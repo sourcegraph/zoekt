@@ -73,6 +73,9 @@ type Options struct {
 
 	// Write memory profiles to this file.
 	MemProfile string
+
+	// LargeFiles are files that should be indexed regardless of their size.
+	LargeFiles map[string]struct{}
 }
 
 // Builder manages (parallel) creation of uniformly sized shards.
@@ -224,7 +227,7 @@ func (b *Builder) Add(doc zoekt.Document) error {
 	// we pass through a part of the source tree with binary/large
 	// files, the corresponding shard would be mostly empty, so
 	// insert a reason here too.
-	if len(doc.Content) > b.opts.SizeMax {
+	if _, ok := b.opts.LargeFiles[doc.Name]; !ok && len(doc.Content) > b.opts.SizeMax {
 		doc.SkipReason = fmt.Sprintf("document size %d larger than limit %d", len(doc.Content), b.opts.SizeMax)
 	} else if err := zoekt.CheckText(doc.Content); err != nil {
 		doc.SkipReason = err.Error()
