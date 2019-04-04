@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
 	"golang.org/x/net/trace"
@@ -43,6 +44,12 @@ type Server struct {
 	// CPUCount is the amount of parallelism to use when indexing a
 	// repository.
 	CPUCount int
+
+	// LargeFiles are files that should be indexed regardless of their size.
+	// This is passed as the large_files flag to zoekt-archive-index.
+	LargeFiles string
+
+	optsMu sync.Mutex
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -150,6 +157,7 @@ func (s *Server) Index(name, commit string) error {
 		fmt.Sprintf("-parallelism=%d", s.CPUCount),
 		"-index", s.IndexDir,
 		"-file_limit", strconv.Itoa(1<<20), // 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
+		"-large_files", s.LargeFiles,
 		"-incremental",
 		"-branch", "HEAD",
 		"-commit", commit,
@@ -208,6 +216,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/options" {
+		s.updateOptions(w, r)
+		return
+	}
+
 	var data struct {
 		Repos    []string
 		IndexMsg string
@@ -239,6 +252,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	repoTmpl.Execute(w, data)
+}
+
+func (s *Server) updateOptions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error parsing body: %v", err), http.StatusBadRequest)
+		return
+	}
+	if lf, ok := r.Form["large_files"]; ok {
+		s.optsMu.Lock()
+		s.LargeFiles = lf[0]
+		s.optsMu.Unlock()
+	}
 }
 
 func listRepos(root *url.URL) ([]string, error) {
@@ -333,8 +363,8 @@ func main() {
 	listen := flag.String("listen", "", "listen on this address.")
 	cpuFraction := flag.Float64("cpu_fraction", 0.25,
 		"use this fraction of the cores for indexing.")
-	dbg := flag.Bool("debug", false,
-		"turn on more verbose logging.")
+	dbg := flag.Bool("debug", false, "turn on more verbose logging.")
+
 	flag.Parse()
 
 	if *cpuFraction <= 0.0 || *cpuFraction > 1.0 {
