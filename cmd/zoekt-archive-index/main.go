@@ -170,7 +170,7 @@ func do(opts Options, bopts build.Options) error {
 		}
 
 		// We do not index large files
-		if f.Size > int64(bopts.SizeMax) {
+		if f.Size > int64(bopts.SizeMax) && !bopts.IgnoreSizeMax(f.Name) {
 			continue
 		}
 

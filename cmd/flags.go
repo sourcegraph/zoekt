@@ -19,10 +19,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 )
+
+type largeFilesFlag []string
+
+func (f *largeFilesFlag) String() string {
+	s := append([]string{""}, *f...)
+	return strings.Join(s, "-large_file ")
+}
+
+func (f *largeFilesFlag) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
 
 var (
 	sizeMax     = flag.Int("file_limit", 128*1024, "maximum file size")
@@ -31,7 +44,12 @@ var (
 	indexDir    = flag.String("index", build.DefaultDir, "directory for search indices")
 	version     = flag.Bool("version", false, "Print version number")
 	ctags       = flag.Bool("require_ctags", false, "If set, ctags calls must succeed.")
+	largeFiles  = largeFilesFlag{}
 )
+
+func init() {
+	flag.Var(&largeFiles, "large_file", "A glob pattern where matching files are to be index regardless of their size. You can add multiple patterns by setting this more than once.")
+}
 
 func OptionsFromFlags() *build.Options {
 	if *version {

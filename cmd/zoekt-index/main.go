@@ -60,7 +60,6 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 
 func main() {
 	var cpuProfile = flag.String("cpu_profile", "", "write cpu profile to file")
-
 	ignoreDirs := flag.String("ignore_dirs", ".git,.hg,.svn", "comma separated list of directories to ignore.")
 	flag.Parse()
 
@@ -120,7 +119,7 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error 
 
 	for f := range comm {
 		displayName := strings.TrimPrefix(f.name, dir+"/")
-		if f.size > int64(opts.SizeMax) {
+		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
 			builder.Add(zoekt.Document{
 				Name:       displayName,
 				SkipReason: fmt.Sprintf("document size %d larger than limit %d", f.size, opts.SizeMax),
