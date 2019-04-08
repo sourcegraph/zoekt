@@ -29,6 +29,18 @@ import (
 
 var _ = log.Println
 
+type largeFilesFlag []string
+
+func (f *largeFilesFlag) String() string {
+	s := append([]string{""}, *f...)
+	return strings.Join(s, "-large_file ")
+}
+
+func (f *largeFilesFlag) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
 func main() {
 	var sizeMax = flag.Int("file_limit", 128*1024, "maximum file size")
 	var shardLimit = flag.Int("shard_limit", 100<<20, "maximum corpus size for a shard")
@@ -45,6 +57,8 @@ func main() {
 		"It also affects name if the indexed repository is under this directory.")
 	ctags := flag.Bool("require_ctags", false, "If set, ctags calls must succeed.")
 	version := flag.Bool("version", false, "Print version number")
+	largeFiles := largeFilesFlag{}
+	flag.Var(&largeFiles, "large_file", "A glob pattern where matching files are to be index regardless of their size.")
 	flag.Parse()
 
 	if *version {
@@ -65,6 +79,7 @@ func main() {
 		ShardMax:         *shardLimit,
 		IndexDir:         *indexDir,
 		CTagsMustSucceed: *ctags,
+		LargeFiles:       largeFiles,
 	}
 	opts.SetDefaults()
 

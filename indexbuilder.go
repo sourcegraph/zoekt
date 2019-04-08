@@ -145,6 +145,12 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 	return &dest, runeSecs, nil
 }
 
+// IndexOptions contains options that were used while building an index but are
+// not specific to a repository.
+type IndexOptions struct {
+	LargeFiles []string
+}
+
 // IndexBuilder builds a single index shard.
 type IndexBuilder struct {
 	contentStrings  []*searchableString
@@ -171,6 +177,8 @@ type IndexBuilder struct {
 
 	// languages codes
 	languages []byte
+
+	opts *IndexOptions
 }
 
 func (d *Repository) verify() error {
@@ -191,11 +199,12 @@ func (b *IndexBuilder) ContentSize() uint32 {
 
 // NewIndexBuilder creates a fresh IndexBuilder. The passed in
 // Repository contains repo metadata, and may be set to nil.
-func NewIndexBuilder(r *Repository) (*IndexBuilder, error) {
+func NewIndexBuilder(r *Repository, iopts *IndexOptions) (*IndexBuilder, error) {
 	b := &IndexBuilder{
 		contentPostings: newPostingsBuilder(),
 		namePostings:    newPostingsBuilder(),
 		languageMap:     map[string]byte{},
+		opts:            iopts,
 	}
 
 	if r == nil {

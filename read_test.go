@@ -21,7 +21,7 @@ import (
 )
 
 func TestReadWrite(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestReadWrite(t *testing.T) {
 }
 
 func TestReadWriteNames(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}

@@ -479,7 +479,7 @@ func IndexGitRepo(opts Options) error {
 				return err
 			}
 
-			if blob.Size > int64(opts.BuildOptions.SizeMax) {
+			if blob.Size > int64(opts.BuildOptions.SizeMax) && !opts.BuildOptions.IgnoreSizeMax(key.FullPath()) {
 				if err := builder.Add(zoekt.Document{
 					SkipReason:        fmt.Sprintf("file size %d exceeds maximum size %d", blob.Size, opts.BuildOptions.SizeMax),
 					Name:              key.FullPath(),

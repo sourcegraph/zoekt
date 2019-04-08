@@ -57,11 +57,26 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 	return nil
 }
 
+type largeFilesFlag []string
+
+func (f *largeFilesFlag) String() string {
+	s := append([]string{""}, *f...)
+	return strings.Join(s, "-large_file ")
+}
+
+func (f *largeFilesFlag) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
 func main() {
 	var cpuProfile = flag.String("cpu_profile", "", "write cpu profile to file")
 	var sizeMax = flag.Int("file_limit", 128*1024, "maximum file size")
 	var shardLimit = flag.Int("shard_limit", 100<<20, "maximum corpus size for a shard")
 	var parallelism = flag.Int("parallelism", 4, "maximum number of parallel indexing processes.")
+
+	largeFiles := largeFilesFlag{}
+	flag.Var(&largeFiles, "large_file", "A glob pattern where matching files are to be index regardless of their size.")
 
 	ignoreDirs := flag.String("ignore_dirs", ".git,.hg,.svn", "comma separated list of directories to ignore.")
 	indexDir := flag.String("index", build.DefaultDir, "directory for search indices")
@@ -72,6 +87,7 @@ func main() {
 		SizeMax:     *sizeMax,
 		ShardMax:    *shardLimit,
 		IndexDir:    *indexDir,
+		LargeFiles:  largeFiles,
 	}
 	opts.SetDefaults()
 	if *cpuProfile != "" {
@@ -129,7 +145,7 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error 
 
 	for f := range comm {
 		displayName := strings.TrimPrefix(f.name, dir+"/")
-		if f.size > int64(opts.SizeMax) {
+		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
 			builder.Add(zoekt.Document{
 				Name:       displayName,
 				SkipReason: fmt.Sprintf("document size %d larger than limit %d", f.size, opts.SizeMax),

@@ -219,7 +219,7 @@ func TestUnloadIndex(t *testing.T) {
 }
 
 func testIndexBuilder(t *testing.T, repo *zoekt.Repository, docs ...zoekt.Document) *zoekt.IndexBuilder {
-	b, err := zoekt.NewIndexBuilder(repo)
+	b, err := zoekt.NewIndexBuilder(repo, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}

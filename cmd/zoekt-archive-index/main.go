@@ -169,7 +169,7 @@ func do(opts Options, bopts build.Options) error {
 		}
 
 		// We do not index large files
-		if f.Size > int64(bopts.SizeMax) {
+		if f.Size > int64(bopts.SizeMax) && !bopts.IgnoreSizeMax(f.Name) {
 			continue
 		}
 
@@ -196,6 +196,18 @@ func do(opts Options, bopts build.Options) error {
 	return builder.Finish()
 }
 
+type largeFilesFlag []string
+
+func (f *largeFilesFlag) String() string {
+	s := append([]string{""}, *f...)
+	return strings.Join(s, "-large_file ")
+}
+
+func (f *largeFilesFlag) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
 func main() {
 	var (
 		sizeMax     = flag.Int("file_limit", 128*1024, "maximum file size")
@@ -205,12 +217,14 @@ func main() {
 		incremental = flag.Bool("incremental", true, "only index changed repositories")
 		ctags       = flag.Bool("require_ctags", false, "If set, ctags calls must succeed.")
 
-		name   = flag.String("name", "", "The repository name for the archive")
-		urlRaw = flag.String("url", "", "The repository URL for the archive")
-		branch = flag.String("branch", "", "The branch name for the archive")
-		commit = flag.String("commit", "", "The commit sha for the archive. If incremental this will avoid updating shards already at commit")
-		strip  = flag.Int("strip_components", 0, "Remove the specified number of leading path elements. Pathnames with fewer elements will be silently skipped.")
+		name       = flag.String("name", "", "The repository name for the archive")
+		urlRaw     = flag.String("url", "", "The repository URL for the archive")
+		branch     = flag.String("branch", "", "The branch name for the archive")
+		commit     = flag.String("commit", "", "The commit sha for the archive. If incremental this will avoid updating shards already at commit")
+		strip      = flag.Int("strip_components", 0, "Remove the specified number of leading path elements. Pathnames with fewer elements will be silently skipped.")
+		largeFiles = largeFilesFlag{}
 	)
+	flag.Var(&largeFiles, "large_file", "A glob pattern where matching files are to be index regardless of their size.")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -226,6 +240,7 @@ func main() {
 		ShardMax:         *shardLimit,
 		IndexDir:         *indexDir,
 		CTagsMustSucceed: *ctags,
+		LargeFiles:       largeFiles,
 	}
 	opts := Options{
 		Incremental: *incremental,

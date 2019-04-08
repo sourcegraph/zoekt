@@ -40,7 +40,11 @@ func clearScores(r *SearchResult) {
 }
 
 func testIndexBuilder(t *testing.T, repo *Repository, docs ...Document) *IndexBuilder {
-	b, err := NewIndexBuilder(repo)
+	return createTestIndexBuilder(t, repo, docs, nil)
+}
+
+func createTestIndexBuilder(t *testing.T, repo *Repository, docs []Document, opts *IndexOptions) *IndexBuilder {
+	b, err := NewIndexBuilder(repo, opts)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -64,7 +68,7 @@ func TestBoundary(t *testing.T) {
 }
 
 func TestDocSectionInvalid(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -257,7 +261,7 @@ func TestCaseFold(t *testing.T) {
 }
 
 func TestAndSearch(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -298,7 +302,7 @@ func TestAndSearch(t *testing.T) {
 }
 
 func TestAndNegateSearch(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -328,7 +332,7 @@ func TestAndNegateSearch(t *testing.T) {
 }
 
 func TestNegativeMatchesOnlyShortcut(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -352,7 +356,7 @@ func TestNegativeMatchesOnlyShortcut(t *testing.T) {
 }
 
 func TestFileSearch(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -388,7 +392,7 @@ func TestFileSearch(t *testing.T) {
 }
 
 func TestFileCase(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -406,7 +410,7 @@ func TestFileCase(t *testing.T) {
 }
 
 func TestFileRegexpSearchBruteForce(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -426,7 +430,7 @@ func TestFileRegexpSearchBruteForce(t *testing.T) {
 }
 
 func TestFileRegexpSearchShortString(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -444,7 +448,7 @@ func TestFileRegexpSearchShortString(t *testing.T) {
 }
 
 func TestFileSubstringSearchBruteForce(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -464,7 +468,7 @@ func TestFileSubstringSearchBruteForce(t *testing.T) {
 }
 
 func TestFileSubstringSearchBruteForceEnd(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -484,7 +488,7 @@ func TestFileSubstringSearchBruteForceEnd(t *testing.T) {
 }
 
 func TestSearchMatchAll(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -501,7 +505,7 @@ func TestSearchMatchAll(t *testing.T) {
 }
 
 func TestSearchNewline(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -518,7 +522,7 @@ func TestSearchNewline(t *testing.T) {
 }
 
 func TestSearchMatchAllRegexp(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -538,7 +542,7 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 }
 
 func TestFileRestriction(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -674,7 +678,7 @@ func TestBranchLimit(t *testing.T) {
 			r.Branches = append(r.Branches, RepositoryBranch{
 				s, "v-" + s})
 		}
-		_, err := NewIndexBuilder(r)
+		_, err := NewIndexBuilder(r, nil)
 		if limit == 64 && err != nil {
 			t.Fatalf("NewIndexBuilder: %v", err)
 		} else if limit == 65 && err == nil {
@@ -1109,24 +1113,37 @@ func TestListReposByContent(t *testing.T) {
 }
 
 func TestMetadata(t *testing.T) {
+	lf := []string{"test"}
 	content := []byte("bla the needle")
 	// ----------------01234567890123
-	b := testIndexBuilder(t, &Repository{
+	b := createTestIndexBuilder(t, &Repository{
 		Name: "reponame",
-	}, Document{Name: "f1", Content: content},
-		Document{Name: "f2", Content: content})
+	}, []Document{
+		Document{Name: "f1", Content: content},
+		Document{Name: "f2", Content: content},
+	}, &IndexOptions{
+		LargeFiles: lf,
+	})
 
 	var buf bytes.Buffer
 	b.Write(&buf)
 	f := &memSeeker{buf.Bytes()}
 
-	rd, _, err := ReadMetadata(f)
+	rd, id, err := ReadMetadata(f)
 	if err != nil {
 		t.Fatalf("ReadMetadata: %v", err)
 	}
 
 	if got, want := rd.Name, "reponame"; got != want {
-		t.Fatalf("got %q want %q", got, want)
+		t.Fatalf("repo metadata: got %q want %q", got, want)
+	}
+
+	got := id.IndexOptions
+	want := IndexOptions{
+		LargeFiles: lf,
+	}
+	if reflect.DeepEqual(got, want) {
+		t.Fatalf("index metadata: got %q want %q", got, want)
 	}
 }
 
@@ -1777,7 +1794,7 @@ func TestDistanceHitIterBailLast(t *testing.T) {
 
 func TestDocumentSectionRuneBoundary(t *testing.T) {
 	content := string([]rune{kelvinCodePoint, kelvinCodePoint, kelvinCodePoint})
-	b, err := NewIndexBuilder(nil)
+	b, err := NewIndexBuilder(nil, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -1832,7 +1849,7 @@ func TestSkipInvalidContent(t *testing.T) {
 		"abc def \x00 abc",
 	} {
 
-		b, err := NewIndexBuilder(nil)
+		b, err := NewIndexBuilder(nil, nil)
 		if err != nil {
 			t.Fatalf("NewIndexBuilder: %v", err)
 		}

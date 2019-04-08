@@ -69,7 +69,7 @@ func TestBasic(t *testing.T) {
 		FileURLTemplate:      "file-url",
 		LineFragmentTemplate: "#line",
 		Branches:             []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestPrint(t *testing.T) {
 		FileURLTemplate:      "file-url",
 		LineFragmentTemplate: "line",
 		Branches:             []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestPrintDefault(t *testing.T) {
 		Name:     "name",
 		URL:      "repo-url",
 		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestCrash(t *testing.T) {
 func TestHostCustomization(t *testing.T) {
 	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
 		Name: "name",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestHostCustomization(t *testing.T) {
 func TestDupResult(t *testing.T) {
 	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
 		Name: "name",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestDupResult(t *testing.T) {
 func TestTruncateLine(t *testing.T) {
 	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
 		Name: "name",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}

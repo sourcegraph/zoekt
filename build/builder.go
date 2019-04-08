@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"runtime/pprof"
@@ -73,6 +74,11 @@ type Options struct {
 
 	// Write memory profiles to this file.
 	MemProfile string
+
+	// LargeFiles is a slice of glob patterns where matching file
+	// paths should be indexed regardless of their size. The glob pattern syntax
+	// can be found here: https://golang.org/pkg/path/filepath/#Match.
+	LargeFiles []string
 }
 
 // Builder manages (parallel) creation of uniformly sized shards.
@@ -180,7 +186,27 @@ func (o *Options) IndexVersions() []zoekt.RepositoryBranch {
 		return nil
 	}
 
+	iopts := &zoekt.IndexOptions{
+		LargeFiles: o.LargeFiles,
+	}
+	if !reflect.DeepEqual(index.IndexOptions, iopts) {
+		return nil
+	}
+
 	return repo.Branches
+}
+
+// IgnoreSizeMax determines whether the max size should be ignored. It uses
+// the glob syntax found here: https://golang.org/pkg/path/filepath/#Match.
+func (o *Options) IgnoreSizeMax(name string) bool {
+	for _, pattern := range o.LargeFiles {
+		pattern = strings.TrimSpace(pattern)
+		if m, _ := filepath.Match(pattern, name); m {
+			return true
+		}
+	}
+
+	return false
 }
 
 // NewBuilder creates a new Builder instance.
@@ -224,7 +250,7 @@ func (b *Builder) Add(doc zoekt.Document) error {
 	// we pass through a part of the source tree with binary/large
 	// files, the corresponding shard would be mostly empty, so
 	// insert a reason here too.
-	if len(doc.Content) > b.opts.SizeMax {
+	if len(doc.Content) > b.opts.SizeMax && !b.opts.IgnoreSizeMax(doc.Name) {
 		doc.SkipReason = fmt.Sprintf("document size %d larger than limit %d", len(doc.Content), b.opts.SizeMax)
 	} else if err := zoekt.CheckText(doc.Content); err != nil {
 		doc.SkipReason = err.Error()
@@ -452,7 +478,10 @@ func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	desc := b.opts.RepositoryDescription
 	desc.SubRepoMap = b.opts.SubRepositories
 
-	shardBuilder, err := zoekt.NewIndexBuilder(&desc)
+	iopts := zoekt.IndexOptions{
+		LargeFiles: b.opts.LargeFiles,
+	}
+	shardBuilder, err := zoekt.NewIndexBuilder(&desc, &iopts)
 	if err != nil {
 		return nil, err
 	}
