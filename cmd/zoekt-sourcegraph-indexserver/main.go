@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -135,6 +136,26 @@ func (s *Server) Run() {
 	}
 }
 
+type IndexOptions struct {
+	// LargeFiles is a slice of glob patterns where matching files are
+	// indexed regardless of their size.
+	LargeFiles *[]string
+}
+
+func (o *IndexOptions) toArgs() string {
+	f := ""
+	var globs []string
+	if o.LargeFiles != nil {
+		globs = *o.LargeFiles
+	} else {
+		globs = []string{}
+	}
+	for i := range globs {
+		f += "-large_file " + globs[i]
+	}
+	return f
+}
+
 // Index starts an index job for repo name at commit.
 func (s *Server) Index(name, commit string) error {
 	tr := trace.New("index", name)
@@ -146,7 +167,13 @@ func (s *Server) Index(name, commit string) error {
 		return s.createEmptyShard(tr, name)
 	}
 
+	opts, err := getIndexOptions(s.Root)
+	if err != nil {
+		return err
+	}
+
 	cmd := exec.Command("zoekt-archive-index",
+		opts.toArgs(),
 		fmt.Sprintf("-parallelism=%d", s.CPUCount),
 		"-index", s.IndexDir,
 		"-file_limit", strconv.Itoa(1<<20), // 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
@@ -292,6 +319,32 @@ func resolveRevision(root *url.URL, repo, spec string) (string, error) {
 		return "", err
 	}
 	return b.String(), nil
+}
+
+func getIndexOptions(root *url.URL) (*IndexOptions, error) {
+	u := root.ResolveReference(&url.URL{Path: "/.internal/search/configuration"})
+	resp, err := http.Get(u.String())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, os.ErrNotExist
+	}
+	if resp.StatusCode != http.StatusOK {
+		fmt.Println(resp.StatusCode)
+		return nil, errors.New("failed to get configuration options")
+	}
+
+	var opts IndexOptions
+
+	err = json.NewDecoder(resp.Body).Decode(&opts)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding body: %v", err)
+	}
+
+	return &opts, nil
 }
 
 func tarballURL(root *url.URL, repo, commit string) string {
