@@ -139,19 +139,13 @@ func (s *Server) Run() {
 type IndexOptions struct {
 	// LargeFiles is a slice of glob patterns where matching files are
 	// indexed regardless of their size.
-	LargeFiles *[]string
+	LargeFiles []string
 }
 
 func (o *IndexOptions) toArgs() string {
 	f := ""
-	var globs []string
-	if o.LargeFiles != nil {
-		globs = *o.LargeFiles
-	} else {
-		globs = []string{}
-	}
-	for i := range globs {
-		f += "-large_file " + globs[i]
+	for i := range o.LargeFiles {
+		f += "-large_file " + o.LargeFiles[i]
 	}
 	return f
 }
