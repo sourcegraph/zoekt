@@ -150,6 +150,35 @@ func (o *IndexOptions) toArgs() string {
 	return f
 }
 
+func getIndexOptions(root *url.URL, client *http.Client) (*IndexOptions, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	u := root.ResolveReference(&url.URL{Path: "/.internal/search/configuration"})
+	resp, err := client.Get(u.String())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, os.ErrNotExist
+	}
+	if resp.StatusCode != http.StatusOK {
+		fmt.Println(resp.StatusCode)
+		return nil, errors.New("failed to get configuration options")
+	}
+
+	var opts IndexOptions
+
+	err = json.NewDecoder(resp.Body).Decode(&opts)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding body: %v", err)
+	}
+
+	return &opts, nil
+}
+
 // Index starts an index job for repo name at commit.
 func (s *Server) Index(name, commit string) error {
 	tr := trace.New("index", name)
@@ -161,7 +190,7 @@ func (s *Server) Index(name, commit string) error {
 		return s.createEmptyShard(tr, name)
 	}
 
-	opts, err := getIndexOptions(s.Root)
+	opts, err := getIndexOptions(s.Root, nil)
 	if err != nil {
 		return err
 	}
@@ -313,32 +342,6 @@ func resolveRevision(root *url.URL, repo, spec string) (string, error) {
 		return "", err
 	}
 	return b.String(), nil
-}
-
-func getIndexOptions(root *url.URL) (*IndexOptions, error) {
-	u := root.ResolveReference(&url.URL{Path: "/.internal/search/configuration"})
-	resp, err := http.Get(u.String())
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, os.ErrNotExist
-	}
-	if resp.StatusCode != http.StatusOK {
-		fmt.Println(resp.StatusCode)
-		return nil, errors.New("failed to get configuration options")
-	}
-
-	var opts IndexOptions
-
-	err = json.NewDecoder(resp.Body).Decode(&opts)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding body: %v", err)
-	}
-
-	return &opts, nil
 }
 
 func tarballURL(root *url.URL, repo, commit string) string {
