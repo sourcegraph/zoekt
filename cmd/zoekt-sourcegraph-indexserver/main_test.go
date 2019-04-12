@@ -4,12 +4,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"testing"
 )
 
 func TestGetIndexOptions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"LargeFiles": ["test"]}`))
+		w.Write([]byte(`{"LargeFiles": ["foo","bar"]}`))
 	}))
 	defer server.Close()
 
@@ -22,7 +23,9 @@ func TestGetIndexOptions(t *testing.T) {
 	if len(opts.LargeFiles) == 0 {
 		t.Error("expected non-empty result from large files list")
 	}
-	if opts.LargeFiles[0] != "test" {
-		t.Error("decoded wrong results")
+
+	want := []string{"-large_file", "foo", "-large_file", "bar"}
+	if got := opts.toArgs(); !reflect.DeepEqual(got, want) {
+		t.Errorf("got unexpected arguments from options\ngot: %v\nwant: %v\n", got, want)
 	}
 }

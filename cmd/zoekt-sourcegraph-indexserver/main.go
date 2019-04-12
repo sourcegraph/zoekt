@@ -142,12 +142,12 @@ type IndexOptions struct {
 	LargeFiles []string
 }
 
-func (o *IndexOptions) toArgs() string {
-	f := ""
-	for i := range o.LargeFiles {
-		f += "-large_file " + o.LargeFiles[i]
+func (o *IndexOptions) toArgs() []string {
+	args := make([]string, 0, len(o.LargeFiles)*2)
+	for _, a := range o.LargeFiles {
+		args = append(args, "-large_file", a)
 	}
-	return f
+	return args
 }
 
 func getIndexOptions(root *url.URL, client *http.Client) (*IndexOptions, error) {
@@ -195,16 +195,19 @@ func (s *Server) Index(name, commit string) error {
 		return err
 	}
 
-	cmd := exec.Command("zoekt-archive-index",
-		opts.toArgs(),
+	args := []string{
 		fmt.Sprintf("-parallelism=%d", s.CPUCount),
 		"-index", s.IndexDir,
-		"-file_limit", strconv.Itoa(1<<20), // 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
+		"-file_limit", strconv.Itoa(1 << 20), // 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
 		"-incremental",
 		"-branch", "HEAD",
 		"-commit", commit,
 		"-name", name,
-		tarballURL(s.Root, name, commit))
+	}
+	args = append(args, opts.toArgs()...)
+	args = append(args, tarballURL(s.Root, name, commit))
+
+	cmd := exec.Command("zoekt-archive-index", args...)
 	// Prevent prompting
 	cmd.Stdin = &bytes.Buffer{}
 	return s.loggedRun(tr, cmd)
