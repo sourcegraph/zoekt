@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	"github.com/google/zoekt/cmd"
 )
 
 type fileInfo struct {
@@ -59,21 +60,11 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 
 func main() {
 	var cpuProfile = flag.String("cpu_profile", "", "write cpu profile to file")
-	var sizeMax = flag.Int("file_limit", 128*1024, "maximum file size")
-	var shardLimit = flag.Int("shard_limit", 100<<20, "maximum corpus size for a shard")
-	var parallelism = flag.Int("parallelism", 4, "maximum number of parallel indexing processes.")
 
 	ignoreDirs := flag.String("ignore_dirs", ".git,.hg,.svn", "comma separated list of directories to ignore.")
-	indexDir := flag.String("index", build.DefaultDir, "directory for search indices")
 	flag.Parse()
 
-	opts := build.Options{
-		Parallelism: *parallelism,
-		SizeMax:     *sizeMax,
-		ShardMax:    *shardLimit,
-		IndexDir:    *indexDir,
-	}
-	opts.SetDefaults()
+	opts := cmd.OptionsFromFlags()
 	if *cpuProfile != "" {
 		f, err := os.Create(*cpuProfile)
 		if err != nil {
@@ -95,7 +86,7 @@ func main() {
 	}
 	for _, arg := range flag.Args() {
 		opts.RepositoryDescription.Source = arg
-		if err := indexArg(arg, opts, ignoreDirMap); err != nil {
+		if err := indexArg(arg, *opts, ignoreDirMap); err != nil {
 			log.Fatal(err)
 		}
 	}

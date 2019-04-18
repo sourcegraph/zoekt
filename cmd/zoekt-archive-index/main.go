@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	"github.com/google/zoekt/cmd"
 )
 
 // stripComponents removes the specified number of leading path
@@ -198,12 +199,7 @@ func do(opts Options, bopts build.Options) error {
 
 func main() {
 	var (
-		sizeMax     = flag.Int("file_limit", 128*1024, "maximum file size")
-		shardLimit  = flag.Int("shard_limit", 100<<20, "maximum corpus size for a shard")
-		parallelism = flag.Int("parallelism", 4, "maximum number of parallel indexing processes.")
-		indexDir    = flag.String("index", build.DefaultDir, "index directory for *.zoekt files.")
 		incremental = flag.Bool("incremental", true, "only index changed repositories")
-		ctags       = flag.Bool("require_ctags", false, "If set, ctags calls must succeed.")
 
 		name   = flag.String("name", "", "The repository name for the archive")
 		urlRaw = flag.String("url", "", "The repository URL for the archive")
@@ -219,14 +215,7 @@ func main() {
 		log.Fatal("expected argument for archive location")
 	}
 	archive := flag.Args()[0]
-
-	bopts := build.Options{
-		Parallelism:      *parallelism,
-		SizeMax:          *sizeMax,
-		ShardMax:         *shardLimit,
-		IndexDir:         *indexDir,
-		CTagsMustSucceed: *ctags,
-	}
+	bopts := cmd.OptionsFromFlags()
 	opts := Options{
 		Incremental: *incremental,
 
@@ -238,7 +227,7 @@ func main() {
 		Strip:   *strip,
 	}
 
-	if err := do(opts, bopts); err != nil {
+	if err := do(opts, *bopts); err != nil {
 		log.Fatal(err)
 	}
 }

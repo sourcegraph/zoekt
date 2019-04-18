@@ -16,41 +16,26 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
+	"github.com/google/zoekt/cmd"
 	"github.com/google/zoekt/gitindex"
 )
 
-var _ = log.Println
-
 func main() {
-	var sizeMax = flag.Int("file_limit", 128*1024, "maximum file size")
-	var shardLimit = flag.Int("shard_limit", 100<<20, "maximum corpus size for a shard")
-	var parallelism = flag.Int("parallelism", 4, "maximum number of parallel indexing processes.")
 	allowMissing := flag.Bool("allow_missing_branches", false, "allow missing branches.")
 	submodules := flag.Bool("submodules", true, "if set to false, do not recurse into submodules")
 	branchesStr := flag.String("branches", "HEAD", "git branches to index.")
 	branchPrefix := flag.String("prefix", "refs/heads/", "prefix for branch names")
 
-	indexDir := flag.String("index", build.DefaultDir, "index directory for *.zoekt files.")
 	incremental := flag.Bool("incremental", true, "only index changed repositories")
 	repoCacheDir := flag.String("repo_cache", "", "directory holding bare git repos, named by URL. "+
 		"this is used to find repositories for submodules. "+
 		"It also affects name if the indexed repository is under this directory.")
-	ctags := flag.Bool("require_ctags", false, "If set, ctags calls must succeed.")
-	version := flag.Bool("version", false, "Print version number")
 	flag.Parse()
-
-	if *version {
-		fmt.Printf("zoekt-git-index version %q\n", zoekt.Version)
-		os.Exit(0)
-	}
 
 	if *repoCacheDir != "" {
 		dir, err := filepath.Abs(*repoCacheDir)
@@ -59,14 +44,7 @@ func main() {
 		}
 		*repoCacheDir = dir
 	}
-	opts := build.Options{
-		Parallelism:      *parallelism,
-		SizeMax:          *sizeMax,
-		ShardMax:         *shardLimit,
-		IndexDir:         *indexDir,
-		CTagsMustSucceed: *ctags,
-	}
-	opts.SetDefaults()
+	opts := cmd.OptionsFromFlags()
 
 	var branches []string
 	if *branchesStr != "" {
@@ -100,7 +78,7 @@ func main() {
 			Submodules:         *submodules,
 			RepoCacheDir:       *repoCacheDir,
 			AllowMissingBranch: *allowMissing,
-			BuildOptions:       opts,
+			BuildOptions:       *opts,
 			Branches:           branches,
 			RepoDir:            dir,
 		}
