@@ -224,7 +224,7 @@ func main() {
 		strip      = flag.Int("strip_components", 0, "Remove the specified number of leading path elements. Pathnames with fewer elements will be silently skipped.")
 		largeFiles = largeFilesFlag{}
 	)
-	flag.Var(&largeFiles, "large_file", "A glob pattern where matching files are to be index regardless of their size.")
+	flag.Var(&largeFiles, "large_file", "A glob pattern where matching files are to be indexed regardless of their size.")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
