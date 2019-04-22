@@ -80,7 +80,21 @@ type Options struct {
 	LargeFiles []string
 }
 
-// Builder manages (parallel) creation of uniformly sized shards.
+// HashOptions creates a hash of the options that affect an index.
+func (o *Options) HashOptions() string {
+	hasher := sha1.New()
+
+	hasher.Write([]byte(o.CTags))
+	hasher.Write([]byte(fmt.Sprintf("%t", o.CTagsMustSucceed)))
+	hasher.Write([]byte(fmt.Sprintf("%d", o.SizeMax)))
+	hasher.Write([]byte(fmt.Sprintf("%q", o.LargeFiles)))
+
+	return fmt.Sprintf("%x", hasher.Sum(nil))
+}
+
+// Builder manages (parallel) creation of uniformly sized shards. The
+// builder buffers up documents until it collects enough documents and
+// then builds a shard and writes.
 type Builder struct {
 	opts     Options
 	throttle chan int
@@ -182,6 +196,10 @@ func (o *Options) IndexVersions() []zoekt.RepositoryBranch {
 	}
 
 	if index.IndexFeatureVersion != zoekt.FeatureVersion {
+		return nil
+	}
+
+	if repo.IndexOptions != o.HashOptions() {
 		return nil
 	}
 
@@ -469,6 +487,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	desc := b.opts.RepositoryDescription
 	desc.SubRepoMap = b.opts.SubRepositories
+	desc.IndexOptions = b.opts.HashOptions()
 
 	shardBuilder, err := zoekt.NewIndexBuilder(&desc)
 	if err != nil {

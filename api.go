@@ -204,6 +204,10 @@ type Repository struct {
 
 	// Importance of the repository, bigger is more important
 	Rank uint16
+
+	// IndexOptions is a hash of the options used to create the index for the
+	// repo.
+	IndexOptions string
 }
 
 // IndexMetadata holds metadata stored in the index file. It contains
