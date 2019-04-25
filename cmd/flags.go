@@ -64,6 +64,7 @@ func OptionsFromFlags() *build.Options {
 		ShardMax:         *shardLimit,
 		IndexDir:         *indexDir,
 		CTagsMustSucceed: *ctags,
+		LargeFiles:       largeFiles,
 	}
 	opts.SetDefaults()
 	return opts
