@@ -23,7 +23,6 @@ import (
 
 	"golang.org/x/net/trace"
 
-	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/hashicorp/go-retryablehttp"
 )
@@ -90,6 +89,14 @@ func (s *Server) Run() {
 			// ResolveRevision is IO bound on the gitserver service. So we do
 			// them concurrently.
 			sem := newSemaphore(32)
+
+			// Cleanup job to trash unused shards
+			sem.Acquire()
+			go func() {
+				defer sem.Release()
+				cleanup(s.IndexDir, repos, time.Now())
+			}()
+
 			tr := trace.New("resolveRevisions", "")
 			tr.LazyPrintf("resolving HEAD for %d repos", len(repos))
 			for _, name := range repos {
@@ -107,13 +114,6 @@ func (s *Server) Run() {
 			}
 			sem.Wait()
 			tr.Finish()
-
-			// Remove indexes for repos which no longer exist.
-			exists := make(map[string]bool)
-			for _, name := range repos {
-				exists[name] = true
-			}
-			s.deleteStaleIndexes(exists)
 
 			<-t.C
 		}
@@ -227,20 +227,6 @@ func (s *Server) createEmptyShard(tr trace.Trace, name string) error {
 	return s.loggedRun(tr, cmd)
 }
 
-func (s *Server) deleteStaleIndexes(exists map[string]bool) {
-	expr := s.IndexDir + "/*"
-	fs, err := filepath.Glob(expr)
-	if err != nil {
-		log.Printf("Glob(%q): %v", expr, err)
-	}
-
-	for _, f := range fs {
-		if err := deleteIfStale(exists, f); err != nil {
-			log.Printf("deleteIfStale(%q): %v", f, err)
-		}
-	}
-}
-
 var repoTmpl = template.Must(template.New("name").Parse(`
 <html><body>
 <a href="debug/requests">Traces</a><br>
@@ -349,34 +335,6 @@ func resolveRevision(root *url.URL, repo, spec string) (string, error) {
 
 func tarballURL(root *url.URL, repo, commit string) string {
 	return root.ResolveReference(&url.URL{Path: fmt.Sprintf("/.internal/git/%s/tar/%s", repo, commit)}).String()
-}
-
-// deleteIfStale deletes the shard if its corresponding repo name is not in
-// exists.
-func deleteIfStale(exists map[string]bool, fn string) error {
-	f, err := os.Open(fn)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
-	ifile, err := zoekt.NewIndexFile(f)
-	if err != nil {
-		return nil
-	}
-	defer ifile.Close()
-
-	repo, _, err := zoekt.ReadMetadata(ifile)
-	if err != nil {
-		return nil
-	}
-
-	if !exists[repo.Name] {
-		debug.Printf("%s no longer exists, deleting %s", repo.Name, fn)
-		return os.Remove(fn)
-	}
-
-	return nil
 }
 
 func main() {
