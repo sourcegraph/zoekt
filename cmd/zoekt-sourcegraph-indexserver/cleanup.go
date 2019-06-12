@@ -96,8 +96,8 @@ func getShards(dir string) map[string][]shard {
 			continue
 		}
 
-		name, ok := shardRepoName(path)
-		if !ok {
+		name, err := shardRepoName(path)
+		if err != nil {
 			debug.Printf("failed to read shard: %v", err)
 			continue
 		}
@@ -111,25 +111,25 @@ func getShards(dir string) map[string][]shard {
 	return shards
 }
 
-func shardRepoName(path string) (string, bool) {
+func shardRepoName(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", false
+		return "", err
 	}
 	defer f.Close()
 
 	ifile, err := zoekt.NewIndexFile(f)
 	if err != nil {
-		return "", false
+		return "", err
 	}
 	defer ifile.Close()
 
 	repo, _, err := zoekt.ReadMetadata(ifile)
 	if err != nil {
-		return "", false
+		return "", err
 	}
 
-	return repo.Name, true
+	return repo.Name, nil
 }
 
 func removeAll(shards []shard) {
