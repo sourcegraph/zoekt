@@ -135,6 +135,12 @@ func shardRepoName(path string) (string, bool) {
 func removeAll(shards []shard) {
 	for _, shard := range shards {
 		if err := os.Remove(shard.Path); err != nil {
+			// We only expect this to fail due to IsNotExist, which is
+			// fine. Additionally this shouldn't fail partially. But if it
+			// does, and the file still exists, then we have the potential for
+			// a partial index for a repo. However, this should be exceedingly
+			// rare due to it being a mix of partial failure on something in
+			// trash + an admin re-adding a repository.
 			debug.Printf("failed to remove shard %s: %v", shard.Path, err)
 		}
 	}
