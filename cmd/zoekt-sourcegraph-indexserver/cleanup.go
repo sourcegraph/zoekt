@@ -84,7 +84,7 @@ func getShards(dir string) map[string][]shard {
 	names, _ := d.Readdirnames(-1)
 	sort.Strings(names)
 
-	shards := map[string][]shard{}
+	shards := make(map[string][]shard, len(names))
 	for _, n := range names {
 		path := filepath.Join(dir, n)
 		fi, err := os.Stat(path)
