@@ -103,32 +103,30 @@ func TestCleanup(t *testing.T) {
 			}
 			defer os.RemoveAll(dir)
 
-			{
-				// Create index files
-				var fs []shard
-				for _, f := range tt.index {
-					f.Path = filepath.Join(dir, f.Path)
-					fs = append(fs, f)
+			// Create index files
+			var fs []shard
+			for _, f := range tt.index {
+				f.Path = filepath.Join(dir, f.Path)
+				fs = append(fs, f)
+			}
+			for _, f := range tt.trash {
+				f.Path = filepath.Join(dir, ".trash", f.Path)
+				fs = append(fs, f)
+			}
+			for _, f := range fs {
+				createEmptyShard(t, f.Repo, f.Path)
+				if err := os.Chtimes(f.Path, f.ModTime, f.ModTime); err != nil {
+					t.Fatal(err)
 				}
-				for _, f := range tt.trash {
-					f.Path = filepath.Join(dir, ".trash", f.Path)
-					fs = append(fs, f)
-				}
-				for _, f := range fs {
-					createEmptyShard(t, f.Repo, f.Path)
-					if err := os.Chtimes(f.Path, f.ModTime, f.ModTime); err != nil {
-						t.Fatal(err)
-					}
-				}
+			}
 
-				cleanup(dir, tt.repos, now)
+			cleanup(dir, tt.repos, now)
 
-				if got, want := readdir(dir), tt.wantIndex; !reflect.DeepEqual(got, want) {
-					t.Errorf("unexpected index\ngot:  %+v\nwant: %+v", got, want)
-				}
-				if got, want := readdir(filepath.Join(dir, ".trash")), tt.wantTrash; !reflect.DeepEqual(got, want) {
-					t.Errorf("unexpected trash\ngot:  %+v\nwant: %+v", got, want)
-				}
+			if got, want := readdir(dir), tt.wantIndex; !reflect.DeepEqual(got, want) {
+				t.Errorf("unexpected index\ngot:  %+v\nwant: %+v", got, want)
+			}
+			if got, want := readdir(filepath.Join(dir, ".trash")), tt.wantTrash; !reflect.DeepEqual(got, want) {
+				t.Errorf("unexpected trash\ngot:  %+v\nwant: %+v", got, want)
 			}
 		})
 	}
