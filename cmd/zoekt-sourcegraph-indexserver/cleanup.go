@@ -10,6 +10,10 @@ import (
 	"github.com/google/zoekt"
 )
 
+// cleanup trashes shards in indexDir that do not exist in repos. For repos
+// that do not exist in indexDir, but do in indexDir/.trash it will move them
+// back into indexDir. Additionally it uses now to remove shards that have
+// been in the trash for 24 hours.
 func cleanup(indexDir string, repos []string, now time.Time) {
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
