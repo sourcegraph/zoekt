@@ -181,6 +181,7 @@ func (i *inMemoryIterator) next(limit uint32) {
 type bitmapIterator struct {
 	it     roaring.IntIterable
 	_first uint32
+	size   uint32
 	what   ngram
 }
 
@@ -197,6 +198,7 @@ func newBitmapIterator(blob []byte, w ngram) *bitmapIterator {
 	return &bitmapIterator{
 		it:     it,
 		_first: first,
+		size:   uint32(len(blob)),
 		what:   w,
 	}
 }
@@ -228,8 +230,8 @@ func (i *bitmapIterator) next(limit uint32) {
 }
 
 func (i *bitmapIterator) updateStats(s *Stats) {
-	// TODO keegan sould this just be
-	// s.IndexBytesLoaded += len(buf)
+	// TODO keegan confirm that bitmap.FromBuffer scans the whole buffer
+	s.IndexBytesLoaded += int64(i.size)
 }
 
 // mergingIterator forms the merge of a set of hitIterators, to
