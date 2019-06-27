@@ -1,6 +1,7 @@
 module github.com/google/zoekt
 
 require (
+	github.com/RoaringBitmap/roaring v0.4.18
 	github.com/andygrunwald/go-gerrit v0.0.0-20181026193842-43cfd7a94eb4
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/gfleury/go-bitbucket-v1 v0.0.0-20181102191809-4910839b609e

@@ -41,9 +41,17 @@ func (s *compoundSection) writeStrings(w *writer, strs []*searchableString) {
 
 func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 	charOffsets *simpleSection, postings *compoundSection, endRunes *simpleSection) {
-	keys := make(ngramSlice, 0, len(s.postings))
-	for k := range s.postings {
-		keys = append(keys, k)
+	var keys ngramSlice
+	if s.postings == nil {
+		keys = make(ngramSlice, 0, len(s.postingSets))
+		for k := range s.postingSets {
+			keys = append(keys, k)
+		}
+	} else {
+		keys = make(ngramSlice, 0, len(s.postings))
+		for k := range s.postings {
+			keys = append(keys, k)
+		}
 	}
 	sort.Sort(keys)
 
@@ -56,8 +64,18 @@ func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 	ngramText.end(w)
 
 	postings.start(w)
-	for _, k := range keys {
-		postings.addItem(w, s.postings[k])
+	if s.postings == nil {
+		for _, k := range keys {
+			b, err := s.postingSets[k].ToBytes()
+			if err != nil {
+				panic("writePostings: " + err.Error())
+			}
+			postings.addItem(w, b)
+		}
+	} else {
+		for _, k := range keys {
+			postings.addItem(w, s.postings[k])
+		}
 	}
 	postings.end(w)
 
