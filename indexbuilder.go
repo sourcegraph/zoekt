@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"sort"
 	"unicode/utf8"
+
+	"github.com/RoaringBitmap/roaring"
 )
 
 var _ = log.Println
@@ -42,6 +44,7 @@ const runeOffsetFrequency = 100
 
 type postingsBuilder struct {
 	postings    map[ngram][]byte
+	postingSets map[ngram]*roaring.Bitmap
 	lastOffsets map[ngram]uint32
 
 	// To support UTF-8 searching, we must map back runes to byte
@@ -60,6 +63,14 @@ type postingsBuilder struct {
 func newPostingsBuilder() *postingsBuilder {
 	return &postingsBuilder{
 		postings:     map[ngram][]byte{},
+		lastOffsets:  map[ngram]uint32{},
+		isPlainASCII: true,
+	}
+}
+
+func newPostingSetsBuilder() *postingsBuilder {
+	return &postingsBuilder{
+		postingSets:  map[ngram]*roaring.Bitmap{},
 		lastOffsets:  map[ngram]uint32{},
 		isPlainASCII: true,
 	}
@@ -111,11 +122,20 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 		}
 
 		ng := runesToNGram(runeGram)
-		lastOff := s.lastOffsets[ng]
 		newOff := endRune + uint32(runeIndex) - 2
 
-		m := binary.PutUvarint(buf[:], uint64(newOff-lastOff))
-		s.postings[ng] = append(s.postings[ng], buf[:m]...)
+		if s.postings == nil {
+			b := s.postingSets[ng]
+			if b == nil {
+				b = roaring.New()
+				s.postingSets[ng] = b
+			}
+			b.Add(newOff)
+		} else {
+			lastOff := s.lastOffsets[ng]
+			m := binary.PutUvarint(buf[:], uint64(newOff-lastOff))
+			s.postings[ng] = append(s.postings[ng], buf[:m]...)
+		}
 		s.lastOffsets[ng] = newOff
 	}
 	s.runeCount += runeIndex
@@ -193,7 +213,7 @@ func (b *IndexBuilder) ContentSize() uint32 {
 // Repository contains repo metadata, and may be set to nil.
 func NewIndexBuilder(r *Repository) (*IndexBuilder, error) {
 	b := &IndexBuilder{
-		contentPostings: newPostingsBuilder(),
+		contentPostings: newPostingSetsBuilder(),
 		namePostings:    newPostingsBuilder(),
 		languageMap:     map[string]byte{},
 	}

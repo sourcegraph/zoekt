@@ -15,7 +15,6 @@
 package zoekt
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/RoaringBitmap/roaring"
@@ -178,53 +177,59 @@ func (i *inMemoryIterator) next(limit uint32) {
 	}
 }
 
-// compressedPostingIterator goes over a delta varint encoded posting
-// list.
-type compressedPostingIterator struct {
-	blob, orig []byte
-	_first     uint32
-	what       ngram
+// bitmapIterator goes over a posting list encoded as a roaring bitmap.
+type bitmapIterator struct {
+	it     roaring.IntIterable
+	_first uint32
+	what   ngram
 }
 
-func newCompressedPostingIterator(b []byte, w ngram) *compressedPostingIterator {
-	d, sz := binary.Uvarint(b)
-	return &compressedPostingIterator{
-		_first: uint32(d),
-		blob:   b[sz:],
-		orig:   b,
+func newBitmapIterator(blob []byte, w ngram) *bitmapIterator {
+	b := roaring.New()
+	b.FromBuffer(blob)
+
+	it := b.Iterator()
+	first := uint32(maxUInt32)
+	if it.HasNext() {
+		first = it.Next()
+	}
+
+	return &bitmapIterator{
+		it:     it,
+		_first: first,
 		what:   w,
 	}
 }
 
-func (i *compressedPostingIterator) String() string {
-	return fmt.Sprintf("compressed(%s, %d, [%d bytes])", i.what, i._first, len(i.blob))
+func (i *bitmapIterator) String() string {
+	return fmt.Sprintf("bitmap(%s)", i.what)
 }
 
-func (i *compressedPostingIterator) first() uint32 {
+func (i *bitmapIterator) first() uint32 {
 	return i._first
 }
 
-func (i *compressedPostingIterator) next(limit uint32) {
+func (i *bitmapIterator) next(limit uint32) {
 	if limit == maxUInt32 {
-		i.blob = nil
 		i._first = maxUInt32
 		return
 	}
 
-	if i._first <= limit && len(i.blob) == 0 {
+	hasNext := i.it.HasNext()
+
+	if i._first <= limit && !hasNext {
 		i._first = maxUInt32
 		return
 	}
 
-	for i._first <= limit && len(i.blob) > 0 {
-		delta, sz := binary.Uvarint(i.blob)
-		i._first += uint32(delta)
-		i.blob = i.blob[sz:]
+	for i._first <= limit && hasNext {
+		i._first = i.it.Next()
 	}
 }
 
-func (i *compressedPostingIterator) updateStats(s *Stats) {
-	s.IndexBytesLoaded += int64(len(i.orig) - len(i.blob))
+func (i *bitmapIterator) updateStats(s *Stats) {
+	// TODO keegan sould this just be
+	// s.IndexBytesLoaded += len(buf)
 }
 
 // mergingIterator forms the merge of a set of hitIterators, to

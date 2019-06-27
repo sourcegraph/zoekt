@@ -27,7 +27,8 @@ package zoekt
 // 13: content checksums
 // 14: languages
 // 15: rune based symbol sections
-const IndexFormatVersion = 15
+// 16: roaring bitmaps for posting lists
+const IndexFormatVersion = 16
 
 // FeatureVersion is increased if a feature is added that requires reindexing data
 // without changing the format version
