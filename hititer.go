@@ -17,6 +17,8 @@ package zoekt
 import (
 	"encoding/binary"
 	"fmt"
+
+	"github.com/RoaringBitmap/roaring"
 )
 
 // hitIterator finds potential search matches, measured in offsets of
@@ -133,8 +135,8 @@ func (d *indexData) trigramHitIterator(ng ngram, caseSensitive, fileName bool) (
 		if err != nil {
 			return nil, err
 		}
-		if len(blob) > 0 {
-			iters = append(iters, newCompressedPostingIterator(blob, v))
+		if len(blob) > 0 { // why this check?
+			iters = append(iters, newBitmapIterator(blob, v))
 		}
 	}
 
