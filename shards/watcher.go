@@ -20,6 +20,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -109,14 +110,28 @@ func (s *shardWatcher) scan() error {
 	}
 
 	var wg sync.WaitGroup
-	for _, t := range toLoad {
-		wg.Add(1)
-		go func(k string) {
-			s.loader.load(k)
-			wg.Done()
-		}(t)
+	ch := make(chan string)
+	defer wg.Wait()
+	defer close(ch)
+
+	n := runtime.NumCPU()
+	wg.Add(n)
+
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			for k := range ch {
+				s.loader.load(k)
+			}
+		}()
 	}
-	wg.Wait()
+
+	began := time.Now()
+	for _, k := range toLoad {
+		ch <- k
+	}
+
+	log.Printf("Loaded %d shards in %s", len(toLoad), time.Since(began))
 
 	return nil
 }
