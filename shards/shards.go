@@ -22,10 +22,10 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"sync"
 	"time"
 
 	"golang.org/x/net/trace"
-	"golang.org/x/sync/semaphore"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
@@ -36,23 +36,29 @@ type rankedShard struct {
 	rank uint16
 }
 
-type shardedSearcher struct {
-	// Limit the number of parallel queries. Since searching is
-	// CPU bound, we can't do better than #CPU queries in
-	// parallel.  If we do so, we just create more memory
-	// pressure.
-	throttle *semaphore.Weighted
-	capacity int64
+type shardedOp struct {
+	ctx     context.Context
+	q       query.Q
+	opts    *zoekt.SearchOptions
+	op      func(rankedShard)
+	shards  []rankedShard
+	results chan *shardResult
+}
 
+type shardedSearcher struct {
+	ops    chan *shardedOp
+	mu     sync.RWMutex
 	shards map[string]rankedShard
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
 	ss := &shardedSearcher{
-		shards:   make(map[string]rankedShard),
-		throttle: semaphore.NewWeighted(n),
-		capacity: n,
+		ops:    make(chan *shardedOp),
+		shards: make(map[string]rankedShard),
 	}
+
+	go ss.work(runtime.NumCPU())
+
 	return ss
 }
 
@@ -91,8 +97,9 @@ func (ss *shardedSearcher) String() string {
 
 // Close closes references to open files. It may be called only once.
 func (ss *shardedSearcher) Close() {
-	ss.lock(context.Background())
-	defer ss.unlock()
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	defer close(ss.ops)
 	for _, s := range ss.shards {
 		s.Close()
 	}
@@ -121,18 +128,12 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		LineFragments: map[string]string{},
 	}
 
-	// This critical section is large, but we don't want to deal with
-	// searches on shards that have just been closed.
-	if err := ss.rlock(ctx); err != nil {
-		return aggregate, err
-	}
-	defer ss.runlock()
-	tr.LazyPrintf("acquired lock")
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+
+	tr.LazyPrintf("acquired read lock")
 	aggregate.Wait = time.Since(start)
 	start = time.Now()
-
-	shards := ss.getShards()
-	all := make(chan shardResult, len(shards))
 
 	var childCtx context.Context
 	var cancel context.CancelFunc
@@ -144,26 +145,20 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 	defer cancel()
 
-	// For each query, throttle the number of parallel
-	// actions. Since searching is mostly CPU bound, we limit the
-	// number of parallel searches. This reduces the peak working
-	// set, which hopefully stops https://cs.bazel.build from crashing
-	// when looking for the string "com".
-	feeder := make(chan zoekt.Searcher, len(shards))
-	for _, s := range shards {
-		feeder <- s
-	}
-	close(feeder)
-	for i := 0; i < runtime.NumCPU(); i++ {
-		go func() {
-			for s := range feeder {
-				searchOneShard(childCtx, s, q, opts, all)
-			}
-		}()
+	shards := ss.getShards()
+	op := shardedOp{
+		ctx:     childCtx,
+		q:       q,
+		opts:    opts,
+		shards:  shards,
+		results: make(chan *shardResult),
 	}
 
+	op.op = op.searchOne
+	ss.ops <- &op
+
 	for range shards {
-		r := <-all
+		r := <-op.results
 		if r.err != nil {
 			return nil, r.err
 		}
@@ -209,41 +204,33 @@ func copySlice(src *[]byte) {
 
 type shardResult struct {
 	sr  *zoekt.SearchResult
+	rl  *zoekt.RepoList
 	err error
 }
 
-func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions, sink chan shardResult) {
+func (op *shardedOp) searchOne(s rankedShard) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("crashed shard: %s: %s, %s", s.String(), r, debug.Stack())
 
 			var r zoekt.SearchResult
 			r.Stats.Crashes = 1
-			sink <- shardResult{&r, nil}
+			op.results <- &shardResult{sr: &r}
 		}
 	}()
-
-	ms, err := s.Search(ctx, q, opts)
-	sink <- shardResult{ms, err}
+	ms, err := s.Search(op.ctx, op.q, op.opts)
+	op.results <- &shardResult{sr: ms, err: err}
 }
 
-type shardListResult struct {
-	rl  *zoekt.RepoList
-	err error
-}
-
-func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, sink chan shardListResult) {
+func (op *shardedOp) listOne(s rankedShard) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("crashed shard: %s: %s, %s", s.String(), r, debug.Stack())
-			sink <- shardListResult{
-				&zoekt.RepoList{Crashes: 1}, nil,
-			}
+			op.results <- &shardResult{rl: &zoekt.RepoList{Crashes: 1}}
 		}
 	}()
-
-	ms, err := s.List(ctx, q)
-	sink <- shardListResult{ms, err}
+	rl, err := s.List(op.ctx, op.q)
+	op.results <- &shardResult{rl: rl, err: err}
 }
 
 func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
@@ -261,35 +248,29 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		tr.Finish()
 	}()
 
-	if err := ss.rlock(ctx); err != nil {
-		return nil, err
-	}
-	defer ss.runlock()
-	tr.LazyPrintf("acquired lock")
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+
+	tr.LazyPrintf("acquired read lock")
 
 	shards := ss.getShards()
-	shardCount := len(shards)
-	all := make(chan shardListResult, shardCount)
 	tr.LazyPrintf("shardCount: %d", len(shards))
 
-	feeder := make(chan zoekt.Searcher, len(shards))
-	for _, s := range shards {
-		feeder <- s
+	op := shardedOp{
+		ctx:     ctx,
+		q:       r,
+		shards:  shards,
+		results: make(chan *shardResult),
 	}
-	close(feeder)
-	for i := 0; i < runtime.NumCPU(); i++ {
-		go func() {
-			for s := range feeder {
-				listOneShard(ctx, s, r, all)
-			}
-		}()
-	}
+
+	op.op = op.listOne
+	ss.ops <- &op
 
 	crashes := 0
 	uniq := map[string]*zoekt.RepoListEntry{}
 
 	for range shards {
-		r := <-all
+		r := <-op.results
 		if r.err != nil {
 			return nil, r.err
 		}
@@ -315,10 +296,6 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 	}, nil
 }
 
-func (s *shardedSearcher) rlock(ctx context.Context) error {
-	return s.throttle.Acquire(ctx, 1)
-}
-
 // getShards returns the currently loaded shards. The shards must be
 // accessed under a rlock call. The shards are sorted by decreasing
 // rank.
@@ -334,18 +311,6 @@ func (s *shardedSearcher) getShards() []rankedShard {
 	return res
 }
 
-func (s *shardedSearcher) runlock() {
-	s.throttle.Release(1)
-}
-
-func (s *shardedSearcher) lock(ctx context.Context) error {
-	return s.throttle.Acquire(ctx, s.capacity)
-}
-
-func (s *shardedSearcher) unlock() {
-	s.throttle.Release(s.capacity)
-}
-
 func shardRank(s zoekt.Searcher) uint16 {
 	q := query.Repo{}
 	result, err := s.List(context.Background(), &q)
@@ -359,8 +324,9 @@ func shardRank(s zoekt.Searcher) uint16 {
 }
 
 func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
-	s.lock(context.Background())
-	defer s.unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	old := s.shards[key]
 	if old.Searcher != nil {
 		old.Close()
@@ -369,10 +335,33 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 	if shard == nil {
 		delete(s.shards, key)
 	} else {
-
 		s.shards[key] = rankedShard{
 			rank:     shardRank(shard),
 			Searcher: shard,
+		}
+	}
+}
+
+func (ss *shardedSearcher) work(n int) {
+	type shardOp struct {
+		*shardedOp
+		shard int
+	}
+
+	ch := make(chan *shardOp)
+	defer close(ch)
+
+	for i := 0; i < n; i++ {
+		go func() {
+			for op := range ch {
+				op.op(op.shards[op.shard])
+			}
+		}()
+	}
+
+	for op := range ss.ops {
+		for i := range op.shards {
+			ch <- &shardOp{op, i}
 		}
 	}
 }
