@@ -29,6 +29,8 @@ import (
 	"net/http/pprof"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,6 +105,11 @@ func writeTemplates(dir string) error {
 	return nil
 }
 
+func atoi(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
+}
+
 func main() {
 	logDir := flag.String("log_dir", "", "log to this directory rather than stderr.")
 	logRefresh := flag.Duration("log_refresh", 24*time.Hour, "if using --log_dir, start writing a new file this often.")
@@ -112,7 +119,6 @@ func main() {
 	html := flag.Bool("html", true, "enable HTML interface")
 	enableRPC := flag.Bool("rpc", false, "enable go/net RPC")
 	print := flag.Bool("print", false, "enable local result URLs")
-	enablePprof := flag.Bool("pprof", false, "set to enable remote profiling.")
 	sslCert := flag.String("ssl_cert", "", "set path to SSL .pem holding certificate.")
 	sslKey := flag.String("ssl_key", "", "set path to SSL .pem holding key.")
 	hostCustomization := flag.String(
@@ -122,6 +128,21 @@ func main() {
 	templateDir := flag.String("template_dir", "", "set directory from which to load custom .html.tpl template files")
 	dumpTemplates := flag.Bool("dump_templates", false, "dump templates into --template_dir and exit.")
 	version := flag.Bool("version", false, "Print version number")
+
+	enablePprof := flag.Bool("pprof", false, "set to enable remote profiling.")
+
+	blockProfileRate := flag.Int(
+		"pprof.block_profile_rate",
+		atoi(os.Getenv("PPROF_BLOCK_PROFILE_RATE")),
+		"pprof block profile rate (0 = disabled)",
+	)
+
+	mutexProfileFraction := flag.Int(
+		"pprof.mutex_profile_fraction",
+		atoi(os.Getenv("PPROF_MUTEX_PROFILE_FRACTION")),
+		"pprof mutex profile fraction (0 = disabled)",
+	)
+
 	flag.Parse()
 
 	if *version {
@@ -134,6 +155,14 @@ func main() {
 			log.Fatal(err)
 		}
 		os.Exit(0)
+	}
+
+	if *blockProfileRate > 0 {
+		runtime.SetBlockProfileRate(*blockProfileRate)
+	}
+
+	if *mutexProfileFraction > 0 {
+		runtime.SetMutexProfileFraction(*mutexProfileFraction)
 	}
 
 	if *logDir != "" {
