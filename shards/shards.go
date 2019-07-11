@@ -57,7 +57,7 @@ func newShardedSearcher(n int64) *shardedSearcher {
 		shards: make(map[string]rankedShard),
 	}
 
-	go ss.work(runtime.NumCPU())
+	go ss.work(runtime.NumCPU() * 8)
 
 	return ss
 }
