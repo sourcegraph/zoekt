@@ -25,6 +25,7 @@ import (
 type loggingLoader struct {
 	loads chan string
 	drops chan string
+	sorts chan struct{}
 }
 
 func (l *loggingLoader) load(k string) {
@@ -33,6 +34,10 @@ func (l *loggingLoader) load(k string) {
 
 func (l *loggingLoader) drop(k string) {
 	l.drops <- k
+}
+
+func (l *loggingLoader) sort() {
+	l.sorts <- struct{}{}
 }
 
 func advanceFS() {
@@ -48,6 +53,7 @@ func TestDirWatcherUnloadOnce(t *testing.T) {
 	logger := &loggingLoader{
 		loads: make(chan string, 10),
 		drops: make(chan string, 10),
+		sorts: make(chan struct{}, 10),
 	}
 	// Upstream fails if empty. Sourcegraph does not
 	// _, err := NewDirectoryWatcher(dir, logger)
@@ -114,6 +120,7 @@ func TestDirWatcherLoadEmpty(t *testing.T) {
 	logger := &loggingLoader{
 		loads: make(chan string, 10),
 		drops: make(chan string, 10),
+		sorts: make(chan struct{}, 10),
 	}
 	dw, err := NewDirectoryWatcher(dir, logger)
 	if err != nil {

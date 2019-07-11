@@ -24,6 +24,8 @@ func TestSearchTypeRepo(t *testing.T) {
 	addShard(
 		zoekt.Document{Name: "f3", Content: []byte("another shard")})
 
+	ss.sort()
+
 	searcher := &typeRepoSearcher{ss}
 	search := func(q query.Q, o ...zoekt.SearchOptions) *zoekt.SearchResult {
 		t.Helper()

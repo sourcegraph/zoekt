@@ -49,6 +49,7 @@ type shardedSearcher struct {
 	ops    chan *shardedOp
 	mu     sync.RWMutex
 	shards map[string]rankedShard
+	sorted []rankedShard
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
@@ -91,6 +92,10 @@ func (l *baseLoader) drop(key string) {
 	l.ss.replace(key, nil)
 }
 
+func (l *baseLoader) sort() {
+	l.ss.sort()
+}
+
 func (ss *shardedSearcher) String() string {
 	return "shardedSearcher"
 }
@@ -100,7 +105,7 @@ func (ss *shardedSearcher) Close() {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	defer close(ss.ops)
-	for _, s := range ss.shards {
+	for _, s := range ss.sorted {
 		s.Close()
 	}
 }
@@ -300,15 +305,7 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 // accessed under a rlock call. The shards are sorted by decreasing
 // rank.
 func (s *shardedSearcher) getShards() []rankedShard {
-	var res []rankedShard
-	for _, sh := range s.shards {
-		res = append(res, sh)
-	}
-	// TODO: precompute this.
-	sort.Slice(res, func(i, j int) bool {
-		return res[i].rank > res[j].rank
-	})
-	return res
+	return s.sorted
 }
 
 func shardRank(s zoekt.Searcher) uint16 {
@@ -340,6 +337,24 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 			Searcher: shard,
 		}
 	}
+}
+
+func (s *shardedSearcher) sort() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.sorted == nil {
+		s.sorted = make([]rankedShard, 0, len(s.shards))
+	}
+
+	s.sorted = s.sorted[:0]
+	for _, shard := range s.shards {
+		s.sorted = append(s.sorted, shard)
+	}
+
+	sort.Slice(s.sorted, func(i, j int) bool {
+		return s.sorted[i].rank > s.sorted[j].rank
+	})
 }
 
 func (ss *shardedSearcher) work(n int) {

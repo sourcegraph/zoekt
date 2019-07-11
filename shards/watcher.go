@@ -31,6 +31,7 @@ type shardLoader interface {
 	// Load a new file. Should be safe for concurrent calls.
 	load(filename string)
 	drop(filename string)
+	sort()
 }
 
 type shardWatcher struct {
@@ -111,6 +112,7 @@ func (s *shardWatcher) scan() error {
 
 	var wg sync.WaitGroup
 	ch := make(chan string)
+	defer s.loader.sort()
 	defer wg.Wait()
 	defer close(ch)
 

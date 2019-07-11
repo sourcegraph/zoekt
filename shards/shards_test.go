@@ -54,6 +54,7 @@ func TestCrashResilience(t *testing.T) {
 	ss.shards = map[string]rankedShard{
 		"x": rankedShard{Searcher: &crashSearcher{}},
 	}
+	ss.sort()
 
 	q := &query.Substring{Pattern: "hoi"}
 	opts := &zoekt.SearchOptions{}
@@ -122,6 +123,8 @@ func TestOrderByShard(t *testing.T) {
 				rank: uint16(i),
 			})
 	}
+
+	ss.sort()
 
 	if res, err := ss.Search(context.Background(), &query.Substring{Pattern: "bla"}, &zoekt.SearchOptions{}); err != nil {
 		t.Errorf("Search: %v", err)
