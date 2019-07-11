@@ -92,22 +92,7 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 	default:
 	}
 
-	tr := trace.New("indexData.Search", d.file.Name())
-	tr.LazyPrintf("opts: %+v", opts)
-	defer func() {
-		if sr != nil {
-			tr.LazyPrintf("num files: %d", len(sr.Files))
-			tr.LazyPrintf("stats: %+v", sr.Stats)
-		}
-		if err != nil {
-			tr.LazyPrintf("error: %v", err)
-			tr.SetError()
-		}
-		tr.Finish()
-	}()
-
 	q = d.simplify(q)
-	tr.LazyLog(q, true)
 	if c, ok := q.(*query.Const); ok && !c.Value {
 		return &res, nil
 	}
