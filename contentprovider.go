@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"log"
 	"sort"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -131,6 +132,25 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
+var candidateMatchPool = sync.Pool{}
+
+func getCandidateMatchSlice(n int) (*[]*candidateMatch, func()) {
+	s, ok := candidateMatchPool.Get().(*[]*candidateMatch)
+	if !ok || s == nil {
+		cms := make([]*candidateMatch, 0, n)
+		s = &cms
+	}
+
+	*s = (*s)[:0]
+
+	return s, func() {
+		for i := range *s {
+			(*s)[i] = nil
+		}
+		candidateMatchPool.Put(s)
+	}
+}
+
 func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 	var result []LineMatch
 	if ms[0].fileName {
@@ -150,8 +170,10 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 			result = []LineMatch{res}
 		}
 	} else {
-		ms = breakMatchesOnNewlines(ms, p.data(false))
-		result = p.fillContentMatches(ms)
+		expanded, cleanup := getCandidateMatchSlice(len(ms))
+		breakMatchesOnNewlines(ms, expanded, p.data(false))
+		result = p.fillContentMatches(*expanded)
+		cleanup()
 	}
 
 	sects := p.docSections()
@@ -163,12 +185,12 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 }
 
 func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
-	var result []LineMatch
+	result := make([]LineMatch, 0, len(ms))
 	for len(ms) > 0 {
 		m := ms[0]
 		num, lineStart, lineEnd := m.line(p.newlines(), p.fileSize)
 
-		var lineCands []*candidateMatch
+		lineCands := ms[:0]
 
 		endMatch := m.byteOffset + m.byteMatchSz
 

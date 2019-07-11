@@ -215,7 +215,10 @@ func Test_breakOnNewlines(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := breakOnNewlines(tt.args.cm, tt.args.text); !reflect.DeepEqual(got, tt.want) {
+			var got []*candidateMatch
+			breakOnNewlines(tt.args.cm, tt.args.text, &got)
+
+			if !reflect.DeepEqual(got, tt.want) {
 				type PrintableCm struct {
 					byteOffset  uint32
 					byteMatchSz uint32

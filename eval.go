@@ -193,11 +193,14 @@ nextFileMatch:
 		visitMatches(mt, known, func(mt matchTree) {
 			atomMatchCount++
 		})
-		finalCands := gatherMatches(mt, known)
 
-		if len(finalCands) == 0 {
+		finalCands, cleanup := getCandidateMatchSlice(len(known))
+		defer cleanup()
+		gatherMatches(mt, known, finalCands)
+
+		if len(*finalCands) == 0 {
 			nm := d.fileName(nextDoc)
-			finalCands = append(finalCands,
+			*finalCands = append(*finalCands,
 				&candidateMatch{
 					caseSensitive: false,
 					fileName:      true,
@@ -209,7 +212,7 @@ nextFileMatch:
 					byteMatchSz:   uint32(len(nm)),
 				})
 		}
-		fileMatch.LineMatches = cp.fillMatches(finalCands)
+		fileMatch.LineMatches = cp.fillMatches(*finalCands)
 
 		maxFileScore := 0.0
 		for i := range fileMatch.LineMatches {
@@ -284,38 +287,37 @@ func (m sortByOffsetSlice) Less(i, j int) bool {
 // filename/content matches: if there are content matches, all
 // filename matches are trimmed from the result. The matches are
 // returned in document order and are non-overlapping.
-func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
-	var cands []*candidateMatch
+func gatherMatches(mt matchTree, known map[matchTree]bool, cands *[]*candidateMatch) {
 	visitMatches(mt, known, func(mt matchTree) {
 		if smt, ok := mt.(*substrMatchTree); ok {
-			cands = append(cands, smt.current...)
+			*cands = append(*cands, smt.current...)
 		}
 		if rmt, ok := mt.(*regexpMatchTree); ok {
-			cands = append(cands, rmt.found...)
+			*cands = append(*cands, rmt.found...)
 		}
 	})
 
 	foundContentMatch := false
-	for _, c := range cands {
+	for _, c := range *cands {
 		if !c.fileName {
 			foundContentMatch = true
 			break
 		}
 	}
 
-	res := cands[:0]
-	for _, c := range cands {
+	res := (*cands)[:0]
+	for _, c := range *cands {
 		if !foundContentMatch || !c.fileName {
 			res = append(res, c)
 		}
 	}
-	cands = res
+	*cands = res
 
 	// Merge adjacent candidates. This guarantees that the matches
 	// are non-overlapping.
-	sort.Sort((sortByOffsetSlice)(cands))
-	res = cands[:0]
-	for i, c := range cands {
+	sort.Sort((sortByOffsetSlice)(*cands))
+	res = (*cands)[:0]
+	for i, c := range *cands {
 		if i == 0 {
 			res = append(res, c)
 			continue
@@ -333,7 +335,7 @@ func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
 		res = append(res, c)
 	}
 
-	return res
+	*cands = res
 }
 
 func (d *indexData) branchIndex(docID uint32) int {

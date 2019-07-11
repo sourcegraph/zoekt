@@ -425,25 +425,22 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 
 // breakMatchesOnNewlines returns matches resulting from breaking each element
 // of cms on newlines within text.
-func breakMatchesOnNewlines(cms []*candidateMatch, text []byte) []*candidateMatch {
-	var cms2 []*candidateMatch
-	for _, cm := range cms {
-		cms2 = append(cms2, breakOnNewlines(cm, text)...)
+func breakMatchesOnNewlines(src []*candidateMatch, dst *[]*candidateMatch, text []byte) {
+	for _, cm := range src {
+		breakOnNewlines(cm, text, dst)
 	}
-	return cms2
 }
 
 // breakOnNewlines returns matches resulting from breaking cm on newlines
 // within text.
-func breakOnNewlines(cm *candidateMatch, text []byte) []*candidateMatch {
-	var cms []*candidateMatch
+func breakOnNewlines(cm *candidateMatch, text []byte, cms *[]*candidateMatch) {
 	var addMe = &candidateMatch{}
 	*addMe = *cm
 	for i := uint32(cm.byteOffset); i < cm.byteOffset+cm.byteMatchSz; i++ {
 		if text[i] == '\n' {
 			addMe.byteMatchSz = i - addMe.byteOffset
 			if addMe.byteMatchSz != 0 {
-				cms = append(cms, addMe)
+				*cms = append(*cms, addMe)
 			}
 
 			addMe = &candidateMatch{}
@@ -453,9 +450,8 @@ func breakOnNewlines(cm *candidateMatch, text []byte) []*candidateMatch {
 	}
 	addMe.byteMatchSz = cm.byteOffset + cm.byteMatchSz - addMe.byteOffset
 	if addMe.byteMatchSz != 0 {
-		cms = append(cms, addMe)
+		*cms = append(*cms, addMe)
 	}
-	return cms
 }
 
 func evalMatchTree(cp *contentProvider, cost int, known map[matchTree]bool, mt matchTree) (bool, bool) {
