@@ -50,12 +50,20 @@ type shardedSearcher struct {
 	mu     sync.RWMutex
 	shards map[string]rankedShard
 	sorted []rankedShard
+	latsmu sync.Mutex
+	lats   *os.File
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
+	lats, err := os.Create("/data/latencies.csv")
+	if err != nil {
+		panic(err)
+	}
+
 	ss := &shardedSearcher{
 		ops:    make(chan *shardedOp),
 		shards: make(map[string]rankedShard),
+		lats:   lats,
 	}
 
 	go ss.work(runtime.NumCPU() * 8)
@@ -105,12 +113,15 @@ func (ss *shardedSearcher) Close() {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	defer close(ss.ops)
+	ss.lats.Close()
 	for _, s := range ss.sorted {
 		s.Close()
 	}
 }
 
 func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
+	began := time.Now()
+
 	tr := trace.New("shardedSearcher.Search", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
@@ -126,8 +137,6 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		tr.Finish()
 	}()
 
-	start := time.Now()
-
 	aggregate := &zoekt.SearchResult{
 		RepoURLs:      map[string]string{},
 		LineFragments: map[string]string{},
@@ -135,10 +144,6 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
-
-	tr.LazyPrintf("acquired read lock")
-	aggregate.Wait = time.Since(start)
-	start = time.Now()
 
 	var childCtx context.Context
 	var cancel context.CancelFunc
@@ -160,13 +165,20 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	}
 
 	op.op = op.searchOne
-	ss.ops <- &op
 
+	start := time.Now()
+	ss.ops <- &op
+	aggregate.Wait = time.Since(start)
+
+	metrics := make([]*shardOpMetrics, 0, len(shards))
 	for range shards {
 		r := <-op.results
 		if r.err != nil {
 			return nil, r.err
 		}
+
+		metrics = append(metrics, r.metrics)
+
 		aggregate.Files = append(aggregate.Files, r.sr.Files...)
 		aggregate.Stats.Add(r.sr.Stats)
 
@@ -197,7 +209,10 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		}
 	}
 
-	aggregate.Duration = time.Since(start)
+	aggregate.Duration = time.Since(began)
+
+	go ss.log(&aggregate.Stats, metrics)
+
 	return aggregate, nil
 }
 
@@ -207,35 +222,54 @@ func copySlice(src *[]byte) {
 	*src = dst
 }
 
+type shardOpMetrics struct {
+	Shard     string
+	Timestamp time.Time
+	Latency   time.Duration
+}
+
 type shardResult struct {
-	sr  *zoekt.SearchResult
-	rl  *zoekt.RepoList
-	err error
+	sr      *zoekt.SearchResult
+	rl      *zoekt.RepoList
+	err     error
+	metrics *shardOpMetrics
 }
 
 func (op *shardedOp) searchOne(s rankedShard) {
+	m := shardOpMetrics{Shard: s.String(), Timestamp: time.Now()}
+
 	defer func() {
+		m.Latency = time.Since(m.Timestamp)
 		if r := recover(); r != nil {
 			log.Printf("crashed shard: %s: %s, %s", s.String(), r, debug.Stack())
 
 			var r zoekt.SearchResult
 			r.Stats.Crashes = 1
-			op.results <- &shardResult{sr: &r}
+			op.results <- &shardResult{sr: &r, metrics: &m}
 		}
 	}()
+
 	ms, err := s.Search(op.ctx, op.q, op.opts)
-	op.results <- &shardResult{sr: ms, err: err}
+	m.Latency = time.Since(m.Timestamp)
+	op.results <- &shardResult{sr: ms, err: err, metrics: &m}
 }
 
 func (op *shardedOp) listOne(s rankedShard) {
+	m := shardOpMetrics{Shard: s.String(), Timestamp: time.Now()}
 	defer func() {
+		m.Latency = time.Since(m.Timestamp)
 		if r := recover(); r != nil {
 			log.Printf("crashed shard: %s: %s, %s", s.String(), r, debug.Stack())
-			op.results <- &shardResult{rl: &zoekt.RepoList{Crashes: 1}}
+			op.results <- &shardResult{
+				rl:      &zoekt.RepoList{Crashes: 1},
+				metrics: &m,
+			}
 		}
 	}()
+
 	rl, err := s.List(op.ctx, op.q)
-	op.results <- &shardResult{rl: rl, err: err}
+	m.Latency = time.Since(m.Timestamp)
+	op.results <- &shardResult{rl: rl, err: err, metrics: &m}
 }
 
 func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
@@ -318,6 +352,31 @@ func shardRank(s zoekt.Searcher) uint16 {
 		return 0
 	}
 	return result.Repos[0].Repository.Rank
+}
+
+func (s *shardedSearcher) log(stats *zoekt.Stats, metrics []*shardOpMetrics) {
+	s.latsmu.Lock()
+	defer s.latsmu.Unlock()
+
+	late := 0
+	const deadline = 30 * time.Microsecond
+	for _, m := range metrics {
+		if m.Latency > deadline {
+			late++
+		}
+		_, err := fmt.Fprintf(s.lats, "%d, %d, %q\n", m.Timestamp.UnixNano(), m.Latency, m.Shard)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	log.Printf("Search took %s (wait=%s, search=%s). %.3f%% of shard searches took more than %s",
+		stats.Duration+stats.Wait,
+		stats.Wait,
+		stats.Duration,
+		(float64(late)/float64(len(metrics)))*100,
+		deadline,
+	)
 }
 
 func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
