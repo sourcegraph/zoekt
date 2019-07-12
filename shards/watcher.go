@@ -105,10 +105,19 @@ func (s *shardWatcher) scan() error {
 	}
 
 	var wg sync.WaitGroup
+	nLoaded := 0
+	log.Printf("loading %d shards", len(toLoad))
+	percent := func(n int) int {
+		return (100*n)/len(toLoad)
+	}
 	for _, t := range toLoad {
 		wg.Add(1)
 		go func(k string) {
 			s.loader.load(k)
+			nLoaded++
+			if percent(nLoaded)/10 != percent(nLoaded-1)/10 {
+				log.Printf("loaded %d%% of shards", percent(nLoaded))
+			}
 			wg.Done()
 		}(t)
 	}
