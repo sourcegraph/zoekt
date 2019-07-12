@@ -79,6 +79,7 @@ type throttledLoader struct {
 }
 
 func (tl *throttledLoader) load(key string) {
+	log.Printf("loading %s", key)
 	tl.throttle <- struct{}{}
 	shard, err := loadShard(key)
 	<-tl.throttle

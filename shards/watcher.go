@@ -55,9 +55,11 @@ func NewDirectoryWatcher(dir string, loader shardLoader) (io.Closer, error) {
 		loader:     loader,
 		quit:       quitter,
 	}
-	if err := sw.scan(); err != nil {
-		return nil, err
-	}
+	go func() {
+		if err := sw.scan(); err != nil {
+			log.Fatalf("failed to scan index directory: %v", err)
+		}
+	}()
 
 	if err := sw.watch(quitter); err != nil {
 		return nil, err
