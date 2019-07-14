@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -355,19 +356,29 @@ func shardRank(s zoekt.Searcher) uint16 {
 }
 
 func (s *shardedSearcher) log(stats *zoekt.Stats, metrics []*shardOpMetrics) {
-	s.latsmu.Lock()
-	defer s.latsmu.Unlock()
-
 	late := 0
 	const deadline = 30 * time.Microsecond
+
+	buf := make([]byte, 0, 128)
 	for _, m := range metrics {
 		if m.Latency > deadline {
 			late++
 		}
-		_, err := fmt.Fprintf(s.lats, "%d, %d, %q\n", m.Timestamp.UnixNano(), m.Latency, m.Shard)
-		if err != nil {
-			panic(err)
-		}
+
+		buf = strconv.AppendInt(buf, m.Timestamp.UnixNano(), 10)
+		buf = append(buf, ',')
+		buf = strconv.AppendInt(buf, int64(m.Latency), 10)
+		buf = append(buf, ',')
+		buf = strconv.AppendQuote(buf, m.Shard)
+		buf = append(buf, '\n')
+	}
+
+	s.latsmu.Lock()
+	_, err := s.lats.Write(buf)
+	s.latsmu.Unlock()
+
+	if err != nil {
+		panic(err)
 	}
 
 	log.Printf("Search took %s (wait=%s, search=%s). %.3f%% of shard searches took more than %s",
