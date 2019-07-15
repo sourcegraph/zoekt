@@ -22,7 +22,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
@@ -51,20 +50,12 @@ type shardedSearcher struct {
 	mu     sync.RWMutex
 	shards map[string]rankedShard
 	sorted []rankedShard
-	latsmu sync.Mutex
-	lats   *os.File
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
-	lats, err := os.Create("/data/latencies.csv")
-	if err != nil {
-		panic(err)
-	}
-
 	ss := &shardedSearcher{
 		ops:    make(chan *shardedOp),
 		shards: make(map[string]rankedShard),
-		lats:   lats,
 	}
 
 	go ss.work(runtime.NumCPU() * 8)
@@ -114,7 +105,6 @@ func (ss *shardedSearcher) Close() {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	defer close(ss.ops)
-	ss.lats.Close()
 	for _, s := range ss.sorted {
 		s.Close()
 	}
@@ -359,26 +349,10 @@ func (s *shardedSearcher) log(stats *zoekt.Stats, metrics []*shardOpMetrics) {
 	late := 0
 	const deadline = 30 * time.Microsecond
 
-	buf := make([]byte, 0, 128)
 	for _, m := range metrics {
 		if m.Latency > deadline {
 			late++
 		}
-
-		buf = strconv.AppendInt(buf, m.Timestamp.UnixNano(), 10)
-		buf = append(buf, ',')
-		buf = strconv.AppendInt(buf, int64(m.Latency), 10)
-		buf = append(buf, ',')
-		buf = strconv.AppendQuote(buf, m.Shard)
-		buf = append(buf, '\n')
-	}
-
-	s.latsmu.Lock()
-	_, err := s.lats.Write(buf)
-	s.latsmu.Unlock()
-
-	if err != nil {
-		panic(err)
 	}
 
 	log.Printf("Search took %s (wait=%s, search=%s). %.3f%% of shard searches took more than %s",
