@@ -45,6 +45,16 @@ type indexData struct {
 	boundariesStart uint32
 	boundaries      []uint32
 
+	symbolNames []byte
+	symbolIndex []uint32
+
+	symbolMetaData      []byte
+	symbolMetaDataIndex []uint32
+
+	symbolNgrams      map[ngram][]uint32
+	symbolRuneOffsets []uint32
+	symbolEndRunes    []uint32
+
 	// rune offsets for the file content boundaries
 	fileEndRunes []uint32
 

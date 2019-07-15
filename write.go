@@ -98,6 +98,10 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 
 	writePostings(w, b.contentPostings, &toc.ngramText, &toc.runeOffsets, &toc.postings, &toc.fileEndRunes)
 
+	writePostings(w, b.symbolPostings, &toc.symbolNgramText, &toc.symbolRuneOffsets, &toc.symbolPostings, &toc.symbolEndRunes)
+	toc.symbolNames.writeStrings(w, b.symbolStrings)
+	toc.symbolMetaData.writeStrings(w, b.symbolMetadata)
+
 	// names.
 	toc.fileNames.writeStrings(w, b.nameStrings)
 

@@ -148,6 +148,8 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 // IndexBuilder builds a single index shard.
 type IndexBuilder struct {
 	contentStrings  []*searchableString
+	symbolStrings   []*searchableString
+	symbolMetadata  []*searchableString
 	nameStrings     []*searchableString
 	docSections     [][]DocumentSection
 	runeDocSections []DocumentSection
@@ -159,6 +161,7 @@ type IndexBuilder struct {
 
 	contentPostings *postingsBuilder
 	namePostings    *postingsBuilder
+	symbolPostings  *postingsBuilder
 
 	// root repository
 	repo Repository
@@ -195,6 +198,7 @@ func NewIndexBuilder(r *Repository) (*IndexBuilder, error) {
 	b := &IndexBuilder{
 		contentPostings: newPostingsBuilder(),
 		namePostings:    newPostingsBuilder(),
+		symbolPostings:  newPostingsBuilder(),
 		languageMap:     map[string]byte{},
 	}
 
@@ -245,6 +249,18 @@ type DocumentSection struct {
 	Start, End uint32
 }
 
+type Symbol struct {
+	Name       string
+	Kind       string
+	Start, End uint32
+}
+
+type symbolSlice []*Symbol
+
+func (m symbolSlice) Len() int           { return len(m) }
+func (m symbolSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
+func (m symbolSlice) Less(i, j int) bool { return m[i].Start < m[j].Start }
+
 // Document holds a document (file) to index.
 type Document struct {
 	Name              string
@@ -257,8 +273,7 @@ type Document struct {
 	// is the reason it wasn't indexed.
 	SkipReason string
 
-	// Document sections for symbols. Offsets should use bytes.
-	Symbols []DocumentSection
+	Symbols []*Symbol
 }
 
 type docSectionSlice []DocumentSection
@@ -329,6 +344,38 @@ func (b *IndexBuilder) populateSubRepoIndices() {
 
 const notIndexedMarker = "NOT-INDEXED: "
 
+func (b *IndexBuilder) addSymbols(symbols []*Symbol, doc uint32) error {
+	symStrs := make([]*searchableString, 0, len(symbols))
+	metadataStrs := make([]*searchableString, 0, len(symbols))
+	for _, sym := range symbols {
+		symStr, _, err := b.symbolPostings.newSearchableString([]byte(sym.Name), nil)
+		if err != nil {
+			return err
+		}
+		symStrs = append(symStrs, symStr)
+
+		buf := &bytes.Buffer{}
+		for _, n := range []uint32{doc, sym.Start, sym.End} {
+			err = binary.Write(buf, binary.BigEndian, n)
+			if err != nil {
+				return nil
+			}
+		}
+		_, err = buf.WriteString(sym.Kind)
+		if err != nil {
+			return err
+		}
+
+		metadataStrs = append(metadataStrs, &searchableString{
+			data: buf.Bytes(),
+		})
+	}
+
+	b.symbolStrings = append(b.symbolStrings, symStrs...)
+	b.symbolMetadata = append(b.symbolMetadata, metadataStrs...)
+	return nil
+}
+
 // Add a file which only occurs in certain branches.
 func (b *IndexBuilder) Add(doc Document) error {
 	hasher := crc64.New(crc64.MakeTable(crc64.ISO))
@@ -346,8 +393,8 @@ func (b *IndexBuilder) Add(doc Document) error {
 		}
 	}
 
-	sort.Sort(docSectionSlice(doc.Symbols))
-	var last DocumentSection
+	sort.Sort(symbolSlice(doc.Symbols))
+	var last *Symbol
 	for i, s := range doc.Symbols {
 		if i > 0 {
 			if last.End > s.Start {
@@ -356,8 +403,14 @@ func (b *IndexBuilder) Add(doc Document) error {
 		}
 		last = s
 	}
-	if last.End > uint32(len(doc.Content)) {
+	if last != nil && last.End > uint32(len(doc.Content)) {
 		return fmt.Errorf("section goes past end of content")
+	}
+
+	docID := uint32(len(b.contentStrings))
+	if err := b.addSymbols(doc.Symbols, docID); err != nil {
+		fmt.Println(err)
+		return err
 	}
 
 	if doc.SubRepositoryPath != "" {
@@ -366,7 +419,7 @@ func (b *IndexBuilder) Add(doc Document) error {
 			return fmt.Errorf("path %q must start subrepo path %q", doc.Name, doc.SubRepositoryPath)
 		}
 	}
-	docStr, runeSecs, err := b.contentPostings.newSearchableString(doc.Content, doc.Symbols)
+	docStr, runeSecs, err := b.contentPostings.newSearchableString(doc.Content, nil)
 	if err != nil {
 		return err
 	}
@@ -397,7 +450,7 @@ func (b *IndexBuilder) Add(doc Document) error {
 	b.runeDocSections = append(b.runeDocSections, runeSecs...)
 
 	b.nameStrings = append(b.nameStrings, nameStr)
-	b.docSections = append(b.docSections, doc.Symbols)
+	b.docSections = append(b.docSections, []DocumentSection{})
 	b.branchMasks = append(b.branchMasks, mask)
 	b.checksums = append(b.checksums, hasher.Sum(nil)...)
 

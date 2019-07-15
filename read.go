@@ -140,6 +140,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d := indexData{
 		file:           r.r,
 		ngrams:         map[ngram]simpleSection{},
+		symbolNgrams:   map[ngram][]uint32{},
 		fileNameNgrams: map[ngram][]uint32{},
 		branchIDs:      map[string]uint{},
 		branchNames:    map[uint]string{},
@@ -199,6 +200,46 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		}
 	}
 
+	d.symbolNames, err = d.readSectionBlob(toc.symbolNames.data)
+	if err != nil {
+		return nil, err
+	}
+
+	d.symbolIndex = toc.symbolNames.relativeIndex()
+
+	d.symbolMetaData, err = d.readSectionBlob(toc.symbolMetaData.data)
+	if err != nil {
+		return nil, err
+	}
+
+	d.symbolMetaDataIndex = toc.symbolMetaData.relativeIndex()
+
+	symbolNgramText, err := d.readSectionBlob(toc.symbolNgramText)
+	if err != nil {
+		return nil, err
+	}
+
+	symbolPostingsData, err := d.readSectionBlob(toc.symbolPostings.data)
+	if err != nil {
+		return nil, err
+	}
+
+	symbolPostingsIndex := toc.symbolPostings.relativeIndex()
+	for i := 0; i < len(symbolNgramText); i += ngramEncoding {
+		j := i / ngramEncoding
+		off := symbolPostingsIndex[j]
+		end := symbolPostingsIndex[j+1]
+		ng := ngram(binary.BigEndian.Uint64(symbolNgramText[i : i+ngramEncoding]))
+		d.symbolNgrams[ng] = fromDeltas(symbolPostingsData[off:end], nil)
+	}
+
+	for i := 0; i < 5; i++ {
+		fmt.Println(d.symbolIndex[i])
+		fmt.Println(d.symbolIndex[i+1])
+		fmt.Println(string(d.symbolNames[d.symbolIndex[i]:d.symbolIndex[i+1]]))
+		fmt.Println(string(d.symbolMetaData[d.symbolMetaDataIndex[i]:d.symbolMetaDataIndex[i+1]]))
+	}
+
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
 	if err != nil {
 		return nil, err
@@ -243,11 +284,13 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.runeDocSections = unmarshalDocSections(blob, nil)
 
 	for sect, dest := range map[simpleSection]*[]uint32{
-		toc.subRepos:        &d.subRepos,
-		toc.runeOffsets:     &d.runeOffsets,
-		toc.nameRuneOffsets: &d.fileNameRuneOffsets,
-		toc.nameEndRunes:    &d.fileNameEndRunes,
-		toc.fileEndRunes:    &d.fileEndRunes,
+		toc.subRepos:          &d.subRepos,
+		toc.symbolRuneOffsets: &d.symbolRuneOffsets,
+		toc.runeOffsets:       &d.runeOffsets,
+		toc.nameRuneOffsets:   &d.fileNameRuneOffsets,
+		toc.nameEndRunes:      &d.fileNameEndRunes,
+		toc.fileEndRunes:      &d.fileEndRunes,
+		toc.symbolEndRunes:    &d.symbolEndRunes,
 	} {
 		if blob, err := d.readSectionBlob(sect); err != nil {
 			return nil, err

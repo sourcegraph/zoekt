@@ -154,11 +154,10 @@ func ctagsAddSymbolsParser(todo []*zoekt.Document, parser ctags.Parser) error {
 		}
 		doc.Language = strings.ToLower(es[0].Language)
 
-		symOffsets, err := tagsToSections(doc.Content, es)
+		doc.Symbols, err = tagsToSymbols(doc.Content, es)
 		if err != nil {
 			return fmt.Errorf("%s: %v", doc.Name, err)
 		}
-		doc.Symbols = symOffsets
 	}
 
 	return nil
@@ -198,11 +197,10 @@ func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) er
 	}
 
 	for k, tags := range fileTags {
-		symOffsets, err := tagsToSections(contents[k], tags)
+		todo[pathIndices[k]].Symbols, err = tagsToSymbols(contents[k], tags)
 		if err != nil {
 			return fmt.Errorf("%s: %v", k, err)
 		}
-		todo[pathIndices[k]].Symbols = symOffsets
 		if len(tags) > 0 {
 			todo[pathIndices[k]].Language = strings.ToLower(tags[0].Language)
 		}
@@ -210,10 +208,10 @@ func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) er
 	return nil
 }
 
-func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSection, error) {
+func tagsToSymbols(content []byte, tags []*ctags.Entry) ([]*zoekt.Symbol, error) {
 	nls := newLinesIndices(content)
 	nls = append(nls, uint32(len(content)))
-	var symOffsets []zoekt.DocumentSection
+	var symbols []*zoekt.Symbol
 	var lastEnd uint32
 	var lastLine int
 	var lastIntraEnd int
@@ -255,7 +253,9 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 
 		endSym := start + uint32(len(t.Sym))
 
-		symOffsets = append(symOffsets, zoekt.DocumentSection{
+		symbols = append(symbols, &zoekt.Symbol{
+			Name:  t.Sym,
+			Kind:  t.Kind,
 			Start: start,
 			End:   endSym,
 		})
@@ -264,7 +264,7 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 		lastIntraEnd = intraOff + len(t.Sym)
 	}
 
-	return symOffsets, nil
+	return symbols, nil
 }
 
 func newLinesIndices(in []byte) []uint32 {
