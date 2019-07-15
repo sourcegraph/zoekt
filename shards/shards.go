@@ -356,9 +356,9 @@ func (s *shardedSearcher) log(stats *zoekt.Stats, metrics []*shardOpMetrics) {
 	}
 
 	log.Printf("Search took %s (wait=%s, search=%s). %.3f%% of shard searches took more than %s",
-		stats.Duration+stats.Wait,
-		stats.Wait,
 		stats.Duration,
+		stats.Wait,
+		stats.Duration-stats.Wait,
 		(float64(late)/float64(len(metrics)))*100,
 		deadline,
 	)
