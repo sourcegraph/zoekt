@@ -171,19 +171,24 @@ func lastMinarg(xs []uint32) uint32 {
 	return uint32(j)
 }
 
-func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
-	if filename {
+func (data *indexData) ngramFrequency(ng ngram, scope query.SearchScope) uint32 {
+	switch scope {
+	case query.ScopeFileName:
 		return uint32(len(data.fileNameNgrams[ng]))
+	case query.ScopeFileContent:
+		return data.ngrams[ng].sz
+	case query.ScopeSymbol:
+		return uint32(len(data.symbolNgrams[ng]))
+	default:
+		return 0
 	}
-
-	return data.ngrams[ng].sz
 }
 
 type ngramIterationResults struct {
 	matchIterator
 
 	caseSensitive bool
-	fileName      bool
+	scope         query.SearchScope
 	substrBytes   []byte
 	substrLowered []byte
 }
@@ -196,26 +201,26 @@ func (r *ngramIterationResults) candidates() []*candidateMatch {
 	cs := r.matchIterator.candidates()
 	for _, c := range cs {
 		c.caseSensitive = r.caseSensitive
-		c.fileName = r.fileName
+		c.scope = r.scope
 		c.substrBytes = r.substrBytes
 		c.substrLowered = r.substrLowered
 	}
 	return cs
 }
 
-func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResults, error) {
-	str := query.Pattern
+func (d *indexData) iterateNgrams(substr *query.Substring) (*ngramIterationResults, error) {
+	str := substr.Pattern
 
 	// Find the 2 least common ngrams from the string.
-	ngramOffs := splitNGrams([]byte(query.Pattern))
+	ngramOffs := splitNGrams([]byte(substr.Pattern))
 	frequencies := make([]uint32, 0, len(ngramOffs))
 	for _, o := range ngramOffs {
 		var freq uint32
-		if query.CaseSensitive {
-			freq = d.ngramFrequency(o.ngram, query.FileName)
+		if substr.CaseSensitive {
+			freq = d.ngramFrequency(o.ngram, substr.Scope)
 		} else {
 			for _, v := range generateCaseNgrams(o.ngram) {
-				freq += d.ngramFrequency(v, query.FileName)
+				freq += d.ngramFrequency(v, substr.Scope)
 			}
 		}
 
@@ -242,14 +247,17 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 		leftPad:  firstI,
 		rightPad: uint32(utf8.RuneCountInString(str)) - firstI,
 	}
-	if query.FileName {
+	switch substr.Scope {
+	case query.ScopeFileName:
 		iter.ends = d.fileNameEndRunes
-	} else {
+	case query.ScopeFileContent:
 		iter.ends = d.fileEndRunes
+	case query.ScopeSymbol:
+		iter.ends = d.symbolEndRunes
 	}
 
 	if firstI != lastI {
-		i, err := d.newDistanceTrigramIter(firstNG, lastNG, lastI-firstI, query.CaseSensitive, query.FileName)
+		i, err := d.newDistanceTrigramIter(firstNG, lastNG, lastI-firstI, substr.CaseSensitive, substr.Scope)
 
 		if err != nil {
 			return nil, err
@@ -257,20 +265,20 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 
 		iter.iter = i
 	} else {
-		hitIter, err := d.trigramHitIterator(lastNG, query.CaseSensitive, query.FileName)
+		hitIter, err := d.trigramHitIterator(lastNG, substr.CaseSensitive, substr.Scope)
 		if err != nil {
 			return nil, err
 		}
 		iter.iter = hitIter
 	}
 
-	patBytes := []byte(query.Pattern)
+	patBytes := []byte(substr.Pattern)
 	lowerPatBytes := toLower(patBytes)
 
 	return &ngramIterationResults{
 		matchIterator: iter,
-		caseSensitive: query.CaseSensitive,
-		fileName:      query.FileName,
+		caseSensitive: substr.CaseSensitive,
+		scope:         substr.Scope,
 		substrBytes:   patBytes,
 		substrLowered: lowerPatBytes,
 	}, nil

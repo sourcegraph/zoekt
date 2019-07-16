@@ -17,6 +17,8 @@ package zoekt
 import (
 	"encoding/binary"
 	"fmt"
+
+	"github.com/google/zoekt/query"
 )
 
 // hitIterator finds potential search matches, measured in offsets of
@@ -89,16 +91,16 @@ func (i *distanceHitIterator) next(limit uint32) {
 	i.findNext()
 }
 
-func (d *indexData) newDistanceTrigramIter(ng1, ng2 ngram, dist uint32, caseSensitive, fileName bool) (hitIterator, error) {
+func (d *indexData) newDistanceTrigramIter(ng1, ng2 ngram, dist uint32, caseSensitive bool, scope query.SearchScope) (hitIterator, error) {
 	if dist == 0 {
 		return nil, fmt.Errorf("d == 0")
 	}
 
-	i1, err := d.trigramHitIterator(ng1, caseSensitive, fileName)
+	i1, err := d.trigramHitIterator(ng1, caseSensitive, scope)
 	if err != nil {
 		return nil, err
 	}
-	i2, err := d.trigramHitIterator(ng2, caseSensitive, fileName)
+	i2, err := d.trigramHitIterator(ng2, caseSensitive, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +111,7 @@ func (d *indexData) newDistanceTrigramIter(ng1, ng2 ngram, dist uint32, caseSens
 	}, nil
 }
 
-func (d *indexData) trigramHitIterator(ng ngram, caseSensitive, fileName bool) (hitIterator, error) {
+func (d *indexData) trigramHitIterator(ng ngram, caseSensitive bool, scope query.SearchScope) (hitIterator, error) {
 	variants := []ngram{ng}
 	if !caseSensitive {
 		variants = generateCaseNgrams(ng)
@@ -117,7 +119,8 @@ func (d *indexData) trigramHitIterator(ng ngram, caseSensitive, fileName bool) (
 
 	iters := make([]hitIterator, 0, len(variants))
 	for _, v := range variants {
-		if fileName {
+		switch scope {
+		case query.ScopeFileName:
 			blob := d.fileNameNgrams[v]
 			if len(blob) > 0 {
 				iters = append(iters, &inMemoryIterator{
@@ -125,16 +128,23 @@ func (d *indexData) trigramHitIterator(ng ngram, caseSensitive, fileName bool) (
 					v,
 				})
 			}
-			continue
-		}
-
-		sec := d.ngrams[v]
-		blob, err := d.readSectionBlob(sec)
-		if err != nil {
-			return nil, err
-		}
-		if len(blob) > 0 {
-			iters = append(iters, newCompressedPostingIterator(blob, v))
+		case query.ScopeFileContent:
+			sec := d.ngrams[v]
+			blob, err := d.readSectionBlob(sec)
+			if err != nil {
+				return nil, err
+			}
+			if len(blob) > 0 {
+				iters = append(iters, newCompressedPostingIterator(blob, v))
+			}
+		case query.ScopeSymbol:
+			blob := d.symbolNgrams[v]
+			if len(blob) > 0 {
+				iters = append(iters, &inMemoryIterator{
+					d.symbolNgrams[v],
+					v,
+				})
+			}
 		}
 	}
 

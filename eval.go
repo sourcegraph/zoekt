@@ -147,13 +147,15 @@ nextFileMatch:
 		}
 
 		nextDoc := mt.nextDoc()
-		if int(nextDoc) <= lastDoc {
-			nextDoc = uint32(lastDoc + 1)
-		}
 		if nextDoc >= docCount {
 			break
 		}
 		lastDoc = int(nextDoc)
+
+		/*
+			fmt.Println()
+			fmt.Println(string(d.fileName(nextDoc)))
+		*/
 
 		if canceled || (res.Stats.MatchCount >= opts.ShardMaxMatchCount && opts.ShardMaxMatchCount > 0) ||
 			(opts.ShardMaxImportantMatch > 0 && importantMatchCount >= opts.ShardMaxImportantMatch) {
@@ -170,6 +172,7 @@ nextFileMatch:
 		for cost := costMin; cost <= costMax; cost++ {
 			v, ok := mt.matches(cp, cost, known)
 			if ok && !v {
+				//fmt.Println("not found")
 				continue nextFileMatch
 			}
 
@@ -178,6 +181,8 @@ nextFileMatch:
 					d.repoMetaData.Name, nextDoc, known)
 			}
 		}
+
+		//fmt.Println("found")
 
 		fileMatch := FileMatch{
 			Repository: d.repoMetaData.Name,
@@ -215,7 +220,7 @@ nextFileMatch:
 			finalCands = append(finalCands,
 				&candidateMatch{
 					caseSensitive: false,
-					fileName:      true,
+					scope:         query.ScopeFileName,
 					substrBytes:   nm,
 					substrLowered: nm,
 					file:          nextDoc,
@@ -253,7 +258,7 @@ nextFileMatch:
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
 		sortMatchesByScore(fileMatch.LineMatches)
 		if opts.Whole {
-			fileMatch.Content = cp.data(false)
+			fileMatch.Content = cp.data(query.ScopeFileContent)
 		}
 
 		res.Files = append(res.Files, fileMatch)
@@ -312,7 +317,7 @@ func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
 
 	foundContentMatch := false
 	for _, c := range cands {
-		if !c.fileName {
+		if c.scope == query.ScopeFileContent {
 			foundContentMatch = true
 			break
 		}
@@ -320,7 +325,7 @@ func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
 
 	res := cands[:0]
 	for _, c := range cands {
-		if !foundContentMatch || !c.fileName {
+		if !foundContentMatch || c.scope == query.ScopeFileContent {
 			res = append(res, c)
 		}
 	}

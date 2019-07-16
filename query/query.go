@@ -31,27 +31,37 @@ type Q interface {
 	String() string
 }
 
+type SearchScope uint8
+
+const (
+	ScopeNone SearchScope = iota
+	ScopeFileName
+	ScopeFileContent
+	ScopeSymbol
+)
+
 // RegexpQuery is a query looking for regular expressions matches.
 type Regexp struct {
 	Regexp        *syntax.Regexp
-	FileName      bool
-	Content       bool
+	Scope         SearchScope
 	CaseSensitive bool
 }
 
 // Symbol finds a string that is a symbol.
 type Symbol struct {
-	Atom *Substring
+	Expr Q
 }
 
 func (s *Symbol) String() string {
-	return fmt.Sprintf("sym:%s", s.Atom)
+	return fmt.Sprintf("sym:%s", s.Expr)
 }
 
 func (q *Regexp) String() string {
 	pref := ""
-	if q.FileName {
+	if q.Scope == ScopeFileName {
 		pref = "file_"
+	} else if q.Scope == ScopeSymbol {
+		pref = "symbol_"
 	}
 	if q.CaseSensitive {
 		pref = "case_" + pref
@@ -186,21 +196,20 @@ type Substring struct {
 	Pattern       string
 	CaseSensitive bool
 
-	// Match only filename
-	FileName bool
-
-	// Match only content
-	Content bool
+	Scope SearchScope
 }
 
 func (q *Substring) String() string {
 	s := ""
 
 	t := ""
-	if q.FileName {
+	switch q.Scope {
+	case ScopeFileName:
 		t = "file_"
-	} else if q.Content {
+	case ScopeFileContent:
 		t = "content_"
+	case ScopeSymbol:
+		t = "symbol_"
 	}
 
 	s += fmt.Sprintf("%ssubstr:%q", t, q.Pattern)
@@ -227,7 +236,9 @@ func (q *Substring) setCase(k string) {
 }
 
 func (q *Symbol) setCase(k string) {
-	q.Atom.setCase(k)
+	if sc, ok := q.Expr.(setCaser); ok {
+		sc.setCase(k)
+	}
 }
 
 func (q *Regexp) setCase(k string) {
@@ -470,19 +481,19 @@ func Map(q Q, f func(q Q) Q) Q {
 func ExpandFileContent(q Q) Q {
 	switch s := q.(type) {
 	case *Substring:
-		if !s.FileName && !s.Content {
+		if s.Scope == ScopeNone {
 			f := *s
-			f.FileName = true
+			f.Scope = ScopeFileName
 			c := *s
-			c.Content = true
+			c.Scope = ScopeFileContent
 			return NewOr(&f, &c)
 		}
 	case *Regexp:
-		if !s.FileName && !s.Content {
+		if s.Scope == ScopeNone {
 			f := *s
-			f.FileName = true
+			f.Scope = ScopeFileName
 			c := *s
-			c.Content = true
+			c.Scope = ScopeFileContent
 			return NewOr(&f, &c)
 		}
 	}

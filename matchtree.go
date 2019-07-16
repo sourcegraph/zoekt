@@ -15,6 +15,7 @@
 package zoekt
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"regexp"
@@ -114,7 +115,7 @@ type noVisitMatchTree struct {
 type regexpMatchTree struct {
 	regexp *regexp.Regexp
 
-	fileName bool
+	scope query.SearchScope
 
 	// mutable
 	reEvaluated bool
@@ -129,11 +130,21 @@ type substrMatchTree struct {
 
 	query         *query.Substring
 	caseSensitive bool
-	fileName      bool
+	scope         query.SearchScope
 
 	// mutable
 	current       []*candidateMatch
 	contEvaluated bool
+}
+
+type symbolMatchTree struct {
+	metaData      []byte
+	metaDataIndex []uint32
+	maxDoc        uint32
+
+	next uint32
+
+	child matchTree
 }
 
 type branchQueryMatchTree struct {
@@ -194,6 +205,10 @@ func (t *substrMatchTree) prepare(nextDoc uint32) {
 	t.matchIterator.prepare(nextDoc)
 	t.current = t.matchIterator.candidates()
 	t.contEvaluated = false
+}
+
+func (t *symbolMatchTree) prepare(nextDoc uint32) {
+	t.child.prepare(t.next)
 }
 
 func (t *branchQueryMatchTree) prepare(doc uint32) {
@@ -261,6 +276,17 @@ func (t *branchQueryMatchTree) nextDoc() uint32 {
 	return maxUInt32
 }
 
+func (t *symbolMatchTree) nextDoc() uint32 {
+	idx := t.child.nextDoc()
+	if idx >= uint32(len(t.metaDataIndex))-1 {
+		return t.maxDoc
+	}
+	t.next = idx
+
+	off := t.metaData[t.metaDataIndex[idx]:t.metaDataIndex[idx+1]]
+	return binary.BigEndian.Uint32(off)
+}
+
 // all String methods
 
 func (t *bruteForceMatchTree) String() string {
@@ -293,11 +319,18 @@ func (t *fileNameMatchTree) String() string {
 
 func (t *substrMatchTree) String() string {
 	f := ""
-	if t.fileName {
+	switch t.scope {
+	case query.ScopeFileName:
 		f = "f"
+	case query.ScopeSymbol:
+		f = "sym"
 	}
 
 	return fmt.Sprintf("%ssubstr(%q, %v, %v)", f, t.query.Pattern, t.current, t.matchIterator)
+}
+
+func (t *symbolMatchTree) String() string {
+	return fmt.Sprintf("%v", t.child)
 }
 
 func (t *branchQueryMatchTree) String() string {
@@ -322,6 +355,8 @@ func visitMatchTree(t matchTree, f func(matchTree)) {
 		visitMatchTree(s.child, f)
 	case *fileNameMatchTree:
 		visitMatchTree(s.child, f)
+	case *symbolMatchTree:
+		visitMatchTree(s.child, f)
 	default:
 		f(t)
 	}
@@ -343,6 +378,8 @@ func visitMatches(t matchTree, known map[matchTree]bool, f func(matchTree)) {
 				visitMatches(ch, known, f)
 			}
 		}
+	case *symbolMatchTree:
+		visitMatches(s.child, known, f)
 	case *notMatchTree:
 	case *noVisitMatchTree:
 		// don't collect into negative trees.
@@ -408,13 +445,14 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 		return false, false
 	}
 
-	idxs := t.regexp.FindAllIndex(cp.data(t.fileName), -1)
+	idxs := t.regexp.FindAllIndex(cp.data(t.scope), -1)
 	found := t.found[:0]
 	for _, idx := range idxs {
 		found = append(found, &candidateMatch{
+			file:        cp.idx,
 			byteOffset:  uint32(idx[0]),
 			byteMatchSz: uint32(idx[1] - idx[0]),
-			fileName:    t.fileName,
+			scope:       t.scope,
 		})
 	}
 	t.found = found
@@ -489,20 +527,20 @@ func (t *substrMatchTree) matches(cp *contentProvider, cost int, known map[match
 		return false, true
 	}
 
-	if t.fileName && cost < costMemory {
+	if t.scope == query.ScopeFileName && cost < costMemory {
 		return false, false
 	}
 
-	if !t.fileName && cost < costContent {
+	if t.scope == query.ScopeFileContent && cost < costContent {
 		return false, false
 	}
 
 	pruned := t.current[:0]
 	for _, m := range t.current {
 		if m.byteOffset == 0 && m.runeOffset > 0 {
-			m.byteOffset = cp.findOffset(m.fileName, m.runeOffset)
+			m.byteOffset = cp.findOffset(m.scope, m.runeOffset)
 		}
-		if m.matchContent(cp.data(m.fileName)) {
+		if m.matchContent(cp.data(m.scope)) {
 			pruned = append(pruned, m)
 		}
 	}
@@ -512,13 +550,21 @@ func (t *substrMatchTree) matches(cp *contentProvider, cost int, known map[match
 	return len(t.current) > 0, true
 }
 
+func (t *symbolMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
+	doc := cp.idx
+	cp.idx = t.next
+	v, ok := evalMatchTree(cp, cost, known, t.child)
+	cp.idx = doc
+	return v, ok
+}
+
 func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 	switch s := q.(type) {
 	case *query.Regexp:
 		subQ := query.RegexpToQuery(s.Regexp, ngramSize)
 		subQ = query.Map(subQ, func(q query.Q) query.Q {
 			if sub, ok := q.(*query.Substring); ok {
-				sub.FileName = s.FileName
+				sub.Scope = s.Scope
 				sub.CaseSensitive = s.CaseSensitive
 			}
 			return q
@@ -535,8 +581,8 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}
 
 		tr := &regexpMatchTree{
-			regexp:   regexp.MustCompile(prefix + s.Regexp.String()),
-			fileName: s.FileName,
+			regexp: regexp.MustCompile(prefix + s.Regexp.String()),
+			scope:  s.Scope,
 		}
 
 		return &andMatchTree{
@@ -624,21 +670,16 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}, nil
 
 	case *query.Symbol:
-		mt, err := d.newSubstringMatchTree(s.Atom)
+		subMT, err := d.newMatchTree(s.Expr)
 		if err != nil {
 			return nil, err
 		}
-
-		if _, ok := mt.(*regexpMatchTree); ok {
-			return nil, fmt.Errorf("regexps and short queries not implemented for symbol search")
-		}
-		subMT, ok := mt.(*substrMatchTree)
-		if !ok {
-			return nil, fmt.Errorf("found %T inside query.Symbol", mt)
-		}
-
-		subMT.matchIterator = d.newTrimByDocSectionIter(s.Atom, subMT.matchIterator)
-		return subMT, nil
+		return &symbolMatchTree{
+			metaData:      d.symbolMetaData,
+			metaDataIndex: d.symbolMetaDataIndex,
+			maxDoc:        uint32(len(d.fileBranchMasks)),
+			child:         subMT,
+		}, nil
 	}
 	log.Panicf("type %T", q)
 	return nil, nil
@@ -648,7 +689,7 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 	st := &substrMatchTree{
 		query:         s,
 		caseSensitive: s.CaseSensitive,
-		fileName:      s.FileName,
+		scope:         s.Scope,
 	}
 
 	if utf8.RuneCountInString(s.Pattern) < ngramSize {
@@ -657,8 +698,8 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 			prefix = "(?i)"
 		}
 		t := &regexpMatchTree{
-			regexp:   regexp.MustCompile(prefix + regexp.QuoteMeta(s.Pattern)),
-			fileName: s.FileName,
+			regexp: regexp.MustCompile(prefix + regexp.QuoteMeta(s.Pattern)),
+			scope:  s.Scope,
 		}
 		return t, nil
 	}

@@ -16,9 +16,13 @@ package zoekt
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 	"log"
 	"sort"
 	"unicode/utf8"
+
+	"github.com/google/zoekt/query"
 )
 
 var _ = log.Println
@@ -72,34 +76,52 @@ func (p *contentProvider) newlines() []uint32 {
 	return p._nl
 }
 
-func (p *contentProvider) data(fileName bool) []byte {
-	if fileName {
+func (p *contentProvider) data(scope query.SearchScope) []byte {
+	switch scope {
+	case query.ScopeFileName:
 		return p.id.fileNameContent[p.id.fileNameIndex[p.idx]:p.id.fileNameIndex[p.idx+1]]
-	}
+	case query.ScopeFileContent:
+		if p._data == nil {
+			p._data, p.err = p.id.readContents(p.idx)
+			p.stats.FilesLoaded++
+			p.stats.ContentBytesLoaded += int64(len(p._data))
+		}
 
-	if p._data == nil {
-		p._data, p.err = p.id.readContents(p.idx)
-		p.stats.FilesLoaded++
-		p.stats.ContentBytesLoaded += int64(len(p._data))
+		return p._data
+	case query.ScopeSymbol:
+		return p.id.symbolNames[p.id.symbolIndex[p.idx]:p.id.symbolIndex[p.idx+1]]
+	default:
+		return nil
 	}
-	return p._data
 }
 
 // Find offset in bytes (relative to corpus start) for an offset in
 // runes (relative to document start). If filename is set, the corpus
 // is the set of filenames, with the document being the name itself.
-func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
+func (p *contentProvider) findOffset(scope query.SearchScope, r uint32) uint32 {
 	if p.id.metaData.PlainASCII {
 		return r
 	}
 
-	sample := p.id.runeOffsets
-	runeEnds := p.id.fileEndRunes
-	fileStartByte := p.id.boundaries[p.idx]
-	if filename {
+	var (
+		sample        []uint32
+		runeEnds      []uint32
+		fileStartByte uint32
+	)
+
+	switch scope {
+	case query.ScopeFileContent:
+		sample = p.id.runeOffsets
+		runeEnds = p.id.fileEndRunes
+		fileStartByte = p.id.boundaries[p.idx]
+	case query.ScopeFileName:
 		sample = p.id.fileNameRuneOffsets
 		runeEnds = p.id.fileNameEndRunes
 		fileStartByte = p.id.fileNameIndex[p.idx]
+	case query.ScopeSymbol:
+		sample = p.id.symbolRuneOffsets
+		runeEnds = p.id.symbolEndRunes
+		fileStartByte = p.id.symbolIndex[p.idx]
 	}
 
 	absR := r
@@ -112,14 +134,18 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 
 	var data []byte
 
-	if filename {
+	switch scope {
+	case query.ScopeFileName:
 		data = p.id.fileNameContent[byteOff:]
-	} else {
+	case query.ScopeFileContent:
 		data, p.err = p.id.readContentSlice(byteOff, 3*runeOffsetFrequency)
 		if p.err != nil {
 			return 0
 		}
+	case query.ScopeSymbol:
+		data = p.id.symbolNames[byteOff:]
 	}
+
 	for left > 0 {
 		_, sz := utf8.DecodeRune(data)
 		byteOff += uint32(sz)
@@ -133,7 +159,8 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 
 func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 	var result []LineMatch
-	if ms[0].fileName {
+	switch ms[0].scope {
+	case query.ScopeFileName:
 		// There is only "line" in a filename.
 		res := LineMatch{
 			Line:     p.id.fileName(p.idx),
@@ -149,8 +176,13 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 
 			result = []LineMatch{res}
 		}
-	} else {
-		ms = breakMatchesOnNewlines(ms, p.data(false))
+
+	default:
+		if ms[0].scope == query.ScopeSymbol {
+			ms = p.mapSymbols(ms)
+		}
+
+		ms = breakMatchesOnNewlines(ms, p.data(query.ScopeFileContent))
 		result = p.fillContentMatches(ms)
 	}
 
@@ -160,6 +192,44 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 	}
 
 	return result
+}
+
+type _ = fmt.Formatter
+
+func (p *contentProvider) mapSymbols(ms []*candidateMatch) []*candidateMatch {
+	cms := make([]*candidateMatch, 0, len(ms))
+	for _, cm := range ms {
+		metaData := p.id.symbolMetaData[p.id.symbolMetaDataIndex[cm.file]:p.id.symbolMetaDataIndex[cm.file+1]]
+		reader := bytes.NewReader(metaData)
+		var (
+			file  uint32
+			start uint32
+		)
+
+		var err error
+		for _, n := range []*uint32{&file, &start} {
+			if err = binary.Read(reader, binary.BigEndian, n); err != nil {
+				break
+			}
+		}
+
+		start += cm.byteOffset
+
+		if err == nil {
+			cms = append(cms, &candidateMatch{
+				caseSensitive: cm.caseSensitive,
+				scope:         query.ScopeFileContent,
+				substrBytes:   cm.substrBytes,
+				substrLowered: cm.substrLowered,
+				file:          file,
+				byteOffset:    start,
+				byteMatchSz:   cm.byteMatchSz,
+				symKind:       cm.symKind,
+			})
+		}
+	}
+
+	return cms
 }
 
 func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
@@ -191,7 +261,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
 				m.byteOffset)
 		}
 
-		data := p.data(false)
+		data := p.data(query.ScopeFileContent)
 
 		// Due to merging matches, we may have a match that
 		// crosses a line boundary. Prevent confusion by
@@ -211,7 +281,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
 			LineEnd:    lineEnd,
 			LineNumber: num,
 		}
-		finalMatch.Line = p.data(false)[lineStart:lineEnd]
+		finalMatch.Line = p.data(query.ScopeFileContent)[lineStart:lineEnd]
 
 		for _, m := range lineCands {
 			fragment := LineFragmentMatch{

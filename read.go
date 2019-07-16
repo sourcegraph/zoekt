@@ -233,13 +233,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.symbolNgrams[ng] = fromDeltas(symbolPostingsData[off:end], nil)
 	}
 
-	for i := 0; i < 5; i++ {
-		fmt.Println(d.symbolIndex[i])
-		fmt.Println(d.symbolIndex[i+1])
-		fmt.Println(string(d.symbolNames[d.symbolIndex[i]:d.symbolIndex[i+1]]))
-		fmt.Println(string(d.symbolMetaData[d.symbolMetaDataIndex[i]:d.symbolMetaDataIndex[i+1]]))
-	}
-
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
 	if err != nil {
 		return nil, err

@@ -128,20 +128,20 @@ func parseExpr(in []byte) (Q, int, error) {
 	case tokBranch:
 		expr = &Branch{Pattern: text}
 	case tokText, tokRegex:
-		q, err := regexpQuery(text, false, false)
+		q, err := regexpQuery(text, ScopeNone)
 		if err != nil {
 			return nil, 0, err
 		}
 		expr = q
 	case tokFile:
-		q, err := regexpQuery(text, false, true)
+		q, err := regexpQuery(text, ScopeFileName)
 		if err != nil {
 			return nil, 0, err
 		}
 		expr = q
 
 	case tokContent:
-		q, err := regexpQuery(text, true, false)
+		q, err := regexpQuery(text, ScopeFileContent)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -153,7 +153,13 @@ func parseExpr(in []byte) (Q, int, error) {
 		if text == "" {
 			return nil, 0, fmt.Errorf("the sym: atom must have an argument")
 		}
-		expr = &Symbol{&Substring{Pattern: text}}
+
+		q, err := regexpQuery(text, ScopeSymbol)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		expr = &Symbol{Expr: q}
 
 	case tokParenClose:
 		// Caller must consume paren.
@@ -211,7 +217,7 @@ const regexpFlags syntax.Flags = syntax.ClassNL | syntax.PerlX | syntax.UnicodeG
 
 // regexpQuery parses an atom into either a regular expression, or a
 // simple substring atom.
-func regexpQuery(text string, content, file bool) (Q, error) {
+func regexpQuery(text string, scope SearchScope) (Q, error) {
 	var expr Q
 
 	r, err := syntax.Parse(text, regexpFlags)
@@ -221,15 +227,13 @@ func regexpQuery(text string, content, file bool) (Q, error) {
 
 	if r.Op == syntax.OpLiteral {
 		expr = &Substring{
-			Pattern:  string(r.Rune),
-			FileName: file,
-			Content:  content,
+			Pattern: string(r.Rune),
+			Scope:   scope,
 		}
 	} else {
 		expr = &Regexp{
-			Regexp:   r,
-			FileName: file,
-			Content:  content,
+			Regexp: r,
+			Scope:  scope,
 		}
 	}
 

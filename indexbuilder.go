@@ -355,7 +355,7 @@ func (b *IndexBuilder) addSymbols(symbols []*Symbol, doc uint32) error {
 		symStrs = append(symStrs, symStr)
 
 		buf := &bytes.Buffer{}
-		for _, n := range []uint32{doc, sym.Start, sym.End} {
+		for _, n := range []uint32{doc, sym.Start} {
 			err = binary.Write(buf, binary.BigEndian, n)
 			if err != nil {
 				return nil
