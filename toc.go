@@ -28,7 +28,7 @@ package zoekt
 // 14: languages
 // 15: rune based symbol sections
 // 16: posting list for symbols
-const IndexFormatVersion = 15
+const IndexFormatVersion = 16
 
 // FeatureVersion is increased if a feature is added that requires reindexing data
 // without changing the format version
@@ -61,6 +61,7 @@ type indexTOC struct {
 	symbolPostings    compoundSection
 	symbolRuneOffsets simpleSection
 	symbolEndRunes    simpleSection
+	symbolFileOffsets simpleSection
 
 	nameNgramText    simpleSection
 	namePostings     compoundSection
@@ -92,6 +93,7 @@ func (t *indexTOC) sections() []section {
 		&t.symbolPostings,
 		&t.symbolRuneOffsets,
 		&t.symbolEndRunes,
+		&t.symbolFileOffsets,
 		&t.branchMasks,
 		&t.subRepos,
 		&t.runeOffsets,

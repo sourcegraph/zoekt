@@ -102,6 +102,12 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	toc.symbolNames.writeStrings(w, b.symbolStrings)
 	toc.symbolMetaData.writeStrings(w, b.symbolMetadata)
 
+	toc.symbolFileOffsets.start(w)
+	for _, o := range b.symbolFileOffsets {
+		w.U32(o)
+	}
+	toc.symbolFileOffsets.end(w)
+
 	// names.
 	toc.fileNames.writeStrings(w, b.nameStrings)
 

@@ -238,6 +238,11 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
+	d.symbolFileOffsets, err = readSectionU32(d.file, toc.symbolFileOffsets)
+	if err != nil {
+		return nil, err
+	}
+
 	d.fileNameContent, err = d.readSectionBlob(toc.fileNames.data)
 	if err != nil {
 		return nil, err

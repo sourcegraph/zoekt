@@ -163,6 +163,8 @@ type IndexBuilder struct {
 	namePostings    *postingsBuilder
 	symbolPostings  *postingsBuilder
 
+	symbolFileOffsets []uint32
+
 	// root repository
 	repo Repository
 
@@ -196,10 +198,11 @@ func (b *IndexBuilder) ContentSize() uint32 {
 // Repository contains repo metadata, and may be set to nil.
 func NewIndexBuilder(r *Repository) (*IndexBuilder, error) {
 	b := &IndexBuilder{
-		contentPostings: newPostingsBuilder(),
-		namePostings:    newPostingsBuilder(),
-		symbolPostings:  newPostingsBuilder(),
-		languageMap:     map[string]byte{},
+		contentPostings:   newPostingsBuilder(),
+		namePostings:      newPostingsBuilder(),
+		symbolPostings:    newPostingsBuilder(),
+		symbolFileOffsets: []uint32{0},
+		languageMap:       map[string]byte{},
 	}
 
 	if r == nil {
@@ -412,6 +415,7 @@ func (b *IndexBuilder) Add(doc Document) error {
 		fmt.Println(err)
 		return err
 	}
+	b.symbolFileOffsets = append(b.symbolFileOffsets, uint32(len(b.symbolStrings)))
 
 	if doc.SubRepositoryPath != "" {
 		rel, err := filepath.Rel(doc.SubRepositoryPath, doc.Name)

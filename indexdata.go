@@ -54,6 +54,7 @@ type indexData struct {
 	symbolNgrams      map[ngram][]uint32
 	symbolRuneOffsets []uint32
 	symbolEndRunes    []uint32
+	symbolFileOffsets []uint32
 
 	// rune offsets for the file content boundaries
 	fileEndRunes []uint32
