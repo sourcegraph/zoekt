@@ -17,7 +17,6 @@ package zoekt
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"log"
 	"sort"
 	"unicode/utf8"
@@ -180,6 +179,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 	default:
 		if ms[0].scope == query.ScopeSymbol {
 			ms = p.mapSymbols(ms)
+			p.idx = ms[0].file
 		}
 
 		ms = breakMatchesOnNewlines(ms, p.data(query.ScopeFileContent))
@@ -193,8 +193,6 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 
 	return result
 }
-
-type _ = fmt.Formatter
 
 func (p *contentProvider) mapSymbols(ms []*candidateMatch) []*candidateMatch {
 	cms := make([]*candidateMatch, 0, len(ms))
@@ -218,7 +216,7 @@ func (p *contentProvider) mapSymbols(ms []*candidateMatch) []*candidateMatch {
 		if err == nil {
 			cms = append(cms, &candidateMatch{
 				caseSensitive: cm.caseSensitive,
-				scope:         query.ScopeFileContent,
+				scope:         query.ScopeSymbol,
 				substrBytes:   cm.substrBytes,
 				substrLowered: cm.substrLowered,
 				file:          file,
@@ -228,7 +226,6 @@ func (p *contentProvider) mapSymbols(ms []*candidateMatch) []*candidateMatch {
 			})
 		}
 	}
-
 	return cms
 }
 

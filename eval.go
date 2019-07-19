@@ -147,15 +147,15 @@ nextFileMatch:
 		}
 
 		nextDoc := mt.nextDoc()
+		/*
+			if int(nextDoc) <= lastDoc {
+				nextDoc = uint32(lastDoc + 1)
+			}
+		*/
 		if nextDoc >= docCount {
 			break
 		}
 		lastDoc = int(nextDoc)
-
-		/*
-			fmt.Println()
-			fmt.Println(string(d.fileName(nextDoc)))
-		*/
 
 		if canceled || (res.Stats.MatchCount >= opts.ShardMaxMatchCount && opts.ShardMaxMatchCount > 0) ||
 			(opts.ShardMaxImportantMatch > 0 && importantMatchCount >= opts.ShardMaxImportantMatch) {
@@ -315,17 +315,21 @@ func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
 		}
 	})
 
-	foundContentMatch := false
+	scope := query.ScopeFileName
 	for _, c := range cands {
-		if c.scope == query.ScopeFileContent {
-			foundContentMatch = true
+		switch c.scope {
+		case query.ScopeFileContent, query.ScopeSymbol:
+			scope = c.scope
+		}
+
+		if scope == query.ScopeFileContent {
 			break
 		}
 	}
 
 	res := cands[:0]
 	for _, c := range cands {
-		if !foundContentMatch || c.scope == query.ScopeFileContent {
+		if c.scope == scope {
 			res = append(res, c)
 		}
 	}
