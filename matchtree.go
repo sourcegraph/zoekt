@@ -194,7 +194,7 @@ func (t *symbolMatchTree) matches(cp *contentProvider, cost int, known map[match
 		// SECOND
 
 		next := t.child.nextDoc()
-		if next == maxUInt32 {
+		if next == maxUInt32 || next+2 >= uint32(len(t.metaDataIndex)) {
 			t.child.prepare(t.sym)
 			break
 		}
@@ -495,8 +495,6 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	if cost < costRegexp {
 		return false, false
 	}
-
-	fmt.Println(string(cp.data(t.scope)))
 
 	idxs := t.regexp.FindAllIndex(cp.data(t.scope), -1)
 	found := t.found[:0]
