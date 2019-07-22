@@ -140,11 +140,79 @@ type substrMatchTree struct {
 type symbolMatchTree struct {
 	metaData      []byte
 	metaDataIndex []uint32
-	maxDoc        uint32
 
-	next uint32
+	symbolFileOffsets []uint32
+
+	cands []*candidateMatch
+
+	sym uint32
+	doc uint32
 
 	child matchTree
+}
+
+func (t *symbolMatchTree) nextDoc() uint32 {
+	idx := t.child.nextDoc()
+	if idx == maxUInt32 {
+		return maxUInt32
+	}
+	t.sym = idx
+
+	off := t.metaData[t.metaDataIndex[idx]:t.metaDataIndex[idx+1]]
+	t.doc = binary.BigEndian.Uint32(off)
+	return t.doc
+}
+
+func (t *symbolMatchTree) prepare(nextDoc uint32) {
+	if nextDoc != t.doc {
+		t.sym = t.symbolFileOffsets[nextDoc]
+		t.doc = nextDoc
+	}
+
+	t.child.prepare(t.sym)
+}
+
+func (t *symbolMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
+	cands := t.cands[:0]
+
+	idx := cp.idx
+	for {
+		known := make(map[matchTree]bool)
+
+		cp.idx = t.sym
+		t.child.matches(cp, cost, known)
+
+		visitMatches(t.child, known, func(mt matchTree) {
+			switch t := mt.(type) {
+			case *substrMatchTree:
+				cands = append(cands, t.current...)
+			case *regexpMatchTree:
+				cands = append(cands, t.found...)
+			}
+		})
+
+		// SECOND
+
+		next := t.child.nextDoc()
+		if next == maxUInt32 {
+			t.child.prepare(t.sym)
+			break
+		}
+
+		doc := binary.BigEndian.Uint32(t.metaData[t.metaDataIndex[next] : t.metaDataIndex[next]+4])
+		if doc != t.doc {
+			t.child.prepare(t.sym)
+			break
+		}
+		t.sym = next
+
+		cp.idx = t.sym
+		t.child.prepare(t.sym)
+	}
+	cp.idx = idx
+	t.cands = cands
+
+	return len(t.cands) > 0, true
 }
 
 type branchQueryMatchTree struct {
@@ -205,10 +273,6 @@ func (t *substrMatchTree) prepare(nextDoc uint32) {
 	t.matchIterator.prepare(nextDoc)
 	t.current = t.matchIterator.candidates()
 	t.contEvaluated = false
-}
-
-func (t *symbolMatchTree) prepare(nextDoc uint32) {
-	t.child.prepare(t.next)
 }
 
 func (t *branchQueryMatchTree) prepare(doc uint32) {
@@ -274,17 +338,6 @@ func (t *branchQueryMatchTree) nextDoc() uint32 {
 		}
 	}
 	return maxUInt32
-}
-
-func (t *symbolMatchTree) nextDoc() uint32 {
-	idx := t.child.nextDoc()
-	if idx >= uint32(len(t.metaDataIndex))-1 {
-		return t.maxDoc
-	}
-	t.next = idx
-
-	off := t.metaData[t.metaDataIndex[idx]:t.metaDataIndex[idx+1]]
-	return binary.BigEndian.Uint32(off)
 }
 
 // all String methods
@@ -378,8 +431,6 @@ func visitMatches(t matchTree, known map[matchTree]bool, f func(matchTree)) {
 				visitMatches(ch, known, f)
 			}
 		}
-	case *symbolMatchTree:
-		visitMatches(s.child, known, f)
 	case *notMatchTree:
 	case *noVisitMatchTree:
 		// don't collect into negative trees.
@@ -444,6 +495,8 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	if cost < costRegexp {
 		return false, false
 	}
+
+	fmt.Println(string(cp.data(t.scope)))
 
 	idxs := t.regexp.FindAllIndex(cp.data(t.scope), -1)
 	found := t.found[:0]
@@ -548,14 +601,6 @@ func (t *substrMatchTree) matches(cp *contentProvider, cost int, known map[match
 	t.contEvaluated = true
 
 	return len(t.current) > 0, true
-}
-
-func (t *symbolMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
-	doc := cp.idx
-	cp.idx = t.next
-	v, ok := evalMatchTree(cp, cost, known, t.child)
-	cp.idx = doc
-	return v, ok
 }
 
 func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
@@ -674,15 +719,19 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &symbolMatchTree{
-			metaData:      d.symbolMetaData,
-			metaDataIndex: d.symbolMetaDataIndex,
-			maxDoc:        uint32(len(d.fileBranchMasks)),
-			child:         subMT,
-		}, nil
+		return d.newSymbolMatchTree(subMT), nil
 	}
 	log.Panicf("type %T", q)
 	return nil, nil
+}
+
+func (d *indexData) newSymbolMatchTree(child matchTree) *symbolMatchTree {
+	return &symbolMatchTree{
+		metaData:          d.symbolMetaData,
+		metaDataIndex:     d.symbolMetaDataIndex,
+		symbolFileOffsets: d.symbolFileOffsets,
+		child:             child,
+	}
 }
 
 func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error) {
@@ -697,10 +746,11 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 		if !s.CaseSensitive {
 			prefix = "(?i)"
 		}
-		t := &regexpMatchTree{
+		var t matchTree = &regexpMatchTree{
 			regexp: regexp.MustCompile(prefix + regexp.QuoteMeta(s.Pattern)),
 			scope:  s.Scope,
 		}
+
 		return t, nil
 	}
 

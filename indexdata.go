@@ -244,6 +244,7 @@ func (d *indexData) iterateNgrams(substr *query.Substring) (*ngramIterationResul
 
 	firstNG := ngramOffs[firstI].ngram
 	lastNG := ngramOffs[lastI].ngram
+
 	iter := &ngramDocIterator{
 		leftPad:  firstI,
 		rightPad: uint32(utf8.RuneCountInString(str)) - firstI,

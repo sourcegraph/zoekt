@@ -147,11 +147,9 @@ nextFileMatch:
 		}
 
 		nextDoc := mt.nextDoc()
-		/*
-			if int(nextDoc) <= lastDoc {
-				nextDoc = uint32(lastDoc + 1)
-			}
-		*/
+		if int(nextDoc) <= lastDoc {
+			nextDoc = uint32(lastDoc + 1)
+		}
 		if nextDoc >= docCount {
 			break
 		}
@@ -169,10 +167,9 @@ nextFileMatch:
 		cp.setDocument(nextDoc)
 
 		known := make(map[matchTree]bool)
-		for cost := costMin; cost <= costMax; cost++ {
+		for cost := costRegexp; cost <= costRegexp; cost++ {
 			v, ok := mt.matches(cp, cost, known)
 			if ok && !v {
-				//fmt.Println("not found")
 				continue nextFileMatch
 			}
 
@@ -181,8 +178,6 @@ nextFileMatch:
 					d.repoMetaData.Name, nextDoc, known)
 			}
 		}
-
-		//fmt.Println("found")
 
 		fileMatch := FileMatch{
 			Repository: d.repoMetaData.Name,
@@ -297,6 +292,10 @@ type sortByOffsetSlice []*candidateMatch
 func (m sortByOffsetSlice) Len() int      { return len(m) }
 func (m sortByOffsetSlice) Swap(i, j int) { m[i], m[j] = m[j], m[i] }
 func (m sortByOffsetSlice) Less(i, j int) bool {
+	if m[i].scope == query.ScopeSymbol {
+		return m[i].file < m[j].file
+	}
+
 	return m[i].byteOffset < m[j].byteOffset
 }
 
@@ -307,11 +306,13 @@ func (m sortByOffsetSlice) Less(i, j int) bool {
 func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
 	var cands []*candidateMatch
 	visitMatches(mt, known, func(mt matchTree) {
-		if smt, ok := mt.(*substrMatchTree); ok {
-			cands = append(cands, smt.current...)
-		}
-		if rmt, ok := mt.(*regexpMatchTree); ok {
-			cands = append(cands, rmt.found...)
+		switch t := mt.(type) {
+		case *substrMatchTree:
+			cands = append(cands, t.current...)
+		case *regexpMatchTree:
+			cands = append(cands, t.found...)
+		case *symbolMatchTree:
+			cands = append(cands, t.cands...)
 		}
 	})
 
@@ -340,7 +341,7 @@ func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
 	sort.Sort((sortByOffsetSlice)(cands))
 	res = cands[:0]
 	for i, c := range cands {
-		if i == 0 {
+		if i == 0 || c.scope == query.ScopeSymbol {
 			res = append(res, c)
 			continue
 		}
