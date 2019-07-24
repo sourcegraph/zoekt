@@ -335,7 +335,10 @@ func resolveRevision(root *url.URL, repo, spec string) (string, error) {
 }
 
 func tarballURL(root *url.URL, repo, commit string) string {
-	return root.ResolveReference(&url.URL{Path: fmt.Sprintf("/.internal/git/%s/tar/%s", repo, commit)}).String()
+	return root.ResolveReference(&url.URL{
+		Path:     fmt.Sprintf("/.internal/git/%s/tar/%s", repo, commit),
+		RawQuery: "redirect=1",
+	}).String()
 }
 
 func main() {
