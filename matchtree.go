@@ -153,7 +153,7 @@ type symbolMatchTree struct {
 
 func (t *symbolMatchTree) nextDoc() uint32 {
 	idx := t.child.nextDoc()
-	if idx + 2 >= uint32(len(t.metaDataIndex)) {
+	if idx == maxUInt32 || idx + 2 >= uint32(len(t.metaDataIndex)) {
 		return maxUInt32
 	}
 	t.sym = idx
