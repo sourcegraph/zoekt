@@ -15,6 +15,7 @@
 package zoekt
 
 import (
+	"encoding/binary"
 	"fmt"
 	"hash/crc64"
 	"unicode/utf8"
@@ -26,6 +27,8 @@ import (
 // in memory to search. Most of the memory is taken up by the ngram =>
 // offset index.
 type indexData struct {
+	symbolData
+
 	file IndexFile
 
 	ngrams map[ngram]simpleSection
@@ -51,6 +54,8 @@ type indexData struct {
 	fileNameContent []byte
 	fileNameIndex   []uint32
 	fileNameNgrams  map[ngram][]uint32
+
+	fileEndSymbol []uint32
 
 	// rune offset=>byte offset mapping, relative to the start of the filename corpus
 	fileNameRuneOffsets []uint32
@@ -82,6 +87,34 @@ type indexData struct {
 	languageMap map[byte]string
 
 	repoListEntry RepoListEntry
+}
+
+type symbolData struct {
+	symContent       []byte
+	symIndex         []uint32
+	symKindContent   []byte
+	symKindIndex     []uint32
+	symMetaData      []byte
+	symMetaDataIndex []uint32
+}
+
+func (d *symbolData) data(i uint32) *Symbol {
+	if i >= uint32(len(d.symMetaDataIndex)) {
+		return nil
+	}
+
+	metadata := d.symMetaData[d.symMetaDataIndex[i]:d.symMetaDataIndex[i+1]]
+	sym := &Symbol{}
+	key := binary.BigEndian.Uint32(metadata)
+	sym.Sym = string(d.symContent[d.symIndex[key]:d.symIndex[key+1]])
+	key = binary.BigEndian.Uint32(metadata[4:])
+	sym.Kind = string(d.symKindContent[d.symKindIndex[key]:d.symKindIndex[key+1]])
+	key = binary.BigEndian.Uint32(metadata[8:])
+	sym.Parent = string(d.symContent[d.symIndex[key]:d.symIndex[key+1]])
+
+	key = binary.BigEndian.Uint32(metadata[12:])
+	sym.ParentKind = string(d.symKindContent[d.symKindIndex[key]:d.symKindIndex[key+1]])
+	return sym
 }
 
 func (d *indexData) getChecksum(idx uint32) []byte {

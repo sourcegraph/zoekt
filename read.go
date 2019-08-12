@@ -173,6 +173,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.docSectionsStart = toc.fileSections.data.off
 	d.docSectionsIndex = toc.fileSections.relativeIndex()
 
+	d.symIndex = toc.symbolMap.relativeIndex()
+	d.symKindIndex = toc.symbolKindMap.relativeIndex()
+	d.symMetaDataIndex = toc.symbolMetaData.relativeIndex()
+
 	d.checksums, err = d.readSectionBlob(toc.contentChecksums)
 	if err != nil {
 		return nil, err
@@ -199,7 +203,27 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		}
 	}
 
+	d.fileEndSymbol, err = readSectionU32(d.file, toc.fileEndSymbol)
+	if err != nil {
+		return nil, err
+	}
+
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
+	if err != nil {
+		return nil, err
+	}
+
+	d.symContent, err = d.readSectionBlob(toc.symbolMap.data)
+	if err != nil {
+		return nil, err
+	}
+
+	d.symKindContent, err = d.readSectionBlob(toc.symbolKindMap.data)
+	if err != nil {
+		return nil, err
+	}
+
+	d.symMetaData, err = d.readSectionBlob(toc.symbolMetaData.data)
 	if err != nil {
 		return nil, err
 	}

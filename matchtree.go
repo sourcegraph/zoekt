@@ -170,16 +170,18 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 	content := cp.data(false)
 
 	found := t.found[:0]
-	for _, sec := range sections {
+	for i, sec := range sections {
 		idx := t.regexp.FindIndex(content[sec.Start:sec.End])
 		if idx == nil {
 			continue
 		}
+
+		secID := cp.id.fileEndSymbol[cp.idx] + uint32(i)
 		cm := &candidateMatch{
 			byteOffset:  sec.Start + uint32(idx[0]),
 			byteMatchSz: uint32(idx[1] - idx[0]),
+			symbolInfo:  cp.id.symbolData.data(secID),
 		}
-
 		found = append(found, cm)
 	}
 	t.found = found
@@ -194,8 +196,10 @@ type symbolSubstrMatchTree struct {
 	patternSize  uint32
 	fileEndRunes []uint32
 
-	doc      uint32
-	sections []DocumentSection
+	doc        uint32
+	sections   []DocumentSection
+	symbolData *symbolData
+	secID      uint32
 }
 
 func (t *symbolSubstrMatchTree) prepare(doc uint32) {
@@ -209,6 +213,7 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 
 	for len(t.sections) > 0 && t.sections[0].Start < fileStart {
 		t.sections = t.sections[1:]
+		t.secID++
 	}
 
 	trimmed := t.current[:0]
@@ -217,6 +222,7 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 		end := start + t.patternSize
 		if start >= t.sections[0].End {
 			t.sections = t.sections[1:]
+			t.secID++
 			continue
 		}
 
@@ -226,6 +232,7 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 		}
 
 		if end <= t.sections[0].End {
+			t.current[0].symbolInfo = t.symbolData.data(t.secID)
 			trimmed = append(trimmed, t.current[0])
 		}
 
@@ -740,6 +747,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
 				fileEndRunes:    d.fileEndRunes,
 				sections:        d.runeDocSections,
+				symbolData:      &d.symbolData,
 			}, nil
 		}
 

@@ -27,7 +27,8 @@ package zoekt
 // 13: content checksums
 // 14: languages
 // 15: rune based symbol sections
-const IndexFormatVersion = 15
+// 16: store ctags metadata
+const IndexFormatVersion = 16
 
 // FeatureVersion is increased if a feature is added that requires reindexing data
 // without changing the format version
@@ -51,6 +52,11 @@ type indexTOC struct {
 	fileEndRunes simpleSection
 	languages    simpleSection
 
+	fileEndSymbol  simpleSection
+	symbolMap      compoundSection
+	symbolKindMap  compoundSection
+	symbolMetaData compoundSection
+
 	branchMasks simpleSection
 	subRepos    simpleSection
 
@@ -73,6 +79,10 @@ func (t *indexTOC) sections() []section {
 		&t.fileContents,
 		&t.fileNames,
 		&t.fileSections,
+		&t.fileEndSymbol,
+		&t.symbolMap,
+		&t.symbolKindMap,
+		&t.symbolMetaData,
 		&t.newlines,
 		&t.ngramText,
 		&t.postings,

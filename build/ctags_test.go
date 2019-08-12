@@ -32,7 +32,7 @@ func TestTagsToSections(t *testing.T) {
 			Line: 2,
 		}}
 
-	secs, err := tagsToSections(c, tags)
+	secs, _, err := tagsToSections(c, tags)
 	if err != nil {
 		t.Fatal("tagsToSections", err)
 	}
@@ -57,7 +57,7 @@ func TestTagsToSectionsMultiple(t *testing.T) {
 		},
 	}
 
-	got, err := tagsToSections(c, tags)
+	got, _, err := tagsToSections(c, tags)
 	if err != nil {
 		t.Fatal("tagsToSections", err)
 	}
@@ -81,7 +81,7 @@ func TestTagsToSectionsEOF(t *testing.T) {
 			Line: 2,
 		}}
 
-	secs, err := tagsToSections(c, tags)
+	secs, _, err := tagsToSections(c, tags)
 	if err != nil {
 		t.Fatal("tagsToSections", err)
 	}

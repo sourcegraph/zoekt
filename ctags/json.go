@@ -180,11 +180,13 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 		}
 
 		e := Entry{
-			Sym:      rep.Name,
-			Path:     rep.Path,
-			Line:     rep.Line,
-			Kind:     rep.Kind,
-			Language: rep.Language,
+			Sym:        rep.Name,
+			Path:       rep.Path,
+			Parent:     rep.Scope,
+			ParentKind: rep.ScopeKind,
+			Line:       rep.Line,
+			Kind:       rep.Kind,
+			Language:   rep.Language,
 		}
 
 		es = append(es, &e)

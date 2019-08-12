@@ -77,6 +77,13 @@ type LineMatch struct {
 	LineFragments []LineFragmentMatch
 }
 
+type Symbol struct {
+	Sym        string
+	Kind       string
+	Parent     string
+	ParentKind string
+}
+
 // LineFragmentMatch a segment of matching text within a line.
 type LineFragmentMatch struct {
 	// Offset within the line, in bytes.
@@ -87,6 +94,8 @@ type LineFragmentMatch struct {
 
 	// Number bytes that match.
 	MatchLength int
+
+	SymbolInfo *Symbol
 }
 
 // Stats contains interesting numbers on the search
