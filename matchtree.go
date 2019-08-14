@@ -216,6 +216,7 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 		t.secID++
 	}
 
+	// TODO we can use fileEndSymbol to skip
 	trimmed := t.current[:0]
 	for len(t.sections) > 0 && len(t.current) > 0 {
 		start := fileStart + t.current[0].runeOffset
