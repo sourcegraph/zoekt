@@ -149,7 +149,6 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 type IndexBuilder struct {
 	contentStrings  []*searchableString
 	nameStrings     []*searchableString
-	symbolStrings   []*searchableString
 	docSections     [][]DocumentSection
 	runeDocSections []DocumentSection
 
@@ -157,6 +156,7 @@ type IndexBuilder struct {
 	symIndex     map[string]uint32
 	symKindID    uint32
 	symKindIndex map[string]uint32
+	symMetaData  []uint32
 
 	fileEndSymbol []uint32
 
@@ -367,16 +367,13 @@ func (b *IndexBuilder) symbolKindID(t string) uint32 {
 
 func (b *IndexBuilder) addSymbols(symbols []*Symbol) {
 	for _, sym := range symbols {
-		buf := &bytes.Buffer{}
-		binary.Write(buf, binary.BigEndian, b.symbolID(sym.Sym))
-		binary.Write(buf, binary.BigEndian, b.symbolKindID(sym.Kind))
-		binary.Write(buf, binary.BigEndian, b.symbolID(sym.Parent))
-		binary.Write(buf, binary.BigEndian, b.symbolKindID(sym.ParentKind))
-		b.symbolStrings = append(b.symbolStrings, &searchableString{
-			data: buf.Bytes(),
-		})
+		b.symMetaData = append(b.symMetaData,
+			b.symbolID(sym.Sym),
+			b.symbolKindID(sym.Kind),
+			b.symbolID(sym.Parent),
+			b.symbolKindID(sym.ParentKind))
 	}
-	b.fileEndSymbol = append(b.fileEndSymbol, uint32(len(b.symbolStrings)))
+	b.fileEndSymbol = append(b.fileEndSymbol, uint32(len(b.symMetaData)/4))
 }
 
 // Add a file which only occurs in certain branches.

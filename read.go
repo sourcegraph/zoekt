@@ -175,7 +175,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 
 	d.symIndex = toc.symbolMap.relativeIndex()
 	d.symKindIndex = toc.symbolKindMap.relativeIndex()
-	d.symMetaDataIndex = toc.symbolMetaData.relativeIndex()
 
 	d.checksums, err = d.readSectionBlob(toc.contentChecksums)
 	if err != nil {
@@ -223,7 +222,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	d.symMetaData, err = d.readSectionBlob(toc.symbolMetaData.data)
+	d.symMetaData, err = d.readSectionBlob(toc.symbolMetaData)
 	if err != nil {
 		return nil, err
 	}

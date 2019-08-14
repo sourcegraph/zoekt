@@ -55,7 +55,7 @@ type indexTOC struct {
 	fileEndSymbol  simpleSection
 	symbolMap      compoundSection
 	symbolKindMap  compoundSection
-	symbolMetaData compoundSection
+	symbolMetaData simpleSection
 
 	branchMasks simpleSection
 	subRepos    simpleSection

@@ -99,8 +99,7 @@ type symbolData struct {
 	symKindContent []byte
 	symKindIndex   []uint32
 	//symMetadata is [4]uint32 Sym Kind Parent ParentKind
-	symMetaData      []byte
-	symMetaDataIndex []uint32
+	symMetaData []byte
 }
 
 // data returns the symbol at i

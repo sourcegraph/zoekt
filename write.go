@@ -105,7 +105,11 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 
 	toc.symbolMap.writeMap(w, b.symIndex)
 	toc.symbolKindMap.writeMap(w, b.symKindIndex)
-	toc.symbolMetaData.writeStrings(w, b.symbolStrings)
+	toc.symbolMetaData.start(w)
+	for _, m := range b.symMetaData {
+		w.U32(m)
+	}
+	toc.symbolMetaData.end(w)
 
 	toc.branchMasks.start(w)
 	for _, m := range b.branchMasks {
