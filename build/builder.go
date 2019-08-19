@@ -68,6 +68,9 @@ type Options struct {
 	// SubRepositories is a path => sub repository map.
 	SubRepositories map[string]*zoekt.Repository
 
+	// DisableCTags disables the generation of ctags metadata.
+	DisableCTags bool
+
 	// Path to exuberant ctags binary to run
 	CTags string
 
@@ -239,6 +242,10 @@ func NewBuilder(opts Options) (*Builder, error) {
 		finishedShards: map[string]string{},
 	}
 
+	if b.opts.DisableCTags {
+		b.opts.CTags = ""
+	}
+
 	if b.opts.CTags == "" && b.opts.CTagsMustSucceed {
 		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
 	}
@@ -251,6 +258,7 @@ func NewBuilder(opts Options) (*Builder, error) {
 
 		b.parser = parser
 	}
+
 	if _, err := b.newShardBuilder(); err != nil {
 		return nil, err
 	}

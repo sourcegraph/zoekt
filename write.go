@@ -156,6 +156,7 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}, &toc.metaData, w); err != nil {
 		return err
 	}
+	b.repo.Symbols = len(b.runeDocSections) > 0
 	if err := b.writeJSON(b.repo, &toc.repoMetaData, w); err != nil {
 		return err
 	}

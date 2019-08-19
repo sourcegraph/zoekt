@@ -27,7 +27,7 @@ package zoekt
 // 13: content checksums
 // 14: languages
 // 15: rune based symbol sections
-// 16: store ctags metadata
+// 16: ctags metadata
 const IndexFormatVersion = 16
 
 // FeatureVersion is increased if a feature is added that requires reindexing data
@@ -39,7 +39,8 @@ const IndexFormatVersion = 16
 // 6: Include '#' into the LineFragment template
 // 7: Record skip reasons in the index.
 // 8: Record source path in the index.
-const FeatureVersion = 8
+// 9: Store ctags metadata
+const FeatureVersion = 9
 
 type indexTOC struct {
 	fileContents compoundSection
