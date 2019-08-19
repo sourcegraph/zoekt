@@ -209,6 +209,10 @@ func (o *Options) IndexVersions() []zoekt.RepositoryBranch {
 		return nil
 	}
 
+	if repo.Symbols == o.DisableCTags {
+		return nil
+	}
+
 	if repo.IndexOptions != o.HashOptions() {
 		return nil
 	}
