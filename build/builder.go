@@ -94,6 +94,7 @@ func (o *Options) HashOptions() string {
 	hasher.Write([]byte(fmt.Sprintf("%t", o.CTagsMustSucceed)))
 	hasher.Write([]byte(fmt.Sprintf("%d", o.SizeMax)))
 	hasher.Write([]byte(fmt.Sprintf("%q", o.LargeFiles)))
+	hasher.Write([]byte(fmt.Sprintf("%t", o.DisableCTags)))
 
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
@@ -206,10 +207,6 @@ func (o *Options) IndexVersions() []zoekt.RepositoryBranch {
 	}
 
 	if index.IndexFeatureVersion != zoekt.FeatureVersion {
-		return nil
-	}
-
-	if repo.Symbols == o.DisableCTags {
 		return nil
 	}
 
