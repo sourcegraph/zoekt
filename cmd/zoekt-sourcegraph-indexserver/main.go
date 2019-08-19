@@ -148,7 +148,9 @@ type IndexOptions struct {
 
 func (o *IndexOptions) toArgs() []string {
 	args := make([]string, 0, len(o.LargeFiles)*2+1)
-	if !o.Symbols {
+	if o.Symbols {
+		args = append(args, "-require_ctags")
+	} else {
 		args = append(args, "-disable_ctags")
 	}
 	for _, a := range o.LargeFiles {
