@@ -44,7 +44,7 @@ var (
 	parallelism  = flag.Int("parallelism", 4, "maximum number of parallel indexing processes.")
 	indexDir     = flag.String("index", build.DefaultDir, "directory for search indices")
 	version      = flag.Bool("version", false, "Print version number")
-	disableCTags = flag.Bool("disable_ctags", false, "Generate ctags metadata")
+	disableCTags = flag.Bool("disable_ctags", false, "If set, ctags will not be called.")
 	ctags        = flag.Bool("require_ctags", false, "If set, ctags calls must succeed.")
 	largeFiles   = largeFilesFlag{}
 )
