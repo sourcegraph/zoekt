@@ -176,11 +176,13 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 			continue
 		}
 
-		secID := cp.id.fileEndSymbol[cp.idx] + uint32(i)
 		cm := &candidateMatch{
 			byteOffset:  sec.Start + uint32(idx[0]),
 			byteMatchSz: uint32(idx[1] - idx[0]),
-			symbolInfo:  cp.id.symbolData.data(secID),
+		}
+		if cp.idx < uint32(len(cp.id.fileEndSymbol)) { // If v15 fileEndSymbol is empty
+			secID := cp.id.fileEndSymbol[cp.idx] + uint32(i)
+			cm.symbolInfo = cp.id.symbolData.data(secID)
 		}
 		found = append(found, cm)
 	}
