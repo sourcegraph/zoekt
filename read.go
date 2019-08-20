@@ -77,13 +77,13 @@ func (r *reader) readTOC(toc *indexTOC) error {
 		return err
 	}
 
-	secs := toc.sections()
+	secs := toc.sectionsHACK(sectionCount)
 
 	if len(secs) != int(sectionCount) {
 		return fmt.Errorf("section count mismatch: got %d want %d", sectionCount, len(secs))
 	}
 
-	for _, s := range toc.sections() {
+	for _, s := range secs {
 		if err := s.read(r); err != nil {
 			return err
 		}
