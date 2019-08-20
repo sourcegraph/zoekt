@@ -14,7 +14,7 @@
 
 package zoekt
 
-// FormatVersion is a version number. It is increased every time the
+// IndexFormatVersion is a version number. It is increased every time the
 // on-disk index format is changed.
 // 5: subrepositories.
 // 6: remove size prefix for posting varint list.
@@ -30,6 +30,14 @@ package zoekt
 // 16: ctags metadata
 const IndexFormatVersion = 16
 
+func init() {
+	if IndexFormatVersion != 16 {
+		panic(`Sourcegraph: While we are on version 16 we have added code into
+	read.go which supports reading IndexFormatVersion 15. If you change the
+	IndexFormatVersion please reach out to Kevin and Keegan.`)
+	}
+}
+
 // FeatureVersion is increased if a feature is added that requires reindexing data
 // without changing the format version
 // 2: Rank field for shards.
@@ -39,8 +47,7 @@ const IndexFormatVersion = 16
 // 6: Include '#' into the LineFragment template
 // 7: Record skip reasons in the index.
 // 8: Record source path in the index.
-// 9: Store ctags metadata
-const FeatureVersion = 9
+const FeatureVersion = 8
 
 type indexTOC struct {
 	fileContents compoundSection
