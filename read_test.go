@@ -132,7 +132,7 @@ func TestReadSearch(t *testing.T) {
 	}{
 		{
 			"ctags_zoekt_v16.00000.zoekt",
-			16, 8,
+			16, 9,
 			[][]FileMatch{{{
 				FileName: "cmd/zoekt/main.go",
 				Language: "go",
@@ -201,7 +201,7 @@ func TestReadSearch(t *testing.T) {
 		},
 		{
 			"zoekt_v16.00000.zoekt",
-			16, 8,
+			16, 9,
 			[][]FileMatch{{{
 				FileName: "cmd/zoekt/main.go",
 				Language: "",
