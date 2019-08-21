@@ -39,7 +39,8 @@ const IndexFormatVersion = 16
 // 6: Include '#' into the LineFragment template
 // 7: Record skip reasons in the index.
 // 8: Record source path in the index.
-const FeatureVersion = 8
+// 9: Store ctags metadata
+const FeatureVersion = 9
 
 func init() {
 	ensureSourcegraphSymbolsHack()
@@ -50,6 +51,11 @@ func ensureSourcegraphSymbolsHack() {
 		panic(`Sourcegraph: While we are on version 16 we have added code into
 	read.go which supports reading IndexFormatVersion 15. If you change the
 	IndexFormatVersion please reach out to Kevin and Keegan.`)
+	}
+	if FeatureVersion != 9 {
+		panic(`Sourcegraph: While we are on FeatureVersion 9 we have added code into
+	read.go which supports reading FeatureVersion 8. If you change the
+	FeatureVersion please reach out to Kevin and Keegan.`)
 	}
 }
 
