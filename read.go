@@ -154,11 +154,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	if IndexFormatVersion != 16 {
-		panic(`Sourcegraph: While we are on version 16 we have added code into
-	read.go which supports reading IndexFormatVersion 15. If you change the
-	IndexFormatVersion please reach out to Kevin and Keegan.`)
-	}
+	ensureSourcegraphSymbolsHack()
 
 	// Once we are not on version 16 use this code again
 	// if d.metaData.IndexFormatVersion != IndexFormatVersion {

@@ -30,14 +30,6 @@ package zoekt
 // 16: ctags metadata
 const IndexFormatVersion = 16
 
-func init() {
-	if IndexFormatVersion != 16 {
-		panic(`Sourcegraph: While we are on version 16 we have added code into
-	read.go which supports reading IndexFormatVersion 15. If you change the
-	IndexFormatVersion please reach out to Kevin and Keegan.`)
-	}
-}
-
 // FeatureVersion is increased if a feature is added that requires reindexing data
 // without changing the format version
 // 2: Rank field for shards.
@@ -48,6 +40,18 @@ func init() {
 // 7: Record skip reasons in the index.
 // 8: Record source path in the index.
 const FeatureVersion = 8
+
+func init() {
+	ensureSourcegraphSymbolsHack()
+}
+
+func ensureSourcegraphSymbolsHack() {
+	if IndexFormatVersion != 16 {
+		panic(`Sourcegraph: While we are on version 16 we have added code into
+	read.go which supports reading IndexFormatVersion 15. If you change the
+	IndexFormatVersion please reach out to Kevin and Keegan.`)
+	}
+}
 
 type indexTOC struct {
 	fileContents compoundSection
@@ -79,11 +83,7 @@ type indexTOC struct {
 }
 
 func (t *indexTOC) sectionsHACK(expectedSectionCount uint32) []section {
-	if IndexFormatVersion != 16 {
-		panic(`Sourcegraph: While we are on version 16 we have added code into
-	read.go which supports reading IndexFormatVersion 15. If you change the
-	IndexFormatVersion please reach out to Kevin and Keegan.`)
-	}
+	ensureSourcegraphSymbolsHack()
 
 	// Sourcegraph hack for v15.
 	if expectedSectionCount == 19 {
