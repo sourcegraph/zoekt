@@ -131,10 +131,10 @@ func TestReadSearch(t *testing.T) {
 		fileMatches    [][]FileMatch
 	}{
 		{
-			"ctags_zoekt_v16.00000.zoekt",
+			"ctagshello_v16.00000.zoekt",
 			16, 9,
 			[][]FileMatch{{{
-				FileName: "cmd/zoekt/main.go",
+				FileName: "main.go",
 				Language: "go",
 				LineMatches: []LineMatch{{
 					Line:          []byte("func main() {"),
@@ -144,7 +144,7 @@ func TestReadSearch(t *testing.T) {
 					LineFragments: []LineFragmentMatch{{0, 1472, 9, nil}},
 				}},
 			}}, {{
-				FileName: "cmd/zoekt/main.go",
+				FileName: "main.go",
 				Language: "go",
 				LineMatches: []LineMatch{{
 					Line:          []byte("package main"),
@@ -154,7 +154,7 @@ func TestReadSearch(t *testing.T) {
 					LineFragments: []LineFragmentMatch{{0, 609, 7, nil}},
 				}},
 			}}, {{
-				FileName: "cmd/zoekt/main.go",
+				FileName: "main.go",
 				Language: "go",
 				LineMatches: []LineMatch{{
 					Line:          []byte("func loadShard(fn string) (zoekt.Searcher, error) {"),
@@ -164,7 +164,7 @@ func TestReadSearch(t *testing.T) {
 					LineFragments: []LineFragmentMatch{{9, 1144, 5, &Symbol{"loadShard", "func", "main", "package"}}},
 				}},
 			}}, {{
-				FileName: "cmd/zoekt/main.go",
+				FileName: "main.go",
 				Language: "go",
 				LineMatches: []LineMatch{{
 					Line:          []byte("func loadShard(fn string) (zoekt.Searcher, error) {"),
@@ -226,14 +226,14 @@ func TestReadSearch(t *testing.T) {
 	}
 
 	qs := []query.Q{
-		query.NewAnd(&query.Substring{Pattern: "func main", Content: true}, &query.Substring{Pattern: "zoekt/main.go", FileName: true}),
-		query.NewAnd(&query.Regexp{Regexp: mustParseRE("^package"), Content: true}, &query.Substring{Pattern: "zoekt/main.go", FileName: true}),
-		query.NewAnd(&query.Symbol{&query.Substring{Pattern: "shard"}}, &query.Substring{Pattern: "zoekt/main.go", FileName: true}),
-		query.NewAnd(&query.Symbol{&query.Regexp{Regexp: mustParseRE("shard$")}}, &query.Substring{Pattern: "zoekt/main.go", FileName: true}),
+		&query.Substring{Pattern: "func main", Content: true},
+		&query.Regexp{Regexp: mustParseRE("^package"), Content: true},
+		&query.Symbol{&query.Substring{Pattern: "Print"}},
+		&query.Symbol{&query.Regexp{Regexp: mustParseRE("Println$")}},
 	}
 
 	for _, tc := range tcs {
-		shard, err := loadShard("test-index/" + tc.file)
+		shard, err := loadShard("testdata/" + tc.file)
 		if err != nil {
 			t.Fatalf("failed loading shard %s %v", tc.file, err)
 		}
