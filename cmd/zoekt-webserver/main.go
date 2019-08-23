@@ -38,6 +38,7 @@ import (
 	"github.com/google/zoekt/web"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
+	tracepkg "github.com/google/zoekt/pkg/trace"
 )
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
@@ -211,6 +212,8 @@ func main() {
 		watchdogAddr = "https://" + *listen
 	}
 	go watchdog(30*time.Second, watchdogAddr)
+
+	handler = tracepkg.Middleware(handler)
 
 	if *sslCert != "" || *sslKey != "" {
 		err = http.ListenAndServeTLS(*listen, *sslCert, *sslKey, handler)
