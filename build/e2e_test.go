@@ -38,6 +38,14 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("TempDir: %v", err)
 	}
 
+	// Create an older shard to test we delete it
+	oldIndex := filepath.Join(dir, fmt.Sprintf("repo_v%d.00000.zoekt", zoekt.IndexFormatVersion-1))
+	if f, err := os.Create(oldIndex); err != nil {
+		t.Fatal(err)
+	} else {
+		f.Close()
+	}
+
 	opts := Options{
 		IndexDir: dir,
 		ShardMax: 1024,
@@ -65,6 +73,10 @@ func TestBasic(t *testing.T) {
 	fs, _ := filepath.Glob(dir + "/*")
 	if len(fs) <= 1 {
 		t.Fatalf("want multiple shards, got %v", fs)
+	}
+
+	if stat, err := os.Stat(oldIndex); !os.IsNotExist(err) {
+		t.Fatalf("old index was not removed: %v %v", stat, err)
 	}
 
 	ss, err := shards.NewDirectorySearcher(dir)

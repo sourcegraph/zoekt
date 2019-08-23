@@ -68,6 +68,9 @@ type Options struct {
 	// SubRepositories is a path => sub repository map.
 	SubRepositories map[string]*zoekt.Repository
 
+	// DisableCTags disables the generation of ctags metadata.
+	DisableCTags bool
+
 	// Path to exuberant ctags binary to run
 	CTags string
 
@@ -91,6 +94,7 @@ func (o *Options) HashOptions() string {
 	hasher.Write([]byte(fmt.Sprintf("%t", o.CTagsMustSucceed)))
 	hasher.Write([]byte(fmt.Sprintf("%d", o.SizeMax)))
 	hasher.Write([]byte(fmt.Sprintf("%q", o.LargeFiles)))
+	hasher.Write([]byte(fmt.Sprintf("%t", o.DisableCTags)))
 
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
@@ -125,6 +129,12 @@ type finishedShard struct {
 // SetDefaults sets reasonable default options.
 func (o *Options) SetDefaults() {
 	if o.CTags == "" {
+		if ctags := os.Getenv("CTAGS_COMMAND"); ctags != "" {
+			o.CTags = ctags
+		}
+	}
+
+	if o.CTags == "" {
 		ctags, err := exec.LookPath("universal-ctags")
 		if err == nil {
 			o.CTags = ctags
@@ -137,9 +147,6 @@ func (o *Options) SetDefaults() {
 			o.CTags = ctags
 		}
 	}
-
-	// Sourcegraph modification: We never want to run ctags
-	o.CTags = ""
 
 	if o.Parallelism == 0 {
 		o.Parallelism = 1
@@ -170,12 +177,16 @@ func hashString(s string) string {
 
 // ShardName returns the name the given index shard.
 func (o *Options) shardName(n int) string {
+	return o.shardNameForVersion(zoekt.IndexFormatVersion, n)
+}
+
+func (o *Options) shardNameForVersion(version, n int) string {
 	abs := url.QueryEscape(o.RepositoryDescription.Name)
 	if len(abs) > 200 {
 		abs = abs[:200] + hashString(abs)[:8]
 	}
 	return filepath.Join(o.IndexDir,
-		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, zoekt.IndexFormatVersion, n))
+		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, version, n))
 }
 
 // IndexVersions returns the versions as present in the index, for
@@ -236,6 +247,10 @@ func NewBuilder(opts Options) (*Builder, error) {
 		finishedShards: map[string]string{},
 	}
 
+	if b.opts.DisableCTags {
+		b.opts.CTags = ""
+	}
+
 	if b.opts.CTags == "" && b.opts.CTagsMustSucceed {
 		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
 	}
@@ -248,6 +263,7 @@ func NewBuilder(opts Options) (*Builder, error) {
 
 		b.parser = parser
 	}
+
 	if _, err := b.newShardBuilder(); err != nil {
 		return nil, err
 	}
@@ -306,6 +322,7 @@ func (b *Builder) Finish() error {
 
 	if b.nextShardNum > 0 {
 		b.deleteRemainingShards()
+		b.deleteOlderVersionShards()
 	}
 	return b.buildError
 }
@@ -317,6 +334,19 @@ func (b *Builder) deleteRemainingShards() {
 		name := b.opts.shardName(shard)
 		if err := os.Remove(name); os.IsNotExist(err) {
 			break
+		}
+	}
+}
+
+// deleteOlderVersionShards removes shards for repo from earlier
+// IndexFormatVersions.
+func (b *Builder) deleteOlderVersionShards() {
+	for version := 0; version < zoekt.IndexFormatVersion; version++ {
+		for shard := 0; ; shard++ {
+			name := b.opts.shardNameForVersion(version, shard)
+			if err := os.Remove(name); os.IsNotExist(err) {
+				break
+			}
 		}
 	}
 }
@@ -488,6 +518,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 
 func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	desc := b.opts.RepositoryDescription
+	desc.HasSymbols = b.opts.CTags != ""
 	desc.SubRepoMap = b.opts.SubRepositories
 	desc.IndexOptions = b.opts.HashOptions()
 

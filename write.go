@@ -39,6 +39,19 @@ func (s *compoundSection) writeStrings(w *writer, strs []*searchableString) {
 	s.end(w)
 }
 
+func (s *compoundSection) writeMap(w *writer, m map[string]uint32) {
+	keys := make([]*searchableString, 0, len(m))
+	for k, _ := range m {
+		keys = append(keys, &searchableString{
+			data: []byte(k),
+		})
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return m[string(keys[i].data)] < m[string(keys[j].data)]
+	})
+	s.writeStrings(w, keys)
+}
+
 func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 	charOffsets *simpleSection, postings *compoundSection, endRunes *simpleSection) {
 	keys := make(ngramSlice, 0, len(s.postings))
@@ -83,6 +96,20 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 		toc.newlines.addItem(w, toSizedDeltas(newLinesIndices(f.data)))
 	}
 	toc.newlines.end(w)
+
+	toc.fileEndSymbol.start(w)
+	for _, m := range b.fileEndSymbol {
+		w.U32(m)
+	}
+	toc.fileEndSymbol.end(w)
+
+	toc.symbolMap.writeMap(w, b.symIndex)
+	toc.symbolKindMap.writeMap(w, b.symKindIndex)
+	toc.symbolMetaData.start(w)
+	for _, m := range b.symMetaData {
+		w.U32(m)
+	}
+	toc.symbolMetaData.end(w)
 
 	toc.branchMasks.start(w)
 	for _, m := range b.branchMasks {

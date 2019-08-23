@@ -218,6 +218,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
 				Offset:      m.byteOffset,
 				LineOffset:  int(m.byteOffset) - lineStart,
 				MatchLength: int(m.byteMatchSz),
+				SymbolInfo:  m.symbolInfo,
 			}
 			finalMatch.LineFragments = append(finalMatch.LineFragments, fragment)
 		}

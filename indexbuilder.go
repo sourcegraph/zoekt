@@ -152,6 +152,14 @@ type IndexBuilder struct {
 	docSections     [][]DocumentSection
 	runeDocSections []DocumentSection
 
+	symID        uint32
+	symIndex     map[string]uint32
+	symKindID    uint32
+	symKindIndex map[string]uint32
+	symMetaData  []uint32
+
+	fileEndSymbol []uint32
+
 	checksums []byte
 
 	branchMasks []uint64
@@ -195,6 +203,9 @@ func NewIndexBuilder(r *Repository) (*IndexBuilder, error) {
 	b := &IndexBuilder{
 		contentPostings: newPostingsBuilder(),
 		namePostings:    newPostingsBuilder(),
+		fileEndSymbol:   []uint32{0},
+		symIndex:        make(map[string]uint32),
+		symKindIndex:    make(map[string]uint32),
 		languageMap:     map[string]byte{},
 	}
 
@@ -258,14 +269,25 @@ type Document struct {
 	SkipReason string
 
 	// Document sections for symbols. Offsets should use bytes.
-	Symbols []DocumentSection
+	Symbols         []DocumentSection
+	SymbolsMetaData []*Symbol
 }
 
-type docSectionSlice []DocumentSection
+type symbolSlice struct {
+	symbols  []DocumentSection
+	metaData []*Symbol
+}
 
-func (m docSectionSlice) Len() int           { return len(m) }
-func (m docSectionSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
-func (m docSectionSlice) Less(i, j int) bool { return m[i].Start < m[j].Start }
+func (s symbolSlice) Len() int { return len(s.symbols) }
+
+func (s symbolSlice) Swap(i, j int) {
+	s.symbols[i], s.symbols[j] = s.symbols[j], s.symbols[i]
+	s.metaData[i], s.metaData[j] = s.metaData[j], s.metaData[i]
+}
+
+func (s symbolSlice) Less(i, j int) bool {
+	return s.symbols[i].Start < s.symbols[j].Start
+}
 
 // AddFile is a convenience wrapper for Add
 func (b *IndexBuilder) AddFile(name string, content []byte) error {
@@ -327,6 +349,33 @@ func (b *IndexBuilder) populateSubRepoIndices() {
 
 const notIndexedMarker = "NOT-INDEXED: "
 
+func (b *IndexBuilder) symbolID(sym string) uint32 {
+	if _, ok := b.symIndex[sym]; !ok {
+		b.symIndex[sym] = b.symID
+		b.symID++
+	}
+	return b.symIndex[sym]
+}
+
+func (b *IndexBuilder) symbolKindID(t string) uint32 {
+	if _, ok := b.symKindIndex[t]; !ok {
+		b.symKindIndex[t] = b.symKindID
+		b.symKindID++
+	}
+	return b.symKindIndex[t]
+}
+
+func (b *IndexBuilder) addSymbols(symbols []*Symbol) {
+	for _, sym := range symbols {
+		b.symMetaData = append(b.symMetaData,
+			b.symbolID(sym.Sym),
+			b.symbolKindID(sym.Kind),
+			b.symbolID(sym.Parent),
+			b.symbolKindID(sym.ParentKind))
+	}
+	b.fileEndSymbol = append(b.fileEndSymbol, uint32(len(b.symMetaData)/4))
+}
+
 // Add a file which only occurs in certain branches.
 func (b *IndexBuilder) Add(doc Document) error {
 	hasher := crc64.New(crc64.MakeTable(crc64.ISO))
@@ -344,7 +393,7 @@ func (b *IndexBuilder) Add(doc Document) error {
 		}
 	}
 
-	sort.Sort(docSectionSlice(doc.Symbols))
+	sort.Sort(symbolSlice{doc.Symbols, doc.SymbolsMetaData})
 	var last DocumentSection
 	for i, s := range doc.Symbols {
 		if i > 0 {
@@ -357,6 +406,7 @@ func (b *IndexBuilder) Add(doc Document) error {
 	if last.End > uint32(len(doc.Content)) {
 		return fmt.Errorf("section goes past end of content")
 	}
+	b.addSymbols(doc.SymbolsMetaData)
 
 	if doc.SubRepositoryPath != "" {
 		rel, err := filepath.Rel(doc.SubRepositoryPath, doc.Name)

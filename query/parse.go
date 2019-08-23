@@ -153,8 +153,13 @@ func parseExpr(in []byte) (Q, int, error) {
 		if text == "" {
 			return nil, 0, fmt.Errorf("the sym: atom must have an argument")
 		}
-		expr = &Symbol{&Substring{Pattern: text}}
 
+		q, err := regexpQuery(text, false, false)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		expr = &Symbol{q}
 	case tokParenClose:
 		// Caller must consume paren.
 		expr = nil

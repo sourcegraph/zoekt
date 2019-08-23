@@ -23,7 +23,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
 )
@@ -39,11 +38,17 @@ type ctagsProcess struct {
 
 func newProcess(bin string) (*ctagsProcess, error) {
 	opt := "default"
-	if runtime.GOOS == "linux" {
-		opt = "sandbox"
-	}
+	// TODO: Figure out why running with --_interactive=sandbox causes `Bad system call` inside Docker, and
+	// reenable it.
+	//
+	// if runtime.GOOS == "linux" {
+	//  opt = "sandbox"
+	// }
 
-	cmd := exec.Command(bin, "--_interactive="+opt, "--fields=*")
+	cmd := exec.Command(bin, "--_interactive="+opt, "--fields=*",
+		"--languages=Basic,C,C#,C++,Clojure,Cobol,CSS,CUDA,D,Elixir,elm,Erlang,Go,haskell,Java,JavaScript,kotlin,Lisp,Lua,MatLab,ObjectiveC,OCaml,Perl,Perl6,PHP,Protobuf,Python,R,Ruby,Rust,scala,Scheme,Sh,swift,Tcl,typescript,tsx,Verilog,Vim",
+		"--map-CSS=+.scss", "--map-CSS=+.less", "--map-CSS=+.sass",
+	)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -175,11 +180,13 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 		}
 
 		e := Entry{
-			Sym:      rep.Name,
-			Path:     rep.Path,
-			Line:     rep.Line,
-			Kind:     rep.Kind,
-			Language: rep.Language,
+			Sym:        rep.Name,
+			Path:       rep.Path,
+			Parent:     rep.Scope,
+			ParentKind: rep.ScopeKind,
+			Line:       rep.Line,
+			Kind:       rep.Kind,
+			Language:   rep.Language,
 		}
 
 		es = append(es, &e)

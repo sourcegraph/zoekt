@@ -308,6 +308,9 @@ func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
 		if rmt, ok := mt.(*regexpMatchTree); ok {
 			cands = append(cands, rmt.found...)
 		}
+		if smt, ok := mt.(*symbolRegexpMatchTree); ok {
+			cands = append(cands, smt.found...)
+		}
 	})
 
 	foundContentMatch := false

@@ -142,10 +142,18 @@ type IndexOptions struct {
 	// LargeFiles is a slice of glob patterns where matching files are
 	// indexed regardless of their size.
 	LargeFiles []string
+
+	// Symbols is a boolean that indicates whether to generate ctags metadata or not
+	Symbols bool
 }
 
 func (o *IndexOptions) toArgs() []string {
-	args := make([]string, 0, len(o.LargeFiles)*2)
+	args := make([]string, 0, len(o.LargeFiles)*2+1)
+	if o.Symbols {
+		args = append(args, "-require_ctags")
+	} else {
+		args = append(args, "-disable_ctags")
+	}
 	for _, a := range o.LargeFiles {
 		args = append(args, "-large_file", a)
 	}

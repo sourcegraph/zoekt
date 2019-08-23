@@ -145,6 +145,105 @@ type branchQueryMatchTree struct {
 	docID     uint32
 }
 
+type symbolRegexpMatchTree struct {
+	matchTree
+	regexp *regexp.Regexp
+
+	reEvaluated bool
+	found       []*candidateMatch
+}
+
+func (t *symbolRegexpMatchTree) prepare(doc uint32) {
+	t.reEvaluated = false
+}
+
+func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
+	if t.reEvaluated {
+		return len(t.found) > 0, true
+	}
+
+	if cost < costRegexp {
+		return false, false
+	}
+
+	sections := cp.docSections()
+	content := cp.data(false)
+
+	found := t.found[:0]
+	for i, sec := range sections {
+		idx := t.regexp.FindIndex(content[sec.Start:sec.End])
+		if idx == nil {
+			continue
+		}
+
+		cm := &candidateMatch{
+			byteOffset:  sec.Start + uint32(idx[0]),
+			byteMatchSz: uint32(idx[1] - idx[0]),
+		}
+		if cp.idx < uint32(len(cp.id.fileEndSymbol)) { // If v15 fileEndSymbol is empty
+			secID := cp.id.fileEndSymbol[cp.idx] + uint32(i)
+			cm.symbolInfo = cp.id.symbolData.data(secID)
+		}
+		found = append(found, cm)
+	}
+	t.found = found
+	t.reEvaluated = true
+
+	return len(t.found) > 0, true
+}
+
+type symbolSubstrMatchTree struct {
+	*substrMatchTree
+
+	patternSize  uint32
+	fileEndRunes []uint32
+
+	doc        uint32
+	sections   []DocumentSection
+	symbolData *symbolData
+	secID      uint32
+}
+
+func (t *symbolSubstrMatchTree) prepare(doc uint32) {
+	t.substrMatchTree.prepare(doc)
+	t.doc = doc
+
+	var fileStart uint32
+	if doc > 0 {
+		fileStart = t.fileEndRunes[doc-1]
+	}
+
+	for len(t.sections) > 0 && t.sections[0].Start < fileStart {
+		t.sections = t.sections[1:]
+		t.secID++
+	}
+
+	// TODO we can use fileEndSymbol to skip
+	trimmed := t.current[:0]
+	for len(t.sections) > 0 && len(t.current) > 0 {
+		start := fileStart + t.current[0].runeOffset
+		end := start + t.patternSize
+		if start >= t.sections[0].End {
+			t.sections = t.sections[1:]
+			t.secID++
+			continue
+		}
+
+		if start < t.sections[0].Start {
+			t.current = t.current[1:]
+			continue
+		}
+
+		if end <= t.sections[0].End {
+			t.current[0].symbolInfo = t.symbolData.data(t.secID)
+			trimmed = append(trimmed, t.current[0])
+		}
+
+		t.current = t.current[1:]
+	}
+	t.current = trimmed
+}
+
 // all prepare methods
 
 func (t *bruteForceMatchTree) prepare(doc uint32) {
@@ -304,6 +403,14 @@ func (t *branchQueryMatchTree) String() string {
 	return fmt.Sprintf("branch(%x)", t.mask)
 }
 
+func (t *symbolSubstrMatchTree) String() string {
+	return fmt.Sprintf("symbol(%v)", t.substrMatchTree)
+}
+
+func (t *symbolRegexpMatchTree) String() string {
+	return fmt.Sprintf("symbol(%v)", t.matchTree)
+}
+
 // visitMatches visits all atoms in matchTree. Note: This visits
 // noVisitMatchTree. For collecting matches use visitMatches.
 func visitMatchTree(t matchTree, f func(matchTree)) {
@@ -322,6 +429,10 @@ func visitMatchTree(t matchTree, f func(matchTree)) {
 		visitMatchTree(s.child, f)
 	case *fileNameMatchTree:
 		visitMatchTree(s.child, f)
+	case *symbolSubstrMatchTree:
+		visitMatchTree(s.substrMatchTree, f)
+	case *symbolRegexpMatchTree:
+		visitMatchTree(s.matchTree, f)
 	default:
 		f(t)
 	}
@@ -343,6 +454,8 @@ func visitMatches(t matchTree, known map[matchTree]bool, f func(matchTree)) {
 				visitMatches(ch, known, f)
 			}
 		}
+	case *symbolSubstrMatchTree:
+		visitMatches(s.substrMatchTree, known, f)
 	case *notMatchTree:
 	case *noVisitMatchTree:
 		// don't collect into negative trees.
@@ -626,21 +739,35 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}, nil
 
 	case *query.Symbol:
-		mt, err := d.newSubstringMatchTree(s.Atom)
+		subMT, err := d.newMatchTree(s.Expr)
 		if err != nil {
 			return nil, err
 		}
 
-		if _, ok := mt.(*regexpMatchTree); ok {
-			return nil, fmt.Errorf("regexps and short queries not implemented for symbol search")
-		}
-		subMT, ok := mt.(*substrMatchTree)
-		if !ok {
-			return nil, fmt.Errorf("found %T inside query.Symbol", mt)
+		if substr, ok := subMT.(*substrMatchTree); ok {
+			return &symbolSubstrMatchTree{
+				substrMatchTree: substr,
+				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
+				fileEndRunes:    d.fileEndRunes,
+				sections:        d.runeDocSections,
+				symbolData:      &d.symbolData,
+			}, nil
 		}
 
-		subMT.matchIterator = d.newTrimByDocSectionIter(s.Atom, subMT.matchIterator)
-		return subMT, nil
+		var regexp *regexp.Regexp
+		visitMatchTree(subMT, func(mt matchTree) {
+			if t, ok := mt.(*regexpMatchTree); ok {
+				regexp = t.regexp
+			}
+		})
+		if regexp == nil {
+			return nil, fmt.Errorf("found %T inside query.Symbol", subMT)
+		}
+
+		return &symbolRegexpMatchTree{
+			regexp:    regexp,
+			matchTree: subMT,
+		}, nil
 	}
 	log.Panicf("type %T", q)
 	return nil, nil

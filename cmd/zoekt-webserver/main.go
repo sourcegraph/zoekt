@@ -34,11 +34,11 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	tracepkg "github.com/google/zoekt/pkg/trace"
 	"github.com/google/zoekt/shards"
 	"github.com/google/zoekt/web"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
-	tracepkg "github.com/google/zoekt/pkg/trace"
 )
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
@@ -215,6 +215,7 @@ func main() {
 
 	handler = tracepkg.Middleware(handler)
 
+	log.Printf("listening on %v", *listen)
 	if *sslCert != "" || *sslKey != "" {
 		err = http.ListenAndServeTLS(*listen, *sslCert, *sslKey, handler)
 	} else {

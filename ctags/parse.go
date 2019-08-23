@@ -27,7 +27,7 @@ type Entry struct {
 	Kind       string
 	Language   string
 	Parent     string
-	ParentType string
+	ParentKind string
 
 	FileLimited bool
 }
@@ -64,7 +64,7 @@ field:
 		for _, p := range []string{"class", "enum"} {
 			if strings.HasPrefix(f, p+":") {
 				e.Parent = strings.TrimPrefix(f, p+":")
-				e.ParentType = p
+				e.ParentKind = p
 				continue field
 			}
 		}

@@ -38,14 +38,15 @@ func (f *largeFilesFlag) Set(value string) error {
 }
 
 var (
-	sizeMax     = flag.Int("file_limit", 128*1024, "maximum file size")
-	trigramMax  = flag.Int("max_trigram_count", 20000, "maximum number of trigrams per document")
-	shardLimit  = flag.Int("shard_limit", 100<<20, "maximum corpus size for a shard")
-	parallelism = flag.Int("parallelism", 4, "maximum number of parallel indexing processes.")
-	indexDir    = flag.String("index", build.DefaultDir, "directory for search indices")
-	version     = flag.Bool("version", false, "Print version number")
-	ctags       = flag.Bool("require_ctags", false, "If set, ctags calls must succeed.")
-	largeFiles  = largeFilesFlag{}
+	sizeMax      = flag.Int("file_limit", 128*1024, "maximum file size")
+	trigramMax   = flag.Int("max_trigram_count", 20000, "maximum number of trigrams per document")
+	shardLimit   = flag.Int("shard_limit", 100<<20, "maximum corpus size for a shard")
+	parallelism  = flag.Int("parallelism", 4, "maximum number of parallel indexing processes.")
+	indexDir     = flag.String("index", build.DefaultDir, "directory for search indices")
+	version      = flag.Bool("version", false, "Print version number")
+	disableCTags = flag.Bool("disable_ctags", false, "If set, ctags will not be called.")
+	ctags        = flag.Bool("require_ctags", false, "If set, ctags calls must succeed.")
+	largeFiles   = largeFilesFlag{}
 )
 
 func init() {
@@ -64,6 +65,7 @@ func OptionsFromFlags() *build.Options {
 		SizeMax:          *sizeMax,
 		ShardMax:         *shardLimit,
 		IndexDir:         *indexDir,
+		DisableCTags:     *disableCTags,
 		CTagsMustSucceed: *ctags,
 		LargeFiles:       largeFiles,
 		TrigramMax:       *trigramMax,

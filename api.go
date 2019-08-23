@@ -77,6 +77,13 @@ type LineMatch struct {
 	LineFragments []LineFragmentMatch
 }
 
+type Symbol struct {
+	Sym        string
+	Kind       string
+	Parent     string
+	ParentKind string
+}
+
 // LineFragmentMatch a segment of matching text within a line.
 type LineFragmentMatch struct {
 	// Offset within the line, in bytes.
@@ -87,6 +94,8 @@ type LineFragmentMatch struct {
 
 	// Number bytes that match.
 	MatchLength int
+
+	SymbolInfo *Symbol
 }
 
 // Stats contains interesting numbers on the search
@@ -208,6 +217,12 @@ type Repository struct {
 	// IndexOptions is a hash of the options used to create the index for the
 	// repo.
 	IndexOptions string
+
+	// HasSymbols is true if this repository has indexed ctags
+	// output. Sourcegraph specific: This field is more appropriate for
+	// IndexMetadata. However, we store it here since the Sourcegraph frontend
+	// can read this structure but not IndexMetadata.
+	HasSymbols bool
 }
 
 // IndexMetadata holds metadata stored in the index file. It contains
