@@ -213,13 +213,13 @@ func main() {
 	}
 	go watchdog(30*time.Second, watchdogAddr)
 
-	handler = tracepkg.Middleware(handler)
+	h := tracepkg.Middleware(handler)
 
 	log.Printf("listening on %v", *listen)
 	if *sslCert != "" || *sslKey != "" {
-		err = http.ListenAndServeTLS(*listen, *sslCert, *sslKey, handler)
+		err = http.ListenAndServeTLS(*listen, *sslCert, *sslKey, h)
 	} else {
-		err = http.ListenAndServe(*listen, handler)
+		err = http.ListenAndServe(*listen, h)
 	}
 	log.Printf("ListenAndServe: %v", err)
 }
