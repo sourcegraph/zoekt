@@ -2,19 +2,31 @@ module github.com/google/zoekt
 
 require (
 	github.com/andygrunwald/go-gerrit v0.0.0-20181026193842-43cfd7a94eb4
+	github.com/certifi/gocertifi v0.0.0-20190506164543-d2eda7129713 // indirect
+	github.com/felixge/httpsnoop v1.0.0
 	github.com/fsnotify/fsnotify v1.4.7
+	github.com/getsentry/raven-go v0.2.0
 	github.com/gfleury/go-bitbucket-v1 v0.0.0-20181102191809-4910839b609e
+	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/google/go-cmp v0.3.0
 	github.com/google/go-github/v27 v27.0.4
 	github.com/google/slothfs v0.0.0-20170112234537-ecdd255f653d
+	github.com/gorilla/mux v1.7.3
 	github.com/hashicorp/go-retryablehttp v0.5.1
 	github.com/keegancsmith/rpc v1.1.0
 	github.com/kylelemons/godebug v0.0.0-20170820004349-d65d576e9348
+	github.com/mattn/go-colorable v0.1.2 // indirect
+	github.com/mattn/go-isatty v0.0.9 // indirect
 	github.com/mitchellh/mapstructure v1.1.2 // indirect
+	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+	github.com/modern-go/reflect2 v1.0.1 // indirect
+	github.com/opentracing/opentracing-go v1.1.0
+	github.com/prometheus/client_golang v1.1.0
 	github.com/xanzy/go-gitlab v0.13.0
 	go.uber.org/automaxprocs v1.2.0
-	golang.org/x/net v0.0.0-20190311183353-d8887717615a
+	golang.org/x/net v0.0.0-20190613194153-d28f0bde5980
 	golang.org/x/oauth2 v0.0.0-20181120190819-8f65e3013eba
 	golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6
+	gopkg.in/inconshreveable/log15.v2 v2.0.0-20180818164646-67afb5ed74ec
 	gopkg.in/src-d/go-git.v4 v4.8.0
 )
