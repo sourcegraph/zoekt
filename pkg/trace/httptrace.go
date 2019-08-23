@@ -10,18 +10,14 @@ import (
 	"strings"
 	"time"
 
-	log15 "gopkg.in/inconshreveable/log15.v2"
-
 	"github.com/felixge/httpsnoop"
-	raven "github.com/getsentry/raven-go"
+	"github.com/getsentry/raven-go"
+	"github.com/google/zoekt"
 	"github.com/gorilla/mux"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sourcegraph/sourcegraph/pkg/api"
-	"github.com/sourcegraph/sourcegraph/pkg/conf"
-	"github.com/sourcegraph/sourcegraph/pkg/repotrackutil"
-	"github.com/sourcegraph/sourcegraph/pkg/version"
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 type key int
@@ -52,30 +48,13 @@ func init() {
 		log15.Error("sentry.dsn", "error", err)
 	}
 
-	raven.SetRelease(version.Version())
+	raven.SetRelease(zoekt.Version)
 	raven.SetTagsContext(map[string]string{
 		"service": filepath.Base(os.Args[0]),
 	})
 
 	prometheus.MustRegister(requestDuration)
 	prometheus.MustRegister(requestHeartbeat)
-
-	go func() {
-		conf.Watch(func() {
-			if conf.Get().Critical.Log == nil {
-				return
-			}
-
-			if conf.Get().Critical.Log.Sentry == nil {
-				return
-			}
-
-			// An empty dsn value is ignored: not an error.
-			if err := raven.SetDSN(conf.Get().Critical.Log.Sentry.Dsn); err != nil {
-				log15.Error("sentry.dsn", "error", err)
-			}
-		})
-	}()
 }
 
 // Middleware captures and exports metrics to Prometheus, etc.
@@ -128,7 +107,6 @@ func Middleware(next http.Handler) http.Handler {
 			"route":  routeName,
 			"method": strings.ToLower(r.Method),
 			"code":   strconv.Itoa(m.Code),
-			"repo":   repotrackutil.GetTrackedRepo(api.RepoName(r.URL.Path)),
 		}
 		requestDuration.With(labels).Observe(m.Duration.Seconds())
 		requestHeartbeat.With(labels).Set(float64(time.Now().Unix()))
