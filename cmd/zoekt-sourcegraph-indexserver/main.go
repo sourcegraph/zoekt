@@ -25,7 +25,8 @@ import (
 	"golang.org/x/net/trace"
 
 	"github.com/google/zoekt/build"
-	retryablehttp "github.com/hashicorp/go-retryablehttp"
+	tracepkg "github.com/google/zoekt/pkg/trace"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
@@ -399,7 +400,7 @@ func main() {
 				return true, true
 			}
 			debug.Printf("serving HTTP on %s", *listen)
-			log.Fatal(http.ListenAndServe(*listen, s))
+			log.Fatal(http.ListenAndServe(*listen, tracepkg.Middleware(s)))
 		}()
 	}
 
