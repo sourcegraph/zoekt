@@ -17,6 +17,7 @@ package zoekt
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -124,164 +125,72 @@ func loadShard(fn string) (Searcher, error) {
 }
 
 func TestReadSearch(t *testing.T) {
-	tcs := []struct {
-		file           string
-		formatVersion  int
-		featureVersion int
-		fileMatches    [][]FileMatch
-	}{
-		{
-			"ctagshello_v16.00000.zoekt",
-			16, 9,
-			[][]FileMatch{{{
-				FileName: "main.go",
-				Language: "go",
-				LineMatches: []LineMatch{{
-					Line:          []byte("func main() {"),
-					LineStart:     1472,
-					LineEnd:       1485,
-					LineNumber:    63,
-					LineFragments: []LineFragmentMatch{{0, 1472, 9, nil}},
-				}},
-			}}, {{
-				FileName: "main.go",
-				Language: "go",
-				LineMatches: []LineMatch{{
-					Line:          []byte("package main"),
-					LineStart:     609,
-					LineEnd:       621,
-					LineNumber:    15,
-					LineFragments: []LineFragmentMatch{{0, 609, 7, nil}},
-				}},
-			}}, {{
-				FileName: "main.go",
-				Language: "go",
-				LineMatches: []LineMatch{{
-					Line:          []byte("func loadShard(fn string) (zoekt.Searcher, error) {"),
-					LineStart:     1135,
-					LineEnd:       1186,
-					LineNumber:    44,
-					LineFragments: []LineFragmentMatch{{9, 1144, 5, &Symbol{"loadShard", "func", "main", "package"}}},
-				}},
-			}}, {{
-				FileName: "main.go",
-				Language: "go",
-				LineMatches: []LineMatch{{
-					Line:          []byte("func loadShard(fn string) (zoekt.Searcher, error) {"),
-					LineStart:     1135,
-					LineEnd:       1186,
-					LineNumber:    44,
-					LineFragments: []LineFragmentMatch{{9, 1144, 5, &Symbol{"loadShard", "func", "main", "package"}}},
-				}},
-			}}},
-		},
-		{
-			"zoekt_v15.00000.zoekt",
-			15, 8,
-			[][]FileMatch{{{
-				FileName: "cmd/zoekt/main.go",
-				Language: "",
-				LineMatches: []LineMatch{{
-					Line:          []byte("func main() {"),
-					LineStart:     1472,
-					LineEnd:       1485,
-					LineNumber:    63,
-					LineFragments: []LineFragmentMatch{{0, 1472, 9, nil}},
-				}},
-			}}, {{
-				FileName: "cmd/zoekt/main.go",
-				LineMatches: []LineMatch{{
-					Line:          []byte("package main"),
-					LineStart:     609,
-					LineEnd:       621,
-					LineNumber:    15,
-					LineFragments: []LineFragmentMatch{{0, 609, 7, nil}},
-				}},
-			}}, {}, {}},
-		},
-		{
-			"zoekt_v16.00000.zoekt",
-			16, 9,
-			[][]FileMatch{{{
-				FileName: "cmd/zoekt/main.go",
-				Language: "",
-				LineMatches: []LineMatch{{
-					Line:          []byte("func main() {"),
-					LineStart:     1472,
-					LineEnd:       1485,
-					LineNumber:    63,
-					LineFragments: []LineFragmentMatch{{0, 1472, 9, nil}},
-				}},
-			}}, {{
-				FileName: "cmd/zoekt/main.go",
-				LineMatches: []LineMatch{{
-					Line:          []byte("package main"),
-					LineStart:     609,
-					LineEnd:       621,
-					LineNumber:    15,
-					LineFragments: []LineFragmentMatch{{0, 609, 7, nil}},
-				}},
-			}}, {}, {}},
-		},
+	type result struct {
+		FormatVersion  int
+		FeatureVersion int
+		FileMatches    [][]FileMatch
+	}
+
+	var want []result
+	golden, err := os.Open("testdata/golden/TestReadSearch.golden")
+	if err != nil {
+		t.Fatalf("failed opening golden file %s", "testdata/golden/TestReadSearch.golden")
+	}
+	defer golden.Close()
+
+	if err := json.NewDecoder(golden).Decode(&want); err != nil {
+		t.Fatalf("error reading golden file %s:\n %v", "testdata/golden/TestReadSearch.golden", err)
 	}
 
 	qs := []query.Q{
 		&query.Substring{Pattern: "func main", Content: true},
 		&query.Regexp{Regexp: mustParseRE("^package"), Content: true},
-		&query.Symbol{&query.Substring{Pattern: "Print"}},
-		&query.Symbol{&query.Regexp{Regexp: mustParseRE("Println$")}},
+		&query.Symbol{&query.Substring{Pattern: "num"}},
+		&query.Symbol{&query.Regexp{Regexp: mustParseRE("sage$")}},
 	}
 
-	for _, tc := range tcs {
-		shard, err := loadShard("testdata/" + tc.file)
+	shardNames := []string{"ctagsrepo_v16.00000", "repo_v15.00000", "repo_v16.00000"}
+	for i, name := range shardNames {
+		shard, err := loadShard("testdata/shards/" + name + ".zoekt")
 		if err != nil {
-			t.Fatalf("failed loading shard %s %v", tc.file, err)
+			t.Fatalf("failed loading shard %s %v", name, err)
 		}
 
 		index, ok := shard.(*indexData)
 		if !ok {
-			t.Fatalf("expected *indexData for %s", tc.file)
+			t.Fatalf("expected *indexData for %s", name)
 		}
 
-		if index.metaData.IndexFormatVersion != tc.formatVersion {
-			t.Errorf("got %d index format version, want %d for %s", index.metaData.IndexFormatVersion, tc.formatVersion, tc.file)
+		if index.metaData.IndexFormatVersion != want[i].FormatVersion {
+			t.Errorf("got %d index format version, want %d for %s", index.metaData.IndexFormatVersion, want[i].FormatVersion, name)
 		}
 
-		if index.metaData.IndexFeatureVersion != tc.featureVersion {
-			t.Errorf("got %d index feature version, want %d for %s", index.metaData.IndexFeatureVersion, tc.featureVersion, tc.file)
+		if index.metaData.IndexFeatureVersion != want[i].FeatureVersion {
+			t.Errorf("got %d index feature version, want %d for %s", index.metaData.IndexFeatureVersion, want[i].FeatureVersion, name)
 		}
 
-		for i, q := range qs {
+		for j, q := range qs {
 			res, err := shard.Search(context.Background(), q, &SearchOptions{})
 			if err != nil {
-				t.Fatalf("failed search %s on %s: %v", q, tc.file, err)
+				t.Fatalf("failed search %s on %s: %v", q, name, err)
 			}
 
-			if len(res.Files) != len(tc.fileMatches[i]) {
-				t.Fatalf("got %d file matches for %s on %s, want %d", len(res.Files), q, tc.file, len(tc.fileMatches[i]))
+			if len(res.Files) != len(want[i].FileMatches[j]) {
+				t.Fatalf("got %d file matches for %s on %s, want %d", len(res.Files), q, name, len(want[i].FileMatches[j]))
 			}
 
-			if len(tc.fileMatches[i]) == 0 {
+			if len(want[i].FileMatches[j]) == 0 {
 				continue
 			}
 
-			want := tc.fileMatches[i][0]
-			got := res.Files[0]
+			got := []FileMatch{{
+				FileName:    res.Files[0].FileName,
+				Language:    res.Files[0].Language,
+				LineMatches: res.Files[0].LineMatches,
+			}}
 
-			if got.FileName != want.FileName {
-				t.Errorf("got %s file name for %s on %s, want %s", got.FileName, q, tc.file, want.FileName)
-			}
-
-			if got.Language != want.Language {
-				t.Errorf("got %s language for %s on %s, want %s", got.Language, q, tc.file, want.Language)
-			}
-
-			for i, _ := range got.LineMatches {
-				got.LineMatches[i].Score = 0
-			}
-
-			if !reflect.DeepEqual(got.LineMatches, want.LineMatches) {
-				t.Errorf("line matches for %s on %s\ngot:\n%v\nwant:\n%v", q, tc.file, got.LineMatches, want.LineMatches)
+			if !reflect.DeepEqual(got, want[i].FileMatches[j]) {
+				t.Errorf("matches for %s on %s\ngot:\n%v\nwant:\n%v", q, name, got, want[i].FileMatches[j])
 			}
 		}
 	}
