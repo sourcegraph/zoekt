@@ -125,20 +125,20 @@ func loadShard(fn string) (Searcher, error) {
 }
 
 func TestReadSearch(t *testing.T) {
-	type result struct {
+	var want []struct {
 		FormatVersion  int
 		FeatureVersion int
 		FileMatches    [][]FileMatch
 	}
 
-	var want []result
-	golden, err := os.Open("testdata/golden/TestReadSearch.golden")
+	golden := "testdata/golden/TestReadSearch.golden"
+	f, err := os.Open(golden)
 	if err != nil {
-		t.Fatalf("failed opening golden file %s", "testdata/golden/TestReadSearch.golden")
+		t.Fatalf("error opening golden file %s", golden)
 	}
-	defer golden.Close()
+	defer f.Close()
 
-	if err := json.NewDecoder(golden).Decode(&want); err != nil {
+	if err := json.NewDecoder(f).Decode(&want); err != nil {
 		t.Fatalf("error reading golden file %s:\n %v", "testdata/golden/TestReadSearch.golden", err)
 	}
 
@@ -149,11 +149,11 @@ func TestReadSearch(t *testing.T) {
 		&query.Symbol{&query.Regexp{Regexp: mustParseRE("sage$")}},
 	}
 
-	shardNames := []string{"ctagsrepo_v16.00000", "repo_v15.00000", "repo_v16.00000"}
-	for i, name := range shardNames {
+	shards := []string{"ctagsrepo_v16.00000", "repo_v15.00000", "repo_v16.00000"}
+	for i, name := range shards {
 		shard, err := loadShard("testdata/shards/" + name + ".zoekt")
 		if err != nil {
-			t.Fatalf("failed loading shard %s %v", name, err)
+			t.Fatalf("error loading shard %s %v", name, err)
 		}
 
 		index, ok := shard.(*indexData)
