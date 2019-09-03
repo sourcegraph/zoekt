@@ -71,7 +71,7 @@ type indexTOC struct {
 	languages    simpleSection
 
 	fileEndSymbol  simpleSection
-	symbolMap      compoundSection
+	symbolMap      lazyCompoundSection
 	symbolKindMap  compoundSection
 	symbolMetaData simpleSection
 

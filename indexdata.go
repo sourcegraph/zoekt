@@ -27,7 +27,7 @@ import (
 // in memory to search. Most of the memory is taken up by the ngram =>
 // offset index.
 type indexData struct {
-	symbolData
+	symbols symbolData
 
 	file IndexFile
 
@@ -94,12 +94,19 @@ type symbolData struct {
 	// symContent stores Symbol.Sym and Symbol.Parent.
 	// TODO we don't need to store Symbol.Sym.
 	symContent []byte
-	symIndex   []uint32
+	symIndex   []byte
 	// symKindContent is an enum of sym.Kind and sym.ParentKind
 	symKindContent []byte
 	symKindIndex   []uint32
-	//symMetadata is [4]uint32 Sym Kind Parent ParentKind
+	//symMetadata is [3]uint32 Sym Kind Parent ParentKind
 	symMetaData []byte
+}
+
+func (d *symbolData) parent(i uint32) []byte {
+	delta := binary.BigEndian.Uint32(d.symIndex)
+	start := binary.BigEndian.Uint32(d.symIndex[i*4:]) - delta
+	end := binary.BigEndian.Uint32(d.symIndex[(i+1)*4:]) - delta
+	return d.symContent[start:end]
 }
 
 // data returns the symbol at i
@@ -115,11 +122,11 @@ func (d *symbolData) data(i uint32) *Symbol {
 	key := binary.BigEndian.Uint32(metadata)
 	// TODO keeps these as bytes to avoid copy from mmap region. Only copy to
 	// string when collecting matches.
-	sym.Sym = string(d.symContent[d.symIndex[key]:d.symIndex[key+1]])
+	sym.Sym = string(d.parent(key))
 	key = binary.BigEndian.Uint32(metadata[4:])
 	sym.Kind = string(d.symKindContent[d.symKindIndex[key]:d.symKindIndex[key+1]])
 	key = binary.BigEndian.Uint32(metadata[8:])
-	sym.Parent = string(d.symContent[d.symIndex[key]:d.symIndex[key+1]])
+	sym.Parent = string(d.parent(key))
 
 	key = binary.BigEndian.Uint32(metadata[12:])
 	sym.ParentKind = string(d.symKindContent[d.symKindIndex[key]:d.symKindIndex[key+1]])
@@ -167,6 +174,7 @@ func (d *indexData) memoryUse() int {
 		d.boundaries, d.fileNameIndex,
 		d.runeOffsets, d.fileNameRuneOffsets,
 		d.fileEndRunes, d.fileNameEndRunes,
+		d.fileEndSymbol, d.symbols.symKindIndex,
 	} {
 		sz += 4 * len(a)
 	}

@@ -159,3 +159,14 @@ func (s *compoundSection) relativeIndex() []uint32 {
 	}
 	return ri
 }
+
+type lazyCompoundSection struct {
+	compoundSection
+}
+
+func (s *lazyCompoundSection) read(r *reader) error {
+	if err := s.data.read(r); err != nil {
+		return err
+	}
+	return s.index.read(r)
+}

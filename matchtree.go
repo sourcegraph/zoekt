@@ -182,7 +182,7 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 		}
 		if cp.idx < uint32(len(cp.id.fileEndSymbol)) { // If v15 fileEndSymbol is empty
 			secID := cp.id.fileEndSymbol[cp.idx] + uint32(i)
-			cm.symbolInfo = cp.id.symbolData.data(secID)
+			cm.symbolInfo = cp.id.symbols.data(secID)
 		}
 		found = append(found, cm)
 	}
@@ -750,7 +750,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
 				fileEndRunes:    d.fileEndRunes,
 				sections:        d.runeDocSections,
-				symbolData:      &d.symbolData,
+				symbolData:      &d.symbols,
 			}, nil
 		}
 
