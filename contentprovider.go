@@ -154,9 +154,8 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 		result = p.fillContentMatches(ms)
 	}
 
-	sects := p.docSections()
 	for i, m := range result {
-		result[i].Score = matchScore(sects, &m)
+		result[i].Score = matchScore(&m)
 	}
 
 	return result
@@ -255,7 +254,7 @@ func findSection(secs []DocumentSection, off, sz uint32) *DocumentSection {
 	return nil
 }
 
-func matchScore(secs []DocumentSection, m *LineMatch) float64 {
+func matchScore(m *LineMatch) float64 {
 	var maxScore float64
 	for _, f := range m.LineFragments {
 		startBoundary := f.LineOffset < len(m.Line) && (f.LineOffset == 0 || byteClass(m.Line[f.LineOffset-1]) != byteClass(m.Line[f.LineOffset]))
@@ -270,18 +269,6 @@ func matchScore(secs []DocumentSection, m *LineMatch) float64 {
 			score = scorePartialWordMatch
 		}
 
-		sec := findSection(secs, f.Offset, uint32(f.MatchLength))
-		if sec != nil {
-			startMatch := sec.Start == f.Offset
-			endMatch := sec.End == f.Offset+uint32(f.MatchLength)
-			if startMatch && endMatch {
-				score += scoreSymbol
-			} else if startMatch || endMatch {
-				score += (scoreSymbol + scorePartialSymbol) / 2
-			} else {
-				score += scorePartialSymbol
-			}
-		}
 		if score > maxScore {
 			maxScore = score
 		}
