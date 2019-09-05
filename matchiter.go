@@ -35,7 +35,7 @@ type candidateMatch struct {
 	byteOffset  uint32
 	byteMatchSz uint32
 
-	symbolInfo *Symbol
+	symbolInfo Symbol
 }
 
 // Matches content against the substring, and populates byteMatchSz on success
