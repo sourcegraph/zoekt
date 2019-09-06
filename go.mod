@@ -11,10 +11,13 @@ require (
 	github.com/keegancsmith/rpc v1.1.0
 	github.com/kylelemons/godebug v0.0.0-20170820004349-d65d576e9348
 	github.com/mitchellh/mapstructure v1.1.2 // indirect
+	github.com/prometheus/client_golang v1.1.0
 	github.com/xanzy/go-gitlab v0.13.0
 	go.uber.org/automaxprocs v1.2.0
-	golang.org/x/net v0.0.0-20190311183353-d8887717615a
+	golang.org/x/net v0.0.0-20190613194153-d28f0bde5980
 	golang.org/x/oauth2 v0.0.0-20181120190819-8f65e3013eba
 	golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6
 	gopkg.in/src-d/go-git.v4 v4.8.0
 )
+
+go 1.13

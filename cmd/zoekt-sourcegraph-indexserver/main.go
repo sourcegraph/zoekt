@@ -26,6 +26,29 @@ import (
 
 	"github.com/google/zoekt/build"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+var (
+	resolveRevisionsDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "resolve_revisions_seconds",
+		Help:    "A histogram of latencies for resolving all repository revisions.",
+		Buckets: prometheus.ExponentialBuckets(1, 10, 6), // 1s -> 27min
+	})
+
+	resolveRevisionDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "resolve_revision_seconds",
+		Help:    "A histogram of latencies for resolving a repository revision.",
+		Buckets: prometheus.ExponentialBuckets(.25, 2, 4), // 250ms -> 2s
+	}, []string{"success"}) // success=true|false
+
+	indexDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "index_repo_seconds",
+		Help:    "A histogram of latencies for indexing a repository.",
+		Buckets: prometheus.ExponentialBuckets(.1, 10, 7), // 100ms -> 27min
+	}, []string{"state"}) // state=fail|success
 )
 
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
@@ -100,20 +123,25 @@ func (s *Server) Run() {
 
 			tr := trace.New("resolveRevisions", "")
 			tr.LazyPrintf("resolving HEAD for %d repos", len(repos))
+			start := time.Now()
 			for _, name := range repos {
 				sem.Acquire()
 				go func(name string) {
 					defer sem.Release()
+					start := time.Now()
 					commit, err := resolveRevision(s.Root, name, "HEAD")
 					if err != nil && !os.IsNotExist(err) {
+						resolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
 						tr.LazyPrintf("failed resolving HEAD for %v: %v", name, err)
 						tr.SetError()
 						return
 					}
+					resolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
 					queue.AddOrUpdate(name, commit)
 				}(name)
 			}
 			sem.Wait()
+			resolveRevisionsDuration.Observe(time.Since(start).Seconds())
 			tr.Finish()
 
 			<-t.C
@@ -128,11 +156,14 @@ func (s *Server) Run() {
 			continue
 		}
 
+		start := time.Now()
 		err := s.Index(name, commit)
 		if err != nil {
+			indexDuration.WithLabelValues("fail").Observe(time.Since(start).Seconds())
 			log.Printf("error indexing %s@%s: %s", name, commit, err)
 			continue
 		}
+		indexDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
 		queue.SetIndexed(name, commit)
 	}
 }
@@ -251,11 +282,6 @@ var repoTmpl = template.Must(template.New("name").Parse(`
 `))
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/debug/requests" {
-		trace.Traces(w, r)
-		return
-	}
-
 	var data struct {
 		Repos    []string
 		IndexMsg string
@@ -406,8 +432,19 @@ func main() {
 			trace.AuthRequest = func(req *http.Request) (any, sensitive bool) {
 				return true, true
 			}
+			prom := promhttp.Handler()
+			h := func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/debug/requests":
+					trace.Traces(w, r)
+				case "/metrics":
+					prom.ServeHTTP(w, r)
+				default:
+					s.ServeHTTP(w, r)
+				}
+			}
 			debug.Printf("serving HTTP on %s", *listen)
-			log.Fatal(http.ListenAndServe(*listen, s))
+			log.Fatal(http.ListenAndServe(*listen, http.HandlerFunc(h)))
 		}()
 	}
 
