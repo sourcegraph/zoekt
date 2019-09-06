@@ -161,7 +161,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	if d.metaData.IndexFormatVersion != 16 && d.metaData.IndexFormatVersion != 15 {
 		return nil, fmt.Errorf("file is v%d, want v%d", d.metaData.IndexFormatVersion, IndexFormatVersion)
 	}
-	readSymbols := d.metaData.IndexFormatVersion == 16
 
 	blob, err = d.readSectionBlob(toc.repoMetaData)
 	if err != nil {
@@ -178,12 +177,23 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.docSectionsStart = toc.fileSections.data.off
 	d.docSectionsIndex = toc.fileSections.relativeIndex()
 
-	if readSymbols {
-		d.symbols.symIndex, err = d.readSectionBlob(toc.symbolMap.index)
+	if d.metaData.IndexFormatVersion == 16 {
+		d.symbols.symKindIndex = toc.symbolKindMap.relativeIndex()
+		d.fileEndSymbol, err = readSectionU32(d.file, toc.fileEndSymbol)
 		if err != nil {
 			return nil, err
 		}
-		d.symbols.symKindIndex = toc.symbolKindMap.relativeIndex()
+
+		for sect, blob := range map[simpleSection]*[]byte{
+			toc.symbolMap.index:    &d.symbols.symIndex,
+			toc.symbolMap.data:     &d.symbols.symContent,
+			toc.symbolKindMap.data: &d.symbols.symKindContent,
+			toc.symbolMetaData:     &d.symbols.symMetaData,
+		} {
+			if *blob, err = d.readSectionBlob(sect); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	d.checksums, err = d.readSectionBlob(toc.contentChecksums)
@@ -212,33 +222,9 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		}
 	}
 
-	if readSymbols {
-		d.fileEndSymbol, err = readSectionU32(d.file, toc.fileEndSymbol)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
 	if err != nil {
 		return nil, err
-	}
-
-	if readSymbols {
-		d.symbols.symContent, err = d.readSectionBlob(toc.symbolMap.data)
-		if err != nil {
-			return nil, err
-		}
-
-		d.symbols.symKindContent, err = d.readSectionBlob(toc.symbolKindMap.data)
-		if err != nil {
-			return nil, err
-		}
-
-		d.symbols.symMetaData, err = d.readSectionBlob(toc.symbolMetaData)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	d.fileNameContent, err = d.readSectionBlob(toc.fileNames.data)
