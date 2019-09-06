@@ -22,7 +22,12 @@
                 "LineOffset": 0,
                 "Offset": 69,
                 "MatchLength": 9,
-                "SymbolInfo": null
+                "SymbolInfo": {
+                  "Sym": "",
+                  "Kind": "",
+                  "Parent": "",
+                  "ParentKind": ""
+                }
               }
             ]
           }
@@ -55,7 +60,12 @@
                 "LineOffset": 0,
                 "Offset": 0,
                 "MatchLength": 7,
-                "SymbolInfo": null
+                "SymbolInfo": {
+                  "Sym": "",
+                  "Kind": "",
+                  "Parent": "",
+                  "ParentKind": ""
+                }
               }
             ]
           }
@@ -70,7 +80,7 @@
     ],
     [
       {
-        "Score": 7910,
+        "Score": 910,
         "Debug": "",
         "FileName": "main.go",
         "Repository": "repo",
@@ -82,7 +92,7 @@
             "LineEnd": 46,
             "LineNumber": 6,
             "FileName": false,
-            "Score": 7501,
+            "Score": 501,
             "LineFragments": [
               {
                 "LineOffset": 1,
@@ -108,7 +118,7 @@
     ],
     [
       {
-        "Score": 5760,
+        "Score": 260,
         "Debug": "",
         "FileName": "main.go",
         "Repository": "repo",
@@ -120,7 +130,7 @@
             "LineEnd": 65,
             "LineNumber": 7,
             "FileName": false,
-            "Score": 5551,
+            "Score": 51,
             "LineFragments": [
               {
                 "LineOffset": 4,

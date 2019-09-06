@@ -22,7 +22,12 @@
                 "LineOffset": 0,
                 "Offset": 69,
                 "MatchLength": 9,
-                "SymbolInfo": null
+                "SymbolInfo": {
+                  "Sym": "",
+                  "Kind": "",
+                  "Parent": "",
+                  "ParentKind": ""
+                }
               }
             ]
           }
@@ -55,7 +60,12 @@
                 "LineOffset": 0,
                 "Offset": 0,
                 "MatchLength": 7,
-                "SymbolInfo": null
+                "SymbolInfo": {
+                  "Sym": "",
+                  "Kind": "",
+                  "Parent": "",
+                  "ParentKind": ""
+                }
               }
             ]
           }

@@ -105,7 +105,12 @@ type symbolData struct {
 func (d *symbolData) parent(i uint32) []byte {
 	delta := binary.BigEndian.Uint32(d.symIndex)
 	start := binary.BigEndian.Uint32(d.symIndex[i*4:]) - delta
-	end := binary.BigEndian.Uint32(d.symIndex[(i+1)*4:]) - delta
+	var end uint32
+	if i+1 == uint32(len(d.symIndex)/4) {
+		end = uint32(len(d.symContent))
+	} else {
+		end = binary.BigEndian.Uint32(d.symIndex[(i+1)*4:]) - delta
+	}
 	return d.symContent[start:end]
 }
 

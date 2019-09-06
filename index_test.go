@@ -302,7 +302,7 @@ func TestAndSearch(t *testing.T) {
 
 	wantStats := Stats{
 		FilesLoaded:        1,
-		ContentBytesLoaded: 18,
+		ContentBytesLoaded: 17,
 		IndexBytesLoaded:   8,
 		NgramMatches:       3, // we look at doc 1, because it's max(0,1) due to AND
 		MatchCount:         1,
@@ -958,99 +958,6 @@ func TestNegativeRegexp(t *testing.T) {
 	}
 }
 
-func TestSymbolRank(t *testing.T) {
-	content := []byte("func bla() blubxxxxx")
-	// ----------------01234567890123456789
-	b := testIndexBuilder(t, nil,
-		Document{
-			Name:    "f1",
-			Content: content,
-		}, Document{
-			Name:    "f2",
-			Content: content,
-			Symbols: []DocumentSection{{5, 8}},
-		}, Document{
-			Name:    "f3",
-			Content: content,
-		})
-
-	res := searchForTest(t, b,
-		&query.Substring{
-			CaseSensitive: false,
-			Pattern:       "bla",
-		})
-
-	if len(res.Files) != 3 {
-		t.Fatalf("got %d files, want 3 files. Full data: %v", len(res.Files), res.Files)
-	}
-	if res.Files[0].FileName != "f2" {
-		t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
-	}
-}
-
-func TestSymbolRankRegexpUTF8(t *testing.T) {
-	prefix := strings.Repeat(string([]rune{kelvinCodePoint}), 100) + "\n"
-	content := []byte(prefix +
-		"func bla() blub")
-	// ------012345678901234
-	b := testIndexBuilder(t, nil,
-		Document{
-			Name:    "f1",
-			Content: content,
-		}, Document{
-			Name:    "f2",
-			Content: content,
-			Symbols: []DocumentSection{{uint32(len(prefix) + 5), uint32(len(prefix) + 8)}},
-		}, Document{
-			Name:    "f3",
-			Content: content,
-		})
-
-	res := searchForTest(t, b,
-		&query.Regexp{
-			Regexp: mustParseRE("b.a"),
-		})
-
-	if len(res.Files) != 3 {
-		t.Fatalf("got %#v, want 3 files", res.Files)
-	}
-	if res.Files[0].FileName != "f2" {
-		t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
-	}
-}
-
-func TestPartialSymbolRank(t *testing.T) {
-	content := []byte("func bla() blub")
-	// ----------------012345678901234
-
-	b := testIndexBuilder(t, nil,
-		Document{
-			Name:    "f1",
-			Content: content,
-			Symbols: []DocumentSection{{4, 9}},
-		}, Document{
-			Name:    "f2",
-			Content: content,
-			Symbols: []DocumentSection{{4, 8}},
-		}, Document{
-			Name:    "f3",
-			Content: content,
-			Symbols: []DocumentSection{{4, 9}},
-		})
-
-	res := searchForTest(t, b,
-		&query.Substring{
-			Pattern: "bla",
-		})
-
-	if len(res.Files) != 3 {
-		t.Fatalf("got %#v, want 3 files", res.Files)
-	}
-	if res.Files[0].FileName != "f2" {
-		t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
-	}
-}
-
 func TestNegativeRepo(t *testing.T) {
 	content := []byte("bla the needle")
 	// ----------------01234567890123
@@ -1185,28 +1092,6 @@ func TestAtomCountScore(t *testing.T) {
 	want := []string{"needle-file-branch", "needle-file", "f1"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
-func TestImportantCutoff(t *testing.T) {
-	content := []byte("func bla() blub")
-	// ----------------012345678901234
-	b := testIndexBuilder(t, nil,
-		Document{
-			Name:    "f1",
-			Content: content,
-			Symbols: []DocumentSection{{5, 8}},
-		}, Document{
-			Name:    "f2",
-			Content: content,
-		})
-	opts := SearchOptions{
-		ShardMaxImportantMatch: 1,
-	}
-
-	sres := searchForTest(t, b, &query.Substring{Pattern: "bla"}, opts)
-	if len(sres.Files) != 1 || sres.Files[0].FileName != "f1" {
-		t.Errorf("got %v, wanted 1 match 'f1'", sres.Files)
 	}
 }
 
@@ -1486,8 +1371,8 @@ func TestIOStats(t *testing.T) {
 	q := &query.Substring{Pattern: "abc", CaseSensitive: true, Content: true}
 	res := searchForTest(t, b, q)
 
-	// 4096 (content) + 2 (overhead: newlines or doc sections)
-	if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
+	// 4096 (content) + 1 (overhead: newlines)
+	if got, want := res.Stats.ContentBytesLoaded, int64(4097); got != want {
 		t.Errorf("got content I/O %d, want %d", got, want)
 	}
 
