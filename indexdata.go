@@ -115,15 +115,15 @@ func (d *symbolData) parent(i uint32) []byte {
 }
 
 // data returns the symbol at i
-func (d *symbolData) data(i uint32) Symbol {
+func (d *symbolData) data(i uint32) *Symbol {
 	size := uint32(4 * 4) // 4 uint32s
 	offset := i * size
 	if offset >= uint32(len(d.symMetaData)) {
-		return Symbol{}
+		return nil
 	}
 
 	metadata := d.symMetaData[offset : offset+size]
-	sym := Symbol{}
+	sym := &Symbol{}
 	key := binary.BigEndian.Uint32(metadata)
 	// TODO keeps these as bytes to avoid copy from mmap region. Only copy to
 	// string when collecting matches.
