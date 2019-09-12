@@ -388,6 +388,7 @@ func (b *IndexBuilder) Add(doc Document) error {
 	if doc.SkipReason != "" {
 		doc.Content = []byte(notIndexedMarker + doc.SkipReason)
 		doc.Symbols = nil
+		doc.SymbolsMetaData = nil
 		if doc.Language == "" {
 			doc.Language = "skipped"
 		}
@@ -406,7 +407,6 @@ func (b *IndexBuilder) Add(doc Document) error {
 	if last.End > uint32(len(doc.Content)) {
 		return fmt.Errorf("section goes past end of content")
 	}
-	b.addSymbols(doc.SymbolsMetaData)
 
 	if doc.SubRepositoryPath != "" {
 		rel, err := filepath.Rel(doc.SubRepositoryPath, doc.Name)
@@ -422,6 +422,7 @@ func (b *IndexBuilder) Add(doc Document) error {
 	if err != nil {
 		return err
 	}
+	b.addSymbols(doc.SymbolsMetaData)
 
 	subRepoIdx, ok := b.subRepoIndices[doc.SubRepositoryPath]
 	if !ok {
