@@ -184,6 +184,8 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 			return nil, err
 		}
 
+		// Call readSectionBlob on each section key, and store the result in
+		// the blob value.
 		for sect, blob := range map[simpleSection]*[]byte{
 			toc.symbolMap.index:    &d.symbols.symIndex,
 			toc.symbolMap.data:     &d.symbols.symContent,
