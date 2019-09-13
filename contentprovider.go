@@ -218,8 +218,16 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
 				Offset:      m.byteOffset,
 				LineOffset:  int(m.byteOffset) - lineStart,
 				MatchLength: int(m.byteMatchSz),
-				SymbolInfo:  m.symbolInfo,
 			}
+			if m.symbol {
+				startSym := p.id.fileEndSymbol[p.idx]
+				fragment.SymbolInfo = p.id.symbols.data(startSym + m.symbolIdx)
+				if fragment.SymbolInfo != nil {
+					sec := p.docSections()[m.symbolIdx]
+					fragment.SymbolInfo.Sym = string(p.data(false)[sec.Start:sec.End])
+				}
+			}
+
 			finalMatch.LineFragments = append(finalMatch.LineFragments, fragment)
 		}
 		result = append(result, finalMatch)

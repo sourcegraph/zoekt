@@ -179,10 +179,8 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 		cm := &candidateMatch{
 			byteOffset:  sec.Start + uint32(idx[0]),
 			byteMatchSz: uint32(idx[1] - idx[0]),
-		}
-		if cp.idx < uint32(len(cp.id.fileEndSymbol)) { // If v15 fileEndSymbol is empty
-			secID := cp.id.fileEndSymbol[cp.idx] + uint32(i)
-			cm.symbolInfo = cp.id.symbols.data(secID)
+			symbol:      true,
+			symbolIdx:   uint32(i),
 		}
 		found = append(found, cm)
 	}
@@ -195,13 +193,13 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 type symbolSubstrMatchTree struct {
 	*substrMatchTree
 
-	patternSize  uint32
-	fileEndRunes []uint32
+	patternSize   uint32
+	fileEndRunes  []uint32
+	fileEndSymbol []uint32
 
 	doc        uint32
 	sections   []DocumentSection
 	symbolData *symbolData
-	secID      uint32
 }
 
 func (t *symbolSubstrMatchTree) prepare(doc uint32) {
@@ -213,29 +211,29 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 		fileStart = t.fileEndRunes[doc-1]
 	}
 
-	for len(t.sections) > 0 && t.sections[0].Start < fileStart {
-		t.sections = t.sections[1:]
-		t.secID++
+	var sections []DocumentSection
+	if len(t.sections) > 0 {
+		sections = t.sections[t.fileEndSymbol[doc]:t.fileEndSymbol[doc+1]]
 	}
+	secIdx := 0
 
-	// TODO we can use fileEndSymbol to skip
 	trimmed := t.current[:0]
-	for len(t.sections) > 0 && len(t.current) > 0 {
+	for len(sections) > secIdx && len(t.current) > 0 {
 		start := fileStart + t.current[0].runeOffset
 		end := start + t.patternSize
-		if start >= t.sections[0].End {
-			t.sections = t.sections[1:]
-			t.secID++
+		if start >= sections[secIdx].End {
+			secIdx++
 			continue
 		}
 
-		if start < t.sections[0].Start {
+		if start < sections[secIdx].Start {
 			t.current = t.current[1:]
 			continue
 		}
 
-		if end <= t.sections[0].End {
-			t.current[0].symbolInfo = t.symbolData.data(t.secID)
+		if end <= sections[secIdx].End {
+			t.current[0].symbol = true
+			t.current[0].symbolIdx = uint32(secIdx)
 			trimmed = append(trimmed, t.current[0])
 		}
 
@@ -749,6 +747,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				substrMatchTree: substr,
 				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
 				fileEndRunes:    d.fileEndRunes,
+				fileEndSymbol:   d.fileEndSymbol,
 				sections:        d.runeDocSections,
 				symbolData:      &d.symbols,
 			}, nil

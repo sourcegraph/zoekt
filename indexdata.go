@@ -124,11 +124,7 @@ func (d *symbolData) data(i uint32) *Symbol {
 
 	metadata := d.symMetaData[offset : offset+size]
 	sym := &Symbol{}
-	key := binary.BigEndian.Uint32(metadata)
-	// TODO keeps these as bytes to avoid copy from mmap region. Only copy to
-	// string when collecting matches.
-	sym.Sym = string(d.parent(key))
-	key = binary.BigEndian.Uint32(metadata[4:])
+	key := binary.BigEndian.Uint32(metadata[4:])
 	sym.Kind = string(d.symKindContent[d.symKindIndex[key]:d.symKindIndex[key+1]])
 	key = binary.BigEndian.Uint32(metadata[8:])
 	sym.Parent = string(d.parent(key))
