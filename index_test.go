@@ -1494,7 +1494,7 @@ func TestIOStats(t *testing.T) {
 	q := &query.Substring{Pattern: "abc", CaseSensitive: true, Content: true}
 	res := searchForTest(t, b, q)
 
-	// 4096 (content) + 2 (overhead: newlines or doc sections)
+	// 4096 (content) + 1 (overhead: newlines)
 	if got, want := res.Stats.ContentBytesLoaded, int64(4097); got != want {
 		t.Errorf("got content I/O %d, want %d", got, want)
 	}

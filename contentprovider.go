@@ -154,7 +154,6 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 		result = p.fillContentMatches(ms)
 	}
 
-	// sects := p.docSections()
 	for i, m := range result {
 		result[i].Score = matchScore(nil, &m)
 	}
@@ -220,11 +219,11 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
 				MatchLength: int(m.byteMatchSz),
 			}
 			if m.symbol {
-				startSym := p.id.fileEndSymbol[p.idx]
-				fragment.SymbolInfo = p.id.symbols.data(startSym + m.symbolIdx)
+				start := p.id.fileEndSymbol[p.idx]
+				fragment.SymbolInfo = p.id.symbols.data(start + m.symbolIdx)
 				if fragment.SymbolInfo != nil {
 					sec := p.docSections()[m.symbolIdx]
-					fragment.SymbolInfo.Sym = string(p.data(false)[sec.Start:sec.End])
+					fragment.SymbolInfo.Sym = string(data[sec.Start:sec.End])
 				}
 			}
 
@@ -277,22 +276,6 @@ func matchScore(secs []DocumentSection, m *LineMatch) float64 {
 		} else if startBoundary || endBoundary {
 			score = scorePartialWordMatch
 		}
-
-		// Disable scoring based on symbol boundaries.
-		/*
-			sec := findSection(secs, f.Offset, uint32(f.MatchLength))
-			if sec != nil {
-				startMatch := sec.Start == f.Offset
-				endMatch := sec.End == f.Offset+uint32(f.MatchLength)
-				if startMatch && endMatch {
-					score += scoreSymbol
-				} else if startMatch || endMatch {
-					score += (scoreSymbol + scorePartialSymbol) / 2
-				} else {
-					score += scorePartialSymbol
-				}
-			}
-		*/
 
 		if score > maxScore {
 			maxScore = score

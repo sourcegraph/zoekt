@@ -197,9 +197,8 @@ type symbolSubstrMatchTree struct {
 	fileEndRunes  []uint32
 	fileEndSymbol []uint32
 
-	doc        uint32
-	sections   []DocumentSection
-	symbolData *symbolData
+	doc      uint32
+	sections []DocumentSection
 }
 
 func (t *symbolSubstrMatchTree) prepare(doc uint32) {
@@ -749,7 +748,6 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				fileEndRunes:    d.fileEndRunes,
 				fileEndSymbol:   d.fileEndSymbol,
 				sections:        d.runeDocSections,
-				symbolData:      &d.symbols,
 			}, nil
 		}
 

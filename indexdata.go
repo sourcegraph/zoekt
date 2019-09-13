@@ -102,19 +102,33 @@ type symbolData struct {
 	symMetaData []byte
 }
 
+func uint32SliceAt(a []byte, n uint32) uint32 {
+	return binary.BigEndian.Uint32(a[n*4:])
+}
+
+func uint32SliceLen(a []byte) uint32 {
+	return uint32(len(a) / 4)
+}
+
+// parent returns index i of the parent enum
 func (d *symbolData) parent(i uint32) []byte {
-	delta := binary.BigEndian.Uint32(d.symIndex)
-	start := binary.BigEndian.Uint32(d.symIndex[i*4:]) - delta
+	delta := uint32SliceAt(d.symIndex, 0)
+	start := uint32SliceAt(d.symIndex, i) - delta
 	var end uint32
-	if i+1 == uint32(len(d.symIndex)/4) {
+	if i+1 == uint32SliceLen(d.symIndex) {
 		end = uint32(len(d.symContent))
 	} else {
-		end = binary.BigEndian.Uint32(d.symIndex[(i+1)*4:]) - delta
+		end = uint32SliceAt(d.symIndex, i+1) - delta
 	}
 	return d.symContent[start:end]
 }
 
-// data returns the symbol at i
+// kind returns index i of the kind enum
+func (d *symbolData) kind(i uint32) []byte {
+	return d.symKindContent[d.symKindIndex[i]:d.symKindIndex[i+1]]
+}
+
+// data returns the symbol at index i
 func (d *symbolData) data(i uint32) *Symbol {
 	size := uint32(4 * 4) // 4 uint32s
 	offset := i * size
@@ -124,13 +138,12 @@ func (d *symbolData) data(i uint32) *Symbol {
 
 	metadata := d.symMetaData[offset : offset+size]
 	sym := &Symbol{}
-	key := binary.BigEndian.Uint32(metadata[4:])
-	sym.Kind = string(d.symKindContent[d.symKindIndex[key]:d.symKindIndex[key+1]])
-	key = binary.BigEndian.Uint32(metadata[8:])
+	key := uint32SliceAt(metadata, 1)
+	sym.Kind = string(d.kind(key))
+	key = uint32SliceAt(metadata, 2)
 	sym.Parent = string(d.parent(key))
-
-	key = binary.BigEndian.Uint32(metadata[12:])
-	sym.ParentKind = string(d.symKindContent[d.symKindIndex[key]:d.symKindIndex[key+1]])
+	key = uint32SliceAt(metadata, 3)
+	sym.ParentKind = string(d.kind(key))
 	return sym
 }
 
