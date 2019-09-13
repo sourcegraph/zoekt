@@ -277,6 +277,12 @@ func matchScore(secs []DocumentSection, m *LineMatch) float64 {
 			score = scorePartialWordMatch
 		}
 
+		// We removed scoring based on symbol boundaries. This is due
+		// to not having a use for result scores at the moment on the
+		// sourcegraph frontend side, so we avoid incurring this
+		// computational overhead. We may reintroduce this later in
+		// the future to improve resutl ranking.
+
 		if score > maxScore {
 			maxScore = score
 		}

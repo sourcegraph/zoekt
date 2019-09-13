@@ -98,7 +98,7 @@ type symbolData struct {
 	// symKindContent is an enum of sym.Kind and sym.ParentKind
 	symKindContent []byte
 	symKindIndex   []uint32
-	// symMetadata is [4]uint32 Sym Kind Parent ParentKind
+	// symMetadata is [4]uint32 0 Kind Parent ParentKind
 	symMetaData []byte
 }
 

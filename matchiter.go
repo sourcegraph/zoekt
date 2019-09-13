@@ -24,6 +24,8 @@ import (
 type candidateMatch struct {
 	caseSensitive bool
 	fileName      bool
+	symbol        bool
+	symbolIdx     uint32
 
 	substrBytes   []byte
 	substrLowered []byte
@@ -34,9 +36,6 @@ type candidateMatch struct {
 	runeOffset  uint32
 	byteOffset  uint32
 	byteMatchSz uint32
-
-	symbol    bool
-	symbolIdx uint32
 }
 
 // Matches content against the substring, and populates byteMatchSz on success
