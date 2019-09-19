@@ -368,6 +368,10 @@ func (b *IndexBuilder) symbolKindID(t string) uint32 {
 func (b *IndexBuilder) addSymbols(symbols []*Symbol) {
 	for _, sym := range symbols {
 		b.symMetaData = append(b.symMetaData,
+			// This field was removed due to redundancy. To avoid
+			// needing to reindex, it is set to zero for now. In the
+			// future, this field will be completely removed. It
+			// will require incrementing the feature version.
 			0,
 			b.symbolKindID(sym.Kind),
 			b.symbolID(sym.Parent),
