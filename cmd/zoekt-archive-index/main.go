@@ -58,12 +58,13 @@ func isGitOID(s string) bool {
 type Options struct {
 	Incremental bool
 
-	Archive string
-	Name    string
-	RepoURL string
-	Branch  string
-	Commit  string
-	Strip   int
+	Archive           string
+	DownloadLimitMbps int64
+	Name              string
+	RepoURL           string
+	Branch            string
+	Commit            string
+	Strip             int
 }
 
 func (o *Options) SetDefaults() {
@@ -150,7 +151,7 @@ func do(opts Options, bopts build.Options) error {
 		}
 	}
 
-	a, err := openArchive(opts.Archive)
+	a, err := openArchive(opts.Archive, opts.DownloadLimitMbps)
 	if err != nil {
 		return err
 	}
@@ -202,11 +203,12 @@ func main() {
 	var (
 		incremental = flag.Bool("incremental", true, "only index changed repositories")
 
-		name   = flag.String("name", "", "The repository name for the archive")
-		urlRaw = flag.String("url", "", "The repository URL for the archive")
-		branch = flag.String("branch", "", "The branch name for the archive")
-		commit = flag.String("commit", "", "The commit sha for the archive. If incremental this will avoid updating shards already at commit")
-		strip  = flag.Int("strip_components", 0, "Remove the specified number of leading path elements. Pathnames with fewer elements will be silently skipped.")
+		name              = flag.String("name", "", "The repository name for the archive")
+		urlRaw            = flag.String("url", "", "The repository URL for the archive")
+		branch            = flag.String("branch", "", "The branch name for the archive")
+		commit            = flag.String("commit", "", "The commit sha for the archive. If incremental this will avoid updating shards already at commit")
+		strip             = flag.Int("strip_components", 0, "Remove the specified number of leading path elements. Pathnames with fewer elements will be silently skipped.")
+		downloadLimitMbps = flag.Int64("download-limit-mbps", 0, "If non-zero, limit archive downloads to specified amount in megabits per second")
 	)
 	flag.Parse()
 
@@ -223,12 +225,13 @@ func main() {
 	opts := Options{
 		Incremental: *incremental,
 
-		Archive: archive,
-		Name:    *name,
-		RepoURL: *urlRaw,
-		Branch:  *branch,
-		Commit:  *commit,
-		Strip:   *strip,
+		Archive:           archive,
+		DownloadLimitMbps: *downloadLimitMbps,
+		Name:              *name,
+		RepoURL:           *urlRaw,
+		Branch:            *branch,
+		Commit:            *commit,
+		Strip:             *strip,
 	}
 
 	if err := do(opts, *bopts); err != nil {

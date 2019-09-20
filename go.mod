@@ -11,6 +11,7 @@ require (
 	github.com/keegancsmith/rpc v1.1.0
 	github.com/kylelemons/godebug v0.0.0-20170820004349-d65d576e9348
 	github.com/mitchellh/mapstructure v1.1.2 // indirect
+	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
 	github.com/prometheus/client_golang v1.1.0
 	github.com/xanzy/go-gitlab v0.13.0
 	go.uber.org/automaxprocs v1.2.0

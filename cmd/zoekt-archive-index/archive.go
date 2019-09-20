@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/mxk/go-flowrate/flowrate"
 )
 
 type Archive interface {
@@ -57,7 +59,10 @@ func (a *tarArchive) Close() error {
 
 // openArchive opens the tar at the URL or filepath u. Also supported is tgz
 // files over http.
-func openArchive(u string) (Archive, error) {
+//
+// If non-zero, limitMbps is used to limit the download speed of archives to
+// the specified amount in megabits per second.
+func openArchive(u string, limitMbps int64) (Archive, error) {
 	var (
 		r      io.Reader
 		closer io.Closer
@@ -68,8 +73,14 @@ func openArchive(u string) (Archive, error) {
 		if err != nil {
 			return nil, err
 		}
+		body := resp.Body
+		if limitMbps != 0 {
+			const megabit = 1000 * 1000
+			body = flowrate.NewReader(body, (limitMbps*megabit)/8)
+		}
+
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			b, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
+			b, err := ioutil.ReadAll(io.LimitReader(body, 1024))
 			resp.Body.Close()
 			if err != nil {
 				return nil, err
@@ -81,7 +92,7 @@ func openArchive(u string) (Archive, error) {
 			}
 		}
 		closer = resp.Body
-		r = resp.Body
+		r = body
 		if resp.Header.Get("Content-Type") == "application/x-gzip" {
 			r, err = gzip.NewReader(r)
 			if err != nil {
