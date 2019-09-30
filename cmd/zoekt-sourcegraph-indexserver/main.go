@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -95,6 +96,8 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) error {
 
 // Run the sync loop. This blocks forever.
 func (s *Server) Run() {
+	waitForFrontend(s.Root)
+
 	queue := &Queue{}
 
 	// Start a goroutine which updates the queue with commits to index.
@@ -406,6 +409,54 @@ func resolveRevision(root *url.URL, repo, spec string) (string, error) {
 		return "", err
 	}
 	return b.String(), nil
+}
+
+func ping(root *url.URL) error {
+	u := root.ResolveReference(&url.URL{Path: "/.internal/ping"})
+	resp, err := http.Get(u.String())
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ping: bad HTTP response status %d", resp.StatusCode)
+	}
+	body, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
+	if err != nil {
+		return err
+	}
+	if want := []byte("pong"); !bytes.Equal(body, want) {
+		const max = 15
+		if len(body) > max {
+			body = body[:max]
+		}
+		return fmt.Errorf("ping: bad HTTP response body %q (want %q)", string(body), string(want))
+	}
+	return nil
+}
+
+func waitForFrontend(root *url.URL) {
+	warned := false
+	lastWarn := time.Now()
+	for {
+		err := ping(root)
+		if err == nil {
+			break
+		}
+
+		if time.Since(lastWarn) > 15*time.Second {
+			warned = true
+			lastWarn = time.Now()
+			log.Printf("frontend API not reachable, will try again: %s", err)
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	if warned {
+		log.Println("frontend API is now reachable. Starting indexing...")
+	}
 }
 
 func tarballURL(root *url.URL, repo, commit string) string {
