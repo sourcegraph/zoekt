@@ -422,15 +422,11 @@ func ping(root *url.URL) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("ping: bad HTTP response status %d", resp.StatusCode)
 	}
-	body, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
+	body, err := ioutil.ReadAll(io.LimitReader(resp.Body, 16))
 	if err != nil {
 		return err
 	}
 	if want := []byte("pong"); !bytes.Equal(body, want) {
-		const max = 15
-		if len(body) > max {
-			body = body[:max]
-		}
 		return fmt.Errorf("ping: bad HTTP response body %q (want %q)", string(body), string(want))
 	}
 	return nil
