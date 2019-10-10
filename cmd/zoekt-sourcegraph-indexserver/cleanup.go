@@ -16,7 +16,6 @@ import (
 // back into indexDir. Additionally it uses now to remove shards that have
 // been in the trash for 24 hours.
 func cleanup(indexDir string, repos []string, now time.Time) {
-
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
 		log.Printf("failed to create trash dir: %v", err)
@@ -154,6 +153,8 @@ func removeIncompleteShards(dir string) {
 			path := filepath.Join(dir, n)
 			if err := os.Remove(path); err != nil {
 				debug.Printf("failed to remove incomplete shard %s: %v", path, err)
+			} else {
+				debug.Printf("cleaned up incomplete shard %s", path)
 			}
 		}
 	}
