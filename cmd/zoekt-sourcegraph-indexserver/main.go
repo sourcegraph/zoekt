@@ -96,6 +96,7 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) error {
 
 // Run the sync loop. This blocks forever.
 func (s *Server) Run() {
+	removeIncompleteShards(s.IndexDir)
 	waitForFrontend(s.Root)
 
 	queue := &Queue{}

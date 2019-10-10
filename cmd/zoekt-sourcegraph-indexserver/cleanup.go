@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 // back into indexDir. Additionally it uses now to remove shards that have
 // been in the trash for 24 hours.
 func cleanup(indexDir string, repos []string, now time.Time) {
+
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
 		log.Printf("failed to create trash dir: %v", err)
@@ -134,6 +136,27 @@ func shardRepoName(path string) (string, error) {
 	}
 
 	return repo.Name, nil
+}
+
+var incompleteRE = regexp.MustCompile("\\.zoekt[0-9]+$")
+
+func removeIncompleteShards(dir string) {
+	d, err := os.Open(dir)
+	if err != nil {
+		debug.Printf("failed to removeIncompleteShards: %s", dir)
+		return
+	}
+	defer d.Close()
+
+	names, _ := d.Readdirnames(-1)
+	for _, n := range names {
+		if incompleteRE.MatchString(n) {
+			path := filepath.Join(dir, n)
+			if err := os.Remove(path); err != nil {
+				debug.Printf("failed to remove incomplete shard %s: %v", path, err)
+			}
+		}
+	}
 }
 
 func removeAll(shards []shard) {

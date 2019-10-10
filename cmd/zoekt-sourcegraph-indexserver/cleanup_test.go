@@ -151,3 +151,39 @@ func createEmptyShard(t *testing.T, repo, path string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRemoveIncompleteShards(t *testing.T) {
+	shards, incomplete := []string{
+		"test.zoekt",
+		"foo.zoekt",
+		"bar.zoekt",
+	}, []string{
+		"incomplete.zoekt123",
+		"crash.zoekt567",
+	}
+	sort.Strings(shards)
+
+	dir, err := ioutil.TempDir("", "TestRemoveIncompleteShards")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	for _, shard := range append(shards, incomplete...) {
+		_, err := os.Create(filepath.Join(dir, shard))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	removeIncompleteShards(dir)
+
+	left, _ := filepath.Glob(filepath.Join(dir, "*"))
+	sort.Strings(left)
+	for i, _ := range left {
+		left[i] = filepath.Base(left[i])
+	}
+
+	if !reflect.DeepEqual(shards, left) {
+		t.Errorf("\ngot shards: %v\nwant: %v\n", left, shards)
+	}
+}
