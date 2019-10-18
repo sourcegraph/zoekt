@@ -199,6 +199,8 @@ type symbolSubstrMatchTree struct {
 
 	doc      uint32
 	sections []DocumentSection
+
+	secID uint32
 }
 
 func (t *symbolSubstrMatchTree) prepare(doc uint32) {
@@ -212,10 +214,24 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 
 	var sections []DocumentSection
 	if len(t.sections) > 0 {
-		sections = t.sections[t.fileEndSymbol[doc]:t.fileEndSymbol[doc+1]]
-	}
-	secIdx := 0
+		most := t.fileEndSymbol[len(t.fileEndSymbol)-1]
+		if most == uint32(len(t.sections)) {
+			sections = t.sections[t.fileEndSymbol[doc]:t.fileEndSymbol[doc+1]]
+		} else {
+			for t.secID < uint32(len(t.sections)) && t.sections[t.secID].Start < fileStart {
+				t.secID++
+			}
 
+			fileEnd, symbolEnd := t.fileEndRunes[doc], t.secID
+			for symbolEnd < uint32(len(t.sections)) && t.sections[symbolEnd].Start < fileEnd {
+				symbolEnd++
+			}
+
+			sections = t.sections[t.secID:symbolEnd]
+		}
+	}
+
+	secIdx := 0
 	trimmed := t.current[:0]
 	for len(sections) > secIdx && len(t.current) > 0 {
 		start := fileStart + t.current[0].runeOffset
