@@ -148,6 +148,7 @@ type branchQueryMatchTree struct {
 type symbolRegexpMatchTree struct {
 	matchTree
 	regexp *regexp.Regexp
+	all    bool // skips regex match if .*
 
 	reEvaluated bool
 	found       []*candidateMatch
@@ -171,9 +172,14 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 
 	found := t.found[:0]
 	for i, sec := range sections {
-		idx := t.regexp.FindIndex(content[sec.Start:sec.End])
-		if idx == nil {
-			continue
+		var idx []int
+		if t.all {
+			idx = []int{0, int(sec.End - sec.Start)}
+		} else {
+			idx = t.regexp.FindIndex(content[sec.Start:sec.End])
+			if idx == nil {
+				continue
+			}
 		}
 
 		cm := &candidateMatch{
@@ -779,6 +785,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 
 		return &symbolRegexpMatchTree{
 			regexp:    regexp,
+			all:       regexp.String() == "(?i)(?-s:.)*", // .*
 			matchTree: subMT,
 		}, nil
 	}
