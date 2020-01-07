@@ -17,6 +17,8 @@ package zoekt
 import (
 	"reflect"
 	"testing"
+
+	"github.com/google/zoekt/query"
 )
 
 func Test_breakOnNewlines(t *testing.T) {
@@ -150,5 +152,41 @@ func Test_breakOnNewlines(t *testing.T) {
 				t.Errorf("breakMatchOnNewlines() = %+v, want %+v", got2, want2)
 			}
 		})
+	}
+}
+
+func TestSymbolMatchRegexAll(t *testing.T) {
+	tests := []struct {
+		query string
+		all   bool
+	}{
+		{query: ".*", all: true},
+		{query: "(a|b)", all: false},
+		{query: "b.r", all: false},
+	}
+
+	for _, tt := range tests {
+		q, err := query.Parse("sym:" + tt.query)
+		if err != nil {
+			t.Errorf("Error parsing query: %s", "sym:"+tt.query)
+			continue
+		}
+
+		d := &indexData{}
+		mt, err := d.newMatchTree(q)
+		if err != nil {
+			t.Errorf("Error creating match tree from query: %s", q)
+			continue
+		}
+
+		regexMT, ok := mt.(*symbolRegexpMatchTree)
+		if !ok {
+			t.Errorf("Expected symbol regex match tree from query: %s, got %v", q, mt)
+			continue
+		}
+
+		if regexMT.all != tt.all {
+			t.Errorf("Expected property all: %t from query: %s", tt.all, q)
+		}
 	}
 }
