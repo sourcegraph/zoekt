@@ -161,21 +161,25 @@ func do(opts Options, bopts build.Options) error {
 	}
 
 	add := func(f *File) error {
-		defer f.Close()
-
 		// We do not index large files
 		if f.Size > int64(bopts.SizeMax) && !bopts.IgnoreSizeMax(f.Name) {
 			return nil
 		}
 
-		contents, err := ioutil.ReadAll(f)
-		if err != nil {
-			return err
-		}
-
 		name := stripComponents(f.Name, opts.Strip)
 		if name == "" {
 			return nil
+		}
+
+		r, err := f.Open()
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+
+		contents, err := ioutil.ReadAll(r)
+		if err != nil {
+			return err
 		}
 
 		return builder.Add(zoekt.Document{

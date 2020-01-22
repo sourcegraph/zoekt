@@ -20,7 +20,7 @@ type Archive interface {
 }
 
 type File struct {
-	io.ReadCloser
+	Open func() (io.ReadCloser, error)
 	Name string
 	Size int64
 }
@@ -43,9 +43,9 @@ func (a *tarArchive) Next() (*File, error) {
 		}
 
 		return &File{
-			ReadCloser: ioutil.NopCloser(a.tr),
-			Name:       hdr.Name,
-			Size:       hdr.Size,
+			Open: func() (io.ReadCloser, error) { return ioutil.NopCloser(a.tr), nil },
+			Name: hdr.Name,
+			Size: hdr.Size,
 		}, nil
 	}
 }
@@ -63,15 +63,10 @@ func (a *zipArchive) Next() (*File, error) {
 	f := a.files[0]
 	a.files = a.files[1:]
 
-	r, err := f.Open()
-	if err != nil {
-		return nil, err
-	}
-
 	return &File{
-		ReadCloser: r,
-		Name:       f.Name,
-		Size:       int64(f.UncompressedSize64),
+		Open: f.Open,
+		Name: f.Name,
+		Size: int64(f.UncompressedSize64),
 	}, nil
 }
 
