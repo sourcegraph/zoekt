@@ -137,11 +137,13 @@ func testIndexIncrementally(t *testing.T, format string) {
 		}
 		opts := Options{
 			Incremental: true,
-			Archive:     archive.Name(),
-			Name:        "repo",
-			Branch:      "master",
-			Commit:      "cccccccccccccccccccccccccccccccccccccccc",
-			Strip:       0,
+			Sources: []Source{{
+				Archive: archive.Name(),
+				Branch:  "master",
+				Commit:  "cccccccccccccccccccccccccccccccccccccccc",
+			}},
+			Name:  "repo",
+			Strip: 0,
 		}
 
 		if err := do(opts, bopts); err != nil {
