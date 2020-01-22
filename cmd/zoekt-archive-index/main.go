@@ -8,6 +8,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"log"
 	"net/url"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/google/zoekt"
@@ -164,9 +166,37 @@ func do(opts Options, bopts build.Options) error {
 		return err
 	}
 
-	// TODO Do document deduplication. This is a naive way to create an index
-	// with multiple branches, since it doesn't dedup documents.
-	for _, src := range opts.Sources {
+	add := func(f *File, brs []string) error {
+		// We do not index large files
+		if f.Size > int64(bopts.SizeMax) && !bopts.IgnoreSizeMax(f.Name) {
+			return nil
+		}
+
+		name := stripComponents(f.Name, opts.Strip)
+		if name == "" {
+			return nil
+		}
+
+		r, err := f.Open()
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+
+		contents, err := ioutil.ReadAll(r)
+		if err != nil {
+			return err
+		}
+
+		return builder.Add(zoekt.Document{
+			Name:     name,
+			Content:  contents,
+			Branches: brs,
+		})
+	}
+
+	if len(opts.Sources) == 1 {
+		src := opts.Sources[0]
 		a, err := openArchive(src.Archive)
 		if err != nil {
 			return err
@@ -174,35 +204,6 @@ func do(opts Options, bopts build.Options) error {
 		defer a.Close()
 
 		brs := []string{src.Branch}
-
-		add := func(f *File) error {
-			// We do not index large files
-			if f.Size > int64(bopts.SizeMax) && !bopts.IgnoreSizeMax(f.Name) {
-				return nil
-			}
-
-			name := stripComponents(f.Name, opts.Strip)
-			if name == "" {
-				return nil
-			}
-
-			r, err := f.Open()
-			if err != nil {
-				return err
-			}
-			defer r.Close()
-
-			contents, err := ioutil.ReadAll(r)
-			if err != nil {
-				return err
-			}
-
-			return builder.Add(zoekt.Document{
-				Name:     name,
-				Content:  contents,
-				Branches: brs,
-			})
-		}
 
 		for {
 			f, err := a.Next()
@@ -213,8 +214,95 @@ func do(opts Options, bopts build.Options) error {
 				return err
 			}
 
-			if err := add(f); err != nil {
+			if err := add(f, brs); err != nil {
 				return err
+			}
+		}
+	} else {
+		// HACK to implement merging
+		var archives [][]*File
+		for _, src := range opts.Sources {
+			a, err := openArchive(src.Archive)
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+			fileser, ok := a.(interface{ Files() []*File })
+			if !ok {
+				return errors.New("only support multiple branches for on disk zip archives")
+			}
+			archives = append(archives, fileser.Files())
+		}
+		for _, files := range archives {
+			sort.Slice(files, func(i, j int) bool {
+				return files[i].Name < files[j].Name
+			})
+		}
+		for {
+			name := ""
+			for _, files := range archives {
+				if len(files) > 0 && (name == "" || files[0].Name < name) {
+					name = files[0].Name
+				}
+			}
+			if name == "" {
+				break
+			}
+			var allcontents [][]byte
+			var allbrs []string
+			for i, files := range archives {
+				if len(files) == 0 || files[0].Name != name {
+					continue
+				}
+				f := files[0]
+				archives[i] = archives[i][1:]
+
+				// We do not index large files
+				if f.Size > int64(bopts.SizeMax) && !bopts.IgnoreSizeMax(f.Name) {
+					continue
+				}
+				if stripComponents(f.Name, opts.Strip) == "" {
+					continue
+				}
+
+				r, err := f.Open()
+				if err != nil {
+					return err
+				}
+				b, err := ioutil.ReadAll(r)
+				_ = r.Close()
+				if err != nil {
+					return err
+				}
+
+				allcontents = append(allcontents, b)
+				allbrs = append(allbrs, opts.Sources[i].Branch)
+			}
+
+			for len(allcontents) > 0 {
+				current := allcontents[0]
+				brs := []string{allbrs[0]}
+				oldContents := allcontents
+				oldBrs := allbrs
+				allcontents = allcontents[:0]
+				allbrs = allbrs[:0]
+				for i := 1; i < len(oldContents); i++ {
+					if bytes.Equal(current, oldContents[i]) {
+						brs = append(brs, oldBrs[i])
+					} else {
+						allcontents = append(allcontents, oldContents[i])
+						allbrs = append(allbrs, oldBrs[i])
+					}
+				}
+
+				err := builder.Add(zoekt.Document{
+					Name:     stripComponents(name, opts.Strip),
+					Content:  current,
+					Branches: brs,
+				})
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}

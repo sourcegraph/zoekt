@@ -70,6 +70,18 @@ func (a *zipArchive) Next() (*File, error) {
 	}, nil
 }
 
+func (a *zipArchive) Files() []*File {
+	files := make([]*File, len(a.files))
+	for i, f := range a.files {
+		files[i] = &File{
+			Open: f.Open,
+			Name: f.Name,
+			Size: int64(f.UncompressedSize64),
+		}
+	}
+	return files
+}
+
 func newZipArchive(r io.Reader, closer io.Closer) (*zipArchive, error) {
 	f, ok := r.(interface {
 		io.ReaderAt
