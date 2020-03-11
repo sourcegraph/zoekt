@@ -16,6 +16,7 @@ package zoekt
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strconv"
 	"syscall"
@@ -72,12 +73,50 @@ func newMmapedIndexFile(f *os.File) (IndexFile, error) {
 	return r, err
 }
 
+type inMemoryIndexFile struct {
+	name string
+	data []byte
+}
+
+func (f *inMemoryIndexFile) Read(off, sz uint32) ([]byte, error) {
+	if off+sz > uint32(len(f.data)) {
+		return nil, fmt.Errorf("out of bounds: %d, len %d", off+sz, len(f.data))
+	}
+	return f.data[off : off+sz], nil
+}
+
+func (f *inMemoryIndexFile) Name() string {
+	return f.name
+}
+
+func (f *inMemoryIndexFile) Size() (uint32, error) {
+	return uint32(len(f.data)), nil
+}
+
+func (f *inMemoryIndexFile) Close() {
+	f.data = []byte{}
+}
+
+func newInMemoryIndexFile(f *os.File) (IndexFile, error) {
+	defer f.Close()
+
+	data, err := ioutil.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+
+	return &inMemoryIndexFile{
+		name: f.Name(),
+		data: data,
+	}, nil
+}
+
 // NewIndexFile returns a new index file. The index file takes
 // ownership of the passed in file, and may close it.
 func NewIndexFile(f *os.File) (IndexFile, error) {
 	disableMmap, _ = strconv.ParseBool(os.Getenv("DISABLE_MMAP"))
 	if disableMmap {
-		return &indexFileFromOS{f}, nil
+		return newInMemoryIndexFile(f)
 	}
 	return newMmapedIndexFile(f)
 }
