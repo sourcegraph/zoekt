@@ -17,6 +17,7 @@ package zoekt
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"syscall"
 )
 
@@ -45,9 +46,7 @@ func (f *mmapedIndexFile) Close() {
 	syscall.Munmap(f.data)
 }
 
-// NewIndexFile returns a new index file. The index file takes
-// ownership of the passed in file, and may close it.
-func NewIndexFile(f *os.File) (IndexFile, error) {
+func newMmapedIndexFile(f *os.File) (IndexFile, error) {
 	defer f.Close()
 
 	fi, err := f.Stat()
@@ -71,4 +70,14 @@ func NewIndexFile(f *os.File) (IndexFile, error) {
 	}
 
 	return r, err
+}
+
+// NewIndexFile returns a new index file. The index file takes
+// ownership of the passed in file, and may close it.
+func NewIndexFile(f *os.File) (IndexFile, error) {
+	disableMmap, _ = strconv.ParseBool(os.Getenv("DISABLE_MMAP"))
+	if disableMmap {
+		return &indexFileFromOS{f}, nil
+	}
+	return newMmapedIndexFile(f)
 }
