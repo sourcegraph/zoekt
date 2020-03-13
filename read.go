@@ -399,7 +399,7 @@ func NewSearcher(r IndexFile) (Searcher, error) {
 	}
 
 	if sourcegraphInMemoryContent {
-		cached := &cachedIndexFile{file: r}
+		cached := &cachedIndexFile{file: &unopenedIndexFile{r.Name()}}
 		if err := cached.cache(toc.fileContents.data); err != nil {
 			return nil, err
 		}
@@ -494,4 +494,52 @@ func (c *cachedIndexFile) Name() string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+// unopenedIndexFile opens the named file for each read and then immediately
+// closes it. It is used in combination with cachedIndexFile to load indexes
+// into memory fully while avoiding keeping thouands of underlying file handles
+// open (as indexFileFromOS would) AND avoiding the memory overhead of mmap
+// (as mmapedIndexFile would impose).
+type unopenedIndexFile struct {
+	name string
+}
+
+func (f *unopenedIndexFile) Read(off, sz uint32) ([]byte, error) {
+	ff, err := os.Open(f.name)
+	if err != nil {
+		return nil, err
+	}
+	defer ff.Close()
+
+	r := make([]byte, sz)
+	_, err = ff.ReadAt(r, int64(off))
+	return r, err
+}
+
+func (f unopenedIndexFile) Size() (uint32, error) {
+	ff, err := os.Open(f.name)
+	if err != nil {
+		return 0, err
+	}
+	defer ff.Close()
+
+	fi, err := ff.Stat()
+	if err != nil {
+		return 0, err
+	}
+
+	sz := fi.Size()
+
+	if sz >= maxUInt32 {
+		return 0, fmt.Errorf("overflow")
+	}
+
+	return uint32(sz), nil
+}
+
+func (f unopenedIndexFile) Close() {}
+
+func (f unopenedIndexFile) Name() string {
+	return f.name
 }
