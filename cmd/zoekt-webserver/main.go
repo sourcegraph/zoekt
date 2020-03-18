@@ -34,6 +34,7 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
 	"github.com/google/zoekt/web"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -159,6 +160,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Sourcegraph: Add logging if debug logging enabled
+	if strings.EqualFold(os.Getenv("SRC_LOG_LEVEL"), "dbug") {
+		searcher = &loggedSearcher{Searcher: searcher}
+	}
+
 	s := &web.Server{
 		Searcher: searcher,
 		Top:      web.Top,
@@ -275,4 +281,19 @@ func watchdog(dt time.Duration, addr string) {
 			log.Panicf("watchdog: %v", err)
 		}
 	}
+}
+
+type loggedSearcher struct {
+	zoekt.Searcher
+}
+
+func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
+	sr, err := s.Searcher.Search(ctx, q, opts)
+	if err != nil {
+		log.Printf("EROR: search failed q=%s: %s", q.String(), err.Error())
+	}
+	if sr != nil {
+		log.Printf("DBUG: search q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsSkipped=%v MatchCount=%v NgramMatches=%v Wait=%v}", q.String(), opts.EstimateDocCount, opts.Whole, opts.ShardMaxMatchCount, opts.TotalMaxMatchCount, opts.ShardMaxImportantMatch, opts.TotalMaxImportantMatch, opts.MaxWallTime, opts.MaxDocDisplayCount, sr.Stats.ContentBytesLoaded, sr.Stats.IndexBytesLoaded, sr.Stats.Crashes, sr.Stats.Duration, sr.Stats.FileCount, sr.Stats.ShardFilesConsidered, sr.Stats.FilesConsidered, sr.Stats.FilesLoaded, sr.Stats.FilesSkipped, sr.Stats.ShardsSkipped, sr.Stats.MatchCount, sr.Stats.NgramMatches, sr.Stats.Wait)
+	}
+	return sr, err
 }
