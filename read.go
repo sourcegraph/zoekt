@@ -18,11 +18,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"log"
-	"os"
 	"sort"
-	"strconv"
-	"strings"
 )
 
 // IndexFile is a file suitable for concurrent read access. For performance
@@ -369,19 +365,6 @@ func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]Document
 	return unmarshalDocSections(blob, buf), sec.sz, nil
 }
 
-// Sourcegraph Experiment: Read content into memory and do not rely on
-// MMAP. We have seen unexpected behaviour of the OS file cache which we
-// haven't been able to narrow down. As such we want a toggle to just keep
-// everything in memory. This will use a lot more memory.
-var sourcegraphInMemoryContent bool
-
-func init() {
-	sourcegraphInMemoryContent, _ = strconv.ParseBool(os.Getenv("IN_MEMORY_CONTENT"))
-	if sourcegraphInMemoryContent {
-		log.Println("INFO: IN_MEMORY_CONTENT=true, this will load all file contents into memory to avoid paging out to disk in case of cache misses (at increased memory cost).")
-	}
-}
-
 // NewSearcher creates a Searcher for a single index file.  Search
 // results coming from this searcher are valid only for the lifetime
 // of the Searcher itself, ie. []byte members should be copied into
@@ -398,12 +381,9 @@ func NewSearcher(r IndexFile) (Searcher, error) {
 		return nil, err
 	}
 
-	if sourcegraphInMemoryContent {
-		cached := &cachedIndexFile{file: r}
-		if err := cached.cache(toc.fileContents.data); err != nil {
-			return nil, err
-		}
-		r = cached
+	r, err = sourcegraphInMemoryContent(&toc, r)
+	if err != nil {
+		return nil, err
 	}
 
 	indexData.file = r
@@ -430,68 +410,4 @@ func ReadMetadata(inf IndexFile) (*Repository, *IndexMetadata, error) {
 	}
 
 	return &repo, &md, nil
-}
-
-// Sourcegraph experiment follows which caches blocks
-type cachedBlock struct {
-	off  uint32
-	data []byte
-}
-
-type cachedIndexFile struct {
-	file   IndexFile
-	blocks []cachedBlock
-}
-
-func (c *cachedIndexFile) cache(ss simpleSection) error {
-	b, err := c.file.Read(ss.off, ss.sz)
-	if err != nil {
-		return err
-	}
-
-	// copy to ensure in memory (likely pointing into mmap region)
-	data := make([]byte, ss.sz)
-	copy(data, b)
-
-	c.blocks = append(c.blocks, cachedBlock{
-		off:  ss.off,
-		data: data,
-	})
-	return nil
-}
-
-func (c *cachedIndexFile) Read(off uint32, sz uint32) ([]byte, error) {
-	for _, block := range c.blocks {
-		if off < block.off {
-			continue
-		}
-		relOff := off - block.off
-		relEnd := relOff + sz
-		if relEnd <= uint32(len(block.data)) {
-			return block.data[relOff:relEnd], nil
-		}
-	}
-	return c.file.Read(off, sz)
-}
-func (c *cachedIndexFile) Size() (uint32, error) {
-	return c.file.Size()
-}
-func (c *cachedIndexFile) Close() {
-	c.blocks = nil
-	c.file.Close()
-}
-
-func (c *cachedIndexFile) Name() string {
-	var b strings.Builder
-	b.WriteString("Cached{")
-	b.WriteString(c.file.Name())
-	b.WriteString(", Blocks: ")
-	for i, block := range c.blocks {
-		if i != 0 {
-			b.WriteString(", ")
-		}
-		_, _ = fmt.Fprintf(&b, "{%d %d}", block.off, len(block.data))
-	}
-	b.WriteString("}")
-	return b.String()
 }
