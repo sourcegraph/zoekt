@@ -1,0 +1,54 @@
+on: push
+name: CI
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: go
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1.14.x
+    - name: checkout
+      uses: actions/checkout@v2
+    - name: test
+      run: go test ./...
+
+  # We build a shared docker image called "zoekt". This is not pushed, but is
+  # used for creating the indexserver and webserver images.
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+    - name: checkout
+      uses: actions/checkout@v2
+
+    # This is the same tag we used for zoekt in the infrastructure repo.
+    - name: version
+      id: version
+      run: echo "::set-output name=value::`date -u +'0.0.%Y%m%d%H%M%S'`-`git rev-parse --short HEAD`"
+
+    - name: build-zoekt
+      uses: docker/build-push-action@v1
+      with:
+        repository: zoekt
+        tags: "latest"
+        add_git_labels: "true"
+        push: "false"
+
+    - name: build-push-webserver
+      uses: docker/build-push-action@v1
+      with:
+        repository: sourcegraph/zoekt-webserver
+        tags: ${{ steps.version.outputs.value }},latest
+        dockerfile: Dockerfile.webserver
+        add_git_labels: "true"
+        push: "false"
+
+    - name: build-push-indexserver
+      uses: docker/build-push-action@v1
+      with:
+        repository: sourcegraph/zoekt-indexserver
+        tags: ${{ steps.version.outputs.value }},latest
+        dockerfile: Dockerfile.indexserver
+        add_git_labels: "true"
+        push: "false"
