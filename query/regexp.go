@@ -45,13 +45,16 @@ func LowerRegexp(r *syntax.Regexp) *syntax.Regexp {
 
 // RegexpToQuery tries to distill a substring search query that
 // matches a superset of the regexp.
-func RegexpToQuery(r *syntax.Regexp, minTextSize int) Q {
-	q := regexpToQueryRecursive(r, minTextSize)
+// If the returned query is symetric with the original regexp,
+// it returns true. A symetric query has the same behaviour as the original
+// regexp and can be used instead.
+func RegexpToQuery(r *syntax.Regexp, minTextSize int) (query Q, isSymetric bool) {
+	q, isSym := regexpToQueryRecursive(r, minTextSize)
 	q = Simplify(q)
-	return q
+	return q, isSym
 }
 
-func regexpToQueryRecursive(r *syntax.Regexp, minTextSize int) Q {
+func regexpToQueryRecursive(r *syntax.Regexp, minTextSize int) (query Q, symetric bool) {
 	// TODO - we could perhaps transform Begin/EndText in '\n'?
 	// TODO - we could perhaps transform CharClass in (OrQuery )
 	// if there are just a few runes, and part of a OpConcat?
@@ -59,7 +62,7 @@ func regexpToQueryRecursive(r *syntax.Regexp, minTextSize int) Q {
 	case syntax.OpLiteral:
 		s := string(r.Rune)
 		if len(s) >= minTextSize {
-			return &Substring{Pattern: s}
+			return &Substring{Pattern: s}, true
 		}
 	case syntax.OpCapture:
 		return regexpToQueryRecursive(r.Sub[0], minTextSize)
@@ -74,15 +77,19 @@ func regexpToQueryRecursive(r *syntax.Regexp, minTextSize int) Q {
 
 	case syntax.OpConcat, syntax.OpAlternate:
 		var qs []Q
+		isSym := true
 		for _, sr := range r.Sub {
-			if sq := regexpToQueryRecursive(sr, minTextSize); sq != nil {
+			if sq, sm := regexpToQueryRecursive(sr, minTextSize); sq != nil {
+				if !sm {
+					isSym = false
+				}
 				qs = append(qs, sq)
 			}
 		}
 		if r.Op == syntax.OpConcat {
-			return &And{qs}
+			return &And{qs}, isSym
 		}
-		return &Or{qs}
+		return &Or{qs}, isSym
 	}
-	return &Const{true}
+	return &Const{true}, false
 }

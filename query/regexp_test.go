@@ -52,13 +52,14 @@ func printRegexp(t *testing.T, r *syntax.Regexp, lvl int) {
 
 func TestRegexpParse(t *testing.T) {
 	type testcase struct {
-		in   string
-		want Q
+		in         string
+		query      Q
+		isSymetric bool
 	}
 
 	cases := []testcase{
-		{"(foo|)bar", &Substring{Pattern: "bar"}},
-		{"(foo|)", &Const{true}},
+		{"(foo|)bar", &Substring{Pattern: "bar"}, false},
+		{"(foo|)", &Const{true}, false},
 		{"(foo|bar)baz.*bla", &And{[]Q{
 			&Or{[]Q{
 				&Substring{Pattern: "foo"},
@@ -66,12 +67,26 @@ func TestRegexpParse(t *testing.T) {
 			}},
 			&Substring{Pattern: "baz"},
 			&Substring{Pattern: "bla"},
-		}}},
+		}}, false},
 		{"^[a-z](People)+barrabas$",
 			&And{[]Q{
 				&Substring{Pattern: "People"},
 				&Substring{Pattern: "barrabas"},
-			}}},
+			}}, false},
+		{"foo", &Substring{Pattern: "foo"}, true},
+		{"^foo", &Substring{Pattern: "foo"}, false},
+		{"(thread|needle|hack)", &Or{[]Q{
+			&Substring{Pattern: "thread"},
+			&Substring{Pattern: "needle"},
+			&Substring{Pattern: "hack"},
+		}}, true},
+		{"thread(needle|hack)", &And{[]Q{
+			&Substring{Pattern: "thread"},
+			&Or{[]Q{
+				&Substring{Pattern: "needle"},
+				&Substring{Pattern: "hack"},
+			}}}},
+			true},
 	}
 
 	for _, c := range cases {
@@ -81,10 +96,14 @@ func TestRegexpParse(t *testing.T) {
 			continue
 		}
 
-		got := RegexpToQuery(r, 3)
-		if !reflect.DeepEqual(c.want, got) {
+		query, isSym := RegexpToQuery(r, 3)
+		if !reflect.DeepEqual(c.query, query) {
 			printRegexp(t, r, 0)
-			t.Errorf("regexpToQuery(%q): got %v, want %v", c.in, got, c.want)
+			t.Errorf("regexpToQuery(%q): got %v, want %v", c.in, query, c.query)
+		}
+		if isSym != c.isSymetric {
+			printRegexp(t, r, 0)
+			t.Errorf("regexpToQuery(%q): got %v, want %v", c.in, isSym, c.isSymetric)
 		}
 	}
 }
