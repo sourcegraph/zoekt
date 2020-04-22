@@ -190,3 +190,37 @@ func TestSymbolMatchRegexAll(t *testing.T) {
 		}
 	}
 }
+
+func TestSymetricQuerySkipRegexpTree(t *testing.T) {
+	tests := []struct {
+		query string
+		skip  bool
+	}{
+		{query: "^foo", skip: false},
+		{query: "foo", skip: true},
+		{query: "thread|needle|hack", skip: true},
+		{query: "thread(needle|hack)", skip: true},
+		{query: "thread(needle|)", skip: false},
+	}
+
+	for _, tt := range tests {
+		q, err := query.Parse(tt.query)
+		if err != nil {
+			t.Errorf("Error parsing query: %s", "sym:"+tt.query)
+			continue
+		}
+
+		d := &indexData{}
+		mt, err := d.newMatchTree(q)
+		if err != nil {
+			t.Errorf("Error creating match tree from query: %s", q)
+			continue
+		}
+
+		visitMatchTree(mt, func(m matchTree) {
+			if _, ok := m.(*regexpMatchTree); ok && tt.skip {
+				t.Errorf("Expected regexpMatchTree to be skipped for query: %s", q)
+			}
+		})
+	}
+}

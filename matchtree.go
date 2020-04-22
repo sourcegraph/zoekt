@@ -652,7 +652,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 	}
 	switch s := q.(type) {
 	case *query.Regexp:
-		subQ := query.RegexpToQuery(s.Regexp, ngramSize)
+		subQ, isSym := query.RegexpToQuery(s.Regexp, ngramSize)
 		subQ = query.Map(subQ, func(q query.Q) query.Q {
 			if sub, ok := q.(*query.Substring); ok {
 				sub.FileName = s.FileName
@@ -664,6 +664,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		subMT, err := d.newMatchTree(subQ)
 		if err != nil {
 			return nil, err
+		}
+
+		// if the query can be used in place of the regexp
+		// return the subtree
+		if isSym {
+			return subMT, nil
 		}
 
 		prefix := ""
