@@ -75,18 +75,12 @@ func TestRegexpParse(t *testing.T) {
 			}}, false},
 		{"foo", &Substring{Pattern: "foo"}, true},
 		{"^foo", &Substring{Pattern: "foo"}, false},
-		{"(thread|needle|hack)", &Or{[]Q{
+		{"(foo) (bar)", &And{[]Q{&Substring{Pattern: "foo"}, &Substring{Pattern: "bar"}}}, false},
+		{"(thread|needle|haystack)", &Or{[]Q{
 			&Substring{Pattern: "thread"},
 			&Substring{Pattern: "needle"},
-			&Substring{Pattern: "hack"},
+			&Substring{Pattern: "haystack"},
 		}}, true},
-		{"thread(needle|hack)", &And{[]Q{
-			&Substring{Pattern: "thread"},
-			&Or{[]Q{
-				&Substring{Pattern: "needle"},
-				&Substring{Pattern: "hack"},
-			}}}},
-			true},
 	}
 
 	for _, c := range cases {

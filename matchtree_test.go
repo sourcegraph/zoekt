@@ -198,9 +198,10 @@ func TestSymetricQuerySkipRegexpTree(t *testing.T) {
 	}{
 		{query: "^foo", skip: false},
 		{query: "foo", skip: true},
-		{query: "thread|needle|hack", skip: true},
-		{query: "thread(needle|hack)", skip: true},
-		{query: "thread(needle|)", skip: false},
+		{query: "thread|needle|haystack", skip: true},
+		{query: "contain(er|ing)", skip: false},
+		{query: "thread (needle|haystack)", skip: true},
+		{query: "thread (needle|)", skip: false},
 	}
 
 	for _, tt := range tests {

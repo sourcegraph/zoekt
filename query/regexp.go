@@ -87,6 +87,9 @@ func regexpToQueryRecursive(r *syntax.Regexp, minTextSize int) (query Q, symetri
 			}
 		}
 		if r.Op == syntax.OpConcat {
+			if len(qs) > 1 {
+				isSym = false
+			}
 			return &And{qs}, isSym
 		}
 		return &Or{qs}, isSym
