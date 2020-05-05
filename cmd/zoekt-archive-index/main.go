@@ -163,11 +163,6 @@ func do(opts Options, bopts build.Options) error {
 	add := func(f *File) error {
 		defer f.Close()
 
-		// We do not index large files
-		if f.Size > int64(bopts.SizeMax) && !bopts.IgnoreSizeMax(f.Name) {
-			return nil
-		}
-
 		contents, err := ioutil.ReadAll(f)
 		if err != nil {
 			return err
