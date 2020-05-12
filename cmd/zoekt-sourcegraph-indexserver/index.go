@@ -46,6 +46,9 @@ type indexArgs struct {
 	// Branch is the branch name.
 	Branch string
 
+	// Branches to index.
+	Branches []zoekt.RepositoryBranch
+
 	// DownloadLimitMBPS is the maximum MB/s to use when downloading the
 	// archive.
 	DownloadLimitMBPS string
@@ -92,6 +95,13 @@ func (o *indexArgs) String() string {
 
 func getIndexOptions(args *indexArgs) error {
 	u := args.Root.ResolveReference(&url.URL{Path: "/.internal/search/configuration"})
+	values, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return err
+	}
+	values.Set("repo", args.Name)
+	u.RawQuery = values.Encode()
+
 	resp, err := client.Get(u.String())
 	if err != nil {
 		return err
@@ -105,7 +115,7 @@ func getIndexOptions(args *indexArgs) error {
 		return errors.New("failed to get configuration options")
 	}
 
-	err = json.NewDecoder(resp.Body).Decode(&args)
+	err = json.NewDecoder(resp.Body).Decode(args)
 	if err != nil {
 		return fmt.Errorf("error decoding body: %v", err)
 	}
@@ -186,6 +196,10 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 
 	if o.Branch != "" {
 		args = append(args, "-branches", o.Branch)
+	}
+
+	for _, branch := range o.Branches {
+		args = append(args, "-branches", branch.Name)
 	}
 
 	args = append(args, o.BuildOptions().Args()...)

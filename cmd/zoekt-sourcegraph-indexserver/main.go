@@ -243,6 +243,9 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 	runCmd := func(cmd *exec.Cmd) error { return s.loggedRun(tr, cmd) }
 	f := s.Indexer
+	if len(args.Branches) > 0 {
+		f = gitIndex
+	}
 	if f == nil {
 		f = archiveIndex
 	}
