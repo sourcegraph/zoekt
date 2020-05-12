@@ -65,7 +65,7 @@ type indexArgs struct {
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
 func (o *indexArgs) BuildOptions() *build.Options {
-	return &build.Options{
+	opts := build.Options{
 		// It is important that this RepositoryDescription exactly matches
 		// what the indexer we call will produce. This is to ensure that
 		// IncrementalSkipIndexing returns true if nothing needs to be done.
@@ -83,6 +83,9 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		CTagsMustSucceed: o.Symbols,
 		DisableCTags:     !o.Symbols,
 	}
+
+	opts.RepositoryDescription.Branches = append(opts.RepositoryDescription.Branches, o.Branches...)
+	return &opts
 }
 
 func (o *indexArgs) String() string {

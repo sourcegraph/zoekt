@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/google/zoekt"
 )
 
 func TestGetIndexOptions(t *testing.T) {
@@ -40,6 +41,12 @@ func TestGetIndexOptions(t *testing.T) {
 
 		`{"Symbols": true}`: {
 			Symbols: true,
+		},
+
+		`{"Branches": [{"Name": "foo", "Version": "abcd"}, {"Name": "bar", "Version": "efgh"}]}`: {
+			Branches: []zoekt.RepositoryBranch{
+				{Name: "foo", Version: "abcd"}, {Name: "bar", Version: "efgh"},
+			},
 		},
 	}
 
@@ -96,14 +103,17 @@ func TestIndex(t *testing.T) {
 	}, {
 		name: "all",
 		args: indexArgs{
-			Root:              root,
-			Name:              "test/repo",
-			Commit:            "deadbeef",
-			Incremental:       true,
-			IndexDir:          "/data/index",
-			Parallelism:       4,
-			FileLimit:         123,
-			Branch:            "HEAD",
+			Root:        root,
+			Name:        "test/repo",
+			Commit:      "deadbeef",
+			Incremental: true,
+			IndexDir:    "/data/index",
+			Parallelism: 4,
+			FileLimit:   123,
+			Branch:      "HEAD",
+			Branches: []zoekt.RepositoryBranch{
+				{Name: "foo", Version: "abcd"}, {Name: "bar", Version: "efgh"},
+			},
 			DownloadLimitMBPS: "1000",
 			LargeFiles:        []string{"foo", "bar"},
 			Symbols:           true,
@@ -126,7 +136,7 @@ func TestIndex(t *testing.T) {
 		wantGit: []string{
 			"git -c protocol.version=2 clone --depth=1 --bare http://api.test/.internal/git/test/repo $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
-			"zoekt-git-index -submodules=false -incremental -branches HEAD " +
+			"zoekt-git-index -submodules=false -incremental -branches HEAD -branches foo -branches bar " +
 				"-file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
 		},
