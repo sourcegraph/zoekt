@@ -171,6 +171,22 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		return err
 	}
 
+	// we assume the first branch is always HEAD
+	if len(o.Branches) > 1 {
+		gitArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--no-tags", cloneURL}
+		for _, branch := range o.Branches {
+			if branch.Name == "HEAD" {
+				continue
+			}
+			gitArgs = append(gitArgs, fmt.Sprintf("+${%s}:refs/heads/%s", branch.Version, branch.Name))
+		}
+		cmd = exec.Command("git", gitArgs...)
+		cmd.Stdin = &bytes.Buffer{}
+		if err := runCmd(cmd); err != nil {
+			return err
+		}
+	}
+
 	args := []string{
 		"-submodules=false",
 	}
