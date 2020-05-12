@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/zoekt"
 )
 
 func TestServer_defaultArgs(t *testing.T) {
@@ -23,7 +24,7 @@ func TestServer_defaultArgs(t *testing.T) {
 		IndexDir:          "/testdata/index",
 		Parallelism:       6,
 		Incremental:       true,
-		Branch:            "HEAD",
+		Branches:          []zoekt.RepositoryBranch{{Name: "HEAD"}},
 		FileLimit:         1 << 20,
 		DownloadLimitMBPS: "1000",
 	}

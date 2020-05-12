@@ -26,6 +26,7 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
+	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"github.com/keegancsmith/tmpfriend"
@@ -259,7 +260,7 @@ func (s *Server) defaultArgs() *indexArgs {
 		Parallelism: s.CPUCount,
 
 		Incremental: true,
-		Branch:      "HEAD",
+		Branches:    []zoekt.RepositoryBranch{{Name: "HEAD"}},
 
 		// 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
 		FileLimit: 1 << 20,

@@ -110,9 +110,8 @@ func TestIndex(t *testing.T) {
 			IndexDir:    "/data/index",
 			Parallelism: 4,
 			FileLimit:   123,
-			Branch:      "HEAD",
 			Branches: []zoekt.RepositoryBranch{
-				{Name: "foo", Version: "abcd"}, {Name: "bar", Version: "efgh"},
+				{Name: "HEAD"}, {Name: "foo", Version: "abcd"}, {Name: "bar", Version: "efgh"},
 			},
 			DownloadLimitMBPS: "1000",
 			LargeFiles:        []string{"foo", "bar"},

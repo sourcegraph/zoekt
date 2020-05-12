@@ -44,9 +44,6 @@ type indexArgs struct {
 	// FileLimit is the maximum size of a file
 	FileLimit int
 
-	// Branch is the branch name.
-	Branch string
-
 	// Branches to index.
 	Branches []zoekt.RepositoryBranch
 
@@ -66,16 +63,13 @@ type indexArgs struct {
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
 func (o *indexArgs) BuildOptions() *build.Options {
-	opts := build.Options{
+	return &build.Options{
 		// It is important that this RepositoryDescription exactly matches
 		// what the indexer we call will produce. This is to ensure that
 		// IncrementalSkipIndexing returns true if nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
-			Name: o.Name,
-			Branches: []zoekt.RepositoryBranch{{
-				Name:    o.Branch,
-				Version: o.Commit,
-			}},
+			Name:     o.Name,
+			Branches: o.Branches,
 		},
 		IndexDir:         o.IndexDir,
 		Parallelism:      o.Parallelism,
@@ -84,17 +78,14 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		CTagsMustSucceed: o.Symbols,
 		DisableCTags:     !o.Symbols,
 	}
-
-	opts.RepositoryDescription.Branches = append(opts.RepositoryDescription.Branches, o.Branches...)
-	return &opts
 }
 
 func (o *indexArgs) String() string {
-	if o.Branch != "" {
-		return o.Name + "@" + o.Branch + "=" + o.Commit
-	} else {
-		return o.Name + "@" + o.Commit
+	if len(o.Branches) != 0 {
+		return o.Name + "@" + o.Branches[0].Name + "=" + o.Commit
 	}
+
+	return o.Name + "@" + o.Commit
 }
 
 func getIndexOptions(args *indexArgs) error {
@@ -140,8 +131,8 @@ func archiveIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		args = append(args, "-incremental")
 	}
 
-	if o.Branch != "" {
-		args = append(args, "-branch", o.Branch)
+	if len(o.Branches) != 0 {
+		args = append(args, "-branch", o.Branches[0].Name)
 	}
 
 	if o.DownloadLimitMBPS != "" {
@@ -199,10 +190,6 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	}
 
 	var branches []string
-	if o.Branch != "" {
-		branches = append(branches, o.Branch)
-	}
-
 	for _, branch := range o.Branches {
 		branches = append(branches, branch.Name)
 	}
