@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
@@ -197,12 +198,17 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		args = append(args, "-incremental")
 	}
 
+	var branches []string
 	if o.Branch != "" {
-		args = append(args, "-branches", o.Branch)
+		branches = append(branches, o.Branch)
 	}
 
 	for _, branch := range o.Branches {
-		args = append(args, "-branches", branch.Name)
+		branches = append(branches, branch.Name)
+	}
+
+	if len(branches) > 0 {
+		args = append(args, "-branches", strings.Join(branches, ","))
 	}
 
 	args = append(args, o.BuildOptions().Args()...)
