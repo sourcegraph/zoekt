@@ -178,7 +178,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 			if branch.Name == "HEAD" {
 				continue
 			}
-			gitArgs = append(gitArgs, fmt.Sprintf("+${%s}:refs/heads/%s", branch.Version, branch.Name))
+			gitArgs = append(gitArgs, fmt.Sprintf("+%s:refs/heads/%s", branch.Version, branch.Name))
 		}
 		cmd = exec.Command("git", gitArgs...)
 		cmd.Stdin = &bytes.Buffer{}
