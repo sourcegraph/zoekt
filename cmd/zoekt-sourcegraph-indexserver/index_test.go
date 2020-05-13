@@ -135,7 +135,7 @@ func TestIndex(t *testing.T) {
 		wantGit: []string{
 			"git -c protocol.version=2 clone --depth=1 --bare http://api.test/.internal/git/test/repo $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --no-tags http://api.test/.internal/git/test/repo +${abcd}:refs/heads/foo +${efgh}:refs/heads/bar",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --no-tags http://api.test/.internal/git/test/repo +abcd:refs/heads/foo +efgh:refs/heads/bar",
 			"zoekt-git-index -submodules=false -incremental -branches HEAD,foo,bar " +
 				"-file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
