@@ -618,11 +618,11 @@ func main() {
 
 	if *listen != "" {
 		go func() {
-			pp := http.NewServeMux()
-			debugserver.AddHandlers(pp, true)
-			pp.Handle("/", s)
+			mux := http.NewServeMux()
+			debugserver.AddHandlers(mux, true)
+			mux.Handle("/", s)
 			debug.Printf("serving HTTP on %s", *listen)
-			log.Fatal(http.ListenAndServe(*listen, pp))
+			log.Fatal(http.ListenAndServe(*listen, mux))
 		}()
 	}
 
