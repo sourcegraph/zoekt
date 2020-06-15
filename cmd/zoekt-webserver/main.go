@@ -26,7 +26,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/http/pprof"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,13 +34,12 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	"github.com/google/zoekt/debugserver"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
 	"github.com/google/zoekt/web"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/automaxprocs/maxprocs"
-	"golang.org/x/net/trace"
 )
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
@@ -207,25 +205,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	handler.Handle("/metrics", promhttp.Handler())
-
-	if *enablePprof {
-		// Zoekt is only available in-cluster for Sourcegraph. So only admins
-		// can reach the endpoint, so we don't need to auth trace
-		// requests. This allows the admin proxy to work.
-		trace.AuthRequest = func(req *http.Request) (any, sensitive bool) {
-			return true, true
-		}
-
-		handler.HandleFunc("/debug/pprof/", pprof.Index)
-		handler.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-		handler.HandleFunc("/debug/pprof/profile", pprof.Profile)
-		handler.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-		handler.HandleFunc("/debug/pprof/trace", pprof.Trace)
-		handler.HandleFunc("/debug/requests/", trace.Traces)
-		handler.HandleFunc("/debug/events/", trace.Events)
-	}
-
+	debugserver.AddHandlers(handler, *enablePprof)
 	handler.HandleFunc("/healthz", healthz)
 
 	watchdogAddr := "http://" + *listen

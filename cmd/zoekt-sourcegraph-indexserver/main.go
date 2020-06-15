@@ -20,9 +20,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/zoekt/debugserver"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
@@ -31,7 +33,6 @@ import (
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -52,6 +53,26 @@ var (
 		Help:    "A histogram of latencies for indexing a repository.",
 		Buckets: prometheus.ExponentialBuckets(.1, 10, 7), // 100ms -> 27min
 	}, []string{"state"}) // state is an indexState
+
+	metricQueueLen = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "index_queue_len",
+		Help: "Current length of indexing queue by code host",
+	}, []string{"codehost"})
+
+	metricNumIndexed = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "index_num_indexed",
+		Help: "Number of indexed repos by code host",
+	}, []string{"codehost"})
+
+	metricFailedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "index_failed_total",
+		Help: "Counts failures to index",
+	})
+
+	metricIndexedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "index_indexed_total",
+		Help: "Counts indexings",
+	})
 )
 
 type indexState string
@@ -121,6 +142,15 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) error {
 	return nil
 }
 
+func codeHostFromName(repoName string) string {
+	parts := strings.Split(repoName, "/")
+	codehost := "unknown"
+	if len(parts) > 1 {
+		codehost = parts[0]
+	}
+	return codehost
+}
+
 // Run the sync loop. This blocks forever.
 func (s *Server) Run() {
 	removeIncompleteShards(s.IndexDir)
@@ -172,7 +202,10 @@ func (s *Server) Run() {
 						return
 					}
 					metricResolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
-					queue.AddOrUpdate(name, commit)
+					added := queue.AddOrUpdate(name, commit)
+					if added {
+						metricQueueLen.WithLabelValues(codeHostFromName(name)).Add(1.0)
+					}
 				}(name)
 			}
 			sem.Wait()
@@ -190,7 +223,7 @@ func (s *Server) Run() {
 			time.Sleep(time.Second)
 			continue
 		}
-
+		metricQueueLen.WithLabelValues(codeHostFromName(name)).Add(-1.0)
 		start := time.Now()
 		args := s.defaultArgs()
 		args.Name = name
@@ -213,10 +246,12 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
 
 	defer func() {
+		metricIndexedTotal.Inc()
 		if err != nil {
 			tr.SetError()
 			tr.LazyPrintf("error: %v", err)
 			state = indexStateFail
+			metricFailedTotal.Inc()
 		}
 		tr.LazyPrintf("state: %s", state)
 		tr.Finish()
@@ -345,10 +380,16 @@ func (s *Server) forceIndex(name string) (string, error) {
 func listIndexed(indexDir string) []string {
 	index := getShards(indexDir)
 	repoNames := make([]string, 0, len(index))
+	countsByHost := make(map[string]int)
 	for name := range index {
 		repoNames = append(repoNames, name)
+		codeHost := codeHostFromName(name)
+		countsByHost[codeHost] += 1
 	}
 	sort.Strings(repoNames)
+	for codeHost, count := range countsByHost {
+		metricNumIndexed.WithLabelValues(codeHost).Set(float64(count))
+	}
 	return repoNames
 }
 
@@ -577,22 +618,11 @@ func main() {
 
 	if *listen != "" {
 		go func() {
-			trace.AuthRequest = func(req *http.Request) (any, sensitive bool) {
-				return true, true
-			}
-			prom := promhttp.Handler()
-			h := func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/debug/requests":
-					trace.Traces(w, r)
-				case "/metrics":
-					prom.ServeHTTP(w, r)
-				default:
-					s.ServeHTTP(w, r)
-				}
-			}
+			pp := http.NewServeMux()
+			debugserver.AddHandlers(pp, true)
+			pp.Handle("/", s)
 			debug.Printf("serving HTTP on %s", *listen)
-			log.Fatal(http.ListenAndServe(*listen, http.HandlerFunc(h)))
+			log.Fatal(http.ListenAndServe(*listen, pp))
 		}()
 	}
 
