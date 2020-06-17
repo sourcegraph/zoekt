@@ -54,24 +54,24 @@ var (
 		Buckets: prometheus.ExponentialBuckets(.1, 10, 7), // 100ms -> 27min
 	}, []string{"state"}) // state is an indexState
 
-	metricQueueLen = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "index_queue_len",
-		Help: "Current length of indexing queue by code host",
-	}, []string{"codehost"})
-
 	metricNumIndexed = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "index_num_indexed",
 		Help: "Number of indexed repos by code host",
 	}, []string{"codehost"})
 
-	metricFailedTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "index_failed_total",
-		Help: "Counts failures to index",
+	metricNumNotIndexed = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "index_num_not_indexed",
+		Help: "Number of not yet indexed repos by code host",
+	}, []string{"codehost"})
+
+	metricFailingTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "index_failing_total",
+		Help: "Counts failures to index (indexing activity, should be used with rate())",
 	})
 
-	metricIndexedTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "index_indexed_total",
-		Help: "Counts indexings",
+	metricIndexingTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "index_indexing_total",
+		Help: "Counts indexings (indexing activity, should be used with rate())",
 	})
 )
 
@@ -202,10 +202,7 @@ func (s *Server) Run() {
 						return
 					}
 					metricResolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
-					added := queue.AddOrUpdate(name, commit)
-					if added {
-						metricQueueLen.WithLabelValues(codeHostFromName(name)).Add(1.0)
-					}
+					queue.AddOrUpdate(name, commit)
 				}(name)
 			}
 			sem.Wait()
@@ -223,7 +220,6 @@ func (s *Server) Run() {
 			time.Sleep(time.Second)
 			continue
 		}
-		metricQueueLen.WithLabelValues(codeHostFromName(name)).Add(-1.0)
 		start := time.Now()
 		args := s.defaultArgs()
 		args.Name = name
@@ -246,12 +242,12 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
 
 	defer func() {
-		metricIndexedTotal.Inc()
+		metricIndexingTotal.Inc()
 		if err != nil {
 			tr.SetError()
 			tr.LazyPrintf("error: %v", err)
 			state = indexStateFail
-			metricFailedTotal.Inc()
+			metricFailingTotal.Inc()
 		}
 		tr.LazyPrintf("state: %s", state)
 		tr.Finish()
@@ -281,6 +277,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	if f == nil {
 		f = archiveIndex
 	}
+	metricIndexingTotal.Inc()
 	return indexStateSuccess, f(args, runCmd)
 }
 
@@ -424,6 +421,14 @@ func listRepos(ctx context.Context, hostname string, root *url.URL, indexed []st
 		return nil, err
 	}
 
+	countsByHost := make(map[string]int)
+	for _, name := range data.RepoNames {
+		codeHost := codeHostFromName(name)
+		countsByHost[codeHost] += 1
+	}
+	for codeHost, count := range countsByHost {
+		metricNumNotIndexed.WithLabelValues(codeHost).Set(float64(count))
+	}
 	return data.RepoNames, nil
 }
 

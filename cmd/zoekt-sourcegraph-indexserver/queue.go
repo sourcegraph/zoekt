@@ -62,13 +62,11 @@ func (q *Queue) Len() int {
 
 // AddOrUpdate sets which commit to index next for repoName. If repoName is
 // already in the queue, it is updated.
-func (q *Queue) AddOrUpdate(repoName, commit string) bool {
-	added := false
+func (q *Queue) AddOrUpdate(repoName, commit string) {
 	q.mu.Lock()
 	item := q.get(repoName)
 	item.latestCommit = commit
 	if item.heapIdx < 0 {
-		added = true
 		q.seq++
 		item.seq = q.seq
 		heap.Push(&q.pq, item)
@@ -76,7 +74,6 @@ func (q *Queue) AddOrUpdate(repoName, commit string) bool {
 		heap.Fix(&q.pq, item.heapIdx)
 	}
 	q.mu.Unlock()
-	return added
 }
 
 // SetIndexed sets what the currently indexed commit is for repoName.
