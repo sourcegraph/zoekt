@@ -242,7 +242,6 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
 
 	defer func() {
-		metricIndexingTotal.Inc()
 		if err != nil {
 			tr.SetError()
 			tr.LazyPrintf("error: %v", err)
