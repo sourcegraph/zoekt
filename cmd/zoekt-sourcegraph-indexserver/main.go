@@ -59,9 +59,9 @@ var (
 		Help: "Number of indexed repos by code host",
 	}, []string{"codehost"})
 
-	metricNumNotIndexed = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "index_num_unindexed",
-		Help: "Number of not yet indexed repos by code host",
+	metricNumAssigned = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "index_num_assigned",
+		Help: "Number of repos assigned to this indexer by code host",
 	}, []string{"codehost"})
 
 	metricFailingTotal = promauto.NewCounter(prometheus.CounterOpts{
@@ -426,7 +426,7 @@ func listRepos(ctx context.Context, hostname string, root *url.URL, indexed []st
 		countsByHost[codeHost] += 1
 	}
 	for codeHost, count := range countsByHost {
-		metricNumNotIndexed.WithLabelValues(codeHost).Set(float64(count))
+		metricNumAssigned.WithLabelValues(codeHost).Set(float64(count))
 	}
 	return data.RepoNames, nil
 }
