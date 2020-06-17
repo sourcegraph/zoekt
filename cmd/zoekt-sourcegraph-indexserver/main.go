@@ -60,7 +60,7 @@ var (
 	}, []string{"codehost"})
 
 	metricNumNotIndexed = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "index_num_not_indexed",
+		Name: "index_num_unindexed",
 		Help: "Number of not yet indexed repos by code host",
 	}, []string{"codehost"})
 
