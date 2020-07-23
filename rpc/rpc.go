@@ -85,8 +85,8 @@ func (c *client) call(ctx context.Context, serviceMethod string, args interface{
 }
 
 // getRPCClient gets the rpc client. If gen matches the current generation, we
-// redail and increment the generation. This is used to prevent concurrent
-// redailing on network failure.
+// redial and increment the generation. This is used to prevent concurrent
+// redialing on network failure.
 func (c *client) getRPCClient(ctx context.Context, gen int) (*rpc.Client, int, error) {
 	// coarse lock so we only dial once
 	c.mu.Lock()
