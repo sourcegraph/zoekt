@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -25,6 +26,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 const debug = false
@@ -67,7 +69,7 @@ func newProcess(bin string) (*ctagsProcess, error) {
 	proc := ctagsProcess{
 		cmd:     cmd,
 		in:      in,
-		out:     &scanner{r: bufio.NewReaderSize(out, 4096)},
+		out:     &scanner{r: bufio.NewReaderSize(out, 4096), timeout: 10 * time.Second},
 		outPipe: out,
 	}
 
@@ -206,6 +208,8 @@ type scanner struct {
 	r    *bufio.Reader
 	line []byte
 	err  error
+
+	timeout time.Duration
 }
 
 func (s *scanner) Scan() bool {
@@ -213,24 +217,53 @@ func (s *scanner) Scan() bool {
 		return false
 	}
 
-	var (
-		err  error
-		line []byte
-	)
+	nextLine := func() ([]byte, error) {
+		var (
+			err  error
+			line []byte
+		)
 
-	for err == nil && len(line) == 0 {
-		line, err = s.r.ReadSlice('\n')
-		for err == bufio.ErrBufferFull {
-			// make line empty so we ignore it
-			line = nil
-			_, err = s.r.ReadSlice('\n')
+		for err == nil && len(line) == 0 {
+			line, err = s.r.ReadSlice('\n')
+			for err == bufio.ErrBufferFull {
+				// make line empty so we ignore it
+				line = nil
+				_, err = s.r.ReadSlice('\n')
+			}
+			line = bytes.TrimSuffix(line, []byte{'\n'})
+			line = bytes.TrimSuffix(line, []byte{'\r'})
 		}
-		line = bytes.TrimSuffix(line, []byte{'\n'})
-		line = bytes.TrimSuffix(line, []byte{'\r'})
+
+		return line, err
+
 	}
 
-	s.line, s.err = line, err
-	return len(line) > 0
+	type nextLineResponse struct {
+		err  error
+		line []byte
+	}
+
+	result := make(chan nextLineResponse, 1)
+	go func() {
+		line, err := nextLine()
+		result <- nextLineResponse{
+			err,
+			line,
+		}
+	}()
+
+	select {
+	case <-time.After(s.timeout):
+		s.err = errors.New("per-line timeout hit")
+		s.line = nil
+
+		return false
+	case r := <-result:
+		s.line = r.line
+		s.err = r.err
+
+		return len(r.line) > 0
+	}
 }
 
 func (s *scanner) Bytes() []byte {
