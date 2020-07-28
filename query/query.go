@@ -151,6 +151,18 @@ func (q *RepoBranches) String() string {
 	return fmt.Sprintf("(reposet %s)", detail)
 }
 
+// GobEncode implements a specialized encoder for RepoBranches.
+func (q *RepoBranches) MarshalBinary() ([]byte, error) {
+	return repoBranchesEncode(q.Set)
+}
+
+// GobDecode implements a specialized decoder for RepoBranches.
+func (q *RepoBranches) UnmarshalBinary(b []byte) error {
+	var err error
+	q.Set, err = repoBranchesDecode(b)
+	return err
+}
+
 // RepoSet is a list of repos to match. It is a Sourcegraph addition and only
 // used in the RPC interface for efficient checking of large repo lists.
 type RepoSet struct {
