@@ -238,6 +238,12 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 			continue
 		}
 
+		// setSize may be larger than the number of shards we have. The size of
+		// filtered is bounded by min(len(set), len(shards))
+		if setSize > len(shards) {
+			setSize = len(shards)
+		}
+
 		filtered := make([]rankedShard, 0, setSize)
 
 		for _, s := range shards {
