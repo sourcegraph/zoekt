@@ -151,6 +151,21 @@ func (q *RepoBranches) String() string {
 	return fmt.Sprintf("(reposet %s)", detail)
 }
 
+// Branches returns a query representing the branches to search for name.
+func (q *RepoBranches) Branches(name string) Q {
+	branches, ok := q.Set[name]
+	if !ok {
+		return &Const{Value: false}
+	}
+
+	// New sub query is (or (branch branches[0]) ...)
+	qs := make([]Q, len(branches))
+	for i, branch := range branches {
+		qs[i] = &Branch{Pattern: branch, Exact: true}
+	}
+	return NewOr(qs...)
+}
+
 // RepoSet is a list of repos to match. It is a Sourcegraph addition and only
 // used in the RPC interface for efficient checking of large repo lists.
 type RepoSet struct {
