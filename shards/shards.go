@@ -252,22 +252,30 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 			}
 		}
 
+		// We don't need to adjust the query since we are returning an empty set
+		// of shards to search.
+		if len(filtered) == 0 {
+			return filtered, and
+		}
+
+		// This optimization allows us to avoid the work done by
+		// indexData.simplify for each shard.
+		//
+		// For example if our query is (and (reposet foo bar) (content baz))
+		// then at this point filtered is [foo bar] and q is the same. For each
+		// shard indexData.simplify will simplify to (and true (content baz)) ->
+		// (content baz). This work can be done now once, rather than per shard.
 		if _, ok := c.(*query.RepoSet); ok {
-			// This optimization allows us to avoid the work done by
-			// indexData.simplify for each shard.
-			//
-			// For example if our query is (and (reposet foo bar) (content baz))
-			// then at this point filtered is [foo bar] and q is the same. For each
-			// shard indexData.simplify will simplify to (and true (content baz)) ->
-			// (content baz). This work can be done now once, rather than per shard.
-			and.Children[i] = &query.Const{Value: len(filtered) > 0}
+			and.Children[i] = &query.Const{Value: true}
+			return filtered, query.Simplify(and)
+		}
 		}
 		// TODO the same optimization for RepoBranches in the common case (all
 		// repos are searching HEAD)
 
 		// Stop after first RepoSet, otherwise we might append duplicate
 		// shards to `filtered`
-		return filtered, query.Simplify(and)
+		return filtered, and
 	}
 
 	return shards, and
