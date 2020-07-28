@@ -333,7 +333,9 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	start = time.Now()
 
 	shards := ss.getShards()
+	tr.LazyPrintf("before selectRepoSet shards:%d", len(shards))
 	shards, q = selectRepoSet(shards, q)
+	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), q)
 
 	all := make(chan shardResult, len(shards))
 
