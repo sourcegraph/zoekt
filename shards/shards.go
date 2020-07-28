@@ -216,9 +216,6 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 	// (and (repobranches ...) (q))
 	// (and (repobranches ...) (q))
 
-	// TODO RepoBranches
-
-	// TODO implement optimization
 	for i, c := range and.Children {
 		var setSize int
 		var hasRepo func(string) bool
@@ -269,9 +266,20 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 			and.Children[i] = &query.Const{Value: true}
 			return filtered, query.Simplify(and)
 		}
+		if b, ok := c.(*query.RepoBranches); ok {
+			// We can only replace if all the repos want the same branches.
+			want := b.Set[filtered[0].name]
+			for _, s := range filtered[1:] {
+				if !strSliceEqual(want, b.Set[s.name]) {
+					return filtered, and
+				}
+			}
+
+			// Every repo wants the same branches, so we can replace RepoBranches
+			// with a list of branch queries.
+			and.Children[i] = b.Branches(filtered[0].name)
+			return filtered, query.Simplify(and)
 		}
-		// TODO the same optimization for RepoBranches in the common case (all
-		// repos are searching HEAD)
 
 		// Stop after first RepoSet, otherwise we might append duplicate
 		// shards to `filtered`
@@ -629,4 +637,16 @@ func loadShard(fn string) (zoekt.Searcher, error) {
 	}
 
 	return s, nil
+}
+
+func strSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
