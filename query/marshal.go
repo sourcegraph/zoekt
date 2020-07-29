@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"unsafe"
 )
 
 // We implement a custom binary marshaller for a list of repos to
@@ -33,19 +34,19 @@ import (
 // The above adds up to a huge improvement, worth the extra complexity:
 //
 // name                   old time/op    new time/op    delta
-// RepoBranches_Encode-8    2.21ms ± 3%    0.63ms ± 5%  -71.55%  (p=0.000 n=10+10)
-// RepoBranches_Decode-8    4.08ms ± 5%    1.20ms ± 1%  -70.58%  (p=0.000 n=10+10)
+// RepoBranches_Encode-8    2.37ms ± 3%    0.66ms ± 2%  -72.02%  (p=0.000 n=10+10)
+// RepoBranches_Decode-8    4.19ms ± 2%    0.75ms ± 2%  -82.17%  (p=0.000 n=10+10)
 //
 // name                   old bytes      new bytes      delta
 // RepoBranches_Encode-8     393kB ± 0%     344kB ± 0%  -12.48%  (p=0.000 n=10+10)
 //
 // name                   old alloc/op   new alloc/op   delta
-// RepoBranches_Encode-8     726kB ± 0%     344kB ± 0%  -52.59%  (p=0.000 n=6+9)
-// RepoBranches_Decode-8    2.31MB ± 0%    1.58MB ± 0%  -31.62%  (p=0.000 n=10+10)
+// RepoBranches_Encode-8     726kB ± 0%     344kB ± 0%  -52.59%  (p=0.000 n=10+8)
+// RepoBranches_Decode-8    2.31MB ± 0%    1.44MB ± 0%  -37.51%  (p=0.000 n=9+10)
 //
 // name                   old allocs/op  new allocs/op  delta
 // RepoBranches_Encode-8     20.0k ± 0%      0.0k ± 0%  -99.99%  (p=0.000 n=10+10)
-// RepoBranches_Decode-8     50.6k ± 0%     20.8k ± 0%  -58.94%  (p=0.000 n=10+10)
+// RepoBranches_Decode-8     50.6k ± 0%      0.4k ± 0%  -99.26%  (p=0.000 n=10+10)
 
 // repoBranchesEncode implements an efficient encoder for RepoBranches.
 func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
@@ -110,7 +111,9 @@ var head = []string{"HEAD"}
 
 // repoBranchesDecode implements an efficient decoder for RepoBranches.
 func repoBranchesDecode(b []byte) (map[string][]string, error) {
-	r := binaryReader{b: b}
+	// binaryReader returns strings pointing into b to avoid allocations. We
+	// don't own b, so we create a copy of it.
+	r := binaryReader{b: append([]byte{}, b...)}
 
 	// Version
 	if v := r.byt(); v != 1 {
@@ -165,7 +168,7 @@ func (b *binaryReader) str() string {
 		b.err = errors.New("malformed RepoBranches")
 		return ""
 	}
-	s := string(b.b[:l])
+	s := b2s(b.b[:l])
 	b.b = b.b[l:]
 	return s
 }
@@ -179,4 +182,8 @@ func (b *binaryReader) byt() byte {
 	x := b.b[0]
 	b.b = b.b[1:]
 	return x
+}
+
+func b2s(b []byte) string {
+	return *(*string)(unsafe.Pointer(&b))
 }
