@@ -151,12 +151,12 @@ func (q *RepoBranches) String() string {
 	return fmt.Sprintf("(reposet %s)", detail)
 }
 
-// GobEncode implements a specialized encoder for RepoBranches.
+// MarshalBinary implements a specialized encoder for RepoBranches.
 func (q *RepoBranches) MarshalBinary() ([]byte, error) {
 	return repoBranchesEncode(q.Set)
 }
 
-// GobDecode implements a specialized decoder for RepoBranches.
+// UnmarshalBinary implements a specialized decoder for RepoBranches.
 func (q *RepoBranches) UnmarshalBinary(b []byte) error {
 	var err error
 	q.Set, err = repoBranchesDecode(b)
