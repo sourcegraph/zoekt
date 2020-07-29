@@ -72,6 +72,9 @@ func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
 		if l := len(branches); l == 1 && branches[0] == "HEAD" {
 			continue
 		} else if l > 255 {
+			// We encode branches len as a byte (saves 11% cpu vs varint). This is
+			// fine sinze Zoekt can only index upto 64 branches (uses a bitmask on a
+			// 64bit int to encode branch information for a document)
 			return nil, fmt.Errorf("can't encode more than 255 branches: %d", l)
 		}
 		for _, branch := range branches {
@@ -95,7 +98,6 @@ func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
 			continue
 		}
 
-		// length of branches is 64 or less
 		b.WriteByte(byte(len(branches)))
 		for _, branch := range branches {
 			str(branch)
