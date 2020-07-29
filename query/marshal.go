@@ -103,6 +103,11 @@ func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// head is the most common slice of branches we search. We re-use it to avoid
+// allocations when decoding. We know that zoekt never mutates the
+// repoBranches slice, so it is safe to share this slice.
+var head = []string{"HEAD"}
+
 // repoBranchesDecode implements an efficient decoder for RepoBranches.
 func repoBranchesDecode(b []byte) (map[string][]string, error) {
 	r := binaryReader{b: b}
@@ -123,7 +128,7 @@ func repoBranchesDecode(b []byte) (map[string][]string, error) {
 
 		// Special case "HEAD"
 		if branchesLen == 0 {
-			repoBranches[name] = []string{"HEAD"}
+			repoBranches[name] = head
 			continue
 		}
 
