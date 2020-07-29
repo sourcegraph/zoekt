@@ -34,19 +34,19 @@ import (
 // The above adds up to a huge improvement, worth the extra complexity:
 //
 // name                   old time/op    new time/op    delta
-// RepoBranches_Encode-8    2.37ms ± 3%    0.66ms ± 2%  -72.02%  (p=0.000 n=10+10)
-// RepoBranches_Decode-8    4.19ms ± 2%    0.75ms ± 2%  -82.17%  (p=0.000 n=10+10)
+// RepoBranches_Encode-8    2.37ms ± 3%    0.62ms ± 0%   -73.77%  (p=0.000 n=10+8)
+// RepoBranches_Decode-8    4.19ms ± 2%    0.74ms ± 1%   -82.37%  (p=0.000 n=10+9)
 //
 // name                   old bytes      new bytes      delta
-// RepoBranches_Encode-8     393kB ± 0%     344kB ± 0%  -12.48%  (p=0.000 n=10+10)
+// RepoBranches_Encode-8     393kB ± 0%     344kB ± 0%   -12.48%  (p=0.000 n=10+10)
 //
 // name                   old alloc/op   new alloc/op   delta
-// RepoBranches_Encode-8     726kB ± 0%     344kB ± 0%  -52.59%  (p=0.000 n=10+8)
-// RepoBranches_Decode-8    2.31MB ± 0%    1.44MB ± 0%  -37.51%  (p=0.000 n=9+10)
+// RepoBranches_Encode-8     726kB ± 0%     344kB ± 0%   -52.60%  (p=0.000 n=10+9)
+// RepoBranches_Decode-8    2.31MB ± 0%    1.44MB ± 0%   -37.51%  (p=0.000 n=9+10)
 //
 // name                   old allocs/op  new allocs/op  delta
-// RepoBranches_Encode-8     20.0k ± 0%      0.0k ± 0%  -99.99%  (p=0.000 n=10+10)
-// RepoBranches_Decode-8     50.6k ± 0%      0.4k ± 0%  -99.26%  (p=0.000 n=10+10)
+// RepoBranches_Encode-8     20.0k ± 0%      0.0k ± 0%  -100.00%  (p=0.000 n=10+10)
+// RepoBranches_Decode-8     50.6k ± 0%      0.4k ± 0%   -99.26%  (p=0.000 n=10+10)
 
 // repoBranchesEncode implements an efficient encoder for RepoBranches.
 func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
