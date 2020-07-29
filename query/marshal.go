@@ -71,6 +71,9 @@ func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
 		size += strSize(name) + 1
 		if l := len(branches); l == 1 && branches[0] == "HEAD" {
 			continue
+		} else if l == 0 {
+			// We reserve "0" for the "HEAD" special case.
+			return nil, fmt.Errorf("repo with no branches: %q", name)
 		} else if l > 255 {
 			// We encode branches len as a byte (saves 11% cpu vs varint). This is
 			// fine sinze Zoekt can only index upto 64 branches (uses a bitmask on a
