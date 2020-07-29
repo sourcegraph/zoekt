@@ -51,7 +51,7 @@ import (
 // repoBranchesEncode implements an efficient encoder for RepoBranches.
 func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
 	var b bytes.Buffer
-	var enc [8]byte
+	var enc [binary.MaxVarintLen64]byte
 	varint := func(n int) {
 		m := binary.PutUvarint(enc[:], uint64(n))
 		b.Write(enc[:m])
