@@ -64,14 +64,9 @@ func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
 		return binary.PutUvarint(enc[:], uint64(len(s))) + len(s)
 	}
 
-	// Version
-	b.WriteByte(1)
-
-	// Length
-	varint(len(repoBranches))
-
 	// Calculate size
-	size := 0
+	size := 1 // version
+	size += binary.PutUvarint(enc[:], uint64(len(repoBranches)))
 	for name, branches := range repoBranches {
 		size += strSize(name) + 1
 		if l := len(branches); l == 1 && branches[0] == "HEAD" {
@@ -84,6 +79,12 @@ func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
 		}
 	}
 	b.Grow(size)
+
+	// Version
+	b.WriteByte(1)
+
+	// Length
+	varint(len(repoBranches))
 
 	for name, branches := range repoBranches {
 		str(name)
