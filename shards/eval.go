@@ -3,13 +3,12 @@ package shards
 import (
 	"context"
 
-	"golang.org/x/net/trace"
-
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
+	"github.com/google/zoekt/trace"
 )
 
-// repoSearcher evaluates all type:repo sub-queries before sending the query
+// typeRepoSearcher evaluates all type:repo sub-queries before sending the query
 // to the underlying searcher. We need to evaluate type:repo queries first
 // since they need to do cross shard operations.
 type typeRepoSearcher struct {
@@ -17,7 +16,7 @@ type typeRepoSearcher struct {
 }
 
 func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
-	tr := trace.New("typeRepoSearcher.Search", "")
+	tr, ctx := trace.New(ctx, "typeRepoSearcher.Search", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
 	defer func() {
@@ -27,7 +26,7 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
-			tr.SetError()
+			tr.SetError(err)
 		}
 		tr.Finish()
 	}()
@@ -41,7 +40,7 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 }
 
 func (s *typeRepoSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
-	tr := trace.New("typeRepoSearcher.List", "")
+	tr, ctx := trace.New(ctx, "typeRepoSearcher.List", "")
 	tr.LazyLog(r, true)
 	defer func() {
 		if rl != nil {
@@ -50,7 +49,7 @@ func (s *typeRepoSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
-			tr.SetError()
+			tr.SetError(err)
 		}
 		tr.Finish()
 	}()

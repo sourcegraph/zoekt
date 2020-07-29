@@ -2,6 +2,7 @@ module github.com/google/zoekt
 
 require (
 	github.com/andygrunwald/go-gerrit v0.0.0-20191101112536-3f5e365ccf57
+	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gfleury/go-bitbucket-v1 v0.0.0-20200312180434-e5170e3280fb
 	github.com/go-git/go-git/v5 v5.0.0
@@ -15,9 +16,14 @@ require (
 	github.com/keegancsmith/tmpfriend v0.0.0-20180423180255-86e88902a513
 	github.com/kylelemons/godebug v1.1.0
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
+	github.com/opentracing-contrib/go-stdlib v1.0.0
+	github.com/opentracing/opentracing-go v1.2.0
 	github.com/prometheus/client_golang v1.5.1
 	github.com/prometheus/procfs v0.0.10 // indirect
+	github.com/uber/jaeger-client-go v2.25.0+incompatible
+	github.com/uber/jaeger-lib v2.2.0+incompatible
 	github.com/xanzy/go-gitlab v0.28.0
+	go.uber.org/atomic v1.4.0
 	go.uber.org/automaxprocs v1.3.0
 	golang.org/x/crypto v0.0.0-20200311171314-f7b00557c8c4 // indirect
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a

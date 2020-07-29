@@ -316,6 +316,10 @@ type SearchOptions struct {
 	// Trim the number of results after collating and sorting the
 	// results
 	MaxDocDisplayCount int
+
+	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
+	// a command-line flag
+	Trace bool
 }
 
 func (s *SearchOptions) String() string {

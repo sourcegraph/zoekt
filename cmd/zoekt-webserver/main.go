@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"time"
@@ -38,8 +39,14 @@ import (
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
 	"github.com/google/zoekt/web"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/automaxprocs/maxprocs"
+
+	"github.com/uber/jaeger-client-go"
+	jaegercfg "github.com/uber/jaeger-client-go/config"
+	jaegerlog "github.com/uber/jaeger-client-go/log"
+	jaegermetrics "github.com/uber/jaeger-lib/metrics"
 )
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
@@ -124,7 +131,33 @@ func main() {
 	templateDir := flag.String("template_dir", "", "set directory from which to load custom .html.tpl template files")
 	dumpTemplates := flag.Bool("dump_templates", false, "dump templates into --template_dir and exit.")
 	version := flag.Bool("version", false, "Print version number")
+	useJaeger := flag.Bool("jaeger", false, "Collect and send traces to Jaeger. Jaeger configuration set via environment variables. Only traces for RPC requests that explicitly opt into traces will be collected.")
 	flag.Parse()
+
+	if *useJaeger {
+		log.Printf("connecting to Jaeger")
+		cfg, err := jaegercfg.FromEnv()
+		cfg.ServiceName = "zoekt"
+		if err != nil {
+			log.Printf("could not initialize jaeger tracer from env, error: %v", err.Error())
+			return
+		}
+		if reflect.DeepEqual(cfg.Sampler, &jaegercfg.SamplerConfig{}) {
+			// Default sampler configuration for when it is not specified via
+			// JAEGER_SAMPLER_* env vars. In most cases, this is sufficient
+			// enough to connect to Jaeger without any env vars.
+			cfg.Sampler.Type = jaeger.SamplerTypeConst
+			cfg.Sampler.Param = 1
+		}
+		tracer, _, err := cfg.NewTracer(
+			jaegercfg.Logger(jaegerlog.StdLogger),
+			jaegercfg.Metrics(jaegermetrics.NullFactory),
+		)
+		if err != nil {
+			log.Printf("could not initialize jaeger tracer, error: %v", err.Error())
+		}
+		opentracing.SetGlobalTracer(tracer)
+	}
 
 	if *version {
 		fmt.Printf("zoekt-webserver version %q\n", zoekt.Version)

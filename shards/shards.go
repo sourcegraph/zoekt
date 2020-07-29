@@ -24,11 +24,11 @@ import (
 	"sort"
 	"time"
 
-	"golang.org/x/net/trace"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
+	"github.com/google/zoekt/trace"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -290,7 +290,7 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 }
 
 func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
-	tr := trace.New("shardedSearcher.Search", "")
+	tr, ctx := trace.New(ctx, "shardedSearcher.Search", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
 	overallStart := time.Now()
@@ -318,7 +318,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 			metricSearchFailedTotal.Inc()
 
 			tr.LazyPrintf("error: %v", err)
-			tr.SetError()
+			tr.SetError(err)
 		}
 		tr.Finish()
 	}()
@@ -464,7 +464,7 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, sink chan sh
 }
 
 func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
-	tr := trace.New("shardedSearcher.List", "")
+	tr, ctx := trace.New(ctx, "shardedSearcher.List", "")
 	tr.LazyLog(r, true)
 	metricListRunning.Inc()
 	defer func() {
@@ -475,7 +475,7 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
-			tr.SetError()
+			tr.SetError(err)
 		}
 		tr.Finish()
 	}()
