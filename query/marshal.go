@@ -94,8 +94,7 @@ func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
 
 		// Special case "HEAD"
 		if len(branches) == 1 && branches[0] == "HEAD" {
-			b.WriteByte(0)
-			continue
+			branches = nil
 		}
 
 		b.WriteByte(byte(len(branches)))
