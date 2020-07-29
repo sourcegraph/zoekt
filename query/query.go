@@ -148,7 +148,7 @@ func (q *RepoBranches) String() string {
 		sort.Strings(repos)
 		detail = strings.Join(repos, " ")
 	}
-	return fmt.Sprintf("(reposet %s)", detail)
+	return fmt.Sprintf("(repobranches %s)", detail)
 }
 
 // Branches returns a query representing the branches to search for name.
