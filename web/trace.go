@@ -1,9 +1,12 @@
 package web
 
 import (
+	"log"
+
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/trace/ot"
+	"github.com/opentracing/opentracing-go"
 	"golang.org/x/net/context"
 )
 
@@ -15,7 +18,19 @@ type traceAwareSearcher struct {
 }
 
 func (s traceAwareSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
-	return s.Searcher.Search(ot.WithShouldTrace(ctx, opts.Trace), q, opts)
+	ctx = ot.WithShouldTrace(ctx, opts.Trace)
+	if opts.Trace && opts.SpanContext != nil {
+		spanContext, err := ot.GetTracer(ctx).Extract(opentracing.TextMap, opentracing.TextMapCarrier(opts.SpanContext))
+		if err != nil {
+			log.Printf("Error extracting span from opts: %s", err)
+		}
+		if spanContext != nil {
+			span, newCtx := ot.StartSpanFromContext(ctx, "zoekt.traceAwareSearcher.Search", opentracing.ChildOf(spanContext))
+			defer span.Finish()
+			ctx = newCtx
+		}
+	}
+	return s.Searcher.Search(ctx, q, opts)
 }
 
 func (s traceAwareSearcher) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
