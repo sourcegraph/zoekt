@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -131,33 +132,9 @@ func main() {
 	templateDir := flag.String("template_dir", "", "set directory from which to load custom .html.tpl template files")
 	dumpTemplates := flag.Bool("dump_templates", false, "dump templates into --template_dir and exit.")
 	version := flag.Bool("version", false, "Print version number")
-	useJaeger := flag.Bool("jaeger", false, "Collect and send traces to Jaeger. Jaeger configuration set via environment variables. Only traces for RPC requests that explicitly opt into traces will be collected.")
 	flag.Parse()
 
-	if *useJaeger {
-		log.Printf("connecting to Jaeger")
-		cfg, err := jaegercfg.FromEnv()
-		cfg.ServiceName = "zoekt"
-		if err != nil {
-			log.Printf("could not initialize jaeger tracer from env, error: %v", err.Error())
-			return
-		}
-		if reflect.DeepEqual(cfg.Sampler, &jaegercfg.SamplerConfig{}) {
-			// Default sampler configuration for when it is not specified via
-			// JAEGER_SAMPLER_* env vars. In most cases, this is sufficient
-			// enough to connect to Jaeger without any env vars.
-			cfg.Sampler.Type = jaeger.SamplerTypeConst
-			cfg.Sampler.Param = 1
-		}
-		tracer, _, err := cfg.NewTracer(
-			jaegercfg.Logger(jaegerlog.StdLogger),
-			jaegercfg.Metrics(jaegermetrics.NullFactory),
-		)
-		if err != nil {
-			log.Printf("could not initialize jaeger tracer, error: %v", err.Error())
-		}
-		opentracing.SetGlobalTracer(tracer)
-	}
+	initializeJaeger()
 
 	if *version {
 		fmt.Printf("zoekt-webserver version %q\n", zoekt.Version)
@@ -346,4 +323,41 @@ func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Sear
 		log.Printf("DBUG: search q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsSkipped=%v MatchCount=%v NgramMatches=%v Wait=%v}", q.String(), opts.EstimateDocCount, opts.Whole, opts.ShardMaxMatchCount, opts.TotalMaxMatchCount, opts.ShardMaxImportantMatch, opts.TotalMaxImportantMatch, opts.MaxWallTime, opts.MaxDocDisplayCount, sr.Stats.ContentBytesLoaded, sr.Stats.IndexBytesLoaded, sr.Stats.Crashes, sr.Stats.Duration, sr.Stats.FileCount, sr.Stats.ShardFilesConsidered, sr.Stats.FilesConsidered, sr.Stats.FilesLoaded, sr.Stats.FilesSkipped, sr.Stats.ShardsSkipped, sr.Stats.MatchCount, sr.Stats.NgramMatches, sr.Stats.Wait)
 	}
 	return sr, err
+}
+
+func initializeJaeger() {
+	jaegerDisabled := os.Getenv("JAEGER_DISABLED")
+	if jaegerDisabled == "" {
+		return
+	}
+	isJaegerDisabled, err := strconv.ParseBool(jaegerDisabled)
+	if err != nil {
+		log.Printf("EROR: failed to parse JAEGER_DISABLED: %s", err)
+		return
+	}
+	if isJaegerDisabled {
+		return
+	}
+	log.Printf("connecting to Jaeger")
+	cfg, err := jaegercfg.FromEnv()
+	cfg.ServiceName = "zoekt"
+	if err != nil {
+		log.Printf("EROR: could not initialize jaeger tracer from env, error: %v", err.Error())
+		return
+	}
+	if reflect.DeepEqual(cfg.Sampler, &jaegercfg.SamplerConfig{}) {
+		// Default sampler configuration for when it is not specified via
+		// JAEGER_SAMPLER_* env vars. In most cases, this is sufficient
+		// enough to connect to Jaeger without any env vars.
+		cfg.Sampler.Type = jaeger.SamplerTypeConst
+		cfg.Sampler.Param = 1
+	}
+	tracer, _, err := cfg.NewTracer(
+		jaegercfg.Logger(jaegerlog.StdLogger),
+		jaegercfg.Metrics(jaegermetrics.NullFactory),
+	)
+	if err != nil {
+		log.Printf("could not initialize jaeger tracer, error: %v", err.Error())
+	}
+	opentracing.SetGlobalTracer(tracer)
 }
