@@ -338,7 +338,6 @@ func initializeJaeger() {
 	if isJaegerDisabled {
 		return
 	}
-	log.Printf("connecting to Jaeger")
 	cfg, err := jaegercfg.FromEnv()
 	cfg.ServiceName = "zoekt"
 	if err != nil {
