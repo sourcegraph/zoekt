@@ -1,5 +1,8 @@
 // Package trace provides a tracing API that in turn invokes both the `golang.org/x/net/trace` API
-// and creates an opentracing span, if the opentracing global tracer is set.
+// and creates an opentracing span if appropriate.
+//
+// This is similar to the github.com/sourcegraph/sourcegraph/internal/trace package in the main repo,
+// and it may make sense to factor both out into a common package at some point.
 package trace
 
 import (
