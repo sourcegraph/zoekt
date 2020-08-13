@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/trace"
+	"golang.org/x/net/trace"
 )
 
 const maxUInt16 = 0xffff
@@ -93,7 +93,7 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 	default:
 	}
 
-	tr, ctx := trace.New(ctx, "indexData.Search", d.file.Name())
+	tr := trace.New("indexData.Search", d.file.Name())
 	tr.LazyPrintf("opts: %+v", opts)
 	defer func() {
 		if sr != nil {
@@ -102,7 +102,7 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
-			tr.SetError(err)
+			tr.SetError()
 		}
 		tr.Finish()
 	}()
@@ -397,7 +397,7 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 }
 
 func (d *indexData) List(ctx context.Context, q query.Q) (rl *RepoList, err error) {
-	tr, ctx := trace.New(ctx, "indexData.List", d.file.Name())
+	tr := trace.New("indexData.List", d.file.Name())
 	defer func() {
 		if rl != nil {
 			tr.LazyPrintf("repos size: %d", len(rl.Repos))
@@ -405,7 +405,7 @@ func (d *indexData) List(ctx context.Context, q query.Q) (rl *RepoList, err erro
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
-			tr.SetError(err)
+			tr.SetError()
 		}
 		tr.Finish()
 	}()
