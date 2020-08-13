@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/zoekt/trace/ot"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/opentracing/opentracing-go/log"
@@ -23,13 +22,13 @@ type Tracer struct {
 }
 
 func New(ctx context.Context, family, title string) (*Trace, context.Context) {
-	tr := Tracer{Tracer: ot.GetTracer(ctx)}
+	tr := Tracer{Tracer: GetOpenTracer(ctx, nil)}
 	return tr.New(ctx, family, title)
 }
 
 // New returns a new Trace with the specified family and title.
 func (t Tracer) New(ctx context.Context, family, title string) (*Trace, context.Context) {
-	span, ctx := ot.StartSpanFromContextWithTracer(
+	span, ctx := StartSpanFromContextWithTracer(
 		ctx,
 		t.Tracer,
 		family,
