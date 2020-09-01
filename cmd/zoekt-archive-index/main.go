@@ -20,6 +20,7 @@ import (
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/cmd"
+	"github.com/google/zoekt/ignore"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 
@@ -113,6 +114,33 @@ func (o *Options) SetDefaults() {
 	}
 }
 
+type ignoreOptions struct {
+	Strip int
+}
+
+func newIgnoreMatcher(ar string, opts ignoreOptions) (*ignore.IgnoreMatcher, error) {
+	a, err := openArchive(ar)
+	if err != nil {
+		return nil, err
+	}
+	defer a.Close()
+
+	for {
+		f, err := a.Next()
+		if err == io.EOF {
+			return &ignore.IgnoreMatcher{}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		file := ignore.StripComponents(f.Name, opts.Strip)
+		if file == ignore.IgnoreFile {
+			patterns, err := ignore.ParseIgnoreFile(f)
+			return &ignore.IgnoreMatcher{IgnoreList: patterns, Strip: opts.Strip}, err
+		}
+	}
+}
+
 func do(opts Options, bopts build.Options) error {
 	opts.SetDefaults()
 
@@ -152,6 +180,11 @@ func do(opts Options, bopts build.Options) error {
 	}
 	defer a.Close()
 
+	ig, err := newIgnoreMatcher(opts.Archive, ignoreOptions{Strip: opts.Strip})
+	if err != nil {
+		return err
+	}
+
 	bopts.RepositoryDescription.Source = opts.Archive
 	builder, err := build.NewBuilder(bopts)
 	if err != nil {
@@ -186,7 +219,9 @@ func do(opts Options, bopts build.Options) error {
 		if err != nil {
 			return err
 		}
-
+		if ig.Match(f.Name) {
+			continue
+		}
 		if err := add(f); err != nil {
 			return err
 		}

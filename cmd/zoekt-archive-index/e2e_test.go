@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	"github.com/google/zoekt/ignore"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
 )
@@ -90,7 +91,7 @@ func testIndexIncrementally(t *testing.T, format string) {
 	if err != nil {
 		t.Fatalf("TempDir: %v", err)
 	}
-	defer os.RemoveAll(indexdir)
+	//defer os.RemoveAll(indexdir)
 	archive, err := ioutil.TempFile("", "TestIndexArg-archive")
 	if err != nil {
 		t.Fatalf("TempFile: %v", err)
@@ -168,5 +169,131 @@ func testIndexIncrementally(t *testing.T, format string) {
 		if len(result.Files) != wantNumFiles {
 			t.Errorf("got %v, want %d files.", result.Files, wantNumFiles)
 		}
+	}
+}
+
+type ignoreTest struct {
+	ignorePattern string
+	wantFiles     int
+}
+
+func TestIgnoreArchive(t *testing.T) {
+	tests := []ignoreTest{
+		{
+			ignorePattern: "D0",
+			wantFiles:     5,
+		},
+		{
+			ignorePattern: "D3",
+			wantFiles:     3,
+		},
+		{
+			ignorePattern: "/D3",
+			wantFiles:     3,
+		},
+		{
+			ignorePattern: "/D3/",
+			wantFiles:     3,
+		},
+		{
+			ignorePattern: "D3/",
+			wantFiles:     3,
+		},
+		{
+			ignorePattern: "D30",
+			wantFiles:     6,
+		},
+		{
+			ignorePattern: "D1\n # D3",
+			wantFiles:     5,
+		},
+		{
+			ignorePattern: "D1\nD3",
+			wantFiles:     2,
+		},
+		{
+			ignorePattern: "D1\n\nD3",
+			wantFiles:     2,
+		},
+		{
+			ignorePattern: "D0\nD1\nD2\nD3",
+			wantFiles:     0,
+		},
+	}
+	for _, format := range []string{"tar", "tgz", "zip"} {
+		t.Run(format, func(t *testing.T) {
+			for _, tt := range tests {
+				testIgnore(t, format, tt)
+			}
+		})
+	}
+}
+
+func testIgnore(t *testing.T, format string, test ignoreTest) {
+	fileSize := 10
+
+	indexdir, err := ioutil.TempDir("", "ignore_index")
+	if err != nil {
+		t.Fatalf("TempDir: %v", err)
+	}
+	//defer os.RemoveAll(indexdir)
+
+	archive, err := ioutil.TempFile("", "ignore_archive")
+	if err != nil {
+		t.Fatalf("TempFile: %v", err)
+	}
+	defer os.Remove(archive.Name())
+
+	content := strings.Repeat("a", fileSize)
+	files := map[string]string{
+		"D0/F0":          content,
+		"D1/F1":          content,
+		"D2/F2":          content,
+		"D3/F3.1":        content,
+		"D3/F3.2":        content,
+		"D3/D3.1/F3.1.1": content,
+	}
+	files[ignore.IgnoreFile] = test.ignorePattern
+	err = writeArchive(archive, format, files)
+	if err != nil {
+		t.Fatalf("unable to create archive %v", err)
+	}
+	archive.Close()
+
+	bopts := build.Options{
+		IndexDir: indexdir,
+	}
+	opts := Options{
+		Incremental: true,
+		Archive:     archive.Name(),
+		Name:        "repo",
+		Branch:      "master",
+		Commit:      "cccccccccccccccccccccccccccccccccccccccc",
+		Strip:       0,
+	}
+
+	if err := do(opts, bopts); err != nil {
+		t.Fatalf("error creating index: %v", err)
+	}
+
+	q, err := query.Parse("aaa")
+	if err != nil {
+		t.Fatalf("Parse(aaa): %v", err)
+	}
+
+	ss, err := shards.NewDirectorySearcher(indexdir)
+	if err != nil {
+		t.Fatalf("NewDirectorySearcher(%s): %v", indexdir, err)
+	}
+	defer ss.Close()
+
+	var sOpts zoekt.SearchOptions
+	result, err := ss.Search(context.Background(), q, &sOpts)
+	if err != nil {
+		t.Fatalf("Search(%v): %v", q, err)
+	}
+
+	if len(result.Files) != test.wantFiles {
+		t.Errorf("got %v, want %d files.", result.Files, test.wantFiles)
 	}
 }
