@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
@@ -91,7 +92,10 @@ func testIndexIncrementally(t *testing.T, format string) {
 	if err != nil {
 		t.Fatalf("TempDir: %v", err)
 	}
-	//defer os.RemoveAll(indexdir)
+	defer func() {
+		advanceFS()
+		os.RemoveAll(indexdir)
+	}()
 	archive, err := ioutil.TempFile("", "TestIndexArg-archive")
 	if err != nil {
 		t.Fatalf("TempFile: %v", err)
@@ -236,7 +240,10 @@ func testIgnore(t *testing.T, format string, test ignoreTest) {
 	if err != nil {
 		t.Fatalf("TempDir: %v", err)
 	}
-	//defer os.RemoveAll(indexdir)
+	defer func() {
+		advanceFS()
+		os.RemoveAll(indexdir)
+	}()
 
 	archive, err := ioutil.TempFile("", "ignore_archive")
 	if err != nil {
@@ -296,4 +303,8 @@ func testIgnore(t *testing.T, format string, test ignoreTest) {
 	if len(result.Files) != test.wantFiles {
 		t.Errorf("got %v, want %d files.", result.Files, test.wantFiles)
 	}
+}
+
+func advanceFS() {
+	time.Sleep(10 * time.Millisecond)
 }
