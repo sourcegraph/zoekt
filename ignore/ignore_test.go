@@ -43,7 +43,7 @@ func TestIgnoreMatcher(t *testing.T) {
 			wantMatch: true,
 		},
 		{
-			path:      "bas/file.go",
+			path:      "foo.go",
 			wantMatch: false,
 		},
 		{
