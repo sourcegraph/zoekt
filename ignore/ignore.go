@@ -41,7 +41,7 @@ func ParseIgnoreFile(r io.Reader) (patterns []string, error error) {
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		// ignore empty lines
-		if len(line) == 0 {
+		if line == "" {
 			continue
 		}
 		// ignore comments
