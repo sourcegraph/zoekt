@@ -35,9 +35,9 @@ git commit -am amsg
 git branch branchdir/abranch
 
 mkdir .sourcegraph
-echo subdir > .sourcegraph/sourcegraphignore
-git add .sourcegraph/sourcegraphignore 
-git commit -am "add sourcegraphignore"
+echo subdir > .sourcegraph/ignore
+git add .sourcegraph/ignore 
+git commit -am "add ignore"
 
 git update-ref refs/meta/config HEAD
 `
@@ -107,7 +107,7 @@ func TestIgnore(t *testing.T) {
 			if len(match.Branches) != 1 || match.Branches[0] != "branchdir/abranch" {
 				t.Fatalf("expected sub-file to be present only on branchdir/abranch")
 			}
-		case ".sourcegraph/sourcegraphignore":
+		case ".sourcegraph/ignore":
 			if len(match.Branches) != 1 || match.Branches[0] != "master" {
 				t.Fatalf("expected sourcegraphignore to be present only on master")
 			}

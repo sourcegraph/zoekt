@@ -520,10 +520,10 @@ func IndexGitRepo(opts Options) error {
 	return builder.Finish()
 }
 
-func newIgnoreMatcher(tree *object.Tree) (*ignore.IgnoreMatcher, error) {
+func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 	ignoreFile, err := tree.File(ignore.IgnoreFile)
 	if err == object.ErrFileNotFound {
-		return &ignore.IgnoreMatcher{}, nil
+		return &ignore.Matcher{}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -532,15 +532,7 @@ func newIgnoreMatcher(tree *object.Tree) (*ignore.IgnoreMatcher, error) {
 	if err != nil {
 		return nil, err
 	}
-	pattern, err := ignore.ParseIgnoreFile(strings.NewReader(content))
-	if err != nil {
-		return nil, err
-	}
-	ig := ignore.IgnoreMatcher{
-		IgnoreList: pattern,
-		Strip:      0,
-	}
-	return &ig, nil
+	return ignore.ParseIgnoreFile(strings.NewReader(content))
 }
 
 func blobContents(blob *object.Blob) ([]byte, error) {

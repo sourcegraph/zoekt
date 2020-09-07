@@ -9,25 +9,11 @@ import (
 
 var (
 	LineComment = "#"
-	IgnoreFile  = ".sourcegraph/sourcegraphignore"
+	IgnoreFile  = ".sourcegraph/ignore"
 )
 
-type IgnoreMatcher struct {
-	IgnoreList []string
-	Strip      int
-}
-
-// StripComponents removes the specified number of leading path
-// elements. Pathnames with fewer elements will return the empty string.
-func StripComponents(path string, count int) string {
-	for i := 0; path != "" && i < count; i++ {
-		i := strings.Index(path, "/")
-		if i < 0 {
-			return ""
-		}
-		path = path[i+1:]
-	}
-	return path
+type Matcher struct {
+	ignoreList []string
 }
 
 // ParseIgnoreFile parses an ignore-file according to the following rules
@@ -36,7 +22,8 @@ func StripComponents(path string, count int) string {
 // - lines starting with # are ignored
 // - empty lines are ignored
 // - if not present, a trailing / is implicit
-func ParseIgnoreFile(r io.Reader) (patterns []string, error error) {
+func ParseIgnoreFile(r io.Reader) (matcher *Matcher, error error) {
+	var patterns []string
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -56,16 +43,16 @@ func ParseIgnoreFile(r io.Reader) (patterns []string, error error) {
 		line = strings.TrimPrefix(line, "/")
 		patterns = append(patterns, line)
 	}
-	return patterns, scanner.Err()
+	return &Matcher{ignoreList: patterns}, scanner.Err()
 }
 
-// Match returns true if path has a prefix in common with any item in m.IgnoreList
-func (m *IgnoreMatcher) Match(path string) bool {
-	if len(m.IgnoreList) == 0 {
+// Match returns true if path has a prefix in common with any item in m.ignoreList
+func (m *Matcher) Match(path string) bool {
+	if len(m.ignoreList) == 0 {
 		return false
 	}
-	for _, pattern := range m.IgnoreList {
-		if strings.HasPrefix(StripComponents(path, m.Strip), pattern) {
+	for _, pattern := range m.ignoreList {
+		if strings.HasPrefix(path, pattern) {
 			return true
 		}
 	}

@@ -22,12 +22,12 @@ func TestParseIgnoreFile(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		gotIgnoreList, err := ParseIgnoreFile(bytes.NewReader(tt.ignoreFile))
+		m, err := ParseIgnoreFile(bytes.NewReader(tt.ignoreFile))
 		if err != nil {
 			t.Error(err)
 		}
-		if !reflect.DeepEqual(gotIgnoreList, tt.wantIgnoreList) {
-			t.Errorf("got %v, expected %v", gotIgnoreList, tt.wantIgnoreList)
+		if !reflect.DeepEqual(m.ignoreList, tt.wantIgnoreList) {
+			t.Errorf("got %v, expected %v", m.ignoreList, tt.wantIgnoreList)
 		}
 	}
 }
@@ -50,17 +50,11 @@ func TestIgnoreMatcher(t *testing.T) {
 			path:      "bar/bas.go",
 			wantMatch: false,
 		},
-		{
-			path:      "qux/foo/file.go",
-			strip:     1,
-			wantMatch: true,
-		},
 	}
 
 	for _, tt := range tests {
-		ig := IgnoreMatcher{
-			IgnoreList: []string{"foo/", "barbas/"},
-			Strip:      tt.strip,
+		ig := Matcher{
+			ignoreList: []string{"foo/", "barbas/"},
 		}
 
 		if got := ig.Match(tt.path); got != tt.wantMatch {
