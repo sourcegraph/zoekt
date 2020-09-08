@@ -42,7 +42,6 @@ func TestParseIgnoreFile(t *testing.T) {
 }
 
 func TestIgnoreMatcher(t *testing.T) {
-
 	ignoreFile := `
 dir1/
 *.go
@@ -52,7 +51,6 @@ dir1/
 	if err != nil {
 		t.Errorf("error in ignoreFile")
 	}
-
 	tests := []struct {
 		path      string
 		wantMatch bool
@@ -74,7 +72,6 @@ dir1/
 			wantMatch: true,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			if got := ig.Match(tt.path); got != tt.wantMatch {
