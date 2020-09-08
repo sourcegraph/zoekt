@@ -35,9 +35,9 @@ git commit -am amsg
 git branch branchdir/abranch
 
 mkdir .sourcegraph
-echo subdir > .sourcegraph/ignore
+echo subdir/ > .sourcegraph/ignore
 git add .sourcegraph/ignore 
-git commit -am "add ignore"
+git commit -am "ignore subdir/"
 
 git update-ref refs/meta/config HEAD
 `

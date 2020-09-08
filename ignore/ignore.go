@@ -5,25 +5,27 @@ import (
 	"bufio"
 	"io"
 	"strings"
+
+	"github.com/gobwas/glob"
 )
 
 var (
-	LineComment = "#"
+	lineComment = "#"
 	IgnoreFile  = ".sourcegraph/ignore"
 )
 
 type Matcher struct {
-	ignoreList []string
+	ignoreList []glob.Glob
 }
 
 // ParseIgnoreFile parses an ignore-file according to the following rules
 //
-// - each line represents a path relative to the root of the repository
+// - each line represents a glob-pattern relative to the root of the repository
+// - for patterns without any glob-characters, a trailing ** is implicit
 // - lines starting with # are ignored
 // - empty lines are ignored
-// - if not present, a trailing / is implicit
 func ParseIgnoreFile(r io.Reader) (matcher *Matcher, error error) {
-	var patterns []string
+	var patterns []glob.Glob
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -32,16 +34,20 @@ func ParseIgnoreFile(r io.Reader) (matcher *Matcher, error error) {
 			continue
 		}
 		// ignore comments
-		if strings.HasPrefix(line, LineComment) {
+		if strings.HasPrefix(line, lineComment) {
 			continue
 		}
-		// add trailing "/" to make sure we don't match files that
-		// share a prefix with a directory
-		if !strings.HasSuffix(line, "/") {
-			line += "/"
-		}
 		line = strings.TrimPrefix(line, "/")
-		patterns = append(patterns, line)
+		// implicit ** for patterns without glob-characters
+		if !strings.ContainsAny(line, ".][*?") {
+			line += "**"
+		}
+		// with separators = '/', * becomes path-aware
+		pattern, err := glob.Compile(line, '/')
+		if err != nil {
+			return nil, err
+		}
+		patterns = append(patterns, pattern)
 	}
 	return &Matcher{ignoreList: patterns}, scanner.Err()
 }
@@ -52,7 +58,7 @@ func (m *Matcher) Match(path string) bool {
 		return false
 	}
 	for _, pattern := range m.ignoreList {
-		if strings.HasPrefix(path, pattern) {
+		if pattern.Match(path) {
 			return true
 		}
 	}

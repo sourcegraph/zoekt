@@ -3,21 +3,30 @@ package ignore
 import (
 	"bytes"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/gobwas/glob"
 )
 
 func TestParseIgnoreFile(t *testing.T) {
 	tests := []struct {
 		ignoreFile     []byte
-		wantIgnoreList []string
+		wantIgnoreList []glob.Glob
 	}{
 		{
-			ignoreFile:     []byte("# ignore this \n  \n foo\n bar"),
-			wantIgnoreList: []string{"foo/", "bar/"},
+			ignoreFile: []byte("# ignore this \n  \n foo\n bar/"),
+			wantIgnoreList: []glob.Glob{
+				glob.MustCompile("foo**", '/'),
+				glob.MustCompile("bar/**", '/')},
 		},
 		{
-			ignoreFile:     []byte("/foo/bar \n /qux"),
-			wantIgnoreList: []string{"foo/bar/", "qux/"},
+			ignoreFile: []byte("/foo/bar \n /qux \n *.go\nfoo.go"),
+			wantIgnoreList: []glob.Glob{
+				glob.MustCompile("foo/bar**", '/'),
+				glob.MustCompile("qux**", '/'),
+				glob.MustCompile("*.go", '/'),
+				glob.MustCompile("foo.go", '/')},
 		},
 	}
 
@@ -33,33 +42,44 @@ func TestParseIgnoreFile(t *testing.T) {
 }
 
 func TestIgnoreMatcher(t *testing.T) {
+
+	ignoreFile := `
+dir1/
+*.go
+**/data.*
+`
+	ig, err := ParseIgnoreFile(strings.NewReader(ignoreFile))
+	if err != nil {
+		t.Errorf("error in ignoreFile")
+	}
+
 	tests := []struct {
 		path      string
-		strip     int
 		wantMatch bool
 	}{
 		{
-			path:      "foo/file.go",
+			path:      "dir1/readme.md",
 			wantMatch: true,
 		},
 		{
 			path:      "foo.go",
+			wantMatch: true,
+		},
+		{
+			path:      "dir2/foo.go",
 			wantMatch: false,
 		},
 		{
-			path:      "bar/bas.go",
-			wantMatch: false,
+			path:      "dir3/data.xyz",
+			wantMatch: true,
 		},
 	}
 
 	for _, tt := range tests {
-		ig := Matcher{
-			ignoreList: []string{"foo/", "barbas/"},
-		}
-
-		if got := ig.Match(tt.path); got != tt.wantMatch {
-			t.Errorf("got %t, expected %t", got, tt.wantMatch)
-		}
+		t.Run(tt.path, func(t *testing.T) {
+			if got := ig.Match(tt.path); got != tt.wantMatch {
+				t.Errorf("got %t, expected %t", got, tt.wantMatch)
+			}
+		})
 	}
-
 }
