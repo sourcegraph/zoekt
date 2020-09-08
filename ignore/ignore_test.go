@@ -60,6 +60,11 @@ dir1/
 			wantMatch: true,
 		},
 		{
+			path:      "dir1/dir2/readme.md",
+			wantMatch: true,
+		},
+
+		{
 			path:      "foo.go",
 			wantMatch: true,
 		},
