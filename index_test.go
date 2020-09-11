@@ -25,6 +25,8 @@ import (
 
 	"github.com/kylelemons/godebug/pretty"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt/query"
 )
 
@@ -1076,13 +1078,17 @@ func TestNegativeRepo(t *testing.T) {
 }
 
 func TestListRepos(t *testing.T) {
-	content := []byte("bla the needle")
+	content := []byte("bla the needle\n")
 	// ----------------01234567890123
-	b := testIndexBuilder(t, &Repository{
-		Name: "reponame",
-	},
-		Document{Name: "f1", Content: content},
-		Document{Name: "f2", Content: content})
+	repo := &Repository{
+		Name:     "reponame",
+		Branches: []RepositoryBranch{{Name: "main"}, {Name: "dev"}},
+	}
+	b := testIndexBuilder(t, repo,
+		Document{Name: "f1", Content: content, Branches: []string{"main", "dev"}},
+		Document{Name: "f2", Content: content, Branches: []string{"main"}},
+		Document{Name: "f2", Content: content, Branches: []string{"dev"}},
+		Document{Name: "f3", Content: content, Branches: []string{"dev"}})
 
 	searcher := searcherForTest(t, b)
 	q := &query.Repo{Pattern: "epo"}
@@ -1090,9 +1096,29 @@ func TestListRepos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List(%v): %v", q, err)
 	}
-	if len(res.Repos) != 1 || res.Repos[0].Repository.Name != "reponame" {
-		t.Fatalf("got %v, want 1 matches", res)
+
+	want := &RepoList{
+		Repos: []*RepoListEntry{{
+			Repository: *repo,
+			Stats: RepoStats{
+				Documents:    4,
+				ContentBytes: 68,
+
+				NewLinesCount:              4,
+				DefaultBranchNewLinesCount: 2,
+				OtherBranchesNewLinesCount: 3,
+			},
+		}},
 	}
+	ignored := []cmp.Option{
+		cmpopts.IgnoreFields(RepoListEntry{}, "IndexMetadata"),
+		cmpopts.IgnoreFields(RepoStats{}, "IndexBytes"),
+		cmpopts.IgnoreFields(Repository{}, "SubRepoMap"),
+	}
+	if diff := cmp.Diff(want, res, ignored...); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+
 	q = &query.Repo{Pattern: "bla"}
 	res, err = searcher.List(context.Background(), q)
 	if err != nil {

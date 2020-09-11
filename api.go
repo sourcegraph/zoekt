@@ -252,6 +252,29 @@ type RepoStats struct {
 
 	// ContentBytes is the amount of RAM used for raw content.
 	ContentBytes int64
+
+	// Sourcegraph specific stats below. These are not as efficient to calculate
+	// as the above statistics. We experimentally measured about a 10% slower
+	// shard load time. However, we find these values very useful to track and
+	// computing them outside of load time introduces a lot of complexity.
+
+	// NewLinesCount is the number of newlines "\n" that appear in the zoekt
+	// indexed documents. This is not exactly the same as line count, since it
+	// will not include lines not terminated by "\n" (eg a file with no "\n", or
+	// a final line without "\n"). Note: Zoekt deduplicates documents across
+	// branches, so if a path has the same contents on multiple branches, there
+	// is only one document for it. As such that document's newlines is only
+	// counted once. See DefaultBranchNewLinesCount and AllBranchesNewLinesCount
+	// for counts which do not deduplicate.
+	NewLinesCount uint64
+
+	// DefaultBranchNewLinesCount is the number of newlines "\n" in the default
+	// branch.
+	DefaultBranchNewLinesCount uint64
+
+	// OtherBranchesNewLinesCount is the number of newlines "\n" in all branches
+	// except the default branch.
+	OtherBranchesNewLinesCount uint64
 }
 
 func (s *RepoStats) Add(o *RepoStats) {
@@ -261,6 +284,11 @@ func (s *RepoStats) Add(o *RepoStats) {
 	s.IndexBytes += o.IndexBytes
 	s.Documents += o.Documents
 	s.ContentBytes += o.ContentBytes
+
+	// Sourcegraph specific
+	s.NewLinesCount += o.NewLinesCount
+	s.DefaultBranchNewLinesCount += o.DefaultBranchNewLinesCount
+	s.OtherBranchesNewLinesCount += o.OtherBranchesNewLinesCount
 }
 
 type RepoListEntry struct {

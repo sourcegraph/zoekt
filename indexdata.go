@@ -18,6 +18,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc64"
+	"log"
+	"math/bits"
 	"unicode/utf8"
 
 	"github.com/google/zoekt/query"
@@ -163,16 +165,63 @@ func (d *indexData) calculateStats() {
 		lastFN = d.fileNameIndex[len(d.fileNameIndex)-1]
 	}
 
+	count, defaultCount, otherCount := d.calculateNewLinesStats()
+
 	stats := RepoStats{
 		IndexBytes:   int64(d.memoryUse()),
 		ContentBytes: int64(int(last) + int(lastFN)),
 		Documents:    len(d.newlinesIndex) - 1,
+
+		// Sourcegraph specific
+		NewLinesCount:              count,
+		DefaultBranchNewLinesCount: defaultCount,
+		OtherBranchesNewLinesCount: otherCount,
 	}
 	d.repoListEntry = RepoListEntry{
 		Repository:    d.repoMetaData,
 		IndexMetadata: d.metaData,
 		Stats:         stats,
 	}
+}
+
+// calculateNewLinesStats computes some Sourcegraph specific statistics. These
+// are not as efficient to calculate as the normal statistics. We
+// experimentally measured about a 10% slower shard load time. However, we
+// find these values very useful to track and computing them outside of load
+// time introduces a lot of complexity.
+func (d *indexData) calculateNewLinesStats() (count, defaultCount, otherCount uint64) {
+	for i, branchMask := range d.fileBranchMasks {
+		// branchMask is a bitmask of the branches for a document. Zoekt by
+		// convention represents the default branch as the lowest bit.
+		isDefault := (branchMask & 1) == 1
+		others := uint64(bits.OnesCount64(branchMask >> 1))
+
+		// this is readNewlines but only reading the size of each section which
+		// corresponds to the number of newlines.
+		sec := simpleSection{
+			off: d.newlinesStart + d.newlinesIndex[i],
+			sz:  d.newlinesIndex[i+1] - d.newlinesIndex[i],
+		}
+		// We are only reading the first varint which is the size. So we don't
+		// need to read more than MaxVarintLen64 bytes.
+		if sec.sz > binary.MaxVarintLen64 {
+			sec.sz = binary.MaxVarintLen64
+		}
+		blob, err := d.readSectionBlob(sec)
+		if err != nil {
+			log.Printf("error reading newline index for document %d on shard %s: %v", i, d.file.Name(), err)
+			continue
+		}
+		sz, _ := binary.Uvarint(blob)
+
+		count += sz
+		if isDefault {
+			defaultCount += sz
+		}
+		otherCount += (others * sz)
+	}
+
+	return
 }
 
 func (d *indexData) Repository() *Repository { return &d.repoMetaData }
