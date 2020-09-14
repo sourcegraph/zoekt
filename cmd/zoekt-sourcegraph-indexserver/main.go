@@ -591,7 +591,7 @@ func main() {
 	debugList := flag.Bool("debug-list", false, "do not start the indexserver, rather list the repositories owned by this indexserver then quit.")
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repositories then quit.")
 
-	expGitIndex := flag.Bool("exp-git-index", os.Getenv("SRC_GIT_INDEX") != "", "use experimental indexing via shallow clones and zoekt-git-index")
+	expGitIndex := flag.Bool("exp-git-index", true, "use experimental indexing via shallow clones and zoekt-git-index")
 
 	flag.Parse()
 
