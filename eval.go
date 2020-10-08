@@ -410,6 +410,15 @@ func (d *indexData) List(ctx context.Context, q query.Q) (rl *RepoList, err erro
 		tr.Finish()
 	}()
 
+	if c, ok := q.(*query.RepoRegex); ok {
+		pattern, err := c.Compile()
+		if err != nil {
+			return nil, err
+		}
+		matched := pattern.MatchString(d.repoListEntry.Repository.Name)
+		return d.maybeRepoList(matched), nil
+	}
+
 	q = d.simplify(q)
 	tr.LazyLog(q, true)
 	if c, ok := q.(*query.Const); ok {

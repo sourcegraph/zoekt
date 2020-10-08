@@ -19,9 +19,11 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"regexp"
 	"regexp/syntax"
 	"sort"
 	"strings"
+	"sync"
 )
 
 var _ = log.Println
@@ -114,6 +116,29 @@ func (q *Const) String() string {
 		return "TRUE"
 	}
 	return "FALSE"
+}
+
+// RepoRegex contains a regex pattern (not compiled) which is matched against
+// repo names. The pattern is lazily compiled by the first indexed searcher that
+// wants to match the pattern against a shard.
+type RepoRegex struct {
+	// any valid regexp pattern
+	Pattern string
+
+	compileOnce sync.Once
+	compiled    *regexp.Regexp
+	err         error
+}
+
+func (q *RepoRegex) String() string {
+	return fmt.Sprintf("reporegex:%s", q.Pattern)
+}
+
+func (q *RepoRegex) Compile() (*regexp.Regexp, error) {
+	q.compileOnce.Do(func() {
+		q.compiled, q.err = regexp.Compile(q.Pattern)
+	})
+	return q.compiled, q.err
 }
 
 type Repo struct {
