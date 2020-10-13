@@ -80,6 +80,11 @@ var (
 		Name: "index_indexing_total",
 		Help: "Counts indexings (indexing activity, should be used with rate())",
 	})
+
+	metricsEnqueueRepoForIndex = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "enqueue_repo_for_index_total",
+		Help: "Counts the number of time /enqueueforindex is called",
+	})
 )
 
 type indexState string
@@ -474,6 +479,7 @@ func (s *Server) enqueueForIndex(queue *Queue)  func (rw http.ResponseWriter, r 
 			http.Error(rw, "not found", http.StatusNotFound)
 			return
 		}
+		metricsEnqueueRepoForIndex.Inc()
 		err := r.ParseForm()
 		if err != nil {
 			http.Error(rw, "error parsing form", http.StatusBadRequest)
@@ -484,6 +490,7 @@ func (s *Server) enqueueForIndex(queue *Queue)  func (rw http.ResponseWriter, r 
 			http.Error(rw, "missing repo", http.StatusBadRequest)
 			return
 		}
+		debug.Printf("enqueueRepoForIndex called with repo: %q", name)
 		opts, err := getIndexOptions(s.Root, name)
 		if err != nil || opts[0].Error != "" {
 			http.Error(rw, "fetching index options", http.StatusInternalServerError)
