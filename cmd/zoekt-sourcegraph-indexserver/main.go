@@ -465,6 +465,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repoTmpl.Execute(w, data)
 }
 
+// enqueueForIndex is expected to be called by other services in order to trigger an index.
+// We expect repo-updater to call this endpoint when a new repo has been added to an instance that
+// we wish to index and don't want to wait for polling to happen.
 func (s *Server) enqueueForIndex(queue *Queue)  func (rw http.ResponseWriter, r *http.Request) {
 	return func(rw http.ResponseWriter, r *http.Request) {
 		if r.Method  != "POST" {
