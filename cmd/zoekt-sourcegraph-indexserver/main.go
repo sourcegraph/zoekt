@@ -225,11 +225,10 @@ func codeHostFromName(repoName string) string {
 }
 
 // Run the sync loop. This blocks forever.
-func (s *Server) Run() {
+func (s *Server) Run(queue *Queue) {
 	removeIncompleteShards(s.IndexDir)
 	waitForFrontend(s.Root)
 
-	queue := &Queue{}
 
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
@@ -464,6 +463,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	repoTmpl.Execute(w, data)
+}
+
+func (s *Server) enqueueForIndex(queue *Queue)  func (rw http.ResponseWriter, r *http.Request) {
+	return func(rw http.ResponseWriter, r *http.Request) {
+		if r.Method  != "POST" {
+			http.Error(rw, "not found", http.StatusNotFound)
+			return
+		}
+		err := r.ParseForm()
+		if err != nil {
+			http.Error(rw, "error parsing form", http.StatusBadRequest)
+			return
+		}
+		name := r.Form.Get("repo")
+		if name == "" {
+			http.Error(rw, "missing repo", http.StatusBadRequest)
+			return
+		}
+		opts, err := getIndexOptions(s.Root, name)
+		if err != nil || opts[0].Error != "" {
+			http.Error(rw, "fetching index options", http.StatusInternalServerError)
+			return
+		}
+		queue.AddOrUpdate(name, opts[0].IndexOptions)
+	}
 }
 
 // forceIndex will run the index job for repo name now. It will return always
@@ -711,15 +735,18 @@ func main() {
 		os.Exit(0)
 	}
 
+	queue := &Queue{}
+
 	if *listen != "" {
 		go func() {
 			mux := http.NewServeMux()
 			debugserver.AddHandlers(mux, true)
 			mux.Handle("/", s)
+			mux.HandleFunc("/enqueueforindex", s.enqueueForIndex(queue))
 			debug.Printf("serving HTTP on %s", *listen)
 			log.Fatal(http.ListenAndServe(*listen, mux))
 		}()
 	}
 
-	s.Run()
+	s.Run(queue)
 }
