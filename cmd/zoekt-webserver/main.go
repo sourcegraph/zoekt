@@ -19,7 +19,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"html/template"
@@ -218,12 +217,6 @@ func main() {
 	debugserver.AddHandlers(handler, *enablePprof)
 	handler.HandleFunc("/healthz", healthz)
 
-	watchdogAddr := "http://" + *listen
-	if *sslCert != "" || *sslKey != "" {
-		watchdogAddr = "https://" + *listen
-	}
-	go watchdog(30*time.Second, watchdogAddr)
-
 	if debug {
 		log.Printf("listening on %v", *listen)
 	}
@@ -241,51 +234,6 @@ func main() {
 func healthz(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte("OK"))
-}
-
-func watchdogOnce(ctx context.Context, client *http.Client, addr string) error {
-	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
-	defer cancel()
-
-	req, err := http.NewRequest("GET", addr, nil)
-	if err != nil {
-		return err
-	}
-
-	req = req.WithContext(ctx)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("watchdog: status %v", resp.StatusCode)
-	}
-	return nil
-}
-
-func watchdog(dt time.Duration, addr string) {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{
-		Transport: tr,
-	}
-	tick := time.NewTicker(dt)
-
-	errCount := 0
-	for range tick.C {
-		err := watchdogOnce(context.Background(), client, addr)
-		if err != nil {
-			errCount++
-		} else {
-			errCount = 0
-		}
-		if errCount == 3 {
-			log.Panicf("watchdog: %v", err)
-		}
-	}
 }
 
 func mustRegisterDiskMonitor(path string) {
