@@ -27,6 +27,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -224,15 +225,73 @@ func main() {
 	}
 	go watchdog(30*time.Second, watchdogAddr)
 
-	if debug {
-		log.Printf("listening on %v", *listen)
+	srv := &http.Server{Addr: *listen, Handler: handler}
+
+	go func() {
+		if debug {
+			log.Printf("listening on %v", *listen)
+		}
+		var err error
+		if *sslCert != "" || *sslKey != "" {
+			err = srv.ListenAndServeTLS(*sslCert, *sslKey)
+		} else {
+			err = srv.ListenAndServe()
+		}
+
+		if err != http.ErrServerClosed {
+			// Fatal otherwise shutdownOnSignal will block
+			log.Fatalf("ListenAndServe: %v", err)
+		}
+	}()
+
+	if err := shutdownOnSignal(srv); err != nil {
+		log.Fatalf("http.Server.Shutdown: %v", err)
 	}
-	if *sslCert != "" || *sslKey != "" {
-		err = http.ListenAndServeTLS(*listen, *sslCert, *sslKey, handler)
-	} else {
-		err = http.ListenAndServe(*listen, handler)
+}
+
+// shutdownOnSignal will listen for SIGINT or SIGTERM and call
+// srv.Shutdown. Note it doesn't call anything else for shutting down. Notably
+// our RPC framework doesn't allow us to drain connections, so it when
+// Shutdown is called all inflight RPC requests will be closed.
+func shutdownOnSignal(srv *http.Server) error {
+	c := make(chan os.Signal, 3)
+	signal.Notify(c, os.Interrupt)    // terminal C-c and goreman
+	signal.Notify(c, syscall.SIGTERM) // Kubernetes
+
+	sig := <-c
+
+	// If we receive another signal, immediate shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-ctx.Done():
+		case sig := <-c:
+			log.Printf("received another signal (%v), immediate shutdown", sig)
+			cancel()
+		}
+	}()
+
+	// SIGTERM is sent by kubernetes. We give 15s to allow our endpoint to be
+	// removed from service discovery before draining traffic.
+	if sig == syscall.SIGTERM {
+		wait := 15 * time.Second
+		log.Printf("received SIGTERM, waiting %v before shutting down", wait)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
 	}
-	log.Printf("ListenAndServe: %v", err)
+
+	// Wait for 10s to drain ongoing requests. Kubernetes gives us 30s to
+	// shutdown, we have already used 15s waiting for our endpoint removal to
+	// propagate.
+	ctx, cancel2 := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel2()
+
+	log.Printf("shutting down")
+	return srv.Shutdown(ctx)
 }
 
 // Always returns 200 OK.
