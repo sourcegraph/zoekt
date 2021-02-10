@@ -21,7 +21,7 @@ const DefaultRPCPath = "/rpc"
 // Server returns an http.Handler for searcher which is the server side of the
 // RPC calls.
 func Server(searcher zoekt.Searcher) http.Handler {
-	registerGob()
+	RegisterGob()
 	server := rpc.NewServer()
 	server.Register(&srv.Searcher{Searcher: searcher})
 	return server
@@ -36,7 +36,7 @@ func Client(address string) zoekt.Searcher {
 // ClientAtPath connects to a Searcher HTTP RPC server at address and path
 // (http://host:port/path).
 func ClientAtPath(address, path string) zoekt.Searcher {
-	registerGob()
+	RegisterGob()
 	return &client{addr: address, path: path}
 }
 
@@ -117,7 +117,7 @@ func (c *client) String() string {
 
 var once sync.Once
 
-func registerGob() {
+func RegisterGob() {
 	once.Do(func() {
 		gob.Register(&query.And{})
 		gob.Register(&query.Branch{})
