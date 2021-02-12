@@ -34,6 +34,7 @@ import (
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/rpc"
+	"github.com/google/zoekt/stream"
 )
 
 var Funcmap = template.FuncMap{
@@ -83,6 +84,9 @@ type Server struct {
 
 	// Serve RPC
 	RPC bool
+
+	// Serve Stream
+	Stream bool
 
 	// If set, show files from the index.
 	Print bool
@@ -171,6 +175,10 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 	}
 	if s.RPC {
 		mux.Handle(rpc.DefaultRPCPath, rpc.Server(traceAwareSearcher{s.Searcher})) // /rpc
+	}
+
+	if s.Stream {
+		mux.Handle(stream.DefaultSSEPath, stream.Server(traceAwareSearcher{s.Searcher})) // /stream
 	}
 
 	return mux, nil

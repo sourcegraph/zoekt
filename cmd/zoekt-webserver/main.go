@@ -123,6 +123,7 @@ func main() {
 	index := flag.String("index", build.DefaultDir, "set index directory to use")
 	html := flag.Bool("html", true, "enable HTML interface")
 	enableRPC := flag.Bool("rpc", false, "enable go/net RPC")
+	enableStream := flag.Bool("stream", false, "enable streamSearch")
 	print := flag.Bool("print", false, "enable local result URLs")
 	enablePprof := flag.Bool("pprof", false, "set to enable remote profiling.")
 	sslCert := flag.String("ssl_cert", "", "set path to SSL .pem holding certificate.")
@@ -196,6 +197,7 @@ func main() {
 	s.Print = *print
 	s.HTML = *html
 	s.RPC = *enableRPC
+	s.Stream = *enableStream
 
 	if *hostCustomization != "" {
 		s.HostCustomQueries = map[string]string{}
