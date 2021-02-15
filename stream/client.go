@@ -7,10 +7,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/google/zoekt/rpc"
-
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
+	"github.com/google/zoekt/rpc"
 )
 
 type client struct {
