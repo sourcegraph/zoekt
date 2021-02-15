@@ -67,11 +67,10 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// we want Searcher.Search to take a channel, buffer here and send chunks over
 	// the network.
 	var chunk *zoekt.SearchResult
+	// We send stats first. We don't send RepoURLs or LineFragments because we don't
+	// use them in Sourcegraph.
 	chunk = &zoekt.SearchResult{
-		Stats:         searchResults.Stats,
-		Files:         nil,
-		RepoURLs:      nil, // Not used by Sourcegraph.
-		LineFragments: nil, // Not used by Sourcegraph.
+		Stats: searchResults.Stats,
 	}
 	// Send event.
 	err = eventWriter.Event("matches", chunk)
