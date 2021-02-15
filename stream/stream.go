@@ -70,8 +70,8 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	chunk = &zoekt.SearchResult{
 		Stats:         searchResults.Stats,
 		Files:         nil,
-		RepoURLs:      searchResults.RepoURLs,
-		LineFragments: searchResults.LineFragments,
+		RepoURLs:      nil, // Not used by Sourcegraph.
+		LineFragments: nil, // Not used by Sourcegraph.
 	}
 	// Send event.
 	err = eventWriter.Event("matches", chunk)
@@ -110,12 +110,11 @@ func newEventStreamWriter(w http.ResponseWriter) (*eventStreamWriter, error) {
 		return nil, errors.New("http flushing not supported")
 	}
 
-	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Type", "application/x-gob-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
-	// TODO: do we need this for frontend <---> zoekt?
 	// This informs nginx to not buffer. With buffering search responses will
 	// be delayed until buffers get full, leading to worst case latency of the
 	// full time a search takes to complete.

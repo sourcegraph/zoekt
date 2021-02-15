@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"context"
 	"net/http/httptest"
 	"sync"
 	"testing"
@@ -10,7 +11,7 @@ import (
 	"github.com/google/zoekt/rpc/mockSearcher"
 )
 
-func TestSSE(t *testing.T) {
+func TestStreamSearch(t *testing.T) {
 	q := query.NewAnd(mustParse("hello world|universe"), query.NewRepoSet("foo/bar", "baz/bam"))
 	searcher := &mockSearcher.MockSearcher{
 		WantSearch: q,
@@ -46,7 +47,7 @@ func TestSSE(t *testing.T) {
 		}
 	}()
 
-	err := cl.StreamSearch(q, nil, StreamerChan(c))
+	err := cl.StreamSearch(context.Background(), q, nil, StreamerChan(c))
 	close(c)
 	if err != nil {
 		t.Fatal(err)

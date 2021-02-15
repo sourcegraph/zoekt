@@ -1,8 +1,8 @@
 package stream
 
 import (
-	"bufio"
 	"bytes"
+	"context"
 	"encoding/gob"
 	"fmt"
 	"net/http"
@@ -40,7 +40,7 @@ func (c StreamerChan) Send(result *zoekt.SearchResult) {
 }
 
 // StreamSearch returns search results as stream via streamer.
-func (c *client) StreamSearch(q query.Q, opts *zoekt.SearchOptions, streamer Streamer) error {
+func (c *client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, streamer Streamer) error {
 	// Encode query and opts.
 	buf := new(bytes.Buffer)
 	args := &searchArgs{
@@ -53,11 +53,11 @@ func (c *client) StreamSearch(q query.Q, opts *zoekt.SearchOptions, streamer Str
 	}
 
 	// Send request.
-	req, err := http.NewRequest("POST", c.address+c.path, buf)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.address+c.path, buf)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Accept", "application/x-gob-stream")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Transfer-Encoding", "chunked")
@@ -67,9 +67,8 @@ func (c *client) StreamSearch(q query.Q, opts *zoekt.SearchOptions, streamer Str
 		return err
 	}
 	defer resp.Body.Close()
-	reader := bufio.NewReader(resp.Body)
 
-	dec := gob.NewDecoder(reader)
+	dec := gob.NewDecoder(resp.Body)
 	for {
 		reply := &searchReply{}
 		err := dec.Decode(reply)
