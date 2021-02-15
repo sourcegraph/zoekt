@@ -26,9 +26,9 @@ func TestSSE(t *testing.T) {
 	s := httptest.NewServer(h)
 	defer s.Close()
 
-	c := NewClientAtAddress(s.URL)
+	cl := NewClientAtAddress(s.URL)
 
-	stream := make(chan *zoekt.SearchResult)
+	c := make(chan *zoekt.SearchResult)
 
 	// Start consumer.
 	wg := sync.WaitGroup{}
@@ -36,7 +36,7 @@ func TestSSE(t *testing.T) {
 	seen := false
 	go func() {
 		defer wg.Done()
-		for res := range stream {
+		for res := range c {
 			if res.Files != nil {
 				seen = true
 				if res.Files[0].FileName != "bin.go" {
@@ -46,8 +46,8 @@ func TestSSE(t *testing.T) {
 		}
 	}()
 
-	err := c.StreamSearch(q, nil, stream)
-	close(stream)
+	err := cl.StreamSearch(q, nil, StreamerChan(c))
+	close(c)
 	if err != nil {
 		t.Fatal(err)
 	}

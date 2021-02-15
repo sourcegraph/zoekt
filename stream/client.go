@@ -28,9 +28,19 @@ func NewClientAtAddress(address string) *client {
 	}}
 }
 
-// StreamSearch sends search results down stream. The caller is responsible to
-// close stream after StreamSearch returns.
-func (c *client) StreamSearch(q query.Q, opts *zoekt.SearchOptions, stream chan<- *zoekt.SearchResult) error {
+type Streamer interface {
+	Send(*zoekt.SearchResult)
+}
+
+// Use StreamerChan to cast a receiving channel of search results to a Streamer.
+type StreamerChan chan<- *zoekt.SearchResult
+
+func (c StreamerChan) Send(result *zoekt.SearchResult) {
+	c <- result
+}
+
+// StreamSearch returns search results as stream via streamer.
+func (c *client) StreamSearch(q query.Q, opts *zoekt.SearchOptions, streamer Streamer) error {
 	// Encode query and opts.
 	buf := new(bytes.Buffer)
 	args := &searchArgs{
@@ -69,7 +79,7 @@ func (c *client) StreamSearch(q query.Q, opts *zoekt.SearchOptions, stream chan<
 		if reply.Event == "done" {
 			break
 		}
-		stream <- reply.Result
+		streamer.Send(reply.Result)
 	}
 	return nil
 }
