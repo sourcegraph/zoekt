@@ -50,7 +50,7 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Always send a done event in the end.
 	defer func() {
-		err = eventWriter.Event("done", nil)
+		err = eventWriter.event("done", nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -73,7 +73,7 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Stats: searchResults.Stats,
 	}
 	// Send event.
-	err = eventWriter.Event("matches", chunk)
+	err = eventWriter.event("matches", chunk)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -90,7 +90,7 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Files: searchResults.Files[i:right],
 		}
 		// Send event.
-		err = eventWriter.Event("matches", chunk)
+		err = eventWriter.event("matches", chunk)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -125,7 +125,7 @@ func newEventStreamWriter(w http.ResponseWriter) (*eventStreamWriter, error) {
 	}, nil
 }
 
-func (e *eventStreamWriter) Event(event string, data *zoekt.SearchResult) error {
+func (e *eventStreamWriter) event(event string, data *zoekt.SearchResult) error {
 	err := e.enc.Encode(searchReply{Event: event, Result: data})
 	if err != nil {
 		return err
