@@ -70,7 +70,7 @@ func TestEventStreamWriter(t *testing.T) {
 	}
 
 	tests := []struct {
-		event string
+		event eventType
 		data  interface{}
 	}{
 		{
@@ -92,7 +92,7 @@ func TestEventStreamWriter(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.event, func(t *testing.T) {
+		t.Run(tt.event.string(), func(t *testing.T) {
 			err := esw.event(tt.event, tt.data)
 			if err != nil {
 				t.Fatal(err)
@@ -103,10 +103,10 @@ func TestEventStreamWriter(t *testing.T) {
 				t.Fatal(err)
 			}
 			if reply.Event != tt.event {
-				t.Fatalf("got %s, want %s", reply.Event, tt.event)
+				t.Fatalf("got %s, want %s", reply.Event.string(), tt.event.string())
 			}
 			if d := cmp.Diff(tt.data, reply.Data); d != "" {
-				t.Fatalf("mismatch for event type %s (-want +got):\n%s", tt.event, d)
+				t.Fatalf("mismatch for event type %s (-want +got):\n%s", tt.event.string(), d)
 			}
 		})
 	}
@@ -150,31 +150,6 @@ func TestContextError(t *testing.T) {
 	err = cl.StreamSearch(ctx, nil, nil, c)
 	if err == nil || err.Error() != serverError.Error() {
 		t.Fatalf("got %s, want %s", err, serverError)
-	}
-}
-
-func TestUnknownEventType(t *testing.T) {
-	h := func(w http.ResponseWriter, r *http.Request) {
-		esw, err := newEventStreamWriter(w)
-		if err != nil {
-			t.Fatal(err)
-		}
-		err = esw.event("unknown", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	s := httptest.NewServer(http.HandlerFunc(h))
-
-	cl := Client{
-		Address:    s.URL,
-		HTTPClient: http.DefaultClient,
-	}
-
-	c := streamerChan(make(chan *zoekt.SearchResult))
-	err := cl.StreamSearch(context.Background(), nil, nil, c)
-	if err == nil {
-		t.Fatalf("expected err!=nil")
 	}
 }
 

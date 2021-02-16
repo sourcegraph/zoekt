@@ -11,13 +11,19 @@ import (
 	"github.com/google/zoekt/rpc"
 )
 
-const (
-	DefaultSSEPath = "/stream"
+const DefaultSSEPath = "/stream"
 
-	eventMatches = "matches"
-	eventError   = "error"
-	eventDone    = "done"
+type eventType int
+
+const (
+	eventMatches eventType = iota
+	eventError
+	eventDone
 )
+
+func (e eventType) string() string {
+	return []string{"eventMatches", "eventError", "eventDone"}[e]
+}
 
 func Server(searcher zoekt.Searcher) http.Handler {
 	registerGob()
@@ -30,7 +36,7 @@ type searchArgs struct {
 }
 
 type searchReply struct {
-	Event string
+	Event eventType
 	Data  interface{}
 }
 
@@ -132,9 +138,11 @@ func newEventStreamWriter(w http.ResponseWriter) (*eventStreamWriter, error) {
 	}, nil
 }
 
-func (e *eventStreamWriter) event(event string, data interface{}) error {
-	if err, isError := data.(error); isError {
-		data = err.Error()
+func (e *eventStreamWriter) event(event eventType, data interface{}) error {
+	if event == eventError {
+		if err, isError := data.(error); isError {
+			data = err.Error()
+		}
 	}
 	err := e.enc.Encode(searchReply{Event: event, Data: data})
 	if err != nil {

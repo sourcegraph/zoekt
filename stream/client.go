@@ -67,7 +67,7 @@ func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 			if res, ok := reply.Data.(*zoekt.SearchResult); ok {
 				streamer.Send(res)
 			} else {
-				return fmt.Errorf("event of type %s could not be converted to *zoekt.SearchResult", eventMatches)
+				return fmt.Errorf("event of type %s could not be converted to *zoekt.SearchResult", eventMatches.string())
 			}
 		case eventError:
 			if errString, ok := reply.Data.(string); ok {
@@ -79,12 +79,12 @@ func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 					return fmt.Errorf(errString)
 				}
 			} else {
-				return fmt.Errorf("data for event of type %s could not be converted to string", eventError)
+				return fmt.Errorf("data for event of type %s could not be converted to string", eventError.string())
 			}
 		case eventDone:
 			return nil
 		default:
-			return fmt.Errorf("unknown event type: %s", reply.Event)
+			return fmt.Errorf("unknown event type")
 		}
 	}
 }
