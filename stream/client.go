@@ -9,22 +9,14 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/rpc"
 )
 
-type client struct {
-	address string
-	path    string
-	conn    *http.Client
-}
+type Client struct {
+	// HTTP address of zoekt-webserver. Will query against Address + "/stream".
+	Address string
 
-func NewClientAtAddress(address string) *client {
-	rpc.RegisterGob()
-	return &client{address, DefaultSSEPath, &http.Client{
-		Transport: &http.Transport{
-			MaxIdleConns: 500,
-		},
-	}}
+	// HTTPClient when set is used instead of http.DefaultClient
+	HTTPClient *http.Client
 }
 
 type Streamer interface {
@@ -32,7 +24,9 @@ type Streamer interface {
 }
 
 // StreamSearch returns search results as stream via streamer.
-func (c *client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, streamer Streamer) error {
+func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, streamer Streamer) error {
+	registerGob()
+
 	// Encode query and opts.
 	buf := new(bytes.Buffer)
 	args := &searchArgs{
@@ -45,7 +39,7 @@ func (c *client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 	}
 
 	// Send request.
-	req, err := http.NewRequestWithContext(ctx, "POST", c.address+c.path, buf)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.Address+DefaultSSEPath, buf)
 	if err != nil {
 		return err
 	}
@@ -54,7 +48,7 @@ func (c *client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Transfer-Encoding", "chunked")
 
-	resp, err := c.conn.Do(req)
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -67,10 +61,23 @@ func (c *client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 		if err != nil {
 			return fmt.Errorf("error during decoding: %w", err)
 		}
-		if reply.Event == "done" {
-			break
+		switch reply.Event {
+		case eventMatches:
+			if res, ok := reply.Data.(*zoekt.SearchResult); ok {
+				streamer.Send(res)
+			} else {
+				return fmt.Errorf("event of type %s could not be converted to *zoekt.SearchResult", eventMatches)
+			}
+		case eventError:
+			if errString, ok := reply.Data.(string); ok {
+				return fmt.Errorf(errString)
+			} else {
+				return fmt.Errorf("data for event of type %s could not be converted to string", eventError)
+			}
+		case eventDone:
+			return nil
+		default:
+			return fmt.Errorf("unknown event type: %s", reply.Event)
 		}
-		streamer.Send(reply.Result)
 	}
-	return nil
 }

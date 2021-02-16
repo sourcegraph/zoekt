@@ -4,16 +4,23 @@ import (
 	"encoding/gob"
 	"errors"
 	"net/http"
+	"sync"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/rpc"
 )
 
-const DefaultSSEPath = "/stream"
+const (
+	DefaultSSEPath = "/stream"
+
+	eventMatches = "matches"
+	eventError   = "error"
+	eventDone    = "done"
+)
 
 func Server(searcher zoekt.Searcher) http.Handler {
-	rpc.RegisterGob()
+	registerGob()
 	return &streamHandler{Searcher: searcher}
 }
 
@@ -23,8 +30,8 @@ type searchArgs struct {
 }
 
 type searchReply struct {
-	Event  string
-	Result *zoekt.SearchResult
+	Event string
+	Data  interface{}
 }
 
 type streamHandler struct {
@@ -50,9 +57,9 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Always send a done event in the end.
 	defer func() {
-		err = eventWriter.event("done", nil)
+		err = eventWriter.event(eventDone, nil)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			_ = eventWriter.event(eventError, err.Error())
 		}
 	}()
 
@@ -73,9 +80,9 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Stats: searchResults.Stats,
 	}
 	// Send event.
-	err = eventWriter.event("matches", chunk)
+	err = eventWriter.event(eventMatches, chunk)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		_ = eventWriter.event(eventError, err.Error())
 		return
 	}
 
@@ -90,9 +97,9 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Files: searchResults.Files[i:right],
 		}
 		// Send event.
-		err = eventWriter.event("matches", chunk)
+		err = eventWriter.event(eventMatches, chunk)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			_ = eventWriter.event(eventError, err.Error())
 			return
 		}
 	}
@@ -125,11 +132,20 @@ func newEventStreamWriter(w http.ResponseWriter) (*eventStreamWriter, error) {
 	}, nil
 }
 
-func (e *eventStreamWriter) event(event string, data *zoekt.SearchResult) error {
-	err := e.enc.Encode(searchReply{Event: event, Result: data})
+func (e *eventStreamWriter) event(event string, data interface{}) error {
+	err := e.enc.Encode(searchReply{Event: event, Data: data})
 	if err != nil {
 		return err
 	}
 	e.flush()
 	return nil
+}
+
+var once sync.Once
+
+func registerGob() {
+	once.Do(func() {
+		gob.Register(&zoekt.SearchResult{})
+	})
+	rpc.RegisterGob()
 }

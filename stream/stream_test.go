@@ -1,10 +1,14 @@
 package stream
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/rpc/mockSearcher"
@@ -26,7 +30,7 @@ func TestStreamSearch(t *testing.T) {
 	s := httptest.NewServer(h)
 	defer s.Close()
 
-	cl := NewClientAtAddress(s.URL)
+	cl := &Client{s.URL, http.DefaultClient}
 
 	c := make(chan *zoekt.SearchResult)
 	defer close(c)
@@ -51,6 +55,60 @@ func TestStreamSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-done
+}
+
+func TestEventStreamWriter(t *testing.T) {
+	registerGob()
+	network := new(bytes.Buffer)
+	enc := gob.NewEncoder(network)
+	dec := gob.NewDecoder(network)
+
+	esw := eventStreamWriter{
+		enc:   enc,
+		flush: func() {},
+	}
+
+	tests := []struct {
+		event string
+		data  interface{}
+	}{
+		{
+			eventDone,
+			nil,
+		},
+		{
+			eventMatches,
+			&zoekt.SearchResult{
+				Files: []zoekt.FileMatch{
+					{FileName: "bin.go"},
+				},
+			},
+		},
+		{
+			eventError,
+			"test error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.event, func(t *testing.T) {
+			err := esw.event(tt.event, tt.data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reply := new(searchReply)
+			err = dec.Decode(reply)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reply.Event != tt.event {
+				t.Fatalf("got %s, want %s", reply.Event, tt.event)
+			}
+			if d := cmp.Diff(tt.data, reply.Data); d != "" {
+				t.Fatalf("mismatch for event type %s (-want +got):\n%s", tt.event, d)
+			}
+		})
+	}
 }
 
 func mustParse(s string) query.Q {
