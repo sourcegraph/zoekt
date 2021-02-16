@@ -12,6 +12,7 @@ import (
 	"github.com/google/zoekt/query"
 )
 
+// Client implements StreamSearch.
 type Client struct {
 	// HTTP address of zoekt-webserver. Will query against Address + "/stream".
 	Address string
@@ -20,11 +21,16 @@ type Client struct {
 	HTTPClient *http.Client
 }
 
+// Streamer is the interface that wraps the basic Send method.
 type Streamer interface {
 	Send(*zoekt.SearchResult)
 }
 
-// StreamSearch returns search results as stream via streamer.
+// StreamSearch returns search results as stream by calling streamer.Send(event)
+// for each event returned by the server.
+//
+// Error events returned by the server are returned as error. Context errors are
+// recreated and returned on a best-efforts basis.
 func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, streamer Streamer) error {
 	registerGob()
 

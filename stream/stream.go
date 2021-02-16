@@ -1,3 +1,5 @@
+// Package stream provides a client and a server to consume search results as
+// stream.
 package stream
 
 import (
@@ -11,6 +13,7 @@ import (
 	"github.com/google/zoekt/rpc"
 )
 
+// DefaultSSEPath is the path used by zoekt-webserver.
 const DefaultSSEPath = "/stream"
 
 type eventType int
@@ -25,6 +28,7 @@ func (e eventType) string() string {
 	return []string{"eventMatches", "eventError", "eventDone"}[e]
 }
 
+// Server returns an http.Handler which is the server side of StreamSearch.
 func Server(searcher zoekt.Searcher) http.Handler {
 	registerGob()
 	return &streamHandler{Searcher: searcher}
@@ -139,6 +143,8 @@ func newEventStreamWriter(w http.ResponseWriter) (*eventStreamWriter, error) {
 }
 
 func (e *eventStreamWriter) event(event eventType, data interface{}) error {
+	// Because gob does not support serializing errors, we send error.Error() and
+	// recreate the error on the client-side.
 	if event == eventError {
 		if err, isError := data.(error); isError {
 			data = err.Error()

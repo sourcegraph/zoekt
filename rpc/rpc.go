@@ -117,6 +117,8 @@ func (c *client) String() string {
 
 var once sync.Once
 
+// RegisterGob registers various query types with gob. It can be called more than
+// once, because calls to gob.Register are protected by a sync.Once.
 func RegisterGob() {
 	once.Do(func() {
 		gob.Register(&query.And{})
