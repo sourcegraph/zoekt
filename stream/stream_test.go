@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -108,6 +109,72 @@ func TestEventStreamWriter(t *testing.T) {
 				t.Fatalf("mismatch for event type %s (-want +got):\n%s", tt.event, d)
 			}
 		})
+	}
+}
+
+func TestContextError(t *testing.T) {
+	var serverError error
+	h := func(w http.ResponseWriter, r *http.Request) {
+		esw, err := newEventStreamWriter(w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = esw.event(eventError, serverError)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := httptest.NewServer(http.HandlerFunc(h))
+
+	cl := Client{
+		Address:    s.URL,
+		HTTPClient: http.DefaultClient,
+	}
+
+	c := streamerChan(make(chan *zoekt.SearchResult))
+	ctx := context.Background()
+
+	serverError = context.Canceled
+	err := cl.StreamSearch(ctx, nil, nil, c)
+	if err != context.Canceled {
+		t.Fatalf("got %+v, want %s", err, context.Canceled)
+	}
+
+	serverError = context.DeadlineExceeded
+	err = cl.StreamSearch(ctx, nil, nil, c)
+	if err != context.DeadlineExceeded {
+		t.Fatalf("got %+v, want %s", err, context.DeadlineExceeded)
+	}
+
+	serverError = fmt.Errorf("other error")
+	err = cl.StreamSearch(ctx, nil, nil, c)
+	if err == nil || err.Error() != serverError.Error() {
+		t.Fatalf("got %s, want %s", err, serverError)
+	}
+}
+
+func TestUnknownEventType(t *testing.T) {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		esw, err := newEventStreamWriter(w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = esw.event("unknown", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := httptest.NewServer(http.HandlerFunc(h))
+
+	cl := Client{
+		Address:    s.URL,
+		HTTPClient: http.DefaultClient,
+	}
+
+	c := streamerChan(make(chan *zoekt.SearchResult))
+	err := cl.StreamSearch(context.Background(), nil, nil, c)
+	if err == nil {
+		t.Fatalf("expected err!=nil")
 	}
 }
 

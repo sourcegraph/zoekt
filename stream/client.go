@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
@@ -70,7 +71,13 @@ func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 			}
 		case eventError:
 			if errString, ok := reply.Data.(string); ok {
-				return fmt.Errorf(errString)
+				if strings.Contains(errString, "context canceled") {
+					return context.Canceled
+				} else if strings.Contains(errString, "context deadline exceeded") {
+					return context.DeadlineExceeded
+				} else {
+					return fmt.Errorf(errString)
+				}
 			} else {
 				return fmt.Errorf("data for event of type %s could not be converted to string", eventError)
 			}

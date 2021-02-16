@@ -59,7 +59,7 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		err = eventWriter.event(eventDone, nil)
 		if err != nil {
-			_ = eventWriter.event(eventError, err.Error())
+			_ = eventWriter.event(eventError, err)
 		}
 	}()
 
@@ -82,7 +82,7 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Send event.
 	err = eventWriter.event(eventMatches, chunk)
 	if err != nil {
-		_ = eventWriter.event(eventError, err.Error())
+		_ = eventWriter.event(eventError, err)
 		return
 	}
 
@@ -99,7 +99,7 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Send event.
 		err = eventWriter.event(eventMatches, chunk)
 		if err != nil {
-			_ = eventWriter.event(eventError, err.Error())
+			_ = eventWriter.event(eventError, err)
 			return
 		}
 	}
@@ -133,6 +133,9 @@ func newEventStreamWriter(w http.ResponseWriter) (*eventStreamWriter, error) {
 }
 
 func (e *eventStreamWriter) event(event string, data interface{}) error {
+	if err, isError := data.(error); isError {
+		data = err.Error()
+	}
 	err := e.enc.Encode(searchReply{Event: event, Data: data})
 	if err != nil {
 		return err
