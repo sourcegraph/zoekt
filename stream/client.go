@@ -31,13 +31,6 @@ type Streamer interface {
 	Send(*zoekt.SearchResult)
 }
 
-// Use StreamerChan to cast a receiving channel of search results to a Streamer.
-type StreamerChan chan<- *zoekt.SearchResult
-
-func (c StreamerChan) Send(result *zoekt.SearchResult) {
-	c <- result
-}
-
 // StreamSearch returns search results as stream via streamer.
 func (c *client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, streamer Streamer) error {
 	// Encode query and opts.

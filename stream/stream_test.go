@@ -46,7 +46,7 @@ func TestStreamSearch(t *testing.T) {
 		}
 	}()
 
-	err := cl.StreamSearch(context.Background(), q, nil, StreamerChan(c))
+	err := cl.StreamSearch(context.Background(), q, nil, streamerChan(c))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,4 +59,10 @@ func mustParse(s string) query.Q {
 		panic(err)
 	}
 	return q
+}
+
+type streamerChan chan<- *zoekt.SearchResult
+
+func (c streamerChan) Send(result *zoekt.SearchResult) {
+	c <- result
 }
