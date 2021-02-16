@@ -12,13 +12,25 @@ import (
 	"github.com/google/zoekt/query"
 )
 
-// Client implements StreamSearch.
-type Client struct {
-	// HTTP address of zoekt-webserver. Will query against Address + "/stream".
-	Address string
+// NewClient returns a client which implements StreamSearch. If httpClient is
+// nil, http.DefaultClient is used.
+func NewClient(address string, httpClient *http.Client) *client {
+	registerGob()
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	return &client{
+		address:    address,
+		httpClient: httpClient,
+	}
+}
 
-	// HTTPClient when set is used instead of http.DefaultClient
-	HTTPClient *http.Client
+type client struct {
+	// HTTP address of zoekt-webserver. Will query against address + "/stream".
+	address string
+
+	// httpClient when set is used instead of http.DefaultClient
+	httpClient *http.Client
 }
 
 // Streamer is the interface that wraps the basic Send method.
@@ -31,9 +43,7 @@ type Streamer interface {
 //
 // Error events returned by the server are returned as error. Context errors are
 // recreated and returned on a best-efforts basis.
-func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, streamer Streamer) error {
-	registerGob()
-
+func (c *client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, streamer Streamer) error {
 	// Encode query and opts.
 	buf := new(bytes.Buffer)
 	args := &searchArgs{
@@ -46,7 +56,7 @@ func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 	}
 
 	// Send request.
-	req, err := http.NewRequestWithContext(ctx, "POST", c.Address+DefaultSSEPath, buf)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.address+DefaultSSEPath, buf)
 	if err != nil {
 		return err
 	}
@@ -55,7 +65,7 @@ func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Transfer-Encoding", "chunked")
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}

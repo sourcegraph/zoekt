@@ -31,7 +31,7 @@ func TestStreamSearch(t *testing.T) {
 	s := httptest.NewServer(h)
 	defer s.Close()
 
-	cl := &Client{s.URL, http.DefaultClient}
+	cl := NewClient(s.URL, nil)
 
 	c := make(chan *zoekt.SearchResult)
 	defer close(c)
@@ -126,10 +126,7 @@ func TestContextError(t *testing.T) {
 	}
 	s := httptest.NewServer(http.HandlerFunc(h))
 
-	cl := Client{
-		Address:    s.URL,
-		HTTPClient: http.DefaultClient,
-	}
+	cl := NewClient(s.URL, nil)
 
 	c := streamerChan(make(chan *zoekt.SearchResult))
 	ctx := context.Background()
