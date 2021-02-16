@@ -85,9 +85,6 @@ type Server struct {
 	// Serve RPC
 	RPC bool
 
-	// Serve Stream
-	Stream bool
-
 	// If set, show files from the index.
 	Print bool
 
@@ -174,10 +171,7 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 		mux.HandleFunc("/print", s.servePrint)
 	}
 	if s.RPC {
-		mux.Handle(rpc.DefaultRPCPath, rpc.Server(traceAwareSearcher{s.Searcher})) // /rpc
-	}
-
-	if s.Stream {
+		mux.Handle(rpc.DefaultRPCPath, rpc.Server(traceAwareSearcher{s.Searcher}))       // /rpc
 		mux.Handle(stream.DefaultSSEPath, stream.Server(traceAwareSearcher{s.Searcher})) // /stream
 	}
 
