@@ -3,7 +3,6 @@ package stream
 import (
 	"context"
 	"net/http/httptest"
-	"sync"
 	"testing"
 
 	"github.com/google/zoekt"
@@ -30,32 +29,28 @@ func TestStreamSearch(t *testing.T) {
 	cl := NewClientAtAddress(s.URL)
 
 	c := make(chan *zoekt.SearchResult)
+	defer close(c)
 
 	// Start consumer.
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	seen := false
+	done := make(chan struct{})
 	go func() {
-		defer wg.Done()
+		defer close(done)
 		for res := range c {
-			if res.Files != nil {
-				seen = true
-				if res.Files[0].FileName != "bin.go" {
-					t.Fatalf("got %s, wanted %s", res.Files[0].FileName, "bin.go")
-				}
+			if res.Files == nil {
+				continue
 			}
+			if res.Files[0].FileName != "bin.go" {
+				t.Fatalf("got %s, wanted %s", res.Files[0].FileName, "bin.go")
+			}
+			return
 		}
 	}()
 
 	err := cl.StreamSearch(context.Background(), q, nil, StreamerChan(c))
-	close(c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !seen {
-		t.Fatal("Did not receive event with res.Files != nil")
-	}
-	wg.Wait()
+	<-done
 }
 
 func mustParse(s string) query.Q {
