@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt"
+	"github.com/google/zoekt/internal/mockSearcher"
 	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/rpc/mockSearcher"
 )
 
 func TestStreamSearch(t *testing.T) {

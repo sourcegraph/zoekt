@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/google/zoekt"
+	"github.com/google/zoekt/internal/mockSearcher"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/rpc"
-	"github.com/google/zoekt/rpc/mockSearcher"
 )
 
 func TestClientServer(t *testing.T) {
