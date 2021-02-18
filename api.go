@@ -157,6 +157,7 @@ func (s *Stats) Add(o Stats) {
 	s.NgramMatches += o.NgramMatches
 	s.ShardFilesConsidered += o.ShardFilesConsidered
 	s.ShardsSkipped += o.ShardsSkipped
+	s.Wait += o.Wait
 }
 
 // SearchResult contains search matches and extra data
