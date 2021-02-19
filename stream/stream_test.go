@@ -26,7 +26,7 @@ func TestStreamSearch(t *testing.T) {
 		},
 	}
 
-	h := &streamHandler{Searcher: searcher}
+	h := &streamHandler{Searcher: adapter{searcher}}
 
 	s := httptest.NewServer(h)
 	defer s.Close()
@@ -162,4 +162,17 @@ type streamerChan chan<- *zoekt.SearchResult
 
 func (c streamerChan) Send(result *zoekt.SearchResult) {
 	c <- result
+}
+
+type adapter struct {
+	zoekt.Searcher
+}
+
+func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender Streamer) (err error) {
+	sr, err := a.Searcher.Search(ctx, q, opts)
+	if err != nil {
+		return err
+	}
+	sender.Send(sr)
+	return nil
 }

@@ -29,7 +29,7 @@ func (e eventType) string() string {
 }
 
 // Server returns an http.Handler which is the server side of StreamSearch.
-func Server(searcher zoekt.Searcher) http.Handler {
+func Server(searcher NewSearcher) http.Handler {
 	registerGob()
 	return &streamHandler{Searcher: searcher}
 }
@@ -45,7 +45,7 @@ type searchReply struct {
 }
 
 type streamHandler struct {
-	Searcher zoekt.Searcher
+	Searcher NewSearcher
 }
 
 func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -73,45 +73,24 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Kick-off search (in batch-mode for now).
-	searchResults, err := h.Searcher.Search(ctx, args.Q, args.Opts)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// We simulate streaming by sending searchResults in chunks over the wire. Later
-	// we want Searcher.Search to take a channel, buffer here and send chunks over
-	// the network.
-	var chunk *zoekt.SearchResult
-	// We send stats first. We don't send RepoURLs or LineFragments because we don't
-	// use them in Sourcegraph.
-	chunk = &zoekt.SearchResult{
-		Stats: searchResults.Stats,
-	}
-	// Send event.
-	err = eventWriter.event(eventMatches, chunk)
-	if err != nil {
-		_ = eventWriter.event(eventError, err)
-		return
-	}
-
-	chunkSize := 100
-	numFiles := len(searchResults.Files)
-	for i := 0; i < numFiles; i = i + chunkSize {
-		right := i + chunkSize
-		if right >= numFiles {
-			right = numFiles
-		}
-		chunk = &zoekt.SearchResult{
-			Files: searchResults.Files[i:right],
-		}
-		// Send event.
-		err = eventWriter.event(eventMatches, chunk)
+	first := sync.Once{}
+	headersSent := false
+	err = h.Searcher.StreamSearch(ctx, args.Q, args.Opts, StreamerFunc(func(event *zoekt.SearchResult) {
+		first.Do(func() {
+			headersSent = true
+		})
+		err := eventWriter.event(eventMatches, event)
 		if err != nil {
 			_ = eventWriter.event(eventError, err)
 			return
 		}
+	}))
+	if err != nil {
+		if headersSent {
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -165,4 +144,9 @@ func registerGob() {
 		gob.Register(&zoekt.SearchResult{})
 	})
 	rpc.RegisterGob()
+}
+
+type NewSearcher interface {
+	zoekt.Searcher
+	Searcher
 }

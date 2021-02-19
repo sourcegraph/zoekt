@@ -2,6 +2,9 @@ package shards
 
 import (
 	"context"
+	"sync"
+
+	"github.com/google/zoekt/stream"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
@@ -12,7 +15,7 @@ import (
 // to the underlying searcher. We need to evaluate type:repo queries first
 // since they need to do cross shard operations.
 type typeRepoSearcher struct {
-	zoekt.Searcher
+	stream.NewSearcher
 }
 
 func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
@@ -36,7 +39,45 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		return nil, err
 	}
 
-	return s.Searcher.Search(ctx, q, opts)
+	return s.NewSearcher.Search(ctx, q, opts)
+}
+
+func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Streamer) (err error) {
+	tr, ctx := trace.New(ctx, "typeRepoSearcher.StreamSearch", "")
+
+	a := struct {
+		sync.Mutex
+		n     int
+		stats *zoekt.Stats
+	}{
+		stats: new(zoekt.Stats),
+	}
+
+	tr.LazyLog(q, true)
+	tr.LazyPrintf("opts: %+v", opts)
+	defer func() {
+		tr.LazyPrintf("num files: %d", a.n)
+		tr.LazyPrintf("stats: %+v", a.stats)
+		if err != nil {
+			tr.LazyPrintf("error: %v", err)
+			tr.SetError(err)
+		}
+		tr.Finish()
+	}()
+
+	q, err = s.eval(ctx, q)
+	if err != nil {
+		return err
+	}
+
+	return s.NewSearcher.StreamSearch(ctx, q, opts, stream.StreamerFunc(func(event *zoekt.SearchResult) {
+		a.Lock()
+		a.n += len(event.Files)
+		a.stats.Add(event.Stats)
+		a.Unlock()
+
+		sender.Send(event)
+	}))
 }
 
 func (s *typeRepoSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
@@ -59,7 +100,7 @@ func (s *typeRepoSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		return nil, err
 	}
 
-	return s.Searcher.List(ctx, r)
+	return s.NewSearcher.List(ctx, r)
 }
 
 func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error) {
@@ -75,7 +116,7 @@ func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error)
 		}
 
 		var rl *zoekt.RepoList
-		rl, err = s.Searcher.List(ctx, rq.Child)
+		rl, err = s.NewSearcher.List(ctx, rq.Child)
 		if err != nil {
 			return nil
 		}

@@ -38,6 +38,10 @@ type Streamer interface {
 	Send(*zoekt.SearchResult)
 }
 
+type Searcher interface {
+	StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender Streamer) (err error)
+}
+
 // StreamerFunc is an adapter to allow the use of ordinary functions as Streamer.
 // If f is a function with the appropriate signature, StreamerFunc(f) is a Streamer
 // that calls f.

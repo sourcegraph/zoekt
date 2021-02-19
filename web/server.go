@@ -77,7 +77,7 @@ var Funcmap = template.FuncMap{
 const defaultNumResults = 50
 
 type Server struct {
-	Searcher zoekt.Searcher
+	Searcher stream.NewSearcher
 
 	// Serve HTML interface
 	HTML bool
@@ -171,8 +171,11 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 		mux.HandleFunc("/print", s.servePrint)
 	}
 	if s.RPC {
-		mux.Handle(rpc.DefaultRPCPath, rpc.Server(traceAwareSearcher{s.Searcher}))       // /rpc
-		mux.Handle(stream.DefaultSSEPath, stream.Server(traceAwareSearcher{s.Searcher})) // /stream
+		mux.Handle(rpc.DefaultRPCPath, rpc.Server(traceAwareSearcher{s.Searcher})) // /rpc
+		mux.Handle(
+			stream.DefaultSSEPath, // /stream
+			stream.Server(traceAwareSearcher{s.Searcher}),
+		)
 	}
 
 	return mux, nil

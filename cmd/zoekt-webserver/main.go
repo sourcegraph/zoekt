@@ -32,8 +32,11 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"github.com/google/zoekt/stream"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
@@ -178,7 +181,7 @@ func main() {
 	logLvl := os.Getenv("SRC_LOG_LEVEL")
 	debug := logLvl == "" || strings.EqualFold(logLvl, "dbug")
 	if debug {
-		searcher = &loggedSearcher{Searcher: searcher}
+		searcher = &loggedSearcher{searcher}
 	}
 
 	s := &web.Server{
@@ -395,11 +398,11 @@ func mustRegisterDiskMonitor(path string) {
 }
 
 type loggedSearcher struct {
-	zoekt.Searcher
+	stream.NewSearcher
 }
 
 func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
-	sr, err := s.Searcher.Search(ctx, q, opts)
+	sr, err := s.NewSearcher.Search(ctx, q, opts)
 	if err != nil {
 		log.Printf("EROR: search failed q=%s: %s", q.String(), err.Error())
 	}
@@ -407,6 +410,27 @@ func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Sear
 		log.Printf("DBUG: search q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsSkipped=%v MatchCount=%v NgramMatches=%v Wait=%v}", q.String(), opts.EstimateDocCount, opts.Whole, opts.ShardMaxMatchCount, opts.TotalMaxMatchCount, opts.ShardMaxImportantMatch, opts.TotalMaxImportantMatch, opts.MaxWallTime, opts.MaxDocDisplayCount, sr.Stats.ContentBytesLoaded, sr.Stats.IndexBytesLoaded, sr.Stats.Crashes, sr.Stats.Duration, sr.Stats.FileCount, sr.Stats.ShardFilesConsidered, sr.Stats.FilesConsidered, sr.Stats.FilesLoaded, sr.Stats.FilesSkipped, sr.Stats.ShardsSkipped, sr.Stats.MatchCount, sr.Stats.NgramMatches, sr.Stats.Wait)
 	}
 	return sr, err
+}
+
+func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Streamer) error {
+	stats := struct {
+		sync.Mutex
+		*zoekt.Stats
+	}{
+		sync.Mutex{},
+		new(zoekt.Stats),
+	}
+	err := s.NewSearcher.StreamSearch(ctx, q, opts, stream.StreamerFunc(func(event *zoekt.SearchResult) {
+		stats.Lock()
+		stats.Add(event.Stats)
+		stats.Unlock()
+		sender.Send(event)
+	}))
+	if err != nil {
+		log.Printf("EROR: search failed q=%s: %s", q.String(), err.Error())
+	}
+	log.Printf("DBUG: search q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsSkipped=%v MatchCount=%v NgramMatches=%v Wait=%v}", q.String(), opts.EstimateDocCount, opts.Whole, opts.ShardMaxMatchCount, opts.TotalMaxMatchCount, opts.ShardMaxImportantMatch, opts.TotalMaxImportantMatch, opts.MaxWallTime, opts.MaxDocDisplayCount, stats.ContentBytesLoaded, stats.IndexBytesLoaded, stats.Crashes, stats.Duration, stats.FileCount, stats.ShardFilesConsidered, stats.FilesConsidered, stats.FilesLoaded, stats.FilesSkipped, stats.ShardsSkipped, stats.MatchCount, stats.NgramMatches, stats.Wait)
+	return err
 }
 
 func initializeJaeger() {
