@@ -38,15 +38,6 @@ type Streamer interface {
 	Send(*zoekt.SearchResult)
 }
 
-// StreamerFunc is an adapter to allow the use of ordinary functions as Streamers. If
-// f is a function with the appropriate signature, StreamerFunc(f) is a Streamer that
-// calls f.
-type StreamerFunc func(result *zoekt.SearchResult)
-
-func (f StreamerFunc) Send(result *zoekt.SearchResult) {
-	f(result)
-}
-
 // StreamSearch returns search results as stream by calling streamer.Send(event)
 // for each event returned by the server.
 //
