@@ -311,7 +311,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		return ss.StreamSearch(ctx, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
+		return ss.StreamSearch(ctx, q, opts, stream.StreamerFunc(func(r *zoekt.SearchResult) {
 			aggregate.Lock()
 			defer aggregate.Unlock()
 
@@ -354,7 +354,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	return aggregate.SearchResult, nil
 }
 
-func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
+func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, streamer stream.Streamer) (err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.Search", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
@@ -381,7 +381,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	}
 	defer ss.runlock()
 	tr.LazyPrintf("acquired lock")
-	sender.Send(&zoekt.SearchResult{
+	streamer.Send(&zoekt.SearchResult{
 		Stats: zoekt.Stats{
 			Wait: time.Since(start),
 		},
@@ -416,7 +416,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		g.Go(func() error {
 			for s := range feeder {
-				err := searchOneShard(childCtx, s, q, opts, stream.SenderFunc(func(sr *zoekt.SearchResult) {
+				err := searchOneShard(childCtx, s, q, opts, stream.StreamerFunc(func(sr *zoekt.SearchResult) {
 					if sr != nil {
 						metricSearchContentBytesLoadedTotal.Add(float64(sr.Stats.ContentBytesLoaded))
 						metricSearchIndexBytesLoadedTotal.Add(float64(sr.Stats.IndexBytesLoaded))
@@ -433,7 +433,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 						tr.LazyPrintf("num files: %d", len(sr.Files))
 						tr.LazyPrintf("stats: %+v", sr.Stats)
 					}
-					sender.Send(sr)
+					streamer.Send(sr)
 				}))
 				if err != nil {
 					return err
@@ -451,7 +451,7 @@ func copySlice(src *[]byte) {
 	*src = dst
 }
 
-func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) error {
+func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions, streamer stream.Streamer) error {
 	metricSearchShardRunning.Inc()
 	defer func() {
 		metricSearchShardRunning.Dec()
@@ -460,7 +460,7 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 
 			var r zoekt.SearchResult
 			r.Stats.Crashes = 1
-			sender.Send(&r)
+			streamer.Send(&r)
 		}
 	}()
 
@@ -469,7 +469,7 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 	if err != nil {
 		return err
 	}
-	sender.Send(ms)
+	streamer.Send(ms)
 	return nil
 }
 
