@@ -293,6 +293,11 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 }
 
 func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
+	tr, ctx := trace.New(ctx, "shardedSearcher.Search", "")
+	defer func() {
+		tr.LazyPrintf("num files: %d", len(sr.Files))
+		tr.LazyPrintf("stats: %+v", sr.Stats)
+	}()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -355,7 +360,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 }
 
 func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Streamer) (err error) {
-	tr, ctx := trace.New(ctx, "shardedSearcher.Search", "")
+	tr, ctx := trace.New(ctx, "shardedSearcher.StreamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
 	overallStart := time.Now()
@@ -429,9 +434,6 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 						metricSearchShardsSkippedTotal.Add(float64(sr.Stats.ShardsSkipped))
 						metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
 						metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
-
-						tr.LazyPrintf("num files: %d", len(sr.Files))
-						tr.LazyPrintf("stats: %+v", sr.Stats)
 					}
 					sender.Send(sr)
 				}))
