@@ -26,11 +26,11 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
-
 	"golang.org/x/sync/semaphore"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
+	"github.com/google/zoekt/stream"
 	"github.com/google/zoekt/trace"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -292,24 +292,6 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 	return shards, and
 }
 
-type Sender interface {
-	Send(sr *zoekt.SearchResult)
-}
-
-type SenderChan chan *zoekt.SearchResult
-
-func (c SenderChan) Send(result *zoekt.SearchResult) {
-	fmt.Printf("Send >>>")
-	c <- result
-	fmt.Printf("<<< Send\n")
-}
-
-type SenderFunc func(result *zoekt.SearchResult)
-
-func (f SenderFunc) Send(result *zoekt.SearchResult) {
-	f(result)
-}
-
 func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -329,7 +311,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		return ss.StreamSearch(ctx, q, opts, SenderFunc(func(r *zoekt.SearchResult) {
+		return ss.StreamSearch(ctx, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
 			aggregate.Lock()
 			defer aggregate.Unlock()
 
@@ -372,7 +354,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	return aggregate.SearchResult, nil
 }
 
-func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender Sender) (err error) {
+func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.Search", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
@@ -434,7 +416,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		g.Go(func() error {
 			for s := range feeder {
-				err := searchOneShard(childCtx, s, q, opts, SenderFunc(func(sr *zoekt.SearchResult) {
+				err := searchOneShard(childCtx, s, q, opts, stream.SenderFunc(func(sr *zoekt.SearchResult) {
 					if sr != nil {
 						metricSearchContentBytesLoadedTotal.Add(float64(sr.Stats.ContentBytesLoaded))
 						metricSearchIndexBytesLoadedTotal.Add(float64(sr.Stats.IndexBytesLoaded))
@@ -469,14 +451,7 @@ func copySlice(src *[]byte) {
 	*src = dst
 }
 
-type shardResult struct {
-	sr  *zoekt.SearchResult
-	err error
-}
-
-func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions, sender Sender) error {
-	fmt.Printf("searchOneShard >>>>\n")
-	defer fmt.Printf("<<<< searchOneShard\n")
+func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) error {
 	metricSearchShardRunning.Inc()
 	defer func() {
 		metricSearchShardRunning.Dec()
@@ -494,9 +469,7 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 	if err != nil {
 		return err
 	}
-	fmt.Printf("trying to send a message\n")
 	sender.Send(ms)
-	fmt.Printf("message sent\n")
 	return nil
 }
 
