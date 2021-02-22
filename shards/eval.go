@@ -4,10 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/google/zoekt/stream"
-
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
+	"github.com/google/zoekt/stream"
 	"github.com/google/zoekt/trace"
 )
 

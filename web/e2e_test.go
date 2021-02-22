@@ -56,7 +56,7 @@ func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) stream.Searcher {
 
 	searcher, err := zoekt.NewSearcher(f)
 	if err != nil {
-		t.Fatalf("Searcher: %v", err)
+		t.Fatalf("NewSearcher: %v", err)
 	}
 
 	return adapter{Searcher: searcher}

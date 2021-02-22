@@ -36,13 +36,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/zoekt/stream"
-
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/debugserver"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
+	"github.com/google/zoekt/stream"
 	"github.com/google/zoekt/web"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
@@ -181,7 +180,7 @@ func main() {
 	logLvl := os.Getenv("SRC_LOG_LEVEL")
 	debug := logLvl == "" || strings.EqualFold(logLvl, "dbug")
 	if debug {
-		searcher = &loggedSearcher{searcher}
+		searcher = &loggedSearcher{Searcher: searcher}
 	}
 
 	s := &web.Server{

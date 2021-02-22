@@ -249,7 +249,7 @@ func TestUnloadIndex(t *testing.T) {
 	indexFile := &memSeeker{indexBytes}
 	searcher, err := zoekt.NewSearcher(indexFile)
 	if err != nil {
-		t.Fatalf("Searcher: %v", err)
+		t.Fatalf("NewSearcher: %v", err)
 	}
 
 	ss := newShardedSearcher(2)
@@ -305,7 +305,7 @@ func searcherForTest(t testing.TB, b *zoekt.IndexBuilder) zoekt.Searcher {
 
 	searcher, err := zoekt.NewSearcher(f)
 	if err != nil {
-		t.Fatalf("Searcher: %v", err)
+		t.Fatalf("NewSearcher: %v", err)
 	}
 
 	return searcher

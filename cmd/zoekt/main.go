@@ -60,7 +60,7 @@ func loadShard(fn string, verbose bool) (zoekt.Searcher, error) {
 	s, err := zoekt.NewSearcher(iFile)
 	if err != nil {
 		iFile.Close()
-		return nil, fmt.Errorf("Searcher(%s): %v", fn, err)
+		return nil, fmt.Errorf("NewSearcher(%s): %v", fn, err)
 	}
 
 	if verbose {
