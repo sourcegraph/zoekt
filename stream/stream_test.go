@@ -26,7 +26,7 @@ func TestStreamSearch(t *testing.T) {
 		},
 	}
 
-	h := &streamHandler{Searcher: adapter{searcher}}
+	h := &handler{Searcher: adapter{searcher}}
 
 	s := httptest.NewServer(h)
 	defer s.Close()

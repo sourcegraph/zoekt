@@ -32,7 +32,7 @@ func (e eventType) string() string {
 // Server returns an http.Handler which is the server side of StreamSearch.
 func Server(searcher Searcher) http.Handler {
 	registerGob()
-	return &streamHandler{Searcher: searcher}
+	return &handler{Searcher: searcher}
 }
 
 type searchArgs struct {
@@ -45,11 +45,11 @@ type searchReply struct {
 	Data  interface{}
 }
 
-type streamHandler struct {
+type handler struct {
 	Searcher Searcher
 }
 
-func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Decode payload.
