@@ -320,10 +320,11 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 			aggregate.Lock()
 			defer aggregate.Unlock()
 
-			aggregate.Files = append(aggregate.Files, r.Files...)
 			aggregate.Stats.Add(r.Stats)
 
 			if len(r.Files) > 0 {
+				aggregate.Files = append(aggregate.Files, r.Files...)
+
 				for k, v := range r.RepoURLs {
 					aggregate.RepoURLs[k] = v
 				}
