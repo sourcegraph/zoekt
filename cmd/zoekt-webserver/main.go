@@ -412,7 +412,7 @@ func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Sear
 	return sr, err
 }
 
-func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Streamer) error {
+func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) error {
 	stats := struct {
 		sync.Mutex
 		*zoekt.Stats
@@ -420,7 +420,7 @@ func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoek
 		sync.Mutex{},
 		new(zoekt.Stats),
 	}
-	err := s.NewSearcher.StreamSearch(ctx, q, opts, stream.StreamerFunc(func(event *zoekt.SearchResult) {
+	err := s.NewSearcher.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		stats.Lock()
 		stats.Add(event.Stats)
 		stats.Unlock()

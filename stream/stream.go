@@ -3,6 +3,7 @@
 package stream
 
 import (
+	"context"
 	"encoding/gob"
 	"errors"
 	"net/http"
@@ -75,7 +76,7 @@ func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	first := sync.Once{}
 	headersSent := false
-	err = h.Searcher.StreamSearch(ctx, args.Q, args.Opts, StreamerFunc(func(event *zoekt.SearchResult) {
+	err = h.Searcher.StreamSearch(ctx, args.Q, args.Opts, SenderFunc(func(event *zoekt.SearchResult) {
 		first.Do(func() {
 			headersSent = true
 		})
@@ -148,5 +149,5 @@ func registerGob() {
 
 type NewSearcher interface {
 	zoekt.Searcher
-	Searcher
+	StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender Sender) (err error)
 }

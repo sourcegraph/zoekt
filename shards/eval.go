@@ -42,7 +42,7 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	return s.NewSearcher.Search(ctx, q, opts)
 }
 
-func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Streamer) (err error) {
+func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.StreamSearch", "")
 
 	a := struct {
@@ -70,7 +70,7 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		return err
 	}
 
-	return s.NewSearcher.StreamSearch(ctx, q, opts, stream.StreamerFunc(func(event *zoekt.SearchResult) {
+	return s.NewSearcher.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		a.Lock()
 		a.n += len(event.Files)
 		a.stats.Add(event.Stats)
