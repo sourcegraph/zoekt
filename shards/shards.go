@@ -314,33 +314,36 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 	start := time.Now()
 
-	g := errgroup.Group{}
-	g.Go(func() error {
-		return ss.StreamSearch(ctx, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
-			aggregate.Lock()
-			defer aggregate.Unlock()
+	if err := ss.rlock(ctx); err != nil {
+		return nil, err
+	}
+	tr.LazyPrintf("acquired lock")
+	defer ss.runlock()
 
-			aggregate.Stats.Add(r.Stats)
+	err = ss.streamSearch(ctx, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
+		aggregate.Lock()
+		defer aggregate.Unlock()
 
-			if len(r.Files) > 0 {
-				aggregate.Files = append(aggregate.Files, r.Files...)
+		aggregate.Stats.Add(r.Stats)
 
-				for k, v := range r.RepoURLs {
-					aggregate.RepoURLs[k] = v
-				}
-				for k, v := range r.LineFragments {
-					aggregate.LineFragments[k] = v
-				}
+		if len(r.Files) > 0 {
+			aggregate.Files = append(aggregate.Files, r.Files...)
+
+			for k, v := range r.RepoURLs {
+				aggregate.RepoURLs[k] = v
 			}
-
-			if cancel != nil && opts.TotalMaxMatchCount > 0 && aggregate.Stats.MatchCount > opts.TotalMaxMatchCount {
-				cancel()
-				cancel = nil
+			for k, v := range r.LineFragments {
+				aggregate.LineFragments[k] = v
 			}
-		}))
-	})
+		}
 
-	if err := g.Wait(); err != nil {
+		if cancel != nil && opts.TotalMaxMatchCount > 0 && aggregate.Stats.MatchCount > opts.TotalMaxMatchCount {
+			cancel()
+			cancel = nil
+		}
+	}))
+
+	if err != nil {
 		return nil, err
 	}
 
@@ -348,13 +351,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	if max := opts.MaxDocDisplayCount; max > 0 && len(aggregate.Files) > max {
 		aggregate.Files = aggregate.Files[:max]
 	}
-	for i := range aggregate.Files {
-		copySlice(&aggregate.Files[i].Content)
-		copySlice(&aggregate.Files[i].Checksum)
-		for l := range aggregate.Files[i].LineMatches {
-			copySlice(&aggregate.Files[i].LineMatches[l].Line)
-		}
-	}
+	copyFiles(aggregate.SearchResult)
 
 	aggregate.Duration = time.Since(start)
 	return aggregate.SearchResult, nil
@@ -362,6 +359,34 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.StreamSearch", "")
+	defer func() {
+		if err != nil {
+			tr.LazyPrintf("error: %v", err)
+			tr.SetError(err)
+		}
+		tr.Finish()
+	}()
+	start := time.Now()
+	// This critical section is large, but we don't want to deal with
+	// searches on shards that have just been closed.
+	if err := ss.rlock(ctx); err != nil {
+		return err
+	}
+	defer ss.runlock()
+	tr.LazyPrintf("acquired lock")
+	sender.Send(&zoekt.SearchResult{
+		Stats: zoekt.Stats{
+			Wait: time.Since(start),
+		},
+	})
+	return ss.streamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+		copyFiles(event)
+		sender.Send(event)
+	}))
+}
+
+func (ss *shardedSearcher) streamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
+	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
 	overallStart := time.Now()
@@ -377,21 +402,6 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		}
 		tr.Finish()
 	}()
-
-	start := time.Now()
-
-	// This critical section is large, but we don't want to deal with
-	// searches on shards that have just been closed.
-	if err := ss.rlock(ctx); err != nil {
-		return err
-	}
-	defer ss.runlock()
-	tr.LazyPrintf("acquired lock")
-	sender.Send(&zoekt.SearchResult{
-		Stats: zoekt.Stats{
-			Wait: time.Since(start),
-		},
-	})
 
 	shards := ss.getShards()
 	tr.LazyPrintf("before selectRepoSet shards:%d", len(shards))
@@ -452,6 +462,16 @@ func copySlice(src *[]byte) {
 	dst := make([]byte, len(*src))
 	copy(dst, *src)
 	*src = dst
+}
+
+func copyFiles(sr *zoekt.SearchResult) {
+	for i := range sr.Files {
+		copySlice(&sr.Files[i].Content)
+		copySlice(&sr.Files[i].Checksum)
+		for l := range sr.Files[i].LineMatches {
+			copySlice(&sr.Files[i].LineMatches[l].Line)
+		}
+	}
 }
 
 func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) error {
