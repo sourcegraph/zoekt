@@ -160,7 +160,7 @@ func newShardedSearcher(n int64) *shardedSearcher {
 
 // NewDirectorySearcher returns a searcher instance that loads all
 // shards corresponding to a glob into memory.
-func NewDirectorySearcher(dir string) (stream.NewSearcher, error) {
+func NewDirectorySearcher(dir string) (stream.Searcher, error) {
 	ss := newShardedSearcher(int64(runtime.GOMAXPROCS(0)))
 	tl := &loader{
 		ss: ss,
@@ -666,7 +666,7 @@ func loadShard(fn string) (zoekt.Searcher, error) {
 	s, err := zoekt.NewSearcher(iFile)
 	if err != nil {
 		iFile.Close()
-		return nil, fmt.Errorf("NewSearcher(%s): %v", fn, err)
+		return nil, fmt.Errorf("Searcher(%s): %v", fn, err)
 	}
 
 	return s, nil

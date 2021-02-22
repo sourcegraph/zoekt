@@ -16,7 +16,7 @@ import (
 // context. This context item toggles on trace collection via the
 // github.com/sourcegraph/zoekt/trace/ot package.
 type traceAwareSearcher struct {
-	Searcher stream.NewSearcher
+	Searcher stream.Searcher
 }
 
 func (s traceAwareSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {

@@ -398,11 +398,11 @@ func mustRegisterDiskMonitor(path string) {
 }
 
 type loggedSearcher struct {
-	stream.NewSearcher
+	stream.Searcher
 }
 
 func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
-	sr, err := s.NewSearcher.Search(ctx, q, opts)
+	sr, err := s.Searcher.Search(ctx, q, opts)
 	if err != nil {
 		log.Printf("EROR: search failed q=%s: %s", q.String(), err.Error())
 	}
@@ -420,7 +420,7 @@ func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoek
 		sync.Mutex{},
 		new(zoekt.Stats),
 	}
-	err := s.NewSearcher.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	err := s.Searcher.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		stats.Lock()
 		stats.Add(event.Stats)
 		stats.Unlock()

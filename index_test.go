@@ -216,7 +216,7 @@ func searcherForTest(t *testing.T, b *IndexBuilder) Searcher {
 
 	searcher, err := NewSearcher(f)
 	if err != nil {
-		t.Fatalf("NewSearcher: %v", err)
+		t.Fatalf("Searcher: %v", err)
 	}
 
 	return searcher

@@ -30,7 +30,7 @@ func (e eventType) string() string {
 }
 
 // Server returns an http.Handler which is the server side of StreamSearch.
-func Server(searcher NewSearcher) http.Handler {
+func Server(searcher Searcher) http.Handler {
 	registerGob()
 	return &streamHandler{Searcher: searcher}
 }
@@ -46,7 +46,7 @@ type searchReply struct {
 }
 
 type streamHandler struct {
-	Searcher NewSearcher
+	Searcher Searcher
 }
 
 func (h *streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +147,7 @@ func registerGob() {
 	rpc.RegisterGob()
 }
 
-type NewSearcher interface {
+type Searcher interface {
 	zoekt.Searcher
 	StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender Sender) (err error)
 }

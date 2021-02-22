@@ -15,7 +15,7 @@ import (
 // to the underlying searcher. We need to evaluate type:repo queries first
 // since they need to do cross shard operations.
 type typeRepoSearcher struct {
-	stream.NewSearcher
+	stream.Searcher
 }
 
 func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
@@ -39,7 +39,7 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		return nil, err
 	}
 
-	return s.NewSearcher.Search(ctx, q, opts)
+	return s.Searcher.Search(ctx, q, opts)
 }
 
 func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
@@ -70,7 +70,7 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		return err
 	}
 
-	return s.NewSearcher.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	return s.Searcher.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		a.Lock()
 		a.n += len(event.Files)
 		a.stats.Add(event.Stats)
@@ -100,7 +100,7 @@ func (s *typeRepoSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		return nil, err
 	}
 
-	return s.NewSearcher.List(ctx, r)
+	return s.Searcher.List(ctx, r)
 }
 
 func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error) {
@@ -116,7 +116,7 @@ func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error)
 		}
 
 		var rl *zoekt.RepoList
-		rl, err = s.NewSearcher.List(ctx, rq.Child)
+		rl, err = s.Searcher.List(ctx, rq.Child)
 		if err != nil {
 			return nil
 		}
