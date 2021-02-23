@@ -412,14 +412,14 @@ func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Sear
 }
 
 func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) error {
-	stats := struct {
-		sync.Mutex
-		zoekt.Stats
-	}{}
+	var (
+		mu    sync.Mutex
+		stats zoekt.Stats
+	)
 	err := s.Streamer.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
-		stats.Lock()
+		mu.Lock()
 		stats.Add(event.Stats)
-		stats.Unlock()
+		mu.Unlock()
 		sender.Send(event)
 	}))
 	if err != nil {
