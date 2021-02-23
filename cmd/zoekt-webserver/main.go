@@ -414,10 +414,8 @@ func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Sear
 func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) error {
 	stats := struct {
 		sync.Mutex
-		*zoekt.Stats
-	}{
-		Stats: new(zoekt.Stats),
-	}
+		zoekt.Stats
+	}{}
 	err := s.Searcher.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		stats.Lock()
 		stats.Add(event.Stats)
