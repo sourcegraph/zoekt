@@ -429,11 +429,11 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, q query.Q, opts *zo
 		feeder <- s
 	}
 	close(feeder)
-	g := errgroup.Group{}
+	g, ctx := errgroup.WithContext(childCtx)
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		g.Go(func() error {
 			for s := range feeder {
-				err := searchOneShard(childCtx, s, q, opts, stream.SenderFunc(func(sr *zoekt.SearchResult) {
+				err := searchOneShard(ctx, s, q, opts, stream.SenderFunc(func(sr *zoekt.SearchResult) {
 					metricSearchContentBytesLoadedTotal.Add(float64(sr.Stats.ContentBytesLoaded))
 					metricSearchIndexBytesLoadedTotal.Add(float64(sr.Stats.IndexBytesLoaded))
 					metricSearchCrashesTotal.Add(float64(sr.Stats.Crashes))
