@@ -3,10 +3,9 @@ package web
 import (
 	"log"
 
-	"github.com/google/zoekt/stream"
-
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
+	"github.com/google/zoekt/stream"
 	"github.com/google/zoekt/trace"
 	"github.com/opentracing/opentracing-go"
 	"golang.org/x/net/context"
