@@ -171,15 +171,15 @@ func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
 	}
 
 	ds := &directorySearcher{
-		Searcher:         ss,
+		Streamer:         ss,
 		directoryWatcher: dw,
 	}
 
-	return &typeRepoSearcher{Searcher: ds}, nil
+	return &typeRepoSearcher{Streamer: ds}, nil
 }
 
 type directorySearcher struct {
-	zoekt.Searcher
+	zoekt.Streamer
 
 	directoryWatcher Stopper
 }
@@ -188,7 +188,7 @@ func (s *directorySearcher) Close() {
 	// We need to Stop directoryWatcher first since it calls load/unload on
 	// Searcher.
 	s.directoryWatcher.Stop()
-	s.Searcher.Close()
+	s.Streamer.Close()
 }
 
 type loader struct {
