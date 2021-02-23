@@ -307,8 +307,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		sync.Mutex
 		*zoekt.SearchResult
 	}{
-		sync.Mutex{},
-		&zoekt.SearchResult{
+		SearchResult: &zoekt.SearchResult{
 			RepoURLs:      map[string]string{},
 			LineFragments: map[string]string{},
 		},
