@@ -24,7 +24,7 @@ func (s traceAwareSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.S
 	return s.Searcher.Search(ctx, q, opts)
 }
 
-func (s traceAwareSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) error {
+func (s traceAwareSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) error {
 	ctx, finish := getTraceContext(ctx, opts.Trace, opts.SpanContext)
 	defer finish()
 	return s.Searcher.StreamSearch(ctx, q, opts, sender)

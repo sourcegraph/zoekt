@@ -358,7 +358,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	return aggregate.SearchResult, nil
 }
 
-func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
+func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.StreamSearch", "")
 	defer func() {
 		if err != nil {
@@ -386,7 +386,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	}))
 }
 
-func (ss *shardedSearcher) streamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
+func (ss *shardedSearcher) streamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
@@ -475,7 +475,7 @@ func copyFiles(sr *zoekt.SearchResult) {
 	}
 }
 
-func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) error {
+func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) error {
 	metricSearchShardRunning.Inc()
 	defer func() {
 		metricSearchShardRunning.Dec()

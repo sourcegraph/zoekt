@@ -40,7 +40,7 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	return s.Searcher.Search(ctx, q, opts)
 }
 
-func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
+func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.StreamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)

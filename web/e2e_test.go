@@ -66,7 +66,7 @@ type adapter struct {
 	zoekt.Searcher
 }
 
-func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
+func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
 	sr, err := a.Searcher.Search(ctx, q, opts)
 	if err != nil {
 		return err

@@ -360,3 +360,8 @@ type SearchOptions struct {
 func (s *SearchOptions) String() string {
 	return fmt.Sprintf("%#v", s)
 }
+
+// Sender is the interface that wraps the basic Send method.
+type Sender interface {
+	Send(*SearchResult)
+}

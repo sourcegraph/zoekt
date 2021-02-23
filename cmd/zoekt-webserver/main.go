@@ -411,7 +411,7 @@ func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Sear
 	return sr, err
 }
 
-func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) error {
+func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) error {
 	stats := struct {
 		sync.Mutex
 		zoekt.Stats
