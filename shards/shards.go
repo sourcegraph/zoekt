@@ -435,19 +435,18 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, q query.Q, opts *zo
 		g.Go(func() error {
 			for s := range feeder {
 				err := searchOneShard(childCtx, s, q, opts, stream.SenderFunc(func(sr *zoekt.SearchResult) {
-					if sr != nil {
-						metricSearchContentBytesLoadedTotal.Add(float64(sr.Stats.ContentBytesLoaded))
-						metricSearchIndexBytesLoadedTotal.Add(float64(sr.Stats.IndexBytesLoaded))
-						metricSearchCrashesTotal.Add(float64(sr.Stats.Crashes))
-						metricSearchFileCountTotal.Add(float64(sr.Stats.FileCount))
-						metricSearchShardFilesConsideredTotal.Add(float64(sr.Stats.ShardFilesConsidered))
-						metricSearchFilesConsideredTotal.Add(float64(sr.Stats.FilesConsidered))
-						metricSearchFilesLoadedTotal.Add(float64(sr.Stats.FilesLoaded))
-						metricSearchFilesSkippedTotal.Add(float64(sr.Stats.FilesSkipped))
-						metricSearchShardsSkippedTotal.Add(float64(sr.Stats.ShardsSkipped))
-						metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
-						metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
-					}
+					metricSearchContentBytesLoadedTotal.Add(float64(sr.Stats.ContentBytesLoaded))
+					metricSearchIndexBytesLoadedTotal.Add(float64(sr.Stats.IndexBytesLoaded))
+					metricSearchCrashesTotal.Add(float64(sr.Stats.Crashes))
+					metricSearchFileCountTotal.Add(float64(sr.Stats.FileCount))
+					metricSearchShardFilesConsideredTotal.Add(float64(sr.Stats.ShardFilesConsidered))
+					metricSearchFilesConsideredTotal.Add(float64(sr.Stats.FilesConsidered))
+					metricSearchFilesLoadedTotal.Add(float64(sr.Stats.FilesLoaded))
+					metricSearchFilesSkippedTotal.Add(float64(sr.Stats.FilesSkipped))
+					metricSearchShardsSkippedTotal.Add(float64(sr.Stats.ShardsSkipped))
+					metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
+					metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
+
 					sender.Send(sr)
 				}))
 				if err != nil {
