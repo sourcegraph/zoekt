@@ -295,8 +295,10 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.Search", "")
 	defer func() {
-		tr.LazyPrintf("num files: %d", len(sr.Files))
-		tr.LazyPrintf("stats: %+v", sr.Stats)
+		if sr != nil {
+			tr.LazyPrintf("num files: %d", len(sr.Files))
+			tr.LazyPrintf("stats: %+v", sr.Stats)
+		}
 	}()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
