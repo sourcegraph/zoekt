@@ -313,12 +313,13 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	}
 
 	start := time.Now()
-
 	if err := ss.rlock(ctx); err != nil {
 		return nil, err
 	}
-	tr.LazyPrintf("acquired lock")
 	defer ss.runlock()
+	tr.LazyPrintf("acquired lock")
+	aggregate.Wait = time.Since(start)
+	start = time.Now()
 
 	err = ss.streamSearch(ctx, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
 		aggregate.Lock()
@@ -342,7 +343,6 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 			cancel = nil
 		}
 	}))
-
 	if err != nil {
 		return nil, err
 	}
@@ -366,9 +366,8 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		}
 		tr.Finish()
 	}()
+
 	start := time.Now()
-	// This critical section is large, but we don't want to deal with
-	// searches on shards that have just been closed.
 	if err := ss.rlock(ctx); err != nil {
 		return err
 	}
@@ -379,6 +378,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 			Wait: time.Since(start),
 		},
 	})
+
 	return ss.streamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		copyFiles(event)
 		sender.Send(event)
@@ -464,6 +464,7 @@ func copySlice(src *[]byte) {
 	*src = dst
 }
 
+// copyFiles must be protected by shardedSearcher.rlock().
 func copyFiles(sr *zoekt.SearchResult) {
 	for i := range sr.Files {
 		copySlice(&sr.Files[i].Content)
