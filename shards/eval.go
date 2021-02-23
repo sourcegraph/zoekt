@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/stream"
 	"github.com/google/zoekt/trace"
 )
 
@@ -13,7 +12,7 @@ import (
 // to the underlying searcher. We need to evaluate type:repo queries first
 // since they need to do cross shard operations.
 type typeRepoSearcher struct {
-	stream.Searcher
+	zoekt.Streamer
 }
 
 func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
@@ -37,7 +36,7 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		return nil, err
 	}
 
-	return s.Searcher.Search(ctx, q, opts)
+	return s.Streamer.Search(ctx, q, opts)
 }
 
 func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
@@ -57,7 +56,7 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		return err
 	}
 
-	return s.Searcher.StreamSearch(ctx, q, opts, sender)
+	return s.Streamer.StreamSearch(ctx, q, opts, sender)
 }
 
 func (s *typeRepoSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
@@ -80,7 +79,7 @@ func (s *typeRepoSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		return nil, err
 	}
 
-	return s.Searcher.List(ctx, r)
+	return s.Streamer.List(ctx, r)
 }
 
 func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error) {
@@ -96,7 +95,7 @@ func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error)
 		}
 
 		var rl *zoekt.RepoList
-		rl, err = s.Searcher.List(ctx, rq.Child)
+		rl, err = s.Streamer.List(ctx, rq.Child)
 		if err != nil {
 			return nil
 		}

@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/stream"
 	"github.com/google/zoekt/trace"
 	"github.com/opentracing/opentracing-go"
 	"golang.org/x/net/context"
@@ -15,7 +14,7 @@ import (
 // context. This context item toggles on trace collection via the
 // github.com/sourcegraph/zoekt/trace/ot package.
 type traceAwareSearcher struct {
-	Searcher stream.Searcher
+	Searcher zoekt.Streamer
 }
 
 func (s traceAwareSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {

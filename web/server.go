@@ -77,7 +77,7 @@ var Funcmap = template.FuncMap{
 const defaultNumResults = 50
 
 type Server struct {
-	Searcher stream.Searcher
+	Searcher zoekt.Streamer
 
 	// Serve HTML interface
 	HTML bool

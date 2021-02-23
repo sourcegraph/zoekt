@@ -180,7 +180,7 @@ func main() {
 	logLvl := os.Getenv("SRC_LOG_LEVEL")
 	debug := logLvl == "" || strings.EqualFold(logLvl, "dbug")
 	if debug {
-		searcher = &loggedSearcher{Searcher: searcher}
+		searcher = &loggedSearcher{Streamer: searcher}
 	}
 
 	s := &web.Server{
@@ -397,11 +397,11 @@ func mustRegisterDiskMonitor(path string) {
 }
 
 type loggedSearcher struct {
-	stream.Searcher
+	zoekt.Streamer
 }
 
 func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
-	sr, err := s.Searcher.Search(ctx, q, opts)
+	sr, err := s.Streamer.Search(ctx, q, opts)
 	if err != nil {
 		log.Printf("EROR: search failed q=%s: %s", q.String(), err.Error())
 	}
@@ -416,7 +416,7 @@ func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoek
 		sync.Mutex
 		zoekt.Stats
 	}{}
-	err := s.Searcher.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	err := s.Streamer.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		stats.Lock()
 		stats.Add(event.Stats)
 		stats.Unlock()

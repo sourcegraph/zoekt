@@ -3,7 +3,6 @@
 package stream
 
 import (
-	"context"
 	"encoding/gob"
 	"errors"
 	"net/http"
@@ -29,13 +28,8 @@ func (e eventType) string() string {
 	return []string{"eventMatches", "eventError", "eventDone"}[e]
 }
 
-type Searcher interface {
-	zoekt.Searcher
-	StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error)
-}
-
 // Server returns an http.Handler which is the server side of StreamSearch.
-func Server(searcher Searcher) http.Handler {
+func Server(searcher zoekt.Streamer) http.Handler {
 	registerGob()
 	return &handler{Searcher: searcher}
 }
@@ -51,7 +45,7 @@ type searchReply struct {
 }
 
 type handler struct {
-	Searcher Searcher
+	Searcher zoekt.Streamer
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

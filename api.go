@@ -365,3 +365,9 @@ func (s *SearchOptions) String() string {
 type Sender interface {
 	Send(*SearchResult)
 }
+
+// Streamer adds the method StreamSearch to the Searcher interface.
+type Streamer interface {
+	Searcher
+	StreamSearch(ctx context.Context, q query.Q, opts *SearchOptions, sender Sender) (err error)
+}

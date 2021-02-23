@@ -28,7 +28,6 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/stream"
 )
 
 // TODO(hanwen): cut & paste from ../ . Should create internal test
@@ -49,7 +48,7 @@ func (s *memSeeker) Name() string {
 	return "memSeeker"
 }
 
-func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) stream.Searcher {
+func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) zoekt.Streamer {
 	var buf bytes.Buffer
 	b.Write(&buf)
 	f := &memSeeker{buf.Bytes()}
@@ -253,7 +252,7 @@ func checkNeedles(t *testing.T, ts *httptest.Server, req string, needles []strin
 }
 
 type crashSearcher struct {
-	stream.Searcher
+	zoekt.Streamer
 }
 
 func (s *crashSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
