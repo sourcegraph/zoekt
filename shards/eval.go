@@ -2,7 +2,6 @@ package shards
 
 import (
 	"context"
-	"sync"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
@@ -43,20 +42,9 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender stream.Sender) (err error) {
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.StreamSearch", "")
-
-	a := struct {
-		sync.Mutex
-		n     int
-		stats *zoekt.Stats
-	}{
-		stats: new(zoekt.Stats),
-	}
-
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
 	defer func() {
-		tr.LazyPrintf("num files: %d", a.n)
-		tr.LazyPrintf("stats: %+v", a.stats)
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
 			tr.SetError(err)
@@ -69,14 +57,7 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		return err
 	}
 
-	return s.Searcher.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
-		a.Lock()
-		a.n += len(event.Files)
-		a.stats.Add(event.Stats)
-		a.Unlock()
-
-		sender.Send(event)
-	}))
+	return s.Searcher.StreamSearch(ctx, q, opts, sender)
 }
 
 func (s *typeRepoSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
