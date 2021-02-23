@@ -79,12 +79,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	first := sync.Once{}
-	headersSent := false
+	// mu protects possibly concurrent writes to the stream.
+	mu := sync.Mutex{}
+
 	err = h.Searcher.StreamSearch(ctx, args.Q, args.Opts, SenderFunc(func(event *zoekt.SearchResult) {
-		first.Do(func() {
-			headersSent = true
-		})
+		mu.Lock()
+		defer mu.Unlock()
 		err := eventWriter.event(eventMatches, event)
 		if err != nil {
 			_ = eventWriter.event(eventError, err)
@@ -92,10 +92,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}))
 	if err != nil {
-		if headersSent {
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		_ = eventWriter.event(eventError, err)
 		return
 	}
 }
