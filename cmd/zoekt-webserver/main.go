@@ -416,8 +416,7 @@ func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoek
 		sync.Mutex
 		*zoekt.Stats
 	}{
-		sync.Mutex{},
-		new(zoekt.Stats),
+		Stats: new(zoekt.Stats),
 	}
 	err := s.Searcher.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		stats.Lock()
