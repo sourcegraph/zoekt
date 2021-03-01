@@ -106,11 +106,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}))
 
-	// In case the last shard we searched didn't return matches, aggStats.Zero() = false.
-	if !aggStats.Zero() {
-		finalEvent := new(zoekt.SearchResult)
-		finalEvent.Stats = aggStats
-		send(finalEvent)
+	if err == nil && !aggStats.Zero() {
+		send(&zoekt.SearchResult{Stats: aggStats})
 	}
 
 	if err != nil {
