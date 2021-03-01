@@ -58,6 +58,55 @@ func TestStreamSearch(t *testing.T) {
 	<-done
 }
 
+func TestStreamSearchJustStats(t *testing.T) {
+	wantStats := zoekt.Stats{
+		Crashes: 1,
+	}
+	q := query.NewAnd(mustParse("hello world|universe"), query.NewRepoSet("foo/bar", "baz/bam"))
+	searcher := &mockSearcher.MockSearcher{
+		WantSearch: q,
+		SearchResult: &zoekt.SearchResult{
+			Files: []zoekt.FileMatch{},
+			Stats: wantStats,
+		},
+	}
+
+	h := &handler{Searcher: adapter{searcher}}
+
+	s := httptest.NewServer(h)
+	defer s.Close()
+
+	cl := NewClient(s.URL, nil)
+
+	c := make(chan *zoekt.SearchResult)
+
+	// Start consumer.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		count := 0
+		for res := range c {
+			count += 1
+			if count > 1 {
+				t.Fatal("expected exactly 1 result, got at least 2")
+			}
+			if d := cmp.Diff(wantStats, res.Stats); d != "" {
+				t.Fatalf("zoekt.Stats mismatch (-want +got): %s\n", d)
+			}
+		}
+		if count != 1 {
+			t.Fatal("expected exactly 1 result, got 0")
+		}
+	}()
+
+	err := cl.StreamSearch(context.Background(), q, nil, streamerChan(c))
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(c)
+	<-done
+}
+
 func TestEventStreamWriter(t *testing.T) {
 	registerGob()
 	network := new(bytes.Buffer)

@@ -160,6 +160,26 @@ func (s *Stats) Add(o Stats) {
 	s.Wait += o.Wait
 }
 
+// Zero returns true if stats is empty.
+func (s *Stats) Zero() bool {
+	if s == nil {
+		return true
+	}
+
+	return !(s.ContentBytesLoaded > 0 ||
+		s.IndexBytesLoaded > 0 ||
+		s.Crashes > 0 ||
+		s.FileCount > 0 ||
+		s.FilesConsidered > 0 ||
+		s.FilesLoaded > 0 ||
+		s.FilesSkipped > 0 ||
+		s.MatchCount > 0 ||
+		s.NgramMatches > 0 ||
+		s.ShardFilesConsidered > 0 ||
+		s.ShardsSkipped > 0 ||
+		s.Wait > 0)
+}
+
 // SearchResult contains search matches and extra data
 type SearchResult struct {
 	Stats

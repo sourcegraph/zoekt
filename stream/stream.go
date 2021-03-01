@@ -73,18 +73,46 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// mu protects possibly concurrent writes to the stream.
+	// mu protects aggStats and concurrent writes to the stream.
 	mu := sync.Mutex{}
-
-	err = h.Searcher.StreamSearch(ctx, args.Q, args.Opts, SenderFunc(func(event *zoekt.SearchResult) {
-		mu.Lock()
-		defer mu.Unlock()
-		err := eventWriter.event(eventMatches, event)
+	var aggStats = zoekt.Stats{}
+	send := func(zsr *zoekt.SearchResult) {
+		err := eventWriter.event(eventMatches, zsr)
 		if err != nil {
 			_ = eventWriter.event(eventError, err)
 			return
 		}
+	}
+
+	err = h.Searcher.StreamSearch(ctx, args.Q, args.Opts, SenderFunc(func(event *zoekt.SearchResult) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		// We don't want to send events over the wire if they just contain stats and no
+		// file matches. Hence, in case we didn't find any results, we will just
+		// aggregate the stats.
+		if len(event.Files) == 0 {
+			aggStats.Add(event.Stats)
+			return
+		}
+
+		// If we have aggregate stats, we merge them with the new event before sending
+		// it, and reset aggStats afterwards.
+		if !aggStats.Zero() {
+			defer func() { aggStats = zoekt.Stats{} }() // reset stats
+			event.Stats.Add(aggStats)
+		}
+		send(event)
+		return
 	}))
+
+	// In case the last shard we searched didn't return matches, aggStats.Zero() = false.
+	if !aggStats.Zero() {
+		finalEvent := new(zoekt.SearchResult)
+		finalEvent.Stats = aggStats
+		send(finalEvent)
+	}
+
 	if err != nil {
 		_ = eventWriter.event(eventError, err)
 		return
