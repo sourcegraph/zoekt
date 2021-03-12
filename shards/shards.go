@@ -340,7 +340,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	aggregate.Wait = time.Since(start)
 	start = time.Now()
 
-	err = ss.streamSearch(ctx, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
+	err = ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
 		aggregate.Lock()
 		defer aggregate.Unlock()
 
@@ -399,13 +399,13 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		},
 	})
 
-	return ss.streamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	return ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		copyFiles(event)
 		sender.Send(event)
 	}))
 }
 
-func (ss *shardedSearcher) streamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
+func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
@@ -438,17 +438,30 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, q query.Q, opts *zo
 
 	defer cancel()
 
+	g, ctx := errgroup.WithContext(childCtx)
+
 	// For each query, throttle the number of parallel
 	// actions. Since searching is mostly CPU bound, we limit the
 	// number of parallel searches. This reduces the peak working
 	// set, which hopefully stops https://cs.bazel.build from crashing
 	// when looking for the string "com".
-	feeder := make(chan zoekt.Searcher, len(shards))
-	for _, s := range shards {
-		feeder <- s
-	}
-	close(feeder)
-	g, ctx := errgroup.WithContext(childCtx)
+	feeder := make(chan zoekt.Searcher, runtime.GOMAXPROCS(0))
+	g.Go(func() error {
+		defer close(feeder)
+		for _, s := range shards {
+			if err := proc.Yield(ctx); err != nil {
+				// We let searchOneShard handle context errors.
+				return nil
+			}
+			select {
+			case feeder <- s:
+			case <-ctx.Done():
+				// We let searchOneShard handle context errors.
+				return nil
+			}
+		}
+		return nil
+	})
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		g.Go(func() error {
 			for s := range feeder {
