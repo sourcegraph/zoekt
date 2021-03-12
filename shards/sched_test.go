@@ -108,3 +108,89 @@ func TestYield(t *testing.T) {
 	// can eyeball them sometimes :)
 	t.Logf("pre=%d post=%d", pre, post)
 }
+
+func TestScheduler(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	capacity := 8
+	batchCap := capacity / 4
+	sched := newScheduler(int64(capacity))
+	sched.interactiveDuration = 0 // instantly downgrade to batch on call to yield.
+
+	var procs []*process
+	addProc := func() {
+		t.Helper()
+		proc, err := sched.Acquire(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		procs = append(procs, proc)
+	}
+	defer func() {
+		for _, p := range procs {
+			p.Release()
+		}
+	}()
+
+	// Fill up interactive queue
+	for i := 0; i < capacity; i++ {
+		addProc()
+	}
+
+	// We expect this to fail since the queue is at capacity
+	if _, err := sched.Acquire(quickCtx(t)); err == nil {
+		t.Fatal("expected first acquire after cap to fail")
+	}
+
+	// move procs[0] to batch queue freeing up interactive
+	if err := procs[0].Yield(ctx); err != nil {
+		t.Fatal(err)
+	}
+	addProc()
+
+	// We expect this to fail since the queue is at capacity again.
+	if _, err := sched.Acquire(quickCtx(t)); err == nil {
+		t.Fatal("expected second acquire after cap to fail")
+	}
+
+	// Fill up batch queue. Already has one item
+	for i := 1; i < batchCap; i++ {
+		if err := procs[i].Yield(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// We expect this to fail since the batch queue is at capacity.
+	if err := procs[batchCap].Yield(quickCtx(t)); err == nil {
+		t.Fatal("expected second acquire after cap to fail")
+	}
+
+	// We check that exclusive works by trying to acquire one and ensuring it
+	// only works once we have released all other existing procs
+	exclusiveC := make(chan *process)
+	go func() {
+		exclusiveC <- sched.Exclusive()
+	}()
+
+	select {
+	case <-exclusiveC:
+		t.Fatal("should not acquire exclusive since other procs are running")
+	case <-time.After(10 * time.Millisecond):
+	}
+
+	for _, p := range procs {
+		p.Release()
+	}
+	procs = nil
+
+	// Now we should get exclusive
+	proc := <-exclusiveC
+	proc.Release()
+}
+
+func quickCtx(t *testing.T) context.Context {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	t.Cleanup(cancel)
+	return ctx
+}

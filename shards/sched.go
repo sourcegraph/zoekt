@@ -56,8 +56,9 @@ import (
 // allow improvements as we learn more.
 type scheduler struct {
 	// Exclusive process holds a write lock, search processes hold read locks.
-	mu       sync.RWMutex
-	throttle *semaphore.Weighted
+	mu             sync.RWMutex
+	semInteractive *semaphore.Weighted
+	semBatch       *semaphore.Weighted
 
 	// interactiveDuration is how long we run a search query at interactive
 	// priority before downgrading it to a batch/slow query.
@@ -65,8 +66,16 @@ type scheduler struct {
 }
 
 func newScheduler(capacity int64) *scheduler {
+	// Burst upto 1/4 of CPUs for batch. This means we now can use upto 1.25 the
+	// amount of CPU.
+	batchCap := capacity / 4
+	if batchCap == 0 {
+		batchCap = 1
+	}
+
 	return &scheduler{
-		throttle: semaphore.NewWeighted(capacity),
+		semInteractive: semaphore.NewWeighted(capacity),
+		semBatch:       semaphore.NewWeighted(batchCap),
 
 		interactiveDuration: 5 * time.Second,
 	}
@@ -77,19 +86,41 @@ func newScheduler(capacity int64) *scheduler {
 // context expires.
 func (s *scheduler) Acquire(ctx context.Context) (*process, error) {
 	s.mu.RLock()
-	if err := s.throttle.Acquire(ctx, 1); err != nil {
+
+	// Start in interactive. yieldFunc will switch us to batch. sem can be nil
+	// if we fail while switching to batch. nil value prevents us releasing
+	// twice.
+	sem := s.semInteractive
+
+	if err := sem.Acquire(ctx, 1); err != nil {
 		s.mu.RUnlock()
 		return nil, err
 	}
 
 	return &process{
 		releaseFunc: func() {
-			s.throttle.Release(1)
+			if sem != nil {
+				sem.Release(1)
+				sem = nil
+			}
 			s.mu.RUnlock()
 		},
 		yieldTimer: newDeadlineTimer(time.Now().Add(s.interactiveDuration)),
 		yieldFunc: func(ctx context.Context) error {
-			// will be implemented next commit.
+			if sem != nil {
+				sem.Release(1)
+				sem = nil
+			}
+
+			// Try to acquire batch. Only set sem if we succeed so we know we can
+			// clean it up. If this fails we assume the process will stop running
+			// (ctx has expired).
+			semNext := s.semBatch
+			if err := semNext.Acquire(ctx, 1); err != nil {
+				return err
+			}
+
+			sem = semNext
 			return nil
 		},
 	}, nil
@@ -137,7 +168,8 @@ func (p *process) Release() {
 // relatively often by a search to allow other processes to run. This can not
 // be called concurrently.
 //
-// The only error it will return is a context error if ctx expires.
+// The only error it will return is a context error if ctx expires. In that
+// case the process should stop running and call Release.
 func (p *process) Yield(ctx context.Context) error {
 	if p.yieldTimer == nil || !p.yieldTimer.Exceeded() {
 		return nil
