@@ -2,6 +2,7 @@ package shards
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/semaphore"
@@ -54,10 +55,9 @@ import (
 // We intentionally keep the algorithm simple, but have a general interface to
 // allow improvements as we learn more.
 type scheduler struct {
+	// Exclusive process holds a write lock, search processes hold read locks.
+	mu       sync.RWMutex
 	throttle *semaphore.Weighted
-
-	// capacity is the max concurrent searches we allow.
-	capacity int64
 
 	// interactiveDuration is how long we run a search query at interactive
 	// priority before downgrading it to a batch/slow query.
@@ -67,7 +67,6 @@ type scheduler struct {
 func newScheduler(capacity int64) *scheduler {
 	return &scheduler{
 		throttle: semaphore.NewWeighted(capacity),
-		capacity: capacity,
 
 		interactiveDuration: 5 * time.Second,
 	}
@@ -77,38 +76,39 @@ func newScheduler(capacity int64) *scheduler {
 // request). See process documentation. It will only return an error if the
 // context expires.
 func (s *scheduler) Acquire(ctx context.Context) (*process, error) {
-	proc, err := s.acquire(ctx, 1)
-	if err != nil {
+	s.mu.RLock()
+	if err := s.throttle.Acquire(ctx, 1); err != nil {
+		s.mu.RUnlock()
 		return nil, err
 	}
 
-	proc.yieldTimer = newDeadlineTimer(time.Now().Add(s.interactiveDuration))
-	proc.yieldFunc = func(ctx context.Context) error {
-		// will be implemented next commit.
-		return nil
-	}
-	return proc, nil
+	return &process{
+		releaseFunc: func() {
+			s.throttle.Release(1)
+			s.mu.RUnlock()
+		},
+		yieldTimer: newDeadlineTimer(time.Now().Add(s.interactiveDuration)),
+		yieldFunc: func(ctx context.Context) error {
+			// will be implemented next commit.
+			return nil
+		},
+	}, nil
 }
 
 // Exclusive blocks until an exclusive process is created. An exclusive
 // process is the only running process. See process documentation.
 func (s *scheduler) Exclusive() *process {
-	// won't error since context.Background won't expire
-	proc, _ := s.acquire(context.Background(), s.capacity)
+	// Exclusive process holds a write lock on mu, which ensures we have no
+	// processes running (search semaphores are empty).
+	//
 	// exclusive processes will never yield, so we leave yieldTimer and
 	// yieldFunc nil.
-	return proc
-}
-
-func (s *scheduler) acquire(ctx context.Context, weight int64) (*process, error) {
-	if err := s.throttle.Acquire(ctx, weight); err != nil {
-		return nil, err
-	}
+	s.mu.Lock()
 	return &process{
 		releaseFunc: func() {
-			s.throttle.Release(weight)
+			s.mu.Unlock()
 		},
-	}, nil
+	}
 }
 
 // process represents a running search query or an exclusive process. When the
