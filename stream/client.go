@@ -82,6 +82,9 @@ func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 		reply := &searchReply{}
 		err := dec.Decode(reply)
 		if err != nil {
+			if ctxErr, ok := stringToContextError(err.Error()); ok {
+				return ctxErr
+			}
 			return fmt.Errorf("error during decoding: %w", err)
 		}
 		switch reply.Event {
@@ -93,20 +96,26 @@ func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 			}
 		case eventError:
 			if errString, ok := reply.Data.(string); ok {
-				if strings.Contains(errString, "context canceled") {
-					return context.Canceled
-				} else if strings.Contains(errString, "context deadline exceeded") {
-					return context.DeadlineExceeded
-				} else {
-					return fmt.Errorf(errString)
+				if ctxErr, ok := stringToContextError(errString); ok {
+					return ctxErr
 				}
-			} else {
-				return fmt.Errorf("data for event of type %s could not be converted to string", eventError.string())
+				return fmt.Errorf(errString)
 			}
+			return fmt.Errorf("data for event of type %s could not be converted to string", eventError.string())
 		case eventDone:
 			return nil
 		default:
 			return fmt.Errorf("unknown event type")
 		}
 	}
+}
+
+func stringToContextError(s string) (error, bool) {
+	if strings.Contains(s, "context canceled") {
+		return context.Canceled, true
+	}
+	if strings.Contains(s, "context deadline exceeded") {
+		return context.DeadlineExceeded, true
+	}
+	return nil, false
 }

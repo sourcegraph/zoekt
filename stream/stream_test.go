@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/internal/mockSearcher"
 	"github.com/google/zoekt/query"
@@ -196,6 +197,40 @@ func TestContextError(t *testing.T) {
 	err = cl.StreamSearch(ctx, nil, nil, c)
 	if err == nil || err.Error() != serverError.Error() {
 		t.Fatalf("got %s, want %s", err, serverError)
+	}
+}
+
+// TestContextErrorClientSide tests if we return a proper context error if the
+// context was canceled on the client-side.
+func TestContextErrorClientSide(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	h := func(w http.ResponseWriter, r *http.Request) {
+		esw, err := newEventStreamWriter(w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = esw.event(eventMatches, zoekt.SearchResult{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Block until the test is finished.
+		done <- struct{}{}
+	}
+	s := httptest.NewServer(http.HandlerFunc(h))
+
+	c := make(chan *zoekt.SearchResult)
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel the context once we received the first event.
+	go func() {
+		<-c
+		cancel()
+	}()
+
+	cl := NewClient(s.URL, nil)
+	err := cl.StreamSearch(ctx, nil, nil, streamerChan(c))
+	if err != context.Canceled {
+		t.Fatalf("got %+v, want %s", err, context.Canceled)
 	}
 }
 
