@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -82,8 +83,11 @@ func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 		reply := &searchReply{}
 		err := dec.Decode(reply)
 		if err != nil {
-			if ctxErr, ok := stringToContextError(err.Error()); ok {
-				return ctxErr
+			if errors.Is(err, context.Canceled) {
+				return context.Canceled
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				return context.DeadlineExceeded
 			}
 			return fmt.Errorf("error during decoding: %w", err)
 		}
