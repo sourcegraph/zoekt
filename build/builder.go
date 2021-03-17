@@ -37,6 +37,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bmatcuk/doublestar"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/ctags"
 )
@@ -316,7 +317,7 @@ func rawConfigEqual(m1, m2 map[string]string, key string) bool {
 func (o *Options) IgnoreSizeMax(name string) bool {
 	for _, pattern := range o.LargeFiles {
 		pattern = strings.TrimSpace(pattern)
-		m, _ := filepath.Match(pattern, name)
+		m, _ := doublestar.PathMatch(pattern, name)
 		if m {
 			return true
 		}
@@ -620,7 +621,7 @@ func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard,
 		return nil, err
 	}
 
-	f, err := ioutil.TempFile(dir, filepath.Base(fn) + ".*.tmp")
+	f, err := ioutil.TempFile(dir, filepath.Base(fn)+".*.tmp")
 	if err != nil {
 		return nil, err
 	}

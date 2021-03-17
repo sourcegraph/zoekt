@@ -55,3 +55,60 @@ func TestFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestIgnoreSizeMax(t *testing.T) {
+	cases := []struct {
+		opts Options
+		path string
+		want bool
+	}{
+		{
+			Options{},
+			"/foo",
+			false,
+		},
+		{
+			Options{LargeFiles: []string{"/*.lock"}},
+			"/foo.lock",
+			true,
+		},
+		{
+			Options{LargeFiles: []string{"/*.lock"}},
+			"/bar/foo.lock",
+			false,
+		},
+		{
+			Options{LargeFiles: []string{"**/*.lock"}},
+			"/bar/foo.lock",
+			true,
+		},
+		{
+			Options{LargeFiles: []string{"**/*.lock"}},
+			"/bar/baz/foo.lock",
+			true,
+		},
+		{
+			Options{LargeFiles: []string{"/baz/**/*.lock"}},
+			"/bar/baz/foo.lock",
+			false,
+		},
+		{
+			Options{LargeFiles: []string{"/baz/**/*.lock"}},
+			"/baz/a/b/c/d/foo.lock",
+			true,
+		},
+		{
+			Options{LargeFiles: []string{"**.lock"}},
+			"/baz/a/b/c/d/foo.lock",
+			false,
+		},
+	}
+
+	for _, c := range cases {
+		got := c.opts.IgnoreSizeMax(c.path)
+		if got != c.want {
+			t.Errorf("mismatch for %v %#v (-want +got): %v %v\n",
+				c.opts.LargeFiles, c.path, c.want, got)
+		}
+	}
+}
