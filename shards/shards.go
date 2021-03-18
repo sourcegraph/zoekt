@@ -139,7 +139,7 @@ type shardedSearcher struct {
 	// CPU bound, we can't do better than #CPU queries in
 	// parallel.  If we do so, we just create more memory
 	// pressure.
-	sched *scheduler
+	sched scheduler
 
 	shards map[string]rankedShard
 

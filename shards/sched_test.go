@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func BenchmarkYield(b *testing.B) {
@@ -50,7 +52,7 @@ func BenchmarkYield(b *testing.B) {
 	// Bencmark of actual yield function
 	b.Run("yield", func(b *testing.B) {
 		ctx := context.Background()
-		sched := newScheduler(1)
+		sched := newMultiScheduler(1)
 		sched.interactiveDuration = quantum
 		proc, err := sched.Acquire(ctx)
 		if err != nil {
@@ -69,7 +71,7 @@ func TestYield(t *testing.T) {
 	quantum := 10 * time.Millisecond
 	deadline := time.Now().Add(quantum)
 
-	sched := newScheduler(1)
+	sched := newMultiScheduler(1)
 	sched.interactiveDuration = quantum
 	proc, err := sched.Acquire(ctx)
 	if err != nil {
@@ -109,13 +111,13 @@ func TestYield(t *testing.T) {
 	t.Logf("pre=%d post=%d", pre, post)
 }
 
-func TestScheduler(t *testing.T) {
+func TestMultiScheduler(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	capacity := 8
 	batchCap := capacity / 4
-	sched := newScheduler(int64(capacity))
+	sched := newMultiScheduler(int64(capacity))
 	sched.interactiveDuration = 0 // instantly downgrade to batch on call to yield.
 
 	var procs []*process
@@ -193,4 +195,19 @@ func quickCtx(t *testing.T) context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	t.Cleanup(cancel)
 	return ctx
+}
+
+func TestParseTuneables(t *testing.T) {
+	cases := map[string]map[string]int{
+		"":                   {},
+		"disable":            {"disable": 1},
+		"disable,batchdiv=2": {"disable": 1, "batchdiv": 2},
+	}
+
+	for v, want := range cases {
+		got := parseTuneables(v)
+		if d := cmp.Diff(want, got); d != "" {
+			t.Errorf("parseTuneables(%q) mismatch (-want, +got):\n%s", v, d)
+		}
+	}
 }

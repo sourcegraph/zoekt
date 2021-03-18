@@ -2,6 +2,10 @@ package shards
 
 import (
 	"context"
+	"log"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,7 +15,44 @@ import (
 // Note: This is a Sourcegraph specific addition to allow long running queries
 // along normal interactive queries.
 
-// scheduler is for managing concurrent searches. Its goals are:
+// scheduler is for managing concurrent searches.
+type scheduler interface {
+	// Acquire blocks until a normal process is created (ie for a search
+	// request). See process documentation. It will only return an error if the
+	// context expires.
+	Acquire(ctx context.Context) (*process, error)
+
+	// Exclusive blocks until an exclusive process is created. An exclusive
+	// process is the only running process. See process documentation.
+	Exclusive() *process
+}
+
+// The ZOEKTSCHED environment variable controls variables within the
+// scheduler. It is a comma-separated list of name=val pairs setting these
+// named variables:
+//
+//   disable: setting disable=1 will use the old zoekt scheduler.
+//
+// Note: these tuneables should be regarded as temporary while we experiment
+// with our scheduler in production. They should not be relied upon in
+// customers/sourcegraph.com in a permanent manor (only temporary).
+var zoektSched = parseTuneables(os.Getenv("ZOEKTSCHED"))
+
+// newScheduler returns a scheduler for use in searches. It will return a
+// multiScheduler unless that has been disabled with the environment variable
+// SCHED_DISABLE. If so it will an equivalent scheduler as upstream zoekt.
+func newScheduler(capacity int64) scheduler {
+	if zoektSched["disable"] == 1 {
+		log.Println("ZOEKTSCHED=disable=1 specified. Using old zoekt scheduler.")
+		return &semaphoreScheduler{
+			throttle: semaphore.NewWeighted(capacity),
+			capacity: capacity,
+		}
+	}
+	return newMultiScheduler(capacity)
+}
+
+// multiScheduler is for managing concurrent searches. Its goals are:
 //
 //   1. Limit the number of concurrent searches.
 //   2. Allow exclusive access.
@@ -54,7 +95,7 @@ import (
 //
 // We intentionally keep the algorithm simple, but have a general interface to
 // allow improvements as we learn more.
-type scheduler struct {
+type multiScheduler struct {
 	// Exclusive process holds a write lock, search processes hold read locks.
 	mu             sync.RWMutex
 	semInteractive *semaphore.Weighted
@@ -65,14 +106,14 @@ type scheduler struct {
 	interactiveDuration time.Duration
 }
 
-func newScheduler(capacity int64) *scheduler {
+func newMultiScheduler(capacity int64) *multiScheduler {
 	// Burst upto 1/4 of interactive capacity for batch.
 	batchCap := capacity / 4
 	if batchCap == 0 {
 		batchCap = 1
 	}
 
-	return &scheduler{
+	return &multiScheduler{
 		semInteractive: semaphore.NewWeighted(capacity),
 		semBatch:       semaphore.NewWeighted(batchCap),
 
@@ -80,10 +121,8 @@ func newScheduler(capacity int64) *scheduler {
 	}
 }
 
-// Acquire blocks until a normal process is created (ie for a search
-// request). See process documentation. It will only return an error if the
-// context expires.
-func (s *scheduler) Acquire(ctx context.Context) (*process, error) {
+// Acquire implements scheduler.Acquire.
+func (s *multiScheduler) Acquire(ctx context.Context) (*process, error) {
 	s.mu.RLock()
 
 	// Start in interactive. yieldFunc will switch us to batch. sem can be nil
@@ -125,9 +164,8 @@ func (s *scheduler) Acquire(ctx context.Context) (*process, error) {
 	}, nil
 }
 
-// Exclusive blocks until an exclusive process is created. An exclusive
-// process is the only running process. See process documentation.
-func (s *scheduler) Exclusive() *process {
+// Exclusive implements scheduler.Exclusive.
+func (s *multiScheduler) Exclusive() *process {
 	// Exclusive process holds a write lock on mu, which ensures we have no
 	// processes running (search semaphores are empty).
 	//
@@ -139,6 +177,38 @@ func (s *scheduler) Exclusive() *process {
 			s.mu.Unlock()
 		},
 	}
+}
+
+// semaphoreScheduler shares a single semaphore for all searches. An exclusive
+// process acquires the full semaphore. This is equivalent to how concurrency
+// is managed in upstream. It exists as a fallback while we test
+// multiScheduler.
+type semaphoreScheduler struct {
+	throttle *semaphore.Weighted
+	capacity int64
+}
+
+// Acquire implements scheduler.Acquire.
+func (s *semaphoreScheduler) Acquire(ctx context.Context) (*process, error) {
+	return s.acquire(ctx, 1)
+}
+
+// Exclusive implements scheduler.Exclusive.
+func (s *semaphoreScheduler) Exclusive() *process {
+	// won't error since context.Background won't expire
+	proc, _ := s.acquire(context.Background(), s.capacity)
+	return proc
+}
+
+func (s *semaphoreScheduler) acquire(ctx context.Context, weight int64) (*process, error) {
+	if err := s.throttle.Acquire(ctx, weight); err != nil {
+		return nil, err
+	}
+	return &process{
+		releaseFunc: func() {
+			s.throttle.Release(weight)
+		},
+	}, nil
 }
 
 // process represents a running search query or an exclusive process. When the
@@ -226,4 +296,26 @@ func (t *deadlineTimer) Stop() {
 	}
 	t.t.Stop()
 	t.t = nil
+}
+
+// parseTuneables parses a comma separated string of key=value pairs. "=value"
+// is optional, defaults to 1. value is expected to be an int. Errors are
+// ignored (value will be 0).
+func parseTuneables(v string) map[string]int {
+	m := map[string]int{}
+
+	for _, kv := range strings.Split(v, ",") {
+		if kv == "" {
+			continue
+		}
+
+		p := strings.SplitN(kv, "=", 2)
+		if len(p) == 1 {
+			m[p[0]] = 1
+		} else {
+			m[p[0]], _ = strconv.Atoi(p[1])
+		}
+	}
+
+	return m
 }
