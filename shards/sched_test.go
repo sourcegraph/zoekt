@@ -7,12 +7,12 @@ import (
 )
 
 func BenchmarkYield(b *testing.B) {
-	// Use quanta longer than the benchmark runs
-	quanta := time.Minute
+	// Use quantum longer than the benchmark runs
+	quantum := time.Minute
 
 	// Benchmark of the raw primitive we are using to tell if we should yield.
 	b.Run("timer", func(b *testing.B) {
-		t := time.NewTimer(quanta)
+		t := time.NewTimer(quantum)
 		defer t.Stop()
 
 		for n := 0; n < b.N; n++ {
@@ -26,7 +26,7 @@ func BenchmarkYield(b *testing.B) {
 
 	// Benchmark of an alternative approach to timer. It is _much_ slower.
 	b.Run("now", func(b *testing.B) {
-		deadline := time.Now().Add(quanta)
+		deadline := time.Now().Add(quantum)
 
 		for n := 0; n < b.N; n++ {
 			if time.Now().After(deadline) {
@@ -37,7 +37,7 @@ func BenchmarkYield(b *testing.B) {
 
 	// Benchmark of our wrapper around time.Timer
 	b.Run("deadlineTimer", func(b *testing.B) {
-		t := newDeadlineTimer(time.Now().Add(quanta))
+		t := newDeadlineTimer(time.Now().Add(quantum))
 		defer t.Stop()
 
 		for n := 0; n < b.N; n++ {
@@ -51,7 +51,7 @@ func BenchmarkYield(b *testing.B) {
 	b.Run("yield", func(b *testing.B) {
 		ctx := context.Background()
 		sched := newScheduler(1)
-		sched.interactiveDuration = quanta
+		sched.interactiveDuration = quantum
 		proc, err := sched.Acquire(ctx)
 		if err != nil {
 			b.Fatal(err)
@@ -66,11 +66,11 @@ func BenchmarkYield(b *testing.B) {
 
 func TestYield(t *testing.T) {
 	ctx := context.Background()
-	quanta := 10 * time.Millisecond
-	deadline := time.Now().Add(quanta)
+	quantum := 10 * time.Millisecond
+	deadline := time.Now().Add(quantum)
 
 	sched := newScheduler(1)
-	sched.interactiveDuration = quanta
+	sched.interactiveDuration = quantum
 	proc, err := sched.Acquire(ctx)
 	if err != nil {
 		t.Fatal(err)

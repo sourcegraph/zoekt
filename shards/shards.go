@@ -445,6 +445,11 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	// number of parallel searches. This reduces the peak working
 	// set, which hopefully stops https://cs.bazel.build from crashing
 	// when looking for the string "com".
+	//
+	// We do yield inside of the feeder. This means we could have num_workers +
+	// cap(feeder) searches run while yield blocks. However, doing it this way
+	// avoids needing to have synchronization in yield, so is done for
+	// simplicity.
 	feeder := make(chan zoekt.Searcher, runtime.GOMAXPROCS(0))
 	g.Go(func() error {
 		defer close(feeder)

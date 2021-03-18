@@ -66,8 +66,7 @@ type scheduler struct {
 }
 
 func newScheduler(capacity int64) *scheduler {
-	// Burst upto 1/4 of CPUs for batch. This means we now can use upto 1.25 the
-	// amount of CPU.
+	// Burst upto 1/4 of interactive capacity for batch.
 	batchCap := capacity / 4
 	if batchCap == 0 {
 		batchCap = 1
