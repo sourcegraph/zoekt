@@ -33,6 +33,13 @@ type scheduler interface {
 //
 //   disable: setting disable=1 will use the old zoekt scheduler.
 //
+//   batchdiv: settings batchDiv=X will make the batch queue size 1/X of the
+//   interactive queue size. By default it is 4.
+//
+//   interactiveseconds: settings interactiveseconds=X will allow search
+//   queries to run in the larger interactive queue for Xs before moving them
+//   to the batch queue.
+//
 // Note: these tuneables should be regarded as temporary while we experiment
 // with our scheduler in production. They should not be relied upon in
 // customers/sourcegraph.com in a permanent manor (only temporary).
@@ -107,17 +114,31 @@ type multiScheduler struct {
 }
 
 func newMultiScheduler(capacity int64) *multiScheduler {
-	// Burst upto 1/4 of interactive capacity for batch.
-	batchCap := capacity / 4
+	batchdiv := zoektSched["batchdiv"]
+	if batchdiv == 0 {
+		// Burst upto 1/4 of interactive capacity for batch.
+		batchdiv = 4
+	} else {
+		log.Printf("ZOEKTSCHED=batchdiv=%d specified. Batch queue size 1/%d of %d.", batchdiv, batchdiv, capacity)
+	}
+
+	batchCap := capacity / int64(batchdiv)
 	if batchCap == 0 {
 		batchCap = 1
+	}
+
+	interactiveseconds := zoektSched["interactiveseconds"]
+	if interactiveseconds == 0 {
+		interactiveseconds = 5
+	} else {
+		log.Printf("ZOEKTSCHED=interactiveseconds=%d specified. Search requests will move to batch queue after %d seconds.", interactiveseconds, interactiveseconds)
 	}
 
 	return &multiScheduler{
 		semInteractive: semaphore.NewWeighted(capacity),
 		semBatch:       semaphore.NewWeighted(batchCap),
 
-		interactiveDuration: 5 * time.Second,
+		interactiveDuration: time.Duration(interactiveseconds) * time.Second,
 	}
 }
 
