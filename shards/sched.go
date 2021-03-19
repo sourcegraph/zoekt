@@ -216,7 +216,7 @@ func (s *semaphoreScheduler) Acquire(ctx context.Context) (*process, error) {
 
 // Exclusive implements scheduler.Exclusive.
 func (s *semaphoreScheduler) Exclusive() *process {
-	// won't error since context.Background won't expire
+	// Won't error since context.Background won't expire.
 	proc, _ := s.acquire(context.Background(), s.capacity)
 	return proc
 }
