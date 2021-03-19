@@ -161,8 +161,8 @@ func TestEventStreamWriter(t *testing.T) {
 	}
 }
 
-func TestContextError(t *testing.T) {
-	var serverError error
+func TestServerError(t *testing.T) {
+	serverError := fmt.Errorf("zoekt server error")
 	h := func(w http.ResponseWriter, r *http.Request) {
 		esw, err := newEventStreamWriter(w)
 		if err != nil {
@@ -174,28 +174,10 @@ func TestContextError(t *testing.T) {
 		}
 	}
 	s := httptest.NewServer(http.HandlerFunc(h))
-
 	cl := NewClient(s.URL, nil)
-
-	c := streamerChan(make(chan *zoekt.SearchResult))
-	ctx := context.Background()
-
-	serverError = context.Canceled
-	err := cl.StreamSearch(ctx, nil, nil, c)
-	if err != context.Canceled {
-		t.Fatalf("got %+v, want %s", err, context.Canceled)
-	}
-
-	serverError = context.DeadlineExceeded
-	err = cl.StreamSearch(ctx, nil, nil, c)
-	if err != context.DeadlineExceeded {
-		t.Fatalf("got %+v, want %s", err, context.DeadlineExceeded)
-	}
-
-	serverError = fmt.Errorf("other error")
-	err = cl.StreamSearch(ctx, nil, nil, c)
-	if err == nil || err.Error() != serverError.Error() {
-		t.Fatalf("got %s, want %s", err, serverError)
+	err := cl.StreamSearch(context.Background(), nil, nil, streamerChan(make(chan *zoekt.SearchResult)))
+	if err == nil {
+		t.Fatalf("got nil, want %s", serverError)
 	}
 }
 
