@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/internal/mockSearcher"
 	"github.com/google/zoekt/query"
@@ -56,6 +57,64 @@ func TestStreamSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-done
+}
+
+func TestFileLimit(t *testing.T) {
+	q := query.NewAnd(mustParse("hello world|universe"), query.NewRepoSet("foo/bar", "baz/bam"))
+
+	nFiles := func(n int) []zoekt.FileMatch {
+		files := make([]zoekt.FileMatch, 0, n)
+		for i := 0; i < n; i++ {
+			files = append(files, zoekt.FileMatch{FileName: fmt.Sprintf("%d.go", i)})
+
+		}
+		return files
+	}
+
+	streamSearcher := &mockStreamSearcher{
+		WantSearch: q,
+		Events: []*zoekt.SearchResult{
+			{
+				Files: nFiles(5),
+			},
+			{
+				Files: nFiles(fileLimit / 2),
+			},
+			{
+				Files: nFiles(fileLimit),
+			},
+		},
+	}
+	want := []int{5, (3.0 / 2) * fileLimit}
+
+	h := &handler{Searcher: streamSearcher}
+
+	s := httptest.NewServer(h)
+	defer s.Close()
+
+	cl := NewClient(s.URL, nil)
+
+	c := make(chan *zoekt.SearchResult)
+
+	// Start consumer.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		i := 0
+		for res := range c {
+			if len(res.Files) != want[i] {
+				t.Fatalf("got %d, wanted %d", len(res.Files), want[i])
+			}
+			i = i + 1
+		}
+	}()
+
+	err := cl.StreamSearch(context.Background(), q, nil, streamerChan(c))
+	close(c)
+	<-done
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestStreamSearchJustStats(t *testing.T) {
@@ -224,4 +283,33 @@ func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 	}
 	sender.Send(sr)
 	return nil
+}
+
+type mockStreamSearcher struct {
+	WantSearch query.Q
+	Events     []*zoekt.SearchResult
+}
+
+func (s *mockStreamSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
+	if q.String() != s.WantSearch.String() {
+		return fmt.Errorf("got query %s != %s", q.String(), s.WantSearch.String())
+	}
+	for _, event := range s.Events {
+		sender.Send(event)
+	}
+	return nil
+}
+
+func (s *mockStreamSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
+	panic("mockStreamSearcher.Searcher")
+}
+
+func (s *mockStreamSearcher) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
+	panic("mockStreamSearcher.List")
+}
+
+func (*mockStreamSearcher) Close() {}
+
+func (*mockStreamSearcher) String() string {
+	return "mockStreamSearcher"
 }

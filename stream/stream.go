@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
@@ -15,6 +16,8 @@ import (
 
 // DefaultSSEPath is the path used by zoekt-webserver.
 const DefaultSSEPath = "/stream"
+
+const fileLimit = 100
 
 type eventType int
 
@@ -73,9 +76,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// mu protects aggStats and concurrent writes to the stream.
+	// mu protects the aggregator `a` and concurrent writes to the stream.
 	mu := sync.Mutex{}
-	var aggStats = zoekt.Stats{}
+	a := &zoekt.SearchResult{}
+	first := true
+	update := func(event *zoekt.SearchResult) {
+		a.Stats.Add(event.Stats)
+		a.Files = append(a.Files, event.Files...)
+	}
 	send := func(zsr *zoekt.SearchResult) {
 		err := eventWriter.event(eventMatches, zsr)
 		if err != nil {
@@ -83,37 +91,52 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	flush := func() {
+		if len(a.Files) == 0 && a.Stats.Zero() {
+			return
+		}
+		send(a)
+		// Reset aggregator.
+		a.Files = a.Files[:0]
+		a.Stats = zoekt.Stats{}
+	}
+
+	flushTicker := time.NewTicker(50 * time.Millisecond)
+	defer flushTicker.Stop()
 
 	err = h.Searcher.StreamSearch(ctx, args.Q, args.Opts, SenderFunc(func(event *zoekt.SearchResult) {
 		mu.Lock()
 		defer mu.Unlock()
 
-		// We don't want to send events over the wire if they just contain stats and no
-		// file matches. Hence, in case we didn't find any results, we will just
-		// aggregate the stats.
-		if len(event.Files) == 0 {
-			aggStats.Add(event.Stats)
+		update(event)
+
+		// We stream back the first non-empty result we get. After that, we send events
+		// in regular time intervals or whenever we have reached the file limit.
+		if first {
+			if len(a.Files) > 0 {
+				first = false
+				flush()
+			}
 			return
 		}
 
-		// If we have aggregate stats, we merge them with the new event before sending
-		// it, and reset aggStats afterwards.
-		if !aggStats.Zero() {
-			defer func() { aggStats = zoekt.Stats{} }() // reset stats
-			event.Stats.Add(aggStats)
+		select {
+		case <-flushTicker.C:
+			flush()
+			return
+		default:
 		}
-		send(event)
-		return
+
+		if len(a.Files) > fileLimit {
+			flush()
+		}
 	}))
-
-	if err == nil && !aggStats.Zero() {
-		send(&zoekt.SearchResult{Stats: aggStats})
-	}
-
 	if err != nil {
 		_ = eventWriter.event(eventError, err)
 		return
 	}
+
+	flush()
 }
 
 type eventStreamWriter struct {
