@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -104,9 +106,9 @@ func newScheduler(capacity int64) scheduler {
 // allow improvements as we learn more.
 type multiScheduler struct {
 	// Exclusive process holds a write lock, search processes hold read locks.
-	mu             sync.RWMutex
-	semInteractive *semaphore.Weighted
-	semBatch       *semaphore.Weighted
+	mu             *rwmutex
+	semInteractive *sema
+	semBatch       *sema
 
 	// interactiveDuration is how long we run a search query at interactive
 	// priority before downgrading it to a batch/slow query.
@@ -135,8 +137,9 @@ func newMultiScheduler(capacity int64) *multiScheduler {
 	}
 
 	return &multiScheduler{
-		semInteractive: semaphore.NewWeighted(capacity),
-		semBatch:       semaphore.NewWeighted(batchCap),
+		mu:             newRWMutex(),
+		semInteractive: newSema(capacity, "interactive"),
+		semBatch:       newSema(batchCap, "batch"),
 
 		interactiveDuration: time.Duration(interactiveseconds) * time.Second,
 	}
@@ -144,14 +147,16 @@ func newMultiScheduler(capacity int64) *multiScheduler {
 
 // Acquire implements scheduler.Acquire.
 func (s *multiScheduler) Acquire(ctx context.Context) (*process, error) {
-	s.mu.RLock()
+	if err := s.mu.RLock(ctx); err != nil {
+		return nil, err
+	}
 
 	// Start in interactive. yieldFunc will switch us to batch. sem can be nil
 	// if we fail while switching to batch. nil value prevents us releasing
 	// twice.
 	sem := s.semInteractive
 
-	if err := sem.Acquire(ctx, 1); err != nil {
+	if err := sem.Acquire(ctx); err != nil {
 		s.mu.RUnlock()
 		return nil, err
 	}
@@ -159,7 +164,7 @@ func (s *multiScheduler) Acquire(ctx context.Context) (*process, error) {
 	return &process{
 		releaseFunc: func() {
 			if sem != nil {
-				sem.Release(1)
+				sem.Release()
 				sem = nil
 			}
 			s.mu.RUnlock()
@@ -167,7 +172,7 @@ func (s *multiScheduler) Acquire(ctx context.Context) (*process, error) {
 		yieldTimer: newDeadlineTimer(time.Now().Add(s.interactiveDuration)),
 		yieldFunc: func(ctx context.Context) error {
 			if sem != nil {
-				sem.Release(1)
+				sem.Release()
 				sem = nil
 			}
 
@@ -175,7 +180,7 @@ func (s *multiScheduler) Acquire(ctx context.Context) (*process, error) {
 			// clean it up. If this fails we assume the process will stop running
 			// (ctx has expired).
 			semNext := s.semBatch
-			if err := semNext.Acquire(ctx, 1); err != nil {
+			if err := semNext.Acquire(ctx); err != nil {
 				return err
 			}
 
@@ -339,4 +344,199 @@ func parseTuneables(v string) map[string]int {
 	}
 
 	return m
+}
+
+// We use a gauge and counter to track the number of processes in each
+// state. They can be one of the following states:
+//
+//   1. global queued
+//   2. interactive queued
+//   3. interactive running
+//   4. batch queued
+//   5. batch running
+//
+// From each state you either transition to the next state or the process
+// ends.
+//
+// Additionally once a process transitions from "global queued" it will be
+// "global running" until termination. This is an additional state on top of
+// the ones listed above.
+//
+// Global refers to the global scheduler lock. A process can only be blocked
+// in global queued if an exclusive lock has been acquired.
+//
+// We have counters for each possible reason a process finished:
+//
+//   - interactive timedout
+//   - batch timedout
+//   - released
+//
+// We have separate gauges and counters for exclusive processes which match
+// what we track for normal processes:
+//
+//   - exclusive queued
+//   - exclusive running
+var (
+	metricSched = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "zoekt_shards_sched",
+		Help: "The current number of zoekt scheduler processes in a state.",
+	}, []string{"type", "state"})
+	metricSchedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "zoekt_shards_sched_total",
+		Help: "The total number of zoekt scheduler processes in a state.",
+	}, []string{"type", "state"})
+)
+
+// sema is a semaphore which tracks its state in prometheus.
+type sema struct {
+	sem *semaphore.Weighted
+
+	metricQueued        *gaugeCounter
+	metricRunning       *gaugeCounter
+	metricTimedoutTotal prometheus.Counter
+}
+
+func newSema(capacity int64, typ string) *sema {
+	return &sema{
+		sem: semaphore.NewWeighted(capacity),
+
+		metricQueued: &gaugeCounter{
+			gauge:   metricSched.WithLabelValues(typ, "queued"),
+			counter: metricSchedTotal.WithLabelValues(typ, "queued"),
+		},
+		metricRunning: &gaugeCounter{
+			gauge:   metricSched.WithLabelValues(typ, "running"),
+			counter: metricSchedTotal.WithLabelValues(typ, "running"),
+		},
+		metricTimedoutTotal: metricSchedTotal.WithLabelValues(typ, "timedout"),
+	}
+}
+
+func (s *sema) Acquire(ctx context.Context) error {
+	s.metricQueued.Inc()
+	defer s.metricQueued.Dec()
+
+	err := s.sem.Acquire(ctx, 1)
+	if err != nil {
+		s.metricTimedoutTotal.Inc()
+		return err
+	}
+
+	s.metricRunning.Inc()
+
+	return nil
+}
+
+func (s *sema) Release() {
+	s.sem.Release(1)
+	s.metricRunning.Dec()
+}
+
+// rwmutex is a wrapper around sync.RWMutex. It additionally respects context
+// cancellation and will track the state of the mutex in prometheus.
+type rwmutex struct {
+	mu sync.RWMutex
+
+	metricQueued        *gaugeCounter
+	metricRunning       *gaugeCounter
+	metricTimedoutTotal prometheus.Counter
+
+	metricExclusiveQueued  *gaugeCounter
+	metricExclusiveRunning *gaugeCounter
+}
+
+func newRWMutex() *rwmutex {
+	return &rwmutex{
+		metricQueued: &gaugeCounter{
+			gauge:   metricSched.WithLabelValues("global", "queued"),
+			counter: metricSchedTotal.WithLabelValues("global", "queued"),
+		},
+		metricRunning: &gaugeCounter{
+			gauge:   metricSched.WithLabelValues("global", "running"),
+			counter: metricSchedTotal.WithLabelValues("global", "running"),
+		},
+		metricTimedoutTotal: metricSchedTotal.WithLabelValues("global", "timedout"),
+
+		metricExclusiveQueued: &gaugeCounter{
+			gauge:   metricSched.WithLabelValues("exclusive", "queued"),
+			counter: metricSchedTotal.WithLabelValues("exclusive", "queued"),
+		},
+		metricExclusiveRunning: &gaugeCounter{
+			gauge:   metricSched.WithLabelValues("exclusive", "running"),
+			counter: metricSchedTotal.WithLabelValues("exclusive", "running"),
+		},
+	}
+}
+
+func (s *rwmutex) RLock(ctx context.Context) error {
+	s.metricQueued.Inc()
+	defer s.metricQueued.Dec()
+
+	err := rlockAcquire(ctx, &s.mu)
+	if err != nil {
+		s.metricTimedoutTotal.Inc()
+		return err
+	}
+
+	s.metricRunning.Inc()
+
+	return nil
+}
+
+func (s *rwmutex) RUnlock() {
+	s.mu.RUnlock()
+	s.metricRunning.Dec()
+}
+
+func (s *rwmutex) Lock() {
+	s.metricExclusiveQueued.Inc()
+	defer s.metricExclusiveQueued.Dec()
+
+	s.mu.Lock()
+	s.metricExclusiveRunning.Inc()
+}
+
+func (s *rwmutex) Unlock() {
+	s.mu.Unlock()
+	s.metricExclusiveRunning.Dec()
+}
+
+func rlockAcquire(ctx context.Context, mu *sync.RWMutex) error {
+	// Lock in goroutine to respect ctx
+	done := make(chan struct{})
+	go func() {
+		mu.RLock()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+
+	case <-ctx.Done():
+		// We can't cancel RLock. So we wait for it to lock in the background and
+		// immediately unlock.
+		go func() {
+			<-done
+			mu.RUnlock()
+		}()
+
+		return ctx.Err()
+	}
+}
+
+// gaugeCounter is a wrapper around a gauge and a counter. Whenever the gauge
+// is incremented so is the counter. Decrement only affects the gauge.
+type gaugeCounter struct {
+	gauge   prometheus.Gauge
+	counter prometheus.Counter
+}
+
+func (m *gaugeCounter) Inc() {
+	m.gauge.Inc()
+	m.counter.Inc()
+}
+
+func (m *gaugeCounter) Dec() {
+	m.gauge.Dec()
 }
