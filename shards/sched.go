@@ -118,7 +118,7 @@ type multiScheduler struct {
 func newMultiScheduler(capacity int64) *multiScheduler {
 	batchdiv := zoektSched["batchdiv"]
 	if batchdiv == 0 {
-		// Burst upto 1/4 of interactive capacity for batch.
+		// Burst up to 1/4 of interactive capacity for batch.
 		batchdiv = 4
 	} else {
 		log.Printf("ZOEKTSCHED=batchdiv=%d specified. Batch queue size 1/%d of %d.", batchdiv, batchdiv, capacity)
