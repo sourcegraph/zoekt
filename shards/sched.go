@@ -96,10 +96,10 @@ func newScheduler(capacity int64) scheduler {
 //
 // ## Design
 //
-// We use semaphores to limit the number of running processes. An exclusive
-// process acquires the full semaphore. A process represents something which
-// has acquired on the semaphore. Every process is either fast or slow. A
-// process starts as fast, but is downgraded to slow after a period of
+// We use semaphores to limit the number of running processes. A process
+// represents something which has acquired from the semaphore. An exclusive
+// process acquires the full semaphore. Every process is either fast or slow. A
+// process starts as fast, but is downgraded to slow after a period of time.
 // time. Downgrading relies on a process co-operatively deciding to downgrade.
 //
 // We intentionally keep the algorithm simple, but have a general interface to
