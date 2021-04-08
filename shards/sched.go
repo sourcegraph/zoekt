@@ -33,7 +33,7 @@ type scheduler interface {
 // scheduler. It is a comma-separated list of name=val pairs setting these
 // named variables:
 //
-//   disable: setting disable=1 will use the old zoekt scheduler.
+//   enable: setting enable=1 will use the new zoekt scheduler.
 //
 //   batchdiv: settings batchDiv=X will make the batch queue size 1/X of the
 //   interactive queue size. By default it is 4.
@@ -51,13 +51,13 @@ var zoektSched = parseTuneables(os.Getenv("ZOEKTSCHED"))
 // multiScheduler unless that has been disabled with the environment variable
 // SCHED_DISABLE. If so it will an equivalent scheduler as upstream zoekt.
 func newScheduler(capacity int64) scheduler {
-	if zoektSched["disable"] == 1 {
-		log.Println("ZOEKTSCHED=disable=1 specified. Using old zoekt scheduler.")
+	if zoektSched["enable"] != 1 {
 		return &semaphoreScheduler{
 			throttle: semaphore.NewWeighted(capacity),
 			capacity: capacity,
 		}
 	}
+	log.Println("ZOEKTSCHED=enable=1 specified. Using new zoekt scheduler.")
 	return newMultiScheduler(capacity)
 }
 
