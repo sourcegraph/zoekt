@@ -213,7 +213,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		// use a random default branch. This is so that HEAD isn't a symref to a
 		// branch that is indexed. For example if you are indexing
 		// HEAD,master. Then HEAD would be pointing to master by default.
-		"-c", "init.defaultBranch=BB0FOFCH32",
+		"-c", "init.defaultBranch=nonExistentBranchBB0FOFCH32",
 		"init",
 		// we don't need a working copy
 		"--bare",
