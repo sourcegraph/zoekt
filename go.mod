@@ -33,3 +33,7 @@ require (
 )
 
 go 1.13
+
+replace (
+	github.com/sourcegraph/go-ctags => ../go-ctags
+)
