@@ -48,7 +48,7 @@ func (s *memSeeker) Name() string {
 	return "memSeeker"
 }
 
-func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) zoekt.Searcher {
+func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) zoekt.Streamer {
 	var buf bytes.Buffer
 	b.Write(&buf)
 	f := &memSeeker{buf.Bytes()}
@@ -58,7 +58,20 @@ func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) zoekt.Searcher {
 		t.Fatalf("NewSearcher: %v", err)
 	}
 
-	return searcher
+	return adapter{Searcher: searcher}
+}
+
+type adapter struct {
+	zoekt.Searcher
+}
+
+func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
+	sr, err := a.Searcher.Search(ctx, q, opts)
+	if err != nil {
+		return err
+	}
+	sender.Send(sr)
+	return nil
 }
 
 func TestBasic(t *testing.T) {
@@ -239,7 +252,7 @@ func checkNeedles(t *testing.T, ts *httptest.Server, req string, needles []strin
 }
 
 type crashSearcher struct {
-	zoekt.Searcher
+	zoekt.Streamer
 }
 
 func (s *crashSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {

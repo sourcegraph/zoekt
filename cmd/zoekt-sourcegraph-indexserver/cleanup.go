@@ -14,7 +14,7 @@ import (
 // cleanup trashes shards in indexDir that do not exist in repos. For repos
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
 // back into indexDir. Additionally it uses now to remove shards that have
-// been in the trash for 24 hours.
+// been in the trash for 24 hours. It also deletes .tmp files older than 4 hours.
 func cleanup(indexDir string, repos []string, now time.Time) {
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
@@ -70,6 +70,25 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 		}
 
 		moveAll(trashDir, shards)
+	}
+
+	// Remove old .tmp files from crashed indexer runs-- for example, if
+	// an indexer OOMs, it will leave around .tmp files, usually in a loop.
+	maxAge := now.Add(-4 * time.Hour)
+	if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
+		log.Printf("Glob: %v", err)
+	} else {
+		for _, f := range failures {
+			st, err := os.Stat(f)
+			if err != nil {
+				log.Printf("Stat(%q): %v", f, err)
+				continue
+			}
+			if !st.IsDir() && st.ModTime().Before(maxAge) {
+				log.Printf("removing old tmp file: %s", f)
+				os.Remove(f)
+			}
+		}
 	}
 }
 

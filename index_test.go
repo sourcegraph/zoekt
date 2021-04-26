@@ -1103,6 +1103,7 @@ func TestListRepos(t *testing.T) {
 			Stats: RepoStats{
 				Documents:    4,
 				ContentBytes: 68,
+				Shards:       1,
 
 				NewLinesCount:              4,
 				DefaultBranchNewLinesCount: 2,
@@ -1146,6 +1147,9 @@ func TestListReposByContent(t *testing.T) {
 	}
 	if len(res.Repos) != 1 || res.Repos[0].Repository.Name != "reponame" {
 		t.Fatalf("got %v, want 1 matches", res)
+	}
+	if got := res.Repos[0].Stats.Shards; got != 1 {
+		t.Fatalf("got %d, want 1 shard", got)
 	}
 	q = &query.Substring{Pattern: "foo"}
 	res, err = searcher.List(context.Background(), q)
@@ -2006,6 +2010,74 @@ func TestCheckText(t *testing.T) {
 		if err := CheckText([]byte(text), 15); err == nil {
 			t.Errorf("CheckText(%q) succeeded", text)
 		}
+	}
+}
+
+func TestLineAnd(t *testing.T) {
+	b := testIndexBuilder(t, &Repository{Name: "reponame"},
+		Document{Name: "f1", Content: []byte("apple\nbanana\napple banana chocolate apple pudding banana\ngrape")},
+		Document{Name: "f2", Content: []byte("apple orange\nbanana")},
+		Document{Name: "f3", Content: []byte("banana grape")},
+	)
+	pattern := "(apple)(?-s:.)*?(banana)"
+	r, _ := syntax.Parse(pattern, syntax.Perl)
+
+	q := query.Regexp{
+		Regexp:  r,
+		Content: true,
+	}
+	res := searchForTest(t, b, &q)
+	wantRegexpCount := 1
+	if gotRegexpCount := res.RegexpsConsidered; gotRegexpCount != wantRegexpCount {
+		t.Errorf("got %d, wanted %d", gotRegexpCount, wantRegexpCount)
+	}
+	if len(res.Files) != 1 || res.Files[0].FileName != "f1" {
+		t.Errorf("got %v, want 1 result", res.Files)
+	}
+}
+
+func TestLineAndFileName(t *testing.T) {
+	b := testIndexBuilder(t, &Repository{Name: "reponame"},
+		Document{Name: "f1", Content: []byte("apple banana\ngrape")},
+		Document{Name: "f2", Content: []byte("apple banana\norange")},
+		Document{Name: "apple banana", Content: []byte("banana grape")},
+	)
+	pattern := "(apple)(?-s:.)*?(banana)"
+	r, _ := syntax.Parse(pattern, syntax.Perl)
+
+	q := query.Regexp{
+		Regexp:   r,
+		FileName: true,
+	}
+	res := searchForTest(t, b, &q)
+	wantRegexpCount := 1
+	if gotRegexpCount := res.RegexpsConsidered; gotRegexpCount != wantRegexpCount {
+		t.Errorf("got %d, wanted %d", gotRegexpCount, wantRegexpCount)
+	}
+	if len(res.Files) != 1 || res.Files[0].FileName != "apple banana" {
+		t.Errorf("got %v, want 1 result", res.Files)
+	}
+}
+
+func TestMultiLineRegex(t *testing.T) {
+	b := testIndexBuilder(t, &Repository{Name: "reponame"},
+		Document{Name: "f1", Content: []byte("apple banana\ngrape")},
+		Document{Name: "f2", Content: []byte("apple orange")},
+		Document{Name: "f3", Content: []byte("grape apple")},
+	)
+	pattern := "(apple).*?[[:space:]].*?(grape)"
+	r, _ := syntax.Parse(pattern, syntax.Perl)
+
+	q := query.Regexp{
+		Regexp: r,
+	}
+	res := searchForTest(t, b, &q)
+	wantRegexpCount := 2
+	if gotRegexpCount := res.RegexpsConsidered; gotRegexpCount != wantRegexpCount {
+		t.Errorf("got %d, wanted %d", gotRegexpCount, wantRegexpCount)
+	}
+	if len(res.Files) != 1 || res.Files[0].FileName != "f1" {
+		t.Errorf("got %v, want 1 result", res.Files)
 	}
 }
 

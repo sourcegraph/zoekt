@@ -132,9 +132,12 @@ func init() {
 	client.Logger = debug
 }
 
-// our index commands should output something every 100mb they process. This
-// should be rather quick so 5m is more than enough time.
-const noOutputTimeout = 5 * time.Minute
+// our index commands should output something every 100mb they process.
+//
+// 2020-11-24 Keegan. "This should be rather quick so 5m is more than enough
+// time."  famous last words. A client was indexing a monorepo with 42
+// cores... 5m was not enough.
+const noOutputTimeout = 30 * time.Minute
 
 func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 	out := &synchronizedBuffer{}
@@ -233,7 +236,6 @@ func codeHostFromName(repoName string) string {
 func (s *Server) Run(queue *Queue) {
 	removeIncompleteShards(s.IndexDir)
 	waitForFrontend(s.Root)
-
 
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
@@ -473,9 +475,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // enqueueForIndex is expected to be called by other services in order to trigger an index.
 // We expect repo-updater to call this endpoint when a new repo has been added to an instance that
 // we wish to index and don't want to wait for polling to happen.
-func (s *Server) enqueueForIndex(queue *Queue)  func (rw http.ResponseWriter, r *http.Request) {
+func (s *Server) enqueueForIndex(queue *Queue) func(rw http.ResponseWriter, r *http.Request) {
 	return func(rw http.ResponseWriter, r *http.Request) {
-		if r.Method  != "POST" {
+		if r.Method != "POST" {
 			http.Error(rw, "not found", http.StatusNotFound)
 			return
 		}

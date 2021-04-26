@@ -106,7 +106,7 @@ func TestIndex(t *testing.T) {
 			"zoekt-archive-index -name test/repo -commit deadbeef -branch HEAD -disable_ctags http://api.test/.internal/git/test/repo/tar/deadbeef",
 		},
 		wantGit: []string{
-			"git init --bare $TMPDIR/test%2Frepo.git",
+			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
@@ -126,7 +126,7 @@ func TestIndex(t *testing.T) {
 			"zoekt-archive-index -name test/repo -commit deadbeef -branch HEAD -disable_ctags http://api.test/.internal/git/test/repo/tar/deadbeef",
 		},
 		wantGit: []string{
-			"git init --bare $TMPDIR/test%2Frepo.git",
+			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
@@ -168,7 +168,7 @@ func TestIndex(t *testing.T) {
 			"http://api.test/.internal/git/test/repo/tar/deadbeef",
 		}, " ")},
 		wantGit: []string{
-			"git init --bare $TMPDIR/test%2Frepo.git",
+			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",

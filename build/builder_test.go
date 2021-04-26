@@ -42,6 +42,8 @@ func TestFlags(t *testing.T) {
 
 	for _, c := range cases {
 		c.want.SetDefaults()
+		// depends on $PATH setting.
+		c.want.CTags = ""
 
 		got := Options{}
 		fs := flag.NewFlagSet("", flag.ContinueOnError)

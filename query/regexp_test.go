@@ -15,7 +15,6 @@
 package query
 
 import (
-	"reflect"
 	"regexp/syntax"
 	"strings"
 	"testing"
@@ -47,58 +46,6 @@ func printRegexp(t *testing.T, r *syntax.Regexp, lvl int) {
 	t.Logf("%s%s ch: %d", strings.Repeat(" ", lvl), opnames[r.Op], len(r.Sub))
 	for _, s := range r.Sub {
 		printRegexp(t, s, lvl+1)
-	}
-}
-
-func TestRegexpParse(t *testing.T) {
-	type testcase struct {
-		in           string
-		query        Q
-		isEquivalent bool
-	}
-
-	cases := []testcase{
-		{"(foo|)bar", &Substring{Pattern: "bar"}, false},
-		{"(foo|)", &Const{true}, false},
-		{"(foo|bar)baz.*bla", &And{[]Q{
-			&Or{[]Q{
-				&Substring{Pattern: "foo"},
-				&Substring{Pattern: "bar"},
-			}},
-			&Substring{Pattern: "baz"},
-			&Substring{Pattern: "bla"},
-		}}, false},
-		{"^[a-z](People)+barrabas$",
-			&And{[]Q{
-				&Substring{Pattern: "People"},
-				&Substring{Pattern: "barrabas"},
-			}}, false},
-		{"foo", &Substring{Pattern: "foo"}, true},
-		{"^foo", &Substring{Pattern: "foo"}, false},
-		{"(foo) (bar)", &And{[]Q{&Substring{Pattern: "foo"}, &Substring{Pattern: "bar"}}}, false},
-		{"(thread|needle|haystack)", &Or{[]Q{
-			&Substring{Pattern: "thread"},
-			&Substring{Pattern: "needle"},
-			&Substring{Pattern: "haystack"},
-		}}, true},
-	}
-
-	for _, c := range cases {
-		r, err := syntax.Parse(c.in, syntax.Perl)
-		if err != nil {
-			t.Errorf("Parse(%q): %v", c.in, err)
-			continue
-		}
-
-		query, isEq := RegexpToQuery(r, 3)
-		if !reflect.DeepEqual(c.query, query) {
-			printRegexp(t, r, 0)
-			t.Errorf("regexpToQuery(%q): got %v, want %v", c.in, query, c.query)
-		}
-		if isEq != c.isEquivalent {
-			printRegexp(t, r, 0)
-			t.Errorf("regexpToQuery(%q): got %v, want %v", c.in, isEq, c.isEquivalent)
-		}
 	}
 }
 

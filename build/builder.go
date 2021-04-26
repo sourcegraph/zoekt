@@ -293,7 +293,23 @@ func (o *Options) IncrementalSkipIndexing() bool {
 		return false
 	}
 
+	// Sourcegraph specific. Ensure we have the correct repository ID set.
+	if !rawConfigEqual(repo.RawConfig, o.RepositoryDescription.RawConfig, "repoid") {
+		return false
+	}
+
 	return reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches)
+}
+
+func rawConfigEqual(m1, m2 map[string]string, key string) bool {
+	var v1, v2 string
+	if m1 != nil {
+		v1 = m1[key]
+	}
+	if m2 != nil {
+		v2 = m2[key]
+	}
+	return v1 == v2
 }
 
 // IgnoreSizeMax determines whether the max size should be ignored.
@@ -604,7 +620,7 @@ func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard,
 		return nil, err
 	}
 
-	f, err := ioutil.TempFile(dir, filepath.Base(fn))
+	f, err := ioutil.TempFile(dir, filepath.Base(fn) + ".*.tmp")
 	if err != nil {
 		return nil, err
 	}

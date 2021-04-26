@@ -51,6 +51,7 @@ func TestCleanup(t *testing.T) {
 		repos []string
 		index []shard
 		trash []shard
+		tmps  map[string]time.Time
 
 		wantIndex []shard
 		wantTrash []shard
@@ -87,6 +88,13 @@ func TestCleanup(t *testing.T) {
 		wantIndex: []shard{mk("foo", 0, recent)},
 		wantTrash: []shard{mk("bar", 0, now)},
 	}, {
+		name: "clean old .tmp files",
+		tmps: map[string]time.Time{
+			"recent.tmp": recent,
+			"old.tmp":    old,
+		},
+		wantIndex: []shard{{Path: "recent.tmp", ModTime: recent}},
+	}, {
 		name:      "all",
 		repos:     []string{"exists", "trashed"},
 		trash:     []shard{mk("trashed", 0, recent), mk("delete", 0, old)},
@@ -116,6 +124,15 @@ func TestCleanup(t *testing.T) {
 			for _, f := range fs {
 				createEmptyShard(t, f.Repo, f.Path)
 				if err := os.Chtimes(f.Path, f.ModTime, f.ModTime); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for name, mtime := range tt.tmps {
+				path := filepath.Join(dir, name)
+				if _, err := os.Create(path); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chtimes(path, mtime, mtime); err != nil {
 					t.Fatal(err)
 				}
 			}

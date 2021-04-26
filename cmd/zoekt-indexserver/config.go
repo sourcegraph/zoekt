@@ -38,6 +38,7 @@ type ConfigEntry struct {
 	GitilesURL             string
 	CGitURL                string
 	BitBucketServerURL     string
+	DisableTLS             bool
 	CredentialPath         string
 	ProjectType            string
 	Name                   string
@@ -207,6 +208,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 				"-dest", repoDir, "-url", c.BitBucketServerURL, "-delete")
 			if c.BitBucketServerProject != "" {
 				cmd.Args = append(cmd.Args, "-project", c.BitBucketServerProject)
+			}
+			if c.DisableTLS {
+				cmd.Args = append(cmd.Args, "-disable-tls")
 			}
 			if c.ProjectType != "" {
 				cmd.Args = append(cmd.Args, "-type", c.ProjectType)

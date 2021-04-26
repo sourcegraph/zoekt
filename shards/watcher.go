@@ -16,13 +16,13 @@ package shards
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -35,41 +35,45 @@ type shardLoader interface {
 	drop(filename string)
 }
 
-type shardWatcher struct {
+type DirectoryWatcher struct {
 	dir        string
 	timestamps map[string]time.Time
 	loader     shardLoader
-	quit       chan<- struct{}
+
+	closeOnce sync.Once
+	// quit is closed by Close to signal the directory watcher to stop.
+	quit chan struct{}
+	// stopped is closed once the directory watcher has stopped.
+	stopped chan struct{}
 }
 
-func (sw *shardWatcher) Close() error {
-	if sw.quit != nil {
+func (sw *DirectoryWatcher) Stop() {
+	sw.closeOnce.Do(func() {
 		close(sw.quit)
-		sw.quit = nil
-	}
-	return nil
+		<-sw.stopped
+	})
 }
 
-func NewDirectoryWatcher(dir string, loader shardLoader) (io.Closer, error) {
-	quitter := make(chan struct{}, 1)
-	sw := &shardWatcher{
+func NewDirectoryWatcher(dir string, loader shardLoader) (*DirectoryWatcher, error) {
+	sw := &DirectoryWatcher{
 		dir:        dir,
 		timestamps: map[string]time.Time{},
 		loader:     loader,
-		quit:       quitter,
+		quit:       make(chan struct{}),
+		stopped:    make(chan struct{}),
 	}
 	if err := sw.scan(); err != nil {
 		return nil, err
 	}
 
-	if err := sw.watch(quitter); err != nil {
+	if err := sw.watch(); err != nil {
 		return nil, err
 	}
 
 	return sw, nil
 }
 
-func (s *shardWatcher) String() string {
+func (s *DirectoryWatcher) String() string {
 	return fmt.Sprintf("shardWatcher(%s)", s.dir)
 }
 
@@ -95,7 +99,7 @@ func versionFromPath(path string) (string, int) {
 	return path[:und], version
 }
 
-func (s *shardWatcher) scan() error {
+func (s *DirectoryWatcher) scan() error {
 	fs, err := filepath.Glob(filepath.Join(s.dir, "*.zoekt"))
 	if err != nil {
 		return err
@@ -184,7 +188,7 @@ func (s *shardWatcher) scan() error {
 	return nil
 }
 
-func (s *shardWatcher) watch(quitter <-chan struct{}) error {
+func (s *DirectoryWatcher) watch() error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
@@ -211,7 +215,7 @@ func (s *shardWatcher) watch(quitter <-chan struct{}) error {
 				if err != nil && err != fsnotify.ErrEventOverflow {
 					log.Println("watcher error:", err)
 				}
-			case <-quitter:
+			case <-s.quit:
 				watcher.Close()
 				close(signal)
 				return
@@ -220,6 +224,7 @@ func (s *shardWatcher) watch(quitter <-chan struct{}) error {
 	}()
 
 	go func() {
+		defer close(s.stopped)
 		for range signal {
 			s.scan()
 		}

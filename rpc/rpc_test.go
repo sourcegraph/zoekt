@@ -2,28 +2,28 @@ package rpc_test
 
 import (
 	"context"
-	"fmt"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"testing"
 
 	"github.com/google/zoekt"
+	"github.com/google/zoekt/internal/mockSearcher"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/rpc"
 )
 
 func TestClientServer(t *testing.T) {
-	mock := &mockSearcher{
-		wantSearch: query.NewAnd(mustParse("hello world|universe"), query.NewRepoSet("foo/bar", "baz/bam")),
-		searchResult: &zoekt.SearchResult{
+	mock := &mockSearcher.MockSearcher{
+		WantSearch: query.NewAnd(mustParse("hello world|universe"), query.NewRepoSet("foo/bar", "baz/bam")),
+		SearchResult: &zoekt.SearchResult{
 			Files: []zoekt.FileMatch{
 				{FileName: "bin.go"},
 			},
 		},
 
-		wantList: &query.Const{Value: true},
-		repoList: &zoekt.RepoList{
+		WantList: &query.Const{Value: true},
+		RepoList: &zoekt.RepoList{
 			Repos: []*zoekt.RepoListEntry{
 				{
 					Repository: zoekt.Repository{
@@ -42,50 +42,27 @@ func TestClientServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := rpc.Client(u.Host)
+	defer client.Close()
 
-	r, err := client.Search(context.Background(), mock.wantSearch, &zoekt.SearchOptions{})
+	r, err := client.Search(context.Background(), mock.WantSearch, &zoekt.SearchOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r, mock.searchResult) {
-		t.Fatalf("got %+v, want %+v", r, mock.searchResult)
+	if !reflect.DeepEqual(r, mock.SearchResult) {
+		t.Fatalf("got %+v, want %+v", r, mock.SearchResult)
 	}
 
-	l, err := client.List(context.Background(), mock.wantList)
+	l, err := client.List(context.Background(), mock.WantList)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(l, mock.repoList) {
-		t.Fatalf("got %+v, want %+v", l, mock.repoList)
+	if !reflect.DeepEqual(l, mock.RepoList) {
+		t.Fatalf("got %+v, want %+v", l, mock.RepoList)
 	}
-}
 
-type mockSearcher struct {
-	wantSearch   query.Q
-	searchResult *zoekt.SearchResult
-
-	wantList query.Q
-	repoList *zoekt.RepoList
-}
-
-func (s *mockSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
-	if q.String() != s.wantSearch.String() {
-		return nil, fmt.Errorf("got query %s != %s", q.String(), s.wantSearch.String())
-	}
-	return s.searchResult, nil
-}
-
-func (s *mockSearcher) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
-	if q.String() != s.wantList.String() {
-		return nil, fmt.Errorf("got query %s != %s", q.String(), s.wantList.String())
-	}
-	return s.repoList, nil
-}
-
-func (*mockSearcher) Close() {}
-
-func (*mockSearcher) String() string {
-	return "mockSearcher"
+	// Test closing a client we never dial.
+	noopClient := rpc.Client(u.Host)
+	noopClient.Close()
 }
 
 func mustParse(s string) query.Q {

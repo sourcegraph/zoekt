@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp/syntax"
 	"sort"
 	"strings"
 
@@ -435,4 +436,85 @@ func (d *indexData) maybeRepoList(include bool) *RepoList {
 		l.Repos = append(l.Repos, &d.repoListEntry)
 	}
 	return l
+}
+
+// regexpToMatchTreeRecursive converts a regular expression to a matchTree mt. If
+// mt is equivalent to the input r, isEqual = true and the matchTree can be used
+// in place of the regex r. If singleLine = true, then the matchTree and all
+// its children only match terms on the same line. singleLine is used during
+// recursion to decide whether to return an andLineMatchTree (singleLine = true)
+// or a andMatchTree (singleLine = false).
+func (d *indexData) regexpToMatchTreeRecursive(r *syntax.Regexp, minTextSize int, fileName bool, caseSensitive bool) (mt matchTree, isEqual bool, singleLine bool, err error) {
+	// TODO - we could perhaps transform Begin/EndText in '\n'?
+	// TODO - we could perhaps transform CharClass in (OrQuery )
+	// if there are just a few runes, and part of a OpConcat?
+	switch r.Op {
+	case syntax.OpLiteral:
+		s := string(r.Rune)
+		if len(s) >= minTextSize {
+			mt, err := d.newSubstringMatchTree(&query.Substring{Pattern: s, FileName: fileName, CaseSensitive: caseSensitive})
+			return mt, true, !strings.Contains(s, "\n"), err
+		}
+	case syntax.OpCapture:
+		return d.regexpToMatchTreeRecursive(r.Sub[0], minTextSize, fileName, caseSensitive)
+
+	case syntax.OpPlus:
+		return d.regexpToMatchTreeRecursive(r.Sub[0], minTextSize, fileName, caseSensitive)
+
+	case syntax.OpRepeat:
+		if r.Min >= 1 {
+			return d.regexpToMatchTreeRecursive(r.Sub[0], minTextSize, fileName, caseSensitive)
+		}
+
+	case syntax.OpConcat, syntax.OpAlternate:
+		var qs []matchTree
+		isEq := true
+		singleLine = true
+		for _, sr := range r.Sub {
+			if sq, subIsEq, subSingleLine, err := d.regexpToMatchTreeRecursive(sr, minTextSize, fileName, caseSensitive); sq != nil {
+				if err != nil {
+					return nil, false, false, err
+				}
+				isEq = isEq && subIsEq
+				singleLine = singleLine && subSingleLine
+				qs = append(qs, sq)
+			}
+		}
+		if r.Op == syntax.OpConcat {
+			if len(qs) > 1 {
+				isEq = false
+			}
+			newQs := make([]matchTree, 0, len(qs))
+			for _, q := range qs {
+				if _, ok := q.(*bruteForceMatchTree); ok {
+					continue
+				}
+				newQs = append(newQs, q)
+			}
+			if len(newQs) == 1 {
+				return newQs[0], isEq, singleLine, nil
+			}
+			if len(newQs) == 0 {
+				return &bruteForceMatchTree{}, isEq, singleLine, nil
+			}
+			if singleLine {
+				return &andLineMatchTree{andMatchTree{children: newQs}}, isEq, singleLine, nil
+			}
+			return &andMatchTree{newQs}, isEq, singleLine, nil
+		}
+		for _, q := range qs {
+			if _, ok := q.(*bruteForceMatchTree); ok {
+				return q, isEq, false, nil
+			}
+		}
+		if len(qs) == 0 {
+			return &noMatchTree{"const"}, isEq, false, nil
+		}
+		return &orMatchTree{qs}, isEq, false, nil
+	case syntax.OpStar:
+		if r.Sub[0].Op == syntax.OpAnyCharNotNL {
+			return &bruteForceMatchTree{}, false, true, nil
+		}
+	}
+	return &bruteForceMatchTree{}, false, false, nil
 }

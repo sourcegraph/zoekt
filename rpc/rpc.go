@@ -21,7 +21,7 @@ const DefaultRPCPath = "/rpc"
 // Server returns an http.Handler for searcher which is the server side of the
 // RPC calls.
 func Server(searcher zoekt.Searcher) http.Handler {
-	registerGob()
+	RegisterGob()
 	server := rpc.NewServer()
 	server.Register(&srv.Searcher{Searcher: searcher})
 	return server
@@ -36,7 +36,7 @@ func Client(address string) zoekt.Searcher {
 // ClientAtPath connects to a Searcher HTTP RPC server at address and path
 // (http://host:port/path).
 func ClientAtPath(address, path string) zoekt.Searcher {
-	registerGob()
+	RegisterGob()
 	return &client{addr: address, path: path}
 }
 
@@ -108,7 +108,11 @@ func (c *client) getRPCClient(ctx context.Context, gen int) (*rpc.Client, int, e
 }
 
 func (c *client) Close() {
-	c.cl.Close()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cl != nil {
+		c.cl.Close()
+	}
 }
 
 func (c *client) String() string {
@@ -117,7 +121,9 @@ func (c *client) String() string {
 
 var once sync.Once
 
-func registerGob() {
+// RegisterGob registers various query types with gob. It can be called more than
+// once, because calls to gob.Register are protected by a sync.Once.
+func RegisterGob() {
 	once.Do(func() {
 		gob.Register(&query.And{})
 		gob.Register(&query.Branch{})

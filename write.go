@@ -16,6 +16,7 @@ package zoekt
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"io"
@@ -181,7 +182,7 @@ func (b *IndexBuilder) writeJSON(data interface{}, sec *simpleSection, w *writer
 }
 
 func newLinesIndices(in []byte) []uint32 {
-	out := make([]uint32, 0, len(in)/30)
+	out := make([]uint32, 0, bytes.Count(in, []byte{'\n'}))
 	for i, c := range in {
 		if c == '\n' {
 			out = append(out, uint32(i))

@@ -151,6 +151,16 @@ func fetchGitRepo(dir string) bool {
 func indexPendingRepos(indexDir, repoDir string, opts *Options, repos <-chan string) {
 	for dir := range repos {
 		indexPendingRepo(dir, indexDir, repoDir, opts)
+
+		// Failures (eg. timeout) will leave temp files
+		// around. We have to clean them, or they will fill up the indexing volume.
+		if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
+			log.Printf("Glob: %v", err)
+		} else {
+			for _, f  := range failures {
+				os.Remove(f)
+			}
+		}
 	}
 }
 
@@ -168,7 +178,6 @@ func indexPendingRepo(dir, indexDir, repoDir string, opts *Options) {
 	args = append(args, dir)
 	cmd := exec.CommandContext(ctx, "zoekt-git-index", args...)
 	loggedRun(cmd)
-
 }
 
 // deleteLogs deletes old logs.

@@ -37,6 +37,7 @@ import (
 func main() {
 	dest := flag.String("dest", "", "destination directory")
 	serverUrl := flag.String("url", "", "BitBucket Server url")
+	disableTLS := flag.Bool("disable-tls", false, "disables TLS verification")
 	credentialsFile := flag.String("credentials", ".bitbucket-credentials", "file holding BitBucket Server credentials")
 	project := flag.String("project", "", "project to mirror")
 	deleteRepos := flag.Bool("delete", false, "delete missing repos")
@@ -86,16 +87,6 @@ func main() {
 	ctx = context.WithValue(ctx, bitbucketv1.ContextBasicAuth, basicAuth)
 	defer cancel()
 
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	httpClient := &http.Client{
-		Transport: tr,
-	}
-	httpClientConfig := func(configs *bitbucketv1.Configuration) {
-		configs.HTTPClient = httpClient
-	}
-
 	apiPath, err := url.Parse("/rest")
 	if err != nil {
 		log.Fatal(err)
@@ -103,10 +94,22 @@ func main() {
 
 	apiBaseURL := rootURL.ResolveReference(apiPath).String()
 
-	client := bitbucketv1.NewAPIClient(
-		ctx,
-		bitbucketv1.NewConfiguration(apiBaseURL, httpClientConfig),
-	)
+	var config *bitbucketv1.Configuration
+	if *disableTLS {
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		httpClient := &http.Client{
+			Transport: tr,
+		}
+		httpClientConfig := func(configs *bitbucketv1.Configuration) {
+			configs.HTTPClient = httpClient
+		}
+		config = bitbucketv1.NewConfiguration(apiBaseURL, httpClientConfig)
+	} else {
+		config = bitbucketv1.NewConfiguration(apiBaseURL)
+	}
+	client := bitbucketv1.NewAPIClient(ctx, config)
 
 	var repos []bitbucketv1.Repository
 

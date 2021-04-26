@@ -6,9 +6,11 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"strings"
 	"testing"
@@ -18,6 +20,14 @@ import (
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
 )
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if !testing.Verbose() {
+		log.SetOutput(ioutil.Discard)
+	}
+	os.Exit(m.Run())
+}
 
 func writeArchive(w io.Writer, format string, files map[string]string) (err error) {
 	if format == "zip" {
