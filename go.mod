@@ -20,7 +20,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/prometheus/client_golang v1.5.1
 	github.com/prometheus/procfs v0.0.10 // indirect
-	github.com/sourcegraph/go-ctags v0.0.0-20200922223002-071e508aa451
+	github.com/sourcegraph/go-ctags v0.0.0-20210426132232-02b1941e7258
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible
 	github.com/xanzy/go-gitlab v0.28.0
@@ -33,7 +33,3 @@ require (
 )
 
 go 1.13
-
-replace (
-	github.com/sourcegraph/go-ctags => ../go-ctags
-)
