@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -268,6 +269,8 @@ func (s *Server) Run(queue *Queue) {
 			tr := trace.New("getIndexOptions", "")
 			tr.LazyPrintf("getting index options for %d repos", len(repos))
 
+			newPriorities := make(map[string]float64)
+
 			// We ask the frontend to get index options in batches.
 			for repos := range batched(repos, 1000) {
 				start := time.Now()
@@ -287,9 +290,14 @@ func (s *Server) Run(queue *Queue) {
 						tr.SetError()
 						continue
 					}
+					if opt.Priority != 0 {
+						newPriorities[name] = opt.Priority
+					}
 					queue.AddOrUpdate(name, opt.IndexOptions)
 				}
 			}
+			s.maybeUpdatePriorities(repos, newPriorities)
+
 			metricResolveRevisionsDuration.Observe(time.Since(start).Seconds())
 			tr.Finish()
 
@@ -319,6 +327,58 @@ func (s *Server) Run(queue *Queue) {
 			log.Printf("updated index %s in %v", args.String(), time.Since(start))
 		}
 		queue.SetIndexed(name, opts, state)
+	}
+}
+
+// Update priority.json given new entries, and remove no longer tracked repos.
+// This doesn't simply write newPriorities because a transient getIndexOptions failure
+// would cause the associated repo to get deprioritized.
+func (s *Server) maybeUpdatePriorities(names []string, newPriorities map[string]float64) {
+	priorityPath := path.Join(s.IndexDir, "priority.json")
+	priorities := map[string]float64{}
+	buf, err := ioutil.ReadFile(priorityPath)
+	if err == nil {
+		err = json.Unmarshal(buf, &priorities)
+		if err != nil {
+			log.Printf("error loading old priority.json: %v", err)
+		}
+	}
+
+	// maybe remove no-longer-tracked repos from the priorities list
+	if len(names) != len(priorities) {
+		set := make(map[string]struct{}, len(names))
+		for _, name := range names {
+			set[name] = struct{}{}
+		}
+		for name := range priorities {
+			if _, ok := set[name]; !ok {
+				delete(priorities, name)
+			}
+		}
+	}
+
+	for name, priority := range newPriorities {
+		priorities[name] = priority
+	}
+
+	newBuf, err := json.Marshal(priorities)
+	if err != nil {
+		log.Printf("error marshaling new priority.json: %v", err)
+	}
+	newBuf = append(newBuf, '\n') // prettier
+
+	if bytes.Equal(buf, newBuf) {
+		return // no need to rewrite priority.json
+	}
+
+	err = ioutil.WriteFile(priorityPath+".tmp", newBuf, 0644)
+	if err != nil {
+		log.Printf("error writing new priority.json: %v", err)
+	}
+
+	err = os.Rename(priorityPath+".tmp", priorityPath)
+	if err != nil {
+		log.Printf("error renaming new priority.json into place: %v", err)
 	}
 }
 

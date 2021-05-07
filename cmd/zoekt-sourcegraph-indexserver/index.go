@@ -40,6 +40,9 @@ type IndexOptions struct {
 
 	// RepoID is the Sourcegraph Repository ID.
 	RepoID int32
+
+	// Priority indicates ranking in results, higher first.
+	Priority float64
 }
 
 // indexArgs represents the arguments we pass to zoekt-archive-index
@@ -78,6 +81,10 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		// NOTE(keegan): 2020-08-13 This is currently not read anywhere. We are
 		// setting it so in a few releases all indexes should have it set.
 		rawConfig["repoid"] = strconv.Itoa(int(o.IndexOptions.RepoID))
+	}
+
+	if o.Priority != 0 {
+		rawConfig["priority"] = strconv.FormatFloat(o.Priority, 'g', -1, 64)
 	}
 
 	return &build.Options{

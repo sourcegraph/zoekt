@@ -16,9 +16,12 @@ package shards
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"runtime"
 	"runtime/debug"
 	"sort"
@@ -145,14 +148,58 @@ type shardedSearcher struct {
 
 	rankedVersion uint64
 	ranked        []rankedShard
+
+	priority map[string]float64
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
 	ss := &shardedSearcher{
-		shards: make(map[string]rankedShard),
-		sched:  newScheduler(n),
+		shards:   make(map[string]rankedShard),
+		sched:    newScheduler(n),
+		priority: make(map[string]float64),
 	}
 	return ss
+}
+
+func (ss *shardedSearcher) watchPriorities(dir string) {
+	priorityPath := path.Join(dir, "priority.json")
+	var lastMtime time.Time
+
+	loadPriority := func() {
+		st, err := os.Stat(priorityPath)
+		if err != nil {
+			return // ignore missing file errors
+		}
+		if st.ModTime() != lastMtime {
+			lastMtime = st.ModTime()
+			buf, err := ioutil.ReadFile(priorityPath)
+			if err != nil {
+				log.Printf("reloading priority.json, error %v", err)
+				return
+			}
+			priority := make(map[string]float64)
+			err = json.Unmarshal(buf, &priority)
+			if err != nil {
+				log.Printf("reloading priority.json, error %v", err)
+				return
+			}
+
+			log.Printf("reloading priority.json: %d shards have priorities", len(priority))
+
+			// get an exclusive lock to update priority map and invalidate ranking
+			proc := ss.sched.Exclusive()
+			defer proc.Release()
+			ss.priority = priority
+			ss.rankedVersion++
+			ss.ranked = nil
+		}
+	}
+
+	loadPriority()
+
+	for range time.Tick(1 * time.Second) { // TODO(rmmh): make this check slower after testing
+		loadPriority()
+	}
 }
 
 // NewDirectorySearcher returns a searcher instance that loads all
@@ -166,6 +213,8 @@ func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	go ss.watchPriorities(dir)
 
 	ds := &directorySearcher{
 		Streamer:         ss,
@@ -639,7 +688,11 @@ func (s *shardedSearcher) getShards() []rankedShard {
 	for _, sh := range s.shards {
 		res = append(res, sh)
 	}
-	sort.Slice(res, func(i, j int) bool {
+	sort.SliceStable(res, func(i, j int) bool {
+		priorityDiff := s.priority[res[i].name] - s.priority[res[j].name]
+		if priorityDiff != 0 {
+			return priorityDiff > 0
+		}
 		return res[i].name < res[j].name
 	})
 
