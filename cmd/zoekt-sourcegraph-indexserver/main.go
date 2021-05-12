@@ -340,7 +340,7 @@ func (s *Server) maybeUpdatePriorities(names []string, newPriorities map[string]
 	if err == nil {
 		err = json.Unmarshal(buf, &priorities)
 		if err != nil {
-			log.Printf("error loading old priority.json: %v", err)
+			log.Printf("warning: error loading old priority.json, treating as empty: %v", err)
 		}
 	}
 
@@ -374,6 +374,7 @@ func (s *Server) maybeUpdatePriorities(names []string, newPriorities map[string]
 	err = ioutil.WriteFile(priorityPath+".tmp", newBuf, 0644)
 	if err != nil {
 		log.Printf("error writing new priority.json: %v", err)
+		return
 	}
 
 	err = os.Rename(priorityPath+".tmp", priorityPath)

@@ -161,7 +161,7 @@ func newShardedSearcher(n int64) *shardedSearcher {
 	return ss
 }
 
-func (ss *shardedSearcher) watchPriorities(dir string) {
+func (ss *shardedSearcher) watchPriorities(dir string, done chan struct{}) {
 	priorityPath := path.Join(dir, "priority.json")
 	var lastMtime time.Time
 
@@ -170,35 +170,45 @@ func (ss *shardedSearcher) watchPriorities(dir string) {
 		if err != nil {
 			return // ignore missing file errors
 		}
-		if st.ModTime() != lastMtime {
-			lastMtime = st.ModTime()
-			buf, err := ioutil.ReadFile(priorityPath)
-			if err != nil {
-				log.Printf("reloading priority.json, error %v", err)
-				return
-			}
-			priority := make(map[string]float64)
-			err = json.Unmarshal(buf, &priority)
-			if err != nil {
-				log.Printf("reloading priority.json, error %v", err)
-				return
-			}
-
-			log.Printf("reloading priority.json: %d shards have priorities", len(priority))
-
-			// get an exclusive lock to update priority map and invalidate ranking
-			proc := ss.sched.Exclusive()
-			defer proc.Release()
-			ss.priority = priority
-			ss.rankedVersion++
-			ss.ranked = nil
+		if st.ModTime() == lastMtime {
+			return // file is unchanged
 		}
+		lastMtime = st.ModTime()
+		buf, err := ioutil.ReadFile(priorityPath)
+		if err != nil {
+			log.Printf("reloading priority.json, error %v", err)
+			return
+		}
+		priority := make(map[string]float64)
+		err = json.Unmarshal(buf, &priority)
+		if err != nil {
+			log.Printf("reloading priority.json, error %v", err)
+			return
+		}
+
+		log.Printf("reloading priority.json: %d shards have priorities", len(priority))
+
+		// get an exclusive lock to update priority map and invalidate ranking
+		proc := ss.sched.Exclusive()
+		defer proc.Release()
+		ss.priority = priority
+		ss.rankedVersion++
+		ss.ranked = nil // will regenerate ranking on next request
 	}
 
 	loadPriority()
 
-	for range time.Tick(1 * time.Second) { // TODO(rmmh): make this check slower after testing
-		loadPriority()
+	// fsnotify is more efficient for watching a large number of files for changes, but a
+	// single stat call once a minute to check one file's modified time is negligible.
+	ticker := time.NewTicker(1 * time.Minute)
+	for {
+		select {
+		case <-done:
+			ticker.Stop()
+			return
+		case <-ticker.C:
+			loadPriority()
+		}
 	}
 }
 
@@ -214,7 +224,7 @@ func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
 		return nil, err
 	}
 
-	go ss.watchPriorities(dir)
+	go ss.watchPriorities(dir, dw.quit)
 
 	ds := &directorySearcher{
 		Streamer:         ss,
@@ -688,7 +698,7 @@ func (s *shardedSearcher) getShards() []rankedShard {
 	for _, sh := range s.shards {
 		res = append(res, sh)
 	}
-	sort.SliceStable(res, func(i, j int) bool {
+	sort.Slice(res, func(i, j int) bool {
 		priorityDiff := s.priority[res[i].name] - s.priority[res[j].name]
 		if priorityDiff != 0 {
 			return priorityDiff > 0
