@@ -435,7 +435,7 @@ func PrintNgramStats(r IndexFile) error {
 	var rNgram [3]rune
 	for ngram, ss := range id.ngrams {
 		rNgram = ngramToRunes(ngram)
-		fmt.Printf("%d (%q,%q,%q)\n", ss.sz, rNgram[0], rNgram[1], rNgram[2])
+		fmt.Printf("%d\t%q\n", ss.sz, string(rNgram[:]))
 	}
 	return nil
 }
