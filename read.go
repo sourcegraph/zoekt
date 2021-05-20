@@ -411,3 +411,31 @@ func ReadMetadata(inf IndexFile) (*Repository, *IndexMetadata, error) {
 
 	return &repo, &md, nil
 }
+
+func loadIndexData(r IndexFile) (*indexData, error) {
+	rd := &reader{r: r}
+
+	var toc indexTOC
+	if err := rd.readTOC(&toc); err != nil {
+		return nil, err
+	}
+	return rd.readIndexData(&toc)
+}
+
+// PrintNgramStats outputs a list of the form
+//    n_1 trigram_1
+//    n_2 trigram_2
+//    ...
+// where n_i is the length of the postings list of trigram_i stored in r.
+func PrintNgramStats(r IndexFile) error {
+	id, err := loadIndexData(r)
+	if err != nil {
+		return err
+	}
+	var rNgram [3]rune
+	for ngram, ss := range id.ngrams {
+		rNgram = ngramToRunes(ngram)
+		fmt.Printf("%d (%q,%q,%q)\n", ss.sz, rNgram[0], rNgram[1], rNgram[2])
+	}
+	return nil
+}

@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/zoekt"
 	"github.com/google/zoekt/debugserver"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
@@ -651,6 +652,20 @@ func setupTmpDir(index string) error {
 	return nil
 }
 
+func printShardStats(fn string) error {
+	f, err := os.Open(fn)
+	if err != nil {
+		return err
+	}
+
+	iFile, err := zoekt.NewIndexFile(f)
+	if err != nil {
+		return err
+	}
+
+	return zoekt.PrintNgramStats(iFile)
+}
+
 func main() {
 	defaultIndexDir := os.Getenv("DATA_DIR")
 	if defaultIndexDir == "" {
@@ -668,6 +683,7 @@ func main() {
 	// non daemon mode for debugging/testing
 	debugList := flag.Bool("debug-list", false, "do not start the indexserver, rather list the repositories owned by this indexserver then quit.")
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repositories then quit.")
+	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
 
 	expGitIndex := flag.Bool("exp-git-index", os.Getenv("DISABLE_GIT_INDEX") == "", "use experimental indexing via shallow clones and zoekt-git-index")
 
@@ -706,7 +722,7 @@ func main() {
 		log.Fatalf("failed to setup TMPDIR under %s: %v", *index, err)
 	}
 
-	if *dbg || *debugList || *debugIndex != "" {
+	if *dbg || *debugList || *debugIndex != "" || *debugShard != "" {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
 	}
 	client.Logger = debug
@@ -743,6 +759,14 @@ func main() {
 		log.Println(msg)
 		if err != nil {
 			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	if *debugShard != "" {
+		err = printShardStats(*debugShard)
+		if err != nil {
+			log.Fatal(err)
 		}
 		os.Exit(0)
 	}
