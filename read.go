@@ -208,20 +208,9 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	textContent, err := d.readSectionBlob(toc.ngramText)
+	d.ngrams, err = d.readNgrams(toc)
 	if err != nil {
 		return nil, err
-	}
-	postingsIndex := toc.postings.relativeIndex()
-
-	const ngramEncoding = 8
-	for i := 0; i < len(textContent); i += ngramEncoding {
-		j := i / ngramEncoding
-		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
-		d.ngrams[ng] = simpleSection{
-			toc.postings.data.off + postingsIndex[j],
-			postingsIndex[j+1] - postingsIndex[j],
-		}
 	}
 
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
@@ -236,23 +225,9 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 
 	d.fileNameIndex = toc.fileNames.relativeIndex()
 
-	nameNgramText, err := d.readSectionBlob(toc.nameNgramText)
+	d.fileNameNgrams, err = d.readFileNameNgrams(toc)
 	if err != nil {
 		return nil, err
-	}
-
-	fileNamePostingsData, err := d.readSectionBlob(toc.namePostings.data)
-	if err != nil {
-		return nil, err
-	}
-
-	fileNamePostingsIndex := toc.namePostings.relativeIndex()
-	for i := 0; i < len(nameNgramText); i += ngramEncoding {
-		j := i / ngramEncoding
-		off := fileNamePostingsIndex[j]
-		end := fileNamePostingsIndex[j+1]
-		ng := ngram(binary.BigEndian.Uint64(nameNgramText[i : i+ngramEncoding]))
-		d.fileNameNgrams[ng] = fromDeltas(fileNamePostingsData[off:end], nil)
 	}
 
 	for j, br := range d.repoMetaData.Branches {
@@ -299,6 +274,53 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 
 	d.calculateStats()
 	return &d, nil
+}
+
+const ngramEncoding = 8
+
+func (d *indexData) readNgrams(toc *indexTOC) (map[ngram]simpleSection, error) {
+	textContent, err := d.readSectionBlob(toc.ngramText)
+	if err != nil {
+		return nil, err
+	}
+	postingsIndex := toc.postings.relativeIndex()
+
+	ngrams := map[ngram]simpleSection{}
+	for i := 0; i < len(textContent); i += ngramEncoding {
+		j := i / ngramEncoding
+		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
+		ngrams[ng] = simpleSection{
+			toc.postings.data.off + postingsIndex[j],
+			postingsIndex[j+1] - postingsIndex[j],
+		}
+	}
+
+	return ngrams, nil
+}
+
+func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]uint32, error) {
+	nameNgramText, err := d.readSectionBlob(toc.nameNgramText)
+	if err != nil {
+		return nil, err
+	}
+
+	fileNamePostingsData, err := d.readSectionBlob(toc.namePostings.data)
+	if err != nil {
+		return nil, err
+	}
+
+	fileNamePostingsIndex := toc.namePostings.relativeIndex()
+
+	fileNameNgrams := map[ngram][]uint32{}
+	for i := 0; i < len(nameNgramText); i += ngramEncoding {
+		j := i / ngramEncoding
+		off := fileNamePostingsIndex[j]
+		end := fileNamePostingsIndex[j+1]
+		ng := ngram(binary.BigEndian.Uint64(nameNgramText[i : i+ngramEncoding]))
+		fileNameNgrams[ng] = fromDeltas(fileNamePostingsData[off:end], nil)
+	}
+
+	return fileNameNgrams, nil
 }
 
 func (d *indexData) verify() error {
