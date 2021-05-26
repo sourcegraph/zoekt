@@ -72,6 +72,16 @@ var (
 		Help: "Number of repos assigned to this indexer by code host",
 	}, []string{"codehost"})
 
+	metricNumPriorities = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "index_priorities_total",
+		Help: "Number of indexed repos with non-zero priorities",
+	})
+
+	metricNumPriorityUpdates = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "index_priorities_update_total",
+		Help: "Total number of times repo ranking has been written to priority.json",
+	})
+
 	metricFailingTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "index_failing_total",
 		Help: "Counts failures to index (indexing activity, should be used with rate())",
@@ -361,6 +371,8 @@ func (s *Server) maybeUpdatePriorities(names []string, newPriorities map[string]
 		priorities[name] = priority
 	}
 
+	metricNumPriorities.Set(float64(len(priorities)))
+
 	newBuf, err := json.Marshal(priorities)
 	if err != nil {
 		log.Printf("error marshaling new priority.json: %v", err)
@@ -381,6 +393,8 @@ func (s *Server) maybeUpdatePriorities(names []string, newPriorities map[string]
 	if err != nil {
 		log.Printf("error renaming new priority.json into place: %v", err)
 	}
+
+	metricNumPriorityUpdates.Inc()
 }
 
 func batched(slice []string, size int) <-chan []string {
