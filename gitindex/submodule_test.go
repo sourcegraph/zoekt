@@ -20,24 +20,43 @@ import (
 )
 
 func TestParseGitModules(t *testing.T) {
-	testData := `[submodule "plugins/abc"]
-	path = plugins/abc
-	url = ../plugins/abc
-	branch = .`
-
-	got, err := ParseGitModules([]byte(testData))
-	if err != nil {
-		t.Fatalf("ParseGitModules: %T", err)
+	cases := []struct {
+		data string
+		want map[string]*SubmoduleEntry
+	}{{
+		`[submodule "plugins/abc"]
+		path = plugins/abc
+		url = ../plugins/abc
+		branch = .`,
+		map[string]*SubmoduleEntry{
+			"plugins/abc": {
+				Path:   "plugins/abc",
+				URL:    "../plugins/abc",
+				Branch: ".",
+			},
+		}},
+		{
+			"\uFEFF" + `[submodule "plugins/abc"]
+			path = plugins/abc
+			url = ../plugins/abc
+			branch = .`,
+			map[string]*SubmoduleEntry{
+				"plugins/abc": {
+					Path:   "plugins/abc",
+					URL:    "../plugins/abc",
+					Branch: ".",
+				},
+			}},
 	}
 
-	want := map[string]*SubmoduleEntry{
-		"plugins/abc": &SubmoduleEntry{
-			Path:   "plugins/abc",
-			URL:    "../plugins/abc",
-			Branch: ".",
-		},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
+	for _, tc := range cases {
+		got, err := ParseGitModules([]byte(tc.data))
+		if err != nil {
+			t.Fatalf("ParseGitModules: %T", err)
+		}
+
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("got %v, want %v", got, tc.want)
+		}
 	}
 }

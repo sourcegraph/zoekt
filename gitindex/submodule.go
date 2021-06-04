@@ -29,7 +29,19 @@ type SubmoduleEntry struct {
 
 // ParseGitModules parses the contents of a .gitmodules file.
 func ParseGitModules(content []byte) (map[string]*SubmoduleEntry, error) {
-	dec := config.NewDecoder(bytes.NewBuffer(content))
+	buf := bytes.NewBuffer(content)
+
+	// Handle the possibility that .gitmodules has a UTF-8 BOM, which would
+	// otherwise break the scanner.
+	// https://stackoverflow.com/a/21375405
+	r, _, err := buf.ReadRune()
+	if err != nil {
+		return nil, err
+	}
+	if r != '\uFEFF' {
+		buf.UnreadRune()
+	}
+	dec := config.NewDecoder(buf)
 	cfg := &config.Config{}
 
 	if err := dec.Decode(cfg); err != nil {
