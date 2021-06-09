@@ -47,6 +47,7 @@ func TestParseGitModules(t *testing.T) {
 					Branch: ".",
 				},
 			}},
+		{"", map[string]*SubmoduleEntry{}},
 	}
 
 	for _, tc := range cases {
