@@ -16,6 +16,7 @@ package gitindex
 
 import (
 	"bytes"
+	"io"
 
 	"github.com/go-git/go-git/v5/plumbing/format/config"
 )
@@ -35,7 +36,7 @@ func ParseGitModules(content []byte) (map[string]*SubmoduleEntry, error) {
 	// otherwise break the scanner.
 	// https://stackoverflow.com/a/21375405
 	r, _, err := buf.ReadRune()
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return nil, err
 	}
 	if r != '\uFEFF' {
