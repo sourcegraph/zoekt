@@ -356,7 +356,6 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 
 	if firstI != lastI {
 		i, err := d.newDistanceTrigramIter(firstNG, lastNG, lastI-firstI, query.CaseSensitive, query.FileName)
-
 		if err != nil {
 			return nil, err
 		}

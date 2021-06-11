@@ -60,7 +60,7 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 }
 
 func main() {
-	var cpuProfile = flag.String("cpu_profile", "", "write cpu profile to file")
+	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to file")
 	ignoreDirs := flag.String("ignore_dirs", ".git,.hg,.svn", "comma separated list of directories to ignore.")
 	flag.Parse()
 

@@ -78,11 +78,13 @@ func TestRegexpParse(t *testing.T) {
 			substrMT("baz"),
 			substrMT("bla"),
 		}}, false},
-		{"^[a-z](People)+barrabas$",
+		{
+			"^[a-z](People)+barrabas$",
 			&andMatchTree{[]matchTree{
 				substrMT("People"),
 				substrMT("barrabas"),
-			}}, false},
+			}}, false,
+		},
 		{"foo", substrMT("foo"), true},
 		{"^foo", substrMT("foo"), false},
 		{"(foo) (bar)", &andMatchTree{[]matchTree{substrMT("foo"), substrMT("bar")}}, false},

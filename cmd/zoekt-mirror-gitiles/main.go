@@ -65,7 +65,7 @@ func main() {
 		log.Fatal("must set --dest")
 	}
 
-	if err := os.MkdirAll(filepath.Join(*dest, rootURL.Host, rootURL.Path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(*dest, rootURL.Host, rootURL.Path), 0o755); err != nil {
 		log.Fatal(err)
 	}
 

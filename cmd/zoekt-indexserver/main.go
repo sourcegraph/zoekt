@@ -157,7 +157,7 @@ func indexPendingRepos(indexDir, repoDir string, opts *Options, repos <-chan str
 		if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
 			log.Printf("Glob: %v", err)
 		} else {
-			for _, f  := range failures {
+			for _, f := range failures {
 				os.Remove(f)
 			}
 		}
@@ -279,7 +279,7 @@ func main() {
 			continue
 		}
 
-		if err := os.MkdirAll(s, 0755); err != nil {
+		if err := os.MkdirAll(s, 0o755); err != nil {
 			log.Fatalf("MkdirAll %s: %v", s, err)
 		}
 	}

@@ -77,7 +77,8 @@ func TestDeleteRepos(t *testing.T) {
 		"gerrit.googlesource.com/bdir.git": {},
 		"adir/.git":                        {},
 		"bdir/.git":                        {},
-		"gerrit.googlesource.com/adir.git": {}}
+		"gerrit.googlesource.com/adir.git": {},
+	}
 
 	if !reflect.DeepEqual(gotAfter, wantAfter) {
 		t.Errorf("got %v want %v", gotAfter, wantAfter)

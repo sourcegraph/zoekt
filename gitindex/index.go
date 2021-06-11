@@ -38,7 +38,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	git "github.com/go-git/go-git/v5"
-	plumcfg "github.com/go-git/go-git/v5/plumbing/format/config"
 )
 
 // RepoModTime returns the time of last fetch of a git repository.
@@ -47,7 +46,7 @@ func RepoModTime(dir string) (time.Time, error) {
 	refDir := filepath.Join(dir, "refs")
 	if _, err := os.Lstat(refDir); err == nil {
 		if err := filepath.Walk(refDir,
-			func(name string, fi os.FileInfo, err error) error {
+			func(_ string, fi os.FileInfo, _ error) error {
 				if !fi.IsDir() && last.Before(fi.ModTime()) {
 					last = fi.ModTime()
 				}
@@ -179,21 +178,6 @@ func configLookupRemoteURL(cfg *config.Config, key string) string {
 	return rc.URLs[0]
 }
 
-func configLookupString(sec *plumcfg.Section, key string) string {
-	for _, o := range sec.Options {
-		if o.Key != key {
-			continue
-		}
-		return o.Value
-	}
-
-	return ""
-}
-
-func isMissingBranchError(err error) bool {
-	return err != nil && err.Error() == "reference not found"
-}
-
 func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	repo, err := git.PlainOpen(repoDir)
 	if err != nil {
@@ -207,8 +191,8 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 
 	sec := cfg.Raw.Section("zoekt")
 
-	webURLStr := configLookupString(sec, "web-url")
-	webURLType := configLookupString(sec, "web-url-type")
+	webURLStr := sec.Options.Get("web-url")
+	webURLType := sec.Options.Get("web-url-type")
 
 	if webURLType != "" && webURLStr != "" {
 		webURL, err := url.Parse(webURLStr)
@@ -222,7 +206,7 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 		desc.URL = webURLStr
 	}
 
-	name := configLookupString(sec, "name")
+	name := sec.Options.Get("name")
 	if name != "" {
 		desc.Name = name
 	} else {
@@ -251,7 +235,7 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	// Github:
 	traction := 0
 	for _, s := range []string{"github-stars", "github-forks", "github-watchers", "github-subscribers"} {
-		f, err := strconv.Atoi(configLookupString(sec, s))
+		f, err := strconv.Atoi(sec.Options.Get(s))
 		if err == nil {
 			traction += f
 		}
@@ -271,7 +255,7 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	return nil
 }
 
-// SetTemplates fills in templates based on the origin URL.
+// SetTemplatesFromOrigin fills in templates based on the origin URL.
 func SetTemplatesFromOrigin(desc *zoekt.Repository, u *url.URL) error {
 	desc.Name = filepath.Join(u.Host, strings.TrimSuffix(u.Path, ".git"))
 
@@ -397,13 +381,14 @@ func IndexGitRepo(opts Options) error {
 	}
 	for _, b := range branches {
 		commit, err := getCommit(repo, opts.BranchPrefix, b)
-		if opts.AllowMissingBranch && isMissingBranchError(err) {
-			continue
-		}
-
 		if err != nil {
+			if opts.AllowMissingBranch && err.Error() == "reference not found" {
+				continue
+			}
+
 			return err
 		}
+
 		opts.BuildOptions.RepositoryDescription.Branches = append(opts.BuildOptions.RepositoryDescription.Branches, zoekt.RepositoryBranch{
 			Name:    b,
 			Version: commit.Hash.String(),

@@ -51,10 +51,10 @@ func runCTags(bin string, inputs map[string][]byte) ([]*ctags.Entry, error) {
 		}
 
 		full := filepath.Join(dir, n)
-		if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
 			return nil, err
 		}
-		err := ioutil.WriteFile(full, c, 0600)
+		err := ioutil.WriteFile(full, c, 0o600)
 		if err != nil {
 			return nil, err
 		}

@@ -32,7 +32,7 @@ import (
 // the directory of the repository.
 func CloneRepo(destDir, name, cloneURL string, settings map[string]string) (string, error) {
 	parent := filepath.Join(destDir, filepath.Dir(name))
-	if err := os.MkdirAll(parent, 0755); err != nil {
+	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return "", err
 	}
 

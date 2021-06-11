@@ -277,7 +277,7 @@ func TestDeleteOldShards(t *testing.T) {
 
 	if fi, err := os.Lstat(fs[0]); err != nil {
 		t.Fatalf("Lstat: %v", err)
-	} else if fi.Mode()&0666 == 0600 {
+	} else if fi.Mode()&0o666 == 0o600 {
 		// This fails spuriously if your umask is very restrictive.
 		t.Errorf("got mode %o, should respect umask.", fi.Mode())
 	}
@@ -348,13 +348,13 @@ func TestPartialSuccess(t *testing.T) {
 		b.AddFile(nm, []byte(strings.Repeat("01234567\n", 128)))
 		if i == 1 {
 			// force writes to fail.
-			if err := os.Chmod(dir, 0555); err != nil {
+			if err := os.Chmod(dir, 0o555); err != nil {
 				t.Fatalf("chmod(%s): %s", dir, err)
 			}
 		}
 	}
 
-	if err := os.Chmod(dir, 0755); err != nil {
+	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatalf("chmod(%s, writable): %s", dir, err)
 	}
 
@@ -408,7 +408,8 @@ func TestFileRank(t *testing.T) {
 			{
 				Name:    "short",
 				Content: []byte("bla"),
-			}},
+			},
+		},
 		want: []int{1, 0},
 	}, {
 		name: "test",

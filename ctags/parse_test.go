@@ -25,7 +25,8 @@ func TestParse(t *testing.T) {
 		out *Entry
 	}
 	cases := []testcase{
-		{`ABBREV_SHA	./gitiles-servlet/src/main/java/com/google/gitiles/CommitData.java	59;"	e	enum:CommitData.Field	file:`,
+		{
+			`ABBREV_SHA	./gitiles-servlet/src/main/java/com/google/gitiles/CommitData.java	59;"	e	enum:CommitData.Field	file:`,
 			&Entry{
 				Name:        "ABBREV_SHA",
 				Path:        "./gitiles-servlet/src/main/java/com/google/gitiles/CommitData.java",
@@ -36,7 +37,8 @@ func TestParse(t *testing.T) {
 				FileLimited: true,
 			},
 		},
-		{`ACCESS_ATTRIBUTE	./gitiles-servlet/src/main/java/com/google/gitiles/CommitData.java	55;"	f	class:BaseServlet	file:`,
+		{
+			`ACCESS_ATTRIBUTE	./gitiles-servlet/src/main/java/com/google/gitiles/CommitData.java	55;"	f	class:BaseServlet	file:`,
 			&Entry{
 				Name:        "ACCESS_ATTRIBUTE",
 				Path:        "./gitiles-servlet/src/main/java/com/google/gitiles/CommitData.java",
@@ -51,7 +53,6 @@ func TestParse(t *testing.T) {
 	for _, c := range cases {
 		e, err := Parse(c.in)
 		if err != nil && c.out != nil {
-
 			t.Errorf("Parse(%s): %v", c.in, err)
 		} else if !reflect.DeepEqual(c.out, e) {
 			t.Errorf("Parse(%s): got %#v, want %#v", c.in, e, c.out)

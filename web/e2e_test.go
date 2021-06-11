@@ -44,6 +44,7 @@ func (s *memSeeker) Read(off, sz uint32) ([]byte, error) {
 func (s *memSeeker) Size() (uint32, error) {
 	return uint32(len(s.data)), nil
 }
+
 func (s *memSeeker) Name() string {
 	return "memSeeker"
 }
@@ -113,19 +114,19 @@ func TestBasic(t *testing.T) {
 
 	nowStr := time.Now().Format("Jan 02, 2006 15:04")
 	for req, needles := range map[string][]string{
-		"/": []string{"from 1 repositories"},
-		"/search?q=water": []string{
+		"/": {"from 1 repositories"},
+		"/search?q=water": {
 			"href=\"file-url#line",
 			"carry <b>water</b>",
 		},
-		"/search?q=r:": []string{
+		"/search?q=r:": {
 			"1234\">master",
 			"Found 1 repositories",
 			nowStr,
 			"repo-url\">name",
 			"1 files (36)",
 		},
-		"/search?q=magic": []string{
+		"/search?q=magic": {
 			`value=magic`,
 		},
 	} {
@@ -178,7 +179,7 @@ func TestPrint(t *testing.T) {
 	defer ts.Close()
 
 	for req, needles := range map[string][]string{
-		"/print?q=bla&r=name&f=f2": []string{
+		"/print?q=bla&r=name&f=f2": {
 			`pre id="l1" class="inline-pre"><span class="noselect"><a href="#l1">`,
 		},
 	} {
@@ -218,7 +219,7 @@ func TestPrintDefault(t *testing.T) {
 	defer ts.Close()
 
 	for req, needles := range map[string][]string{
-		"/search?q=water": []string{
+		"/search?q=water": {
 			`href="print?`,
 		},
 	} {

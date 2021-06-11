@@ -65,7 +65,7 @@ func main() {
 	}
 
 	destDir := filepath.Join(*dest, rootURL.Host)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
 
@@ -173,9 +173,7 @@ func deleteStaleRepos(destDir string, filter *gitindex.Filter, repos []bitbucket
 
 func IsValidProjectType(projectType string) bool {
 	switch projectType {
-	case
-		"NORMAL",
-		"PERSONAL":
+	case "NORMAL", "PERSONAL":
 		return true
 	}
 	return false
@@ -190,13 +188,11 @@ func getAllRepos(client bitbucketv1.APIClient) ([]bitbucketv1.Repository, error)
 
 	for {
 		resp, err := client.DefaultApi.GetRepositories_19(opts)
-
 		if err != nil {
 			return nil, err
 		}
 
 		repos, err := bitbucketv1.GetRepositoriesResponse(resp)
-
 		if err != nil {
 			return nil, err
 		}

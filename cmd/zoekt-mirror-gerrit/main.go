@@ -126,10 +126,9 @@ func main() {
 	}
 
 	projects := make(map[string]gerrit.ProjectInfo)
-	page := new(map[string]gerrit.ProjectInfo)
 	skip := "0"
 	for {
-		page, _, err = client.Projects.ListProjects(&gerrit.ProjectOptions{Skip: skip})
+		page, _, err := client.Projects.ListProjects(&gerrit.ProjectOptions{Skip: skip})
 		if err != nil {
 			log.Fatalf("ListProjects: %v", err)
 		}

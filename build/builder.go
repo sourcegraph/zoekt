@@ -38,6 +38,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bmatcuk/doublestar"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/ctags"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -86,9 +87,10 @@ type Options struct {
 	// Write memory profiles to this file.
 	MemProfile string
 
-	// LargeFiles is a slice of glob patterns where matching file
-	// paths should be indexed regardless of their size. The pattern syntax
-	// can be found here: https://golang.org/pkg/path/filepath/#Match.
+	// LargeFiles is a slice of glob patterns, including ** for any number
+	// of directories, where matching file paths should be indexed
+	// regardless of their size. The full pattern syntax is here:
+	// https://github.com/bmatcuk/doublestar/tree/v1#patterns.
 	LargeFiles []string
 }
 
@@ -320,7 +322,7 @@ func rawConfigEqual(m1, m2 map[string]string, key string) bool {
 func (o *Options) IgnoreSizeMax(name string) bool {
 	for _, pattern := range o.LargeFiles {
 		pattern = strings.TrimSpace(pattern)
-		m, _ := filepath.Match(pattern, name)
+		m, _ := doublestar.PathMatch(pattern, name)
 		if m {
 			return true
 		}
@@ -641,7 +643,7 @@ func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 
 func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard, error) {
 	dir := filepath.Dir(fn)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 
@@ -650,7 +652,7 @@ func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard,
 		return nil, err
 	}
 	if runtime.GOOS != "windows" {
-		if err := f.Chmod(0666 &^ umask); err != nil {
+		if err := f.Chmod(0o666 &^ umask); err != nil {
 			return nil, err
 		}
 	}

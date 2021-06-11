@@ -36,13 +36,17 @@ type docIterator interface {
 	prepare(nextDoc uint32)
 }
 
-const costConst = 0
-const costMemory = 1
-const costContent = 2
-const costRegexp = 3
+const (
+	costConst   = 0
+	costMemory  = 1
+	costContent = 2
+	costRegexp  = 3
+)
 
-const costMin = costConst
-const costMax = costRegexp
+const (
+	costMin = costConst
+	costMax = costRegexp
+)
 
 // An expression tree coupled with matches. The matchtree has two
 // functions:

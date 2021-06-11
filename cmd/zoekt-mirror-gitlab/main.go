@@ -64,7 +64,7 @@ func main() {
 	host = rootURL.Host
 
 	destDir := filepath.Join(*dest, host)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
 
@@ -91,7 +91,6 @@ func main() {
 	var gitlabProjects []*gitlab.Project
 	for {
 		projects, resp, err := client.Projects.ListProjects(opt)
-
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -139,7 +138,6 @@ func main() {
 }
 
 func deleteStaleProjects(destDir string, filter *gitindex.Filter, projects []*gitlab.Project) error {
-
 	u, err := url.Parse(projects[0].HTTPURLToRepo)
 	u.Path = ""
 	if err != nil {
@@ -163,7 +161,6 @@ func deleteStaleProjects(destDir string, filter *gitindex.Filter, projects []*gi
 }
 
 func fetchProjects(destDir, token string, projects []*gitlab.Project) {
-
 	for _, p := range projects {
 		u, err := url.Parse(p.HTTPURLToRepo)
 		if err != nil {

@@ -30,7 +30,8 @@ func TestTagsToSections(t *testing.T) {
 		{
 			Name: "bar",
 			Line: 2,
-		}}
+		},
+	}
 
 	secs, _, err := tagsToSections(c, tags)
 	if err != nil {
@@ -79,7 +80,8 @@ func TestTagsToSectionsEOF(t *testing.T) {
 		{
 			Name: "bar",
 			Line: 2,
-		}}
+		},
+	}
 
 	secs, _, err := tagsToSections(c, tags)
 	if err != nil {

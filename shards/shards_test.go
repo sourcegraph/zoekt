@@ -52,7 +52,7 @@ func TestCrashResilience(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 	ss := newShardedSearcher(2)
 	ss.shards = map[string]rankedShard{
-		"x": rankedShard{Searcher: &crashSearcher{}},
+		"x": {Searcher: &crashSearcher{}},
 	}
 
 	q := &query.Substring{Pattern: "hoi"}

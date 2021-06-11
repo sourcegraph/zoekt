@@ -120,9 +120,9 @@ func parseBranches(manifestRepoURL, revPrefix string, cache *gitindex.RepoCache,
 }
 
 func main() {
-	var sizeMax = flag.Int("file_limit", 128<<10, "maximum file size")
-	var shardLimit = flag.Int("shard_limit", 100<<20, "maximum corpus size for a shard")
-	var parallelism = flag.Int("parallelism", 1, "maximum number of parallel indexing processes")
+	sizeMax := flag.Int("file_limit", 128<<10, "maximum file size")
+	shardLimit := flag.Int("shard_limit", 100<<20, "maximum corpus size for a shard")
+	parallelism := flag.Int("parallelism", 1, "maximum number of parallel indexing processes")
 
 	revPrefix := flag.String("rev_prefix", "refs/remotes/origin/", "prefix for references")
 	baseURLStr := flag.String("base_url", "", "base url to interpret repository names")

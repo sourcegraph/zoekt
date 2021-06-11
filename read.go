@@ -358,7 +358,8 @@ func (d *indexData) readContentSlice(off uint32, sz uint32) ([]byte, error) {
 	// section.
 	return d.readSectionBlob(simpleSection{
 		off: d.boundariesStart + off,
-		sz:  sz})
+		sz:  sz,
+	})
 }
 
 func (d *indexData) readNewlines(i uint32, buf []uint32) ([]uint32, uint32, error) {

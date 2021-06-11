@@ -65,7 +65,7 @@ func writeArchive(w io.Writer, format string, files map[string]string) (err erro
 	for name, body := range files {
 		hdr := &tar.Header{
 			Name: name,
-			Mode: 0600,
+			Mode: 0o600,
 			Size: int64(len(body)),
 		}
 		if err := tw.WriteHeader(hdr); err != nil {

@@ -102,7 +102,7 @@ func main() {
 		client = github.NewClient(nil)
 	}
 	destDir := filepath.Join(*dest, host)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
 

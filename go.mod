@@ -3,6 +3,7 @@ module github.com/google/zoekt
 require (
 	cloud.google.com/go v0.82.0
 	github.com/andygrunwald/go-gerrit v0.0.0-20191101112536-3f5e365ccf57
+	github.com/bmatcuk/doublestar v1.3.4
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gfleury/go-bitbucket-v1 v0.0.0-20200312180434-e5170e3280fb

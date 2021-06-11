@@ -49,7 +49,7 @@ func main() {
 	name = strings.TrimSuffix(name, ".git")
 
 	destDir := filepath.Dir(filepath.Join(*dest, name))
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
 
