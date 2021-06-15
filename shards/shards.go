@@ -689,6 +689,9 @@ func (s *shardedSearcher) getShards() []rankedShard {
 
 	var res []rankedShard
 	for _, sh := range s.shards {
+		if i, ok := sh.Searcher.(zoekt.PrioritySetter); ok {
+			i.SetPriority(s.priority[sh.name])
+		}
 		res = append(res, sh)
 	}
 	sort.Slice(res, func(i, j int) bool {

@@ -227,6 +227,10 @@ func (d *indexData) calculateNewLinesStats() (count, defaultCount, otherCount ui
 
 func (d *indexData) Repository() *Repository { return &d.repoMetaData }
 
+func (d *indexData) SetPriority(priority float64) {
+	d.repoMetaData.Priority = priority
+}
+
 func (d *indexData) String() string {
 	return fmt.Sprintf("shard(%s)", d.file.Name())
 }

@@ -182,10 +182,11 @@ nextFileMatch:
 		}
 
 		fileMatch := FileMatch{
-			Repository: d.repoMetaData.Name,
-			FileName:   string(d.fileName(nextDoc)),
-			Checksum:   d.getChecksum(nextDoc),
-			Language:   d.languageMap[d.languages[nextDoc]],
+			Repository:         d.repoMetaData.Name,
+			RepositoryPriority: d.repoMetaData.Priority,
+			FileName:           string(d.fileName(nextDoc)),
+			Checksum:           d.getChecksum(nextDoc),
+			Language:           d.languageMap[d.languages[nextDoc]],
 		}
 
 		if s := d.subRepos[nextDoc]; s > 0 {

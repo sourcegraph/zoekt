@@ -27,6 +27,9 @@ type FileMatch struct {
 	// Ranking; the higher, the better.
 	Score float64 // TODO - hide this field?
 
+	// SubRepositoryScore holds the priority of the repo, if one exists.
+	RepositoryPriority float64
+
 	// For debugging. Needs DebugScore set, but public so tests in
 	// other packages can print some diagnostics.
 	Debug string
@@ -238,6 +241,9 @@ type Repository struct {
 	// Importance of the repository, bigger is more important
 	Rank uint16
 
+	// SOURCEGRAPH Priority of the repository, bigger is more important.
+	Priority float64
+
 	// IndexOptions is a hash of the options used to create the index for the
 	// repo.
 	IndexOptions string
@@ -337,6 +343,10 @@ type Searcher interface {
 
 	// Describe the searcher for debug messages.
 	String() string
+}
+
+type PrioritySetter interface {
+	SetPriority(priority float64)
 }
 
 type SearchOptions struct {
