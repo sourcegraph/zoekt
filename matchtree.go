@@ -826,7 +826,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		if s.Pattern == "HEAD" {
 			mask = 1
 		} else {
-			for nm, m := range d.branchIDs {
+			for nm, m := range d.branchIDs[0] {
 				if (s.Exact && nm == s.Pattern) || (!s.Exact && strings.Contains(nm, s.Pattern)) {
 					mask |= uint64(m)
 				}
@@ -888,9 +888,89 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			all:       regexp.String() == "(?i)(?-s:.)*",
 			matchTree: subMT,
 		}, nil
+	case *query.RepoBranches:
+		reposBranchesWant := make(map[uint16]uint64)
+		for _, r := range d.repoMetaData {
+			if branches, ok := s.Set[r.Name]; ok {
+				repoIdx, ok := d.repoMap[r.Name]
+				if !ok {
+					log.Panicf("repoMetaData not in sync with repoMap")
+				}
+				var mask uint64
+				for _, branch := range branches {
+					m, ok := d.branchIDs[repoIdx][branch]
+					if !ok {
+						continue
+					}
+					mask = mask | uint64(m)
+				}
+				if mask != 0 {
+					reposBranchesWant[repoIdx] = mask
+				}
+			}
+		}
+		pred := func(docID uint32) bool {
+			return d.fileBranchMasks[docID]&reposBranchesWant[d.repos[docID]] != 0
+		}
+		return &docMatchTree{
+			docs: d.filterDocs(pred),
+		}, nil
+
+	case *query.RepoSet:
+		var reposWant map[uint16]struct{}
+		for _, r := range d.repoMetaData {
+			if _, ok := s.Set[r.Name]; ok {
+				repoWant, ok := d.repoMap[r.Name]
+				if !ok {
+					log.Panicf("repoMetaData not in sync with repoMap")
+				}
+				reposWant[repoWant] = struct{}{}
+			}
+		}
+		// Optimization: If all repos within a shard are to be searched we can just
+		// return a bruteForceMatchTree.
+		if len(reposWant) == len(d.repoMetaData) {
+			return &bruteForceMatchTree{}, nil
+		}
+		pred := func(docID uint32) bool {
+			_, ok := reposWant[d.repos[docID]]
+			return ok
+		}
+		return &docMatchTree{
+			docs: d.filterDocs(pred),
+		}, nil
+	case *query.Repo:
+		var reposWant map[uint16]struct{}
+		for _, r := range d.repoMetaData {
+			if strings.Contains(r.Name, s.Pattern) {
+				repoWant, ok := d.repoMap[r.Name]
+				if !ok {
+					log.Panicf("repoMetaData not in sync with repoMap")
+				}
+				reposWant[repoWant] = struct{}{}
+			}
+		}
+		pred := func(docID uint32) bool {
+			_, ok := reposWant[d.repos[docID]]
+			return ok
+		}
+		return &docMatchTree{
+			docs: d.filterDocs(pred),
+		}, nil
 	}
 	log.Panicf("type %T", q)
 	return nil, nil
+}
+
+// filterDocs returns a slice those docIDs for which predicate(docID) = true.
+func (d *indexData) filterDocs(predicate func(docID uint32) bool) []uint32 {
+	docs := []uint32{}
+	for i := uint32(0); i < uint32(len(d.fileBranchMasks)); i++ {
+		if predicate(i) {
+			docs = append(docs, i)
+		}
+	}
+	return docs
 }
 
 func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error) {

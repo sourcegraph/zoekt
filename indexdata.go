@@ -69,13 +69,13 @@ type indexData struct {
 	fileBranchMasks []uint64
 
 	// mask (power of 2) => name
-	branchNames map[uint]string
+	branchNames []map[uint]string
 
 	// name => mask (power of 2)
-	branchIDs map[string]uint
+	branchIDs []map[string]uint
 
 	metaData     IndexMetadata
-	repoMetaData Repository
+	repoMetaData []Repository
 
 	subRepos     []uint32
 	subRepoPaths []string
@@ -89,7 +89,13 @@ type indexData struct {
 	// inverse of LanguageMap in metaData
 	languageMap map[byte]string
 
-	repoListEntry RepoListEntry
+	repoListEntry []RepoListEntry
+
+	// repos for all the files.
+	repos []uint16
+
+	// maps repository names to their index
+	repoMap map[string]uint16
 }
 
 type symbolData struct {
@@ -154,7 +160,8 @@ func (d *indexData) getChecksum(idx uint32) []byte {
 	return d.checksums[start : start+crc64.Size]
 }
 
-func (d *indexData) calculateStats() {
+// TODO (stefan): Calculate stats per repo.
+func (d *indexData) calculateStatsForRepoIndex(i int) RepoListEntry {
 	var last uint32
 	if len(d.boundaries) > 0 {
 		last += d.boundaries[len(d.boundaries)-1]
@@ -178,10 +185,17 @@ func (d *indexData) calculateStats() {
 		DefaultBranchNewLinesCount: defaultCount,
 		OtherBranchesNewLinesCount: otherCount,
 	}
-	d.repoListEntry = RepoListEntry{
-		Repository:    d.repoMetaData,
+	return RepoListEntry{
+		Repository:    d.repoMetaData[i],
 		IndexMetadata: d.metaData,
 		Stats:         stats,
+	}
+}
+
+func (d *indexData) calculateStats() {
+	d.repoListEntry = make([]RepoListEntry, 0, len(d.repoMetaData))
+	for i := 0; i < len(d.repoMetaData); i++ {
+		d.repoListEntry = append(d.repoListEntry, d.calculateStatsForRepoIndex(i))
 	}
 }
 
@@ -225,7 +239,7 @@ func (d *indexData) calculateNewLinesStats() (count, defaultCount, otherCount ui
 	return
 }
 
-func (d *indexData) Repository() *Repository { return &d.repoMetaData }
+func (d *indexData) Repository() []Repository { return d.repoMetaData }
 
 func (d *indexData) String() string {
 	return fmt.Sprintf("shard(%s)", d.file.Name())
