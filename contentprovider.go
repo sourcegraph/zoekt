@@ -107,8 +107,7 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 		absR += runeEnds[p.idx-1]
 	}
 
-	byteOff := sample[absR/runeOffsetFrequency]
-	left := absR % runeOffsetFrequency
+	byteOff, left := sample.lookup(absR)
 
 	var data []byte
 
