@@ -64,12 +64,12 @@ func TestReadWrite(t *testing.T) {
 		t.Errorf("got filename %q, want %q", got, "filename")
 	}
 
-	if len(data.ngrams) != 3 {
+	if len(data.ngrams.DumpMap()) != 3 {
 		t.Fatalf("got ngrams %v, want 3 ngrams", data.ngrams)
 	}
 
-	if _, ok := data.ngrams[stringToNGram("bcq")]; ok {
-		t.Errorf("found ngram bcd in %v", data.ngrams)
+	if sec := data.ngrams.Get(stringToNGram("bcq")); sec.sz > 0 {
+		t.Errorf("found ngram bcq (%v) in %v", uint64(stringToNGram("bcq")), data.ngrams)
 	}
 }
 
