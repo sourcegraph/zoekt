@@ -33,7 +33,7 @@ type indexData struct {
 
 	file IndexFile
 
-	ngrams map[ngram]simpleSection
+	ngrams arrayNgramOffset
 
 	newlinesStart uint32
 	newlinesIndex []uint32
@@ -244,7 +244,7 @@ func (d *indexData) memoryUse() int {
 	}
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
-	sz += 12 * len(d.ngrams)
+	sz += d.ngrams.SizeBytes()
 	for _, v := range d.fileNameNgrams {
 		sz += 4*len(v) + 4
 	}
@@ -282,7 +282,7 @@ func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
 		return uint32(len(data.fileNameNgrams[ng]))
 	}
 
-	return data.ngrams[ng].sz
+	return data.ngrams.Get(ng).sz
 }
 
 type ngramIterationResults struct {

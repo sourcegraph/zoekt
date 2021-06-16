@@ -139,7 +139,6 @@ func (r *reader) readJSON(data interface{}, sec *simpleSection) error {
 func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d := indexData{
 		file:           r.r,
-		ngrams:         map[ngram]simpleSection{},
 		fileNameNgrams: map[ngram][]uint32{},
 		branchIDs:      map[string]uint{},
 		branchNames:    map[uint]string{},
@@ -278,24 +277,24 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 
 const ngramEncoding = 8
 
-func (d *indexData) readNgrams(toc *indexTOC) (map[ngram]simpleSection, error) {
+func (d *indexData) readNgrams(toc *indexTOC) (arrayNgramOffset, error) {
 	textContent, err := d.readSectionBlob(toc.ngramText)
 	if err != nil {
-		return nil, err
+		return arrayNgramOffset{}, err
 	}
 	postingsIndex := toc.postings.relativeIndex()
 
-	ngrams := make(map[ngram]simpleSection, len(textContent)/ngramEncoding)
-	for i := 0; i < len(textContent); i += ngramEncoding {
-		j := i / ngramEncoding
-		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
-		ngrams[ng] = simpleSection{
-			toc.postings.data.off + postingsIndex[j],
-			postingsIndex[j+1] - postingsIndex[j],
-		}
+	for i := 0; i < len(postingsIndex); i++ {
+		postingsIndex[i] += toc.postings.data.off
 	}
 
-	return ngrams, nil
+	ngrams := make([]ngram, 0, len(textContent)/ngramEncoding)
+	for i := 0; i < len(textContent); i += ngramEncoding {
+		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
+		ngrams = append(ngrams, ng)
+	}
+
+	return makeArrayNgramOffset(ngrams, postingsIndex), nil
 }
 
 func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]uint32, error) {
@@ -456,7 +455,7 @@ func PrintNgramStats(r IndexFile) error {
 		return err
 	}
 	var rNgram [3]rune
-	for ngram, ss := range id.ngrams {
+	for ngram, ss := range id.ngrams.DumpMap() {
 		rNgram = ngramToRunes(ngram)
 		fmt.Printf("%d\t%q\n", ss.sz, string(rNgram[:]))
 	}
