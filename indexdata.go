@@ -44,7 +44,7 @@ type indexData struct {
 	runeDocSections []byte
 
 	// rune offset=>byte offset mapping, relative to the start of the content corpus
-	runeOffsets []uint32
+	runeOffsets runeOffsetMap
 
 	// offsets of file contents; includes end of last file
 	boundariesStart uint32
@@ -61,7 +61,7 @@ type indexData struct {
 	fileEndSymbol []uint32
 
 	// rune offset=>byte offset mapping, relative to the start of the filename corpus
-	fileNameRuneOffsets []uint32
+	fileNameRuneOffsets runeOffsetMap
 
 	// rune offsets for the file name boundaries
 	fileNameEndRunes []uint32
@@ -248,12 +248,13 @@ func (d *indexData) memoryUse() int {
 	for _, a := range [][]uint32{
 		d.newlinesIndex, d.docSectionsIndex,
 		d.boundaries, d.fileNameIndex,
-		d.runeOffsets, d.fileNameRuneOffsets,
 		d.fileEndRunes, d.fileNameEndRunes,
 		d.fileEndSymbol, d.symbols.symKindIndex,
 	} {
 		sz += 4 * len(a)
 	}
+	sz += d.runeOffsets.sizeBytes()
+	sz += d.fileNameRuneOffsets.sizeBytes()
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
 	sz += d.ngrams.SizeBytes()

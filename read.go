@@ -245,10 +245,12 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	}
 	d.runeDocSections = blob
 
+	var runeOffsets, fileNameRuneOffsets []uint32
+
 	for sect, dest := range map[simpleSection]*[]uint32{
 		toc.subRepos:        &d.subRepos,
-		toc.runeOffsets:     &d.runeOffsets,
-		toc.nameRuneOffsets: &d.fileNameRuneOffsets,
+		toc.runeOffsets:     &runeOffsets,
+		toc.nameRuneOffsets: &fileNameRuneOffsets,
 		toc.nameEndRunes:    &d.fileNameEndRunes,
 		toc.fileEndRunes:    &d.fileEndRunes,
 	} {
@@ -258,6 +260,9 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 			*dest = fromSizedDeltas(blob, nil)
 		}
 	}
+
+	d.runeOffsets = makeRuneOffsetMap(runeOffsets)
+	d.fileNameRuneOffsets = makeRuneOffsetMap(fileNameRuneOffsets)
 
 	d.subRepoPaths = make([][]string, 0, len(d.repoMetaData))
 	for i := 0; i < len(d.repoMetaData); i++ {
