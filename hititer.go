@@ -120,10 +120,7 @@ func (d *indexData) trigramHitIterator(ng ngram, caseSensitive, fileName bool) (
 		if fileName {
 			blob := d.fileNameNgrams[v]
 			if len(blob) > 0 {
-				iters = append(iters, &inMemoryIterator{
-					d.fileNameNgrams[v],
-					v,
-				})
+				iters = append(iters, newCompressedPostingIterator(blob, v))
 			}
 			continue
 		}

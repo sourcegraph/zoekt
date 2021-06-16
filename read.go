@@ -139,7 +139,7 @@ func (r *reader) readJSON(data interface{}, sec *simpleSection) error {
 func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d := indexData{
 		file:           r.r,
-		fileNameNgrams: map[ngram][]uint32{},
+		fileNameNgrams: map[ngram][]byte{},
 		branchIDs:      []map[string]uint{},
 		branchNames:    []map[uint]string{},
 	}
@@ -312,7 +312,7 @@ func (d *indexData) readNgrams(toc *indexTOC) (arrayNgramOffset, error) {
 	return makeArrayNgramOffset(ngrams, postingsIndex), nil
 }
 
-func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]uint32, error) {
+func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]byte, error) {
 	nameNgramText, err := d.readSectionBlob(toc.nameNgramText)
 	if err != nil {
 		return nil, err
@@ -325,13 +325,13 @@ func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]uint32, error
 
 	fileNamePostingsIndex := toc.namePostings.relativeIndex()
 
-	fileNameNgrams := make(map[ngram][]uint32, len(nameNgramText)/ngramEncoding)
+	fileNameNgrams := make(map[ngram][]byte, len(nameNgramText)/ngramEncoding)
 	for i := 0; i < len(nameNgramText); i += ngramEncoding {
 		j := i / ngramEncoding
 		off := fileNamePostingsIndex[j]
 		end := fileNamePostingsIndex[j+1]
 		ng := ngram(binary.BigEndian.Uint64(nameNgramText[i : i+ngramEncoding]))
-		fileNameNgrams[ng] = fromDeltas(fileNamePostingsData[off:end], nil)
+		fileNameNgrams[ng] = fileNamePostingsData[off:end]
 	}
 
 	return fileNameNgrams, nil
