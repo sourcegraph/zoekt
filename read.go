@@ -243,7 +243,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.runeDocSections = unmarshalDocSections(blob, nil)
+	d.runeDocSections = blob
 
 	for sect, dest := range map[simpleSection]*[]uint32{
 		toc.subRepos:        &d.subRepos,

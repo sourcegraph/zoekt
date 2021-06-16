@@ -878,7 +878,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
 				fileEndRunes:    d.fileEndRunes,
 				fileEndSymbol:   d.fileEndSymbol,
-				sections:        d.runeDocSections,
+				sections:        unmarshalDocSections(d.runeDocSections, nil),
 			}, nil
 		}
 
