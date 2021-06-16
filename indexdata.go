@@ -55,7 +55,7 @@ type indexData struct {
 
 	fileNameContent []byte
 	fileNameIndex   []uint32
-	fileNameNgrams  map[ngram][]uint32
+	fileNameNgrams  map[ngram][]byte
 
 	// fileEndSymbol[i] is the index of the first symbol for document i.
 	fileEndSymbol []uint32
@@ -257,9 +257,7 @@ func (d *indexData) memoryUse() int {
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
 	sz += d.ngrams.SizeBytes()
-	for _, v := range d.fileNameNgrams {
-		sz += 4*len(v) + 4
-	}
+	sz += 12 * len(d.fileNameNgrams) // these slices reference mmap-ed memory
 	return sz
 }
 
