@@ -51,8 +51,8 @@ func (d *indexData) simplify(in query.Q) query.Q {
 				if strings.Contains(md.Name, r.Pattern) {
 					return q
 				}
-				return &query.Const{Value: false}
 			}
+			return &query.Const{Value: false}
 		case *query.RepoBranches:
 			if simpleShard {
 				return r.Branches(d.repoMetaData[0].Name)
@@ -63,7 +63,6 @@ func (d *indexData) simplify(in query.Q) query.Q {
 				}
 			}
 			return &query.Const{Value: false}
-
 		case *query.RepoSet:
 			if simpleShard {
 				return &query.Const{Value: r.Set[d.repoMetaData[0].Name]}
