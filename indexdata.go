@@ -91,7 +91,7 @@ type indexData struct {
 
 	repoListEntry []RepoListEntry
 
-	// repository indexes for all the files.
+	// repository indexes for all the files
 	repos []uint16
 
 	// maps repository names to their index
@@ -160,7 +160,8 @@ func (d *indexData) getChecksum(idx uint32) []byte {
 	return d.checksums[start : start+crc64.Size]
 }
 
-// TODO (stefan): Calculate stats per repo.
+// TODO (stefan): Update this function to return meaningful stats for compound
+// shards.
 func (d *indexData) calculateStatsForRepoIndex(i int) RepoListEntry {
 	var last uint32
 	if len(d.boundaries) > 0 {

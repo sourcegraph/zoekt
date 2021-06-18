@@ -293,7 +293,8 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	// This is a hack for now. We should store it in the shard with indexBuilder.
+	// This is a hack for now. We should store "repos" in the shard with
+	// indexBuilder.
 	repos := make([]uint16, 0, len(d.fileBranchMasks))
 	for i := 0; i < len(d.fileBranchMasks); i++ {
 		repos = append(repos, 0) // just support 1 repo for now.
