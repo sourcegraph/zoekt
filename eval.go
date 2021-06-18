@@ -44,11 +44,11 @@ func (d *indexData) simplify(in query.Q) query.Q {
 	eval := query.Map(in, func(q query.Q) query.Q {
 		switch r := q.(type) {
 		case *query.Repo:
-			if simpleShard {
-				return &query.Const{Value: strings.Contains(d.repoMetaData[0].Name, r.Pattern)}
-			}
 			for _, md := range d.repoMetaData {
 				if strings.Contains(md.Name, r.Pattern) {
+					if simpleShard {
+						return &query.Const{Value: true}
+					}
 					return q
 				}
 			}
@@ -64,11 +64,11 @@ func (d *indexData) simplify(in query.Q) query.Q {
 			}
 			return &query.Const{Value: false}
 		case *query.RepoSet:
-			if simpleShard {
-				return &query.Const{Value: r.Set[d.repoMetaData[0].Name]}
-			}
 			for _, md := range d.repoMetaData {
 				if r.Set[md.Name] {
+					if simpleShard {
+						return &query.Const{Value: true}
+					}
 					return q
 				}
 			}
