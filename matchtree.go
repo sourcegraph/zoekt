@@ -897,6 +897,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			all:       regexp.String() == "(?i)(?-s:.)*",
 			matchTree: subMT,
 		}, nil
+
 	case *query.RepoBranches:
 		reposBranchesWant := make(map[uint16]uint64)
 		for _, r := range d.repoMetaData {
@@ -948,6 +949,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		return &docMatchTree{
 			docs: d.filterDocs(pred),
 		}, nil
+
 	case *query.Repo:
 		var reposWant map[uint16]struct{}
 		for _, r := range d.repoMetaData {
@@ -971,9 +973,9 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 	return nil, nil
 }
 
-// filterDocs returns a slice those docIDs for which predicate(docID) = true.
+// filterDocs returns a slice of those docIDs for which predicate(docID) = true.
 func (d *indexData) filterDocs(predicate func(docID uint32) bool) []uint32 {
-	docs := []uint32{}
+	var docs []uint32
 	for i := uint32(0); i < uint32(len(d.fileBranchMasks)); i++ {
 		if predicate(i) {
 			docs = append(docs, i)

@@ -218,10 +218,10 @@ nextFileMatch:
 		}
 
 		if s := d.subRepos[nextDoc]; s > 0 {
-			if s >= uint32(len(d.subRepoPaths)) {
+			if s >= uint32(len(d.subRepoPaths[d.repos[nextDoc]])) {
 				log.Panicf("corrupt index: subrepo %d beyond %v", s, d.subRepoPaths)
 			}
-			path := d.subRepoPaths[s]
+			path := d.subRepoPaths[d.repos[nextDoc]][s]
 			fileMatch.SubRepositoryPath = path
 			sr := md.SubRepoMap[path]
 			fileMatch.SubRepositoryName = sr.Name
@@ -419,7 +419,7 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 		id := uint32(1)
 		for mask != 0 {
 			if mask&0x1 != 0 {
-				branches = append(branches, d.branchNames[d.repos[docID]][uint(id)])
+				branches = append(branches, d.branchNames[repoIdx][uint(id)])
 			}
 			id <<= 1
 			mask >>= 1

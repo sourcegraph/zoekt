@@ -78,7 +78,7 @@ type indexData struct {
 	repoMetaData []Repository
 
 	subRepos     []uint32
-	subRepoPaths []string
+	subRepoPaths [][]string
 
 	// Checksums for all the files, at 8-byte intervals
 	checksums []byte
@@ -91,7 +91,7 @@ type indexData struct {
 
 	repoListEntry []RepoListEntry
 
-	// repos for all the files.
+	// repository indexes for all the files.
 	repos []uint16
 
 	// maps repository names to their index

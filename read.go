@@ -168,10 +168,9 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	// Not required once all shards are saved a lists of objects.
+	// This is not required once all shards save repoMetaData as lists.
 	x := bytes.TrimLeft(blob, " \t\r\n")
 	isObject := len(x) > 0 && x[0] == '{'
-
 	if isObject {
 		d.repoMetaData = make([]Repository, 1)
 		if err := json.Unmarshal(blob, &d.repoMetaData[0]); err != nil {
@@ -275,13 +274,14 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		}
 	}
 
+	d.subRepoPaths = make([][]string, 0, len(d.repoMetaData))
 	for i := 0; i < len(d.repoMetaData); i++ {
-		var keys []string
+		keys := make([]string, 0, len(d.repoMetaData[i].SubRepoMap))
 		for k := range d.repoMetaData[i].SubRepoMap {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		d.subRepoPaths = append(d.subRepoPaths, keys...)
+		d.subRepoPaths = append(d.subRepoPaths, keys)
 	}
 
 	d.languageMap = map[byte]string{}
