@@ -15,7 +15,6 @@
 package zoekt
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -168,18 +167,9 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	// This is not required once all shards save repoMetaData as lists.
-	x := bytes.TrimLeft(blob, " \t\r\n")
-	isObject := len(x) > 0 && x[0] == '{'
-	if isObject {
-		d.repoMetaData = make([]Repository, 1)
-		if err := json.Unmarshal(blob, &d.repoMetaData[0]); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := json.Unmarshal(blob, &d.repoMetaData); err != nil {
-			return nil, err
-		}
+	d.repoMetaData = make([]Repository, 1)
+	if err := json.Unmarshal(blob, &d.repoMetaData[0]); err != nil {
+		return nil, err
 	}
 
 	d.boundariesStart = toc.fileContents.data.off
