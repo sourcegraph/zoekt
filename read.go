@@ -293,14 +293,14 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	// This is a hack for now. We should read this from disk.
+	// This is a hack for now. We should store it in the shard with indexBuilder.
 	repos := make([]uint16, 0, len(d.fileBranchMasks))
 	for i := 0; i < len(d.fileBranchMasks); i++ {
 		repos = append(repos, 0) // just support 1 repo for now.
 	}
 	d.repos = repos
 
-	// This doesn't need to be stored on disk. It can be recreated on read.
+	// This doesn't need to be stored on disk. We can recreate it on read.
 	rm := make(map[string]uint16)
 	for i, md := range d.repoMetaData {
 		rm[md.Name] = uint16(i)

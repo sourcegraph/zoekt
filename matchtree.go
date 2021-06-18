@@ -146,7 +146,8 @@ type substrMatchTree struct {
 
 type branchQueryMatchTree struct {
 	fileMasks []uint64
-	mask      uint64
+	masks     []uint64
+	repos     []uint16
 
 	// mutable
 	firstDone bool
@@ -380,7 +381,7 @@ func (t *branchQueryMatchTree) nextDoc() uint32 {
 	}
 
 	for i := start; i < uint32(len(t.fileMasks)); i++ {
-		if (t.mask & t.fileMasks[i]) != 0 {
+		if (t.masks[t.repos[i]] & t.fileMasks[i]) != 0 {
 			return i
 		}
 	}
@@ -427,7 +428,7 @@ func (t *substrMatchTree) String() string {
 }
 
 func (t *branchQueryMatchTree) String() string {
-	return fmt.Sprintf("branch(%x)", t.mask)
+	return fmt.Sprintf("branch(%x)", t.masks)
 }
 
 func (t *symbolSubstrMatchTree) String() string {
@@ -623,7 +624,7 @@ func (t *orMatchTree) matches(cp *contentProvider, cost int, known map[matchTree
 }
 
 func (t *branchQueryMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
-	return t.fileMasks[t.docID]&t.mask != 0, true
+	return t.fileMasks[t.docID]&t.masks[t.repos[cp.idx]] != 0, true
 }
 
 func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
@@ -822,19 +823,27 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		return d.newSubstringMatchTree(s)
 
 	case *query.Branch:
-		mask := uint64(0)
+		masks := make([]uint64, 0, len(d.repoMetaData))
 		if s.Pattern == "HEAD" {
-			mask = 1
-		} else {
-			for nm, m := range d.branchIDs[0] {
-				if (s.Exact && nm == s.Pattern) || (!s.Exact && strings.Contains(nm, s.Pattern)) {
-					mask |= uint64(m)
-				}
+			for i := 0; i < len(d.repoMetaData); i++ {
+				masks = append(masks, 1)
 			}
+		} else {
+			for _, branchIDs := range d.branchIDs {
+				mask := uint64(0)
+				for nm, m := range branchIDs {
+					if (s.Exact && nm == s.Pattern) || (!s.Exact && strings.Contains(nm, s.Pattern)) {
+						mask |= uint64(m)
+					}
+				}
+				masks = append(masks, mask)
+			}
+
 		}
 		return &branchQueryMatchTree{
-			mask:      mask,
+			masks:     masks,
 			fileMasks: d.fileBranchMasks,
+			repos:     d.repos,
 		}, nil
 	case *query.Const:
 		if s.Value {

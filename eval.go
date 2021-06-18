@@ -404,13 +404,13 @@ func (d *indexData) branchIndex(docID uint32) int {
 func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTree]bool) []string {
 	foundBranchQuery := false
 	var branches []string
-
+	repoIdx := d.repos[docID]
 	visitMatches(mt, known, func(mt matchTree) {
 		bq, ok := mt.(*branchQueryMatchTree)
 		if ok {
 			foundBranchQuery = true
 			branches = append(branches,
-				d.branchNames[d.repos[docID]][uint(bq.mask)])
+				d.branchNames[repoIdx][uint(bq.masks[repoIdx])])
 		}
 	})
 
