@@ -318,10 +318,10 @@ func (r *reader) readMetadata(toc *indexTOC) (*Repository, *IndexMetadata, error
 
 const ngramEncoding = 8
 
-func (d *indexData) readNgrams(toc *indexTOC) (arrayNgramOffset, error) {
+func (d *indexData) readNgrams(toc *indexTOC) (combinedNgramOffset, error) {
 	textContent, err := d.readSectionBlob(toc.ngramText)
 	if err != nil {
-		return arrayNgramOffset{}, err
+		return combinedNgramOffset{}, err
 	}
 	postingsIndex := toc.postings.relativeIndex()
 
@@ -335,7 +335,7 @@ func (d *indexData) readNgrams(toc *indexTOC) (arrayNgramOffset, error) {
 		ngrams = append(ngrams, ng)
 	}
 
-	return makeArrayNgramOffset(ngrams, postingsIndex), nil
+	return makeCombinedNgramOffset(ngrams, postingsIndex), nil
 }
 
 func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]byte, error) {
