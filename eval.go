@@ -39,7 +39,7 @@ func (m *FileMatch) addScore(what string, s float64) {
 	m.Score += s
 }
 
-// simplifyMultiRepo takes a query and a predicate. It return Const(true) if all
+// simplifyMultiRepo takes a query and a predicate. It returns Const(true) if all
 // repository names fulfill the predicate, Const(false) if none of them do, and q
 // otherwise.
 func (d *indexData) simplifyMultiRepo(q query.Q, predicate func(repoName string) bool) query.Q {

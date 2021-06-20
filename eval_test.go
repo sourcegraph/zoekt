@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt/query"
 )
 
@@ -123,5 +124,92 @@ func TestRegexpParse(t *testing.T) {
 			printRegexp(t, r, 0)
 			t.Errorf("regexpToQuery(%q): got %v, want %v", c.in, isEq, c.isEquivalent)
 		}
+	}
+}
+
+func TestSimplifyRepoSet(t *testing.T) {
+	d := &indexData{
+		repoMetaData: []Repository{{Name: "foo"}, {Name: "bar"}},
+	}
+	all := &query.RepoSet{Set: map[string]bool{"foo": true, "bar": true}}
+	some := &query.RepoSet{Set: map[string]bool{"foo": true, "banana": true}}
+	none := &query.RepoSet{Set: map[string]bool{"banana": true}}
+
+	got := d.simplify(all)
+	if d := cmp.Diff(&query.Const{Value: true}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+
+	got = d.simplify(some)
+	if d := cmp.Diff(some, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+
+	got = d.simplify(none)
+	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+}
+
+func TestSimplifyRepo(t *testing.T) {
+	d := &indexData{
+		repoMetaData: []Repository{{Name: "foo"}, {Name: "fool"}},
+	}
+	all := &query.Repo{"foo"}
+	some := &query.Repo{"fool"}
+	none := &query.Repo{"bar"}
+
+	got := d.simplify(all)
+	if d := cmp.Diff(&query.Const{Value: true}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+
+	got = d.simplify(some)
+	if d := cmp.Diff(some, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+
+	got = d.simplify(none)
+	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+}
+
+func TestSimplifyRepoBranch(t *testing.T) {
+	d := &indexData{
+		repoMetaData: []Repository{{Name: "foo"}, {Name: "bar"}},
+	}
+
+	some := &query.RepoBranches{Set: map[string][]string{"bar": {"branch1"}}}
+	none := &query.Repo{"banana"}
+
+	got := d.simplify(some)
+	if d := cmp.Diff(some, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+
+	got = d.simplify(none)
+	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+}
+
+func TestSimplifyRepoBranchSimple(t *testing.T) {
+	d := &indexData{
+		repoMetaData: []Repository{{Name: "foo"}},
+	}
+	q := &query.RepoBranches{Set: map[string][]string{"foo": {"HEAD", "b1"}, "bar": {"HEAD"}}}
+
+	want := &query.Or{[]query.Q{&query.Branch{
+		Pattern: "HEAD",
+		Exact:   true,
+	}, &query.Branch{
+		Pattern: "b1",
+		Exact:   true,
+	}}}
+
+	got := d.simplify(q)
+	if d := cmp.Diff(want, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
 	}
 }
