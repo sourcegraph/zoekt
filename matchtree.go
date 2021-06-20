@@ -899,13 +899,9 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}, nil
 
 	case *query.RepoBranches:
-		reposBranchesWant := make(map[uint16]uint64)
-		for _, r := range d.repoMetaData {
+		reposBranchesWant := make([]uint64, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
 			if branches, ok := s.Set[r.Name]; ok {
-				repoIdx, ok := d.repoMap[r.Name]
-				if !ok {
-					log.Panicf("repoMetaData not in sync with repoMap")
-				}
 				var mask uint64
 				for _, branch := range branches {
 					m, ok := d.branchIDs[repoIdx][branch]
@@ -914,9 +910,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 					}
 					mask = mask | uint64(m)
 				}
-				if mask != 0 {
-					reposBranchesWant[repoIdx] = mask
-				}
+				reposBranchesWant[repoIdx] = mask
 			}
 		}
 		pred := func(docID uint32) bool {
@@ -927,43 +921,28 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}, nil
 
 	case *query.RepoSet:
-		var reposWant map[uint16]struct{}
-		for _, r := range d.repoMetaData {
+		reposWant := make([]bool, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
 			if _, ok := s.Set[r.Name]; ok {
-				repoWant, ok := d.repoMap[r.Name]
-				if !ok {
-					log.Panicf("repoMetaData not in sync with repoMap")
-				}
-				reposWant[repoWant] = struct{}{}
+				reposWant[repoIdx] = true
 			}
 		}
-		// Optimization: If all repos within a shard are to be searched we can just
-		// return a bruteForceMatchTree.
-		if len(reposWant) == len(d.repoMetaData) {
-			return &bruteForceMatchTree{}, nil
-		}
 		pred := func(docID uint32) bool {
-			_, ok := reposWant[d.repos[docID]]
-			return ok
+			return reposWant[d.repos[docID]]
 		}
 		return &docMatchTree{
 			docs: d.filterDocs(pred),
 		}, nil
 
 	case *query.Repo:
-		var reposWant map[uint16]struct{}
-		for _, r := range d.repoMetaData {
+		reposWant := make([]bool, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
 			if strings.Contains(r.Name, s.Pattern) {
-				repoWant, ok := d.repoMap[r.Name]
-				if !ok {
-					log.Panicf("repoMetaData not in sync with repoMap")
-				}
-				reposWant[repoWant] = struct{}{}
+				reposWant[repoIdx] = true
 			}
 		}
 		pred := func(docID uint32) bool {
-			_, ok := reposWant[d.repos[docID]]
-			return ok
+			return reposWant[d.repos[docID]]
 		}
 		return &docMatchTree{
 			docs: d.filterDocs(pred),
