@@ -291,13 +291,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	}
 	d.repos = repos
 
-	// This doesn't need to be stored on disk. We can recreate it on read.
-	rm := make(map[string]uint16)
-	for i, md := range d.repoMetaData {
-		rm[md.Name] = uint16(i)
-	}
-	d.repoMap = rm
-
 	d.calculateStats()
 	return &d, nil
 }

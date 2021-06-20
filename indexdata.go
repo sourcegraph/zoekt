@@ -93,9 +93,6 @@ type indexData struct {
 
 	// repository indexes for all the files
 	repos []uint16
-
-	// maps repository names to their index
-	repoMap map[string]uint16
 }
 
 type symbolData struct {
