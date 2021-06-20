@@ -39,20 +39,34 @@ func (m *FileMatch) addScore(what string, s float64) {
 	m.Score += s
 }
 
+// simplifyMultiRepo takes a query and a predicate. It return Const(true) if all
+// repository names fulfill the predicate, Const(false) if none of them do, and q
+// otherwise.
+func (d *indexData) simplifyMultiRepo(q query.Q, predicate func(repoName string) bool) query.Q {
+	count := 0
+	for _, md := range d.repoMetaData {
+		if predicate(md.Name) {
+			count++
+		}
+	}
+	if count == len(d.repoMetaData) {
+		return &query.Const{Value: true}
+	}
+	if count > 0 {
+		return q
+	}
+	return &query.Const{Value: false}
+}
+
 func (d *indexData) simplify(in query.Q) query.Q {
 	simpleShard := len(d.repoMetaData) == 1
 	eval := query.Map(in, func(q query.Q) query.Q {
 		switch r := q.(type) {
 		case *query.Repo:
-			for _, md := range d.repoMetaData {
-				if strings.Contains(md.Name, r.Pattern) {
-					if simpleShard {
-						return &query.Const{Value: true}
-					}
-					return q
-				}
+			if simpleShard {
+				return &query.Const{Value: strings.Contains(d.repoMetaData[0].Name, r.Pattern)}
 			}
-			return &query.Const{Value: false}
+			return d.simplifyMultiRepo(in, func(name string) bool { return strings.Contains(name, r.Pattern) })
 		case *query.RepoBranches:
 			if simpleShard {
 				return r.Branches(d.repoMetaData[0].Name)
@@ -64,15 +78,10 @@ func (d *indexData) simplify(in query.Q) query.Q {
 			}
 			return &query.Const{Value: false}
 		case *query.RepoSet:
-			for _, md := range d.repoMetaData {
-				if r.Set[md.Name] {
-					if simpleShard {
-						return &query.Const{Value: true}
-					}
-					return q
-				}
+			if simpleShard {
+				return &query.Const{Value: r.Set[d.repoMetaData[0].Name]}
 			}
-			return &query.Const{Value: false}
+			return d.simplifyMultiRepo(in, func(name string) bool { return r.Set[name] })
 		case *query.Language:
 			_, has := d.metaData.LanguageMap[r.Language]
 			if !has {
@@ -462,8 +471,8 @@ func (d *indexData) List(ctx context.Context, q query.Q) (rl *RepoList, err erro
 // include is true. Otherwise it returns an empty list.
 func (d *indexData) maybeRepoList(include bool) *RepoList {
 	l := &RepoList{}
-	l.Repos = make([]*RepoListEntry, 0, len(d.repoListEntry))
 	if include {
+		l.Repos = make([]*RepoListEntry, 0, len(d.repoListEntry))
 		for _, rle := range d.repoListEntry {
 			l.Repos = append(l.Repos, &rle)
 		}
