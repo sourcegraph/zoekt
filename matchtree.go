@@ -624,7 +624,7 @@ func (t *orMatchTree) matches(cp *contentProvider, cost int, known map[matchTree
 }
 
 func (t *branchQueryMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
-	return t.fileMasks[t.docID]&t.masks[t.repos[cp.idx]] != 0, true
+	return t.fileMasks[t.docID]&t.masks[t.repos[t.docID]] != 0, true
 }
 
 func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
