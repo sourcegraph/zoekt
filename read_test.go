@@ -142,7 +142,7 @@ func TestReadSearch(t *testing.T) {
 		&query.Symbol{Expr: &query.Regexp{Regexp: mustParseRE("sage$")}},
 	}
 
-	shards := []string{"ctagsrepo_v16.00000", "repo_v15.00000", "repo_v16.00000"}
+	shards := []string{"ctagsrepo_v16.00000", "repo_v16.00000"}
 	for _, name := range shards {
 		shard, err := loadShard("testdata/shards/" + name + ".zoekt")
 		if err != nil {
