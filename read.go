@@ -141,8 +141,8 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		file:           r.r,
 		ngrams:         map[ngram]simpleSection{},
 		fileNameNgrams: map[ngram][]uint32{},
-		branchIDs:      map[string]uint{},
-		branchNames:    map[uint]string{},
+		branchIDs:      []map[string]uint{},
+		branchNames:    []map[uint]string{},
 	}
 
 	blob, err := d.readSectionBlob(toc.metaData)
@@ -166,7 +166,9 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(blob, &d.repoMetaData); err != nil {
+
+	d.repoMetaData = make([]Repository, 1)
+	if err := json.Unmarshal(blob, &d.repoMetaData[0]); err != nil {
 		return nil, err
 	}
 
@@ -230,10 +232,16 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	for j, br := range d.repoMetaData.Branches {
-		id := uint(1) << uint(j)
-		d.branchIDs[br.Name] = id
-		d.branchNames[id] = br.Name
+	for _, md := range d.repoMetaData {
+		repoBranchIDs := make(map[string]uint, len(md.Branches))
+		repoBranchNames := make(map[uint]string, len(md.Branches))
+		for j, br := range md.Branches {
+			id := uint(1) << uint(j)
+			repoBranchIDs[br.Name] = id
+			repoBranchNames[id] = br.Name
+		}
+		d.branchIDs = append(d.branchIDs, repoBranchIDs)
+		d.branchNames = append(d.branchNames, repoBranchNames)
 	}
 
 	blob, err = d.readSectionBlob(toc.runeDocSections)
@@ -256,12 +264,15 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		}
 	}
 
-	var keys []string
-	for k := range d.repoMetaData.SubRepoMap {
-		keys = append(keys, k)
+	d.subRepoPaths = make([][]string, 0, len(d.repoMetaData))
+	for i := 0; i < len(d.repoMetaData); i++ {
+		keys := make([]string, 0, len(d.repoMetaData[i].SubRepoMap))
+		for k := range d.repoMetaData[i].SubRepoMap {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		d.subRepoPaths = append(d.subRepoPaths, keys)
 	}
-	sort.Strings(keys)
-	d.subRepoPaths = keys
 
 	d.languageMap = map[byte]string{}
 	for k, v := range d.metaData.LanguageMap {
@@ -271,6 +282,14 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	if err := d.verify(); err != nil {
 		return nil, err
 	}
+
+	// This is a hack for now to keep the shard format unchanged. To support shard
+	// merging we will store "repos" in the shard.
+	repos := make([]uint16, 0, len(d.fileBranchMasks))
+	for i := 0; i < len(d.fileBranchMasks); i++ {
+		repos = append(repos, 0) // just support 1 repo for now.
+	}
+	d.repos = repos
 
 	d.calculateStats()
 	return &d, nil

@@ -39,15 +39,49 @@ func (m *FileMatch) addScore(what string, s float64) {
 	m.Score += s
 }
 
+// simplifyMultiRepo takes a query and a predicate. It returns Const(true) if all
+// repository names fulfill the predicate, Const(false) if none of them do, and q
+// otherwise.
+func (d *indexData) simplifyMultiRepo(q query.Q, predicate func(repoName string) bool) query.Q {
+	count := 0
+	for _, md := range d.repoMetaData {
+		if predicate(md.Name) {
+			count++
+		}
+	}
+	if count == len(d.repoMetaData) {
+		return &query.Const{Value: true}
+	}
+	if count > 0 {
+		return q
+	}
+	return &query.Const{Value: false}
+}
+
 func (d *indexData) simplify(in query.Q) query.Q {
+	simpleShard := len(d.repoMetaData) == 1
 	eval := query.Map(in, func(q query.Q) query.Q {
 		switch r := q.(type) {
 		case *query.Repo:
-			return &query.Const{Value: strings.Contains(d.repoMetaData.Name, r.Pattern)}
+			if simpleShard {
+				return &query.Const{Value: strings.Contains(d.repoMetaData[0].Name, r.Pattern)}
+			}
+			return d.simplifyMultiRepo(in, func(name string) bool { return strings.Contains(name, r.Pattern) })
 		case *query.RepoBranches:
-			return r.Branches(d.repoMetaData.Name)
+			if simpleShard {
+				return r.Branches(d.repoMetaData[0].Name)
+			}
+			for _, md := range d.repoMetaData {
+				if _, ok := r.Set[md.Name]; ok {
+					return q
+				}
+			}
+			return &query.Const{Value: false}
 		case *query.RepoSet:
-			return &query.Const{Value: r.Set[d.repoMetaData.Name]}
+			if simpleShard {
+				return &query.Const{Value: r.Set[d.repoMetaData[0].Name]}
+			}
+			return d.simplifyMultiRepo(in, func(name string) bool { return r.Set[name] })
 		case *query.Language:
 			_, has := d.metaData.LanguageMap[r.Language]
 			if !has {
@@ -159,7 +193,7 @@ nextFileMatch:
 
 		if canceled || (res.Stats.MatchCount >= opts.ShardMaxMatchCount && opts.ShardMaxMatchCount > 0) ||
 			(opts.ShardMaxImportantMatch > 0 && importantMatchCount >= opts.ShardMaxImportantMatch) {
-			res.Stats.FilesSkipped += d.repoListEntry.Stats.Documents - lastDoc
+			res.Stats.FilesSkipped += d.repoListEntry[d.repos[nextDoc]].Stats.Documents - lastDoc
 			break
 		}
 
@@ -169,6 +203,9 @@ nextFileMatch:
 		cp.setDocument(nextDoc)
 
 		known := make(map[matchTree]bool)
+
+		md := d.repoMetaData[d.repos[nextDoc]]
+
 		for cost := costMin; cost <= costMax; cost++ {
 			v, ok := mt.matches(cp, cost, known)
 			if ok && !v {
@@ -177,24 +214,24 @@ nextFileMatch:
 
 			if cost == costMax && !ok {
 				log.Panicf("did not decide. Repo %s, doc %d, known %v",
-					d.repoMetaData.Name, nextDoc, known)
+					md.Name, nextDoc, known)
 			}
 		}
 
 		fileMatch := FileMatch{
-			Repository: d.repoMetaData.Name,
+			Repository: md.Name,
 			FileName:   string(d.fileName(nextDoc)),
 			Checksum:   d.getChecksum(nextDoc),
 			Language:   d.languageMap[d.languages[nextDoc]],
 		}
 
 		if s := d.subRepos[nextDoc]; s > 0 {
-			if s >= uint32(len(d.subRepoPaths)) {
+			if s >= uint32(len(d.subRepoPaths[d.repos[nextDoc]])) {
 				log.Panicf("corrupt index: subrepo %d beyond %v", s, d.subRepoPaths)
 			}
-			path := d.subRepoPaths[s]
+			path := d.subRepoPaths[d.repos[nextDoc]][s]
 			fileMatch.SubRepositoryPath = path
-			sr := d.repoMetaData.SubRepoMap[path]
+			sr := md.SubRepoMap[path]
 			fileMatch.SubRepositoryName = sr.Name
 			if idx := d.branchIndex(nextDoc); idx >= 0 {
 				fileMatch.Version = sr.Branches[idx].Version
@@ -202,7 +239,7 @@ nextFileMatch:
 		} else {
 			idx := d.branchIndex(nextDoc)
 			if idx >= 0 {
-				fileMatch.Version = d.repoMetaData.Branches[idx].Version
+				fileMatch.Version = md.Branches[idx].Version
 			}
 		}
 
@@ -246,7 +283,7 @@ nextFileMatch:
 
 		// Prefer earlier docs.
 		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))))
-		fileMatch.addScore("shard-order", scoreShardRankFactor*float64(d.repoMetaData.Rank)/maxUInt16)
+		fileMatch.addScore("shard-order", scoreShardRankFactor*float64(md.Rank)/maxUInt16)
 
 		if fileMatch.Score > scoreImportantThreshold {
 			importantMatchCount++
@@ -263,9 +300,12 @@ nextFileMatch:
 	}
 	SortFilesByScore(res.Files)
 
-	addRepo(&res, &d.repoMetaData)
-	for _, v := range d.repoMetaData.SubRepoMap {
-		addRepo(&res, v)
+	for _, md := range d.repoMetaData {
+		r := md
+		addRepo(&res, &r)
+		for _, v := range r.SubRepoMap {
+			addRepo(&res, v)
+		}
 	}
 
 	visitMatchTree(mt, func(mt matchTree) {
@@ -372,13 +412,13 @@ func (d *indexData) branchIndex(docID uint32) int {
 func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTree]bool) []string {
 	foundBranchQuery := false
 	var branches []string
-
+	repoIdx := d.repos[docID]
 	visitMatches(mt, known, func(mt matchTree) {
 		bq, ok := mt.(*branchQueryMatchTree)
 		if ok {
 			foundBranchQuery = true
 			branches = append(branches,
-				d.branchNames[uint(bq.mask)])
+				d.branchNames[repoIdx][uint(bq.masks[repoIdx])])
 		}
 	})
 
@@ -387,7 +427,7 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 		id := uint32(1)
 		for mask != 0 {
 			if mask&0x1 != 0 {
-				branches = append(branches, d.branchNames[uint(id)])
+				branches = append(branches, d.branchNames[repoIdx][uint(id)])
 			}
 			id <<= 1
 			mask >>= 1
@@ -432,7 +472,10 @@ func (d *indexData) List(ctx context.Context, q query.Q) (rl *RepoList, err erro
 func (d *indexData) maybeRepoList(include bool) *RepoList {
 	l := &RepoList{}
 	if include {
-		l.Repos = append(l.Repos, &d.repoListEntry)
+		l.Repos = make([]*RepoListEntry, 0, len(d.repoListEntry))
+		for _, rle := range d.repoListEntry {
+			l.Repos = append(l.Repos, &rle)
+		}
 	}
 	return l
 }
