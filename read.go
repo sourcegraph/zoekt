@@ -77,7 +77,7 @@ func (r *reader) readTOC(toc *indexTOC) error {
 		return err
 	}
 
-	secs := toc.sectionsHACK(sectionCount)
+	secs := toc.sections()
 
 	if len(secs) != int(sectionCount) {
 		return fmt.Errorf("section count mismatch: got %d want %d", sectionCount, len(secs))
@@ -154,11 +154,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	ensureSourcegraphSymbolsHack()
-
-	// Once we are not on version 16 use this code again
-	// if d.metaData.IndexFormatVersion != IndexFormatVersion {
-	if d.metaData.IndexFormatVersion != 16 && d.metaData.IndexFormatVersion != 15 {
+	if d.metaData.IndexFormatVersion != IndexFormatVersion {
 		return nil, fmt.Errorf("file is v%d, want v%d", d.metaData.IndexFormatVersion, IndexFormatVersion)
 	}
 
