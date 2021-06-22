@@ -591,7 +591,7 @@ type shardListResult struct {
 	err error
 }
 
-func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, sink chan shardListResult) {
+func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.ListOptions, sink chan shardListResult) {
 	metricListShardRunning.Inc()
 	defer func() {
 		metricListShardRunning.Dec()
@@ -603,7 +603,7 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, sink chan sh
 		}
 	}()
 
-	ms, err := s.List(ctx, q, nil)
+	ms, err := s.List(ctx, q, opts)
 	sink <- shardListResult{ms, err}
 }
 
@@ -647,7 +647,7 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		go func() {
 			for s := range feeder {
-				listOneShard(ctx, s, r, all)
+				listOneShard(ctx, s, r, opts, all)
 			}
 		}()
 	}
@@ -670,8 +670,8 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		for _, r := range r.rl.Repos {
 			prev, ok := uniq[r.Repository.Name]
 			if !ok {
-				// No need to make copy since r's value is already a pointer.
-				uniq[r.Repository.Name] = r
+				cp := *r // We need to copy because we mutate r.Stats when merging duplicates
+				uniq[r.Repository.Name] = &cp
 			} else {
 				prev.Stats.Add(&r.Stats)
 			}
