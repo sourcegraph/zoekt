@@ -475,13 +475,13 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 		}
 	}
 
-	l := RepoList{
-		Repos:   make([]*RepoListEntry, 0, len(d.repoListEntry)),
-	}
+	var l RepoList
 
 	minimal := opts != nil && opts.Minimal
 	if minimal {
 		l.Minimal = make(map[uint32]*MinimalRepoListEntry, len(d.repoListEntry))
+	} else {
+		l.Repos = make([]*RepoListEntry, 0, len(d.repoListEntry))
 	}
 
 	for i := range d.repoListEntry {
