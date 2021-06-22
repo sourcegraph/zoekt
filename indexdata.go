@@ -171,7 +171,7 @@ func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoListEntry 
 
 	lastFN := last
 	if len(d.fileNameIndex) > int(end) {
-		lastFN = d.fileNameIndex[len(d.fileNameIndex)-1]
+		lastFN = d.fileNameIndex[end]
 	}
 
 	count, defaultCount, otherCount := d.calculateNewLinesStats(start, end)
