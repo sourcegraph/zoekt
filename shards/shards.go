@@ -603,11 +603,11 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, sink chan sh
 		}
 	}()
 
-	ms, err := s.List(ctx, q)
+	ms, err := s.List(ctx, q, nil)
 	sink <- shardListResult{ms, err}
 }
 
-func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
+func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.List", "")
 	tr.LazyLog(r, true)
 	metricListRunning.Inc()
@@ -715,7 +715,7 @@ func (s *shardedSearcher) getShards() []rankedShard {
 
 func shardName(s zoekt.Searcher) string {
 	q := query.Repo{}
-	result, err := s.List(context.Background(), &q)
+	result, err := s.List(context.Background(), &q, nil)
 	if err != nil {
 		return ""
 	}

@@ -318,7 +318,7 @@ func (s *Server) fetchStats(ctx context.Context) (*zoekt.RepoStats, error) {
 		return stats, nil
 	}
 
-	repos, err := s.Searcher.List(ctx, &query.Const{Value: true})
+	repos, err := s.Searcher.List(ctx, &query.Const{Value: true}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +409,7 @@ func (s *Server) serveAbout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveListReposErr(q query.Q, qStr string, w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	repos, err := s.Searcher.List(ctx, q)
+	repos, err := s.Searcher.List(ctx, q, nil)
 	if err != nil {
 		return err
 	}

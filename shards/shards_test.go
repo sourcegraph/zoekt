@@ -34,7 +34,7 @@ func (s *crashSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Searc
 	panic("search")
 }
 
-func (s *crashSearcher) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
+func (s *crashSearcher) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (*zoekt.RepoList, error) {
 	panic("list")
 }
 
@@ -63,7 +63,7 @@ func TestCrashResilience(t *testing.T) {
 		t.Errorf("got stats %#v, want crashes = 1", res.Stats)
 	}
 
-	if res, err := ss.List(context.Background(), q); err != nil {
+	if res, err := ss.List(context.Background(), q, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	} else if res.Crashes != 1 {
 		t.Errorf("got result %#v, want crashes = 1", res)
@@ -105,7 +105,7 @@ func (s *rankSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Search
 	}, nil
 }
 
-func (s *rankSearcher) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
+func (s *rankSearcher) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (*zoekt.RepoList, error) {
 	r := zoekt.Repository{}
 	if s.repo != nil {
 		r = *s.repo

@@ -1,13 +1,13 @@
 package web
 
 import (
+	"context"
 	"log"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/trace"
 	"github.com/opentracing/opentracing-go"
-	"golang.org/x/net/context"
 )
 
 // traceAwareSearcher wraps a zoekt.Searcher instance so that the tracing context item is set in the
@@ -45,8 +45,8 @@ func getTraceContext(ctx context.Context, opName string, traceEnabled bool, span
 	}
 	return ctx, finish
 }
-func (s traceAwareSearcher) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
-	return s.Searcher.List(ctx, q)
+func (s traceAwareSearcher) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (*zoekt.RepoList, error) {
+	return s.Searcher.List(ctx, q, nil)
 }
 func (s traceAwareSearcher) Close()         { s.Searcher.Close() }
 func (s traceAwareSearcher) String() string { return s.Searcher.String() }

@@ -54,7 +54,7 @@ func (c *client) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOption
 	return reply.Result, err
 }
 
-func (c *client) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
+func (c *client) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (*zoekt.RepoList, error) {
 	var reply srv.ListReply
 	err := c.call(ctx, "Searcher.List", &srv.ListArgs{Q: q}, &reply)
 	return reply.List, err

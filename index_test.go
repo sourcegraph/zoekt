@@ -124,7 +124,7 @@ func TestEmptyIndex(t *testing.T) {
 		t.Fatalf("Search: %v", err)
 	}
 
-	if _, err := searcher.List(context.Background(), &query.Repo{}); err != nil {
+	if _, err := searcher.List(context.Background(), &query.Repo{}, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 
@@ -1096,7 +1096,7 @@ func TestListRepos(t *testing.T) {
 
 	searcher := searcherForTest(t, b)
 	q := &query.Repo{Pattern: "epo"}
-	res, err := searcher.List(context.Background(), q)
+	res, err := searcher.List(context.Background(), q, nil)
 	if err != nil {
 		t.Fatalf("List(%v): %v", q, err)
 	}
@@ -1125,7 +1125,7 @@ func TestListRepos(t *testing.T) {
 	}
 
 	q = &query.Repo{Pattern: "bla"}
-	res, err = searcher.List(context.Background(), q)
+	res, err = searcher.List(context.Background(), q, nil)
 	if err != nil {
 		t.Fatalf("List(%v): %v", q, err)
 	}
@@ -1145,7 +1145,7 @@ func TestListReposByContent(t *testing.T) {
 
 	searcher := searcherForTest(t, b)
 	q := &query.Substring{Pattern: "needle"}
-	res, err := searcher.List(context.Background(), q)
+	res, err := searcher.List(context.Background(), q, nil)
 	if err != nil {
 		t.Fatalf("List(%v): %v", q, err)
 	}
@@ -1156,7 +1156,7 @@ func TestListReposByContent(t *testing.T) {
 		t.Fatalf("got %d, want 1 shard", got)
 	}
 	q = &query.Substring{Pattern: "foo"}
-	res, err = searcher.List(context.Background(), q)
+	res, err = searcher.List(context.Background(), q, nil)
 	if err != nil {
 		t.Fatalf("List(%v): %v", q, err)
 	}

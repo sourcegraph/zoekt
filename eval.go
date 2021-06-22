@@ -431,7 +431,7 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 	return branches
 }
 
-func (d *indexData) List(ctx context.Context, q query.Q) (rl *RepoList, err error) {
+func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl *RepoList, err error) {
 	tr := trace.New("indexData.List", d.file.Name())
 	defer func() {
 		if rl != nil {

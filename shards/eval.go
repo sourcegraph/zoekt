@@ -59,7 +59,7 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	return s.Streamer.StreamSearch(ctx, q, opts, sender)
 }
 
-func (s *typeRepoSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
+func (s *typeRepoSearcher) List(ctx context.Context, r query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.List", "")
 	tr.LazyLog(r, true)
 	defer func() {
@@ -79,7 +79,7 @@ func (s *typeRepoSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		return nil, err
 	}
 
-	return s.Streamer.List(ctx, r)
+	return s.Streamer.List(ctx, r, nil)
 }
 
 func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error) {
@@ -95,7 +95,7 @@ func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error)
 		}
 
 		var rl *zoekt.RepoList
-		rl, err = s.Streamer.List(ctx, rq.Child)
+		rl, err = s.Streamer.List(ctx, rq.Child, nil)
 		if err != nil {
 			return nil
 		}

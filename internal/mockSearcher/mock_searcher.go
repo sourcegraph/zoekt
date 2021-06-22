@@ -23,7 +23,7 @@ func (s *MockSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Search
 	return s.SearchResult, nil
 }
 
-func (s *MockSearcher) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
+func (s *MockSearcher) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (*zoekt.RepoList, error) {
 	if q.String() != s.WantList.String() {
 		return nil, fmt.Errorf("got query %s != %s", q.String(), s.WantList.String())
 	}

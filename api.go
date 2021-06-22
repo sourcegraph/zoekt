@@ -332,12 +332,14 @@ type Searcher interface {
 
 	// List lists repositories. The query `q` can only contain
 	// query.Repo atoms.
-	List(ctx context.Context, q query.Q) (*RepoList, error)
+	List(ctx context.Context, q query.Q, opts *ListOptions) (*RepoList, error)
 	Close()
 
 	// Describe the searcher for debug messages.
 	String() string
 }
+
+type ListOptions struct {}
 
 type SearchOptions struct {
 	// Return an upper-bound estimate of eligible documents in

@@ -52,7 +52,7 @@ func TestClientServer(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", r, mock.SearchResult)
 	}
 
-	l, err := client.List(context.Background(), mock.WantList)
+	l, err := client.List(context.Background(), mock.WantList, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

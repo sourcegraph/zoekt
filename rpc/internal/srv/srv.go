@@ -52,7 +52,7 @@ func (s *Searcher) Search(ctx context.Context, args *SearchArgs, reply *SearchRe
 func (s *Searcher) List(ctx context.Context, args *ListArgs, reply *ListReply) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
-	r, err := s.Searcher.List(ctx, args.Q)
+	r, err := s.Searcher.List(ctx, args.Q, nil)
 	if err != nil {
 		return err
 	}
