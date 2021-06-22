@@ -450,34 +450,47 @@ func (d *indexData) List(ctx context.Context, q query.Q) (rl *RepoList, err erro
 		tr.Finish()
 	}()
 
+	var include func(rle *RepoListEntry) (bool, error)
+
 	q = d.simplify(q)
 	tr.LazyLog(q, true)
 	if c, ok := q.(*query.Const); ok {
-		return d.maybeRepoList(c.Value), nil
-	}
-
-	sr, err := d.Search(ctx, q, &SearchOptions{
-		ShardMaxMatchCount: 1,
-		TotalMaxMatchCount: 1,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return d.maybeRepoList(len(sr.Files) > 0), nil
-}
-
-// maybeRepoList returns a singleton repo list containing the repo for d if
-// include is true. Otherwise it returns an empty list.
-func (d *indexData) maybeRepoList(include bool) *RepoList {
-	l := &RepoList{}
-	if include {
-		l.Repos = make([]*RepoListEntry, 0, len(d.repoListEntry))
-		for _, rle := range d.repoListEntry {
-			l.Repos = append(l.Repos, &rle)
+		if !c.Value {
+			return &RepoList{}, nil
+		}
+		include = func(rle *RepoListEntry) (bool, error) {
+			return true, nil
+		}
+	} else {
+		// We need to run a search per repo to decide if it is included.
+		include = func(rle *RepoListEntry) (bool, error) {
+			qOneRepo := query.NewAnd(
+				query.NewRepoSet(rle.Repository.Name),
+				q)
+			sr, err := d.Search(ctx, qOneRepo, &SearchOptions{
+				ShardMaxMatchCount: 1,
+				TotalMaxMatchCount: 1,
+			})
+			if err != nil {
+				return false, err
+			}
+			return len(sr.Files) > 0, nil
 		}
 	}
-	return l
+
+	repos := make([]*RepoListEntry, 0, len(d.repoListEntry))
+	for _, rle := range d.repoListEntry {
+		ok, err := include(&rle)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			rleCopy := rle
+			repos = append(repos, &rleCopy)
+		}
+	}
+
+	return &RepoList{Repos: repos}, nil
 }
 
 // regexpToMatchTreeRecursive converts a regular expression to a matchTree mt. If
