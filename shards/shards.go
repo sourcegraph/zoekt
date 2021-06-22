@@ -610,12 +610,14 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, sink chan sh
 func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.List", "")
 	tr.LazyLog(r, true)
+	tr.LazyPrintf("opts: %s", opts)
 	metricListRunning.Inc()
 	defer func() {
 		metricListRunning.Dec()
 		if rl != nil {
 			tr.LazyPrintf("repos size: %d", len(rl.Repos))
 			tr.LazyPrintf("crashes: %d", rl.Crashes)
+			tr.LazyPrintf("minimal size: %d", len(rl.Minimal))
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
@@ -641,6 +643,7 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		feeder <- s
 	}
 	close(feeder)
+
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		go func() {
 			for s := range feeder {
@@ -649,7 +652,11 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		}()
 	}
 
-	crashes := 0
+
+	agg := zoekt.RepoList{
+		Minimal: map[uint32]*zoekt.MinimalRepoListEntry{},
+	}
+
 	uniq := map[string]*zoekt.RepoListEntry{}
 
 	for range shards {
@@ -657,26 +664,33 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		if r.err != nil {
 			return nil, r.err
 		}
-		crashes += r.rl.Crashes
+
+		agg.Crashes += r.rl.Crashes
+
 		for _, r := range r.rl.Repos {
 			prev, ok := uniq[r.Repository.Name]
 			if !ok {
-				cp := *r
-				uniq[r.Repository.Name] = &cp
+				// No need to make copy since r's value is already a pointer.
+				uniq[r.Repository.Name] = r
 			} else {
 				prev.Stats.Add(&r.Stats)
 			}
 		}
+
+		for id, r := range r.rl.Minimal {
+			_, ok := agg.Minimal[id]
+			if !ok {
+				agg.Minimal[id] = r
+			}
+		}
 	}
 
-	aggregate := make([]*zoekt.RepoListEntry, 0, len(uniq))
-	for _, v := range uniq {
-		aggregate = append(aggregate, v)
+	agg.Repos = make([]*zoekt.RepoListEntry, 0, len(uniq))
+	for _, r := range uniq {
+		agg.Repos = append(agg.Repos, r)
 	}
-	return &zoekt.RepoList{
-		Repos:   aggregate,
-		Crashes: crashes,
-	}, nil
+
+	return &agg, nil
 }
 
 // getShards returns the currently loaded shards. The shards must be accessed

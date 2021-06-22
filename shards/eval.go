@@ -62,10 +62,12 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 func (s *typeRepoSearcher) List(ctx context.Context, r query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.List", "")
 	tr.LazyLog(r, true)
+	tr.LazyPrintf("opts: %s", opts)
 	defer func() {
 		if rl != nil {
 			tr.LazyPrintf("repos size: %d", len(rl.Repos))
 			tr.LazyPrintf("crashes: %d", rl.Crashes)
+			tr.LazyPrintf("minimal size : %d", len(rl.Minimal))
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
@@ -79,7 +81,7 @@ func (s *typeRepoSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		return nil, err
 	}
 
-	return s.Streamer.List(ctx, r, nil)
+	return s.Streamer.List(ctx, r, opts)
 }
 
 func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error) {
