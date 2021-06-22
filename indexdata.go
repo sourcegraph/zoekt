@@ -157,25 +157,29 @@ func (d *indexData) getChecksum(idx uint32) []byte {
 	return d.checksums[start : start+crc64.Size]
 }
 
-// TODO (stefan): Update this function to return meaningful stats for compound
-// shards.
-func (d *indexData) calculateStatsForRepoIndex(i int) RepoListEntry {
+// calculates stats for files in the range [start, end). It is assumed that all
+// files in the range belong to the same repository.
+func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoListEntry {
+	if start >= end {
+		return RepoListEntry{}
+	}
+
 	var last uint32
-	if len(d.boundaries) > 0 {
-		last += d.boundaries[len(d.boundaries)-1]
+	if len(d.boundaries) > int(end) {
+		last += d.boundaries[end]
 	}
 
 	lastFN := last
-	if len(d.fileNameIndex) > 0 {
+	if len(d.fileNameIndex) > int(end) {
 		lastFN = d.fileNameIndex[len(d.fileNameIndex)-1]
 	}
 
-	count, defaultCount, otherCount := d.calculateNewLinesStats()
+	count, defaultCount, otherCount := d.calculateNewLinesStats(start, end)
 
 	stats := RepoStats{
 		IndexBytes:   int64(d.memoryUse()),
 		ContentBytes: int64(int(last) + int(lastFN)),
-		Documents:    len(d.newlinesIndex) - 1,
+		Documents:    int(end - start),
 		Shards:       1,
 
 		// Sourcegraph specific
@@ -184,7 +188,7 @@ func (d *indexData) calculateStatsForRepoIndex(i int) RepoListEntry {
 		OtherBranchesNewLinesCount: otherCount,
 	}
 	return RepoListEntry{
-		Repository:    d.repoMetaData[i],
+		Repository:    d.repoMetaData[d.repos[start]],
 		IndexMetadata: d.metaData,
 		Stats:         stats,
 	}
@@ -192,18 +196,24 @@ func (d *indexData) calculateStatsForRepoIndex(i int) RepoListEntry {
 
 func (d *indexData) calculateStats() {
 	d.repoListEntry = make([]RepoListEntry, 0, len(d.repoMetaData))
+	var start, end uint32
 	for i := 0; i < len(d.repoMetaData); i++ {
-		d.repoListEntry = append(d.repoListEntry, d.calculateStatsForRepoIndex(i))
+		// determine the file range for repo i
+		for end < uint32(len(d.repos)) && d.repos[end] == uint16(i) {
+			end++
+		}
+		d.repoListEntry = append(d.repoListEntry, d.calculateStatsForFileRange(start, end))
+		start = end
 	}
 }
 
-// calculateNewLinesStats computes some Sourcegraph specific statistics. These
-// are not as efficient to calculate as the normal statistics. We
-// experimentally measured about a 10% slower shard load time. However, we
-// find these values very useful to track and computing them outside of load
-// time introduces a lot of complexity.
-func (d *indexData) calculateNewLinesStats() (count, defaultCount, otherCount uint64) {
-	for i, branchMask := range d.fileBranchMasks {
+// calculateNewLinesStats computes some Sourcegraph specific statistics for files
+// in the range [start, end). These are not as efficient to calculate as the
+// normal statistics. We experimentally measured about a 10% slower shard load
+// time. However, we find these values very useful to track and computing them
+// outside of load time introduces a lot of complexity.
+func (d *indexData) calculateNewLinesStats(start, end uint32) (count, defaultCount, otherCount uint64) {
+	for i, branchMask := range d.fileBranchMasks[start:end] {
 		// branchMask is a bitmask of the branches for a document. Zoekt by
 		// convention represents the default branch as the lowest bit.
 		isDefault := (branchMask & 1) == 1
@@ -243,6 +253,7 @@ func (d *indexData) String() string {
 	return fmt.Sprintf("shard(%s)", d.file.Name())
 }
 
+// calculates an approximate size of indexData in memory in bytes.
 func (d *indexData) memoryUse() int {
 	sz := 0
 	for _, a := range [][]uint32{
@@ -250,11 +261,15 @@ func (d *indexData) memoryUse() int {
 		d.boundaries, d.fileNameIndex,
 		d.fileEndRunes, d.fileNameEndRunes,
 		d.fileEndSymbol, d.symbols.symKindIndex,
+		d.subRepos,
 	} {
 		sz += 4 * len(a)
 	}
 	sz += d.runeOffsets.sizeBytes()
 	sz += d.fileNameRuneOffsets.sizeBytes()
+	sz += len(d.languages)
+	sz += len(d.checksums)
+	sz += 2 * len(d.repos)
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
 	sz += d.ngrams.SizeBytes()
