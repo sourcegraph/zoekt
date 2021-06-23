@@ -227,9 +227,10 @@ func (d *indexData) calculateStats() {
 // time. However, we find these values very useful to track and computing them
 // outside of load time introduces a lot of complexity.
 func (d *indexData) calculateNewLinesStats(start, end uint32) (count, defaultCount, otherCount uint64) {
-	for i, branchMask := range d.fileBranchMasks[start:end] {
+	for i := start; i < end; i++ {
 		// branchMask is a bitmask of the branches for a document. Zoekt by
 		// convention represents the default branch as the lowest bit.
+		branchMask := d.fileBranchMasks[i]
 		isDefault := (branchMask & 1) == 1
 		others := uint64(bits.OnesCount64(branchMask >> 1))
 
