@@ -157,55 +157,87 @@ func (d *indexData) getChecksum(idx uint32) []byte {
 	return d.checksums[start : start+crc64.Size]
 }
 
-// TODO (stefan): Update this function to return meaningful stats for compound
-// shards.
-func (d *indexData) calculateStatsForRepoIndex(i int) RepoListEntry {
+// calculates stats for files in the range [start, end).
+func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoStats {
+	if start >= end {
+		return RepoStats{
+			IndexBytes: int64(d.memoryUse()),
+			Shards:     1,
+		}
+	}
+
 	var last uint32
-	if len(d.boundaries) > 0 {
-		last += d.boundaries[len(d.boundaries)-1]
+	if len(d.boundaries) > int(end) {
+		last += d.boundaries[end]
 	}
 
 	lastFN := last
-	if len(d.fileNameIndex) > 0 {
-		lastFN = d.fileNameIndex[len(d.fileNameIndex)-1]
+	if len(d.fileNameIndex) > int(end) {
+		lastFN = d.fileNameIndex[end]
 	}
 
-	count, defaultCount, otherCount := d.calculateNewLinesStats()
+	count, defaultCount, otherCount := d.calculateNewLinesStats(start, end)
 
-	stats := RepoStats{
+	// CR keegan for stefan: I think we may want to restructure RepoListEntry so
+	// that we don't change anything, except we have
+	// []Repository. Alternatively, things we can divide up we do (like
+	// here). Right now I don't like that these numbers are not true, especially
+	// after aggregation. For now I will move forward with this until we can
+	// chat more.
+	return RepoStats{
+		// CR keegan for stefan: we also sum this. It is displayed in the zoekt
+		// interface, so doesn't really affect us. We do expose it on index
+		// information, so it may surprise some admins that a small repo uses a
+		// lot of memory.
 		IndexBytes:   int64(d.memoryUse()),
 		ContentBytes: int64(int(last) + int(lastFN)),
-		Documents:    len(d.newlinesIndex) - 1,
-		Shards:       1,
+		Documents:    int(end - start),
+		// CR keegan for stefan: our shard count is going to go out of whack,
+		// since we will aggregate these. So we will report more shards than are
+		// present on disk. What should we do?
+		Shards: 1,
 
 		// Sourcegraph specific
 		NewLinesCount:              count,
 		DefaultBranchNewLinesCount: defaultCount,
 		OtherBranchesNewLinesCount: otherCount,
 	}
-	return RepoListEntry{
-		Repository:    d.repoMetaData[i],
-		IndexMetadata: d.metaData,
-		Stats:         stats,
-	}
 }
 
-func (d *indexData) calculateStats() {
+func (d *indexData) calculateStats() error {
 	d.repoListEntry = make([]RepoListEntry, 0, len(d.repoMetaData))
-	for i := 0; i < len(d.repoMetaData); i++ {
-		d.repoListEntry = append(d.repoListEntry, d.calculateStatsForRepoIndex(i))
+	var start, end uint32
+	for repoID, md := range d.repoMetaData {
+		// determine the file range for repo i
+		for end < uint32(len(d.repos)) && d.repos[end] == uint16(repoID) {
+			end++
+		}
+
+		if start < end && d.repos[start] != uint16(repoID) {
+			return fmt.Errorf("shard documents out of order with respect to repositories: expected document %d to be part of repo %d", start, repoID)
+		}
+
+		d.repoListEntry = append(d.repoListEntry, RepoListEntry{
+			Repository:    md,
+			IndexMetadata: d.metaData,
+			Stats:         d.calculateStatsForFileRange(start, end),
+		})
+		start = end
 	}
+
+	return nil
 }
 
-// calculateNewLinesStats computes some Sourcegraph specific statistics. These
-// are not as efficient to calculate as the normal statistics. We
-// experimentally measured about a 10% slower shard load time. However, we
-// find these values very useful to track and computing them outside of load
-// time introduces a lot of complexity.
-func (d *indexData) calculateNewLinesStats() (count, defaultCount, otherCount uint64) {
-	for i, branchMask := range d.fileBranchMasks {
+// calculateNewLinesStats computes some Sourcegraph specific statistics for files
+// in the range [start, end). These are not as efficient to calculate as the
+// normal statistics. We experimentally measured about a 10% slower shard load
+// time. However, we find these values very useful to track and computing them
+// outside of load time introduces a lot of complexity.
+func (d *indexData) calculateNewLinesStats(start, end uint32) (count, defaultCount, otherCount uint64) {
+	for i := start; i < end; i++ {
 		// branchMask is a bitmask of the branches for a document. Zoekt by
 		// convention represents the default branch as the lowest bit.
+		branchMask := d.fileBranchMasks[i]
 		isDefault := (branchMask & 1) == 1
 		others := uint64(bits.OnesCount64(branchMask >> 1))
 
@@ -243,6 +275,7 @@ func (d *indexData) String() string {
 	return fmt.Sprintf("shard(%s)", d.file.Name())
 }
 
+// calculates an approximate size of indexData in memory in bytes.
 func (d *indexData) memoryUse() int {
 	sz := 0
 	for _, a := range [][]uint32{
@@ -250,11 +283,15 @@ func (d *indexData) memoryUse() int {
 		d.boundaries, d.fileNameIndex,
 		d.fileEndRunes, d.fileNameEndRunes,
 		d.fileEndSymbol, d.symbols.symKindIndex,
+		d.subRepos,
 	} {
 		sz += 4 * len(a)
 	}
 	sz += d.runeOffsets.sizeBytes()
 	sz += d.fileNameRuneOffsets.sizeBytes()
+	sz += len(d.languages)
+	sz += len(d.checksums)
+	sz += 2 * len(d.repos)
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
 	sz += d.ngrams.SizeBytes()
