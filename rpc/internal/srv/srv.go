@@ -22,7 +22,7 @@ type SearchReply struct {
 }
 
 type ListArgs struct {
-	Q query.Q
+	Q    query.Q
 	Opts *zoekt.ListOptions
 }
 

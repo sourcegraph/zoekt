@@ -290,6 +290,7 @@ func TestUnloadIndex(t *testing.T) {
 func TestShardedSearcher_List(t *testing.T) {
 	repos := []*zoekt.Repository{
 		{
+			ID:        1234,
 			Name:      "repo-a",
 			Branches:  []zoekt.RepositoryBranch{{Name: "main"}, {Name: "dev"}},
 			RawConfig: map[string]string{"repoid": "1234"},
@@ -319,11 +320,11 @@ func TestShardedSearcher_List(t *testing.T) {
 				Repos: []*zoekt.RepoListEntry{
 					{
 						Repository: *repos[0],
-						Stats: zoekt.RepoStats{Shards: 2},
+						Stats:      zoekt.RepoStats{Shards: 2},
 					},
 					{
 						Repository: *repos[1],
-						Stats: zoekt.RepoStats{Shards: 2},
+						Stats:      zoekt.RepoStats{Shards: 2},
 					},
 				},
 			},
@@ -335,11 +336,11 @@ func TestShardedSearcher_List(t *testing.T) {
 				Repos: []*zoekt.RepoListEntry{
 					{
 						Repository: *repos[0],
-						Stats: zoekt.RepoStats{Shards: 2},
+						Stats:      zoekt.RepoStats{Shards: 2},
 					},
 					{
 						Repository: *repos[1],
-						Stats: zoekt.RepoStats{Shards: 2},
+						Stats:      zoekt.RepoStats{Shards: 2},
 					},
 				},
 			},
@@ -351,13 +352,13 @@ func TestShardedSearcher_List(t *testing.T) {
 				Repos: []*zoekt.RepoListEntry{
 					{
 						Repository: *repos[1],
-						Stats: zoekt.RepoStats{Shards: 2},
+						Stats:      zoekt.RepoStats{Shards: 2},
 					},
 				},
 				Minimal: map[uint32]*zoekt.MinimalRepoListEntry{
-					repos[0].ID(): {
+					repos[0].ID: {
 						HasSymbols: repos[0].HasSymbols,
-						Branches: repos[0].Branches,
+						Branches:   repos[0].Branches,
 					},
 				},
 			},
@@ -381,7 +382,7 @@ func TestShardedSearcher_List(t *testing.T) {
 			ignored := []cmp.Option{
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreFields(zoekt.RepoListEntry{}, "IndexMetadata"),
-				cmpopts.IgnoreFields(zoekt.RepoStats{}, "IndexBytes"),
+				cmpopts.IgnoreFields(zoekt.RepoStats{}, "IndexBytes", "Documents"),
 				cmpopts.IgnoreFields(zoekt.Repository{}, "SubRepoMap"),
 			}
 			if diff := cmp.Diff(tc.want, res, ignored...); diff != "" {

@@ -1148,8 +1148,9 @@ func TestListRepos(t *testing.T) {
 
 	t.Run("minimal", func(t *testing.T) {
 		repo := &Repository{
-			Name:     "reponame",
-			Branches: []RepositoryBranch{{Name: "main"}, {Name: "dev"}},
+			ID:        1234,
+			Name:      "reponame",
+			Branches:  []RepositoryBranch{{Name: "main"}, {Name: "dev"}},
 			RawConfig: map[string]string{"repoid": "1234"},
 		}
 		b := testIndexBuilder(t, repo,
@@ -1168,9 +1169,9 @@ func TestListRepos(t *testing.T) {
 
 		want := &RepoList{
 			Minimal: map[uint32]*MinimalRepoListEntry{
-				repo.ID(): {
+				repo.ID: {
 					HasSymbols: repo.HasSymbols,
-					Branches: repo.Branches,
+					Branches:   repo.Branches,
 				},
 			},
 		}

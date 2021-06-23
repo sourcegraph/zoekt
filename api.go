@@ -16,6 +16,7 @@ package zoekt // import "github.com/google/zoekt"
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -203,6 +204,9 @@ type RepositoryBranch struct {
 
 // Repository holds repository metadata.
 type Repository struct {
+	// Sourcergaph's repository ID
+	ID uint32
+
 	// The repository name
 	Name string
 
@@ -250,10 +254,21 @@ type Repository struct {
 	HasSymbols bool
 }
 
-// ID returns the repository's Sourcegraph ID.
-func (r Repository) ID() uint32 {
-	id, _ := strconv.ParseUint(r.RawConfig["repoid"], 10, 32)
-	return uint32(id)
+func (r *Repository) UnmarshalJSON(data []byte) error {
+	// We define a new type so that we can use json.Unmarhsal
+	// without recursing into this same method.
+	type repository *Repository
+	repo := repository(r)
+
+	err := json.Unmarshal(data, repo)
+	if err != nil {
+		return err
+	}
+
+	id, _ := strconv.ParseUint(repo.RawConfig["repoid"], 10, 32)
+	r.ID = uint32(id)
+
+	return nil
 }
 
 // IndexMetadata holds metadata stored in the index file. It contains
@@ -330,13 +345,13 @@ type RepoListEntry struct {
 
 type MinimalRepoListEntry struct {
 	HasSymbols bool
-	Branches []RepositoryBranch
+	Branches   []RepositoryBranch
 }
 
 // RepoList holds a set of Repository metadata.
 type RepoList struct {
 	// Full response to a List request. Returned when ListOptions.Minimal is false.
-	Repos   []*RepoListEntry
+	Repos []*RepoListEntry
 
 	Crashes int
 
