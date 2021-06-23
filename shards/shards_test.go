@@ -382,7 +382,7 @@ func TestShardedSearcher_List(t *testing.T) {
 			ignored := []cmp.Option{
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreFields(zoekt.RepoListEntry{}, "IndexMetadata"),
-				cmpopts.IgnoreFields(zoekt.RepoStats{}, "IndexBytes", "Documents"),
+				cmpopts.IgnoreFields(zoekt.RepoStats{}, "IndexBytes"),
 				cmpopts.IgnoreFields(zoekt.Repository{}, "SubRepoMap"),
 			}
 			if diff := cmp.Diff(tc.want, res, ignored...); diff != "" {
@@ -511,5 +511,4 @@ func BenchmarkShardedSearch(b *testing.B) {
 			}
 		})
 	}
-
 }
