@@ -157,11 +157,13 @@ func (d *indexData) getChecksum(idx uint32) []byte {
 	return d.checksums[start : start+crc64.Size]
 }
 
-// calculates stats for files in the range [start, end). It is assumed that all
-// files in the range belong to the same repository.
-func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoListEntry {
+// calculates stats for files in the range [start, end).
+func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoStats {
 	if start >= end {
-		return RepoListEntry{}
+		return RepoStats{
+			IndexBytes: int64(d.memoryUse()),
+			Shards:     1,
+		}
 	}
 
 	var last uint32
@@ -176,33 +178,45 @@ func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoListEntry 
 
 	count, defaultCount, otherCount := d.calculateNewLinesStats(start, end)
 
-	stats := RepoStats{
+	// CR keegan for stefan: I think we may want to restructure RepoListEntry so
+	// that we don't change anything, except we have
+	// []Repository. Alternatively, things we can divide up we do (like
+	// here). Right now I don't like that these numbers are not true, especially
+	// after aggregation. For now I will move forward with this until we can
+	// chat more.
+	return RepoStats{
+		// CR keegan for stefan: we also sum this. It is displayed in the zoekt
+		// interface, so doesn't really affect us. We do expose it on index
+		// information, so it may surprise some admins that a small repo uses a
+		// lot of memory.
 		IndexBytes:   int64(d.memoryUse()),
 		ContentBytes: int64(int(last) + int(lastFN)),
 		Documents:    int(end - start),
-		Shards:       1,
+		// CR keegan for stefan: our shard count is going to go out of whack,
+		// since we will aggregate these. So we will report more shards than are
+		// present on disk. What should we do?
+		Shards: 1,
 
 		// Sourcegraph specific
 		NewLinesCount:              count,
 		DefaultBranchNewLinesCount: defaultCount,
 		OtherBranchesNewLinesCount: otherCount,
 	}
-	return RepoListEntry{
-		Repository:    d.repoMetaData[d.repos[start]],
-		IndexMetadata: d.metaData,
-		Stats:         stats,
-	}
 }
 
 func (d *indexData) calculateStats() {
 	d.repoListEntry = make([]RepoListEntry, 0, len(d.repoMetaData))
 	var start, end uint32
-	for i := 0; i < len(d.repoMetaData); i++ {
+	for repoID, md := range d.repoMetaData {
 		// determine the file range for repo i
-		for end < uint32(len(d.repos)) && d.repos[end] == uint16(i) {
+		for end < uint32(len(d.repos)) && d.repos[end] == uint16(repoID) {
 			end++
 		}
-		d.repoListEntry = append(d.repoListEntry, d.calculateStatsForFileRange(start, end))
+		d.repoListEntry = append(d.repoListEntry, RepoListEntry{
+			Repository:    md,
+			IndexMetadata: d.metaData,
+			Stats:         d.calculateStatsForFileRange(start, end),
+		})
 		start = end
 	}
 }

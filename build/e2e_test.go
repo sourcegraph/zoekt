@@ -464,9 +464,6 @@ func TestEmptyContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBuilder: %v", err)
 	}
-	b.Add(zoekt.Document{
-		Name: "main.go",
-	})
 	if err := b.Finish(); err != nil {
 		t.Errorf("Finish: %v", err)
 	}
