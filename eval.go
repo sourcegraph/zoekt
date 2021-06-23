@@ -59,16 +59,14 @@ func (d *indexData) simplifyMultiRepo(q query.Q, predicate func(repoName string)
 }
 
 func (d *indexData) simplify(in query.Q) query.Q {
-	simpleShard := len(d.repoMetaData) == 1
 	eval := query.Map(in, func(q query.Q) query.Q {
 		switch r := q.(type) {
 		case *query.Repo:
-			if simpleShard {
-				return &query.Const{Value: strings.Contains(d.repoMetaData[0].Name, r.Pattern)}
-			}
-			return d.simplifyMultiRepo(in, func(name string) bool { return strings.Contains(name, r.Pattern) })
+			return d.simplifyMultiRepo(q, func(name string) bool { return strings.Contains(name, r.Pattern) })
 		case *query.RepoBranches:
-			if simpleShard {
+			if len(d.repoMetaData) == 1 {
+				// Can simplify query now. compound too complicated since each repo
+				// may have different branches.
 				return r.Branches(d.repoMetaData[0].Name)
 			}
 			for _, md := range d.repoMetaData {
@@ -78,10 +76,7 @@ func (d *indexData) simplify(in query.Q) query.Q {
 			}
 			return &query.Const{Value: false}
 		case *query.RepoSet:
-			if simpleShard {
-				return &query.Const{Value: r.Set[d.repoMetaData[0].Name]}
-			}
-			return d.simplifyMultiRepo(in, func(name string) bool { return r.Set[name] })
+			return d.simplifyMultiRepo(q, func(name string) bool { return r.Set[name] })
 		case *query.Language:
 			_, has := d.metaData.LanguageMap[r.Language]
 			if !has {
