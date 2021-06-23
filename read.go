@@ -291,7 +291,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	}
 	d.repos = repos
 
-	d.calculateStats()
+	if err := d.calculateStats(); err != nil {
+		return nil, err
+	}
+
 	return &d, nil
 }
 

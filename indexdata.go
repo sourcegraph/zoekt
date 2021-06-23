@@ -204,7 +204,7 @@ func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoStats {
 	}
 }
 
-func (d *indexData) calculateStats() {
+func (d *indexData) calculateStats() error {
 	d.repoListEntry = make([]RepoListEntry, 0, len(d.repoMetaData))
 	var start, end uint32
 	for repoID, md := range d.repoMetaData {
@@ -212,6 +212,11 @@ func (d *indexData) calculateStats() {
 		for end < uint32(len(d.repos)) && d.repos[end] == uint16(repoID) {
 			end++
 		}
+
+		if start < end && d.repos[start] != uint16(repoID) {
+			return fmt.Errorf("shard documents out of order with respect to repositories: expected document %d to be part of repo %d", start, repoID)
+		}
+
 		d.repoListEntry = append(d.repoListEntry, RepoListEntry{
 			Repository:    md,
 			IndexMetadata: d.metaData,
@@ -219,6 +224,8 @@ func (d *indexData) calculateStats() {
 		})
 		start = end
 	}
+
+	return nil
 }
 
 // calculateNewLinesStats computes some Sourcegraph specific statistics for files
