@@ -591,7 +591,7 @@ type shardListResult struct {
 	err error
 }
 
-func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, sink chan shardListResult) {
+func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.ListOptions, sink chan shardListResult) {
 	metricListShardRunning.Inc()
 	defer func() {
 		metricListShardRunning.Dec()
@@ -603,19 +603,21 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, sink chan sh
 		}
 	}()
 
-	ms, err := s.List(ctx, q)
+	ms, err := s.List(ctx, q, opts)
 	sink <- shardListResult{ms, err}
 }
 
-func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
+func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.List", "")
 	tr.LazyLog(r, true)
+	tr.LazyPrintf("opts: %s", opts)
 	metricListRunning.Inc()
 	defer func() {
 		metricListRunning.Dec()
 		if rl != nil {
 			tr.LazyPrintf("repos size: %d", len(rl.Repos))
 			tr.LazyPrintf("crashes: %d", rl.Crashes)
+			tr.LazyPrintf("minimal size: %d", len(rl.Minimal))
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
@@ -641,15 +643,19 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		feeder <- s
 	}
 	close(feeder)
+
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		go func() {
 			for s := range feeder {
-				listOneShard(ctx, s, r, all)
+				listOneShard(ctx, s, r, opts, all)
 			}
 		}()
 	}
 
-	crashes := 0
+	agg := zoekt.RepoList{
+		Minimal: map[uint32]*zoekt.MinimalRepoListEntry{},
+	}
+
 	uniq := map[string]*zoekt.RepoListEntry{}
 
 	for range shards {
@@ -657,26 +663,33 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		if r.err != nil {
 			return nil, r.err
 		}
-		crashes += r.rl.Crashes
+
+		agg.Crashes += r.rl.Crashes
+
 		for _, r := range r.rl.Repos {
 			prev, ok := uniq[r.Repository.Name]
 			if !ok {
-				cp := *r
+				cp := *r // We need to copy because we mutate r.Stats when merging duplicates
 				uniq[r.Repository.Name] = &cp
 			} else {
 				prev.Stats.Add(&r.Stats)
 			}
 		}
+
+		for id, r := range r.rl.Minimal {
+			_, ok := agg.Minimal[id]
+			if !ok {
+				agg.Minimal[id] = r
+			}
+		}
 	}
 
-	aggregate := make([]*zoekt.RepoListEntry, 0, len(uniq))
-	for _, v := range uniq {
-		aggregate = append(aggregate, v)
+	agg.Repos = make([]*zoekt.RepoListEntry, 0, len(uniq))
+	for _, r := range uniq {
+		agg.Repos = append(agg.Repos, r)
 	}
-	return &zoekt.RepoList{
-		Repos:   aggregate,
-		Crashes: crashes,
-	}, nil
+
+	return &agg, nil
 }
 
 // getShards returns the currently loaded shards. The shards must be accessed
@@ -715,7 +728,7 @@ func (s *shardedSearcher) getShards() []rankedShard {
 
 func shardName(s zoekt.Searcher) string {
 	q := query.Repo{}
-	result, err := s.List(context.Background(), &q)
+	result, err := s.List(context.Background(), &q, nil)
 	if err != nil {
 		return ""
 	}

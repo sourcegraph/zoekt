@@ -431,12 +431,14 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 	return branches
 }
 
-func (d *indexData) List(ctx context.Context, q query.Q) (rl *RepoList, err error) {
+func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl *RepoList, err error) {
 	tr := trace.New("indexData.List", d.file.Name())
+	tr.LazyPrintf("opts: %s", opts)
 	defer func() {
 		if rl != nil {
 			tr.LazyPrintf("repos size: %d", len(rl.Repos))
 			tr.LazyPrintf("crashes: %d", rl.Crashes)
+			tr.LazyPrintf("minimal size: %d", len(rl.Minimal))
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
@@ -473,19 +475,37 @@ func (d *indexData) List(ctx context.Context, q query.Q) (rl *RepoList, err erro
 		}
 	}
 
-	repos := make([]*RepoListEntry, 0, len(d.repoListEntry))
-	for _, rle := range d.repoListEntry {
-		ok, err := include(&rle)
+	var l RepoList
+
+	minimal := opts != nil && opts.Minimal
+	if minimal {
+		l.Minimal = make(map[uint32]*MinimalRepoListEntry, len(d.repoListEntry))
+	} else {
+		l.Repos = make([]*RepoListEntry, 0, len(d.repoListEntry))
+	}
+
+	for i := range d.repoListEntry {
+		rle := &d.repoListEntry[i]
+		ok, err := include(rle)
 		if err != nil {
 			return nil, err
 		}
-		if ok {
-			rleCopy := rle
-			repos = append(repos, &rleCopy)
+
+		if !ok {
+			continue
+		}
+
+		if id := rle.Repository.ID; id != 0 && minimal {
+			l.Minimal[id] = &MinimalRepoListEntry{
+				HasSymbols: rle.Repository.HasSymbols,
+				Branches:   rle.Repository.Branches,
+			}
+		} else {
+			l.Repos = append(l.Repos, rle)
 		}
 	}
 
-	return &RepoList{Repos: repos}, nil
+	return &l, nil
 }
 
 // regexpToMatchTreeRecursive converts a regular expression to a matchTree mt. If

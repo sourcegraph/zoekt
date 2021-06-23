@@ -16,7 +16,9 @@ package zoekt // import "github.com/google/zoekt"
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/zoekt/query"
@@ -202,6 +204,9 @@ type RepositoryBranch struct {
 
 // Repository holds repository metadata.
 type Repository struct {
+	// Sourcergaph's repository ID
+	ID uint32
+
 	// The repository name
 	Name string
 
@@ -247,6 +252,23 @@ type Repository struct {
 	// IndexMetadata. However, we store it here since the Sourcegraph frontend
 	// can read this structure but not IndexMetadata.
 	HasSymbols bool
+}
+
+func (r *Repository) UnmarshalJSON(data []byte) error {
+	// We define a new type so that we can use json.Unmarhsal
+	// without recursing into this same method.
+	type repository *Repository
+	repo := repository(r)
+
+	err := json.Unmarshal(data, repo)
+	if err != nil {
+		return err
+	}
+
+	id, _ := strconv.ParseUint(repo.RawConfig["repoid"], 10, 32)
+	r.ID = uint32(id)
+
+	return nil
 }
 
 // IndexMetadata holds metadata stored in the index file. It contains
@@ -321,10 +343,20 @@ type RepoListEntry struct {
 	Stats         RepoStats
 }
 
+type MinimalRepoListEntry struct {
+	HasSymbols bool
+	Branches   []RepositoryBranch
+}
+
 // RepoList holds a set of Repository metadata.
 type RepoList struct {
-	Repos   []*RepoListEntry
+	// Full response to a List request. Returned when ListOptions.Minimal is false.
+	Repos []*RepoListEntry
+
 	Crashes int
+
+	// Minimal response to a List request. Returned when ListOptions.Minimal is true.
+	Minimal map[uint32]*MinimalRepoListEntry
 }
 
 type Searcher interface {
@@ -332,11 +364,20 @@ type Searcher interface {
 
 	// List lists repositories. The query `q` can only contain
 	// query.Repo atoms.
-	List(ctx context.Context, q query.Q) (*RepoList, error)
+	List(ctx context.Context, q query.Q, opts *ListOptions) (*RepoList, error)
 	Close()
 
 	// Describe the searcher for debug messages.
 	String() string
+}
+
+type ListOptions struct {
+	// Return only Minimal data per repo that Sourcegraph frontend needs.
+	Minimal bool
+}
+
+func (o *ListOptions) String() string {
+	return fmt.Sprintf("%#v", o)
 }
 
 type SearchOptions struct {

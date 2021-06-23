@@ -176,7 +176,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	repos, err := ss.List(ctx, &query.Repo{Pattern: "repo"})
+	repos, err := ss.List(ctx, &query.Repo{Pattern: "repo"}, nil)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestUpdate(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	ctx = context.Background()
-	if repos, err = ss.List(ctx, &query.Repo{Pattern: "repo"}); err != nil {
+	if repos, err = ss.List(ctx, &query.Repo{Pattern: "repo"}, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	} else if len(repos.Repos) != 2 {
 		t.Errorf("List(repo): got %v, want 2 repos", repos.Repos)
@@ -226,7 +226,7 @@ func TestUpdate(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	ctx = context.Background()
-	if repos, err = ss.List(ctx, &query.Repo{Pattern: "repo"}); err != nil {
+	if repos, err = ss.List(ctx, &query.Repo{Pattern: "repo"}, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	} else if len(repos.Repos) != 1 {
 		var ss []string
@@ -480,7 +480,7 @@ func TestEmptyContent(t *testing.T) {
 	defer ss.Close()
 
 	ctx := context.Background()
-	result, err := ss.List(ctx, &query.Const{Value: true})
+	result, err := ss.List(ctx, &query.Const{Value: true}, nil)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

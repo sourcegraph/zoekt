@@ -92,6 +92,7 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		// what the indexer we call will produce. This is to ensure that
 		// IncrementalSkipIndexing returns true if nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
+			ID:        uint32(o.IndexOptions.RepoID),
 			Name:      o.Name,
 			Branches:  o.Branches,
 			RawConfig: rawConfig,

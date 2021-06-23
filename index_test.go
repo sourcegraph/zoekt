@@ -124,7 +124,7 @@ func TestEmptyIndex(t *testing.T) {
 		t.Fatalf("Search: %v", err)
 	}
 
-	if _, err := searcher.List(context.Background(), &query.Repo{}); err != nil {
+	if _, err := searcher.List(context.Background(), &query.Repo{}, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 
@@ -1083,55 +1083,112 @@ func TestNegativeRepo(t *testing.T) {
 
 func TestListRepos(t *testing.T) {
 	content := []byte("bla the needle\n")
-	// ----------------01234567890123
-	repo := &Repository{
-		Name:     "reponame",
-		Branches: []RepositoryBranch{{Name: "main"}, {Name: "dev"}},
-	}
-	b := testIndexBuilder(t, repo,
-		Document{Name: "f1", Content: content, Branches: []string{"main", "dev"}},
-		Document{Name: "f2", Content: content, Branches: []string{"main"}},
-		Document{Name: "f2", Content: content, Branches: []string{"dev"}},
-		Document{Name: "f3", Content: content, Branches: []string{"dev"}})
+	t.Run("default and minimal fallback", func(t *testing.T) {
+		// ----------------01234567890123
+		repo := &Repository{
+			Name:     "reponame",
+			Branches: []RepositoryBranch{{Name: "main"}, {Name: "dev"}},
+		}
+		b := testIndexBuilder(t, repo,
+			Document{Name: "f1", Content: content, Branches: []string{"main", "dev"}},
+			Document{Name: "f2", Content: content, Branches: []string{"main"}},
+			Document{Name: "f2", Content: content, Branches: []string{"dev"}},
+			Document{Name: "f3", Content: content, Branches: []string{"dev"}})
 
-	searcher := searcherForTest(t, b)
-	q := &query.Repo{Pattern: "epo"}
-	res, err := searcher.List(context.Background(), q)
-	if err != nil {
-		t.Fatalf("List(%v): %v", q, err)
-	}
+		searcher := searcherForTest(t, b)
 
-	want := &RepoList{
-		Repos: []*RepoListEntry{{
-			Repository: *repo,
-			Stats: RepoStats{
-				Documents:    4,
-				ContentBytes: 68,
-				Shards:       1,
+		for _, opts := range []*ListOptions{
+			nil,
+			{Minimal: false},
+			{Minimal: true},
+		} {
+			t.Run(fmt.Sprint(opts), func(t *testing.T) {
+				q := &query.Repo{Pattern: "epo"}
 
-				NewLinesCount:              4,
-				DefaultBranchNewLinesCount: 2,
-				OtherBranchesNewLinesCount: 3,
+				res, err := searcher.List(context.Background(), q, opts)
+				if err != nil {
+					t.Fatalf("List(%v): %v", q, err)
+				}
+
+				want := &RepoList{
+					Repos: []*RepoListEntry{{
+						Repository: *repo,
+						Stats: RepoStats{
+							Documents:    4,
+							ContentBytes: 68,
+							Shards:       1,
+
+							NewLinesCount:              4,
+							DefaultBranchNewLinesCount: 2,
+							OtherBranchesNewLinesCount: 3,
+						},
+					}},
+				}
+				ignored := []cmp.Option{
+					cmpopts.EquateEmpty(),
+					cmpopts.IgnoreFields(RepoListEntry{}, "IndexMetadata"),
+					cmpopts.IgnoreFields(RepoStats{}, "IndexBytes"),
+					cmpopts.IgnoreFields(Repository{}, "SubRepoMap"),
+				}
+				if diff := cmp.Diff(want, res, ignored...); diff != "" {
+					t.Fatalf("mismatch (-want +got):\n%s", diff)
+				}
+
+				q = &query.Repo{Pattern: "bla"}
+				res, err = searcher.List(context.Background(), q, nil)
+				if err != nil {
+					t.Fatalf("List(%v): %v", q, err)
+				}
+				if len(res.Repos) != 0 || len(res.Minimal) != 0 {
+					t.Fatalf("got %v, want 0 matches", res)
+				}
+			})
+		}
+	})
+
+	t.Run("minimal", func(t *testing.T) {
+		repo := &Repository{
+			ID:        1234,
+			Name:      "reponame",
+			Branches:  []RepositoryBranch{{Name: "main"}, {Name: "dev"}},
+			RawConfig: map[string]string{"repoid": "1234"},
+		}
+		b := testIndexBuilder(t, repo,
+			Document{Name: "f1", Content: content, Branches: []string{"main", "dev"}},
+			Document{Name: "f2", Content: content, Branches: []string{"main"}},
+			Document{Name: "f2", Content: content, Branches: []string{"dev"}},
+			Document{Name: "f3", Content: content, Branches: []string{"dev"}})
+
+		searcher := searcherForTest(t, b)
+
+		q := &query.Repo{Pattern: "epo"}
+		res, err := searcher.List(context.Background(), q, &ListOptions{Minimal: true})
+		if err != nil {
+			t.Fatalf("List(%v): %v", q, err)
+		}
+
+		want := &RepoList{
+			Minimal: map[uint32]*MinimalRepoListEntry{
+				repo.ID: {
+					HasSymbols: repo.HasSymbols,
+					Branches:   repo.Branches,
+				},
 			},
-		}},
-	}
-	ignored := []cmp.Option{
-		cmpopts.IgnoreFields(RepoListEntry{}, "IndexMetadata"),
-		cmpopts.IgnoreFields(RepoStats{}, "IndexBytes"),
-		cmpopts.IgnoreFields(Repository{}, "SubRepoMap"),
-	}
-	if diff := cmp.Diff(want, res, ignored...); diff != "" {
-		t.Fatalf("mismatch (-want +got):\n%s", diff)
-	}
+		}
 
-	q = &query.Repo{Pattern: "bla"}
-	res, err = searcher.List(context.Background(), q)
-	if err != nil {
-		t.Fatalf("List(%v): %v", q, err)
-	}
-	if len(res.Repos) != 0 {
-		t.Fatalf("got %v, want 0 matches", res)
-	}
+		if diff := cmp.Diff(want, res); diff != "" {
+			t.Fatalf("mismatch (-want +got):\n%s", diff)
+		}
+
+		q = &query.Repo{Pattern: "bla"}
+		res, err = searcher.List(context.Background(), q, &ListOptions{Minimal: true})
+		if err != nil {
+			t.Fatalf("List(%v): %v", q, err)
+		}
+		if len(res.Repos) != 0 || len(res.Minimal) != 0 {
+			t.Fatalf("got %v, want 0 matches", res)
+		}
+	})
 }
 
 func TestListReposByContent(t *testing.T) {
@@ -1145,7 +1202,7 @@ func TestListReposByContent(t *testing.T) {
 
 	searcher := searcherForTest(t, b)
 	q := &query.Substring{Pattern: "needle"}
-	res, err := searcher.List(context.Background(), q)
+	res, err := searcher.List(context.Background(), q, nil)
 	if err != nil {
 		t.Fatalf("List(%v): %v", q, err)
 	}
@@ -1156,7 +1213,7 @@ func TestListReposByContent(t *testing.T) {
 		t.Fatalf("got %d, want 1 shard", got)
 	}
 	q = &query.Substring{Pattern: "foo"}
-	res, err = searcher.List(context.Background(), q)
+	res, err = searcher.List(context.Background(), q, nil)
 	if err != nil {
 		t.Fatalf("List(%v): %v", q, err)
 	}
