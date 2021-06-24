@@ -17,56 +17,46 @@ package zoekt // import "github.com/google/zoekt"
 import (
 	"bytes"
 	"encoding/gob"
+	"strings"
 	"testing"
 )
 
 /*
-BenchmarkMinimalRepoListEncodings
-BenchmarkMinimalRepoListEncodings/slice
-    benchmark.go:192: bytes: 205
-BenchmarkMinimalRepoListEncodings/slice-16         	 2129965	       561.4 ns/op	       0 B/op	       0 allocs/op
-BenchmarkMinimalRepoListEncodings/map
-    benchmark.go:192: bytes: 191
-BenchmarkMinimalRepoListEncodings/map-16           	 1516594	       792.1 ns/op	     152 B/op	       4 allocs/op
-PASS
+BenchmarkMinimalRepoListEncodings/slice-8         	    570	  2145665 ns/op	   753790 bytes	   3981 B/op	      0 allocs/op
+BenchmarkMinimalRepoListEncodings/map-8           	    360	  3337522 ns/op	   740778 bytes	 377777 B/op	  13002 allocs/op
 */
 func BenchmarkMinimalRepoListEncodings(b *testing.B) {
-	branches := []RepositoryBranch{{Name: "main"}, {Name: "dev"}}
+	size := uint32(13000) // 2021-06-24 rough estimate of number of repos on a replica.
 
-	type Slice []struct {
+	type Slice struct {
 		ID         uint32
 		HasSymbols bool
 		Branches   []RepositoryBranch
 	}
 
-	b.Run("slice", benchmarkEncoding(Slice{
-		{
-			ID:         1,
-			HasSymbols: true,
-			Branches:   branches,
-		},
-		{
-			ID:         2,
-			HasSymbols: false,
-			Branches:   branches,
-		},
-	}))
+	branches := []RepositoryBranch{{Name: "HEAD", Version: strings.Repeat("a", 40)}}
+	mapData := make(map[uint32]*MinimalRepoListEntry, size)
+	sliceData := make([]Slice, 0, size)
 
-	b.Run("map", benchmarkEncoding(map[uint32]*MinimalRepoListEntry{
-		1: {
+	for id := uint32(1); id <= size; id++ {
+		mapData[id] = &MinimalRepoListEntry{
 			HasSymbols: true,
 			Branches:   branches,
-		},
-		2: {
-			HasSymbols: false,
+		}
+		sliceData = append(sliceData, Slice{
+			ID:         id,
+			HasSymbols: true,
 			Branches:   branches,
-		},
-	}))
+		})
+	}
+
+	b.Run("slice", benchmarkEncoding(sliceData))
+
+	b.Run("map", benchmarkEncoding(mapData))
 }
 
 func benchmarkEncoding(data interface{}) func(*testing.B) {
 	return func(b *testing.B) {
-		b.StopTimer()
 		b.Helper()
 
 		var buf bytes.Buffer
@@ -77,10 +67,10 @@ func benchmarkEncoding(data interface{}) func(*testing.B) {
 		}
 
 		b.ReportAllocs()
-		b.Logf("bytes: %d", buf.Len())
-		b.StartTimer()
+		b.ResetTimer()
+		b.ReportMetric(float64(buf.Len()), "bytes")
 		for i := 0; i < b.N; i++ {
-			enc.Encode(data)
+			_ = enc.Encode(data)
 			buf.Reset()
 		}
 	}
