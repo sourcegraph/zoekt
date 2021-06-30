@@ -43,6 +43,9 @@ type IndexOptions struct {
 
 	// Priority indicates ranking in results, higher first.
 	Priority float64
+
+	// Public is true if the repository is public.
+	Public bool
 }
 
 // indexArgs represents the arguments we pass to zoekt-archive-index
@@ -78,13 +81,15 @@ type indexArgs struct {
 func (o *indexArgs) BuildOptions() *build.Options {
 	rawConfig := map[string]string{}
 	if o.IndexOptions.RepoID > 0 {
-		// NOTE(keegan): 2020-08-13 This is currently not read anywhere. We are
-		// setting it so in a few releases all indexes should have it set.
 		rawConfig["repoid"] = strconv.Itoa(int(o.IndexOptions.RepoID))
 	}
 
 	if o.Priority != 0 {
 		rawConfig["priority"] = strconv.FormatFloat(o.Priority, 'g', -1, 64)
+	}
+
+	if o.Public {
+		rawConfig["public"] = "1"
 	}
 
 	return &build.Options{

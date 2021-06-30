@@ -53,9 +53,14 @@ var (
 		Buckets: prometheus.ExponentialBuckets(.25, 2, 4), // 250ms -> 2s
 	}, []string{"success"}) // success=true|false
 
-	metricGetIndexOptionsError = promauto.NewCounter(prometheus.CounterOpts{
+	metricGetIndexOptionsErrorTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "get_index_options_error_total",
 		Help: "The total number of times we failed to get index options for a repository.",
+	})
+
+	metricGetIndexOptionsError = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "get_index_options_error",
+		Help: "The number of repositories we failed to get options for the last time we polled.",
 	})
 
 	metricIndexDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -281,13 +286,20 @@ func (s *Server) Run(queue *Queue) {
 			tr := trace.New("getIndexOptions", "")
 			tr.LazyPrintf("getting index options for %d repos", len(repos))
 
-			newPriorities := make(map[string]float64)
+			var (
+				newPriorities = make(map[string]float64)
+				failed        = make(map[string]struct{})
+				public        []string
+			)
 
 			// We ask the frontend to get index options in batches.
 			for repos := range batched(repos, 1000) {
 				start := time.Now()
 				opts, err := getIndexOptions(s.Root, repos...)
 				if err != nil {
+					for _, name := range repos {
+						failed[name] = struct{}{}
+					}
 					metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
 					tr.LazyPrintf("failed fetching options batch: %v", err)
 					tr.SetError()
@@ -297,7 +309,8 @@ func (s *Server) Run(queue *Queue) {
 				for i, opt := range opts {
 					name := repos[i]
 					if opt.Error != "" {
-						metricGetIndexOptionsError.Inc()
+						failed[name] = struct{}{}
+						metricGetIndexOptionsErrorTotal.Inc()
 						tr.LazyPrintf("failed fetching options for %v: %v", name, opt.Error)
 						tr.SetError()
 						continue
@@ -305,11 +318,19 @@ func (s *Server) Run(queue *Queue) {
 					if opt.Priority != 0 {
 						newPriorities[name] = opt.Priority
 					}
+					if opt.Public {
+						public = append(public, name)
+					}
 					queue.AddOrUpdate(name, opt.IndexOptions)
 				}
 			}
 			s.maybeUpdatePriorities(repos, newPriorities)
 
+			if err := writePublicSet(s.IndexDir, public, failed); err != nil {
+				log.Printf("WARN: error writing public set: %s", err.Error())
+			}
+
+			metricGetIndexOptionsError.Set(float64(len(failed)))
 			metricResolveRevisionsDuration.Observe(time.Since(start).Seconds())
 			tr.Finish()
 
