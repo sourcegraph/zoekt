@@ -41,6 +41,10 @@ type FileMatch struct {
 	Branches    []string
 	LineMatches []LineMatch
 
+	// RepositoryID is a Sourcegraph extension. This is the ID of Repository in
+	// Sourcegraph.
+	RepositoryID uint32
+
 	// Only set if requested
 	Content []byte
 
