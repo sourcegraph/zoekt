@@ -867,7 +867,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}
 		return &docMatchTree{
 			reason:  "language",
-			numDocs: uint32(len(d.languages)),
+			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
 				return d.languages[docID] == code
 			},
@@ -920,11 +920,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				reposBranchesWant[repoIdx] = mask
 			}
 		}
-		pred := func(docID uint32) bool {
-			return d.fileBranchMasks[docID]&reposBranchesWant[d.repos[docID]] != 0
-		}
 		return &docMatchTree{
-			docs: d.filterDocs(pred),
+			reason:  "RepoBranches",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return d.fileBranchMasks[docID]&reposBranchesWant[d.repos[docID]] != 0
+			},
 		}, nil
 
 	case *query.RepoSet:
@@ -934,11 +935,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				reposWant[repoIdx] = true
 			}
 		}
-		pred := func(docID uint32) bool {
-			return reposWant[d.repos[docID]]
-		}
 		return &docMatchTree{
-			docs: d.filterDocs(pred),
+			reason:  "RepoSet",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return reposWant[d.repos[docID]]
+			},
 		}, nil
 
 	case *query.Repo:
@@ -948,11 +950,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				reposWant[repoIdx] = true
 			}
 		}
-		pred := func(docID uint32) bool {
-			return reposWant[d.repos[docID]]
-		}
 		return &docMatchTree{
-			docs: d.filterDocs(pred),
+			reason:  "Repo",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return reposWant[d.repos[docID]]
+			},
 		}, nil
 	}
 	log.Panicf("type %T", q)

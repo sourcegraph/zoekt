@@ -433,6 +433,10 @@ func (d *indexData) fileName(i uint32) []byte {
 	return d.fileNameContent[d.fileNameIndex[i]:d.fileNameIndex[i+1]]
 }
 
+func (d *indexData) numDocs() uint32 {
+	return uint32(len(d.fileBranchMasks))
+}
+
 func (s *indexData) Close() {
 	s.file.Close()
 }
