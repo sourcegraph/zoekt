@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"reflect"
 	"regexp/syntax"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -1378,72 +1377,6 @@ func TestSubRepo(t *testing.T) {
 
 	if sres.LineFragments["sub-name"] != "sub-line" {
 		t.Errorf("got LineFragmentTemplate %v, want {'sub':'sub-line'}", sres.LineFragments)
-	}
-}
-
-func TestNewIndexBuilder(t *testing.T) {
-	var branchX100 []RepositoryBranch
-	for i := 0; i < 100; i++ {
-		branchX100 = append(branchX100, RepositoryBranch{
-			Name: strconv.Itoa(i),
-		})
-	}
-
-	cases := []struct {
-		name string
-		repo Repository
-		errS string
-	}{{
-		name: "empty",
-		repo: Repository{},
-	}, {
-		name: "too-many-branches",
-		repo: Repository{
-			Branches: branchX100,
-		},
-		errS: "too many branches",
-	}, {
-		name: "subrepo-branches",
-		repo: Repository{
-			Branches: []RepositoryBranch{{
-				Name: "dev",
-			}},
-			SubRepoMap: map[string]*Repository{
-				"sub": {
-					Branches: []RepositoryBranch{{
-						Name: "dev",
-					}},
-				},
-			},
-		},
-	}, {
-		name: "subrepo-mismatch-branches",
-		repo: Repository{
-			Branches: []RepositoryBranch{{
-				Name: "dev",
-			}},
-			SubRepoMap: map[string]*Repository{
-				"sub": {
-					Branches: []RepositoryBranch{{
-						Name: "main",
-					}},
-				},
-			},
-		},
-		errS: "got subrepository branches [{main }], want main repository branches [{dev }]",
-	}}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewIndexBuilder(&tc.repo)
-			var got string
-			if err != nil {
-				got = err.Error()
-			}
-			if got != tc.errS {
-				t.Fatalf("unexpected error:\nwanted: %s\ngot:    %s", tc.errS, got)
-			}
-		})
 	}
 }
 
