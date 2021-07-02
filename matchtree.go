@@ -82,10 +82,20 @@ type matchTree interface {
 	matches(cp *contentProvider, cost int, known map[matchTree]bool) (match bool, sure bool)
 }
 
+// docMatchTree iterates over documents for which predicate(docID) returns true.
 type docMatchTree struct {
+	// the number of documents in a shard.
+	numDocs uint32
+
+	predicate func(docID uint32) bool
+
+	// provides additional information about the reason why the docMatchTree was
+	// created.
+	reason string
+
 	// mutable
-	docs    []uint32
-	current []uint32
+	firstDone bool
+	docID     uint32
 }
 
 type bruteForceMatchTree struct {
@@ -280,15 +290,8 @@ func (t *bruteForceMatchTree) prepare(doc uint32) {
 }
 
 func (t *docMatchTree) prepare(doc uint32) {
-	for len(t.docs) > 0 && t.docs[0] < doc {
-		t.docs = t.docs[1:]
-	}
-	i := 0
-	for ; i < len(t.docs) && t.docs[i] == doc; i++ {
-	}
-
-	t.current = t.docs[:i]
-	t.docs = t.docs[i:]
+	t.docID = doc
+	t.firstDone = true
 }
 
 func (t *andMatchTree) prepare(doc uint32) {
@@ -331,10 +334,16 @@ func (t *branchQueryMatchTree) prepare(doc uint32) {
 // nextDoc
 
 func (t *docMatchTree) nextDoc() uint32 {
-	if len(t.docs) == 0 {
-		return maxUInt32
+	var start uint32
+	if t.firstDone {
+		start = t.docID + 1
 	}
-	return t.docs[0]
+	for i := start; i < t.numDocs; i++ {
+		if t.predicate(i) {
+			return i
+		}
+	}
+	return maxUInt32
 }
 
 func (t *bruteForceMatchTree) nextDoc() uint32 {
@@ -395,7 +404,7 @@ func (t *bruteForceMatchTree) String() string {
 }
 
 func (t *docMatchTree) String() string {
-	return fmt.Sprintf("docs%v", t.docs)
+	return fmt.Sprintf("doc(%s)", t.reason)
 }
 
 func (t *andMatchTree) String() string {
@@ -501,7 +510,7 @@ func visitMatches(t matchTree, known map[matchTree]bool, f func(matchTree)) {
 // all matches() methods.
 
 func (t *docMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
-	return len(t.current) > 0, true
+	return t.predicate(cp.idx), true
 }
 
 func (t *bruteForceMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
@@ -856,14 +865,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		if !ok {
 			return &noMatchTree{"lang"}, nil
 		}
-		docs := make([]uint32, 0, len(d.languages))
-		for d, l := range d.languages {
-			if l == code {
-				docs = append(docs, uint32(d))
-			}
-		}
 		return &docMatchTree{
-			docs: docs,
+			reason:  "language",
+			numDocs: uint32(len(d.languages)),
+			predicate: func(docID uint32) bool {
+				return d.languages[docID] == code
+			},
 		}, nil
 
 	case *query.Symbol:

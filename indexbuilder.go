@@ -233,6 +233,9 @@ func (b *IndexBuilder) setRepository(desc *Repository) error {
 				branchEqual = branchEqual && (b.Name == desc.Branches[i].Name)
 			}
 		}
+		if !branchEqual {
+			return fmt.Errorf("got subrepository branches %v, want main repository branches %v", subrepo.Branches, desc.Branches)
+		}
 	}
 
 	if len(desc.Branches) > 64 {
