@@ -363,14 +363,6 @@ type RepoList struct {
 	Minimal map[uint32]*MinimalRepoListEntry
 }
 
-// MuxSearcher is a Sourcegraph addition. It allows to hydrate a Searcher with
-// out-of-band contextual information, like the visibility of the repo.
-type MuxSearcher interface {
-	Searcher
-
-	SetVisibility([]bool)
-}
-
 type Searcher interface {
 	Search(ctx context.Context, q query.Q, opts *SearchOptions) (*SearchResult, error)
 
@@ -428,6 +420,9 @@ type SearchOptions struct {
 
 	// SpanContext is the opentracing span context, if it exists, from the zoekt client
 	SpanContext map[string]string
+
+	// Visibility can either be {public, private, ""}.
+	Visibility string
 }
 
 func (s *SearchOptions) String() string {

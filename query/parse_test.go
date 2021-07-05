@@ -116,16 +116,6 @@ func TestParseQuery(t *testing.T) {
 		{"def or or abc", nil},
 
 		{"", &Const{Value: true}},
-
-		// visibility.
-		{"abc v:public", NewAnd(
-			&Substring{Pattern: "abc"},
-			&Visibility{Value: "public"},
-		)},
-		{"abc visibility:private", NewAnd(
-			&Substring{Pattern: "abc"},
-			&Visibility{Value: "private"},
-		)},
 	} {
 		got, err := Parse(c.in)
 		if (c.want == nil) != (err != nil) {
@@ -163,8 +153,6 @@ func TestTokenize(t *testing.T) {
 		{"o\"r\" bla", tokText, "or"},
 		{"or bla", tokOr, "or"},
 		{"ar bla", tokText, "ar"},
-		{"v:bla", tokVis, "bla"},
-		{"visibility:bla", tokVis, "bla"},
 	}
 	for _, c := range cases {
 		tok, err := nextToken([]byte(c.in))

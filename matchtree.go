@@ -958,12 +958,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			},
 		}, nil
 
-	case *query.Visibility:
+	case query.RepoFunc:
 		return &docMatchTree{
-			reason:  "Visibility",
+			reason:  "RepoFunc",
 			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
-				return (s.Value == "public") == d.public[d.repos[docID]]
+				return s(d.repoMetaData[d.repos[docID]].Name)
 			},
 		}, nil
 

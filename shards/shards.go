@@ -134,7 +134,7 @@ type repositorer interface {
 }
 
 type rankedShard struct {
-	zoekt.MuxSearcher
+	zoekt.Searcher
 	// SOURCEGRAPH we want to search shards in the order of the name to match
 	// up with how we sort results in graphqlbackend.
 	name string
@@ -212,14 +212,7 @@ func (ss *shardedSearcher) readPublicSet(dir string, lastMtime time.Time) time.T
 	}
 	proc := ss.sched.Exclusive()
 	defer proc.Release()
-
-	// We invalidate the cache (ss.ranked = nil) to ensure that indexData.public is
-	// set for the next search. Instead we could also keep the cache intact and
-	// mutate ss.shards, but cache invalidation seems more explicit and doesn't rely
-	// on the mutated field having a reference like value.
 	ss.public = publicReposSet
-	ss.rankedVersion++
-	ss.ranked = nil
 
 	return st.ModTime()
 }
@@ -302,7 +295,6 @@ func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
 	tl := &loader{
 		ss: ss,
 	}
-
 	dw, err := NewDirectoryWatcher(dir, tl)
 	if err != nil {
 		return nil, err
@@ -572,6 +564,18 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	shards, q = selectRepoSet(shards, q)
 	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), q)
 
+	switch v := opts.Visibility; v {
+	case "public", "private":
+		q = &query.And{Children: []query.Q{query.RepoFunc(func(name string) bool {
+			_, ok := ss.public[name]
+			return ok == (v == "public")
+		}), q}}
+	case "":
+		// nop
+	default:
+		return fmt.Errorf("got SearchOptions.Visibility=%s, expected {public, private, \"\"}", v)
+	}
+
 	var childCtx context.Context
 	var cancel context.CancelFunc
 	if opts.MaxWallTime == 0 {
@@ -787,10 +791,6 @@ func (s *shardedSearcher) getShards() []rankedShard {
 
 	var res []rankedShard
 	for _, sh := range s.shards {
-		// Hydrate indexData with visibility.
-		_, ok := s.public[sh.name]
-		sh.SetVisibility([]bool{ok})
-
 		res = append(res, sh)
 	}
 	sort.Slice(res, func(i, j int) bool {
@@ -827,7 +827,7 @@ func shardName(s zoekt.Searcher) string {
 	return result.Repos[0].Repository.Name
 }
 
-func (s *shardedSearcher) replace(key string, shard zoekt.MuxSearcher) {
+func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 	var name string
 	if shard != nil {
 		name = shardName(shard)
@@ -837,7 +837,7 @@ func (s *shardedSearcher) replace(key string, shard zoekt.MuxSearcher) {
 	defer proc.Release()
 
 	old := s.shards[key]
-	if old.MuxSearcher != nil {
+	if old.Searcher != nil {
 		old.Close()
 	}
 
@@ -845,8 +845,8 @@ func (s *shardedSearcher) replace(key string, shard zoekt.MuxSearcher) {
 		delete(s.shards, key)
 	} else {
 		s.shards[key] = rankedShard{
-			name:        name,
-			MuxSearcher: shard,
+			name:     name,
+			Searcher: shard,
 		}
 	}
 	s.rankedVersion++
@@ -855,7 +855,7 @@ func (s *shardedSearcher) replace(key string, shard zoekt.MuxSearcher) {
 	metricShardsLoaded.Set(float64(len(s.shards)))
 }
 
-func loadShard(fn string) (zoekt.MuxSearcher, error) {
+func loadShard(fn string) (zoekt.Searcher, error) {
 	f, err := os.Open(fn)
 	if err != nil {
 		return nil, err

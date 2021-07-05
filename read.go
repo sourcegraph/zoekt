@@ -291,9 +291,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	}
 	d.repos = repos
 
-	// All repos are private per default.
-	d.public = make([]bool, len(d.repoMetaData))
-
 	if err := d.calculateStats(); err != nil {
 		return nil, err
 	}
@@ -417,7 +414,7 @@ func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]Document
 // results coming from this searcher are valid only for the lifetime
 // of the Searcher itself, ie. []byte members should be copied into
 // fresh buffers if the result is to survive closing the shard.
-func NewSearcher(r IndexFile) (MuxSearcher, error) {
+func NewSearcher(r IndexFile) (Searcher, error) {
 	rd := &reader{r: r}
 
 	var toc indexTOC

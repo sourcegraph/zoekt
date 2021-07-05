@@ -210,7 +210,7 @@ func searchForTest(t *testing.T, b *IndexBuilder, q query.Q, o ...SearchOptions)
 	return res
 }
 
-func searcherForTest(t *testing.T, b *IndexBuilder, mux ...func(searcher MuxSearcher)) Searcher {
+func searcherForTest(t *testing.T, b *IndexBuilder) Searcher {
 	var buf bytes.Buffer
 	b.Write(&buf)
 	f := &memSeeker{buf.Bytes()}
@@ -218,9 +218,6 @@ func searcherForTest(t *testing.T, b *IndexBuilder, mux ...func(searcher MuxSear
 	searcher, err := NewSearcher(f)
 	if err != nil {
 		t.Fatalf("NewSearcher: %v", err)
-	}
-	for _, m := range mux {
-		m(searcher)
 	}
 
 	return searcher
@@ -2193,42 +2190,4 @@ func TestSearchTypeFileName(t *testing.T) {
 			Child: &query.Substring{Pattern: "file"},
 		})
 	wantSingleMatch(res, "f2")
-}
-
-func TestVisibilitySearch(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-	b.AddFile("f1", []byte("banana"))
-
-	cases := []struct {
-		visibility []bool
-		want       int
-	}{
-		{
-			visibility: []bool{true},
-			want:       1,
-		},
-		{
-			visibility: []bool{false},
-			want:       0,
-		},
-	}
-
-	q := &query.Visibility{Value: "public"}
-
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%v", c.visibility), func(t *testing.T) {
-			searcher := searcherForTest(t, b, func(searcher MuxSearcher) { searcher.SetVisibility(c.visibility) })
-			res, err := searcher.Search(context.Background(), q, &SearchOptions{})
-			if err != nil {
-				t.Fatalf("Search(%s): %v", q, err)
-			}
-			matches := res.Files
-			if len(matches) != c.want {
-				t.Fatalf("got %#v, want 1 match", matches)
-			}
-		})
-	}
 }

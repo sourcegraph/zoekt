@@ -357,12 +357,10 @@ func (q *Branch) String() string {
 	return fmt.Sprintf("branch:%q", q.Pattern)
 }
 
-type Visibility struct {
-	Value string
-}
+type RepoFunc func(name string) bool
 
-func (v *Visibility) String() string {
-	return fmt.Sprintf("visibility: %v", v.Value)
+func (v RepoFunc) String() string {
+	return "RepoFunc"
 }
 
 func queryChildren(q Q) []Q {

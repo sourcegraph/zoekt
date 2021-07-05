@@ -93,13 +93,6 @@ type indexData struct {
 
 	// repository indexes for all the files
 	repos []uint16
-
-	// public[i] is true iff repoMetaData[i] is a public repository.
-	public []bool
-}
-
-func (d *indexData) SetVisibility(visibility []bool) {
-	d.public = visibility
 }
 
 type symbolData struct {

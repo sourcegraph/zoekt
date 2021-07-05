@@ -34,10 +34,6 @@ import (
 
 type crashSearcher struct{}
 
-func (s *crashSearcher) SetVisibility(_ []bool) {
-	return
-}
-
 func (s *crashSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
 	panic("search")
 }
@@ -60,7 +56,7 @@ func TestCrashResilience(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 	ss := newShardedSearcher(2)
 	ss.shards = map[string]rankedShard{
-		"x": {MuxSearcher: &crashSearcher{}},
+		"x": {Searcher: &crashSearcher{}},
 	}
 
 	q := &query.Substring{Pattern: "hoi"}
@@ -81,10 +77,6 @@ func TestCrashResilience(t *testing.T) {
 type rankSearcher struct {
 	rank uint16
 	repo *zoekt.Repository
-}
-
-func (s *rankSearcher) SetVisibility(_ []bool) {
-	return
 }
 
 func (s *rankSearcher) Close() {
@@ -415,7 +407,7 @@ func testIndexBuilder(t testing.TB, repo *zoekt.Repository, docs ...zoekt.Docume
 	return b
 }
 
-func searcherForTest(t testing.TB, b *zoekt.IndexBuilder) zoekt.MuxSearcher {
+func searcherForTest(t testing.TB, b *zoekt.IndexBuilder) zoekt.Searcher {
 	var buf bytes.Buffer
 	b.Write(&buf)
 	f := &memSeeker{buf.Bytes()}
@@ -437,7 +429,7 @@ func reposForTest(n int) (result []*zoekt.Repository) {
 	return result
 }
 
-func testSearcherForRepo(b testing.TB, r *zoekt.Repository, numFiles int) zoekt.MuxSearcher {
+func testSearcherForRepo(b testing.TB, r *zoekt.Repository, numFiles int) zoekt.Searcher {
 	builder := testIndexBuilder(b, r)
 
 	builder.Add(zoekt.Document{
@@ -545,5 +537,97 @@ func TestReadPublicSet(t *testing.T) {
 	_, ok := ss.public["zoekt"]
 	if !ok || len(ss.public) != 1 {
 		t.Fatalf("expected ss.priority to contain 'zoekt'")
+	}
+}
+
+func TestVisibilityQuery(t *testing.T) {
+	ss := newShardedSearcher(1)
+
+	ss.public = map[string]struct{}{"publicRepo": {}}
+
+	var nextShardNum int
+	addShard := func(repo string, docs ...zoekt.Document) {
+		b := testIndexBuilder(t, &zoekt.Repository{Name: repo}, docs...)
+		shard := searcherForTest(t, b)
+		ss.replace(fmt.Sprintf("key-%d", nextShardNum), shard)
+		nextShardNum++
+	}
+	addShard("publicRepo", zoekt.Document{Name: "f1", Content: []byte("bla the needle")})
+	addShard("privateRepo", zoekt.Document{Name: "f2", Content: []byte("the banana")}, zoekt.Document{Name: "f3", Content: []byte("needle banana")})
+
+	cases := []struct {
+		pattern    string
+		visibility string
+		wantRepos  []string
+		wantFiles  int
+	}{
+		{
+			pattern:    "the",
+			visibility: "public",
+			wantRepos:  []string{"publicRepo"},
+			wantFiles:  1,
+		},
+		{
+			pattern:    "the",
+			visibility: "private",
+			wantRepos:  []string{"privateRepo"},
+			wantFiles:  1,
+		},
+		{
+			pattern:    "banana",
+			visibility: "private",
+			wantRepos:  []string{"privateRepo"},
+			wantFiles:  2,
+		},
+		{
+			pattern:    "banana",
+			visibility: "public",
+			wantFiles:  0,
+		},
+		{
+			pattern:    "bla",
+			visibility: "private",
+			wantFiles:  0,
+		},
+		{
+			pattern:    "needle",
+			visibility: "private",
+			wantRepos:  []string{"privateRepo"},
+			wantFiles:  1,
+		},
+		{
+			pattern:    "the",
+			visibility: "",
+			wantRepos:  []string{"publicRepo", "privateRepo"},
+			wantFiles:  2,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("pattern:%s,visibility:%s", c.pattern, c.visibility), func(t *testing.T) {
+
+			sr, err := ss.Search(context.Background(), &query.Substring{Pattern: c.pattern}, &zoekt.SearchOptions{Visibility: c.visibility})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got := len(sr.Files); got != c.wantFiles {
+				t.Fatalf("wanted %d, got %d", c.wantFiles, got)
+			}
+
+			if c.wantFiles == 0 {
+				return
+			}
+
+			gotRepos := make([]string, 0, len(sr.RepoURLs))
+			for k, _ := range sr.RepoURLs {
+				gotRepos = append(gotRepos, k)
+			}
+			sort.Strings(gotRepos)
+			sort.Strings(c.wantRepos)
+			if d := cmp.Diff(c.wantRepos, gotRepos); d != "" {
+				t.Fatalf("(-want, +got):\n%s", d)
+			}
+		})
 	}
 }
