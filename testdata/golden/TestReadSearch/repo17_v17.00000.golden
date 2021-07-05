@@ -1,13 +1,13 @@
 {
-  "FormatVersion": 15,
-  "FeatureVersion": 8,
+  "FormatVersion": 17,
+  "FeatureVersion": 1,
   "FileMatches": [
     [
       {
         "Score": 910,
         "Debug": "",
         "FileName": "main.go",
-        "Repository": "repo",
+        "Repository": "repo17",
         "Branches": null,
         "LineMatches": [
           {
@@ -40,7 +40,7 @@
         "Score": 710,
         "Debug": "",
         "FileName": "main.go",
-        "Repository": "repo",
+        "Repository": "repo17",
         "Branches": null,
         "LineMatches": [
           {

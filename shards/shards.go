@@ -132,9 +132,15 @@ type repositorer interface {
 
 type rankedShard struct {
 	zoekt.Searcher
-	// SOURCEGRAPH we want to search shards in the order of the name to match
-	// up with how we sort results in graphqlbackend.
-	name string
+
+	// priority is convenient to store here. It is only set and read inside of
+	// getShards.
+	priority float64
+
+	// We have out of band ranking on compound shards which can change even if
+	// the shard file does not. So we compute a rank in getShards. We store
+	// names here to avoid the cost of List in the search request path.
+	names []string
 }
 
 type shardedSearcher struct {
@@ -296,18 +302,32 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 
 	for i, c := range and.Children {
 		var setSize int
-		var hasRepo func(string) bool
+		var hasRepos func([]string) (bool, bool)
 
 		switch setQuery := c.(type) {
 		case *query.RepoSet:
 			setSize = len(setQuery.Set)
-			hasRepo = func(name string) bool {
-				return setQuery.Set[name]
+			hasRepos = func(names []string) (any, all bool) {
+				any = false
+				all = true
+				for _, name := range names {
+					b := setQuery.Set[name]
+					any = any || b
+					all = all && b
+				}
+				return any, all
 			}
 		case *query.RepoBranches:
 			setSize = len(setQuery.Set)
-			hasRepo = func(name string) bool {
-				return len(setQuery.Set[name]) > 0
+			hasRepos = func(names []string) (any, all bool) {
+				any = false
+				all = true
+				for _, name := range names {
+					b := len(setQuery.Set[name]) > 0
+					any = any || b
+					all = all && b
+				}
+				return any, all
 			}
 		default:
 			continue
@@ -320,16 +340,24 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		}
 
 		filtered := make([]rankedShard, 0, setSize)
+		filteredAll := true
 
 		for _, s := range shards {
-			if hasRepo(s.name) {
+			if any, all := hasRepos(s.names); any {
 				filtered = append(filtered, s)
+				filteredAll = filteredAll && all
 			}
 		}
 
 		// We don't need to adjust the query since we are returning an empty set
 		// of shards to search.
 		if len(filtered) == 0 {
+			return filtered, and
+		}
+
+		// We can't simplify the query since we are searching shards which contain
+		// repos we aren't supposed to search.
+		if !filteredAll {
 			return filtered, and
 		}
 
@@ -346,16 +374,18 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		}
 		if b, ok := c.(*query.RepoBranches); ok {
 			// We can only replace if all the repos want the same branches.
-			want := b.Set[filtered[0].name]
-			for _, s := range filtered[1:] {
-				if !strSliceEqual(want, b.Set[s.name]) {
-					return filtered, and
+			want := b.Set[filtered[0].names[0]]
+			for _, s := range filtered {
+				for _, name := range s.names {
+					if !strSliceEqual(want, b.Set[name]) {
+						return filtered, and
+					}
 				}
 			}
 
 			// Every repo wants the same branches, so we can replace RepoBranches
 			// with a list of branch queries.
-			and.Children[i] = b.Branches(filtered[0].name)
+			and.Children[i] = b.Branches(filtered[0].names[0])
 			return filtered, query.Simplify(and)
 		}
 
@@ -702,14 +732,23 @@ func (s *shardedSearcher) getShards() []rankedShard {
 
 	var res []rankedShard
 	for _, sh := range s.shards {
-		res = append(res, sh)
+		var priority float64
+		for _, name := range sh.names {
+			if p := s.priority[name]; p > priority {
+				priority = p
+			}
+		}
+		res = append(res, rankedShard{
+			Searcher: sh.Searcher,
+			priority: priority,
+			names:    sh.names,
+		})
 	}
 	sort.Slice(res, func(i, j int) bool {
-		priorityDiff := s.priority[res[i].name] - s.priority[res[j].name]
-		if priorityDiff != 0 {
-			return priorityDiff > 0
+		if res[i].priority != res[j].priority {
+			return res[i].priority > res[j].priority
 		}
-		return res[i].name < res[j].name
+		return res[i].names[0] < res[j].names[0]
 	})
 
 	// Cache ranked. We currently hold a read lock, so start a goroutine which
@@ -726,22 +765,27 @@ func (s *shardedSearcher) getShards() []rankedShard {
 	return res
 }
 
-func shardName(s zoekt.Searcher) string {
+func shardNames(s zoekt.Searcher) []string {
 	q := query.Repo{}
 	result, err := s.List(context.Background(), &q, nil)
 	if err != nil {
-		return ""
+		return nil
 	}
 	if len(result.Repos) == 0 {
-		return ""
+		return nil
 	}
-	return result.Repos[0].Repository.Name
+
+	names := make([]string, 0, len(result.Repos))
+	for _, r := range result.Repos {
+		names = append(names, r.Repository.Name)
+	}
+	return names
 }
 
 func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
-	var name string
+	var names []string
 	if shard != nil {
-		name = shardName(shard)
+		names = shardNames(shard)
 	}
 
 	proc := s.sched.Exclusive()
@@ -752,11 +796,12 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 		old.Close()
 	}
 
-	if shard == nil {
+	// remove shard if the file is gone or all repos are tombstoned.
+	if shard == nil || len(names) == 0 {
 		delete(s.shards, key)
 	} else {
 		s.shards[key] = rankedShard{
-			name:     name,
+			names:    names,
 			Searcher: shard,
 		}
 	}

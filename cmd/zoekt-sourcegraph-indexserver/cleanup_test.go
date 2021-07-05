@@ -34,13 +34,15 @@ func TestCleanup(t *testing.T) {
 			if filepath.Ext(path) != ".zoekt" {
 				continue
 			}
-			name, _ := shardRepoName(path)
+			names, _ := shardRepoNames(path)
 			fi, _ := os.Stat(path)
-			shards = append(shards, shard{
-				Repo:    name,
-				Path:    filepath.Base(path),
-				ModTime: fi.ModTime(),
-			})
+			for _, name := range names {
+				shards = append(shards, shard{
+					Repo:    name,
+					Path:    filepath.Base(path),
+					ModTime: fi.ModTime(),
+				})
+			}
 		}
 		return shards
 	}

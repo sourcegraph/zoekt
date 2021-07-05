@@ -262,21 +262,52 @@ func hashString(s string) string {
 
 // ShardName returns the name the given index shard.
 func (o *Options) shardName(n int) string {
+	return o.shardNameVersion(zoekt.IndexFormatVersion, n)
+}
+
+func (o *Options) shardNameVersion(version, n int) string {
 	abs := url.QueryEscape(o.RepositoryDescription.Name)
 	if len(abs) > 200 {
 		abs = abs[:200] + hashString(abs)[:8]
 	}
 	return filepath.Join(o.IndexDir,
-		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, zoekt.IndexFormatVersion, n))
+		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, version, n))
 }
+
+var readVersions = []struct {
+	IndexFormatVersion int
+	FeatureVersion     int
+}{{
+	IndexFormatVersion: zoekt.IndexFormatVersion,
+	FeatureVersion:     zoekt.FeatureVersion,
+}, {
+	// SOURCEGRAPH: We don't re-index v16 files unless something changed. We
+	// support reading v16 files. In a few versions time we can force a re-index
+	// of everything.
+	IndexFormatVersion: 16,
+	FeatureVersion:     9,
+}}
 
 // IncrementalSkipIndexing returns true if the index present on disk matches
 // the build options.
 func (o *Options) IncrementalSkipIndexing() bool {
-	fn := o.shardName(0)
+	// Open the latest version we support that is on disk.
+	var (
+		f              *os.File
+		featureVersion int
+	)
+	for _, v := range readVersions {
+		fn := o.shardNameVersion(v.IndexFormatVersion, 0)
 
-	f, err := os.Open(fn)
-	if err != nil {
+		var err error
+		f, err = os.Open(fn)
+		if err == nil {
+			featureVersion = v.FeatureVersion
+			break
+		}
+	}
+
+	if f == nil {
 		return false
 	}
 
@@ -286,14 +317,21 @@ func (o *Options) IncrementalSkipIndexing() bool {
 	}
 	defer iFile.Close()
 
-	repo, index, err := zoekt.ReadMetadata(iFile)
+	repos, index, err := zoekt.ReadMetadata(iFile)
 	if err != nil {
 		return false
 	}
 
-	if index.IndexFeatureVersion != zoekt.FeatureVersion {
+	if index.IndexFeatureVersion != featureVersion {
 		return false
 	}
+
+	// This shouldn't happen. shardName above should only be reading
+	// non-compound shards.
+	if len(repos) != 1 {
+		return false
+	}
+	repo := repos[0]
 
 	if repo.IndexOptions != o.HashOptions() {
 		return false

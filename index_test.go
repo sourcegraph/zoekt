@@ -1239,7 +1239,7 @@ func TestMetadata(t *testing.T) {
 		t.Fatalf("ReadMetadata: %v", err)
 	}
 
-	if got, want := rd.Name, "reponame"; got != want {
+	if got, want := rd[0].Name, "reponame"; got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
 }

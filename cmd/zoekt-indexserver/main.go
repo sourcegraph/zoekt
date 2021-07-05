@@ -217,10 +217,16 @@ func deleteIfOrphan(repoDir string, fn string) error {
 	}
 	defer ifile.Close()
 
-	repo, _, err := zoekt.ReadMetadata(ifile)
+	repos, _, err := zoekt.ReadMetadata(ifile)
 	if err != nil {
 		return nil
 	}
+
+	// TODO support compound shards in zoekt-indexserver
+	if len(repos) != 1 {
+		return nil
+	}
+	repo := repos[0]
 
 	_, err = os.Stat(repo.Source)
 	if os.IsNotExist(err) {

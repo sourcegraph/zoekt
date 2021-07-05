@@ -251,6 +251,46 @@ func fromSizedDeltas(data []byte, ps []uint32) []uint32 {
 	return ps
 }
 
+func toSizedDeltas16(offsets []uint16) []byte {
+	var enc [8]byte
+
+	deltas := make([]byte, 0, len(offsets)*2)
+
+	m := binary.PutUvarint(enc[:], uint64(len(offsets)))
+	deltas = append(deltas, enc[:m]...)
+
+	var last uint16
+	for _, p := range offsets {
+		delta := p - last
+		last = p
+
+		m := binary.PutUvarint(enc[:], uint64(delta))
+		deltas = append(deltas, enc[:m]...)
+	}
+	return deltas
+}
+
+func fromSizedDeltas16(data []byte, ps []uint16) []uint16 {
+	sz, m := binary.Uvarint(data)
+	data = data[m:]
+
+	if cap(ps) < int(sz) {
+		ps = make([]uint16, 0, sz)
+	} else {
+		ps = ps[:0]
+	}
+
+	var last uint16
+	for len(data) > 0 {
+		delta, m := binary.Uvarint(data)
+		offset := last + uint16(delta)
+		last = offset
+		data = data[m:]
+		ps = append(ps, offset)
+	}
+	return ps
+}
+
 func fromDeltas(data []byte, buf []uint32) []uint32 {
 	buf = buf[:0]
 	if cap(buf) < len(data)/2 {
