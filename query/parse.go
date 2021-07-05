@@ -212,12 +212,11 @@ func parseExpr(in []byte) (Q, int, error) {
 
 	case tokVis:
 		switch text {
-		case "public":
-		case "private":
+		case "public", "private":
+			expr = &Visibility{text}
 		default:
 			return nil, 0, fmt.Errorf("query: unknown visibility argument %q, want {public, private}", text)
 		}
-		expr = &Visibility{text}
 	}
 
 	return expr, len(in) - len(b), nil
