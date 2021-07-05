@@ -363,6 +363,14 @@ type RepoList struct {
 	Minimal map[uint32]*MinimalRepoListEntry
 }
 
+// MuxSearcher is a Sourcegraph addition. It allows to hydrate a Searcher with
+// out-of-band contextual information, like the visibility of the repo.
+type MuxSearcher interface {
+	Searcher
+
+	SetVisibility([]bool)
+}
+
 type Searcher interface {
 	Search(ctx context.Context, q query.Q, opts *SearchOptions) (*SearchResult, error)
 

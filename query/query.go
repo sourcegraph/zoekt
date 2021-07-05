@@ -357,6 +357,14 @@ func (q *Branch) String() string {
 	return fmt.Sprintf("branch:%q", q.Pattern)
 }
 
+type Visibility struct {
+	Value string
+}
+
+func (v *Visibility) String() string {
+	return fmt.Sprintf("visibility: %v", v.Value)
+}
+
 func queryChildren(q Q) []Q {
 	switch s := q.(type) {
 	case *And:

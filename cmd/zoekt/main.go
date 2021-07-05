@@ -46,7 +46,7 @@ func displayMatches(files []zoekt.FileMatch, pat string, withRepo bool, list boo
 	}
 }
 
-func loadShard(fn string, verbose bool) (zoekt.Searcher, error) {
+func loadShard(fn string, verbose bool) (zoekt.MuxSearcher, error) {
 	f, err := os.Open(fn)
 	if err != nil {
 		return nil, err

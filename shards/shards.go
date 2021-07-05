@@ -15,6 +15,7 @@
 package shards
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,9 +23,11 @@ import (
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -131,7 +134,7 @@ type repositorer interface {
 }
 
 type rankedShard struct {
-	zoekt.Searcher
+	zoekt.MuxSearcher
 	// SOURCEGRAPH we want to search shards in the order of the name to match
 	// up with how we sort results in graphqlbackend.
 	name string
@@ -150,6 +153,9 @@ type shardedSearcher struct {
 	ranked        []rankedShard
 
 	priority map[string]float64
+
+	// public is a set of public repository names.
+	public map[string]struct{}
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
@@ -157,8 +163,85 @@ func newShardedSearcher(n int64) *shardedSearcher {
 		shards:   make(map[string]rankedShard),
 		sched:    newScheduler(n),
 		priority: make(map[string]float64),
+		public:   make(map[string]struct{}),
 	}
 	return ss
+}
+
+// readPublicSet reads public.txt and acquires an exclusive lock to hydrate
+// shardedSearcher with a set of public repos.
+func (ss *shardedSearcher) readPublicSet(dir string, lastMtime time.Time) time.Time {
+	publicPath := filepath.Join(dir, "public.txt")
+
+	st, err := os.Stat(publicPath)
+	if err != nil {
+		log.Printf("watchPublic: os.Stat: %s", err)
+		return lastMtime // ignore missing file errors
+	}
+	if st.ModTime() == lastMtime {
+		log.Printf("watchPublic: public.txt unchanged, no need to reload")
+		return lastMtime // file is unchanged
+	}
+
+	file, err := os.Open(publicPath)
+	if err != nil {
+		log.Printf("watchPublic: os.Open: %s", err)
+		return st.ModTime()
+	}
+	defer file.Close()
+
+	var publicRepos []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		repo := strings.TrimSpace(scanner.Text())
+		if repo == "" {
+			continue
+		}
+		publicRepos = append(publicRepos, repo)
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("watchPublic: scanner error: %s", err)
+		return st.ModTime()
+	}
+
+	log.Printf("Reloading public.txt. %d public repositories", len(publicRepos))
+
+	publicReposSet := make(map[string]struct{}, len(publicRepos))
+	for _, r := range publicRepos {
+		publicReposSet[r] = struct{}{}
+	}
+	proc := ss.sched.Exclusive()
+	defer proc.Release()
+
+	// We invalidate the cache (ss.ranked = nil) to ensure that indexData.public is
+	// set for the next search. Instead we could also keep the cache intact and
+	// mutate ss.shards, but cache invalidation seems more explicit and doesn't rely
+	// on the mutated field having a reference like value.
+	ss.public = publicReposSet
+	ss.rankedVersion++
+	ss.ranked = nil
+
+	return st.ModTime()
+}
+
+// watchPublic watches public.txt in dir by calling readPublicSet in regular
+// intervals. The first call to readPublicSet is immediate.
+func (ss *shardedSearcher) watchPublic(dir string, done chan struct{}) {
+	// instant tick
+	lastMtime := ss.readPublicSet(dir, time.Time{})
+
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		for {
+			select {
+			case <-done:
+				ticker.Stop()
+				return
+			case <-ticker.C:
+				lastMtime = ss.readPublicSet(dir, lastMtime)
+			}
+		}
+	}()
 }
 
 func (ss *shardedSearcher) watchPriorities(dir string, done chan struct{}) {
@@ -219,12 +302,14 @@ func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
 	tl := &loader{
 		ss: ss,
 	}
+
 	dw, err := NewDirectoryWatcher(dir, tl)
 	if err != nil {
 		return nil, err
 	}
 
 	go ss.watchPriorities(dir, dw.quit)
+	ss.watchPublic(dir, dw.quit)
 
 	ds := &directorySearcher{
 		Streamer:         ss,
@@ -702,6 +787,10 @@ func (s *shardedSearcher) getShards() []rankedShard {
 
 	var res []rankedShard
 	for _, sh := range s.shards {
+		// Hydrate indexData with visibility.
+		_, ok := s.public[sh.name]
+		sh.SetVisibility([]bool{ok})
+
 		res = append(res, sh)
 	}
 	sort.Slice(res, func(i, j int) bool {
@@ -738,7 +827,7 @@ func shardName(s zoekt.Searcher) string {
 	return result.Repos[0].Repository.Name
 }
 
-func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
+func (s *shardedSearcher) replace(key string, shard zoekt.MuxSearcher) {
 	var name string
 	if shard != nil {
 		name = shardName(shard)
@@ -748,7 +837,7 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 	defer proc.Release()
 
 	old := s.shards[key]
-	if old.Searcher != nil {
+	if old.MuxSearcher != nil {
 		old.Close()
 	}
 
@@ -756,8 +845,8 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 		delete(s.shards, key)
 	} else {
 		s.shards[key] = rankedShard{
-			name:     name,
-			Searcher: shard,
+			name:        name,
+			MuxSearcher: shard,
 		}
 	}
 	s.rankedVersion++
@@ -766,7 +855,7 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 	metricShardsLoaded.Set(float64(len(s.shards)))
 }
 
-func loadShard(fn string) (zoekt.Searcher, error) {
+func loadShard(fn string) (zoekt.MuxSearcher, error) {
 	f, err := os.Open(fn)
 	if err != nil {
 		return nil, err

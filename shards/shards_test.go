@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"runtime"
 	"sort"
 	"testing"
@@ -32,6 +33,10 @@ import (
 )
 
 type crashSearcher struct{}
+
+func (s *crashSearcher) SetVisibility(_ []bool) {
+	return
+}
 
 func (s *crashSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
 	panic("search")
@@ -55,7 +60,7 @@ func TestCrashResilience(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 	ss := newShardedSearcher(2)
 	ss.shards = map[string]rankedShard{
-		"x": {Searcher: &crashSearcher{}},
+		"x": {MuxSearcher: &crashSearcher{}},
 	}
 
 	q := &query.Substring{Pattern: "hoi"}
@@ -76,6 +81,10 @@ func TestCrashResilience(t *testing.T) {
 type rankSearcher struct {
 	rank uint16
 	repo *zoekt.Repository
+}
+
+func (s *rankSearcher) SetVisibility(_ []bool) {
+	return
 }
 
 func (s *rankSearcher) Close() {
@@ -406,7 +415,7 @@ func testIndexBuilder(t testing.TB, repo *zoekt.Repository, docs ...zoekt.Docume
 	return b
 }
 
-func searcherForTest(t testing.TB, b *zoekt.IndexBuilder) zoekt.Searcher {
+func searcherForTest(t testing.TB, b *zoekt.IndexBuilder) zoekt.MuxSearcher {
 	var buf bytes.Buffer
 	b.Write(&buf)
 	f := &memSeeker{buf.Bytes()}
@@ -428,7 +437,7 @@ func reposForTest(n int) (result []*zoekt.Repository) {
 	return result
 }
 
-func testSearcherForRepo(b testing.TB, r *zoekt.Repository, numFiles int) zoekt.Searcher {
+func testSearcherForRepo(b testing.TB, r *zoekt.Repository, numFiles int) zoekt.MuxSearcher {
 	builder := testIndexBuilder(b, r)
 
 	builder.Add(zoekt.Document{
@@ -510,5 +519,31 @@ func BenchmarkShardedSearch(b *testing.B) {
 				search(b, q, bb.wantFiles)
 			}
 		})
+	}
+}
+
+func TestReadPublicSet(t *testing.T) {
+	ss := newShardedSearcher(1)
+
+	dir := t.TempDir()
+
+	// Handle missing public.txt gracefully.
+	ss.readPublicSet(dir, time.Time{})
+
+	err := os.WriteFile(path.Join(dir, "public.txt"), []byte("zoekt\n"), 0644)
+	if err != nil {
+		t.Fatalf("failed to write public.txt.tmp: %v", err)
+	}
+
+	lastMtime := ss.readPublicSet(dir, time.Time{})
+	lastMtime2 := ss.readPublicSet(dir, lastMtime) // public.txt is unchanged
+
+	if lastMtime != lastMtime2 {
+		t.Fatalf("got %v != %v, but expected both times to be the same", lastMtime, lastMtime2)
+	}
+
+	_, ok := ss.public["zoekt"]
+	if !ok || len(ss.public) != 1 {
+		t.Fatalf("expected ss.priority to contain 'zoekt'")
 	}
 }

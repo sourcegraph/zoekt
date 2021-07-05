@@ -957,6 +957,16 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				return reposWant[d.repos[docID]]
 			},
 		}, nil
+
+	case *query.Visibility:
+		return &docMatchTree{
+			reason:  "Visibility",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return (s.Value == "public") == d.public[d.repos[docID]]
+			},
+		}, nil
+
 	}
 	log.Panicf("type %T", q)
 	return nil, nil
