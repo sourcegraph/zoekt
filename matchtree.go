@@ -965,7 +965,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			repoVisible = append(repoVisible, (r.RawConfig["public"] == "1") == wantPublic)
 		}
 		return &docMatchTree{
-			reason:  fmt.Sprintf("Visibility:%s", s.Value),
+			reason:  s.String(),
 			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
 				return repoVisible[d.repos[docID]]
