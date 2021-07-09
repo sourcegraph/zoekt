@@ -138,5 +138,6 @@ func RegisterGob() {
 		gob.Register(&query.Substring{})
 		gob.Register(&query.Symbol{})
 		gob.Register(&query.Type{})
+		gob.Register(&query.Visibility{})
 	})
 }
