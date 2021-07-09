@@ -144,6 +144,14 @@ type Stats struct {
 	// Number of candidate matches as a result of searching ngrams.
 	NgramMatches int
 
+	// Priority of the shard that was searched.
+	ShardPriority float64
+
+	// Maximum priority of a shard that is being searched in parallel. This is used to reorder results
+	// when the result set is known to be stable-- that is, when a result's ShardPriority is greater than
+	// the max(MaxPendingShardPriority) from the latest results of each backend, it can be returned to the user.
+	MaxPendingShardPriority float64
+
 	// Wall clock time for queued search.
 	Wait time.Duration
 
