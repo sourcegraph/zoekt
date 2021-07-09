@@ -144,27 +144,13 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		branchNames:    []map[uint]string{},
 	}
 
-	blob, err := d.readSectionBlob(toc.metaData)
-	if err != nil {
+	if repo, md, err := r.readMetadata(toc); md != nil && md.IndexFormatVersion != IndexFormatVersion {
+		return nil, fmt.Errorf("file is v%d, want v%d", md.IndexFormatVersion, IndexFormatVersion)
+	} else if err != nil {
 		return nil, err
-	}
-
-	if err := json.Unmarshal(blob, &d.metaData); err != nil {
-		return nil, err
-	}
-
-	if d.metaData.IndexFormatVersion != IndexFormatVersion {
-		return nil, fmt.Errorf("file is v%d, want v%d", d.metaData.IndexFormatVersion, IndexFormatVersion)
-	}
-
-	blob, err = d.readSectionBlob(toc.repoMetaData)
-	if err != nil {
-		return nil, err
-	}
-
-	d.repoMetaData = make([]Repository, 1)
-	if err := json.Unmarshal(blob, &d.repoMetaData[0]); err != nil {
-		return nil, err
+	} else {
+		d.metaData = *md
+		d.repoMetaData = []Repository{*repo}
 	}
 
 	d.boundariesStart = toc.fileContents.data.off
@@ -174,6 +160,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.docSectionsStart = toc.fileSections.data.off
 	d.docSectionsIndex = toc.fileSections.relativeIndex()
 
+	var err error
 	if d.metaData.IndexFormatVersion == 16 {
 		d.symbols.symKindIndex = toc.symbolKindMap.relativeIndex()
 		d.fileEndSymbol, err = readSectionU32(d.file, toc.fileEndSymbol)
@@ -239,7 +226,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.branchNames = append(d.branchNames, repoBranchNames)
 	}
 
-	blob, err = d.readSectionBlob(toc.runeDocSections)
+	blob, err := d.readSectionBlob(toc.runeDocSections)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +283,20 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	}
 
 	return &d, nil
+}
+
+func (r *reader) readMetadata(toc *indexTOC) (*Repository, *IndexMetadata, error) {
+	var md IndexMetadata
+	if err := r.readJSON(&md, &toc.metaData); err != nil {
+		return nil, nil, err
+	}
+
+	var repo Repository
+	if err := r.readJSON(&repo, &toc.repoMetaData); err != nil {
+		return nil, &md, err
+	}
+
+	return &repo, &md, nil
 }
 
 const ngramEncoding = 8
@@ -444,17 +445,7 @@ func ReadMetadata(inf IndexFile) (*Repository, *IndexMetadata, error) {
 		return nil, nil, err
 	}
 
-	var md IndexMetadata
-	if err := rd.readJSON(&md, &toc.metaData); err != nil {
-		return nil, nil, err
-	}
-
-	var repo Repository
-	if err := rd.readJSON(&repo, &toc.repoMetaData); err != nil {
-		return nil, nil, err
-	}
-
-	return &repo, &md, nil
+	return rd.readMetadata(&toc)
 }
 
 func loadIndexData(r IndexFile) (*indexData, error) {
