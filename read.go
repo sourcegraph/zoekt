@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 )
 
@@ -294,6 +295,18 @@ func (r *reader) readMetadata(toc *indexTOC) (*Repository, *IndexMetadata, error
 	var repo Repository
 	if err := r.readJSON(&repo, &toc.repoMetaData); err != nil {
 		return nil, &md, err
+	}
+
+	// Sourcegraph specific: we support mutating metadata via an additional
+	// ".meta" file. This is to support tombstoning. An additional benefit is we
+	// can update metadata (such as Rank and Name) without re-indexing content.
+	if b, err := os.ReadFile(r.r.Name() + ".meta"); err != nil && !os.IsNotExist(err) {
+		return nil, &md, fmt.Errorf("failed to read meta file: %w", err)
+	} else if len(b) > 0 {
+		err = json.Unmarshal(b, &repo)
+		if err != nil {
+			return nil, &md, fmt.Errorf("failed to unmarshal meta file: %w", err)
+		}
 	}
 
 	return &repo, &md, nil

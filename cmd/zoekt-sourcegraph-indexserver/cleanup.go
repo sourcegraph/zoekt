@@ -177,6 +177,7 @@ func removeIncompleteShards(dir string) {
 			if err := os.Remove(path); err != nil {
 				debug.Printf("failed to remove incomplete shard %s: %v", path, err)
 			} else {
+				os.Remove(path + ".meta")
 				debug.Printf("cleaned up incomplete shard %s", path)
 			}
 		}
@@ -194,6 +195,7 @@ func removeAll(shards []shard) {
 			// trash + an admin re-adding a repository.
 			debug.Printf("failed to remove shard %s: %v", shard.Path, err)
 		}
+		os.Remove(shard.Path + ".meta")
 	}
 }
 
@@ -205,6 +207,7 @@ func moveAll(dstDir string, shards []shard) {
 			removeAll(shards)
 			return
 		}
+		_ = os.Rename(shard.Path+".meta", dst+".meta")
 		// update path so that partial failure removes the dst path
 		shards[i].Path = dst
 	}

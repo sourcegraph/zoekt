@@ -15,6 +15,7 @@
 package build
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -62,7 +63,7 @@ func TestBasic(t *testing.T) {
 		t.Errorf("Finish: %v", err)
 	}
 
-	fs, _ := filepath.Glob(dir + "/*")
+	fs, _ := filepath.Glob(dir + "/*.zoekt")
 	if len(fs) <= 1 {
 		t.Fatalf("want multiple shards, got %v", fs)
 	}
@@ -71,6 +72,7 @@ func TestBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
 	}
+	defer ss.Close()
 
 	q, err := query.Parse("111")
 	if err != nil {
@@ -84,10 +86,69 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("Search(%v): %v", q, err)
 	}
 
-	if len(result.Files) != 1 || result.Files[0].FileName != "F1" {
+	if len(result.Files) != 1 {
 		t.Errorf("got %v, want 1 file.", result.Files)
+	} else if gotFile, wantFile := result.Files[0].FileName, "F1"; gotFile != wantFile {
+		t.Errorf("got file %q, want %q", gotFile, wantFile)
+	} else if gotRepo, wantRepo := result.Files[0].Repository, "repo"; gotRepo != wantRepo {
+		t.Errorf("got repo %q, want %q", gotRepo, wantRepo)
 	}
-	defer ss.Close()
+
+	t.Run("meta file", func(t *testing.T) {
+		// Add a .meta file for each shard with repo.Name set to "repo-mutated"
+		for _, p := range fs {
+			repo, err := shardRepoMetadata(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			repo.Name = "repo-mutated"
+			b, err := json.Marshal(repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := ioutil.WriteFile(p+".meta", b, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// TODO(keegan) do not merge until you remove this time.Sleep
+		time.Sleep(time.Second)
+
+		result, err := ss.Search(ctx, q, &sOpts)
+		if err != nil {
+			t.Fatalf("Search(%v): %v", q, err)
+		}
+
+		if len(result.Files) != 1 {
+			t.Errorf("got %v, want 1 file.", result.Files)
+		} else if gotFile, wantFile := result.Files[0].FileName, "F1"; gotFile != wantFile {
+			t.Errorf("got file %q, want %q", gotFile, wantFile)
+		} else if gotRepo, wantRepo := result.Files[0].Repository, "repo-mutated"; gotRepo != wantRepo {
+			t.Errorf("got repo %q, want %q", gotRepo, wantRepo)
+		}
+	})
+}
+
+func shardRepoMetadata(path string) (*zoekt.Repository, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	ifile, err := zoekt.NewIndexFile(f)
+	if err != nil {
+		return nil, err
+	}
+	defer ifile.Close()
+
+	repo, _, err := zoekt.ReadMetadata(ifile)
+	if err != nil {
+		return nil, err
+	}
+
+	return repo, nil
 }
 
 func TestLargeFileOption(t *testing.T) {

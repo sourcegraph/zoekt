@@ -454,6 +454,7 @@ func (b *Builder) deleteRemainingShards() {
 		if err := os.Remove(name); os.IsNotExist(err) {
 			break
 		} else {
+			_ = os.Remove(name + ".meta")
 			b.shardLog("remove", name)
 		}
 	}
