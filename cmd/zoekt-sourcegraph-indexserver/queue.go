@@ -94,20 +94,14 @@ func (q *Queue) AddOrUpdate(repoName string, opts IndexOptions) {
 func (q *Queue) SetIndexed(repoName string, opts IndexOptions, state indexState) {
 	q.mu.Lock()
 	item := q.get(repoName)
-	item.indexed = reflect.DeepEqual(opts, item.opts)
 	item.setIndexState(state)
+	if state != indexStateFail {
+		item.indexed = reflect.DeepEqual(opts, item.opts)
+	}
 	if item.heapIdx >= 0 {
 		// We only update the position in the queue, never add it.
 		heap.Fix(&q.pq, item.heapIdx)
 	}
-	q.mu.Unlock()
-}
-
-// SetLastIndexFailed will update our metrics to track that this repository is
-// not up to date.
-func (q *Queue) SetLastIndexFailed(repoName string) {
-	q.mu.Lock()
-	q.get(repoName).setIndexState(indexStateFail)
 	q.mu.Unlock()
 }
 
