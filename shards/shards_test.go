@@ -512,3 +512,98 @@ func BenchmarkShardedSearch(b *testing.B) {
 		})
 	}
 }
+
+func TestVisibilityQuery(t *testing.T) {
+	ss := newShardedSearcher(1)
+
+	var nextShardNum int
+	addShard := func(repo string, public bool, docs ...zoekt.Document) {
+		r := &zoekt.Repository{Name: repo}
+		if public {
+			r.RawConfig = map[string]string{"public": "1"}
+		}
+		b := testIndexBuilder(t, r, docs...)
+		shard := searcherForTest(t, b)
+		ss.replace(fmt.Sprintf("key-%d", nextShardNum), shard)
+		nextShardNum++
+	}
+	addShard("publicRepo", true, zoekt.Document{Name: "f1", Content: []byte("bla the needle")})
+	addShard("publicRepo2", true, zoekt.Document{Name: "f2", Content: []byte("needle in haystack")})
+	addShard("privateRepo", false, zoekt.Document{Name: "f3", Content: []byte("the banana")}, zoekt.Document{Name: "f3", Content: []byte("needle banana")})
+
+	cases := []struct {
+		pattern    string
+		visibility string
+		wantRepos  []string
+		wantFiles  int
+	}{
+		{
+			pattern:    "the",
+			visibility: "public",
+			wantRepos:  []string{"publicRepo"},
+			wantFiles:  1,
+		},
+		{
+			pattern:    "banana",
+			visibility: "public",
+			wantFiles:  0,
+		},
+		{
+			pattern:    "needle",
+			visibility: "public",
+			wantRepos:  []string{"publicRepo", "publicRepo2"},
+			wantFiles:  2,
+		},
+		{
+			pattern:    "the",
+			visibility: "private",
+			wantRepos:  []string{"privateRepo"},
+			wantFiles:  1,
+		},
+		{
+			pattern:    "banana",
+			visibility: "private",
+			wantRepos:  []string{"privateRepo"},
+			wantFiles:  2,
+		},
+		{
+			pattern:    "bla",
+			visibility: "private",
+			wantFiles:  0,
+		},
+		{
+			pattern:    "needle",
+			visibility: "private",
+			wantRepos:  []string{"privateRepo"},
+			wantFiles:  1,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("pattern:%s,visibility:%s", c.pattern, c.visibility), func(t *testing.T) {
+
+			sr, err := ss.Search(context.Background(), query.NewAnd(&query.Substring{Pattern: c.pattern}, &query.Visibility{c.visibility}), &zoekt.SearchOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got := len(sr.Files); got != c.wantFiles {
+				t.Fatalf("wanted %d, got %d", c.wantFiles, got)
+			}
+
+			if c.wantFiles == 0 {
+				return
+			}
+
+			gotRepos := make([]string, 0, len(sr.RepoURLs))
+			for k, _ := range sr.RepoURLs {
+				gotRepos = append(gotRepos, k)
+			}
+			sort.Strings(gotRepos)
+			sort.Strings(c.wantRepos)
+			if d := cmp.Diff(c.wantRepos, gotRepos); d != "" {
+				t.Fatalf("(-want, +got):\n%s", d)
+			}
+		})
+	}
+}

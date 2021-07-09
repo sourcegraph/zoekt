@@ -210,6 +210,13 @@ func parseExpr(in []byte) (Q, int, error) {
 		// Later we will lift this into a root, like we do for caseQ
 		expr = &Type{Type: t, Child: nil}
 
+	case tokVis:
+		switch text {
+		case "public", "private":
+			expr = &Visibility{text}
+		default:
+			return nil, 0, fmt.Errorf("query: unknown visibility argument %q, want {public, private}", text)
+		}
 	}
 
 	return expr, len(in) - len(b), nil
@@ -358,6 +365,7 @@ const (
 	tokLang       = 12
 	tokSym        = 13
 	tokType       = 14
+	tokVis        = 15
 )
 
 var tokNames = map[int]string{
@@ -375,23 +383,26 @@ var tokNames = map[int]string{
 	tokLang:       "Language",
 	tokSym:        "Symbol",
 	tokType:       "Type",
+	tokVis:        "Visibility",
 }
 
 var prefixes = map[string]int{
-	"b:":       tokBranch,
-	"branch:":  tokBranch,
-	"c:":       tokContent,
-	"case:":    tokCase,
-	"content:": tokContent,
-	"f:":       tokFile,
-	"file:":    tokFile,
-	"r:":       tokRepo,
-	"regex:":   tokRegex,
-	"repo:":    tokRepo,
-	"lang:":    tokLang,
-	"sym:":     tokSym,
-	"t:":       tokType,
-	"type:":    tokType,
+	"b:":          tokBranch,
+	"branch:":     tokBranch,
+	"c:":          tokContent,
+	"case:":       tokCase,
+	"content:":    tokContent,
+	"f:":          tokFile,
+	"file:":       tokFile,
+	"r:":          tokRepo,
+	"regex:":      tokRegex,
+	"repo:":       tokRepo,
+	"lang:":       tokLang,
+	"sym:":        tokSym,
+	"t:":          tokType,
+	"type:":       tokType,
+	"v:":          tokVis,
+	"visibility:": tokVis,
 }
 
 var reservedWords = map[string]int{

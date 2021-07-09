@@ -30,6 +30,13 @@ var _ = log.Println
 type Q interface {
 	String() string
 }
+type Visibility struct {
+	Value string
+}
+
+func (v *Visibility) String() string {
+	return fmt.Sprintf("visibility:%s", v.Value)
+}
 
 // RegexpQuery is a query looking for regular expressions matches.
 type Regexp struct {
