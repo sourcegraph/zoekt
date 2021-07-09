@@ -425,12 +425,6 @@ func NewSearcher(r IndexFile) (Searcher, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	r, err = sourcegraphInMemoryContent(&toc, r)
-	if err != nil {
-		return nil, err
-	}
-
 	indexData.file = r
 	return indexData, nil
 }
