@@ -94,20 +94,14 @@ func (q *Queue) AddOrUpdate(repoName string, opts IndexOptions) {
 func (q *Queue) SetIndexed(repoName string, opts IndexOptions, state indexState) {
 	q.mu.Lock()
 	item := q.get(repoName)
-	item.indexed = reflect.DeepEqual(opts, item.opts)
 	item.setIndexState(state)
+	if state != indexStateFail {
+		item.indexed = reflect.DeepEqual(opts, item.opts)
+	}
 	if item.heapIdx >= 0 {
 		// We only update the position in the queue, never add it.
 		heap.Fix(&q.pq, item.heapIdx)
 	}
-	q.mu.Unlock()
-}
-
-// SetLastIndexFailed will update our metrics to track that this repository is
-// not up to date.
-func (q *Queue) SetLastIndexFailed(repoName string) {
-	q.mu.Lock()
-	q.get(repoName).setIndexState(indexStateFail)
 	q.mu.Unlock()
 }
 
@@ -205,11 +199,18 @@ func (pq pqueue) Less(i, j int) bool {
 	// they are either equal priority or y is more urgent.
 	x := pq[i]
 	y := pq[j]
-	if x.indexed == y.indexed {
-		// tie breaker is to prefer the item added to the queue first
-		return x.seq < y.seq
+	if x.indexed != y.indexed {
+		return !x.indexed
 	}
-	return !x.indexed
+
+	if xFail, yFail := x.indexState == indexStateFail, y.indexState == indexStateFail; xFail != yFail {
+		// if you failed to index, you are likely to fail again. So prefer
+		// non-failed.
+		return !xFail
+	}
+
+	// tie breaker is to prefer the item added to the queue first
+	return x.seq < y.seq
 }
 
 func (pq pqueue) Swap(i, j int) {
