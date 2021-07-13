@@ -145,14 +145,15 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		branchNames:    []map[uint]string{},
 	}
 
-	if repo, md, err := r.readMetadata(toc); md != nil && md.IndexFormatVersion != IndexFormatVersion {
+	repo, md, err := r.readMetadata(toc)
+	if md != nil && md.IndexFormatVersion != IndexFormatVersion {
 		return nil, fmt.Errorf("file is v%d, want v%d", md.IndexFormatVersion, IndexFormatVersion)
 	} else if err != nil {
 		return nil, err
-	} else {
-		d.metaData = *md
-		d.repoMetaData = []Repository{*repo}
 	}
+
+	d.metaData = *md
+	d.repoMetaData = []Repository{*repo}
 
 	d.boundariesStart = toc.fileContents.data.off
 	d.boundaries = toc.fileContents.relativeIndex()
@@ -161,7 +162,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.docSectionsStart = toc.fileSections.data.off
 	d.docSectionsIndex = toc.fileSections.relativeIndex()
 
-	var err error
 	if d.metaData.IndexFormatVersion == 16 {
 		d.symbols.symKindIndex = toc.symbolKindMap.relativeIndex()
 		d.fileEndSymbol, err = readSectionU32(d.file, toc.fileEndSymbol)
