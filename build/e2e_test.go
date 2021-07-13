@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -112,22 +113,58 @@ func TestBasic(t *testing.T) {
 			}
 		}
 
-		// TODO(keegan) do not merge until you remove this time.Sleep
-		time.Sleep(time.Second)
+		// use retryTest to allow for the directory watcher to notice the meta
+		// file
+		retryTest(t, func(fatalf func(format string, args ...interface{})) {
+			result, err := ss.Search(ctx, q, &sOpts)
+			if err != nil {
+				fatalf("Search(%v): %v", q, err)
+			}
 
-		result, err := ss.Search(ctx, q, &sOpts)
-		if err != nil {
-			t.Fatalf("Search(%v): %v", q, err)
-		}
-
-		if len(result.Files) != 1 {
-			t.Errorf("got %v, want 1 file.", result.Files)
-		} else if gotFile, wantFile := result.Files[0].FileName, "F1"; gotFile != wantFile {
-			t.Errorf("got file %q, want %q", gotFile, wantFile)
-		} else if gotRepo, wantRepo := result.Files[0].Repository, "repo-mutated"; gotRepo != wantRepo {
-			t.Errorf("got repo %q, want %q", gotRepo, wantRepo)
-		}
+			if len(result.Files) != 1 {
+				fatalf("got %v, want 1 file.", result.Files)
+			} else if gotFile, wantFile := result.Files[0].FileName, "F1"; gotFile != wantFile {
+				fatalf("got file %q, want %q", gotFile, wantFile)
+			} else if gotRepo, wantRepo := result.Files[0].Repository, "repo-mutated"; gotRepo != wantRepo {
+				fatalf("got repo %q, want %q", gotRepo, wantRepo)
+			}
+		})
 	})
+}
+
+// retryTest will retry f until min(t.Deadline(), time.Minute). It returns
+// once f doesn't call fatalf.
+func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface{}))) {
+	t.Helper()
+
+	sleep := 100 * time.Millisecond
+	deadline := time.Now().Add(time.Minute)
+	if d, ok := t.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	deadline = deadline.Add(-2 * sleep)
+
+	for time.Now().Before(deadline) {
+		done := make(chan bool)
+		go func() {
+			defer close(done)
+
+			f(func(format string, args ...interface{}) {
+				runtime.Goexit()
+			})
+
+			done <- true
+		}()
+
+		success, _ := <-done
+		if success {
+			return
+		}
+		time.Sleep(sleep)
+	}
+
+	// final run for the test, using the real t.Fatalf
+	f(t.Fatalf)
 }
 
 func shardRepoMetadata(path string) (*zoekt.Repository, error) {
