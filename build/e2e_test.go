@@ -137,14 +137,14 @@ func TestBasic(t *testing.T) {
 func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface{}))) {
 	t.Helper()
 
-	sleep := 100 * time.Millisecond
+	sleep := 10 * time.Millisecond
 	deadline := time.Now().Add(time.Minute)
 	if d, ok := t.Deadline(); ok && d.Before(deadline) {
-		deadline = d
+		// give 1s for us to do a final test run
+		deadline = d.Add(-time.Second)
 	}
-	deadline = deadline.Add(-2 * sleep)
 
-	for time.Now().Before(deadline) {
+	for {
 		done := make(chan bool)
 		go func() {
 			defer close(done)
@@ -159,6 +159,12 @@ func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface
 		success, _ := <-done
 		if success {
 			return
+		}
+
+		// each time we increase sleep by 1.5
+		sleep := sleep*2 - sleep/2
+		if time.Now().Add(sleep).After(deadline) {
+			break
 		}
 		time.Sleep(sleep)
 	}
