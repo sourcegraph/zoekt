@@ -461,6 +461,24 @@ func ReadMetadata(inf IndexFile) (*Repository, *IndexMetadata, error) {
 	return rd.readMetadata(&toc)
 }
 
+// IndexFilePaths returns all paths for the IndexFile at filepath p that
+// exist. Note: if no files exist this will return an empty slice and nil
+// error.
+//
+// This is p and the ".meta" file for p.
+func IndexFilePaths(p string) ([]string, error) {
+	paths := []string{p, p + ".meta"}
+	exist := paths[:0]
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			exist = append(exist, p)
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+	return exist, nil
+}
+
 func loadIndexData(r IndexFile) (*indexData, error) {
 	rd := &reader{r: r}
 

@@ -44,7 +44,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 		}
 
 		log.Printf("removing old shards from trash for %s", repo)
-		removeAll(shards)
+		removeAll(shards...)
 		delete(trash, repo)
 	}
 
@@ -160,7 +160,7 @@ func shardRepoName(path string) (string, error) {
 	return repo.Name, nil
 }
 
-var incompleteRE = regexp.MustCompile(`\.zoekt[0-9]+$`)
+var incompleteRE = regexp.MustCompile(`\.zoekt[0-9]+(\.\w+)?$`)
 
 func removeIncompleteShards(dir string) {
 	d, err := os.Open(dir)
@@ -177,39 +177,65 @@ func removeIncompleteShards(dir string) {
 			if err := os.Remove(path); err != nil {
 				debug.Printf("failed to remove incomplete shard %s: %v", path, err)
 			} else {
-				os.Remove(path + ".meta")
 				debug.Printf("cleaned up incomplete shard %s", path)
 			}
 		}
 	}
 }
 
-func removeAll(shards []shard) {
+func removeAll(shards ...shard) {
+	// Note on error handling here: We only expect this to fail due to
+	// IsNotExist, which is fine. Additionally this shouldn't fail
+	// partially. But if it does, and the file still exists, then we have the
+	// potential for a partial index for a repo. However, this should be
+	// exceedingly rare due to it being a mix of partial failure on something in
+	// trash + an admin re-adding a repository.
 	for _, shard := range shards {
-		if err := os.Remove(shard.Path); err != nil {
-			// We only expect this to fail due to IsNotExist, which is
-			// fine. Additionally this shouldn't fail partially. But if it
-			// does, and the file still exists, then we have the potential for
-			// a partial index for a repo. However, this should be exceedingly
-			// rare due to it being a mix of partial failure on something in
-			// trash + an admin re-adding a repository.
+		paths, err := zoekt.IndexFilePaths(shard.Path)
+		if err != nil {
 			debug.Printf("failed to remove shard %s: %v", shard.Path, err)
 		}
-		os.Remove(shard.Path + ".meta")
+		for _, p := range paths {
+			if err := os.Remove(p); err != nil {
+				debug.Printf("failed to remove shard file %s: %v", p, err)
+			}
+		}
 	}
 }
 
 func moveAll(dstDir string, shards []shard) {
 	for i, shard := range shards {
-		dst := filepath.Join(dstDir, filepath.Base(shard.Path))
-		if err := os.Rename(shard.Path, dst); err != nil {
-			log.Printf("failed to move shard, deleting all shards for %s: %v", shard.Repo, err)
-			removeAll(shards)
+		paths, err := zoekt.IndexFilePaths(shard.Path)
+		if err != nil {
+			log.Printf("failed to stat shard paths, deleting all shards for %s: %v", shard.Repo, err)
+			removeAll(shards...)
 			return
 		}
-		_ = os.Rename(shard.Path+".meta", dst+".meta")
-		// update path so that partial failure removes the dst path
-		shards[i].Path = dst
+
+		// Remove all files in dstDir for shard. This is to avoid cases like not
+		// overwriting an old meta file.
+		dstShard := shard
+		dstShard.Path = filepath.Join(dstDir, filepath.Base(shard.Path))
+		removeAll(dstShard)
+
+		// Rename all paths, stop at first failure
+		for _, p := range paths {
+			dst := filepath.Join(dstDir, filepath.Base(p))
+			err = os.Rename(p, dst)
+			if err != nil {
+				break
+			}
+		}
+
+		if err != nil {
+			log.Printf("failed to move shard, deleting all shards for %s: %v", shard.Repo, err)
+			removeAll(dstShard) // some files may have moved to dst
+			removeAll(shards...)
+			return
+		}
+
+		// update shards so partial failure removes the dst path
+		shards[i] = dstShard
 	}
 }
 

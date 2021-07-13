@@ -196,9 +196,11 @@ func TestRemoveIncompleteShards(t *testing.T) {
 		"test.zoekt",
 		"foo.zoekt",
 		"bar.zoekt",
+		"bar.zoekt.meta",
 	}, []string{
 		"incomplete.zoekt123",
 		"crash.zoekt567",
+		"metacrash.zoekt789.meta",
 	}
 	sort.Strings(shards)
 

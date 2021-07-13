@@ -451,12 +451,16 @@ func (b *Builder) deleteRemainingShards() {
 		shard := b.nextShardNum
 		b.nextShardNum++
 		name := b.opts.shardName(shard)
-		if err := os.Remove(name); os.IsNotExist(err) {
+		// best effort: we get an error paths is empty and we assume there is
+		// nothing more to cleanup.
+		paths, _ := zoekt.IndexFilePaths(name)
+		if len(paths) == 0 {
 			break
-		} else {
-			_ = os.Remove(name + ".meta")
-			b.shardLog("remove", name)
 		}
+		for _, p := range paths {
+			_ = os.Remove(p)
+		}
+		b.shardLog("remove", name)
 	}
 }
 
