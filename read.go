@@ -155,6 +155,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.metaData = *md
 	d.repoMetaData = []Repository{*repo}
 
+	for _, md := range d.repoMetaData {
+		md.RawConfigEncoded = EncodeRawConfig(md.RawConfig)
+	}
+
 	d.boundariesStart = toc.fileContents.data.off
 	d.boundaries = toc.fileContents.relativeIndex()
 	d.newlinesStart = toc.newlines.data.off
@@ -284,6 +288,28 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	}
 
 	return &d, nil
+}
+
+const (
+	rawConfigYes uint8 = iota + 1
+	rawConfigNo
+)
+
+// EncodeRawConfig encodes a rawConfig map into a uint8 flag that corresponds to
+// the encoding of query.RawConfig.Encoded.
+func EncodeRawConfig(rawConfig map[string]string) uint8 {
+	var encoded uint8
+	for i, f := range []string{"public", "fork", "archived"} {
+		var e uint8
+		v, ok := rawConfig[f]
+		if ok && v == "1" {
+			e = e | rawConfigYes
+		} else {
+			e = e | rawConfigNo
+		}
+		encoded = encoded | e<<(2*i)
+	}
+	return encoded
 }
 
 func (r *reader) readMetadata(toc *indexTOC) (*Repository, *IndexMetadata, error) {

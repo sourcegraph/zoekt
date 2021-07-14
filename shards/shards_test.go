@@ -513,76 +513,82 @@ func BenchmarkShardedSearch(b *testing.B) {
 	}
 }
 
-func TestVisibilityQuery(t *testing.T) {
+func TestRawQuerySearch(t *testing.T) {
 	ss := newShardedSearcher(1)
 
 	var nextShardNum int
-	addShard := func(repo string, public bool, docs ...zoekt.Document) {
+	addShard := func(repo string, rawConfig map[string]string, docs ...zoekt.Document) {
 		r := &zoekt.Repository{Name: repo}
-		if public {
-			r.RawConfig = map[string]string{"public": "1"}
-		}
+		r.RawConfigEncoded = zoekt.EncodeRawConfig(rawConfig)
 		b := testIndexBuilder(t, r, docs...)
 		shard := searcherForTest(t, b)
 		ss.replace(fmt.Sprintf("key-%d", nextShardNum), shard)
 		nextShardNum++
 	}
-	addShard("publicRepo", true, zoekt.Document{Name: "f1", Content: []byte("bla the needle")})
-	addShard("publicRepo2", true, zoekt.Document{Name: "f2", Content: []byte("needle in haystack")})
-	addShard("privateRepo", false, zoekt.Document{Name: "f3", Content: []byte("the banana")}, zoekt.Document{Name: "f3", Content: []byte("needle banana")})
+	addShard("public", map[string]string{"public": "1"}, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})
+	addShard("private_archived", map[string]string{"archived": "1"}, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
+	addShard("public_fork", map[string]string{"public": "1", "fork": "1"}, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
 
 	cases := []struct {
-		pattern    string
-		visibility string
-		wantRepos  []string
-		wantFiles  int
+		pattern   string
+		flags     uint8
+		wantRepos []string
+		wantFiles int
 	}{
 		{
-			pattern:    "the",
-			visibility: "public",
-			wantRepos:  []string{"publicRepo"},
-			wantFiles:  1,
+			pattern:   "bar",
+			flags:     0,
+			wantRepos: []string{"public"},
+			wantFiles: 1,
 		},
 		{
-			pattern:    "banana",
-			visibility: "public",
-			wantFiles:  0,
+			pattern:   "bas",
+			flags:     query.Public,
+			wantRepos: []string{"public"},
+			wantFiles: 1,
 		},
 		{
-			pattern:    "needle",
-			visibility: "public",
-			wantRepos:  []string{"publicRepo", "publicRepo2"},
-			wantFiles:  2,
+			pattern:   "bar",
+			flags:     query.Forks,
+			wantRepos: []string{"public_fork"},
+			wantFiles: 1,
 		},
 		{
-			pattern:    "the",
-			visibility: "private",
-			wantRepos:  []string{"privateRepo"},
-			wantFiles:  1,
+			pattern:   "bas",
+			flags:     query.NoArchived,
+			wantRepos: []string{"public"},
+			wantFiles: 1,
 		},
 		{
-			pattern:    "banana",
-			visibility: "private",
-			wantRepos:  []string{"privateRepo"},
-			wantFiles:  2,
+			pattern:   "foo",
+			flags:     query.NoForks,
+			wantRepos: []string{"public", "private_archived"},
+			wantFiles: 2,
 		},
 		{
-			pattern:    "bla",
-			visibility: "private",
-			wantFiles:  0,
+			pattern:   "bas",
+			flags:     query.Archived,
+			wantRepos: []string{"private_archived"},
+			wantFiles: 1,
 		},
 		{
-			pattern:    "needle",
-			visibility: "private",
-			wantRepos:  []string{"privateRepo"},
-			wantFiles:  1,
+			pattern:   "foo",
+			flags:     query.Private,
+			wantRepos: []string{"private_archived"},
+			wantFiles: 1,
+		},
+		{
+			pattern:   "foo",
+			flags:     query.Private | query.NoArchived,
+			wantRepos: []string{},
+			wantFiles: 0,
 		},
 	}
-
 	for _, c := range cases {
-		t.Run(fmt.Sprintf("pattern:%s,visibility:%s", c.pattern, c.visibility), func(t *testing.T) {
+		t.Run(fmt.Sprintf("pattern:%s", c.pattern), func(t *testing.T) {
+			q := query.NewAnd(&query.Substring{Pattern: c.pattern}, query.NewRawConfig(c.flags))
 
-			sr, err := ss.Search(context.Background(), query.NewAnd(&query.Substring{Pattern: c.pattern}, &query.Visibility{c.visibility}), &zoekt.SearchOptions{})
+			sr, err := ss.Search(context.Background(), q, &zoekt.SearchOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}

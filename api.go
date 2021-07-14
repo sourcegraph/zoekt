@@ -244,6 +244,9 @@ type Repository struct {
 	// All zoekt.* configuration settings.
 	RawConfig map[string]string
 
+	// Encoded RawConfig.
+	RawConfigEncoded uint8
+
 	// Importance of the repository, bigger is more important
 	Rank uint16
 

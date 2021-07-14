@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/google/zoekt/query"
@@ -212,4 +213,44 @@ func TestReadSearch(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestEncodeRawConfig(t *testing.T) {
+	mustParse := func(s string) uint8 {
+		i, err := strconv.ParseInt(s, 2, 8)
+		if err != nil {
+			t.Fatalf("failed to parse %s", s)
+		}
+		return uint8(i)
+	}
+
+	cases := []struct {
+		rawConfig map[string]string
+		want      string
+	}{
+		{
+			rawConfig: map[string]string{"public": "1"},
+			want:      "101001",
+		},
+		{
+			rawConfig: map[string]string{"fork": "1"},
+			want:      "100110",
+		},
+		{
+			rawConfig: map[string]string{"public": "1", "fork": "1"},
+			want:      "100101",
+		},
+		{
+			rawConfig: map[string]string{"public": "1", "fork": "1", "archived": "1"},
+			want:      "010101",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.want, func(t *testing.T) {
+			if got := EncodeRawConfig(c.rawConfig); got != mustParse(c.want) {
+				t.Fatalf("want %s, got %s", c.want, strconv.FormatInt(int64(got), 2))
+			}
+		})
+	}
+
 }

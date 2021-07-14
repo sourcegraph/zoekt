@@ -957,18 +957,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				return reposWant[d.repos[docID]]
 			},
 		}, nil
-
-	case *query.Visibility:
-		wantPublic := s.Value == "public"
-		repoVisible := make([]bool, 0, len(d.repoMetaData))
-		for _, r := range d.repoMetaData {
-			repoVisible = append(repoVisible, (r.RawConfig["public"] == "1") == wantPublic)
-		}
+	case *query.RawConfig:
 		return &docMatchTree{
 			reason:  s.String(),
 			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
-				return repoVisible[d.repos[docID]]
+				return s.Encoded&d.repoMetaData[d.repos[docID]].RawConfigEncoded == s.Encoded
 			},
 		}, nil
 	}

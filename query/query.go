@@ -30,12 +30,52 @@ var _ = log.Println
 type Q interface {
 	String() string
 }
-type Visibility struct {
-	Value string
+
+const (
+	Public     uint8 = 1
+	Private          = 2
+	Forks            = 1 << 2
+	NoForks          = 2 << 2
+	Archived         = 1 << 4
+	NoArchived       = 2 << 4
+)
+
+var flagNames = map[uint8]string{
+	Public:     "Public",
+	Private:    "Private",
+	Forks:      "Forks",
+	NoForks:    "NoForks",
+	Archived:   "Archived",
+	NoArchived: "NoArchived",
 }
 
-func (v *Visibility) String() string {
-	return fmt.Sprintf("visibility:%s", v.Value)
+// NewRawConfig construct a RawConfig query atom. The default value flag=0 will
+// filter for all public repositories which are neither forks nor archived. Not
+// providing a flag is equivalent to ignoring the dimension. For example,
+// Forks|Archived will filter for public and private repositories which are both,
+// forks and archived.
+func NewRawConfig(flag uint8) *RawConfig {
+	if flag == 0 {
+		return &RawConfig{Encoded: Public | NoForks | NoArchived}
+	}
+	return &RawConfig{flag}
+}
+
+// RawConfig filters for repositories based on their encoded RawConfig map.
+// Always use the constructor NewRawConfig instead of creating RawConfig
+// manually.
+type RawConfig struct {
+	Encoded uint8
+}
+
+func (r *RawConfig) String() string {
+	var s []string
+	for f, label := range flagNames {
+		if r.Encoded&f != 0 {
+			s = append(s, label)
+		}
+	}
+	return fmt.Sprintf("rawConfig:%s", strings.Join(s, "|"))
 }
 
 // RegexpQuery is a query looking for regular expressions matches.
