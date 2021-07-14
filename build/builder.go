@@ -451,7 +451,7 @@ func (b *Builder) deleteRemainingShards() {
 		shard := b.nextShardNum
 		b.nextShardNum++
 		name := b.opts.shardName(shard)
-		// best effort: we get an error paths is empty and we assume there is
+		// best effort: we get an error if paths is empty and we assume there is
 		// nothing more to cleanup.
 		paths, _ := zoekt.IndexFilePaths(name)
 		if len(paths) == 0 {
