@@ -441,24 +441,30 @@ func (b *Builder) Finish() error {
 	b.finishedShards = map[string]string{}
 
 	if b.nextShardNum > 0 {
-		b.deleteRemainingShards()
+		if err := b.deleteRemainingShards(); err != nil {
+			log.Printf("failed to delete some old shards: %v", err)
+		}
 	}
 	return b.buildError
 }
 
-func (b *Builder) deleteRemainingShards() {
+func (b *Builder) deleteRemainingShards() error {
 	for {
 		shard := b.nextShardNum
 		b.nextShardNum++
 		name := b.opts.shardName(shard)
-		// best effort: we get an error if paths is empty and we assume there is
-		// nothing more to cleanup.
-		paths, _ := zoekt.IndexFilePaths(name)
+		paths, err := zoekt.IndexFilePaths(name)
+		if err != nil {
+			return err
+		}
 		if len(paths) == 0 {
-			break
+			return nil
 		}
 		for _, p := range paths {
-			_ = os.Remove(p)
+			err := os.Remove(p)
+			if err != nil {
+				return err
+			}
 		}
 		b.shardLog("remove", name)
 	}
