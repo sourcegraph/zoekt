@@ -132,6 +132,14 @@ func (s *DirectoryWatcher) scan() error {
 		}
 
 		ts[fn] = fi.ModTime()
+
+		fiMeta, err := os.Lstat(fn + ".meta")
+		if err != nil {
+			continue
+		}
+		if fiMeta.ModTime().After(fi.ModTime()) {
+			ts[fn] = fiMeta.ModTime()
+		}
 	}
 
 	var toLoad []string

@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 )
 
@@ -144,28 +145,15 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		branchNames:    []map[uint]string{},
 	}
 
-	blob, err := d.readSectionBlob(toc.metaData)
-	if err != nil {
+	repo, md, err := r.readMetadata(toc)
+	if md != nil && md.IndexFormatVersion != IndexFormatVersion {
+		return nil, fmt.Errorf("file is v%d, want v%d", md.IndexFormatVersion, IndexFormatVersion)
+	} else if err != nil {
 		return nil, err
 	}
 
-	if err := json.Unmarshal(blob, &d.metaData); err != nil {
-		return nil, err
-	}
-
-	if d.metaData.IndexFormatVersion != IndexFormatVersion {
-		return nil, fmt.Errorf("file is v%d, want v%d", d.metaData.IndexFormatVersion, IndexFormatVersion)
-	}
-
-	blob, err = d.readSectionBlob(toc.repoMetaData)
-	if err != nil {
-		return nil, err
-	}
-
-	d.repoMetaData = make([]Repository, 1)
-	if err := json.Unmarshal(blob, &d.repoMetaData[0]); err != nil {
-		return nil, err
-	}
+	d.metaData = *md
+	d.repoMetaData = []Repository{*repo}
 
 	d.boundariesStart = toc.fileContents.data.off
 	d.boundaries = toc.fileContents.relativeIndex()
@@ -239,7 +227,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.branchNames = append(d.branchNames, repoBranchNames)
 	}
 
-	blob, err = d.readSectionBlob(toc.runeDocSections)
+	blob, err := d.readSectionBlob(toc.runeDocSections)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +284,32 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	}
 
 	return &d, nil
+}
+
+func (r *reader) readMetadata(toc *indexTOC) (*Repository, *IndexMetadata, error) {
+	var md IndexMetadata
+	if err := r.readJSON(&md, &toc.metaData); err != nil {
+		return nil, nil, err
+	}
+
+	var repo Repository
+	if err := r.readJSON(&repo, &toc.repoMetaData); err != nil {
+		return nil, &md, err
+	}
+
+	// Sourcegraph specific: we support mutating metadata via an additional
+	// ".meta" file. This is to support tombstoning. An additional benefit is we
+	// can update metadata (such as Rank and Name) without re-indexing content.
+	if b, err := os.ReadFile(r.r.Name() + ".meta"); err != nil && !os.IsNotExist(err) {
+		return nil, &md, fmt.Errorf("failed to read meta file: %w", err)
+	} else if len(b) > 0 {
+		err = json.Unmarshal(b, &repo)
+		if err != nil {
+			return nil, &md, fmt.Errorf("failed to unmarshal meta file: %w", err)
+		}
+	}
+
+	return &repo, &md, nil
 }
 
 const ngramEncoding = 8
@@ -438,17 +452,25 @@ func ReadMetadata(inf IndexFile) (*Repository, *IndexMetadata, error) {
 		return nil, nil, err
 	}
 
-	var md IndexMetadata
-	if err := rd.readJSON(&md, &toc.metaData); err != nil {
-		return nil, nil, err
-	}
+	return rd.readMetadata(&toc)
+}
 
-	var repo Repository
-	if err := rd.readJSON(&repo, &toc.repoMetaData); err != nil {
-		return nil, nil, err
+// IndexFilePaths returns all paths for the IndexFile at filepath p that
+// exist. Note: if no files exist this will return an empty slice and nil
+// error.
+//
+// This is p and the ".meta" file for p.
+func IndexFilePaths(p string) ([]string, error) {
+	paths := []string{p, p + ".meta"}
+	exist := paths[:0]
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			exist = append(exist, p)
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
 	}
-
-	return &repo, &md, nil
+	return exist, nil
 }
 
 func loadIndexData(r IndexFile) (*indexData, error) {
