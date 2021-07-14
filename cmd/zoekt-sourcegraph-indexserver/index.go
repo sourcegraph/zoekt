@@ -46,6 +46,12 @@ type IndexOptions struct {
 
 	// Public is true if the repository is public.
 	Public bool
+
+	// Fork is true if the repository is a fork.
+	Fork bool
+
+	// Archived is true if the repository is archived.
+	Archived bool
 }
 
 // indexArgs represents the arguments we pass to zoekt-archive-index
@@ -90,6 +96,14 @@ func (o *indexArgs) BuildOptions() *build.Options {
 
 	if o.Public {
 		rawConfig["public"] = "1"
+	}
+
+	if o.Fork {
+		rawConfig["fork"] = "1"
+	}
+
+	if o.Archived {
+		rawConfig["archived"] = "1"
 	}
 
 	return &build.Options{
