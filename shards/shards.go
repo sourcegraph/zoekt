@@ -133,8 +133,6 @@ type repositorer interface {
 
 type rankedShard struct {
 	zoekt.Searcher
-	// SOURCEGRAPH we want to search shards in the order of the name to match
-	// up with how we sort results in graphqlbackend.
 	name     string
 	priority float64
 }
@@ -517,6 +515,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	feeder := make(chan rankedShard, runtime.GOMAXPROCS(0))
 	g.Go(func() error {
 		defer close(feeder)
+		// Note: shards is sorted in order of descending priority.
 		for _, s := range shards {
 			// We let searchOneShard handle context errors.
 			_ = proc.Yield(ctx)
@@ -562,8 +561,8 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 					// 5) C finally wakes up, computes max, and sends results with maxPP=-Inf, but with priority=3.
 					mu.Lock()
 					pendingPriorities.remove(s.priority)
-					sr.Stats.MaxPendingShardPriority = pendingPriorities.max()
-					sr.Stats.ShardPriority = s.priority
+					sr.Progress.MaxPendingShardPriority = pendingPriorities.max()
+					sr.Progress.ShardPriority = s.priority
 					sender.Send(sr)
 					mu.Unlock()
 				}))

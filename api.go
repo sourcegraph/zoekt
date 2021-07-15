@@ -144,14 +144,6 @@ type Stats struct {
 	// Number of candidate matches as a result of searching ngrams.
 	NgramMatches int
 
-	// Priority of the shard that was searched.
-	ShardPriority float64
-
-	// Maximum priority of a shard that is being searched in parallel. This is used to reorder results
-	// when the result set is known to be stable-- that is, when a result's ShardPriority is greater than
-	// the max(MaxPendingShardPriority) from the latest results of each backend, it can be returned to the user.
-	MaxPendingShardPriority float64
-
 	// Wall clock time for queued search.
 	Wait time.Duration
 
@@ -194,9 +186,24 @@ func (s *Stats) Zero() bool {
 		s.Wait > 0)
 }
 
+// Progress contains information about the global progress of the running search query.
+// This is used by the frontend to reorder results and emit them when stable.
+type Progress struct {
+	// Priority of the shard that was searched.
+	ShardPriority float64
+
+	// Maximum priority of a shard that is being searched in parallel. This is used to reorder results
+	// when the result set is known to be stable-- that is, when a result's ShardPriority is greater than
+	// the max(MaxPendingShardPriority) from the latest results of each backend, it can be returned to the user.
+	//
+	// MaxPendingShardPriority decreases monotonically in each SearchResult.
+	MaxPendingShardPriority float64
+}
+
 // SearchResult contains search matches and extra data
 type SearchResult struct {
 	Stats
+	Progress
 	Files []FileMatch
 
 	// RepoURLs holds a repo => template string map.
