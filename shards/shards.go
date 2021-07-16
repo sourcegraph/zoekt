@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"path"
 	"runtime"
@@ -132,9 +133,8 @@ type repositorer interface {
 
 type rankedShard struct {
 	zoekt.Searcher
-	// SOURCEGRAPH we want to search shards in the order of the name to match
-	// up with how we sort results in graphqlbackend.
-	name string
+	name     string
+	priority float64
 }
 
 type shardedSearcher struct {
@@ -497,6 +497,9 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 
 	defer cancel()
 
+	mu := sync.Mutex{}
+	pendingPriorities := prioritySlice{}
+
 	g, ctx := errgroup.WithContext(childCtx)
 
 	// For each query, throttle the number of parallel
@@ -509,12 +512,16 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	// cap(feeder) searches run while yield blocks. However, doing it this way
 	// avoids needing to have synchronization in yield, so is done for
 	// simplicity.
-	feeder := make(chan zoekt.Searcher, runtime.GOMAXPROCS(0))
+	feeder := make(chan rankedShard, runtime.GOMAXPROCS(0))
 	g.Go(func() error {
 		defer close(feeder)
+		// Note: shards is sorted in order of descending priority.
 		for _, s := range shards {
 			// We let searchOneShard handle context errors.
 			_ = proc.Yield(ctx)
+			mu.Lock()
+			pendingPriorities.append(s.priority)
+			mu.Unlock()
 			feeder <- s
 		}
 		return nil
@@ -535,9 +542,34 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 					metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
 					metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
 
+					// MaxPendingPriority *cannot* be this result's Priority, because
+					// the priority is removed before computing max() and calling sender.Send.
+					// (There may be duplicate priorities, though-- that's fine.) A PendingShard
+					// is one that has not entered this critical section and sent its results.
+					//
+					// Note that there are at least two layers above this implementing streamSearch
+					// or StreamSearch that also take a lock for the entirety of the Send() operation.
+					//
+					// This is to avoid a potential race between shards sending back results
+					// if the priority were removed before sending without a lock:
+					// 1) shard A (pri 1), B (pri 2), C (pri 3) dispatch, pendingPriorities = [1, 2, 3]
+					// 2) C completes and removes itself from the priority list, pP = [1, 2]
+					// 3) B completes, removes itself, computes max, *and sends results* as maxPendingPriority=1,
+					//    indicating that no future results will come from a lower-ordered shard, pP = [1]
+					// 4) A completes, removes itself, computes max, and sends results with maxPP=-Inf, indicating
+					//    that the stream is finished (?)
+					// 5) C finally wakes up, computes max, and sends results with maxPP=-Inf, but with priority=3.
+					mu.Lock()
+					pendingPriorities.remove(s.priority)
+					sr.Progress.MaxPendingPriority = pendingPriorities.max()
+					sr.Progress.Priority = s.priority
 					sender.Send(sr)
+					mu.Unlock()
 				}))
 				if err != nil {
+					mu.Lock()
+					pendingPriorities.remove(s.priority)
+					mu.Unlock()
 					return err
 				}
 			}
@@ -702,10 +734,16 @@ func (s *shardedSearcher) getShards() []rankedShard {
 
 	var res []rankedShard
 	for _, sh := range s.shards {
-		res = append(res, sh)
+		// Add the current priority to the sorted list of ranked shards.
+		// This will be used for downstream result reordering.
+		res = append(res, rankedShard{
+			name:     sh.name,
+			priority: s.priority[sh.name],
+			Searcher: sh.Searcher,
+		})
 	}
 	sort.Slice(res, func(i, j int) bool {
-		priorityDiff := s.priority[res[i].name] - s.priority[res[j].name]
+		priorityDiff := res[i].priority - res[j].priority
 		if priorityDiff != 0 {
 			return priorityDiff > 0
 		}
@@ -795,4 +833,41 @@ func strSliceEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// prioritySlice is a trivial implementation of an array that provides three
+// things: appending a value, removing a value, and getting the array's max.
+// Operations take O(n) time, which is acceptable because N is restricted to
+// GOMAXPROCS (i.e., number of cpu cores) by the shardedSearcher interface.
+type prioritySlice []float64
+
+func (p *prioritySlice) append(pri float64) {
+	*p = append(*p, pri)
+}
+
+func (p *prioritySlice) remove(pri float64) {
+	for i, opri := range *p {
+		if opri == pri {
+			if i != len(*p)-1 {
+				// swap to make this element the tail
+				(*p)[i] = (*p)[len(*p)-1]
+			}
+			// pop the end off
+			*p = (*p)[:len(*p)-1]
+			break
+		}
+	}
+}
+
+func (p *prioritySlice) max() float64 {
+	// remove() and max() could be combined, but this is easier to read and
+	// the expected performance difference from the extra lock and loop is
+	// almost certainly irrelevant.
+	maxPri := math.Inf(-1)
+	for _, pri := range *p {
+		if pri > maxPri {
+			maxPri = pri
+		}
+	}
+	return maxPri
 }

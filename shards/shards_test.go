@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"runtime"
 	"sort"
@@ -605,5 +606,31 @@ func TestVisibilityQuery(t *testing.T) {
 				t.Fatalf("(-want, +got):\n%s", d)
 			}
 		})
+	}
+}
+
+func TestPrioritySlice(t *testing.T) {
+	p := &prioritySlice{}
+	for step, oper := range []struct {
+		isAppend    bool
+		value       float64
+		expectedMax float64
+	}{
+		{true, 1, 1},
+		{true, 3, 3},
+		{true, 2, 3},
+		{false, 1, 3},
+		{false, 3, 2},
+		{false, 2, math.Inf(-1)},
+	} {
+		if oper.isAppend {
+			p.append(oper.value)
+		} else {
+			p.remove(oper.value)
+		}
+		max := p.max()
+		if max != oper.expectedMax {
+			t.Errorf("%d: got %f, want %f", step, max, oper.expectedMax)
+		}
 	}
 }
