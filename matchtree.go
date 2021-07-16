@@ -962,7 +962,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			reason:  s.String(),
 			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
-				return s.Encoded&d.repoMetaData[d.repos[docID]].RawConfigEncoded == s.Encoded
+				return s.Encoded&d.rawConfigMasks[d.repos[docID]] == s.Encoded
 			},
 		}, nil
 	}

@@ -251,7 +251,7 @@ func TestEncodeRawConfig(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.want, func(t *testing.T) {
-			if got := EncodeRawConfig(c.rawConfig); got != mustParse(c.want) {
+			if got := encodeRawConfig(c.rawConfig); got != mustParse(c.want) {
 				t.Fatalf("want %s, got %s", c.want, strconv.FormatInt(int64(got), 2))
 			}
 		})

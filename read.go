@@ -225,6 +225,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		}
 		d.branchIDs = append(d.branchIDs, repoBranchIDs)
 		d.branchNames = append(d.branchNames, repoBranchNames)
+		d.rawConfigMasks = append(d.rawConfigMasks, encodeRawConfig(md.RawConfig))
 	}
 
 	blob, err := d.readSectionBlob(toc.runeDocSections)
@@ -286,28 +287,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	return &d, nil
 }
 
-const (
-	rawConfigYes = 1
-	rawConfigNo  = 2
-)
-
-// EncodeRawConfig encodes a rawConfig map into a uint8 flag that corresponds to
-// the encoding of query.RawConfig.Encoded.
-func EncodeRawConfig(rawConfig map[string]string) uint8 {
-	var encoded uint8
-	for i, f := range []string{"public", "fork", "archived"} {
-		var e uint8
-		v, ok := rawConfig[f]
-		if ok && v == "1" {
-			e |= rawConfigYes
-		} else {
-			e |= rawConfigNo
-		}
-		encoded = encoded | e<<(2*i)
-	}
-	return encoded
-}
-
 func (r *reader) readMetadata(toc *indexTOC) (*Repository, *IndexMetadata, error) {
 	var md IndexMetadata
 	if err := r.readJSON(&md, &toc.metaData); err != nil {
@@ -330,8 +309,6 @@ func (r *reader) readMetadata(toc *indexTOC) (*Repository, *IndexMetadata, error
 			return nil, &md, fmt.Errorf("failed to unmarshal meta file: %w", err)
 		}
 	}
-
-	repo.RawConfigEncoded = EncodeRawConfig(repo.RawConfig)
 
 	return &repo, &md, nil
 }
