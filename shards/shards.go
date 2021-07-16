@@ -542,7 +542,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 					metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
 					metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
 
-					// MaxPendingShardPriority *cannot* be this result's ShardPriority, because
+					// MaxPendingPriority *cannot* be this result's Priority, because
 					// the priority is removed before computing max() and calling sender.Send.
 					// (There may be duplicate priorities, though-- that's fine.) A PendingShard
 					// is one that has not entered this critical section and sent its results.
@@ -561,8 +561,8 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 					// 5) C finally wakes up, computes max, and sends results with maxPP=-Inf, but with priority=3.
 					mu.Lock()
 					pendingPriorities.remove(s.priority)
-					sr.Progress.MaxPendingShardPriority = pendingPriorities.max()
-					sr.Progress.ShardPriority = s.priority
+					sr.Progress.MaxPendingPriority = pendingPriorities.max()
+					sr.Progress.Priority = s.priority
 					sender.Send(sr)
 					mu.Unlock()
 				}))

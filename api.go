@@ -188,16 +188,17 @@ func (s *Stats) Zero() bool {
 
 // Progress contains information about the global progress of the running search query.
 // This is used by the frontend to reorder results and emit them when stable.
+// Sourcegraph specific: this is used when querying multiple zoekt-webserver instances.
 type Progress struct {
 	// Priority of the shard that was searched.
-	ShardPriority float64
+	Priority float64
 
-	// Maximum priority of a shard that is being searched in parallel. This is used to reorder results
-	// when the result set is known to be stable-- that is, when a result's ShardPriority is greater than
-	// the max(MaxPendingShardPriority) from the latest results of each backend, it can be returned to the user.
+	// MaxPendingPriority is the maximum priority of pending result that is being searched in parallel.
+	// This is used to reorder results when the result set is known to be stable-- that is, when a result's
+	// Priority is greater than the max(MaxPendingPriority) from the latest results of each backend, it can be returned to the user.
 	//
-	// MaxPendingShardPriority decreases monotonically in each SearchResult.
-	MaxPendingShardPriority float64
+	// MaxPendingPriority decreases monotonically in each SearchResult.
+	MaxPendingPriority float64
 }
 
 // SearchResult contains search matches and extra data
