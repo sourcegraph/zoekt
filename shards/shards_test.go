@@ -519,7 +519,7 @@ func TestRawQuerySearch(t *testing.T) {
 	var nextShardNum int
 	addShard := func(repo string, rawConfig map[string]string, docs ...zoekt.Document) {
 		r := &zoekt.Repository{Name: repo}
-		r.RawConfigEncoded = zoekt.EncodeRawConfig(rawConfig)
+		r.RawConfig = rawConfig
 		b := testIndexBuilder(t, r, docs...)
 		shard := searcherForTest(t, b)
 		ss.replace(fmt.Sprintf("key-%d", nextShardNum), shard)
@@ -546,6 +546,12 @@ func TestRawQuerySearch(t *testing.T) {
 			flags:     query.Public,
 			wantRepos: []string{"public"},
 			wantFiles: 1,
+		},
+		{
+			pattern:   "foo",
+			flags:     query.Public,
+			wantRepos: []string{"public", "public_fork"},
+			wantFiles: 2,
 		},
 		{
 			pattern:   "bar",
