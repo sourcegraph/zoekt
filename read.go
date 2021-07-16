@@ -155,10 +155,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.metaData = *md
 	d.repoMetaData = []Repository{*repo}
 
-	for _, md := range d.repoMetaData {
-		md.RawConfigEncoded = EncodeRawConfig(md.RawConfig)
-	}
-
 	d.boundariesStart = toc.fileContents.data.off
 	d.boundaries = toc.fileContents.relativeIndex()
 	d.newlinesStart = toc.newlines.data.off
@@ -291,8 +287,8 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 }
 
 const (
-	rawConfigYes uint8 = iota + 1
-	rawConfigNo
+	rawConfigYes = 1
+	rawConfigNo  = 2
 )
 
 // EncodeRawConfig encodes a rawConfig map into a uint8 flag that corresponds to
@@ -303,9 +299,9 @@ func EncodeRawConfig(rawConfig map[string]string) uint8 {
 		var e uint8
 		v, ok := rawConfig[f]
 		if ok && v == "1" {
-			e = e | rawConfigYes
+			e |= rawConfigYes
 		} else {
-			e = e | rawConfigNo
+			e |= rawConfigNo
 		}
 		encoded = encoded | e<<(2*i)
 	}
@@ -334,6 +330,8 @@ func (r *reader) readMetadata(toc *indexTOC) (*Repository, *IndexMetadata, error
 			return nil, &md, fmt.Errorf("failed to unmarshal meta file: %w", err)
 		}
 	}
+
+	repo.RawConfigEncoded = EncodeRawConfig(repo.RawConfig)
 
 	return &repo, &md, nil
 }

@@ -244,6 +244,10 @@ func TestEncodeRawConfig(t *testing.T) {
 			rawConfig: map[string]string{"public": "1", "fork": "1", "archived": "1"},
 			want:      "010101",
 		},
+		{
+			rawConfig: map[string]string{},
+			want:      "101010",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.want, func(t *testing.T) {
