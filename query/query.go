@@ -32,31 +32,31 @@ type Q interface {
 }
 
 const (
-	OnlyPublic   uint8 = 1
-	OnlyPrivate        = 2
-	OnlyForks          = 1 << 2
-	NoForks            = 2 << 2
-	OnlyArchived       = 1 << 4
-	NoArchived         = 2 << 4
+	RcOnlyPublic   uint8 = 1
+	RcOnlyPrivate        = 2
+	RcOnlyForks          = 1 << 2
+	RcNoForks            = 2 << 2
+	RcOnlyArchived       = 1 << 4
+	RcNoArchived         = 2 << 4
 )
 
 var flagNames = map[uint8]string{
-	OnlyPublic:   "OnlyPublic",
-	OnlyPrivate:  "OnlyPrivate",
-	OnlyForks:    "OnlyForks",
-	NoForks:      "NoForks",
-	OnlyArchived: "OnlyArchived",
-	NoArchived:   "NoArchived",
+	RcOnlyPublic:   "RcOnlyPublic",
+	RcOnlyPrivate:  "RcOnlyPrivate",
+	RcOnlyForks:    "RcOnlyForks",
+	RcNoForks:      "RcNoForks",
+	RcOnlyArchived: "RcOnlyArchived",
+	RcNoArchived:   "RcNoArchived",
 }
 
 // NewRawConfig construct a RawConfig query atom. The default value flag=0 will
 // filter for all public repositories which are neither forks nor archived. Not
 // providing a flag is equivalent to ignoring the dimension. For example,
-// OnlyForks|OnlyArchived will filter for public and private repositories which are both,
+// RcOnlyForks|RcOnlyArchived will filter for public and private repositories which are both,
 // forks and archived.
 func NewRawConfig(flag uint8) *RawConfig {
 	if flag == 0 {
-		return &RawConfig{Encoded: OnlyPublic | NoForks | NoArchived}
+		return &RawConfig{Encoded: RcOnlyPublic | RcNoForks | RcNoArchived}
 	}
 	return &RawConfig{flag}
 }
