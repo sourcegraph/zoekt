@@ -32,7 +32,7 @@ type Q interface {
 }
 
 // RawConfig filters for repositories based on their encoded RawConfig map.
-type RawConfig uint8
+type RawConfig uint64
 
 const (
 	RcOnlyPublic   RawConfig = 1
