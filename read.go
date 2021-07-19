@@ -225,6 +225,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		}
 		d.branchIDs = append(d.branchIDs, repoBranchIDs)
 		d.branchNames = append(d.branchNames, repoBranchNames)
+		d.rawConfigMasks = append(d.rawConfigMasks, encodeRawConfig(md.RawConfig))
 	}
 
 	blob, err := d.readSectionBlob(toc.runeDocSections)

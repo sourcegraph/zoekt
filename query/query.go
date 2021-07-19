@@ -30,12 +30,36 @@ var _ = log.Println
 type Q interface {
 	String() string
 }
-type Visibility struct {
-	Value string
+
+// RawConfig filters repositories based on their encoded RawConfig map.
+type RawConfig uint64
+
+const (
+	RcOnlyPublic   RawConfig = 1
+	RcOnlyPrivate  RawConfig = 2
+	RcOnlyForks    RawConfig = 1 << 2
+	RcNoForks      RawConfig = 2 << 2
+	RcOnlyArchived RawConfig = 1 << 4
+	RcNoArchived   RawConfig = 2 << 4
+)
+
+var flagNames = map[RawConfig]string{
+	RcOnlyPublic:   "RcOnlyPublic",
+	RcOnlyPrivate:  "RcOnlyPrivate",
+	RcOnlyForks:    "RcOnlyForks",
+	RcNoForks:      "RcNoForks",
+	RcOnlyArchived: "RcOnlyArchived",
+	RcNoArchived:   "RcNoArchived",
 }
 
-func (v *Visibility) String() string {
-	return fmt.Sprintf("visibility:%s", v.Value)
+func (r RawConfig) String() string {
+	var s []string
+	for f, label := range flagNames {
+		if r&f != 0 {
+			s = append(s, label)
+		}
+	}
+	return fmt.Sprintf("rawConfig:%s", strings.Join(s, "|"))
 }
 
 // RegexpQuery is a query looking for regular expressions matches.

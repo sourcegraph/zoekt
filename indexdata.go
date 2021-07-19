@@ -93,6 +93,9 @@ type indexData struct {
 
 	// repository indexes for all the files
 	repos []uint16
+
+	// rawConfigMasks contains the encoded RawConfig for each repository
+	rawConfigMasks []uint8
 }
 
 type symbolData struct {
@@ -439,4 +442,25 @@ func (d *indexData) numDocs() uint32 {
 
 func (s *indexData) Close() {
 	s.file.Close()
+}
+
+const (
+	rawConfigYes = 1
+	rawConfigNo  = 2
+)
+
+// encodeRawConfig encodes a rawConfig map into a uint8 mask.
+func encodeRawConfig(rawConfig map[string]string) uint8 {
+	var encoded uint8
+	for i, f := range []string{"public", "fork", "archived"} {
+		var e uint8
+		v, ok := rawConfig[f]
+		if ok && v == "1" {
+			e |= rawConfigYes
+		} else {
+			e |= rawConfigNo
+		}
+		encoded = encoded | e<<(2*i)
+	}
+	return encoded
 }
