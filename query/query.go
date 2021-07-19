@@ -31,16 +31,19 @@ type Q interface {
 	String() string
 }
 
+// RawConfig filters for repositories based on their encoded RawConfig map.
+type RawConfig uint8
+
 const (
-	RcOnlyPublic   uint8 = 1
-	RcOnlyPrivate        = 2
-	RcOnlyForks          = 1 << 2
-	RcNoForks            = 2 << 2
-	RcOnlyArchived       = 1 << 4
-	RcNoArchived         = 2 << 4
+	RcOnlyPublic   RawConfig = 1
+	RcOnlyPrivate  RawConfig = 2
+	RcOnlyForks    RawConfig = 1 << 2
+	RcNoForks      RawConfig = 2 << 2
+	RcOnlyArchived RawConfig = 1 << 4
+	RcNoArchived   RawConfig = 2 << 4
 )
 
-var flagNames = map[uint8]string{
+var flagNames = map[RawConfig]string{
 	RcOnlyPublic:   "RcOnlyPublic",
 	RcOnlyPrivate:  "RcOnlyPrivate",
 	RcOnlyForks:    "RcOnlyForks",
@@ -49,29 +52,10 @@ var flagNames = map[uint8]string{
 	RcNoArchived:   "RcNoArchived",
 }
 
-// NewRawConfig construct a RawConfig query atom. The default value flag=0 will
-// filter for all public repositories which are neither forks nor archived. Not
-// providing a flag is equivalent to ignoring the dimension. For example,
-// RcOnlyForks|RcOnlyArchived will filter for public and private repositories which are both,
-// forks and archived.
-func NewRawConfig(flag uint8) *RawConfig {
-	if flag == 0 {
-		return &RawConfig{Encoded: RcOnlyPublic | RcNoForks | RcNoArchived}
-	}
-	return &RawConfig{flag}
-}
-
-// RawConfig filters for repositories based on their encoded RawConfig map.
-// Always use the constructor NewRawConfig instead of creating RawConfig
-// manually.
-type RawConfig struct {
-	Encoded uint8
-}
-
-func (r *RawConfig) String() string {
+func (r RawConfig) String() string {
 	var s []string
 	for f, label := range flagNames {
-		if r.Encoded&f != 0 {
+		if r&f != 0 {
 			s = append(s, label)
 		}
 	}

@@ -957,12 +957,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				return reposWant[d.repos[docID]]
 			},
 		}, nil
-	case *query.RawConfig:
+	case query.RawConfig:
 		return &docMatchTree{
 			reason:  s.String(),
 			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
-				return s.Encoded&d.rawConfigMasks[d.repos[docID]] == s.Encoded
+				return uint8(s)&d.rawConfigMasks[d.repos[docID]] == uint8(s)
 			},
 		}, nil
 	}

@@ -531,16 +531,10 @@ func TestRawQuerySearch(t *testing.T) {
 
 	cases := []struct {
 		pattern   string
-		flags     uint8
+		flags     query.RawConfig
 		wantRepos []string
 		wantFiles int
 	}{
-		{
-			pattern:   "bar",
-			flags:     0,
-			wantRepos: []string{"public"},
-			wantFiles: 1,
-		},
 		{
 			pattern:   "bas",
 			flags:     query.RcOnlyPublic,
@@ -552,6 +546,12 @@ func TestRawQuerySearch(t *testing.T) {
 			flags:     query.RcOnlyPublic,
 			wantRepos: []string{"public", "public_fork"},
 			wantFiles: 2,
+		},
+		{
+			pattern:   "foo",
+			flags:     query.RcOnlyPublic | query.RcNoForks,
+			wantRepos: []string{"public"},
+			wantFiles: 1,
 		},
 		{
 			pattern:   "bar",
@@ -592,7 +592,7 @@ func TestRawQuerySearch(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("pattern:%s", c.pattern), func(t *testing.T) {
-			q := query.NewAnd(&query.Substring{Pattern: c.pattern}, query.NewRawConfig(c.flags))
+			q := query.NewAnd(&query.Substring{Pattern: c.pattern}, c.flags)
 
 			sr, err := ss.Search(context.Background(), q, &zoekt.SearchOptions{})
 			if err != nil {
