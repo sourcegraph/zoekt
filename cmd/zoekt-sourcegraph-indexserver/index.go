@@ -87,15 +87,18 @@ type indexArgs struct {
 // doesn't set fields like repository/branch.
 func (o *indexArgs) BuildOptions() *build.Options {
 	return &build.Options{
-		// It is important that this RepositoryDescription exactly matches
-		// what the indexer we call will produce. This is to ensure that
-		// IncrementalSkipIndexing returns true if nothing needs to be done.
+		// It is important that this RepositoryDescription exactly matches what
+		// the indexer we call will produce. This is to ensure that
+		// IncrementalSkipIndexing and IndexState can correctly calculate if
+		// nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
 			ID:       uint32(o.IndexOptions.RepoID),
 			Name:     o.Name,
 			Branches: o.Branches,
 			// Always specify every field since incremental meta data updates ignore
 			// missing fields.
+			//
+			// Ensure this matches the fields in build Options.IndexState.
 			RawConfig: map[string]string{
 				"repoid":   strconv.Itoa(int(o.IndexOptions.RepoID)),
 				"priority": strconv.FormatFloat(o.Priority, 'g', -1, 64),

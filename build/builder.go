@@ -18,6 +18,7 @@ package build
 
 import (
 	"crypto/sha1"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -270,46 +271,80 @@ func (o *Options) shardName(n int) string {
 		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, zoekt.IndexFormatVersion, n))
 }
 
+type IndexState string
+
+const (
+	IndexStateMissing IndexState = "missing"
+	IndexStateCorrupt            = "corrupt"
+	IndexStateVersion            = "version-mismatch"
+	IndexStateOption             = "option-mismatch"
+	IndexStateMeta               = "meta-mismatch"
+	IndexStateContent            = "content-mismatch"
+	IndexStateEqual              = "equal"
+)
+
 // IncrementalSkipIndexing returns true if the index present on disk matches
 // the build options.
 func (o *Options) IncrementalSkipIndexing() bool {
+	return o.IndexState() == IndexStateEqual
+}
+
+// IndexState checks how the index present on disk compares to the build
+// options.
+func (o *Options) IndexState() IndexState {
 	fn := o.shardName(0)
 
-	f, err := os.Open(fn)
-	if err != nil {
-		return false
-	}
-
-	iFile, err := zoekt.NewIndexFile(f)
-	if err != nil {
-		return false
-	}
-	defer iFile.Close()
-
-	repo, index, err := zoekt.ReadMetadata(iFile)
-	if err != nil {
-		return false
+	repo, index, err := readMetadata(fn)
+	if os.IsNotExist(err) {
+		return IndexStateMissing
+	} else if err != nil {
+		return IndexStateCorrupt
 	}
 
 	if index.IndexFeatureVersion != zoekt.FeatureVersion {
-		return false
+		return IndexStateVersion
 	}
 
 	if repo.IndexOptions != o.HashOptions() {
-		return false
+		return IndexStateOption
 	}
 
-	// Sourcegraph specific. Ensure we have the correct repository ID set.
-	if !rawConfigEqual(repo.RawConfig, o.RepositoryDescription.RawConfig, "repoid") {
-		return false
+	if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
+		return IndexStateContent
 	}
 
-	// Sourcegraph specific. Ensure we have public set correctly.
-	if !rawConfigEqual(repo.RawConfig, o.RepositoryDescription.RawConfig, "public") {
-		return false
+	// Sourcegraph specific. Check if we only need to update meta. Do this after
+	// ensuring the content is the same so we don't only update meta.
+	//
+	// This should match the fields specified in RawConfig for
+	// zoekt-sourcegraph-indexserver indexArgs.BuildOptions.
+	//
+	// TODO(keegan) this is a sign that we need to ensure we can just check
+	// rawconfig is equal and then do a replace update. But need to validate
+	// that it is safe to do first. Will do in a follow-up.
+	for _, k := range []string{"repoid", "priority", "public", "fork", "archived"} {
+		if !rawConfigEqual(repo.RawConfig, o.RepositoryDescription.RawConfig, k) {
+			return IndexStateMeta
+		}
 	}
 
-	return reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches)
+	return IndexStateEqual
+}
+
+func readMetadata(p string) (*zoekt.Repository, *zoekt.IndexMetadata, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer f.Close()
+
+	iFile, err := zoekt.NewIndexFile(f)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer iFile.Close()
+
+	return zoekt.ReadMetadata(iFile)
 }
 
 func rawConfigEqual(m1, m2 map[string]string, key string) bool {
@@ -693,3 +728,87 @@ func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard,
 
 // umask holds the Umask of the current process
 var umask os.FileMode
+
+// MergeMeta updates the .meta files for the shards on disk for o.
+//
+// Note: currently we only merge the RawConfig field. If a raw config field
+// exists on disk but not in the options, we keep the on disk value.
+func MergeMeta(o *Options) error {
+	// TODO should this logic live in the zoekt pkg rather than the build pkg?
+	// Argument for build is its the only place we deal with writing to multiple
+	// shards. Argument for zoekt is it's the only place that understands meta
+	// implementation.
+	var todo map[string]string
+	for i := 0; ; i++ {
+		fn := o.shardName(i)
+
+		repo, _, err := readMetadata(fn)
+		if os.IsNotExist(err) {
+			break
+		} else if err != nil {
+			// TODO what do we do about bad shards? In the read path we only ensure
+			// 00000 is working. Right now we just bail.
+			return err
+		}
+
+		if repo.RawConfig == nil {
+			repo.RawConfig = map[string]string{}
+		}
+		for k, v := range o.RepositoryDescription.RawConfig {
+			repo.RawConfig[k] = v
+		}
+
+		dst := fn + ".meta"
+		tmp, err := jsonMarshalTmpFile(repo, dst)
+		if err != nil {
+			return err
+		}
+
+		todo[tmp] = dst
+	}
+
+	// best effort once we get here. Rename everything. Return error of last
+	// failure.
+	var renameErr error
+	for tmp, dst := range todo {
+		if err := os.Rename(tmp, dst); err != nil {
+			renameErr = err
+		}
+	}
+
+	return renameErr
+}
+
+// jsonMarshalFileTmp will marshal v to the temporary file p + ".*.tmp" and
+// returns the file name.
+//
+// Note: .tmp is the same suffix used by Builder. indexserver knows to clean
+// them up.
+func jsonMarshalTmpFile(v interface{}, p string) (_ string, err error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+
+	f, err := ioutil.TempFile(filepath.Dir(p), filepath.Base(p)+".*.tmp")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		f.Close()
+		if err != nil {
+			_ = os.Remove(f.Name())
+		}
+	}()
+
+	if runtime.GOOS != "windows" {
+		if err := f.Chmod(0o666 &^ umask); err != nil {
+			return "", err
+		}
+	}
+	if _, err := f.Write(b); err != nil {
+		return "", err
+	}
+
+	return f.Name(), f.Close()
+}

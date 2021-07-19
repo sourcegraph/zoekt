@@ -69,6 +69,11 @@ var (
 		Buckets: prometheus.ExponentialBuckets(.1, 10, 7), // 100ms -> 27min
 	}, []string{"state"}) // state is an indexState
 
+	metricIndexIncrementalIndexState = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "index_incremental_index_state",
+		Help: "A count of the state on disk vs what we want to build. See zoekt/build.IndexState.",
+	}, []string{"state"}) // state is build.IndexState
+
 	metricNumIndexed = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "index_num_indexed",
 		Help: "Number of indexed repos by code host",
@@ -474,9 +479,17 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	if args.Incremental {
 		bo := args.BuildOptions()
 		bo.SetDefaults()
-		if bo.IncrementalSkipIndexing() {
+		state := bo.IndexState()
+		metricIndexIncrementalIndexState.WithLabelValues(string(state)).Inc()
+		switch state {
+		case build.IndexStateEqual:
 			debug.Printf("%s index already up to date", args.String())
 			return indexStateNoop, nil
+
+		case build.IndexStateMeta:
+			debug.Printf("updating index.meta %s", args.String())
+
+			return indexStateSuccess, build.MergeMeta(bo)
 		}
 	}
 
