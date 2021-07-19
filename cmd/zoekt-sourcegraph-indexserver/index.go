@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -85,36 +86,23 @@ type indexArgs struct {
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
 func (o *indexArgs) BuildOptions() *build.Options {
-	rawConfig := map[string]string{}
-	if o.IndexOptions.RepoID > 0 {
-		rawConfig["repoid"] = strconv.Itoa(int(o.IndexOptions.RepoID))
-	}
-
-	if o.Priority != 0 {
-		rawConfig["priority"] = strconv.FormatFloat(o.Priority, 'g', -1, 64)
-	}
-
-	if o.Public {
-		rawConfig["public"] = "1"
-	}
-
-	if o.Fork {
-		rawConfig["fork"] = "1"
-	}
-
-	if o.Archived {
-		rawConfig["archived"] = "1"
-	}
-
 	return &build.Options{
 		// It is important that this RepositoryDescription exactly matches
 		// what the indexer we call will produce. This is to ensure that
 		// IncrementalSkipIndexing returns true if nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
-			ID:        uint32(o.IndexOptions.RepoID),
-			Name:      o.Name,
-			Branches:  o.Branches,
-			RawConfig: rawConfig,
+			ID:       uint32(o.IndexOptions.RepoID),
+			Name:     o.Name,
+			Branches: o.Branches,
+			// Always specify every field since incremental meta data updates ignore
+			// missing fields.
+			RawConfig: map[string]string{
+				"repoid":   strconv.Itoa(int(o.IndexOptions.RepoID)),
+				"priority": strconv.FormatFloat(o.Priority, 'g', -1, 64),
+				"public":   marshalBool(o.Public),
+				"fork":     marshalBool(o.Fork),
+				"archived": marshalBool(o.Archived),
+			},
 		},
 		IndexDir:         o.IndexDir,
 		Parallelism:      o.Parallelism,
@@ -123,6 +111,13 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		CTagsMustSucceed: o.Symbols,
 		DisableCTags:     !o.Symbols,
 	}
+}
+
+func marshalBool(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
 }
 
 func (o *indexArgs) String() string {
@@ -277,15 +272,23 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		}
 	}
 
-	// zoekt.name is used by zoekt-git-index to set the repository name.
-	cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt.name", o.Name)
-	cmd.Stdin = &bytes.Buffer{}
-	if err := runCmd(cmd); err != nil {
-		return err
+	// create git config with options
+	type configKV struct{ Key, Value string }
+	config := []configKV{{
+		// zoekt.name is used by zoekt-git-index to set the repository name.
+		Key:   "name",
+		Value: o.Name,
+	}}
+	for k, v := range buildOptions.RepositoryDescription.RawConfig {
+		config = append(config, configKV{Key: k, Value: v})
 	}
+	sort.Slice(config, func(i, j int) bool {
+		return config[i].Key < config[j].Key
+	})
 
-	for key, value := range buildOptions.RepositoryDescription.RawConfig {
-		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt."+key, value)
+	// write config to repo
+	for _, kv := range config {
+		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt."+kv.Key, kv.Value)
 		cmd.Stdin = &bytes.Buffer{}
 		if err := runCmd(cmd); err != nil {
 			return err
