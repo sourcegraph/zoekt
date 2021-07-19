@@ -304,11 +304,6 @@ func (o *Options) IncrementalSkipIndexing() bool {
 		return false
 	}
 
-	// Sourcegraph specific. Ensure we have public set correctly.
-	if !rawConfigEqual(repo.RawConfig, o.RepositoryDescription.RawConfig, "public") {
-		return false
-	}
-
 	return reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches)
 }
 
