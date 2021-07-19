@@ -31,7 +31,7 @@ type Q interface {
 	String() string
 }
 
-// RawConfig filters for repositories based on their encoded RawConfig map.
+// RawConfig filters repositories based on their encoded RawConfig map.
 type RawConfig uint64
 
 const (

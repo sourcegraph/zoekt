@@ -449,8 +449,7 @@ const (
 	rawConfigNo  = 2
 )
 
-// encodeRawConfig encodes a rawConfig map into a uint8 flag that corresponds to
-// the encoding of query.RawConfig.Encoded.
+// encodeRawConfig encodes a rawConfig map into a uint8 mask.
 func encodeRawConfig(rawConfig map[string]string) uint8 {
 	var encoded uint8
 	for i, f := range []string{"public", "fork", "archived"} {
