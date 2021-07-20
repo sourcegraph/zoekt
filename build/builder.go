@@ -779,7 +779,7 @@ func MergeMeta(o *Options) error {
 	return renameErr
 }
 
-// jsonMarshalFileTmp will marshal v to the temporary file p + ".*.tmp" and
+// jsonMarshalFileTmp marshals v to the temporary file p + ".*.tmp" and
 // returns the file name.
 //
 // Note: .tmp is the same suffix used by Builder. indexserver knows to clean
