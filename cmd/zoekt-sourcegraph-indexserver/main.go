@@ -113,10 +113,11 @@ var (
 type indexState string
 
 const (
-	indexStateFail    indexState = "fail"
-	indexStateSuccess            = "success"
-	indexStateNoop               = "noop"  // We didn't need to update index
-	indexStateEmpty              = "empty" // index is empty (empty repo)
+	indexStateFail        indexState = "fail"
+	indexStateSuccess                = "success"
+	indexStateSuccessMeta            = "success_meta" // We only updated metadata
+	indexStateNoop                   = "noop"         // We didn't need to update index
+	indexStateEmpty                  = "empty"        // index is empty (empty repo)
 )
 
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
@@ -359,8 +360,11 @@ func (s *Server) Run(queue *Queue) {
 		if err != nil {
 			log.Printf("error indexing %s: %s", args.String(), err)
 		}
-		if state == indexStateSuccess {
+		switch state {
+		case indexStateSuccess:
 			log.Printf("updated index %s in %v", args.String(), time.Since(start))
+		case indexStateSuccessMeta:
+			log.Printf("updated meta %s in %v", args.String(), time.Since(start))
 		}
 		queue.SetIndexed(name, opts, state)
 	}
@@ -492,7 +496,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 			if err := mergeMeta(bo); err != nil {
 				log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
 			} else {
-				return indexStateSuccess, nil
+				return indexStateSuccessMeta, nil
 			}
 
 		case build.IndexStateCorrupt:
