@@ -16,16 +16,14 @@ package shards
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math"
 	"os"
-	"path"
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -148,68 +146,14 @@ type shardedSearcher struct {
 
 	rankedVersion uint64
 	ranked        []rankedShard
-
-	priority map[string]float64
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
 	ss := &shardedSearcher{
-		shards:   make(map[string]rankedShard),
-		sched:    newScheduler(n),
-		priority: make(map[string]float64),
+		shards: make(map[string]rankedShard),
+		sched:  newScheduler(n),
 	}
 	return ss
-}
-
-func (ss *shardedSearcher) watchPriorities(dir string, done chan struct{}) {
-	priorityPath := path.Join(dir, "priority.json")
-	var lastMtime time.Time
-
-	loadPriority := func() {
-		st, err := os.Stat(priorityPath)
-		if err != nil {
-			return // ignore missing file errors
-		}
-		if st.ModTime() == lastMtime {
-			return // file is unchanged
-		}
-		lastMtime = st.ModTime()
-		buf, err := ioutil.ReadFile(priorityPath)
-		if err != nil {
-			log.Printf("reloading priority.json, error %v", err)
-			return
-		}
-		priority := make(map[string]float64)
-		err = json.Unmarshal(buf, &priority)
-		if err != nil {
-			log.Printf("reloading priority.json, error %v", err)
-			return
-		}
-
-		log.Printf("reloading priority.json: %d shards have priorities", len(priority))
-
-		// get an exclusive lock to update priority map and invalidate ranking
-		proc := ss.sched.Exclusive()
-		defer proc.Release()
-		ss.priority = priority
-		ss.rankedVersion++
-		ss.ranked = nil // will regenerate ranking on next request
-	}
-
-	loadPriority()
-
-	// fsnotify is more efficient for watching a large number of files for changes, but a
-	// single stat call once a minute to check one file's modified time is negligible.
-	ticker := time.NewTicker(1 * time.Minute)
-	for {
-		select {
-		case <-done:
-			ticker.Stop()
-			return
-		case <-ticker.C:
-			loadPriority()
-		}
-	}
 }
 
 // NewDirectorySearcher returns a searcher instance that loads all
@@ -223,8 +167,6 @@ func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	go ss.watchPriorities(dir, dw.quit)
 
 	ds := &directorySearcher{
 		Streamer:         ss,
@@ -732,15 +674,9 @@ func (s *shardedSearcher) getShards() []rankedShard {
 		return s.ranked
 	}
 
-	var res []rankedShard
+	res := make([]rankedShard, 0, len(s.shards))
 	for _, sh := range s.shards {
-		// Add the current priority to the sorted list of ranked shards.
-		// This will be used for downstream result reordering.
-		res = append(res, rankedShard{
-			name:     sh.name,
-			priority: s.priority[sh.name],
-			Searcher: sh.Searcher,
-		})
+		res = append(res, sh)
 	}
 	sort.Slice(res, func(i, j int) bool {
 		priorityDiff := res[i].priority - res[j].priority
@@ -764,22 +700,34 @@ func (s *shardedSearcher) getShards() []rankedShard {
 	return res
 }
 
-func shardName(s zoekt.Searcher) string {
+func mkRankedShard(s zoekt.Searcher) rankedShard {
 	q := query.Repo{}
 	result, err := s.List(context.Background(), &q, nil)
 	if err != nil {
-		return ""
+		return rankedShard{Searcher: s}
 	}
 	if len(result.Repos) == 0 {
-		return ""
+		return rankedShard{Searcher: s}
 	}
-	return result.Repos[0].Repository.Name
+
+	repo := result.Repos[0].Repository
+
+	var priority float64
+	if repo.RawConfig != nil {
+		priority, _ = strconv.ParseFloat(repo.RawConfig["priority"], 64)
+	}
+
+	return rankedShard{
+		Searcher: s,
+		name:     repo.Name,
+		priority: priority,
+	}
 }
 
 func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
-	var name string
+	var ranked rankedShard
 	if shard != nil {
-		name = shardName(shard)
+		ranked = mkRankedShard(shard)
 	}
 
 	proc := s.sched.Exclusive()
@@ -793,10 +741,7 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 	if shard == nil {
 		delete(s.shards, key)
 	} else {
-		s.shards[key] = rankedShard{
-			name:     name,
-			Searcher: shard,
-		}
+		s.shards[key] = ranked
 	}
 	s.rankedVersion++
 	s.ranked = nil
