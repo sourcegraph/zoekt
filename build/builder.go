@@ -324,17 +324,6 @@ func (o *Options) IndexState() IndexState {
 	return IndexStateEqual
 }
 
-func rawConfigEqual(m1, m2 map[string]string, key string) bool {
-	var v1, v2 string
-	if m1 != nil {
-		v1 = m1[key]
-	}
-	if m2 != nil {
-		v2 = m2[key]
-	}
-	return v1 == v2
-}
-
 // IgnoreSizeMax determines whether the max size should be ignored.
 func (o *Options) IgnoreSizeMax(name string) bool {
 	for _, pattern := range o.LargeFiles {
