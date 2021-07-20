@@ -262,7 +262,7 @@ func hashString(s string) string {
 }
 
 // ShardName returns the name the given index shard.
-func (o *Options) shardName(n int) string {
+func (o *Options) ShardName(n int) string {
 	abs := url.QueryEscape(o.RepositoryDescription.Name)
 	if len(abs) > 200 {
 		abs = abs[:200] + hashString(abs)[:8]
@@ -292,7 +292,7 @@ func (o *Options) IncrementalSkipIndexing() bool {
 // IndexState checks how the index present on disk compares to the build
 // options.
 func (o *Options) IndexState() IndexState {
-	fn := o.shardName(0)
+	fn := o.ShardName(0)
 
 	repo, index, err := zoekt.ReadMetadataPath(fn)
 	if os.IsNotExist(err) {
@@ -465,7 +465,7 @@ func (b *Builder) deleteRemainingShards() error {
 	for {
 		shard := b.nextShardNum
 		b.nextShardNum++
-		name := b.opts.shardName(shard)
+		name := b.opts.ShardName(shard)
 		paths, err := zoekt.IndexFilePaths(name)
 		if err != nil {
 			return err
@@ -641,7 +641,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 		}
 	}
 
-	name := b.opts.shardName(nextShardNum)
+	name := b.opts.ShardName(nextShardNum)
 
 	shardBuilder, err := b.newShardBuilder()
 	if err != nil {
@@ -720,7 +720,7 @@ func MergeMeta(o *Options) error {
 	// implementation.
 	var todo map[string]string
 	for i := 0; ; i++ {
-		fn := o.shardName(i)
+		fn := o.ShardName(i)
 
 		repo, _, err := zoekt.ReadMetadataPath(fn)
 		if os.IsNotExist(err) {
