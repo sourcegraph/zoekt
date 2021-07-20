@@ -294,7 +294,7 @@ func (o *Options) IncrementalSkipIndexing() bool {
 func (o *Options) IndexState() IndexState {
 	fn := o.shardName(0)
 
-	repo, index, err := readMetadata(fn)
+	repo, index, err := zoekt.ReadMetadataPath(fn)
 	if os.IsNotExist(err) {
 		return IndexStateMissing
 	} else if err != nil {
@@ -329,22 +329,6 @@ func (o *Options) IndexState() IndexState {
 	}
 
 	return IndexStateEqual
-}
-
-func readMetadata(p string) (*zoekt.Repository, *zoekt.IndexMetadata, error) {
-	f, err := os.Open(p)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer f.Close()
-
-	iFile, err := zoekt.NewIndexFile(f)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer iFile.Close()
-
-	return zoekt.ReadMetadata(iFile)
 }
 
 func rawConfigEqual(m1, m2 map[string]string, key string) bool {
@@ -742,7 +726,7 @@ func MergeMeta(o *Options) error {
 	for i := 0; ; i++ {
 		fn := o.shardName(i)
 
-		repo, _, err := readMetadata(fn)
+		repo, _, err := zoekt.ReadMetadataPath(fn)
 		if os.IsNotExist(err) {
 			break
 		} else if err != nil {
