@@ -709,8 +709,10 @@ var umask os.FileMode
 
 // MergeMeta updates the .meta files for the shards on disk for o.
 //
-// Note: currently we only merge the RawConfig field. If a raw config field
-// exists on disk but not in the options, we keep the on disk value.
+// This process is best effort. If anything fails we return on the first
+// failure. This means you might have an inconsistent state on disk if an
+// error is returned. It is recommended to fallback to re-indexing in that
+// case.
 func MergeMeta(o *Options) error {
 	// TODO should this logic live in the zoekt pkg rather than the build pkg?
 	// Argument for build is its the only place we deal with writing to multiple
@@ -724,8 +726,6 @@ func MergeMeta(o *Options) error {
 		if os.IsNotExist(err) {
 			break
 		} else if err != nil {
-			// TODO what do we do about bad shards? In the read path we only ensure
-			// 00000 is working. Right now we just bail.
 			return err
 		}
 
@@ -744,6 +744,9 @@ func MergeMeta(o *Options) error {
 		}
 
 		todo[tmp] = dst
+
+		// if we fail to rename, this defer will attempt to remove the tmp file.
+		defer os.Remove(tmp)
 	}
 
 	// best effort once we get here. Rename everything. Return error of last

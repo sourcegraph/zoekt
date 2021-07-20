@@ -489,7 +489,11 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		case build.IndexStateMeta:
 			debug.Printf("updating index.meta %s", args.String())
 
-			return indexStateSuccess, build.MergeMeta(bo)
+			if err := build.MergeMeta(bo); err != nil {
+				log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
+			} else {
+				return indexStateSuccess, nil
+			}
 		}
 	}
 
