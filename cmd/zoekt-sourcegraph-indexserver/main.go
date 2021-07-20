@@ -494,6 +494,9 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 			} else {
 				return indexStateSuccess, nil
 			}
+
+		case build.IndexStateCorrupt:
+			log.Printf("falling back to full update: corrupt index: %s", args.String())
 		}
 	}
 
