@@ -479,9 +479,9 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	if args.Incremental {
 		bo := args.BuildOptions()
 		bo.SetDefaults()
-		state := bo.IndexState()
-		metricIndexIncrementalIndexState.WithLabelValues(string(state)).Inc()
-		switch state {
+		incrementalState := bo.IndexState()
+		metricIndexIncrementalIndexState.WithLabelValues(string(incrementalState)).Inc()
+		switch incrementalState {
 		case build.IndexStateEqual:
 			debug.Printf("%s index already up to date", args.String())
 			return indexStateNoop, nil
