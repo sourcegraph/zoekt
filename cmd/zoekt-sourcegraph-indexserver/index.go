@@ -95,10 +95,6 @@ func (o *indexArgs) BuildOptions() *build.Options {
 			ID:       uint32(o.IndexOptions.RepoID),
 			Name:     o.Name,
 			Branches: o.Branches,
-			// Always specify every field since incremental meta data updates ignore
-			// missing fields.
-			//
-			// Ensure this matches the fields in build Options.IndexState.
 			RawConfig: map[string]string{
 				"repoid":   strconv.Itoa(int(o.IndexOptions.RepoID)),
 				"priority": strconv.FormatFloat(o.Priority, 'g', -1, 64),

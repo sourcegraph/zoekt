@@ -17,7 +17,9 @@ package zoekt // import "github.com/google/zoekt"
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -289,6 +291,49 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 	r.ID = uint32(id)
 
 	return nil
+}
+
+// MergeMutable will merge x into r. mutated will be true if it made any
+// changes. err is non-nil if we needed to mutate an immutable field.
+//
+// Note: SubRepoMap, IndexOptions and HasSymbol fields are ignored. They are
+// computed while indexing so can't be synthesized from x.
+//
+// Note: We ignore RawConfig fields which are duplicated into Repository:
+// name and id.
+//
+// Note: URL, *Template fields are ignored. They are not used by Sourcegraph.
+func (r *Repository) MergeMutable(x *Repository) (mutated bool, err error) {
+	if r.ID != x.ID {
+		// Sourcegraph: strange behaviour may occur if ID changes but names don't.
+		return mutated, errors.New("ID is immutable")
+	}
+	if r.Name != x.Name {
+		// Name is encoded into the shard name on disk. We need to re-index if it
+		// changes.
+		return mutated, errors.New("Name is immutable")
+	}
+	if !reflect.DeepEqual(r.Branches, x.Branches) {
+		// Need a reindex if content changing.
+		return mutated, errors.New("Branches is immutable")
+	}
+
+	for k, v := range x.RawConfig {
+		// We ignore name and id since they are encoded into the repository.
+		if k == "name" || k == "id" {
+			continue
+		}
+		if r.RawConfig == nil {
+			mutated = true
+			r.RawConfig = make(map[string]string)
+		}
+		if r.RawConfig[k] != v {
+			mutated = true
+			r.RawConfig[k] = v
+		}
+	}
+
+	return mutated, nil
 }
 
 // IndexMetadata holds metadata stored in the index file. It contains

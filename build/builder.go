@@ -313,19 +313,13 @@ func (o *Options) IndexState() IndexState {
 		return IndexStateContent
 	}
 
-	// Sourcegraph specific. Check if we only need to update meta. Do this after
-	// ensuring the content is the same so we don't only update meta.
-	//
-	// This should match the fields specified in RawConfig for
-	// zoekt-sourcegraph-indexserver indexArgs.BuildOptions.
-	//
-	// TODO(keegan) this is a sign that we need to ensure we can just check
-	// rawconfig is equal and then do a replace update. But need to validate
-	// that it is safe to do first. Will do in a follow-up.
-	for _, k := range []string{"repoid", "priority", "public", "fork", "archived"} {
-		if !rawConfigEqual(repo.RawConfig, o.RepositoryDescription.RawConfig, k) {
-			return IndexStateMeta
-		}
+	// We can mutate repo since it lives in the scope of this function call.
+	if updated, err := repo.MergeMutable(&o.RepositoryDescription); err != nil {
+		// non-nil err means we are trying to update an immutable field =>
+		// reindex content.
+		return IndexStateContent
+	} else if updated {
+		return IndexStateMeta
 	}
 
 	return IndexStateEqual
@@ -735,11 +729,12 @@ func MergeMeta(o *Options) error {
 			return err
 		}
 
-		if repo.RawConfig == nil {
-			repo.RawConfig = map[string]string{}
-		}
-		for k, v := range o.RepositoryDescription.RawConfig {
-			repo.RawConfig[k] = v
+		if updated, err := repo.MergeMutable(&o.RepositoryDescription); err != nil {
+			return err
+		} else if !updated {
+			// This shouldn't happen, but ignore it if it does. We may be working on
+			// an interrupted shard. This helps us converge to something correct.
+			continue
 		}
 
 		dst := fn + ".meta"
