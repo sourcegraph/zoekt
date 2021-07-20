@@ -98,7 +98,7 @@ func TestBasic(t *testing.T) {
 	t.Run("meta file", func(t *testing.T) {
 		// Add a .meta file for each shard with repo.Name set to "repo-mutated"
 		for _, p := range fs {
-			repo, err := shardRepoMetadata(p)
+			repo, _, err := zoekt.ReadMetadataPath(p)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -171,27 +171,6 @@ func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface
 
 	// final run for the test, using the real t.Fatalf
 	f(t.Fatalf)
-}
-
-func shardRepoMetadata(path string) (*zoekt.Repository, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	ifile, err := zoekt.NewIndexFile(f)
-	if err != nil {
-		return nil, err
-	}
-	defer ifile.Close()
-
-	repo, _, err := zoekt.ReadMetadata(ifile)
-	if err != nil {
-		return nil, err
-	}
-
-	return repo, nil
 }
 
 func TestLargeFileOption(t *testing.T) {
