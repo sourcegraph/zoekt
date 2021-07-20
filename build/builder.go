@@ -316,6 +316,7 @@ func (o *Options) IndexState() IndexState {
 	if updated, err := repo.MergeMutable(&o.RepositoryDescription); err != nil {
 		// non-nil err means we are trying to update an immutable field =>
 		// reindex content.
+		log.Printf("warn: immutable field changed, requires re-index: %s", err)
 		return IndexStateContent
 	} else if updated {
 		return IndexStateMeta

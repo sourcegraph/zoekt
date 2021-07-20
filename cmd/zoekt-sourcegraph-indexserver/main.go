@@ -491,7 +491,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 			return indexStateNoop, nil
 
 		case build.IndexStateMeta:
-			debug.Printf("updating index.meta %s", args.String())
+			log.Printf("updating index.meta %s", args.String())
 
 			if err := mergeMeta(bo); err != nil {
 				log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
