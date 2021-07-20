@@ -18,7 +18,7 @@ import (
 // error is returned. It is recommended to fallback to re-indexing in that
 // case.
 func mergeMeta(o *build.Options) error {
-	var todo map[string]string
+	todo := map[string]string{}
 	for i := 0; ; i++ {
 		fn := o.ShardName(i)
 
