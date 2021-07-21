@@ -434,9 +434,15 @@ func (b *Builder) Finish() error {
 	}
 
 	for tmp, final := range b.finishedShards {
-		if err := os.Rename(tmp, final); err != nil {
+		err := os.Rename(tmp, final)
+		if err != nil {
 			b.buildError = err
-		} else {
+		}
+		err = os.Remove(final + ".meta")
+		if err != nil && !os.IsNotExist(err) {
+			b.buildError = err
+		}
+		if err == nil {
 			b.shardLog("upsert", final)
 		}
 	}

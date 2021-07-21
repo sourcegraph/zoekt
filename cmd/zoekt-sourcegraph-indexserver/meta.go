@@ -38,7 +38,7 @@ func mergeMeta(o *build.Options) error {
 		}
 
 		dst := fn + ".meta"
-		tmp, err := jsonMarshalTmpFile(repo, dst)
+		tmp, err := jsonMarshalMetadata(repo, dst)
 		if err != nil {
 			return err
 		}
@@ -61,12 +61,17 @@ func mergeMeta(o *build.Options) error {
 	return renameErr
 }
 
-// jsonMarshalFileTmp marshals v to the temporary file p + ".*.tmp" and
-// returns the file name.
+// jsonMarshalMetadata marshals repo to the temporary file p + ".*.tmp" and
+// returns the file name. Only a subset of the fields of repo will be written
+// to the metadata file.
 //
 // Note: .tmp is the same suffix used by Builder. indexserver knows to clean
 // them up.
-func jsonMarshalTmpFile(v interface{}, p string) (_ string, err error) {
+func jsonMarshalMetadata(repo *zoekt.Repository, p string) (_ string, err error) {
+	type metadata struct {
+		RawConfig map[string]string
+	}
+	v := &metadata{RawConfig: repo.RawConfig}
 	b, err := json.Marshal(v)
 	if err != nil {
 		return "", err
