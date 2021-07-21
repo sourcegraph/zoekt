@@ -436,8 +436,25 @@ func (b *Builder) Finish() error {
 	for tmp, final := range b.finishedShards {
 		if err := os.Rename(tmp, final); err != nil {
 			b.buildError = err
-		} else {
-			b.shardLog("upsert", final)
+			continue
+		}
+
+		b.shardLog("upsert", final)
+
+		// Remove extra files unrelated to the new shard. We don't want the old
+		// meta file sticking around.
+		paths, err := zoekt.IndexFilePaths(final)
+		if err != nil {
+			b.buildError = err
+		}
+		for _, p := range paths {
+			if p == final {
+				continue
+			}
+			log.Printf("removing old shard file: %s", p)
+			if err := os.Remove(p); err != nil {
+				b.buildError = err
+			}
 		}
 	}
 	b.finishedShards = map[string]string{}
