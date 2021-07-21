@@ -29,10 +29,7 @@ type mmapedIndexFile struct {
 }
 
 func (f *mmapedIndexFile) Read(off, sz uint32) ([]byte, error) {
-	if off > off+sz {
-		return nil, fmt.Errorf("slice bound out of range [%d:%d] reading file %s", off, off+sz, f.name)
-	}
-	if off+sz > uint32(len(f.data)) {
+	if off > off+sz || off+sz > uint32(len(f.data)) {
 		return nil, fmt.Errorf("out of bounds: %d, len %d", off+sz, len(f.data))
 	}
 	return f.data[off : off+sz], nil
