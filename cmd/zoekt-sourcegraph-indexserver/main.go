@@ -69,11 +69,6 @@ var (
 		Buckets: prometheus.ExponentialBuckets(.1, 10, 7), // 100ms -> 27min
 	}, []string{"state"}) // state is an indexState
 
-	metricIndexIncrementalIndexState = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "index_incremental_index_state",
-		Help: "A count of the state on disk vs what we want to build. See zoekt/build.IndexState.",
-	}, []string{"state"}) // state is build.IndexState
-
 	metricNumIndexed = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "index_num_indexed",
 		Help: "Number of indexed repos by code host",
@@ -113,11 +108,10 @@ var (
 type indexState string
 
 const (
-	indexStateFail        indexState = "fail"
-	indexStateSuccess                = "success"
-	indexStateSuccessMeta            = "success_meta" // We only updated metadata
-	indexStateNoop                   = "noop"         // We didn't need to update index
-	indexStateEmpty                  = "empty"        // index is empty (empty repo)
+	indexStateFail    indexState = "fail"
+	indexStateSuccess            = "success"
+	indexStateNoop               = "noop"  // We didn't need to update index
+	indexStateEmpty              = "empty" // index is empty (empty repo)
 )
 
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
@@ -360,11 +354,8 @@ func (s *Server) Run(queue *Queue) {
 		if err != nil {
 			log.Printf("error indexing %s: %s", args.String(), err)
 		}
-		switch state {
-		case indexStateSuccess:
+		if state == indexStateSuccess {
 			log.Printf("updated index %s in %v", args.String(), time.Since(start))
-		case indexStateSuccessMeta:
-			log.Printf("updated meta %s in %v", args.String(), time.Since(start))
 		}
 		queue.SetIndexed(name, opts, state)
 	}
@@ -483,24 +474,9 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	if args.Incremental {
 		bo := args.BuildOptions()
 		bo.SetDefaults()
-		incrementalState := bo.IndexState()
-		metricIndexIncrementalIndexState.WithLabelValues(string(incrementalState)).Inc()
-		switch incrementalState {
-		case build.IndexStateEqual:
+		if bo.IncrementalSkipIndexing() {
 			debug.Printf("%s index already up to date", args.String())
 			return indexStateNoop, nil
-
-		case build.IndexStateMeta:
-			log.Printf("updating index.meta %s", args.String())
-
-			if err := mergeMeta(bo); err != nil {
-				log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
-			} else {
-				return indexStateSuccessMeta, nil
-			}
-
-		case build.IndexStateCorrupt:
-			log.Printf("falling back to full update: corrupt index: %s", args.String())
 		}
 	}
 

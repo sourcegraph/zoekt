@@ -456,25 +456,6 @@ func ReadMetadata(inf IndexFile) (*Repository, *IndexMetadata, error) {
 	return rd.readMetadata(&toc)
 }
 
-// ReadMetadataPath returns the metadata of index shard at p without reading
-// the index data. ReadMetadataPath is a helper for ReadMetadata which opens
-// the IndexFile at p.
-func ReadMetadataPath(p string) (*Repository, *IndexMetadata, error) {
-	f, err := os.Open(p)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer f.Close()
-
-	iFile, err := NewIndexFile(f)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer iFile.Close()
-
-	return ReadMetadata(iFile)
-}
-
 // IndexFilePaths returns all paths for the IndexFile at filepath p that
 // exist. Note: if no files exist this will return an empty slice and nil
 // error.

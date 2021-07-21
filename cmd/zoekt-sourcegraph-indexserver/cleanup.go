@@ -140,7 +140,19 @@ func getShards(dir string) map[string][]shard {
 }
 
 func shardRepoName(path string) (string, error) {
-	repo, _, err := zoekt.ReadMetadataPath(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	ifile, err := zoekt.NewIndexFile(f)
+	if err != nil {
+		return "", err
+	}
+	defer ifile.Close()
+
+	repo, _, err := zoekt.ReadMetadata(ifile)
 	if err != nil {
 		return "", err
 	}

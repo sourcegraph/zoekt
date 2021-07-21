@@ -261,7 +261,7 @@ func hashString(s string) string {
 }
 
 // ShardName returns the name the given index shard.
-func (o *Options) ShardName(n int) string {
+func (o *Options) shardName(n int) string {
 	abs := url.QueryEscape(o.RepositoryDescription.Name)
 	if len(abs) > 200 {
 		abs = abs[:200] + hashString(abs)[:8]
@@ -270,59 +270,57 @@ func (o *Options) ShardName(n int) string {
 		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, zoekt.IndexFormatVersion, n))
 }
 
-type IndexState string
-
-const (
-	IndexStateMissing IndexState = "missing"
-	IndexStateCorrupt            = "corrupt"
-	IndexStateVersion            = "version-mismatch"
-	IndexStateOption             = "option-mismatch"
-	IndexStateMeta               = "meta-mismatch"
-	IndexStateContent            = "content-mismatch"
-	IndexStateEqual              = "equal"
-)
-
 // IncrementalSkipIndexing returns true if the index present on disk matches
 // the build options.
 func (o *Options) IncrementalSkipIndexing() bool {
-	return o.IndexState() == IndexStateEqual
-}
+	fn := o.shardName(0)
 
-// IndexState checks how the index present on disk compares to the build
-// options.
-func (o *Options) IndexState() IndexState {
-	fn := o.ShardName(0)
+	f, err := os.Open(fn)
+	if err != nil {
+		return false
+	}
 
-	repo, index, err := zoekt.ReadMetadataPath(fn)
-	if os.IsNotExist(err) {
-		return IndexStateMissing
-	} else if err != nil {
-		return IndexStateCorrupt
+	iFile, err := zoekt.NewIndexFile(f)
+	if err != nil {
+		return false
+	}
+	defer iFile.Close()
+
+	repo, index, err := zoekt.ReadMetadata(iFile)
+	if err != nil {
+		return false
 	}
 
 	if index.IndexFeatureVersion != zoekt.FeatureVersion {
-		return IndexStateVersion
+		return false
 	}
 
 	if repo.IndexOptions != o.HashOptions() {
-		return IndexStateOption
+		return false
 	}
 
-	if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
-		return IndexStateContent
+	// Sourcegraph specific. Ensure we have the correct repository ID set.
+	if !rawConfigEqual(repo.RawConfig, o.RepositoryDescription.RawConfig, "repoid") {
+		return false
 	}
 
-	// We can mutate repo since it lives in the scope of this function call.
-	if updated, err := repo.MergeMutable(&o.RepositoryDescription); err != nil {
-		// non-nil err means we are trying to update an immutable field =>
-		// reindex content.
-		log.Printf("warn: immutable field changed, requires re-index: %s", err)
-		return IndexStateContent
-	} else if updated {
-		return IndexStateMeta
+	// Sourcegraph specific. Ensure we have public set correctly.
+	if !rawConfigEqual(repo.RawConfig, o.RepositoryDescription.RawConfig, "public") {
+		return false
 	}
 
-	return IndexStateEqual
+	return reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches)
+}
+
+func rawConfigEqual(m1, m2 map[string]string, key string) bool {
+	var v1, v2 string
+	if m1 != nil {
+		v1 = m1[key]
+	}
+	if m2 != nil {
+		v2 = m2[key]
+	}
+	return v1 == v2
 }
 
 // IgnoreSizeMax determines whether the max size should be ignored.
@@ -454,7 +452,7 @@ func (b *Builder) deleteRemainingShards() error {
 	for {
 		shard := b.nextShardNum
 		b.nextShardNum++
-		name := b.opts.ShardName(shard)
+		name := b.opts.shardName(shard)
 		paths, err := zoekt.IndexFilePaths(name)
 		if err != nil {
 			return err
@@ -630,7 +628,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 		}
 	}
 
-	name := b.opts.ShardName(nextShardNum)
+	name := b.opts.shardName(nextShardNum)
 
 	shardBuilder, err := b.newShardBuilder()
 	if err != nil {
