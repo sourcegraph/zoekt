@@ -393,6 +393,10 @@ document.onkeydown=function(e){
     </div>
   </nav>
 `,
+	"robots": `
+user-agent: *
+disallow: /search
+`,
 }
 
 func init() {

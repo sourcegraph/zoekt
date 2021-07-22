@@ -226,27 +226,19 @@ func (b *IndexBuilder) setRepository(desc *Repository) error {
 		return err
 	}
 
-	for _, subrepo := range desc.SubRepoMap {
-		branchEqual := len(subrepo.Branches) == len(desc.Branches)
-		if branchEqual {
-			for i, b := range subrepo.Branches {
-				branchEqual = branchEqual && (b.Name == desc.Branches[i].Name)
-			}
-		}
-	}
-
 	if len(desc.Branches) > 64 {
 		return fmt.Errorf("too many branches")
 	}
 
 	b.repo = *desc
-	repoCopy := *desc
-	repoCopy.SubRepoMap = nil
 
-	if b.repo.SubRepoMap == nil {
-		b.repo.SubRepoMap = map[string]*Repository{}
+	// copy subrepomap without root
+	b.repo.SubRepoMap = map[string]*Repository{}
+	for k, v := range desc.SubRepoMap {
+		if k != "" {
+			b.repo.SubRepoMap[k] = v
+		}
 	}
-	b.repo.SubRepoMap[""] = &repoCopy
 
 	b.populateSubRepoIndices()
 	return nil
@@ -336,7 +328,7 @@ func (b *IndexBuilder) populateSubRepoIndices() {
 	if b.subRepoIndices != nil {
 		return
 	}
-	var paths []string
+	paths := []string{""}
 	for k := range b.repo.SubRepoMap {
 		paths = append(paths, k)
 	}

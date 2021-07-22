@@ -129,6 +129,9 @@ func TestBasic(t *testing.T) {
 		"/search?q=magic": {
 			`value=magic`,
 		},
+		"/robots.txt": {
+			"disallow: /search",
+		},
 	} {
 		checkNeedles(t, ts, req, needles)
 	}

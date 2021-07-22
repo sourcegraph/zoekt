@@ -111,6 +111,7 @@ type Server struct {
 	result     *template.Template
 	print      *template.Template
 	about      *template.Template
+	robots     *template.Template
 
 	startTime time.Time
 
@@ -152,6 +153,7 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 		"search":     &s.search,
 		"repolist":   &s.repolist,
 		"about":      &s.about,
+		"robots":     &s.robots,
 	} {
 		*v = s.Top.Lookup(k)
 		if *v == nil {
@@ -165,6 +167,7 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
 	if s.HTML {
+		mux.HandleFunc("/robots.txt", s.serveRobots)
 		mux.HandleFunc("/search", s.serveSearch)
 		mux.HandleFunc("/", s.serveSearchBox)
 		mux.HandleFunc("/about", s.serveAbout)
@@ -403,6 +406,22 @@ func (s *Server) serveAboutErr(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) serveAbout(w http.ResponseWriter, r *http.Request) {
 	if err := s.serveAboutErr(w, r); err != nil {
+		http.Error(w, err.Error(), http.StatusTeapot)
+	}
+}
+
+func (s *Server) serveRobotsErr(w http.ResponseWriter, r *http.Request) error {
+	data := struct{}{}
+	var buf bytes.Buffer
+	if err := s.robots.Execute(&buf, &data); err != nil {
+		return err
+	}
+	w.Write(buf.Bytes())
+	return nil
+}
+
+func (s *Server) serveRobots(w http.ResponseWriter, r *http.Request) {
+	if err := s.serveRobotsErr(w, r); err != nil {
 		http.Error(w, err.Error(), http.StatusTeapot)
 	}
 }

@@ -255,9 +255,12 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 
 	d.subRepoPaths = make([][]string, 0, len(d.repoMetaData))
 	for i := 0; i < len(d.repoMetaData); i++ {
-		keys := make([]string, 0, len(d.repoMetaData[i].SubRepoMap))
+		keys := make([]string, 0, len(d.repoMetaData[i].SubRepoMap)+1)
+		keys = append(keys, "")
 		for k := range d.repoMetaData[i].SubRepoMap {
-			keys = append(keys, k)
+			if k != "" {
+				keys = append(keys, k)
+			}
 		}
 		sort.Strings(keys)
 		d.subRepoPaths = append(d.subRepoPaths, keys)
