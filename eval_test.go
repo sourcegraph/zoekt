@@ -128,10 +128,24 @@ func TestRegexpParse(t *testing.T) {
 	}
 }
 
-func TestSimplifyRepoSet(t *testing.T) {
-	d := &indexData{
-		repoMetaData: []Repository{{Name: "foo"}, {Name: "bar"}},
+// compoundReposShard returns a compound shard where each repo has 1 document.
+func compoundReposShard(t *testing.T, names ...string) *indexData {
+	t.Helper()
+	b := newIndexBuilder()
+	for _, name := range names {
+		if err := b.setRepository(&Repository{Name: name}); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.AddFile(name+".txt", []byte(name+" content")); err != nil {
+			t.Fatal(err)
+		}
 	}
+	s := searcherForTest(t, b)
+	return s.(*indexData)
+}
+
+func TestSimplifyRepoSet(t *testing.T) {
+	d := compoundReposShard(t, "foo", "bar")
 	all := &query.RepoSet{Set: map[string]bool{"foo": true, "bar": true}}
 	some := &query.RepoSet{Set: map[string]bool{"foo": true, "banana": true}}
 	none := &query.RepoSet{Set: map[string]bool{"banana": true}}
@@ -153,9 +167,7 @@ func TestSimplifyRepoSet(t *testing.T) {
 }
 
 func TestSimplifyRepo(t *testing.T) {
-	d := &indexData{
-		repoMetaData: []Repository{{Name: "foo"}, {Name: "fool"}},
-	}
+	d := compoundReposShard(t, "foo", "fool")
 	all := &query.Repo{"foo"}
 	some := &query.Repo{"fool"}
 	none := &query.Repo{"bar"}
@@ -177,9 +189,7 @@ func TestSimplifyRepo(t *testing.T) {
 }
 
 func TestSimplifyRepoBranch(t *testing.T) {
-	d := &indexData{
-		repoMetaData: []Repository{{Name: "foo"}, {Name: "bar"}},
-	}
+	d := compoundReposShard(t, "foo", "bar")
 
 	some := &query.RepoBranches{Set: map[string][]string{"bar": {"branch1"}}}
 	none := &query.Repo{"banana"}
@@ -196,9 +206,7 @@ func TestSimplifyRepoBranch(t *testing.T) {
 }
 
 func TestSimplifyRepoBranchSimple(t *testing.T) {
-	d := &indexData{
-		repoMetaData: []Repository{{Name: "foo"}},
-	}
+	d := compoundReposShard(t, "foo")
 	q := &query.RepoBranches{Set: map[string][]string{"foo": {"HEAD", "b1"}, "bar": {"HEAD"}}}
 
 	want := &query.Or{[]query.Q{&query.Branch{

@@ -22,8 +22,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/zoekt/query"
@@ -143,9 +145,16 @@ func TestReadSearch(t *testing.T) {
 		&query.Symbol{Expr: &query.Regexp{Regexp: mustParseRE("sage$")}},
 	}
 
-	shards := []string{"ctagsrepo_v16.00000", "repo_v16.00000"}
-	for _, name := range shards {
-		shard, err := loadShard("testdata/shards/" + name + ".zoekt")
+	shards, err := filepath.Glob("testdata/shards/*.zoekt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range shards {
+		name := filepath.Base(path)
+		name = strings.TrimSuffix(name, ".zoekt")
+
+		shard, err := loadShard(path)
 		if err != nil {
 			t.Fatalf("error loading shard %s %v", name, err)
 		}

@@ -28,19 +28,12 @@ package zoekt
 // 14: languages
 // 15: rune based symbol sections
 // 16: ctags metadata
-const IndexFormatVersion = 16
+// 17: compound shard (multi repo)
+const IndexFormatVersion = 17
 
 // FeatureVersion is increased if a feature is added that requires reindexing data
 // without changing the format version
-// 2: Rank field for shards.
-// 3: Rank documents within shards
-// 4: Dedup file bugfix
-// 5: Remove max line size limit
-// 6: Include '#' into the LineFragment template
-// 7: Record skip reasons in the index.
-// 8: Record source path in the index.
-// 9: Store ctags metadata & bump default max file size
-const FeatureVersion = 9
+const FeatureVersion = 1
 
 type indexTOC struct {
 	fileContents compoundSection
@@ -69,6 +62,8 @@ type indexTOC struct {
 	nameEndRunes     simpleSection
 	contentChecksums simpleSection
 	runeDocSections  simpleSection
+
+	repos simpleSection
 }
 
 func (t *indexTOC) sections() []section {
@@ -98,5 +93,6 @@ func (t *indexTOC) sections() []section {
 		&t.contentChecksums,
 		&t.languages,
 		&t.runeDocSections,
+		&t.repos,
 	}
 }

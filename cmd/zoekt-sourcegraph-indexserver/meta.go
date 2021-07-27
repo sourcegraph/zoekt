@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -22,12 +23,17 @@ func mergeMeta(o *build.Options) error {
 	for i := 0; ; i++ {
 		fn := o.ShardName(i)
 
-		repo, _, err := zoekt.ReadMetadataPath(fn)
+		repos, _, err := zoekt.ReadMetadataPath(fn)
 		if os.IsNotExist(err) {
 			break
 		} else if err != nil {
 			return err
 		}
+
+		if len(repos) != 1 {
+			return fmt.Errorf("mergeMeta: does not support compound shards: %s", fn)
+		}
+		repo := repos[0]
 
 		if updated, err := repo.MergeMutable(&o.RepositoryDescription); err != nil {
 			return err

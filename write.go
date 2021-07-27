@@ -147,6 +147,10 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	w.Write(marshalDocSections(b.runeDocSections))
 	toc.runeDocSections.end(w)
 
+	toc.repos.start(w)
+	w.Write(toSizedDeltas16(b.repos))
+	toc.repos.end(w)
+
 	indexTime := b.IndexTime
 	if indexTime.IsZero() {
 		indexTime = time.Now()
@@ -162,7 +166,7 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}, &toc.metaData, w); err != nil {
 		return err
 	}
-	if err := b.writeJSON(b.repo, &toc.repoMetaData, w); err != nil {
+	if err := b.writeJSON(b.repoList, &toc.repoMetaData, w); err != nil {
 		return err
 	}
 

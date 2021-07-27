@@ -2,6 +2,8 @@ package build
 
 import (
 	"flag"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -113,4 +115,74 @@ func TestFlags(t *testing.T) {
 			t.Errorf("mismatch for %v (-want +got):\n%s", c.args, d)
 		}
 	}
+}
+
+func TestIncrementalSkipIndexing(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+		opts Options
+	}{{
+		name: "v17-noop",
+		want: true,
+		opts: Options{
+			RepositoryDescription: zoekt.Repository{
+				Name: "repo17",
+			},
+			SizeMax:      2097152,
+			DisableCTags: true,
+		},
+	}, {
+		name: "v16-noop",
+		want: true,
+		opts: Options{
+			RepositoryDescription: zoekt.Repository{
+				Name: "repo",
+			},
+			SizeMax:      2097152,
+			DisableCTags: true,
+		},
+	}, {
+		name: "v17-id",
+		want: false,
+		opts: Options{
+			RepositoryDescription: zoekt.Repository{
+				Name: "repo17",
+				RawConfig: map[string]string{
+					"repoid": "123",
+				},
+			},
+			SizeMax:      2097152,
+			DisableCTags: true,
+		},
+	}, {
+		name: "doesnotexist",
+		want: false,
+		opts: Options{
+			RepositoryDescription: zoekt.Repository{
+				Name: "doesnotexist",
+			},
+			SizeMax:      2097152,
+			DisableCTags: true,
+		},
+	}}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.opts.IndexDir = "../testdata/shards"
+			t.Log(tc.opts.IndexState())
+			got := tc.opts.IncrementalSkipIndexing()
+			if got != tc.want {
+				t.Fatalf("want %v got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if !testing.Verbose() {
+		log.SetOutput(io.Discard)
+	}
+	os.Exit(m.Run())
 }
