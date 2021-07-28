@@ -33,7 +33,7 @@ type indexData struct {
 
 	file IndexFile
 
-	ngrams arrayNgramOffset
+	ngrams combinedNgramOffset
 
 	newlinesStart uint32
 	newlinesIndex []uint32
