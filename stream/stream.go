@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
