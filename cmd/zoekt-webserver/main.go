@@ -246,7 +246,10 @@ func main() {
 		log.Println("watchdog disabled")
 	}
 
-	srv := &http.Server{Addr: *listen, Handler: handler}
+	srv := &http.Server{
+		Addr: *listen,
+		Handler: web.HTTPTraceMiddleware(handler),
+	}
 
 	go func() {
 		if debug {
