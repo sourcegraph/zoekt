@@ -533,10 +533,13 @@ func (d *indexData) regexpToMatchTreeRecursive(r *syntax.Regexp, minTextSize int
 		return d.regexpToMatchTreeRecursive(r.Sub[0], minTextSize, fileName, caseSensitive)
 
 	case syntax.OpRepeat:
-		if r.Min >= 1 {
+		if r.Min == 1 {
 			return d.regexpToMatchTreeRecursive(r.Sub[0], minTextSize, fileName, caseSensitive)
+		} else if r.Min > 1 {
+			// (x){2,} can't be expressed precisely by the matchTree
+			mt, _, singleLine, err := d.regexpToMatchTreeRecursive(r.Sub[0], minTextSize, fileName, caseSensitive)
+			return mt, false, singleLine, err
 		}
-
 	case syntax.OpConcat, syntax.OpAlternate:
 		var qs []matchTree
 		isEq := true
