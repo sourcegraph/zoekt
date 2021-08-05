@@ -246,7 +246,10 @@ func main() {
 		log.Println("watchdog disabled")
 	}
 
-	srv := &http.Server{Addr: *listen, Handler: handler}
+	srv := &http.Server{
+		Addr:    *listen,
+		Handler: handler,
+	}
 
 	go func() {
 		if debug {
@@ -402,18 +405,28 @@ type loggedSearcher struct {
 	zoekt.Streamer
 }
 
-func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
-	sr, err := s.Streamer.Search(ctx, q, opts)
-	if err != nil {
-		log.Printf("EROR: search failed q=%s: %s", q.String(), err.Error())
-	}
-	if sr != nil {
-		log.Printf("DBUG: search q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsSkipped=%v MatchCount=%v NgramMatches=%v Wait=%v}", q.String(), opts.EstimateDocCount, opts.Whole, opts.ShardMaxMatchCount, opts.TotalMaxMatchCount, opts.ShardMaxImportantMatch, opts.TotalMaxImportantMatch, opts.MaxWallTime, opts.MaxDocDisplayCount, sr.Stats.ContentBytesLoaded, sr.Stats.IndexBytesLoaded, sr.Stats.Crashes, sr.Stats.Duration, sr.Stats.FileCount, sr.Stats.ShardFilesConsidered, sr.Stats.FilesConsidered, sr.Stats.FilesLoaded, sr.Stats.FilesSkipped, sr.Stats.ShardsSkipped, sr.Stats.MatchCount, sr.Stats.NgramMatches, sr.Stats.Wait)
-	}
-	return sr, err
+func (s *loggedSearcher) Search(
+	ctx context.Context,
+	q query.Q,
+	opts *zoekt.SearchOptions,
+) (sr *zoekt.SearchResult, err error) {
+	defer func() {
+		var stats *zoekt.Stats
+		if sr != nil {
+			stats = &sr.Stats
+		}
+		s.log(ctx, q, opts, stats, err)
+	}()
+
+	return s.Streamer.Search(ctx, q, opts)
 }
 
-func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) error {
+func (s *loggedSearcher) StreamSearch(
+	ctx context.Context,
+	q query.Q,
+	opts *zoekt.SearchOptions,
+	sender zoekt.Sender,
+) error {
 	var (
 		mu    sync.Mutex
 		stats zoekt.Stats
@@ -424,11 +437,67 @@ func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoek
 		mu.Unlock()
 		sender.Send(event)
 	}))
-	if err != nil {
-		log.Printf("EROR: search failed q=%s: %s", q.String(), err.Error())
-	}
-	log.Printf("DBUG: search q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsSkipped=%v MatchCount=%v NgramMatches=%v Wait=%v}", q.String(), opts.EstimateDocCount, opts.Whole, opts.ShardMaxMatchCount, opts.TotalMaxMatchCount, opts.ShardMaxImportantMatch, opts.TotalMaxImportantMatch, opts.MaxWallTime, opts.MaxDocDisplayCount, stats.ContentBytesLoaded, stats.IndexBytesLoaded, stats.Crashes, stats.Duration, stats.FileCount, stats.ShardFilesConsidered, stats.FilesConsidered, stats.FilesLoaded, stats.FilesSkipped, stats.ShardsSkipped, stats.MatchCount, stats.NgramMatches, stats.Wait)
+
+	s.log(ctx, q, opts, &stats, err)
+
 	return err
+}
+
+func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, st *zoekt.Stats, err error) {
+	id := traceID(ctx)
+	if err != nil {
+		log.Printf("EROR: search failed traceID=%s q=%s: %s", id, q.String(), err.Error())
+		return
+	}
+
+	if st == nil {
+		return
+	}
+
+	log.Printf(
+		"DBUG: search traceID=%s q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsSkipped=%v MatchCount=%v NgramMatches=%v Wait=%v}",
+		id,
+		q.String(),
+		opts.EstimateDocCount,
+		opts.Whole,
+		opts.ShardMaxMatchCount,
+		opts.TotalMaxMatchCount,
+		opts.ShardMaxImportantMatch,
+		opts.TotalMaxImportantMatch,
+		opts.MaxWallTime,
+		opts.MaxDocDisplayCount,
+		st.ContentBytesLoaded,
+		st.IndexBytesLoaded,
+		st.Crashes,
+		st.Duration,
+		st.FileCount,
+		st.ShardFilesConsidered,
+		st.FilesConsidered,
+		st.FilesLoaded,
+		st.FilesSkipped,
+		st.ShardsSkipped,
+		st.MatchCount,
+		st.NgramMatches,
+		st.Wait,
+	)
+}
+
+// traceID returns a trace ID, if any, found in the given context.
+func traceID(ctx context.Context) string {
+	span := opentracing.SpanFromContext(ctx)
+	if span == nil {
+		return ""
+	}
+	return traceIDFromSpan(span)
+}
+
+// traceIDFromSpan returns a trace ID, if any, found in the given span.
+func traceIDFromSpan(span opentracing.Span) string {
+	spanCtx, ok := span.Context().(jaeger.SpanContext)
+	if !ok {
+		return ""
+	}
+	return spanCtx.TraceID().String()
 }
 
 func initializeJaeger() {

@@ -75,7 +75,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// mu protects aggStats and concurrent writes to the stream.
 	mu := sync.Mutex{}
-	var aggStats = zoekt.Stats{}
+	aggStats := zoekt.Stats{}
 	send := func(zsr *zoekt.SearchResult) {
 		err := eventWriter.event(eventMatches, zsr)
 		if err != nil {
