@@ -3,15 +3,11 @@ package web
 import (
 	"context"
 	"log"
-	"net/http"
-	"time"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/trace"
-	othttp "github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
-	"github.com/uber/jaeger-client-go"
 )
 
 // traceAwareSearcher wraps a zoekt.Searcher instance so that the tracing context item is set in the
@@ -70,20 +66,3 @@ func (s traceAwareSearcher) List(ctx context.Context, q query.Q, opts *zoekt.Lis
 }
 func (s traceAwareSearcher) Close()         { s.Searcher.Close() }
 func (s traceAwareSearcher) String() string { return s.Searcher.String() }
-
-func HTTPTraceMiddleware(next http.Handler) http.Handler {
-	tracer := opentracing.GlobalTracer()
-	return othttp.MiddlewareFunc(tracer, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		began := time.Now()
-		next.ServeHTTP(w, r)
-		duration := time.Since(began)
-
-		traceID := ""
-		span := opentracing.SpanFromContext(r.Context())
-		if span != nil {
-			traceID = span.Context().(jaeger.SpanContext).TraceID().String()
-		}
-
-		log.Printf("method=%s url=%s traceid=%s duration=%s", r.Method, r.URL, traceID, duration)
-	}))
-}

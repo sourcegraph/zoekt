@@ -248,7 +248,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    *listen,
-		Handler: web.HTTPTraceMiddleware(handler),
+		Handler: handler,
 	}
 
 	go func() {
