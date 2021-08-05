@@ -16,6 +16,7 @@ package ctags
 
 import (
 	"log"
+	"os"
 	"strings"
 	"sync"
 
@@ -28,9 +29,14 @@ type Parser = goctags.Parser
 type Entry = goctags.Entry
 
 func newProcess(bin string) (Parser, error) {
-	return goctags.New(goctags.Options{
-		Bin: bin,
-	})
+	opts := goctags.Options{
+		Bin:  bin,
+		Info: log.New(os.Stderr, "CTAGS INF: ", log.LstdFlags),
+	}
+	if debug {
+		opts.Debug = log.New(os.Stderr, "CTAGS DBG: ", log.LstdFlags)
+	}
+	return goctags.New(opts)
 }
 
 type lockedParser struct {
