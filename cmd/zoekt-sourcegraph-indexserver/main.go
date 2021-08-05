@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/profiler"
@@ -173,6 +174,10 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 		errC <- cmd.Wait()
 	}()
 
+	// This channel is set after we have sent sigquit. It allows us to follow up
+	// with a sigkill if the process doesn't quit after sigquit.
+	kill := make(<-chan time.Time)
+
 	lastLen := 0
 	for {
 		select {
@@ -182,10 +187,20 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 				lastLen = out.Len()
 				log.Printf("still running %s", cmd.Args)
 			} else {
-				log.Printf("no output for %s, killing %s", noOutputTimeout, cmd.Args)
-				if err := cmd.Process.Kill(); err != nil {
-					log.Println("kill failed:", err)
+				// Send quit (C-\) first so we get a stack dump.
+				log.Printf("no output for %s, quitting %s", noOutputTimeout, cmd.Args)
+				if err := cmd.Process.Signal(syscall.SIGQUIT); err != nil {
+					log.Println("quit failed:", err)
 				}
+
+				// send sigkill if still running in 10s
+				kill = time.After(10 * time.Second)
+			}
+
+		case <-kill:
+			log.Printf("still running, killing %s", cmd.Args)
+			if err := cmd.Process.Kill(); err != nil {
+				log.Println("kill failed:", err)
 			}
 
 		case err := <-errC:
