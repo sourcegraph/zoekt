@@ -96,26 +96,28 @@ func TestBasic(t *testing.T) {
 	}
 
 	t.Run("meta file", func(t *testing.T) {
-		// Add a .meta file for each shard with repo.Name set to "repo-mutated"
-		for _, p := range fs {
-			repo, _, err := zoekt.ReadMetadataPath(p)
-			if err != nil {
-				t.Fatal(err)
-			}
-			repo.Name = "repo-mutated"
-			b, err := json.Marshal(repo)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if err := ioutil.WriteFile(p+".meta", b, 0600); err != nil {
-				t.Fatal(err)
-			}
-		}
-
 		// use retryTest to allow for the directory watcher to notice the meta
 		// file
 		retryTest(t, func(fatalf func(format string, args ...interface{})) {
+			// Add a .meta file for each shard with repo.Name set to
+			// "repo-mutated". We do this inside retry helper since we have noticed
+			// some flakiness on github CI.
+			for _, p := range fs {
+				repo, _, err := zoekt.ReadMetadataPath(p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				repo.Name = "repo-mutated"
+				b, err := json.Marshal(repo)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if err := ioutil.WriteFile(p+".meta", b, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
 			result, err := ss.Search(ctx, q, &sOpts)
 			if err != nil {
 				fatalf("Search(%v): %v", q, err)
