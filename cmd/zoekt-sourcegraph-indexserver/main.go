@@ -126,10 +126,6 @@ type Server struct {
 	// repository.
 	CPUCount int
 
-	// Indexer is the indexer to use. Either archiveIndex (default) or the
-	// experimental gitIndex.
-	Indexer func(*indexArgs, func(*exec.Cmd) error) error
-
 	mu            sync.Mutex
 	lastListRepos []string
 }
@@ -427,15 +423,8 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	log.Printf("updating index %s", args.String())
 
 	runCmd := func(cmd *exec.Cmd) error { return s.loggedRun(tr, cmd) }
-	f := s.Indexer
-	if f == nil && len(args.Branches) > 1 {
-		f = gitIndex
-	}
-	if f == nil {
-		f = archiveIndex
-	}
 	metricIndexingTotal.Inc()
-	return indexStateSuccess, f(args, runCmd)
+	return indexStateSuccess, gitIndex(args, runCmd)
 }
 
 func (s *Server) defaultArgs() *indexArgs {
@@ -742,7 +731,7 @@ func main() {
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repositories then quit.")
 	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
 
-	expGitIndex := flag.Bool("exp-git-index", os.Getenv("DISABLE_GIT_INDEX") == "", "use experimental indexing via shallow clones and zoekt-git-index")
+	_ = flag.Bool("exp-git-index", true, "DEPRECATED: not read anymore. We always use zoekt-git-index now.")
 
 	flag.Parse()
 
@@ -794,10 +783,6 @@ func main() {
 		Interval: *interval,
 		CPUCount: cpuCount,
 		Hostname: *hostname,
-	}
-
-	if *expGitIndex {
-		s.Indexer = gitIndex
 	}
 
 	if *debugList {

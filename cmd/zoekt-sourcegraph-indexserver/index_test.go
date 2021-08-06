@@ -89,10 +89,9 @@ func TestIndex(t *testing.T) {
 	}
 
 	cases := []struct {
-		name        string
-		args        indexArgs
-		wantArchive []string
-		wantGit     []string
+		name string
+		args indexArgs
+		want []string
 	}{{
 		name: "minimal",
 		args: indexArgs{
@@ -102,10 +101,7 @@ func TestIndex(t *testing.T) {
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
 			},
 		},
-		wantArchive: []string{
-			"zoekt-archive-index -name test/repo -commit deadbeef -branch HEAD -disable_ctags http://api.test/.internal/git/test/repo/tar/deadbeef",
-		},
-		wantGit: []string{
+		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
@@ -127,10 +123,7 @@ func TestIndex(t *testing.T) {
 				RepoID:   123,
 			},
 		},
-		wantArchive: []string{
-			"zoekt-archive-index -name test/repo -commit deadbeef -branch HEAD -disable_ctags http://api.test/.internal/git/test/repo/tar/deadbeef",
-		},
-		wantGit: []string{
+		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
@@ -161,22 +154,7 @@ func TestIndex(t *testing.T) {
 				},
 			},
 		},
-		wantArchive: []string{strings.Join([]string{
-			"zoekt-archive-index",
-			"-name", "test/repo",
-			"-commit", "deadbeef",
-			"-branch", "HEAD",
-			"-incremental",
-			"-download-limit-mbps", "1000",
-			"-file_limit", "123",
-			"-parallelism", "4",
-			"-index", "/data/index",
-			"-require_ctags",
-			"-large_file", "foo",
-			"-large_file", "bar",
-			"http://api.test/.internal/git/test/repo/tar/deadbeef",
-		}, " ")},
-		wantGit: []string{
+		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
@@ -203,22 +181,11 @@ func TestIndex(t *testing.T) {
 				return nil
 			}
 
-			branches := tc.args.Branches
-			tc.args.Branches = branches[:1]
-			if err := archiveIndex(&tc.args, runCmd); err != nil {
-				t.Fatal(err)
-			}
-			if !cmp.Equal(got, tc.wantArchive) {
-				t.Errorf("archive mismatch (-want +got):\n%s", cmp.Diff(tc.wantArchive, got, splitargs))
-			}
-
-			got = nil
-			tc.args.Branches = branches
 			if err := gitIndex(&tc.args, runCmd); err != nil {
 				t.Fatal(err)
 			}
-			if !cmp.Equal(got, tc.wantGit) {
-				t.Errorf("git mismatch (-want +got):\n%s", cmp.Diff(tc.wantGit, got, splitargs))
+			if !cmp.Equal(got, tc.want) {
+				t.Errorf("git mismatch (-want +got):\n%s", cmp.Diff(tc.want, got, splitargs))
 			}
 		})
 	}
