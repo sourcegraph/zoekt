@@ -55,7 +55,7 @@ type IndexOptions struct {
 	Archived bool
 }
 
-// indexArgs represents the arguments we pass to zoekt-archive-index
+// indexArgs represents the arguments we pass to zoekt-git-index
 type indexArgs struct {
 	IndexOptions
 
@@ -171,43 +171,6 @@ func getIndexOptions(root *url.URL, repos ...string) ([]indexOptionsItem, error)
 	}
 
 	return opts, nil
-}
-
-func archiveIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
-	// An index should never take longer than an hour.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
-	defer cancel()
-
-	if len(o.Branches) != 1 {
-		return fmt.Errorf("zoekt-archive-index only supports 1 branch, got %v", o.Branches)
-	}
-
-	commit := o.Branches[0].Version
-	args := []string{
-		"-name", o.Name,
-		"-commit", commit,
-		"-branch", o.Branches[0].Name,
-	}
-
-	// Even though we check for incremental in this process, we still pass it
-	// in just in case we regress in how we check in process. We will still
-	// notice thanks to metrics and increased load on gitserver.
-	if o.Incremental {
-		args = append(args, "-incremental")
-	}
-
-	if o.DownloadLimitMBPS != "" {
-		args = append(args, "-download-limit-mbps", o.DownloadLimitMBPS)
-	}
-
-	args = append(args, o.BuildOptions().Args()...)
-
-	args = append(args, o.Root.ResolveReference(&url.URL{Path: fmt.Sprintf("/.internal/git/%s/tar/%s", o.Name, commit)}).String())
-
-	cmd := exec.CommandContext(ctx, "zoekt-archive-index", args...)
-	// Prevent prompting
-	cmd.Stdin = &bytes.Buffer{}
-	return runCmd(cmd)
 }
 
 func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
