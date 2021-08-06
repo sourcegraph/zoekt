@@ -15,18 +15,26 @@ import (
 )
 
 func TestServer_defaultArgs(t *testing.T) {
+	root, err := url.Parse("http://api.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	s := &Server{
+		Root:     root,
 		IndexDir: "/testdata/index",
 		CPUCount: 6,
 	}
 	want := &indexArgs{
+		Name:              "testName",
+		CloneURL:          "http://api.test/.internal/git/testName",
 		IndexDir:          "/testdata/index",
 		Parallelism:       6,
 		Incremental:       true,
 		FileLimit:         1 << 20,
 		DownloadLimitMBPS: "1000",
 	}
-	got := s.defaultArgs()
+	got := s.indexArgs("testName", IndexOptions{})
 	if !cmp.Equal(got, want) {
 		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}

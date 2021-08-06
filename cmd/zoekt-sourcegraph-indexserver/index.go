@@ -55,9 +55,8 @@ type IndexOptions struct {
 type indexArgs struct {
 	IndexOptions
 
-	// Root is the base URL for the Sourcegraph instance to index. Normally
-	// http://sourcegraph-frontend-internal or http://localhost:3090.
-	Root *url.URL
+	// CloneURL is the remote git URL of the repository for cloning.
+	CloneURL string
 
 	// Name is the name of the repository.
 	Name string
@@ -164,7 +163,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	// We shallow fetch each commit specified in zoekt.Branches. This requires
 	// the server to have configured both uploadpack.allowAnySHA1InWant and
 	// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
-	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", getCloneURL(o.Root, o.Name)}
+	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
 	for _, b := range o.Branches {
 		fetchArgs = append(fetchArgs, b.Version)
 	}

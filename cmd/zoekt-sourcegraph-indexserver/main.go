@@ -317,9 +317,7 @@ func (s *Server) Run(queue *Queue) {
 			continue
 		}
 		start := time.Now()
-		args := s.defaultArgs()
-		args.Name = name
-		args.IndexOptions = opts
+		args := s.indexArgs(name, opts)
 		state, err := s.Index(args)
 		metricIndexDuration.WithLabelValues(string(state)).Observe(time.Since(start).Seconds())
 		if err != nil {
@@ -419,9 +417,12 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	return indexStateSuccess, gitIndex(args, runCmd)
 }
 
-func (s *Server) defaultArgs() *indexArgs {
+func (s *Server) indexArgs(name string, opts IndexOptions) *indexArgs {
 	return &indexArgs{
-		Root:        s.Root,
+		Name:         name,
+		CloneURL:     getCloneURL(s.Root, name),
+		IndexOptions: opts,
+
 		IndexDir:    s.IndexDir,
 		Parallelism: s.CPUCount,
 
@@ -534,9 +535,7 @@ func (s *Server) forceIndex(name string) (string, error) {
 		return fmt.Sprintf("Indexing %s failed: %s", name, errS), errors.New(errS)
 	}
 
-	args := s.defaultArgs()
-	args.Name = name
-	args.IndexOptions = opts[0].IndexOptions
+	args := s.indexArgs(name, opts[0].IndexOptions)
 	args.Incremental = false // force re-index
 	state, err := s.Index(args)
 	if err != nil {
