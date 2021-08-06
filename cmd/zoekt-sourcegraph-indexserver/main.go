@@ -5,12 +5,10 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -34,7 +32,6 @@ import (
 	"golang.org/x/net/trace"
 
 	"github.com/google/zoekt/build"
-	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -130,12 +127,7 @@ type Server struct {
 	lastListRepos []string
 }
 
-var client = retryablehttp.NewClient()
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
-
-func init() {
-	client.Logger = debug
-}
 
 // our index commands should output something every 100mb they process.
 //
@@ -567,92 +559,6 @@ func listIndexed(indexDir string) []string {
 		metricNumIndexed.WithLabelValues(codeHost).Set(float64(count))
 	}
 	return repoNames
-}
-
-func listRepos(ctx context.Context, hostname string, root *url.URL, indexed []string) ([]string, error) {
-	body, err := json.Marshal(&struct {
-		Hostname string
-		Indexed  []string
-	}{
-		Hostname: hostname,
-		Indexed:  indexed,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	u := root.ResolveReference(&url.URL{Path: "/.internal/repos/index"})
-	resp, err := client.Post(u.String(), "application/json; charset=utf8", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to list repositories: status %s", resp.Status)
-	}
-
-	var data struct {
-		RepoNames []string
-	}
-	err = json.NewDecoder(resp.Body).Decode(&data)
-	if err != nil {
-		return nil, err
-	}
-
-	countsByHost := make(map[string]int)
-	for _, name := range data.RepoNames {
-		codeHost := codeHostFromName(name)
-		countsByHost[codeHost] += 1
-	}
-	for codeHost, count := range countsByHost {
-		metricNumAssigned.WithLabelValues(codeHost).Set(float64(count))
-	}
-	return data.RepoNames, nil
-}
-
-func ping(root *url.URL) error {
-	u := root.ResolveReference(&url.URL{Path: "/.internal/ping", RawQuery: "service=gitserver"})
-	resp, err := client.Get(u.String())
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ping: bad HTTP response status %d: %s", resp.StatusCode, string(body))
-	}
-	if !bytes.Equal(body, []byte("pong")) {
-		return fmt.Errorf("ping: did not receive pong: %s", string(body))
-	}
-	return nil
-}
-
-func waitForFrontend(root *url.URL) {
-	warned := false
-	lastWarn := time.Now()
-	for {
-		err := ping(root)
-		if err == nil {
-			break
-		}
-
-		if time.Since(lastWarn) > 15*time.Second {
-			warned = true
-			lastWarn = time.Now()
-			log.Printf("frontend or gitserver API not available, will try again: %s", err)
-		}
-
-		time.Sleep(250 * time.Millisecond)
-	}
-
-	if warned {
-		log.Println("frontend API is now reachable. Starting indexing...")
-	}
 }
 
 func hostnameBestEffort() string {
