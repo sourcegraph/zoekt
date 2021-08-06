@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 func TestGetIndexOptions(t *testing.T) {
@@ -39,6 +40,11 @@ func TestGetIndexOptions(t *testing.T) {
 	u, err := url.Parse(server.URL)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	sg := &Sourcegraph{
+		Root:   u,
+		Client: retryablehttp.NewClient(),
 	}
 
 	cases := map[string]*IndexOptions{
@@ -67,7 +73,7 @@ func TestGetIndexOptions(t *testing.T) {
 	for r, want := range cases {
 		response = []byte(r)
 
-		got, err := getIndexOptions(u, "test/repo")
+		got, err := sg.GetIndexOptions("test/repo")
 		if err != nil && want != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

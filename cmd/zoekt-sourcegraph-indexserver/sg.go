@@ -16,10 +16,17 @@ import (
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 )
 
-var client = retryablehttp.NewClient()
+// Sourcegraph contains methods which interact with the Sourcegraph API.
+type Sourcegraph struct {
+	// Root is the base URL for the Sourcegraph instance to index. Normally
+	// http://sourcegraph-frontend-internal or http://localhost:3090.
+	Root *url.URL
 
-func init() {
-	client.Logger = debug
+	// Hostname is the name we advertise to Sourcegraph when asking for the
+	// list of repositories to index.
+	Hostname string
+
+	Client *retryablehttp.Client
 }
 
 // indexOptionsItem wraps IndexOptions to also include an error returned by
@@ -29,12 +36,12 @@ type indexOptionsItem struct {
 	Error string
 }
 
-func getIndexOptions(root *url.URL, repos ...string) ([]indexOptionsItem, error) {
-	u := root.ResolveReference(&url.URL{
+func (s *Sourcegraph) GetIndexOptions(repos ...string) ([]indexOptionsItem, error) {
+	u := s.Root.ResolveReference(&url.URL{
 		Path: "/.internal/search/configuration",
 	})
 
-	resp, err := client.PostForm(u.String(), url.Values{"repo": repos})
+	resp, err := s.Client.PostForm(u.String(), url.Values{"repo": repos})
 	if err != nil {
 		return nil, err
 	}
@@ -64,15 +71,15 @@ func getIndexOptions(root *url.URL, repos ...string) ([]indexOptionsItem, error)
 	return opts, nil
 }
 
-func getCloneURL(root *url.URL, name string) string {
-	return root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", name)}).String()
+func (s *Sourcegraph) GetCloneURL(name string) string {
+	return s.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", name)}).String()
 }
 
-func waitForFrontend(root *url.URL) {
+func (s *Sourcegraph) WaitForFrontend() {
 	warned := false
 	lastWarn := time.Now()
 	for {
-		err := ping(root)
+		err := ping(s.Root)
 		if err == nil {
 			break
 		}
@@ -91,20 +98,20 @@ func waitForFrontend(root *url.URL) {
 	}
 }
 
-func listRepos(ctx context.Context, hostname string, root *url.URL, indexed []string) ([]string, error) {
+func (s *Sourcegraph) ListRepos(ctx context.Context, indexed []string) ([]string, error) {
 	body, err := json.Marshal(&struct {
 		Hostname string
 		Indexed  []string
 	}{
-		Hostname: hostname,
+		Hostname: s.Hostname,
 		Indexed:  indexed,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	u := root.ResolveReference(&url.URL{Path: "/.internal/repos/index"})
-	resp, err := client.Post(u.String(), "application/json; charset=utf8", bytes.NewReader(body))
+	u := s.Root.ResolveReference(&url.URL{Path: "/.internal/repos/index"})
+	resp, err := s.Client.Post(u.String(), "application/json; charset=utf8", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +142,7 @@ func listRepos(ctx context.Context, hostname string, root *url.URL, indexed []st
 
 func ping(root *url.URL) error {
 	u := root.ResolveReference(&url.URL{Path: "/.internal/ping", RawQuery: "service=gitserver"})
-	resp, err := client.Get(u.String())
+	resp, err := http.Get(u.String())
 	if err != nil {
 		return err
 	}

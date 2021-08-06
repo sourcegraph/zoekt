@@ -28,6 +28,7 @@ import (
 	"cloud.google.com/go/profiler"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/debugserver"
+	"github.com/hashicorp/go-retryablehttp"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
@@ -105,19 +106,13 @@ const (
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
 // exists to conveniently use all the options passed in via func main.
 type Server struct {
-	// Root is the base URL for the Sourcegraph instance to index. Normally
-	// http://sourcegraph-frontend-internal or http://localhost:3090.
-	Root *url.URL
+	Sourcegraph *Sourcegraph
 
 	// IndexDir is the index directory to use.
 	IndexDir string
 
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
-
-	// Hostname is the name we advertise to Sourcegraph when asking for the
-	// list of repositories to index.
-	Hostname string
 
 	// CPUCount is the amount of parallelism to use when indexing a
 	// repository.
@@ -246,12 +241,12 @@ func codeHostFromName(repoName string) string {
 // Run the sync loop. This blocks forever.
 func (s *Server) Run(queue *Queue) {
 	removeIncompleteShards(s.IndexDir)
-	waitForFrontend(s.Root)
+	s.Sourcegraph.WaitForFrontend()
 
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
 		for range jitterTicker(s.Interval) {
-			repos, err := listRepos(context.Background(), s.Hostname, s.Root, listIndexed(s.IndexDir))
+			repos, err := s.Sourcegraph.ListRepos(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
 				log.Println(err)
 				continue
@@ -282,7 +277,7 @@ func (s *Server) Run(queue *Queue) {
 			// We ask the frontend to get index options in batches.
 			for repos := range batched(repos, 1000) {
 				start := time.Now()
-				opts, err := getIndexOptions(s.Root, repos...)
+				opts, err := s.Sourcegraph.GetIndexOptions(repos...)
 				if err != nil {
 					metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
 					tr.LazyPrintf("failed fetching options batch: %v", err)
@@ -420,7 +415,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 func (s *Server) indexArgs(name string, opts IndexOptions) *indexArgs {
 	return &indexArgs{
 		Name:         name,
-		CloneURL:     getCloneURL(s.Root, name),
+		CloneURL:     s.Sourcegraph.GetCloneURL(name),
 		IndexOptions: opts,
 
 		IndexDir:    s.IndexDir,
@@ -515,7 +510,7 @@ func (s *Server) enqueueForIndex(queue *Queue) func(rw http.ResponseWriter, r *h
 			return
 		}
 		debug.Printf("enqueueRepoForIndex called with repo: %q", name)
-		opts, err := getIndexOptions(s.Root, name)
+		opts, err := s.Sourcegraph.GetIndexOptions(name)
 		if err != nil || opts[0].Error != "" {
 			http.Error(rw, "fetching index options", http.StatusInternalServerError)
 			return
@@ -527,7 +522,7 @@ func (s *Server) enqueueForIndex(queue *Queue) func(rw http.ResponseWriter, r *h
 // forceIndex will run the index job for repo name now. It will return always
 // return a string explaining what it did, even if it failed.
 func (s *Server) forceIndex(name string) (string, error) {
-	opts, err := getIndexOptions(s.Root, name)
+	opts, err := s.Sourcegraph.GetIndexOptions(name)
 	if err != nil {
 		return fmt.Sprintf("Indexing %s failed: %v", name, err), err
 	}
@@ -676,6 +671,8 @@ func main() {
 	if *dbg || *debugList || *debugIndex != "" || *debugShard != "" {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
 	}
+
+	client := retryablehttp.NewClient()
 	client.Logger = debug
 
 	cpuCount := int(math.Round(float64(runtime.GOMAXPROCS(0)) * (*cpuFraction)))
@@ -683,15 +680,18 @@ func main() {
 		cpuCount = 1
 	}
 	s := &Server{
-		Root:     rootURL,
+		Sourcegraph: &Sourcegraph{
+			Root:     rootURL,
+			Client:   client,
+			Hostname: *hostname,
+		},
 		IndexDir: *index,
 		Interval: *interval,
 		CPUCount: cpuCount,
-		Hostname: *hostname,
 	}
 
 	if *debugList {
-		repos, err := listRepos(context.Background(), s.Hostname, s.Root, listIndexed(s.IndexDir))
+		repos, err := s.Sourcegraph.ListRepos(context.Background(), listIndexed(s.IndexDir))
 		if err != nil {
 			log.Fatal(err)
 		}

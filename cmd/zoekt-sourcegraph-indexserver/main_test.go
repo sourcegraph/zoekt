@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 func TestServer_defaultArgs(t *testing.T) {
@@ -21,7 +22,9 @@ func TestServer_defaultArgs(t *testing.T) {
 	}
 
 	s := &Server{
-		Root:     root,
+		Sourcegraph: &Sourcegraph{
+			Root: root,
+		},
 		IndexDir: "/testdata/index",
 		CPUCount: 6,
 	}
@@ -64,7 +67,13 @@ func TestListRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gotRepos, err := listRepos(context.Background(), "test-indexed-search-1", u, []string{"foo", "bam"})
+	s := &Sourcegraph{
+		Root:     u,
+		Hostname: "test-indexed-search-1",
+		Client:   retryablehttp.NewClient(),
+	}
+
+	gotRepos, err := s.ListRepos(context.Background(), []string{"foo", "bam"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +125,7 @@ func TestPing(t *testing.T) {
 	// We expect waitForFrontend to just work now
 	done := make(chan struct{})
 	go func() {
-		waitForFrontend(root)
+		(&Sourcegraph{Root: root}).WaitForFrontend()
 		close(done)
 	}()
 
