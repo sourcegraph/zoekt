@@ -5,12 +5,10 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -30,11 +28,11 @@ import (
 	"cloud.google.com/go/profiler"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/debugserver"
+	"github.com/hashicorp/go-retryablehttp"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
 	"github.com/google/zoekt/build"
-	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -108,19 +106,13 @@ const (
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
 // exists to conveniently use all the options passed in via func main.
 type Server struct {
-	// Root is the base URL for the Sourcegraph instance to index. Normally
-	// http://sourcegraph-frontend-internal or http://localhost:3090.
-	Root *url.URL
+	Sourcegraph *Sourcegraph
 
 	// IndexDir is the index directory to use.
 	IndexDir string
 
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
-
-	// Hostname is the name we advertise to Sourcegraph when asking for the
-	// list of repositories to index.
-	Hostname string
 
 	// CPUCount is the amount of parallelism to use when indexing a
 	// repository.
@@ -130,12 +122,7 @@ type Server struct {
 	lastListRepos []string
 }
 
-var client = retryablehttp.NewClient()
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
-
-func init() {
-	client.Logger = debug
-}
 
 // our index commands should output something every 100mb they process.
 //
@@ -254,12 +241,12 @@ func codeHostFromName(repoName string) string {
 // Run the sync loop. This blocks forever.
 func (s *Server) Run(queue *Queue) {
 	removeIncompleteShards(s.IndexDir)
-	waitForFrontend(s.Root)
+	s.Sourcegraph.WaitForFrontend()
 
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
 		for range jitterTicker(s.Interval) {
-			repos, err := listRepos(context.Background(), s.Hostname, s.Root, listIndexed(s.IndexDir))
+			repos, err := s.Sourcegraph.ListRepos(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
 				log.Println(err)
 				continue
@@ -290,7 +277,7 @@ func (s *Server) Run(queue *Queue) {
 			// We ask the frontend to get index options in batches.
 			for repos := range batched(repos, 1000) {
 				start := time.Now()
-				opts, err := getIndexOptions(s.Root, repos...)
+				opts, err := s.Sourcegraph.GetIndexOptions(repos...)
 				if err != nil {
 					metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
 					tr.LazyPrintf("failed fetching options batch: %v", err)
@@ -325,9 +312,7 @@ func (s *Server) Run(queue *Queue) {
 			continue
 		}
 		start := time.Now()
-		args := s.defaultArgs()
-		args.Name = name
-		args.IndexOptions = opts
+		args := s.indexArgs(name, opts)
 		state, err := s.Index(args)
 		metricIndexDuration.WithLabelValues(string(state)).Observe(time.Since(start).Seconds())
 		if err != nil {
@@ -427,9 +412,12 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	return indexStateSuccess, gitIndex(args, runCmd)
 }
 
-func (s *Server) defaultArgs() *indexArgs {
+func (s *Server) indexArgs(name string, opts IndexOptions) *indexArgs {
 	return &indexArgs{
-		Root:        s.Root,
+		Name:         name,
+		CloneURL:     s.Sourcegraph.GetCloneURL(name),
+		IndexOptions: opts,
+
 		IndexDir:    s.IndexDir,
 		Parallelism: s.CPUCount,
 
@@ -522,7 +510,7 @@ func (s *Server) enqueueForIndex(queue *Queue) func(rw http.ResponseWriter, r *h
 			return
 		}
 		debug.Printf("enqueueRepoForIndex called with repo: %q", name)
-		opts, err := getIndexOptions(s.Root, name)
+		opts, err := s.Sourcegraph.GetIndexOptions(name)
 		if err != nil || opts[0].Error != "" {
 			http.Error(rw, "fetching index options", http.StatusInternalServerError)
 			return
@@ -534,7 +522,7 @@ func (s *Server) enqueueForIndex(queue *Queue) func(rw http.ResponseWriter, r *h
 // forceIndex will run the index job for repo name now. It will return always
 // return a string explaining what it did, even if it failed.
 func (s *Server) forceIndex(name string) (string, error) {
-	opts, err := getIndexOptions(s.Root, name)
+	opts, err := s.Sourcegraph.GetIndexOptions(name)
 	if err != nil {
 		return fmt.Sprintf("Indexing %s failed: %v", name, err), err
 	}
@@ -542,9 +530,7 @@ func (s *Server) forceIndex(name string) (string, error) {
 		return fmt.Sprintf("Indexing %s failed: %s", name, errS), errors.New(errS)
 	}
 
-	args := s.defaultArgs()
-	args.Name = name
-	args.IndexOptions = opts[0].IndexOptions
+	args := s.indexArgs(name, opts[0].IndexOptions)
 	args.Incremental = false // force re-index
 	state, err := s.Index(args)
 	if err != nil {
@@ -567,92 +553,6 @@ func listIndexed(indexDir string) []string {
 		metricNumIndexed.WithLabelValues(codeHost).Set(float64(count))
 	}
 	return repoNames
-}
-
-func listRepos(ctx context.Context, hostname string, root *url.URL, indexed []string) ([]string, error) {
-	body, err := json.Marshal(&struct {
-		Hostname string
-		Indexed  []string
-	}{
-		Hostname: hostname,
-		Indexed:  indexed,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	u := root.ResolveReference(&url.URL{Path: "/.internal/repos/index"})
-	resp, err := client.Post(u.String(), "application/json; charset=utf8", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to list repositories: status %s", resp.Status)
-	}
-
-	var data struct {
-		RepoNames []string
-	}
-	err = json.NewDecoder(resp.Body).Decode(&data)
-	if err != nil {
-		return nil, err
-	}
-
-	countsByHost := make(map[string]int)
-	for _, name := range data.RepoNames {
-		codeHost := codeHostFromName(name)
-		countsByHost[codeHost] += 1
-	}
-	for codeHost, count := range countsByHost {
-		metricNumAssigned.WithLabelValues(codeHost).Set(float64(count))
-	}
-	return data.RepoNames, nil
-}
-
-func ping(root *url.URL) error {
-	u := root.ResolveReference(&url.URL{Path: "/.internal/ping", RawQuery: "service=gitserver"})
-	resp, err := client.Get(u.String())
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ping: bad HTTP response status %d: %s", resp.StatusCode, string(body))
-	}
-	if !bytes.Equal(body, []byte("pong")) {
-		return fmt.Errorf("ping: did not receive pong: %s", string(body))
-	}
-	return nil
-}
-
-func waitForFrontend(root *url.URL) {
-	warned := false
-	lastWarn := time.Now()
-	for {
-		err := ping(root)
-		if err == nil {
-			break
-		}
-
-		if time.Since(lastWarn) > 15*time.Second {
-			warned = true
-			lastWarn = time.Now()
-			log.Printf("frontend or gitserver API not available, will try again: %s", err)
-		}
-
-		time.Sleep(250 * time.Millisecond)
-	}
-
-	if warned {
-		log.Println("frontend API is now reachable. Starting indexing...")
-	}
 }
 
 func hostnameBestEffort() string {
@@ -771,6 +671,8 @@ func main() {
 	if *dbg || *debugList || *debugIndex != "" || *debugShard != "" {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
 	}
+
+	client := retryablehttp.NewClient()
 	client.Logger = debug
 
 	cpuCount := int(math.Round(float64(runtime.GOMAXPROCS(0)) * (*cpuFraction)))
@@ -778,15 +680,18 @@ func main() {
 		cpuCount = 1
 	}
 	s := &Server{
-		Root:     rootURL,
+		Sourcegraph: &Sourcegraph{
+			Root:     rootURL,
+			Client:   client,
+			Hostname: *hostname,
+		},
 		IndexDir: *index,
 		Interval: *interval,
 		CPUCount: cpuCount,
-		Hostname: *hostname,
 	}
 
 	if *debugList {
-		repos, err := listRepos(context.Background(), s.Hostname, s.Root, listIndexed(s.IndexDir))
+		repos, err := s.Sourcegraph.ListRepos(context.Background(), listIndexed(s.IndexDir))
 		if err != nil {
 			log.Fatal(err)
 		}

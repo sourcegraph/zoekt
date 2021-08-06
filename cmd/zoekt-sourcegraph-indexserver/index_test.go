@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 func TestGetIndexOptions(t *testing.T) {
@@ -39,6 +40,11 @@ func TestGetIndexOptions(t *testing.T) {
 	u, err := url.Parse(server.URL)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	sg := &Sourcegraph{
+		Root:   u,
+		Client: retryablehttp.NewClient(),
 	}
 
 	cases := map[string]*IndexOptions{
@@ -67,7 +73,7 @@ func TestGetIndexOptions(t *testing.T) {
 	for r, want := range cases {
 		response = []byte(r)
 
-		got, err := getIndexOptions(u, "test/repo")
+		got, err := sg.GetIndexOptions("test/repo")
 		if err != nil && want != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -83,11 +89,6 @@ func TestGetIndexOptions(t *testing.T) {
 }
 
 func TestIndex(t *testing.T) {
-	root, err := url.Parse("http://api.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	cases := []struct {
 		name string
 		args indexArgs
@@ -95,8 +96,8 @@ func TestIndex(t *testing.T) {
 	}{{
 		name: "minimal",
 		args: indexArgs{
-			Root: root,
-			Name: "test/repo",
+			CloneURL: "http://api.test/.internal/git/test/repo",
+			Name:     "test/repo",
 			IndexOptions: IndexOptions{
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
 			},
@@ -116,8 +117,8 @@ func TestIndex(t *testing.T) {
 	}, {
 		name: "minimal-id",
 		args: indexArgs{
-			Root: root,
-			Name: "test/repo",
+			CloneURL: "http://api.test/.internal/git/test/repo",
+			Name:     "test/repo",
 			IndexOptions: IndexOptions{
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
 				RepoID:   123,
@@ -138,7 +139,7 @@ func TestIndex(t *testing.T) {
 	}, {
 		name: "all",
 		args: indexArgs{
-			Root:              root,
+			CloneURL:          "http://api.test/.internal/git/test/repo",
 			Name:              "test/repo",
 			Incremental:       true,
 			IndexDir:          "/data/index",

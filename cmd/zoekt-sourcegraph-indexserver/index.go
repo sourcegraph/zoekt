@@ -4,17 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -59,9 +55,8 @@ type IndexOptions struct {
 type indexArgs struct {
 	IndexOptions
 
-	// Root is the base URL for the Sourcegraph instance to index. Normally
-	// http://sourcegraph-frontend-internal or http://localhost:3090.
-	Root *url.URL
+	// CloneURL is the remote git URL of the repository for cloning.
+	CloneURL string
 
 	// Name is the name of the repository.
 	Name string
@@ -131,48 +126,6 @@ func (o *indexArgs) String() string {
 	return s
 }
 
-// indexOptionsItem wraps IndexOptions to also include an error returned by
-// the API.
-type indexOptionsItem struct {
-	IndexOptions
-	Error string
-}
-
-func getIndexOptions(root *url.URL, repos ...string) ([]indexOptionsItem, error) {
-	u := root.ResolveReference(&url.URL{
-		Path: "/.internal/search/configuration",
-	})
-
-	resp, err := client.PostForm(u.String(), url.Values{"repo": repos})
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
-		_ = resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-		return nil, &url.Error{
-			Op:  "Get",
-			URL: u.String(),
-			Err: fmt.Errorf("%s: %s", resp.Status, string(b)),
-		}
-	}
-
-	opts := make([]indexOptionsItem, len(repos))
-	dec := json.NewDecoder(resp.Body)
-	for i := range opts {
-		if err := dec.Decode(&opts[i]); err != nil {
-			return nil, fmt.Errorf("error decoding body: %w", err)
-		}
-	}
-
-	return opts, nil
-}
-
 func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
@@ -210,8 +163,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	// We shallow fetch each commit specified in zoekt.Branches. This requires
 	// the server to have configured both uploadpack.allowAnySHA1InWant and
 	// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
-	cloneURL := o.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", o.Name)}).String()
-	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", cloneURL}
+	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
 	for _, b := range o.Branches {
 		fetchArgs = append(fetchArgs, b.Version)
 	}
