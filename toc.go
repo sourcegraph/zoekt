@@ -41,7 +41,8 @@ const IndexFormatVersion = 16
 // 8: Record source path in the index.
 // 9: Store ctags metadata & bump default max file size
 // 10: Compound shards; more flexible TOC format.
-const FeatureVersion = 10
+// 11: Bloom filters for file names & contents
+const FeatureVersion = 11
 
 // WriteMinFeatureVersion and ReadMinFeatureVersion constrain forwards and backwards
 // compatibility. For example, if a new way to encode filenameNgrams on disk is
@@ -93,6 +94,9 @@ type indexTOC struct {
 	nameEndRunes     simpleSection
 	contentChecksums simpleSection
 	runeDocSections  simpleSection
+
+	contentBloom simpleSection
+	nameBloom    simpleSection
 
 	repos simpleSection
 }
@@ -175,6 +179,8 @@ func (t *indexTOC) sectionsTaggedList() []taggedSection {
 		{"languages", &t.languages},
 		{"runeDocSections", &t.runeDocSections},
 		{"repos", &t.repos},
+		{"nameBloom", &t.nameBloom},
+		{"contentBloom", &t.contentBloom},
 	}
 }
 

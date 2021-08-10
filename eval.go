@@ -171,10 +171,21 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 		return nil, err
 	}
 
+	mt, err = pruneMatchTree(mt)
+	if err != nil {
+		return nil, err
+	}
+	if mt == nil {
+		res.Stats.ShardsSkippedFilter++
+		return &res, nil
+	}
+
 	totalAtomCount := 0
 	visitMatchTree(mt, func(t matchTree) {
 		totalAtomCount++
 	})
+
+	res.Stats.ShardsScanned++
 
 	cp := &contentProvider{
 		id:    d,

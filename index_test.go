@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"regexp/syntax"
 	"strings"
@@ -43,6 +44,8 @@ func clearScores(r *SearchResult) {
 
 func testIndexBuilder(t *testing.T, repo *Repository, docs ...Document) *IndexBuilder {
 	b, err := NewIndexBuilder(repo)
+	b.contentBloom.bits = b.contentBloom.bits[:bloomSizeTest]
+	b.nameBloom.bits = b.nameBloom.bits[:bloomSizeTest]
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -88,6 +91,29 @@ func TestDocSectionInvalid(t *testing.T) {
 
 	if err := b.Add(doc); err == nil {
 		t.Errorf("doc sections beyond EOF should fail")
+	}
+}
+
+func TestBloomSkip(t *testing.T) {
+	for _, tc := range []struct {
+		skip bool
+		want int
+	}{
+		{false, 1},
+		{true, 0},
+	} {
+		if tc.skip {
+			os.Setenv("ZOEKT_DISABLE_BLOOM", "1")
+		}
+		b := testIndexBuilder(t, nil,
+			Document{Name: "f1", Content: []byte("reader derre errea")},
+		)
+		res := searchForTest(t, b, &query.Substring{Pattern: "derrea"})
+		if res.Stats.ShardsSkippedFilter != tc.want {
+			t.Errorf("bloom disabled=%v filtered out %v shards, want %v",
+				tc.skip, res.Stats.ShardsSkippedFilter, tc.want)
+		}
+		os.Unsetenv("ZOEKT_DISABLE_BLOOM")
 	}
 }
 
@@ -311,6 +337,7 @@ func TestAndSearch(t *testing.T) {
 		MatchCount:         1,
 		FileCount:          1,
 		FilesConsidered:    2,
+		ShardsScanned:      1,
 	}
 	if diff := pretty.Compare(wantStats, sres.Stats); diff != "" {
 		t.Errorf("got stats diff %s", diff)

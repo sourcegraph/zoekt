@@ -120,6 +120,7 @@ type notMatchTree struct {
 	child matchTree
 }
 
+// Returns only the filename of child matches.
 type fileNameMatchTree struct {
 	child matchTree
 }
@@ -421,6 +422,10 @@ func (t *orMatchTree) String() string {
 
 func (t *notMatchTree) String() string {
 	return fmt.Sprintf("not(%v)", t.child)
+}
+
+func (t *noVisitMatchTree) String() string {
+	return fmt.Sprintf("novisit(%v)", t.matchTree)
 }
 
 func (t *fileNameMatchTree) String() string {
@@ -1025,4 +1030,93 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 	}
 	st.matchIterator = result
 	return st, nil
+}
+
+// pruneMatchTree removes impossible branches from the matchTree, as indicated
+// by substrMatchTree having a noMatchTree and the resulting impossible and clauses and so forth.
+func pruneMatchTree(mt matchTree) (matchTree, error) {
+	var err error
+	switch mt := mt.(type) {
+	// leaf nodes that we test with the filter:
+	case *substrMatchTree:
+		if res, ok := mt.matchIterator.(*ngramIterationResults); ok {
+			if _, ok := res.matchIterator.(*noMatchTree); ok {
+				return nil, nil
+			}
+		}
+	// recursive tree structures:
+	case *andMatchTree:
+		// Any branch of an and becoming impossible means the entire clause
+		// is impossible. Otherwise, just handle rewrites.
+		for i, child := range mt.children {
+			newChild, err := pruneMatchTree(child)
+			if err != nil {
+				return nil, err
+			}
+			if newChild == nil {
+				return nil, nil
+			}
+			mt.children[i] = newChild
+		}
+	case *orMatchTree:
+		// *All* branches of an OR becoming impossible means the entire clause
+		// is impossible. Otherwise, drop impossible subclauses and handle
+		// rewrites, including simplifying to a singular resulting child branch.
+		n := 0
+		for _, child := range mt.children {
+			newChild, err := pruneMatchTree(child)
+			if err != nil {
+				return nil, err
+			}
+			if newChild != nil {
+				mt.children[n] = newChild
+				n++
+			}
+		}
+		mt.children = mt.children[:n]
+		if len(mt.children) == 1 {
+			return mt.children[0], nil
+		} else if len(mt.children) == 0 {
+			return nil, nil
+		}
+	case *noVisitMatchTree:
+		mt.matchTree, err = pruneMatchTree(mt.matchTree)
+		if err != nil {
+			return nil, err
+		}
+		if mt.matchTree == nil {
+			return nil, nil
+		}
+	case *fileNameMatchTree:
+		mt.child, err = pruneMatchTree(mt.child)
+	case *andLineMatchTree:
+		child, err := pruneMatchTree(&mt.andMatchTree)
+		if err != nil {
+			return nil, err
+		}
+		if child == nil {
+			return nil, nil
+		}
+		if c, ok := child.(*andMatchTree); ok {
+			mt.andMatchTree = *c
+		} else {
+			// the and was simplified to a single clause,
+			// so the linematch portion is irrelevant.
+			return mt, nil
+		}
+	case *notMatchTree:
+		mt.child, err = pruneMatchTree(mt.child)
+		if err != nil {
+			return nil, err
+		}
+		if mt.child == nil {
+			// not false => true
+			return &bruteForceMatchTree{}, nil
+		}
+	// unhandled:
+	case *docMatchTree:
+	case *bruteForceMatchTree:
+	case *regexpMatchTree:
+	}
+	return mt, err
 }
