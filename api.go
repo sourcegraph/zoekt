@@ -137,8 +137,15 @@ type Stats struct {
 	// gathered enough matches.
 	FilesSkipped int
 
+	// Shards that we scanned to find matches.
+	ShardsScanned int
+
 	// Shards that we did not process because a query was canceled.
 	ShardsSkipped int
+
+	// Shards that we did not process because the query was rejected
+	// by the bloom or ngram filter indicating it had no matches.
+	ShardsSkippedFilter int
 
 	// Number of non-overlapping matches
 	MatchCount int
@@ -164,7 +171,9 @@ func (s *Stats) Add(o Stats) {
 	s.MatchCount += o.MatchCount
 	s.NgramMatches += o.NgramMatches
 	s.ShardFilesConsidered += o.ShardFilesConsidered
+	s.ShardsScanned += o.ShardsScanned
 	s.ShardsSkipped += o.ShardsSkipped
+	s.ShardsSkippedFilter += o.ShardsSkippedFilter
 	s.Wait += o.Wait
 }
 
@@ -184,7 +193,9 @@ func (s *Stats) Zero() bool {
 		s.MatchCount > 0 ||
 		s.NgramMatches > 0 ||
 		s.ShardFilesConsidered > 0 ||
+		s.ShardsScanned > 0 ||
 		s.ShardsSkipped > 0 ||
+		s.ShardsSkippedFilter > 0 ||
 		s.Wait > 0)
 }
 
