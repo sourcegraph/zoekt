@@ -195,13 +195,9 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	dir := filepath.Join(sf.RootDir, filepath.FromSlash(name))
 
 	opts := IndexOptions{
-		RepoID:  int32(crc32.ChecksumIEEE([]byte(name))),
+		// magic at the end is to ensure we get a positive number when casting.
+		RepoID:  int32(crc32.ChecksumIEEE([]byte(name))%(1<<31-1) + 1),
 		Symbols: true,
-	}
-
-	// ensure we are positive
-	if opts.RepoID <= 0 {
-		opts.RepoID = 1 - (opts.RepoID / 2)
 	}
 
 	cmd := exec.Command("git", "rev-parse", "HEAD")
