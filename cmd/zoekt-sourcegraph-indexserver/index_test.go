@@ -42,7 +42,7 @@ func TestGetIndexOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sg := &Sourcegraph{
+	sg := &sourcegraphClient{
 		Root:   u,
 		Client: retryablehttp.NewClient(),
 	}

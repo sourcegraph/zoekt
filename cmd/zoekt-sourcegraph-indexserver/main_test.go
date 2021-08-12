@@ -22,7 +22,7 @@ func TestServer_defaultArgs(t *testing.T) {
 	}
 
 	s := &Server{
-		Sourcegraph: &Sourcegraph{
+		Sourcegraph: &sourcegraphClient{
 			Root: root,
 		},
 		IndexDir: "/testdata/index",
@@ -67,7 +67,7 @@ func TestListRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := &Sourcegraph{
+	s := &sourcegraphClient{
 		Root:     u,
 		Hostname: "test-indexed-search-1",
 		Client:   retryablehttp.NewClient(),
@@ -125,7 +125,7 @@ func TestPing(t *testing.T) {
 	// We expect waitForFrontend to just work now
 	done := make(chan struct{})
 	go func() {
-		(&Sourcegraph{Root: root}).WaitForFrontend()
+		(&sourcegraphClient{Root: root}).WaitForFrontend()
 		close(done)
 	}()
 

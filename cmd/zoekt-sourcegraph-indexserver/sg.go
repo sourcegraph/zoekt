@@ -5,19 +5,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
 	"time"
 
+	"github.com/google/zoekt"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 )
 
-// Sourcegraph contains methods which interact with the Sourcegraph API.
-type Sourcegraph struct {
+type Sourcegraph interface {
+	GetIndexOptions(repos ...string) ([]indexOptionsItem, error)
+	GetCloneURL(name string) string
+	WaitForFrontend()
+	ListRepos(ctx context.Context, indexed []string) ([]string, error)
+}
+
+// sourcegraphClient contains methods which interact with the sourcegraph API.
+type sourcegraphClient struct {
 	// Root is the base URL for the Sourcegraph instance to index. Normally
 	// http://sourcegraph-frontend-internal or http://localhost:3090.
 	Root *url.URL
@@ -36,7 +48,7 @@ type indexOptionsItem struct {
 	Error string
 }
 
-func (s *Sourcegraph) GetIndexOptions(repos ...string) ([]indexOptionsItem, error) {
+func (s *sourcegraphClient) GetIndexOptions(repos ...string) ([]indexOptionsItem, error) {
 	u := s.Root.ResolveReference(&url.URL{
 		Path: "/.internal/search/configuration",
 	})
@@ -71,11 +83,11 @@ func (s *Sourcegraph) GetIndexOptions(repos ...string) ([]indexOptionsItem, erro
 	return opts, nil
 }
 
-func (s *Sourcegraph) GetCloneURL(name string) string {
+func (s *sourcegraphClient) GetCloneURL(name string) string {
 	return s.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", name)}).String()
 }
 
-func (s *Sourcegraph) WaitForFrontend() {
+func (s *sourcegraphClient) WaitForFrontend() {
 	warned := false
 	lastWarn := time.Now()
 	for {
@@ -98,7 +110,7 @@ func (s *Sourcegraph) WaitForFrontend() {
 	}
 }
 
-func (s *Sourcegraph) ListRepos(ctx context.Context, indexed []string) ([]string, error) {
+func (s *sourcegraphClient) ListRepos(ctx context.Context, indexed []string) ([]string, error) {
 	body, err := json.Marshal(&struct {
 		Hostname string
 		Indexed  []string
@@ -159,4 +171,82 @@ func ping(root *url.URL) error {
 		return fmt.Errorf("ping: did not receive pong: %s", string(body))
 	}
 	return nil
+}
+
+type sourcegraphFake struct {
+	RootDir string
+	Log     *log.Logger
+}
+
+func (sf sourcegraphFake) GetIndexOptions(repos ...string) ([]indexOptionsItem, error) {
+	var items []indexOptionsItem
+	for _, name := range repos {
+		opts, err := sf.getIndexOptions(name)
+		if err != nil {
+			items = append(items, indexOptionsItem{Error: err.Error()})
+		} else {
+			items = append(items, indexOptionsItem{IndexOptions: opts})
+		}
+	}
+	return items, nil
+}
+
+func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
+	dir := filepath.Join(sf.RootDir, filepath.FromSlash(name))
+
+	opts := IndexOptions{
+		// magic at the end is to ensure we get a positive number when casting.
+		RepoID:  int32(crc32.ChecksumIEEE([]byte(name))%(1<<31-1) + 1),
+		Symbols: true,
+	}
+
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	if b, err := cmd.Output(); err != nil {
+		return opts, err
+	} else {
+		head := string(bytes.TrimSpace(b))
+		opts.Branches = []zoekt.RepositoryBranch{{
+			Name:    "HEAD",
+			Version: head,
+		}}
+	}
+
+	return opts, nil
+}
+
+func (sf sourcegraphFake) GetCloneURL(name string) string {
+	return filepath.Join(sf.RootDir, filepath.FromSlash(name))
+}
+func (sf sourcegraphFake) WaitForFrontend() {}
+
+func (sf sourcegraphFake) ListRepos(ctx context.Context, indexed []string) ([]string, error) {
+	var repos []string
+	err := filepath.Walk(sf.RootDir, func(path string, fi os.FileInfo, fileErr error) error {
+		if fileErr != nil {
+			sf.Log.Printf("WARN: ignoring error searching %s: %v", path, fileErr)
+			return nil
+		}
+		if !fi.IsDir() {
+			return nil
+		}
+
+		gitdir := filepath.Join(path, ".git")
+		if fi, err := os.Stat(gitdir); err != nil || !fi.IsDir() {
+			return nil
+		}
+
+		subpath, err := filepath.Rel(sf.RootDir, path)
+		if err != nil {
+			// According to WalkFunc docs, path is always filepath.Join(root,
+			// subpath). So Rel should always work.
+			return fmt.Errorf("filepath.Walk returned %s which is not relative to %s: %w", path, sf.RootDir, err)
+		}
+
+		name := filepath.ToSlash(subpath)
+		repos = append(repos, name)
+
+		return filepath.SkipDir
+	})
+	return repos, err
 }

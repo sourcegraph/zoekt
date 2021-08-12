@@ -106,7 +106,7 @@ const (
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
 // exists to conveniently use all the options passed in via func main.
 type Server struct {
-	Sourcegraph *Sourcegraph
+	Sourcegraph Sourcegraph
 
 	// IndexDir is the index directory to use.
 	IndexDir string
@@ -618,7 +618,7 @@ func main() {
 		defaultIndexDir = build.DefaultDir
 	}
 
-	root := flag.String("sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090")
+	root := flag.String("sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	interval := flag.Duration("interval", time.Minute, "sync with sourcegraph this often")
 	index := flag.String("index", defaultIndexDir, "set index directory to use")
 	listen := flag.String("listen", ":6072", "listen on this address.")
@@ -672,22 +672,31 @@ func main() {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	client := retryablehttp.NewClient()
-	client.Logger = debug
+	var sg Sourcegraph
+	if rootURL.IsAbs() {
+		client := retryablehttp.NewClient()
+		client.Logger = debug
+		sg = &sourcegraphClient{
+			Root:     rootURL,
+			Client:   client,
+			Hostname: *hostname,
+		}
+	} else {
+		sg = sourcegraphFake{
+			RootDir: rootURL.String(),
+			Log:     log.New(os.Stderr, "sourcegraph: ", log.LstdFlags),
+		}
+	}
 
 	cpuCount := int(math.Round(float64(runtime.GOMAXPROCS(0)) * (*cpuFraction)))
 	if cpuCount < 1 {
 		cpuCount = 1
 	}
 	s := &Server{
-		Sourcegraph: &Sourcegraph{
-			Root:     rootURL,
-			Client:   client,
-			Hostname: *hostname,
-		},
-		IndexDir: *index,
-		Interval: *interval,
-		CPUCount: cpuCount,
+		Sourcegraph: sg,
+		IndexDir:    *index,
+		Interval:    *interval,
+		CPUCount:    cpuCount,
 	}
 
 	if *debugList {
