@@ -218,3 +218,25 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 	default:
 	}
 }
+
+func TestHumanTruncateList(t *testing.T) {
+	paths := []string{
+		"dir/1",
+		"dir/2",
+		"dir/3",
+		"dir/4",
+	}
+
+	assert := func(max int, want string) {
+		got := humanTruncateList(paths, max)
+		if got != want {
+			t.Errorf("unexpected humanTruncateList max=%d.\ngot:  %s\nwant: %s", max, got, want)
+		}
+	}
+
+	assert(1, "1... 3 more")
+	assert(2, "1, 2... 2 more")
+	assert(3, "1, 2, 3... 1 more")
+	assert(4, "1, 2, 3, 4")
+	assert(5, "1, 2, 3, 4")
+}
