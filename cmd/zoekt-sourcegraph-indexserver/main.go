@@ -583,26 +583,26 @@ func setupTmpDir(index string) error {
 
 func printMetaData(fn string) error {
 	repo, indexMeta, err := zoekt.ReadMetadataPath(fn)
-	if err!= nil {
+	if err != nil {
 		return err
 	}
 
 	printJson := func(v interface{}) error {
 		b, err := json.Marshal(v)
-		if err!= nil {
-			return  err
+		if err != nil {
+			return err
 		}
 		fmt.Printf("%+v\n", string(b))
 		return nil
 	}
 
 	err = printJson(indexMeta)
-	if err!=nil {
+	if err != nil {
 		return err
 	}
 
 	err = printJson(repo)
-	if err!=nil {
+	if err != nil {
 		return err
 	}
 	return nil
@@ -757,8 +757,8 @@ func main() {
 	}
 
 	if *debugMeta != "" {
-	err = printMetaData(*debugMeta)
-		if err!= nil {
+		err = printMetaData(*debugMeta)
+		if err != nil {
 			log.Fatal(err)
 		}
 		os.Exit(0)
