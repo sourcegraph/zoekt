@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -580,6 +581,24 @@ func setupTmpDir(index string) error {
 	return nil
 }
 
+func printMetaData(fn string) error {
+	repo, indexMeta, err := zoekt.ReadMetadataPath(fn)
+	if err != nil {
+		return err
+	}
+
+	err = json.NewEncoder(os.Stdout).Encode(indexMeta)
+	if err != nil {
+		return err
+	}
+
+	err = json.NewEncoder(os.Stdout).Encode(repo)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func printShardStats(fn string) error {
 	f, err := os.Open(fn)
 	if err != nil {
@@ -630,6 +649,7 @@ func main() {
 	debugList := flag.Bool("debug-list", false, "do not start the indexserver, rather list the repositories owned by this indexserver then quit.")
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repositories then quit.")
 	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
+	debugMeta := flag.String("debug-meta", "", "do not start the indexserver, rather print shard metadata then quit.")
 
 	_ = flag.Bool("exp-git-index", true, "DEPRECATED: not read anymore. We always use zoekt-git-index now.")
 
@@ -721,6 +741,14 @@ func main() {
 
 	if *debugShard != "" {
 		err = printShardStats(*debugShard)
+		if err != nil {
+			log.Fatal(err)
+		}
+		os.Exit(0)
+	}
+
+	if *debugMeta != "" {
+		err = printMetaData(*debugMeta)
 		if err != nil {
 			log.Fatal(err)
 		}
