@@ -587,21 +587,12 @@ func printMetaData(fn string) error {
 		return err
 	}
 
-	printJson := func(v interface{}) error {
-		b, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("%+v\n", string(b))
-		return nil
-	}
-
-	err = printJson(indexMeta)
+	err = json.NewEncoder(os.Stdout).Encode(indexMeta)
 	if err != nil {
 		return err
 	}
 
-	err = printJson(repo)
+	err = json.NewEncoder(os.Stdout).Encode(repo)
 	if err != nil {
 		return err
 	}
