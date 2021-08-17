@@ -153,6 +153,3 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 
 	return ib, nil
 }
-
-type nameHash struct {
-}
