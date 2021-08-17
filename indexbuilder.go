@@ -165,7 +165,9 @@ type IndexBuilder struct {
 
 	branchMasks []uint64
 	subRepos    []uint32
-	repos       []uint16
+
+	// docID => repoID
+	repos []uint16
 
 	contentPostings *postingsBuilder
 	namePostings    *postingsBuilder
