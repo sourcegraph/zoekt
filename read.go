@@ -297,11 +297,8 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		}
 		d.repos = fromSizedDeltas16(blob, nil)
 	} else {
-		repos := make([]uint16, 0, len(d.fileBranchMasks))
-		for i := 0; i < len(d.fileBranchMasks); i++ {
-			repos = append(repos, 0) // just support 1 repo for now.
-		}
-		d.repos = repos
+		// every document is for repo index 0 (default value of uint16)
+		d.repos = make([]uint16, len(d.fileBranchMasks))
 	}
 
 	if err := d.calculateStats(); err != nil {
@@ -332,7 +329,6 @@ func (r *reader) readMetadata(toc *indexTOC) ([]*Repository, *IndexMetadata, err
 		}
 	}
 
-	// TODO should this be []Repository?
 	var repos []*Repository
 	if md.IndexFormatVersion >= 17 {
 		if err := json.Unmarshal(blob, &repos); err != nil {
