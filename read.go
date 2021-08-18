@@ -79,10 +79,8 @@ func (r *reader) readTOC(toc *indexTOC) error {
 	}
 
 	secs := toc.sections()
-
-	// Version 16 has one less section. If we are off by 1, assume we are reading 16.
-	if len(secs) == int(sectionCount)+1 {
-		secs = secs[:sectionCount]
+	if len(secs) != int(sectionCount) {
+		secs = toc.sectionsNext()
 	}
 
 	if len(secs) != int(sectionCount) {
@@ -146,7 +144,7 @@ func (r *reader) readJSON(data interface{}, sec *simpleSection) error {
 // non-nil error is returned.
 func canReadVersion(md *IndexMetadata) bool {
 	// Backwards compatible with v16
-	return md.IndexFormatVersion == 16 || md.IndexFormatVersion == IndexFormatVersion
+	return md.IndexFormatVersion == IndexFormatVersion || md.IndexFormatVersion == NextIndexFormatVersion
 }
 
 func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {

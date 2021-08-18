@@ -297,11 +297,8 @@ var readVersions = []struct {
 	IndexFormatVersion: zoekt.IndexFormatVersion,
 	FeatureVersion:     zoekt.FeatureVersion,
 }, {
-	// SOURCEGRAPH: We don't re-index v16 files unless something changed. We
-	// support reading v16 files. In a few versions time we can force a re-index
-	// of everything.
-	IndexFormatVersion: 16,
-	FeatureVersion:     9,
+	IndexFormatVersion: zoekt.NextIndexFormatVersion,
+	FeatureVersion:     zoekt.NextFeatureVersion,
 }}
 
 // IncrementalSkipIndexing returns true if the index present on disk matches

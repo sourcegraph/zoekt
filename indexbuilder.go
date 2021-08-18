@@ -148,6 +148,11 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 
 // IndexBuilder builds a single index shard.
 type IndexBuilder struct {
+	// The version we will write to disk. Sourcegraph Specific. This is to
+	// enable feature flagging new format versions.
+	indexFormatVersion int
+	featureVersion     int
+
 	contentStrings  []*searchableString
 	nameStrings     []*searchableString
 	docSections     [][]DocumentSection
@@ -221,6 +226,9 @@ func NewIndexBuilder(r *Repository) (*IndexBuilder, error) {
 
 func newIndexBuilder() *IndexBuilder {
 	return &IndexBuilder{
+		indexFormatVersion: IndexFormatVersion,
+		featureVersion:     FeatureVersion,
+
 		contentPostings: newPostingsBuilder(),
 		namePostings:    newPostingsBuilder(),
 		fileEndSymbol:   []uint32{0},

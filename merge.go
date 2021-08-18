@@ -85,6 +85,8 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 	}
 
 	ib := newIndexBuilder()
+	ib.indexFormatVersion = NextIndexFormatVersion
+	ib.featureVersion = NextFeatureVersion
 
 	for _, d := range ds {
 		lastRepoID := -1

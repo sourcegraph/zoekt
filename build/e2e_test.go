@@ -105,7 +105,7 @@ func TestBasic(t *testing.T) {
 					t.Fatal(err)
 				}
 				repos[0].Name = "repo-mutated"
-				b, err := json.Marshal(repos)
+				b, err := json.Marshal(repos[0])
 				if err != nil {
 					t.Fatal(err)
 				}
