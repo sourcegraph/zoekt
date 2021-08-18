@@ -35,10 +35,7 @@ import (
 )
 
 func TestBasic(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
+	dir := t.TempDir()
 
 	opts := Options{
 		IndexDir: dir,

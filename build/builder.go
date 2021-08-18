@@ -205,6 +205,9 @@ type Builder struct {
 	finishedShards map[string]string
 
 	shardLogger io.WriteCloser
+
+	// indexTime is set by tests for doing reproducible builds.
+	indexTime time.Time
 }
 
 type finishedShard struct {
@@ -673,6 +676,7 @@ func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	if err != nil {
 		return nil, err
 	}
+	shardBuilder.IndexTime = b.indexTime
 	return shardBuilder, nil
 }
 

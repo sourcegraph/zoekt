@@ -2,11 +2,70 @@ package build
 
 import (
 	"flag"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/google/zoekt"
 )
+
+// ensure we don't regress on how we build v16
+func TestBuildv16(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := Options{
+		IndexDir: dir,
+		RepositoryDescription: zoekt.Repository{
+			Name:   "repo",
+			Source: "./testdata/repo/",
+		},
+		DisableCTags: true,
+	}
+	opts.SetDefaults()
+
+	b, err := NewBuilder(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.indexTime, _ = time.Parse(time.RFC3339, "2018-07-06T18:44:45-07:00")
+
+	for _, p := range []string{"main.go"} {
+		blob, err := os.ReadFile(filepath.Join("../testdata/repo", p))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.AddFile(p, blob)
+	}
+
+	if err := b.Finish(); err != nil {
+		t.Fatal(err)
+	}
+
+	gotP := filepath.Join(dir, "repo_v16.00000.zoekt")
+	wantP := filepath.Join("../testdata/shards", "repo_v16.00000.zoekt")
+
+	// uncomment to update
+	//err = os.Rename(gotP, wantP)
+	//if err != nil {
+	//	t.Fatal(err)
+	//}
+
+	got, err := os.ReadFile(gotP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(wantP)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if d := cmp.Diff(want, got); d != "" {
+		t.Errorf("mismatch (-want +got):\n%s", d)
+	}
+}
 
 func TestFlags(t *testing.T) {
 	cases := []struct {
