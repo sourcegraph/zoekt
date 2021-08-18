@@ -241,35 +241,29 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 	// (and (repobranches ...) (q))
 	// (and (repobranches ...) (q))
 
+	hasReposForPredicate := func(pred func(name string) bool) func(names []string) (any, all bool) {
+		return func(names []string) (any, all bool) {
+			any = false
+			all = true
+			for _, name := range names {
+				b := pred(name)
+				any = any || b
+				all = all && b
+			}
+			return any, all
+		}
+	}
+
 	for i, c := range and.Children {
 		var setSize int
 		var hasRepos func([]string) (bool, bool)
-
 		switch setQuery := c.(type) {
 		case *query.RepoSet:
 			setSize = len(setQuery.Set)
-			hasRepos = func(names []string) (any, all bool) {
-				any = false
-				all = true
-				for _, name := range names {
-					b := setQuery.Set[name]
-					any = any || b
-					all = all && b
-				}
-				return any, all
-			}
+			hasRepos = hasReposForPredicate(func(name string) bool { return setQuery.Set[name] })
 		case *query.RepoBranches:
 			setSize = len(setQuery.Set)
-			hasRepos = func(names []string) (any, all bool) {
-				any = false
-				all = true
-				for _, name := range names {
-					b := len(setQuery.Set[name]) > 0
-					any = any || b
-					all = all && b
-				}
-				return any, all
-			}
+			hasRepos = hasReposForPredicate(func(name string) bool { return len(setQuery.Set[name]) > 0 })
 		default:
 			continue
 		}
