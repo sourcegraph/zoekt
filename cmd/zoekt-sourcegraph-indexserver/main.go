@@ -242,7 +242,6 @@ func codeHostFromName(repoName string) string {
 // Run the sync loop. This blocks forever.
 func (s *Server) Run(queue *Queue) {
 	removeIncompleteShards(s.IndexDir)
-	s.Sourcegraph.WaitForFrontend()
 
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {

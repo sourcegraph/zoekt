@@ -2,14 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/go-retryablehttp"
@@ -86,53 +83,6 @@ func TestListRepos(t *testing.T) {
 	}
 	if want := "/.internal/repos/index"; gotURL.Path != want {
 		t.Errorf("request path mismatch (-want +got):\n%s", cmp.Diff(want, gotURL.Path))
-	}
-}
-
-func TestPing(t *testing.T) {
-	var response []byte
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/.internal/ping" {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		if r.URL.Query().Get("service") != "gitserver" {
-			http.Error(w, "expected service gitserver in request", http.StatusBadRequest)
-			return
-		}
-		_, _ = w.Write(response)
-	}))
-	defer server.Close()
-
-	root, err := url.Parse(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Ping fails
-	response = []byte("hello")
-	err = ping(root)
-	if got, want := fmt.Sprintf("%v", err), "did not receive pong"; !strings.Contains(got, want) {
-		t.Errorf("wanted ping to fail,\ngot:  %q\nwant: %q", got, want)
-	}
-
-	response = []byte("pong")
-	err = ping(root)
-	if err != nil {
-		t.Errorf("wanted ping to succeed, got: %v", err)
-	}
-
-	// We expect waitForFrontend to just work now
-	done := make(chan struct{})
-	go func() {
-		(&sourcegraphClient{Root: root}).WaitForFrontend()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("waitForFrontend blocking")
 	}
 }
 

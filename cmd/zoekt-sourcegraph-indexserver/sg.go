@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"time"
 
 	"github.com/google/zoekt"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
@@ -24,7 +23,6 @@ import (
 type Sourcegraph interface {
 	GetIndexOptions(repos ...string) ([]indexOptionsItem, error)
 	GetCloneURL(name string) string
-	WaitForFrontend()
 	ListRepos(ctx context.Context, indexed []string) ([]string, error)
 }
 
@@ -87,29 +85,6 @@ func (s *sourcegraphClient) GetCloneURL(name string) string {
 	return s.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", name)}).String()
 }
 
-func (s *sourcegraphClient) WaitForFrontend() {
-	warned := false
-	lastWarn := time.Now()
-	for {
-		err := ping(s.Root)
-		if err == nil {
-			break
-		}
-
-		if time.Since(lastWarn) > 15*time.Second {
-			warned = true
-			lastWarn = time.Now()
-			log.Printf("frontend or gitserver API not available, will try again: %s", err)
-		}
-
-		time.Sleep(250 * time.Millisecond)
-	}
-
-	if warned {
-		log.Println("frontend API is now reachable. Starting indexing...")
-	}
-}
-
 func (s *sourcegraphClient) ListRepos(ctx context.Context, indexed []string) ([]string, error) {
 	body, err := json.Marshal(&struct {
 		Hostname string
@@ -150,27 +125,6 @@ func (s *sourcegraphClient) ListRepos(ctx context.Context, indexed []string) ([]
 		metricNumAssigned.WithLabelValues(codeHost).Set(float64(count))
 	}
 	return data.RepoNames, nil
-}
-
-func ping(root *url.URL) error {
-	u := root.ResolveReference(&url.URL{Path: "/.internal/ping", RawQuery: "service=gitserver"})
-	resp, err := http.Get(u.String())
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ping: bad HTTP response status %d: %s", resp.StatusCode, string(body))
-	}
-	if !bytes.Equal(body, []byte("pong")) {
-		return fmt.Errorf("ping: did not receive pong: %s", string(body))
-	}
-	return nil
 }
 
 type sourcegraphFake struct {
@@ -218,8 +172,6 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 func (sf sourcegraphFake) GetCloneURL(name string) string {
 	return filepath.Join(sf.RootDir, filepath.FromSlash(name))
 }
-func (sf sourcegraphFake) WaitForFrontend() {}
-
 func (sf sourcegraphFake) ListRepos(ctx context.Context, indexed []string) ([]string, error) {
 	var repos []string
 	err := filepath.Walk(sf.RootDir, func(path string, fi os.FileInfo, fileErr error) error {
