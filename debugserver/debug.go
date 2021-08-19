@@ -3,12 +3,20 @@ package debugserver
 import (
 	"net/http"
 	"net/http/pprof"
+	"sync"
 
+	"github.com/google/zoekt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/trace"
 )
 
+var registerOnce sync.Once
+
 func AddHandlers(mux *http.ServeMux, enablePprof bool) {
+	registerOnce.Do(register)
+
 	trace.AuthRequest = func(req *http.Request) (any, sensitive bool) {
 		return true, true
 	}
@@ -41,4 +49,10 @@ func AddHandlers(mux *http.ServeMux, enablePprof bool) {
 	mux.Handle("/debug/requests", http.HandlerFunc(trace.Traces))
 	mux.Handle("/debug/events", http.HandlerFunc(trace.Events))
 	mux.Handle("/metrics", promhttp.Handler())
+}
+
+func register() {
+	promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "zoekt_version",
+	}, []string{"version"}).WithLabelValues(zoekt.Version).Set(1)
 }
