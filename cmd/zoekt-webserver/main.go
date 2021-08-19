@@ -519,6 +519,7 @@ func initializeJaeger() {
 		log.Printf("EROR: could not initialize jaeger tracer from env, error: %v", err.Error())
 		return
 	}
+	cfg.Tags = append(cfg.Tags, opentracing.Tag{Key: "service.version", Value: zoekt.Version})
 	if reflect.DeepEqual(cfg.Sampler, &jaegercfg.SamplerConfig{}) {
 		// Default sampler configuration for when it is not specified via
 		// JAEGER_SAMPLER_* env vars. In most cases, this is sufficient
