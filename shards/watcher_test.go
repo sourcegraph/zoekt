@@ -189,10 +189,11 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 	// 	t.Fatalf("got %v, want 'empty'", err)
 	// }
 
-	shardLatest := filepath.Join(dir, fmt.Sprintf("foo_v%d.00000.zoekt", zoekt.IndexFormatVersion))
+	want := zoekt.NextIndexFormatVersion
+	shardLatest := filepath.Join(dir, fmt.Sprintf("foo_v%d.00000.zoekt", want))
 
 	for delta := -1; delta <= 1; delta++ {
-		repo := fmt.Sprintf("foo_v%d.00000.zoekt", zoekt.IndexFormatVersion+delta)
+		repo := fmt.Sprintf("foo_v%d.00000.zoekt", want+delta)
 		shard := filepath.Join(dir, repo)
 		if err := ioutil.WriteFile(shard, []byte("hello"), 0644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
