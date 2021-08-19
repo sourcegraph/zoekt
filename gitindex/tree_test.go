@@ -39,7 +39,7 @@ func createSubmoduleRepo(dir string) error {
 	}
 	script := `mkdir adir bdir
 cd adir
-git init
+git init -b master
 mkdir subdir
 echo acont > afile
 echo sub-cont > subdir/sub-file
@@ -50,7 +50,7 @@ git commit -am amsg
 
 cd ..
 cd bdir
-git init
+git init -b master
 echo bcont > bfile
 git add bfile
 git config user.email "you@example.com"
@@ -300,7 +300,7 @@ func createMultibranchRepo(dir string) error {
 	}
 	script := `mkdir repo
 cd repo
-git init
+git init -b master
 mkdir subdir
 echo acont > afile
 echo sub-cont > subdir/sub-file
