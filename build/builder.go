@@ -265,25 +265,41 @@ func hashString(s string) string {
 
 // ShardName returns the name the given index shard.
 func (o *Options) ShardName(n int) string {
+	return o.shardNameVersion(zoekt.IndexFormatVersion, n)
+}
+
+func (o *Options) shardNameVersion(version, n int) string {
 	abs := url.QueryEscape(o.RepositoryDescription.Name)
 	if len(abs) > 200 {
 		abs = abs[:200] + hashString(abs)[:8]
 	}
 	return filepath.Join(o.IndexDir,
-		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, zoekt.IndexFormatVersion, n))
+		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, version, n))
 }
 
 type IndexState string
 
 const (
-	IndexStateMissing IndexState = "missing"
-	IndexStateCorrupt            = "corrupt"
-	IndexStateVersion            = "version-mismatch"
-	IndexStateOption             = "option-mismatch"
-	IndexStateMeta               = "meta-mismatch"
-	IndexStateContent            = "content-mismatch"
-	IndexStateEqual              = "equal"
+	IndexStateMissing            IndexState = "missing"
+	IndexStateCorrupt                       = "corrupt"
+	IndexStateUnexpectedCompound            = "unexpected-compound"
+	IndexStateVersion                       = "version-mismatch"
+	IndexStateOption                        = "option-mismatch"
+	IndexStateMeta                          = "meta-mismatch"
+	IndexStateContent                       = "content-mismatch"
+	IndexStateEqual                         = "equal"
 )
+
+var readVersions = []struct {
+	IndexFormatVersion int
+	FeatureVersion     int
+}{{
+	IndexFormatVersion: zoekt.IndexFormatVersion,
+	FeatureVersion:     zoekt.FeatureVersion,
+}, {
+	IndexFormatVersion: zoekt.NextIndexFormatVersion,
+	FeatureVersion:     zoekt.NextFeatureVersion,
+}}
 
 // IncrementalSkipIndexing returns true if the index present on disk matches
 // the build options.
@@ -294,18 +310,35 @@ func (o *Options) IncrementalSkipIndexing() bool {
 // IndexState checks how the index present on disk compares to the build
 // options.
 func (o *Options) IndexState() IndexState {
-	fn := o.ShardName(0)
+	// Open the latest version we support that is on disk.
+	fn := ""
+	featureVersion := -1
+	for _, v := range readVersions {
+		fn = o.shardNameVersion(v.IndexFormatVersion, 0)
+		if _, err := os.Stat(fn); err == nil {
+			featureVersion = v.FeatureVersion
+			break
+		}
+	}
 
-	repo, index, err := zoekt.ReadMetadataPath(fn)
+	repos, index, err := zoekt.ReadMetadataPath(fn)
 	if os.IsNotExist(err) {
 		return IndexStateMissing
 	} else if err != nil {
 		return IndexStateCorrupt
 	}
 
-	if index.IndexFeatureVersion != zoekt.FeatureVersion {
+	if index.IndexFeatureVersion != featureVersion {
 		return IndexStateVersion
 	}
+
+	// This shouldn't happen. Options only references one repository, so
+	// shardName will only return non compound repositories. We still need to
+	// work out how to do IndexState with compound shards.
+	if len(repos) != 1 {
+		return IndexStateUnexpectedCompound
+	}
+	repo := repos[0]
 
 	if repo.IndexOptions != o.HashOptions() {
 		return IndexStateOption

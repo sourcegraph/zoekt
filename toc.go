@@ -42,6 +42,10 @@ const IndexFormatVersion = 16
 // 9: Store ctags metadata & bump default max file size
 const FeatureVersion = 9
 
+// 17: compound shard (multi repo)
+const NextIndexFormatVersion = 17
+const NextFeatureVersion = 1
+
 type indexTOC struct {
 	fileContents compoundSection
 	fileNames    compoundSection
@@ -69,6 +73,8 @@ type indexTOC struct {
 	nameEndRunes     simpleSection
 	contentChecksums simpleSection
 	runeDocSections  simpleSection
+
+	repos simpleSection
 }
 
 func (t *indexTOC) sections() []section {
@@ -99,4 +105,8 @@ func (t *indexTOC) sections() []section {
 		&t.languages,
 		&t.runeDocSections,
 	}
+}
+
+func (t *indexTOC) sectionsNext() []section {
+	return append(t.sections(), &t.repos)
 }

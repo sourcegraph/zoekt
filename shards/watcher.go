@@ -112,7 +112,7 @@ func (s *DirectoryWatcher) scan() error {
 
 		// In the case of downgrades, avoid reading
 		// newer index formats.
-		if version > zoekt.IndexFormatVersion {
+		if version > zoekt.IndexFormatVersion && version > zoekt.NextIndexFormatVersion {
 			continue
 		}
 

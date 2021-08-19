@@ -79,6 +79,9 @@ func (r *reader) readTOC(toc *indexTOC) error {
 	}
 
 	secs := toc.sections()
+	if len(secs) != int(sectionCount) {
+		secs = toc.sectionsNext()
+	}
 
 	if len(secs) != int(sectionCount) {
 		return fmt.Errorf("section count mismatch: got %d want %d", sectionCount, len(secs))
@@ -137,6 +140,13 @@ func (r *reader) readJSON(data interface{}, sec *simpleSection) error {
 	return json.Unmarshal(blob, data)
 }
 
+// canReadVersion returns checks if zoekt can read in md. If it can't a
+// non-nil error is returned.
+func canReadVersion(md *IndexMetadata) bool {
+	// Backwards compatible with v16
+	return md.IndexFormatVersion == IndexFormatVersion || md.IndexFormatVersion == NextIndexFormatVersion
+}
+
 func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d := indexData{
 		file:           r.r,
@@ -145,15 +155,18 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		branchNames:    []map[uint]string{},
 	}
 
-	repo, md, err := r.readMetadata(toc)
-	if md != nil && md.IndexFormatVersion != IndexFormatVersion {
+	repos, md, err := r.readMetadata(toc)
+	if md != nil && !canReadVersion(md) {
 		return nil, fmt.Errorf("file is v%d, want v%d", md.IndexFormatVersion, IndexFormatVersion)
 	} else if err != nil {
 		return nil, err
 	}
 
 	d.metaData = *md
-	d.repoMetaData = []Repository{*repo}
+	d.repoMetaData = make([]Repository, 0, len(repos))
+	for _, r := range repos {
+		d.repoMetaData = append(d.repoMetaData, *r)
+	}
 
 	d.boundariesStart = toc.fileContents.data.off
 	d.boundaries = toc.fileContents.relativeIndex()
@@ -162,24 +175,22 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.docSectionsStart = toc.fileSections.data.off
 	d.docSectionsIndex = toc.fileSections.relativeIndex()
 
-	if d.metaData.IndexFormatVersion == 16 {
-		d.symbols.symKindIndex = toc.symbolKindMap.relativeIndex()
-		d.fileEndSymbol, err = readSectionU32(d.file, toc.fileEndSymbol)
-		if err != nil {
-			return nil, err
-		}
+	d.symbols.symKindIndex = toc.symbolKindMap.relativeIndex()
+	d.fileEndSymbol, err = readSectionU32(d.file, toc.fileEndSymbol)
+	if err != nil {
+		return nil, err
+	}
 
-		// Call readSectionBlob on each section key, and store the result in
-		// the blob value.
-		for sect, blob := range map[simpleSection]*[]byte{
-			toc.symbolMap.index:    &d.symbols.symIndex,
-			toc.symbolMap.data:     &d.symbols.symContent,
-			toc.symbolKindMap.data: &d.symbols.symKindContent,
-			toc.symbolMetaData:     &d.symbols.symMetaData,
-		} {
-			if *blob, err = d.readSectionBlob(sect); err != nil {
-				return nil, err
-			}
+	// Call readSectionBlob on each section key, and store the result in
+	// the blob value.
+	for sect, blob := range map[simpleSection]*[]byte{
+		toc.symbolMap.index:    &d.symbols.symIndex,
+		toc.symbolMap.data:     &d.symbols.symContent,
+		toc.symbolKindMap.data: &d.symbols.symKindContent,
+		toc.symbolMetaData:     &d.symbols.symMetaData,
+	} {
+		if *blob, err = d.readSectionBlob(sect); err != nil {
+			return nil, err
 		}
 	}
 
@@ -228,6 +239,8 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.rawConfigMasks = append(d.rawConfigMasks, encodeRawConfig(md.RawConfig))
 	}
 
+	d.repoTombstone = make([]bool, len(d.repoMetaData))
+
 	blob, err := d.readSectionBlob(toc.runeDocSections)
 	if err != nil {
 		return nil, err
@@ -275,13 +288,16 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	// This is a hack for now to keep the shard format unchanged. To support shard
-	// merging we will store "repos" in the shard.
-	repos := make([]uint16, 0, len(d.fileBranchMasks))
-	for i := 0; i < len(d.fileBranchMasks); i++ {
-		repos = append(repos, 0) // just support 1 repo for now.
+	if d.metaData.IndexFormatVersion >= 17 {
+		blob, err := d.readSectionBlob(toc.repos)
+		if err != nil {
+			return nil, err
+		}
+		d.repos = fromSizedDeltas16(blob, nil)
+	} else {
+		// every document is for repo index 0 (default value of uint16)
+		d.repos = make([]uint16, len(d.fileBranchMasks))
 	}
-	d.repos = repos
 
 	if err := d.calculateStats(); err != nil {
 		return nil, err
@@ -290,30 +306,40 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	return &d, nil
 }
 
-func (r *reader) readMetadata(toc *indexTOC) (*Repository, *IndexMetadata, error) {
+func (r *reader) readMetadata(toc *indexTOC) ([]*Repository, *IndexMetadata, error) {
 	var md IndexMetadata
 	if err := r.readJSON(&md, &toc.metaData); err != nil {
 		return nil, nil, err
 	}
 
-	var repo Repository
-	if err := r.readJSON(&repo, &toc.repoMetaData); err != nil {
-		return nil, &md, err
-	}
-
 	// Sourcegraph specific: we support mutating metadata via an additional
 	// ".meta" file. This is to support tombstoning. An additional benefit is we
 	// can update metadata (such as Rank and Name) without re-indexing content.
-	if b, err := os.ReadFile(r.r.Name() + ".meta"); err != nil && !os.IsNotExist(err) {
+	blob, err := os.ReadFile(r.r.Name() + ".meta")
+	if err != nil && !os.IsNotExist(err) {
 		return nil, &md, fmt.Errorf("failed to read meta file: %w", err)
-	} else if len(b) > 0 {
-		err = json.Unmarshal(b, &repo)
+	}
+
+	if len(blob) == 0 {
+		blob, err = r.r.Read(toc.repoMetaData.off, toc.repoMetaData.sz)
 		if err != nil {
-			return nil, &md, fmt.Errorf("failed to unmarshal meta file: %w", err)
+			return nil, &md, err
 		}
 	}
 
-	return &repo, &md, nil
+	var repos []*Repository
+	if md.IndexFormatVersion >= 17 {
+		if err := json.Unmarshal(blob, &repos); err != nil {
+			return nil, &md, err
+		}
+	} else {
+		repos = make([]*Repository, 1)
+		if err := json.Unmarshal(blob, &repos[0]); err != nil {
+			return nil, &md, err
+		}
+	}
+
+	return repos, &md, nil
 }
 
 const ngramEncoding = 8
@@ -449,7 +475,7 @@ func NewSearcher(r IndexFile) (Searcher, error) {
 
 // ReadMetadata returns the metadata of index shard without reading
 // the index data. The IndexFile is not closed.
-func ReadMetadata(inf IndexFile) (*Repository, *IndexMetadata, error) {
+func ReadMetadata(inf IndexFile) ([]*Repository, *IndexMetadata, error) {
 	rd := &reader{r: inf}
 	var toc indexTOC
 	if err := rd.readTOC(&toc); err != nil {
@@ -462,7 +488,7 @@ func ReadMetadata(inf IndexFile) (*Repository, *IndexMetadata, error) {
 // ReadMetadataPath returns the metadata of index shard at p without reading
 // the index data. ReadMetadataPath is a helper for ReadMetadata which opens
 // the IndexFile at p.
-func ReadMetadataPath(p string) (*Repository, *IndexMetadata, error) {
+func ReadMetadataPath(p string) ([]*Repository, *IndexMetadata, error) {
 	f, err := os.Open(p)
 	if err != nil {
 		return nil, nil, err

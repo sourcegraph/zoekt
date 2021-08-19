@@ -19,13 +19,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"sort"
 	"time"
 )
 
-func (w *writer) writeTOC(toc *indexTOC) {
-	secs := toc.sections()
+func (w *writer) writeTOC(secs []section) {
 	w.U32(uint32(len(secs)))
 	for _, s := range secs {
 		s.write(w)
@@ -85,6 +85,8 @@ func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 }
 
 func (b *IndexBuilder) Write(out io.Writer) error {
+	next := b.indexFormatVersion == NextIndexFormatVersion
+
 	buffered := bufio.NewWriterSize(out, 1<<20)
 	defer buffered.Flush()
 
@@ -147,29 +149,49 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	w.Write(marshalDocSections(b.runeDocSections))
 	toc.runeDocSections.end(w)
 
+	if next {
+		toc.repos.start(w)
+		w.Write(toSizedDeltas16(b.repos))
+		toc.repos.end(w)
+	}
+
 	indexTime := b.IndexTime
 	if indexTime.IsZero() {
 		indexTime = time.Now()
 	}
 
 	if err := b.writeJSON(&IndexMetadata{
-		IndexFormatVersion:  IndexFormatVersion,
+		IndexFormatVersion:  b.indexFormatVersion,
 		IndexTime:           indexTime,
-		IndexFeatureVersion: FeatureVersion,
+		IndexFeatureVersion: b.featureVersion,
 		PlainASCII:          b.contentPostings.isPlainASCII && b.namePostings.isPlainASCII,
 		LanguageMap:         b.languageMap,
 		ZoektVersion:        Version,
 	}, &toc.metaData, w); err != nil {
 		return err
 	}
-	if err := b.writeJSON(b.repo, &toc.repoMetaData, w); err != nil {
-		return err
+
+	if next {
+		if err := b.writeJSON(b.repoList, &toc.repoMetaData, w); err != nil {
+			return err
+		}
+	} else {
+		if len(b.repoList) != 1 {
+			return fmt.Errorf("have %d repos, but only support 1 in index format version %d", len(b.repoList), b.indexFormatVersion)
+		}
+		if err := b.writeJSON(b.repoList[0], &toc.repoMetaData, w); err != nil {
+			return err
+		}
 	}
 
 	var tocSection simpleSection
 
 	tocSection.start(w)
-	w.writeTOC(&toc)
+	if next {
+		w.writeTOC(toc.sectionsNext())
+	} else {
+		w.writeTOC(toc.sections())
+	}
 	tocSection.end(w)
 	tocSection.write(w)
 	return w.err

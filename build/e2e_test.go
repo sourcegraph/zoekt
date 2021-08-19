@@ -100,12 +100,12 @@ func TestBasic(t *testing.T) {
 			// "repo-mutated". We do this inside retry helper since we have noticed
 			// some flakiness on github CI.
 			for _, p := range fs {
-				repo, _, err := zoekt.ReadMetadataPath(p)
+				repos, _, err := zoekt.ReadMetadataPath(p)
 				if err != nil {
 					t.Fatal(err)
 				}
-				repo.Name = "repo-mutated"
-				b, err := json.Marshal(repo)
+				repos[0].Name = "repo-mutated"
+				b, err := json.Marshal(repos[0])
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/google/zoekt"
 )
 
 type loggingLoader struct {
@@ -187,10 +189,11 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 	// 	t.Fatalf("got %v, want 'empty'", err)
 	// }
 
-	shardv16 := filepath.Join(dir, "foo_v16.00000.zoekt")
+	want := zoekt.NextIndexFormatVersion
+	shardLatest := filepath.Join(dir, fmt.Sprintf("foo_v%d.00000.zoekt", want))
 
-	for _, v := range []int{15, 16, 17} {
-		repo := fmt.Sprintf("foo_v%d.00000.zoekt", v)
+	for delta := -1; delta <= 1; delta++ {
+		repo := fmt.Sprintf("foo_v%d.00000.zoekt", want+delta)
 		shard := filepath.Join(dir, repo)
 		if err := ioutil.WriteFile(shard, []byte("hello"), 0644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
@@ -203,8 +206,8 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 	}
 	defer dw.Stop()
 
-	if got := <-logger.loads; got != shardv16 {
-		t.Fatalf("got load event %v, want %v", got, shardv16)
+	if got := <-logger.loads; got != shardLatest {
+		t.Fatalf("got load event %v, want %v", got, shardLatest)
 	}
 
 	advanceFS()

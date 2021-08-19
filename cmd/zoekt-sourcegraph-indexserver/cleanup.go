@@ -124,11 +124,17 @@ func getShards(dir string) map[string][]shard {
 			continue
 		}
 
-		name, err := shardRepoName(path)
+		names, err := shardRepoNames(path)
 		if err != nil {
 			debug.Printf("failed to read shard: %v", err)
 			continue
 		}
+
+		// TODO support compound shards once we support tombstones
+		if len(names) != 1 {
+			continue
+		}
+		name := names[0]
 
 		shards[name] = append(shards[name], shard{
 			Repo:    name,
@@ -139,13 +145,17 @@ func getShards(dir string) map[string][]shard {
 	return shards
 }
 
-func shardRepoName(path string) (string, error) {
-	repo, _, err := zoekt.ReadMetadataPath(path)
+func shardRepoNames(path string) ([]string, error) {
+	repos, _, err := zoekt.ReadMetadataPath(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return repo.Name, nil
+	names := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		names = append(names, repo.Name)
+	}
+	return names, nil
 }
 
 var incompleteRE = regexp.MustCompile(`\.zoekt[0-9]+(\.\w+)?$`)

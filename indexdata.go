@@ -77,6 +77,10 @@ type indexData struct {
 	metaData     IndexMetadata
 	repoMetaData []Repository
 
+	// repoTombstone[repoID] is true if we are not allowed to search
+	// repoID.
+	repoTombstone []bool
+
 	subRepos     []uint32
 	subRepoPaths [][]string
 
@@ -271,8 +275,6 @@ func (d *indexData) calculateNewLinesStats(start, end uint32) (count, defaultCou
 
 	return
 }
-
-func (d *indexData) Repository() []Repository { return d.repoMetaData }
 
 func (d *indexData) String() string {
 	return fmt.Sprintf("shard(%s)", d.file.Name())

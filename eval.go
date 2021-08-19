@@ -44,12 +44,15 @@ func (m *FileMatch) addScore(what string, s float64) {
 // otherwise.
 func (d *indexData) simplifyMultiRepo(q query.Q, predicate func(repoName string) bool) query.Q {
 	count := 0
-	for _, md := range d.repoMetaData {
-		if predicate(md.Name) {
+	alive := len(d.repoMetaData)
+	for i, md := range d.repoMetaData {
+		if d.repoTombstone[i] {
+			alive--
+		} else if predicate(md.Name) {
 			count++
 		}
 	}
-	if count == len(d.repoMetaData) {
+	if count == alive {
 		return &query.Const{Value: true}
 	}
 	if count > 0 {
@@ -180,6 +183,10 @@ nextFileMatch:
 		nextDoc := mt.nextDoc()
 		if int(nextDoc) <= lastDoc {
 			nextDoc = uint32(lastDoc + 1)
+		}
+		// Skip tombstoned docs
+		for nextDoc < docCount && d.repoTombstone[d.repos[nextDoc]] {
+			nextDoc++
 		}
 		if nextDoc >= docCount {
 			break
@@ -486,6 +493,9 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 	}
 
 	for i := range d.repoListEntry {
+		if d.repoTombstone[i] {
+			continue
+		}
 		rle := &d.repoListEntry[i]
 		ok, err := include(rle)
 		if err != nil {
