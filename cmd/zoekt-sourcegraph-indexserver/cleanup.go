@@ -120,7 +120,7 @@ func getShards(dir string) map[string][]shard {
 			debug.Printf("stat failed: %v", err)
 			continue
 		}
-		if fi.IsDir() {
+		if fi.IsDir() || filepath.Ext(path) != ".zoekt" {
 			continue
 		}
 
