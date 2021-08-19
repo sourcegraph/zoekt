@@ -36,7 +36,7 @@ func Merge(dstDir string, files ...IndexFile) error {
 		}
 	}
 
-	fn := filepath.Join(dstDir, fmt.Sprintf("compound-%x_v%d.%05d.zoekt", hasher.Sum(nil), IndexFormatVersion, 0))
+	fn := filepath.Join(dstDir, fmt.Sprintf("compound-%x_v%d.%05d.zoekt", hasher.Sum(nil), NextIndexFormatVersion, 0))
 	return builderWriteAll(fn, ib)
 }
 
