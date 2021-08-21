@@ -133,7 +133,6 @@ func compoundReposShard(t *testing.T, names ...string) *indexData {
 	t.Helper()
 	b := newIndexBuilder()
 	b.indexFormatVersion = NextIndexFormatVersion
-	b.featureVersion = NextFeatureVersion
 	for _, name := range names {
 		if err := b.setRepository(&Repository{Name: name}); err != nil {
 			t.Fatal(err)

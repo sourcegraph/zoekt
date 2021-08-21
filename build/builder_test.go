@@ -13,6 +13,8 @@ import (
 	"github.com/google/zoekt"
 )
 
+var update = flag.Bool("update", false, "update golden file")
+
 // ensure we don't regress on how we build v16
 func TestBuildv16(t *testing.T) {
 	dir := t.TempDir()
@@ -57,11 +59,17 @@ func TestBuildv16(t *testing.T) {
 
 	gotP := filepath.Join(dir, "repo_v16.00000.zoekt")
 
-	// uncomment to update
-	//err = os.Rename(gotP, wantP)
-	//if err != nil {
-	//	t.Fatal(err)
-	//}
+	if *update {
+		data, err := os.ReadFile(gotP)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = os.WriteFile(wantP, data, 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
 
 	got, err := os.ReadFile(gotP)
 	if err != nil {
