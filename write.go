@@ -25,10 +25,22 @@ import (
 )
 
 func (w *writer) writeTOC(toc *indexTOC) {
-	secs := toc.sections()
-	w.U32(uint32(len(secs)))
+	// Tagged sections are indicated with a 0 section count.
+	// Tagged sections allow easier forwards and backwards
+	// compatibility when evolving zoekt index files with new
+	// sections.
+	//
+	// A tagged section is:
+	// Varint TagLen, Tag String, Varint SecType, Section
+	//
+	// Section type is indicated because simpleSections and
+	// compoundSections have different lengths.
+	w.U32(0)
+	secs := toc.sectionsTaggedList()
 	for _, s := range secs {
-		s.write(w)
+		w.String(s.tag)
+		w.Varint(uint32(s.sec.kind()))
+		s.sec.write(w)
 	}
 }
 

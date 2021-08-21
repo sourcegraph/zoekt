@@ -65,6 +65,12 @@ func (w *writer) Varint(n uint32) {
 	w.Write(enc[:m])
 }
 
+func (w *writer) String(s string) {
+	b := []byte(s)
+	w.Varint(uint32(len(b)))
+	w.Write(b)
+}
+
 func (s *simpleSection) start(w *writer) {
 	s.off = w.Off()
 }
@@ -77,12 +83,24 @@ func (s *simpleSection) end(w *writer) {
 type section interface {
 	read(*reader) error
 	write(*writer)
+	kind() sectionKind // simple or complex, used in serialization
 }
+
+type sectionKind int
+
+const (
+	sectionKindSimple  sectionKind = 0
+	sectionKindComplex sectionKind = 1
+)
 
 // simpleSection is a simple range of bytes.
 type simpleSection struct {
 	off uint32
 	sz  uint32
+}
+
+func (s *simpleSection) kind() sectionKind {
+	return sectionKindSimple
 }
 
 func (s *simpleSection) read(r *reader) error {
@@ -110,6 +128,10 @@ type compoundSection struct {
 
 	offsets []uint32
 	index   simpleSection
+}
+
+func (s *compoundSection) kind() sectionKind {
+	return sectionKindComplex
 }
 
 func (s *compoundSection) start(w *writer) {

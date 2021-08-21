@@ -27,6 +27,7 @@ package zoekt
 // 13: content checksums
 // 14: languages
 // 15: rune based symbol sections
+// 16 (TBA): TODO: remove fallback parsing in readTOC
 const IndexFormatVersion = 15
 
 // FeatureVersion is increased if a feature is added that requires reindexing data
@@ -66,6 +67,8 @@ type indexTOC struct {
 }
 
 func (t *indexTOC) sections() []section {
+	// This old sections list is only needed to maintain backwards compatibility,
+	// and can be removed when a migration to tagged sections is complete.
 	return []section{
 		// This must be first, so it can be reliably read across
 		// file format versions.
@@ -89,4 +92,51 @@ func (t *indexTOC) sections() []section {
 		&t.languages,
 		&t.runeDocSections,
 	}
+}
+
+type taggedSection struct {
+	tag string
+	sec section
+}
+
+func (t *indexTOC) sectionsTagged() map[string]section {
+	out := map[string]section{}
+	for _, ent := range t.sectionsTaggedList() {
+		out[ent.tag] = ent.sec
+	}
+	for _, ent := range t.sectionsTaggedCompatibilityList() {
+		out[ent.tag] = ent.sec
+	}
+	return out
+}
+
+func (t *indexTOC) sectionsTaggedList() []taggedSection {
+	return []taggedSection{
+		{"metadata", &t.metaData},
+		{"repoMetaData", &t.repoMetaData},
+		{"fileContents", &t.fileContents},
+		{"fileNames", &t.fileNames},
+		{"fileSections", &t.fileSections},
+		{"newlines", &t.newlines},
+		{"ngramText", &t.ngramText},
+		{"postings", &t.postings},
+		{"nameNgramText", &t.nameNgramText},
+		{"namePostings", &t.namePostings},
+		{"branchMasks", &t.branchMasks},
+		{"subRepos", &t.subRepos},
+		{"runeOffsets", &t.runeOffsets},
+		{"nameRuneOffsets", &t.nameRuneOffsets},
+		{"fileEndRunes", &t.fileEndRunes},
+		{"nameEndRunes", &t.nameEndRunes},
+		{"contentChecksums", &t.contentChecksums},
+		{"languages", &t.languages},
+		{"runeDocSections", &t.runeDocSections},
+	}
+}
+
+// sectionsTaggedCompatibilityList returns a list of sections that will be
+// handled or converted for backwards compatiblity, but aren't written by
+// the current iteration of the indexer.
+func (t *indexTOC) sectionsTaggedCompatibilityList() []taggedSection {
+	return []taggedSection{}
 }
