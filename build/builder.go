@@ -302,7 +302,7 @@ var readVersions = []struct {
 	FeatureVersion:     zoekt.FeatureVersion,
 }, {
 	IndexFormatVersion: zoekt.NextIndexFormatVersion,
-	FeatureVersion:     zoekt.NextFeatureVersion,
+	FeatureVersion:     zoekt.FeatureVersion,
 }}
 
 // IncrementalSkipIndexing returns true if the index present on disk matches

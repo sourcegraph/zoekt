@@ -25,10 +25,23 @@ import (
 	"time"
 )
 
-func (w *writer) writeTOC(secs []section) {
-	w.U32(uint32(len(secs)))
+func (w *writer) writeTOC(toc *indexTOC) {
+	// Tagged sections are indicated with a 0 section count.
+	// Tagged sections allow easier forwards and backwards
+	// compatibility when evolving zoekt index files with new
+	// sections.
+	//
+	// A tagged section is:
+	// Varint TagLen, Tag String, Varint Kind, Section
+	//
+	// Section kind is indicated because simpleSections and
+	// compoundSections have different lengths.
+	w.U32(0)
+	secs := toc.sectionsTaggedList()
 	for _, s := range secs {
-		s.write(w)
+		w.String(s.tag)
+		w.Varint(uint32(s.sec.kind()))
+		s.sec.write(w)
 	}
 }
 
@@ -161,13 +174,14 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}
 
 	if err := b.writeJSON(&IndexMetadata{
-		IndexFormatVersion:  b.indexFormatVersion,
-		IndexTime:           indexTime,
-		IndexFeatureVersion: b.featureVersion,
-		PlainASCII:          b.contentPostings.isPlainASCII && b.namePostings.isPlainASCII,
-		LanguageMap:         b.languageMap,
-		ZoektVersion:        Version,
-		ID:                  b.ID,
+		IndexFormatVersion:    b.indexFormatVersion,
+		IndexTime:             indexTime,
+		IndexFeatureVersion:   b.featureVersion,
+		IndexMinReaderVersion: WriteMinFeatureVersion,
+		PlainASCII:            b.contentPostings.isPlainASCII && b.namePostings.isPlainASCII,
+		LanguageMap:           b.languageMap,
+		ZoektVersion:          Version,
+		ID:                    b.ID,
 	}, &toc.metaData, w); err != nil {
 		return err
 	}
@@ -188,11 +202,7 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	var tocSection simpleSection
 
 	tocSection.start(w)
-	if next {
-		w.writeTOC(toc.sectionsNext())
-	} else {
-		w.writeTOC(toc.sections())
-	}
+	w.writeTOC(&toc)
 	tocSection.end(w)
 	tocSection.write(w)
 	return w.err

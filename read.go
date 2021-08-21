@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/crc64"
+	"log"
 	"os"
 	"sort"
 
@@ -62,6 +63,36 @@ func (r *reader) U64() (uint64, error) {
 	return binary.BigEndian.Uint64(b), nil
 }
 
+func (r *reader) ReadByte() (byte, error) {
+	b, err := r.r.Read(r.off, 1)
+	r.off += 1
+	if err != nil {
+		return 0, err
+	}
+	return b[0], nil
+}
+
+func (r *reader) Varint() (uint64, error) {
+	v, err := binary.ReadUvarint(r)
+	if err != nil {
+		return 0, err
+	}
+	return v, nil
+}
+
+func (r *reader) Str() (string, error) {
+	slen, err := r.Varint()
+	if err != nil {
+		return "", err
+	}
+	b, err := r.r.Read(r.off, uint32(slen))
+	if err != nil {
+		return "", err
+	}
+	r.off += uint32(slen)
+	return string(b), nil
+}
+
 func (r *reader) readTOC(toc *indexTOC) error {
 	sz, err := r.r.Size()
 	if err != nil {
@@ -81,18 +112,57 @@ func (r *reader) readTOC(toc *indexTOC) error {
 		return err
 	}
 
-	secs := toc.sections()
-	if len(secs) != int(sectionCount) {
-		secs = toc.sectionsNext()
-	}
+	if sectionCount == 0 {
+		// tagged sections are indicated by a 0 sectionCount,
+		// and then a list of string-tagged type-indicated sections.
+		secs := toc.sectionsTagged()
+		for r.off < tocSection.off+tocSection.sz {
+			tag, err := r.Str()
+			if err != nil {
+				return err
+			}
+			kind, err := r.Varint()
+			if err != nil {
+				return err
+			}
+			sec := secs[tag]
+			if sec != nil && sec.kind() == sectionKind(kind) {
+				// happy path
+				if err := sec.read(r); err != nil {
+					return err
+				}
+				continue
+			}
+			// error case: skip over unknown section
+			if sec == nil {
+				log.Printf("file %s TOC has unknown section %q", r.r.Name(), tag)
+			} else {
+				return fmt.Errorf("file %s TOC section %q expects kind %d, got kind %d", r.r.Name(), tag,
+					kind, sec.kind())
+			}
+			if kind == 0 {
+				(&simpleSection{}).read(r)
+			} else if kind == 1 {
+				(&compoundSection{}).read(r)
+			}
+		}
+	} else {
+		// TODO: Remove this branch when ReaderMinFeatureVersion >= 10
 
-	if len(secs) != int(sectionCount) {
-		return fmt.Errorf("section count mismatch: got %d want %d", sectionCount, len(secs))
-	}
+		secs := toc.sections()
 
-	for _, s := range secs {
-		if err := s.read(r); err != nil {
-			return err
+		if len(secs) != int(sectionCount) {
+			secs = toc.sectionsNext()
+		}
+
+		if len(secs) != int(sectionCount) {
+			return fmt.Errorf("section count mismatch: got %d want %d", sectionCount, len(secs))
+		}
+
+		for _, s := range secs {
+			if err := s.read(r); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -169,6 +239,14 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.repoMetaData = make([]Repository, 0, len(repos))
 	for _, r := range repos {
 		d.repoMetaData = append(d.repoMetaData, *r)
+	}
+
+	if d.metaData.IndexFeatureVersion < ReadMinFeatureVersion {
+		return nil, fmt.Errorf("file is feature version %d, want feature version >= %d", d.metaData.IndexFeatureVersion, ReadMinFeatureVersion)
+	}
+
+	if d.metaData.IndexMinReaderVersion > FeatureVersion {
+		return nil, fmt.Errorf("file needs read feature version >= %d, have read feature version %d", d.metaData.IndexMinReaderVersion, FeatureVersion)
 	}
 
 	d.boundariesStart = toc.fileContents.data.off
