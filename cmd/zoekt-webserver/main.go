@@ -19,7 +19,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"html/template"
@@ -46,7 +45,6 @@ import (
 	"github.com/google/zoekt/web"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/uber/jaeger-client-go"
@@ -224,28 +222,6 @@ func main() {
 	debugserver.AddHandlers(handler, *enablePprof)
 	handler.HandleFunc("/healthz", healthz)
 
-	// Sourcegraph: We use environment variables to configure watchdog since
-	// they are more convenient than flags in containerized environments.
-	watchdogTick := 30 * time.Second
-	if v := os.Getenv("ZOEKT_WATCHDOG_TICK"); v != "" {
-		watchdogTick, _ = time.ParseDuration(v)
-		log.Printf("custom ZOEKT_WATCHDOG_TICK=%v", watchdogTick)
-	}
-	watchdogErrCount := 3
-	if v := os.Getenv("ZOEKT_WATCHDOG_ERRORS"); v != "" {
-		watchdogErrCount, _ = strconv.Atoi(v)
-		log.Printf("custom ZOEKT_WATCHDOG_ERRORS=%d", watchdogErrCount)
-	}
-	watchdogAddr := "http://" + *listen
-	if *sslCert != "" || *sslKey != "" {
-		watchdogAddr = "https://" + *listen
-	}
-	if watchdogErrCount > 0 && watchdogTick > 0 {
-		go watchdog(watchdogTick, watchdogErrCount, watchdogAddr)
-	} else {
-		log.Println("watchdog disabled")
-	}
-
 	srv := &http.Server{
 		Addr:    *listen,
 		Handler: handler,
@@ -324,59 +300,6 @@ func shutdownOnSignal(srv *http.Server) error {
 func healthz(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte("OK"))
-}
-
-func watchdogOnce(ctx context.Context, client *http.Client, addr string) error {
-	defer metricWatchdogTotal.Inc()
-
-	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
-	defer cancel()
-
-	req, err := http.NewRequest("GET", addr, nil)
-	if err != nil {
-		return err
-	}
-
-	req = req.WithContext(ctx)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("watchdog: status %v", resp.StatusCode)
-	}
-	return nil
-}
-
-func watchdog(dt time.Duration, maxErrCount int, addr string) {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{
-		Transport: tr,
-	}
-	tick := time.NewTicker(dt)
-
-	errCount := 0
-	for range tick.C {
-		err := watchdogOnce(context.Background(), client, addr)
-		if err != nil {
-			errCount++
-			metricWatchdogErrors.Set(float64(errCount))
-			metricWatchdogErrorsTotal.Inc()
-			if errCount >= maxErrCount {
-				log.Panicf("watchdog: %v", err)
-			} else {
-				log.Printf("watchdog: failed, will try %d more times: %v", maxErrCount-errCount, err)
-			}
-		} else if errCount > 0 {
-			errCount = 0
-			metricWatchdogErrors.Set(float64(errCount))
-			log.Printf("watchdog: success, resetting error count")
-		}
-	}
 }
 
 func mustRegisterDiskMonitor(path string) {
@@ -554,18 +477,3 @@ func initializeGoogleCloudProfiler() {
 		log.Printf("could not initialize google cloud profiler: %s", err.Error())
 	}
 }
-
-var (
-	metricWatchdogErrors = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "zoekt_webserver_watchdog_errors",
-		Help: "The current error count for zoekt watchdog.",
-	})
-	metricWatchdogTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "zoekt_webserver_watchdog_total",
-		Help: "The total number of requests done by zoekt watchdog.",
-	})
-	metricWatchdogErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "zoekt_webserver_watchdog_errors_total",
-		Help: "The total number of errors from zoekt watchdog.",
-	})
-)
