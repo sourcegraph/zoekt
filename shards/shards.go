@@ -125,10 +125,6 @@ var (
 	})
 )
 
-type repositorer interface {
-	Repository() *zoekt.Repository
-}
-
 type rankedShard struct {
 	zoekt.Searcher
 
