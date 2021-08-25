@@ -16,6 +16,7 @@ package web
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -178,7 +179,24 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 		mux.Handle(stream.DefaultSSEPath, stream.Server(traceAwareSearcher{s.Searcher})) // /stream
 	}
 
+	mux.HandleFunc("/healthz", s.serveHealthz)
+
 	return mux, nil
+}
+
+func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
+	q := &query.Const{Value: true}
+	opts := &zoekt.SearchOptions{ShardMaxMatchCount: 1, TotalMaxMatchCount: 1, MaxDocDisplayCount: 1}
+
+	result, err := s.Searcher.Search(r.Context(), q, opts)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("not ready: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
