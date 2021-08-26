@@ -13,18 +13,28 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// cleanup trashes shards in indexDir that do not exist in repos. For repos
-// that do not exist in indexDir, but do in indexDir/.trash it will move them
-// back into indexDir. Additionally it uses now to remove shards that have
-// been in the trash for 24 hours. It also deletes .tmp files older than 4 hours.
-func cleanup(indexDir string, repos []string, now time.Time) {
-	trashDir := filepath.Join(indexDir, ".trash")
-	if err := os.MkdirAll(trashDir, 0755); err != nil {
-		log.Printf("failed to create trash dir: %v", err)
+func trashDir(indexDir string) (string, error) {
+	dir := filepath.Join(indexDir, ".trash")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create trash dir: %v", err)
+	}
+	return dir, nil
+}
+
+// cleanup trashes shards in indexDir that do not exist in repos. Additionally it
+// uses "now" to remove shards that have been in the trash for 24 hours. It also
+// deletes .tmp files older than 4 hours.
+func (s *Server) cleanup(repos []string, now time.Time) {
+	trashDir, err := trashDir(s.IndexDir)
+	if err != nil {
+		log.Println(err)
 	}
 
+	s.mu2.Lock()
+	defer s.mu2.Unlock()
+
 	trash := getShards(trashDir)
-	index := getShards(indexDir)
+	index := getShards(s.IndexDir)
 
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
@@ -50,18 +60,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 
 	// index: Move missing repos from trash into index
 	for _, repo := range repos {
-		// Delete from index so that index will only contain shards to be
-		// trashed.
 		delete(index, repo)
-
-		shards, ok := trash[repo]
-		if !ok {
-			continue
-		}
-
-		log.Printf("restoring shards from trash for %s", repo)
-		moveAll(indexDir, shards)
-		shardsLog(indexDir, "restore", shards)
 	}
 
 	// index: Move non-existant repos into trash
@@ -73,13 +72,13 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 		}
 
 		moveAll(trashDir, shards)
-		shardsLog(indexDir, "remove", shards)
+		shardsLog(s.IndexDir, "remove", shards)
 	}
 
 	// Remove old .tmp files from crashed indexer runs-- for example, if
 	// an indexer OOMs, it will leave around .tmp files, usually in a loop.
 	maxAge := now.Add(-4 * time.Hour)
-	if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
+	if failures, err := filepath.Glob(filepath.Join(s.IndexDir, "*.tmp")); err != nil {
 		log.Printf("Glob: %v", err)
 	} else {
 		for _, f := range failures {

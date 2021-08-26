@@ -121,6 +121,9 @@ type Server struct {
 
 	mu            sync.Mutex
 	lastListRepos []string
+
+	// mu2 protects the trash and the index.
+	mu2 sync.Mutex
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -267,7 +270,7 @@ func (s *Server) Run(queue *Queue) {
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
-				cleanup(s.IndexDir, repos, time.Now())
+				s.cleanup(repos, time.Now())
 			}()
 
 			start := time.Now()
@@ -381,6 +384,8 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		return indexStateEmpty, s.createEmptyShard(tr, args.Name)
 	}
 
+	s.restore(args.Name)
+
 	if args.Incremental {
 		bo := args.BuildOptions()
 		bo.SetDefaults()
@@ -410,6 +415,43 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	runCmd := func(cmd *exec.Cmd) error { return s.loggedRun(tr, cmd) }
 	metricIndexingTotal.Inc()
 	return indexStateSuccess, gitIndex(args, runCmd)
+}
+
+// restore moves shards from the trash folder back to the index folder on a
+// best-effort basis.
+func (s *Server) restore(repoName string) {
+	s.mu2.Lock()
+	defer s.mu2.Unlock()
+
+	trashDir, err := trashDir(s.IndexDir)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	trash := getShards(trashDir)
+	if len(trash) == 0 {
+		return
+	}
+
+	shards, ok := trash[repoName]
+	if !ok {
+		// Most common case.
+		return
+	}
+
+	// Before we can move the shard from the trash to the index, we have to make sure
+	// we don't conflict with existing shards.
+	index := getShards(s.IndexDir)
+
+	if _, conflict := index[repoName]; conflict {
+		log.Printf("conflict while reviving %s, deleting shards from trash", repoName)
+		removeAll(shards...)
+		return
+	}
+
+	log.Printf("restoring shards from trash for %s", repoName)
+	moveAll(s.IndexDir, shards)
+	shardsLog(s.IndexDir, "restore", shards)
 }
 
 func (s *Server) indexArgs(name string, opts IndexOptions) *indexArgs {
