@@ -271,7 +271,7 @@ func TestEncodeRawConfig(t *testing.T) {
 
 }
 
-func TestBackFillIDIsDeterministic(t *testing.T) {
+func TestBackfillIDIsDeterministic(t *testing.T) {
 	repo := "github.com/a/b"
 	now := time.Now()
 	have1 := BackfillID(now, repo)
