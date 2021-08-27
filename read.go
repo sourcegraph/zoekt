@@ -563,6 +563,8 @@ func PrintNgramStats(r IndexFile) error {
 
 var crc64Table = crc64.MakeTable(crc64.ECMA)
 
+// BackfillID returns a 20 char long sortable ID. The ID only depends on the
+// inputs. It should only be used to set the ID of simple v16 shards on read.
 func BackfillID(t time.Time, s string) string {
 	var id xid.ID
 	binary.BigEndian.PutUint32(id[:], uint32(t.Unix()))
