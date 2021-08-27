@@ -78,6 +78,9 @@ func TestBasic(t *testing.T) {
 		if md.IndexTime != md0.IndexTime {
 			t.Fatalf("wanted identical time stamps but got %v!=%v", md.IndexTime, md0.IndexTime)
 		}
+		if md.ID != md0.ID {
+			t.Fatalf("wanted identical IDs but got %s!=%s", md.ID, md0.ID)
+		}
 	}
 
 	ss, err := shards.NewDirectorySearcher(dir)

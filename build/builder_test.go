@@ -33,6 +33,7 @@ func TestBuildv16(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.indexTime, _ = time.Parse(time.RFC3339, "2018-07-06T18:44:45-07:00")
+	b.id = zoekt.BackfillID(b.indexTime, "github.com/a/b")
 
 	for _, p := range []string{"main.go"} {
 		blob, err := os.ReadFile(filepath.Join("../testdata/repo", p))
