@@ -66,6 +66,20 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("want multiple shards, got %v", fs)
 	}
 
+	_, md0, err := zoekt.ReadMetadataPath(fs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fs[1:] {
+		_, md, err := zoekt.ReadMetadataPath(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if md.IndexTime != md0.IndexTime {
+			t.Fatalf("wanted identical time stamps but got %v!=%v", md.IndexTime, md0.IndexTime)
+		}
+	}
+
 	ss, err := shards.NewDirectorySearcher(dir)
 	if err != nil {
 		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)

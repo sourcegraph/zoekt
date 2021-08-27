@@ -414,6 +414,8 @@ func NewBuilder(opts Options) (*Builder, error) {
 		return nil, err
 	}
 
+	b.indexTime = time.Now()
+
 	return b, nil
 }
 
