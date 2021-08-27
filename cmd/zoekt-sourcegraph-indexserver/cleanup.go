@@ -16,7 +16,7 @@ import (
 )
 
 var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-	Name:    "zoekt_cleanup_duration_seconds",
+	Name:    "index_cleanup_duration_seconds",
 	Help:    "The duration of one cleanup run",
 	Buckets: prometheus.LinearBuckets(1, 1, 10),
 })
