@@ -10,14 +10,23 @@ import (
 	"time"
 
 	"github.com/google/zoekt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+	Name:    "index_cleanup_duration_seconds",
+	Help:    "The duration of one cleanup run",
+	Buckets: prometheus.LinearBuckets(1, 1, 10),
+})
 
 // cleanup trashes shards in indexDir that do not exist in repos. For repos
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
 // back into indexDir. Additionally it uses now to remove shards that have
 // been in the trash for 24 hours. It also deletes .tmp files older than 4 hours.
 func cleanup(indexDir string, repos []string, now time.Time) {
+	start := time.Now()
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
 		log.Printf("failed to create trash dir: %v", err)
@@ -94,6 +103,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			}
 		}
 	}
+	metricCleanupDuration.Observe(time.Since(start).Seconds())
 }
 
 type shard struct {
