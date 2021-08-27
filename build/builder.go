@@ -41,6 +41,7 @@ import (
 	"github.com/bmatcuk/doublestar"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/ctags"
+	"github.com/rs/xid"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -208,6 +209,9 @@ type Builder struct {
 
 	// indexTime is set by tests for doing reproducible builds.
 	indexTime time.Time
+
+	// a sortable 20 chars long id.
+	id string
 }
 
 type finishedShard struct {
@@ -414,7 +418,9 @@ func NewBuilder(opts Options) (*Builder, error) {
 		return nil, err
 	}
 
-	b.indexTime = time.Now()
+	now := time.Now()
+	b.indexTime = now
+	b.id = xid.NewWithTime(now).String()
 
 	return b, nil
 }
@@ -712,6 +718,7 @@ func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 		return nil, err
 	}
 	shardBuilder.IndexTime = b.indexTime
+	shardBuilder.ID = b.id
 	return shardBuilder, nil
 }
 

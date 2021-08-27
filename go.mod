@@ -21,10 +21,10 @@ require (
 	github.com/kevinburke/ssh_config v1.1.0 // indirect
 	github.com/kylelemons/godebug v1.1.0
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
-	github.com/opentracing-contrib/go-stdlib v1.0.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/prometheus/client_golang v1.5.1
 	github.com/prometheus/procfs v0.0.10 // indirect
+	github.com/rs/xid v1.3.0
 	github.com/sergi/go-diff v1.2.0 // indirect
 	github.com/sourcegraph/go-ctags v0.0.0-20210805071240-8c61152fb089
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
