@@ -222,7 +222,6 @@ func main() {
 	}
 
 	debugserver.AddHandlers(handler, *enablePprof)
-	handler.HandleFunc("/healthz", healthz)
 
 	// Sourcegraph: We use environment variables to configure watchdog since
 	// they are more convenient than flags in containerized environments.
@@ -231,15 +230,19 @@ func main() {
 		watchdogTick, _ = time.ParseDuration(v)
 		log.Printf("custom ZOEKT_WATCHDOG_TICK=%v", watchdogTick)
 	}
+
 	watchdogErrCount := 3
 	if v := os.Getenv("ZOEKT_WATCHDOG_ERRORS"); v != "" {
 		watchdogErrCount, _ = strconv.Atoi(v)
 		log.Printf("custom ZOEKT_WATCHDOG_ERRORS=%d", watchdogErrCount)
 	}
+
 	watchdogAddr := "http://" + *listen
 	if *sslCert != "" || *sslKey != "" {
 		watchdogAddr = "https://" + *listen
 	}
+	watchdogAddr += "/healthz"
+
 	if watchdogErrCount > 0 && watchdogTick > 0 {
 		go watchdog(watchdogTick, watchdogErrCount, watchdogAddr)
 	} else {
@@ -316,14 +319,6 @@ func shutdownOnSignal(srv *http.Server) error {
 
 	log.Printf("shutting down")
 	return srv.Shutdown(ctx)
-}
-
-// Always returns 200 OK.
-// Used for kubernetes liveness and readiness checks.
-// https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/
-func healthz(w http.ResponseWriter, req *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte("OK"))
 }
 
 func watchdogOnce(ctx context.Context, client *http.Client, addr string) error {
