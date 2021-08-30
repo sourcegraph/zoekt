@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -323,6 +324,23 @@ func (o *Options) IndexState() IndexState {
 
 	repos, index, err := zoekt.ReadMetadataPath(fn)
 	if os.IsNotExist(err) {
+		// TODO: remove once we support resolving repo name to shard name
+		// Ignore index requests for repos contained in compound shards.
+		compoundShards, err := filepath.Glob(path.Join(o.IndexDir, "compound-*.zoekt"))
+		if err != nil {
+			return IndexStateMissing
+		}
+		for _, fn := range compoundShards {
+			repos, index, err = zoekt.ReadMetadataPath(fn)
+			if err != nil {
+				return IndexStateMissing
+			}
+			for _, repo := range repos {
+				if repo.Name == o.RepositoryDescription.Name {
+					return IndexStateUnexpectedCompound
+				}
+			}
+		}
 		return IndexStateMissing
 	} else if err != nil {
 		return IndexStateCorrupt

@@ -402,6 +402,11 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 		case build.IndexStateCorrupt:
 			log.Printf("falling back to full update: corrupt index: %s", args.String())
+
+			// TODO: Remove this case once we support tombstoning.
+		case build.IndexStateUnexpectedCompound:
+			log.Printf("compound shard: ignoring index request for %s", args.Name)
+			return indexStateNoop, nil
 		}
 	}
 
