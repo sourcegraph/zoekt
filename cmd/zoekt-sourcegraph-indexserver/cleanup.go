@@ -140,17 +140,13 @@ func getShards(dir string) map[string][]shard {
 			continue
 		}
 
-		// TODO support compound shards once we support tombstones
-		if len(names) != 1 {
-			continue
+		for _, name := range names {
+			shards[name] = append(shards[name], shard{
+				Repo:    name,
+				Path:    path,
+				ModTime: fi.ModTime(),
+			})
 		}
-		name := names[0]
-
-		shards[name] = append(shards[name], shard{
-			Repo:    name,
-			Path:    path,
-			ModTime: fi.ModTime(),
-		})
 	}
 	return shards
 }
