@@ -743,7 +743,7 @@ func mkRankedShard(s zoekt.Searcher) rankedShard {
 		if r.Repository.RawConfig != nil {
 			priority, _ := strconv.ParseFloat(r.Repository.RawConfig["priority"], 64)
 			if priority > maxPriority {
-				priority = maxPriority
+				maxPriority = priority
 			}
 		}
 	}
