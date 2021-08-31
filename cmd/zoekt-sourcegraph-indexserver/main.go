@@ -239,6 +239,11 @@ func codeHostFromName(repoName string) string {
 	return repoName
 }
 
+// pauseFileName if present in IndexDir will stop index jobs from
+// running. This is to make it possible to experiment with the content of the
+// IndexDir without the indexserver writing to it.
+const pauseFileName = "PAUSE"
+
 // Run the sync loop. This blocks forever.
 func (s *Server) Run(queue *Queue) {
 	removeIncompleteShards(s.IndexDir)
@@ -246,6 +251,11 @@ func (s *Server) Run(queue *Queue) {
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
 		for range jitterTicker(s.Interval) {
+			if b, err := os.ReadFile(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
+				log.Printf("indexserver manually paused via PAUSE file: %s", string(bytes.TrimSpace(b)))
+				continue
+			}
+
 			repos, err := s.Sourcegraph.ListRepos(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
 				log.Println(err)
@@ -306,6 +316,11 @@ func (s *Server) Run(queue *Queue) {
 
 	// In the current goroutine process the queue forever.
 	for {
+		if _, err := os.Stat(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
+			time.Sleep(time.Second)
+			continue
+		}
+
 		name, opts, ok := queue.Pop()
 		if !ok {
 			time.Sleep(time.Second)
