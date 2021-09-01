@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -32,8 +31,6 @@ func TestBuildv16(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.indexTime, _ = time.Parse(time.RFC3339, "2018-07-06T18:44:45-07:00")
-	b.id = zoekt.BackfillID(b.indexTime, "github.com/a/b")
 
 	for _, p := range []string{"main.go"} {
 		blob, err := os.ReadFile(filepath.Join("../testdata/repo", p))
@@ -43,12 +40,22 @@ func TestBuildv16(t *testing.T) {
 		b.AddFile(p, blob)
 	}
 
+	wantP := filepath.Join("../testdata/shards", "repo_v16.00000.zoekt")
+
+	// fields indexTime and id depend on time. For this test, we copy the fields from
+	// the old shard.
+	_, wantMetadata, err := zoekt.ReadMetadataPath(wantP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.indexTime = wantMetadata.IndexTime
+	b.id = wantMetadata.ID
+
 	if err := b.Finish(); err != nil {
 		t.Fatal(err)
 	}
 
 	gotP := filepath.Join(dir, "repo_v16.00000.zoekt")
-	wantP := filepath.Join("../testdata/shards", "repo_v16.00000.zoekt")
 
 	// uncomment to update
 	//err = os.Rename(gotP, wantP)

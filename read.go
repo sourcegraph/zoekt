@@ -21,7 +21,6 @@ import (
 	"hash/crc64"
 	"os"
 	"sort"
-	"time"
 
 	"github.com/rs/xid"
 )
@@ -347,7 +346,7 @@ func (r *reader) readMetadata(toc *indexTOC) ([]*Repository, *IndexMetadata, err
 		if len(repos) == 0 {
 			return nil, nil, fmt.Errorf("len(repos)=0. Cannot backfill ID")
 		}
-		md.ID = BackfillID(time.Unix(0, 0), repos[0].Name)
+		md.ID = backfillID(repos[0].Name)
 	}
 
 	return repos, &md, nil
@@ -563,11 +562,14 @@ func PrintNgramStats(r IndexFile) error {
 
 var crc64Table = crc64.MakeTable(crc64.ECMA)
 
-// BackfillID returns a 20 char long sortable ID. The ID only depends on the
-// inputs. It should only be used to set the ID of simple v16 shards on read.
-func BackfillID(t time.Time, s string) string {
+// backfillID returns a 20 char long sortable ID. The ID only depends on s. It
+// should only be used to set the ID of simple v16 shards on read.
+func backfillID(s string) string {
 	var id xid.ID
-	binary.BigEndian.PutUint32(id[:], uint32(t.Unix()))
+
+	// Our timestamps are based on Unix time. Shards without IDs are assigned IDs
+	// based on the 0 epoch.
+	binary.BigEndian.PutUint32(id[:], 0)
 	binary.BigEndian.PutUint64(id[4:], crc64.Checksum([]byte(s), crc64Table))
 	return id.String()
 }

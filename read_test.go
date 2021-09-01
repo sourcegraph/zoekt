@@ -21,15 +21,12 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/zoekt/query"
 )
@@ -273,27 +270,10 @@ func TestEncodeRawConfig(t *testing.T) {
 
 func TestBackfillIDIsDeterministic(t *testing.T) {
 	repo := "github.com/a/b"
-	now := time.Now()
-	have1 := BackfillID(now, repo)
-	have2 := BackfillID(now, repo)
+	have1 := backfillID(repo)
+	have2 := backfillID(repo)
 
 	if have1 != have2 {
 		t.Fatalf("%s != %s ", have1, have2)
-	}
-}
-
-func TestBackfillIDIsSortable(t *testing.T) {
-	repo := "github.com/a/b"
-	for i := 0; i < 10; i++ {
-		t1 := time.Unix(rand.Int63(), 0)
-		have1 := BackfillID(t1, repo)
-		have2 := BackfillID(t1.Add(time.Second), repo)
-
-		sorted := []string{have2, have1}
-		sort.Strings(sorted)
-
-		if sorted[0] != have1 {
-			t.Fatalf("IDs should have been sorted by time")
-		}
 	}
 }
