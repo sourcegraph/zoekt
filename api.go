@@ -345,6 +345,7 @@ type IndexMetadata struct {
 	PlainASCII          bool
 	LanguageMap         map[string]byte
 	ZoektVersion        string
+	ID                  string
 }
 
 // Statistics of a (collection of) repositories.

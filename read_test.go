@@ -267,3 +267,13 @@ func TestEncodeRawConfig(t *testing.T) {
 	}
 
 }
+
+func TestBackfillIDIsDeterministic(t *testing.T) {
+	repo := "github.com/a/b"
+	have1 := backfillID(repo)
+	have2 := backfillID(repo)
+
+	if have1 != have2 {
+		t.Fatalf("%s != %s ", have1, have2)
+	}
+}

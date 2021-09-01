@@ -192,6 +192,9 @@ type IndexBuilder struct {
 	// IndexTime will be used as the time if non-zero. Otherwise
 	// time.Now(). This is useful for doing reproducible builds in tests.
 	IndexTime time.Time
+
+	// a sortable 20 chars long id.
+	ID string
 }
 
 func (d *Repository) verify() error {

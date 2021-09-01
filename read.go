@@ -18,8 +18,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/crc64"
 	"os"
 	"sort"
+
+	"github.com/rs/xid"
 )
 
 // IndexFile is a file suitable for concurrent read access. For performance
@@ -339,6 +342,13 @@ func (r *reader) readMetadata(toc *indexTOC) ([]*Repository, *IndexMetadata, err
 		}
 	}
 
+	if md.ID == "" {
+		if len(repos) == 0 {
+			return nil, nil, fmt.Errorf("len(repos)=0. Cannot backfill ID")
+		}
+		md.ID = backfillID(repos[0].Name)
+	}
+
 	return repos, &md, nil
 }
 
@@ -548,4 +558,18 @@ func PrintNgramStats(r IndexFile) error {
 		fmt.Printf("%d\t%q\n", ss.sz, string(rNgram[:]))
 	}
 	return nil
+}
+
+var crc64Table = crc64.MakeTable(crc64.ECMA)
+
+// backfillID returns a 20 char long sortable ID. The ID only depends on s. It
+// should only be used to set the ID of simple v16 shards on read.
+func backfillID(s string) string {
+	var id xid.ID
+
+	// Our timestamps are based on Unix time. Shards without IDs are assigned IDs
+	// based on the 0 epoch.
+	binary.BigEndian.PutUint32(id[:], 0)
+	binary.BigEndian.PutUint64(id[4:], crc64.Checksum([]byte(s), crc64Table))
+	return id.String()
 }
