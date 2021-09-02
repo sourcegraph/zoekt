@@ -123,6 +123,16 @@ var (
 		Name: "zoekt_list_shard_running",
 		Help: "The number of concurrent list requests in a shard running",
 	})
+	metricShardCloseDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "zoekt_shard_close_duration_seconds",
+		Help:    "The time it takes to close a Searcher.",
+		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
+	})
+	metricRankCacheUpdateDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "zoekt_rank_cache_update_duration_seconds",
+		Help:    "The time it takes to update the shard cache with new ranked shards.",
+		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
+	})
 )
 
 type rankedShard struct {
@@ -714,11 +724,13 @@ func (s *shardedSearcher) getShards() []rankedShard {
 	// acquires a write lock to update. Use requiredVersion to ensure our
 	// cached slice is still current after acquiring the write lock.
 	go func(ranked []rankedShard, requiredVersion uint64) {
+		start := time.Now()
 		proc := s.sched.Exclusive()
-		defer proc.Release()
 		if s.rankedVersion == requiredVersion {
 			s.ranked = ranked
 		}
+		proc.Release()
+		metricRankCacheUpdateDurationSeconds.Observe(time.Since(start).Seconds())
 	}(res, s.rankedVersion)
 
 	return res
@@ -766,7 +778,9 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 
 	old := s.shards[key]
 	if old.Searcher != nil {
+		start := time.Now()
 		old.Close()
+		metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
 	}
 
 	if shard == nil {
