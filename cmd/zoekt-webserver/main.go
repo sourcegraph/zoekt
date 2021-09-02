@@ -51,7 +51,6 @@ import (
 
 	"github.com/uber/jaeger-client-go"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
-	jaegerlog "github.com/uber/jaeger-client-go/log"
 	jaegermetrics "github.com/uber/jaeger-lib/metrics"
 )
 
@@ -523,13 +522,24 @@ func initializeJaeger() {
 		cfg.Sampler.Param = 1
 	}
 	tracer, _, err := cfg.NewTracer(
-		jaegercfg.Logger(jaegerlog.StdLogger),
+		jaegercfg.Logger(&jaegerLogger{}),
 		jaegercfg.Metrics(jaegermetrics.NullFactory),
 	)
 	if err != nil {
 		log.Printf("could not initialize jaeger tracer, error: %v", err.Error())
 	}
 	opentracing.SetGlobalTracer(tracer)
+}
+
+type jaegerLogger struct{}
+
+func (l *jaegerLogger) Error(msg string) {
+	log.Printf("ERROR: %s", msg)
+}
+
+// Infof logs a message at info priority
+func (l *jaegerLogger) Infof(msg string, args ...interface{}) {
+	log.Printf(msg, args...)
 }
 
 func initializeGoogleCloudProfiler() {
