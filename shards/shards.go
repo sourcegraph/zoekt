@@ -155,8 +155,8 @@ type shardedSearcher struct {
 
 	shards map[string]rankedShard
 
-	rankedVersion uint64
-	ranked        []rankedShard
+	rankedLock sync.Mutex // guards ranked
+	ranked     []rankedShard
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
@@ -695,14 +695,20 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	return &agg, nil
 }
 
-// getShards returns the currently loaded shards. The shards must be accessed
-// under a rlock call. The shards are sorted by decreasing rank and should not
-// be mutated.
+// getShards returns the currently loaded shards. The shards are sorted by decreasing
+// rank and should not be mutated.
 func (s *shardedSearcher) getShards() []rankedShard {
+	start := time.Now()
+	s.rankedLock.Lock()
+	defer s.rankedLock.Unlock()
 	if len(s.ranked) > 0 {
+		metricRankCacheUpdateDurationSeconds.Observe(time.Since(start).Seconds())
 		return s.ranked
 	}
 
+	// Holding rankedLock during the search ensures that we only perform
+	// the sort once-- any blocked goroutines would take just as long to
+	// perform the sort themselves.
 	res := make([]rankedShard, 0, len(s.shards))
 	for _, sh := range s.shards {
 		res = append(res, sh)
@@ -720,18 +726,7 @@ func (s *shardedSearcher) getShards() []rankedShard {
 		return res[i].names[0] < res[j].names[0]
 	})
 
-	// Cache ranked. We currently hold a read lock, so start a goroutine which
-	// acquires a write lock to update. Use requiredVersion to ensure our
-	// cached slice is still current after acquiring the write lock.
-	go func(ranked []rankedShard, requiredVersion uint64) {
-		start := time.Now()
-		proc := s.sched.Exclusive()
-		if s.rankedVersion == requiredVersion {
-			s.ranked = ranked
-		}
-		proc.Release()
-		metricRankCacheUpdateDurationSeconds.Observe(time.Since(start).Seconds())
-	}(res, s.rankedVersion)
+	s.ranked = res
 
 	return res
 }
@@ -788,8 +783,9 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 	} else {
 		s.shards[key] = ranked
 	}
-	s.rankedVersion++
+	s.rankedLock.Lock()
 	s.ranked = nil
+	s.rankedLock.Unlock()
 
 	metricShardsLoaded.Set(float64(len(s.shards)))
 }
