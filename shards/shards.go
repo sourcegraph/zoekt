@@ -133,6 +133,39 @@ var (
 		Help:    "The time it takes to update the shard cache with new ranked shards.",
 		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
 	})
+
+	metricListAllRepos = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_repos",
+		Help: "The last List(true) value for RepoStats.Repos. Repos is used for aggregrating the number of repositories.",
+	})
+	metricListAllShards = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_shards",
+		Help: "The last List(true) value for RepoStats.Shards. Shards is the total number of search shards.",
+	})
+	metricListAllDocuments = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_documents",
+		Help: "The last List(true) value for RepoStats.Documents. Documents holds the number of documents or files.",
+	})
+	metricListAllIndexBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_index_bytes",
+		Help: "The last List(true) value for RepoStats.IndexBytes. IndexBytes is the amount of RAM used for index overhead.",
+	})
+	metricListAllContentBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_content_bytes",
+		Help: "The last List(true) value for RepoStats.ContentBytes. ContentBytes is the amount of RAM used for raw content.",
+	})
+	metricListAllNewLinesCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_new_lines_count",
+		Help: "The last List(true) value for RepoStats.NewLinesCount.",
+	})
+	metricListAllDefaultBranchNewLinesCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_default_branch_new_lines_count",
+		Help: "The last List(true) value for RepoStats.DefaultBranchNewLinesCount.",
+	})
+	metricListAllOtherBranchesNewLinesCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_other_branches_new_lines_count",
+		Help: "The last List(true) value for RepoStats.OtherBranchesNewLinesCount.",
+	})
 )
 
 type rankedShard struct {
@@ -581,7 +614,6 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 	}()
 
 	ms, err := s.Search(ctx, q, opts)
-
 	if err != nil {
 		return err
 	}
@@ -628,6 +660,12 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		}
 		tr.Finish()
 	}()
+
+	r = query.Simplify(r)
+	isAll := false
+	if c, ok := r.(*query.Const); ok {
+		isAll = c.Value
+	}
 
 	proc, err := ss.sched.Acquire(ctx)
 	if err != nil {
@@ -692,7 +730,28 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		agg.Repos = append(agg.Repos, r)
 	}
 
+	isMinimal := opts != nil && opts.Minimal
+	if isAll && !isMinimal {
+		reportListAllMetrics(agg.Repos)
+	}
+
 	return &agg, nil
+}
+
+func reportListAllMetrics(repos []*zoekt.RepoListEntry) {
+	var stats zoekt.RepoStats
+	for _, r := range repos {
+		stats.Add(&r.Stats)
+	}
+
+	metricListAllRepos.Set(float64(stats.Repos))
+	metricListAllIndexBytes.Set(float64(stats.IndexBytes))
+	metricListAllContentBytes.Set(float64(stats.ContentBytes))
+	metricListAllDocuments.Set(float64(stats.Documents))
+	metricListAllShards.Set(float64(stats.Shards))
+	metricListAllNewLinesCount.Set(float64(stats.NewLinesCount))
+	metricListAllDefaultBranchNewLinesCount.Set(float64(stats.DefaultBranchNewLinesCount))
+	metricListAllOtherBranchesNewLinesCount.Set(float64(stats.OtherBranchesNewLinesCount))
 }
 
 // getShards returns the currently loaded shards. The shards are sorted by decreasing
@@ -769,15 +828,8 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 	}
 
 	proc := s.sched.Exclusive()
-	defer proc.Release()
 
 	old := s.shards[key]
-	if old.Searcher != nil {
-		start := time.Now()
-		old.Close()
-		metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
-	}
-
 	if shard == nil {
 		delete(s.shards, key)
 	} else {
@@ -786,6 +838,14 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 	s.rankedLock.Lock()
 	s.ranked = nil
 	s.rankedLock.Unlock()
+
+	proc.Release()
+
+	if old.Searcher != nil {
+		start := time.Now()
+		old.Close()
+		metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
+	}
 
 	metricShardsLoaded.Set(float64(len(s.shards)))
 }
