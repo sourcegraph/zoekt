@@ -614,7 +614,6 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 	}()
 
 	ms, err := s.Search(ctx, q, opts)
-
 	if err != nil {
 		return err
 	}
@@ -834,15 +833,8 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 	}
 
 	proc := s.sched.Exclusive()
-	defer proc.Release()
 
 	old := s.shards[key]
-	if old.Searcher != nil {
-		start := time.Now()
-		old.Close()
-		metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
-	}
-
 	if shard == nil {
 		delete(s.shards, key)
 	} else {
@@ -850,6 +842,14 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 	}
 	s.rankedVersion++
 	s.ranked = nil
+
+	proc.Release()
+
+	if old.Searcher != nil {
+		start := time.Now()
+		old.Close()
+		metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
+	}
 
 	metricShardsLoaded.Set(float64(len(s.shards)))
 }
