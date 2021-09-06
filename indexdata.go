@@ -192,11 +192,6 @@ func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoStats {
 	// after aggregation. For now I will move forward with this until we can
 	// chat more.
 	return RepoStats{
-		// CR keegan for stefan: we also sum this. It is displayed in the zoekt
-		// interface, so doesn't really affect us. We do expose it on index
-		// information, so it may surprise some admins that a small repo uses a
-		// lot of memory.
-		IndexBytes:   int64(d.memoryUse()),
 		ContentBytes: int64(int(last) + int(lastFN)),
 		Documents:    int(end - start),
 		// CR keegan for stefan: our shard count is going to go out of whack,
@@ -230,6 +225,22 @@ func (d *indexData) calculateStats() error {
 			Stats:         d.calculateStatsForFileRange(start, end),
 		})
 		start = end
+	}
+
+	// All repos in a compound shard share memoryUse. So we average out the
+	// memoryUse per shard in our reporting. This has the benefit that when you
+	// aggregate the IndexBytes you get back the actual memoryUse.
+	//
+	// TODO take into account tombstones for aggregation. Even better, adjust
+	// API to be shard centric not repo centric.
+	if len(d.repoListEntry) > 0 {
+		indexBytes := d.memoryUse()
+		indexBytesChunk := indexBytes / len(d.repoListEntry)
+		for i := range d.repoListEntry {
+			d.repoListEntry[i].Stats.IndexBytes = int64(indexBytesChunk)
+			indexBytes -= indexBytesChunk
+		}
+		d.repoListEntry[0].Stats.IndexBytes += int64(indexBytes)
 	}
 
 	return nil
