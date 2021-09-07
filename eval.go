@@ -195,7 +195,7 @@ nextFileMatch:
 
 		if canceled || (res.Stats.MatchCount >= opts.ShardMaxMatchCount && opts.ShardMaxMatchCount > 0) ||
 			(opts.ShardMaxImportantMatch > 0 && importantMatchCount >= opts.ShardMaxImportantMatch) {
-			res.Stats.FilesSkipped += d.repoListEntry[d.repos[nextDoc]].Stats.Documents - lastDoc
+			res.Stats.FilesSkipped += int(docCount - nextDoc)
 			break
 		}
 
