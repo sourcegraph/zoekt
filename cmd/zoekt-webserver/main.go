@@ -298,9 +298,17 @@ func shutdownOnSignal(srv *http.Server) error {
 		}
 	}()
 
+	// Feature flagged. If we are not respecting ready status, we don't need to
+	// wait for it to propogate. This is the case currently for sourcegraph.com
+	// due to using our custom statefulset service discovery.
+	fast := os.Getenv("SHUTDOWN_MODE") == "fast"
+	if fast {
+		log.Println("SHUTDOWN_MODE=fast so not waiting for unready state to propogate")
+	}
+
 	// SIGTERM is sent by kubernetes. We give 15s to allow our endpoint to be
 	// removed from service discovery before draining traffic.
-	if sig == syscall.SIGTERM {
+	if sig == syscall.SIGTERM && !fast {
 		wait := 15 * time.Second
 		log.Printf("received SIGTERM, waiting %v before shutting down", wait)
 		select {
