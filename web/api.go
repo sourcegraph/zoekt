@@ -103,6 +103,8 @@ type Repository struct {
 
 	// Total amount of content bytes.
 	Size int64
+	// Total resident RAM usage in bytes.
+	MemorySize int64
 }
 
 // PrintInput is provided to the server.Print template.
