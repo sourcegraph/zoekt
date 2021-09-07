@@ -250,6 +250,8 @@ func (s *DirectoryWatcher) watch() error {
 	go func() {
 		defer close(s.stopped)
 		for range signal {
+			// 1s to settle
+			time.Sleep(time.Second)
 			s.scan()
 		}
 	}()
