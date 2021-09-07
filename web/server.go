@@ -462,6 +462,10 @@ func (s *Server) serveListReposErr(q query.Q, qStr string, w http.ResponseWriter
 		sort.Slice(repos.Repos, func(i, j int) bool {
 			return repos.Repos[i].Stats.ContentBytes < repos.Repos[j].Stats.ContentBytes
 		})
+	case "ram", "revram":
+		sort.Slice(repos.Repos, func(i, j int) bool {
+			return repos.Repos[i].Stats.IndexBytes < repos.Repos[j].Stats.IndexBytes
+		})
 	case "time", "revtime":
 		sort.Slice(repos.Repos, func(i, j int) bool {
 			return repos.Repos[i].IndexMetadata.IndexTime.Before(
@@ -485,13 +489,6 @@ func (s *Server) serveListReposErr(q query.Q, qStr string, w http.ResponseWriter
 	for _, s := range repos.Repos {
 		aggregate.Add(&s.Stats)
 	}
-	res := RepoListInput{
-		Last: LastInput{
-			Query:     qStr,
-			AutoFocus: true,
-		},
-		Stats: aggregate,
-	}
 
 	numStr := qvals.Get("num")
 	num, err := strconv.Atoi(numStr)
@@ -506,15 +503,25 @@ func (s *Server) serveListReposErr(q query.Q, qStr string, w http.ResponseWriter
 		repos.Repos = repos.Repos[:num]
 	}
 
+	res := RepoListInput{
+		Last: LastInput{
+			Query:     qStr,
+			Num:       num,
+			AutoFocus: true,
+		},
+		Stats: aggregate,
+	}
+
 	for _, r := range repos.Repos {
 		t := s.getTemplate(r.Repository.CommitURLTemplate)
 
 		repo := Repository{
-			Name:      r.Repository.Name,
-			URL:       r.Repository.URL,
-			IndexTime: r.IndexMetadata.IndexTime,
-			Size:      r.Stats.ContentBytes,
-			Files:     int64(r.Stats.Documents),
+			Name:       r.Repository.Name,
+			URL:        r.Repository.URL,
+			IndexTime:  r.IndexMetadata.IndexTime,
+			Size:       r.Stats.ContentBytes,
+			MemorySize: r.Stats.IndexBytes,
+			Files:      int64(r.Stats.Documents),
 		}
 		for _, b := range r.Repository.Branches {
 			var buf bytes.Buffer

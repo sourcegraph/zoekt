@@ -126,7 +126,7 @@ func TestBasic(t *testing.T) {
 			"Found 1 repositories",
 			nowStr,
 			"repo-url\">name",
-			"1 files (36)",
+			"1 files (36B)",
 		},
 		"/search?q=magic": {
 			`value=magic`,
