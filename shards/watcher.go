@@ -161,10 +161,9 @@ func (s *DirectoryWatcher) scan() error {
 	}
 
 	if len(toDrop) > 0 {
-		log.Printf("unloading %d shard(s)", len(toDrop))
+		log.Printf("unloading %d shard(s): %s", len(toDrop), humanTruncateList(toDrop, 5))
 	}
 	for _, t := range toDrop {
-		log.Printf("unloading: %s", filepath.Base(t))
 		s.loader.drop(t)
 	}
 
