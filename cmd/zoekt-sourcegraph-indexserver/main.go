@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -107,6 +108,7 @@ const (
 // exists to conveniently use all the options passed in via func main.
 type Server struct {
 	Sourcegraph Sourcegraph
+	BatchSize   int
 
 	// IndexDir is the index directory to use.
 	IndexDir string
@@ -269,7 +271,7 @@ func (s *Server) Run(queue *Queue) {
 			tr.LazyPrintf("getting index options for %d repos", len(repos))
 
 			// We ask the frontend to get index options in batches.
-			for repos := range batched(repos, 1000) {
+			for repos := range batched(repos, s.BatchSize) {
 				start := time.Now()
 				opts, err := s.Sourcegraph.GetIndexOptions(repos...)
 				if err != nil {
@@ -662,6 +664,15 @@ func main() {
 		log.Fatalf("url.Parse(%v): %v", *root, err)
 	}
 
+	var batchSize int = 1000
+	batchSizeStr := os.Getenv("SRC_REPO_CONFIG_BATCH_SIZE")
+	if batchSizeStr != "" {
+		batchSize, err = strconv.Atoi(batchSizeStr)
+		if err != nil {
+			log.Fatal("Invalid value for SRC_REPO_CONFIG_BATCH_SIZE, must be int")
+		}
+	}
+
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	maxprocs.Set()
 
@@ -707,6 +718,7 @@ func main() {
 	}
 	s := &Server{
 		Sourcegraph: sg,
+		BatchSize:   batchSize,
 		IndexDir:    *index,
 		Interval:    *interval,
 		CPUCount:    cpuCount,
