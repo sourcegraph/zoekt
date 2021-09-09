@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -68,15 +67,15 @@ var (
 		Help: "A count of the state on disk vs what we want to build. See zoekt/build.IndexState.",
 	}, []string{"state"}) // state is build.IndexState
 
-	metricNumIndexed = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	metricNumIndexed = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "index_num_indexed",
 		Help: "Number of indexed repos by code host",
-	}, []string{"codehost"})
+	})
 
-	metricNumAssigned = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	metricNumAssigned = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "index_num_assigned",
 		Help: "Number of repos assigned to this indexer by code host",
-	}, []string{"codehost"})
+	})
 
 	metricFailingTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "index_failing_total",
@@ -222,21 +221,6 @@ func (sb *synchronizedBuffer) String() string {
 	sb.mu.Lock()
 	defer sb.mu.Unlock()
 	return sb.b.String()
-}
-
-func codeHostFromName(repoName string) string {
-	if i := strings.Index(repoName, "/"); i >= 0 {
-		repoName = repoName[:i]
-	}
-
-	// basic check that codehost is a domain. We want to avoid returning high
-	// cardinality fields (for example if Sourcegraph is configured to not
-	// include the hostname in repoName).
-	if !strings.Contains(repoName, ".") {
-		return "unknown"
-	}
-
-	return repoName
 }
 
 // pauseFileName if present in IndexDir will stop index jobs from
@@ -556,17 +540,12 @@ func (s *Server) forceIndex(name string) (string, error) {
 
 func listIndexed(indexDir string) []string {
 	index := getShards(indexDir)
+	metricNumIndexed.Set(float64(len(index)))
 	repoNames := make([]string, 0, len(index))
-	countsByHost := make(map[string]int)
 	for name := range index {
 		repoNames = append(repoNames, name)
-		codeHost := codeHostFromName(name)
-		countsByHost[codeHost] += 1
 	}
 	sort.Strings(repoNames)
-	for codeHost, count := range countsByHost {
-		metricNumIndexed.WithLabelValues(codeHost).Set(float64(count))
-	}
 	return repoNames
 }
 

@@ -116,14 +116,8 @@ func (s *sourcegraphClient) ListRepos(ctx context.Context, indexed []string) ([]
 		return nil, err
 	}
 
-	countsByHost := make(map[string]int)
-	for _, name := range data.RepoNames {
-		codeHost := codeHostFromName(name)
-		countsByHost[codeHost] += 1
-	}
-	for codeHost, count := range countsByHost {
-		metricNumAssigned.WithLabelValues(codeHost).Set(float64(count))
-	}
+	metricNumAssigned.Set(float64(len(data.RepoNames)))
+
 	return data.RepoNames, nil
 }
 
