@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -234,7 +235,11 @@ func (s *Server) Run(queue *Queue) {
 
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
-		for range jitterTicker(s.Interval) {
+		// We update the list of indexed repos every Interval. To speed up manual
+		// testing we also listen for SIGUSR1 to trigger updates.
+		//
+		// "pkill -SIGUSR1 zoekt-sourcegra"
+		for range jitterTicker(s.Interval, syscall.SIGUSR1) {
 			if b, err := os.ReadFile(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
 				log.Printf("indexserver manually paused via PAUSE file: %s", string(bytes.TrimSpace(b)))
 				continue
@@ -344,7 +349,10 @@ func batched(slice []string, size int) <-chan []string {
 
 // jitterTicker returns a ticker which ticks with a jitter. Each tick is
 // uniformly selected from the range (d/2, d + d/2). It will tick on creation.
-func jitterTicker(d time.Duration) <-chan struct{} {
+//
+// sig is a list of signals which also cause the ticker to fire. This is a
+// convenience to allow manually triggering of the ticker.
+func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 	ticker := make(chan struct{})
 
 	go func() {
@@ -353,6 +361,18 @@ func jitterTicker(d time.Duration) <-chan struct{} {
 			ns := int64(d)
 			jitter := rand.Int63n(ns)
 			time.Sleep(time.Duration(ns/2 + jitter))
+		}
+	}()
+
+	go func() {
+		if len(sig) == 0 {
+			return
+		}
+
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, sig...)
+		for range c {
+			ticker <- struct{}{}
 		}
 	}()
 
