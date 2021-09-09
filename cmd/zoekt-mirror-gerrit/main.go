@@ -119,7 +119,9 @@ func main() {
 
 	var projectURL string
 	for _, s := range []string{"http", "anonymous http"} {
-		projectURL = info.Download.Schemes[s].URL
+		if projectURL == "" {
+			projectURL = info.Download.Schemes[s].URL
+		}
 	}
 	if projectURL == "" {
 		log.Fatalf("project URL is empty, got Schemes %#v", info.Download.Schemes)
