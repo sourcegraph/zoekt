@@ -195,7 +195,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestDontCountSkippedFiles(t *testing.T) {
+func TestDontCountContentOfSkippedFiles(t *testing.T) {
 	b, err := NewBuilder(Options{RepositoryDescription: zoekt.Repository{
 		Name: "foo",
 	}})
@@ -203,11 +203,11 @@ func TestDontCountSkippedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	binary := "abc def \x00 abc"
-
+	// content with at least 100 bytes
+	binary := append([]byte("abc def \x00"), make([]byte, 100)...)
 	err = b.Add(zoekt.Document{
 		Name:    "f1",
-		Content: []byte(binary),
+		Content: binary,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -215,7 +215,7 @@ func TestDontCountSkippedFiles(t *testing.T) {
 	if len(b.todo) != 1 || b.todo[0].SkipReason == "" {
 		t.Fatalf("document should have been skipped")
 	}
-	if b.size != 0 {
-		t.Fatalf("skipped documents should not count towards shard size thresold")
+	if b.size >= 100 {
+		t.Fatalf("content of skipped documents should not count towards shard size thresold")
 	}
 }
