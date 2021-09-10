@@ -1,6 +1,7 @@
 FROM alpine
 
-RUN apk add --no-cache ca-certificates bind-tools tini
+RUN apk update --no-cache && apk upgrade --no-cache && \
+   apk add --no-cache ca-certificates bind-tools tini
 
 # Run as non-root user sourcegraph. External volumes should be mounted under /data (which will be owned by sourcegraph).
 RUN mkdir -p /home/sourcegraph
