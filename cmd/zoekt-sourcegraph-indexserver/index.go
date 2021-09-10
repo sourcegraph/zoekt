@@ -4,18 +4,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -43,15 +40,23 @@ type IndexOptions struct {
 
 	// Priority indicates ranking in results, higher first.
 	Priority float64
+
+	// Public is true if the repository is public.
+	Public bool
+
+	// Fork is true if the repository is a fork.
+	Fork bool
+
+	// Archived is true if the repository is archived.
+	Archived bool
 }
 
-// indexArgs represents the arguments we pass to zoekt-archive-index
+// indexArgs represents the arguments we pass to zoekt-git-index
 type indexArgs struct {
 	IndexOptions
 
-	// Root is the base URL for the Sourcegraph instance to index. Normally
-	// http://sourcegraph-frontend-internal or http://localhost:3090.
-	Root *url.URL
+	// CloneURL is the remote git URL of the repository for cloning.
+	CloneURL string
 
 	// Name is the name of the repository.
 	Name string
@@ -76,25 +81,22 @@ type indexArgs struct {
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
 func (o *indexArgs) BuildOptions() *build.Options {
-	rawConfig := map[string]string{}
-	if o.IndexOptions.RepoID > 0 {
-		// NOTE(keegan): 2020-08-13 This is currently not read anywhere. We are
-		// setting it so in a few releases all indexes should have it set.
-		rawConfig["repoid"] = strconv.Itoa(int(o.IndexOptions.RepoID))
-	}
-
-	if o.Priority != 0 {
-		rawConfig["priority"] = strconv.FormatFloat(o.Priority, 'g', -1, 64)
-	}
-
 	return &build.Options{
-		// It is important that this RepositoryDescription exactly matches
-		// what the indexer we call will produce. This is to ensure that
-		// IncrementalSkipIndexing returns true if nothing needs to be done.
+		// It is important that this RepositoryDescription exactly matches what
+		// the indexer we call will produce. This is to ensure that
+		// IncrementalSkipIndexing and IndexState can correctly calculate if
+		// nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
-			Name:      o.Name,
-			Branches:  o.Branches,
-			RawConfig: rawConfig,
+			ID:       uint32(o.IndexOptions.RepoID),
+			Name:     o.Name,
+			Branches: o.Branches,
+			RawConfig: map[string]string{
+				"repoid":   strconv.Itoa(int(o.IndexOptions.RepoID)),
+				"priority": strconv.FormatFloat(o.Priority, 'g', -1, 64),
+				"public":   marshalBool(o.Public),
+				"fork":     marshalBool(o.Fork),
+				"archived": marshalBool(o.Archived),
+			},
 		},
 		IndexDir:         o.IndexDir,
 		Parallelism:      o.Parallelism,
@@ -103,6 +105,13 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		CTagsMustSucceed: o.Symbols,
 		DisableCTags:     !o.Symbols,
 	}
+}
+
+func marshalBool(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
 }
 
 func (o *indexArgs) String() string {
@@ -115,85 +124,6 @@ func (o *indexArgs) String() string {
 		}
 	}
 	return s
-}
-
-// indexOptionsItem wraps IndexOptions to also include an error returned by
-// the API.
-type indexOptionsItem struct {
-	IndexOptions
-	Error string
-}
-
-func getIndexOptions(root *url.URL, repos ...string) ([]indexOptionsItem, error) {
-	u := root.ResolveReference(&url.URL{
-		Path: "/.internal/search/configuration",
-	})
-
-	resp, err := client.PostForm(u.String(), url.Values{"repo": repos})
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
-		_ = resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-		return nil, &url.Error{
-			Op:  "Get",
-			URL: u.String(),
-			Err: fmt.Errorf("%s: %s", resp.Status, string(b)),
-		}
-	}
-
-	opts := make([]indexOptionsItem, len(repos))
-	dec := json.NewDecoder(resp.Body)
-	for i := range opts {
-		if err := dec.Decode(&opts[i]); err != nil {
-			return nil, fmt.Errorf("error decoding body: %w", err)
-		}
-	}
-
-	return opts, nil
-}
-
-func archiveIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
-	// An index should never take longer than an hour.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
-	defer cancel()
-
-	if len(o.Branches) != 1 {
-		return fmt.Errorf("zoekt-archive-index only supports 1 branch, got %v", o.Branches)
-	}
-
-	commit := o.Branches[0].Version
-	args := []string{
-		"-name", o.Name,
-		"-commit", commit,
-		"-branch", o.Branches[0].Name,
-	}
-
-	// Even though we check for incremental in this process, we still pass it
-	// in just in case we regress in how we check in process. We will still
-	// notice thanks to metrics and increased load on gitserver.
-	if o.Incremental {
-		args = append(args, "-incremental")
-	}
-
-	if o.DownloadLimitMBPS != "" {
-		args = append(args, "-download-limit-mbps", o.DownloadLimitMBPS)
-	}
-
-	args = append(args, o.BuildOptions().Args()...)
-
-	args = append(args, o.Root.ResolveReference(&url.URL{Path: fmt.Sprintf("/.internal/git/%s/tar/%s", o.Name, commit)}).String())
-
-	cmd := exec.CommandContext(ctx, "zoekt-archive-index", args...)
-	// Prevent prompting
-	cmd.Stdin = &bytes.Buffer{}
-	return runCmd(cmd)
 }
 
 func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
@@ -233,8 +163,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	// We shallow fetch each commit specified in zoekt.Branches. This requires
 	// the server to have configured both uploadpack.allowAnySHA1InWant and
 	// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
-	cloneURL := o.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", o.Name)}).String()
-	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", cloneURL}
+	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
 	for _, b := range o.Branches {
 		fetchArgs = append(fetchArgs, b.Version)
 	}
@@ -257,15 +186,23 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		}
 	}
 
-	// zoekt.name is used by zoekt-git-index to set the repository name.
-	cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt.name", o.Name)
-	cmd.Stdin = &bytes.Buffer{}
-	if err := runCmd(cmd); err != nil {
-		return err
+	// create git config with options
+	type configKV struct{ Key, Value string }
+	config := []configKV{{
+		// zoekt.name is used by zoekt-git-index to set the repository name.
+		Key:   "name",
+		Value: o.Name,
+	}}
+	for k, v := range buildOptions.RepositoryDescription.RawConfig {
+		config = append(config, configKV{Key: k, Value: v})
 	}
+	sort.Slice(config, func(i, j int) bool {
+		return config[i].Key < config[j].Key
+	})
 
-	for key, value := range buildOptions.RepositoryDescription.RawConfig {
-		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt."+key, value)
+	// write config to repo
+	for _, kv := range config {
+		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt."+kv.Key, kv.Value)
 		cmd.Stdin = &bytes.Buffer{}
 		if err := runCmd(cmd); err != nil {
 			return err

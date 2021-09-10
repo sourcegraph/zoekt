@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -19,22 +18,23 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strings"
+	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/profiler"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/debugserver"
+	"github.com/hashicorp/go-retryablehttp"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
 	"github.com/google/zoekt/build"
-	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -64,24 +64,19 @@ var (
 		Buckets: prometheus.ExponentialBuckets(.1, 10, 7), // 100ms -> 27min
 	}, []string{"state"}) // state is an indexState
 
-	metricNumIndexed = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	metricIndexIncrementalIndexState = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "index_incremental_index_state",
+		Help: "A count of the state on disk vs what we want to build. See zoekt/build.IndexState.",
+	}, []string{"state"}) // state is build.IndexState
+
+	metricNumIndexed = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "index_num_indexed",
 		Help: "Number of indexed repos by code host",
-	}, []string{"codehost"})
-
-	metricNumAssigned = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "index_num_assigned",
-		Help: "Number of repos assigned to this indexer by code host",
-	}, []string{"codehost"})
-
-	metricNumPriorities = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "index_priorities_total",
-		Help: "Number of indexed repos with non-zero priorities",
 	})
 
-	metricNumPriorityUpdates = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "index_priorities_update_total",
-		Help: "Total number of times repo ranking has been written to priority.json",
+	metricNumAssigned = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "index_num_assigned",
+		Help: "Number of repos assigned to this indexer by code host",
 	})
 
 	metricFailingTotal = promauto.NewCounter(prometheus.CounterOpts{
@@ -103,18 +98,18 @@ var (
 type indexState string
 
 const (
-	indexStateFail    indexState = "fail"
-	indexStateSuccess            = "success"
-	indexStateNoop               = "noop"  // We didn't need to update index
-	indexStateEmpty              = "empty" // index is empty (empty repo)
+	indexStateFail        indexState = "fail"
+	indexStateSuccess                = "success"
+	indexStateSuccessMeta            = "success_meta" // We only updated metadata
+	indexStateNoop                   = "noop"         // We didn't need to update index
+	indexStateEmpty                  = "empty"        // index is empty (empty repo)
 )
 
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
 // exists to conveniently use all the options passed in via func main.
 type Server struct {
-	// Root is the base URL for the Sourcegraph instance to index. Normally
-	// http://sourcegraph-frontend-internal or http://localhost:3090.
-	Root *url.URL
+	Sourcegraph Sourcegraph
+	BatchSize   int
 
 	// IndexDir is the index directory to use.
 	IndexDir string
@@ -122,28 +117,15 @@ type Server struct {
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
 
-	// Hostname is the name we advertise to Sourcegraph when asking for the
-	// list of repositories to index.
-	Hostname string
-
 	// CPUCount is the amount of parallelism to use when indexing a
 	// repository.
 	CPUCount int
-
-	// Indexer is the indexer to use. Either archiveIndex (default) or the
-	// experimental gitIndex.
-	Indexer func(*indexArgs, func(*exec.Cmd) error) error
 
 	mu            sync.Mutex
 	lastListRepos []string
 }
 
-var client = retryablehttp.NewClient()
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
-
-func init() {
-	client.Logger = debug
-}
 
 // our index commands should output something every 100mb they process.
 //
@@ -178,6 +160,10 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 		errC <- cmd.Wait()
 	}()
 
+	// This channel is set after we have sent sigquit. It allows us to follow up
+	// with a sigkill if the process doesn't quit after sigquit.
+	kill := make(<-chan time.Time)
+
 	lastLen := 0
 	for {
 		select {
@@ -187,10 +173,20 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 				lastLen = out.Len()
 				log.Printf("still running %s", cmd.Args)
 			} else {
-				log.Printf("no output for %s, killing %s", noOutputTimeout, cmd.Args)
-				if err := cmd.Process.Kill(); err != nil {
-					log.Println("kill failed:", err)
+				// Send quit (C-\) first so we get a stack dump.
+				log.Printf("no output for %s, quitting %s", noOutputTimeout, cmd.Args)
+				if err := cmd.Process.Signal(syscall.SIGQUIT); err != nil {
+					log.Println("quit failed:", err)
 				}
+
+				// send sigkill if still running in 10s
+				kill = time.After(10 * time.Second)
+			}
+
+		case <-kill:
+			log.Printf("still running, killing %s", cmd.Args)
+			if err := cmd.Process.Kill(); err != nil {
+				log.Println("kill failed:", err)
 			}
 
 		case err := <-errC:
@@ -230,30 +226,28 @@ func (sb *synchronizedBuffer) String() string {
 	return sb.b.String()
 }
 
-func codeHostFromName(repoName string) string {
-	if i := strings.Index(repoName, "/"); i >= 0 {
-		repoName = repoName[:i]
-	}
-
-	// basic check that codehost is a domain. We want to avoid returning high
-	// cardinality fields (for example if Sourcegraph is configured to not
-	// include the hostname in repoName).
-	if !strings.Contains(repoName, ".") {
-		return "unknown"
-	}
-
-	return repoName
-}
+// pauseFileName if present in IndexDir will stop index jobs from
+// running. This is to make it possible to experiment with the content of the
+// IndexDir without the indexserver writing to it.
+const pauseFileName = "PAUSE"
 
 // Run the sync loop. This blocks forever.
 func (s *Server) Run(queue *Queue) {
 	removeIncompleteShards(s.IndexDir)
-	waitForFrontend(s.Root)
 
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
-		for range jitterTicker(s.Interval) {
-			repos, err := listRepos(context.Background(), s.Hostname, s.Root, listIndexed(s.IndexDir))
+		// We update the list of indexed repos every Interval. To speed up manual
+		// testing we also listen for SIGUSR1 to trigger updates.
+		//
+		// "pkill -SIGUSR1 zoekt-sourcegra"
+		for range jitterTicker(s.Interval, syscall.SIGUSR1) {
+			if b, err := os.ReadFile(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
+				log.Printf("indexserver manually paused via PAUSE file: %s", string(bytes.TrimSpace(b)))
+				continue
+			}
+
+			repos, err := s.Sourcegraph.ListRepos(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
 				log.Println(err)
 				continue
@@ -281,12 +275,10 @@ func (s *Server) Run(queue *Queue) {
 			tr := trace.New("getIndexOptions", "")
 			tr.LazyPrintf("getting index options for %d repos", len(repos))
 
-			newPriorities := make(map[string]float64)
-
 			// We ask the frontend to get index options in batches.
-			for repos := range batched(repos, 1000) {
+			for repos := range batched(repos, s.BatchSize) {
 				start := time.Now()
-				opts, err := getIndexOptions(s.Root, repos...)
+				opts, err := s.Sourcegraph.GetIndexOptions(repos...)
 				if err != nil {
 					metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
 					tr.LazyPrintf("failed fetching options batch: %v", err)
@@ -302,13 +294,9 @@ func (s *Server) Run(queue *Queue) {
 						tr.SetError()
 						continue
 					}
-					if opt.Priority != 0 {
-						newPriorities[name] = opt.Priority
-					}
 					queue.AddOrUpdate(name, opt.IndexOptions)
 				}
 			}
-			s.maybeUpdatePriorities(repos, newPriorities)
 
 			metricResolveRevisionsDuration.Observe(time.Since(start).Seconds())
 			tr.Finish()
@@ -319,84 +307,31 @@ func (s *Server) Run(queue *Queue) {
 
 	// In the current goroutine process the queue forever.
 	for {
+		if _, err := os.Stat(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
+			time.Sleep(time.Second)
+			continue
+		}
+
 		name, opts, ok := queue.Pop()
 		if !ok {
 			time.Sleep(time.Second)
 			continue
 		}
 		start := time.Now()
-		args := s.defaultArgs()
-		args.Name = name
-		args.IndexOptions = opts
+		args := s.indexArgs(name, opts)
 		state, err := s.Index(args)
 		metricIndexDuration.WithLabelValues(string(state)).Observe(time.Since(start).Seconds())
 		if err != nil {
 			log.Printf("error indexing %s: %s", args.String(), err)
-			queue.SetLastIndexFailed(name)
-			continue
 		}
-		if state == indexStateSuccess {
+		switch state {
+		case indexStateSuccess:
 			log.Printf("updated index %s in %v", args.String(), time.Since(start))
+		case indexStateSuccessMeta:
+			log.Printf("updated meta %s in %v", args.String(), time.Since(start))
 		}
 		queue.SetIndexed(name, opts, state)
 	}
-}
-
-// Update priority.json given new entries, and remove no longer tracked repos.
-// This doesn't simply write newPriorities because a transient getIndexOptions failure
-// would cause the associated repo to get deprioritized.
-func (s *Server) maybeUpdatePriorities(names []string, newPriorities map[string]float64) {
-	priorityPath := path.Join(s.IndexDir, "priority.json")
-	priorities := map[string]float64{}
-	buf, err := ioutil.ReadFile(priorityPath)
-	if err == nil {
-		err = json.Unmarshal(buf, &priorities)
-		if err != nil {
-			log.Printf("warning: error loading old priority.json, treating as empty: %v", err)
-		}
-	}
-
-	// maybe remove no-longer-tracked repos from the priorities list
-	if len(names) != len(priorities) {
-		set := make(map[string]struct{}, len(names))
-		for _, name := range names {
-			set[name] = struct{}{}
-		}
-		for name := range priorities {
-			if _, ok := set[name]; !ok {
-				delete(priorities, name)
-			}
-		}
-	}
-
-	for name, priority := range newPriorities {
-		priorities[name] = priority
-	}
-
-	metricNumPriorities.Set(float64(len(priorities)))
-
-	newBuf, err := json.Marshal(priorities)
-	if err != nil {
-		log.Printf("error marshaling new priority.json: %v", err)
-	}
-	newBuf = append(newBuf, '\n') // prettier
-
-	if bytes.Equal(buf, newBuf) {
-		return // no need to rewrite priority.json
-	}
-
-	err = ioutil.WriteFile(priorityPath+".tmp", newBuf, 0644)
-	if err != nil {
-		log.Printf("error writing new priority.json: %v", err)
-		return
-	}
-
-	err = os.Rename(priorityPath+".tmp", priorityPath)
-	if err != nil {
-		log.Printf("error renaming new priority.json into place: %v", err)
-	}
-
-	metricNumPriorityUpdates.Inc()
 }
 
 func batched(slice []string, size int) <-chan []string {
@@ -416,7 +351,10 @@ func batched(slice []string, size int) <-chan []string {
 
 // jitterTicker returns a ticker which ticks with a jitter. Each tick is
 // uniformly selected from the range (d/2, d + d/2). It will tick on creation.
-func jitterTicker(d time.Duration) <-chan struct{} {
+//
+// sig is a list of signals which also cause the ticker to fire. This is a
+// convenience to allow manually triggering of the ticker.
+func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 	ticker := make(chan struct{})
 
 	go func() {
@@ -425,6 +363,18 @@ func jitterTicker(d time.Duration) <-chan struct{} {
 			ns := int64(d)
 			jitter := rand.Int63n(ns)
 			time.Sleep(time.Duration(ns/2 + jitter))
+		}
+	}()
+
+	go func() {
+		if len(sig) == 0 {
+			return
+		}
+
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, sig...)
+		for range c {
+			ticker <- struct{}{}
 		}
 	}()
 
@@ -455,29 +405,40 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	if args.Incremental {
 		bo := args.BuildOptions()
 		bo.SetDefaults()
-		if bo.IncrementalSkipIndexing() {
+		incrementalState := bo.IndexState()
+		metricIndexIncrementalIndexState.WithLabelValues(string(incrementalState)).Inc()
+		switch incrementalState {
+		case build.IndexStateEqual:
 			debug.Printf("%s index already up to date", args.String())
 			return indexStateNoop, nil
+
+		case build.IndexStateMeta:
+			log.Printf("updating index.meta %s", args.String())
+
+			if err := mergeMeta(bo); err != nil {
+				log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
+			} else {
+				return indexStateSuccessMeta, nil
+			}
+
+		case build.IndexStateCorrupt:
+			log.Printf("falling back to full update: corrupt index: %s", args.String())
 		}
 	}
 
 	log.Printf("updating index %s", args.String())
 
 	runCmd := func(cmd *exec.Cmd) error { return s.loggedRun(tr, cmd) }
-	f := s.Indexer
-	if f == nil && len(args.Branches) > 1 {
-		f = gitIndex
-	}
-	if f == nil {
-		f = archiveIndex
-	}
 	metricIndexingTotal.Inc()
-	return indexStateSuccess, f(args, runCmd)
+	return indexStateSuccess, gitIndex(args, runCmd)
 }
 
-func (s *Server) defaultArgs() *indexArgs {
+func (s *Server) indexArgs(name string, opts IndexOptions) *indexArgs {
 	return &indexArgs{
-		Root:        s.Root,
+		Name:         name,
+		CloneURL:     s.Sourcegraph.GetCloneURL(name),
+		IndexOptions: opts,
+
 		IndexDir:    s.IndexDir,
 		Parallelism: s.CPUCount,
 
@@ -570,7 +531,7 @@ func (s *Server) enqueueForIndex(queue *Queue) func(rw http.ResponseWriter, r *h
 			return
 		}
 		debug.Printf("enqueueRepoForIndex called with repo: %q", name)
-		opts, err := getIndexOptions(s.Root, name)
+		opts, err := s.Sourcegraph.GetIndexOptions(name)
 		if err != nil || opts[0].Error != "" {
 			http.Error(rw, "fetching index options", http.StatusInternalServerError)
 			return
@@ -582,7 +543,7 @@ func (s *Server) enqueueForIndex(queue *Queue) func(rw http.ResponseWriter, r *h
 // forceIndex will run the index job for repo name now. It will return always
 // return a string explaining what it did, even if it failed.
 func (s *Server) forceIndex(name string) (string, error) {
-	opts, err := getIndexOptions(s.Root, name)
+	opts, err := s.Sourcegraph.GetIndexOptions(name)
 	if err != nil {
 		return fmt.Sprintf("Indexing %s failed: %v", name, err), err
 	}
@@ -590,9 +551,7 @@ func (s *Server) forceIndex(name string) (string, error) {
 		return fmt.Sprintf("Indexing %s failed: %s", name, errS), errors.New(errS)
 	}
 
-	args := s.defaultArgs()
-	args.Name = name
-	args.IndexOptions = opts[0].IndexOptions
+	args := s.indexArgs(name, opts[0].IndexOptions)
 	args.Incremental = false // force re-index
 	state, err := s.Index(args)
 	if err != nil {
@@ -603,104 +562,13 @@ func (s *Server) forceIndex(name string) (string, error) {
 
 func listIndexed(indexDir string) []string {
 	index := getShards(indexDir)
+	metricNumIndexed.Set(float64(len(index)))
 	repoNames := make([]string, 0, len(index))
-	countsByHost := make(map[string]int)
 	for name := range index {
 		repoNames = append(repoNames, name)
-		codeHost := codeHostFromName(name)
-		countsByHost[codeHost] += 1
 	}
 	sort.Strings(repoNames)
-	for codeHost, count := range countsByHost {
-		metricNumIndexed.WithLabelValues(codeHost).Set(float64(count))
-	}
 	return repoNames
-}
-
-func listRepos(ctx context.Context, hostname string, root *url.URL, indexed []string) ([]string, error) {
-	body, err := json.Marshal(&struct {
-		Hostname string
-		Indexed  []string
-	}{
-		Hostname: hostname,
-		Indexed:  indexed,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	u := root.ResolveReference(&url.URL{Path: "/.internal/repos/index"})
-	resp, err := client.Post(u.String(), "application/json; charset=utf8", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to list repositories: status %s", resp.Status)
-	}
-
-	var data struct {
-		RepoNames []string
-	}
-	err = json.NewDecoder(resp.Body).Decode(&data)
-	if err != nil {
-		return nil, err
-	}
-
-	countsByHost := make(map[string]int)
-	for _, name := range data.RepoNames {
-		codeHost := codeHostFromName(name)
-		countsByHost[codeHost] += 1
-	}
-	for codeHost, count := range countsByHost {
-		metricNumAssigned.WithLabelValues(codeHost).Set(float64(count))
-	}
-	return data.RepoNames, nil
-}
-
-func ping(root *url.URL) error {
-	u := root.ResolveReference(&url.URL{Path: "/.internal/ping", RawQuery: "service=gitserver"})
-	resp, err := client.Get(u.String())
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ping: bad HTTP response status %d: %s", resp.StatusCode, string(body))
-	}
-	if !bytes.Equal(body, []byte("pong")) {
-		return fmt.Errorf("ping: did not receive pong: %s", string(body))
-	}
-	return nil
-}
-
-func waitForFrontend(root *url.URL) {
-	warned := false
-	lastWarn := time.Now()
-	for {
-		err := ping(root)
-		if err == nil {
-			break
-		}
-
-		if time.Since(lastWarn) > 15*time.Second {
-			warned = true
-			lastWarn = time.Now()
-			log.Printf("frontend or gitserver API not available, will try again: %s", err)
-		}
-
-		time.Sleep(250 * time.Millisecond)
-	}
-
-	if warned {
-		log.Println("frontend API is now reachable. Starting indexing...")
-	}
 }
 
 func hostnameBestEffort() string {
@@ -723,6 +591,24 @@ func setupTmpDir(index string) error {
 	}
 	if !tmpfriend.IsTmpFriendDir(tmpRoot) {
 		_, err := tmpfriend.RootTempDir(tmpRoot)
+		return err
+	}
+	return nil
+}
+
+func printMetaData(fn string) error {
+	repo, indexMeta, err := zoekt.ReadMetadataPath(fn)
+	if err != nil {
+		return err
+	}
+
+	err = json.NewEncoder(os.Stdout).Encode(indexMeta)
+	if err != nil {
+		return err
+	}
+
+	err = json.NewEncoder(os.Stdout).Encode(repo)
+	if err != nil {
 		return err
 	}
 	return nil
@@ -766,20 +652,21 @@ func main() {
 		defaultIndexDir = build.DefaultDir
 	}
 
-	root := flag.String("sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090")
+	root := flag.String("sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	interval := flag.Duration("interval", time.Minute, "sync with sourcegraph this often")
 	index := flag.String("index", defaultIndexDir, "set index directory to use")
 	listen := flag.String("listen", ":6072", "listen on this address.")
 	hostname := flag.String("hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	cpuFraction := flag.Float64("cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
-	dbg := flag.Bool("debug", false, "turn on more verbose logging.")
+	dbg := flag.Bool("debug", os.Getenv("SRC_LOG_LEVEL") == "dbug", "turn on more verbose logging.")
 
 	// non daemon mode for debugging/testing
 	debugList := flag.Bool("debug-list", false, "do not start the indexserver, rather list the repositories owned by this indexserver then quit.")
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repositories then quit.")
 	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
+	debugMeta := flag.String("debug-meta", "", "do not start the indexserver, rather print shard metadata then quit.")
 
-	expGitIndex := flag.Bool("exp-git-index", os.Getenv("DISABLE_GIT_INDEX") == "", "use experimental indexing via shallow clones and zoekt-git-index")
+	_ = flag.Bool("exp-git-index", true, "DEPRECATED: not read anymore. We always use zoekt-git-index now.")
 
 	flag.Parse()
 
@@ -795,6 +682,15 @@ func main() {
 	rootURL, err := url.Parse(*root)
 	if err != nil {
 		log.Fatalf("url.Parse(%v): %v", *root, err)
+	}
+
+	var batchSize int = 1000
+	batchSizeStr := os.Getenv("SRC_REPO_CONFIG_BATCH_SIZE")
+	if batchSizeStr != "" {
+		batchSize, err = strconv.Atoi(batchSizeStr)
+		if err != nil {
+			log.Fatal("Invalid value for SRC_REPO_CONFIG_BATCH_SIZE, must be int")
+		}
 	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
@@ -819,26 +715,37 @@ func main() {
 	if *dbg || *debugList || *debugIndex != "" || *debugShard != "" {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
 	}
-	client.Logger = debug
+
+	var sg Sourcegraph
+	if rootURL.IsAbs() {
+		client := retryablehttp.NewClient()
+		client.Logger = debug
+		sg = &sourcegraphClient{
+			Root:     rootURL,
+			Client:   client,
+			Hostname: *hostname,
+		}
+	} else {
+		sg = sourcegraphFake{
+			RootDir: rootURL.String(),
+			Log:     log.New(os.Stderr, "sourcegraph: ", log.LstdFlags),
+		}
+	}
 
 	cpuCount := int(math.Round(float64(runtime.GOMAXPROCS(0)) * (*cpuFraction)))
 	if cpuCount < 1 {
 		cpuCount = 1
 	}
 	s := &Server{
-		Root:     rootURL,
-		IndexDir: *index,
-		Interval: *interval,
-		CPUCount: cpuCount,
-		Hostname: *hostname,
-	}
-
-	if *expGitIndex {
-		s.Indexer = gitIndex
+		Sourcegraph: sg,
+		BatchSize:   batchSize,
+		IndexDir:    *index,
+		Interval:    *interval,
+		CPUCount:    cpuCount,
 	}
 
 	if *debugList {
-		repos, err := listRepos(context.Background(), s.Hostname, s.Root, listIndexed(s.IndexDir))
+		repos, err := s.Sourcegraph.ListRepos(context.Background(), listIndexed(s.IndexDir))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -859,6 +766,14 @@ func main() {
 
 	if *debugShard != "" {
 		err = printShardStats(*debugShard)
+		if err != nil {
+			log.Fatal(err)
+		}
+		os.Exit(0)
+	}
+
+	if *debugMeta != "" {
+		err = printMetaData(*debugMeta)
 		if err != nil {
 			log.Fatal(err)
 		}

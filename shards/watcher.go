@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -111,7 +112,7 @@ func (s *DirectoryWatcher) scan() error {
 
 		// In the case of downgrades, avoid reading
 		// newer index formats.
-		if version > zoekt.IndexFormatVersion {
+		if version > zoekt.IndexFormatVersion && version > zoekt.NextIndexFormatVersion {
 			continue
 		}
 
@@ -132,6 +133,14 @@ func (s *DirectoryWatcher) scan() error {
 		}
 
 		ts[fn] = fi.ModTime()
+
+		fiMeta, err := os.Lstat(fn + ".meta")
+		if err != nil {
+			continue
+		}
+		if fiMeta.ModTime().After(fi.ModTime()) {
+			ts[fn] = fiMeta.ModTime()
+		}
 	}
 
 	var toLoad []string
@@ -152,10 +161,9 @@ func (s *DirectoryWatcher) scan() error {
 	}
 
 	if len(toDrop) > 0 {
-		log.Printf("unloading %d shards", len(toDrop))
+		log.Printf("unloading %d shard(s): %s", len(toDrop), humanTruncateList(toDrop, 5))
 	}
 	for _, t := range toDrop {
-		log.Printf("unloading: %s", t)
 		s.loader.drop(t)
 	}
 
@@ -163,7 +171,7 @@ func (s *DirectoryWatcher) scan() error {
 		return nil
 	}
 
-	log.Printf("loading %d shards", len(toLoad))
+	log.Printf("loading %d shard(s): %s", len(toLoad), humanTruncateList(toLoad, 5))
 
 	// Limit amount of concurrent shard loads.
 	throttle := make(chan struct{}, runtime.GOMAXPROCS(0))
@@ -186,6 +194,22 @@ func (s *DirectoryWatcher) scan() error {
 	}
 
 	return nil
+}
+
+func humanTruncateList(paths []string, max int) string {
+	sort.Strings(paths)
+	var b strings.Builder
+	for i, p := range paths {
+		if i >= max {
+			fmt.Fprintf(&b, "... %d more", len(paths)-i)
+			break
+		}
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(filepath.Base(p))
+	}
+	return b.String()
 }
 
 func (s *DirectoryWatcher) watch() error {

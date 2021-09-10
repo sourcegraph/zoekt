@@ -54,9 +54,9 @@ func (c *client) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOption
 	return reply.Result, err
 }
 
-func (c *client) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
+func (c *client) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (*zoekt.RepoList, error) {
 	var reply srv.ListReply
-	err := c.call(ctx, "Searcher.List", &srv.ListArgs{Q: q}, &reply)
+	err := c.call(ctx, "Searcher.List", &srv.ListArgs{Q: q, Opts: opts}, &reply)
 	return reply.List, err
 }
 
@@ -138,5 +138,6 @@ func RegisterGob() {
 		gob.Register(&query.Substring{})
 		gob.Register(&query.Symbol{})
 		gob.Register(&query.Type{})
+		gob.Register(query.RawConfig(41))
 	})
 }

@@ -42,22 +42,9 @@ const IndexFormatVersion = 16
 // 9: Store ctags metadata & bump default max file size
 const FeatureVersion = 9
 
-func init() {
-	ensureSourcegraphSymbolsHack()
-}
-
-func ensureSourcegraphSymbolsHack() {
-	if IndexFormatVersion != 16 {
-		panic(`Sourcegraph: While we are on version 16 we have added code into
-	read.go which supports reading IndexFormatVersion 15. If you change the
-	IndexFormatVersion please reach out to Kevin and Keegan.`)
-	}
-	if FeatureVersion != 9 {
-		panic(`Sourcegraph: While we are on FeatureVersion 9 we have added code into
-	read.go which supports reading FeatureVersion 8. If you change the
-	FeatureVersion please reach out to Kevin and Keegan.`)
-	}
-}
+// 17: compound shard (multi repo)
+const NextIndexFormatVersion = 17
+const NextFeatureVersion = 1
 
 type indexTOC struct {
 	fileContents compoundSection
@@ -86,39 +73,8 @@ type indexTOC struct {
 	nameEndRunes     simpleSection
 	contentChecksums simpleSection
 	runeDocSections  simpleSection
-}
 
-func (t *indexTOC) sectionsHACK(expectedSectionCount uint32) []section {
-	ensureSourcegraphSymbolsHack()
-
-	// Sourcegraph hack for v15.
-	if expectedSectionCount == 19 {
-		return []section{
-			// This must be first, so it can be reliably read across
-			// file format versions.
-			&t.metaData,
-			&t.repoMetaData,
-			&t.fileContents,
-			&t.fileNames,
-			&t.fileSections,
-			&t.newlines,
-			&t.ngramText,
-			&t.postings,
-			&t.nameNgramText,
-			&t.namePostings,
-			&t.branchMasks,
-			&t.subRepos,
-			&t.runeOffsets,
-			&t.nameRuneOffsets,
-			&t.fileEndRunes,
-			&t.nameEndRunes,
-			&t.contentChecksums,
-			&t.languages,
-			&t.runeDocSections,
-		}
-	}
-
-	return t.sections()
+	repos simpleSection
 }
 
 func (t *indexTOC) sections() []section {
@@ -149,4 +105,8 @@ func (t *indexTOC) sections() []section {
 		&t.languages,
 		&t.runeDocSections,
 	}
+}
+
+func (t *indexTOC) sectionsNext() []section {
+	return append(t.sections(), &t.repos)
 }

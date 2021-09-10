@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 func TestGetIndexOptions(t *testing.T) {
@@ -39,6 +40,11 @@ func TestGetIndexOptions(t *testing.T) {
 	u, err := url.Parse(server.URL)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	sg := &sourcegraphClient{
+		Root:   u,
+		Client: retryablehttp.NewClient(),
 	}
 
 	cases := map[string]*IndexOptions{
@@ -67,7 +73,7 @@ func TestGetIndexOptions(t *testing.T) {
 	for r, want := range cases {
 		response = []byte(r)
 
-		got, err := getIndexOptions(u, "test/repo")
+		got, err := sg.GetIndexOptions("test/repo")
 		if err != nil && want != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -83,60 +89,57 @@ func TestGetIndexOptions(t *testing.T) {
 }
 
 func TestIndex(t *testing.T) {
-	root, err := url.Parse("http://api.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	cases := []struct {
-		name        string
-		args        indexArgs
-		wantArchive []string
-		wantGit     []string
+		name string
+		args indexArgs
+		want []string
 	}{{
 		name: "minimal",
 		args: indexArgs{
-			Root: root,
-			Name: "test/repo",
+			CloneURL: "http://api.test/.internal/git/test/repo",
+			Name:     "test/repo",
 			IndexOptions: IndexOptions{
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
 			},
 		},
-		wantArchive: []string{
-			"zoekt-archive-index -name test/repo -commit deadbeef -branch HEAD -disable_ctags http://api.test/.internal/git/test/repo/tar/deadbeef",
-		},
-		wantGit: []string{
+		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"zoekt-git-index -submodules=false -branches HEAD -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}, {
 		name: "minimal-id",
 		args: indexArgs{
-			Root: root,
-			Name: "test/repo",
+			CloneURL: "http://api.test/.internal/git/test/repo",
+			Name:     "test/repo",
 			IndexOptions: IndexOptions{
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
 				RepoID:   123,
 			},
 		},
-		wantArchive: []string{
-			"zoekt-archive-index -name test/repo -commit deadbeef -branch HEAD -disable_ctags http://api.test/.internal/git/test/repo/tar/deadbeef",
-		},
-		wantGit: []string{
+		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 123",
 			"zoekt-git-index -submodules=false -branches HEAD -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}, {
 		name: "all",
 		args: indexArgs{
-			Root:              root,
+			CloneURL:          "http://api.test/.internal/git/test/repo",
 			Name:              "test/repo",
 			Incremental:       true,
 			IndexDir:          "/data/index",
@@ -152,27 +155,17 @@ func TestIndex(t *testing.T) {
 				},
 			},
 		},
-		wantArchive: []string{strings.Join([]string{
-			"zoekt-archive-index",
-			"-name", "test/repo",
-			"-commit", "deadbeef",
-			"-branch", "HEAD",
-			"-incremental",
-			"-download-limit-mbps", "1000",
-			"-file_limit", "123",
-			"-parallelism", "4",
-			"-index", "/data/index",
-			"-require_ctags",
-			"-large_file", "foo",
-			"-large_file", "bar",
-			"http://api.test/.internal/git/test/repo/tar/deadbeef",
-		}, " ")},
-		wantGit: []string{
+		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
 			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev " +
 				"-file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
@@ -189,22 +182,11 @@ func TestIndex(t *testing.T) {
 				return nil
 			}
 
-			branches := tc.args.Branches
-			tc.args.Branches = branches[:1]
-			if err := archiveIndex(&tc.args, runCmd); err != nil {
-				t.Fatal(err)
-			}
-			if !cmp.Equal(got, tc.wantArchive) {
-				t.Errorf("archive mismatch (-want +got):\n%s", cmp.Diff(tc.wantArchive, got, splitargs))
-			}
-
-			got = nil
-			tc.args.Branches = branches
 			if err := gitIndex(&tc.args, runCmd); err != nil {
 				t.Fatal(err)
 			}
-			if !cmp.Equal(got, tc.wantGit) {
-				t.Errorf("git mismatch (-want +got):\n%s", cmp.Diff(tc.wantGit, got, splitargs))
+			if !cmp.Equal(got, tc.want) {
+				t.Errorf("git mismatch (-want +got):\n%s", cmp.Diff(tc.want, got, splitargs))
 			}
 		})
 	}

@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/google/zoekt"
 )
 
 type loggingLoader struct {
@@ -187,10 +189,11 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 	// 	t.Fatalf("got %v, want 'empty'", err)
 	// }
 
-	shardv16 := filepath.Join(dir, "foo_v16.00000.zoekt")
+	want := zoekt.NextIndexFormatVersion
+	shardLatest := filepath.Join(dir, fmt.Sprintf("foo_v%d.00000.zoekt", want))
 
-	for _, v := range []int{15, 16, 17} {
-		repo := fmt.Sprintf("foo_v%d.00000.zoekt", v)
+	for delta := -1; delta <= 1; delta++ {
+		repo := fmt.Sprintf("foo_v%d.00000.zoekt", want+delta)
 		shard := filepath.Join(dir, repo)
 		if err := ioutil.WriteFile(shard, []byte("hello"), 0644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
@@ -203,8 +206,8 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 	}
 	defer dw.Stop()
 
-	if got := <-logger.loads; got != shardv16 {
-		t.Fatalf("got load event %v, want %v", got, shardv16)
+	if got := <-logger.loads; got != shardLatest {
+		t.Fatalf("got load event %v, want %v", got, shardLatest)
 	}
 
 	advanceFS()
@@ -217,4 +220,26 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 		t.Errorf("spurious drops of %q", k)
 	default:
 	}
+}
+
+func TestHumanTruncateList(t *testing.T) {
+	paths := []string{
+		"dir/1",
+		"dir/2",
+		"dir/3",
+		"dir/4",
+	}
+
+	assert := func(max int, want string) {
+		got := humanTruncateList(paths, max)
+		if got != want {
+			t.Errorf("unexpected humanTruncateList max=%d.\ngot:  %s\nwant: %s", max, got, want)
+		}
+	}
+
+	assert(1, "1... 3 more")
+	assert(2, "1, 2... 2 more")
+	assert(3, "1, 2, 3... 1 more")
+	assert(4, "1, 2, 3, 4")
+	assert(5, "1, 2, 3, 4")
 }

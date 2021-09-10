@@ -17,11 +17,13 @@ package web
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -124,10 +126,13 @@ func TestBasic(t *testing.T) {
 			"Found 1 repositories",
 			nowStr,
 			"repo-url\">name",
-			"1 files (36)",
+			"1 files (36B)",
 		},
 		"/search?q=magic": {
 			`value=magic`,
+		},
+		"/robots.txt": {
+			"disallow: /search",
 		},
 	} {
 		checkNeedles(t, ts, req, needles)
@@ -448,5 +453,64 @@ func TestTruncateLine(t *testing.T) {
 	}
 	if want := "bytes skipped)..."; !strings.Contains(result, want) {
 		t.Fatalf("got %s, want substring %q", result, want)
+	}
+}
+
+func TestHealthz(t *testing.T) {
+	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+		Name: "name",
+	})
+	if err != nil {
+		t.Fatalf("NewIndexBuilder: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := b.Add(zoekt.Document{
+			Name:    fmt.Sprintf("file%d", i),
+			Content: []byte("bla"),
+		}); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+	}
+	s := searcherForTest(t, b)
+	srv := Server{
+		Searcher: s,
+		Top:      Top,
+		HTML:     true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	req, err := http.NewRequest("GET", ts.URL+"/healthz", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do(%v): %v", req, err)
+	}
+
+	t.Cleanup(func() {
+		res.Body.Close()
+	})
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("want 200 status code, got: %v", res.StatusCode)
+	}
+
+	var result zoekt.SearchResult
+	err = json.NewDecoder(res.Body).Decode(&result)
+	if err != nil {
+		t.Fatalf("json.Decode: %v", err)
+	}
+
+	if reflect.DeepEqual(result, zoekt.SearchResult{}) {
+		t.Fatal("empty result in response")
 	}
 }

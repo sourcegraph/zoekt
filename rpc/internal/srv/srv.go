@@ -22,7 +22,8 @@ type SearchReply struct {
 }
 
 type ListArgs struct {
-	Q query.Q
+	Q    query.Q
+	Opts *zoekt.ListOptions
 }
 
 type ListReply struct {
@@ -52,7 +53,7 @@ func (s *Searcher) Search(ctx context.Context, args *SearchArgs, reply *SearchRe
 func (s *Searcher) List(ctx context.Context, args *ListArgs, reply *ListReply) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
-	r, err := s.Searcher.List(ctx, args.Q)
+	r, err := s.Searcher.List(ctx, args.Q, args.Opts)
 	if err != nil {
 		return err
 	}

@@ -22,7 +22,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/zoekt/query"
@@ -64,12 +67,12 @@ func TestReadWrite(t *testing.T) {
 		t.Errorf("got filename %q, want %q", got, "filename")
 	}
 
-	if len(data.ngrams) != 3 {
+	if len(data.ngrams.DumpMap()) != 3 {
 		t.Fatalf("got ngrams %v, want 3 ngrams", data.ngrams)
 	}
 
-	if _, ok := data.ngrams[stringToNGram("bcq")]; ok {
-		t.Errorf("found ngram bcd in %v", data.ngrams)
+	if sec := data.ngrams.Get(stringToNGram("bcq")); sec.sz > 0 {
+		t.Errorf("found ngram bcq (%v) in %v", uint64(stringToNGram("bcq")), data.ngrams)
 	}
 }
 
@@ -104,7 +107,7 @@ func TestReadWriteNames(t *testing.T) {
 	if !reflect.DeepEqual([]uint32{0, 4}, data.fileNameIndex) {
 		t.Errorf("got index %v, want {0,4}", data.fileNameIndex)
 	}
-	if got := data.fileNameNgrams[stringToNGram("bCd")]; !reflect.DeepEqual(got, []uint32{1}) {
+	if got := data.fileNameNgrams[stringToNGram("bCd")]; !reflect.DeepEqual(got, []byte{1}) {
 		t.Errorf("got trigram bcd at bits %v, want sz 2", data.fileNameNgrams)
 	}
 }
@@ -142,9 +145,16 @@ func TestReadSearch(t *testing.T) {
 		&query.Symbol{Expr: &query.Regexp{Regexp: mustParseRE("sage$")}},
 	}
 
-	shards := []string{"ctagsrepo_v16.00000", "repo_v15.00000", "repo_v16.00000"}
-	for _, name := range shards {
-		shard, err := loadShard("testdata/shards/" + name + ".zoekt")
+	shards, err := filepath.Glob("testdata/shards/*.zoekt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range shards {
+		name := filepath.Base(path)
+		name = strings.TrimSuffix(name, ".zoekt")
+
+		shard, err := loadShard(path)
 		if err != nil {
 			t.Fatalf("error loading shard %s %v", name, err)
 		}
@@ -211,5 +221,59 @@ func TestReadSearch(t *testing.T) {
 				t.Errorf("matches for %s on %s\ngot:\n%v\nwant:\n%v", q, name, res.Files[0], want.FileMatches[j])
 			}
 		}
+	}
+}
+
+func TestEncodeRawConfig(t *testing.T) {
+	mustParse := func(s string) uint8 {
+		i, err := strconv.ParseInt(s, 2, 8)
+		if err != nil {
+			t.Fatalf("failed to parse %s", s)
+		}
+		return uint8(i)
+	}
+
+	cases := []struct {
+		rawConfig map[string]string
+		want      string
+	}{
+		{
+			rawConfig: map[string]string{"public": "1"},
+			want:      "101001",
+		},
+		{
+			rawConfig: map[string]string{"fork": "1"},
+			want:      "100110",
+		},
+		{
+			rawConfig: map[string]string{"public": "1", "fork": "1"},
+			want:      "100101",
+		},
+		{
+			rawConfig: map[string]string{"public": "1", "fork": "1", "archived": "1"},
+			want:      "010101",
+		},
+		{
+			rawConfig: map[string]string{},
+			want:      "101010",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.want, func(t *testing.T) {
+			if got := encodeRawConfig(c.rawConfig); got != mustParse(c.want) {
+				t.Fatalf("want %s, got %s", c.want, strconv.FormatInt(int64(got), 2))
+			}
+		})
+	}
+
+}
+
+func TestBackfillIDIsDeterministic(t *testing.T) {
+	repo := "github.com/a/b"
+	have1 := backfillID(repo)
+	have2 := backfillID(repo)
+
+	if have1 != have2 {
+		t.Fatalf("%s != %s ", have1, have2)
 	}
 }

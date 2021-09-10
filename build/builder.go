@@ -41,6 +41,7 @@ import (
 	"github.com/bmatcuk/doublestar"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/ctags"
+	"github.com/rs/xid"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -205,6 +206,12 @@ type Builder struct {
 	finishedShards map[string]string
 
 	shardLogger io.WriteCloser
+
+	// indexTime is set by tests for doing reproducible builds.
+	indexTime time.Time
+
+	// a sortable 20 chars long id.
+	id string
 }
 
 type finishedShard struct {
@@ -261,61 +268,101 @@ func hashString(s string) string {
 }
 
 // ShardName returns the name the given index shard.
-func (o *Options) shardName(n int) string {
+func (o *Options) ShardName(n int) string {
+	return o.shardNameVersion(zoekt.IndexFormatVersion, n)
+}
+
+func (o *Options) shardNameVersion(version, n int) string {
 	abs := url.QueryEscape(o.RepositoryDescription.Name)
 	if len(abs) > 200 {
 		abs = abs[:200] + hashString(abs)[:8]
 	}
 	return filepath.Join(o.IndexDir,
-		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, zoekt.IndexFormatVersion, n))
+		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, version, n))
 }
+
+type IndexState string
+
+const (
+	IndexStateMissing            IndexState = "missing"
+	IndexStateCorrupt                       = "corrupt"
+	IndexStateUnexpectedCompound            = "unexpected-compound"
+	IndexStateVersion                       = "version-mismatch"
+	IndexStateOption                        = "option-mismatch"
+	IndexStateMeta                          = "meta-mismatch"
+	IndexStateContent                       = "content-mismatch"
+	IndexStateEqual                         = "equal"
+)
+
+var readVersions = []struct {
+	IndexFormatVersion int
+	FeatureVersion     int
+}{{
+	IndexFormatVersion: zoekt.IndexFormatVersion,
+	FeatureVersion:     zoekt.FeatureVersion,
+}, {
+	IndexFormatVersion: zoekt.NextIndexFormatVersion,
+	FeatureVersion:     zoekt.NextFeatureVersion,
+}}
 
 // IncrementalSkipIndexing returns true if the index present on disk matches
 // the build options.
 func (o *Options) IncrementalSkipIndexing() bool {
-	fn := o.shardName(0)
-
-	f, err := os.Open(fn)
-	if err != nil {
-		return false
-	}
-
-	iFile, err := zoekt.NewIndexFile(f)
-	if err != nil {
-		return false
-	}
-	defer iFile.Close()
-
-	repo, index, err := zoekt.ReadMetadata(iFile)
-	if err != nil {
-		return false
-	}
-
-	if index.IndexFeatureVersion != zoekt.FeatureVersion {
-		return false
-	}
-
-	if repo.IndexOptions != o.HashOptions() {
-		return false
-	}
-
-	// Sourcegraph specific. Ensure we have the correct repository ID set.
-	if !rawConfigEqual(repo.RawConfig, o.RepositoryDescription.RawConfig, "repoid") {
-		return false
-	}
-
-	return reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches)
+	return o.IndexState() == IndexStateEqual
 }
 
-func rawConfigEqual(m1, m2 map[string]string, key string) bool {
-	var v1, v2 string
-	if m1 != nil {
-		v1 = m1[key]
+// IndexState checks how the index present on disk compares to the build
+// options.
+func (o *Options) IndexState() IndexState {
+	// Open the latest version we support that is on disk.
+	fn := ""
+	featureVersion := -1
+	for _, v := range readVersions {
+		fn = o.shardNameVersion(v.IndexFormatVersion, 0)
+		if _, err := os.Stat(fn); err == nil {
+			featureVersion = v.FeatureVersion
+			break
+		}
 	}
-	if m2 != nil {
-		v2 = m2[key]
+
+	repos, index, err := zoekt.ReadMetadataPath(fn)
+	if os.IsNotExist(err) {
+		return IndexStateMissing
+	} else if err != nil {
+		return IndexStateCorrupt
 	}
-	return v1 == v2
+
+	if index.IndexFeatureVersion != featureVersion {
+		return IndexStateVersion
+	}
+
+	// This shouldn't happen. Options only references one repository, so
+	// shardName will only return non compound repositories. We still need to
+	// work out how to do IndexState with compound shards.
+	if len(repos) != 1 {
+		return IndexStateUnexpectedCompound
+	}
+	repo := repos[0]
+
+	if repo.IndexOptions != o.HashOptions() {
+		return IndexStateOption
+	}
+
+	if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
+		return IndexStateContent
+	}
+
+	// We can mutate repo since it lives in the scope of this function call.
+	if updated, err := repo.MergeMutable(&o.RepositoryDescription); err != nil {
+		// non-nil err means we are trying to update an immutable field =>
+		// reindex content.
+		log.Printf("warn: immutable field changed, requires re-index: %s", err)
+		return IndexStateContent
+	} else if updated {
+		return IndexStateMeta
+	}
+
+	return IndexStateEqual
 }
 
 // IgnoreSizeMax determines whether the max size should be ignored.
@@ -371,6 +418,10 @@ func NewBuilder(opts Options) (*Builder, error) {
 		return nil, err
 	}
 
+	now := time.Now()
+	b.indexTime = now
+	b.id = xid.NewWithTime(now).String()
+
 	return b, nil
 }
 
@@ -400,7 +451,13 @@ func (b *Builder) Add(doc zoekt.Document) error {
 	}
 
 	b.todo = append(b.todo, &doc)
-	b.size += len(doc.Name) + len(doc.Content)
+
+	if doc.SkipReason == "" {
+		b.size += len(doc.Name) + len(doc.Content)
+	} else {
+		b.size += len(doc.Name) + len(doc.SkipReason)
+	}
+
 	if b.size > b.opts.ShardMax {
 		return b.flush()
 	}
@@ -429,28 +486,56 @@ func (b *Builder) Finish() error {
 	for tmp, final := range b.finishedShards {
 		if err := os.Rename(tmp, final); err != nil {
 			b.buildError = err
-		} else {
-			b.shardLog("upsert", final)
+			continue
+		}
+
+		b.shardLog("upsert", final)
+
+		// Remove extra files unrelated to the new shard. We don't want the old
+		// meta file sticking around.
+		paths, err := zoekt.IndexFilePaths(final)
+		if err != nil {
+			b.buildError = err
+		}
+		for _, p := range paths {
+			if p == final {
+				continue
+			}
+			log.Printf("removing old shard file: %s", p)
+			if err := os.Remove(p); err != nil {
+				b.buildError = err
+			}
 		}
 	}
 	b.finishedShards = map[string]string{}
 
 	if b.nextShardNum > 0 {
-		b.deleteRemainingShards()
+		if err := b.deleteRemainingShards(); err != nil {
+			log.Printf("failed to delete some old shards: %v", err)
+		}
 	}
 	return b.buildError
 }
 
-func (b *Builder) deleteRemainingShards() {
+func (b *Builder) deleteRemainingShards() error {
 	for {
 		shard := b.nextShardNum
 		b.nextShardNum++
-		name := b.opts.shardName(shard)
-		if err := os.Remove(name); os.IsNotExist(err) {
-			break
-		} else {
-			b.shardLog("remove", name)
+		name := b.opts.ShardName(shard)
+		paths, err := zoekt.IndexFilePaths(name)
+		if err != nil {
+			return err
 		}
+		if len(paths) == 0 {
+			return nil
+		}
+		for _, p := range paths {
+			err := os.Remove(p)
+			if err != nil {
+				return err
+			}
+		}
+		b.shardLog("remove", name)
 	}
 }
 
@@ -612,7 +697,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 		}
 	}
 
-	name := b.opts.shardName(nextShardNum)
+	name := b.opts.ShardName(nextShardNum)
 
 	shardBuilder, err := b.newShardBuilder()
 	if err != nil {
@@ -638,6 +723,8 @@ func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	if err != nil {
 		return nil, err
 	}
+	shardBuilder.IndexTime = b.indexTime
+	shardBuilder.ID = b.id
 	return shardBuilder, nil
 }
 

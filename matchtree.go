@@ -82,10 +82,20 @@ type matchTree interface {
 	matches(cp *contentProvider, cost int, known map[matchTree]bool) (match bool, sure bool)
 }
 
+// docMatchTree iterates over documents for which predicate(docID) returns true.
 type docMatchTree struct {
+	// the number of documents in a shard.
+	numDocs uint32
+
+	predicate func(docID uint32) bool
+
+	// provides additional information about the reason why the docMatchTree was
+	// created.
+	reason string
+
 	// mutable
-	docs    []uint32
-	current []uint32
+	firstDone bool
+	docID     uint32
 }
 
 type bruteForceMatchTree struct {
@@ -146,7 +156,8 @@ type substrMatchTree struct {
 
 type branchQueryMatchTree struct {
 	fileMasks []uint64
-	mask      uint64
+	masks     []uint64
+	repos     []uint16
 
 	// mutable
 	firstDone bool
@@ -279,15 +290,8 @@ func (t *bruteForceMatchTree) prepare(doc uint32) {
 }
 
 func (t *docMatchTree) prepare(doc uint32) {
-	for len(t.docs) > 0 && t.docs[0] < doc {
-		t.docs = t.docs[1:]
-	}
-	i := 0
-	for ; i < len(t.docs) && t.docs[i] == doc; i++ {
-	}
-
-	t.current = t.docs[:i]
-	t.docs = t.docs[i:]
+	t.docID = doc
+	t.firstDone = true
 }
 
 func (t *andMatchTree) prepare(doc uint32) {
@@ -330,10 +334,16 @@ func (t *branchQueryMatchTree) prepare(doc uint32) {
 // nextDoc
 
 func (t *docMatchTree) nextDoc() uint32 {
-	if len(t.docs) == 0 {
-		return maxUInt32
+	var start uint32
+	if t.firstDone {
+		start = t.docID + 1
 	}
-	return t.docs[0]
+	for i := start; i < t.numDocs; i++ {
+		if t.predicate(i) {
+			return i
+		}
+	}
+	return maxUInt32
 }
 
 func (t *bruteForceMatchTree) nextDoc() uint32 {
@@ -380,7 +390,7 @@ func (t *branchQueryMatchTree) nextDoc() uint32 {
 	}
 
 	for i := start; i < uint32(len(t.fileMasks)); i++ {
-		if (t.mask & t.fileMasks[i]) != 0 {
+		if (t.masks[t.repos[i]] & t.fileMasks[i]) != 0 {
 			return i
 		}
 	}
@@ -394,7 +404,7 @@ func (t *bruteForceMatchTree) String() string {
 }
 
 func (t *docMatchTree) String() string {
-	return fmt.Sprintf("docs%v", t.docs)
+	return fmt.Sprintf("doc(%s)", t.reason)
 }
 
 func (t *andMatchTree) String() string {
@@ -427,7 +437,7 @@ func (t *substrMatchTree) String() string {
 }
 
 func (t *branchQueryMatchTree) String() string {
-	return fmt.Sprintf("branch(%x)", t.mask)
+	return fmt.Sprintf("branch(%x)", t.masks)
 }
 
 func (t *symbolSubstrMatchTree) String() string {
@@ -500,7 +510,7 @@ func visitMatches(t matchTree, known map[matchTree]bool, f func(matchTree)) {
 // all matches() methods.
 
 func (t *docMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
-	return len(t.current) > 0, true
+	return t.predicate(cp.idx), true
 }
 
 func (t *bruteForceMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
@@ -623,7 +633,7 @@ func (t *orMatchTree) matches(cp *contentProvider, cost int, known map[matchTree
 }
 
 func (t *branchQueryMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
-	return t.fileMasks[t.docID]&t.mask != 0, true
+	return t.fileMasks[t.docID]&t.masks[t.repos[t.docID]] != 0, true
 }
 
 func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
@@ -822,19 +832,27 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		return d.newSubstringMatchTree(s)
 
 	case *query.Branch:
-		mask := uint64(0)
+		masks := make([]uint64, 0, len(d.repoMetaData))
 		if s.Pattern == "HEAD" {
-			mask = 1
-		} else {
-			for nm, m := range d.branchIDs {
-				if (s.Exact && nm == s.Pattern) || (!s.Exact && strings.Contains(nm, s.Pattern)) {
-					mask |= uint64(m)
-				}
+			for i := 0; i < len(d.repoMetaData); i++ {
+				masks = append(masks, 1)
 			}
+		} else {
+			for _, branchIDs := range d.branchIDs {
+				mask := uint64(0)
+				for nm, m := range branchIDs {
+					if (s.Exact && nm == s.Pattern) || (!s.Exact && strings.Contains(nm, s.Pattern)) {
+						mask |= uint64(m)
+					}
+				}
+				masks = append(masks, mask)
+			}
+
 		}
 		return &branchQueryMatchTree{
-			mask:      mask,
+			masks:     masks,
 			fileMasks: d.fileBranchMasks,
+			repos:     d.repos,
 		}, nil
 	case *query.Const:
 		if s.Value {
@@ -847,14 +865,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		if !ok {
 			return &noMatchTree{"lang"}, nil
 		}
-		docs := make([]uint32, 0, len(d.languages))
-		for d, l := range d.languages {
-			if l == code {
-				docs = append(docs, uint32(d))
-			}
-		}
 		return &docMatchTree{
-			docs: docs,
+			reason:  "language",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return d.languages[docID] == code
+			},
 		}, nil
 
 	case *query.Symbol:
@@ -869,7 +885,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
 				fileEndRunes:    d.fileEndRunes,
 				fileEndSymbol:   d.fileEndSymbol,
-				sections:        d.runeDocSections,
+				sections:        unmarshalDocSections(d.runeDocSections, nil),
 			}, nil
 		}
 
@@ -888,9 +904,81 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			all:       regexp.String() == "(?i)(?-s:.)*",
 			matchTree: subMT,
 		}, nil
+
+	case *query.RepoBranches:
+		reposBranchesWant := make([]uint64, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
+			if branches, ok := s.Set[r.Name]; ok {
+				var mask uint64
+				for _, branch := range branches {
+					m, ok := d.branchIDs[repoIdx][branch]
+					if !ok {
+						continue
+					}
+					mask = mask | uint64(m)
+				}
+				reposBranchesWant[repoIdx] = mask
+			}
+		}
+		return &docMatchTree{
+			reason:  "RepoBranches",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return d.fileBranchMasks[docID]&reposBranchesWant[d.repos[docID]] != 0
+			},
+		}, nil
+
+	case *query.RepoSet:
+		reposWant := make([]bool, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
+			if _, ok := s.Set[r.Name]; ok {
+				reposWant[repoIdx] = true
+			}
+		}
+		return &docMatchTree{
+			reason:  "RepoSet",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return reposWant[d.repos[docID]]
+			},
+		}, nil
+
+	case *query.Repo:
+		reposWant := make([]bool, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
+			if strings.Contains(r.Name, s.Pattern) {
+				reposWant[repoIdx] = true
+			}
+		}
+		return &docMatchTree{
+			reason:  "Repo",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return reposWant[d.repos[docID]]
+			},
+		}, nil
+	case query.RawConfig:
+		return &docMatchTree{
+			reason:  s.String(),
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return uint8(s)&d.rawConfigMasks[d.repos[docID]] == uint8(s)
+			},
+		}, nil
 	}
 	log.Panicf("type %T", q)
 	return nil, nil
+}
+
+// filterDocs returns a slice of those docIDs for which predicate(docID) = true.
+func (d *indexData) filterDocs(predicate func(docID uint32) bool) []uint32 {
+	var docs []uint32
+	for i := uint32(0); i < uint32(len(d.fileBranchMasks)); i++ {
+		if predicate(i) {
+			docs = append(docs, i)
+		}
+	}
+	return docs
 }
 
 func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error) {

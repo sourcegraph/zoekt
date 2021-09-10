@@ -15,12 +15,14 @@
 package build
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -33,10 +35,7 @@ import (
 )
 
 func TestBasic(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
+	dir := t.TempDir()
 
 	opts := Options{
 		IndexDir: dir,
@@ -62,15 +61,33 @@ func TestBasic(t *testing.T) {
 		t.Errorf("Finish: %v", err)
 	}
 
-	fs, _ := filepath.Glob(dir + "/*")
+	fs, _ := filepath.Glob(dir + "/*.zoekt")
 	if len(fs) <= 1 {
 		t.Fatalf("want multiple shards, got %v", fs)
+	}
+
+	_, md0, err := zoekt.ReadMetadataPath(fs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fs[1:] {
+		_, md, err := zoekt.ReadMetadataPath(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if md.IndexTime != md0.IndexTime {
+			t.Fatalf("wanted identical time stamps but got %v!=%v", md.IndexTime, md0.IndexTime)
+		}
+		if md.ID != md0.ID {
+			t.Fatalf("wanted identical IDs but got %s!=%s", md.ID, md0.ID)
+		}
 	}
 
 	ss, err := shards.NewDirectorySearcher(dir)
 	if err != nil {
 		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
 	}
+	defer ss.Close()
 
 	q, err := query.Parse("111")
 	if err != nil {
@@ -84,10 +101,92 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("Search(%v): %v", q, err)
 	}
 
-	if len(result.Files) != 1 || result.Files[0].FileName != "F1" {
+	if len(result.Files) != 1 {
 		t.Errorf("got %v, want 1 file.", result.Files)
+	} else if gotFile, wantFile := result.Files[0].FileName, "F1"; gotFile != wantFile {
+		t.Errorf("got file %q, want %q", gotFile, wantFile)
+	} else if gotRepo, wantRepo := result.Files[0].Repository, "repo"; gotRepo != wantRepo {
+		t.Errorf("got repo %q, want %q", gotRepo, wantRepo)
 	}
-	defer ss.Close()
+
+	t.Run("meta file", func(t *testing.T) {
+		// use retryTest to allow for the directory watcher to notice the meta
+		// file
+		retryTest(t, func(fatalf func(format string, args ...interface{})) {
+			// Add a .meta file for each shard with repo.Name set to
+			// "repo-mutated". We do this inside retry helper since we have noticed
+			// some flakiness on github CI.
+			for _, p := range fs {
+				repos, _, err := zoekt.ReadMetadataPath(p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				repos[0].Name = "repo-mutated"
+				b, err := json.Marshal(repos[0])
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if err := ioutil.WriteFile(p+".meta", b, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			result, err := ss.Search(ctx, q, &sOpts)
+			if err != nil {
+				fatalf("Search(%v): %v", q, err)
+			}
+
+			if len(result.Files) != 1 {
+				fatalf("got %v, want 1 file.", result.Files)
+			} else if gotFile, wantFile := result.Files[0].FileName, "F1"; gotFile != wantFile {
+				fatalf("got file %q, want %q", gotFile, wantFile)
+			} else if gotRepo, wantRepo := result.Files[0].Repository, "repo-mutated"; gotRepo != wantRepo {
+				fatalf("got repo %q, want %q", gotRepo, wantRepo)
+			}
+		})
+	})
+}
+
+// retryTest will retry f until min(t.Deadline(), time.Minute). It returns
+// once f doesn't call fatalf.
+func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface{}))) {
+	t.Helper()
+
+	sleep := 10 * time.Millisecond
+	deadline := time.Now().Add(time.Minute)
+	if d, ok := t.Deadline(); ok && d.Before(deadline) {
+		// give 1s for us to do a final test run
+		deadline = d.Add(-time.Second)
+	}
+
+	for {
+		done := make(chan bool)
+		go func() {
+			defer close(done)
+
+			f(func(format string, args ...interface{}) {
+				runtime.Goexit()
+			})
+
+			done <- true
+		}()
+
+		success, _ := <-done
+		if success {
+			return
+		}
+
+		// each time we increase sleep by 1.5
+		sleep := sleep*2 - sleep/2
+		if time.Now().Add(sleep).After(deadline) {
+			break
+		}
+		time.Sleep(sleep)
+	}
+
+	// final run for the test, using the real t.Fatalf
+	f(t.Fatalf)
 }
 
 func TestLargeFileOption(t *testing.T) {
@@ -176,7 +275,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	repos, err := ss.List(ctx, &query.Repo{Pattern: "repo"})
+	repos, err := ss.List(ctx, &query.Repo{Pattern: "repo"}, nil)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -210,7 +309,7 @@ func TestUpdate(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	ctx = context.Background()
-	if repos, err = ss.List(ctx, &query.Repo{Pattern: "repo"}); err != nil {
+	if repos, err = ss.List(ctx, &query.Repo{Pattern: "repo"}, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	} else if len(repos.Repos) != 2 {
 		t.Errorf("List(repo): got %v, want 2 repos", repos.Repos)
@@ -226,7 +325,7 @@ func TestUpdate(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	ctx = context.Background()
-	if repos, err = ss.List(ctx, &query.Repo{Pattern: "repo"}); err != nil {
+	if repos, err = ss.List(ctx, &query.Repo{Pattern: "repo"}, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	} else if len(repos.Repos) != 1 {
 		var ss []string
@@ -480,7 +579,7 @@ func TestEmptyContent(t *testing.T) {
 	defer ss.Close()
 
 	ctx := context.Background()
-	result, err := ss.List(ctx, &query.Const{Value: true})
+	result, err := ss.List(ctx, &query.Const{Value: true}, nil)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

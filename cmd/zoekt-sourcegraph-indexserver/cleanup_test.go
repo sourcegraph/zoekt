@@ -34,13 +34,15 @@ func TestCleanup(t *testing.T) {
 			if filepath.Ext(path) != ".zoekt" {
 				continue
 			}
-			name, _ := shardRepoName(path)
+			names, _ := shardRepoNames(path)
 			fi, _ := os.Stat(path)
-			shards = append(shards, shard{
-				Repo:    name,
-				Path:    filepath.Base(path),
-				ModTime: fi.ModTime(),
-			})
+			for _, name := range names {
+				shards = append(shards, shard{
+					Repo:    name,
+					Path:    filepath.Base(path),
+					ModTime: fi.ModTime(),
+				})
+			}
 		}
 		return shards
 	}
@@ -196,9 +198,11 @@ func TestRemoveIncompleteShards(t *testing.T) {
 		"test.zoekt",
 		"foo.zoekt",
 		"bar.zoekt",
+		"bar.zoekt.meta",
 	}, []string{
 		"incomplete.zoekt123",
 		"crash.zoekt567",
+		"metacrash.zoekt789.meta",
 	}
 	sort.Strings(shards)
 

@@ -209,7 +209,6 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		// Later we will lift this into a root, like we do for caseQ
 		expr = &Type{Type: t, Child: nil}
-
 	}
 
 	return expr, len(in) - len(b), nil
@@ -358,6 +357,7 @@ const (
 	tokLang       = 12
 	tokSym        = 13
 	tokType       = 14
+	tokVis        = 15
 )
 
 var tokNames = map[int]string{

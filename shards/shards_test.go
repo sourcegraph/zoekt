@@ -19,11 +19,15 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"runtime"
+	"sort"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 )
@@ -34,7 +38,7 @@ func (s *crashSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Searc
 	panic("search")
 }
 
-func (s *crashSearcher) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
+func (s *crashSearcher) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (*zoekt.RepoList, error) {
 	panic("list")
 }
 
@@ -63,7 +67,7 @@ func TestCrashResilience(t *testing.T) {
 		t.Errorf("got stats %#v, want crashes = 1", res.Stats)
 	}
 
-	if res, err := ss.List(context.Background(), q); err != nil {
+	if res, err := ss.List(context.Background(), q, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	} else if res.Crashes != 1 {
 		t.Errorf("got result %#v, want crashes = 1", res)
@@ -105,7 +109,7 @@ func (s *rankSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Search
 	}, nil
 }
 
-func (s *rankSearcher) List(ctx context.Context, q query.Q) (*zoekt.RepoList, error) {
+func (s *rankSearcher) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (*zoekt.RepoList, error) {
 	r := zoekt.Repository{}
 	if s.repo != nil {
 		r = *s.repo
@@ -284,6 +288,111 @@ func TestUnloadIndex(t *testing.T) {
 	}
 }
 
+func TestShardedSearcher_List(t *testing.T) {
+	repos := []*zoekt.Repository{
+		{
+			ID:        1234,
+			Name:      "repo-a",
+			Branches:  []zoekt.RepositoryBranch{{Name: "main"}, {Name: "dev"}},
+			RawConfig: map[string]string{"repoid": "1234"},
+		},
+		{
+			Name:     "repo-b",
+			Branches: []zoekt.RepositoryBranch{{Name: "main"}, {Name: "dev"}},
+		},
+	}
+
+	// Test duplicate removal when ListOptions.Minimal is true and false
+	ss := newShardedSearcher(4)
+	ss.replace("1", searcherForTest(t, testIndexBuilder(t, repos[0])))
+	ss.replace("2", searcherForTest(t, testIndexBuilder(t, repos[0])))
+	ss.replace("3", searcherForTest(t, testIndexBuilder(t, repos[1])))
+	ss.replace("4", searcherForTest(t, testIndexBuilder(t, repos[1])))
+
+	for _, tc := range []struct {
+		name string
+		opts *zoekt.ListOptions
+		want *zoekt.RepoList
+	}{
+		{
+			name: "nil opts",
+			opts: nil,
+			want: &zoekt.RepoList{
+				Repos: []*zoekt.RepoListEntry{
+					{
+						Repository: *repos[0],
+						Stats:      zoekt.RepoStats{Shards: 2},
+					},
+					{
+						Repository: *repos[1],
+						Stats:      zoekt.RepoStats{Shards: 2},
+					},
+				},
+			},
+		},
+		{
+			name: "minimal=false",
+			opts: &zoekt.ListOptions{Minimal: false},
+			want: &zoekt.RepoList{
+				Repos: []*zoekt.RepoListEntry{
+					{
+						Repository: *repos[0],
+						Stats:      zoekt.RepoStats{Shards: 2},
+					},
+					{
+						Repository: *repos[1],
+						Stats:      zoekt.RepoStats{Shards: 2},
+					},
+				},
+			},
+		},
+		{
+			name: "minimal=true",
+			opts: &zoekt.ListOptions{Minimal: true},
+			want: &zoekt.RepoList{
+				Repos: []*zoekt.RepoListEntry{
+					{
+						Repository: *repos[1],
+						Stats:      zoekt.RepoStats{Shards: 2},
+					},
+				},
+				Minimal: map[uint32]*zoekt.MinimalRepoListEntry{
+					repos[0].ID: {
+						HasSymbols: repos[0].HasSymbols,
+						Branches:   repos[0].Branches,
+					},
+				},
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			q := &query.Repo{Pattern: "epo"}
+
+			res, err := ss.List(context.Background(), q, tc.opts)
+			if err != nil {
+				t.Fatalf("List(%v, %s): %v", q, tc.opts, err)
+			}
+
+			sort.Slice(res.Repos, func(i, j int) bool {
+				return res.Repos[i].Repository.Name < res.Repos[j].Repository.Name
+			})
+
+			ignored := []cmp.Option{
+				cmpopts.EquateEmpty(),
+				cmpopts.IgnoreFields(zoekt.RepoListEntry{}, "IndexMetadata"),
+				cmpopts.IgnoreFields(zoekt.RepoStats{}, "IndexBytes"),
+				cmpopts.IgnoreFields(zoekt.Repository{}, "SubRepoMap"),
+			}
+			if diff := cmp.Diff(tc.want, res, ignored...); diff != "" {
+				t.Fatalf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func testIndexBuilder(t testing.TB, repo *zoekt.Repository, docs ...zoekt.Document) *zoekt.IndexBuilder {
 	b, err := zoekt.NewIndexBuilder(repo)
 	if err != nil {
@@ -403,5 +512,137 @@ func BenchmarkShardedSearch(b *testing.B) {
 			}
 		})
 	}
+}
 
+func TestRawQuerySearch(t *testing.T) {
+	ss := newShardedSearcher(1)
+
+	var nextShardNum int
+	addShard := func(repo string, rawConfig map[string]string, docs ...zoekt.Document) {
+		r := &zoekt.Repository{Name: repo}
+		r.RawConfig = rawConfig
+		b := testIndexBuilder(t, r, docs...)
+		shard := searcherForTest(t, b)
+		ss.replace(fmt.Sprintf("key-%d", nextShardNum), shard)
+		nextShardNum++
+	}
+	addShard("public", map[string]string{"public": "1"}, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})
+	addShard("private_archived", map[string]string{"archived": "1"}, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
+	addShard("public_fork", map[string]string{"public": "1", "fork": "1"}, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
+
+	cases := []struct {
+		pattern   string
+		flags     query.RawConfig
+		wantRepos []string
+		wantFiles int
+	}{
+		{
+			pattern:   "bas",
+			flags:     query.RcOnlyPublic,
+			wantRepos: []string{"public"},
+			wantFiles: 1,
+		},
+		{
+			pattern:   "foo",
+			flags:     query.RcOnlyPublic,
+			wantRepos: []string{"public", "public_fork"},
+			wantFiles: 2,
+		},
+		{
+			pattern:   "foo",
+			flags:     query.RcOnlyPublic | query.RcNoForks,
+			wantRepos: []string{"public"},
+			wantFiles: 1,
+		},
+		{
+			pattern:   "bar",
+			flags:     query.RcOnlyForks,
+			wantRepos: []string{"public_fork"},
+			wantFiles: 1,
+		},
+		{
+			pattern:   "bas",
+			flags:     query.RcNoArchived,
+			wantRepos: []string{"public"},
+			wantFiles: 1,
+		},
+		{
+			pattern:   "foo",
+			flags:     query.RcNoForks,
+			wantRepos: []string{"public", "private_archived"},
+			wantFiles: 2,
+		},
+		{
+			pattern:   "bas",
+			flags:     query.RcOnlyArchived,
+			wantRepos: []string{"private_archived"},
+			wantFiles: 1,
+		},
+		{
+			pattern:   "foo",
+			flags:     query.RcOnlyPrivate,
+			wantRepos: []string{"private_archived"},
+			wantFiles: 1,
+		},
+		{
+			pattern:   "foo",
+			flags:     query.RcOnlyPrivate | query.RcNoArchived,
+			wantRepos: []string{},
+			wantFiles: 0,
+		},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("pattern:%s", c.pattern), func(t *testing.T) {
+			q := query.NewAnd(&query.Substring{Pattern: c.pattern}, c.flags)
+
+			sr, err := ss.Search(context.Background(), q, &zoekt.SearchOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got := len(sr.Files); got != c.wantFiles {
+				t.Fatalf("wanted %d, got %d", c.wantFiles, got)
+			}
+
+			if c.wantFiles == 0 {
+				return
+			}
+
+			gotRepos := make([]string, 0, len(sr.RepoURLs))
+			for k, _ := range sr.RepoURLs {
+				gotRepos = append(gotRepos, k)
+			}
+			sort.Strings(gotRepos)
+			sort.Strings(c.wantRepos)
+			if d := cmp.Diff(c.wantRepos, gotRepos); d != "" {
+				t.Fatalf("(-want, +got):\n%s", d)
+			}
+		})
+	}
+}
+
+func TestPrioritySlice(t *testing.T) {
+	p := &prioritySlice{}
+	for step, oper := range []struct {
+		isAppend    bool
+		value       float64
+		expectedMax float64
+	}{
+		{true, 1, 1},
+		{true, 3, 3},
+		{true, 2, 3},
+		{false, 1, 3},
+		{false, 3, 2},
+		{false, 2, math.Inf(-1)},
+	} {
+		if oper.isAppend {
+			p.append(oper.value)
+		} else {
+			p.remove(oper.value)
+		}
+		max := p.max()
+		if max != oper.expectedMax {
+			t.Errorf("%d: got %f, want %f", step, max, oper.expectedMax)
+		}
+	}
 }

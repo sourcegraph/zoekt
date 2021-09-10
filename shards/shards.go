@@ -16,15 +16,14 @@ package shards
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"math"
 	"os"
-	"path"
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -124,17 +123,60 @@ var (
 		Name: "zoekt_list_shard_running",
 		Help: "The number of concurrent list requests in a shard running",
 	})
-)
+	metricShardCloseDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "zoekt_shard_close_duration_seconds",
+		Help:    "The time it takes to close a Searcher.",
+		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
+	})
+	metricRankCacheUpdateDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "zoekt_rank_cache_update_duration_seconds",
+		Help:    "The time it takes to update the shard cache with new ranked shards.",
+		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
+	})
 
-type repositorer interface {
-	Repository() *zoekt.Repository
-}
+	metricListAllRepos = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_repos",
+		Help: "The last List(true) value for RepoStats.Repos. Repos is used for aggregrating the number of repositories.",
+	})
+	metricListAllShards = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_shards",
+		Help: "The last List(true) value for RepoStats.Shards. Shards is the total number of search shards.",
+	})
+	metricListAllDocuments = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_documents",
+		Help: "The last List(true) value for RepoStats.Documents. Documents holds the number of documents or files.",
+	})
+	metricListAllIndexBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_index_bytes",
+		Help: "The last List(true) value for RepoStats.IndexBytes. IndexBytes is the amount of RAM used for index overhead.",
+	})
+	metricListAllContentBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_content_bytes",
+		Help: "The last List(true) value for RepoStats.ContentBytes. ContentBytes is the amount of RAM used for raw content.",
+	})
+	metricListAllNewLinesCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_new_lines_count",
+		Help: "The last List(true) value for RepoStats.NewLinesCount.",
+	})
+	metricListAllDefaultBranchNewLinesCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_default_branch_new_lines_count",
+		Help: "The last List(true) value for RepoStats.DefaultBranchNewLinesCount.",
+	})
+	metricListAllOtherBranchesNewLinesCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zoekt_list_all_stats_other_branches_new_lines_count",
+		Help: "The last List(true) value for RepoStats.OtherBranchesNewLinesCount.",
+	})
+)
 
 type rankedShard struct {
 	zoekt.Searcher
-	// SOURCEGRAPH we want to search shards in the order of the name to match
-	// up with how we sort results in graphqlbackend.
-	name string
+
+	priority float64
+
+	// We have out of band ranking on compound shards which can change even if
+	// the shard file does not. So we compute a rank in getShards. We store
+	// names here to avoid the cost of List in the search request path.
+	names []string
 }
 
 type shardedSearcher struct {
@@ -146,70 +188,16 @@ type shardedSearcher struct {
 
 	shards map[string]rankedShard
 
-	rankedVersion uint64
-	ranked        []rankedShard
-
-	priority map[string]float64
+	rankedLock sync.Mutex // guards ranked
+	ranked     []rankedShard
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
 	ss := &shardedSearcher{
-		shards:   make(map[string]rankedShard),
-		sched:    newScheduler(n),
-		priority: make(map[string]float64),
+		shards: make(map[string]rankedShard),
+		sched:  newScheduler(n),
 	}
 	return ss
-}
-
-func (ss *shardedSearcher) watchPriorities(dir string, done chan struct{}) {
-	priorityPath := path.Join(dir, "priority.json")
-	var lastMtime time.Time
-
-	loadPriority := func() {
-		st, err := os.Stat(priorityPath)
-		if err != nil {
-			return // ignore missing file errors
-		}
-		if st.ModTime() == lastMtime {
-			return // file is unchanged
-		}
-		lastMtime = st.ModTime()
-		buf, err := ioutil.ReadFile(priorityPath)
-		if err != nil {
-			log.Printf("reloading priority.json, error %v", err)
-			return
-		}
-		priority := make(map[string]float64)
-		err = json.Unmarshal(buf, &priority)
-		if err != nil {
-			log.Printf("reloading priority.json, error %v", err)
-			return
-		}
-
-		log.Printf("reloading priority.json: %d shards have priorities", len(priority))
-
-		// get an exclusive lock to update priority map and invalidate ranking
-		proc := ss.sched.Exclusive()
-		defer proc.Release()
-		ss.priority = priority
-		ss.rankedVersion++
-		ss.ranked = nil // will regenerate ranking on next request
-	}
-
-	loadPriority()
-
-	// fsnotify is more efficient for watching a large number of files for changes, but a
-	// single stat call once a minute to check one file's modified time is negligible.
-	ticker := time.NewTicker(1 * time.Minute)
-	for {
-		select {
-		case <-done:
-			ticker.Stop()
-			return
-		case <-ticker.C:
-			loadPriority()
-		}
-	}
 }
 
 // NewDirectorySearcher returns a searcher instance that loads all
@@ -223,8 +211,6 @@ func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	go ss.watchPriorities(dir, dw.quit)
 
 	ds := &directorySearcher{
 		Streamer:         ss,
@@ -294,21 +280,29 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 	// (and (repobranches ...) (q))
 	// (and (repobranches ...) (q))
 
+	hasReposForPredicate := func(pred func(name string) bool) func(names []string) (any, all bool) {
+		return func(names []string) (any, all bool) {
+			any = false
+			all = true
+			for _, name := range names {
+				b := pred(name)
+				any = any || b
+				all = all && b
+			}
+			return any, all
+		}
+	}
+
 	for i, c := range and.Children {
 		var setSize int
-		var hasRepo func(string) bool
-
+		var hasRepos func([]string) (bool, bool)
 		switch setQuery := c.(type) {
 		case *query.RepoSet:
 			setSize = len(setQuery.Set)
-			hasRepo = func(name string) bool {
-				return setQuery.Set[name]
-			}
+			hasRepos = hasReposForPredicate(func(name string) bool { return setQuery.Set[name] })
 		case *query.RepoBranches:
 			setSize = len(setQuery.Set)
-			hasRepo = func(name string) bool {
-				return len(setQuery.Set[name]) > 0
-			}
+			hasRepos = hasReposForPredicate(func(name string) bool { return len(setQuery.Set[name]) > 0 })
 		default:
 			continue
 		}
@@ -320,16 +314,24 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		}
 
 		filtered := make([]rankedShard, 0, setSize)
+		filteredAll := true
 
 		for _, s := range shards {
-			if hasRepo(s.name) {
+			if any, all := hasRepos(s.names); any {
 				filtered = append(filtered, s)
+				filteredAll = filteredAll && all
 			}
 		}
 
 		// We don't need to adjust the query since we are returning an empty set
 		// of shards to search.
 		if len(filtered) == 0 {
+			return filtered, and
+		}
+
+		// We can't simplify the query since we are searching shards which contain
+		// repos we aren't supposed to search.
+		if !filteredAll {
 			return filtered, and
 		}
 
@@ -346,16 +348,18 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		}
 		if b, ok := c.(*query.RepoBranches); ok {
 			// We can only replace if all the repos want the same branches.
-			want := b.Set[filtered[0].name]
-			for _, s := range filtered[1:] {
-				if !strSliceEqual(want, b.Set[s.name]) {
-					return filtered, and
+			want := b.Set[filtered[0].names[0]]
+			for _, s := range filtered {
+				for _, name := range s.names {
+					if !strSliceEqual(want, b.Set[name]) {
+						return filtered, and
+					}
 				}
 			}
 
 			// Every repo wants the same branches, so we can replace RepoBranches
 			// with a list of branch queries.
-			and.Children[i] = b.Branches(filtered[0].name)
+			and.Children[i] = b.Branches(filtered[0].names[0])
 			return filtered, query.Simplify(and)
 		}
 
@@ -497,6 +501,9 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 
 	defer cancel()
 
+	mu := sync.Mutex{}
+	pendingPriorities := prioritySlice{}
+
 	g, ctx := errgroup.WithContext(childCtx)
 
 	// For each query, throttle the number of parallel
@@ -509,12 +516,16 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	// cap(feeder) searches run while yield blocks. However, doing it this way
 	// avoids needing to have synchronization in yield, so is done for
 	// simplicity.
-	feeder := make(chan zoekt.Searcher, runtime.GOMAXPROCS(0))
+	feeder := make(chan rankedShard, runtime.GOMAXPROCS(0))
 	g.Go(func() error {
 		defer close(feeder)
+		// Note: shards is sorted in order of descending priority.
 		for _, s := range shards {
 			// We let searchOneShard handle context errors.
 			_ = proc.Yield(ctx)
+			mu.Lock()
+			pendingPriorities.append(s.priority)
+			mu.Unlock()
 			feeder <- s
 		}
 		return nil
@@ -535,9 +546,34 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 					metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
 					metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
 
+					// MaxPendingPriority *cannot* be this result's Priority, because
+					// the priority is removed before computing max() and calling sender.Send.
+					// (There may be duplicate priorities, though-- that's fine.) A PendingShard
+					// is one that has not entered this critical section and sent its results.
+					//
+					// Note that there are at least two layers above this implementing streamSearch
+					// or StreamSearch that also take a lock for the entirety of the Send() operation.
+					//
+					// This is to avoid a potential race between shards sending back results
+					// if the priority were removed before sending without a lock:
+					// 1) shard A (pri 1), B (pri 2), C (pri 3) dispatch, pendingPriorities = [1, 2, 3]
+					// 2) C completes and removes itself from the priority list, pP = [1, 2]
+					// 3) B completes, removes itself, computes max, *and sends results* as maxPendingPriority=1,
+					//    indicating that no future results will come from a lower-ordered shard, pP = [1]
+					// 4) A completes, removes itself, computes max, and sends results with maxPP=-Inf, indicating
+					//    that the stream is finished (?)
+					// 5) C finally wakes up, computes max, and sends results with maxPP=-Inf, but with priority=3.
+					mu.Lock()
+					pendingPriorities.remove(s.priority)
+					sr.Progress.MaxPendingPriority = pendingPriorities.max()
+					sr.Progress.Priority = s.priority
 					sender.Send(sr)
+					mu.Unlock()
 				}))
 				if err != nil {
+					mu.Lock()
+					pendingPriorities.remove(s.priority)
+					mu.Unlock()
 					return err
 				}
 			}
@@ -578,7 +614,6 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 	}()
 
 	ms, err := s.Search(ctx, q, opts)
-
 	if err != nil {
 		return err
 	}
@@ -591,7 +626,7 @@ type shardListResult struct {
 	err error
 }
 
-func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, sink chan shardListResult) {
+func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.ListOptions, sink chan shardListResult) {
 	metricListShardRunning.Inc()
 	defer func() {
 		metricListShardRunning.Dec()
@@ -603,19 +638,21 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, sink chan sh
 		}
 	}()
 
-	ms, err := s.List(ctx, q)
+	ms, err := s.List(ctx, q, opts)
 	sink <- shardListResult{ms, err}
 }
 
-func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoList, err error) {
+func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.List", "")
 	tr.LazyLog(r, true)
+	tr.LazyPrintf("opts: %s", opts)
 	metricListRunning.Inc()
 	defer func() {
 		metricListRunning.Dec()
 		if rl != nil {
 			tr.LazyPrintf("repos size: %d", len(rl.Repos))
 			tr.LazyPrintf("crashes: %d", rl.Crashes)
+			tr.LazyPrintf("minimal size: %d", len(rl.Minimal))
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
@@ -623,6 +660,12 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		}
 		tr.Finish()
 	}()
+
+	r = query.Simplify(r)
+	isAll := false
+	if c, ok := r.(*query.Const); ok {
+		isAll = c.Value
+	}
 
 	proc, err := ss.sched.Acquire(ctx)
 	if err != nil {
@@ -641,15 +684,19 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		feeder <- s
 	}
 	close(feeder)
+
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		go func() {
 			for s := range feeder {
-				listOneShard(ctx, s, r, all)
+				listOneShard(ctx, s, r, opts, all)
 			}
 		}()
 	}
 
-	crashes := 0
+	agg := zoekt.RepoList{
+		Minimal: map[uint32]*zoekt.MinimalRepoListEntry{},
+	}
+
 	uniq := map[string]*zoekt.RepoListEntry{}
 
 	for range shards {
@@ -657,98 +704,148 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q) (rl *zoekt.RepoL
 		if r.err != nil {
 			return nil, r.err
 		}
-		crashes += r.rl.Crashes
+
+		agg.Crashes += r.rl.Crashes
+
 		for _, r := range r.rl.Repos {
 			prev, ok := uniq[r.Repository.Name]
 			if !ok {
-				cp := *r
+				cp := *r // We need to copy because we mutate r.Stats when merging duplicates
 				uniq[r.Repository.Name] = &cp
 			} else {
 				prev.Stats.Add(&r.Stats)
 			}
 		}
+
+		for id, r := range r.rl.Minimal {
+			_, ok := agg.Minimal[id]
+			if !ok {
+				agg.Minimal[id] = r
+			}
+		}
 	}
 
-	aggregate := make([]*zoekt.RepoListEntry, 0, len(uniq))
-	for _, v := range uniq {
-		aggregate = append(aggregate, v)
+	agg.Repos = make([]*zoekt.RepoListEntry, 0, len(uniq))
+	for _, r := range uniq {
+		agg.Repos = append(agg.Repos, r)
 	}
-	return &zoekt.RepoList{
-		Repos:   aggregate,
-		Crashes: crashes,
-	}, nil
+
+	isMinimal := opts != nil && opts.Minimal
+	if isAll && !isMinimal {
+		reportListAllMetrics(agg.Repos)
+	}
+
+	return &agg, nil
 }
 
-// getShards returns the currently loaded shards. The shards must be accessed
-// under a rlock call. The shards are sorted by decreasing rank and should not
-// be mutated.
+func reportListAllMetrics(repos []*zoekt.RepoListEntry) {
+	var stats zoekt.RepoStats
+	for _, r := range repos {
+		stats.Add(&r.Stats)
+	}
+
+	metricListAllRepos.Set(float64(stats.Repos))
+	metricListAllIndexBytes.Set(float64(stats.IndexBytes))
+	metricListAllContentBytes.Set(float64(stats.ContentBytes))
+	metricListAllDocuments.Set(float64(stats.Documents))
+	metricListAllShards.Set(float64(stats.Shards))
+	metricListAllNewLinesCount.Set(float64(stats.NewLinesCount))
+	metricListAllDefaultBranchNewLinesCount.Set(float64(stats.DefaultBranchNewLinesCount))
+	metricListAllOtherBranchesNewLinesCount.Set(float64(stats.OtherBranchesNewLinesCount))
+}
+
+// getShards returns the currently loaded shards. The shards are sorted by decreasing
+// rank and should not be mutated.
 func (s *shardedSearcher) getShards() []rankedShard {
+	start := time.Now()
+	s.rankedLock.Lock()
+	defer s.rankedLock.Unlock()
 	if len(s.ranked) > 0 {
+		metricRankCacheUpdateDurationSeconds.Observe(time.Since(start).Seconds())
 		return s.ranked
 	}
 
-	var res []rankedShard
+	// Holding rankedLock during the search ensures that we only perform
+	// the sort once-- any blocked goroutines would take just as long to
+	// perform the sort themselves.
+	res := make([]rankedShard, 0, len(s.shards))
 	for _, sh := range s.shards {
 		res = append(res, sh)
 	}
 	sort.Slice(res, func(i, j int) bool {
-		priorityDiff := s.priority[res[i].name] - s.priority[res[j].name]
+		priorityDiff := res[i].priority - res[j].priority
 		if priorityDiff != 0 {
 			return priorityDiff > 0
 		}
-		return res[i].name < res[j].name
+		if len(res[i].names) == 0 || len(res[j].names) == 0 {
+			// Protect against empty names which can happen if we fail to List or
+			// the shard is full of tombstones. Prefer the shard which has names.
+			return len(res[i].names) >= len(res[j].names)
+		}
+		return res[i].names[0] < res[j].names[0]
 	})
 
-	// Cache ranked. We currently hold a read lock, so start a goroutine which
-	// acquires a write lock to update. Use requiredVersion to ensure our
-	// cached slice is still current after acquiring the write lock.
-	go func(ranked []rankedShard, requiredVersion uint64) {
-		proc := s.sched.Exclusive()
-		defer proc.Release()
-		if s.rankedVersion == requiredVersion {
-			s.ranked = ranked
-		}
-	}(res, s.rankedVersion)
+	s.ranked = res
 
 	return res
 }
 
-func shardName(s zoekt.Searcher) string {
-	q := query.Repo{}
-	result, err := s.List(context.Background(), &q)
+func mkRankedShard(s zoekt.Searcher) rankedShard {
+	q := query.Const{Value: true}
+	result, err := s.List(context.Background(), &q, nil)
 	if err != nil {
-		return ""
+		return rankedShard{Searcher: s}
 	}
 	if len(result.Repos) == 0 {
-		return ""
+		return rankedShard{Searcher: s}
 	}
-	return result.Repos[0].Repository.Name
+
+	var (
+		maxPriority float64
+		names       = make([]string, 0, len(result.Repos))
+	)
+	for _, r := range result.Repos {
+		names = append(names, r.Repository.Name)
+		if r.Repository.RawConfig != nil {
+			priority, _ := strconv.ParseFloat(r.Repository.RawConfig["priority"], 64)
+			if priority > maxPriority {
+				maxPriority = priority
+			}
+		}
+	}
+
+	return rankedShard{
+		Searcher: s,
+		names:    names,
+		priority: maxPriority,
+	}
 }
 
 func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
-	var name string
+	var ranked rankedShard
 	if shard != nil {
-		name = shardName(shard)
+		ranked = mkRankedShard(shard)
 	}
 
 	proc := s.sched.Exclusive()
-	defer proc.Release()
 
 	old := s.shards[key]
-	if old.Searcher != nil {
-		old.Close()
-	}
-
 	if shard == nil {
 		delete(s.shards, key)
 	} else {
-		s.shards[key] = rankedShard{
-			name:     name,
-			Searcher: shard,
-		}
+		s.shards[key] = ranked
 	}
-	s.rankedVersion++
+	s.rankedLock.Lock()
 	s.ranked = nil
+	s.rankedLock.Unlock()
+
+	proc.Release()
+
+	if old.Searcher != nil {
+		start := time.Now()
+		old.Close()
+		metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
+	}
 
 	metricShardsLoaded.Set(float64(len(s.shards)))
 }
@@ -782,4 +879,41 @@ func strSliceEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// prioritySlice is a trivial implementation of an array that provides three
+// things: appending a value, removing a value, and getting the array's max.
+// Operations take O(n) time, which is acceptable because N is restricted to
+// GOMAXPROCS (i.e., number of cpu cores) by the shardedSearcher interface.
+type prioritySlice []float64
+
+func (p *prioritySlice) append(pri float64) {
+	*p = append(*p, pri)
+}
+
+func (p *prioritySlice) remove(pri float64) {
+	for i, opri := range *p {
+		if opri == pri {
+			if i != len(*p)-1 {
+				// swap to make this element the tail
+				(*p)[i] = (*p)[len(*p)-1]
+			}
+			// pop the end off
+			*p = (*p)[:len(*p)-1]
+			break
+		}
+	}
+}
+
+func (p *prioritySlice) max() float64 {
+	// remove() and max() could be combined, but this is easier to read and
+	// the expected performance difference from the extra lock and loop is
+	// almost certainly irrelevant.
+	maxPri := math.Inf(-1)
+	for _, pri := range *p {
+		if pri > maxPri {
+			maxPri = pri
+		}
+	}
+	return maxPri
 }

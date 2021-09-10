@@ -51,7 +51,6 @@ import (
 
 	"github.com/uber/jaeger-client-go"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
-	jaegerlog "github.com/uber/jaeger-client-go/log"
 	jaegermetrics "github.com/uber/jaeger-lib/metrics"
 )
 
@@ -222,7 +221,6 @@ func main() {
 	}
 
 	debugserver.AddHandlers(handler, *enablePprof)
-	handler.HandleFunc("/healthz", healthz)
 
 	// Sourcegraph: We use environment variables to configure watchdog since
 	// they are more convenient than flags in containerized environments.
@@ -231,22 +229,29 @@ func main() {
 		watchdogTick, _ = time.ParseDuration(v)
 		log.Printf("custom ZOEKT_WATCHDOG_TICK=%v", watchdogTick)
 	}
+
 	watchdogErrCount := 3
 	if v := os.Getenv("ZOEKT_WATCHDOG_ERRORS"); v != "" {
 		watchdogErrCount, _ = strconv.Atoi(v)
 		log.Printf("custom ZOEKT_WATCHDOG_ERRORS=%d", watchdogErrCount)
 	}
+
 	watchdogAddr := "http://" + *listen
 	if *sslCert != "" || *sslKey != "" {
 		watchdogAddr = "https://" + *listen
 	}
+	watchdogAddr += "/healthz"
+
 	if watchdogErrCount > 0 && watchdogTick > 0 {
 		go watchdog(watchdogTick, watchdogErrCount, watchdogAddr)
 	} else {
 		log.Println("watchdog disabled")
 	}
 
-	srv := &http.Server{Addr: *listen, Handler: handler}
+	srv := &http.Server{
+		Addr:    *listen,
+		Handler: handler,
+	}
 
 	go func() {
 		if debug {
@@ -293,9 +298,17 @@ func shutdownOnSignal(srv *http.Server) error {
 		}
 	}()
 
+	// Feature flagged. If we are not respecting ready status, we don't need to
+	// wait for it to propogate. This is the case currently for sourcegraph.com
+	// due to using our custom statefulset service discovery.
+	fast := os.Getenv("SHUTDOWN_MODE") == "fast"
+	if fast {
+		log.Println("SHUTDOWN_MODE=fast so not waiting for unready state to propogate")
+	}
+
 	// SIGTERM is sent by kubernetes. We give 15s to allow our endpoint to be
 	// removed from service discovery before draining traffic.
-	if sig == syscall.SIGTERM {
+	if sig == syscall.SIGTERM && !fast {
 		wait := 15 * time.Second
 		log.Printf("received SIGTERM, waiting %v before shutting down", wait)
 		select {
@@ -313,14 +326,6 @@ func shutdownOnSignal(srv *http.Server) error {
 
 	log.Printf("shutting down")
 	return srv.Shutdown(ctx)
-}
-
-// Always returns 200 OK.
-// Used for kubernetes liveness and readiness checks.
-// https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/
-func healthz(w http.ResponseWriter, req *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte("OK"))
 }
 
 func watchdogOnce(ctx context.Context, client *http.Client, addr string) error {
@@ -402,18 +407,28 @@ type loggedSearcher struct {
 	zoekt.Streamer
 }
 
-func (s *loggedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
-	sr, err := s.Streamer.Search(ctx, q, opts)
-	if err != nil {
-		log.Printf("EROR: search failed q=%s: %s", q.String(), err.Error())
-	}
-	if sr != nil {
-		log.Printf("DBUG: search q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsSkipped=%v MatchCount=%v NgramMatches=%v Wait=%v}", q.String(), opts.EstimateDocCount, opts.Whole, opts.ShardMaxMatchCount, opts.TotalMaxMatchCount, opts.ShardMaxImportantMatch, opts.TotalMaxImportantMatch, opts.MaxWallTime, opts.MaxDocDisplayCount, sr.Stats.ContentBytesLoaded, sr.Stats.IndexBytesLoaded, sr.Stats.Crashes, sr.Stats.Duration, sr.Stats.FileCount, sr.Stats.ShardFilesConsidered, sr.Stats.FilesConsidered, sr.Stats.FilesLoaded, sr.Stats.FilesSkipped, sr.Stats.ShardsSkipped, sr.Stats.MatchCount, sr.Stats.NgramMatches, sr.Stats.Wait)
-	}
-	return sr, err
+func (s *loggedSearcher) Search(
+	ctx context.Context,
+	q query.Q,
+	opts *zoekt.SearchOptions,
+) (sr *zoekt.SearchResult, err error) {
+	defer func() {
+		var stats *zoekt.Stats
+		if sr != nil {
+			stats = &sr.Stats
+		}
+		s.log(ctx, q, opts, stats, err)
+	}()
+
+	return s.Streamer.Search(ctx, q, opts)
 }
 
-func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) error {
+func (s *loggedSearcher) StreamSearch(
+	ctx context.Context,
+	q query.Q,
+	opts *zoekt.SearchOptions,
+	sender zoekt.Sender,
+) error {
 	var (
 		mu    sync.Mutex
 		stats zoekt.Stats
@@ -424,11 +439,67 @@ func (s *loggedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoek
 		mu.Unlock()
 		sender.Send(event)
 	}))
-	if err != nil {
-		log.Printf("EROR: search failed q=%s: %s", q.String(), err.Error())
-	}
-	log.Printf("DBUG: search q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsSkipped=%v MatchCount=%v NgramMatches=%v Wait=%v}", q.String(), opts.EstimateDocCount, opts.Whole, opts.ShardMaxMatchCount, opts.TotalMaxMatchCount, opts.ShardMaxImportantMatch, opts.TotalMaxImportantMatch, opts.MaxWallTime, opts.MaxDocDisplayCount, stats.ContentBytesLoaded, stats.IndexBytesLoaded, stats.Crashes, stats.Duration, stats.FileCount, stats.ShardFilesConsidered, stats.FilesConsidered, stats.FilesLoaded, stats.FilesSkipped, stats.ShardsSkipped, stats.MatchCount, stats.NgramMatches, stats.Wait)
+
+	s.log(ctx, q, opts, &stats, err)
+
 	return err
+}
+
+func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, st *zoekt.Stats, err error) {
+	id := traceID(ctx)
+	if err != nil {
+		log.Printf("EROR: search failed traceID=%s q=%s: %s", id, q.String(), err.Error())
+		return
+	}
+
+	if st == nil {
+		return
+	}
+
+	log.Printf(
+		"DBUG: search traceID=%s q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsSkipped=%v MatchCount=%v NgramMatches=%v Wait=%v}",
+		id,
+		q.String(),
+		opts.EstimateDocCount,
+		opts.Whole,
+		opts.ShardMaxMatchCount,
+		opts.TotalMaxMatchCount,
+		opts.ShardMaxImportantMatch,
+		opts.TotalMaxImportantMatch,
+		opts.MaxWallTime,
+		opts.MaxDocDisplayCount,
+		st.ContentBytesLoaded,
+		st.IndexBytesLoaded,
+		st.Crashes,
+		st.Duration,
+		st.FileCount,
+		st.ShardFilesConsidered,
+		st.FilesConsidered,
+		st.FilesLoaded,
+		st.FilesSkipped,
+		st.ShardsSkipped,
+		st.MatchCount,
+		st.NgramMatches,
+		st.Wait,
+	)
+}
+
+// traceID returns a trace ID, if any, found in the given context.
+func traceID(ctx context.Context) string {
+	span := opentracing.SpanFromContext(ctx)
+	if span == nil {
+		return ""
+	}
+	return traceIDFromSpan(span)
+}
+
+// traceIDFromSpan returns a trace ID, if any, found in the given span.
+func traceIDFromSpan(span opentracing.Span) string {
+	spanCtx, ok := span.Context().(jaeger.SpanContext)
+	if !ok {
+		return ""
+	}
+	return spanCtx.TraceID().String()
 }
 
 func initializeJaeger() {
@@ -450,6 +521,7 @@ func initializeJaeger() {
 		log.Printf("EROR: could not initialize jaeger tracer from env, error: %v", err.Error())
 		return
 	}
+	cfg.Tags = append(cfg.Tags, opentracing.Tag{Key: "service.version", Value: zoekt.Version})
 	if reflect.DeepEqual(cfg.Sampler, &jaegercfg.SamplerConfig{}) {
 		// Default sampler configuration for when it is not specified via
 		// JAEGER_SAMPLER_* env vars. In most cases, this is sufficient
@@ -458,13 +530,24 @@ func initializeJaeger() {
 		cfg.Sampler.Param = 1
 	}
 	tracer, _, err := cfg.NewTracer(
-		jaegercfg.Logger(jaegerlog.StdLogger),
+		jaegercfg.Logger(&jaegerLogger{}),
 		jaegercfg.Metrics(jaegermetrics.NullFactory),
 	)
 	if err != nil {
 		log.Printf("could not initialize jaeger tracer, error: %v", err.Error())
 	}
 	opentracing.SetGlobalTracer(tracer)
+}
+
+type jaegerLogger struct{}
+
+func (l *jaegerLogger) Error(msg string) {
+	log.Printf("ERROR: %s", msg)
+}
+
+// Infof logs a message at info priority
+func (l *jaegerLogger) Infof(msg string, args ...interface{}) {
+	log.Printf(msg, args...)
 }
 
 func initializeGoogleCloudProfiler() {

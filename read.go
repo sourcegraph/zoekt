@@ -18,7 +18,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/crc64"
+	"os"
 	"sort"
+
+	"github.com/rs/xid"
 )
 
 // IndexFile is a file suitable for concurrent read access. For performance
@@ -77,7 +81,10 @@ func (r *reader) readTOC(toc *indexTOC) error {
 		return err
 	}
 
-	secs := toc.sectionsHACK(sectionCount)
+	secs := toc.sections()
+	if len(secs) != int(sectionCount) {
+		secs = toc.sectionsNext()
+	}
 
 	if len(secs) != int(sectionCount) {
 		return fmt.Errorf("section count mismatch: got %d want %d", sectionCount, len(secs))
@@ -136,38 +143,32 @@ func (r *reader) readJSON(data interface{}, sec *simpleSection) error {
 	return json.Unmarshal(blob, data)
 }
 
+// canReadVersion returns checks if zoekt can read in md. If it can't a
+// non-nil error is returned.
+func canReadVersion(md *IndexMetadata) bool {
+	// Backwards compatible with v16
+	return md.IndexFormatVersion == IndexFormatVersion || md.IndexFormatVersion == NextIndexFormatVersion
+}
+
 func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d := indexData{
 		file:           r.r,
-		ngrams:         map[ngram]simpleSection{},
-		fileNameNgrams: map[ngram][]uint32{},
-		branchIDs:      map[string]uint{},
-		branchNames:    map[uint]string{},
+		fileNameNgrams: map[ngram][]byte{},
+		branchIDs:      []map[string]uint{},
+		branchNames:    []map[uint]string{},
 	}
 
-	blob, err := d.readSectionBlob(toc.metaData)
-	if err != nil {
+	repos, md, err := r.readMetadata(toc)
+	if md != nil && !canReadVersion(md) {
+		return nil, fmt.Errorf("file is v%d, want v%d", md.IndexFormatVersion, IndexFormatVersion)
+	} else if err != nil {
 		return nil, err
 	}
 
-	if err := json.Unmarshal(blob, &d.metaData); err != nil {
-		return nil, err
-	}
-
-	ensureSourcegraphSymbolsHack()
-
-	// Once we are not on version 16 use this code again
-	// if d.metaData.IndexFormatVersion != IndexFormatVersion {
-	if d.metaData.IndexFormatVersion != 16 && d.metaData.IndexFormatVersion != 15 {
-		return nil, fmt.Errorf("file is v%d, want v%d", d.metaData.IndexFormatVersion, IndexFormatVersion)
-	}
-
-	blob, err = d.readSectionBlob(toc.repoMetaData)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(blob, &d.repoMetaData); err != nil {
-		return nil, err
+	d.metaData = *md
+	d.repoMetaData = make([]Repository, 0, len(repos))
+	for _, r := range repos {
+		d.repoMetaData = append(d.repoMetaData, *r)
 	}
 
 	d.boundariesStart = toc.fileContents.data.off
@@ -177,24 +178,22 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.docSectionsStart = toc.fileSections.data.off
 	d.docSectionsIndex = toc.fileSections.relativeIndex()
 
-	if d.metaData.IndexFormatVersion == 16 {
-		d.symbols.symKindIndex = toc.symbolKindMap.relativeIndex()
-		d.fileEndSymbol, err = readSectionU32(d.file, toc.fileEndSymbol)
-		if err != nil {
-			return nil, err
-		}
+	d.symbols.symKindIndex = toc.symbolKindMap.relativeIndex()
+	d.fileEndSymbol, err = readSectionU32(d.file, toc.fileEndSymbol)
+	if err != nil {
+		return nil, err
+	}
 
-		// Call readSectionBlob on each section key, and store the result in
-		// the blob value.
-		for sect, blob := range map[simpleSection]*[]byte{
-			toc.symbolMap.index:    &d.symbols.symIndex,
-			toc.symbolMap.data:     &d.symbols.symContent,
-			toc.symbolKindMap.data: &d.symbols.symKindContent,
-			toc.symbolMetaData:     &d.symbols.symMetaData,
-		} {
-			if *blob, err = d.readSectionBlob(sect); err != nil {
-				return nil, err
-			}
+	// Call readSectionBlob on each section key, and store the result in
+	// the blob value.
+	for sect, blob := range map[simpleSection]*[]byte{
+		toc.symbolMap.index:    &d.symbols.symIndex,
+		toc.symbolMap.data:     &d.symbols.symContent,
+		toc.symbolKindMap.data: &d.symbols.symKindContent,
+		toc.symbolMetaData:     &d.symbols.symMetaData,
+	} {
+		if *blob, err = d.readSectionBlob(sect); err != nil {
+			return nil, err
 		}
 	}
 
@@ -230,22 +229,33 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	for j, br := range d.repoMetaData.Branches {
-		id := uint(1) << uint(j)
-		d.branchIDs[br.Name] = id
-		d.branchNames[id] = br.Name
+	for _, md := range d.repoMetaData {
+		repoBranchIDs := make(map[string]uint, len(md.Branches))
+		repoBranchNames := make(map[uint]string, len(md.Branches))
+		for j, br := range md.Branches {
+			id := uint(1) << uint(j)
+			repoBranchIDs[br.Name] = id
+			repoBranchNames[id] = br.Name
+		}
+		d.branchIDs = append(d.branchIDs, repoBranchIDs)
+		d.branchNames = append(d.branchNames, repoBranchNames)
+		d.rawConfigMasks = append(d.rawConfigMasks, encodeRawConfig(md.RawConfig))
 	}
 
-	blob, err = d.readSectionBlob(toc.runeDocSections)
+	d.repoTombstone = make([]bool, len(d.repoMetaData))
+
+	blob, err := d.readSectionBlob(toc.runeDocSections)
 	if err != nil {
 		return nil, err
 	}
-	d.runeDocSections = unmarshalDocSections(blob, nil)
+	d.runeDocSections = blob
+
+	var runeOffsets, fileNameRuneOffsets []uint32
 
 	for sect, dest := range map[simpleSection]*[]uint32{
 		toc.subRepos:        &d.subRepos,
-		toc.runeOffsets:     &d.runeOffsets,
-		toc.nameRuneOffsets: &d.fileNameRuneOffsets,
+		toc.runeOffsets:     &runeOffsets,
+		toc.nameRuneOffsets: &fileNameRuneOffsets,
 		toc.nameEndRunes:    &d.fileNameEndRunes,
 		toc.fileEndRunes:    &d.fileEndRunes,
 	} {
@@ -256,12 +266,21 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		}
 	}
 
-	var keys []string
-	for k := range d.repoMetaData.SubRepoMap {
-		keys = append(keys, k)
+	d.runeOffsets = makeRuneOffsetMap(runeOffsets)
+	d.fileNameRuneOffsets = makeRuneOffsetMap(fileNameRuneOffsets)
+
+	d.subRepoPaths = make([][]string, 0, len(d.repoMetaData))
+	for i := 0; i < len(d.repoMetaData); i++ {
+		keys := make([]string, 0, len(d.repoMetaData[i].SubRepoMap)+1)
+		keys = append(keys, "")
+		for k := range d.repoMetaData[i].SubRepoMap {
+			if k != "" {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		d.subRepoPaths = append(d.subRepoPaths, keys)
 	}
-	sort.Strings(keys)
-	d.subRepoPaths = keys
 
 	d.languageMap = map[byte]string{}
 	for k, v := range d.metaData.LanguageMap {
@@ -272,33 +291,90 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	d.calculateStats()
+	if d.metaData.IndexFormatVersion >= 17 {
+		blob, err := d.readSectionBlob(toc.repos)
+		if err != nil {
+			return nil, err
+		}
+		d.repos = fromSizedDeltas16(blob, nil)
+	} else {
+		// every document is for repo index 0 (default value of uint16)
+		d.repos = make([]uint16, len(d.fileBranchMasks))
+	}
+
+	if err := d.calculateStats(); err != nil {
+		return nil, err
+	}
+
 	return &d, nil
+}
+
+func (r *reader) readMetadata(toc *indexTOC) ([]*Repository, *IndexMetadata, error) {
+	var md IndexMetadata
+	if err := r.readJSON(&md, &toc.metaData); err != nil {
+		return nil, nil, err
+	}
+
+	// Sourcegraph specific: we support mutating metadata via an additional
+	// ".meta" file. This is to support tombstoning. An additional benefit is we
+	// can update metadata (such as Rank and Name) without re-indexing content.
+	blob, err := os.ReadFile(r.r.Name() + ".meta")
+	if err != nil && !os.IsNotExist(err) {
+		return nil, &md, fmt.Errorf("failed to read meta file: %w", err)
+	}
+
+	if len(blob) == 0 {
+		blob, err = r.r.Read(toc.repoMetaData.off, toc.repoMetaData.sz)
+		if err != nil {
+			return nil, &md, err
+		}
+	}
+
+	var repos []*Repository
+	if md.IndexFormatVersion >= 17 {
+		if err := json.Unmarshal(blob, &repos); err != nil {
+			return nil, &md, err
+		}
+	} else {
+		repos = make([]*Repository, 1)
+		if err := json.Unmarshal(blob, &repos[0]); err != nil {
+			return nil, &md, err
+		}
+	}
+
+	if md.ID == "" {
+		if len(repos) == 0 {
+			return nil, nil, fmt.Errorf("len(repos)=0. Cannot backfill ID")
+		}
+		md.ID = backfillID(repos[0].Name)
+	}
+
+	return repos, &md, nil
 }
 
 const ngramEncoding = 8
 
-func (d *indexData) readNgrams(toc *indexTOC) (map[ngram]simpleSection, error) {
+func (d *indexData) readNgrams(toc *indexTOC) (combinedNgramOffset, error) {
 	textContent, err := d.readSectionBlob(toc.ngramText)
 	if err != nil {
-		return nil, err
+		return combinedNgramOffset{}, err
 	}
 	postingsIndex := toc.postings.relativeIndex()
 
-	ngrams := make(map[ngram]simpleSection, len(textContent)/ngramEncoding)
-	for i := 0; i < len(textContent); i += ngramEncoding {
-		j := i / ngramEncoding
-		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
-		ngrams[ng] = simpleSection{
-			toc.postings.data.off + postingsIndex[j],
-			postingsIndex[j+1] - postingsIndex[j],
-		}
+	for i := 0; i < len(postingsIndex); i++ {
+		postingsIndex[i] += toc.postings.data.off
 	}
 
-	return ngrams, nil
+	ngrams := make([]ngram, 0, len(textContent)/ngramEncoding)
+	for i := 0; i < len(textContent); i += ngramEncoding {
+		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
+		ngrams = append(ngrams, ng)
+	}
+
+	return makeCombinedNgramOffset(ngrams, postingsIndex), nil
 }
 
-func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]uint32, error) {
+func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]byte, error) {
 	nameNgramText, err := d.readSectionBlob(toc.nameNgramText)
 	if err != nil {
 		return nil, err
@@ -311,13 +387,13 @@ func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]uint32, error
 
 	fileNamePostingsIndex := toc.namePostings.relativeIndex()
 
-	fileNameNgrams := make(map[ngram][]uint32, len(nameNgramText)/ngramEncoding)
+	fileNameNgrams := make(map[ngram][]byte, len(nameNgramText)/ngramEncoding)
 	for i := 0; i < len(nameNgramText); i += ngramEncoding {
 		j := i / ngramEncoding
 		off := fileNamePostingsIndex[j]
 		end := fileNamePostingsIndex[j+1]
 		ng := ngram(binary.BigEndian.Uint64(nameNgramText[i : i+ngramEncoding]))
-		fileNameNgrams[ng] = fromDeltas(fileNamePostingsData[off:end], nil)
+		fileNameNgrams[ng] = fileNamePostingsData[off:end]
 	}
 
 	return fileNameNgrams, nil
@@ -403,36 +479,57 @@ func NewSearcher(r IndexFile) (Searcher, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	r, err = sourcegraphInMemoryContent(&toc, r)
-	if err != nil {
-		return nil, err
-	}
-
 	indexData.file = r
 	return indexData, nil
 }
 
 // ReadMetadata returns the metadata of index shard without reading
 // the index data. The IndexFile is not closed.
-func ReadMetadata(inf IndexFile) (*Repository, *IndexMetadata, error) {
+func ReadMetadata(inf IndexFile) ([]*Repository, *IndexMetadata, error) {
 	rd := &reader{r: inf}
 	var toc indexTOC
 	if err := rd.readTOC(&toc); err != nil {
 		return nil, nil, err
 	}
 
-	var md IndexMetadata
-	if err := rd.readJSON(&md, &toc.metaData); err != nil {
+	return rd.readMetadata(&toc)
+}
+
+// ReadMetadataPath returns the metadata of index shard at p without reading
+// the index data. ReadMetadataPath is a helper for ReadMetadata which opens
+// the IndexFile at p.
+func ReadMetadataPath(p string) ([]*Repository, *IndexMetadata, error) {
+	f, err := os.Open(p)
+	if err != nil {
 		return nil, nil, err
 	}
+	defer f.Close()
 
-	var repo Repository
-	if err := rd.readJSON(&repo, &toc.repoMetaData); err != nil {
+	iFile, err := NewIndexFile(f)
+	if err != nil {
 		return nil, nil, err
 	}
+	defer iFile.Close()
 
-	return &repo, &md, nil
+	return ReadMetadata(iFile)
+}
+
+// IndexFilePaths returns all paths for the IndexFile at filepath p that
+// exist. Note: if no files exist this will return an empty slice and nil
+// error.
+//
+// This is p and the ".meta" file for p.
+func IndexFilePaths(p string) ([]string, error) {
+	paths := []string{p, p + ".meta"}
+	exist := paths[:0]
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			exist = append(exist, p)
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+	return exist, nil
 }
 
 func loadIndexData(r IndexFile) (*indexData, error) {
@@ -456,9 +553,23 @@ func PrintNgramStats(r IndexFile) error {
 		return err
 	}
 	var rNgram [3]rune
-	for ngram, ss := range id.ngrams {
+	for ngram, ss := range id.ngrams.DumpMap() {
 		rNgram = ngramToRunes(ngram)
 		fmt.Printf("%d\t%q\n", ss.sz, string(rNgram[:]))
 	}
 	return nil
+}
+
+var crc64Table = crc64.MakeTable(crc64.ECMA)
+
+// backfillID returns a 20 char long sortable ID. The ID only depends on s. It
+// should only be used to set the ID of simple v16 shards on read.
+func backfillID(s string) string {
+	var id xid.ID
+
+	// Our timestamps are based on Unix time. Shards without IDs are assigned IDs
+	// based on the 0 epoch.
+	binary.BigEndian.PutUint32(id[:], 0)
+	binary.BigEndian.PutUint64(id[4:], crc64.Checksum([]byte(s), crc64Table))
+	return id.String()
 }

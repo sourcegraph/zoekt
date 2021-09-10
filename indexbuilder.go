@@ -23,6 +23,7 @@ import (
 	"log"
 	"path/filepath"
 	"sort"
+	"time"
 	"unicode/utf8"
 )
 
@@ -147,6 +148,11 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 
 // IndexBuilder builds a single index shard.
 type IndexBuilder struct {
+	// The version we will write to disk. Sourcegraph Specific. This is to
+	// enable feature flagging new format versions.
+	indexFormatVersion int
+	featureVersion     int
+
 	contentStrings  []*searchableString
 	nameStrings     []*searchableString
 	docSections     [][]DocumentSection
@@ -165,20 +171,30 @@ type IndexBuilder struct {
 	branchMasks []uint64
 	subRepos    []uint32
 
+	// docID => repoID
+	repos []uint16
+
 	contentPostings *postingsBuilder
 	namePostings    *postingsBuilder
 
-	// root repository
-	repo Repository
+	// root repositories
+	repoList []Repository
 
 	// name to index.
-	subRepoIndices map[string]uint32
+	subRepoIndices []map[string]uint32
 
 	// language => language code
 	languageMap map[string]byte
 
 	// languages codes
 	languages []byte
+
+	// IndexTime will be used as the time if non-zero. Otherwise
+	// time.Now(). This is useful for doing reproducible builds in tests.
+	IndexTime time.Time
+
+	// a sortable 20 chars long id.
+	ID string
 }
 
 func (d *Repository) verify() error {
@@ -200,14 +216,7 @@ func (b *IndexBuilder) ContentSize() uint32 {
 // NewIndexBuilder creates a fresh IndexBuilder. The passed in
 // Repository contains repo metadata, and may be set to nil.
 func NewIndexBuilder(r *Repository) (*IndexBuilder, error) {
-	b := &IndexBuilder{
-		contentPostings: newPostingsBuilder(),
-		namePostings:    newPostingsBuilder(),
-		fileEndSymbol:   []uint32{0},
-		symIndex:        make(map[string]uint32),
-		symKindIndex:    make(map[string]uint32),
-		languageMap:     map[string]byte{},
-	}
+	b := newIndexBuilder()
 
 	if r == nil {
 		r = &Repository{}
@@ -218,38 +227,42 @@ func NewIndexBuilder(r *Repository) (*IndexBuilder, error) {
 	return b, nil
 }
 
-func (b *IndexBuilder) setRepository(desc *Repository) error {
-	if len(b.contentStrings) > 0 {
-		return fmt.Errorf("setRepository called after adding files")
+func newIndexBuilder() *IndexBuilder {
+	return &IndexBuilder{
+		indexFormatVersion: IndexFormatVersion,
+		featureVersion:     FeatureVersion,
+
+		contentPostings: newPostingsBuilder(),
+		namePostings:    newPostingsBuilder(),
+		fileEndSymbol:   []uint32{0},
+		symIndex:        make(map[string]uint32),
+		symKindIndex:    make(map[string]uint32),
+		languageMap:     map[string]byte{},
 	}
+}
+
+func (b *IndexBuilder) setRepository(desc *Repository) error {
 	if err := desc.verify(); err != nil {
 		return err
-	}
-
-	for _, subrepo := range desc.SubRepoMap {
-		branchEqual := len(subrepo.Branches) == len(desc.Branches)
-		if branchEqual {
-			for i, b := range subrepo.Branches {
-				branchEqual = branchEqual && (b.Name == desc.Branches[i].Name)
-			}
-		}
 	}
 
 	if len(desc.Branches) > 64 {
 		return fmt.Errorf("too many branches")
 	}
 
-	b.repo = *desc
-	repoCopy := *desc
-	repoCopy.SubRepoMap = nil
+	repo := *desc
 
-	if b.repo.SubRepoMap == nil {
-		b.repo.SubRepoMap = map[string]*Repository{}
+	// copy subrepomap without root
+	repo.SubRepoMap = map[string]*Repository{}
+	for k, v := range desc.SubRepoMap {
+		if k != "" {
+			repo.SubRepoMap[k] = v
+		}
 	}
-	b.repo.SubRepoMap[""] = &repoCopy
 
-	b.populateSubRepoIndices()
-	return nil
+	b.repoList = append(b.repoList, repo)
+
+	return b.populateSubRepoIndices()
 }
 
 type DocumentSection struct {
@@ -332,19 +345,29 @@ func CheckText(content []byte, maxTrigramCount int) error {
 	return nil
 }
 
-func (b *IndexBuilder) populateSubRepoIndices() {
-	if b.subRepoIndices != nil {
-		return
+func (b *IndexBuilder) populateSubRepoIndices() error {
+	if len(b.subRepoIndices) == len(b.repoList) {
+		return nil
 	}
-	var paths []string
-	for k := range b.repo.SubRepoMap {
+	if len(b.subRepoIndices) != len(b.repoList)-1 {
+		return fmt.Errorf("populateSubRepoIndices not called for a repo: %d != %d - 1", len(b.subRepoIndices), len(b.repoList))
+	}
+	repo := b.repoList[len(b.repoList)-1]
+	b.subRepoIndices = append(b.subRepoIndices, mkSubRepoIndices(repo))
+	return nil
+}
+
+func mkSubRepoIndices(repo Repository) map[string]uint32 {
+	paths := []string{""}
+	for k := range repo.SubRepoMap {
 		paths = append(paths, k)
 	}
 	sort.Strings(paths)
-	b.subRepoIndices = make(map[string]uint32, len(paths))
+	subRepoIndices := make(map[string]uint32, len(paths))
 	for i, p := range paths {
-		b.subRepoIndices[p] = uint32(i)
+		subRepoIndices[p] = uint32(i)
 	}
+	return subRepoIndices
 }
 
 const notIndexedMarker = "NOT-INDEXED: "
@@ -427,7 +450,8 @@ func (b *IndexBuilder) Add(doc Document) error {
 	}
 	b.addSymbols(doc.SymbolsMetaData)
 
-	subRepoIdx, ok := b.subRepoIndices[doc.SubRepositoryPath]
+	repoIdx := len(b.repoList) - 1
+	subRepoIdx, ok := b.subRepoIndices[repoIdx][doc.SubRepositoryPath]
 	if !ok {
 		return fmt.Errorf("unknown subrepo path %q", doc.SubRepositoryPath)
 	}
@@ -441,7 +465,12 @@ func (b *IndexBuilder) Add(doc Document) error {
 		mask |= m
 	}
 
+	if repoIdx > 1<<16 {
+		return fmt.Errorf("too many repos in shard: max is %d", 1<<16)
+	}
+
 	b.subRepos = append(b.subRepos, subRepoIdx)
+	b.repos = append(b.repos, uint16(repoIdx))
 
 	hasher.Write(doc.Content)
 
@@ -468,7 +497,7 @@ func (b *IndexBuilder) Add(doc Document) error {
 }
 
 func (b *IndexBuilder) branchMask(br string) uint64 {
-	for i, b := range b.repo.Branches {
+	for i, b := range b.repoList[len(b.repoList)-1].Branches {
 		if b.Name == br {
 			return uint64(1) << uint(i)
 		}
