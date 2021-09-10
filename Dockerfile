@@ -30,7 +30,8 @@ RUN curl -fsSL -o ctags.tar.gz "https://codeload.github.com/universal-ctags/ctag
 
 FROM alpine AS zoekt
 
-RUN apk add --no-cache git ca-certificates bind-tools tini
+RUN apk update --no-cache && apk upgrade --no-cache && \
+    apk add --no-cache git ca-certificates bind-tools tini
 
 COPY --from=ctags /usr/local/bin/universal-* /usr/local/bin/
 COPY --from=builder /go/bin/* /usr/local/bin/
