@@ -451,7 +451,13 @@ func (b *Builder) Add(doc zoekt.Document) error {
 	}
 
 	b.todo = append(b.todo, &doc)
-	b.size += len(doc.Name) + len(doc.Content)
+
+	if doc.SkipReason == "" {
+		b.size += len(doc.Name) + len(doc.Content)
+	} else {
+		b.size += len(doc.Name) + len(doc.SkipReason)
+	}
+
 	if b.size > b.opts.ShardMax {
 		return b.flush()
 	}
