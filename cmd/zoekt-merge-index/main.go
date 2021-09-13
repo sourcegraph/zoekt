@@ -28,7 +28,8 @@ func merge(dstDir string, names []string) error {
 		files = append(files, indexFile)
 	}
 
-	return zoekt.Merge(dstDir, files...)
+	_, err := zoekt.Merge(dstDir, files...)
+	return err
 }
 
 func main() {
