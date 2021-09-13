@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"flag"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -84,4 +87,12 @@ func TestListRepos(t *testing.T) {
 	if want := "/.internal/repos/index"; gotURL.Path != want {
 		t.Errorf("request path mismatch (-want +got):\n%s", cmp.Diff(want, gotURL.Path))
 	}
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if !testing.Verbose() {
+		log.SetOutput(ioutil.Discard)
+	}
+	os.Exit(m.Run())
 }
