@@ -574,6 +574,7 @@ func (b *Builder) Finish() error {
 
 	for p := range toDelete {
 		log.Printf("removing old shard file: %s", p)
+		b.shardLog("remove", p)
 		if err := os.Remove(p); err != nil {
 			b.buildError = err
 		}
