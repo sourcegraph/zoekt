@@ -526,8 +526,6 @@ func (b *Builder) Add(doc zoekt.Document) error {
 // stale shards from previous runs. This should always be called, also
 // in failure cases, to ensure cleanup.
 func (b *Builder) Finish() error {
-	defer b.shardLogger.Close()
-
 	b.flush()
 	b.building.Wait()
 
@@ -540,60 +538,48 @@ func (b *Builder) Finish() error {
 		return b.buildError
 	}
 
+	// We mark finished shards as empty when we successfully finish. Return now
+	// to allow call sites to call Finish idempotently.
+	if len(b.finishedShards) == 0 {
+		return nil
+	}
+
+	defer b.shardLogger.Close()
+
+	// Collect a map of the old shards on disk. For each new shard we replace we
+	// delete it from toDelete. Anything remaining in toDelete will be removed
+	// after we have renamed everything into place.
+	toDelete := map[string]struct{}{}
+	for _, name := range b.opts.FindAllShards() {
+		paths, err := zoekt.IndexFilePaths(name)
+		if err != nil {
+			b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
+		}
+		for _, p := range paths {
+			toDelete[p] = struct{}{}
+		}
+	}
+
 	for tmp, final := range b.finishedShards {
 		if err := os.Rename(tmp, final); err != nil {
 			b.buildError = err
 			continue
 		}
 
-		b.shardLog("upsert", final)
+		delete(toDelete, final)
 
-		// Remove extra files unrelated to the new shard. We don't want the old
-		// meta file sticking around.
-		paths, err := zoekt.IndexFilePaths(final)
-		if err != nil {
-			b.buildError = err
-		}
-		for _, p := range paths {
-			if p == final {
-				continue
-			}
-			log.Printf("removing old shard file: %s", p)
-			if err := os.Remove(p); err != nil {
-				b.buildError = err
-			}
-		}
+		b.shardLog("upsert", final)
 	}
 	b.finishedShards = map[string]string{}
 
-	if b.nextShardNum > 0 {
-		if err := b.deleteRemainingShards(); err != nil {
-			log.Printf("failed to delete some old shards: %v", err)
+	for p := range toDelete {
+		log.Printf("removing old shard file: %s", p)
+		if err := os.Remove(p); err != nil {
+			b.buildError = err
 		}
 	}
-	return b.buildError
-}
 
-func (b *Builder) deleteRemainingShards() error {
-	for {
-		shard := b.nextShardNum
-		b.nextShardNum++
-		name := b.opts.shardName(shard)
-		paths, err := zoekt.IndexFilePaths(name)
-		if err != nil {
-			return err
-		}
-		if len(paths) == 0 {
-			return nil
-		}
-		for _, p := range paths {
-			err := os.Remove(p)
-			if err != nil {
-				return err
-			}
-		}
-		b.shardLog("remove", name)
-	}
+	return b.buildError
 }
 
 func (b *Builder) flush() error {
