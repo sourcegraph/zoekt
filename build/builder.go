@@ -269,7 +269,7 @@ func hashString(s string) string {
 }
 
 // ShardName returns the name the given index shard.
-func (o *Options) ShardName(n int) string {
+func (o *Options) shardName(n int) string {
 	return o.shardNameVersion(zoekt.IndexFormatVersion, n)
 }
 
@@ -285,14 +285,13 @@ func (o *Options) shardNameVersion(version, n int) string {
 type IndexState string
 
 const (
-	IndexStateMissing            IndexState = "missing"
-	IndexStateCorrupt                       = "corrupt"
-	IndexStateUnexpectedCompound            = "unexpected-compound"
-	IndexStateVersion                       = "version-mismatch"
-	IndexStateOption                        = "option-mismatch"
-	IndexStateMeta                          = "meta-mismatch"
-	IndexStateContent                       = "content-mismatch"
-	IndexStateEqual                         = "equal"
+	IndexStateMissing IndexState = "missing"
+	IndexStateCorrupt            = "corrupt"
+	IndexStateVersion            = "version-mismatch"
+	IndexStateOption             = "option-mismatch"
+	IndexStateMeta               = "meta-mismatch"
+	IndexStateContent            = "content-mismatch"
+	IndexStateEqual              = "equal"
 )
 
 var readVersions = []struct {
@@ -316,51 +315,35 @@ func (o *Options) IncrementalSkipIndexing() bool {
 // options.
 func (o *Options) IndexState() IndexState {
 	// Open the latest version we support that is on disk.
-	fn := ""
-	featureVersion := -1
-	for _, v := range readVersions {
-		fn = o.shardNameVersion(v.IndexFormatVersion, 0)
-		if _, err := os.Stat(fn); err == nil {
-			featureVersion = v.FeatureVersion
-			break
-		}
+	fn := o.findShard()
+	if fn == "" {
+		return IndexStateMissing
 	}
 
 	repos, index, err := zoekt.ReadMetadataPath(fn)
 	if os.IsNotExist(err) {
-		// TODO: remove once we support resolving repo name to shard name
-		// Ignore index requests for repos contained in compound shards.
-		compoundShards, err := filepath.Glob(path.Join(o.IndexDir, "compound-*.zoekt"))
-		if err != nil {
-			return IndexStateMissing
-		}
-		for _, fn := range compoundShards {
-			repos, index, err = zoekt.ReadMetadataPath(fn)
-			if err != nil {
-				return IndexStateMissing
-			}
-			for _, repo := range repos {
-				if repo.Name == o.RepositoryDescription.Name {
-					return IndexStateUnexpectedCompound
-				}
-			}
-		}
 		return IndexStateMissing
 	} else if err != nil {
 		return IndexStateCorrupt
 	}
 
-	if index.IndexFeatureVersion != featureVersion {
-		return IndexStateVersion
+	for _, v := range readVersions {
+		if v.IndexFormatVersion == index.IndexFormatVersion && v.FeatureVersion != index.IndexFeatureVersion {
+			return IndexStateVersion
+		}
 	}
 
-	// This shouldn't happen. Options only references one repository, so
-	// shardName will only return non compound repositories. We still need to
-	// work out how to do IndexState with compound shards.
-	if len(repos) != 1 {
-		return IndexStateUnexpectedCompound
+	var repo *zoekt.Repository
+	for _, cand := range repos {
+		if cand.Name == o.RepositoryDescription.Name {
+			repo = cand
+			break
+		}
 	}
-	repo := repos[0]
+
+	if repo == nil {
+		return IndexStateCorrupt
+	}
 
 	if repo.IndexOptions != o.HashOptions() {
 		return IndexStateOption
@@ -381,6 +364,62 @@ func (o *Options) IndexState() IndexState {
 	}
 
 	return IndexStateEqual
+}
+
+func (o *Options) findShard() string {
+	for _, v := range readVersions {
+		fn := o.shardNameVersion(v.IndexFormatVersion, 0)
+		if _, err := os.Stat(fn); err == nil {
+			return fn
+		}
+	}
+
+	// Brute force finding the shard in compound shards. We should only hit this
+	// code path for repositories that are not already existing or are in
+	// compound shards.
+	//
+	// TODO add an oracle which can speed this up in the case of repositories
+	// already in compound shards.
+	compoundShards, err := filepath.Glob(path.Join(o.IndexDir, "compound-*.zoekt"))
+	if err != nil {
+		return ""
+	}
+	for _, fn := range compoundShards {
+		repos, _, err := zoekt.ReadMetadataPath(fn)
+		if err != nil {
+			continue
+		}
+		for _, repo := range repos {
+			if repo.Name == o.RepositoryDescription.Name {
+				return fn
+			}
+		}
+	}
+
+	return ""
+}
+
+func (o *Options) FindAllShards() []string {
+	for _, v := range readVersions {
+		fn := o.shardNameVersion(v.IndexFormatVersion, 0)
+		if _, err := os.Stat(fn); err == nil {
+			shards := []string{fn}
+			for i := 1; ; i++ {
+				fn := o.shardNameVersion(v.IndexFormatVersion, i)
+				if _, err := os.Stat(fn); err != nil {
+					return shards
+				}
+				shards = append(shards, fn)
+			}
+		}
+	}
+
+	// lazily fallback to findShard which will look for a compound shard.
+	if fn := o.findShard(); fn != "" {
+		return []string{fn}
+	}
+
+	return nil
 }
 
 // IgnoreSizeMax determines whether the max size should be ignored.
@@ -539,7 +578,7 @@ func (b *Builder) deleteRemainingShards() error {
 	for {
 		shard := b.nextShardNum
 		b.nextShardNum++
-		name := b.opts.ShardName(shard)
+		name := b.opts.shardName(shard)
 		paths, err := zoekt.IndexFilePaths(name)
 		if err != nil {
 			return err
@@ -715,7 +754,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 		}
 	}
 
-	name := b.opts.ShardName(nextShardNum)
+	name := b.opts.shardName(nextShardNum)
 
 	shardBuilder, err := b.newShardBuilder()
 	if err != nil {
