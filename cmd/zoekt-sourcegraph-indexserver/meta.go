@@ -20,20 +20,23 @@ import (
 // case.
 func mergeMeta(o *build.Options) error {
 	todo := map[string]string{}
-	for i := 0; ; i++ {
-		fn := o.ShardName(i)
-
-		repos, _, err := zoekt.ReadMetadataPath(fn)
-		if os.IsNotExist(err) {
-			break
-		} else if err != nil {
+	for _, fn := range o.FindAllShards() {
+		repos, md, err := zoekt.ReadMetadataPath(fn)
+		if err != nil {
 			return err
 		}
 
-		if len(repos) != 1 {
-			return fmt.Errorf("mergeMeta: does not support compound shards: %s", fn)
+		var repo *zoekt.Repository
+		for _, cand := range repos {
+			if cand.Name == o.RepositoryDescription.Name {
+				repo = cand
+				break
+			}
 		}
-		repo := repos[0]
+
+		if repo == nil {
+			return fmt.Errorf("mergeMeta: could not find repo %s in shard %s", o.RepositoryDescription.Name, fn)
+		}
 
 		if updated, err := repo.MergeMutable(&o.RepositoryDescription); err != nil {
 			return err
@@ -43,8 +46,16 @@ func mergeMeta(o *build.Options) error {
 			continue
 		}
 
+		var merged interface{}
+		if md.IndexFormatVersion >= 17 {
+			merged = repos
+		} else {
+			// <= v16 expects a single repo, not a list.
+			merged = repo
+		}
+
 		dst := fn + ".meta"
-		tmp, err := jsonMarshalTmpFile(repo, dst)
+		tmp, err := jsonMarshalTmpFile(merged, dst)
 		if err != nil {
 			return err
 		}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/zoekt"
@@ -140,17 +141,13 @@ func getShards(dir string) map[string][]shard {
 			continue
 		}
 
-		// TODO support compound shards once we support tombstones
-		if len(names) != 1 {
-			continue
+		for _, name := range names {
+			shards[name] = append(shards[name], shard{
+				Repo:    name,
+				Path:    path,
+				ModTime: fi.ModTime(),
+			})
 		}
-		name := names[0]
-
-		shards[name] = append(shards[name], shard{
-			Repo:    name,
-			Path:    path,
-			ModTime: fi.ModTime(),
-		})
 	}
 	return shards
 }
@@ -225,6 +222,14 @@ func moveAll(dstDir string, shards []shard) {
 		dstShard := shard
 		dstShard.Path = filepath.Join(dstDir, filepath.Base(shard.Path))
 		removeAll(dstShard)
+
+		// HACK we do not yet support tombstones in compound shard. So we avoid
+		// needing to deal with it by always deleting the whole compound shard.
+		if strings.HasPrefix(filepath.Base(shard.Path), "compound-") {
+			log.Printf("HACK removing compound shard since we don't support tombstoning: %s", shard.Path)
+			removeAll(shard)
+			continue
+		}
 
 		// Rename all paths, stop at first failure
 		for _, p := range paths {
