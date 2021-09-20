@@ -13,13 +13,13 @@ COPY . ./
 ARG VERSION
 RUN go install -ldflags "-X github.com/google/zoekt.Version=$VERSION" ./cmd/...
 
-FROM alpine:3.11 AS ctags
+FROM alpine:3.14 AS ctags
 
 RUN apk add --no-cache --virtual build-deps ca-certificates curl jansson-dev \
     libseccomp-dev linux-headers autoconf pkgconfig make automake \
     gcc g++ binutils
 
-ENV CTAGS_VERSION=681a8d5f5f6fcca9d8cca703c250f4cdf05b45c3
+ENV CTAGS_VERSION=7c4df9d38c4fe4bb494e5f3b2279034d7d8bd7b7
 
 RUN curl -fsSL -o ctags.tar.gz "https://codeload.github.com/universal-ctags/ctags/tar.gz/$CTAGS_VERSION" && \
     tar -C /tmp -xzf ctags.tar.gz && cd /tmp/ctags-$CTAGS_VERSION && \
