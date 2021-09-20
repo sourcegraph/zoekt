@@ -135,18 +135,12 @@ func (s *DirectoryWatcher) scan() error {
 		ts[fn] = fi.ModTime()
 
 		fiMeta, err := os.Lstat(fn + ".meta")
-		if err != nil {
-			continue
-		}
-		if fiMeta.ModTime().After(fi.ModTime()) {
+		if err == nil && fiMeta.ModTime().After(ts[fn]) {
 			ts[fn] = fiMeta.ModTime()
 		}
 
 		fiRip, err := os.Lstat(fn + ".rip")
-		if err != nil {
-			continue
-		}
-		if fiRip.ModTime().After(fi.ModTime()) {
+		if err == nil && fiRip.ModTime().After(ts[fn]) {
 			ts[fn] = fiRip.ModTime()
 		}
 	}

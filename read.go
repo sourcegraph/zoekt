@@ -595,6 +595,9 @@ func ReadMetadataPath(p string) ([]*Repository, *IndexMetadata, error) {
 	return ReadMetadata(iFile)
 }
 
+//func TombstonedReposPath(p string) (map[string]struct{}, error)
+//}
+
 // IndexFilePaths returns all paths for the IndexFile at filepath p that
 // exist. Note: if no files exist this will return an empty slice and nil
 // error.

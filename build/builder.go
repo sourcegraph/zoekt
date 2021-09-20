@@ -573,6 +573,18 @@ func (b *Builder) Finish() error {
 	b.finishedShards = map[string]string{}
 
 	for p := range toDelete {
+		if _, err := os.Stat(filepath.Join(path.Dir(p), tombstoneFileName)); err == nil {
+			// Don't delete compound shards, set tombstones instead.
+			if strings.HasPrefix(filepath.Base(p), "compound-") {
+				if strings.HasSuffix(p, ".zoekt") {
+					repoName := b.opts.RepositoryDescription.Name
+					b.shardLog(fmt.Sprintf("setTombstone %s", repoName), p)
+					err := setTombstone(p, repoName)
+					b.buildError = err
+				}
+				continue
+			}
+		}
 		log.Printf("removing old shard file: %s", p)
 		b.shardLog("remove", p)
 		if err := os.Remove(p); err != nil {
@@ -581,6 +593,58 @@ func (b *Builder) Finish() error {
 	}
 
 	return b.buildError
+}
+
+const (
+	tombstoneFileName = "RIP"
+)
+
+func setTombstone(shardPath string, repoName string) error {
+	repos, _, err := zoekt.ReadMetadataPath(shardPath)
+	if err != nil {
+		return err
+	}
+	for repoID, repo := range repos {
+		if repo.Name != repoName {
+			continue
+		}
+
+		tmp, err := ioutil.TempFile(filepath.Dir(shardPath), filepath.Base(shardPath)+".*.tmp")
+		defer tmp.Close()
+
+		dest := shardPath + ".rip"
+
+		setNewAndRename := func() error {
+			if _, err := tmp.WriteString(fmt.Sprintf("%d\t%d\n", repoID, 1)); err != nil {
+				return err
+			}
+			err = os.Rename(tmp.Name(), dest)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+
+		b, err := os.ReadFile(dest)
+		if os.IsNotExist(err) {
+			if err := setNewAndRename(); err != nil {
+				return err
+			}
+			break
+		}
+		if err != nil {
+			return err
+		}
+		_, err = tmp.Write(b)
+		if err != nil {
+			return err
+		}
+		if err := setNewAndRename(); err != nil {
+			return err
+		}
+		break
+	}
+	return nil
 }
 
 func (b *Builder) flush() error {
