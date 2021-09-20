@@ -320,7 +320,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.rawConfigMasks = append(d.rawConfigMasks, encodeRawConfig(md.RawConfig))
 	}
 
-	d.repoTombstone = make([]bool, len(d.repoMetaData))
+	err = d.readTombstones()
+	if err != nil {
+		return nil, err
+	}
 
 	blob, err := d.readSectionBlob(toc.runeDocSections)
 	if err != nil {
@@ -598,7 +601,7 @@ func ReadMetadataPath(p string) ([]*Repository, *IndexMetadata, error) {
 //
 // This is p and the ".meta" file for p.
 func IndexFilePaths(p string) ([]string, error) {
-	paths := []string{p, p + ".meta"}
+	paths := []string{p, p + ".meta", p + ".rip"}
 	exist := paths[:0]
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {

@@ -141,6 +141,14 @@ func (s *DirectoryWatcher) scan() error {
 		if fiMeta.ModTime().After(fi.ModTime()) {
 			ts[fn] = fiMeta.ModTime()
 		}
+
+		fiRip, err := os.Lstat(fn + ".rip")
+		if err != nil {
+			continue
+		}
+		if fiRip.ModTime().After(fi.ModTime()) {
+			ts[fn] = fiRip.ModTime()
+		}
 	}
 
 	var toLoad []string

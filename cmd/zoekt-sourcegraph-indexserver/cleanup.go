@@ -70,18 +70,26 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 		}
 
 		log.Printf("restoring shards from trash for %s", repo)
+		if _, err := os.Stat(filepath.Join(indexDir, tombstoneFileName)); err == nil {
+			shardsLog(indexDir, fmt.Sprintf("unsetTombstone %s", repo), shards)
+			unsetTombstone(shards, repo)
+		}
 		moveAll(indexDir, shards)
 		shardsLog(indexDir, "restore", shards)
 	}
 
-	// index: Move non-existant repos into trash
-	for _, shards := range index {
+	// index: Move non-existent repos into trash
+	for repo, shards := range index {
 		// Best-effort touch. If touch fails, we will just remove from the
 		// trash sooner.
 		for _, shard := range shards {
 			_ = os.Chtimes(shard.Path, now, now)
 		}
 
+		if _, err := os.Stat(filepath.Join(indexDir, tombstoneFileName)); err == nil {
+			shardsLog(indexDir, fmt.Sprintf("setTombstone %s", repo), shards)
+			setTombstone(shards, repo)
+		}
 		moveAll(trashDir, shards)
 		shardsLog(indexDir, "remove", shards)
 	}
@@ -105,6 +113,60 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 		}
 	}
 	metricCleanupDuration.Observe(time.Since(start).Seconds())
+}
+
+type tombstoneOp int8
+
+const (
+	addTombstone    tombstoneOp = 1
+	removeTombstone tombstoneOp = -1
+)
+
+func setTombstone(shards []shard, repoName string) {
+	err := appendTombstones(shards, repoName, addTombstone)
+	if err != nil {
+		log.Printf("setTombstone failed with error: %s", err)
+	}
+}
+
+func unsetTombstone(shards []shard, repoName string) {
+	err := appendTombstones(shards, repoName, removeTombstone)
+	if err != nil {
+		log.Printf("unsetTombstone failed with error: %s", err)
+	}
+}
+
+func appendTombstones(shards []shard, repoName string, op tombstoneOp) error {
+	for _, s := range shards {
+		repos, _, err := zoekt.ReadMetadataPath(s.Path)
+		if err != nil {
+			return err
+		}
+		for ix, repo := range repos {
+			if repo.Name == repoName {
+				err = appendTombstone(s.Path+".rip", uint64(ix), op)
+				if err != nil {
+					return err
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
+func appendTombstone(file string, repoID uint64, op tombstoneOp) error {
+	fmt.Printf("appendTombstone, file=%s\n", file)
+	f, err := os.OpenFile(file,
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(fmt.Sprintf("%d\t%d\n", repoID, op)); err != nil {
+		return err
+	}
+	return nil
 }
 
 type shard struct {

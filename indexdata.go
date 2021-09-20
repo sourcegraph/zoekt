@@ -15,11 +15,16 @@
 package zoekt
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"hash/crc64"
 	"log"
 	"math/bits"
+	"os"
+	"path"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/google/zoekt/query"
@@ -100,6 +105,49 @@ type indexData struct {
 
 	// rawConfigMasks contains the encoded RawConfig for each repository
 	rawConfigMasks []uint8
+}
+
+const tombstoneFileName = "RIP"
+
+func (d *indexData) readTombstones() error {
+	d.repoTombstone = make([]bool, len(d.repoMetaData))
+	if _, err := os.Stat(path.Join(path.Dir(d.file.Name()), tombstoneFileName)); err != nil {
+		return nil
+	} else {
+		fmt.Printf("reading tombstone file for %s\n", d.file.Name())
+	}
+
+	file, err := os.Open(d.file.Name() + ".rip")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	tombstoneMap := make(map[uint]int)
+	for scanner.Scan() {
+		repoOps := strings.Split(scanner.Text(), "\t")
+		repoId, err := strconv.Atoi(repoOps[0])
+		if err != nil {
+			return err
+		}
+		repoOp, err := strconv.Atoi(repoOps[1])
+		if err != nil {
+			return err
+		}
+		tombstoneMap[uint(repoId)] += repoOp
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	for k, v := range tombstoneMap {
+		d.repoTombstone[k] = v > 0
+	}
+	fmt.Printf("tombstones for %s: %v\n", d.file.Name(), d.repoTombstone)
+	return nil
 }
 
 type symbolData struct {

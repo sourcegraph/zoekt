@@ -231,6 +231,10 @@ func (sb *synchronizedBuffer) String() string {
 // IndexDir without the indexserver writing to it.
 const pauseFileName = "PAUSE"
 
+// tombstoneFileName if present in IndexDir will create *.rip files containing
+// tombstones operations.
+const tombstoneFileName = "RIP"
+
 // Run the sync loop. This blocks forever.
 func (s *Server) Run(queue *Queue) {
 	removeIncompleteShards(s.IndexDir)
