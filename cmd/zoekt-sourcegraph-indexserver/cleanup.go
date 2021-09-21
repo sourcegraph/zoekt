@@ -157,6 +157,28 @@ func setTombstone(shardPath string, repoName string) error {
 	return nil
 }
 
+func loadTombstones(path string) (map[string]struct{}, error) {
+	m := make(map[string]struct{})
+
+	file, err := os.Open(path + ".rip")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return m, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		m[scanner.Text()] = struct{}{}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 type shard struct {
 	Repo    string
 	Path    string
@@ -220,28 +242,6 @@ func shardRepoNames(path string) ([]string, error) {
 		names = append(names, repo.Name)
 	}
 	return names, nil
-}
-
-func loadTombstones(path string) (map[string]struct{}, error) {
-	m := make(map[string]struct{})
-
-	file, err := os.Open(path + ".rip")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return m, nil
-		}
-		return nil, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		m[scanner.Text()] = struct{}{}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return m, nil
 }
 
 var incompleteRE = regexp.MustCompile(`\.zoekt[0-9]+(\.\w+)?$`)
