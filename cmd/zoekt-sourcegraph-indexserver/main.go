@@ -676,7 +676,8 @@ func main() {
 	if *index == "" {
 		log.Fatal("must set -index")
 	}
-	if *root == "" {
+	needSourcegraph := !(*debugShard != "" || *debugMeta != "")
+	if *root == "" && needSourcegraph {
 		log.Fatal("must set -sourcegraph_url")
 	}
 	rootURL, err := url.Parse(*root)
