@@ -219,7 +219,6 @@ func shardRepoNames(path string) ([]string, error) {
 		}
 		names = append(names, repo.Name)
 	}
-	fmt.Printf("shardRepoNames[%s] = %v\n", path, names)
 	return names, nil
 }
 

@@ -264,7 +264,7 @@ func (s *Server) Run(queue *Queue) {
 			s.lastListRepos = repos
 			s.mu.Unlock()
 
-			log.Printf("updating index queue with %d repositories", len(repos))
+			debug.Printf("updating index queue with %d repositories", len(repos))
 
 			// Stop indexing repos we don't need to track anymore
 			count := queue.MaybeRemoveMissing(repos)
@@ -422,7 +422,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		metricIndexIncrementalIndexState.WithLabelValues(string(incrementalState)).Inc()
 		switch incrementalState {
 		case build.IndexStateEqual:
-			log.Printf("%s index already up to date", args.String())
+			debug.Printf("%s index already up to date", args.String())
 			return indexStateNoop, nil
 
 		case build.IndexStateMeta:
