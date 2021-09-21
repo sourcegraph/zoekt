@@ -23,8 +23,6 @@ import (
 	"math/bits"
 	"os"
 	"path"
-	"strconv"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/google/zoekt/query"
@@ -117,37 +115,41 @@ func (d *indexData) readTombstones() error {
 		fmt.Printf("reading tombstone file for %s\n", d.file.Name())
 	}
 
-	file, err := os.Open(d.file.Name() + ".rip")
+	m, err := loadTombstones(d.file.Name())
+	if err != nil {
+		return err
+	}
+
+	for ix, repo := range d.repoMetaData {
+		if _, ok := m[repo.Name]; ok {
+			d.repoTombstone[ix] = true
+		}
+	}
+
+	fmt.Printf("tombstones for %s: %v\n", d.file.Name(), d.repoTombstone)
+	return nil
+}
+
+func loadTombstones(path string) (map[string]struct{}, error) {
+	m := make(map[string]struct{})
+
+	file, err := os.Open(path + ".rip")
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return m, nil
 		}
-		return err
+		return nil, err
 	}
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	tombstoneMap := make(map[uint]int)
 	for scanner.Scan() {
-		repoOps := strings.Split(scanner.Text(), "\t")
-		repoId, err := strconv.Atoi(repoOps[0])
-		if err != nil {
-			return err
-		}
-		repoOp, err := strconv.Atoi(repoOps[1])
-		if err != nil {
-			return err
-		}
-		tombstoneMap[uint(repoId)] += repoOp
+		m[scanner.Text()] = struct{}{}
 	}
 	if err := scanner.Err(); err != nil {
-		return err
+		return nil, err
 	}
-	for k, v := range tombstoneMap {
-		d.repoTombstone[k] = v > 0
-	}
-	fmt.Printf("tombstones for %s: %v\n", d.file.Name(), d.repoTombstone)
-	return nil
+	return m, nil
 }
 
 type symbolData struct {
