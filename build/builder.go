@@ -311,37 +311,28 @@ var readVersions = []struct {
 func (o *Options) IncrementalSkipIndexing() bool {
 	return o.IndexState() == IndexStateEqual
 }
-func loadTombstones(path string) (m map[int]int, _ error) {
+func loadTombstones(path string) (m map[string]struct{}, _ error) {
+	m = make(map[string]struct{})
 	defer func() {
 		fmt.Printf("loadTombstones %+v\n", m)
 	}()
 	file, err := os.Open(path + ".rip")
 	if err != nil {
 		if os.IsNotExist(err) {
-			return make(map[int]int, 0), nil
+			return m, nil
 		}
 		return nil, err
 	}
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	tombstoneMap := make(map[int]int)
 	for scanner.Scan() {
-		repoOps := strings.Split(scanner.Text(), "\t")
-		repoId, err := strconv.Atoi(repoOps[0])
-		if err != nil {
-			return nil, err
-		}
-		repoOp, err := strconv.Atoi(repoOps[1])
-		if err != nil {
-			return nil, err
-		}
-		tombstoneMap[repoId] += repoOp
+		m[scanner.Text()] = struct{}{}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	return tombstoneMap, nil
+	return m, nil
 }
 
 // IndexState checks how the index present on disk compares to the build
@@ -364,12 +355,9 @@ func (o *Options) IndexState() IndexState {
 	tombstoneMap, err := loadTombstones(fn)
 	if err != nil {
 		fmt.Println("loadTombstones ERR", err)
-	}
-	for ix, repo := range repos {
-		if o.RepositoryDescription.Name == repo.Name {
-			if cnt, ok := tombstoneMap[ix]; ok && cnt > 0 {
-				return IndexStateMissing
-			}
+	} else {
+		if _, ok := tombstoneMap[o.RepositoryDescription.Name]; ok {
+			return IndexStateMissing
 		}
 	}
 
@@ -646,49 +634,28 @@ const (
 )
 
 func setTombstone(shardPath string, repoName string) error {
-	repos, _, err := zoekt.ReadMetadataPath(shardPath)
+	ts, err := loadTombstones(shardPath)
 	if err != nil {
 		return err
 	}
-	for repoID, repo := range repos {
-		if repo.Name != repoName {
-			continue
-		}
 
-		tmp, err := ioutil.TempFile(filepath.Dir(shardPath), filepath.Base(shardPath)+".*.tmp")
-		defer tmp.Close()
+	ts[repoName] = struct{}{}
 
-		dest := shardPath + ".rip"
-
-		setNewAndRename := func() error {
-			if _, err := tmp.WriteString(fmt.Sprintf("%d\t%d\n", repoID, 1)); err != nil {
-				return err
-			}
-			err = os.Rename(tmp.Name(), dest)
-			if err != nil {
-				return err
-			}
-			return nil
-		}
-
-		b, err := os.ReadFile(dest)
-		if os.IsNotExist(err) {
-			if err := setNewAndRename(); err != nil {
-				return err
-			}
-			break
-		}
+	tmp, err := ioutil.TempFile(filepath.Dir(shardPath), filepath.Base(shardPath)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer tmp.Close()
+	for r := range ts {
+		_, err = tmp.WriteString(r + "\n")
 		if err != nil {
 			return err
 		}
-		_, err = tmp.Write(b)
-		if err != nil {
-			return err
-		}
-		if err := setNewAndRename(); err != nil {
-			return err
-		}
-		break
+	}
+
+	err = os.Rename(tmp.Name(), shardPath+".rip")
+	if err != nil {
+		return err
 	}
 	return nil
 }

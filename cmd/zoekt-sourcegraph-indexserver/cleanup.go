@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -110,7 +109,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 		if _, err := os.Stat(filepath.Join(indexDir, tombstoneFileName)); err == nil {
 			if len(shards) > 0 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
 				shardsLog(indexDir, fmt.Sprintf("setTombstone %s", repo), shards)
-				if err := setTombstones(shards, repo, addTombstone); err != nil {
+				if err := setTombstones(shards, repo); err != nil {
 					log.Printf("error setting tombstone %s", err)
 				}
 				break
@@ -141,115 +140,39 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 	metricCleanupDuration.Observe(time.Since(start).Seconds())
 }
 
-type tombstoneOp int8
-
-const (
-	addTombstone    tombstoneOp = 1
-	removeTombstone tombstoneOp = -1
-)
-
-//func setTombstone(shards []shard, repoName string) {
-//	err := appendTombstones(shards, repoName, addTombstone)
-//	if err != nil {
-//		log.Printf("setTombstone failed with error: %s", err)
-//	}
-//}
-//
-//func unsetTombstone(shards []shard, repoName string) {
-//	err := appendTombstones(shards, repoName, removeTombstone)
-//	if err != nil {
-//		log.Printf("unsetTombstone failed with error: %s", err)
-//	}
-//}
-//
-//func appendTombstones(shards []shard, repoName string, op tombstoneOp) error {
-//	for _, s := range shards {
-//		repos, _, err := zoekt.ReadMetadataPath(s.Path)
-//		if err != nil {
-//			return err
-//		}
-//		for ix, repo := range repos {
-//			if repo.Name == repoName {
-//				err = appendTombstone(s.Path+".rip", uint64(ix), op)
-//				if err != nil {
-//					return err
-//				}
-//				break
-//			}
-//		}
-//	}
-//	return nil
-//}
-
-//func appendTombstone(file string, repoID uint64, op tombstoneOp) error {
-//	fmt.Printf("appendTombstone, file=%s\n", file)
-//	f, err := os.OpenFile(file,
-//		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-//	if err != nil {
-//		return err
-//	}
-//	defer f.Close()
-//	if _, err := f.WriteString(fmt.Sprintf("%d\t%d\n", repoID, op)); err != nil {
-//		return err
-//	}
-//
-//	return nil
-//}
-
-func setTombstones(shards []shard, repoName string, op tombstoneOp) error {
+func setTombstones(shards []shard, repoName string) error {
 	for ix, s := range shards {
 		fmt.Println("set tombstone for ", ix, s.Path)
-		if err := setTombstone(s.Path, repoName, op); err != nil {
+		if err := setTombstone(s.Path, repoName); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func setTombstone(shardPath string, repoName string, op tombstoneOp) error {
-	repos, _, err := zoekt.ReadMetadataPath(shardPath)
+func setTombstone(shardPath string, repoName string) error {
+	ts, err := loadTombstones(shardPath)
 	if err != nil {
 		return err
 	}
-	for repoID, repo := range repos {
-		if repo.Name != repoName {
-			continue
-		}
 
-		tmp, err := ioutil.TempFile(filepath.Dir(shardPath), filepath.Base(shardPath)+".*.tmp")
-		defer tmp.Close()
+	ts[repoName] = struct{}{}
 
-		dest := shardPath + ".rip"
-
-		setNewAndRename := func() error {
-			if _, err := tmp.WriteString(fmt.Sprintf("%d\t%d\n", repoID, op)); err != nil {
-				return err
-			}
-			err = os.Rename(tmp.Name(), dest)
-			if err != nil {
-				return err
-			}
-			return nil
-		}
-
-		b, err := os.ReadFile(dest)
-		if os.IsNotExist(err) {
-			if err := setNewAndRename(); err != nil {
-				return err
-			}
-			break
-		}
+	tmp, err := ioutil.TempFile(filepath.Dir(shardPath), filepath.Base(shardPath)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer tmp.Close()
+	for r := range ts {
+		_, err = tmp.WriteString(r + "\n")
 		if err != nil {
 			return err
 		}
-		_, err = tmp.Write(b)
-		if err != nil {
-			return err
-		}
-		if err := setNewAndRename(); err != nil {
-			return err
-		}
-		break
+	}
+
+	err = os.Rename(tmp.Name(), shardPath+".rip")
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -305,20 +228,13 @@ func shardRepoNames(path string) ([]string, error) {
 		return nil, err
 	}
 
-	tombstoneMap, err := loadTombstones(path)
+	tombstones, err := loadTombstones(path)
 	if err != nil {
-		fmt.Println("loadTombstones ERR", err)
+		return nil, err
 	}
-	res := make(map[string]struct{})
-	for ix, repo := range repos {
-		if cnt, ok := tombstoneMap[ix]; ok && cnt > 0 {
-			res[repo.Name] = struct{}{}
-		}
-	}
-
 	names := make([]string, 0, len(repos))
 	for _, repo := range repos {
-		if _, ok := res[repo.Name]; ok {
+		if _, ok := tombstones[repo.Name]; ok {
 			continue
 		}
 		names = append(names, repo.Name)
@@ -327,37 +243,28 @@ func shardRepoNames(path string) ([]string, error) {
 	return names, nil
 }
 
-func loadTombstones(path string) (m map[int]int, _ error) {
+func loadTombstones(path string) (m map[string]struct{}, _ error) {
+	m = make(map[string]struct{})
 	defer func() {
 		fmt.Printf("loadTombstones %+v\n", m)
 	}()
 	file, err := os.Open(path + ".rip")
 	if err != nil {
 		if os.IsNotExist(err) {
-			return make(map[int]int, 0), nil
+			return m, nil
 		}
 		return nil, err
 	}
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	tombstoneMap := make(map[int]int)
 	for scanner.Scan() {
-		repoOps := strings.Split(scanner.Text(), "\t")
-		repoId, err := strconv.Atoi(repoOps[0])
-		if err != nil {
-			return nil, err
-		}
-		repoOp, err := strconv.Atoi(repoOps[1])
-		if err != nil {
-			return nil, err
-		}
-		tombstoneMap[repoId] += repoOp
+		m[scanner.Text()] = struct{}{}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	return tombstoneMap, nil
+	return m, nil
 }
 
 var incompleteRE = regexp.MustCompile(`\.zoekt[0-9]+(\.\w+)?$`)
