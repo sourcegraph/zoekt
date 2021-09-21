@@ -85,15 +85,6 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 		}
 
 		log.Printf("restoring shards from trash for %s", repo)
-		//if _, err := os.Stat(filepath.Join(indexDir, tombstoneFileName)); err == nil {
-		//	if len(shards) > 0 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
-		//		shardsLog(indexDir, fmt.Sprintf("unsetTombstone %s", repo), shards)
-		//		if err := setTombstones(shards, repo, removeTombstone); err != nil {
-		//			log.Printf("error setting tombstone %s", err)
-		//		}
-		//		break
-		//	}
-		//}
 		moveAll(indexDir, shards)
 		shardsLog(indexDir, "restore", shards)
 	}
@@ -228,13 +219,13 @@ func shardRepoNames(path string) ([]string, error) {
 		return nil, err
 	}
 
-	tombstones, err := loadTombstones(path)
+	ts, err := loadTombstones(path)
 	if err != nil {
 		return nil, err
 	}
 	names := make([]string, 0, len(repos))
 	for _, repo := range repos {
-		if _, ok := tombstones[repo.Name]; ok {
+		if _, ok := ts[repo.Name]; ok {
 			continue
 		}
 		names = append(names, repo.Name)
@@ -243,11 +234,9 @@ func shardRepoNames(path string) ([]string, error) {
 	return names, nil
 }
 
-func loadTombstones(path string) (m map[string]struct{}, _ error) {
-	m = make(map[string]struct{})
-	defer func() {
-		fmt.Printf("loadTombstones %+v\n", m)
-	}()
+func loadTombstones(path string) (map[string]struct{}, error) {
+	m := make(map[string]struct{})
+
 	file, err := os.Open(path + ".rip")
 	if err != nil {
 		if os.IsNotExist(err) {

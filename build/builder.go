@@ -311,11 +311,9 @@ var readVersions = []struct {
 func (o *Options) IncrementalSkipIndexing() bool {
 	return o.IndexState() == IndexStateEqual
 }
-func loadTombstones(path string) (m map[string]struct{}, _ error) {
-	m = make(map[string]struct{})
-	defer func() {
-		fmt.Printf("loadTombstones %+v\n", m)
-	}()
+func loadTombstones(path string) (map[string]struct{}, error) {
+	m := make(map[string]struct{})
+
 	file, err := os.Open(path + ".rip")
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -351,12 +349,11 @@ func (o *Options) IndexState() IndexState {
 		return IndexStateCorrupt
 	}
 
-	// TODO (stefan)
-	tombstoneMap, err := loadTombstones(fn)
+	ts, err := loadTombstones(fn)
 	if err != nil {
-		fmt.Println("loadTombstones ERR", err)
+		fmt.Printf("error loading tombstones for %s: %s", fn, err)
 	} else {
-		if _, ok := tombstoneMap[o.RepositoryDescription.Name]; ok {
+		if _, ok := ts[o.RepositoryDescription.Name]; ok {
 			return IndexStateMissing
 		}
 	}
