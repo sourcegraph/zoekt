@@ -235,6 +235,9 @@ const pauseFileName = "PAUSE"
 func (s *Server) Run(queue *Queue) {
 	removeIncompleteShards(s.IndexDir)
 
+	// Protect the index directory from concurrent access of builder and cleanup.
+	muIndexDir := sync.Mutex{}
+
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
 		// We update the list of indexed repos every Interval. To speed up manual
@@ -268,7 +271,9 @@ func (s *Server) Run(queue *Queue) {
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
+				muIndexDir.Lock()
 				cleanup(s.IndexDir, repos, time.Now())
+				muIndexDir.Unlock()
 			}()
 
 			start := time.Now()
@@ -319,7 +324,11 @@ func (s *Server) Run(queue *Queue) {
 		}
 		start := time.Now()
 		args := s.indexArgs(name, opts)
+
+		muIndexDir.Lock()
 		state, err := s.Index(args)
+		muIndexDir.Unlock()
+
 		metricIndexDuration.WithLabelValues(string(state)).Observe(time.Since(start).Seconds())
 		if err != nil {
 			log.Printf("error indexing %s: %s", args.String(), err)
