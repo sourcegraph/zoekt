@@ -31,8 +31,6 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 // back into indexDir. Additionally it uses now to remove shards that have
 // been in the trash for 24 hours. It also deletes .tmp files older than 4 hours.
 func cleanup(indexDir string, repos []string, now time.Time) {
-	fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-	defer fmt.Printf("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n")
 	start := time.Now()
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
@@ -41,15 +39,6 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 
 	trash := getShards(trashDir)
 	index := getShards(indexDir)
-
-	{
-		fmt.Printf("repos = %+v\n", repos)
-		reposInIndex := make([]string, 0, len(index))
-		for k := range index {
-			reposInIndex = append(reposInIndex, k)
-		}
-		fmt.Printf("index = %+v\n", reposInIndex)
-	}
 
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)

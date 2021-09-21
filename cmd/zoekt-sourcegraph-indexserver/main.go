@@ -322,7 +322,6 @@ func (s *Server) Run(queue *Queue) {
 		}
 
 		name, opts, ok := queue.Pop()
-		fmt.Printf("POP %s\n", name)
 		if !ok {
 			time.Sleep(time.Second)
 			continue
