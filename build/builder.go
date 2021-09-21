@@ -17,6 +17,7 @@
 package build
 
 import (
+	"bufio"
 	"crypto/sha1"
 	"flag"
 	"fmt"
@@ -310,6 +311,38 @@ var readVersions = []struct {
 func (o *Options) IncrementalSkipIndexing() bool {
 	return o.IndexState() == IndexStateEqual
 }
+func loadTombstones(path string) (m map[int]int, _ error) {
+	defer func() {
+		fmt.Printf("loadTombstones %+v\n", m)
+	}()
+	file, err := os.Open(path + ".rip")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[int]int, 0), nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	tombstoneMap := make(map[int]int)
+	for scanner.Scan() {
+		repoOps := strings.Split(scanner.Text(), "\t")
+		repoId, err := strconv.Atoi(repoOps[0])
+		if err != nil {
+			return nil, err
+		}
+		repoOp, err := strconv.Atoi(repoOps[1])
+		if err != nil {
+			return nil, err
+		}
+		tombstoneMap[repoId] += repoOp
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return tombstoneMap, nil
+}
 
 // IndexState checks how the index present on disk compares to the build
 // options.
@@ -325,6 +358,19 @@ func (o *Options) IndexState() IndexState {
 		return IndexStateMissing
 	} else if err != nil {
 		return IndexStateCorrupt
+	}
+
+	// TODO (stefan)
+	tombstoneMap, err := loadTombstones(fn)
+	if err != nil {
+		fmt.Println("loadTombstones ERR", err)
+	}
+	for ix, repo := range repos {
+		if o.RepositoryDescription.Name == repo.Name {
+			if cnt, ok := tombstoneMap[ix]; ok && cnt > 0 {
+				return IndexStateMissing
+			}
+		}
 	}
 
 	for _, v := range readVersions {

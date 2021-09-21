@@ -86,15 +86,15 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 		}
 
 		log.Printf("restoring shards from trash for %s", repo)
-		if _, err := os.Stat(filepath.Join(indexDir, tombstoneFileName)); err == nil {
-			if len(shards) > 0 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
-				shardsLog(indexDir, fmt.Sprintf("unsetTombstone %s", repo), shards)
-				if err := setTombstones(shards, repo, removeTombstone); err != nil {
-					log.Printf("error setting tombstone %s", err)
-				}
-				break
-			}
-		}
+		//if _, err := os.Stat(filepath.Join(indexDir, tombstoneFileName)); err == nil {
+		//	if len(shards) > 0 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
+		//		shardsLog(indexDir, fmt.Sprintf("unsetTombstone %s", repo), shards)
+		//		if err := setTombstones(shards, repo, removeTombstone); err != nil {
+		//			log.Printf("error setting tombstone %s", err)
+		//		}
+		//		break
+		//	}
+		//}
 		moveAll(indexDir, shards)
 		shardsLog(indexDir, "restore", shards)
 	}
