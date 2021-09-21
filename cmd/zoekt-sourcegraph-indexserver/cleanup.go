@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -23,8 +21,6 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 	Help:    "The duration of one cleanup run",
 	Buckets: prometheus.LinearBuckets(1, 1, 10),
 })
-
-// TODO: deal with concurrent access to .rip files cleanup vs builder
 
 // cleanup trashes shards in indexDir that do not exist in repos. For repos
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
@@ -86,7 +82,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			_ = os.Chtimes(shard.Path, now, now)
 		}
 
-		if _, err := os.Stat(filepath.Join(indexDir, tombstoneFileName)); err == nil {
+		if _, err := os.Stat(filepath.Join(indexDir, zoekt.TombstoneFileName)); err == nil {
 			if len(shards) > 0 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
 				shardsLog(indexDir, fmt.Sprintf("setTombstone %s", repo), shards)
 				if err := setTombstones(shards, repo); err != nil {
@@ -121,62 +117,12 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 }
 
 func setTombstones(shards []shard, repoName string) error {
-	for ix, s := range shards {
-		fmt.Println("set tombstone for ", ix, s.Path)
-		if err := setTombstone(s.Path, repoName); err != nil {
+	for _, s := range shards {
+		if err := zoekt.SetTombstone(s.Path, repoName); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func setTombstone(shardPath string, repoName string) error {
-	ts, err := loadTombstones(shardPath)
-	if err != nil {
-		return err
-	}
-
-	ts[repoName] = struct{}{}
-
-	tmp, err := ioutil.TempFile(filepath.Dir(shardPath), filepath.Base(shardPath)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer tmp.Close()
-	for r := range ts {
-		_, err = tmp.WriteString(r + "\n")
-		if err != nil {
-			return err
-		}
-	}
-
-	err = os.Rename(tmp.Name(), shardPath+".rip")
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func loadTombstones(path string) (map[string]struct{}, error) {
-	m := make(map[string]struct{})
-
-	file, err := os.Open(path + ".rip")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return m, nil
-		}
-		return nil, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		m[scanner.Text()] = struct{}{}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return m, nil
 }
 
 type shard struct {
@@ -230,7 +176,7 @@ func shardRepoNames(path string) ([]string, error) {
 		return nil, err
 	}
 
-	ts, err := loadTombstones(path)
+	ts, err := zoekt.LoadTombstones(path)
 	if err != nil {
 		return nil, err
 	}

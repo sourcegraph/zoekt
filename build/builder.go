@@ -17,7 +17,6 @@
 package build
 
 import (
-	"bufio"
 	"crypto/sha1"
 	"flag"
 	"fmt"
@@ -311,27 +310,6 @@ var readVersions = []struct {
 func (o *Options) IncrementalSkipIndexing() bool {
 	return o.IndexState() == IndexStateEqual
 }
-func loadTombstones(path string) (map[string]struct{}, error) {
-	m := make(map[string]struct{})
-
-	file, err := os.Open(path + ".rip")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return m, nil
-		}
-		return nil, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		m[scanner.Text()] = struct{}{}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
 
 // IndexState checks how the index present on disk compares to the build
 // options.
@@ -349,7 +327,7 @@ func (o *Options) IndexState() IndexState {
 		return IndexStateCorrupt
 	}
 
-	ts, err := loadTombstones(fn)
+	ts, err := zoekt.LoadTombstones(fn)
 	if err != nil {
 		fmt.Printf("error loading tombstones for %s: %s", fn, err)
 	} else {
@@ -604,13 +582,13 @@ func (b *Builder) Finish() error {
 	b.finishedShards = map[string]string{}
 
 	for p := range toDelete {
-		if _, err := os.Stat(filepath.Join(path.Dir(p), tombstoneFileName)); err == nil {
+		if _, err := os.Stat(filepath.Join(path.Dir(p), zoekt.TombstoneFileName)); err == nil {
 			// Don't delete compound shards, set tombstones instead.
 			if strings.HasPrefix(filepath.Base(p), "compound-") {
 				if strings.HasSuffix(p, ".zoekt") {
 					repoName := b.opts.RepositoryDescription.Name
 					b.shardLog(fmt.Sprintf("setTombstone %s", repoName), p)
-					err := setTombstone(p, repoName)
+					err := zoekt.SetTombstone(p, repoName)
 					b.buildError = err
 				}
 				continue
@@ -624,37 +602,6 @@ func (b *Builder) Finish() error {
 	}
 
 	return b.buildError
-}
-
-const (
-	tombstoneFileName = "RIP"
-)
-
-func setTombstone(shardPath string, repoName string) error {
-	ts, err := loadTombstones(shardPath)
-	if err != nil {
-		return err
-	}
-
-	ts[repoName] = struct{}{}
-
-	tmp, err := ioutil.TempFile(filepath.Dir(shardPath), filepath.Base(shardPath)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer tmp.Close()
-	for r := range ts {
-		_, err = tmp.WriteString(r + "\n")
-		if err != nil {
-			return err
-		}
-	}
-
-	err = os.Rename(tmp.Name(), shardPath+".rip")
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (b *Builder) flush() error {

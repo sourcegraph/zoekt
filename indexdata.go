@@ -15,7 +15,6 @@
 package zoekt
 
 import (
-	"bufio"
 	"encoding/binary"
 	"fmt"
 	"hash/crc64"
@@ -105,17 +104,15 @@ type indexData struct {
 	rawConfigMasks []uint8
 }
 
-const tombstoneFileName = "RIP"
-
-func (d *indexData) readTombstones() error {
+func (d *indexData) readRepoTombstones() error {
 	d.repoTombstone = make([]bool, len(d.repoMetaData))
-	if _, err := os.Stat(path.Join(path.Dir(d.file.Name()), tombstoneFileName)); err != nil {
+	if _, err := os.Stat(path.Join(path.Dir(d.file.Name()), TombstoneFileName)); err != nil {
 		return nil
 	} else {
 		fmt.Printf("reading tombstone file for %s\n", d.file.Name())
 	}
 
-	m, err := loadTombstones(d.file.Name())
+	m, err := LoadTombstones(d.file.Name())
 	if err != nil {
 		return err
 	}
@@ -128,28 +125,6 @@ func (d *indexData) readTombstones() error {
 
 	fmt.Printf("tombstones for %s: %v\n", d.file.Name(), d.repoTombstone)
 	return nil
-}
-
-func loadTombstones(path string) (map[string]struct{}, error) {
-	m := make(map[string]struct{})
-
-	file, err := os.Open(path + ".rip")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return m, nil
-		}
-		return nil, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		m[scanner.Text()] = struct{}{}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return m, nil
 }
 
 type symbolData struct {

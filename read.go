@@ -320,7 +320,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.rawConfigMasks = append(d.rawConfigMasks, encodeRawConfig(md.RawConfig))
 	}
 
-	err = d.readTombstones()
+	err = d.readRepoTombstones()
 	if err != nil {
 		return nil, err
 	}
