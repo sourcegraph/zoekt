@@ -21,7 +21,8 @@ import (
 	"log"
 	"math/bits"
 	"os"
-	"path"
+	"path/filepath"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/google/zoekt/query"
@@ -106,15 +107,21 @@ type indexData struct {
 
 func (d *indexData) readRepoTombstones() error {
 	d.repoTombstone = make([]bool, len(d.repoMetaData))
-	if _, err := os.Stat(path.Join(path.Dir(d.file.Name()), TombstoneFileName)); err != nil {
+	if _, err := os.Stat(filepath.Join(filepath.Dir(d.file.Name()), TombstoneFileName)); err != nil {
 		return nil
-	} else {
-		fmt.Printf("reading tombstone file for %s\n", d.file.Name())
 	}
+	if !strings.HasPrefix(filepath.Base(d.file.Name()), "compound-") {
+		return nil
+	}
+	fmt.Printf("reading tombstones for %s\n", d.file.Name())
 
 	m, err := LoadTombstones(d.file.Name())
 	if err != nil {
 		return err
+	}
+
+	if len(m) == 0 {
+		return nil
 	}
 
 	for ix, repo := range d.repoMetaData {
@@ -122,8 +129,6 @@ func (d *indexData) readRepoTombstones() error {
 			d.repoTombstone[ix] = true
 		}
 	}
-
-	fmt.Printf("tombstones for %s: %v\n", d.file.Name(), d.repoTombstone)
 	return nil
 }
 
