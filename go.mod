@@ -26,7 +26,7 @@ require (
 	github.com/prometheus/procfs v0.0.10 // indirect
 	github.com/rs/xid v1.3.0
 	github.com/sergi/go-diff v1.2.0 // indirect
-	github.com/sourcegraph/go-ctags v0.0.0-20210805071240-8c61152fb089
+	github.com/sourcegraph/go-ctags v0.0.0-20210923045602-fa5a6095f725
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible
 	github.com/xanzy/go-gitlab v0.28.0
