@@ -86,9 +86,9 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			if len(shards) > 0 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
 				shardsLog(indexDir, fmt.Sprintf("setTombstone %s", repo), shards)
 				if err := setTombstones(shards, repo); err != nil {
-					log.Printf("error setting tombstone for %s: %s\n", repo, err)
+					log.Printf("error setting tombstone for %s in %+v: %s\n", repo, shards, err)
 				}
-				break
+				continue
 			}
 		}
 		moveAll(trashDir, shards)
