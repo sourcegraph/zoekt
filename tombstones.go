@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 )
 
 // TombstoneFileName if present in IndexDir will create *.rip files containing
@@ -24,6 +26,11 @@ func SetTombstone(shardPath string, repoName string) error {
 		return err
 	}
 	defer tmp.Close()
+	if runtime.GOOS != "windows" {
+		if err = tmp.Chmod(0o666 &^ umask); err != nil {
+			return err
+		}
+	}
 	for r := range ts {
 		_, err = tmp.WriteString(r + "\n")
 		if err != nil {
@@ -58,4 +65,12 @@ func LoadTombstones(path string) (map[string]struct{}, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+// umask holds the Umask of the current process
+var umask os.FileMode
+
+func init() {
+	umask = os.FileMode(syscall.Umask(0))
+	syscall.Umask(int(umask))
 }
