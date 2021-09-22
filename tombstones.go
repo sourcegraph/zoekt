@@ -10,9 +10,12 @@ import (
 )
 
 // TombstoneFileName if present in IndexDir will create *.rip files containing
-// tombstones operations.
+// tombstones instead of deleting compound shards.
 const TombstoneFileName = "RIP"
 
+// SetTombstone idempotently adds repoName to the .rip file of the shard at
+// shardPath. It does not validate whether the repository is actually contained
+// in the shard.
 func SetTombstone(shardPath string, repoName string) error {
 	ts, err := LoadTombstones(shardPath)
 	if err != nil {
@@ -45,10 +48,11 @@ func SetTombstone(shardPath string, repoName string) error {
 	return nil
 }
 
-func LoadTombstones(path string) (map[string]struct{}, error) {
+// LoadTombstones loads the tombstones for the shard at shardPath.
+func LoadTombstones(shardPath string) (map[string]struct{}, error) {
 	m := make(map[string]struct{})
 
-	file, err := os.Open(path + ".rip")
+	file, err := os.Open(shardPath + ".rip")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return m, nil

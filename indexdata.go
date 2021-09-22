@@ -105,6 +105,7 @@ type indexData struct {
 	rawConfigMasks []uint8
 }
 
+// readRepoTombstones has to be called after d.repoMetaData has been set.
 func (d *indexData) readRepoTombstones() error {
 	d.repoTombstone = make([]bool, len(d.repoMetaData))
 	if _, err := os.Stat(filepath.Join(filepath.Dir(d.file.Name()), TombstoneFileName)); err != nil {
