@@ -437,6 +437,8 @@ github.com/sourcegraph/go-ctags v0.0.0-20210923190348-8a163c1411cb h1:wTwdy25y20
 github.com/sourcegraph/go-ctags v0.0.0-20210923190348-8a163c1411cb/go.mod h1:ZYjpRXoJrRlxjU9ZfpaUKJkk62AjhJPffN3rlw2aqxM=
 github.com/sourcegraph/go-ctags v0.0.0-20210923195914-d1c916a41c81 h1:nLiXwvRpfv2Dh7F/MW4b9WXqYrVXOXN83ZHSW28+5Ro=
 github.com/sourcegraph/go-ctags v0.0.0-20210923195914-d1c916a41c81/go.mod h1:ZYjpRXoJrRlxjU9ZfpaUKJkk62AjhJPffN3rlw2aqxM=
+github.com/sourcegraph/go-ctags v0.0.0-20210923201916-00b9c039141c h1:yE3O0BjqgifSyuyhnvvOuonOHZa8m58IJgqFEB07dR0=
+github.com/sourcegraph/go-ctags v0.0.0-20210923201916-00b9c039141c/go.mod h1:ZYjpRXoJrRlxjU9ZfpaUKJkk62AjhJPffN3rlw2aqxM=
 github.com/sourcegraph/go-diff v0.5.1/go.mod h1:j2dHj3m8aZgQO8lMTcTnBcXkRRRqi34cd2MNlA9u1mE=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=
 github.com/spf13/afero v1.1.2/go.mod h1:j4pytiNVoe2o6bmDsKpLACNPDBIoEAkihy7loJ1B0CQ=
