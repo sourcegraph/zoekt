@@ -113,7 +113,6 @@ func (d *indexData) readRepoTombstones() error {
 	if !strings.HasPrefix(filepath.Base(d.file.Name()), "compound-") {
 		return nil
 	}
-	fmt.Printf("reading tombstones for %s\n", d.file.Name())
 
 	m, err := LoadTombstones(d.file.Name())
 	if err != nil {
