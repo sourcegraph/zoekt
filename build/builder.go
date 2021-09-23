@@ -320,7 +320,7 @@ func (o *Options) IndexState() IndexState {
 		return IndexStateMissing
 	}
 
-	repos, index, err := zoekt.ReadMetadataPath(fn)
+	repos, index, err := zoekt.ReadMetadataPathAlive(fn)
 	if os.IsNotExist(err) {
 		return IndexStateMissing
 	} else if err != nil {
@@ -385,16 +385,9 @@ func (o *Options) findShard() string {
 		return ""
 	}
 	for _, fn := range compoundShards {
-		repos, _, err := zoekt.ReadMetadataPath(fn)
+		repos, _, err := zoekt.ReadMetadataPathAlive(fn)
 		if err != nil {
 			continue
-		}
-		if zoekt.TombstonesEnabled(filepath.Dir(fn)) {
-			ts, err := zoekt.LoadTombstones(fn)
-			if err != nil {
-				continue
-			}
-			repos = filterRepos(repos, ts)
 		}
 		for _, repo := range repos {
 			if repo.Name == o.RepositoryDescription.Name {
@@ -404,17 +397,6 @@ func (o *Options) findShard() string {
 	}
 
 	return ""
-}
-
-func filterRepos(repos []*zoekt.Repository, ts map[string]struct{}) []*zoekt.Repository {
-	cur := 0
-	for ix, repo := range repos {
-		if _, ok := ts[repo.Name]; ok {
-			repos[cur], repos[ix] = repos[ix], repos[cur]
-			cur++
-		}
-	}
-	return repos[cur:]
 }
 
 func (o *Options) FindAllShards() []string {
@@ -586,7 +568,7 @@ func (b *Builder) Finish() error {
 
 		delete(toDelete, final)
 
-		b.shardLog("upsert", final)
+		b.shardLog("upsert", final, b.opts.RepositoryDescription.Name)
 	}
 	b.finishedShards = map[string]string{}
 
@@ -596,7 +578,7 @@ func (b *Builder) Finish() error {
 			if strings.HasPrefix(filepath.Base(p), "compound-") {
 				if strings.HasSuffix(p, ".zoekt") {
 					repoName := b.opts.RepositoryDescription.Name
-					b.shardLog(fmt.Sprintf("setTombstone %s", repoName), p)
+					b.shardLog("set_tombstone", p, repoName)
 					err := zoekt.SetTombstone(p, repoName)
 					b.buildError = err
 				}
@@ -604,7 +586,7 @@ func (b *Builder) Finish() error {
 			}
 		}
 		log.Printf("removing old shard file: %s", p)
-		b.shardLog("remove", p)
+		b.shardLog("remove", p, b.opts.RepositoryDescription.Name)
 		if err := os.Remove(p); err != nil {
 			b.buildError = err
 		}
@@ -668,13 +650,13 @@ func (b *Builder) flush() error {
 	return nil
 }
 
-func (b *Builder) shardLog(action, shard string) {
+func (b *Builder) shardLog(action, shard string, repoName string) {
 	shard = filepath.Base(shard)
 	var shardSize int64
 	if fi, err := os.Stat(filepath.Join(b.opts.IndexDir, shard)); err == nil {
 		shardSize = fi.Size()
 	}
-	_, _ = fmt.Fprintf(b.shardLogger, "%d\t%s\t%s\t%d\n", time.Now().UTC().Unix(), action, shard, shardSize)
+	_, _ = fmt.Fprintf(b.shardLogger, "%d\t%s\t%s\t%d\t%s\n", time.Now().UTC().Unix(), action, shard, shardSize, repoName)
 }
 
 var profileNumber int

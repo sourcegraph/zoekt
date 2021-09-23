@@ -1,55 +1,67 @@
 package zoekt
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestSetTombstone(t *testing.T) {
+	mockRepos = mkRepos("r1", "r2", "r3")
+
+	readMeta := func(shard string) []byte {
+		blob, err := os.ReadFile(shard + ".meta")
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		return blob
+	}
+
 	dir := t.TempDir()
+	ghostShard := filepath.Join(dir, "test.zoekt")
 
-	wantRepo := "r1"
-	shardPath := filepath.Join(dir, "test.zoekt")
+	SetTombstone(ghostShard, "r2")
 
-	err := SetTombstone(shardPath, wantRepo)
-	if err != nil {
+	blob := readMeta(ghostShard)
+	gotRepos := []*Repository{}
+	if err := json.Unmarshal(blob, &gotRepos); err != nil {
 		t.Fatal(err)
 	}
 
-	m, err := LoadTombstones(shardPath)
-	if err != nil {
-		t.Fatal(m)
+	if gotRepos[0].Tombstone {
+		t.Fatal("r1 should have been alive")
 	}
-	if len(m) != 1 {
-		t.Fatalf("wanted 1 tombstone, got %d", len(m))
+	if !gotRepos[1].Tombstone {
+		t.Fatal("r2 should have been dead")
 	}
-	if _, ok := m[wantRepo]; !ok {
-		t.Fatalf("%s should have been tombstoned", wantRepo)
+	if gotRepos[2].Tombstone {
+		t.Fatal("r3 should have been alive")
 	}
 
-	err = SetTombstone(shardPath, wantRepo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantRepo2 := "r2"
-	err = SetTombstone(shardPath, wantRepo2)
-	if err != nil {
+	SetTombstone(ghostShard, "r1")
+
+	blob = readMeta(ghostShard)
+	gotRepos = nil
+	if err := json.Unmarshal(blob, &gotRepos); err != nil {
 		t.Fatal(err)
 	}
 
-	m, err = LoadTombstones(shardPath)
-	if err != nil {
-		t.Fatal(m)
+	if !gotRepos[0].Tombstone {
+		t.Fatal("r1 should have been dead")
 	}
-	if len(m) != 2 {
-		t.Fatalf("wanted tombstones [%s, %s], got %v", wantRepo, wantRepo2, m)
+	if !gotRepos[1].Tombstone {
+		t.Fatal("r2 should have been dead")
 	}
+	if gotRepos[2].Tombstone {
+		t.Fatal("r3 should have been alive")
+	}
+}
 
-	if _, ok := m[wantRepo]; !ok {
-		t.Fatalf("%s should have been tombstoned", wantRepo)
+func mkRepos(repoNames ...string) []*Repository {
+	ret := make([]*Repository, 0, len(repoNames))
+	for _, n := range repoNames {
+		ret = append(ret, &Repository{Name: n})
 	}
-
-	if _, ok := m[wantRepo2]; !ok {
-		t.Fatalf("%s should have been tombstoned", wantRepo2)
-	}
+	return ret
 }

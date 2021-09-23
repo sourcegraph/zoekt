@@ -20,8 +20,6 @@ import (
 	"hash/crc64"
 	"log"
 	"math/bits"
-	"path/filepath"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/google/zoekt/query"
@@ -79,10 +77,6 @@ type indexData struct {
 	metaData     IndexMetadata
 	repoMetaData []Repository
 
-	// repoTombstone[repoID] is true if we are not allowed to search
-	// repoID.
-	repoTombstone []bool
-
 	subRepos     []uint32
 	subRepoPaths [][]string
 
@@ -102,33 +96,6 @@ type indexData struct {
 
 	// rawConfigMasks contains the encoded RawConfig for each repository
 	rawConfigMasks []uint8
-}
-
-// readRepoTombstones has to be called after d.repoMetaData has been set.
-func (d *indexData) readRepoTombstones() error {
-	d.repoTombstone = make([]bool, len(d.repoMetaData))
-	if !TombstonesEnabled(filepath.Dir(d.file.Name())) {
-		return nil
-	}
-	if !strings.HasPrefix(filepath.Base(d.file.Name()), "compound-") {
-		return nil
-	}
-
-	m, err := LoadTombstones(d.file.Name())
-	if err != nil {
-		return err
-	}
-
-	if len(m) == 0 {
-		return nil
-	}
-
-	for ix, repo := range d.repoMetaData {
-		if _, ok := m[repo.Name]; ok {
-			d.repoTombstone[ix] = true
-		}
-	}
-	return nil
 }
 
 type symbolData struct {

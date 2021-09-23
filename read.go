@@ -320,11 +320,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.rawConfigMasks = append(d.rawConfigMasks, encodeRawConfig(md.RawConfig))
 	}
 
-	err = d.readRepoTombstones()
-	if err != nil {
-		return nil, err
-	}
-
 	blob, err := d.readSectionBlob(toc.runeDocSections)
 	if err != nil {
 		return nil, err
@@ -576,6 +571,24 @@ func ReadMetadata(inf IndexFile) ([]*Repository, *IndexMetadata, error) {
 	return rd.readMetadata(&toc)
 }
 
+// ReadMetadataPathAlive is like ReadMetadataPath except that it only returns
+// alive repositories. The order of repositories returned by
+// ReadMetadataPathAlive is not deterministic.
+func ReadMetadataPathAlive(p string) ([]*Repository, *IndexMetadata, error) {
+	repos, id, err := ReadMetadataPath(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	cur := 0
+	for ix, repo := range repos {
+		if repo.Tombstone {
+			repos[cur], repos[ix] = repos[ix], repos[cur]
+			cur++
+		}
+	}
+	return repos[cur:], id, nil
+}
+
 // ReadMetadataPath returns the metadata of index shard at p without reading
 // the index data. ReadMetadataPath is a helper for ReadMetadata which opens
 // the IndexFile at p.
@@ -601,7 +614,7 @@ func ReadMetadataPath(p string) ([]*Repository, *IndexMetadata, error) {
 //
 // This is p and the ".meta" file for p.
 func IndexFilePaths(p string) ([]string, error) {
-	paths := []string{p, p + ".meta", p + ".rip"}
+	paths := []string{p, p + ".meta"}
 	exist := paths[:0]
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {

@@ -173,20 +173,12 @@ func getShards(dir string) map[string][]shard {
 }
 
 func shardRepoNames(path string) ([]string, error) {
-	repos, _, err := zoekt.ReadMetadataPath(path)
-	if err != nil {
-		return nil, err
-	}
-
-	ts, err := zoekt.LoadTombstones(path)
+	repos, _, err := zoekt.ReadMetadataPathAlive(path)
 	if err != nil {
 		return nil, err
 	}
 	names := make([]string, 0, len(repos))
 	for _, repo := range repos {
-		if _, ok := ts[repo.Name]; ok {
-			continue
-		}
 		names = append(names, repo.Name)
 	}
 	return names, nil
