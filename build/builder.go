@@ -327,15 +327,6 @@ func (o *Options) IndexState() IndexState {
 		return IndexStateCorrupt
 	}
 
-	ts, err := zoekt.LoadTombstones(fn)
-	if err != nil {
-		fmt.Printf("error loading tombstones for %s: %s", fn, err)
-	} else {
-		if _, ok := ts[o.RepositoryDescription.Name]; ok {
-			return IndexStateMissing
-		}
-	}
-
 	for _, v := range readVersions {
 		if v.IndexFormatVersion == index.IndexFormatVersion && v.FeatureVersion != index.IndexFeatureVersion {
 			return IndexStateVersion
@@ -398,6 +389,13 @@ func (o *Options) findShard() string {
 		if err != nil {
 			continue
 		}
+		if zoekt.TombstonesEnabled(filepath.Dir(fn)) {
+			ts, err := zoekt.LoadTombstones(fn)
+			if err != nil {
+				continue
+			}
+			repos = filterRepos(repos, ts)
+		}
 		for _, repo := range repos {
 			if repo.Name == o.RepositoryDescription.Name {
 				return fn
@@ -406,6 +404,17 @@ func (o *Options) findShard() string {
 	}
 
 	return ""
+}
+
+func filterRepos(repos []*zoekt.Repository, ts map[string]struct{}) []*zoekt.Repository {
+	cur := 0
+	for ix, repo := range repos {
+		if _, ok := ts[repo.Name]; ok {
+			repos[cur], repos[ix] = repos[ix], repos[cur]
+			cur++
+		}
+	}
+	return repos[cur:]
 }
 
 func (o *Options) FindAllShards() []string {

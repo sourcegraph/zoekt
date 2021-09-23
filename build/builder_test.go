@@ -2,10 +2,12 @@ package build
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -226,4 +228,63 @@ func TestDontCountContentOfSkippedFiles(t *testing.T) {
 	if b.size >= 100 {
 		t.Fatalf("content of skipped documents should not count towards shard size thresold")
 	}
+}
+
+func TestFilterRepos(t *testing.T) {
+	r := []string{"r1", "r2", "r3", "r4"}
+	cases := []struct {
+		repos      []string
+		tombstones []string
+		want       []string
+	}{
+		{
+			repos:      r,
+			tombstones: []string{"r2", "r4"},
+			want:       []string{"r1", "r3"},
+		},
+		{
+			repos:      r,
+			tombstones: []string{},
+			want:       []string{"r1", "r2", "r3", "r4"},
+		},
+		{
+			repos:      r,
+			tombstones: []string{"r5"},
+			want:       []string{"r1", "r2", "r3", "r4"},
+		},
+		{
+			repos:      r,
+			tombstones: r,
+			want:       []string{},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(fmt.Sprintf("%v", tt.tombstones), func(t *testing.T) {
+			repos := mkRepos(tt.repos...)
+			ts := make(map[string]struct{}, len(tt.tombstones))
+			for _, tombstone := range tt.tombstones {
+				ts[tombstone] = struct{}{}
+			}
+
+			gotRepos := filterRepos(repos, ts)
+
+			gotRepoNames := make([]string, 0, len(gotRepos))
+			for _, gotRepo := range gotRepos {
+				gotRepoNames = append(gotRepoNames, gotRepo.Name)
+			}
+			sort.Strings(gotRepoNames)
+			if diff := cmp.Diff(gotRepoNames, tt.want); diff != "" {
+				t.Fatalf("wanted %v, got %v", tt.want, gotRepoNames)
+			}
+		})
+	}
+}
+
+func mkRepos(repoNames ...string) []*zoekt.Repository {
+	ret := make([]*zoekt.Repository, 0, len(repoNames))
+	for _, n := range repoNames {
+		ret = append(ret, &zoekt.Repository{Name: n})
+	}
+	return ret
 }
