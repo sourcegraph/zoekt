@@ -9,9 +9,11 @@ import (
 	"syscall"
 )
 
-// TombstoneFileName if present in IndexDir will create *.rip files containing
-// tombstones instead of deleting compound shards.
-const TombstoneFileName = "RIP"
+// TombstoneEnabled returns true if a file "RIP" is present in dir.
+func TombstonesEnabled(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "RIP"))
+	return err == nil
+}
 
 // SetTombstone idempotently adds repoName to the .rip file of the shard at
 // shardPath. It does not validate whether the repository is actually contained

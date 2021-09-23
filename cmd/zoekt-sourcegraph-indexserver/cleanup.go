@@ -36,6 +36,8 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 	trash := getShards(trashDir)
 	index := getShards(indexDir)
 
+	tombstonesEnabled := zoekt.TombstonesEnabled(indexDir)
+
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
 	for repo, shards := range trash {
@@ -82,7 +84,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			_ = os.Chtimes(shard.Path, now, now)
 		}
 
-		if _, err := os.Stat(filepath.Join(indexDir, zoekt.TombstoneFileName)); err == nil {
+		if tombstonesEnabled {
 			if len(shards) > 0 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
 				shardsLog(indexDir, fmt.Sprintf("setTombstone %s", repo), shards)
 				if err := setTombstones(shards, repo); err != nil {

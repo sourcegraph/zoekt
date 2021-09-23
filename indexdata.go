@@ -20,7 +20,6 @@ import (
 	"hash/crc64"
 	"log"
 	"math/bits"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -108,7 +107,7 @@ type indexData struct {
 // readRepoTombstones has to be called after d.repoMetaData has been set.
 func (d *indexData) readRepoTombstones() error {
 	d.repoTombstone = make([]bool, len(d.repoMetaData))
-	if _, err := os.Stat(filepath.Join(filepath.Dir(d.file.Name()), TombstoneFileName)); err != nil {
+	if !TombstonesEnabled(filepath.Dir(d.file.Name())) {
 		return nil
 	}
 	if !strings.HasPrefix(filepath.Base(d.file.Name()), "compound-") {
