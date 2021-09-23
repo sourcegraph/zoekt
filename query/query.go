@@ -22,6 +22,8 @@ import (
 	"regexp/syntax"
 	"sort"
 	"strings"
+
+	"github.com/RoaringBitmap/roaring"
 )
 
 var _ = log.Println
@@ -161,14 +163,20 @@ func (q *Repo) String() string {
 type RepoBranches struct {
 	// Set is map reponame -> [branch]
 	Set map[string][]string
+
+	// IDs is an alternative representation from branch to compressed repo ids
+	IDs map[string]*roaring.Bitmap
 }
 
 func (q *RepoBranches) String() string {
 	var detail string
-	if len(q.Set) > 5 {
+	switch {
+	case len(q.IDs) > 0:
+		detail = fmt.Sprintf("branches=%d", len(q.IDs))
+	case len(q.Set) > 5:
 		// Large sets being output are not useful
 		detail = fmt.Sprintf("size=%d", len(q.Set))
-	} else {
+	default:
 		repos := make([]string, len(q.Set))
 		i := 0
 		for repo, branches := range q.Set {
@@ -183,9 +191,21 @@ func (q *RepoBranches) String() string {
 }
 
 // Branches returns a query representing the branches to search for name.
-func (q *RepoBranches) Branches(name string) Q {
-	branches, ok := q.Set[name]
-	if !ok {
+func (q *RepoBranches) Branches(name string, id uint32) Q {
+	var branches []string
+
+	switch {
+	case len(q.IDs) > 0:
+		for branch, ids := range q.IDs {
+			if ids != nil && ids.Contains(id) {
+				branches = append(branches, branch)
+			}
+		}
+	case len(q.Set) > 0:
+		branches = q.Set[name]
+	}
+
+	if len(branches) == 0 {
 		return &Const{Value: false}
 	}
 
@@ -197,30 +217,37 @@ func (q *RepoBranches) Branches(name string) Q {
 	return NewOr(qs...)
 }
 
-// MarshalBinary implements a specialized encoder for RepoBranches.
-func (q *RepoBranches) MarshalBinary() ([]byte, error) {
-	return repoBranchesEncode(q.Set)
-}
-
-// UnmarshalBinary implements a specialized decoder for RepoBranches.
-func (q *RepoBranches) UnmarshalBinary(b []byte) error {
-	var err error
-	q.Set, err = repoBranchesDecode(b)
-	return err
-}
-
 // RepoSet is a list of repos to match. It is a Sourcegraph addition and only
 // used in the RPC interface for efficient checking of large repo lists.
 type RepoSet struct {
 	Set map[string]bool
+
+	IDs *roaring.Bitmap
+}
+
+func (q *RepoSet) IsEmpty() bool {
+	return (q.IDs != nil && q.IDs.IsEmpty()) || len(q.Set) == 0
+}
+
+func (q *RepoSet) Contains(name string, id uint32) bool {
+	switch {
+	case q.IDs != nil:
+		return q.IDs.Contains(id)
+	case len(q.Set) > 0:
+		return q.Set[name]
+	default:
+		return false
+	}
 }
 
 func (q *RepoSet) String() string {
 	var detail string
-	if len(q.Set) > 5 {
-		// Large sets being output are not useful
+	switch {
+	case q.IDs != nil:
+		detail = fmt.Sprintf("size=%d", q.IDs.GetCardinality())
+	case len(q.Set) > 5:
 		detail = fmt.Sprintf("size=%d", len(q.Set))
-	} else {
+	default:
 		repos := make([]string, len(q.Set))
 		i := 0
 		for repo := range q.Set {
@@ -523,7 +550,7 @@ func evalConstants(q Q) Q {
 			return &Const{true}
 		}
 	case *RepoSet:
-		if len(s.Set) == 0 {
+		if s.IsEmpty() {
 			return &Const{true}
 		}
 	}

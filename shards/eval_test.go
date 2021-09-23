@@ -13,7 +13,7 @@ func TestSearchTypeRepo(t *testing.T) {
 	ss := newShardedSearcher(2)
 	nextShardNum := 1
 	addShard := func(docs ...zoekt.Document) {
-		b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"}, docs...)
+		b := testIndexBuilder(t, &zoekt.Repository{ID: 1, Name: "reponame"}, docs...)
 		shard := searcherForTest(t, b)
 		ss.replace(fmt.Sprintf("key-%d", nextShardNum), shard)
 		nextShardNum++

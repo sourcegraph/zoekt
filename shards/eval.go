@@ -3,6 +3,7 @@ package shards
 import (
 	"context"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/trace"
@@ -97,14 +98,14 @@ func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error)
 		}
 
 		var rl *zoekt.RepoList
-		rl, err = s.Streamer.List(ctx, rq.Child, nil)
+		rl, err = s.Streamer.List(ctx, rq.Child, &zoekt.ListOptions{Minimal: true})
 		if err != nil {
 			return nil
 		}
 
-		rs := &query.RepoSet{Set: make(map[string]bool, len(rl.Repos))}
-		for _, r := range rl.Repos {
-			rs.Set[r.Repository.Name] = true
+		rs := &query.RepoSet{IDs: roaring.NewBitmap()}
+		for id := range rl.Minimal {
+			rs.IDs.Add(id)
 		}
 		return rs
 	})

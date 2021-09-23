@@ -42,13 +42,13 @@ func (m *FileMatch) addScore(what string, s float64) {
 // simplifyMultiRepo takes a query and a predicate. It returns Const(true) if all
 // repository names fulfill the predicate, Const(false) if none of them do, and q
 // otherwise.
-func (d *indexData) simplifyMultiRepo(q query.Q, predicate func(repoName string) bool) query.Q {
+func (d *indexData) simplifyMultiRepo(q query.Q, predicate func(*Repository) bool) query.Q {
 	count := 0
 	alive := len(d.repoMetaData)
 	for i, md := range d.repoMetaData {
 		if d.repoTombstone[i] {
 			alive--
-		} else if predicate(md.Name) {
+		} else if predicate(&md) {
 			count++
 		}
 	}
@@ -65,21 +65,33 @@ func (d *indexData) simplify(in query.Q) query.Q {
 	eval := query.Map(in, func(q query.Q) query.Q {
 		switch r := q.(type) {
 		case *query.Repo:
-			return d.simplifyMultiRepo(q, func(name string) bool { return strings.Contains(name, r.Pattern) })
+			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
+				return strings.Contains(repo.Name, r.Pattern)
+			})
 		case *query.RepoBranches:
 			if len(d.repoMetaData) == 1 {
 				// Can simplify query now. compound too complicated since each repo
 				// may have different branches.
-				return r.Branches(d.repoMetaData[0].Name)
+				return r.Branches(d.repoMetaData[0].Name, d.repoMetaData[0].ID)
 			}
 			for _, md := range d.repoMetaData {
-				if _, ok := r.Set[md.Name]; ok {
-					return q
+				for _, ids := range r.IDs {
+					if ids != nil && ids.Contains(md.ID) {
+						return q
+					}
+				}
+
+				if len(r.Set) > 0 {
+					if _, ok := r.Set[md.Name]; ok {
+						return q
+					}
 				}
 			}
 			return &query.Const{Value: false}
 		case *query.RepoSet:
-			return d.simplifyMultiRepo(q, func(name string) bool { return r.Set[name] })
+			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
+				return r.Contains(repo.Name, repo.ID)
+			})
 		case *query.Language:
 			_, has := d.metaData.LanguageMap[r.Language]
 			if !has {
