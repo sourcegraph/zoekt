@@ -748,7 +748,7 @@ func TestBranchVersions(t *testing.T) {
 }
 
 func mustParseRE(s string) *syntax.Regexp {
-	r, err := syntax.Parse(s, 0)
+	r, err := syntax.Parse(s, syntax.Perl)
 	if err != nil {
 		panic(err)
 	}
