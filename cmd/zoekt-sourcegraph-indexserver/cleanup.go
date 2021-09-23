@@ -73,7 +73,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 
 		log.Printf("restoring shards from trash for %s", repo)
 		moveAll(indexDir, shards)
-		shardsLog(indexDir, "restore", shards)
+		shardsLog(indexDir, "restore", shards, repo)
 	}
 
 	// index: Move non-existent repos into trash
@@ -86,7 +86,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 
 		if tombstonesEnabled {
 			if len(shards) > 0 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
-				shardsLog(indexDir, fmt.Sprintf("setTombstone %s", repo), shards)
+				shardsLog(indexDir, "set_tombstone", shards, repo)
 				if err := setTombstones(shards, repo); err != nil {
 					log.Printf("error setting tombstone for %s in %+v: %s\n", repo, shards, err)
 				}
@@ -94,7 +94,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			}
 		}
 		moveAll(trashDir, shards)
-		shardsLog(indexDir, "remove", shards)
+		shardsLog(indexDir, "remove", shards, repo)
 	}
 
 	// Remove old .tmp files from crashed indexer runs-- for example, if
@@ -279,7 +279,7 @@ func moveAll(dstDir string, shards []shard) {
 	}
 }
 
-func shardsLog(indexDir, action string, shards []shard) {
+func shardsLog(indexDir, action string, shards []shard, repoName string) {
 	shardLogger := &lumberjack.Logger{
 		Filename:   filepath.Join(indexDir, "zoekt-indexserver-shard-log.tsv"),
 		MaxSize:    100, // Megabyte
@@ -293,6 +293,6 @@ func shardsLog(indexDir, action string, shards []shard) {
 		if fi, err := os.Stat(filepath.Join(indexDir, shard)); err == nil {
 			shardSize = fi.Size()
 		}
-		_, _ = fmt.Fprintf(shardLogger, "%d\t%s\t%s\t%d\n", time.Now().UTC().Unix(), action, shard, shardSize)
+		_, _ = fmt.Fprintf(shardLogger, "%d\t%s\t%s\t%d\t%s\n", time.Now().UTC().Unix(), action, shard, shardSize, repoName)
 	}
 }
