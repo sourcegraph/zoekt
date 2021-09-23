@@ -127,21 +127,21 @@ func (s *DirectoryWatcher) scan() error {
 			continue
 		}
 
-		fi, err := os.Lstat(fn)
+		paths, err := zoekt.IndexFilePaths(fn)
 		if err != nil {
-			continue
+			return err
 		}
 
-		ts[fn] = fi.ModTime()
-
-		fiMeta, err := os.Lstat(fn + ".meta")
-		if err == nil && fiMeta.ModTime().After(ts[fn]) {
-			ts[fn] = fiMeta.ModTime()
-		}
-
-		fiRip, err := os.Lstat(fn + ".rip")
-		if err == nil && fiRip.ModTime().After(ts[fn]) {
-			ts[fn] = fiRip.ModTime()
+		for _, p := range paths {
+			fi, err := os.Lstat(p)
+			if err != nil {
+				continue
+			}
+			if v, ok := ts[fn]; !ok {
+				ts[fn] = fi.ModTime()
+			} else if fi.ModTime().After(v) {
+				ts[fn] = fi.ModTime()
+			}
 		}
 	}
 
