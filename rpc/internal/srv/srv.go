@@ -42,6 +42,12 @@ func (s *Searcher) Search(ctx context.Context, args *SearchArgs, reply *SearchRe
 		defer cancel()
 	}
 
+	if args.Q != nil {
+		if cache, ok := args.Q.(*query.GobCache); ok {
+			args.Q = cache.Q
+		}
+	}
+
 	r, err := s.Searcher.Search(ctx, args.Q, args.Opts)
 	if err != nil {
 		return err

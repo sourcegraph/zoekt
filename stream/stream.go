@@ -59,6 +59,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if cache, ok := args.Q.(*query.GobCache); ok {
+		args.Q = cache.Q
+	}
+
 	eventWriter, err := newEventStreamWriter(w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
