@@ -30,7 +30,11 @@ func SetTombstone(shardPath string, repoName string) error {
 	if err != nil {
 		return err
 	}
-	defer tmp.Close()
+	defer func() {
+		tmp.Close()
+		os.Remove(tmp.Name())
+	}()
+
 	if runtime.GOOS != "windows" {
 		if err = tmp.Chmod(0o666 &^ umask); err != nil {
 			return err
