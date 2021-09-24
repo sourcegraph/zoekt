@@ -172,8 +172,8 @@ func TestRandomMatch(t *testing.T) {
 }
 
 func TestFuzzSearcher(t *testing.T) {
-	rng := rand.New(rand.NewSource(4))
-	for i := 0; i < 10000; i++ {
+	rng := rand.New(rand.NewSource(6))
+	for i := 0; i < 1e6; i++ {
 		re := randomRegexp(4, 5, rng)
 		ex := randomMatch(re, rng)
 		ex2 := randomMatch(re, rng)
@@ -182,6 +182,11 @@ func TestFuzzSearcher(t *testing.T) {
 			continue
 		}
 		re2 := regexp.MustCompile(re.String())
+
+		if re2.Match([]byte{}) {
+			continue
+		}
+
 		reStr := strings.ReplaceAll(re.String(), "(?-s:.)", ".")
 
 		if !re2.MatchString(ex) {
@@ -209,7 +214,6 @@ func TestFuzzSearcher(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Search(%s): %v", q, err)
 		}
-		clearScores(res)
 
 		exp := 0
 		if ex != "" {
@@ -228,4 +232,52 @@ func TestFuzzSearcher(t *testing.T) {
 		}
 	}
 
+}
+
+func TestFuzzRegressions(t *testing.T) {
+	// This test is for cases found by TestFuzzSearcher that were later
+	// debugged and fixed.
+	for _, tc := range []struct {
+		re       string
+		examples []string
+		want     int
+	}{
+		{
+			"[t-vFy]{0,}|[fl]|anhD",
+			[]string{"anhD", "f"},
+			2,
+		},
+		{
+			"g?|(abcd)+",
+			[]string{"gabcdabcd"},
+			1,
+		},
+	} {
+		rec := regexp.MustCompile(tc.re)
+		for _, ex := range tc.examples {
+			if !rec.MatchString(ex) {
+				t.Fatalf("input regex %v doesn't match example %v", tc.re, ex)
+			}
+		}
+
+		b := testIndexBuilder(t, nil,
+			Document{Name: "f1", Content: []byte(strings.Join(tc.examples, "\n"))},
+		)
+
+		searcher := searcherForTest(t, b)
+
+		q := &query.Regexp{
+			Regexp:        mustParseRE(tc.re),
+			CaseSensitive: true,
+		}
+		res, err := searcher.Search(context.Background(), q, &SearchOptions{})
+		if err != nil {
+			t.Fatalf("Search(%s): %v", q, err)
+		}
+
+		if res.MatchCount != tc.want {
+			t.Errorf("bad match count: got %d want %d, regexp %v examples %q",
+				res.MatchCount, tc.want, tc.re, tc.examples)
+		}
+	}
 }

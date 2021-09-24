@@ -399,6 +399,13 @@ func (t *branchQueryMatchTree) nextDoc() uint32 {
 
 // all String methods
 
+func filenameChar(fileName bool) rune {
+	if fileName {
+		return 'F'
+	}
+	return 'C'
+}
+
 func (t *bruteForceMatchTree) String() string {
 	return "all"
 }
@@ -412,7 +419,7 @@ func (t *andMatchTree) String() string {
 }
 
 func (t *regexpMatchTree) String() string {
-	return fmt.Sprintf("re(%s)", t.regexp)
+	return fmt.Sprintf("re%c(%s)", filenameChar(t.fileName), t.regexp)
 }
 
 func (t *orMatchTree) String() string {
@@ -446,6 +453,10 @@ func (t *symbolSubstrMatchTree) String() string {
 
 func (t *symbolRegexpMatchTree) String() string {
 	return fmt.Sprintf("symbol(%v)", t.matchTree)
+}
+
+func (t *noVisitMatchTree) String() string {
+	return fmt.Sprintf("novisit(%v)", t.matchTree)
 }
 
 // visitMatches visits all atoms in matchTree. Note: This visits
@@ -648,6 +659,7 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	cp.stats.RegexpsConsidered++
 	idxs := t.regexp.FindAllIndex(cp.data(t.fileName), -1)
 	found := t.found[:0]
+	// fmt.Println("regex.matches!!", t.regexp, cost, idxs, string(cp.data(t.fileName)))
 	for _, idx := range idxs {
 		cm := &candidateMatch{
 			byteOffset:  uint32(idx[0]),
