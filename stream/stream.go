@@ -59,9 +59,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if cache, ok := args.Q.(*query.GobCache); ok {
-		args.Q = cache.Q
-	}
+	args.Q = query.RPCUnwrap(args.Q)
 
 	eventWriter, err := newEventStreamWriter(w)
 	if err != nil {

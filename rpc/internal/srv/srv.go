@@ -43,9 +43,7 @@ func (s *Searcher) Search(ctx context.Context, args *SearchArgs, reply *SearchRe
 	}
 
 	if args.Q != nil {
-		if cache, ok := args.Q.(*query.GobCache); ok {
-			args.Q = cache.Q
-		}
+		args.Q = query.RPCUnwrap(args.Q)
 	}
 
 	r, err := s.Searcher.Search(ctx, args.Q, args.Opts)
@@ -59,6 +57,11 @@ func (s *Searcher) Search(ctx context.Context, args *SearchArgs, reply *SearchRe
 func (s *Searcher) List(ctx context.Context, args *ListArgs, reply *ListReply) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
+
+	if args.Q != nil {
+		args.Q = query.RPCUnwrap(args.Q)
+	}
+
 	r, err := s.Searcher.List(ctx, args.Q, args.Opts)
 	if err != nil {
 		return err

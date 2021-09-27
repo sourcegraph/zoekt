@@ -34,6 +34,17 @@ type Q interface {
 	String() string
 }
 
+// RPCUnwrap processes q to remove RPC specific elements from q. This is
+// needed because gob isn't flexible enough for us. This should be called by
+// RPC servers at the client/server boundary so that q works with the rest of
+// zoekt.
+func RPCUnwrap(q Q) Q {
+	if cache, ok := q.(*GobCache); ok {
+		return cache.Q
+	}
+	return q
+}
+
 // RawConfig filters repositories based on their encoded RawConfig map.
 type RawConfig uint64
 
