@@ -241,6 +241,7 @@ func (q *RepoBranches) Branches(name string, id uint32) Q {
 				branches = append(branches, branch)
 			}
 		}
+		sort.Strings(branches)
 	case len(q.Set) > 0:
 		branches = q.Set[name]
 	}

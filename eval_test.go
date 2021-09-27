@@ -264,18 +264,51 @@ func idsToArrays(in map[string]*roaring.Bitmap) map[string][]uint32 {
 
 func TestSimplifyRepoBranchSimple(t *testing.T) {
 	d := compoundReposShard(t, "foo")
-	q := &query.RepoBranches{Set: map[string][]string{"foo": {"HEAD", "b1"}, "bar": {"HEAD"}}}
 
-	want := &query.Or{[]query.Q{&query.Branch{
-		Pattern: "HEAD",
-		Exact:   true,
-	}, &query.Branch{
-		Pattern: "b1",
-		Exact:   true,
-	}}}
+	for _, tc := range []struct {
+		name string
+		rb   *query.RepoBranches
+	}{
+		{
+			name: "Set",
+			rb: &query.RepoBranches{
+				Set: map[string][]string{"foo": {"HEAD", "b1"}, "bar": {"HEAD"}},
+			},
+		},
+		{
+			name: "IDs",
+			rb: &query.RepoBranches{
+				IDs: map[string]*roaring.Bitmap{
+					"HEAD": roaring.BitmapOf(hash("foo"), hash("bar")),
+					"b1":   roaring.BitmapOf(hash("foo")),
+				},
+			},
+		},
+		{
+			name: "both", // IDs prioritised
+			rb: &query.RepoBranches{
+				Set: map[string][]string{"foo": {"HEAD", "b1"}, "bar": {"HEAD"}},
+				IDs: map[string]*roaring.Bitmap{
+					"HEAD": roaring.BitmapOf(hash("foo"), hash("bar")),
+					"b1":   roaring.BitmapOf(hash("foo")),
+				},
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			want := &query.Or{[]query.Q{&query.Branch{
+				Pattern: "HEAD",
+				Exact:   true,
+			}, &query.Branch{
+				Pattern: "b1",
+				Exact:   true,
+			}}}
 
-	got := d.simplify(q)
-	if d := cmp.Diff(want, got); d != "" {
-		t.Fatalf("-want, +got:\n%s", d)
+			got := d.simplify(tc.rb)
+			if d := cmp.Diff(want, got); d != "" {
+				t.Fatalf("-want, +got:\n%s", d)
+			}
+		})
 	}
 }
