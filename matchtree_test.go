@@ -229,24 +229,58 @@ func TestSymbolMatchRegexAll(t *testing.T) {
 
 func TestRepoSet(t *testing.T) {
 	d := &indexData{
-		repoMetaData:    []Repository{{Name: "r0"}, {Name: "r1"}, {Name: "r2"}, {Name: "r3"}},
+		repoMetaData: []Repository{
+			{ID: hash("r0"), Name: "r0"},
+			{ID: hash("r1"), Name: "r1"},
+			{ID: hash("r2"), Name: "r2"},
+			{ID: hash("r3"), Name: "r3"},
+		},
 		fileBranchMasks: []uint64{1, 1, 1, 1, 1, 1},
 		repos:           []uint16{0, 0, 1, 2, 3, 3},
 	}
-	mt, err := d.newMatchTree(&query.RepoSet{Set: map[string]bool{"r1": true, "r3": true, "r99": true}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []uint32{2, 4, 5}
-	for i := 0; i < len(want); i++ {
-		nextDoc := mt.nextDoc()
-		if nextDoc != want[i] {
-			t.Fatalf("want %d, got %d", want[i], nextDoc)
-		}
-		mt.prepare(nextDoc)
-	}
-	if mt.nextDoc() != maxUInt32 {
-		t.Fatalf("expected %d document, but got at least 1 more", len(want))
+
+	for _, tc := range []struct {
+		name string
+		rs   *query.RepoSet
+	}{
+		{
+			name: "Set",
+			rs: &query.RepoSet{
+				Set: map[string]bool{"r1": true, "r3": true, "r99": true},
+			},
+		},
+		{
+			name: "IDs",
+			rs: &query.RepoSet{
+				IDs: roaring.BitmapOf(hash("r1"), hash("r3"), hash("r99")),
+			},
+		},
+		{
+			name: "both",
+			rs: &query.RepoSet{
+				Set: map[string]bool{"r1": true, "r3": true, "r99": true},
+				IDs: roaring.BitmapOf(hash("r1"), hash("r3"), hash("r99")),
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			mt, err := d.newMatchTree(tc.rs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []uint32{2, 4, 5}
+			for i := 0; i < len(want); i++ {
+				nextDoc := mt.nextDoc()
+				if nextDoc != want[i] {
+					t.Fatalf("want %d, got %d", want[i], nextDoc)
+				}
+				mt.prepare(nextDoc)
+			}
+			if mt.nextDoc() != maxUInt32 {
+				t.Fatalf("expected %d document, but got at least 1 more", len(want))
+			}
+		})
 	}
 }
 
