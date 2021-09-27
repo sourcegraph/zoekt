@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"math"
 	"os"
@@ -26,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
@@ -180,7 +182,7 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 		}
 
 		ss.replace(shardName, &rankSearcher{
-			repo: &zoekt.Repository{Name: repoName},
+			repo: &zoekt.Repository{ID: hash(repoName), Name: repoName},
 			rank: uint16(n - i),
 		})
 	}
@@ -193,9 +195,19 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 		t.Fatalf("no reposet: got %d results, want %d", len(res.Files), n)
 	}
 
-	repoBranches := &query.RepoBranches{Set: make(map[string][]string)}
+	repoBranchesSet := &query.RepoBranches{Set: make(map[string][]string)}
+	repoBranchesIDs := &query.RepoBranches{IDs: make(map[string]*roaring.Bitmap)}
+
 	for _, name := range repoSetNames {
-		repoBranches.Set[name] = []string{"HEAD"}
+		repoBranchesSet.Set[name] = []string{"HEAD"}
+
+		ids := repoBranchesIDs.IDs["HEAD"]
+		if ids == nil {
+			ids = roaring.New()
+			repoBranchesIDs.IDs["HEAD"] = ids
+		}
+
+		ids.Add(hash(name))
 	}
 
 	set := query.NewRepoSet(repoSetNames...)
@@ -206,9 +218,13 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 		// Test with the same reposet again
 		query.NewAnd(set, sub),
 
-		query.NewAnd(repoBranches, sub),
+		query.NewAnd(repoBranchesSet, sub),
 		// Test with the same repoBranches again
-		query.NewAnd(repoBranches, sub),
+		query.NewAnd(repoBranchesSet, sub),
+
+		query.NewAnd(repoBranchesIDs, sub),
+		// Test with the same repoBranches with IDs again
+		query.NewAnd(repoBranchesIDs, sub),
 	}
 
 	for _, q := range queries {
@@ -222,6 +238,12 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 			t.Fatalf("%s: got %d results, want %d", q, len(res.Files), len(repoSetNames))
 		}
 	}
+}
+
+func hash(name string) uint32 {
+	h := fnv.New32()
+	h.Write([]byte(name))
+	return h.Sum32()
 }
 
 type memSeeker struct {
