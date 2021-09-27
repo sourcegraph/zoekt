@@ -299,6 +299,9 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		switch setQuery := c.(type) {
 		case *query.RepoSet:
 			setSize = len(setQuery.Set)
+			if setSize == 0 && setQuery.IDs != nil {
+				setSize = int(setQuery.IDs.GetCardinality())
+			}
 			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
 				return setQuery.Contains(repo.Name, repo.ID)
 			})
