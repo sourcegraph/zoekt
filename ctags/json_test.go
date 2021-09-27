@@ -66,10 +66,17 @@ class Back implements Future extends Frob {
 			Name:     "Back",
 			Path:     "io/zoekt/Back.java",
 			Line:     4,
+			Kind:     "classes",
+			Language: "Java",
+			Pattern:  "/^class Back implements Future extends Frob {$/",
+		},
+		{
+			Name:     "Back",
+			Path:     "io/zoekt/Back.java",
+			Line:     4,
 			Language: "Java",
 			Kind:     "class",
 		},
-
 		{
 			Name:       "BLA",
 			Path:       "io/zoekt/Back.java",
