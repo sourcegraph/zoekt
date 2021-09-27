@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/google/zoekt/query"
 )
 
@@ -274,24 +275,62 @@ func TestRepo(t *testing.T) {
 
 func TestRepoBranches(t *testing.T) {
 	d := &indexData{
-		repoMetaData:    []Repository{{Name: "foo"}, {Name: "bar"}},
+		repoMetaData: []Repository{
+			{ID: hash("foo"), Name: "foo"},
+			{ID: hash("bar"), Name: "bar"},
+		},
 		fileBranchMasks: []uint64{1, 1, 1, 2, 1, 2, 1},
 		repos:           []uint16{0, 0, 1, 1, 1, 1, 1},
 		branchIDs:       []map[string]uint{{"HEAD": 1}, {"HEAD": 1, "b1": 2}},
 	}
-	mt, err := d.newMatchTree(&query.RepoBranches{Set: map[string][]string{"bar": {"b1", "b2"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []uint32{3, 5}
-	for i := 0; i < len(want); i++ {
-		nextDoc := mt.nextDoc()
-		if nextDoc != want[i] {
-			t.Fatalf("want %d, got %d", want[i], nextDoc)
-		}
-		mt.prepare(nextDoc)
-	}
-	if mt.nextDoc() != maxUInt32 {
-		t.Fatalf("expect %d documents, but got at least 1 more", len(want))
+
+	for _, tc := range []struct {
+		name string
+		rb   *query.RepoBranches
+	}{
+		{
+			name: "Set",
+			rb: &query.RepoBranches{
+				Set: map[string][]string{"bar": {"b1", "b2"}},
+			},
+		},
+		{
+			name: "IDs",
+			rb: &query.RepoBranches{
+				IDs: map[string]*roaring.Bitmap{
+					"b1": roaring.BitmapOf(hash("bar")),
+					"b2": roaring.BitmapOf(hash("bar")),
+				},
+			},
+		},
+		{
+			name: "both",
+			rb: &query.RepoBranches{
+				Set: map[string][]string{"bar": {"b1", "b2"}},
+				IDs: map[string]*roaring.Bitmap{
+					"b1": roaring.BitmapOf(hash("bar")),
+					"b2": roaring.BitmapOf(hash("bar")),
+				},
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			mt, err := d.newMatchTree(tc.rb)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []uint32{3, 5}
+			for i := 0; i < len(want); i++ {
+				nextDoc := mt.nextDoc()
+				if nextDoc != want[i] {
+					t.Fatalf("want %d, got %d", want[i], nextDoc)
+				}
+				mt.prepare(nextDoc)
+			}
+			if mt.nextDoc() != maxUInt32 {
+				t.Fatalf("expect %d documents, but got at least 1 more", len(want))
+			}
+		})
 	}
 }
