@@ -15,11 +15,13 @@
 package zoekt
 
 import (
+	"hash/fnv"
 	"reflect"
 	"regexp/syntax"
 	"strings"
 	"testing"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt/query"
 )
@@ -134,7 +136,7 @@ func compoundReposShard(t *testing.T, names ...string) *indexData {
 	b := newIndexBuilder()
 	b.indexFormatVersion = NextIndexFormatVersion
 	for _, name := range names {
-		if err := b.setRepository(&Repository{Name: name}); err != nil {
+		if err := b.setRepository(&Repository{ID: hash(name), Name: name}); err != nil {
 			t.Fatal(err)
 		}
 		if err := b.AddFile(name+".txt", []byte(name+" content")); err != nil {
@@ -189,21 +191,75 @@ func TestSimplifyRepo(t *testing.T) {
 	}
 }
 
+func hash(name string) uint32 {
+	h := fnv.New32()
+	h.Write([]byte(name))
+	return h.Sum32()
+}
+
 func TestSimplifyRepoBranch(t *testing.T) {
 	d := compoundReposShard(t, "foo", "bar")
 
-	some := &query.RepoBranches{Set: map[string][]string{"bar": {"branch1"}}}
-	none := &query.Repo{"banana"}
+	none := &query.Repo{Pattern: "banana"}
+	for _, tc := range []struct {
+		name string
+		rb   *query.RepoBranches
+	}{
+		{
+			name: "Set",
+			rb: &query.RepoBranches{
+				Set: map[string][]string{"bar": {"branch1"}},
+			},
+		},
+		{
+			name: "IDs",
+			rb: &query.RepoBranches{
+				IDs: map[string]*roaring.Bitmap{
+					"branch1": roaring.BitmapOf(hash("bar")),
+				},
+			},
+		},
+		{
+			name: "both",
+			rb: &query.RepoBranches{ // IDs prioritised
+				Set: map[string][]string{"bar": {"branch1"}},
+				IDs: map[string]*roaring.Bitmap{
+					"branch1": roaring.BitmapOf(hash("bar")),
+				},
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := d.simplify(tc.rb)
 
-	got := d.simplify(some)
-	if d := cmp.Diff(some, got); d != "" {
-		t.Fatalf("-want, +got:\n%s", d)
-	}
+			assertRepoBranchesEqual(t, tc.rb, got.(*query.RepoBranches))
 
-	got = d.simplify(none)
-	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
-		t.Fatalf("-want, +got:\n%s", d)
+			got = d.simplify(none)
+
+			if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
+				t.Fatalf("-want, +got:\n%s", d)
+			}
+		})
 	}
+}
+
+func assertRepoBranchesEqual(t testing.TB, a, b *query.RepoBranches) {
+	t.Helper()
+	if !cmp.Equal(a, b) {
+		t.Errorf("RepoBranches mismatch (-want, +got):\nSet: %s\nIDs: %s",
+			cmp.Diff(a.Set, b.Set),
+			cmp.Diff(idsToArrays(a.IDs), idsToArrays(b.IDs)),
+		)
+	}
+}
+
+func idsToArrays(in map[string]*roaring.Bitmap) map[string][]uint32 {
+	out := make(map[string][]uint32, len(in))
+	for branch, ids := range in {
+		out[branch] = ids.ToArray()
+	}
+	return out
 }
 
 func TestSimplifyRepoBranchSimple(t *testing.T) {

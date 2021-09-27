@@ -168,6 +168,46 @@ type RepoBranches struct {
 	IDs map[string]*roaring.Bitmap
 }
 
+func (q *RepoBranches) Equal(other *RepoBranches) bool {
+	switch {
+	case q == other:
+		return true
+	case other == nil || q == nil:
+		return false
+	case len(q.Set) != len(other.Set):
+		return false
+	case len(q.IDs) != len(other.IDs):
+		return false
+	}
+
+	for repo, branches := range q.Set {
+		otherBranches := other.Set[repo]
+
+		if len(branches) != len(otherBranches) {
+			return false
+		}
+
+		for i := range branches {
+			if branches[i] != otherBranches[i] {
+				return false
+			}
+		}
+	}
+
+	for branch, ids := range q.IDs {
+		otherIDs := other.IDs[branch]
+
+		switch {
+		case ids == otherIDs:
+			continue
+		case !ids.Equals(otherIDs):
+			return false
+		}
+	}
+
+	return true
+}
+
 func (q *RepoBranches) String() string {
 	var detail string
 	switch {
