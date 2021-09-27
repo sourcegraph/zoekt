@@ -304,9 +304,23 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 			})
 		case *query.RepoBranches:
 			setSize = len(setQuery.Set)
-			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
-				return len(setQuery.Set[repo.Name]) > 0
-			})
+			for _, ids := range setQuery.IDs {
+				setSize += int(ids.GetCardinality())
+			}
+			if len(setQuery.Set) > 0 {
+				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+					return len(setQuery.Set[repo.Name]) > 0
+				})
+			} else {
+				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+					for _, ids := range setQuery.IDs {
+						if ids.Contains(repo.ID) {
+							return true
+						}
+					}
+					return false
+				})
+			}
 		default:
 			continue
 		}
@@ -352,13 +366,17 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		}
 		if b, ok := c.(*query.RepoBranches); ok {
 			// We can only replace if all the repos want the same branches.
-			want := b.Set[filtered[0].repos[0].Name]
-			for _, s := range filtered {
-				for _, repo := range s.repos {
-					if !strSliceEqual(want, b.Set[repo.Name]) {
-						return filtered, and
+			if len(b.Set) > 0 {
+				want := b.Set[filtered[0].repos[0].Name]
+				for _, s := range filtered {
+					for _, repo := range s.repos {
+						if !strSliceEqual(want, b.Set[repo.Name]) {
+							return filtered, and
+						}
 					}
 				}
+			} else if len(b.IDs) != 1 {
+				return filtered, and
 			}
 
 			// Every repo wants the same branches, so we can replace RepoBranches
