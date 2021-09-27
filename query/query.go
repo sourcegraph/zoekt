@@ -267,7 +267,7 @@ type RepoSet struct {
 }
 
 func (q *RepoSet) IsEmpty() bool {
-	return (q.IDs != nil && q.IDs.IsEmpty()) || len(q.Set) == 0
+	return (q.IDs == nil || q.IDs.IsEmpty()) && len(q.Set) == 0
 }
 
 func (q *RepoSet) Contains(name string, id uint32) bool {
