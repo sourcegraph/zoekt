@@ -160,6 +160,15 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 		}}
 	}
 
+	if _, err := os.Stat(filepath.Join(dir, "SG_PRIVATE")); err == nil {
+		opts.Public = false
+	}
+	if _, err := os.Stat(filepath.Join(dir, "SG_FORK")); err == nil {
+		opts.Fork = true
+	}
+	if _, err := os.Stat(filepath.Join(dir, "SG_ARCHIVED")); err == nil {
+		opts.Archived = true
+	}
 	return opts, nil
 }
 
