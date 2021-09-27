@@ -305,8 +305,11 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		case *query.RepoBranches:
 			setSize = len(setQuery.Set)
 			for _, ids := range setQuery.IDs {
-				setSize += int(ids.GetCardinality())
+				if ids != nil {
+					setSize += int(ids.GetCardinality())
+				}
 			}
+
 			if len(setQuery.Set) > 0 {
 				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
 					return len(setQuery.Set[repo.Name]) > 0
@@ -314,7 +317,7 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 			} else {
 				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
 					for _, ids := range setQuery.IDs {
-						if ids.Contains(repo.ID) {
+						if ids != nil && ids.Contains(repo.ID) {
 							return true
 						}
 					}
