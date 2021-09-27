@@ -207,54 +207,53 @@ func (rb *RepoBranches) UnmarshalBinary(b []byte) error {
 
 type binaryReader struct {
 	b   []byte
-	off int
 	err error
 }
 
 func (b *binaryReader) uvarint() int {
-	x, n := binary.Uvarint(b.b[b.off:])
+	x, n := binary.Uvarint(b.b)
 	if n < 0 {
 		b.b = nil
 		b.err = errors.New("malformed RepoBranches")
 		return 0
 	}
-	b.off += n
+	b.b = b.b[n:]
 	return int(x)
 }
 
 func (b *binaryReader) str() string {
 	l := b.uvarint()
-	if l > len(b.b[b.off:]) {
+	if l > len(b.b) {
 		b.b = nil
 		b.err = errors.New("malformed RepoBranches")
 		return ""
 	}
-	s := b2s(b.b[b.off : b.off+l])
-	b.off += l
+	s := b2s(b.b[:l])
+	b.b = b.b[l:]
 	return s
 }
 
 func (b *binaryReader) bitmap() *roaring.Bitmap {
 	l := b.uvarint()
-	if l > len(b.b[b.off:]) {
+	if l > len(b.b) {
 		b.b = nil
 		b.err = errors.New("malformed RepoBranches")
 		return nil
 	}
 	r := roaring.New()
-	_, b.err = r.FromBuffer(b.b[b.off : b.off+l])
-	b.off += l
+	_, b.err = r.FromBuffer(b.b[:l])
+	b.b = b.b[l:]
 	return r
 }
 
 func (b *binaryReader) byt() byte {
-	if len(b.b[b.off:]) < 1 {
+	if len(b.b) < 1 {
 		b.b = nil
 		b.err = errors.New("malformed RepoBranches")
 		return 0
 	}
-	x := b.b[b.off]
-	b.off++
+	x := b.b[0]
+	b.b = b.b[1:]
 	return x
 }
 
