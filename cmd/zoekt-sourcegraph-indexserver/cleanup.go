@@ -85,10 +85,14 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 		}
 
 		if tombstonesEnabled {
-			if len(shards) > 0 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
-				shardsLog(indexDir, "set_tombstone", shards, repo)
-				if err := setTombstones(shards, repo); err != nil {
-					log.Printf("error setting tombstone for %s in %+v: %s\n", repo, shards, err)
+			// 1 repo can be split across many simple shards but it should only be contained
+			// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
+			// shard at index 0.
+			if len(shards) == 1 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
+				shardsLog(indexDir, "tomb", shards, repo)
+				if err := zoekt.SetTombstone(shards[0].Path, repo); err != nil {
+					log.Printf("error setting tombstone for %s in shard %s: %s. Removing shard\n", repo, shards[0], err)
+					_ = os.Remove(shards[0].Path)
 				}
 				continue
 			}
