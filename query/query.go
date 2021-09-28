@@ -172,10 +172,10 @@ func (q *RepoBranches) String() string {
 	var detail string
 	switch {
 	case len(q.IDs) > 0:
-		detail = fmt.Sprintf("branches=%d", len(q.IDs))
+		detail = fmt.Sprintf("ids=%d", len(q.IDs))
 	case len(q.Set) > 5:
 		// Large sets being output are not useful
-		detail = fmt.Sprintf("size=%d", len(q.Set))
+		detail = fmt.Sprintf("set=%d", len(q.Set))
 	default:
 		repos := make([]string, len(q.Set))
 		i := 0
@@ -271,9 +271,9 @@ func (q *RepoSet) String() string {
 	var detail string
 	switch {
 	case q.IDs != nil:
-		detail = fmt.Sprintf("size=%d", q.IDs.GetCardinality())
+		detail = fmt.Sprintf("ids=%d", q.IDs.GetCardinality())
 	case len(q.Set) > 5:
-		detail = fmt.Sprintf("size=%d", len(q.Set))
+		detail = fmt.Sprintf("set=%d", len(q.Set))
 	default:
 		repos := make([]string, len(q.Set))
 		i := 0
