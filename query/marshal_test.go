@@ -280,18 +280,17 @@ func genRepoSet(n int) *RepoSet {
 	return rs
 }
 
-func genRepoSetIDs(n int) *RepoSet {
+func genRepoSetIDs(n uint32) *RepoSet {
 	key := fmt.Sprintf("RepoSetIDs:%d", n)
 	val, ok := genCache[key]
 	if ok {
 		return val.(*RepoSet)
 	}
 
-	set := genRepoSet(n).Set
 	rs := &RepoSet{IDs: roaring.New()}
 
-	for repo := range set {
-		rs.IDs.Add(hash(repo))
+	for i := uint32(1); i <= n; i++ {
+		rs.IDs.Add(i)
 	}
 
 	genCache[key] = rs
@@ -345,15 +344,17 @@ func genRepoBranchesIDs(n int) *RepoBranches {
 	set := genRepoBranches(n).Set
 	rb := &RepoBranches{IDs: map[string]*roaring.Bitmap{}}
 
-	for repo, branches := range set {
+	id := uint32(1)
+	for _, branches := range set {
 		for _, branch := range branches {
 			ids, ok := rb.IDs[branch]
 			if !ok {
 				ids = roaring.New()
 				rb.IDs[branch] = ids
 			}
-			ids.Add(hash(repo))
+			ids.Add(id)
 		}
+		id++
 	}
 
 	for _, ids := range rb.IDs {
