@@ -122,15 +122,6 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 	metricCleanupDuration.Observe(time.Since(start).Seconds())
 }
 
-func setTombstones(shards []shard, repoName string) error {
-	for _, s := range shards {
-		if err := zoekt.SetTombstone(s.Path, repoName); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 type shard struct {
 	Repo    string
 	Path    string
