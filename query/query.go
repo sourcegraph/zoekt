@@ -208,7 +208,7 @@ func (q *RepoBranches) Equal(other *RepoBranches) bool {
 	return true
 }
 
-func (q *RepoBranches) String() string {
+func (q *RepoBranches) _String() string {
 	var detail string
 	switch {
 	case len(q.IDs) > 0:
@@ -256,6 +256,32 @@ func (q *RepoBranches) Branches(name string, id uint32) Q {
 		qs[i] = &Branch{Pattern: branch, Exact: true}
 	}
 	return NewOr(qs...)
+}
+
+// MarshalBinary implements a specialized encoder for RepoBranches.
+func (q *RepoBranches) MarshalBinary() ([]byte, error) {
+	if q.IDs != nil {
+		return repoBranchesIDsEncode(q.IDs)
+	}
+	return repoBranchesEncode(q.Set)
+}
+
+// UnmarshalBinary implements a specialized decoder for RepoBranches.
+func (q *RepoBranches) UnmarshalBinary(b []byte) (err error) {
+	// binaryReader returns strings pointing into b to avoid allocations. We
+	// don't own b, so we create a copy of it.
+	r := &binaryReader{b: append(make([]byte, 0, len(b)), b...)}
+
+	switch v := r.byt(); v { // Version
+	case 1:
+		q.Set, err = repoBranchesDecode(r)
+	case 2:
+		q.IDs, err = repoBranchesIDsDecode(r)
+	default:
+		return fmt.Errorf("unsupported RepoBranches encoding version %d", v)
+	}
+
+	return err
 }
 
 // RepoSet is a list of repos to match. It is a Sourcegraph addition and only
