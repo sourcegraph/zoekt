@@ -17,7 +17,7 @@ import (
 // marshalling.
 
 func BenchmarkRepoBranches_Encode(b *testing.B) {
-	repoBranches := genRepoBranches()
+	repoBranches := genRepoBranches(5_500_000)
 
 	// do one write to amortize away the cost of gob registration
 	w := &countWriter{}
@@ -39,7 +39,7 @@ func BenchmarkRepoBranches_Encode(b *testing.B) {
 }
 
 func BenchmarkRepoBranches_Decode(b *testing.B) {
-	repoBranches := genRepoBranches()
+	repoBranches := genRepoBranches(5_500_000)
 
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(repoBranches); err != nil {
@@ -59,7 +59,7 @@ func BenchmarkRepoBranches_Decode(b *testing.B) {
 }
 
 func TestRepoBranches_Marshal(t *testing.T) {
-	want := genRepoBranches()
+	want := genRepoBranches(1000)
 
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(want); err != nil {
@@ -77,7 +77,7 @@ func TestRepoBranches_Marshal(t *testing.T) {
 }
 
 func BenchmarkRepoBranchesIDs_Encode(b *testing.B) {
-	repoBranches := genRepoBranchesIDs()
+	repoBranches := genRepoBranchesIDs(5_500_000)
 
 	// do one write to amortize away the cost of gob registration
 	w := &countWriter{}
@@ -99,7 +99,7 @@ func BenchmarkRepoBranchesIDs_Encode(b *testing.B) {
 }
 
 func BenchmarkRepoBranchesIDs_Decode(b *testing.B) {
-	repoBranches := genRepoBranchesIDs()
+	repoBranches := genRepoBranchesIDs(5_500_000)
 
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(repoBranches); err != nil {
@@ -119,7 +119,7 @@ func BenchmarkRepoBranchesIDs_Decode(b *testing.B) {
 }
 
 func TestRepoBranchesIDs_Marshal(t *testing.T) {
-	want := genRepoBranchesIDs()
+	want := genRepoBranchesIDs(1000)
 
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(want); err != nil {
@@ -137,7 +137,18 @@ func TestRepoBranchesIDs_Marshal(t *testing.T) {
 	}
 }
 
-func genRepoBranches() *RepoBranches {
+// Generating 5.5M repos slows down the benchmark setup time, so we cache things.
+var (
+	repoBranchesCache    = map[int]map[string][]string{}
+	repoBranchesIDsCache = map[int]map[string]*roaring.Bitmap{}
+)
+
+func genRepoBranches(n int) *RepoBranches {
+	set, ok := repoBranchesCache[n]
+	if ok {
+		return &RepoBranches{Set: set}
+	}
+
 	genName := func(n int) string {
 		bs := make([]byte, 8)
 		binary.LittleEndian.PutUint64(bs, uint64(n))
@@ -145,42 +156,55 @@ func genRepoBranches() *RepoBranches {
 	}
 
 	repoBranches := &RepoBranches{Set: map[string][]string{}}
-	for i := 0; i < 1000; i++ {
-		org := genName(i)
-		for j := 0; j < 1000; j++ {
-			name := "github.com/" + org + "/" + genName(i*2+j)
-			repoBranches.Set[name] = []string{"HEAD"}
-			if j%50 == 0 {
-				repoBranches.Set[name] = append(repoBranches.Set[name], "more", "branches")
-			}
+	orgIndex := 0
+	repoIndex := 0
+
+	for i := 0; i < n; i++ {
+		org := genName(orgIndex)
+		name := "github.com/" + org + "/" + genName(orgIndex*2+repoIndex)
+		repoBranches.Set[name] = []string{"HEAD"}
+		if repoIndex%50 == 0 {
+			repoBranches.Set[name] = append(repoBranches.Set[name], "more", "branches")
 		}
+
+		if i%1000 == 0 {
+			orgIndex++
+			repoIndex = 0
+		}
+
+		repoIndex++
 	}
+
+	repoBranchesCache[n] = repoBranches.Set
 
 	return repoBranches
 }
 
-func genRepoBranchesIDs() *RepoBranches {
-	rb := genRepoBranches()
-	rb.IDs = map[string]*roaring.Bitmap{}
+func genRepoBranchesIDs(n int) *RepoBranches {
+	branchIDs, ok := repoBranchesIDsCache[n]
+	if ok {
+		return &RepoBranches{IDs: branchIDs}
+	}
 
-	for repo, branches := range rb.Set {
+	set := genRepoBranches(n).Set
+	branchIDs = map[string]*roaring.Bitmap{}
+
+	for repo, branches := range set {
 		for _, branch := range branches {
-			ids, ok := rb.IDs[branch]
+			ids, ok := branchIDs[branch]
 			if !ok {
 				ids = roaring.New()
-				rb.IDs[branch] = ids
+				branchIDs[branch] = ids
 			}
 			ids.Add(hash(repo))
 		}
 	}
 
-	for _, ids := range rb.IDs {
+	for _, ids := range branchIDs {
 		ids.RunOptimize()
 	}
 
-	rb.Set = nil
-
-	return rb
+	return &RepoBranches{IDs: branchIDs}
 }
 
 func hash(name string) uint32 {
