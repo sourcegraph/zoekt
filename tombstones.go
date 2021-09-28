@@ -37,32 +37,23 @@ func SetTombstone(shardPath string, repoName string) error {
 	}
 
 	dest := shardPath + ".meta"
-	fn, err := jsonMarshalTmpFile(repos, dest)
+	err = jsonMarshalMeta(repos, dest)
 	if err != nil {
 		return err
 	}
 
-	err = os.Rename(fn, dest)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
-// jsonMarshalFileTmp marshals v to the temporary file p + ".*.tmp" and
-// returns the file name.
-//
-// Note: .tmp is the same suffix used by Builder. indexserver knows to clean
-// them up.
-func jsonMarshalTmpFile(v interface{}, p string) (_ string, err error) {
+func jsonMarshalMeta(v interface{}, p string) (err error) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	f, err := ioutil.TempFile(filepath.Dir(p), filepath.Base(p)+".*.tmp")
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer func() {
 		f.Close()
@@ -71,14 +62,17 @@ func jsonMarshalTmpFile(v interface{}, p string) (_ string, err error) {
 		}
 	}()
 
-	if err := f.Chmod(0o666 &^ umask); err != nil {
-		return "", err
-	}
-	if _, err := f.Write(b); err != nil {
-		return "", err
+	err = f.Chmod(0o666 &^ umask)
+	if err != nil {
+		return err
 	}
 
-	return f.Name(), f.Close()
+	_, err = f.Write(b)
+	if err != nil {
+		return err
+	}
+
+	return os.Rename(f.Name(), p)
 }
 
 // umask holds the Umask of the current process
