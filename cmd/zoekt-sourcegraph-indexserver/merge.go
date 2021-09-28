@@ -1,0 +1,208 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/zoekt"
+)
+
+func doMerge(dir string, targetSize int, maxSize int, days int, simulate bool) error {
+	if simulate {
+		debug.Println("simulating")
+	}
+
+	shards := loadShards(dir)
+	if len(shards) == 0 {
+		return fmt.Errorf("no shards found")
+	}
+	debug.Printf("found %d shards\n", len(shards))
+
+	opts := compoundOpts{
+		targetSizeBytes: int64(targetSize) * 1024 * 1024,
+		maxSizeBytes:    int64(maxSize) * 1024 * 1024,
+		cutoffDate:      time.Now().AddDate(0, 0, -days),
+	}
+	compounds, excluded := generateCompounds(shards, opts)
+
+	debug.Printf("generated %d compounds and %d excluded repositories\n", len(compounds), len(excluded))
+	if len(compounds) == 0 {
+		return nil
+	}
+
+	var totalSizeBytes int64 = 0
+	totalShards := 0
+	for ix, c := range compounds {
+		debug.Printf("compound %d: merging %d shards with total size %.2f MiB\n", ix, len(c.shards), float64(c.size)/(1024*1024))
+		if !simulate {
+			err := runMerge(c.shards)
+			if err != nil {
+				return err
+			}
+		}
+		totalShards += len(c.shards)
+		totalSizeBytes += c.size
+	}
+
+	debug.Printf("total size: %.2f MiB, number of shards merged: %d\n", float64(totalSizeBytes)/(1024*1024), totalShards)
+	return nil
+}
+
+func loadShards(dir string) []shard {
+	d, err := os.Open(dir)
+	if err != nil {
+		debug.Printf("failed to loadShards: %s", dir)
+		return []shard{}
+	}
+	defer d.Close()
+	names, _ := d.Readdirnames(-1)
+
+	shards := make([]shard, 0, len(names))
+	for _, n := range names {
+		path := filepath.Join(dir, n)
+		fi, err := os.Stat(path)
+		if err != nil {
+			debug.Printf("stat failed for %s: %s", n, err)
+			continue
+		}
+
+		if fi.IsDir() || filepath.Ext(path) != ".zoekt" || strings.HasPrefix(filepath.Base(path), "compound-") {
+			continue
+		}
+
+		repos, _, err := zoekt.ReadMetadataPath(path)
+		if err != nil {
+			debug.Printf("failed to load metadata for %s\n", filepath.Base(path))
+			continue
+		}
+		if len(repos) != 1 {
+			debug.Printf("expected %s to be a simple shard, but encountered %d repos", n, len(repos))
+			continue
+		}
+
+		rank, err := strconv.ParseFloat(repos[0].RawConfig["rank"], 64)
+		if err != nil {
+			debug.Printf("error parsing rank %s for shard: %s: %s, setting rank to 0", repos[0].RawConfig["rank"], n, err)
+			rank = 0
+		}
+
+		shards = append(shards, shard{
+			Repo:      n,
+			Path:      path,
+			ModTime:   fi.ModTime(),
+			SizeBytes: fi.Size(),
+			Rank:      rank,
+		})
+	}
+	return shards
+}
+
+type compound struct {
+	shards []shard
+	size   int64
+}
+
+type compoundOpts struct {
+	targetSizeBytes int64
+	maxSizeBytes    int64
+	cutoffDate      time.Time
+}
+
+func generateCompounds(shards []shard, opt compoundOpts) ([]compound, []shard) {
+	cur := 0
+	for ix, s := range shards {
+		if s.ModTime.After(opt.cutoffDate) || s.SizeBytes > opt.maxSizeBytes {
+			shards[cur], shards[ix] = shards[ix], shards[cur]
+			cur++
+			continue
+		}
+	}
+	if cur == len(shards) {
+		return []compound{}, shards
+	}
+
+	excluded := shards[:cur]
+	shards = shards[cur:]
+
+	sort.Slice(shards, func(i, j int) bool {
+		return shards[i].Rank < shards[j].Rank
+	})
+
+	// We prioritze merging shards with similar priority. This approach does not
+	// minimize the distance to the target size, but it gets close enough.
+	compounds := make([]compound, 0)
+	currentCompound := compound{}
+	for _, s := range shards {
+		if currentCompound.size > opt.targetSizeBytes {
+			compounds = append(compounds, currentCompound)
+			currentCompound = compound{}
+		}
+		currentCompound.shards = append(currentCompound.shards, s)
+		currentCompound.size += s.SizeBytes
+	}
+	if currentCompound.size > opt.targetSizeBytes {
+		compounds = append(compounds, currentCompound)
+	} else {
+		// The shards in currentCompound did not reach the desired target size. We don't
+		// want to create tiny compound shards, hence we append to excluded. The next
+		// time we run merge we might have enough shards to cross the threshold.
+		excluded = append(excluded, currentCompound.shards...)
+	}
+
+	return compounds, excluded
+}
+
+func runMerge(shards []shard) error {
+	sb := strings.Builder{}
+	for _, s := range shards {
+		sb.WriteString(fmt.Sprintf("%s\n", s.Path))
+	}
+
+	cmd := exec.Command("zoekt-merge-index", "-")
+	wc, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+
+	err = cmd.Start()
+	if err != nil {
+		return err
+	}
+
+	_, err = io.WriteString(wc, sb.String())
+	if err != nil {
+		return err
+	}
+	wc.Close()
+
+	err = cmd.Wait()
+	if err != nil {
+		return err
+	}
+
+	backupDir := filepath.Join(filepath.Dir(shards[0].Path), ".bak")
+	err = os.MkdirAll(backupDir, 0o755)
+	if err != nil {
+		debug.Printf("error creating backup dir %s: %s", backupDir, err)
+		for _, s := range shards {
+			err = os.Remove(s.Path)
+			if err != nil {
+				debug.Printf("error removing %s: %s", s.Path, err)
+			}
+		}
+	}
+	for _, s := range shards {
+		err = os.Rename(s.Path, filepath.Join(filepath.Dir(s.Path), ".bak", filepath.Base(s.Path)))
+		if err != nil {
+			debug.Printf("error removing %s: %s", s.Path, err)
+		}
+	}
+	return nil
+}

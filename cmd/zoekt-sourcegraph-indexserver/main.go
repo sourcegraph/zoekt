@@ -696,6 +696,7 @@ func main() {
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repositories then quit.")
 	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
 	debugMeta := flag.String("debug-meta", "", "do not start the indexserver, rather print shard metadata then quit.")
+	debugMerge := flag.String("debug-merge", "", "index dir,max shard size in MiB,compound target size in MiB,min age in days.")
 
 	_ = flag.Bool("exp-git-index", true, "DEPRECATED: not read anymore. We always use zoekt-git-index now.")
 
@@ -707,7 +708,7 @@ func main() {
 	if *index == "" {
 		log.Fatal("must set -index")
 	}
-	needSourcegraph := !(*debugShard != "" || *debugMeta != "")
+	needSourcegraph := !(*debugShard != "" || *debugMeta != "" || *debugMerge != "")
 	if *root == "" && needSourcegraph {
 		log.Fatal("must set -sourcegraph_url")
 	}
@@ -809,6 +810,37 @@ func main() {
 
 	if *debugMeta != "" {
 		err = printMetaData(*debugMeta)
+		if err != nil {
+			log.Fatal(err)
+		}
+		os.Exit(0)
+	}
+
+	if *debugMerge != "" {
+		params := strings.Split(*debugMerge, ",")
+		dir := params[0]
+
+		maxSize, err := strconv.Atoi(params[1])
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		targetSize, err := strconv.Atoi(params[2])
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		days, err := strconv.Atoi(params[3])
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		simulate, err := strconv.ParseBool(params[4])
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = doMerge(dir, targetSize, maxSize, days, simulate)
 		if err != nil {
 			log.Fatal(err)
 		}
