@@ -572,21 +572,19 @@ func ReadMetadata(inf IndexFile) ([]*Repository, *IndexMetadata, error) {
 }
 
 // ReadMetadataPathAlive is like ReadMetadataPath except that it only returns
-// alive repositories. The order of repositories returned by
-// ReadMetadataPathAlive is not deterministic.
+// alive repositories.
 func ReadMetadataPathAlive(p string) ([]*Repository, *IndexMetadata, error) {
 	repos, id, err := ReadMetadataPath(p)
 	if err != nil {
 		return nil, nil, err
 	}
-	cur := 0
-	for ix, repo := range repos {
-		if repo.Tombstone {
-			repos[cur], repos[ix] = repos[ix], repos[cur]
-			cur++
+	alive := repos[:0]
+	for _, repo := range repos {
+		if !repo.Tombstone {
+			alive = append(alive, repo)
 		}
 	}
-	return repos[cur:], id, nil
+	return alive, id, nil
 }
 
 // ReadMetadataPath returns the metadata of index shard at p without reading
