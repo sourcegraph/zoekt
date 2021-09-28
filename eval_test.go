@@ -214,124 +214,87 @@ func TestSimplifyRepo(t *testing.T) {
 	}
 }
 
-func hash(name string) uint32 {
-	h := fnv.New32()
-	h.Write([]byte(name))
-	return h.Sum32()
-}
-
 func TestSimplifyRepoBranch(t *testing.T) {
 	d := compoundReposShard(t, "foo", "bar")
 
-	none := &query.Repo{Pattern: "banana"}
-	for _, tc := range []struct {
-		name string
-		rb   *query.RepoBranches
-	}{
-		{
-			name: "Set",
-			rb: &query.RepoBranches{
-				Set: map[string][]string{"bar": {"branch1"}},
-			},
-		},
-		{
-			name: "IDs",
-			rb: &query.RepoBranches{
-				IDs: map[string]*roaring.Bitmap{
-					"branch1": roaring.BitmapOf(hash("bar")),
-				},
-			},
-		},
-		{
-			name: "both",
-			rb: &query.RepoBranches{ // IDs prioritised
-				Set: map[string][]string{"bar": {"branch1"}},
-				IDs: map[string]*roaring.Bitmap{
-					"branch1": roaring.BitmapOf(hash("bar")),
-				},
-			},
-		},
-	} {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			got := d.simplify(tc.rb)
+	some := &query.RepoBranches{Set: map[string][]string{"bar": {"branch1"}}}
+	none := &query.Repo{"banana"}
 
-			assertRepoBranchesEqual(t, tc.rb, got.(*query.RepoBranches))
+	got := d.simplify(some)
+	if d := cmp.Diff(some, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
 
-			got = d.simplify(none)
-
-			if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
-				t.Fatalf("-want, +got:\n%s", d)
-			}
-		})
+	got = d.simplify(none)
+	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
 	}
 }
 
-func assertRepoBranchesEqual(t testing.TB, a, b *query.RepoBranches) {
-	t.Helper()
-	if !cmp.Equal(a, b) {
-		t.Errorf("RepoBranches mismatch (-want, +got):\nSet: %s\nIDs: %s",
-			cmp.Diff(a.Set, b.Set),
-			cmp.Diff(idsToArrays(a.IDs), idsToArrays(b.IDs)),
-		)
-	}
-}
+func TestSimplifyRepoBranch_IDs(t *testing.T) {
+	d := compoundReposShard(t, "foo", "bar")
 
-func idsToArrays(in map[string]*roaring.Bitmap) map[string][]uint32 {
-	out := make(map[string][]uint32, len(in))
-	for branch, ids := range in {
-		out[branch] = ids.ToArray()
+	some := &query.RepoBranches{
+		IDs: map[string]*roaring.Bitmap{
+			"branch1": roaring.BitmapOf(hash("bar")),
+		},
 	}
-	return out
+	none := &query.Repo{"banana"}
+
+	got := d.simplify(some)
+	if d := cmp.Diff(some, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+
+	got = d.simplify(none)
+	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
 }
 
 func TestSimplifyRepoBranchSimple(t *testing.T) {
 	d := compoundReposShard(t, "foo")
+	q := &query.RepoBranches{Set: map[string][]string{"foo": {"HEAD", "b1"}, "bar": {"HEAD"}}}
 
-	for _, tc := range []struct {
-		name string
-		rb   *query.RepoBranches
-	}{
-		{
-			name: "Set",
-			rb: &query.RepoBranches{
-				Set: map[string][]string{"foo": {"HEAD", "b1"}, "bar": {"HEAD"}},
-			},
-		},
-		{
-			name: "IDs",
-			rb: &query.RepoBranches{
-				IDs: map[string]*roaring.Bitmap{
-					"HEAD": roaring.BitmapOf(hash("foo"), hash("bar")),
-					"b1":   roaring.BitmapOf(hash("foo")),
-				},
-			},
-		},
-		{
-			name: "both", // IDs prioritised
-			rb: &query.RepoBranches{
-				Set: map[string][]string{"foo": {"HEAD", "b1"}, "bar": {"HEAD"}},
-				IDs: map[string]*roaring.Bitmap{
-					"HEAD": roaring.BitmapOf(hash("foo"), hash("bar")),
-					"b1":   roaring.BitmapOf(hash("foo")),
-				},
-			},
-		},
-	} {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			want := &query.Or{[]query.Q{&query.Branch{
-				Pattern: "HEAD",
-				Exact:   true,
-			}, &query.Branch{
-				Pattern: "b1",
-				Exact:   true,
-			}}}
+	want := &query.Or{[]query.Q{&query.Branch{
+		Pattern: "HEAD",
+		Exact:   true,
+	}, &query.Branch{
+		Pattern: "b1",
+		Exact:   true,
+	}}}
 
-			got := d.simplify(tc.rb)
-			if d := cmp.Diff(want, got); d != "" {
-				t.Fatalf("-want, +got:\n%s", d)
-			}
-		})
+	got := d.simplify(q)
+	if d := cmp.Diff(want, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
 	}
+}
+
+func TestSimplifyRepoBranchSimple_IDs(t *testing.T) {
+	d := compoundReposShard(t, "foo")
+	q := &query.RepoBranches{
+		IDs: map[string]*roaring.Bitmap{
+			"HEAD": roaring.BitmapOf(hash("foo"), hash("bar")),
+			"b1":   roaring.BitmapOf(hash("foo")),
+		},
+	}
+
+	want := &query.Or{[]query.Q{&query.Branch{
+		Pattern: "HEAD",
+		Exact:   true,
+	}, &query.Branch{
+		Pattern: "b1",
+		Exact:   true,
+	}}}
+
+	got := d.simplify(q)
+	if d := cmp.Diff(want, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+}
+
+func hash(name string) uint32 {
+	h := fnv.New32()
+	h.Write([]byte(name))
+	return h.Sum32()
 }
