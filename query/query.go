@@ -208,7 +208,7 @@ func (q *RepoBranches) Equal(other *RepoBranches) bool {
 	return true
 }
 
-func (q *RepoBranches) _String() string {
+func (q *RepoBranches) String() string {
 	var detail string
 	switch {
 	case len(q.IDs) > 0:
