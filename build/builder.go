@@ -573,17 +573,16 @@ func (b *Builder) Finish() error {
 	b.finishedShards = map[string]string{}
 
 	for p := range toDelete {
-		if zoekt.TombstonesEnabled(filepath.Dir(p)) {
-			// Don't delete compound shards, set tombstones instead.
-			if strings.HasPrefix(filepath.Base(p), "compound-") {
-				if strings.HasSuffix(p, ".zoekt") {
-					repoName := b.opts.RepositoryDescription.Name
-					b.shardLog("set_tombstone", p, repoName)
-					err := zoekt.SetTombstone(p, repoName)
-					b.buildError = err
-				}
+		// Don't delete compound shards, set tombstones instead.
+		if zoekt.TombstonesEnabled(filepath.Dir(p)) && strings.HasPrefix(filepath.Base(p), "compound-") {
+			if !strings.HasSuffix(p, ".zoekt") {
 				continue
 			}
+			repoName := b.opts.RepositoryDescription.Name
+			b.shardLog("tomb", p, repoName)
+			err := zoekt.SetTombstone(p, repoName)
+			b.buildError = err
+			continue
 		}
 		log.Printf("removing old shard file: %s", p)
 		b.shardLog("remove", p, b.opts.RepositoryDescription.Name)
