@@ -242,7 +242,8 @@ func TestSimplifyRepoBranch_IDs(t *testing.T) {
 	none := &query.Repo{"banana"}
 
 	got := d.simplify(some)
-	if d := cmp.Diff(some, got); d != "" {
+	tr := cmp.Transformer("", func(b *roaring.Bitmap) []uint32 { return b.ToArray() })
+	if d := cmp.Diff(some, got, tr); d != "" {
 		t.Fatalf("-want, +got:\n%s", d)
 	}
 
