@@ -145,9 +145,9 @@ func genRepoBranches() *RepoBranches {
 	}
 
 	repoBranches := &RepoBranches{Set: map[string][]string{}}
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 1000; i++ {
 		org := genName(i)
-		for j := 0; j < 100; j++ {
+		for j := 0; j < 1000; j++ {
 			name := "github.com/" + org + "/" + genName(i*2+j)
 			repoBranches.Set[name] = []string{"HEAD"}
 			if j%50 == 0 {

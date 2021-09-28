@@ -6,6 +6,7 @@ require (
 	github.com/ProtonMail/go-crypto v0.0.0-20210707164159-52430bf6b52c // indirect
 	github.com/RoaringBitmap/roaring v0.9.4
 	github.com/andygrunwald/go-gerrit v0.0.0-20191101112536-3f5e365ccf57
+	github.com/bits-and-blooms/bitset v1.2.1 // indirect
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/fsnotify/fsnotify v1.4.9
