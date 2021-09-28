@@ -44,7 +44,11 @@ func TestClientServer(t *testing.T) {
 	client := rpc.Client(u.Host)
 	defer client.Close()
 
-	r, err := client.Search(context.Background(), mock.WantSearch, &zoekt.SearchOptions{})
+	var cached query.Q = &query.GobCache{
+		Q: mock.WantSearch,
+	}
+
+	r, err := client.Search(context.Background(), cached, &zoekt.SearchOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,6 +59,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	args.Q = query.RPCUnwrap(args.Q)
+
 	eventWriter, err := newEventStreamWriter(w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
