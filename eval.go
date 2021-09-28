@@ -46,7 +46,7 @@ func (d *indexData) simplifyMultiRepo(q query.Q, predicate func(repoName string)
 	count := 0
 	alive := len(d.repoMetaData)
 	for i, md := range d.repoMetaData {
-		if d.repoTombstone[i] {
+		if d.repoMetaData[i].Tombstone {
 			alive--
 		} else if predicate(md.Name) {
 			count++
@@ -185,7 +185,7 @@ nextFileMatch:
 			nextDoc = uint32(lastDoc + 1)
 		}
 		// Skip tombstoned docs
-		for nextDoc < docCount && d.repoTombstone[d.repos[nextDoc]] {
+		for nextDoc < docCount && d.repoMetaData[d.repos[nextDoc]].Tombstone {
 			nextDoc++
 		}
 		if nextDoc >= docCount {
@@ -493,7 +493,7 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 	}
 
 	for i := range d.repoListEntry {
-		if d.repoTombstone[i] {
+		if d.repoMetaData[i].Tombstone {
 			continue
 		}
 		rle := &d.repoListEntry[i]

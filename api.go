@@ -274,6 +274,9 @@ type Repository struct {
 	// IndexMetadata. However, we store it here since the Sourcegraph frontend
 	// can read this structure but not IndexMetadata.
 	HasSymbols bool
+
+	// Tombstone is true if we are not allowed to search this repo.
+	Tombstone bool
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {

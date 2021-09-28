@@ -77,10 +77,6 @@ type indexData struct {
 	metaData     IndexMetadata
 	repoMetaData []Repository
 
-	// repoTombstone[repoID] is true if we are not allowed to search
-	// repoID.
-	repoTombstone []bool
-
 	subRepos     []uint32
 	subRepoPaths [][]string
 
