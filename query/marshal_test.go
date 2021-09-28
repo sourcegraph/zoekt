@@ -173,6 +173,10 @@ func genRepoBranchesIDs() *RepoBranches {
 		}
 	}
 
+	for _, ids := range rb.IDs {
+		ids.RunOptimize()
+	}
+
 	rb.Set = nil
 
 	return rb

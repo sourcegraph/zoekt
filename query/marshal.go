@@ -179,7 +179,6 @@ func repoBranchesIDsEncode(repoBranchesIDs map[string]*roaring.Bitmap) ([]byte, 
 
 	for branch, ids := range repoBranchesIDs {
 		str(branch)
-		ids.RunOptimize()
 		l := ids.GetSerializedSizeInBytes()
 		varint(l)
 
