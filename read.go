@@ -320,8 +320,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.rawConfigMasks = append(d.rawConfigMasks, encodeRawConfig(md.RawConfig))
 	}
 
-	d.repoTombstone = make([]bool, len(d.repoMetaData))
-
 	blob, err := d.readSectionBlob(toc.runeDocSections)
 	if err != nil {
 		return nil, err
@@ -571,6 +569,22 @@ func ReadMetadata(inf IndexFile) ([]*Repository, *IndexMetadata, error) {
 	}
 
 	return rd.readMetadata(&toc)
+}
+
+// ReadMetadataPathAlive is like ReadMetadataPath except that it only returns
+// alive repositories.
+func ReadMetadataPathAlive(p string) ([]*Repository, *IndexMetadata, error) {
+	repos, id, err := ReadMetadataPath(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	alive := repos[:0]
+	for _, repo := range repos {
+		if !repo.Tombstone {
+			alive = append(alive, repo)
+		}
+	}
+	return alive, id, nil
 }
 
 // ReadMetadataPath returns the metadata of index shard at p without reading

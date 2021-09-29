@@ -36,6 +36,8 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 	trash := getShards(trashDir)
 	index := getShards(indexDir)
 
+	tombstonesEnabled := zoekt.TombstonesEnabled(indexDir)
+
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
 	for repo, shards := range trash {
@@ -71,19 +73,32 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 
 		log.Printf("restoring shards from trash for %s", repo)
 		moveAll(indexDir, shards)
-		shardsLog(indexDir, "restore", shards)
+		shardsLog(indexDir, "restore", shards, repo)
 	}
 
-	// index: Move non-existant repos into trash
-	for _, shards := range index {
+	// index: Move non-existent repos into trash
+	for repo, shards := range index {
 		// Best-effort touch. If touch fails, we will just remove from the
 		// trash sooner.
 		for _, shard := range shards {
 			_ = os.Chtimes(shard.Path, now, now)
 		}
 
+		if tombstonesEnabled {
+			// 1 repo can be split across many simple shards but it should only be contained
+			// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
+			// shard at index 0.
+			if len(shards) == 1 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
+				shardsLog(indexDir, "tomb", shards, repo)
+				if err := zoekt.SetTombstone(shards[0].Path, repo); err != nil {
+					log.Printf("error setting tombstone for %s in shard %s: %s. Removing shard\n", repo, shards[0], err)
+					_ = os.Remove(shards[0].Path)
+				}
+				continue
+			}
+		}
 		moveAll(trashDir, shards)
-		shardsLog(indexDir, "remove", shards)
+		shardsLog(indexDir, "remove", shards, repo)
 	}
 
 	// Remove old .tmp files from crashed indexer runs-- for example, if
@@ -153,11 +168,10 @@ func getShards(dir string) map[string][]shard {
 }
 
 func shardRepoNames(path string) ([]string, error) {
-	repos, _, err := zoekt.ReadMetadataPath(path)
+	repos, _, err := zoekt.ReadMetadataPathAlive(path)
 	if err != nil {
 		return nil, err
 	}
-
 	names := make([]string, 0, len(repos))
 	for _, repo := range repos {
 		names = append(names, repo.Name)
@@ -252,7 +266,7 @@ func moveAll(dstDir string, shards []shard) {
 	}
 }
 
-func shardsLog(indexDir, action string, shards []shard) {
+func shardsLog(indexDir, action string, shards []shard, repoName string) {
 	shardLogger := &lumberjack.Logger{
 		Filename:   filepath.Join(indexDir, "zoekt-indexserver-shard-log.tsv"),
 		MaxSize:    100, // Megabyte
@@ -266,6 +280,6 @@ func shardsLog(indexDir, action string, shards []shard) {
 		if fi, err := os.Stat(filepath.Join(indexDir, shard)); err == nil {
 			shardSize = fi.Size()
 		}
-		_, _ = fmt.Fprintf(shardLogger, "%d\t%s\t%s\t%d\n", time.Now().UTC().Unix(), action, shard, shardSize)
+		_, _ = fmt.Fprintf(shardLogger, "%d\t%s\t%s\t%d\t%s\n", time.Now().UTC().Unix(), action, shard, shardSize, repoName)
 	}
 }

@@ -320,7 +320,7 @@ func (o *Options) IndexState() IndexState {
 		return IndexStateMissing
 	}
 
-	repos, index, err := zoekt.ReadMetadataPath(fn)
+	repos, index, err := zoekt.ReadMetadataPathAlive(fn)
 	if os.IsNotExist(err) {
 		return IndexStateMissing
 	} else if err != nil {
@@ -385,7 +385,7 @@ func (o *Options) findShard() string {
 		return ""
 	}
 	for _, fn := range compoundShards {
-		repos, _, err := zoekt.ReadMetadataPath(fn)
+		repos, _, err := zoekt.ReadMetadataPathAlive(fn)
 		if err != nil {
 			continue
 		}
@@ -568,13 +568,24 @@ func (b *Builder) Finish() error {
 
 		delete(toDelete, final)
 
-		b.shardLog("upsert", final)
+		b.shardLog("upsert", final, b.opts.RepositoryDescription.Name)
 	}
 	b.finishedShards = map[string]string{}
 
 	for p := range toDelete {
+		// Don't delete compound shards, set tombstones instead.
+		if zoekt.TombstonesEnabled(filepath.Dir(p)) && strings.HasPrefix(filepath.Base(p), "compound-") {
+			if !strings.HasSuffix(p, ".zoekt") {
+				continue
+			}
+			repoName := b.opts.RepositoryDescription.Name
+			b.shardLog("tomb", p, repoName)
+			err := zoekt.SetTombstone(p, repoName)
+			b.buildError = err
+			continue
+		}
 		log.Printf("removing old shard file: %s", p)
-		b.shardLog("remove", p)
+		b.shardLog("remove", p, b.opts.RepositoryDescription.Name)
 		if err := os.Remove(p); err != nil {
 			b.buildError = err
 		}
@@ -638,13 +649,13 @@ func (b *Builder) flush() error {
 	return nil
 }
 
-func (b *Builder) shardLog(action, shard string) {
+func (b *Builder) shardLog(action, shard string, repoName string) {
 	shard = filepath.Base(shard)
 	var shardSize int64
 	if fi, err := os.Stat(filepath.Join(b.opts.IndexDir, shard)); err == nil {
 		shardSize = fi.Size()
 	}
-	_, _ = fmt.Fprintf(b.shardLogger, "%d\t%s\t%s\t%d\n", time.Now().UTC().Unix(), action, shard, shardSize)
+	_, _ = fmt.Fprintf(b.shardLogger, "%d\t%s\t%s\t%d\t%s\n", time.Now().UTC().Unix(), action, shard, shardSize, repoName)
 }
 
 var profileNumber int

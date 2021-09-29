@@ -29,7 +29,7 @@ func Merge(dstDir string, files ...IndexFile) (fn string, _ error) {
 	hasher := sha1.New()
 	for _, d := range ds {
 		for i, md := range d.repoMetaData {
-			if d.repoTombstone[i] {
+			if d.repoMetaData[i].Tombstone {
 				continue
 			}
 			hasher.Write([]byte(md.Name))
@@ -96,7 +96,7 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 		for docID := uint32(0); int(docID) < len(d.fileBranchMasks); docID++ {
 			repoID := int(d.repos[docID])
 
-			if d.repoTombstone[repoID] {
+			if d.repoMetaData[repoID].Tombstone {
 				continue
 			}
 
