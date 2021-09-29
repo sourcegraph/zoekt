@@ -917,7 +917,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			reposBranchesWant[repoIdx] = mask
 		}
 		return &docMatchTree{
-			reason:  "RepoBranches",
+			reason:  "BranchRepos",
 			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
 				return d.fileBranchMasks[docID]&reposBranchesWant[d.repos[docID]] != 0
