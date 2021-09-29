@@ -196,21 +196,6 @@ func (q *BranchesRepos) String() string {
 	return sb.String()
 }
 
-func (q *BranchesRepos) Branches(id uint32) Q {
-	var qs []Q
-	for _, br := range q.List {
-		if br.Repos.Contains(id) {
-			qs = append(qs, &Branch{Pattern: br.Branch, Exact: true})
-		}
-	}
-
-	if len(qs) == 0 {
-		return &Const{Value: false}
-	}
-
-	return NewOr(qs...)
-}
-
 // MarshalBinary implements a specialized encoder for BranchesRepos.
 func (q BranchesRepos) MarshalBinary() ([]byte, error) {
 	return branchesReposEncode(q.List)

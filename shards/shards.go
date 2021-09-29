@@ -374,7 +374,7 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 
 			// Every repo wants the same branches, so we can replace RepoBranches
 			// with a list of branch queries.
-			and.Children[i] = c.Branches(filtered[0].repos[0].ID)
+			and.Children[i] = &query.Branch{Pattern: c.List[0].Branch, Exact: true}
 			return filtered, query.Simplify(and)
 
 		case *query.RepoBranches:
