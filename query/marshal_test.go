@@ -131,8 +131,7 @@ func TestBranchesRepos_Marshal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tr := cmp.Transformer("", func(b *roaring.Bitmap) []uint32 { return b.ToArray() })
-	if diff := cmp.Diff(want, got, tr); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("mismatch IDs (-want +got):\n%s", diff)
 	}
 }
