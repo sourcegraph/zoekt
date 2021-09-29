@@ -172,31 +172,21 @@ func (q *Repo) String() string {
 	return fmt.Sprintf("repo:%s", q.Pattern)
 }
 
-// BranchRepos is a map from branches to repos to match. It is a Sourcegraph
+// BranchesRepos is a slice of BranchRepos to match. It is a Sourcegraph
 // addition and only used in the RPC interface for efficient checking of large
 // repo lists.
-type BranchRepos struct {
-	// branch -> bitmap of Sourcegraph repo IDs
-	Set map[string]*roaring.Bitmap
-}
+type BranchesRepos []BranchRepos
 
-func (q *BranchRepos) String() string {
+func (q BranchesRepos) String() string {
 	var sb strings.Builder
 
-	sb.WriteString("(branchrepos")
+	sb.WriteString("(branchesrepos")
 
-	branches := make([]string, 0, len(q.Set))
-	for branch := range q.Set {
-		branches = append(branches, branch)
-	}
-
-	sort.Strings(branches)
-	for _, branch := range branches {
-		ids := q.Set[branch]
-		if size := ids.GetCardinality(); size > 1 {
-			sb.WriteString(" " + branch + ":" + strconv.FormatUint(size, 64))
+	for _, br := range q {
+		if size := br.Repos.GetCardinality(); size > 1 {
+			sb.WriteString(" " + br.Branch + ":" + strconv.FormatUint(size, 64))
 		} else {
-			sb.WriteString(" " + branch + "=" + ids.String())
+			sb.WriteString(" " + br.Branch + "=" + br.Repos.String())
 		}
 	}
 
@@ -204,38 +194,26 @@ func (q *BranchRepos) String() string {
 	return sb.String()
 }
 
-func (q *BranchRepos) Branches(id uint32) Q {
-	var branches []string
-	for branch, ids := range q.Set {
-		if ids.Contains(id) {
-			branches = append(branches, branch)
+func (q BranchesRepos) Branches(id uint32) Q {
+	var qs []Q
+	for _, br := range q {
+		if br.Repos.Contains(id) {
+			qs = append(qs, &Branch{Pattern: br.Branch, Exact: true})
 		}
 	}
 
-	if len(branches) == 0 {
+	if len(qs) == 0 {
 		return &Const{Value: false}
-	}
-
-	sort.Strings(branches)
-
-	// New sub query is (or (branch branches[0]) ...)
-	qs := make([]Q, len(branches))
-	for i, branch := range branches {
-		qs[i] = &Branch{Pattern: branch, Exact: true}
 	}
 
 	return NewOr(qs...)
 }
 
-// MarshalBinary implements a specialized encoder for RepoBranches.
-func (q *BranchRepos) MarshalBinary() ([]byte, error) {
-	return branchReposEncode(q.Set)
-}
-
-// UnmarshalBinary implements a specialized decoder for RepoBranches.
-func (q *BranchRepos) UnmarshalBinary(b []byte) (err error) {
-	q.Set, err = branchReposDecode(b)
-	return err
+// BranchRepos is a (branch, sourcegraph repo ids bitmap) tuple. It is a
+// Sourcegraph addition.
+type BranchRepos struct {
+	Branch string
+	Repos  *roaring.Bitmap
 }
 
 // RepoBranches is a list of branches in repos to match. It is a Sourcegraph

@@ -68,15 +68,15 @@ func (d *indexData) simplify(in query.Q) query.Q {
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
 				return strings.Contains(repo.Name, r.Pattern)
 			})
-		case *query.BranchRepos:
+		case query.BranchesRepos:
 			if len(d.repoMetaData) == 1 {
 				// Can simplify query now. compound too complicated since each repo
 				// may have different branches.
 				return r.Branches(d.repoMetaData[0].ID)
 			}
 			for _, md := range d.repoMetaData {
-				for _, ids := range r.Set {
-					if ids.Contains(md.ID) {
+				for _, br := range r {
+					if br.Repos.Contains(md.ID) {
 						return q
 					}
 				}

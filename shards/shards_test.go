@@ -196,18 +196,13 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 	}
 
 	repoBranchesSet := &query.RepoBranches{Set: make(map[string][]string)}
-	branchReposSet := &query.BranchRepos{Set: make(map[string]*roaring.Bitmap)}
+	branchesRepos := query.BranchesRepos{
+		{Branch: "HEAD", Repos: roaring.New()},
+	}
 
 	for _, name := range repoSetNames {
 		repoBranchesSet.Set[name] = []string{"HEAD"}
-
-		ids := branchReposSet.Set["HEAD"]
-		if ids == nil {
-			ids = roaring.New()
-			branchReposSet.Set["HEAD"] = ids
-		}
-
-		ids.Add(hash(name))
+		branchesRepos[0].Repos.Add(hash(name))
 	}
 
 	set := query.NewRepoSet(repoSetNames...)
@@ -222,9 +217,9 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 		// Test with the same repoBranches again
 		query.NewAnd(repoBranchesSet, sub),
 
-		query.NewAnd(branchReposSet, sub),
+		query.NewAnd(branchesRepos, sub),
 		// Test with the same repoBranches with IDs again
-		query.NewAnd(branchReposSet, sub),
+		query.NewAnd(branchesRepos, sub),
 	}
 
 	for _, q := range queries {

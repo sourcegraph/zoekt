@@ -211,10 +211,8 @@ func TestSimplifyRepoBranch(t *testing.T) {
 func TestSimplifyBranchRepos(t *testing.T) {
 	d := compoundReposShard(t, "foo", "bar")
 
-	some := &query.BranchRepos{
-		Set: map[string]*roaring.Bitmap{
-			"branch1": roaring.BitmapOf(hash("bar")),
-		},
+	some := query.BranchesRepos{
+		{Branch: "branch1", Repos: roaring.BitmapOf(hash("bar"))},
 	}
 	none := &query.Repo{"banana"}
 
@@ -250,11 +248,9 @@ func TestSimplifyRepoBranchSimple(t *testing.T) {
 
 func TestSimplifyBranchReposSimple(t *testing.T) {
 	d := compoundReposShard(t, "foo")
-	q := &query.BranchRepos{
-		Set: map[string]*roaring.Bitmap{
-			"HEAD": roaring.BitmapOf(hash("foo"), hash("bar")),
-			"b1":   roaring.BitmapOf(hash("foo")),
-		},
+	q := query.BranchesRepos{
+		{Branch: "HEAD", Repos: roaring.BitmapOf(hash("foo"), hash("bar"))},
+		{Branch: "b1", Repos: roaring.BitmapOf(hash("foo"))},
 	}
 
 	want := &query.Or{[]query.Q{&query.Branch{
