@@ -297,7 +297,7 @@ func TestRepoBranches(t *testing.T) {
 	}
 }
 
-func TestBranchRepos(t *testing.T) {
+func TestBranchesRepos(t *testing.T) {
 	d := &indexData{
 		repoMetaData: []Repository{
 			{ID: hash("foo"), Name: "foo"},
