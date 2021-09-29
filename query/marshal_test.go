@@ -132,7 +132,7 @@ func TestBranchesRepos_Marshal(t *testing.T) {
 	}
 
 	tr := cmp.Transformer("", func(b *roaring.Bitmap) []uint32 { return b.ToArray() })
-	if diff := cmp.Diff(want, got, tr); diff != "" {
+	if diff := cmp.Diff(want, &got, tr); diff != "" {
 		t.Fatalf("mismatch IDs (-want +got):\n%s", diff)
 	}
 }
@@ -177,11 +177,11 @@ func genRepoBranches(n int) *RepoBranches {
 	return repoBranches
 }
 
-func genBranchesRepos(n int) BranchesRepos {
+func genBranchesRepos(n int) *BranchesRepos {
 	key := fmt.Sprintf("BranchesRepos:%d", n)
 	val, ok := genCache[key]
 	if ok {
-		return val.(BranchesRepos)
+		return val.(*BranchesRepos)
 	}
 
 	set := genRepoBranches(n).Set
@@ -200,7 +200,7 @@ func genBranchesRepos(n int) BranchesRepos {
 		id++
 	}
 
-	brs := make(BranchesRepos, 0, len(br))
+	brs := make([]BranchRepos, 0, len(br))
 	for branch, ids := range br {
 		ids.RunOptimize()
 		brs = append(brs, BranchRepos{Branch: branch, Repos: ids})
@@ -210,9 +210,13 @@ func genBranchesRepos(n int) BranchesRepos {
 		return brs[i].Branch < brs[j].Branch
 	})
 
-	genCache[key] = brs
+	q := &BranchesRepos{
+		List: brs,
+	}
 
-	return brs
+	genCache[key] = q
+
+	return q
 }
 
 type countWriter struct {

@@ -153,7 +153,7 @@ func repoBranchesDecode(b []byte) (map[string][]string, error) {
 	return repoBranches, r.err
 }
 
-func branchesReposEncode(brs BranchesRepos) ([]byte, error) {
+func branchesReposEncode(brs []BranchRepos) ([]byte, error) {
 	var b bytes.Buffer
 	var enc [binary.MaxVarintLen64]byte
 	varint := func(n uint64) {
@@ -204,7 +204,7 @@ func branchesReposEncode(brs BranchesRepos) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func branchesReposDecode(b []byte) (BranchesRepos, error) {
+func branchesReposDecode(b []byte) ([]BranchRepos, error) {
 	// binaryReader returns strings pointing into b to avoid allocations. We
 	// don't own b, so we create a copy of it.
 	r := binaryReader{b: append(make([]byte, 0, len(b)), b...)}
@@ -215,7 +215,7 @@ func branchesReposDecode(b []byte) (BranchesRepos, error) {
 	}
 
 	l := r.uvarint() // Length
-	brs := make(BranchesRepos, l)
+	brs := make([]BranchRepos, l)
 
 	for i := 0; i < l; i++ {
 		brs[i].Branch = r.str()

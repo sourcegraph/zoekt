@@ -302,13 +302,13 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
 				return setQuery.Set[repo.Name]
 			})
-		case query.BranchesRepos:
-			for _, br := range setQuery {
+		case *query.BranchesRepos:
+			for _, br := range setQuery.List {
 				setSize += int(br.Repos.GetCardinality())
 			}
 
 			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
-				for _, br := range setQuery {
+				for _, br := range setQuery.List {
 					if br.Repos.Contains(repo.ID) {
 						return true
 					}
@@ -364,8 +364,11 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 			and.Children[i] = &query.Const{Value: true}
 			return filtered, query.Simplify(and)
 
-		case query.BranchesRepos:
-			if len(c) != 1 {
+		case *query.BranchesRepos:
+			// We can only replace if all the repos want the same branches. We
+			// simplify and just check that we are requesting 1 branch. The common
+			// case is just asking for HEAD, so this should be effective.
+			if len(c.List) != 1 {
 				return filtered, and
 			}
 

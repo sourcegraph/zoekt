@@ -175,14 +175,16 @@ func (q *Repo) String() string {
 // BranchesRepos is a slice of BranchRepos to match. It is a Sourcegraph
 // addition and only used in the RPC interface for efficient checking of large
 // repo lists.
-type BranchesRepos []BranchRepos
+type BranchesRepos struct {
+	List []BranchRepos
+}
 
-func (q BranchesRepos) String() string {
+func (q *BranchesRepos) String() string {
 	var sb strings.Builder
 
 	sb.WriteString("(branchesrepos")
 
-	for _, br := range q {
+	for _, br := range q.List {
 		if size := br.Repos.GetCardinality(); size > 1 {
 			sb.WriteString(" " + br.Branch + ":" + strconv.FormatUint(size, 64))
 		} else {
@@ -194,9 +196,9 @@ func (q BranchesRepos) String() string {
 	return sb.String()
 }
 
-func (q BranchesRepos) Branches(id uint32) Q {
+func (q *BranchesRepos) Branches(id uint32) Q {
 	var qs []Q
-	for _, br := range q {
+	for _, br := range q.List {
 		if br.Repos.Contains(id) {
 			qs = append(qs, &Branch{Pattern: br.Branch, Exact: true})
 		}
@@ -211,12 +213,12 @@ func (q BranchesRepos) Branches(id uint32) Q {
 
 // MarshalBinary implements a specialized encoder for BranchesRepos.
 func (q BranchesRepos) MarshalBinary() ([]byte, error) {
-	return branchesReposEncode(q)
+	return branchesReposEncode(q.List)
 }
 
 // UnmarshalBinary implements a specialized decoder for BranchesRepos.
 func (q *BranchesRepos) UnmarshalBinary(b []byte) (err error) {
-	*q, err = branchesReposDecode(b)
+	q.List, err = branchesReposDecode(b)
 	return err
 }
 

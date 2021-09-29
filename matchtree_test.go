@@ -308,10 +308,10 @@ func TestBranchesRepos(t *testing.T) {
 		branchIDs:       []map[string]uint{{"HEAD": 1}, {"HEAD": 1, "b1": 2}},
 	}
 
-	mt, err := d.newMatchTree(query.BranchesRepos{
+	mt, err := d.newMatchTree(&query.BranchesRepos{List: []query.BranchRepos{
 		{Branch: "b1", Repos: roaring.BitmapOf(hash("bar"))},
 		{Branch: "b2", Repos: roaring.BitmapOf(hash("bar"))},
-	})
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}

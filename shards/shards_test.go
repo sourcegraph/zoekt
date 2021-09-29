@@ -196,13 +196,13 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 	}
 
 	repoBranchesSet := &query.RepoBranches{Set: make(map[string][]string)}
-	branchesRepos := query.BranchesRepos{
+	branchesRepos := &query.BranchesRepos{List: []query.BranchRepos{
 		{Branch: "HEAD", Repos: roaring.New()},
-	}
+	}}
 
 	for _, name := range repoSetNames {
 		repoBranchesSet.Set[name] = []string{"HEAD"}
-		branchesRepos[0].Repos.Add(hash(name))
+		branchesRepos.List[0].Repos.Add(hash(name))
 	}
 
 	set := query.NewRepoSet(repoSetNames...)
