@@ -25,6 +25,13 @@ func doMerge(dir string, targetSize int, maxSize int, days int, simulate bool) e
 	}
 	debug.Printf("found %d shards\n", len(shards))
 
+	backupDir := filepath.Join(dir, ".scratch/bak")
+	err := os.MkdirAll(backupDir, 0o755)
+	if err != nil {
+		debug.Printf("error creating backup dir %s: %s", backupDir, err)
+		return err
+	}
+
 	opts := compoundOpts{
 		targetSizeBytes: int64(targetSize) * 1024 * 1024,
 		maxSizeBytes:    int64(maxSize) * 1024 * 1024,
@@ -39,16 +46,17 @@ func doMerge(dir string, targetSize int, maxSize int, days int, simulate bool) e
 
 	var totalSizeBytes int64 = 0
 	totalShards := 0
-	for ix, c := range compounds {
-		debug.Printf("compound %d: merging %d shards with total size %.2f MiB\n", ix, len(c.shards), float64(c.size)/(1024*1024))
+	for ix, comp := range compounds {
+		debug.Printf("compound %d: merging %d shards with total size %.2f MiB\n", ix, len(comp.shards), float64(comp.size)/(1024*1024))
 		if !simulate {
-			err := runMerge(c.shards)
+			err := callMerge(comp.shards)
 			if err != nil {
 				return err
 			}
+			moveAll(backupDir, comp.shards)
 		}
-		totalShards += len(c.shards)
-		totalSizeBytes += c.size
+		totalShards += len(comp.shards)
+		totalSizeBytes += comp.size
 	}
 
 	debug.Printf("total size: %.2f MiB, number of shards merged: %d\n", float64(totalSizeBytes)/(1024*1024), totalShards)
@@ -67,6 +75,7 @@ func loadShards(dir string) []shard {
 	shards := make([]shard, 0, len(names))
 	for _, n := range names {
 		path := filepath.Join(dir, n)
+
 		fi, err := os.Stat(path)
 		if err != nil {
 			debug.Printf("stat failed for %s: %s", n, err)
@@ -115,6 +124,11 @@ type compoundOpts struct {
 	cutoffDate      time.Time
 }
 
+// generateCompounds encodes the following merge policy:
+//   - merge shards that are older than opt.cutoffDate
+//   - merge shards that are smaller than opt.maxSizeBytes
+//   - merge shards with similar rank
+//   - compound shards should be larger than opt.targetSizeBytes
 func generateCompounds(shards []shard, opt compoundOpts) ([]compound, []shard) {
 	cur := 0
 	for ix, s := range shards {
@@ -136,7 +150,7 @@ func generateCompounds(shards []shard, opt compoundOpts) ([]compound, []shard) {
 	})
 
 	// We prioritze merging shards with similar priority. This approach does not
-	// minimize the distance to the target size, but it gets close enough.
+	// minimize the distance to the target compound size, but it gets close enough.
 	compounds := make([]compound, 0)
 	currentCompound := compound{}
 	for _, s := range shards {
@@ -159,7 +173,7 @@ func generateCompounds(shards []shard, opt compoundOpts) ([]compound, []shard) {
 	return compounds, excluded
 }
 
-func runMerge(shards []shard) error {
+func callMerge(shards []shard) error {
 	sb := strings.Builder{}
 	for _, s := range shards {
 		sb.WriteString(fmt.Sprintf("%s\n", s.Path))
@@ -182,27 +196,5 @@ func runMerge(shards []shard) error {
 	}
 	wc.Close()
 
-	err = cmd.Wait()
-	if err != nil {
-		return err
-	}
-
-	backupDir := filepath.Join(filepath.Dir(shards[0].Path), ".bak")
-	err = os.MkdirAll(backupDir, 0o755)
-	if err != nil {
-		debug.Printf("error creating backup dir %s: %s", backupDir, err)
-		for _, s := range shards {
-			err = os.Remove(s.Path)
-			if err != nil {
-				debug.Printf("error removing %s: %s", s.Path, err)
-			}
-		}
-	}
-	for _, s := range shards {
-		err = os.Rename(s.Path, filepath.Join(filepath.Dir(s.Path), ".bak", filepath.Base(s.Path)))
-		if err != nil {
-			debug.Printf("error removing %s: %s", s.Path, err)
-		}
-	}
-	return nil
+	return cmd.Wait()
 }
