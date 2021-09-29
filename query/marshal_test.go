@@ -139,25 +139,6 @@ func TestBranchRepos_Marshal(t *testing.T) {
 // Generating 5.5M repos slows down the benchmark setup time, so we cache things.
 var genCache = map[string]interface{}{}
 
-func genRepoSet(n int) *RepoSet {
-	key := fmt.Sprintf("RepoSet:%d", n)
-	val, ok := genCache[key]
-	if ok {
-		return val.(*RepoSet)
-	}
-
-	rb := genRepoBranches(n)
-	set := make(map[string]bool, len(rb.Set))
-
-	for repo := range rb.Set {
-		set[repo] = true
-	}
-
-	rs := &RepoSet{Set: set}
-	genCache[key] = rs
-	return rs
-}
-
 func genRepoBranches(n int) *RepoBranches {
 	key := fmt.Sprintf("RepoBranches:%d", n)
 	val, ok := genCache[key]
