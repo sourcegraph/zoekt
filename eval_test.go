@@ -208,7 +208,7 @@ func TestSimplifyRepoBranch(t *testing.T) {
 	}
 }
 
-func TestSimplifyBranchRepos(t *testing.T) {
+func TestSimplifyBranchesRepos(t *testing.T) {
 	d := compoundReposShard(t, "foo", "bar")
 
 	some := query.BranchesRepos{
