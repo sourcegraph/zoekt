@@ -248,27 +248,6 @@ func TestSimplifyRepoBranchSimple(t *testing.T) {
 	}
 }
 
-func TestSimplifyBranchesReposSimple(t *testing.T) {
-	d := compoundReposShard(t, "foo")
-	q := &query.BranchesRepos{List: []query.BranchRepos{
-		{Branch: "HEAD", Repos: roaring.BitmapOf(hash("foo"), hash("bar"))},
-		{Branch: "b1", Repos: roaring.BitmapOf(hash("foo"))},
-	}}
-
-	want := &query.Or{[]query.Q{&query.Branch{
-		Pattern: "HEAD",
-		Exact:   true,
-	}, &query.Branch{
-		Pattern: "b1",
-		Exact:   true,
-	}}}
-
-	got := d.simplify(q)
-	if d := cmp.Diff(want, got); d != "" {
-		t.Fatalf("-want, +got:\n%s", d)
-	}
-}
-
 func hash(name string) uint32 {
 	h := fnv.New32()
 	h.Write([]byte(name))
