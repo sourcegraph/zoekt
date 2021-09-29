@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
-	"hash/fnv"
 	"testing"
 
 	"github.com/RoaringBitmap/roaring"
@@ -76,8 +75,8 @@ func TestRepoBranches_Marshal(t *testing.T) {
 	}
 }
 
-func BenchmarkRepoBranchesIDs_Encode(b *testing.B) {
-	repoBranches := genRepoBranchesIDs(5_500_000)
+func BenchmarkBranchRepos_Encode(b *testing.B) {
+	repoBranches := genBranchRepos(5_500_000)
 
 	// do one write to amortize away the cost of gob registration
 	w := &countWriter{}
@@ -98,8 +97,8 @@ func BenchmarkRepoBranchesIDs_Encode(b *testing.B) {
 	}
 }
 
-func BenchmarkRepoBranchesIDs_Decode(b *testing.B) {
-	repoBranches := genRepoBranchesIDs(5_500_000)
+func BenchmarkBranchRepos_Decode(b *testing.B) {
+	repoBranches := genBranchRepos(5_500_000)
 
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(repoBranches); err != nil {
@@ -118,136 +117,15 @@ func BenchmarkRepoBranchesIDs_Decode(b *testing.B) {
 	}
 }
 
-func TestRepoBranchesIDs_Marshal(t *testing.T) {
-	want := genRepoBranchesIDs(1000)
+func TestBranchRepos_Marshal(t *testing.T) {
+	want := genBranchRepos(1000)
 
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(want); err != nil {
 		t.Fatal(err)
 	}
 
-	var got RepoBranches
-	if err := gob.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&got); err != nil {
-		t.Fatal(err)
-	}
-
-	tr := cmp.Transformer("", func(b *roaring.Bitmap) []uint32 { return b.ToArray() })
-	if diff := cmp.Diff(want, &got, tr); diff != "" {
-		t.Fatalf("mismatch IDs (-want +got):\n%s", diff)
-	}
-}
-
-func BenchmarkRepoSet_Encode(b *testing.B) {
-	repoBranches := genRepoSet(5_500_000)
-
-	// do one write to amortize away the cost of gob registration
-	w := &countWriter{}
-	enc := gob.NewEncoder(w)
-	if err := enc.Encode(repoBranches); err != nil {
-		b.Fatal(err)
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	b.ReportMetric(float64(w.n), "bytes")
-
-	for n := 0; n < b.N; n++ {
-		if err := enc.Encode(repoBranches); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkRepoSet_Decode(b *testing.B) {
-	repoBranches := genRepoSet(5_500_000)
-
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(repoBranches); err != nil {
-		b.Fatal(err)
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for n := 0; n < b.N; n++ {
-		// We need to include gob.NewDecoder cost to avoid measuring encoding.
-		var repoBranches RepoSet
-		if err := gob.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&repoBranches); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func TestRepoSet_Marshal(t *testing.T) {
-	want := genRepoSet(1000)
-
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(want); err != nil {
-		t.Fatal(err)
-	}
-
-	var got RepoSet
-	if err := gob.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&got); err != nil {
-		t.Fatal(err)
-	}
-
-	if diff := cmp.Diff(want, &got); diff != "" {
-		t.Fatalf("mismatch (-want +got):\n%s", diff)
-	}
-}
-
-func BenchmarkRepoSetIDs_Encode(b *testing.B) {
-	repoBranches := genRepoSetIDs(5_500_000)
-
-	// do one write to amortize away the cost of gob registration
-	w := &countWriter{}
-	enc := gob.NewEncoder(w)
-	if err := enc.Encode(repoBranches); err != nil {
-		b.Fatal(err)
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	b.ReportMetric(float64(w.n), "bytes")
-
-	for n := 0; n < b.N; n++ {
-		if err := enc.Encode(repoBranches); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkRepoSetIDs_Decode(b *testing.B) {
-	repoBranches := genRepoSetIDs(5_500_000)
-
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(repoBranches); err != nil {
-		b.Fatal(err)
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for n := 0; n < b.N; n++ {
-		// We need to include gob.NewDecoder cost to avoid measuring encoding.
-		var repoBranches RepoSet
-		if err := gob.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&repoBranches); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func TestRepoSetIDs_Marshal(t *testing.T) {
-	want := genRepoSetIDs(1000)
-
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(want); err != nil {
-		t.Fatal(err)
-	}
-
-	var got RepoSet
+	var got BranchRepos
 	if err := gob.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
@@ -276,23 +154,6 @@ func genRepoSet(n int) *RepoSet {
 	}
 
 	rs := &RepoSet{Set: set}
-	genCache[key] = rs
-	return rs
-}
-
-func genRepoSetIDs(n uint32) *RepoSet {
-	key := fmt.Sprintf("RepoSetIDs:%d", n)
-	val, ok := genCache[key]
-	if ok {
-		return val.(*RepoSet)
-	}
-
-	rs := &RepoSet{IDs: roaring.New()}
-
-	for i := uint32(1); i <= n; i++ {
-		rs.IDs.Add(i)
-	}
-
 	genCache[key] = rs
 	return rs
 }
@@ -334,42 +195,36 @@ func genRepoBranches(n int) *RepoBranches {
 	return repoBranches
 }
 
-func genRepoBranchesIDs(n int) *RepoBranches {
-	key := fmt.Sprintf("RepoBranchesIDs:%d", n)
+func genBranchRepos(n int) *BranchRepos {
+	key := fmt.Sprintf("BranchRepos:%d", n)
 	val, ok := genCache[key]
 	if ok {
-		return val.(*RepoBranches)
+		return val.(*BranchRepos)
 	}
 
 	set := genRepoBranches(n).Set
-	rb := &RepoBranches{IDs: map[string]*roaring.Bitmap{}}
+	br := &BranchRepos{Set: map[string]*roaring.Bitmap{}}
 
 	id := uint32(1)
 	for _, branches := range set {
 		for _, branch := range branches {
-			ids, ok := rb.IDs[branch]
+			ids, ok := br.Set[branch]
 			if !ok {
 				ids = roaring.New()
-				rb.IDs[branch] = ids
+				br.Set[branch] = ids
 			}
 			ids.Add(id)
 		}
 		id++
 	}
 
-	for _, ids := range rb.IDs {
+	for _, ids := range br.Set {
 		ids.RunOptimize()
 	}
 
-	genCache[key] = rb
+	genCache[key] = br
 
-	return rb
-}
-
-func hash(name string) uint32 {
-	h := fnv.New32()
-	h.Write([]byte(name))
-	return h.Sum32()
+	return br
 }
 
 type countWriter struct {

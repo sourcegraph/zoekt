@@ -118,7 +118,16 @@ func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
 var head = []string{"HEAD"}
 
 // repoBranchesDecode implements an efficient decoder for RepoBranches.
-func repoBranchesDecode(r *binaryReader) (map[string][]string, error) {
+func repoBranchesDecode(b []byte) (map[string][]string, error) {
+	// binaryReader returns strings pointing into b to avoid allocations. We
+	// don't own b, so we create a copy of it.
+	r := binaryReader{b: append([]byte{}, b...)}
+
+	// Version
+	if v := r.byt(); v != 1 {
+		return nil, fmt.Errorf("unsupported RepoBranches encoding version %d", v)
+	}
+
 	// Length
 	l := r.uvarint()
 	repoBranches := make(map[string][]string, l)
@@ -144,7 +153,7 @@ func repoBranchesDecode(r *binaryReader) (map[string][]string, error) {
 	return repoBranches, r.err
 }
 
-func repoBranchesIDsEncode(repoBranchesIDs map[string]*roaring.Bitmap) ([]byte, error) {
+func branchReposEncode(branchRepos map[string]*roaring.Bitmap) ([]byte, error) {
 	var b bytes.Buffer
 	var enc [binary.MaxVarintLen64]byte
 	varint := func(n uint64) {
@@ -161,8 +170,8 @@ func repoBranchesIDsEncode(repoBranchesIDs map[string]*roaring.Bitmap) ([]byte, 
 
 	// Calculate size
 	size := uint64(1) // version
-	size += uint64(binary.PutUvarint(enc[:], uint64(len(repoBranchesIDs))))
-	for branch, ids := range repoBranchesIDs {
+	size += uint64(binary.PutUvarint(enc[:], uint64(len(branchRepos))))
+	for branch, ids := range branchRepos {
 		size += strSize(branch)
 		idsSize := ids.GetSerializedSizeInBytes()
 		size += uint64(binary.PutUvarint(enc[:], idsSize))
@@ -172,12 +181,12 @@ func repoBranchesIDsEncode(repoBranchesIDs map[string]*roaring.Bitmap) ([]byte, 
 	b.Grow(int(size))
 
 	// Version
-	b.WriteByte(2)
+	b.WriteByte(1)
 
 	// Length
-	varint(uint64(len(repoBranchesIDs)))
+	varint(uint64(len(branchRepos)))
 
-	for branch, ids := range repoBranchesIDs {
+	for branch, ids := range branchRepos {
 		str(branch)
 		l := ids.GetSerializedSizeInBytes()
 		varint(l)
@@ -195,7 +204,16 @@ func repoBranchesIDsEncode(repoBranchesIDs map[string]*roaring.Bitmap) ([]byte, 
 	return b.Bytes(), nil
 }
 
-func repoBranchesIDsDecode(r *binaryReader) (map[string]*roaring.Bitmap, error) {
+func branchReposDecode(b []byte) (map[string]*roaring.Bitmap, error) {
+	// binaryReader returns strings pointing into b to avoid allocations. We
+	// don't own b, so we create a copy of it.
+	r := binaryReader{b: append(make([]byte, 0, len(b)), b...)}
+
+	// Version
+	if v := r.byt(); v != 1 {
+		return nil, fmt.Errorf("unsupported BranchRepos encoding version %d", v)
+	}
+
 	l := r.uvarint() // Length
 	branchIDs := make(map[string]*roaring.Bitmap, l)
 

@@ -68,29 +68,35 @@ func (d *indexData) simplify(in query.Q) query.Q {
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
 				return strings.Contains(repo.Name, r.Pattern)
 			})
-		case *query.RepoBranches:
+		case *query.BranchRepos:
 			if len(d.repoMetaData) == 1 {
 				// Can simplify query now. compound too complicated since each repo
 				// may have different branches.
-				return r.Branches(d.repoMetaData[0].Name, d.repoMetaData[0].ID)
+				return r.Branches(d.repoMetaData[0].ID)
 			}
 			for _, md := range d.repoMetaData {
-				for _, ids := range r.IDs {
-					if ids != nil && ids.Contains(md.ID) {
-						return q
-					}
-				}
-
-				if len(r.Set) > 0 {
-					if _, ok := r.Set[md.Name]; ok {
+				for _, ids := range r.Set {
+					if ids.Contains(md.ID) {
 						return q
 					}
 				}
 			}
 			return &query.Const{Value: false}
+		case *query.RepoBranches:
+			if len(d.repoMetaData) == 1 {
+				// Can simplify query now. compound too complicated since each repo
+				// may have different branches.
+				return r.Branches(d.repoMetaData[0].Name)
+			}
+			for _, md := range d.repoMetaData {
+				if _, ok := r.Set[md.Name]; ok {
+					return q
+				}
+			}
+			return &query.Const{Value: false}
 		case *query.RepoSet:
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
-				return r.Contains(repo.Name, repo.ID)
+				return r.Set[repo.Name]
 			})
 		case *query.Language:
 			_, has := d.metaData.LanguageMap[r.Language]

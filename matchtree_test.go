@@ -250,37 +250,6 @@ func TestRepoSet(t *testing.T) {
 	}
 }
 
-func TestRepoSet_IDs(t *testing.T) {
-	d := &indexData{
-		repoMetaData: []Repository{
-			{ID: hash("r0"), Name: "r0"},
-			{ID: hash("r1"), Name: "r1"},
-			{ID: hash("r2"), Name: "r2"},
-			{ID: hash("r3"), Name: "r3"},
-		},
-		fileBranchMasks: []uint64{1, 1, 1, 1, 1, 1},
-		repos:           []uint16{0, 0, 1, 2, 3, 3},
-	}
-
-	mt, err := d.newMatchTree(&query.RepoSet{
-		IDs: roaring.BitmapOf(hash("r1"), hash("r3"), hash("r99")),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []uint32{2, 4, 5}
-	for i := 0; i < len(want); i++ {
-		nextDoc := mt.nextDoc()
-		if nextDoc != want[i] {
-			t.Fatalf("want %d, got %d", want[i], nextDoc)
-		}
-		mt.prepare(nextDoc)
-	}
-	if mt.nextDoc() != maxUInt32 {
-		t.Fatalf("expected %d document, but got at least 1 more", len(want))
-	}
-}
-
 func TestRepo(t *testing.T) {
 	d := &indexData{
 		repoMetaData:    []Repository{{Name: "foo"}, {Name: "bar"}},
@@ -328,7 +297,7 @@ func TestRepoBranches(t *testing.T) {
 	}
 }
 
-func TestRepoBranches_IDs(t *testing.T) {
+func TestBranchRepos(t *testing.T) {
 	d := &indexData{
 		repoMetaData: []Repository{
 			{ID: hash("foo"), Name: "foo"},
@@ -339,8 +308,8 @@ func TestRepoBranches_IDs(t *testing.T) {
 		branchIDs:       []map[string]uint{{"HEAD": 1}, {"HEAD": 1, "b1": 2}},
 	}
 
-	mt, err := d.newMatchTree(&query.RepoBranches{
-		IDs: map[string]*roaring.Bitmap{
+	mt, err := d.newMatchTree(&query.BranchRepos{
+		Set: map[string]*roaring.Bitmap{
 			"b1": roaring.BitmapOf(hash("bar")),
 			"b2": roaring.BitmapOf(hash("bar")),
 		},

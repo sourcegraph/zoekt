@@ -169,29 +169,6 @@ func TestSimplifyRepoSet(t *testing.T) {
 	}
 }
 
-func TestSimplifyRepoSet_IDs(t *testing.T) {
-	d := compoundReposShard(t, "foo", "bar")
-	all := &query.RepoSet{IDs: roaring.BitmapOf(hash("foo"), hash("bar"))}
-	some := &query.RepoSet{IDs: roaring.BitmapOf(hash("foo"), hash("banana"))}
-	none := &query.RepoSet{IDs: roaring.BitmapOf(hash("banana"))}
-
-	got := d.simplify(all)
-	if d := cmp.Diff(&query.Const{Value: true}, got); d != "" {
-		t.Fatalf("-want, +got:\n%s", d)
-	}
-
-	got = d.simplify(some)
-	tr := cmp.Transformer("", func(b *roaring.Bitmap) []uint32 { return b.ToArray() })
-	if d := cmp.Diff(some, got, tr); d != "" {
-		t.Fatalf("-want, +got:\n%s", d)
-	}
-
-	got = d.simplify(none)
-	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
-		t.Fatalf("-want, +got:\n%s", d)
-	}
-}
-
 func TestSimplifyRepo(t *testing.T) {
 	d := compoundReposShard(t, "foo", "fool")
 	all := &query.Repo{"foo"}
@@ -231,11 +208,11 @@ func TestSimplifyRepoBranch(t *testing.T) {
 	}
 }
 
-func TestSimplifyRepoBranch_IDs(t *testing.T) {
+func TestSimplifyBranchRepos(t *testing.T) {
 	d := compoundReposShard(t, "foo", "bar")
 
-	some := &query.RepoBranches{
-		IDs: map[string]*roaring.Bitmap{
+	some := &query.BranchRepos{
+		Set: map[string]*roaring.Bitmap{
 			"branch1": roaring.BitmapOf(hash("bar")),
 		},
 	}
@@ -271,10 +248,10 @@ func TestSimplifyRepoBranchSimple(t *testing.T) {
 	}
 }
 
-func TestSimplifyRepoBranchSimple_IDs(t *testing.T) {
+func TestSimplifyBranchReposSimple(t *testing.T) {
 	d := compoundReposShard(t, "foo")
-	q := &query.RepoBranches{
-		IDs: map[string]*roaring.Bitmap{
+	q := &query.BranchRepos{
+		Set: map[string]*roaring.Bitmap{
 			"HEAD": roaring.BitmapOf(hash("foo"), hash("bar")),
 			"b1":   roaring.BitmapOf(hash("foo")),
 		},

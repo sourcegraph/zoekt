@@ -299,34 +299,28 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		switch setQuery := c.(type) {
 		case *query.RepoSet:
 			setSize = len(setQuery.Set)
-			if setSize == 0 && setQuery.IDs != nil {
-				setSize = int(setQuery.IDs.GetCardinality())
-			}
 			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
-				return setQuery.Contains(repo.Name, repo.ID)
+				return setQuery.Set[repo.Name]
+			})
+		case *query.BranchRepos:
+			setSize = len(setQuery.Set)
+			for _, ids := range setQuery.Set {
+				setSize += int(ids.GetCardinality())
+			}
+
+			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+				for _, ids := range setQuery.Set {
+					if ids.Contains(repo.ID) {
+						return true
+					}
+				}
+				return false
 			})
 		case *query.RepoBranches:
 			setSize = len(setQuery.Set)
-			for _, ids := range setQuery.IDs {
-				if ids != nil {
-					setSize += int(ids.GetCardinality())
-				}
-			}
-
-			if len(setQuery.Set) > 0 {
-				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
-					return len(setQuery.Set[repo.Name]) > 0
-				})
-			} else {
-				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
-					for _, ids := range setQuery.IDs {
-						if ids != nil && ids.Contains(repo.ID) {
-							return true
-						}
-					}
-					return false
-				})
-			}
+			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+				return len(setQuery.Set[repo.Name]) > 0
+			})
 		default:
 			continue
 		}
@@ -366,29 +360,35 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		// then at this point filtered is [foo bar] and q is the same. For each
 		// shard indexData.simplify will simplify to (and true (content baz)) ->
 		// (content baz). This work can be done now once, rather than per shard.
-		if _, ok := c.(*query.RepoSet); ok {
+		switch c := c.(type) {
+		case *query.RepoSet:
 			and.Children[i] = &query.Const{Value: true}
 			return filtered, query.Simplify(and)
-		}
-		if b, ok := c.(*query.RepoBranches); ok {
-			// We can only replace if all the repos want the same branches.
-			if len(b.Set) > 0 {
-				want := b.Set[filtered[0].repos[0].Name]
-				for _, s := range filtered {
-					for _, repo := range s.repos {
-						if !strSliceEqual(want, b.Set[repo.Name]) {
-							return filtered, and
-						}
-					}
-				}
-			} else if len(b.IDs) != 1 {
+
+		case *query.BranchRepos:
+			if len(c.Set) != 1 {
 				return filtered, and
 			}
 
 			// Every repo wants the same branches, so we can replace RepoBranches
 			// with a list of branch queries.
-			repo := filtered[0].repos[0]
-			and.Children[i] = b.Branches(repo.Name, repo.ID)
+			and.Children[i] = c.Branches(filtered[0].repos[0].ID)
+			return filtered, query.Simplify(and)
+
+		case *query.RepoBranches:
+			// We can only replace if all the repos want the same branches.
+			want := c.Set[filtered[0].repos[0].Name]
+			for _, s := range filtered {
+				for _, repo := range s.repos {
+					if !strSliceEqual(want, c.Set[repo.Name]) {
+						return filtered, and
+					}
+				}
+			}
+
+			// Every repo wants the same branches, so we can replace RepoBranches
+			// with a list of branch queries.
+			and.Children[i] = c.Branches(filtered[0].repos[0].Name)
 			return filtered, query.Simplify(and)
 		}
 

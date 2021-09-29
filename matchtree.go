@@ -905,29 +905,39 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			matchTree: subMT,
 		}, nil
 
-	case *query.RepoBranches:
+	case *query.BranchRepos:
 		reposBranchesWant := make([]uint64, len(d.repoMetaData))
 		for repoIdx, r := range d.repoMetaData {
 			var mask uint64
-
-			switch {
-			case len(s.IDs) > 0:
-				for branch, ids := range s.IDs {
-					if ids != nil && ids.Contains(r.ID) {
-						if m, ok := d.branchIDs[repoIdx][branch]; ok {
-							mask |= uint64(m)
-						}
-					}
-				}
-			case len(s.Set) > 0:
-				for _, branch := range s.Set[r.Name] {
-					if m, ok := d.branchIDs[repoIdx][branch]; ok {
-						mask |= uint64(m)
-					}
+			for branch, ids := range s.Set {
+				if ids.Contains(r.ID) {
+					mask |= uint64(d.branchIDs[repoIdx][branch])
 				}
 			}
-
 			reposBranchesWant[repoIdx] = mask
+		}
+		return &docMatchTree{
+			reason:  "RepoBranches",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return d.fileBranchMasks[docID]&reposBranchesWant[d.repos[docID]] != 0
+			},
+		}, nil
+
+	case *query.RepoBranches:
+		reposBranchesWant := make([]uint64, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
+			if branches, ok := s.Set[r.Name]; ok {
+				var mask uint64
+				for _, branch := range branches {
+					m, ok := d.branchIDs[repoIdx][branch]
+					if !ok {
+						continue
+					}
+					mask = mask | uint64(m)
+				}
+				reposBranchesWant[repoIdx] = mask
+			}
 		}
 		return &docMatchTree{
 			reason:  "RepoBranches",
@@ -940,7 +950,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 	case *query.RepoSet:
 		reposWant := make([]bool, len(d.repoMetaData))
 		for repoIdx, r := range d.repoMetaData {
-			if s.Contains(r.Name, r.ID) {
+			if _, ok := s.Set[r.Name]; ok {
 				reposWant[repoIdx] = true
 			}
 		}

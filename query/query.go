@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"regexp/syntax"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -171,26 +172,86 @@ func (q *Repo) String() string {
 	return fmt.Sprintf("repo:%s", q.Pattern)
 }
 
+// BranchRepos is a map from branches to repos to match. It is a Sourcegraph
+// addition and only used in the RPC interface for efficient checking of large
+// repo lists.
+type BranchRepos struct {
+	// branch -> bitmap of Sourcegraph repo IDs
+	Set map[string]*roaring.Bitmap
+}
+
+func (q *BranchRepos) String() string {
+	var sb strings.Builder
+
+	sb.WriteString("(branchrepos")
+
+	branches := make([]string, 0, len(q.Set))
+	for branch := range q.Set {
+		branches = append(branches, branch)
+	}
+
+	sort.Strings(branches)
+	for _, branch := range branches {
+		ids := q.Set[branch]
+		if size := ids.GetCardinality(); size > 1 {
+			sb.WriteString(" " + branch + ":" + strconv.FormatUint(size, 64))
+		} else {
+			sb.WriteString(" " + branch + "=" + ids.String())
+		}
+	}
+
+	sb.WriteString(")")
+	return sb.String()
+}
+
+func (q *BranchRepos) Branches(id uint32) Q {
+	var branches []string
+	for branch, ids := range q.Set {
+		if ids.Contains(id) {
+			branches = append(branches, branch)
+		}
+	}
+
+	if len(branches) == 0 {
+		return &Const{Value: false}
+	}
+
+	sort.Strings(branches)
+
+	// New sub query is (or (branch branches[0]) ...)
+	qs := make([]Q, len(branches))
+	for i, branch := range branches {
+		qs[i] = &Branch{Pattern: branch, Exact: true}
+	}
+
+	return NewOr(qs...)
+}
+
+// MarshalBinary implements a specialized encoder for RepoBranches.
+func (q *BranchRepos) MarshalBinary() ([]byte, error) {
+	return branchReposEncode(q.Set)
+}
+
+// UnmarshalBinary implements a specialized decoder for RepoBranches.
+func (q *BranchRepos) UnmarshalBinary(b []byte) (err error) {
+	q.Set, err = branchReposDecode(b)
+	return err
+}
+
 // RepoBranches is a list of branches in repos to match. It is a Sourcegraph
 // addition and only used in the RPC interface for efficient checking of large
 // repo lists.
 type RepoBranches struct {
 	// Set is map reponame -> [branch]
 	Set map[string][]string
-
-	// IDs is an alternative representation from branch to compressed repo ids
-	IDs map[string]*roaring.Bitmap
 }
 
 func (q *RepoBranches) String() string {
 	var detail string
-	switch {
-	case len(q.IDs) > 0:
-		detail = fmt.Sprintf("ids=%d", len(q.IDs))
-	case len(q.Set) > 5:
+	if len(q.Set) > 5 {
 		// Large sets being output are not useful
-		detail = fmt.Sprintf("set=%d", len(q.Set))
-	default:
+		detail = fmt.Sprintf("size=%d", len(q.Set))
+	} else {
 		repos := make([]string, len(q.Set))
 		i := 0
 		for repo, branches := range q.Set {
@@ -205,22 +266,9 @@ func (q *RepoBranches) String() string {
 }
 
 // Branches returns a query representing the branches to search for name.
-func (q *RepoBranches) Branches(name string, id uint32) Q {
-	var branches []string
-
-	switch {
-	case len(q.IDs) > 0:
-		for branch, ids := range q.IDs {
-			if ids != nil && ids.Contains(id) {
-				branches = append(branches, branch)
-			}
-		}
-		sort.Strings(branches)
-	case len(q.Set) > 0:
-		branches = q.Set[name]
-	}
-
-	if len(branches) == 0 {
+func (q *RepoBranches) Branches(name string) Q {
+	branches, ok := q.Set[name]
+	if !ok {
 		return &Const{Value: false}
 	}
 
@@ -234,27 +282,13 @@ func (q *RepoBranches) Branches(name string, id uint32) Q {
 
 // MarshalBinary implements a specialized encoder for RepoBranches.
 func (q *RepoBranches) MarshalBinary() ([]byte, error) {
-	if q.IDs != nil {
-		return repoBranchesIDsEncode(q.IDs)
-	}
 	return repoBranchesEncode(q.Set)
 }
 
 // UnmarshalBinary implements a specialized decoder for RepoBranches.
-func (q *RepoBranches) UnmarshalBinary(b []byte) (err error) {
-	// binaryReader returns strings pointing into b to avoid allocations. We
-	// don't own b, so we create a copy of it.
-	r := &binaryReader{b: append(make([]byte, 0, len(b)), b...)}
-
-	switch v := r.byt(); v { // Version
-	case 1:
-		q.Set, err = repoBranchesDecode(r)
-	case 2:
-		q.IDs, err = repoBranchesIDsDecode(r)
-	default:
-		return fmt.Errorf("unsupported RepoBranches encoding version %d", v)
-	}
-
+func (q *RepoBranches) UnmarshalBinary(b []byte) error {
+	var err error
+	q.Set, err = repoBranchesDecode(b)
 	return err
 }
 
@@ -262,33 +296,14 @@ func (q *RepoBranches) UnmarshalBinary(b []byte) (err error) {
 // used in the RPC interface for efficient checking of large repo lists.
 type RepoSet struct {
 	Set map[string]bool
-
-	IDs *roaring.Bitmap
-}
-
-func (q *RepoSet) IsEmpty() bool {
-	return (q.IDs == nil || q.IDs.IsEmpty()) && len(q.Set) == 0
-}
-
-func (q *RepoSet) Contains(name string, id uint32) bool {
-	switch {
-	case q.IDs != nil:
-		return q.IDs.Contains(id)
-	case len(q.Set) > 0:
-		return q.Set[name]
-	default:
-		return false
-	}
 }
 
 func (q *RepoSet) String() string {
 	var detail string
-	switch {
-	case q.IDs != nil:
-		detail = fmt.Sprintf("ids=%d", q.IDs.GetCardinality())
-	case len(q.Set) > 5:
-		detail = fmt.Sprintf("set=%d", len(q.Set))
-	default:
+	if len(q.Set) > 5 {
+		// Large sets being output are not useful
+		detail = fmt.Sprintf("size=%d", len(q.Set))
+	} else {
 		repos := make([]string, len(q.Set))
 		i := 0
 		for repo := range q.Set {
@@ -641,7 +656,7 @@ func evalConstants(q Q) Q {
 			return &Const{true}
 		}
 	case *RepoSet:
-		if s.IsEmpty() {
+		if len(s.Set) == 0 {
 			return &Const{true}
 		}
 	}
