@@ -45,10 +45,10 @@ func (m *FileMatch) addScore(what string, s float64) {
 func (d *indexData) simplifyMultiRepo(q query.Q, predicate func(*Repository) bool) query.Q {
 	count := 0
 	alive := len(d.repoMetaData)
-	for i, md := range d.repoMetaData {
+	for i := range d.repoMetaData {
 		if d.repoTombstone[i] {
 			alive--
-		} else if predicate(&md) {
+		} else if predicate(&d.repoMetaData[i]) {
 			count++
 		}
 	}
