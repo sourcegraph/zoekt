@@ -209,6 +209,17 @@ func (q BranchesRepos) Branches(id uint32) Q {
 	return NewOr(qs...)
 }
 
+// MarshalBinary implements a specialized encoder for BranchesRepos.
+func (q BranchesRepos) MarshalBinary() ([]byte, error) {
+	return branchesReposEncode(q)
+}
+
+// UnmarshalBinary implements a specialized decoder for BranchesRepos.
+func (q *BranchesRepos) UnmarshalBinary(b []byte) (err error) {
+	*q, err = branchesReposDecode(b)
+	return err
+}
+
 // BranchRepos is a (branch, sourcegraph repo ids bitmap) tuple. It is a
 // Sourcegraph addition.
 type BranchRepos struct {

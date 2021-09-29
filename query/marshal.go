@@ -153,7 +153,7 @@ func repoBranchesDecode(b []byte) (map[string][]string, error) {
 	return repoBranches, r.err
 }
 
-func branchReposEncode(branchRepos map[string]*roaring.Bitmap) ([]byte, error) {
+func branchesReposEncode(brs BranchesRepos) ([]byte, error) {
 	var b bytes.Buffer
 	var enc [binary.MaxVarintLen64]byte
 	varint := func(n uint64) {
@@ -170,10 +170,10 @@ func branchReposEncode(branchRepos map[string]*roaring.Bitmap) ([]byte, error) {
 
 	// Calculate size
 	size := uint64(1) // version
-	size += uint64(binary.PutUvarint(enc[:], uint64(len(branchRepos))))
-	for branch, ids := range branchRepos {
-		size += strSize(branch)
-		idsSize := ids.GetSerializedSizeInBytes()
+	size += uint64(binary.PutUvarint(enc[:], uint64(len(brs))))
+	for _, br := range brs {
+		size += strSize(br.Branch)
+		idsSize := br.Repos.GetSerializedSizeInBytes()
 		size += uint64(binary.PutUvarint(enc[:], idsSize))
 		size += idsSize
 	}
@@ -184,14 +184,14 @@ func branchReposEncode(branchRepos map[string]*roaring.Bitmap) ([]byte, error) {
 	b.WriteByte(1)
 
 	// Length
-	varint(uint64(len(branchRepos)))
+	varint(uint64(len(brs)))
 
-	for branch, ids := range branchRepos {
-		str(branch)
-		l := ids.GetSerializedSizeInBytes()
+	for _, br := range brs {
+		str(br.Branch)
+		l := br.Repos.GetSerializedSizeInBytes()
 		varint(l)
 
-		n, err := ids.WriteTo(&b)
+		n, err := br.Repos.WriteTo(&b)
 		if err != nil {
 			return nil, err
 		}
@@ -204,7 +204,7 @@ func branchReposEncode(branchRepos map[string]*roaring.Bitmap) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func branchReposDecode(b []byte) (map[string]*roaring.Bitmap, error) {
+func branchesReposDecode(b []byte) (BranchesRepos, error) {
 	// binaryReader returns strings pointing into b to avoid allocations. We
 	// don't own b, so we create a copy of it.
 	r := binaryReader{b: append(make([]byte, 0, len(b)), b...)}
@@ -215,14 +215,14 @@ func branchReposDecode(b []byte) (map[string]*roaring.Bitmap, error) {
 	}
 
 	l := r.uvarint() // Length
-	branchIDs := make(map[string]*roaring.Bitmap, l)
+	brs := make(BranchesRepos, l)
 
 	for i := 0; i < l; i++ {
-		branch := r.str()
-		branchIDs[branch] = r.bitmap()
+		brs[i].Branch = r.str()
+		brs[i].Repos = r.bitmap()
 	}
 
-	return branchIDs, r.err
+	return brs, r.err
 }
 
 type binaryReader struct {
