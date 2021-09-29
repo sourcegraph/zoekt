@@ -15,11 +15,13 @@
 package zoekt
 
 import (
+	"hash/fnv"
 	"reflect"
 	"regexp/syntax"
 	"strings"
 	"testing"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt/query"
 )
@@ -134,7 +136,7 @@ func compoundReposShard(t *testing.T, names ...string) *indexData {
 	b := newIndexBuilder()
 	b.indexFormatVersion = NextIndexFormatVersion
 	for _, name := range names {
-		if err := b.setRepository(&Repository{Name: name}); err != nil {
+		if err := b.setRepository(&Repository{ID: hash(name), Name: name}); err != nil {
 			t.Fatal(err)
 		}
 		if err := b.AddFile(name+".txt", []byte(name+" content")); err != nil {
@@ -206,6 +208,28 @@ func TestSimplifyRepoBranch(t *testing.T) {
 	}
 }
 
+func TestSimplifyBranchesRepos(t *testing.T) {
+	d := compoundReposShard(t, "foo", "bar")
+
+	some := &query.BranchesRepos{
+		List: []query.BranchRepos{
+			{Branch: "branch1", Repos: roaring.BitmapOf(hash("bar"))},
+		},
+	}
+	none := &query.Repo{"banana"}
+
+	got := d.simplify(some)
+	tr := cmp.Transformer("", func(b *roaring.Bitmap) []uint32 { return b.ToArray() })
+	if d := cmp.Diff(some, got, tr); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+
+	got = d.simplify(none)
+	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+}
+
 func TestSimplifyRepoBranchSimple(t *testing.T) {
 	d := compoundReposShard(t, "foo")
 	q := &query.RepoBranches{Set: map[string][]string{"foo": {"HEAD", "b1"}, "bar": {"HEAD"}}}
@@ -222,4 +246,10 @@ func TestSimplifyRepoBranchSimple(t *testing.T) {
 	if d := cmp.Diff(want, got); d != "" {
 		t.Fatalf("-want, +got:\n%s", d)
 	}
+}
+
+func hash(name string) uint32 {
+	h := fnv.New32()
+	h.Write([]byte(name))
+	return h.Sum32()
 }

@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/google/zoekt/query"
 )
 
@@ -291,6 +292,39 @@ func TestRepoBranches(t *testing.T) {
 		}
 		mt.prepare(nextDoc)
 	}
+	if mt.nextDoc() != maxUInt32 {
+		t.Fatalf("expect %d documents, but got at least 1 more", len(want))
+	}
+}
+
+func TestBranchesRepos(t *testing.T) {
+	d := &indexData{
+		repoMetaData: []Repository{
+			{ID: hash("foo"), Name: "foo"},
+			{ID: hash("bar"), Name: "bar"},
+		},
+		fileBranchMasks: []uint64{1, 1, 1, 2, 1, 2, 1},
+		repos:           []uint16{0, 0, 1, 1, 1, 1, 1},
+		branchIDs:       []map[string]uint{{"HEAD": 1}, {"HEAD": 1, "b1": 2}},
+	}
+
+	mt, err := d.newMatchTree(&query.BranchesRepos{List: []query.BranchRepos{
+		{Branch: "b1", Repos: roaring.BitmapOf(hash("bar"))},
+		{Branch: "b2", Repos: roaring.BitmapOf(hash("bar"))},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []uint32{3, 5}
+	for i := 0; i < len(want); i++ {
+		nextDoc := mt.nextDoc()
+		if nextDoc != want[i] {
+			t.Fatalf("want %d, got %d", want[i], nextDoc)
+		}
+		mt.prepare(nextDoc)
+	}
+
 	if mt.nextDoc() != maxUInt32 {
 		t.Fatalf("expect %d documents, but got at least 1 more", len(want))
 	}

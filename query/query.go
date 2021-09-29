@@ -23,8 +23,11 @@ import (
 	"reflect"
 	"regexp/syntax"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/RoaringBitmap/roaring"
 )
 
 var _ = log.Println
@@ -167,6 +170,48 @@ type Repo struct {
 
 func (q *Repo) String() string {
 	return fmt.Sprintf("repo:%s", q.Pattern)
+}
+
+// BranchesRepos is a slice of BranchRepos to match. It is a Sourcegraph
+// addition and only used in the RPC interface for efficient checking of large
+// repo lists.
+type BranchesRepos struct {
+	List []BranchRepos
+}
+
+func (q *BranchesRepos) String() string {
+	var sb strings.Builder
+
+	sb.WriteString("(branchesrepos")
+
+	for _, br := range q.List {
+		if size := br.Repos.GetCardinality(); size > 1 {
+			sb.WriteString(" " + br.Branch + ":" + strconv.FormatUint(size, 64))
+		} else {
+			sb.WriteString(" " + br.Branch + "=" + br.Repos.String())
+		}
+	}
+
+	sb.WriteString(")")
+	return sb.String()
+}
+
+// MarshalBinary implements a specialized encoder for BranchesRepos.
+func (q BranchesRepos) MarshalBinary() ([]byte, error) {
+	return branchesReposEncode(q.List)
+}
+
+// UnmarshalBinary implements a specialized decoder for BranchesRepos.
+func (q *BranchesRepos) UnmarshalBinary(b []byte) (err error) {
+	q.List, err = branchesReposDecode(b)
+	return err
+}
+
+// BranchRepos is a (branch, sourcegraph repo ids bitmap) tuple. It is a
+// Sourcegraph addition.
+type BranchRepos struct {
+	Branch string
+	Repos  *roaring.Bitmap
 }
 
 // RepoBranches is a list of branches in repos to match. It is a Sourcegraph

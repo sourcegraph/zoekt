@@ -290,8 +290,10 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	id, _ := strconv.ParseUint(repo.RawConfig["repoid"], 10, 32)
-	r.ID = uint32(id)
+	if v, ok := repo.RawConfig["repoid"]; ok {
+		id, _ := strconv.ParseUint(v, 10, 32)
+		r.ID = uint32(id)
+	}
 
 	return nil
 }

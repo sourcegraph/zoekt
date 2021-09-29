@@ -905,6 +905,25 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			matchTree: subMT,
 		}, nil
 
+	case *query.BranchesRepos:
+		reposBranchesWant := make([]uint64, len(d.repoMetaData))
+		for repoIdx := range d.repoMetaData {
+			var mask uint64
+			for _, br := range s.List {
+				if br.Repos.Contains(d.repoMetaData[repoIdx].ID) {
+					mask |= uint64(d.branchIDs[repoIdx][br.Branch])
+				}
+			}
+			reposBranchesWant[repoIdx] = mask
+		}
+		return &docMatchTree{
+			reason:  "BranchesRepos",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return d.fileBranchMasks[docID]&reposBranchesWant[d.repos[docID]] != 0
+			},
+		}, nil
+
 	case *query.RepoBranches:
 		reposBranchesWant := make([]uint64, len(d.repoMetaData))
 		for repoIdx, r := range d.repoMetaData {

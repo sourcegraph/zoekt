@@ -176,7 +176,7 @@ type rankedShard struct {
 	// We have out of band ranking on compound shards which can change even if
 	// the shard file does not. So we compute a rank in getShards. We store
 	// names here to avoid the cost of List in the search request path.
-	names []string
+	repos []*zoekt.Repository
 }
 
 type shardedSearcher struct {
@@ -280,12 +280,12 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 	// (and (repobranches ...) (q))
 	// (and (repobranches ...) (q))
 
-	hasReposForPredicate := func(pred func(name string) bool) func(names []string) (any, all bool) {
-		return func(names []string) (any, all bool) {
+	hasReposForPredicate := func(pred func(repo *zoekt.Repository) bool) func(repos []*zoekt.Repository) (any, all bool) {
+		return func(repos []*zoekt.Repository) (any, all bool) {
 			any = false
 			all = true
-			for _, name := range names {
-				b := pred(name)
+			for _, repo := range repos {
+				b := pred(repo)
 				any = any || b
 				all = all && b
 			}
@@ -295,14 +295,31 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 
 	for i, c := range and.Children {
 		var setSize int
-		var hasRepos func([]string) (bool, bool)
+		var hasRepos func([]*zoekt.Repository) (bool, bool)
 		switch setQuery := c.(type) {
 		case *query.RepoSet:
 			setSize = len(setQuery.Set)
-			hasRepos = hasReposForPredicate(func(name string) bool { return setQuery.Set[name] })
+			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+				return setQuery.Set[repo.Name]
+			})
+		case *query.BranchesRepos:
+			for _, br := range setQuery.List {
+				setSize += int(br.Repos.GetCardinality())
+			}
+
+			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+				for _, br := range setQuery.List {
+					if br.Repos.Contains(repo.ID) {
+						return true
+					}
+				}
+				return false
+			})
 		case *query.RepoBranches:
 			setSize = len(setQuery.Set)
-			hasRepos = hasReposForPredicate(func(name string) bool { return len(setQuery.Set[name]) > 0 })
+			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+				return len(setQuery.Set[repo.Name]) > 0
+			})
 		default:
 			continue
 		}
@@ -317,7 +334,7 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		filteredAll := true
 
 		for _, s := range shards {
-			if any, all := hasRepos(s.names); any {
+			if any, all := hasRepos(s.repos); any {
 				filtered = append(filtered, s)
 				filteredAll = filteredAll && all
 			}
@@ -342,16 +359,30 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 		// then at this point filtered is [foo bar] and q is the same. For each
 		// shard indexData.simplify will simplify to (and true (content baz)) ->
 		// (content baz). This work can be done now once, rather than per shard.
-		if _, ok := c.(*query.RepoSet); ok {
+		switch c := c.(type) {
+		case *query.RepoSet:
 			and.Children[i] = &query.Const{Value: true}
 			return filtered, query.Simplify(and)
-		}
-		if b, ok := c.(*query.RepoBranches); ok {
+
+		case *query.BranchesRepos:
+			// We can only replace if all the repos want the same branches. We
+			// simplify and just check that we are requesting 1 branch. The common
+			// case is just asking for HEAD, so this should be effective.
+			if len(c.List) != 1 {
+				return filtered, and
+			}
+
+			// Every repo wants the same branches, so we can replace RepoBranches
+			// with a list of branch queries.
+			and.Children[i] = &query.Branch{Pattern: c.List[0].Branch, Exact: true}
+			return filtered, query.Simplify(and)
+
+		case *query.RepoBranches:
 			// We can only replace if all the repos want the same branches.
-			want := b.Set[filtered[0].names[0]]
+			want := c.Set[filtered[0].repos[0].Name]
 			for _, s := range filtered {
-				for _, name := range s.names {
-					if !strSliceEqual(want, b.Set[name]) {
+				for _, repo := range s.repos {
+					if !strSliceEqual(want, c.Set[repo.Name]) {
 						return filtered, and
 					}
 				}
@@ -359,7 +390,7 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 
 			// Every repo wants the same branches, so we can replace RepoBranches
 			// with a list of branch queries.
-			and.Children[i] = b.Branches(filtered[0].names[0])
+			and.Children[i] = c.Branches(filtered[0].repos[0].Name)
 			return filtered, query.Simplify(and)
 		}
 
@@ -777,12 +808,12 @@ func (s *shardedSearcher) getShards() []rankedShard {
 		if priorityDiff != 0 {
 			return priorityDiff > 0
 		}
-		if len(res[i].names) == 0 || len(res[j].names) == 0 {
+		if len(res[i].repos) == 0 || len(res[j].repos) == 0 {
 			// Protect against empty names which can happen if we fail to List or
 			// the shard is full of tombstones. Prefer the shard which has names.
-			return len(res[i].names) >= len(res[j].names)
+			return len(res[i].repos) >= len(res[j].repos)
 		}
-		return res[i].names[0] < res[j].names[0]
+		return res[i].repos[0].Name < res[j].repos[0].Name
 	})
 
 	s.ranked = res
@@ -802,12 +833,13 @@ func mkRankedShard(s zoekt.Searcher) rankedShard {
 
 	var (
 		maxPriority float64
-		names       = make([]string, 0, len(result.Repos))
+		repos       = make([]*zoekt.Repository, 0, len(result.Repos))
 	)
-	for _, r := range result.Repos {
-		names = append(names, r.Repository.Name)
-		if r.Repository.RawConfig != nil {
-			priority, _ := strconv.ParseFloat(r.Repository.RawConfig["priority"], 64)
+	for i := range result.Repos {
+		repo := &result.Repos[i].Repository
+		repos = append(repos, repo)
+		if repo.RawConfig != nil {
+			priority, _ := strconv.ParseFloat(repo.RawConfig["priority"], 64)
 			if priority > maxPriority {
 				maxPriority = priority
 			}
@@ -816,7 +848,7 @@ func mkRankedShard(s zoekt.Searcher) rankedShard {
 
 	return rankedShard{
 		Searcher: s,
-		names:    names,
+		repos:    repos,
 		priority: maxPriority,
 	}
 }
