@@ -257,7 +257,7 @@ func (b *binaryReader) bitmap() *roaring.Bitmap {
 	l := b.uvarint()
 	if l > len(b.b) {
 		b.b = nil
-		b.err = errors.New("malformed RepoBranches")
+		b.err = errors.New("malformed BranchRepos")
 		return nil
 	}
 	r := roaring.New()
