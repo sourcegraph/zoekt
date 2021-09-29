@@ -246,7 +246,7 @@ func TestSimplifyRepoBranchSimple(t *testing.T) {
 	}
 }
 
-func TestSimplifyBranchReposSimple(t *testing.T) {
+func TestSimplifyBranchesReposSimple(t *testing.T) {
 	d := compoundReposShard(t, "foo")
 	q := query.BranchesRepos{
 		{Branch: "HEAD", Repos: roaring.BitmapOf(hash("foo"), hash("bar"))},
