@@ -85,6 +85,19 @@ func (p *contentProvider) data(fileName bool) []byte {
 	return p._data
 }
 
+func (p *contentProvider) dataForRegions(fileName bool, regions [][2]uint32) []byte {
+	if fileName {
+		return p.id.fileNameContent[p.id.fileNameIndex[p.idx]:p.id.fileNameIndex[p.idx+1]]
+	}
+
+	if p._data == nil {
+		p._data, p.err = p.id.readContents(p.idx)
+		p.stats.FilesLoaded++
+		p.stats.ContentBytesLoaded += int64(len(p._data))
+	}
+	return p._data
+}
+
 // Find offset in bytes (relative to corpus start) for an offset in
 // runes (relative to document start). If filename is set, the corpus
 // is the set of filenames, with the document being the name itself.

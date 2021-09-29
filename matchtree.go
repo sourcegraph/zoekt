@@ -141,7 +141,6 @@ type regexpMatchTree struct {
 	// nextDoc, prepare.
 	bruteForceMatchTree
 }
-
 type substrMatchTree struct {
 	matchIterator
 
@@ -483,6 +482,9 @@ func visitMatchTree(t matchTree, f func(matchTree)) {
 		visitMatchTree(s.substrMatchTree, f)
 	case *symbolRegexpMatchTree:
 		visitMatchTree(s.matchTree, f)
+	case *regexpLineMatchTree:
+		visitMatchTree(s.reMT, f)
+		visitMatchTree(s.subMT, f)
 	default:
 		f(t)
 	}
@@ -506,6 +508,8 @@ func visitMatches(t matchTree, known map[matchTree]bool, f func(matchTree)) {
 				visitMatches(ch, known, f)
 			}
 		}
+	case *regexpLineMatchTree:
+		visitMatches(s.reMT, known, f)
 	case *symbolSubstrMatchTree:
 		visitMatches(s.substrMatchTree, known, f)
 	case *notMatchTree:
@@ -656,23 +660,84 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 		return false, false
 	}
 
-	cp.stats.RegexpsConsidered++
-	idxs := t.regexp.FindAllIndex(cp.data(t.fileName), -1)
-	found := t.found[:0]
-	// fmt.Println("regex.matches!!", t.regexp, cost, idxs, string(cp.data(t.fileName)))
-	for _, idx := range idxs {
-		cm := &candidateMatch{
-			byteOffset:  uint32(idx[0]),
-			byteMatchSz: uint32(idx[1] - idx[0]),
-			fileName:    t.fileName,
-		}
+	return t.matchesRegions(cp, cost, known, nil)
+}
 
-		found = append(found, cm)
+func (t *regexpMatchTree) matchesRegions(cp *contentProvider, cost int, known map[matchTree]bool, regions [][2]uint32) (bool, bool) {
+	if t.reEvaluated {
+		return len(t.found) > 0, true
+	}
+
+	if cost < costRegexp {
+		return false, false
+	}
+
+	cp.stats.RegexpsConsidered++
+	found := t.found[:0]
+	data := cp.data(t.fileName)
+	if regions == nil {
+		regions = [][2]uint32{{0, uint32(len(data))}}
+	}
+	for _, region := range regions {
+		idxs := t.regexp.FindAllIndex(data[region[0]:region[1]], -1)
+
+		// fmt.Printf("regex.matches!! %s %v %v %v %#v\n", t.regexp, region, cost, idxs, string(data[region[0]:region[1]]))
+		for _, idx := range idxs {
+			found = append(found, &candidateMatch{
+				byteOffset:  region[0] + uint32(idx[0]),
+				byteMatchSz: uint32(idx[1] - idx[0]),
+				fileName:    t.fileName,
+			})
+		}
 	}
 	t.found = found
 	t.reEvaluated = true
 
 	return len(t.found) > 0, true
+}
+
+// regexpLineMatchTree is a performance optimization of andMatchTree. For single-line
+// regexps we only want to test the regexp against matching lines.
+type regexpLineMatchTree struct {
+	reMT  *regexpMatchTree
+	subMT matchTree
+}
+
+func (t *regexpLineMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
+	matches, sure := t.subMT.matches(cp, cost, known)
+	if !(sure && matches) {
+		return matches, sure
+	}
+
+	if cost < costRegexp {
+		return false, false
+	}
+
+	cands := gatherMatches(t.subMT, known)
+	lastEnd := -0xffff
+	lineRegions := [][2]uint32{}
+	for _, c := range cands {
+		_, byteStart, byteEnd := c.line(cp.newlines(), cp.fileSize)
+		if lastEnd+4 >= byteStart {
+			lineRegions[len(lineRegions)-1][1] = uint32(byteEnd)
+		} else {
+			lineRegions = append(lineRegions, [2]uint32{uint32(byteStart), uint32(byteEnd) + 1})
+		}
+		lastEnd = byteEnd
+	}
+
+	//fmt.Printf("RLMT: %v %s %v\n", t.reMT.fileName, t.reMT.regexp.String(), lineRegions)
+
+	return t.reMT.matchesRegions(cp, cost, known, lineRegions)
+}
+
+func (t *regexpLineMatchTree) nextDoc() uint32 {
+	return t.subMT.nextDoc()
+}
+
+func (t *regexpLineMatchTree) prepare(nextDoc uint32) {
+	t.reMT.prepare(nextDoc)
+	t.subMT.prepare(nextDoc)
 }
 
 // breakMatchesOnNewlines returns matches resulting from breaking each element
@@ -775,7 +840,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		// original regexp, it returns true. An equivalent matchTree has the same
 		// behaviour as the original regexp and can be used instead.
 		//
-		subMT, isEq, _, err := d.regexpToMatchTreeRecursive(s.Regexp, ngramSize, s.FileName, s.CaseSensitive)
+		subMT, isEq, singleLine, err := d.regexpToMatchTreeRecursive(s.Regexp, ngramSize, s.FileName, s.CaseSensitive)
 		if err != nil {
 			return nil, err
 		}
@@ -793,6 +858,13 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		tr := &regexpMatchTree{
 			regexp:   regexp.MustCompile(prefix + s.Regexp.String()),
 			fileName: s.FileName,
+		}
+
+		if singleLine && !s.FileName {
+			return &regexpLineMatchTree{
+				reMT:  tr,
+				subMT: subMT,
+			}, nil
 		}
 
 		return &andMatchTree{
