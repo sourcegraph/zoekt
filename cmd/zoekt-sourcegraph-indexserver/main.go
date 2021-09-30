@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -655,6 +656,11 @@ func initializeGoogleCloudProfiler() {
 	}
 }
 
+func srcLogLevelIsDebug() bool {
+	lvl := os.Getenv("SRC_LOG_LEVEL")
+	return strings.EqualFold(lvl, "dbug") || strings.EqualFold(lvl, "debug")
+}
+
 func main() {
 	defaultIndexDir := os.Getenv("DATA_DIR")
 	if defaultIndexDir == "" {
@@ -667,7 +673,7 @@ func main() {
 	listen := flag.String("listen", ":6072", "listen on this address.")
 	hostname := flag.String("hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	cpuFraction := flag.Float64("cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
-	dbg := flag.Bool("debug", os.Getenv("SRC_LOG_LEVEL") == "dbug", "turn on more verbose logging.")
+	dbg := flag.Bool("debug", srcLogLevelIsDebug(), "turn on more verbose logging.")
 
 	// non daemon mode for debugging/testing
 	debugList := flag.Bool("debug-list", false, "do not start the indexserver, rather list the repositories owned by this indexserver then quit.")

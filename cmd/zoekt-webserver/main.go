@@ -179,7 +179,7 @@ func main() {
 
 	// Sourcegraph: Add logging if debug logging enabled
 	logLvl := os.Getenv("SRC_LOG_LEVEL")
-	debug := logLvl == "" || strings.EqualFold(logLvl, "dbug")
+	debug := logLvl == "" || strings.EqualFold(logLvl, "dbug") || strings.EqualFold(logLvl, "debug")
 	if debug {
 		searcher = &loggedSearcher{Streamer: searcher}
 	}
