@@ -14,7 +14,12 @@ import (
 	"github.com/google/zoekt"
 )
 
-func doMerge(dir string, targetSize int, maxSize int, days int, simulate bool) error {
+func doMerge(params string) error {
+	dir, maxSize, targetSize, days, simulate, err := parseParams(params)
+	if err != nil {
+		return err
+	}
+
 	if simulate {
 		debug.Println("simulating")
 	}
@@ -26,7 +31,7 @@ func doMerge(dir string, targetSize int, maxSize int, days int, simulate bool) e
 	debug.Printf("found %d shards\n", len(shards))
 
 	backupDir := filepath.Join(dir, ".scratch/bak")
-	err := os.MkdirAll(backupDir, 0o755)
+	err = os.MkdirAll(backupDir, 0o755)
 	if err != nil {
 		debug.Printf("error creating backup dir %s: %s", backupDir, err)
 		return err
@@ -197,4 +202,30 @@ func callMerge(shards []shard) error {
 	wc.Close()
 
 	return cmd.Wait()
+}
+
+func parseParams(params string) (indexDir string, maxSize int, targetSize int, days int, simulate bool, err error) {
+	ps := strings.Split(params, ",")
+	indexDir = ps[0]
+
+	maxSize, err = strconv.Atoi(ps[1])
+	if err != nil {
+		return
+	}
+
+	targetSize, err = strconv.Atoi(ps[2])
+	if err != nil {
+		return
+	}
+
+	days, err = strconv.Atoi(ps[3])
+	if err != nil {
+		return
+	}
+
+	simulate, err = strconv.ParseBool(ps[4])
+	if err != nil {
+		return
+	}
+	return
 }

@@ -23,7 +23,6 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -817,30 +816,7 @@ func main() {
 	}
 
 	if *debugMerge != "" {
-		params := strings.Split(*debugMerge, ",")
-		dir := params[0]
-
-		maxSize, err := strconv.Atoi(params[1])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		targetSize, err := strconv.Atoi(params[2])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		days, err := strconv.Atoi(params[3])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		simulate, err := strconv.ParseBool(params[4])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = doMerge(dir, targetSize, maxSize, days, simulate)
+		err = doMerge(*debugMerge)
 		if err != nil {
 			log.Fatal(err)
 		}
