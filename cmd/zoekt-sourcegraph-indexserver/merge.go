@@ -14,6 +14,8 @@ import (
 	"github.com/google/zoekt"
 )
 
+// doMerge drives the merge process, I imagine this function goes away once we
+// automate merging.
 func doMerge(params string) error {
 	dir, maxSize, targetSize, days, simulate, err := parseParams(params)
 	if err != nil {
@@ -68,6 +70,7 @@ func doMerge(params string) error {
 	return nil
 }
 
+// loadShards returns all simple shards in dir without .meta files.
 func loadShards(dir string) []shard {
 	d, err := os.Open(dir)
 	if err != nil {
@@ -129,7 +132,7 @@ type compoundOpts struct {
 	cutoffDate      time.Time
 }
 
-// generateCompounds encodes the following merge policy:
+// generateCompounds encodes the merge policy:
 //   - merge shards that are older than opt.cutoffDate
 //   - merge shards that are smaller than opt.maxSizeBytes
 //   - merge shards with similar rank
@@ -204,6 +207,9 @@ func callMerge(shards []shard) error {
 	return cmd.Wait()
 }
 
+// parseParams is helper function to parse a comma separated string of parameters
+// of the form "path,1,2000,1,true". This should be used just for debugging and
+// testing.
 func parseParams(params string) (indexDir string, maxSize int, targetSize int, days int, simulate bool, err error) {
 	ps := strings.Split(params, ",")
 	indexDir = ps[0]
