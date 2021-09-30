@@ -264,13 +264,17 @@ document.onkeydown=function(e){
     <div class="container">
       {{template "footerBoilerplate"}}
       <p class="navbar-text navbar-right">
-      Took {{.Stats.Duration}}{{if .Stats.Wait}}(queued: {{.Stats.Wait}}){{end}} for
+      Took {{.Stats.Duration}}{{if .Stats.Wait}} (queued: {{.Stats.Wait}}){{end}} for
       {{HumanUnit .Stats.IndexBytesLoaded}}B index data,
       {{.Stats.NgramMatches}} ngram matches,
       {{.Stats.FilesConsidered}} docs considered,
-      {{.Stats.FilesLoaded}} docs ({{HumanUnit .Stats.ContentBytesLoaded}}B)
-      loaded{{if or .Stats.FilesSkipped .Stats.ShardsSkipped}},
-      {{.Stats.FilesSkipped}} docs and {{.Stats.ShardsSkipped}} shards skipped{{else}}.{{end}}
+      {{.Stats.FilesLoaded}} docs ({{HumanUnit .Stats.ContentBytesLoaded}}B) loaded,
+      {{.Stats.ShardsScanned}} shards scanned,
+      {{.Stats.ShardsSkippedFilter}} shards filtered
+      {{- if or .Stats.FilesSkipped .Stats.ShardsSkipped -}}
+        , {{.Stats.FilesSkipped}} docs skipped, {{.Stats.ShardsSkipped}} shards skipped
+      {{- end -}}
+	  .
       </p>
     </div>
   </nav>
