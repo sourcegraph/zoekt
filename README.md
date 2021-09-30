@@ -18,7 +18,7 @@ minimal to avoid difficult merge conflicts. Differences:
 - We have exposed the API via
   [keegancsmith/rpc](https://github.com/keegancsmith/rpc) (a fork of `net/rpc`
   which supports cancellation).
-- Query primitive `RepoSet` to efficiently specify a set of repositories to
+- Query primitive `BranchesRepos` to efficiently specify a set of repositories to
   search.
 - Allow empty shard directories on startup. Needed when starting a fresh
   instance which hasn't indexed anything yet.

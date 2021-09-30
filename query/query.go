@@ -179,6 +179,14 @@ type BranchesRepos struct {
 	List []BranchRepos
 }
 
+// NewSingleBranchesRepos is a helper for creating a BranchesRepos which
+// searches a single branch.
+func NewSingleBranchesRepos(branch string, ids ...uint32) *BranchesRepos {
+	return &BranchesRepos{List: []BranchRepos{
+		{branch, roaring.BitmapOf(ids...)},
+	}}
+}
+
 func (q *BranchesRepos) String() string {
 	var sb strings.Builder
 
@@ -186,7 +194,7 @@ func (q *BranchesRepos) String() string {
 
 	for _, br := range q.List {
 		if size := br.Repos.GetCardinality(); size > 1 {
-			sb.WriteString(" " + br.Branch + ":" + strconv.FormatUint(size, 64))
+			sb.WriteString(" " + br.Branch + ":" + strconv.FormatUint(size, 10))
 		} else {
 			sb.WriteString(" " + br.Branch + "=" + br.Repos.String())
 		}
