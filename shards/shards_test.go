@@ -440,6 +440,7 @@ func searcherForTest(t testing.TB, b *zoekt.IndexBuilder) zoekt.Searcher {
 func reposForTest(n int) (result []*zoekt.Repository) {
 	for i := 0; i < n; i++ {
 		result = append(result, &zoekt.Repository{
+			ID:   uint32(i + 1),
 			Name: fmt.Sprintf("test-repository-%d", i),
 		})
 	}
@@ -469,13 +470,13 @@ func BenchmarkShardedSearch(b *testing.B) {
 
 	filesPerRepo := 300
 	repos := reposForTest(3000)
-	repoSetNames := make([]string, 0, len(repos)/2)
+	var repoSetIDs []uint32
 
 	for i, r := range repos {
 		searcher := testSearcherForRepo(b, r, filesPerRepo)
 		ss.replace(r.Name, searcher)
 		if i%2 == 0 {
-			repoSetNames = append(repoSetNames, r.Name)
+			repoSetIDs = append(repoSetIDs, r.ID)
 		}
 	}
 
@@ -488,7 +489,7 @@ func BenchmarkShardedSearch(b *testing.B) {
 
 	setAnd := func(q query.Q) func() query.Q {
 		return func() query.Q {
-			return query.NewAnd(query.NewRepoSet(repoSetNames...), q)
+			return query.NewAnd(query.NewSingleBranchesRepos("head", repoSetIDs...), q)
 		}
 	}
 
@@ -513,8 +514,8 @@ func BenchmarkShardedSearch(b *testing.B) {
 		{"substring no results", func() query.Q { return helloworldSub }, 0},
 		{"substring some results", func() query.Q { return needleSub }, len(repos)},
 
-		{"substring all results and repo set", setAnd(haystackSub), len(repoSetNames) * filesPerRepo},
-		{"substring some results and repo set", setAnd(needleSub), len(repoSetNames)},
+		{"substring all results and repo set", setAnd(haystackSub), len(repoSetIDs) * filesPerRepo},
+		{"substring some results and repo set", setAnd(needleSub), len(repoSetIDs)},
 		{"substring no results and repo set", setAnd(helloworldSub), 0},
 	}
 

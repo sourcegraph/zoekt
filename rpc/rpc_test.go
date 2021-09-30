@@ -15,7 +15,7 @@ import (
 
 func TestClientServer(t *testing.T) {
 	mock := &mockSearcher.MockSearcher{
-		WantSearch: query.NewAnd(mustParse("hello world|universe"), query.NewRepoSet("foo/bar", "baz/bam")),
+		WantSearch: query.NewAnd(mustParse("hello world|universe"), query.NewSingleBranchesRepos("HEAD", 1, 2)),
 		SearchResult: &zoekt.SearchResult{
 			Files: []zoekt.FileMatch{
 				{FileName: "bin.go"},
@@ -27,6 +27,7 @@ func TestClientServer(t *testing.T) {
 			Repos: []*zoekt.RepoListEntry{
 				{
 					Repository: zoekt.Repository{
+						ID:   2,
 						Name: "foo/bar",
 					},
 				},
