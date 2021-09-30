@@ -300,31 +300,6 @@ func NewRepoSet(repo ...string) *RepoSet {
 	return s
 }
 
-const (
-	TypeFileMatch uint8 = iota
-	TypeFileName
-	TypeRepo
-)
-
-// Type changes the result type returned.
-type Type struct {
-	Child Q
-	Type  uint8
-}
-
-func (q *Type) String() string {
-	switch q.Type {
-	case TypeFileMatch:
-		return fmt.Sprintf("(type:filematch %s)", q.Child)
-	case TypeFileName:
-		return fmt.Sprintf("(type:filename %s)", q.Child)
-	case TypeRepo:
-		return fmt.Sprintf("(type:repo %s)", q.Child)
-	default:
-		return fmt.Sprintf("(type:UNKNOWN %s)", q.Child)
-	}
-}
-
 // Substring is the most basic query: a query for a substring.
 type Substring struct {
 	Pattern       string
@@ -545,9 +520,6 @@ func flatten(q Q) (Q, bool) {
 	case *Not:
 		child, changed := flatten(s.Child)
 		return &Not{child}, changed
-	case *Type:
-		child, changed := flatten(s.Child)
-		return &Type{Child: child, Type: s.Type}, changed
 	default:
 		return q, false
 	}
@@ -607,18 +579,6 @@ func evalConstants(q Q) Q {
 			return invertConst(ch)
 		}
 		return &Not{ch}
-	case *Type:
-		ch := evalConstants(s.Child)
-		if _, ok := ch.(*Const); ok {
-			// If q is the root query, then evaluating this to a const changes
-			// the type of result we will return. However, the only case this
-			// makes sense is `type:repo TRUE` to return all repos or
-			// `type:file TRUE` to return all filenames. For other cases we
-			// want to do this constant folding though, so we allow the
-			// unexpected behaviour mentioned previously.
-			return ch
-		}
-		return &Type{Child: ch, Type: s.Type}
 	case *Substring:
 		if len(s.Pattern) == 0 {
 			return &Const{true}
@@ -661,8 +621,6 @@ func Map(q Q, f func(q Q) Q) Q {
 		q = &Or{Children: mapQueryList(s.Children, f)}
 	case *Not:
 		q = &Not{Child: Map(s.Child, f)}
-	case *Type:
-		q = &Type{Type: s.Type, Child: Map(s.Child, f)}
 	}
 	return f(q)
 }
@@ -698,7 +656,6 @@ func VisitAtoms(q Q, v func(q Q)) {
 		case *And:
 		case *Or:
 		case *Not:
-		case *Type:
 		default:
 			v(iQ)
 		}
