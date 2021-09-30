@@ -60,20 +60,23 @@ const (
 	RcNoArchived   RawConfig = 2 << 4
 )
 
-var flagNames = map[RawConfig]string{
-	RcOnlyPublic:   "RcOnlyPublic",
-	RcOnlyPrivate:  "RcOnlyPrivate",
-	RcOnlyForks:    "RcOnlyForks",
-	RcNoForks:      "RcNoForks",
-	RcOnlyArchived: "RcOnlyArchived",
-	RcNoArchived:   "RcNoArchived",
+var flagNames = []struct {
+	Mask  RawConfig
+	Label string
+}{
+	{RcOnlyPublic, "RcOnlyPublic"},
+	{RcOnlyPrivate, "RcOnlyPrivate"},
+	{RcOnlyForks, "RcOnlyForks"},
+	{RcNoForks, "RcNoForks"},
+	{RcOnlyArchived, "RcOnlyArchived"},
+	{RcNoArchived, "RcNoArchived"},
 }
 
 func (r RawConfig) String() string {
 	var s []string
-	for f, label := range flagNames {
-		if r&f != 0 {
-			s = append(s, label)
+	for _, fn := range flagNames {
+		if r&fn.Mask != 0 {
+			s = append(s, fn.Label)
 		}
 	}
 	return fmt.Sprintf("rawConfig:%s", strings.Join(s, "|"))
