@@ -91,7 +91,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			if len(shards) == 1 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
 				shardsLog(indexDir, "tomb", shards, repo)
 				if err := zoekt.SetTombstone(shards[0].Path, repo); err != nil {
-					log.Printf("error setting tombstone for %s in shard %s: %s. Removing shard\n", repo, shards[0], err)
+					log.Printf("error setting tombstone for %s in shard %s: %s. Removing shard\n", repo, shards[0].Path, err)
 					_ = os.Remove(shards[0].Path)
 				}
 				continue
