@@ -189,22 +189,13 @@ func (q *RepoRegexp) String() string {
 // GobEncode implements gob.Encoder.
 func (q *RepoRegexp) GobEncode() ([]byte, error) {
 	// gob can't encode syntax.Regexp
-	var buf bytes.Buffer
-	buf.WriteByte(1) // version
-	buf.WriteString(q.Regexp.String())
-	return buf.Bytes(), nil
+	return []byte(q.Regexp.String()), nil
 }
 
 // GobDecode implements gob.Decoder.
 func (q *RepoRegexp) GobDecode(data []byte) error {
-	if len(data) == 0 {
-		return fmt.Errorf("malformed RepoRegexp gob: empty")
-	}
-	if data[0] != 1 {
-		return fmt.Errorf("malformed RepoRegexp gob: expected version 1 got %d", data[0])
-	}
 	var err error
-	q.Regexp, err = regexp.Compile(string(data[1:]))
+	q.Regexp, err = regexp.Compile(string(data))
 	return err
 }
 
