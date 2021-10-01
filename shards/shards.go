@@ -212,10 +212,12 @@ func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
 		return nil, err
 	}
 
-	return &directorySearcher{
+	ds := &directorySearcher{
 		Streamer:         ss,
 		directoryWatcher: dw,
-	}, nil
+	}
+
+	return &typeRepoSearcher{Streamer: ds}, nil
 }
 
 type directorySearcher struct {

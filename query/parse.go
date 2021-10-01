@@ -194,6 +194,21 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		b = b[n:]
 		expr = &Not{subQ}
+
+	case tokType:
+		var t uint8
+		switch text {
+		case "filematch":
+			t = TypeFileMatch
+		case "filename", "file":
+			t = TypeFileName
+		case "repo":
+			t = TypeRepo
+		default:
+			return nil, 0, fmt.Errorf("query: unknown type argument %q, want {filematch,filename,repo}", text)
+		}
+		// Later we will lift this into a root, like we do for caseQ
+		expr = &Type{Type: t, Child: nil}
 	}
 
 	return expr, len(in) - len(b), nil
@@ -287,10 +302,15 @@ func parseExprList(in []byte) ([]Q, int, error) {
 
 	setCase := "auto"
 	newQS := qs[:0]
+	typeT := uint8(100)
 	for _, q := range qs {
 		switch s := q.(type) {
 		case *caseQ:
 			setCase = s.Flavor
+		case *Type:
+			if s.Type < typeT {
+				typeT = s.Type
+			}
 		default:
 			newQS = append(newQS, q)
 		}
@@ -301,6 +321,9 @@ func parseExprList(in []byte) ([]Q, int, error) {
 		}
 		return q
 	})
+	if typeT != 100 {
+		qs = []Q{&Type{Type: typeT, Child: NewAnd(qs...)}}
+	}
 	return qs, len(in) - len(b), nil
 }
 
@@ -333,6 +356,7 @@ const (
 	tokContent    = 11
 	tokLang       = 12
 	tokSym        = 13
+	tokType       = 14
 	tokVis        = 15
 )
 
@@ -350,6 +374,7 @@ var tokNames = map[int]string{
 	tokText:       "Text",
 	tokLang:       "Language",
 	tokSym:        "Symbol",
+	tokType:       "Type",
 }
 
 var prefixes = map[string]int{
@@ -365,6 +390,8 @@ var prefixes = map[string]int{
 	"repo:":    tokRepo,
 	"lang:":    tokLang,
 	"sym:":     tokSym,
+	"t:":       tokType,
+	"type:":    tokType,
 }
 
 var reservedWords = map[string]int{
