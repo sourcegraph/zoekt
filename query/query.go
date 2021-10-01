@@ -90,15 +90,6 @@ type Regexp struct {
 	CaseSensitive bool
 }
 
-// Symbol finds a string that is a symbol.
-type Symbol struct {
-	Expr Q
-}
-
-func (s *Symbol) String() string {
-	return fmt.Sprintf("sym:%s", s.Expr)
-}
-
 func (q *Regexp) String() string {
 	pref := ""
 	if q.FileName {
@@ -138,6 +129,15 @@ func (q *Regexp) GobDecode(data []byte) error {
 	}
 	*q = gobq.Regexp
 	return nil
+}
+
+// Symbol finds a string that is a symbol.
+type Symbol struct {
+	Expr Q
+}
+
+func (s *Symbol) String() string {
+	return fmt.Sprintf("sym:%s", s.Expr)
 }
 
 type caseQ struct {
