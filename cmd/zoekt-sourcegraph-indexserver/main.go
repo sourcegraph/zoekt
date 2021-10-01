@@ -594,7 +594,10 @@ func hostnameBestEffort() string {
 
 // setupTmpDir sets up a temporary directory on the same volume as the
 // indexes.
-func setupTmpDir(index string) error {
+//
+// If main is true we will delete older temp directories left around. main is
+// false when this is a debug command.
+func setupTmpDir(index string, main bool) error {
 	tmpRoot := filepath.Join(index, ".indexserver.tmp")
 	if err := os.MkdirAll(tmpRoot, 0755); err != nil {
 		return err
@@ -724,11 +727,13 @@ func main() {
 		}
 	}
 
-	if err := setupTmpDir(*index); err != nil {
+	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != ""
+
+	if err := setupTmpDir(*index, !isDebugCmd); err != nil {
 		log.Fatalf("failed to setup TMPDIR under %s: %v", *index, err)
 	}
 
-	if *dbg || *debugList || *debugIndex != "" || *debugShard != "" {
+	if *dbg || isDebugCmd {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
