@@ -16,6 +16,7 @@ package zoekt
 
 import (
 	"reflect"
+	"regexp/syntax"
 	"testing"
 
 	"github.com/RoaringBitmap/roaring"
@@ -327,5 +328,62 @@ func TestBranchesRepos(t *testing.T) {
 
 	if mt.nextDoc() != maxUInt32 {
 		t.Fatalf("expect %d documents, but got at least 1 more", len(want))
+	}
+}
+
+func TestBloomReject(t *testing.T) {
+	d := &indexData{
+		bloomNames:    makeBloomFilterEmpty(),
+		bloomContents: makeBloomFilterEmpty(),
+	}
+	d.bloomNames.bits = d.bloomNames.bits[:bloomSizeTest]
+	d.bloomContents.bits = d.bloomContents.bits[:bloomSizeTest]
+	d.bloomNames.addBytes([]byte("somefilename"))
+	d.bloomContents.addBytes([]byte("and its different contents"))
+
+	regexpQ := func(fileName bool, pattern string) query.Q {
+		re, err := syntax.Parse(pattern, syntax.Perl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fileName {
+			return &query.Regexp{FileName: true, Regexp: re}
+		}
+		return &query.Regexp{Content: true, Regexp: re}
+	}
+
+	for _, tc := range []struct {
+		want  bool
+		query query.Q
+	}{
+		{false, &query.Substring{FileName: true, Pattern: "somef"}},
+		{true, &query.Substring{FileName: true, Pattern: "different"}},
+		{false, &query.Substring{Content: true, Pattern: "contents"}},
+		{true, &query.Substring{Content: true, Pattern: "other"}},
+		{false, regexpQ(true, "somefile")},
+		{true, regexpQ(true, "someotherfile")},
+		{false, regexpQ(true, "(somefile|someotherfile)")},
+		{true, regexpQ(true, "(afile|someotherfile)")},
+		{true, regexpQ(true, "(somefile)(someotherfile)")},
+		{false, regexpQ(true, "(somefile)(filename)")},
+		{false, regexpQ(false, "x{5}")},
+		{true, regexpQ(false, "(missing){5}")},
+		{false, &query.Or{Children: []query.Q{regexpQ(true, "somefile")}}},
+		{true, &query.Or{Children: []query.Q{regexpQ(false, "somefile")}}},
+		{false, &query.Or{Children: []query.Q{regexpQ(false, "somefile"), regexpQ(false, "different")}}},
+		{false, &query.And{Children: []query.Q{&query.Substring{Pattern: "content"}}}},
+		{true, &query.And{Children: []query.Q{
+			&query.Substring{Pattern: "content"},
+			&query.Substring{Pattern: "other"},
+		}}},
+	} {
+		got := d.bloomReject(tc.query)
+		if got != tc.want {
+			if s, ok := tc.query.(*query.Regexp); ok {
+				t.Errorf("bloomReject(&query.Regexp{%q}) got %v want %v", s.Regexp.String(), got, tc.want)
+			} else {
+				t.Errorf("bloomReject(%#v) got %v want %v", tc.query, got, tc.want)
+			}
+		}
 	}
 }

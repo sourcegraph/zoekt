@@ -378,24 +378,6 @@ func (r *ngramIterationResults) candidates() []*candidateMatch {
 func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResults, error) {
 	str := query.Pattern
 
-	if len(query.Pattern) >= bloomHashMinWordLength {
-		// test against appropriate content or filename bloom filters
-		pat := []byte(query.Pattern)
-		match := true
-		if query.FileName {
-			match = d.bloomNames.maybeHasBytes(pat)
-		} else {
-			match = d.bloomContents.maybeHasBytes(pat)
-		}
-		if !match {
-			return &ngramIterationResults{
-				matchIterator: &noMatchTree{
-					Why: "bloomfilter",
-				},
-			}, nil
-		}
-	}
-
 	// Find the 2 least common ngrams from the string.
 	ngramOffs := splitNGrams([]byte(query.Pattern))
 	frequencies := make([]uint32, 0, len(ngramOffs))

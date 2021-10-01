@@ -143,6 +143,11 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 	default:
 	}
 
+	if d.bloomReject(q) {
+		res.Stats.ShardsSkippedFilter++
+		return &res, nil
+	}
+
 	tr := trace.New("indexData.Search", d.file.Name())
 	tr.LazyPrintf("opts: %+v", opts)
 	defer func() {
@@ -173,15 +178,6 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 	mt, err := d.newMatchTree(q)
 	if err != nil {
 		return nil, err
-	}
-
-	mt, err = pruneMatchTree(mt)
-	if err != nil {
-		return nil, err
-	}
-	if mt == nil {
-		res.Stats.ShardsSkippedFilter++
-		return &res, nil
 	}
 
 	totalAtomCount := 0
