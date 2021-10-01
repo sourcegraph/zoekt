@@ -819,20 +819,6 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			child: ct,
 		}, err
 
-	case *query.Type:
-		if s.Type != query.TypeFileName {
-			break
-		}
-
-		ct, err := d.newMatchTree(s.Child)
-		if err != nil {
-			return nil, err
-		}
-
-		return &fileNameMatchTree{
-			child: ct,
-		}, nil
-
 	case *query.Substring:
 		return d.newSubstringMatchTree(s)
 

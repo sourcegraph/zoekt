@@ -99,11 +99,6 @@ func TestParseQuery(t *testing.T) {
 			&Not{Child: &Substring{Pattern: "def", FileName: true, CaseSensitive: true}},
 		)},
 
-		// type
-		{"type:repo abc", &Type{Type: TypeRepo, Child: &Substring{Pattern: "abc"}}},
-		{"type:file abc def", &Type{Type: TypeFileName, Child: NewAnd(&Substring{Pattern: "abc"}, &Substring{Pattern: "def"})}},
-		{"(type:repo abc) def", NewAnd(&Type{Type: TypeRepo, Child: &Substring{Pattern: "abc"}}, &Substring{Pattern: "def"})},
-
 		// errors.
 		{"--", nil},
 		{"\"abc", nil},

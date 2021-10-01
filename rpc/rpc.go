@@ -140,7 +140,6 @@ func RegisterGob() {
 		gob.Register(&query.Repo{})
 		gob.Register(&query.Substring{})
 		gob.Register(&query.Symbol{})
-		gob.Register(&query.Type{})
 		gob.Register(query.RawConfig(41))
 	})
 }
