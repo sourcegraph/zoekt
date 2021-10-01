@@ -741,7 +741,7 @@ func main() {
 		}
 	}
 
-	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != ""
+	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != "" || *debugMerge != ""
 
 	if err := setupTmpDir(*index, !isDebugCmd); err != nil {
 		log.Fatalf("failed to setup TMPDIR under %s: %v", *index, err)
