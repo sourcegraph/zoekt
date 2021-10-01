@@ -967,6 +967,22 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				return reposWant[d.repos[docID]]
 			},
 		}, nil
+
+	case *query.RepoRegexp:
+		reposWant := make([]bool, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
+			if s.Regexp.MatchString(r.Name) {
+				reposWant[repoIdx] = true
+			}
+		}
+		return &docMatchTree{
+			reason:  "RepoRegexp",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return reposWant[d.repos[docID]]
+			},
+		}, nil
+
 	case query.RawConfig:
 		return &docMatchTree{
 			reason:  s.String(),

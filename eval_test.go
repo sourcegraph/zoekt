@@ -17,6 +17,7 @@ package zoekt
 import (
 	"hash/fnv"
 	"reflect"
+	"regexp"
 	"regexp/syntax"
 	"strings"
 	"testing"
@@ -188,6 +189,44 @@ func TestSimplifyRepo(t *testing.T) {
 	got = d.simplify(none)
 	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
 		t.Fatalf("-want, +got:\n%s", d)
+	}
+}
+
+func TestSimplifyRepoRegexp(t *testing.T) {
+	re := func(pat string) *query.RepoRegexp {
+		t.Helper()
+		re, err := regexp.Compile(pat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &query.RepoRegexp{
+			Regexp: re,
+		}
+	}
+	d := compoundReposShard(t, "foo", "fool")
+	cases := []struct {
+		name string
+		q    query.Q
+		want query.Q
+	}{{
+		name: "all",
+		q:    re("f.*"),
+		want: &query.Const{Value: true},
+	}, {
+		name: "some",
+		q:    re("foo."),
+		want: re("foo."),
+	}, {
+		name: "none",
+		q:    re("banana"),
+		want: &query.Const{Value: false},
+	}}
+
+	for _, tc := range cases {
+		got := d.simplify(tc.q)
+		if d := cmp.Diff(tc.want.String(), got.String()); d != "" {
+			t.Errorf("%s: -want, +got:\n%s", tc.name, d)
+		}
 	}
 }
 

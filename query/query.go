@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"regexp"
 	"regexp/syntax"
 	"sort"
 	"strconv"
@@ -173,6 +174,29 @@ type Repo struct {
 
 func (q *Repo) String() string {
 	return fmt.Sprintf("repo:%s", q.Pattern)
+}
+
+// RepoRegexp is a Sourcegraph addition which searches documents where the
+// repository name matches Regexp.
+type RepoRegexp struct {
+	Regexp *regexp.Regexp
+}
+
+func (q *RepoRegexp) String() string {
+	return fmt.Sprintf("reporegex:%q", q.Regexp.String())
+}
+
+// GobEncode implements gob.Encoder.
+func (q *RepoRegexp) GobEncode() ([]byte, error) {
+	// gob can't encode syntax.Regexp
+	return []byte(q.Regexp.String()), nil
+}
+
+// GobDecode implements gob.Decoder.
+func (q *RepoRegexp) GobDecode(data []byte) error {
+	var err error
+	q.Regexp, err = regexp.Compile(string(data))
+	return err
 }
 
 // BranchesRepos is a slice of BranchRepos to match. It is a Sourcegraph

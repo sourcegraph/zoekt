@@ -126,6 +126,8 @@ var once sync.Once
 func RegisterGob() {
 	once.Do(func() {
 		gob.Register(&query.And{})
+		gob.Register(&query.BranchRepos{})
+		gob.Register(&query.BranchesRepos{})
 		gob.Register(&query.Branch{})
 		gob.Register(&query.Const{})
 		gob.Register(&query.GobCache{})
@@ -133,9 +135,8 @@ func RegisterGob() {
 		gob.Register(&query.Not{})
 		gob.Register(&query.Or{})
 		gob.Register(&query.Regexp{})
-		gob.Register(&query.BranchRepos{})
-		gob.Register(&query.BranchesRepos{})
 		gob.Register(&query.RepoBranches{})
+		gob.Register(&query.RepoRegexp{})
 		gob.Register(&query.RepoSet{})
 		gob.Register(&query.Repo{})
 		gob.Register(&query.Substring{})
