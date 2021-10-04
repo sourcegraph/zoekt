@@ -175,6 +175,7 @@ func (s *Stats) Add(o Stats) {
 	s.ShardsSkipped += o.ShardsSkipped
 	s.ShardsSkippedFilter += o.ShardsSkippedFilter
 	s.Wait += o.Wait
+	s.RegexpsConsidered += o.RegexpsConsidered
 }
 
 // Zero returns true if stats is empty.
@@ -196,7 +197,8 @@ func (s *Stats) Zero() bool {
 		s.ShardsScanned > 0 ||
 		s.ShardsSkipped > 0 ||
 		s.ShardsSkippedFilter > 0 ||
-		s.Wait > 0)
+		s.Wait > 0 ||
+		s.RegexpsConsidered > 0)
 }
 
 // Progress contains information about the global progress of the running search query.
