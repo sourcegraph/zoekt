@@ -76,6 +76,10 @@ func (s *sourcegraphClient) GetIndexOptions(repos ...string) ([]indexOptionsItem
 		if err := dec.Decode(&opts[i]); err != nil {
 			return nil, fmt.Errorf("error decoding body: %w", err)
 		}
+		// Override Sourcegraph name. This can technically be out of sync with
+		// somewhat rare races. Once we have switched to ID backed communication
+		// with Sourcegraph we can fully rely on the name returned.
+		opts[i].Name = repos[i]
 	}
 
 	return opts, nil
@@ -145,6 +149,7 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	opts := IndexOptions{
 		// magic at the end is to ensure we get a positive number when casting.
 		RepoID:  int32(crc32.ChecksumIEEE([]byte(name))%(1<<31-1) + 1),
+		Name:    name,
 		Symbols: true,
 	}
 

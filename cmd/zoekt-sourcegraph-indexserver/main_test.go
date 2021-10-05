@@ -29,7 +29,9 @@ func TestServer_defaultArgs(t *testing.T) {
 		CPUCount: 6,
 	}
 	want := &indexArgs{
-		Name:              "testName",
+		IndexOptions: IndexOptions{
+			Name: "testName",
+		},
 		CloneURL:          "http://api.test/.internal/git/testName",
 		IndexDir:          "/testdata/index",
 		Parallelism:       6,
@@ -37,7 +39,7 @@ func TestServer_defaultArgs(t *testing.T) {
 		FileLimit:         1 << 20,
 		DownloadLimitMBPS: "1000",
 	}
-	got := s.indexArgs("testName", IndexOptions{})
+	got := s.indexArgs(IndexOptions{Name: "testName"})
 	if !cmp.Equal(got, want) {
 		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}

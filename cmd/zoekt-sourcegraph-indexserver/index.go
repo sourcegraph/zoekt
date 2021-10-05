@@ -38,6 +38,9 @@ type IndexOptions struct {
 	// RepoID is the Sourcegraph Repository ID.
 	RepoID int32
 
+	// Name is the Repository Name.
+	Name string
+
 	// Priority indicates ranking in results, higher first.
 	Priority float64
 
@@ -57,9 +60,6 @@ type indexArgs struct {
 
 	// CloneURL is the remote git URL of the repository for cloning.
 	CloneURL string
-
-	// Name is the name of the repository.
-	Name string
 
 	// Incremental indicates to skip indexing if already indexed.
 	Incremental bool

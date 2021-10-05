@@ -44,21 +44,20 @@ type Queue struct {
 
 // Pop returns the repoName and opts of the next repo to index. If the queue
 // is empty ok is false.
-func (q *Queue) Pop() (repoName string, opts IndexOptions, ok bool) {
+func (q *Queue) Pop() (opts IndexOptions, ok bool) {
 	q.mu.Lock()
 	if len(q.pq) == 0 {
 		q.mu.Unlock()
-		return "", IndexOptions{}, false
+		return IndexOptions{}, false
 	}
 	item := heap.Pop(&q.pq).(*queueItem)
-	repoName = item.repoName
 	opts = item.opts
 
 	metricQueueLen.Set(float64(len(q.pq)))
 	metricQueueCap.Set(float64(len(q.items)))
 
 	q.mu.Unlock()
-	return repoName, opts, true
+	return opts, true
 }
 
 // Len returns the number of items in the queue.
@@ -71,9 +70,9 @@ func (q *Queue) Len() int {
 
 // AddOrUpdate sets which opts to index next for repoName. If repoName is
 // already in the queue, it is updated.
-func (q *Queue) AddOrUpdate(repoName string, opts IndexOptions) {
+func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Lock()
-	item := q.get(repoName)
+	item := q.get(opts.Name)
 	if !reflect.DeepEqual(item.opts, opts) {
 		item.indexed = false
 		item.opts = opts
@@ -91,9 +90,9 @@ func (q *Queue) AddOrUpdate(repoName string, opts IndexOptions) {
 }
 
 // SetIndexed sets what the currently indexed options are for repoName.
-func (q *Queue) SetIndexed(repoName string, opts IndexOptions, state indexState) {
+func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Lock()
-	item := q.get(repoName)
+	item := q.get(opts.Name)
 	item.setIndexState(state)
 	if state != indexStateFail {
 		item.indexed = reflect.DeepEqual(opts, item.opts)
