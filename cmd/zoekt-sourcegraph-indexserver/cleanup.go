@@ -287,8 +287,8 @@ func shardsLog(indexDir, action string, shards []shard, repoName string) {
 
 // vacuum removes tombstoned repos from compound shards. Ensure vacuum has
 // exclusive access to dir while it runs.
-func vacuum(dir string) {
-	d, err := os.Open(dir)
+func (s *Server) vacuum() {
+	d, err := os.Open(s.IndexDir)
 	if err != nil {
 		return
 	}
@@ -302,14 +302,17 @@ func vacuum(dir string) {
 			continue
 		}
 
-		removed, err := removeTombstones(filepath.Join(dir, fn))
+		s.muIndexDir.Lock()
+		removed, err := removeTombstones(filepath.Join(s.IndexDir, fn))
+		s.muIndexDir.Unlock()
+
 		if err != nil {
 			debug.Printf("error while removing tombstones in %s: %s", fn, err)
 		}
 		if len(removed) > 0 {
 			for _, ts := range removed {
-				shardsLog(dir, "vac", []shard{{
-					Path: filepath.Join(dir, fn)}}, ts)
+				shardsLog(s.IndexDir, "vac", []shard{{
+					Path: filepath.Join(s.IndexDir, fn)}}, ts)
 			}
 		}
 	}
