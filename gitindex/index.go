@@ -397,6 +397,10 @@ func IndexGitRepo(opts Options) error {
 			Version: commit.Hash.String(),
 		})
 
+		if when := commit.Committer.When; when.After(opts.BuildOptions.RepositoryDescription.LatestCommitDate) {
+			opts.BuildOptions.RepositoryDescription.LatestCommitDate = when
+		}
+
 		tree, err := commit.Tree()
 		if err != nil {
 			return err
