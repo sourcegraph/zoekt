@@ -240,6 +240,7 @@ func TestVacuum(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	mockMerger = func() error { return mergeHelper(t, fn) }
 	got, err := removeTombstones(fn)
 	if err != nil {
 		t.Fatal(err)
@@ -247,6 +248,35 @@ func TestVacuum(t *testing.T) {
 
 	if len(got) != 1 || got[0] != "repo2" {
 		t.Fatal(err)
+	}
+
+	dir := filepath.Dir(fn)
+	d, err := os.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shards, err := d.Readdirnames(-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(shards) != 1 {
+		t.Fatalf("expected 1 shard, but instead got %d", len(shards))
+	}
+
+	repos, _, err := zoekt.ReadMetadataPath(filepath.Join(dir, shards[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(repos) != 3 {
+		t.Fatalf("wanted 3, got %d repos", len(repos))
+	}
+
+	for _, r := range repos {
+		if r.Tombstone {
+			t.Fatalf("found tombstone for %s", r.Name)
+		}
 	}
 }
 
@@ -290,4 +320,23 @@ func createCompoundShard(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return fn
+}
+
+func mergeHelper(t *testing.T, fn string) error {
+	t.Helper()
+
+	f, err := os.Open(fn)
+	if err != nil {
+		return fmt.Errorf("os.Open: %s", err)
+	}
+	defer f.Close()
+
+	indexFile, err := zoekt.NewIndexFile(f)
+	if err != nil {
+		return fmt.Errorf("zoekt.NewIndexFile: %s ", err)
+	}
+	defer indexFile.Close()
+
+	_, err = zoekt.Merge(filepath.Dir(fn), indexFile)
+	return err
 }

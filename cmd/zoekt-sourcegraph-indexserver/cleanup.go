@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -314,9 +315,18 @@ func vacuum(dir string) {
 	}
 }
 
+var mockMerger func() error
+
 // removeTombstones removes all tombstones from a compound shard at fn by merging
 // the compound shard with itself.
 func removeTombstones(fn string) ([]string, error) {
+	var runMerge func() error
+	if mockMerger != nil {
+		runMerge = mockMerger
+	} else {
+		runMerge = exec.Command("zoekt-merge-index", fn).Run
+	}
+
 	repos, _, err := zoekt.ReadMetadataPath(fn)
 	if err != nil {
 		return nil, fmt.Errorf("zoekt.ReadMetadataPath: %s", err)
@@ -332,18 +342,6 @@ func removeTombstones(fn string) ([]string, error) {
 		return nil, nil
 	}
 
-	f, err := os.Open(fn)
-	if err != nil {
-		return nil, fmt.Errorf("os.Open: %s", err)
-	}
-	defer f.Close()
-
-	indexFile, err := zoekt.NewIndexFile(f)
-	if err != nil {
-		return nil, fmt.Errorf("zoekt.NewIndexFile: %s ", err)
-	}
-	defer indexFile.Close()
-
 	defer func() {
 		paths, err := zoekt.IndexFilePaths(fn)
 		if err != nil {
@@ -353,9 +351,9 @@ func removeTombstones(fn string) ([]string, error) {
 			os.Remove(path)
 		}
 	}()
-	_, err = zoekt.Merge(filepath.Dir(fn), indexFile)
+	err = runMerge()
 	if err != nil {
-		return nil, fmt.Errorf("zoekt.Merge: %s", err)
+		return nil, fmt.Errorf("runMerge: %s", err)
 	}
 	return tombstones, nil
 }
