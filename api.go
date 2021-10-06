@@ -45,7 +45,7 @@ type FileMatch struct {
 
 	// RepositoryID is a Sourcegraph extension. This is the ID of Repository in
 	// Sourcegraph.
-	RepositoryID uint32
+	RepositoryID int32
 
 	// Only set if requested
 	Content []byte
@@ -240,7 +240,7 @@ type RepositoryBranch struct {
 // Repository holds repository metadata.
 type Repository struct {
 	// Sourcergaph's repository ID
-	ID uint32
+	ID int32
 
 	// The repository name
 	Name string
@@ -310,7 +310,7 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 
 	if v, ok := repo.RawConfig["repoid"]; ok {
 		id, _ := strconv.ParseUint(v, 10, 32)
-		r.ID = uint32(id)
+		r.ID = int32(id)
 	}
 
 	return nil
@@ -446,7 +446,7 @@ type RepoList struct {
 	Crashes int
 
 	// Minimal response to a List request. Returned when ListOptions.Minimal is true.
-	Minimal map[uint32]*MinimalRepoListEntry
+	Minimal map[int32]*MinimalRepoListEntry
 }
 
 type Searcher interface {

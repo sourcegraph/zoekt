@@ -252,7 +252,7 @@ func TestSimplifyBranchesRepos(t *testing.T) {
 
 	some := &query.BranchesRepos{
 		List: []query.BranchRepos{
-			{Branch: "branch1", Repos: roaring.BitmapOf(hash("bar"))},
+			{Branch: "branch1", Repos: roaring.BitmapOf(uint32(hash("bar")))},
 		},
 	}
 	none := &query.Repo{"banana"}
@@ -287,8 +287,12 @@ func TestSimplifyRepoBranchSimple(t *testing.T) {
 	}
 }
 
-func hash(name string) uint32 {
+func hash(name string) int32 {
 	h := fnv.New32()
-	h.Write([]byte(name))
-	return h.Sum32()
+	var x int32
+	for x <= 0 {
+		h.Write([]byte(name))
+		x = int32(h.Sum32())
+	}
+	return x
 }

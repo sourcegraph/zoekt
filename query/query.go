@@ -208,9 +208,13 @@ type BranchesRepos struct {
 
 // NewSingleBranchesRepos is a helper for creating a BranchesRepos which
 // searches a single branch.
-func NewSingleBranchesRepos(branch string, ids ...uint32) *BranchesRepos {
+func NewSingleBranchesRepos(branch string, ids ...int32) *BranchesRepos {
+	uids := make([]uint32, len(ids))
+	for i, x := range ids {
+		uids[i] = uint32(x)
+	}
 	return &BranchesRepos{List: []BranchRepos{
-		{branch, roaring.BitmapOf(ids...)},
+		{branch, roaring.BitmapOf(uids...)},
 	}}
 }
 

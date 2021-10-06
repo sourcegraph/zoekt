@@ -202,7 +202,7 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 
 	for _, name := range repoSetNames {
 		repoBranchesSet.Set[name] = []string{"HEAD"}
-		branchesRepos.List[0].Repos.Add(hash(name))
+		branchesRepos.List[0].Repos.Add(uint32(hash(name)))
 	}
 
 	set := query.NewRepoSet(repoSetNames...)
@@ -235,10 +235,14 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 	}
 }
 
-func hash(name string) uint32 {
+func hash(name string) int32 {
 	h := fnv.New32()
-	h.Write([]byte(name))
-	return h.Sum32()
+	var x int32
+	for x <= 0 {
+		h.Write([]byte(name))
+		x = int32(h.Sum32())
+	}
+	return x
 }
 
 type memSeeker struct {
@@ -373,7 +377,7 @@ func TestShardedSearcher_List(t *testing.T) {
 						Stats:      zoekt.RepoStats{Shards: 2},
 					},
 				},
-				Minimal: map[uint32]*zoekt.MinimalRepoListEntry{
+				Minimal: map[int32]*zoekt.MinimalRepoListEntry{
 					repos[0].ID: {
 						HasSymbols: repos[0].HasSymbols,
 						Branches:   repos[0].Branches,
@@ -440,7 +444,7 @@ func searcherForTest(t testing.TB, b *zoekt.IndexBuilder) zoekt.Searcher {
 func reposForTest(n int) (result []*zoekt.Repository) {
 	for i := 0; i < n; i++ {
 		result = append(result, &zoekt.Repository{
-			ID:   uint32(i + 1),
+			ID:   int32(i + 1),
 			Name: fmt.Sprintf("test-repository-%d", i),
 		})
 	}
@@ -470,7 +474,7 @@ func BenchmarkShardedSearch(b *testing.B) {
 
 	filesPerRepo := 300
 	repos := reposForTest(3000)
-	var repoSetIDs []uint32
+	var repoSetIDs []int32
 
 	for i, r := range repos {
 		searcher := testSearcherForRepo(b, r, filesPerRepo)

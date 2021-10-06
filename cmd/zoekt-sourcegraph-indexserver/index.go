@@ -87,7 +87,7 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		// IncrementalSkipIndexing and IndexState can correctly calculate if
 		// nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
-			ID:       uint32(o.IndexOptions.RepoID),
+			ID:       o.IndexOptions.RepoID,
 			Name:     o.Name,
 			Branches: o.Branches,
 			RawConfig: map[string]string{

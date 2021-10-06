@@ -309,7 +309,7 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 
 			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
 				for _, br := range setQuery.List {
-					if br.Repos.Contains(repo.ID) {
+					if br.Repos.Contains(uint32(repo.ID)) {
 						return true
 					}
 				}
@@ -725,7 +725,7 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	}
 
 	agg := zoekt.RepoList{
-		Minimal: map[uint32]*zoekt.MinimalRepoListEntry{},
+		Minimal: map[int32]*zoekt.MinimalRepoListEntry{},
 	}
 
 	uniq := map[string]*zoekt.RepoListEntry{}

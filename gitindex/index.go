@@ -224,7 +224,7 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	}
 
 	id, _ := strconv.ParseUint(sec.Options.Get("repoid"), 10, 32)
-	desc.ID = uint32(id)
+	desc.ID = int32(id)
 
 	if desc.RawConfig == nil {
 		desc.RawConfig = map[string]string{}

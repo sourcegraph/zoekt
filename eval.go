@@ -75,7 +75,7 @@ func (d *indexData) simplify(in query.Q) query.Q {
 		case *query.BranchesRepos:
 			for i := range d.repoMetaData {
 				for _, br := range r.List {
-					if br.Repos.Contains(d.repoMetaData[i].ID) {
+					if br.Repos.Contains(uint32(d.repoMetaData[i].ID)) {
 						return q
 					}
 				}
@@ -515,7 +515,7 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 
 	minimal := opts != nil && opts.Minimal
 	if minimal {
-		l.Minimal = make(map[uint32]*MinimalRepoListEntry, len(d.repoListEntry))
+		l.Minimal = make(map[int32]*MinimalRepoListEntry, len(d.repoListEntry))
 	} else {
 		l.Repos = make([]*RepoListEntry, 0, len(d.repoListEntry))
 	}
