@@ -696,7 +696,7 @@ func main() {
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repositories then quit.")
 	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
 	debugMeta := flag.String("debug-meta", "", "do not start the indexserver, rather print shard metadata then quit.")
-	debugMerge := flag.String("debug-merge", "", "index dir,max shard size in MiB,compound target size in MiB,min age in days.")
+	debugMerge := flag.String("debug-merge", "", "index dir,compound target size in MiB,simulate(true,false)")
 
 	_ = flag.Bool("exp-git-index", true, "DEPRECATED: not read anymore. We always use zoekt-git-index now.")
 

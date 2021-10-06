@@ -127,12 +127,6 @@ type shard struct {
 	Repo    string
 	Path    string
 	ModTime time.Time
-
-	// The size as reported by os.Stat.
-	SizeBytes int64
-
-	// The rank of repo as recorded in its RawConfig.
-	Rank float64
 }
 
 func getShards(dir string) map[string][]shard {
