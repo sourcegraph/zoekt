@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt"
+	"github.com/google/zoekt/build"
 )
 
 func TestCleanup(t *testing.T) {
@@ -229,4 +230,113 @@ func TestRemoveIncompleteShards(t *testing.T) {
 	if !reflect.DeepEqual(shards, left) {
 		t.Errorf("\ngot shards: %v\nwant: %v\n", left, shards)
 	}
+}
+
+func TestVacuum(t *testing.T) {
+	fn := createCompoundShard(t)
+
+	err := zoekt.SetTombstone(fn, "repo2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockMerger = func() error { return mergeHelper(t, fn) }
+	got, err := removeTombstones(fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 1 || got[0] != "repo2" {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Dir(fn)
+	d, err := os.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shards, err := d.Readdirnames(-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(shards) != 1 {
+		t.Fatalf("expected 1 shard, but instead got %d", len(shards))
+	}
+
+	repos, _, err := zoekt.ReadMetadataPath(filepath.Join(dir, shards[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(repos) != 3 {
+		t.Fatalf("wanted 3, got %d repos", len(repos))
+	}
+
+	for _, r := range repos {
+		if r.Tombstone {
+			t.Fatalf("found tombstone for %s", r.Name)
+		}
+	}
+}
+
+// createCompoundShard returns a path to a compound shard containing repos
+// repo0..repo3
+func createCompoundShard(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+
+	repoNames := []string{"repo0", "repo1", "repo2", "repo3"}
+	var repoFns []string
+
+	for _, name := range repoNames {
+		opts := build.Options{
+			IndexDir: dir,
+			RepositoryDescription: zoekt.Repository{
+				Name: name,
+				RawConfig: map[string]string{
+					"public": "1",
+				},
+			},
+		}
+		opts.SetDefaults()
+		b, err := build.NewBuilder(opts)
+		if err != nil {
+			t.Fatalf("NewBuilder: %v", err)
+		}
+		b.AddFile("F", []byte(strings.Repeat("abc", 100)))
+		if err := b.Finish(); err != nil {
+			t.Errorf("Finish: %v", err)
+		}
+
+		repoFns = append(repoFns, opts.FindAllShards()...)
+	}
+
+	// create a compound shard.
+	dir = t.TempDir()
+	fn, err := merge(dir, repoFns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fn
+}
+
+func mergeHelper(t *testing.T, fn string) error {
+	t.Helper()
+
+	f, err := os.Open(fn)
+	if err != nil {
+		return fmt.Errorf("os.Open: %s", err)
+	}
+	defer f.Close()
+
+	indexFile, err := zoekt.NewIndexFile(f)
+	if err != nil {
+		return fmt.Errorf("zoekt.NewIndexFile: %s ", err)
+	}
+	defer indexFile.Close()
+
+	_, err = zoekt.Merge(filepath.Dir(fn), indexFile)
+	return err
 }

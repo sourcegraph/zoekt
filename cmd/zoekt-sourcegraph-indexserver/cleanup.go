@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -282,4 +283,80 @@ func shardsLog(indexDir, action string, shards []shard, repoName string) {
 		}
 		_, _ = fmt.Fprintf(shardLogger, "%d\t%s\t%s\t%d\t%s\n", time.Now().UTC().Unix(), action, shard, shardSize, repoName)
 	}
+}
+
+// vacuum removes tombstoned repos from compound shards. Vacuum locks the index
+// directory for each compound shard it vacuums.
+func (s *Server) vacuum() {
+	d, err := os.Open(s.IndexDir)
+	if err != nil {
+		return
+	}
+	defer d.Close()
+	fns, _ := d.Readdirnames(-1)
+
+	for _, fn := range fns {
+		// We could run this over all shards, but based on our current setup, simple
+		// shards won't have tombstones but instead will be moved to .trash.
+		if !strings.HasPrefix(fn, "compound-") || !strings.HasSuffix(fn, ".zoekt") {
+			continue
+		}
+
+		s.muIndexDir.Lock()
+		removed, err := removeTombstones(filepath.Join(s.IndexDir, fn))
+		s.muIndexDir.Unlock()
+
+		if err != nil {
+			debug.Printf("error while removing tombstones in %s: %s", fn, err)
+		}
+		if len(removed) > 0 {
+			for _, ts := range removed {
+				shardsLog(s.IndexDir, "vac", []shard{{
+					Path: filepath.Join(s.IndexDir, fn)}}, ts)
+			}
+		}
+	}
+}
+
+var mockMerger func() error
+
+// removeTombstones removes all tombstones from a compound shard at fn by merging
+// the compound shard with itself.
+func removeTombstones(fn string) ([]string, error) {
+	var runMerge func() error
+	if mockMerger != nil {
+		runMerge = mockMerger
+	} else {
+		runMerge = exec.Command("zoekt-merge-index", fn).Run
+	}
+
+	repos, _, err := zoekt.ReadMetadataPath(fn)
+	if err != nil {
+		return nil, fmt.Errorf("zoekt.ReadMetadataPath: %s", err)
+	}
+
+	var tombstones []string
+	for _, r := range repos {
+		if r.Tombstone {
+			tombstones = append(tombstones, r.Name)
+		}
+	}
+	if len(tombstones) == 0 {
+		return nil, nil
+	}
+
+	defer func() {
+		paths, err := zoekt.IndexFilePaths(fn)
+		if err != nil {
+			return
+		}
+		for _, path := range paths {
+			os.Remove(path)
+		}
+	}()
+	err = runMerge()
+	if err != nil {
+		return nil, fmt.Errorf("runMerge: %s", err)
+	}
+	return tombstones, nil
 }

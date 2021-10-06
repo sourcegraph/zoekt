@@ -118,12 +118,19 @@ type Server struct {
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
 
+	// Vacuum is how often indexserver scans compound shards to remove tombstones.
+	// Vacuum is enabled by placing a file named RIP in the index directory.
+	Vacuum time.Duration
+
 	// CPUCount is the amount of parallelism to use when indexing a
 	// repository.
 	CPUCount int
 
 	mu            sync.Mutex
 	lastListRepos []string
+
+	// Protects the index directory from concurrent access.
+	muIndexDir sync.Mutex
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -236,9 +243,6 @@ const pauseFileName = "PAUSE"
 func (s *Server) Run(queue *Queue) {
 	removeIncompleteShards(s.IndexDir)
 
-	// Protect the index directory from concurrent access of builder and cleanup.
-	muIndexDir := sync.Mutex{}
-
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
 		// We update the list of indexed repos every Interval. To speed up manual
@@ -272,9 +276,9 @@ func (s *Server) Run(queue *Queue) {
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
-				muIndexDir.Lock()
+				s.muIndexDir.Lock()
 				cleanup(s.IndexDir, repos, time.Now())
-				muIndexDir.Unlock()
+				s.muIndexDir.Unlock()
 			}()
 
 			start := time.Now()
@@ -311,6 +315,14 @@ func (s *Server) Run(queue *Queue) {
 		}
 	}()
 
+	go func() {
+		for range jitterTicker(s.Vacuum, syscall.SIGUSR1) {
+			if zoekt.TombstonesEnabled(s.IndexDir) {
+				s.vacuum()
+			}
+		}
+	}()
+
 	// In the current goroutine process the queue forever.
 	for {
 		if _, err := os.Stat(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
@@ -326,9 +338,9 @@ func (s *Server) Run(queue *Queue) {
 		start := time.Now()
 		args := s.indexArgs(name, opts)
 
-		muIndexDir.Lock()
+		s.muIndexDir.Lock()
 		state, err := s.Index(args)
-		muIndexDir.Unlock()
+		s.muIndexDir.Unlock()
 
 		metricIndexDuration.WithLabelValues(string(state)).Observe(time.Since(start).Seconds())
 		if err != nil {
@@ -672,6 +684,7 @@ func main() {
 
 	root := flag.String("sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	interval := flag.Duration("interval", time.Minute, "sync with sourcegraph this often")
+	intervalVacuum := flag.Duration("vacuum", time.Hour, "run vacuum this often")
 	index := flag.String("index", defaultIndexDir, "set index directory to use")
 	listen := flag.String("listen", ":6072", "listen on this address.")
 	hostname := flag.String("hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
@@ -762,6 +775,7 @@ func main() {
 		BatchSize:   batchSize,
 		IndexDir:    *index,
 		Interval:    *interval,
+		Vacuum:      *intervalVacuum,
 		CPUCount:    cpuCount,
 	}
 
