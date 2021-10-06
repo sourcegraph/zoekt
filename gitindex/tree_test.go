@@ -26,6 +26,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
@@ -307,13 +308,13 @@ echo sub-cont > subdir/sub-file
 git add afile subdir/sub-file
 git config user.email "you@example.com"
 git config user.name "Your Name"
-git commit -am amsg
+GIT_COMMITTER_DATE="Mon 5 Oct 2021 11:00:00 +0000" git commit -am amsg
 
 git branch branchdir/a
 
 echo acont >> afile
 git add afile subdir/sub-file
-git commit -am amsg
+GIT_COMMITTER_DATE="Tue 6 Oct 2021 12:00:00 +0000" git commit -am amsg
 
 git branch branchdir/b
 
@@ -482,5 +483,47 @@ func TestUniq(t *testing.T) {
 	got := uniq(in)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestLatestCommit(t *testing.T) {
+	dir := t.TempDir()
+	indexDir := t.TempDir()
+
+	if err := createMultibranchRepo(dir); err != nil {
+		t.Fatalf("createMultibranchRepo: %v", err)
+	}
+
+	buildOpts := build.Options{
+		IndexDir: indexDir,
+		RepositoryDescription: zoekt.Repository{
+			Name: "repo",
+		},
+	}
+	buildOpts.SetDefaults()
+
+	opts := Options{
+		RepoDir:      filepath.Join(dir + "/repo"),
+		BuildOptions: buildOpts,
+		BranchPrefix: "refs/heads",
+		Branches:     []string{"branchdir/a", "branchdir/b"},
+	}
+	if err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := shards.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	rlist, err := searcher.List(context.Background(), &query.Repo{Pattern: ""}, nil)
+	if err != nil {
+		t.Fatalf("List(): %v", err)
+	}
+
+	if want := time.Date(2021, 10, 6, 12, 0, 0, 0, time.UTC); rlist.Repos[0].Repository.LatestCommitDate != want {
+		t.Fatalf("want %s, got %s", want, rlist.Repos[0].Repository.LatestCommitDate)
 	}
 }

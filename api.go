@@ -290,6 +290,11 @@ type Repository struct {
 
 	// Tombstone is true if we are not allowed to search this repo.
 	Tombstone bool
+
+	// LatestCommitDate is the date of the latest commit among all indexed Branches.
+	// The date might be time.Time's 0-value if the repository was last indexed
+	// before this field was added.
+	LatestCommitDate time.Time
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {
