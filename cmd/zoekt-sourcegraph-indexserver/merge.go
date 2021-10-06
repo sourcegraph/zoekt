@@ -193,18 +193,16 @@ func generateCompounds(shards []candidate, targetSizeBytes int64) []compound {
 			cur.add(shards[i])
 			shards = append(shards[:i], shards[i+1:]...)
 		}
-
-		// No need to merge a single shard.
-		if len(cur.shards) == 1 {
-			continue
-		}
-
 		compounds = append(compounds, cur)
 	}
 	return compounds
 }
 
 func callMerge(shards []candidate) error {
+	if len(shards) <= 1 {
+		return nil
+	}
+
 	cmd := exec.Command("zoekt-merge-index", "-")
 	wc, err := cmd.StdinPipe()
 	if err != nil {

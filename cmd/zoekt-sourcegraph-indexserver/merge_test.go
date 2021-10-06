@@ -67,32 +67,36 @@ func TestGenerateCompoundShards(t *testing.T) {
 	}
 
 	// Expected compounds
+	// compound 0: r4 (total size 10)
 	// compound 1: r3 + r6 (total size  10)
 	// compound 2: r5 + r2 + r1 (total size 10)
-	//
-	// r4 -> already max size
 
 	compounds := generateCompounds(shards, 10)
 
-	if len(compounds) != 2 {
-		t.Fatalf("expected 2 compound shards, but got %d", len(compounds))
+	if len(compounds) != 3 {
+		t.Fatalf("expected 3 compound shards, but got %d", len(compounds))
 	}
 
 	totalShards := 0
 	for _, c := range compounds {
 		totalShards += len(c.shards)
 	}
-	if totalShards != 5 {
-		t.Fatalf("shards mismatch: wanted %d, got %d", 5, totalShards)
+	if totalShards != 6 {
+		t.Fatalf("shards mismatch: wanted %d, got %d", 6, totalShards)
 	}
 
-	want := []candidate{{"r3", 9}, {"r6", 1}}
+	want := []candidate{{"r4", 10}}
 	if diff := cmp.Diff(want, compounds[0].shards, cmp.Options{cmp.AllowUnexported(candidate{})}); diff != "" {
 		t.Fatalf("-want,+got\n%s", diff)
 	}
 
-	want = []candidate{{"r5", 5}, {"r2", 3}, {"r1", 2}}
+	want = []candidate{{"r3", 9}, {"r6", 1}}
 	if diff := cmp.Diff(want, compounds[1].shards, cmp.Options{cmp.AllowUnexported(candidate{})}); diff != "" {
+		t.Fatalf("-want,+got\n%s", diff)
+	}
+
+	want = []candidate{{"r5", 5}, {"r2", 3}, {"r1", 2}}
+	if diff := cmp.Diff(want, compounds[2].shards, cmp.Options{cmp.AllowUnexported(candidate{})}); diff != "" {
 		t.Fatalf("-want,+got\n%s", diff)
 	}
 }
