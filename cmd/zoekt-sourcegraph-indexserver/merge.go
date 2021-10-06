@@ -16,8 +16,8 @@ import (
 )
 
 // parseParams is helper function to parse a comma separated string of parameters
-// of the form "string,int,bool". This should be used just for debugging and
-// testing only.
+// of the form "string,int,bool". This should be used for debugging and testing
+// only.
 func parseParams(params string) (indexDir string, targetSizeBytes int64, simulate bool, err error) {
 	ps := strings.Split(params, ",")
 	indexDir = ps[0]
@@ -28,7 +28,7 @@ func parseParams(params string) (indexDir string, targetSizeBytes int64, simulat
 	}
 	targetSizeBytes = int64(targetSize * 1024 * 1024)
 
-	simulate, err = strconv.ParseBool(ps[3])
+	simulate, err = strconv.ParseBool(ps[2])
 	if err != nil {
 		return
 	}
@@ -47,7 +47,7 @@ func doMerge(params string) error {
 	}
 
 	shards, excluded := loadCandidates(dir)
-	debug.Printf("found %d candidate shards, %d excluded\n", len(shards), excluded)
+	debug.Printf("found %d candidate shards, %d repos were excluded\n", len(shards), excluded)
 	if len(shards) == 0 {
 		return nil
 	}
@@ -184,6 +184,10 @@ func generateCompounds(shards []candidate, targetSizeBytes int64) []compound {
 	for len(shards) > 0 {
 		cur := compound{}
 
+		// Start with the largest shard and add smaller shards until we reach the target
+		// size. This strategy automatically fills up compound shards below the target
+		// size. We accept compounds with 1 repo because we will ignore them later in
+		// callMerge.
 		cur.add(shards[len(shards)-1])
 		shards = shards[:len(shards)-1]
 		for i := len(shards) - 1; i >= 0; i-- {
@@ -208,6 +212,7 @@ func callMerge(shards []candidate) error {
 	if err != nil {
 		return err
 	}
+	defer wc.Close()
 
 	err = cmd.Start()
 	if err != nil {
