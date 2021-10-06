@@ -49,21 +49,25 @@ func TestGetIndexOptions(t *testing.T) {
 
 	cases := map[string]*IndexOptions{
 		`{"Symbols": true, "LargeFiles": ["foo","bar"]}`: {
+			Name:       "test/repo",
 			Symbols:    true,
 			LargeFiles: []string{"foo", "bar"},
 		},
 
 		`{"Symbols": false, "LargeFiles": ["foo","bar"]}`: {
+			Name:       "test/repo",
 			LargeFiles: []string{"foo", "bar"},
 		},
 
-		`{}`: {},
+		`{}`: {Name: "test/repo"},
 
 		`{"Symbols": true}`: {
+			Name:    "test/repo",
 			Symbols: true,
 		},
 
 		`{"RepoID": 123}`: {
+			Name:   "test/repo",
 			RepoID: 123,
 		},
 
@@ -97,8 +101,8 @@ func TestIndex(t *testing.T) {
 		name: "minimal",
 		args: indexArgs{
 			CloneURL: "http://api.test/.internal/git/test/repo",
-			Name:     "test/repo",
 			IndexOptions: IndexOptions{
+				Name:     "test/repo",
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
 			},
 		},
@@ -118,8 +122,8 @@ func TestIndex(t *testing.T) {
 		name: "minimal-id",
 		args: indexArgs{
 			CloneURL: "http://api.test/.internal/git/test/repo",
-			Name:     "test/repo",
 			IndexOptions: IndexOptions{
+				Name:     "test/repo",
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
 				RepoID:   123,
 			},
@@ -140,13 +144,13 @@ func TestIndex(t *testing.T) {
 		name: "all",
 		args: indexArgs{
 			CloneURL:          "http://api.test/.internal/git/test/repo",
-			Name:              "test/repo",
 			Incremental:       true,
 			IndexDir:          "/data/index",
 			Parallelism:       4,
 			FileLimit:         123,
 			DownloadLimitMBPS: "1000",
 			IndexOptions: IndexOptions{
+				Name:       "test/repo",
 				LargeFiles: []string{"foo", "bar"},
 				Symbols:    true,
 				Branches: []zoekt.RepositoryBranch{

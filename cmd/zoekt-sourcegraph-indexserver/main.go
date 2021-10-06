@@ -304,7 +304,7 @@ func (s *Server) Run(queue *Queue) {
 						tr.SetError()
 						continue
 					}
-					queue.AddOrUpdate(name, opt.IndexOptions)
+					queue.AddOrUpdate(opt.IndexOptions)
 				}
 			}
 
@@ -330,13 +330,13 @@ func (s *Server) Run(queue *Queue) {
 			continue
 		}
 
-		name, opts, ok := queue.Pop()
+		opts, ok := queue.Pop()
 		if !ok {
 			time.Sleep(time.Second)
 			continue
 		}
 		start := time.Now()
-		args := s.indexArgs(name, opts)
+		args := s.indexArgs(opts)
 
 		s.muIndexDir.Lock()
 		state, err := s.Index(args)
@@ -352,7 +352,7 @@ func (s *Server) Run(queue *Queue) {
 		case indexStateSuccessMeta:
 			log.Printf("updated meta %s in %v", args.String(), time.Since(start))
 		}
-		queue.SetIndexed(name, opts, state)
+		queue.SetIndexed(opts, state)
 	}
 }
 
@@ -455,10 +455,9 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	return indexStateSuccess, gitIndex(args, runCmd)
 }
 
-func (s *Server) indexArgs(name string, opts IndexOptions) *indexArgs {
+func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 	return &indexArgs{
-		Name:         name,
-		CloneURL:     s.Sourcegraph.GetCloneURL(name),
+		CloneURL:     s.Sourcegraph.GetCloneURL(opts.Name),
 		IndexOptions: opts,
 
 		IndexDir:    s.IndexDir,
@@ -558,7 +557,7 @@ func (s *Server) enqueueForIndex(queue *Queue) func(rw http.ResponseWriter, r *h
 			http.Error(rw, "fetching index options", http.StatusInternalServerError)
 			return
 		}
-		queue.AddOrUpdate(name, opts[0].IndexOptions)
+		queue.AddOrUpdate(opts[0].IndexOptions)
 	}
 }
 
@@ -573,7 +572,7 @@ func (s *Server) forceIndex(name string) (string, error) {
 		return fmt.Sprintf("Indexing %s failed: %s", name, errS), errors.New(errS)
 	}
 
-	args := s.indexArgs(name, opts[0].IndexOptions)
+	args := s.indexArgs(opts[0].IndexOptions)
 	args.Incremental = false // force re-index
 	state, err := s.Index(args)
 	if err != nil {
