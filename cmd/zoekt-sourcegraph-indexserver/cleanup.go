@@ -285,8 +285,8 @@ func shardsLog(indexDir, action string, shards []shard, repoName string) {
 	}
 }
 
-// vacuum removes tombstoned repos from compound shards. Ensure vacuum has
-// exclusive access to dir while it runs.
+// vacuum removes tombstoned repos from compound shards. Vacuum locks the index
+// directory for each compound shard it vacuums.
 func (s *Server) vacuum() {
 	d, err := os.Open(s.IndexDir)
 	if err != nil {
