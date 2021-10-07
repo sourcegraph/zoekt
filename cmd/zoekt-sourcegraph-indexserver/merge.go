@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/zoekt"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // parseParams is helper function to parse a comma separated string of parameters
@@ -35,11 +37,19 @@ func parseParams(params string) (indexDir string, targetSizeBytes int64, simulat
 	return
 }
 
+var reCompound = regexp.MustCompile("compound-.*\\.zoekt")
+
 // doMerge drives the merge process.
 func doMerge(params string) error {
 	dir, targetSizeBytes, simulate, err := parseParams(params)
 	if err != nil {
 		return err
+	}
+
+	wc := &lumberjack.Logger{
+		Filename:   filepath.Join(dir, "zoekt-merge-log.tsv"),
+		MaxSize:    100, // Megabyte
+		MaxBackups: 5,
 	}
 
 	if simulate {
@@ -63,12 +73,18 @@ func doMerge(params string) error {
 	for ix, comp := range compounds {
 		debug.Printf("compound %d: merging %d shards with total size %.2f MiB\n", ix, len(comp.shards), float64(comp.size)/(1024*1024))
 		if !simulate {
-			err := callMerge(comp.shards)
+			stdOut, stdErr, err := callMerge(comp.shards)
+			debug.Printf("callMerge: OUT: %s, ERR: %s\n", string(stdOut), string(stdErr))
 			for _, s := range comp.shards {
 				os.Remove(s.path)
 			}
 			if err != nil {
-				return err
+				return fmt.Errorf("%s: %s", stdErr, err)
+			}
+			newCompoundName := reCompound.Find(stdErr)
+			now := time.Now()
+			for _, s := range comp.shards {
+				_, _ = fmt.Fprintf(wc, "%d\t%s\t%s\t%s\n", now.UTC().Unix(), "merge", filepath.Base(s.path), string(newCompoundName))
 			}
 		}
 		totalShards += len(comp.shards)
@@ -202,27 +218,30 @@ func generateCompounds(shards []candidate, targetSizeBytes int64) []compound {
 	return compounds
 }
 
-func callMerge(shards []candidate) error {
+func callMerge(shards []candidate) ([]byte, []byte, error) {
 	if len(shards) <= 1 {
-		return nil
+		return nil, nil, nil
 	}
 
 	cmd := exec.Command("zoekt-merge-index", "-")
+
+	outBuf := &bytes.Buffer{}
+	errBuf := &bytes.Buffer{}
+	cmd.Stdout = outBuf
+	cmd.Stderr = errBuf
+
 	wc, err := cmd.StdinPipe()
 	if err != nil {
-		return err
-	}
-	defer wc.Close()
-
-	err = cmd.Start()
-	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	for _, s := range shards {
-		io.WriteString(wc, fmt.Sprintf("%s\n", s.path))
-	}
-	wc.Close()
+	go func() {
+		for _, s := range shards {
+			io.WriteString(wc, fmt.Sprintf("%s\n", s.path))
+		}
+		wc.Close()
+	}()
 
-	return cmd.Wait()
+	err = cmd.Run()
+	return outBuf.Bytes(), errBuf.Bytes(), err
 }
