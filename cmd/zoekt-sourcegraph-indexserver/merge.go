@@ -154,7 +154,7 @@ func isExcluded(path string) bool {
 		return true
 	}
 
-	if rank, err := strconv.Atoi(repos[0].RawConfig["rank"]); err == nil && rank > 100 {
+	if priority, err := strconv.ParseFloat(repos[0].RawConfig["priority"], 64); err == nil && priority > 100 {
 		return true
 	}
 
