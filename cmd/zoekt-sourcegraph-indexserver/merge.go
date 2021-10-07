@@ -140,6 +140,10 @@ func hasMultipleShards(path string) bool {
 }
 
 func isExcluded(path string) bool {
+	if hasMultipleShards(path) {
+		return true
+	}
+
 	repos, _, err := zoekt.ReadMetadataPath(path)
 	if err != nil {
 		debug.Printf("failed to load metadata for %s\n", filepath.Base(path))
@@ -155,10 +159,6 @@ func isExcluded(path string) bool {
 	}
 
 	if priority, err := strconv.ParseFloat(repos[0].RawConfig["priority"], 64); err == nil && priority > 100 {
-		return true
-	}
-
-	if hasMultipleShards(path) {
 		return true
 	}
 
