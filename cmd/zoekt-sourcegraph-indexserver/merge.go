@@ -47,13 +47,13 @@ func doMerge(params string) error {
 	}
 
 	shards, excluded := loadCandidates(dir)
-	debug.Printf("found %d candidate shards, %d repos were excluded\n", len(shards), excluded)
+	debug.Printf("merging: found %d candidate shards, %d repos were excluded\n", len(shards), excluded)
 	if len(shards) == 0 {
 		return nil
 	}
 
 	compounds := generateCompounds(shards, targetSizeBytes)
-	debug.Printf("generated %d compounds\n", len(compounds))
+	debug.Printf("merging: generated %d compounds\n", len(compounds))
 	if len(compounds) == 0 {
 		return nil
 	}
