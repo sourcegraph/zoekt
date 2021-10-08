@@ -79,7 +79,8 @@ func doMerge(params string) error {
 				os.Remove(s.path)
 			}
 			if err != nil {
-				return fmt.Errorf("%s: %s", stdErr, err)
+				debug.Printf("error during merging compound %d, stdErr: %s, err: %s\n", ix, stdErr, err)
+				continue
 			}
 			// for len(comp.shards)<=1, callMerge is a NOP. Hence there is no need to log
 			// anything here.
