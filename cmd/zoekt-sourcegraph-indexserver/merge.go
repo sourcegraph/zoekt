@@ -81,10 +81,14 @@ func doMerge(params string) error {
 			if err != nil {
 				return fmt.Errorf("%s: %s", stdErr, err)
 			}
-			newCompoundName := reCompound.Find(stdErr)
-			now := time.Now()
-			for _, s := range comp.shards {
-				_, _ = fmt.Fprintf(wc, "%d\t%s\t%s\t%s\n", now.UTC().Unix(), "merge", filepath.Base(s.path), string(newCompoundName))
+			// for len(comp.shards)<=1, callMerge is a NOP. Hence there is no need to log
+			// anything here.
+			if len(comp.shards) > 1 {
+				newCompoundName := reCompound.Find(stdErr)
+				now := time.Now()
+				for _, s := range comp.shards {
+					_, _ = fmt.Fprintf(wc, "%d\t%s\t%s\t%s\n", now.UTC().Unix(), "merge", filepath.Base(s.path), string(newCompoundName))
+				}
 			}
 		}
 		totalShards += len(comp.shards)
@@ -218,6 +222,8 @@ func generateCompounds(shards []candidate, targetSizeBytes int64) []compound {
 	return compounds
 }
 
+// callMerge calls zoekt-merge-index and caputures its output. callMerge is a NOP
+// if len(shards) <= 1.
 func callMerge(shards []candidate) ([]byte, []byte, error) {
 	if len(shards) <= 1 {
 		return nil, nil, nil
