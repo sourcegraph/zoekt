@@ -695,6 +695,7 @@ func main() {
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repositories then quit.")
 	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
 	debugMeta := flag.String("debug-meta", "", "do not start the indexserver, rather print shard metadata then quit.")
+	debugMerge := flag.String("debug-merge", "", "index dir,compound target size in MiB,simulate(true,false)")
 
 	_ = flag.Bool("exp-git-index", true, "DEPRECATED: not read anymore. We always use zoekt-git-index now.")
 
@@ -706,7 +707,7 @@ func main() {
 	if *index == "" {
 		log.Fatal("must set -index")
 	}
-	needSourcegraph := !(*debugShard != "" || *debugMeta != "")
+	needSourcegraph := !(*debugShard != "" || *debugMeta != "" || *debugMerge != "")
 	if *root == "" && needSourcegraph {
 		log.Fatal("must set -sourcegraph_url")
 	}
@@ -739,7 +740,7 @@ func main() {
 		}
 	}
 
-	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != ""
+	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != "" || *debugMerge != ""
 
 	if err := setupTmpDir(*index, !isDebugCmd); err != nil {
 		log.Fatalf("failed to setup TMPDIR under %s: %v", *index, err)
@@ -808,6 +809,14 @@ func main() {
 
 	if *debugMeta != "" {
 		err = printMetaData(*debugMeta)
+		if err != nil {
+			log.Fatal(err)
+		}
+		os.Exit(0)
+	}
+
+	if *debugMerge != "" {
+		err = doMerge(*debugMerge)
 		if err != nil {
 			log.Fatal(err)
 		}
