@@ -18,7 +18,14 @@ import (
 	"time"
 
 	"github.com/google/zoekt"
+	"github.com/google/zoekt/query"
 )
+
+type ApiSearchResult struct {
+	Result     *ResultInput             `json:"result,omitempty"`
+	Repos      *RepoListInput           `json:"repos,omitempty"`
+	Suggestion *query.SuggestQueryError `json:"suggestion,omitempty"`
+}
 
 type LastInput struct {
 	Query string
@@ -36,7 +43,7 @@ type ResultInput struct {
 	Stats         zoekt.Stats
 	Duration      time.Duration
 	FileMatches   []*FileMatch
-	SearchOptions string
+	SearchOptions zoekt.SearchOptions
 }
 
 // FileMatch holds the per file data provided to search results template
