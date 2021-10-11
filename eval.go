@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	"github.com/google/zoekt/query"
-	"golang.org/x/net/trace"
 )
 
 const maxUInt16 = 0xffff
@@ -143,22 +142,7 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 	default:
 	}
 
-	tr := trace.New("indexData.Search", d.file.Name())
-	tr.LazyPrintf("opts: %+v", opts)
-	defer func() {
-		if sr != nil {
-			tr.LazyPrintf("num files: %d", len(sr.Files))
-			tr.LazyPrintf("stats: %+v", sr.Stats)
-		}
-		if err != nil {
-			tr.LazyPrintf("error: %v", err)
-			tr.SetError()
-		}
-		tr.Finish()
-	}()
-
 	q = d.simplify(q)
-	tr.LazyLog(q, true)
 	if c, ok := q.(*query.Const); ok && !c.Value {
 		return &res, nil
 	}
@@ -468,25 +452,9 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 }
 
 func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl *RepoList, err error) {
-	tr := trace.New("indexData.List", d.file.Name())
-	tr.LazyPrintf("opts: %s", opts)
-	defer func() {
-		if rl != nil {
-			tr.LazyPrintf("repos size: %d", len(rl.Repos))
-			tr.LazyPrintf("crashes: %d", rl.Crashes)
-			tr.LazyPrintf("minimal size: %d", len(rl.Minimal))
-		}
-		if err != nil {
-			tr.LazyPrintf("error: %v", err)
-			tr.SetError()
-		}
-		tr.Finish()
-	}()
-
 	var include func(rle *RepoListEntry) (bool, error)
 
 	q = d.simplify(q)
-	tr.LazyLog(q, true)
 	if c, ok := q.(*query.Const); ok {
 		if !c.Value {
 			return &RepoList{}, nil
