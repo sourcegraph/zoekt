@@ -115,6 +115,12 @@ var (
 		Help: "Total number of candidate matches as a result of searching ngrams",
 	})
 
+	metricSearchAggregateDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "zoekt_search_aggregate_duration_seconds",
+		Help:    "The duration a search request aggregation took in seconds",
+		Buckets: prometheus.DefBuckets, // DefBuckets good for service timings
+	}, []string{"section"})
+
 	metricListRunning = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "zoekt_list_running",
 		Help: "The number of concurrent list requests running",
@@ -435,8 +441,12 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	start = time.Now()
 
 	err = ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
+		began := time.Now()
+
 		aggregate.Lock()
 		defer aggregate.Unlock()
+
+		metricSearchAggregateDuration.WithLabelValues("lock").Observe(time.Since(began).Seconds())
 
 		aggregate.Stats.Add(r.Stats)
 
@@ -451,10 +461,14 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 			}
 		}
 
+		metricSearchAggregateDuration.WithLabelValues("aggregate").Observe(time.Since(began).Seconds())
+
 		if cancel != nil && opts.TotalMaxMatchCount > 0 && aggregate.Stats.MatchCount > opts.TotalMaxMatchCount {
 			cancel()
 			cancel = nil
 		}
+
+		metricSearchAggregateDuration.WithLabelValues("total").Observe(time.Since(began).Seconds())
 	}))
 	if err != nil {
 		return nil, err
