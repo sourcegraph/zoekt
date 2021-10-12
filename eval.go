@@ -71,6 +71,9 @@ func (o *SearchOptions) SetDefaults() {
 	if o.TotalMaxImportantMatch == 0 {
 		o.TotalMaxImportantMatch = 10 * o.ShardMaxImportantMatch
 	}
+	if o.NumContextLines > 5 {
+		o.NumContextLines = 5
+	}
 }
 
 func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) (sr *SearchResult, err error) {
@@ -223,7 +226,7 @@ nextFileMatch:
 					byteMatchSz:   uint32(len(nm)),
 				})
 		}
-		fileMatch.LineMatches = cp.fillMatches(finalCands)
+		fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines)
 
 		maxFileScore := 0.0
 		for i := range fileMatch.LineMatches {

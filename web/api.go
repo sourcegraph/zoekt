@@ -68,6 +68,8 @@ type Match struct {
 	LineNum  int
 
 	Fragments []Fragment
+	Before    []string
+	After     []string
 }
 
 // Fragment holds data of a single contiguous match within in a line

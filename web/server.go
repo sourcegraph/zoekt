@@ -174,14 +174,14 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 }
 
 func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
-	qvals := r.URL.Query()
-	useJson := qvals.Get("format") == "json"
-	var buf bytes.Buffer
-
 	result, err := s.serveSearchErr(r)
 	if suggest, ok := err.(*query.SuggestQueryError); ok {
 		result = &ApiSearchResult{Suggestion: suggest}
 	}
+
+	qvals := r.URL.Query()
+	useJson := qvals.Get("format") == "json"
+	var buf bytes.Buffer
 
 	if err == nil && !useJson {
 		if result.Repos != nil {
@@ -250,6 +250,13 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 	sOpts := zoekt.SearchOptions{
 		MaxWallTime: 10 * time.Second,
 	}
+
+	ctxLinesStr := qvals.Get("ctx")
+	numCtxLines, err := strconv.Atoi(ctxLinesStr)
+	if err != nil || numCtxLines < 0 {
+		numCtxLines = 0
+	}
+	sOpts.NumContextLines = numCtxLines
 
 	sOpts.SetDefaults()
 

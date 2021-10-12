@@ -131,7 +131,7 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
-func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
+func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
 	var result []LineMatch
 	if ms[0].fileName {
 		// There is only "line" in a filename.
@@ -151,7 +151,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 		}
 	} else {
 		ms = breakMatchesOnNewlines(ms, p.data(false))
-		result = p.fillContentMatches(ms)
+		result = p.fillContentMatches(ms, numContextLines)
 	}
 
 	sects := p.docSections()
@@ -162,7 +162,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 	return result
 }
 
-func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
+func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
 	var result []LineMatch
 	for len(ms) > 0 {
 		m := ms[0]
@@ -212,6 +212,31 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
 			LineNumber: num,
 		}
 		finalMatch.Line = data[lineStart:lineEnd]
+
+		if numContextLines > 0 {
+			var before [][]byte
+			var after [][]byte
+			lineNum := 0
+			prev := -1
+			for lineNum < num+numContextLines && prev < len(data) {
+				next := bytes.IndexByte(data[prev+1:], '\n')
+				if next == -1 {
+					next = len(data)
+				} else {
+					next += prev + 1
+				}
+				lineNum += 1
+				if (lineNum < num) && (num-lineNum <= numContextLines) {
+					before = append(before, data[prev+1:next])
+				}
+				if (lineNum > num) && (lineNum-num <= numContextLines) {
+					after = append(after, data[prev+1:next])
+				}
+				prev = next
+			}
+			finalMatch.LinesBefore = before
+			finalMatch.LinesAfter = after
+		}
 
 		for _, m := range lineCands {
 			fragment := LineFragmentMatch{
