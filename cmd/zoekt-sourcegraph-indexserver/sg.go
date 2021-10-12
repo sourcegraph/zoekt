@@ -148,7 +148,7 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 
 	opts := IndexOptions{
 		// magic at the end is to ensure we get a positive number when casting.
-		RepoID:  int32(crc32.ChecksumIEEE([]byte(name))%(1<<31-1) + 1),
+		RepoID:  uint32(crc32.ChecksumIEEE([]byte(name))%(1<<31-1) + 1),
 		Name:    name,
 		Symbols: true,
 	}

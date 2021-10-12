@@ -12,12 +12,12 @@ func TestQueue(t *testing.T) {
 	queue := &Queue{}
 
 	for i := 0; i < 100; i++ {
-		queue.AddOrUpdate(mkHEADIndexOptions(fmt.Sprintf("item-%d", i), strconv.Itoa(i)))
+		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
 	}
 
 	// Odd numbers are already at the same commit
 	for i := 1; i < 100; i += 2 {
-		queue.SetIndexed(mkHEADIndexOptions(fmt.Sprintf("item-%d", i), strconv.Itoa(i)), indexStateSuccess)
+		queue.SetIndexed(mkHEADIndexOptions(i, strconv.Itoa(i)), indexStateSuccess)
 	}
 
 	// Ensure we process all the even commits first, then odd.
@@ -50,7 +50,7 @@ func TestQueueFIFO(t *testing.T) {
 	queue := &Queue{}
 
 	for i := 0; i < 100; i++ {
-		queue.AddOrUpdate(mkHEADIndexOptions(fmt.Sprintf("item-%d", i), strconv.Itoa(i)))
+		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
 	}
 
 	want := 0
@@ -74,8 +74,8 @@ func TestQueueFIFO(t *testing.T) {
 func TestQueue_MaybeRemoveMissing(t *testing.T) {
 	queue := &Queue{}
 
-	queue.AddOrUpdate(mkHEADIndexOptions("foo", "foo"))
-	queue.AddOrUpdate(mkHEADIndexOptions("bar", "bar"))
+	queue.AddOrUpdate(IndexOptions{RepoID: 1, Name: "foo"})
+	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
 	queue.MaybeRemoveMissing([]string{"bar"})
 
 	opts, _ := queue.Pop()
@@ -88,9 +88,10 @@ func TestQueue_MaybeRemoveMissing(t *testing.T) {
 	}
 }
 
-func mkHEADIndexOptions(name, version string) IndexOptions {
+func mkHEADIndexOptions(id int, version string) IndexOptions {
 	return IndexOptions{
-		Name:     name,
+		RepoID:   uint32(id),
+		Name:     fmt.Sprintf("item-%d", id),
 		Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: version}},
 	}
 }

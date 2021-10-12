@@ -36,7 +36,7 @@ type IndexOptions struct {
 	Branches []zoekt.RepositoryBranch
 
 	// RepoID is the Sourcegraph Repository ID.
-	RepoID int32
+	RepoID uint32
 
 	// Name is the Repository Name.
 	Name string
