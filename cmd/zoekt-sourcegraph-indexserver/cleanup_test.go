@@ -20,9 +20,10 @@ import (
 func TestCleanup(t *testing.T) {
 	mk := func(name string, n int, mtime time.Time) shard {
 		return shard{
-			Repo:    name,
-			Path:    fmt.Sprintf("%s_v%d.%05d.zoekt", url.QueryEscape(name), 15, n),
-			ModTime: mtime,
+			RepoID:   fakeID(name),
+			RepoName: name,
+			Path:     fmt.Sprintf("%s_v%d.%05d.zoekt", url.QueryEscape(name), 15, n),
+			ModTime:  mtime,
 		}
 	}
 	// We don't use getShards so that we have two implementations of the same
@@ -39,9 +40,10 @@ func TestCleanup(t *testing.T) {
 			fi, _ := os.Stat(path)
 			for _, repo := range repos {
 				shards = append(shards, shard{
-					Repo:    repo.Name,
-					Path:    filepath.Base(path),
-					ModTime: fi.ModTime(),
+					RepoID:   repo.ID,
+					RepoName: repo.Name,
+					Path:     filepath.Base(path),
+					ModTime:  fi.ModTime(),
 				})
 			}
 		}
@@ -128,7 +130,7 @@ func TestCleanup(t *testing.T) {
 				fs = append(fs, f)
 			}
 			for _, f := range fs {
-				createEmptyShard(t, f.Repo, f.Path)
+				createEmptyShard(t, f.RepoName, f.Path)
 				if err := os.Chtimes(f.Path, f.ModTime, f.ModTime); err != nil {
 					t.Fatal(err)
 				}
@@ -143,7 +145,11 @@ func TestCleanup(t *testing.T) {
 				}
 			}
 
-			cleanup(dir, tt.repos, now)
+			var repoIDs []uint32
+			for _, name := range tt.repos {
+				repoIDs = append(repoIDs, fakeID(name))
+			}
+			cleanup(dir, repoIDs, now)
 
 			if d := cmp.Diff(tt.wantIndex, glob(filepath.Join(dir, "*.zoekt"))); d != "" {
 				t.Errorf("unexpected index (-want, +got):\n%s", d)
@@ -171,7 +177,10 @@ func createEmptyShard(t *testing.T, repo, path string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{Name: repo})
+	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+		ID:   fakeID(repo),
+		Name: repo,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +244,7 @@ func TestRemoveIncompleteShards(t *testing.T) {
 func TestVacuum(t *testing.T) {
 	fn := createCompoundShard(t)
 
-	err := zoekt.SetTombstone(fn, "repo2")
+	err := zoekt.SetTombstone(fn, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,13 +296,14 @@ func createCompoundShard(t *testing.T) string {
 
 	dir := t.TempDir()
 
-	repoNames := []string{"repo0", "repo1", "repo2", "repo3"}
+	repoNames := []string{"repo1", "repo2", "repo3", "repo4"}
 	var repoFns []string
 
-	for _, name := range repoNames {
+	for i, name := range repoNames {
 		opts := build.Options{
 			IndexDir: dir,
 			RepositoryDescription: zoekt.Repository{
+				ID:   uint32(i + 1),
 				Name: name,
 				RawConfig: map[string]string{
 					"public": "1",

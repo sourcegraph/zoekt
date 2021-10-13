@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
 // back into indexDir. Additionally it uses now to remove shards that have
 // been in the trash for 24 hours. It also deletes .tmp files older than 4 hours.
-func cleanup(indexDir string, repos []string, now time.Time) {
+func cleanup(indexDir string, repos []uint32, now time.Time) {
 	start := time.Now()
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
@@ -56,7 +57,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			continue
 		}
 
-		log.Printf("removing old shards from trash for %s", repo)
+		log.Printf("removing old shards from trash for %v", repo)
 		removeAll(shards...)
 		delete(trash, repo)
 	}
@@ -72,9 +73,9 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			continue
 		}
 
-		log.Printf("restoring shards from trash for %s", repo)
+		log.Printf("restoring shards from trash for %v", repo)
 		moveAll(indexDir, shards)
-		shardsLog(indexDir, "restore", shards, repo)
+		shardsLog(indexDir, "restore", shards, strconv.Itoa(int(repo)))
 	}
 
 	// index: Move non-existent repos into trash
@@ -90,16 +91,16 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
 			// shard at index 0.
 			if len(shards) == 1 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
-				shardsLog(indexDir, "tomb", shards, repo)
+				shardsLog(indexDir, "tomb", shards, strconv.Itoa(int(repo)))
 				if err := zoekt.SetTombstone(shards[0].Path, repo); err != nil {
-					log.Printf("error setting tombstone for %s in shard %s: %s. Removing shard\n", repo, shards[0].Path, err)
+					log.Printf("error setting tombstone for %v in shard %s: %s. Removing shard\n", repo, shards[0].Path, err)
 					_ = os.Remove(shards[0].Path)
 				}
 				continue
 			}
 		}
 		moveAll(trashDir, shards)
-		shardsLog(indexDir, "remove", shards, repo)
+		shardsLog(indexDir, "remove", shards, strconv.Itoa(int(repo)))
 	}
 
 	// Remove old .tmp files from crashed indexer runs-- for example, if
@@ -124,12 +125,13 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 }
 
 type shard struct {
-	Repo    string
-	Path    string
-	ModTime time.Time
+	RepoID   uint32
+	RepoName string
+	Path     string
+	ModTime  time.Time
 }
 
-func getShards(dir string) map[string][]shard {
+func getShards(dir string) map[uint32][]shard {
 	d, err := os.Open(dir)
 	if err != nil {
 		debug.Printf("failed to getShards: %s", dir)
@@ -139,7 +141,7 @@ func getShards(dir string) map[string][]shard {
 	names, _ := d.Readdirnames(-1)
 	sort.Strings(names)
 
-	shards := make(map[string][]shard, len(names))
+	shards := make(map[uint32][]shard, len(names))
 	for _, n := range names {
 		path := filepath.Join(dir, n)
 		fi, err := os.Stat(path)
@@ -158,10 +160,11 @@ func getShards(dir string) map[string][]shard {
 		}
 
 		for _, repo := range repos {
-			shards[repo.Name] = append(shards[repo.Name], shard{
-				Repo:    repo.Name,
-				Path:    path,
-				ModTime: fi.ModTime(),
+			shards[repo.ID] = append(shards[repo.ID], shard{
+				RepoID:   repo.ID,
+				RepoName: repo.Name,
+				Path:     path,
+				ModTime:  fi.ModTime(),
 			})
 		}
 	}
@@ -215,7 +218,7 @@ func moveAll(dstDir string, shards []shard) {
 	for i, shard := range shards {
 		paths, err := zoekt.IndexFilePaths(shard.Path)
 		if err != nil {
-			log.Printf("failed to stat shard paths, deleting all shards for %s: %v", shard.Repo, err)
+			log.Printf("failed to stat shard paths, deleting all shards for %s: %v", shard.RepoName, err)
 			removeAll(shards...)
 			return
 		}
@@ -244,7 +247,7 @@ func moveAll(dstDir string, shards []shard) {
 		}
 
 		if err != nil {
-			log.Printf("failed to move shard, deleting all shards for %s: %v", shard.Repo, err)
+			log.Printf("failed to move shard, deleting all shards for %s: %v", shard.RepoName, err)
 			removeAll(dstShard) // some files may have moved to dst
 			removeAll(shards...)
 			return

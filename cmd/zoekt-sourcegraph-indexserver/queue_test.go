@@ -76,7 +76,7 @@ func TestQueue_MaybeRemoveMissing(t *testing.T) {
 
 	queue.AddOrUpdate(IndexOptions{RepoID: 1, Name: "foo"})
 	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
-	queue.MaybeRemoveMissing([]string{"bar"})
+	queue.MaybeRemoveMissing([]uint32{2})
 
 	opts, _ := queue.Pop()
 	if opts.Name != "bar" {

@@ -21,7 +21,7 @@ func TestSetTombstone(t *testing.T) {
 	dir := t.TempDir()
 	ghostShard := filepath.Join(dir, "test.zoekt")
 
-	SetTombstone(ghostShard, "r2")
+	SetTombstone(ghostShard, 2)
 
 	blob := readMeta(ghostShard)
 	gotRepos := []*Repository{}
@@ -39,7 +39,7 @@ func TestSetTombstone(t *testing.T) {
 		t.Fatal("r3 should have been alive")
 	}
 
-	SetTombstone(ghostShard, "r1")
+	SetTombstone(ghostShard, 1)
 
 	blob = readMeta(ghostShard)
 	gotRepos = nil
@@ -60,8 +60,8 @@ func TestSetTombstone(t *testing.T) {
 
 func mkRepos(repoNames ...string) []*Repository {
 	ret := make([]*Repository, 0, len(repoNames))
-	for _, n := range repoNames {
-		ret = append(ret, &Repository{Name: n})
+	for i, n := range repoNames {
+		ret = append(ret, &Repository{ID: uint32(i + 1), Name: n})
 	}
 	return ret
 }

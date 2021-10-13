@@ -17,7 +17,7 @@ func TombstonesEnabled(dir string) bool {
 var mockRepos []*Repository
 
 // SetTombstone idempotently sets a tombstone for repoName in .meta.
-func SetTombstone(shardPath string, repoName string) error {
+func SetTombstone(shardPath string, repoID uint32) error {
 	var repos []*Repository
 	var err error
 
@@ -31,7 +31,7 @@ func SetTombstone(shardPath string, repoName string) error {
 	}
 
 	for _, repo := range repos {
-		if repo.Name == repoName {
+		if repo.ID == repoID {
 			repo.Tombstone = true
 		}
 	}
