@@ -45,7 +45,7 @@ func TestServer_defaultArgs(t *testing.T) {
 	}
 }
 
-func TestListRepos(t *testing.T) {
+func TestListRepoIDs(t *testing.T) {
 	var gotBody string
 	var gotURL *url.URL
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +75,7 @@ func TestListRepos(t *testing.T) {
 		Client:   retryablehttp.NewClient(),
 	}
 
-	gotRepos, err := s.ListRepos(context.Background(), []string{"foo", "bam"})
+	gotRepos, err := s.ListRepoNames(context.Background(), []string{"foo", "bam"})
 	if err != nil {
 		t.Fatal(err)
 	}

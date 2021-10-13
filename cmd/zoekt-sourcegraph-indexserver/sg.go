@@ -15,15 +15,21 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strconv"
 
 	"github.com/google/zoekt"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 )
 
 type Sourcegraph interface {
-	GetIndexOptions(repos ...string) ([]indexOptionsItem, error)
+	GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error)
 	GetCloneURL(name string) string
-	ListRepos(ctx context.Context, indexed []string) ([]string, error)
+	ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error)
+
+	// Deprecated. Included to minimize diff sizes.
+	GetIndexOptionsName(repos ...string) ([]indexOptionsItem, error)
+	// Deprecated. Included to minimize diff sizes.
+	ListRepoNames(ctx context.Context, indexed []string) ([]string, error)
 }
 
 // sourcegraphClient contains methods which interact with the sourcegraph API.
@@ -46,7 +52,7 @@ type indexOptionsItem struct {
 	Error string
 }
 
-func (s *sourcegraphClient) GetIndexOptions(repos ...string) ([]indexOptionsItem, error) {
+func (s *sourcegraphClient) GetIndexOptionsName(repos ...string) ([]indexOptionsItem, error) {
 	u := s.Root.ResolveReference(&url.URL{
 		Path: "/.internal/search/configuration",
 	})
@@ -85,11 +91,50 @@ func (s *sourcegraphClient) GetIndexOptions(repos ...string) ([]indexOptionsItem
 	return opts, nil
 }
 
+func (s *sourcegraphClient) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error) {
+	u := s.Root.ResolveReference(&url.URL{
+		Path: "/.internal/search/configuration",
+	})
+
+	repoIDs := make([]string, len(repos))
+	for i, id := range repos {
+		repoIDs[i] = strconv.Itoa(int(id))
+	}
+	resp, err := s.Client.PostForm(u.String(), url.Values{"repoID": repoIDs})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, &url.Error{
+			Op:  "Get",
+			URL: u.String(),
+			Err: fmt.Errorf("%s: %s", resp.Status, string(b)),
+		}
+	}
+
+	opts := make([]indexOptionsItem, len(repos))
+	dec := json.NewDecoder(resp.Body)
+	for i := range opts {
+		if err := dec.Decode(&opts[i]); err != nil {
+			return nil, fmt.Errorf("error decoding body: %w", err)
+		}
+	}
+
+	return opts, nil
+}
+
 func (s *sourcegraphClient) GetCloneURL(name string) string {
 	return s.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", name)}).String()
 }
 
-func (s *sourcegraphClient) ListRepos(ctx context.Context, indexed []string) ([]string, error) {
+func (s *sourcegraphClient) ListRepoNames(ctx context.Context, indexed []string) ([]string, error) {
 	body, err := json.Marshal(&struct {
 		Hostname string
 		Indexed  []string
@@ -125,12 +170,48 @@ func (s *sourcegraphClient) ListRepos(ctx context.Context, indexed []string) ([]
 	return data.RepoNames, nil
 }
 
+func (s *sourcegraphClient) ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
+	body, err := json.Marshal(&struct {
+		Hostname   string
+		IndexedIDs []uint32
+	}{
+		Hostname:   s.Hostname,
+		IndexedIDs: indexed,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	u := s.Root.ResolveReference(&url.URL{Path: "/.internal/repos/index"})
+	resp, err := s.Client.Post(u.String(), "application/json; charset=utf8", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to list repositories: status %s", resp.Status)
+	}
+
+	var data struct {
+		RepoIDs []uint32
+	}
+	err = json.NewDecoder(resp.Body).Decode(&data)
+	if err != nil {
+		return nil, err
+	}
+
+	metricNumAssigned.Set(float64(len(data.RepoIDs)))
+
+	return data.RepoIDs, nil
+}
+
 type sourcegraphFake struct {
 	RootDir string
 	Log     *log.Logger
 }
 
-func (sf sourcegraphFake) GetIndexOptions(repos ...string) ([]indexOptionsItem, error) {
+func (sf sourcegraphFake) GetIndexOptionsName(repos ...string) ([]indexOptionsItem, error) {
 	var items []indexOptionsItem
 	for _, name := range repos {
 		opts, err := sf.getIndexOptions(name)
@@ -143,12 +224,44 @@ func (sf sourcegraphFake) GetIndexOptions(repos ...string) ([]indexOptionsItem, 
 	return items, nil
 }
 
+func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error) {
+	reposIdx := map[uint32]int{}
+	for i, id := range repos {
+		reposIdx[id] = i
+	}
+
+	items := make([]indexOptionsItem, len(repos))
+	err := sf.visitRepos(func(name string) {
+		idx, ok := reposIdx[fakeID(name)]
+		if !ok {
+			return
+		}
+		opts, err := sf.getIndexOptions(name)
+		if err != nil {
+			items[idx] = indexOptionsItem{Error: err.Error()}
+		} else {
+			items[idx] = indexOptionsItem{IndexOptions: opts}
+		}
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range items {
+		if items[i].Error == "" && items[i].RepoID == 0 {
+			items[i].Error = "not found"
+		}
+	}
+
+	return items, nil
+}
+
 func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	dir := filepath.Join(sf.RootDir, filepath.FromSlash(name))
 
 	opts := IndexOptions{
-		// magic at the end is to ensure we get a positive number when casting.
-		RepoID:  uint32(crc32.ChecksumIEEE([]byte(name))%(1<<31-1) + 1),
+		RepoID:  fakeID(name),
 		Name:    name,
 		Symbols: true,
 	}
@@ -180,9 +293,25 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 func (sf sourcegraphFake) GetCloneURL(name string) string {
 	return filepath.Join(sf.RootDir, filepath.FromSlash(name))
 }
-func (sf sourcegraphFake) ListRepos(ctx context.Context, indexed []string) ([]string, error) {
+
+func (sf sourcegraphFake) ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
+	var repos []uint32
+	err := sf.visitRepos(func(name string) {
+		repos = append(repos, fakeID(name))
+	})
+	return repos, err
+}
+
+func (sf sourcegraphFake) ListRepoNames(ctx context.Context, indexed []string) ([]string, error) {
 	var repos []string
-	err := filepath.Walk(sf.RootDir, func(path string, fi os.FileInfo, fileErr error) error {
+	err := sf.visitRepos(func(name string) {
+		repos = append(repos, name)
+	})
+	return repos, err
+}
+
+func (sf sourcegraphFake) visitRepos(visit func(name string)) error {
+	return filepath.Walk(sf.RootDir, func(path string, fi os.FileInfo, fileErr error) error {
 		if fileErr != nil {
 			sf.Log.Printf("WARN: ignoring error searching %s: %v", path, fileErr)
 			return nil
@@ -204,9 +333,14 @@ func (sf sourcegraphFake) ListRepos(ctx context.Context, indexed []string) ([]st
 		}
 
 		name := filepath.ToSlash(subpath)
-		repos = append(repos, name)
+		visit(name)
 
 		return filepath.SkipDir
 	})
-	return repos, err
+}
+
+// fakeID returns a deterministic ID based on name. Used for fakes and tests.
+func fakeID(name string) uint32 {
+	// magic at the end is to ensure we get a positive number when casting.
+	return uint32(crc32.ChecksumIEEE([]byte(name))%(1<<31-1) + 1)
 }

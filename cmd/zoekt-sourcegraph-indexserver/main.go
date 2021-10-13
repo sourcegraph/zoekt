@@ -254,7 +254,7 @@ func (s *Server) Run() {
 				continue
 			}
 
-			repos, err := s.Sourcegraph.ListRepos(context.Background(), listIndexed(s.IndexDir))
+			repos, err := s.Sourcegraph.ListRepoNames(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
 				log.Println(err)
 				continue
@@ -283,7 +283,7 @@ func (s *Server) Run() {
 			// We ask the frontend to get index options in batches.
 			for repos := range batched(repos, s.BatchSize) {
 				start := time.Now()
-				opts, err := s.Sourcegraph.GetIndexOptions(repos...)
+				opts, err := s.Sourcegraph.GetIndexOptionsName(repos...)
 				if err != nil {
 					metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
 					tr.LazyPrintf("failed fetching options batch: %v", err)
@@ -547,7 +547,7 @@ func (s *Server) serveEnqueueForIndex(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	debug.Printf("enqueueRepoForIndex called with repo: %q", name)
-	opts, err := s.Sourcegraph.GetIndexOptions(name)
+	opts, err := s.Sourcegraph.GetIndexOptionsName(name)
 	if err != nil || opts[0].Error != "" {
 		http.Error(rw, "fetching index options", http.StatusInternalServerError)
 		return
@@ -558,7 +558,7 @@ func (s *Server) serveEnqueueForIndex(rw http.ResponseWriter, r *http.Request) {
 // forceIndex will run the index job for repo name now. It will return always
 // return a string explaining what it did, even if it failed.
 func (s *Server) forceIndex(name string) (string, error) {
-	opts, err := s.Sourcegraph.GetIndexOptions(name)
+	opts, err := s.Sourcegraph.GetIndexOptionsName(name)
 	if err != nil {
 		return fmt.Sprintf("Indexing %s failed: %v", name, err), err
 	}
@@ -774,7 +774,7 @@ func main() {
 	}
 
 	if *debugList {
-		repos, err := s.Sourcegraph.ListRepos(context.Background(), listIndexed(s.IndexDir))
+		repos, err := s.Sourcegraph.ListRepoNames(context.Background(), listIndexed(s.IndexDir))
 		if err != nil {
 			log.Fatal(err)
 		}
