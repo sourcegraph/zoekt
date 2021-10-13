@@ -24,7 +24,7 @@ import (
 type Sourcegraph interface {
 	GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error)
 	GetCloneURL(name string) string
-	ListRepos(ctx context.Context, indexed []uint32) ([]uint32, error)
+	ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error)
 
 	// Deprecated. Included to minimize diff sizes.
 	GetIndexOptionsName(repos ...string) ([]indexOptionsItem, error)
@@ -170,7 +170,7 @@ func (s *sourcegraphClient) ListRepoNames(ctx context.Context, indexed []string)
 	return data.RepoNames, nil
 }
 
-func (s *sourcegraphClient) ListRepos(ctx context.Context, indexed []uint32) ([]uint32, error) {
+func (s *sourcegraphClient) ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
 	body, err := json.Marshal(&struct {
 		Hostname   string
 		IndexedIDs []uint32
@@ -294,7 +294,7 @@ func (sf sourcegraphFake) GetCloneURL(name string) string {
 	return filepath.Join(sf.RootDir, filepath.FromSlash(name))
 }
 
-func (sf sourcegraphFake) ListRepos(ctx context.Context, indexed []uint32) ([]uint32, error) {
+func (sf sourcegraphFake) ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
 	var repos []uint32
 	err := sf.visitRepos(func(name string) {
 		repos = append(repos, sf.id(name))
