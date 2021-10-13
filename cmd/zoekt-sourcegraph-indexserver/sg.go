@@ -29,7 +29,7 @@ type Sourcegraph interface {
 	// Deprecated. Included to minimize diff sizes.
 	GetIndexOptionsName(repos ...string) ([]indexOptionsItem, error)
 	// Deprecated. Included to minimize diff sizes.
-	ListReposName(ctx context.Context, indexed []string) ([]string, error)
+	ListRepoNames(ctx context.Context, indexed []string) ([]string, error)
 }
 
 // sourcegraphClient contains methods which interact with the sourcegraph API.
@@ -134,7 +134,7 @@ func (s *sourcegraphClient) GetCloneURL(name string) string {
 	return s.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", name)}).String()
 }
 
-func (s *sourcegraphClient) ListReposName(ctx context.Context, indexed []string) ([]string, error) {
+func (s *sourcegraphClient) ListRepoNames(ctx context.Context, indexed []string) ([]string, error) {
 	body, err := json.Marshal(&struct {
 		Hostname string
 		Indexed  []string
@@ -302,7 +302,7 @@ func (sf sourcegraphFake) ListRepos(ctx context.Context, indexed []uint32) ([]ui
 	return repos, err
 }
 
-func (sf sourcegraphFake) ListReposName(ctx context.Context, indexed []string) ([]string, error) {
+func (sf sourcegraphFake) ListRepoNames(ctx context.Context, indexed []string) ([]string, error) {
 	var repos []string
 	err := sf.visitRepos(func(name string) {
 		repos = append(repos, name)

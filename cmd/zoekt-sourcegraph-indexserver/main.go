@@ -254,7 +254,7 @@ func (s *Server) Run() {
 				continue
 			}
 
-			repos, err := s.Sourcegraph.ListReposName(context.Background(), listIndexed(s.IndexDir))
+			repos, err := s.Sourcegraph.ListRepoNames(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
 				log.Println(err)
 				continue
@@ -774,7 +774,7 @@ func main() {
 	}
 
 	if *debugList {
-		repos, err := s.Sourcegraph.ListReposName(context.Background(), listIndexed(s.IndexDir))
+		repos, err := s.Sourcegraph.ListRepoNames(context.Background(), listIndexed(s.IndexDir))
 		if err != nil {
 			log.Fatal(err)
 		}
