@@ -35,11 +35,11 @@ func TestCleanup(t *testing.T) {
 			if filepath.Ext(path) != ".zoekt" {
 				continue
 			}
-			names, _ := shardRepoNames(path)
+			repos, _, _ := zoekt.ReadMetadataPathAlive(path)
 			fi, _ := os.Stat(path)
-			for _, name := range names {
+			for _, repo := range repos {
 				shards = append(shards, shard{
-					Repo:    name,
+					Repo:    repo.Name,
 					Path:    filepath.Base(path),
 					ModTime: fi.ModTime(),
 				})

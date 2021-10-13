@@ -151,33 +151,21 @@ func getShards(dir string) map[string][]shard {
 			continue
 		}
 
-		names, err := shardRepoNames(path)
+		repos, _, err := zoekt.ReadMetadataPathAlive(path)
 		if err != nil {
 			debug.Printf("failed to read shard: %v", err)
 			continue
 		}
 
-		for _, name := range names {
-			shards[name] = append(shards[name], shard{
-				Repo:    name,
+		for _, repo := range repos {
+			shards[repo.Name] = append(shards[repo.Name], shard{
+				Repo:    repo.Name,
 				Path:    path,
 				ModTime: fi.ModTime(),
 			})
 		}
 	}
 	return shards
-}
-
-func shardRepoNames(path string) ([]string, error) {
-	repos, _, err := zoekt.ReadMetadataPathAlive(path)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(repos))
-	for _, repo := range repos {
-		names = append(names, repo.Name)
-	}
-	return names, nil
 }
 
 var incompleteRE = regexp.MustCompile(`\.zoekt[0-9]+(\.\w+)?$`)
