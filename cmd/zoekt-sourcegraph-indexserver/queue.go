@@ -89,6 +89,17 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Unlock()
 }
 
+// Iterate will call f on each item known to the queue, including items that
+// have been popped from the queue. Note: this is done in a random order and
+// the queue mutex is held during all calls to f. Do not mutate the data.
+func (q *Queue) Iterate(f func(*IndexOptions)) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, item := range q.items {
+		f(&item.opts)
+	}
+}
+
 // SetIndexed sets what the currently indexed options are for opts.RepoID.
 func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Lock()
