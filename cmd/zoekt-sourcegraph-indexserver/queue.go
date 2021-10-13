@@ -10,13 +10,13 @@ import (
 )
 
 type queueItem struct {
-	// repoName is the name of the repo
-	repoName string
-	// opts are the options to use when indexing repoName.
+	// repoID is the ID of the repo
+	repoID uint32
+	// opts are the options to use when indexing repoID.
 	opts IndexOptions
 	// indexed is true if opts has been indexed.
 	indexed bool
-	// indexState is the indexState of the last attempt at indexing repoName.
+	// indexState is the indexState of the last attempt at indexing repoID.
 	indexState indexState
 	// heapIdx is the index of the item in the heap. If < 0 then the item is
 	// not on the heap.
@@ -37,13 +37,13 @@ type queueItem struct {
 // * The order of repos returned by Sourcegraph API are ordered by importance.
 type Queue struct {
 	mu    sync.Mutex
-	items map[string]*queueItem
+	items map[uint32]*queueItem
 	pq    pqueue
 	seq   int64
 }
 
-// Pop returns the repoName and opts of the next repo to index. If the queue
-// is empty ok is false.
+// Pop returns the opts of the next repo to index. If the queue is empty ok is
+// false.
 func (q *Queue) Pop() (opts IndexOptions, ok bool) {
 	q.mu.Lock()
 	if len(q.pq) == 0 {
@@ -68,11 +68,11 @@ func (q *Queue) Len() int {
 	return l
 }
 
-// AddOrUpdate sets which opts to index next for repoName. If repoName is
-// already in the queue, it is updated.
+// AddOrUpdate sets which opts to index next. If opts.RepoID is already in the
+// queue, it is updated.
 func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Lock()
-	item := q.get(opts.Name)
+	item := q.get(opts.RepoID)
 	if !reflect.DeepEqual(item.opts, opts) {
 		item.indexed = false
 		item.opts = opts
@@ -89,10 +89,10 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Unlock()
 }
 
-// SetIndexed sets what the currently indexed options are for repoName.
+// SetIndexed sets what the currently indexed options are for opts.RepoID.
 func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Lock()
-	item := q.get(opts.Name)
+	item := q.get(opts.RepoID)
 	item.setIndexState(state)
 	if state != indexStateFail {
 		item.indexed = reflect.DeepEqual(opts, item.opts)
@@ -132,8 +132,8 @@ func (q *Queue) MaybeRemoveMissing(names []string) int {
 	defer q.mu.Unlock()
 
 	count := 0
-	for name, item := range q.items {
-		if _, ok := set[name]; ok {
+	for _, item := range q.items {
+		if _, ok := set[item.opts.Name]; ok {
 			continue
 		}
 
@@ -141,7 +141,7 @@ func (q *Queue) MaybeRemoveMissing(names []string) int {
 			heap.Remove(&q.pq, item.heapIdx)
 		}
 		item.setIndexState("")
-		delete(q.items, name)
+		delete(q.items, item.opts.RepoID)
 		count++
 	}
 
@@ -151,23 +151,23 @@ func (q *Queue) MaybeRemoveMissing(names []string) int {
 	return count
 }
 
-// get returns the item for repoName. If the repoName hasn't been seen before,
-// it is added to q.items.
+// get returns the item for repoID. If the repoID hasn't been seen before, it
+// is added to q.items.
 //
 // Note: get requires that q.mu is held.
-func (q *Queue) get(repoName string) *queueItem {
+func (q *Queue) get(repoID uint32) *queueItem {
 	if q.items == nil {
-		q.items = map[string]*queueItem{}
+		q.items = map[uint32]*queueItem{}
 		q.pq = make(pqueue, 0)
 	}
 
-	item, ok := q.items[repoName]
+	item, ok := q.items[repoID]
 	if !ok {
 		item = &queueItem{
-			repoName: repoName,
-			heapIdx:  -1,
+			repoID:  repoID,
+			heapIdx: -1,
 		}
-		q.items[repoName] = item
+		q.items[repoID] = item
 	}
 
 	return item
