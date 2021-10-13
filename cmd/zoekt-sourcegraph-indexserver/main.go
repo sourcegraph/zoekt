@@ -128,9 +128,6 @@ type Server struct {
 
 	queue Queue
 
-	mu            sync.Mutex
-	lastListRepos []string
-
 	// Protects the index directory from concurrent access.
 	muIndexDir sync.Mutex
 }
@@ -262,10 +259,6 @@ func (s *Server) Run() {
 				log.Println(err)
 				continue
 			}
-
-			s.mu.Lock()
-			s.lastListRepos = repos
-			s.mu.Unlock()
 
 			debug.Printf("updating index queue with %d repositories", len(repos))
 
@@ -526,9 +519,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		data.IndexMsg, _ = s.forceIndex(name)
 	}
 
-	s.mu.Lock()
-	data.Repos = s.lastListRepos
-	s.mu.Unlock()
+	s.queue.Iterate(func(opts *IndexOptions) {
+		data.Repos = append(data.Repos, opts.Name)
+	})
 
 	repoTmpl.Execute(w, data)
 }
