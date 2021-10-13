@@ -77,7 +77,7 @@ func TestGetIndexOptions(t *testing.T) {
 	for r, want := range cases {
 		response = []byte(r)
 
-		got, err := sg.GetIndexOptions("test/repo")
+		got, err := sg.GetIndexOptionsName("test/repo")
 		if err != nil && want != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

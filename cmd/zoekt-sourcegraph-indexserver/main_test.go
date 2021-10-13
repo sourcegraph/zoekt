@@ -75,7 +75,7 @@ func TestListRepos(t *testing.T) {
 		Client:   retryablehttp.NewClient(),
 	}
 
-	gotRepos, err := s.ListRepos(context.Background(), []string{"foo", "bam"})
+	gotRepos, err := s.ListReposName(context.Background(), []string{"foo", "bam"})
 	if err != nil {
 		t.Fatal(err)
 	}
