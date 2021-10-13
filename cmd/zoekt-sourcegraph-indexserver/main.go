@@ -126,6 +126,8 @@ type Server struct {
 	// repository.
 	CPUCount int
 
+	queue Queue
+
 	mu            sync.Mutex
 	lastListRepos []string
 
@@ -240,7 +242,7 @@ func (sb *synchronizedBuffer) String() string {
 const pauseFileName = "PAUSE"
 
 // Run the sync loop. This blocks forever.
-func (s *Server) Run(queue *Queue) {
+func (s *Server) Run() {
 	removeIncompleteShards(s.IndexDir)
 
 	// Start a goroutine which updates the queue with commits to index.
@@ -268,7 +270,7 @@ func (s *Server) Run(queue *Queue) {
 			debug.Printf("updating index queue with %d repositories", len(repos))
 
 			// Stop indexing repos we don't need to track anymore
-			count := queue.MaybeRemoveMissing(repos)
+			count := s.queue.MaybeRemoveMissing(repos)
 			if count > 0 {
 				log.Printf("stopped tracking %d repositories", count)
 			}
@@ -304,7 +306,7 @@ func (s *Server) Run(queue *Queue) {
 						tr.SetError()
 						continue
 					}
-					queue.AddOrUpdate(opt.IndexOptions)
+					s.queue.AddOrUpdate(opt.IndexOptions)
 				}
 			}
 
@@ -330,7 +332,7 @@ func (s *Server) Run(queue *Queue) {
 			continue
 		}
 
-		opts, ok := queue.Pop()
+		opts, ok := s.queue.Pop()
 		if !ok {
 			time.Sleep(time.Second)
 			continue
@@ -352,7 +354,7 @@ func (s *Server) Run(queue *Queue) {
 		case indexStateSuccessMeta:
 			log.Printf("updated meta %s in %v", args.String(), time.Since(start))
 		}
-		queue.SetIndexed(opts, state)
+		s.queue.SetIndexed(opts, state)
 	}
 }
 
@@ -531,34 +533,33 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repoTmpl.Execute(w, data)
 }
 
-// enqueueForIndex is expected to be called by other services in order to trigger an index.
-// We expect repo-updater to call this endpoint when a new repo has been added to an instance that
-// we wish to index and don't want to wait for polling to happen.
-func (s *Server) enqueueForIndex(queue *Queue) func(rw http.ResponseWriter, r *http.Request) {
-	return func(rw http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
-			http.Error(rw, "not found", http.StatusNotFound)
-			return
-		}
-		metricsEnqueueRepoForIndex.Inc()
-		err := r.ParseForm()
-		if err != nil {
-			http.Error(rw, "error parsing form", http.StatusBadRequest)
-			return
-		}
-		name := r.Form.Get("repo")
-		if name == "" {
-			http.Error(rw, "missing repo", http.StatusBadRequest)
-			return
-		}
-		debug.Printf("enqueueRepoForIndex called with repo: %q", name)
-		opts, err := s.Sourcegraph.GetIndexOptions(name)
-		if err != nil || opts[0].Error != "" {
-			http.Error(rw, "fetching index options", http.StatusInternalServerError)
-			return
-		}
-		queue.AddOrUpdate(opts[0].IndexOptions)
+// serveEnqueueForIndex is expected to be called by other services in order to
+// trigger an index.  We expect repo-updater to call this endpoint when a new
+// repo has been added to an instance that we wish to index and don't want to
+// wait for polling to happen.
+func (s *Server) serveEnqueueForIndex(rw http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(rw, "not found", http.StatusNotFound)
+		return
 	}
+	metricsEnqueueRepoForIndex.Inc()
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(rw, "error parsing form", http.StatusBadRequest)
+		return
+	}
+	name := r.Form.Get("repo")
+	if name == "" {
+		http.Error(rw, "missing repo", http.StatusBadRequest)
+		return
+	}
+	debug.Printf("enqueueRepoForIndex called with repo: %q", name)
+	opts, err := s.Sourcegraph.GetIndexOptions(name)
+	if err != nil || opts[0].Error != "" {
+		http.Error(rw, "fetching index options", http.StatusInternalServerError)
+		return
+	}
+	s.queue.AddOrUpdate(opts[0].IndexOptions)
 }
 
 // forceIndex will run the index job for repo name now. It will return always
@@ -825,18 +826,16 @@ func main() {
 
 	initializeGoogleCloudProfiler()
 
-	queue := &Queue{}
-
 	if *listen != "" {
 		go func() {
 			mux := http.NewServeMux()
 			debugserver.AddHandlers(mux, true)
 			mux.Handle("/", s)
-			mux.HandleFunc("/enqueueforindex", s.enqueueForIndex(queue))
+			mux.HandleFunc("/enqueueforindex", s.serveEnqueueForIndex)
 			debug.Printf("serving HTTP on %s", *listen)
 			log.Fatal(http.ListenAndServe(*listen, mux))
 		}()
 	}
 
-	s.Run(queue)
+	s.Run()
 }
