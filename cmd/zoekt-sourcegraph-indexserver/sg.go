@@ -232,7 +232,7 @@ func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, 
 
 	items := make([]indexOptionsItem, len(repos))
 	err := sf.visitRepos(func(name string) {
-		idx, ok := reposIdx[sf.id(name)]
+		idx, ok := reposIdx[fakeID(name)]
 		if !ok {
 			return
 		}
@@ -261,7 +261,7 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	dir := filepath.Join(sf.RootDir, filepath.FromSlash(name))
 
 	opts := IndexOptions{
-		RepoID:  sf.id(name),
+		RepoID:  fakeID(name),
 		Name:    name,
 		Symbols: true,
 	}
@@ -297,7 +297,7 @@ func (sf sourcegraphFake) GetCloneURL(name string) string {
 func (sf sourcegraphFake) ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
 	var repos []uint32
 	err := sf.visitRepos(func(name string) {
-		repos = append(repos, sf.id(name))
+		repos = append(repos, fakeID(name))
 	})
 	return repos, err
 }
@@ -339,7 +339,8 @@ func (sf sourcegraphFake) visitRepos(visit func(name string)) error {
 	})
 }
 
-func (sf sourcegraphFake) id(name string) uint32 {
+// fakeID returns a deterministic ID based on name. Used for fakes and tests.
+func fakeID(name string) uint32 {
 	// magic at the end is to ensure we get a positive number when casting.
 	return uint32(crc32.ChecksumIEEE([]byte(name))%(1<<31-1) + 1)
 }
