@@ -57,7 +57,7 @@ func TestListRepoIDs(t *testing.T) {
 		}
 		gotBody = string(b)
 
-		_, err = w.Write([]byte(`{"RepoNames": ["foo", "bar", "baz"]}`))
+		_, err = w.Write([]byte(`{"RepoIDs": [1, 2, 3]}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -75,15 +75,15 @@ func TestListRepoIDs(t *testing.T) {
 		Client:   retryablehttp.NewClient(),
 	}
 
-	gotRepos, err := s.ListRepoNames(context.Background(), []string{"foo", "bam"})
+	gotRepos, err := s.ListRepoIDs(context.Background(), []uint32{1, 3})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if want := []string{"foo", "bar", "baz"}; !cmp.Equal(gotRepos, want) {
+	if want := []uint32{1, 2, 3}; !cmp.Equal(gotRepos, want) {
 		t.Errorf("repos mismatch (-want +got):\n%s", cmp.Diff(want, gotRepos))
 	}
-	if want := `{"Hostname":"test-indexed-search-1","Indexed":["foo","bam"]}`; gotBody != want {
+	if want := `{"Hostname":"test-indexed-search-1","IndexedIDs":[1,3]}`; gotBody != want {
 		t.Errorf("body mismatch (-want +got):\n%s", cmp.Diff(want, gotBody))
 	}
 	if want := "/.internal/repos/index"; gotURL.Path != want {
