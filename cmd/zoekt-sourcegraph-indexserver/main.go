@@ -419,10 +419,12 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		return indexStateEmpty, s.createEmptyShard(tr, args.Name)
 	}
 
+	reason := "forced"
 	if args.Incremental {
 		bo := args.BuildOptions()
 		bo.SetDefaults()
 		incrementalState := bo.IndexState()
+		reason = string(incrementalState)
 		metricIndexIncrementalIndexState.WithLabelValues(string(incrementalState)).Inc()
 		switch incrementalState {
 		case build.IndexStateEqual:
@@ -443,7 +445,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		}
 	}
 
-	log.Printf("updating index %s", args.String())
+	log.Printf("updating index %s reason=%s", args.String(), reason)
 
 	runCmd := func(cmd *exec.Cmd) error { return s.loggedRun(tr, cmd) }
 	metricIndexingTotal.Inc()
