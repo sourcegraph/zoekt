@@ -89,11 +89,6 @@ var (
 		Name: "index_indexing_total",
 		Help: "Counts indexings (indexing activity, should be used with rate())",
 	})
-
-	metricsEnqueueRepoForIndex = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "enqueue_repo_for_index_total",
-		Help: "Counts the number of time /enqueueforindex is called",
-	})
 )
 
 type indexState string
@@ -528,35 +523,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repoTmpl.Execute(w, data)
 }
 
-// serveEnqueueForIndex is expected to be called by other services in order to
-// trigger an index.  We expect repo-updater to call this endpoint when a new
-// repo has been added to an instance that we wish to index and don't want to
-// wait for polling to happen.
-func (s *Server) serveEnqueueForIndex(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(rw, "not found", http.StatusNotFound)
-		return
-	}
-	metricsEnqueueRepoForIndex.Inc()
-	err := r.ParseForm()
-	if err != nil {
-		http.Error(rw, "error parsing form", http.StatusBadRequest)
-		return
-	}
-	name := r.Form.Get("repo")
-	if name == "" {
-		http.Error(rw, "missing repo", http.StatusBadRequest)
-		return
-	}
-	debug.Printf("enqueueRepoForIndex called with repo: %q", name)
-	opts, err := s.Sourcegraph.GetIndexOptionsName(name)
-	if err != nil || opts[0].Error != "" {
-		http.Error(rw, "fetching index options", http.StatusInternalServerError)
-		return
-	}
-	s.queue.AddOrUpdate(opts[0].IndexOptions)
-}
-
 // forceIndex will run the index job for repo name now. It will return always
 // return a string explaining what it did, even if it failed.
 func (s *Server) forceIndex(name string) (string, error) {
@@ -828,7 +794,6 @@ func main() {
 			mux := http.NewServeMux()
 			debugserver.AddHandlers(mux, true)
 			mux.Handle("/", s)
-			mux.HandleFunc("/enqueueforindex", s.serveEnqueueForIndex)
 			debug.Printf("serving HTTP on %s", *listen)
 			log.Fatal(http.ListenAndServe(*listen, mux))
 		}()
