@@ -29,7 +29,7 @@ func TestGetIndexOptions(t *testing.T) {
 			http.Error(w, fmt.Sprintf("got URL %v want %v", got, want), http.StatusBadRequest)
 			return
 		}
-		if got, want := r.Form, (url.Values{"repo": []string{"test/repo"}}); !reflect.DeepEqual(got, want) {
+		if got, want := r.Form, (url.Values{"repoID": []string{"123"}}); !reflect.DeepEqual(got, want) {
 			http.Error(w, fmt.Sprintf("got URL %v want %v", got, want), http.StatusBadRequest)
 			return
 		}
@@ -49,25 +49,21 @@ func TestGetIndexOptions(t *testing.T) {
 
 	cases := map[string]*IndexOptions{
 		`{"Symbols": true, "LargeFiles": ["foo","bar"]}`: {
-			Name:       "test/repo",
 			Symbols:    true,
 			LargeFiles: []string{"foo", "bar"},
 		},
 
 		`{"Symbols": false, "LargeFiles": ["foo","bar"]}`: {
-			Name:       "test/repo",
 			LargeFiles: []string{"foo", "bar"},
 		},
 
-		`{}`: {Name: "test/repo"},
+		`{}`: {},
 
 		`{"Symbols": true}`: {
-			Name:    "test/repo",
 			Symbols: true,
 		},
 
 		`{"RepoID": 123}`: {
-			Name:   "test/repo",
 			RepoID: 123,
 		},
 
@@ -77,7 +73,7 @@ func TestGetIndexOptions(t *testing.T) {
 	for r, want := range cases {
 		response = []byte(r)
 
-		got, err := sg.GetIndexOptionsName("test/repo")
+		got, err := sg.GetIndexOptions(123)
 		if err != nil && want != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
