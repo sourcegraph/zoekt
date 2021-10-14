@@ -115,7 +115,7 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Unlock()
 }
 
-// MaybeRemoveMissing will remove all queue items not in names. It will
+// MaybeRemoveMissing will remove all queue items not in ids. It will
 // heuristically not run to conserve resources and return -1. Otherwise it
 // will return the number of names removed from the queue.
 //
@@ -124,9 +124,9 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 // removals. Removal requires memory allocation and coarse locking. To avoid
 // that we use a heuristic which can falsely decide it doesn't need to
 // remove. However, we will converge onto removing items.
-func (q *Queue) MaybeRemoveMissing(names []string) int {
+func (q *Queue) MaybeRemoveMissing(ids []uint32) int {
 	q.mu.Lock()
-	sameSize := len(q.items) == len(names)
+	sameSize := len(q.items) == len(ids)
 	q.mu.Unlock()
 
 	// heuristically skip expensive work
@@ -134,9 +134,9 @@ func (q *Queue) MaybeRemoveMissing(names []string) int {
 		return -1
 	}
 
-	set := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		set[name] = struct{}{}
+	set := make(map[uint32]struct{}, len(ids))
+	for _, id := range ids {
+		set[id] = struct{}{}
 	}
 
 	q.mu.Lock()
@@ -144,7 +144,7 @@ func (q *Queue) MaybeRemoveMissing(names []string) int {
 
 	count := 0
 	for _, item := range q.items {
-		if _, ok := set[item.opts.Name]; ok {
+		if _, ok := set[item.opts.RepoID]; ok {
 			continue
 		}
 

@@ -27,7 +27,7 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
 // back into indexDir. Additionally it uses now to remove shards that have
 // been in the trash for 24 hours. It also deletes .tmp files older than 4 hours.
-func cleanup(indexDir string, repos []string, now time.Time) {
+func cleanup(indexDir string, repos []uint32, now time.Time) {
 	start := time.Now()
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
@@ -56,7 +56,7 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			continue
 		}
 
-		log.Printf("removing old shards from trash for %s", repo)
+		log.Printf("removing old shards from trash for %v", repo)
 		removeAll(shards...)
 		delete(trash, repo)
 	}
@@ -72,9 +72,9 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			continue
 		}
 
-		log.Printf("restoring shards from trash for %s", repo)
+		log.Printf("restoring shards from trash for %v", repo)
 		moveAll(indexDir, shards)
-		shardsLog(indexDir, "restore", shards, repo)
+		shardsLog(indexDir, "restore", shards)
 	}
 
 	// index: Move non-existent repos into trash
@@ -90,16 +90,16 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 			// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
 			// shard at index 0.
 			if len(shards) == 1 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
-				shardsLog(indexDir, "tomb", shards, repo)
+				shardsLog(indexDir, "tomb", shards)
 				if err := zoekt.SetTombstone(shards[0].Path, repo); err != nil {
-					log.Printf("error setting tombstone for %s in shard %s: %s. Removing shard\n", repo, shards[0].Path, err)
+					log.Printf("error setting tombstone for %v in shard %s: %s. Removing shard\n", repo, shards[0].Path, err)
 					_ = os.Remove(shards[0].Path)
 				}
 				continue
 			}
 		}
 		moveAll(trashDir, shards)
-		shardsLog(indexDir, "remove", shards, repo)
+		shardsLog(indexDir, "remove", shards)
 	}
 
 	// Remove old .tmp files from crashed indexer runs-- for example, if
@@ -124,12 +124,13 @@ func cleanup(indexDir string, repos []string, now time.Time) {
 }
 
 type shard struct {
-	Repo    string
-	Path    string
-	ModTime time.Time
+	RepoID   uint32
+	RepoName string
+	Path     string
+	ModTime  time.Time
 }
 
-func getShards(dir string) map[string][]shard {
+func getShards(dir string) map[uint32][]shard {
 	d, err := os.Open(dir)
 	if err != nil {
 		debug.Printf("failed to getShards: %s", dir)
@@ -139,7 +140,7 @@ func getShards(dir string) map[string][]shard {
 	names, _ := d.Readdirnames(-1)
 	sort.Strings(names)
 
-	shards := make(map[string][]shard, len(names))
+	shards := make(map[uint32][]shard, len(names))
 	for _, n := range names {
 		path := filepath.Join(dir, n)
 		fi, err := os.Stat(path)
@@ -158,10 +159,11 @@ func getShards(dir string) map[string][]shard {
 		}
 
 		for _, repo := range repos {
-			shards[repo.Name] = append(shards[repo.Name], shard{
-				Repo:    repo.Name,
-				Path:    path,
-				ModTime: fi.ModTime(),
+			shards[repo.ID] = append(shards[repo.ID], shard{
+				RepoID:   repo.ID,
+				RepoName: repo.Name,
+				Path:     path,
+				ModTime:  fi.ModTime(),
 			})
 		}
 	}
@@ -215,7 +217,7 @@ func moveAll(dstDir string, shards []shard) {
 	for i, shard := range shards {
 		paths, err := zoekt.IndexFilePaths(shard.Path)
 		if err != nil {
-			log.Printf("failed to stat shard paths, deleting all shards for %s: %v", shard.Repo, err)
+			log.Printf("failed to stat shard paths, deleting all shards for %s: %v", shard.RepoName, err)
 			removeAll(shards...)
 			return
 		}
@@ -244,7 +246,7 @@ func moveAll(dstDir string, shards []shard) {
 		}
 
 		if err != nil {
-			log.Printf("failed to move shard, deleting all shards for %s: %v", shard.Repo, err)
+			log.Printf("failed to move shard, deleting all shards for %s: %v", shard.RepoName, err)
 			removeAll(dstShard) // some files may have moved to dst
 			removeAll(shards...)
 			return
@@ -255,7 +257,7 @@ func moveAll(dstDir string, shards []shard) {
 	}
 }
 
-func shardsLog(indexDir, action string, shards []shard, repoName string) {
+func shardsLog(indexDir, action string, shards []shard) {
 	shardLogger := &lumberjack.Logger{
 		Filename:   filepath.Join(indexDir, "zoekt-indexserver-shard-log.tsv"),
 		MaxSize:    100, // Megabyte
@@ -269,7 +271,7 @@ func shardsLog(indexDir, action string, shards []shard, repoName string) {
 		if fi, err := os.Stat(filepath.Join(indexDir, shard)); err == nil {
 			shardSize = fi.Size()
 		}
-		_, _ = fmt.Fprintf(shardLogger, "%d\t%s\t%s\t%d\t%s\n", time.Now().UTC().Unix(), action, shard, shardSize, repoName)
+		_, _ = fmt.Fprintf(shardLogger, "%d\t%s\t%s\t%d\t%s\t%d\n", time.Now().UTC().Unix(), action, shard, shardSize, s.RepoName, s.RepoID)
 	}
 }
 
@@ -290,18 +292,27 @@ func (s *Server) vacuum() {
 			continue
 		}
 
+		path := filepath.Join(s.IndexDir, fn)
+		info, err := os.Stat(path)
+		if err != nil {
+			debug.Printf("vacuum stat failed: %v", err)
+			continue
+		}
+
 		s.muIndexDir.Lock()
-		removed, err := removeTombstones(filepath.Join(s.IndexDir, fn))
+		removed, err := removeTombstones(path)
 		s.muIndexDir.Unlock()
 
 		if err != nil {
 			debug.Printf("error while removing tombstones in %s: %s", fn, err)
 		}
-		if len(removed) > 0 {
-			for _, ts := range removed {
-				shardsLog(s.IndexDir, "vac", []shard{{
-					Path: filepath.Join(s.IndexDir, fn)}}, ts)
-			}
+		for _, repo := range removed {
+			shardsLog(s.IndexDir, "vac", []shard{{
+				RepoID:   repo.ID,
+				RepoName: repo.Name,
+				Path:     filepath.Join(s.IndexDir, fn),
+				ModTime:  info.ModTime(),
+			}})
 		}
 	}
 }
@@ -310,7 +321,7 @@ var mockMerger func() error
 
 // removeTombstones removes all tombstones from a compound shard at fn by merging
 // the compound shard with itself.
-func removeTombstones(fn string) ([]string, error) {
+func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 	var runMerge func() error
 	if mockMerger != nil {
 		runMerge = mockMerger
@@ -323,10 +334,10 @@ func removeTombstones(fn string) ([]string, error) {
 		return nil, fmt.Errorf("zoekt.ReadMetadataPath: %s", err)
 	}
 
-	var tombstones []string
+	var tombstones []*zoekt.Repository
 	for _, r := range repos {
 		if r.Tombstone {
-			tombstones = append(tombstones, r.Name)
+			tombstones = append(tombstones, r)
 		}
 	}
 	if len(tombstones) == 0 {

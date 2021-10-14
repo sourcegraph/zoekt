@@ -578,9 +578,8 @@ func (b *Builder) Finish() error {
 			if !strings.HasSuffix(p, ".zoekt") {
 				continue
 			}
-			repoName := b.opts.RepositoryDescription.Name
-			b.shardLog("tomb", p, repoName)
-			err := zoekt.SetTombstone(p, repoName)
+			b.shardLog("tomb", p, b.opts.RepositoryDescription.Name)
+			err := zoekt.SetTombstone(p, b.opts.RepositoryDescription.ID)
 			b.buildError = err
 			continue
 		}

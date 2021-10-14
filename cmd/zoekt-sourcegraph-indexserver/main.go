@@ -254,7 +254,7 @@ func (s *Server) Run() {
 				continue
 			}
 
-			repos, err := s.Sourcegraph.ListRepoNames(context.Background(), listIndexed(s.IndexDir))
+			repos, err := s.Sourcegraph.ListRepoIDs(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
 				log.Println(err)
 				continue
@@ -283,7 +283,7 @@ func (s *Server) Run() {
 			// We ask the frontend to get index options in batches.
 			for repos := range batched(repos, s.BatchSize) {
 				start := time.Now()
-				opts, err := s.Sourcegraph.GetIndexOptionsName(repos...)
+				opts, err := s.Sourcegraph.GetIndexOptions(repos...)
 				if err != nil {
 					metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
 					tr.LazyPrintf("failed fetching options batch: %v", err)
@@ -351,8 +351,8 @@ func (s *Server) Run() {
 	}
 }
 
-func batched(slice []string, size int) <-chan []string {
-	c := make(chan []string)
+func batched(slice []uint32, size int) <-chan []uint32 {
+	c := make(chan []uint32)
 	go func() {
 		for len(slice) > 0 {
 			if size > len(slice) {
@@ -575,15 +575,17 @@ func (s *Server) forceIndex(name string) (string, error) {
 	return fmt.Sprintf("Indexed %s with state %s", args.String(), state), nil
 }
 
-func listIndexed(indexDir string) []string {
+func listIndexed(indexDir string) []uint32 {
 	index := getShards(indexDir)
 	metricNumIndexed.Set(float64(len(index)))
-	repoNames := make([]string, 0, len(index))
-	for name := range index {
-		repoNames = append(repoNames, name)
+	repoIDs := make([]uint32, 0, len(index))
+	for id := range index {
+		repoIDs = append(repoIDs, id)
 	}
-	sort.Strings(repoNames)
-	return repoNames
+	sort.Slice(repoIDs, func(i, j int) bool {
+		return repoIDs[i] < repoIDs[j]
+	})
+	return repoIDs
 }
 
 func hostnameBestEffort() string {
@@ -774,7 +776,7 @@ func main() {
 	}
 
 	if *debugList {
-		repos, err := s.Sourcegraph.ListRepoNames(context.Background(), listIndexed(s.IndexDir))
+		repos, err := s.Sourcegraph.ListRepoIDs(context.Background(), listIndexed(s.IndexDir))
 		if err != nil {
 			log.Fatal(err)
 		}
