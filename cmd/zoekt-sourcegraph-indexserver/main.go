@@ -89,11 +89,6 @@ var (
 		Name: "index_indexing_total",
 		Help: "Counts indexings (indexing activity, should be used with rate())",
 	})
-
-	metricsEnqueueRepoForIndex = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "enqueue_repo_for_index_total",
-		Help: "Counts the number of time /enqueueforindex is called",
-	})
 )
 
 type indexState string
@@ -503,69 +498,50 @@ var repoTmpl = template.Must(template.New("name").Parse(`
 <h3>Re-index repository</h3>
 <form action="/" method="post">
 {{range .Repos}}
-<input type="submit" name="repo" value="{{ . }}" /> <br />
+<button type="submit" name="repo" value="{{ .ID }}" />{{ .Name }}</button><br />
 {{end}}
 </form>
 </body></html>
 `))
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	type Repo struct {
+		ID   uint32
+		Name string
+	}
 	var data struct {
-		Repos    []string
+		Repos    []Repo
 		IndexMsg string
 	}
 
 	if r.Method == "POST" {
 		r.ParseForm()
-		name := r.Form.Get("repo")
-		data.IndexMsg, _ = s.forceIndex(name)
+		if id, err := strconv.Atoi(r.Form.Get("repo")); err != nil {
+			data.IndexMsg = err.Error()
+		} else {
+			data.IndexMsg, _ = s.forceIndex(uint32(id))
+		}
 	}
 
 	s.queue.Iterate(func(opts *IndexOptions) {
-		data.Repos = append(data.Repos, opts.Name)
+		data.Repos = append(data.Repos, Repo{
+			ID:   opts.RepoID,
+			Name: opts.Name,
+		})
 	})
 
 	repoTmpl.Execute(w, data)
 }
 
-// serveEnqueueForIndex is expected to be called by other services in order to
-// trigger an index.  We expect repo-updater to call this endpoint when a new
-// repo has been added to an instance that we wish to index and don't want to
-// wait for polling to happen.
-func (s *Server) serveEnqueueForIndex(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(rw, "not found", http.StatusNotFound)
-		return
-	}
-	metricsEnqueueRepoForIndex.Inc()
-	err := r.ParseForm()
-	if err != nil {
-		http.Error(rw, "error parsing form", http.StatusBadRequest)
-		return
-	}
-	name := r.Form.Get("repo")
-	if name == "" {
-		http.Error(rw, "missing repo", http.StatusBadRequest)
-		return
-	}
-	debug.Printf("enqueueRepoForIndex called with repo: %q", name)
-	opts, err := s.Sourcegraph.GetIndexOptionsName(name)
-	if err != nil || opts[0].Error != "" {
-		http.Error(rw, "fetching index options", http.StatusInternalServerError)
-		return
-	}
-	s.queue.AddOrUpdate(opts[0].IndexOptions)
-}
-
 // forceIndex will run the index job for repo name now. It will return always
 // return a string explaining what it did, even if it failed.
-func (s *Server) forceIndex(name string) (string, error) {
-	opts, err := s.Sourcegraph.GetIndexOptionsName(name)
+func (s *Server) forceIndex(id uint32) (string, error) {
+	opts, err := s.Sourcegraph.GetIndexOptions(id)
 	if err != nil {
-		return fmt.Sprintf("Indexing %s failed: %v", name, err), err
+		return fmt.Sprintf("Indexing %d failed: %v", id, err), err
 	}
 	if errS := opts[0].Error; errS != "" {
-		return fmt.Sprintf("Indexing %s failed: %s", name, errS), errors.New(errS)
+		return fmt.Sprintf("Indexing %d failed: %s", id, errS), errors.New(errS)
 	}
 
 	args := s.indexArgs(opts[0].IndexOptions)
@@ -690,7 +666,7 @@ func main() {
 
 	// non daemon mode for debugging/testing
 	debugList := flag.Bool("debug-list", false, "do not start the indexserver, rather list the repositories owned by this indexserver then quit.")
-	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repositories then quit.")
+	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repository ID then quit.")
 	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
 	debugMeta := flag.String("debug-meta", "", "do not start the indexserver, rather print shard metadata then quit.")
 	debugMerge := flag.String("debug-merge", "", "index dir,compound target size in MiB,simulate(true,false)")
@@ -789,7 +765,11 @@ func main() {
 	}
 
 	if *debugIndex != "" {
-		msg, err := s.forceIndex(*debugIndex)
+		id, err := strconv.Atoi(*debugIndex)
+		if err != nil {
+			log.Fatal(err)
+		}
+		msg, err := s.forceIndex(uint32(id))
 		log.Println(msg)
 		if err != nil {
 			os.Exit(1)
@@ -828,7 +808,6 @@ func main() {
 			mux := http.NewServeMux()
 			debugserver.AddHandlers(mux, true)
 			mux.Handle("/", s)
-			mux.HandleFunc("/enqueueforindex", s.serveEnqueueForIndex)
 			debug.Printf("serving HTTP on %s", *listen)
 			log.Fatal(http.ListenAndServe(*listen, mux))
 		}()
