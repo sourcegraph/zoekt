@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,10 +22,6 @@ type scheduler interface {
 	// request). See process documentation. It will only return an error if the
 	// context expires.
 	Acquire(ctx context.Context) (*process, error)
-
-	// Exclusive blocks until an exclusive process is created. An exclusive
-	// process is the only running process. See process documentation.
-	Exclusive() *process
 }
 
 // The ZOEKTSCHED environment variable controls variables within the
@@ -64,23 +59,14 @@ func newScheduler(capacity int64) scheduler {
 // multiScheduler is for managing concurrent searches. Its goals are:
 //
 //   1. Limit the number of concurrent searches.
-//   2. Allow exclusive access.
-//   3. Co-operatively limit long running searches.
-//   4. No tuneables.
+//   2. Co-operatively limit long running searches.
+//   3. No tuneables.
 //
 // ### Limit the number of concurrent searches
 //
 // Searching is CPU bound, so we can't do better than #CPU queries
 // concurrently. If we do so, we just create more memory pressure.
 //
-// ### Allow exclusive access
-//
-// During the time the shard list is accessed and a search is actually done on
-// a shard it can't be closed. As such while a search is running we do not
-// allow any closing of shards. However, we do need to close and add shards as
-// the indexer proceeds. To do this we have an exclusive process which will be
-// the only one running. This is like a Lock on a RWMutex, while a normal
-// search is a RLock.
 //
 // ### Co-operatively limit long running searches
 //
@@ -105,8 +91,6 @@ func newScheduler(capacity int64) scheduler {
 // We intentionally keep the algorithm simple, but have a general interface to
 // allow improvements as we learn more.
 type multiScheduler struct {
-	// Exclusive process holds a write lock, search processes hold read locks.
-	mu             *rwmutex
 	semInteractive *sema
 	semBatch       *sema
 
@@ -137,7 +121,6 @@ func newMultiScheduler(capacity int64) *multiScheduler {
 	}
 
 	return &multiScheduler{
-		mu:             newRWMutex(),
 		semInteractive: newSema(capacity, "interactive"),
 		semBatch:       newSema(batchCap, "batch"),
 
@@ -147,17 +130,12 @@ func newMultiScheduler(capacity int64) *multiScheduler {
 
 // Acquire implements scheduler.Acquire.
 func (s *multiScheduler) Acquire(ctx context.Context) (*process, error) {
-	if err := s.mu.RLock(ctx); err != nil {
-		return nil, err
-	}
-
 	// Start in interactive. yieldFunc will switch us to batch. sem can be nil
 	// if we fail while switching to batch. nil value prevents us releasing
 	// twice.
 	sem := s.semInteractive
 
 	if err := sem.Acquire(ctx); err != nil {
-		s.mu.RUnlock()
 		return nil, err
 	}
 
@@ -167,7 +145,6 @@ func (s *multiScheduler) Acquire(ctx context.Context) (*process, error) {
 				sem.Release()
 				sem = nil
 			}
-			s.mu.RUnlock()
 		},
 		yieldTimer: newDeadlineTimer(time.Now().Add(s.interactiveDuration)),
 		yieldFunc: func(ctx context.Context) error {
@@ -188,21 +165,6 @@ func (s *multiScheduler) Acquire(ctx context.Context) (*process, error) {
 			return nil
 		},
 	}, nil
-}
-
-// Exclusive implements scheduler.Exclusive.
-func (s *multiScheduler) Exclusive() *process {
-	// Exclusive process holds a write lock on mu, which ensures we have no
-	// processes running (search semaphores are empty).
-	//
-	// exclusive processes will never yield, so we leave yieldTimer and
-	// yieldFunc nil.
-	s.mu.Lock()
-	return &process{
-		releaseFunc: func() {
-			s.mu.Unlock()
-		},
-	}
 }
 
 // semaphoreScheduler shares a single semaphore for all searches. An exclusive
@@ -430,99 +392,6 @@ func (s *sema) Acquire(ctx context.Context) error {
 func (s *sema) Release() {
 	s.sem.Release(1)
 	s.metricRunning.Dec()
-}
-
-// rwmutex is a wrapper around sync.RWMutex. It additionally respects context
-// cancellation and will track the state of the mutex in prometheus.
-type rwmutex struct {
-	mu sync.RWMutex
-
-	metricQueued        *gaugeCounter
-	metricRunning       *gaugeCounter
-	metricTimedoutTotal prometheus.Counter
-
-	metricExclusiveQueued  *gaugeCounter
-	metricExclusiveRunning *gaugeCounter
-}
-
-func newRWMutex() *rwmutex {
-	return &rwmutex{
-		metricQueued: &gaugeCounter{
-			gauge:   metricSched.WithLabelValues("global", "queued"),
-			counter: metricSchedTotal.WithLabelValues("global", "queued"),
-		},
-		metricRunning: &gaugeCounter{
-			gauge:   metricSched.WithLabelValues("global", "running"),
-			counter: metricSchedTotal.WithLabelValues("global", "running"),
-		},
-		metricTimedoutTotal: metricSchedTotal.WithLabelValues("global", "timedout"),
-
-		metricExclusiveQueued: &gaugeCounter{
-			gauge:   metricSched.WithLabelValues("exclusive", "queued"),
-			counter: metricSchedTotal.WithLabelValues("exclusive", "queued"),
-		},
-		metricExclusiveRunning: &gaugeCounter{
-			gauge:   metricSched.WithLabelValues("exclusive", "running"),
-			counter: metricSchedTotal.WithLabelValues("exclusive", "running"),
-		},
-	}
-}
-
-func (s *rwmutex) RLock(ctx context.Context) error {
-	s.metricQueued.Inc()
-	defer s.metricQueued.Dec()
-
-	err := rlockAcquire(ctx, &s.mu)
-	if err != nil {
-		s.metricTimedoutTotal.Inc()
-		return err
-	}
-
-	s.metricRunning.Inc()
-
-	return nil
-}
-
-func (s *rwmutex) RUnlock() {
-	s.mu.RUnlock()
-	s.metricRunning.Dec()
-}
-
-func (s *rwmutex) Lock() {
-	s.metricExclusiveQueued.Inc()
-	defer s.metricExclusiveQueued.Dec()
-
-	s.mu.Lock()
-	s.metricExclusiveRunning.Inc()
-}
-
-func (s *rwmutex) Unlock() {
-	s.mu.Unlock()
-	s.metricExclusiveRunning.Dec()
-}
-
-func rlockAcquire(ctx context.Context, mu *sync.RWMutex) error {
-	// Lock in goroutine to respect ctx
-	done := make(chan struct{})
-	go func() {
-		mu.RLock()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		return nil
-
-	case <-ctx.Done():
-		// We can't cancel RLock. So we wait for it to lock in the background and
-		// immediately unlock.
-		go func() {
-			<-done
-			mu.RUnlock()
-		}()
-
-		return ctx.Err()
-	}
 }
 
 // gaugeCounter is a wrapper around a gauge and a counter. Whenever the gauge
