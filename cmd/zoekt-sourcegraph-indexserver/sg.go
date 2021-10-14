@@ -259,11 +259,19 @@ func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, 
 
 func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	dir := filepath.Join(sf.RootDir, filepath.FromSlash(name))
+	exists := func(p string) bool {
+		_, err := os.Stat(filepath.Join(dir, "SG_PRIVATE"))
+		return err == nil
+	}
 
 	opts := IndexOptions{
 		RepoID:  fakeID(name),
 		Name:    name,
 		Symbols: true,
+
+		Public:   !exists("SG_PRIVATE"),
+		Fork:     exists("SG_FORK"),
+		Archived: exists("SG_ARCHIVED"),
 	}
 
 	cmd := exec.Command("git", "rev-parse", "HEAD")
@@ -278,15 +286,6 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 		}}
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "SG_PRIVATE")); err == nil {
-		opts.Public = false
-	}
-	if _, err := os.Stat(filepath.Join(dir, "SG_FORK")); err == nil {
-		opts.Fork = true
-	}
-	if _, err := os.Stat(filepath.Join(dir, "SG_ARCHIVED")); err == nil {
-		opts.Archived = true
-	}
 	return opts, nil
 }
 
