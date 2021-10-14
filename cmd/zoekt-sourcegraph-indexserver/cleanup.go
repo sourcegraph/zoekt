@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -75,7 +74,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time) {
 
 		log.Printf("restoring shards from trash for %v", repo)
 		moveAll(indexDir, shards)
-		shardsLog(indexDir, "restore", shards, strconv.Itoa(int(repo)))
+		shardsLog(indexDir, "restore", shards)
 	}
 
 	// index: Move non-existent repos into trash
@@ -91,7 +90,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time) {
 			// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
 			// shard at index 0.
 			if len(shards) == 1 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
-				shardsLog(indexDir, "tomb", shards, strconv.Itoa(int(repo)))
+				shardsLog(indexDir, "tomb", shards)
 				if err := zoekt.SetTombstone(shards[0].Path, repo); err != nil {
 					log.Printf("error setting tombstone for %v in shard %s: %s. Removing shard\n", repo, shards[0].Path, err)
 					_ = os.Remove(shards[0].Path)
@@ -100,7 +99,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time) {
 			}
 		}
 		moveAll(trashDir, shards)
-		shardsLog(indexDir, "remove", shards, strconv.Itoa(int(repo)))
+		shardsLog(indexDir, "remove", shards)
 	}
 
 	// Remove old .tmp files from crashed indexer runs-- for example, if
@@ -258,7 +257,7 @@ func moveAll(dstDir string, shards []shard) {
 	}
 }
 
-func shardsLog(indexDir, action string, shards []shard, repoName string) {
+func shardsLog(indexDir, action string, shards []shard) {
 	shardLogger := &lumberjack.Logger{
 		Filename:   filepath.Join(indexDir, "zoekt-indexserver-shard-log.tsv"),
 		MaxSize:    100, // Megabyte
@@ -272,7 +271,7 @@ func shardsLog(indexDir, action string, shards []shard, repoName string) {
 		if fi, err := os.Stat(filepath.Join(indexDir, shard)); err == nil {
 			shardSize = fi.Size()
 		}
-		_, _ = fmt.Fprintf(shardLogger, "%d\t%s\t%s\t%d\t%s\n", time.Now().UTC().Unix(), action, shard, shardSize, repoName)
+		_, _ = fmt.Fprintf(shardLogger, "%d\t%s\t%s\t%d\t%s\t%d\n", time.Now().UTC().Unix(), action, shard, shardSize, s.RepoName, s.RepoID)
 	}
 }
 
@@ -293,18 +292,27 @@ func (s *Server) vacuum() {
 			continue
 		}
 
+		path := filepath.Join(s.IndexDir, fn)
+		info, err := os.Stat(path)
+		if err != nil {
+			debug.Printf("vacuum stat failed: %v", err)
+			continue
+		}
+
 		s.muIndexDir.Lock()
-		removed, err := removeTombstones(filepath.Join(s.IndexDir, fn))
+		removed, err := removeTombstones(path)
 		s.muIndexDir.Unlock()
 
 		if err != nil {
 			debug.Printf("error while removing tombstones in %s: %s", fn, err)
 		}
-		if len(removed) > 0 {
-			for _, ts := range removed {
-				shardsLog(s.IndexDir, "vac", []shard{{
-					Path: filepath.Join(s.IndexDir, fn)}}, ts)
-			}
+		for _, repo := range removed {
+			shardsLog(s.IndexDir, "vac", []shard{{
+				RepoID:   repo.ID,
+				RepoName: repo.Name,
+				Path:     filepath.Join(s.IndexDir, fn),
+				ModTime:  info.ModTime(),
+			}})
 		}
 	}
 }
@@ -313,7 +321,7 @@ var mockMerger func() error
 
 // removeTombstones removes all tombstones from a compound shard at fn by merging
 // the compound shard with itself.
-func removeTombstones(fn string) ([]string, error) {
+func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 	var runMerge func() error
 	if mockMerger != nil {
 		runMerge = mockMerger
@@ -326,10 +334,10 @@ func removeTombstones(fn string) ([]string, error) {
 		return nil, fmt.Errorf("zoekt.ReadMetadataPath: %s", err)
 	}
 
-	var tombstones []string
+	var tombstones []*zoekt.Repository
 	for _, r := range repos {
 		if r.Tombstone {
-			tombstones = append(tombstones, r.Name)
+			tombstones = append(tombstones, r)
 		}
 	}
 	if len(tombstones) == 0 {

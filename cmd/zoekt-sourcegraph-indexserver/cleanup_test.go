@@ -255,7 +255,7 @@ func TestVacuum(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(got) != 1 || got[0] != "repo2" {
+	if len(got) != 1 || got[0].Name != "repo2" {
 		t.Fatal(err)
 	}
 
