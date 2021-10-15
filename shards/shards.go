@@ -16,7 +16,6 @@ package shards
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -176,9 +175,6 @@ var (
 )
 
 type rankedShard struct {
-	// Lock protecting Close operation which will block until all searches using
-	// this shard call RUnlock.
-	mu sync.RWMutex
 	zoekt.Searcher
 
 	priority float64 // maximum priority across all repos in the shard
@@ -187,35 +183,6 @@ type rankedShard struct {
 	// the shard file does not. So we compute a rank in getShards. We store
 	// repos here to avoid the cost of List in the search request path.
 	repos []*zoekt.Repository
-}
-
-func (r *rankedShard) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if r.Searcher == nil {
-		return nil, os.ErrClosed
-	}
-	return r.Searcher.Search(ctx, q, opts)
-}
-
-func (r *rankedShard) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (*zoekt.RepoList, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if r.Searcher == nil {
-		return nil, os.ErrClosed
-	}
-	return r.Searcher.List(ctx, q, opts)
-}
-
-func (r *rankedShard) Close() {
-	if r == nil || r.Searcher == nil {
-		return
-	}
-
-	r.mu.Lock()
-	r.Searcher.Close()
-	r.Searcher = nil
-	r.mu.Unlock()
 }
 
 type shardedSearcher struct {
@@ -548,7 +515,6 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	if max := opts.MaxDocDisplayCount; max > 0 && len(aggregate.Files) > max {
 		aggregate.Files = aggregate.Files[:max]
 	}
-	copyFiles(aggregate.SearchResult)
 
 	aggregate.Duration = time.Since(start)
 	return aggregate.SearchResult, nil
@@ -577,10 +543,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		},
 	})
 
-	return ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
-		copyFiles(event)
-		sender.Send(event)
-	}))
+	return ss.streamSearch(ctx, proc, q, opts, sender)
 }
 
 func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
@@ -661,6 +624,11 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 					metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
 					metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
 
+					// copyFiles must happen before finalizer for *rankedShard Closes the underlying mmaped file
+					// so we ensure it always happens before *rankedShard is no longer referenced and can be garbage
+					// collected
+					copyFiles(sr)
+
 					// MaxPendingPriority *cannot* be this result's Priority, because
 					// the priority is removed before computing max() and calling sender.Send.
 					// (There may be duplicate priorities, though-- that's fine.) A PendingShard
@@ -689,14 +657,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 					mu.Lock()
 					pendingPriorities.remove(s.priority)
 					mu.Unlock()
-
-					// Ignore errors from shards that have been closed since we started the search.
-					// Since the shard is being removed anyways, it's OK to not return results for
-					// it instead of waiting for all searches that started before the shard was removed
-					// to finish before closing. This simplifies concurrency control of the shard lifecycle.
-					if !errors.Is(err, os.ErrClosed) {
-						return err
-					}
+					return err
 				}
 			}
 			return nil
@@ -711,7 +672,6 @@ func copySlice(src *[]byte) {
 	*src = dst
 }
 
-// copyFiles must be protected by shardedSearcher.sched.
 func copyFiles(sr *zoekt.SearchResult) {
 	for i := range sr.Files {
 		copySlice(&sr.Files[i].Content)
@@ -937,10 +897,12 @@ func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
 			s.shards[key] = r
 		}
 
-		if old != nil {
-			start := time.Now()
-			old.Close()
-			metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
+		if old != nil && old.Searcher != nil {
+			runtime.SetFinalizer(old, func(r *rankedShard) {
+				start := time.Now()
+				r.Close()
+				metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
+			})
 		}
 	}
 
