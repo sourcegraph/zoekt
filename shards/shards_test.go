@@ -21,13 +21,11 @@ import (
 	"hash/fnv"
 	"log"
 	"math"
-	"math/rand"
 	"os"
 	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -712,25 +710,4 @@ func TestPrioritySlice(t *testing.T) {
 			t.Errorf("%d: got %f, want %f", step, max, oper.expectedMax)
 		}
 	}
-}
-
-func BenchmarkRLock(b *testing.B) {
-	type locker struct{ sync.RWMutex }
-	rlocks := make([]*locker, 100000)
-	for i := 0; i < cap(rlocks); i++ {
-		rlocks[i] = new(locker)
-	}
-
-	rand.Shuffle(len(rlocks), func(i, j int) {
-		rlocks[i], rlocks[j] = rlocks[j], rlocks[i]
-	})
-
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for j := range rlocks {
-				rlocks[j].RLock()
-			}
-		}
-	})
 }
