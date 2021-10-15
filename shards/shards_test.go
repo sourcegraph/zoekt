@@ -22,8 +22,10 @@ import (
 	"log"
 	"math"
 	"os"
+	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -163,6 +165,49 @@ func TestOrderByShard(t *testing.T) {
 		if got != want {
 			t.Logf("%d: got %q, want %q", i, got, want)
 		}
+	}
+}
+
+func TestShardedSearcher_Ranking(t *testing.T) {
+	ss := newShardedSearcher(1)
+
+	var nextShardNum int
+	addShard := func(repo string, priority float64, docs ...zoekt.Document) {
+		r := &zoekt.Repository{ID: hash(repo), Name: repo}
+		r.RawConfig = map[string]string{
+			"public":   "1",
+			"priority": strconv.FormatFloat(priority, 'f', 2, 64),
+		}
+		b := testIndexBuilder(t, r, docs...)
+		shard := searcherForTest(t, b)
+		ss.replace(fmt.Sprintf("key-%d", nextShardNum), shard)
+		nextShardNum++
+	}
+
+	addShard("super-star", 0.9, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})
+	addShard("weekend-project", 0.25, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
+	addShard("moderately-popular", 0.5, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
+
+	q := &query.Substring{Pattern: "foo"}
+
+	sr, err := ss.Search(context.Background(), q, &zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		"weekend-project",
+		"moderately-popular",
+		"super-star",
+	}
+
+	var have []string
+	for _, fm := range sr.Files {
+		have = append(have, fm.Repository)
+	}
+
+	if !reflect.DeepEqual(want, have) {
+		t.Fatalf("\nwant: %s\nhave: %s", want, have)
 	}
 }
 
