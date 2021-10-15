@@ -184,9 +184,10 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 		nextShardNum++
 	}
 
-	addShard("super-star", 0.9, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})
 	addShard("weekend-project", 0.25, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
 	addShard("moderately-popular", 0.5, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
+	addShard("weekend-project-2", 0.25, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
+	addShard("super-star", 0.9, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})
 
 	q := &query.Substring{Pattern: "foo"}
 
@@ -196,9 +197,10 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 	}
 
 	want := []string{
-		"weekend-project",
-		"moderately-popular",
 		"super-star",
+		"moderately-popular",
+		"weekend-project",
+		"weekend-project-2",
 	}
 
 	var have []string

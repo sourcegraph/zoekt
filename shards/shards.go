@@ -15,7 +15,6 @@
 package shards
 
 import (
-	"container/heap"
 	"context"
 	"fmt"
 	"log"
@@ -23,6 +22,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -832,6 +832,11 @@ func (s *shardedSearcher) getShards() []*rankedShard {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ranked := append(make([]*rankedShard, 0, len(s.ranked)), s.ranked...)
+	//ranked := make([]*rankedShard, 0, len(s.ranked))
+	//for i := len(s.ranked) - 1; i >= 0; i-- {
+	//	ranked = append(ranked, s.ranked[i])
+	//}
+
 	return ranked
 }
 
@@ -875,15 +880,15 @@ func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
 
 	s.mu.Lock()
 	old := s.shards[key]
-	if old != nil && old.index >= 0 {
-		heap.Remove(&s.ranked, old.index)
+	if old != nil {
+		s.ranked.remove(old)
 	}
 
 	if shard == nil {
 		delete(s.shards, key)
 	} else {
 		s.shards[key] = r
-		heap.Push(&s.ranked, r)
+		s.ranked.insert(r)
 	}
 	s.mu.Unlock()
 
@@ -930,40 +935,26 @@ func strSliceEqual(a, b []string) bool {
 // is called.
 type rankedShards []*rankedShard
 
-func (s rankedShards) Len() int { return len(s) }
-func (s rankedShards) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-	s[i].index = i
-	s[j].index = j
+func (s *rankedShards) insert(r *rankedShard) {
+	r.index = sort.Search(len(*s), func(i int) bool {
+		priorityDiff := (*s)[i].priority - r.priority
+		if priorityDiff != 0 {
+			return priorityDiff < 0
+		}
+		if len((*s)[i].repos) == 0 || len(r.repos) == 0 {
+			// Protect against empty names which can happen if we fail to List or
+			// the shard is full of tombstones. Prefer the shard which has names.
+			return len((*s)[i].repos) <= len(r.repos)
+		}
+		return (*s)[i].repos[0].Name > r.repos[0].Name
+	})
+	*s = append(*s, nil)
+	copy((*s)[r.index+1:], (*s)[r.index:])
+	(*s)[r.index] = r
 }
 
-func (s rankedShards) Less(i, j int) bool {
-	priorityDiff := s[i].priority - s[j].priority
-	if priorityDiff != 0 {
-		return priorityDiff > 0
-	}
-	if len(s[i].repos) == 0 || len(s[j].repos) == 0 {
-		// Protect against empty names which can happen if we fail to List or
-		// the shard is full of tombstones. Prefer the shard which has names.
-		return len(s[i].repos) >= len(s[j].repos)
-	}
-	return s[i].repos[0].Name < s[j].repos[0].Name
-}
-
-func (s *rankedShards) Push(x interface{}) {
-	n := len(*s)
-	shard := x.(*rankedShard)
-	shard.index = n
-	*s = append(*s, shard)
-}
-
-func (s *rankedShards) Pop() interface{} {
-	old := *s
-	n := len(old)
-	x := old[n-1]
-	x.index = -1 // for safety
-	*s = old[:n-1]
-	return x
+func (s *rankedShards) remove(r *rankedShard) {
+	*s = append((*s)[:r.index], (*s)[r.index+1:]...)
 }
 
 // prioritySlice is a trivial implementation of an array that provides three
