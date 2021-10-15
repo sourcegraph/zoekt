@@ -624,7 +624,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 					metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
 					metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
 
-					// copyFiles must happen before finalizer for *rankedShard Closes the underlying mmaped file
+					// copyFiles must happen before the finalizer for *rankedShard Closes the underlying mmaped file
 					// so we ensure it always happens before *rankedShard is no longer referenced and can be garbage
 					// collected
 					copyFiles(sr)
