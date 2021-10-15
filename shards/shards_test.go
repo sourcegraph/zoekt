@@ -724,7 +724,6 @@ func BenchmarkRLock(b *testing.B) {
 	})
 
 	b.ResetTimer()
-	b.SetParallelism(1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			for j := range rlocks {

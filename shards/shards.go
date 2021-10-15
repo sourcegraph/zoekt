@@ -16,13 +16,13 @@ package shards
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math"
 	"os"
 	"runtime"
 	"runtime/debug"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -192,12 +192,18 @@ type rankedShard struct {
 func (r *rankedShard) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if r.Searcher == nil {
+		return nil, os.ErrClosed
+	}
 	return r.Searcher.Search(ctx, q, opts)
 }
 
 func (r *rankedShard) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (*zoekt.RepoList, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if r.Searcher == nil {
+		return nil, os.ErrClosed
+	}
 	return r.Searcher.List(ctx, q, opts)
 }
 
@@ -208,6 +214,7 @@ func (r *rankedShard) Close() {
 
 	r.mu.Lock()
 	r.Searcher.Close()
+	r.Searcher = nil
 	r.mu.Unlock()
 }
 
@@ -646,7 +653,14 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 					mu.Lock()
 					pendingPriorities.remove(s.priority)
 					mu.Unlock()
-					return err
+
+					// Ignore errors from shards that have been closed since we started the search.
+					// Since the shard is being removed anyways, it's OK to not return results for
+					// it instead of waiting for all searches that started before the shard was removed
+					// to finish before closing. This simplifies concurrency control of the shard lifecycle.
+					if !errors.Is(err, os.ErrClosed) {
+						return err
+					}
 				}
 			}
 			return nil
@@ -831,13 +845,7 @@ func reportListAllMetrics(repos []*zoekt.RepoListEntry) {
 func (s *shardedSearcher) getShards() []*rankedShard {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	ranked := append(make([]*rankedShard, 0, len(s.ranked)), s.ranked...)
-	//ranked := make([]*rankedShard, 0, len(s.ranked))
-	//for i := len(s.ranked) - 1; i >= 0; i-- {
-	//	ranked = append(ranked, s.ranked[i])
-	//}
-
-	return ranked
+	return s.ranked
 }
 
 func mkRankedShard(s zoekt.Searcher) *rankedShard {
@@ -930,32 +938,7 @@ func strSliceEqual(a, b []string) bool {
 	return true
 }
 
-// rankedShards implements the heap.Interface to maintain the shards in priority
-// order incrementally rather than having to re-sort all of them every time replace
-// is called.
 type rankedShards []*rankedShard
-
-func (s *rankedShards) insert(r *rankedShard) {
-	r.index = sort.Search(len(*s), func(i int) bool {
-		priorityDiff := (*s)[i].priority - r.priority
-		if priorityDiff != 0 {
-			return priorityDiff < 0
-		}
-		if len((*s)[i].repos) == 0 || len(r.repos) == 0 {
-			// Protect against empty names which can happen if we fail to List or
-			// the shard is full of tombstones. Prefer the shard which has names.
-			return len((*s)[i].repos) <= len(r.repos)
-		}
-		return (*s)[i].repos[0].Name > r.repos[0].Name
-	})
-	*s = append(*s, nil)
-	copy((*s)[r.index+1:], (*s)[r.index:])
-	(*s)[r.index] = r
-}
-
-func (s *rankedShards) remove(r *rankedShard) {
-	*s = append((*s)[:r.index], (*s)[r.index+1:]...)
-}
 
 // prioritySlice is a trivial implementation of an array that provides three
 // things: appending a value, removing a value, and getting the array's max.
