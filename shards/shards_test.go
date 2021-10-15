@@ -192,13 +192,6 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 	addShard("weekend-project-2", 0.25, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
 	addShard("super-star", 0.9, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})
 
-	q := &query.Substring{Pattern: "foo"}
-
-	sr, err := ss.Search(context.Background(), q, &zoekt.SearchOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	want := []string{
 		"super-star",
 		"moderately-popular",
@@ -207,8 +200,10 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 	}
 
 	var have []string
-	for _, fm := range sr.Files {
-		have = append(have, fm.Repository)
+	for _, s := range ss.getShards() {
+		for _, r := range s.repos {
+			have = append(have, r.Name)
+		}
 	}
 
 	if !reflect.DeepEqual(want, have) {
