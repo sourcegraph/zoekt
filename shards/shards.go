@@ -23,11 +23,13 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
@@ -134,12 +136,11 @@ var (
 		Help:    "The time it takes to close a Searcher.",
 		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
 	})
-	metricRankCacheUpdateDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "zoekt_rank_cache_update_duration_seconds",
-		Help:    "The time it takes to update the shard cache with new ranked shards.",
+	metricShardsBatchReplaceDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "zoekt_shards_batch_replace_duration_seconds",
+		Help:    "The time it takes to close a Searcher.",
 		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
 	})
-
 	metricListAllRepos = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "zoekt_list_all_stats_repos",
 		Help: "The last List(true) value for RepoStats.Repos. Repos is used for aggregrating the number of repositories.",
@@ -180,7 +181,6 @@ type rankedShard struct {
 	mu sync.RWMutex
 	zoekt.Searcher
 
-	index    int     // index in rankedShards heap
 	priority float64 // maximum priority across all repos in the shard
 
 	// We have out of band ranking on compound shards which can change even if
@@ -275,20 +275,56 @@ type loader struct {
 	ss *shardedSearcher
 }
 
-func (tl *loader) load(key string) {
-	shard, err := loadShard(key)
-	if err != nil {
-		metricShardsLoadFailedTotal.Inc()
-		log.Printf("reloading: %s, err %v ", key, err)
-		return
+func (tl *loader) load(keys ...string) {
+	var (
+		mu     sync.Mutex     // synchronizes writes to the shards map
+		wg     sync.WaitGroup // used to wait for all shards to load
+		sem    = semaphore.NewWeighted(int64(runtime.GOMAXPROCS(0)))
+		shards = make(map[string]zoekt.Searcher, len(keys))
+	)
+
+	log.Printf("loading %d shard(s): %s", len(keys), humanTruncateList(keys, 5))
+
+	lastProgress := time.Now()
+	for i, key := range keys {
+		// If taking a while to start-up occasionally give a progress message
+		if time.Since(lastProgress) > 10*time.Second {
+			log.Printf("still need to load %d shards...", len(keys)-i)
+			lastProgress = time.Now()
+		}
+
+		_ = sem.Acquire(context.Background(), 1)
+		wg.Add(1)
+
+		go func(key string) {
+			defer sem.Release(1)
+			defer wg.Done()
+
+			shard, err := loadShard(key)
+			if err != nil {
+				metricShardsLoadFailedTotal.Inc()
+				log.Printf("reloading: %s, err %v ", key, err)
+				return
+			}
+			metricShardsLoadedTotal.Inc()
+
+			mu.Lock()
+			shards[key] = shard
+			mu.Unlock()
+		}(key)
 	}
 
-	metricShardsLoadedTotal.Inc()
-	tl.ss.replace(key, shard)
+	wg.Wait()
+
+	tl.ss.replace(shards)
 }
 
-func (tl *loader) drop(key string) {
-	tl.ss.replace(key, nil)
+func (tl *loader) drop(keys ...string) {
+	shards := make(map[string]zoekt.Searcher, len(keys))
+	for _, key := range keys {
+		shards[key] = nil
+	}
+	tl.ss.replace(shards)
 }
 
 func (ss *shardedSearcher) String() string {
@@ -880,31 +916,41 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 	}
 }
 
-func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
-	var r *rankedShard
-	if shard != nil {
-		r = mkRankedShard(shard)
-	}
+func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
+	defer func(began time.Time) {
+		metricShardsBatchReplaceDurationSeconds.Observe(time.Since(began).Seconds())
+	}(time.Now())
 
 	s.mu.Lock()
-	old := s.shards[key]
-	if old != nil {
-		s.ranked.remove(old)
+	defer s.mu.Unlock()
+
+	for key, shard := range shards {
+		var r *rankedShard
+		if shard != nil {
+			r = mkRankedShard(shard)
+		}
+
+		old := s.shards[key]
+		if shard == nil {
+			delete(s.shards, key)
+		} else {
+			s.shards[key] = r
+		}
+
+		if old != nil {
+			start := time.Now()
+			old.Close()
+			metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
+		}
 	}
 
-	if shard == nil {
-		delete(s.shards, key)
-	} else {
-		s.shards[key] = r
-		s.ranked.insert(r)
+	s.ranked = make(rankedShards, 0, len(s.shards))
+	for _, r := range s.shards {
+		s.ranked = append(s.ranked, r)
 	}
-	s.mu.Unlock()
+	sort.Sort(s.ranked)
 
-	start := time.Now()
-	old.Close() // Blocks until all searches using the shard finish
-	metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
-
-	metricShardsLoaded.Set(float64(len(s.shards)))
+	metricShardsLoaded.Set(float64(len(s.ranked)))
 }
 
 func loadShard(fn string) (zoekt.Searcher, error) {
@@ -939,6 +985,23 @@ func strSliceEqual(a, b []string) bool {
 }
 
 type rankedShards []*rankedShard
+
+func (s rankedShards) Len() int { return len(s) }
+
+func (s rankedShards) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+
+func (s rankedShards) Less(i, j int) bool {
+	priorityDiff := s[i].priority - s[j].priority
+	if priorityDiff != 0 {
+		return priorityDiff > 0
+	}
+	if len(s[i].repos) == 0 || len(s[j].repos) == 0 {
+		// Protect against empty names which can happen if we fail to List or
+		// the shard is full of tombstones. Prefer the shard which has names.
+		return len(s[i].repos) >= len(s[j].repos)
+	}
+	return s[i].repos[0].Name < s[j].repos[0].Name
+}
 
 // prioritySlice is a trivial implementation of an array that provides three
 // things: appending a value, removing a value, and getting the array's max.

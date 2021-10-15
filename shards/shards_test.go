@@ -133,10 +133,9 @@ func TestOrderByShard(t *testing.T) {
 
 	n := 10 * runtime.GOMAXPROCS(0)
 	for i := 0; i < n; i++ {
-		ss.replace(fmt.Sprintf("shard%d", i),
-			&rankSearcher{
-				rank: uint16(i),
-			})
+		ss.replace(map[string]zoekt.Searcher{
+			fmt.Sprintf("shard%d", i): &rankSearcher{rank: uint16(i)},
+		})
 	}
 
 	if res, err := ss.Search(context.Background(), &query.Substring{Pattern: "bla"}, &zoekt.SearchOptions{}); err != nil {
@@ -182,7 +181,9 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 		}
 		b := testIndexBuilder(t, r, docs...)
 		shard := searcherForTest(t, b)
-		ss.replace(fmt.Sprintf("key-%d", nextShardNum), shard)
+		ss.replace(map[string]zoekt.Searcher{
+			fmt.Sprintf("key-%d", nextShardNum): shard,
+		})
 		nextShardNum++
 	}
 
@@ -228,9 +229,11 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 			repoSetNames = append(repoSetNames, repoName)
 		}
 
-		ss.replace(shardName, &rankSearcher{
-			repo: &zoekt.Repository{ID: hash(repoName), Name: repoName},
-			rank: uint16(n - i),
+		ss.replace(map[string]zoekt.Searcher{
+			shardName: &rankSearcher{
+				repo: &zoekt.Repository{ID: hash(repoName), Name: repoName},
+				rank: uint16(n - i),
+			},
 		})
 	}
 
@@ -321,7 +324,7 @@ func TestUnloadIndex(t *testing.T) {
 	}
 
 	ss := newShardedSearcher(2)
-	ss.replace("key", searcher)
+	ss.replace(map[string]zoekt.Searcher{"key": searcher})
 
 	var opts zoekt.SearchOptions
 	q := &query.Substring{Pattern: "needle"}
@@ -368,10 +371,12 @@ func TestShardedSearcher_List(t *testing.T) {
 
 	// Test duplicate removal when ListOptions.Minimal is true and false
 	ss := newShardedSearcher(4)
-	ss.replace("1", searcherForTest(t, testIndexBuilder(t, repos[0])))
-	ss.replace("2", searcherForTest(t, testIndexBuilder(t, repos[0])))
-	ss.replace("3", searcherForTest(t, testIndexBuilder(t, repos[1])))
-	ss.replace("4", searcherForTest(t, testIndexBuilder(t, repos[1])))
+	ss.replace(map[string]zoekt.Searcher{
+		"1": searcherForTest(t, testIndexBuilder(t, repos[0])),
+		"2": searcherForTest(t, testIndexBuilder(t, repos[0])),
+		"3": searcherForTest(t, testIndexBuilder(t, repos[1])),
+		"4": searcherForTest(t, testIndexBuilder(t, repos[1])),
+	})
 
 	for _, tc := range []struct {
 		name string
@@ -519,13 +524,15 @@ func BenchmarkShardedSearch(b *testing.B) {
 	repos := reposForTest(3000)
 	var repoSetIDs []uint32
 
+	shards := make(map[string]zoekt.Searcher, len(repos))
 	for i, r := range repos {
-		searcher := testSearcherForRepo(b, r, filesPerRepo)
-		ss.replace(r.Name, searcher)
+		shards[r.Name] = testSearcherForRepo(b, r, filesPerRepo)
 		if i%2 == 0 {
 			repoSetIDs = append(repoSetIDs, r.ID)
 		}
 	}
+
+	ss.replace(shards)
 
 	ctx := context.Background()
 	opts := &zoekt.SearchOptions{}
@@ -588,7 +595,7 @@ func TestRawQuerySearch(t *testing.T) {
 		r.RawConfig = rawConfig
 		b := testIndexBuilder(t, r, docs...)
 		shard := searcherForTest(t, b)
-		ss.replace(fmt.Sprintf("key-%d", nextShardNum), shard)
+		ss.replace(map[string]zoekt.Searcher{fmt.Sprintf("key-%d", nextShardNum): shard})
 		nextShardNum++
 	}
 	addShard("public", map[string]string{"public": "1"}, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})

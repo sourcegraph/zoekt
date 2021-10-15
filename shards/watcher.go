@@ -19,7 +19,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,8 +31,8 @@ import (
 
 type shardLoader interface {
 	// Load a new file. Should be safe for concurrent calls.
-	load(filename string)
-	drop(filename string)
+	load(filenames ...string)
+	drop(filenames ...string)
 }
 
 type DirectoryWatcher struct {
@@ -163,35 +162,14 @@ func (s *DirectoryWatcher) scan() error {
 	if len(toDrop) > 0 {
 		log.Printf("unloading %d shard(s): %s", len(toDrop), humanTruncateList(toDrop, 5))
 	}
-	for _, t := range toDrop {
-		s.loader.drop(t)
-	}
+
+	s.loader.drop(toDrop...)
 
 	if len(toLoad) == 0 {
 		return nil
 	}
 
-	log.Printf("loading %d shard(s): %s", len(toLoad), humanTruncateList(toLoad, 5))
-
-	// Limit amount of concurrent shard loads.
-	throttle := make(chan struct{}, runtime.GOMAXPROCS(0))
-	lastProgress := time.Now()
-	for i, t := range toLoad {
-		// If taking a while to start-up occasionally give a progress message
-		if time.Since(lastProgress) > 10*time.Second {
-			log.Printf("still need to load %d shards...", len(toLoad)-i)
-			lastProgress = time.Now()
-		}
-
-		throttle <- struct{}{}
-		go func(k string) {
-			s.loader.load(k)
-			<-throttle
-		}(t)
-	}
-	for i := 0; i < cap(throttle); i++ {
-		throttle <- struct{}{}
-	}
+	s.loader.load(toLoad...)
 
 	return nil
 }
