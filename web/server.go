@@ -178,20 +178,8 @@ func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 	if suggest, ok := err.(*query.SuggestQueryError); ok {
 		result = &ApiSearchResult{Suggestion: suggest}
 	}
-
 	qvals := r.URL.Query()
-	useJson := qvals.Get("format") == "json"
-	var buf bytes.Buffer
-
-	if err == nil && !useJson {
-		if result.Repos != nil {
-			err = s.repolist.Execute(&buf, &result.Repos)
-		} else if result.Result != nil {
-			err = s.result.Execute(&buf, &result.Result)
-		}
-	}
-
-	if useJson {
+	if qvals.Get("format") == "json" {
 		w.Header().Add("Content-Type", "application/json")
 		if err != nil {
 			w.WriteHeader(http.StatusTeapot)
@@ -201,15 +189,23 @@ func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var buf bytes.Buffer
 	if err == nil {
-		w.Write(buf.Bytes())
-		return
+		if result.Repos != nil {
+			err = s.repolist.Execute(&buf, &result.Repos)
+		} else if result.Result != nil {
+			err = s.result.Execute(&buf, &result.Result)
+		}
+		if err == nil {
+			w.Write(buf.Bytes())
+			return
+		}
 	}
 
+	http.Error(w, err.Error(), http.StatusTeapot)
 	if result != nil && result.Suggestion != nil {
 		if err = s.didYouMean.Execute(&buf, result.Suggestion); err == nil {
 			w.Write(buf.Bytes())
-			return
 		}
 	}
 	http.Error(w, err.Error(), http.StatusTeapot)
