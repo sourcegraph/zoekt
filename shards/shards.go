@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -192,9 +193,10 @@ type shardedSearcher struct {
 	// pressure.
 	sched scheduler
 
-	mu     sync.RWMutex
+	mu     sync.Mutex // protects writes to shards
 	shards map[string]*rankedShard
-	ranked rankedShards
+
+	ranked atomic.Value
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
@@ -839,9 +841,7 @@ func reportListAllMetrics(repos []*zoekt.RepoListEntry) {
 // getShards returns the currently loaded shards. The shards are sorted by decreasing
 // rank and should not be mutated.
 func (s *shardedSearcher) getShards() []*rankedShard {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.ranked
+	return s.ranked.Load().([]*rankedShard)
 }
 
 func mkRankedShard(s zoekt.Searcher) *rankedShard {
@@ -906,13 +906,27 @@ func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
 		}
 	}
 
-	s.ranked = make(rankedShards, 0, len(s.shards))
+	ranked := make([]*rankedShard, 0, len(s.shards))
 	for _, r := range s.shards {
-		s.ranked = append(s.ranked, r)
+		ranked = append(ranked, r)
 	}
-	sort.Sort(s.ranked)
 
-	metricShardsLoaded.Set(float64(len(s.ranked)))
+	sort.Slice(ranked, func(i, j int) bool {
+		priorityDiff := ranked[i].priority - ranked[j].priority
+		if priorityDiff != 0 {
+			return priorityDiff > 0
+		}
+		if len(ranked[i].repos) == 0 || len(ranked[j].repos) == 0 {
+			// Protect against empty names which can happen if we fail to List or
+			// the shard is full of tombstones. Prefer the shard which has names.
+			return len(ranked[i].repos) >= len(ranked[j].repos)
+		}
+		return ranked[i].repos[0].Name < ranked[j].repos[0].Name
+	})
+
+	s.ranked.Store(ranked)
+
+	metricShardsLoaded.Set(float64(len(ranked)))
 }
 
 func loadShard(fn string) (zoekt.Searcher, error) {
@@ -944,25 +958,6 @@ func strSliceEqual(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-type rankedShards []*rankedShard
-
-func (s rankedShards) Len() int { return len(s) }
-
-func (s rankedShards) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-
-func (s rankedShards) Less(i, j int) bool {
-	priorityDiff := s[i].priority - s[j].priority
-	if priorityDiff != 0 {
-		return priorityDiff > 0
-	}
-	if len(s[i].repos) == 0 || len(s[j].repos) == 0 {
-		// Protect against empty names which can happen if we fail to List or
-		// the shard is full of tombstones. Prefer the shard which has names.
-		return len(s[i].repos) >= len(s[j].repos)
-	}
-	return s[i].repos[0].Name < s[j].repos[0].Name
 }
 
 // prioritySlice is a trivial implementation of an array that provides three
