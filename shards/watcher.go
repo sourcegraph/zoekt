@@ -30,7 +30,7 @@ import (
 )
 
 type shardLoader interface {
-	// Load a new file. Should be safe for concurrent calls.
+	// Load a new file.
 	load(filenames ...string)
 	drop(filenames ...string)
 }

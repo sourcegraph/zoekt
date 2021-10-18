@@ -298,13 +298,13 @@ func (ss *shardedSearcher) String() string {
 // Close closes references to open files. It may be called only once.
 func (ss *shardedSearcher) Close() {
 	ss.mu.Lock()
-	shards := ss.shards
-	ss.shards = make(map[string]*rankedShard)
+	shards := make(map[string]zoekt.Searcher, len(ss.shards))
+	for k := range ss.shards {
+		shards[k] = nil
+	}
 	ss.mu.Unlock()
 
-	for _, s := range shards {
-		s.Close()
-	}
+	ss.replace(shards)
 }
 
 func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
