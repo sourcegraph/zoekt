@@ -17,6 +17,7 @@ package shards
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -479,7 +480,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	aggregate.Wait = time.Since(start)
 	start = time.Now()
 
-	err = ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
+	closer, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
 		began := time.Now()
 
 		aggregate.Lock()
@@ -509,6 +510,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 		metricSearchAggregateDuration.WithLabelValues("total").Observe(time.Since(began).Seconds())
 	}))
+	defer closer.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -517,6 +519,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	if max := opts.MaxDocDisplayCount; max > 0 && len(aggregate.Files) > max {
 		aggregate.Files = aggregate.Files[:max]
 	}
+	copyFiles(aggregate.SearchResult)
 
 	aggregate.Duration = time.Since(start)
 	return aggregate.SearchResult, nil
@@ -545,10 +548,21 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		},
 	})
 
-	return ss.streamSearch(ctx, proc, q, opts, sender)
+	closer, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+		copyFiles(event)
+		sender.Send(event)
+	}))
+	closer.Close()
+	return err
 }
 
-func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
+type noopShardsCloser []*rankedShard
+
+func (_ noopShardsCloser) Close() error {
+	return nil
+}
+
+func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (_ io.Closer, err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
@@ -570,6 +584,8 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	tr.LazyPrintf("before selectRepoSet shards:%d", len(shards))
 	shards, q = selectRepoSet(shards, q)
 	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), q)
+
+	closer := noopShardsCloser(shards)
 
 	var childCtx context.Context
 	var cancel context.CancelFunc
@@ -626,11 +642,6 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 					metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
 					metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
 
-					// copyFiles must happen before the finalizer for *rankedShard Closes the underlying mmaped file
-					// so we ensure it always happens before *rankedShard is no longer referenced and can be garbage
-					// collected
-					copyFiles(sr)
-
 					// MaxPendingPriority *cannot* be this result's Priority, because
 					// the priority is removed before computing max() and calling sender.Send.
 					// (There may be duplicate priorities, though-- that's fine.) A PendingShard
@@ -665,7 +676,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 			return nil
 		})
 	}
-	return g.Wait()
+	return closer, g.Wait()
 }
 
 func copySlice(src *[]byte) {
