@@ -847,7 +847,8 @@ func reportListAllMetrics(repos []*zoekt.RepoListEntry) {
 // getShards returns the currently loaded shards. The shards are sorted by decreasing
 // rank and should not be mutated.
 func (s *shardedSearcher) getShards() []*rankedShard {
-	return s.ranked.Load().([]*rankedShard)
+	ranked, _ := s.ranked.Load().([]*rankedShard)
+	return ranked
 }
 
 func mkRankedShard(s zoekt.Searcher) *rankedShard {
