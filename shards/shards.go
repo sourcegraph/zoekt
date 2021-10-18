@@ -17,7 +17,6 @@ package shards
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"os"
@@ -480,7 +479,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	aggregate.Wait = time.Since(start)
 	start = time.Now()
 
-	closer, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
+	shards, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
 		began := time.Now()
 
 		aggregate.Lock()
@@ -510,7 +509,6 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 		metricSearchAggregateDuration.WithLabelValues("total").Observe(time.Since(began).Seconds())
 	}))
-	defer closer.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -520,6 +518,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		aggregate.Files = aggregate.Files[:max]
 	}
 	copyFiles(aggregate.SearchResult)
+	runtime.KeepAlive(shards)
 
 	aggregate.Duration = time.Since(start)
 	return aggregate.SearchResult, nil
@@ -548,21 +547,22 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		},
 	})
 
-	closer, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	shards, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		copyFiles(event)
 		sender.Send(event)
 	}))
-	closer.Close()
+	runtime.KeepAlive(shards)
 	return err
 }
 
-type noopShardsCloser []*rankedShard
-
-func (_ noopShardsCloser) Close() error {
-	return nil
-}
-
-func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (_ io.Closer, err error) {
+// streamSearch is an internal helper since both Search and StreamSearch are largely similiar.
+//
+// done must always be called, even if err is non-nil. The SearchResults sent
+// via sender contain references to the underlying mmap data that the garbage
+// collector can't see. Calling done informs the garbage collector it is free
+// to collect those shards. The caller must call copyFiles on any
+// SearchResults it returns/streams out before calling done.
+func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (done func(), err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
@@ -584,8 +584,6 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	tr.LazyPrintf("before selectRepoSet shards:%d", len(shards))
 	shards, q = selectRepoSet(shards, q)
 	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), q)
-
-	closer := noopShardsCloser(shards)
 
 	var childCtx context.Context
 	var cancel context.CancelFunc
@@ -676,7 +674,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 			return nil
 		})
 	}
-	return closer, g.Wait()
+	return shards, g.Wait()
 }
 
 func copySlice(src *[]byte) {
