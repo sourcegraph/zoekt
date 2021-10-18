@@ -131,11 +131,6 @@ var (
 		Name: "zoekt_list_shard_running",
 		Help: "The number of concurrent list requests in a shard running",
 	})
-	metricShardCloseDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "zoekt_shard_close_duration_seconds",
-		Help:    "The time it takes to close a Searcher.",
-		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
-	})
 	metricShardsBatchReplaceDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "zoekt_shards_batch_replace_duration_seconds",
 		Help:    "The time it takes to replace a batch of Searchers.",
@@ -910,9 +905,7 @@ func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
 
 		if old != nil && old.Searcher != nil {
 			runtime.SetFinalizer(old, func(r *rankedShard) {
-				start := time.Now()
 				r.Close()
-				metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
 			})
 		}
 	}
