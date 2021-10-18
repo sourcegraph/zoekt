@@ -30,12 +30,16 @@ type loggingLoader struct {
 	drops chan string
 }
 
-func (l *loggingLoader) load(k string) {
-	l.loads <- k
+func (l *loggingLoader) load(keys ...string) {
+	for _, key := range keys {
+		l.loads <- key
+	}
 }
 
-func (l *loggingLoader) drop(k string) {
-	l.drops <- k
+func (l *loggingLoader) drop(keys ...string) {
+	for _, key := range keys {
+		l.drops <- key
+	}
 }
 
 func advanceFS() {

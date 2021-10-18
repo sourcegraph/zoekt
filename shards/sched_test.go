@@ -168,27 +168,10 @@ func TestMultiScheduler(t *testing.T) {
 		t.Fatal("expected second acquire after cap to fail")
 	}
 
-	// We check that exclusive works by trying to acquire one and ensuring it
-	// only works once we have released all other existing procs
-	exclusiveC := make(chan *process)
-	go func() {
-		exclusiveC <- sched.Exclusive()
-	}()
-
-	select {
-	case <-exclusiveC:
-		t.Fatal("should not acquire exclusive since other procs are running")
-	case <-time.After(10 * time.Millisecond):
-	}
-
 	for _, p := range procs {
 		p.Release()
 	}
 	procs = nil
-
-	// Now we should get exclusive
-	proc := <-exclusiveC
-	proc.Release()
 }
 
 func quickCtx(t *testing.T) context.Context {

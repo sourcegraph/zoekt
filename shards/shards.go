@@ -25,9 +25,11 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
@@ -129,17 +131,11 @@ var (
 		Name: "zoekt_list_shard_running",
 		Help: "The number of concurrent list requests in a shard running",
 	})
-	metricShardCloseDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "zoekt_shard_close_duration_seconds",
-		Help:    "The time it takes to close a Searcher.",
+	metricShardsBatchReplaceDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "zoekt_shards_batch_replace_duration_seconds",
+		Help:    "The time it takes to replace a batch of Searchers.",
 		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
 	})
-	metricRankCacheUpdateDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "zoekt_rank_cache_update_duration_seconds",
-		Help:    "The time it takes to update the shard cache with new ranked shards.",
-		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
-	})
-
 	metricListAllRepos = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "zoekt_list_all_stats_repos",
 		Help: "The last List(true) value for RepoStats.Repos. Repos is used for aggregrating the number of repositories.",
@@ -177,11 +173,11 @@ var (
 type rankedShard struct {
 	zoekt.Searcher
 
-	priority float64
+	priority float64 // maximum priority across all repos in the shard
 
 	// We have out of band ranking on compound shards which can change even if
 	// the shard file does not. So we compute a rank in getShards. We store
-	// names here to avoid the cost of List in the search request path.
+	// repos here to avoid the cost of List in the search request path.
 	repos []*zoekt.Repository
 }
 
@@ -192,15 +188,15 @@ type shardedSearcher struct {
 	// pressure.
 	sched scheduler
 
-	shards map[string]rankedShard
+	mu     sync.Mutex // protects writes to shards
+	shards map[string]*rankedShard
 
-	rankedLock sync.Mutex // guards ranked
-	ranked     []rankedShard
+	ranked atomic.Value
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
 	ss := &shardedSearcher{
-		shards: make(map[string]rankedShard),
+		shards: make(map[string]*rankedShard),
 		sched:  newScheduler(n),
 	}
 	return ss
@@ -243,20 +239,56 @@ type loader struct {
 	ss *shardedSearcher
 }
 
-func (tl *loader) load(key string) {
-	shard, err := loadShard(key)
-	if err != nil {
-		metricShardsLoadFailedTotal.Inc()
-		log.Printf("reloading: %s, err %v ", key, err)
-		return
+func (tl *loader) load(keys ...string) {
+	var (
+		mu     sync.Mutex     // synchronizes writes to the shards map
+		wg     sync.WaitGroup // used to wait for all shards to load
+		sem    = semaphore.NewWeighted(int64(runtime.GOMAXPROCS(0)))
+		shards = make(map[string]zoekt.Searcher, len(keys))
+	)
+
+	log.Printf("loading %d shard(s): %s", len(keys), humanTruncateList(keys, 5))
+
+	lastProgress := time.Now()
+	for i, key := range keys {
+		// If taking a while to start-up occasionally give a progress message
+		if time.Since(lastProgress) > 10*time.Second {
+			log.Printf("still need to load %d shards...", len(keys)-i)
+			lastProgress = time.Now()
+		}
+
+		_ = sem.Acquire(context.Background(), 1)
+		wg.Add(1)
+
+		go func(key string) {
+			defer sem.Release(1)
+			defer wg.Done()
+
+			shard, err := loadShard(key)
+			if err != nil {
+				metricShardsLoadFailedTotal.Inc()
+				log.Printf("reloading: %s, err %v ", key, err)
+				return
+			}
+			metricShardsLoadedTotal.Inc()
+
+			mu.Lock()
+			shards[key] = shard
+			mu.Unlock()
+		}(key)
 	}
 
-	metricShardsLoadedTotal.Inc()
-	tl.ss.replace(key, shard)
+	wg.Wait()
+
+	tl.ss.replace(shards)
 }
 
-func (tl *loader) drop(key string) {
-	tl.ss.replace(key, nil)
+func (tl *loader) drop(keys ...string) {
+	shards := make(map[string]zoekt.Searcher, len(keys))
+	for _, key := range keys {
+		shards[key] = nil
+	}
+	tl.ss.replace(shards)
 }
 
 func (ss *shardedSearcher) String() string {
@@ -265,15 +297,17 @@ func (ss *shardedSearcher) String() string {
 
 // Close closes references to open files. It may be called only once.
 func (ss *shardedSearcher) Close() {
-	proc := ss.sched.Exclusive()
-	defer proc.Release()
-	for _, s := range ss.shards {
-		s.Close()
+	ss.mu.Lock()
+	shards := make(map[string]zoekt.Searcher, len(ss.shards))
+	for k := range ss.shards {
+		shards[k] = nil
 	}
-	ss.shards = make(map[string]rankedShard)
+	ss.mu.Unlock()
+
+	ss.replace(shards)
 }
 
-func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
+func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
 	and, ok := q.(*query.And)
 	if !ok {
 		return shards, q
@@ -336,7 +370,7 @@ func selectRepoSet(shards []rankedShard, q query.Q) ([]rankedShard, query.Q) {
 			setSize = len(shards)
 		}
 
-		filtered := make([]rankedShard, 0, setSize)
+		filtered := make([]*rankedShard, 0, setSize)
 		filteredAll := true
 
 		for _, s := range shards {
@@ -440,7 +474,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	aggregate.Wait = time.Since(start)
 	start = time.Now()
 
-	err = ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
+	done, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
 		began := time.Now()
 
 		aggregate.Lock()
@@ -470,6 +504,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 		metricSearchAggregateDuration.WithLabelValues("total").Observe(time.Since(began).Seconds())
 	}))
+	defer done()
 	if err != nil {
 		return nil, err
 	}
@@ -507,13 +542,22 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		},
 	})
 
-	return ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	done, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		copyFiles(event)
 		sender.Send(event)
 	}))
+	done()
+	return err
 }
 
-func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
+// streamSearch is an internal helper since both Search and StreamSearch are largely similiar.
+//
+// done must always be called, even if err is non-nil. The SearchResults sent
+// via sender contain references to the underlying mmap data that the garbage
+// collector can't see. Calling done informs the garbage collector it is free
+// to collect those shards. The caller must call copyFiles on any
+// SearchResults it returns/streams out before calling done.
+func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (done func(), err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
@@ -561,7 +605,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	// cap(feeder) searches run while yield blocks. However, doing it this way
 	// avoids needing to have synchronization in yield, so is done for
 	// simplicity.
-	feeder := make(chan rankedShard, runtime.GOMAXPROCS(0))
+	feeder := make(chan *rankedShard, runtime.GOMAXPROCS(0))
 	g.Go(func() error {
 		defer close(feeder)
 		// Note: shards is sorted in order of descending priority.
@@ -625,7 +669,9 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 			return nil
 		})
 	}
-	return g.Wait()
+	return func() {
+		runtime.KeepAlive(shards)
+	}, g.Wait()
 }
 
 func copySlice(src *[]byte) {
@@ -634,7 +680,6 @@ func copySlice(src *[]byte) {
 	*src = dst
 }
 
-// copyFiles must be protected by shardedSearcher.sched.
 func copyFiles(sr *zoekt.SearchResult) {
 	for i := range sr.Files {
 		copySlice(&sr.Files[i].Content)
@@ -801,48 +846,19 @@ func reportListAllMetrics(repos []*zoekt.RepoListEntry) {
 
 // getShards returns the currently loaded shards. The shards are sorted by decreasing
 // rank and should not be mutated.
-func (s *shardedSearcher) getShards() []rankedShard {
-	start := time.Now()
-	s.rankedLock.Lock()
-	defer s.rankedLock.Unlock()
-	if len(s.ranked) > 0 {
-		metricRankCacheUpdateDurationSeconds.Observe(time.Since(start).Seconds())
-		return s.ranked
-	}
-
-	// Holding rankedLock during the search ensures that we only perform
-	// the sort once-- any blocked goroutines would take just as long to
-	// perform the sort themselves.
-	res := make([]rankedShard, 0, len(s.shards))
-	for _, sh := range s.shards {
-		res = append(res, sh)
-	}
-	sort.Slice(res, func(i, j int) bool {
-		priorityDiff := res[i].priority - res[j].priority
-		if priorityDiff != 0 {
-			return priorityDiff > 0
-		}
-		if len(res[i].repos) == 0 || len(res[j].repos) == 0 {
-			// Protect against empty names which can happen if we fail to List or
-			// the shard is full of tombstones. Prefer the shard which has names.
-			return len(res[i].repos) >= len(res[j].repos)
-		}
-		return res[i].repos[0].Name < res[j].repos[0].Name
-	})
-
-	s.ranked = res
-
-	return res
+func (s *shardedSearcher) getShards() []*rankedShard {
+	ranked, _ := s.ranked.Load().([]*rankedShard)
+	return ranked
 }
 
-func mkRankedShard(s zoekt.Searcher) rankedShard {
+func mkRankedShard(s zoekt.Searcher) *rankedShard {
 	q := query.Const{Value: true}
 	result, err := s.List(context.Background(), &q, nil)
 	if err != nil {
-		return rankedShard{Searcher: s}
+		return &rankedShard{Searcher: s}
 	}
 	if len(result.Repos) == 0 {
-		return rankedShard{Searcher: s}
+		return &rankedShard{Searcher: s}
 	}
 
 	var (
@@ -860,40 +876,83 @@ func mkRankedShard(s zoekt.Searcher) rankedShard {
 		}
 	}
 
-	return rankedShard{
+	return &rankedShard{
 		Searcher: s,
 		repos:    repos,
 		priority: maxPriority,
 	}
 }
 
-func (s *shardedSearcher) replace(key string, shard zoekt.Searcher) {
-	var ranked rankedShard
-	if shard != nil {
-		ranked = mkRankedShard(shard)
+func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
+	defer func(began time.Time) {
+		metricShardsBatchReplaceDurationSeconds.Observe(time.Since(began).Seconds())
+	}(time.Now())
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key, shard := range shards {
+		var r *rankedShard
+		if shard != nil {
+			r = mkRankedShard(shard)
+		}
+
+		old := s.shards[key]
+		if shard == nil {
+			delete(s.shards, key)
+		} else {
+			s.shards[key] = r
+		}
+
+		if old != nil && old.Searcher != nil {
+			//                 _ ___                /^^\ /^\  /^^\_
+			//     _          _@)@) \            ,,/ '` ~ `'~~ ', `\.
+			//   _/o\_ _ _ _/~`.`...'~\        ./~~..,'`','',.,' '  ~:
+			//  / `,'.~,~.~  .   , . , ~|,   ,/ .,' , ,. .. ,,.   `,  ~\_
+			// ( ' _' _ '_` _  '  .    , `\_/ .' ..' '  `  `   `..  `,   \_
+			//  ~V~ V~ V~ V~ ~\ `   ' .  '    , ' .,.,''`.,.''`.,.``. ',   \_
+			//   _/\ /\ /\ /\_/, . ' ,   `_/~\_ .' .,. ,, , _/~\_ `. `. '.,  \_
+			//  < ~ ~ '~`'~'`, .,  .   `_: ::: \_ '      `_/ ::: \_ `.,' . ',  \_
+			//   \ ' `_  '`_    _    ',/ _::_::_ \ _    _/ _::_::_ \   `.,'.,`., \-,-,-,_,_,
+			//    `'~~ `'~~ `'~~ `'~~  \(_)(_)(_)/  `~~' \(_)(_)(_)/ ~'`\_.._,._,'_;_;_;_;_;
+			//
+			// We can't just call Close now, because there may be ongoing searches
+			// which have old in the shards list. Previously we used an exclusive
+			// lock to gaurentee there were no concurrent searches. However, that
+			// led to blocking on the read path.
+			//
+			// We could introduce granular locking per rankedShard to know when
+			// there are no more references. However, this becomes tricky in
+			// practice. Instead we rely on the garbage collector noticing old is no
+			// longer used. We take care in our searchers to runtime.KeepAlive until
+			// we have stopped referencing the underling mmap data.
+			runtime.SetFinalizer(old, func(r *rankedShard) {
+				r.Close()
+			})
+		}
 	}
 
-	proc := s.sched.Exclusive()
-
-	old := s.shards[key]
-	if shard == nil {
-		delete(s.shards, key)
-	} else {
-		s.shards[key] = ranked
-	}
-	s.rankedLock.Lock()
-	s.ranked = nil
-	s.rankedLock.Unlock()
-
-	proc.Release()
-
-	if old.Searcher != nil {
-		start := time.Now()
-		old.Close()
-		metricShardCloseDurationSeconds.Observe(time.Since(start).Seconds())
+	ranked := make([]*rankedShard, 0, len(s.shards))
+	for _, r := range s.shards {
+		ranked = append(ranked, r)
 	}
 
-	metricShardsLoaded.Set(float64(len(s.shards)))
+	sort.Slice(ranked, func(i, j int) bool {
+		priorityDiff := ranked[i].priority - ranked[j].priority
+		if priorityDiff != 0 {
+			return priorityDiff > 0
+		}
+		if len(ranked[i].repos) == 0 || len(ranked[j].repos) == 0 {
+			// Protect against empty names which can happen if we fail to List or
+			// the shard is full of tombstones. Prefer the shard which has names.
+			return len(ranked[i].repos) >= len(ranked[j].repos)
+		}
+		return ranked[i].repos[0].Name < ranked[j].repos[0].Name
+	})
+
+	s.ranked.Store(ranked)
+
+	metricShardsLoaded.Set(float64(len(ranked)))
 }
 
 func loadShard(fn string) (zoekt.Searcher, error) {
