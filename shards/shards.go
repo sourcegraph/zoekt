@@ -904,6 +904,27 @@ func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
 		}
 
 		if old != nil && old.Searcher != nil {
+			//                 _ ___                /^^\ /^\  /^^\_
+			//     _          _@)@) \            ,,/ '` ~ `'~~ ', `\.
+			//   _/o\_ _ _ _/~`.`...'~\        ./~~..,'`','',.,' '  ~:
+			//  / `,'.~,~.~  .   , . , ~|,   ,/ .,' , ,. .. ,,.   `,  ~\_
+			// ( ' _' _ '_` _  '  .    , `\_/ .' ..' '  `  `   `..  `,   \_
+			//  ~V~ V~ V~ V~ ~\ `   ' .  '    , ' .,.,''`.,.''`.,.``. ',   \_
+			//   _/\ /\ /\ /\_/, . ' ,   `_/~\_ .' .,. ,, , _/~\_ `. `. '.,  \_
+			//  < ~ ~ '~`'~'`, .,  .   `_: ::: \_ '      `_/ ::: \_ `.,' . ',  \_
+			//   \ ' `_  '`_    _    ',/ _::_::_ \ _    _/ _::_::_ \   `.,'.,`., \-,-,-,_,_,
+			//    `'~~ `'~~ `'~~ `'~~  \(_)(_)(_)/  `~~' \(_)(_)(_)/ ~'`\_.._,._,'_;_;_;_;_;
+			//
+			// We can't just call Close now, because there may be ongoing searches
+			// which have old in the shards list. Previously we used an exclusive
+			// lock to gaurentee there were no concurrent searches. However, that
+			// led to blocking on the read path.
+			//
+			// We could introduce granular locking per rankedShard to know when
+			// there are no more references. However, this becomes tricky in
+			// practice. Instead we rely on the garbage collector noticing old is no
+			// longer used. We take care in our searchers to runtime.KeepAlive until
+			// we have stopped referencing the underling mmap data.
 			runtime.SetFinalizer(old, func(r *rankedShard) {
 				r.Close()
 			})
