@@ -138,7 +138,7 @@ var (
 	})
 	metricShardsBatchReplaceDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "zoekt_shards_batch_replace_duration_seconds",
-		Help:    "The time it takes to close a Searcher.",
+		Help:    "The time it takes to replace a batch of Searchers.",
 		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30},
 	})
 	metricListAllRepos = promauto.NewGauge(prometheus.GaugeOpts{
