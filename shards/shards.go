@@ -479,7 +479,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	aggregate.Wait = time.Since(start)
 	start = time.Now()
 
-	shards, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
+	done, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
 		began := time.Now()
 
 		aggregate.Lock()
@@ -509,6 +509,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 		metricSearchAggregateDuration.WithLabelValues("total").Observe(time.Since(began).Seconds())
 	}))
+	defer done()
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +519,6 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		aggregate.Files = aggregate.Files[:max]
 	}
 	copyFiles(aggregate.SearchResult)
-	runtime.KeepAlive(shards)
 
 	aggregate.Duration = time.Since(start)
 	return aggregate.SearchResult, nil
@@ -547,11 +547,11 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		},
 	})
 
-	shards, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	done, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		copyFiles(event)
 		sender.Send(event)
 	}))
-	runtime.KeepAlive(shards)
+	done()
 	return err
 }
 
@@ -674,7 +674,9 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 			return nil
 		})
 	}
-	return shards, g.Wait()
+	return func() {
+		runtime.KeepAlive(shards)
+	}, g.Wait()
 }
 
 func copySlice(src *[]byte) {
