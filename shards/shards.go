@@ -609,6 +609,9 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 		wg      sync.WaitGroup
 	)
 
+	// Since searching is mostly CPU bound, we limit the number
+	// of parallel shard searches which also reduces the peak working set
+
 	wg.Add(workers)
 	for i := 0; i < workers; i++ {
 		go func() {
@@ -647,7 +650,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 
 search:
 	for {
-		_ = proc.Yield(ctx)
+		_ = proc.Yield(ctx) // We let searchOneShard handle context errors.
 
 		select {
 		case work <- next:
