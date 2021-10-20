@@ -598,6 +598,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	}
 
 	type result struct {
+		priority float64
 		*zoekt.SearchResult
 		err error
 	}
@@ -614,10 +615,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 			defer wg.Done()
 			for s := range search {
 				sr, err := searchOneShard(ctx, s, q, opts)
-				if sr != nil {
-					sr.Priority = s.priority
-				}
-				r := &result{SearchResult: sr, err: err}
+				r := &result{priority: s.priority, SearchResult: sr, err: err}
 				results <- r
 			}
 		}()
@@ -665,6 +663,11 @@ search:
 				break search
 			}
 
+			observeMetrics(r.SearchResult)
+
+			// delete this result's priority from pending before computing the new max pending priority
+			pending.remove(r.priority)
+
 			if r.err != nil {
 				// Set final error and stop searching new shards, but consume any pending
 				// search results.
@@ -673,12 +676,7 @@ search:
 				continue
 			}
 
-			observeMetrics(r.SearchResult)
-
-			// delete this rankedShard from the pending set before computing the new max pending priority
-			pending.remove(r.Priority)
 			r.MaxPendingPriority = pending.max()
-
 			sender.Send(r.SearchResult)
 		}
 	}
