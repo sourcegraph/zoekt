@@ -627,7 +627,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	}()
 
 	var (
-		pending = make(map[*rankedShard]struct{}, workers)
+		pending = make(prioritySlice, 0, workers)
 		shard   = 0
 		next    = shards[shard]
 
@@ -651,7 +651,7 @@ search:
 
 		select {
 		case work <- next:
-			pending[next] = struct{}{}
+			pending.append(next.priority)
 
 			if shard++; shard == len(shards) {
 				stop()
@@ -674,15 +674,10 @@ search:
 			observeMetrics(r.SearchResult)
 
 			// delete this rankedShard from the pending set before computing the new max pending priority
-			delete(pending, r.rankedShard)
+			pending.remove(r.priority)
 
 			r.Priority = r.rankedShard.priority
-			r.MaxPendingPriority = math.Inf(-1)
-			for s := range pending {
-				if s.priority > r.MaxPendingPriority {
-					r.MaxPendingPriority = s.priority
-				}
-			}
+			r.MaxPendingPriority = pending.max()
 
 			sender.Send(r.SearchResult)
 		}
