@@ -15,7 +15,6 @@
 package shards
 
 import (
-	"container/heap"
 	"context"
 	"fmt"
 	"log"
@@ -605,7 +604,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	}
 
 	var (
-		results = make(chan *result)
+		results = make(chan *result, workers) // buffer to free up workers while sending back results
 		search  = make(chan *rankedShard)
 		wg      sync.WaitGroup
 	)
@@ -629,15 +628,19 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 
 	var (
 		pending = make(map[*rankedShard]struct{}, workers)
-		pq      = make(priorityQueue, 0, workers)
 		shard   = 0
 		next    = shards[shard]
+
+		// We need a separate nil-able reference to the same channel so we can close(search) for the worker
+		// go-routines to finish but also set work to nil in order for the select statement below to ignore
+		// that case when we want to stop a search. This is needed because sending on a closed channel panics.
+		work = search
 	)
 
 	stop := func() {
-		if search != nil {
+		if work != nil {
 			close(search)
-			search = nil
+			work = nil
 			next = nil
 		}
 	}
@@ -647,7 +650,7 @@ search:
 		_ = proc.Yield(ctx)
 
 		select {
-		case search <- next:
+		case work <- next:
 			pending[next] = struct{}{}
 
 			if shard++; shard == len(shards) {
@@ -681,18 +684,8 @@ search:
 				}
 			}
 
-			// Pop and send search results where it is guaranteed that no higher-priority result
-			// is possible, because there are no pending shards with a greater priority.
-			pq.add(r.SearchResult)
-			for pq.isTopAbove(r.MaxPendingPriority) {
-				sender.Send(heap.Pop(&pq).(*zoekt.SearchResult))
-			}
+			sender.Send(r.SearchResult)
 		}
-	}
-
-	// Flush any pending results.
-	for pq.Len() > 0 {
-		sender.Send(heap.Pop(&pq).(*zoekt.SearchResult))
 	}
 
 	return func() { runtime.KeepAlive(shards) }, err
@@ -710,44 +703,6 @@ func observeMetrics(sr *zoekt.SearchResult) {
 	metricSearchShardsSkippedTotal.Add(float64(sr.Stats.ShardsSkipped))
 	metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
 	metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
-}
-
-// priorityQueue modified from https://golang.org/pkg/container/heap/
-// A priorityQueue implements heap.Interface and holds Items.
-// All Exported methods are part of the container.heap interface, and
-// unexported methods are local helpers.
-type priorityQueue []*zoekt.SearchResult
-
-func (pq *priorityQueue) add(sr *zoekt.SearchResult) {
-	heap.Push(pq, sr)
-}
-
-func (pq *priorityQueue) isTopAbove(limit float64) bool {
-	return len(*pq) > 0 && (*pq)[0].Progress.Priority >= limit
-}
-
-func (pq priorityQueue) Len() int { return len(pq) }
-
-func (pq priorityQueue) Less(i, j int) bool {
-	// We want Pop to give us the highest, not lowest, priority so we use greater than here.
-	return pq[i].Progress.Priority > pq[j].Progress.Priority
-}
-
-func (pq priorityQueue) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-}
-
-func (pq *priorityQueue) Push(x interface{}) {
-	*pq = append(*pq, x.(*zoekt.SearchResult))
-}
-
-func (pq *priorityQueue) Pop() interface{} {
-	old := *pq
-	n := len(old)
-	item := old[n-1]
-	old[n-1] = nil // avoid memory leak
-	*pq = old[0 : n-1]
-	return item
 }
 
 func copySlice(src *[]byte) {
@@ -771,7 +726,7 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 	defer func() {
 		metricSearchShardRunning.Dec()
 		if e := recover(); e != nil {
-			log.Printf("crashed shard: %s: %s, %s", s.String(), e, debug.Stack())
+			log.Printf("crashed shard: %s: %#v, %s", s, e, debug.Stack())
 
 			if sr == nil {
 				sr = &zoekt.SearchResult{}
