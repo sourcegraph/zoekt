@@ -593,7 +593,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 
 	defer cancel()
 
-	workers := runtime.NumCPU()
+	workers := runtime.GOMAXPROCS(0)
 	if workers > len(shards) {
 		workers = len(shards)
 	}
