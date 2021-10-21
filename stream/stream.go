@@ -76,7 +76,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// mu protects aggStats and concurrent writes to the stream.
-	mu := sync.Mutex{}
 	aggStats := zoekt.Stats{}
 	send := func(zsr *zoekt.SearchResult) {
 		err := eventWriter.event(eventMatches, zsr)
@@ -87,9 +86,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = h.Searcher.StreamSearch(ctx, args.Q, args.Opts, SenderFunc(func(event *zoekt.SearchResult) {
-		mu.Lock()
-		defer mu.Unlock()
-
 		// We don't want to send events over the wire if they just contain stats and no
 		// file matches. Hence, in case we didn't find any results, we will just
 		// aggregate the stats.
