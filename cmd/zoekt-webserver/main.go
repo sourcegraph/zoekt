@@ -32,7 +32,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -430,13 +429,10 @@ func (s *loggedSearcher) StreamSearch(
 	sender zoekt.Sender,
 ) error {
 	var (
-		mu    sync.Mutex
 		stats zoekt.Stats
 	)
 	err := s.Streamer.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
-		mu.Lock()
 		stats.Add(event.Stats)
-		mu.Unlock()
 		sender.Send(event)
 	}))
 

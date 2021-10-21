@@ -28,7 +28,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/google/zoekt"
@@ -116,12 +115,6 @@ var (
 		Name: "zoekt_search_ngram_matches_total",
 		Help: "Total number of candidate matches as a result of searching ngrams",
 	})
-
-	metricSearchAggregateDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "zoekt_search_aggregate_duration_seconds",
-		Help:    "The duration a search request aggregation took in seconds",
-		Buckets: prometheus.DefBuckets, // DefBuckets good for service timings
-	}, []string{"section"})
 
 	metricListRunning = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "zoekt_list_running",
@@ -454,14 +447,9 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	aggregate := struct {
-		sync.Mutex
-		*zoekt.SearchResult
-	}{
-		SearchResult: &zoekt.SearchResult{
-			RepoURLs:      map[string]string{},
-			LineFragments: map[string]string{},
-		},
+	aggregate := &zoekt.SearchResult{
+		RepoURLs:      map[string]string{},
+		LineFragments: map[string]string{},
 	}
 
 	start := time.Now()
@@ -475,13 +463,6 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	start = time.Now()
 
 	done, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
-		began := time.Now()
-
-		aggregate.Lock()
-		defer aggregate.Unlock()
-
-		metricSearchAggregateDuration.WithLabelValues("lock").Observe(time.Since(began).Seconds())
-
 		aggregate.Stats.Add(r.Stats)
 
 		if len(r.Files) > 0 {
@@ -495,14 +476,10 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 			}
 		}
 
-		metricSearchAggregateDuration.WithLabelValues("aggregate").Observe(time.Since(began).Seconds())
-
 		if cancel != nil && opts.TotalMaxMatchCount > 0 && aggregate.Stats.MatchCount > opts.TotalMaxMatchCount {
 			cancel()
 			cancel = nil
 		}
-
-		metricSearchAggregateDuration.WithLabelValues("total").Observe(time.Since(began).Seconds())
 	}))
 	defer done()
 	if err != nil {
@@ -513,10 +490,10 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	if max := opts.MaxDocDisplayCount; max > 0 && len(aggregate.Files) > max {
 		aggregate.Files = aggregate.Files[:max]
 	}
-	copyFiles(aggregate.SearchResult)
+	copyFiles(aggregate)
 
 	aggregate.Duration = time.Since(start)
-	return aggregate.SearchResult, nil
+	return aggregate, nil
 }
 
 func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
@@ -580,98 +557,126 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	shards, q = selectRepoSet(shards, q)
 	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), q)
 
-	var childCtx context.Context
+	if len(shards) == 0 {
+		return func() {}, nil
+	}
+
 	var cancel context.CancelFunc
 	if opts.MaxWallTime == 0 {
-		childCtx, cancel = context.WithCancel(ctx)
+		ctx, cancel = context.WithCancel(ctx)
 	} else {
-		childCtx, cancel = context.WithTimeout(ctx, opts.MaxWallTime)
+		ctx, cancel = context.WithTimeout(ctx, opts.MaxWallTime)
 	}
 
 	defer cancel()
 
-	mu := sync.Mutex{}
-	pendingPriorities := prioritySlice{}
-
-	g, ctx := errgroup.WithContext(childCtx)
-
-	// For each query, throttle the number of parallel
-	// actions. Since searching is mostly CPU bound, we limit the
-	// number of parallel searches. This reduces the peak working
-	// set, which hopefully stops https://cs.bazel.build from crashing
-	// when looking for the string "com".
-	//
-	// We do yield inside of the feeder. This means we could have num_workers +
-	// cap(feeder) searches run while yield blocks. However, doing it this way
-	// avoids needing to have synchronization in yield, so is done for
-	// simplicity.
-	feeder := make(chan *rankedShard, runtime.GOMAXPROCS(0))
-	g.Go(func() error {
-		defer close(feeder)
-		// Note: shards is sorted in order of descending priority.
-		for _, s := range shards {
-			// We let searchOneShard handle context errors.
-			_ = proc.Yield(ctx)
-			mu.Lock()
-			pendingPriorities.append(s.priority)
-			mu.Unlock()
-			feeder <- s
-		}
-		return nil
-	})
-	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
-		g.Go(func() error {
-			for s := range feeder {
-				err := searchOneShard(ctx, s, q, opts, stream.SenderFunc(func(sr *zoekt.SearchResult) {
-					metricSearchContentBytesLoadedTotal.Add(float64(sr.Stats.ContentBytesLoaded))
-					metricSearchIndexBytesLoadedTotal.Add(float64(sr.Stats.IndexBytesLoaded))
-					metricSearchCrashesTotal.Add(float64(sr.Stats.Crashes))
-					metricSearchFileCountTotal.Add(float64(sr.Stats.FileCount))
-					metricSearchShardFilesConsideredTotal.Add(float64(sr.Stats.ShardFilesConsidered))
-					metricSearchFilesConsideredTotal.Add(float64(sr.Stats.FilesConsidered))
-					metricSearchFilesLoadedTotal.Add(float64(sr.Stats.FilesLoaded))
-					metricSearchFilesSkippedTotal.Add(float64(sr.Stats.FilesSkipped))
-					metricSearchShardsSkippedTotal.Add(float64(sr.Stats.ShardsSkipped))
-					metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
-					metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
-
-					// MaxPendingPriority *cannot* be this result's Priority, because
-					// the priority is removed before computing max() and calling sender.Send.
-					// (There may be duplicate priorities, though-- that's fine.) A PendingShard
-					// is one that has not entered this critical section and sent its results.
-					//
-					// Note that there are at least two layers above this implementing streamSearch
-					// or StreamSearch that also take a lock for the entirety of the Send() operation.
-					//
-					// This is to avoid a potential race between shards sending back results
-					// if the priority were removed before sending without a lock:
-					// 1) shard A (pri 1), B (pri 2), C (pri 3) dispatch, pendingPriorities = [1, 2, 3]
-					// 2) C completes and removes itself from the priority list, pP = [1, 2]
-					// 3) B completes, removes itself, computes max, *and sends results* as maxPendingPriority=1,
-					//    indicating that no future results will come from a lower-ordered shard, pP = [1]
-					// 4) A completes, removes itself, computes max, and sends results with maxPP=-Inf, indicating
-					//    that the stream is finished (?)
-					// 5) C finally wakes up, computes max, and sends results with maxPP=-Inf, but with priority=3.
-					mu.Lock()
-					pendingPriorities.remove(s.priority)
-					sr.Progress.MaxPendingPriority = pendingPriorities.max()
-					sr.Progress.Priority = s.priority
-					sender.Send(sr)
-					mu.Unlock()
-				}))
-				if err != nil {
-					mu.Lock()
-					pendingPriorities.remove(s.priority)
-					mu.Unlock()
-					return err
-				}
-			}
-			return nil
-		})
+	workers := runtime.GOMAXPROCS(0)
+	if workers > len(shards) {
+		workers = len(shards)
 	}
-	return func() {
-		runtime.KeepAlive(shards)
-	}, g.Wait()
+
+	type result struct {
+		priority float64
+		*zoekt.SearchResult
+		err error
+	}
+
+	var (
+		results = make(chan *result, workers) // buffer to free up workers while sending back results
+		search  = make(chan *rankedShard)
+		wg      sync.WaitGroup
+	)
+
+	// Since searching is mostly CPU bound, we limit the number
+	// of parallel shard searches which also reduces the peak working set
+
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			for s := range search {
+				sr, err := searchOneShard(ctx, s, q, opts)
+				r := &result{priority: s.priority, SearchResult: sr, err: err}
+				results <- r
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var (
+		pending = make(prioritySlice, 0, workers)
+		shard   = 0
+		next    = shards[shard]
+
+		// We need a separate nil-able reference to the same channel so we can close(search) for the worker
+		// go-routines to finish but also set work to nil in order for the select statement below to ignore
+		// that case when we want to stop a search. This is needed because sending on a closed channel panics.
+		work = search
+	)
+
+	stop := func() {
+		if work != nil {
+			close(search)
+			work = nil
+			next = nil
+		}
+	}
+
+search:
+	for {
+		_ = proc.Yield(ctx) // We let searchOneShard handle context errors.
+
+		select {
+		case work <- next:
+			pending.append(next.priority)
+
+			if shard++; shard == len(shards) {
+				stop()
+			} else {
+				next = shards[shard]
+			}
+		case r, ok := <-results:
+			if !ok {
+				break search
+			}
+
+			observeMetrics(r.SearchResult)
+
+			// delete this result's priority from pending before computing the new max pending priority
+			pending.remove(r.priority)
+
+			if r.err != nil {
+				// Set final error and stop searching new shards, but consume any pending
+				// search results.
+				stop()
+				err = r.err
+				continue
+			}
+
+			r.MaxPendingPriority = pending.max()
+			sender.Send(r.SearchResult)
+		}
+	}
+
+	return func() { runtime.KeepAlive(shards) }, err
+}
+
+func observeMetrics(sr *zoekt.SearchResult) {
+	metricSearchContentBytesLoadedTotal.Add(float64(sr.Stats.ContentBytesLoaded))
+	metricSearchIndexBytesLoadedTotal.Add(float64(sr.Stats.IndexBytesLoaded))
+	metricSearchCrashesTotal.Add(float64(sr.Stats.Crashes))
+	metricSearchFileCountTotal.Add(float64(sr.Stats.FileCount))
+	metricSearchShardFilesConsideredTotal.Add(float64(sr.Stats.ShardFilesConsidered))
+	metricSearchFilesConsideredTotal.Add(float64(sr.Stats.FilesConsidered))
+	metricSearchFilesLoadedTotal.Add(float64(sr.Stats.FilesLoaded))
+	metricSearchFilesSkippedTotal.Add(float64(sr.Stats.FilesSkipped))
+	metricSearchShardsSkippedTotal.Add(float64(sr.Stats.ShardsSkipped))
+	metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
+	metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
 }
 
 func copySlice(src *[]byte) {
@@ -690,25 +695,21 @@ func copyFiles(sr *zoekt.SearchResult) {
 	}
 }
 
-func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) error {
+func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
 	metricSearchShardRunning.Inc()
 	defer func() {
 		metricSearchShardRunning.Dec()
-		if r := recover(); r != nil {
-			log.Printf("crashed shard: %s: %s, %s", s.String(), r, debug.Stack())
+		if e := recover(); e != nil {
+			log.Printf("crashed shard: %s: %#v, %s", s, e, debug.Stack())
 
-			var r zoekt.SearchResult
-			r.Stats.Crashes = 1
-			sender.Send(&r)
+			if sr == nil {
+				sr = &zoekt.SearchResult{}
+			}
+			sr.Stats.Crashes = 1
 		}
 	}()
 
-	ms, err := s.Search(ctx, q, opts)
-	if err != nil {
-		return err
-	}
-	sender.Send(ms)
-	return nil
+	return s.Search(ctx, q, opts)
 }
 
 type shardListResult struct {
@@ -918,7 +919,7 @@ func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
 			//
 			// We can't just call Close now, because there may be ongoing searches
 			// which have old in the shards list. Previously we used an exclusive
-			// lock to gaurentee there were no concurrent searches. However, that
+			// lock to guarantee there were no concurrent searches. However, that
 			// led to blocking on the read path.
 			//
 			// We could introduce granular locking per rankedShard to know when
