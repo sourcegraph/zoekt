@@ -582,8 +582,10 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 	}
 
 	var (
-		results = make(chan *result, workers) // buffer to free up workers while sending back results
-		search  = make(chan *rankedShard)
+		// buffered channels to continue searching when sending back results
+		// takes a while / blocks. The maximum pending result set is workers * 2.
+		results = make(chan *result, workers)
+		search  = make(chan *rankedShard, workers)
 		wg      sync.WaitGroup
 	)
 
