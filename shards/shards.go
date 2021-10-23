@@ -646,8 +646,6 @@ search:
 				break search
 			}
 
-			observeMetrics(r.SearchResult)
-
 			// delete this result's priority from pending before computing the new max pending priority
 			pending.remove(r.priority)
 
@@ -658,6 +656,8 @@ search:
 				err = r.err
 				continue
 			}
+
+			observeMetrics(r.SearchResult)
 
 			r.MaxPendingPriority = pending.max()
 			sender.Send(r.SearchResult)
