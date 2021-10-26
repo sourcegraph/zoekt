@@ -659,7 +659,9 @@ search:
 
 			observeMetrics(r.SearchResult)
 
+			r.Priority = r.priority
 			r.MaxPendingPriority = pending.max()
+
 			sender.Send(r.SearchResult)
 		}
 	}
