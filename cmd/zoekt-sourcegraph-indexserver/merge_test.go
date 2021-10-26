@@ -41,62 +41,65 @@ func TestHasMultipleShards(t *testing.T) {
 func TestGenerateCompoundShards(t *testing.T) {
 	shards := []candidate{
 		{
-			path:      "r1",
+			path:      "r2",
 			sizeBytes: 2,
 		},
 		{
-			path:      "r2",
+			path:      "r3",
 			sizeBytes: 3,
 		},
 		{
-			path:      "r3",
-			sizeBytes: 9,
+			path:      "r8",
+			sizeBytes: 8,
 		},
 		{
-			path:      "r4",
-			sizeBytes: 10,
+			path:      "r9",
+			sizeBytes: 9,
 		},
 		{
 			path:      "r5",
 			sizeBytes: 5,
 		},
 		{
-			path:      "r6",
+			path:      "r1",
 			sizeBytes: 1,
 		},
 	}
 
 	// Expected compounds
-	// compound 0: r4 (total size 10)
-	// compound 1: r3 + r6 (total size  10)
-	// compound 2: r5 + r2 + r1 (total size 10)
+	// compound 0: r1 + r5 + r3 (total size 9)
+	// compound 1: r9 (total size  9)
+	// compound 3: r8 + r2 (total size  10)
 
 	compounds := generateCompounds(shards, 10)
 
-	if len(compounds) != 3 {
-		t.Fatalf("expected 3 compound shards, but got %d", len(compounds))
+	wantCompounds := 3
+	if len(compounds) != wantCompounds {
+		t.Fatalf("expected %d compound shards, but got %d", wantCompounds, len(compounds))
 	}
 
+	wantTotalShards := 6
 	totalShards := 0
 	for _, c := range compounds {
 		totalShards += len(c.shards)
 	}
-	if totalShards != 6 {
-		t.Fatalf("shards mismatch: wanted %d, got %d", 6, totalShards)
+	if totalShards != wantTotalShards {
+		t.Fatalf("shards mismatch: wanted %d, got %d", wantTotalShards, totalShards)
 	}
 
-	want := []candidate{{"r4", 10}}
+	want := []candidate{{"r1", 1}, {"r5", 5}, {"r3", 3}}
 	if diff := cmp.Diff(want, compounds[0].shards, cmp.Options{cmp.AllowUnexported(candidate{})}); diff != "" {
 		t.Fatalf("-want,+got\n%s", diff)
 	}
 
-	want = []candidate{{"r3", 9}, {"r6", 1}}
+	want = []candidate{{"r9", 9}}
 	if diff := cmp.Diff(want, compounds[1].shards, cmp.Options{cmp.AllowUnexported(candidate{})}); diff != "" {
 		t.Fatalf("-want,+got\n%s", diff)
 	}
 
-	want = []candidate{{"r5", 5}, {"r2", 3}, {"r1", 2}}
+	want = []candidate{{"r8", 8}, {"r2", 2}}
 	if diff := cmp.Diff(want, compounds[2].shards, cmp.Options{cmp.AllowUnexported(candidate{})}); diff != "" {
 		t.Fatalf("-want,+got\n%s", diff)
 	}
+
 }
