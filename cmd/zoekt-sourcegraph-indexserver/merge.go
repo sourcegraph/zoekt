@@ -49,9 +49,6 @@ func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) err
 		if !simulate {
 			stdOut, stdErr, err := callMerge(comp.shards)
 			debug.Printf("callMerge: OUT: %s, ERR: %s\n", string(stdOut), string(stdErr))
-			for _, s := range comp.shards {
-				os.Remove(s.path)
-			}
 			if err != nil {
 				debug.Printf("error during merging compound %d, stdErr: %s, err: %s\n", ix, stdErr, err)
 				continue
@@ -237,5 +234,12 @@ func callMerge(shards []candidate) ([]byte, []byte, error) {
 	}()
 
 	err = cmd.Run()
+	// If err==nil we can safely delete the candidate shards. In case err!=nil we
+	// don't know if a compound shard was created or not, so it is best to just
+	// delete the candidate shards to avoid duplicate results in case a compound
+	// shard was created after all.
+	for _, s := range shards {
+		os.Remove(s.path)
+	}
 	return outBuf.Bytes(), errBuf.Bytes(), err
 }
