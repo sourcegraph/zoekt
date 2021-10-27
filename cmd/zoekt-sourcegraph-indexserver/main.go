@@ -117,6 +117,19 @@ type Server struct {
 	// Vacuum is enabled by placing a file named RIP in the index directory.
 	Vacuum time.Duration
 
+	// IntervalMerge defines how often indexserver runs the merge operation in the index
+	// directory.
+	IntervalMerge time.Duration
+
+	// TargetSizeBytes is the target size in bytes for compound shards. The higher
+	// the value the more repositories a compound shard will contain and the bigger
+	// the potential for saving MEM. The savings in MEM come at the cost of a
+	// degraded search performance.
+	TargetSizeBytes int64
+
+	// Shards larger than MaxSizeBytes are excluded from merging.
+	MaxSizeBytes int64
+
 	// CPUCount is the amount of parallelism to use when indexing a
 	// repository.
 	CPUCount int
@@ -309,6 +322,17 @@ func (s *Server) Run() {
 		for range jitterTicker(s.Vacuum, syscall.SIGUSR1) {
 			if zoekt.TombstonesEnabled(s.IndexDir) {
 				s.vacuum()
+			}
+		}
+	}()
+
+	go func() {
+		for range jitterTicker(s.IntervalMerge, syscall.SIGUSR1) {
+			if zoekt.TombstonesEnabled(s.IndexDir) {
+				err := doMerge(s.IndexDir, s.TargetSizeBytes, s.MaxSizeBytes, false)
+				if err != nil {
+					log.Printf("error during merging: %s", err)
+				}
 			}
 		}
 	}()
@@ -649,6 +673,18 @@ func srcLogLevelIsDebug() bool {
 	return strings.EqualFold(lvl, "dbug") || strings.EqualFold(lvl, "debug")
 }
 
+func getEnvWithDefaultInt64(k string, defaultVal int64) int64 {
+	v := os.Getenv(k)
+	if v == "" {
+		return defaultVal
+	}
+	i, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		log.Fatalf("error parsing ENV %s: %s", k, err)
+	}
+	return i
+}
+
 func main() {
 	defaultIndexDir := os.Getenv("DATA_DIR")
 	if defaultIndexDir == "" {
@@ -658,6 +694,9 @@ func main() {
 	root := flag.String("sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	interval := flag.Duration("interval", time.Minute, "sync with sourcegraph this often")
 	intervalVacuum := flag.Duration("vacuum", time.Hour, "run vacuum this often")
+	intervalMerge := flag.Duration("interval_merge", time.Hour, "run merge this often")
+	targetSize := flag.Int64("merge_target_size", getEnvWithDefaultInt64("SRC_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
+	maxSize := flag.Int64("merge_max_size", getEnvWithDefaultInt64("SRC_MAX_SIZE", 1800), "the maximum size in MiB a shard can have to be considered for merging")
 	index := flag.String("index", defaultIndexDir, "set index directory to use")
 	listen := flag.String("listen", ":6072", "listen on this address.")
 	hostname := flag.String("hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
@@ -669,7 +708,8 @@ func main() {
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repository ID then quit.")
 	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
 	debugMeta := flag.String("debug-meta", "", "do not start the indexserver, rather print shard metadata then quit.")
-	debugMerge := flag.String("debug-merge", "", "index dir,compound target size in MiB,simulate(true,false)")
+	debugMerge := flag.Bool("debug-merge", false, "do not start the indexserver, rather run merge in the index directory then quit.")
+	debugMergeSimulate := flag.Bool("simulate", false, "use in conjuction with debugMerge. If set, merging is simulated.")
 
 	_ = flag.Bool("exp-git-index", true, "DEPRECATED: not read anymore. We always use zoekt-git-index now.")
 
@@ -681,7 +721,7 @@ func main() {
 	if *index == "" {
 		log.Fatal("must set -index")
 	}
-	needSourcegraph := !(*debugShard != "" || *debugMeta != "" || *debugMerge != "")
+	needSourcegraph := !(*debugShard != "" || *debugMeta != "" || *debugMerge)
 	if *root == "" && needSourcegraph {
 		log.Fatal("must set -sourcegraph_url")
 	}
@@ -714,7 +754,7 @@ func main() {
 		}
 	}
 
-	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != "" || *debugMerge != ""
+	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != "" || *debugMerge
 
 	if err := setupTmpDir(*index, !isDebugCmd); err != nil {
 		log.Fatalf("failed to setup TMPDIR under %s: %v", *index, err)
@@ -745,12 +785,15 @@ func main() {
 		cpuCount = 1
 	}
 	s := &Server{
-		Sourcegraph: sg,
-		BatchSize:   batchSize,
-		IndexDir:    *index,
-		Interval:    *interval,
-		Vacuum:      *intervalVacuum,
-		CPUCount:    cpuCount,
+		Sourcegraph:     sg,
+		BatchSize:       batchSize,
+		IndexDir:        *index,
+		Interval:        *interval,
+		Vacuum:          *intervalVacuum,
+		IntervalMerge:   *intervalMerge,
+		CPUCount:        cpuCount,
+		TargetSizeBytes: *targetSize * 1024 * 1024,
+		MaxSizeBytes:    *maxSize * 1024 * 1024,
 	}
 
 	if *debugList {
@@ -793,8 +836,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *debugMerge != "" {
-		err = doMerge(*debugMerge)
+	if *debugMerge {
+		err = doMerge(*index, *targetSize*1024*1024, *maxSize*1024*1024, *debugMergeSimulate)
 		if err != nil {
 			log.Fatal(err)
 		}

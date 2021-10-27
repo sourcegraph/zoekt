@@ -9,41 +9,16 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/zoekt"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// parseParams is helper function to parse a comma separated string of parameters
-// of the form "string,int,bool". This should be used for debugging and testing
-// only.
-func parseParams(params string) (indexDir string, targetSizeBytes int64, simulate bool, err error) {
-	ps := strings.Split(params, ",")
-	indexDir = ps[0]
-
-	targetSize, err := strconv.Atoi(ps[1])
-	if err != nil {
-		return
-	}
-	targetSizeBytes = int64(targetSize * 1024 * 1024)
-
-	simulate, err = strconv.ParseBool(ps[2])
-	if err != nil {
-		return
-	}
-	return
-}
-
 var reCompound = regexp.MustCompile("compound-.*\\.zoekt")
 
 // doMerge drives the merge process.
-func doMerge(params string) error {
-	dir, targetSizeBytes, simulate, err := parseParams(params)
-	if err != nil {
-		return err
-	}
+func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) error {
 
 	wc := &lumberjack.Logger{
 		Filename:   filepath.Join(dir, "zoekt-merge-log.tsv"),
@@ -55,7 +30,7 @@ func doMerge(params string) error {
 		debug.Println("simulating")
 	}
 
-	shards, excluded := loadCandidates(dir, targetSizeBytes)
+	shards, excluded := loadCandidates(dir, maxSizeBytes)
 	debug.Printf("merging: found %d candidate shards, %d repos were excluded\n", len(shards), excluded)
 	if len(shards) == 0 {
 		return nil
@@ -107,7 +82,7 @@ type candidate struct {
 }
 
 // loadCandidates returns all shards eligable for merging.
-func loadCandidates(dir string, targetSize int64) ([]candidate, int) {
+func loadCandidates(dir string, maxSize int64) ([]candidate, int) {
 	excluded := 0
 
 	d, err := os.Open(dir)
@@ -132,7 +107,7 @@ func loadCandidates(dir string, targetSize int64) ([]candidate, int) {
 			continue
 		}
 
-		if isExcluded(path, fi, targetSize) {
+		if isExcluded(path, fi, maxSize) {
 			excluded++
 			continue
 		}
@@ -163,9 +138,7 @@ func hasMultipleShards(path string) bool {
 //
 // We need path and FileInfo because FileInfo does not contain the full path, see
 // discussion here https://github.com/golang/go/issues/32300.
-//
-// targetSize is the target size of the final compound shard in bytes.
-func isExcluded(path string, fi os.FileInfo, targetSize int64) bool {
+func isExcluded(path string, fi os.FileInfo, maxSize int64) bool {
 
 	// It takes around 2 minutes to create a compound shard of 2 GiB. This is true
 	// even if we just add 1 repo to an existing compound shard. The reason is that
@@ -174,9 +147,9 @@ func isExcluded(path string, fi os.FileInfo, targetSize int64) bool {
 	// shard with other smaller candidate shards if the compound shard already has a
 	// decent size.
 	//
-	// The concrete value of the threshold is not important as long as it is smaller
-	// than the targetSize and large enough to see sufficient benefits from merging.
-	if fi.Size() > int64(0.9*float64(targetSize)) {
+	// The concrete value of maxSize is not important as long as it is smaller than
+	// the targetSize and large enough to see sufficient benefits from merging.
+	if fi.Size() > maxSize {
 		return true
 	}
 
