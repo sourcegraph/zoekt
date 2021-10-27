@@ -1,11 +1,11 @@
 package main
 
 import (
+	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/google/go-cmp/cmp"
+	"testing/quick"
 )
 
 func TestHasMultipleShards(t *testing.T) {
@@ -38,65 +38,74 @@ func TestHasMultipleShards(t *testing.T) {
 	}
 }
 
-func TestGenerateCompoundShards(t *testing.T) {
-	shards := []candidate{
-		{
-			path:      "r1",
-			sizeBytes: 2,
-		},
-		{
-			path:      "r2",
-			sizeBytes: 3,
-		},
-		{
-			path:      "r3",
-			sizeBytes: 9,
-		},
-		{
-			path:      "r4",
-			sizeBytes: 10,
-		},
-		{
-			path:      "r5",
-			sizeBytes: 5,
-		},
-		{
-			path:      "r6",
-			sizeBytes: 1,
-		},
+// genTestCompounds is a helper that generates compounds from n shards with sizes
+// in (0, targetSize].
+func genTestCompounds(t *testing.T, n uint8, targetSize int64) ([]compound, int64) {
+	t.Helper()
+
+	candidates := make([]candidate, 0, n)
+	var totalSize int64
+	var i uint8
+	for i = 0; i < n; i++ {
+		thisSize := rand.Int63n(targetSize) + 1
+		candidates = append(candidates, candidate{"", thisSize})
+		totalSize += thisSize
 	}
 
-	// Expected compounds
-	// compound 0: r4 (total size 10)
-	// compound 1: r3 + r6 (total size  10)
-	// compound 2: r5 + r2 + r1 (total size 10)
+	compounds := generateCompounds(candidates, targetSize)
+	return compounds, totalSize
+}
 
-	compounds := generateCompounds(shards, 10)
-
-	if len(compounds) != 3 {
-		t.Fatalf("expected 3 compound shards, but got %d", len(compounds))
+func TestCompoundsContainAllShards(t *testing.T) {
+	// n is uint8 to keep the slices reasonably small and the tests performant.
+	f := func(n uint8) bool {
+		compounds, wantTotalSize := genTestCompounds(t, n, 10)
+		shardCount := 0
+		var gotTotalSize int64
+		for _, c := range compounds {
+			shardCount += len(c.shards)
+			gotTotalSize += c.size
+		}
+		return shardCount == int(n) && gotTotalSize == wantTotalSize
 	}
 
-	totalShards := 0
-	for _, c := range compounds {
-		totalShards += len(c.shards)
+	if err := quick.Check(f, nil); err != nil {
+		t.Fatal(err)
 	}
-	if totalShards != 6 {
-		t.Fatalf("shards mismatch: wanted %d, got %d", 6, totalShards)
+}
+
+func TestFewerCompoundsThanShards(t *testing.T) {
+	f := func(n uint8) bool {
+		compounds, _ := genTestCompounds(t, n, 10)
+
+		shardCount := 0
+		for _, c := range compounds {
+			shardCount += len(c.shards)
+		}
+		return shardCount >= len(compounds)
 	}
 
-	want := []candidate{{"r4", 10}}
-	if diff := cmp.Diff(want, compounds[0].shards, cmp.Options{cmp.AllowUnexported(candidate{})}); diff != "" {
-		t.Fatalf("-want,+got\n%s", diff)
+	if err := quick.Check(f, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompoundsHaveSizeBelowTargetSize(t *testing.T) {
+	f := func(n uint8, targetSize int64) bool {
+		if targetSize <= 0 {
+			return true
+		}
+
+		compounds, _ := genTestCompounds(t, n, targetSize)
+		for _, c := range compounds {
+			if c.size > targetSize {
+				return false
+			}
+		}
+		return true
 	}
 
-	want = []candidate{{"r3", 9}, {"r6", 1}}
-	if diff := cmp.Diff(want, compounds[1].shards, cmp.Options{cmp.AllowUnexported(candidate{})}); diff != "" {
-		t.Fatalf("-want,+got\n%s", diff)
-	}
-
-	want = []candidate{{"r5", 5}, {"r2", 3}, {"r1", 2}}
-	if diff := cmp.Diff(want, compounds[2].shards, cmp.Options{cmp.AllowUnexported(candidate{})}); diff != "" {
-		t.Fatalf("-want,+got\n%s", diff)
+	if err := quick.Check(f, nil); err != nil {
+		t.Fatal(err)
 	}
 }

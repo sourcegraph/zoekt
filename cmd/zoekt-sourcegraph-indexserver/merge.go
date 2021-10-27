@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -56,7 +55,7 @@ func doMerge(params string) error {
 		debug.Println("simulating")
 	}
 
-	shards, excluded := loadCandidates(dir)
+	shards, excluded := loadCandidates(dir, targetSizeBytes)
 	debug.Printf("merging: found %d candidate shards, %d repos were excluded\n", len(shards), excluded)
 	if len(shards) == 0 {
 		return nil
@@ -108,7 +107,7 @@ type candidate struct {
 }
 
 // loadCandidates returns all shards eligable for merging.
-func loadCandidates(dir string) ([]candidate, int) {
+func loadCandidates(dir string, targetSize int64) ([]candidate, int) {
 	excluded := 0
 
 	d, err := os.Open(dir)
@@ -133,7 +132,7 @@ func loadCandidates(dir string) ([]candidate, int) {
 			continue
 		}
 
-		if isExcluded(path) {
+		if isExcluded(path, fi, targetSize) {
 			excluded++
 			continue
 		}
@@ -160,14 +159,34 @@ func hasMultipleShards(path string) bool {
 	return true
 }
 
-func isExcluded(path string) bool {
+// isExcluded returns true if a shard should not be merged, false otherwise.
+//
+// We need path and FileInfo because FileInfo does not contain the full path, see
+// discussion here https://github.com/golang/go/issues/32300.
+//
+// targetSize is the target size of the final compound shard in bytes.
+func isExcluded(path string, fi os.FileInfo, targetSize int64) bool {
+
+	// It takes around 2 minutes to create a compound shard of 2 GiB. This is true
+	// even if we just add 1 repo to an existing compound shard. The reason is that
+	// we don't support incremental merging, but instead create a compound shard from
+	// scratch for each merge operation. Hence we want to avoid merging a compound
+	// shard with other smaller candidate shards if the compound shard already has a
+	// decent size.
+	//
+	// The concrete value of the threshold is not important as long as it is smaller
+	// than the targetSize and large enough to see sufficient benefits from merging.
+	if fi.Size() > int64(0.9*float64(targetSize)) {
+		return true
+	}
+
 	if hasMultipleShards(path) {
 		return true
 	}
 
 	repos, _, err := zoekt.ReadMetadataPath(path)
 	if err != nil {
-		debug.Printf("failed to load metadata for %s\n", filepath.Base(path))
+		debug.Printf("failed to load metadata for %s\n", fi.Name())
 		return true
 	}
 
@@ -197,17 +216,12 @@ func (c *compound) add(cand candidate) {
 }
 
 func generateCompounds(shards []candidate, targetSizeBytes int64) []compound {
-	sort.Slice(shards, func(i, j int) bool {
-		return shards[i].sizeBytes < shards[j].sizeBytes
-	})
-
 	compounds := make([]compound, 0)
 	for len(shards) > 0 {
 		cur := compound{}
 
-		// Start with the largest shard and add smaller shards until we reach the target
-		// size. This strategy automatically fills up compound shards below the target
-		// size. We accept compounds with 1 repo because we will ignore them later in
+		// Start with the last shard and add more shards until we reach the target size.
+		// We accept compounds with 1 repo because we will ignore them later in
 		// callMerge.
 		cur.add(shards[len(shards)-1])
 		shards = shards[:len(shards)-1]
@@ -223,7 +237,7 @@ func generateCompounds(shards []candidate, targetSizeBytes int64) []compound {
 	return compounds
 }
 
-// callMerge calls zoekt-merge-index and caputures its output. callMerge is a NOP
+// callMerge calls zoekt-merge-index and captures its output. callMerge is a NOP
 // if len(shards) <= 1.
 func callMerge(shards []candidate) ([]byte, []byte, error) {
 	if len(shards) <= 1 {
