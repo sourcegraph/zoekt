@@ -113,9 +113,9 @@ type Server struct {
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
 
-	// Vacuum is how often indexserver scans compound shards to remove tombstones.
-	// Vacuum is enabled by placing a file named RIP in the index directory.
-	Vacuum time.Duration
+	// IntervalVacuum is how often indexserver scans compound shards to remove
+	// tombstones.
+	IntervalVacuum time.Duration
 
 	// IntervalMerge defines how often indexserver runs the merge operation in the index
 	// directory.
@@ -319,7 +319,7 @@ func (s *Server) Run() {
 	}()
 
 	go func() {
-		for range jitterTicker(s.Vacuum, syscall.SIGUSR1) {
+		for range jitterTicker(s.IntervalVacuum, syscall.SIGUSR1) {
 			if zoekt.TombstonesEnabled(s.IndexDir) {
 				s.vacuum()
 			}
@@ -789,7 +789,7 @@ func main() {
 		BatchSize:       batchSize,
 		IndexDir:        *index,
 		Interval:        *interval,
-		Vacuum:          *intervalVacuum,
+		IntervalVacuum:  *intervalVacuum,
 		IntervalMerge:   *intervalMerge,
 		CPUCount:        cpuCount,
 		TargetSizeBytes: *targetSize * 1024 * 1024,
