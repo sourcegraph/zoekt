@@ -4,8 +4,12 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/quick"
+
+	"github.com/google/zoekt"
+	"github.com/google/zoekt/build"
 )
 
 func TestHasMultipleShards(t *testing.T) {
@@ -106,6 +110,35 @@ func TestCompoundsHaveSizeBelowTargetSize(t *testing.T) {
 	}
 
 	if err := quick.Check(f, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDoNotDeleteSingleShards(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a test shard.
+	opts := build.Options{
+		IndexDir:              dir,
+		RepositoryDescription: zoekt.Repository{Name: "test-repo"},
+	}
+	opts.SetDefaults()
+	b, err := build.NewBuilder(opts)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+	b.AddFile("F", []byte(strings.Repeat("abc", 100)))
+	if err := b.Finish(); err != nil {
+		t.Errorf("Finish: %v", err)
+	}
+
+	err = doMerge(dir, 2000*1024*1024, 1800*1024*1024, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = os.Stat(filepath.Join(dir, "test-repo_v16.00000.zoekt"))
+	if err != nil {
 		t.Fatal(err)
 	}
 }
