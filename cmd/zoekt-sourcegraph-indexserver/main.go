@@ -113,13 +113,13 @@ type Server struct {
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
 
-	// IntervalVacuum is how often indexserver scans compound shards to remove
+	// VacuumInterval is how often indexserver scans compound shards to remove
 	// tombstones.
-	IntervalVacuum time.Duration
+	VacuumInterval time.Duration
 
-	// IntervalMerge defines how often indexserver runs the merge operation in the index
+	// MergeInterval defines how often indexserver runs the merge operation in the index
 	// directory.
-	IntervalMerge time.Duration
+	MergeInterval time.Duration
 
 	// TargetSizeBytes is the target size in bytes for compound shards. The higher
 	// the value the more repositories a compound shard will contain and the bigger
@@ -319,7 +319,7 @@ func (s *Server) Run() {
 	}()
 
 	go func() {
-		for range jitterTicker(s.IntervalVacuum, syscall.SIGUSR1) {
+		for range jitterTicker(s.VacuumInterval, syscall.SIGUSR1) {
 			if zoekt.TombstonesEnabled(s.IndexDir) {
 				s.vacuum()
 			}
@@ -327,7 +327,7 @@ func (s *Server) Run() {
 	}()
 
 	go func() {
-		for range jitterTicker(s.IntervalMerge, syscall.SIGUSR1) {
+		for range jitterTicker(s.MergeInterval, syscall.SIGUSR1) {
 			if zoekt.TombstonesEnabled(s.IndexDir) {
 				err := doMerge(s.IndexDir, s.TargetSizeBytes, s.MaxSizeBytes, false)
 				if err != nil {
@@ -693,8 +693,8 @@ func main() {
 
 	root := flag.String("sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	interval := flag.Duration("interval", time.Minute, "sync with sourcegraph this often")
-	intervalVacuum := flag.Duration("vacuum", time.Hour, "run vacuum this often")
-	intervalMerge := flag.Duration("interval_merge", time.Hour, "run merge this often")
+	vacuumInterval := flag.Duration("vacuum_interval", time.Hour, "run vacuum this often")
+	mergeInterval := flag.Duration("merge_interval", time.Hour, "run merge this often")
 	targetSize := flag.Int64("merge_target_size", getEnvWithDefaultInt64("SRC_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
 	maxSize := flag.Int64("merge_max_size", getEnvWithDefaultInt64("SRC_MAX_SIZE", 1800), "the maximum size in MiB a shard can have to be considered for merging")
 	index := flag.String("index", defaultIndexDir, "set index directory to use")
@@ -789,8 +789,8 @@ func main() {
 		BatchSize:       batchSize,
 		IndexDir:        *index,
 		Interval:        *interval,
-		IntervalVacuum:  *intervalVacuum,
-		IntervalMerge:   *intervalMerge,
+		VacuumInterval:  *vacuumInterval,
+		MergeInterval:   *mergeInterval,
 		CPUCount:        cpuCount,
 		TargetSizeBytes: *targetSize * 1024 * 1024,
 		MaxSizeBytes:    *maxSize * 1024 * 1024,
