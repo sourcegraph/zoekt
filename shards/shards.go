@@ -667,11 +667,69 @@ search:
 			r.Priority = r.priority
 			r.MaxPendingPriority = pending.max()
 
-			sender.Send(r.SearchResult)
+			// For simple shards, send the results immediately.
+			if len(r.SearchResult.RepoURLs) <= 1 {
+				sender.Send(r.SearchResult)
+				break
+			}
+
+			// For compound shards, stream results per repo.
+			stats, srs := splitByRepository(r.SearchResult)
+			tr.LazyPrintf("compound shard: results from %d repositories", len(srs))
+			for _, sr := range srs {
+				if len(sr.Files) == 0 {
+					panic("unreachable")
+				}
+				sr.Priority = sr.Files[0].RepositoryPriority
+
+				// TODO (stefan): make sure repos in compound shards are searched in order of their priority.
+				sr.MaxPendingPriority = r.MaxPendingPriority
+				sender.Send(sr)
+			}
+			sender.Send(&zoekt.SearchResult{Stats: stats})
 		}
 	}
 
 	return func() { runtime.KeepAlive(shards) }, err
+}
+
+// splitByRepository splits a zoekt.SearchResult by repository ID. We separate
+// the stats from the searchResult, because stats must be aggregateable.
+func splitByRepository(result *zoekt.SearchResult) (zoekt.Stats, []*zoekt.SearchResult) {
+	if len(result.Files) == 0 {
+		return result.Stats, nil
+	}
+	if len(result.Files) == 1 {
+		stats := result.Stats
+		result.Stats = zoekt.Stats{}
+		return stats, []*zoekt.SearchResult{result}
+	}
+
+	res := []*zoekt.SearchResult{}
+	appendResult := func(repoName string, a, b int) {
+		res = append(res, &zoekt.SearchResult{
+			Files:         result.Files[a:b],
+			RepoURLs:      map[string]string{repoName: result.RepoURLs[repoName]},
+			LineFragments: map[string]string{repoName: result.LineFragments[repoName]},
+		})
+	}
+
+	var startIndex, endIndex int
+	curRepoID := result.Files[0].RepositoryID
+	curRepoName := result.Files[0].Repository
+
+	fm := zoekt.FileMatch{}
+	for endIndex, fm = range result.Files {
+		if curRepoID != fm.RepositoryID {
+			appendResult(curRepoName, startIndex, endIndex)
+
+			startIndex = endIndex
+			curRepoID = fm.RepositoryID
+			curRepoName = fm.Repository
+		}
+	}
+	appendResult(curRepoName, startIndex, endIndex+1)
+	return result.Stats, res
 }
 
 func observeMetrics(sr *zoekt.SearchResult) {

@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strconv"
 	"testing"
+	"testing/quick"
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
@@ -711,4 +712,70 @@ func TestPrioritySlice(t *testing.T) {
 			t.Errorf("%d: got %f, want %f", step, max, oper.expectedMax)
 		}
 	}
+}
+
+func TestSplitByRepository(t *testing.T) {
+	wantStats := zoekt.Stats{}
+	wantStats.ShardsScanned = 1
+
+	// i, j, k are the number of file matches for each of the 3 repositories in this
+	// test.
+	f := func(i, j, k uint8) bool {
+		fm := make([]zoekt.FileMatch, 0, i+j+k)
+		fm = append(fm, mkFileMatch(int(i), 1)...)
+		fm = append(fm, mkFileMatch(int(j), 2)...)
+		fm = append(fm, mkFileMatch(int(k), 3)...)
+
+		sr := &zoekt.SearchResult{
+			Stats: wantStats,
+			Files: fm,
+		}
+
+		gotStats, srs := splitByRepository(sr)
+
+		if diff := cmp.Diff(wantStats, gotStats); diff != "" {
+			t.Logf("-want,+got\n%s", diff)
+			return false
+		}
+
+		nonZero := 0
+		for _, l := range []uint8{i, j, k} {
+			if l > 0 {
+				nonZero++
+			}
+		}
+		if l := len(srs); l != nonZero {
+			t.Logf("wanted results from %d repositores, got %d", nonZero, l)
+		}
+
+		gotTotal := 0
+		for _, sr := range srs {
+			gotTotal += len(sr.Files)
+		}
+		wantTotal := int(i) + int(j) + int(k)
+		if gotTotal != wantTotal {
+			t.Logf("wanted %d file matches, got %d", wantTotal, gotTotal)
+			return false
+		}
+
+		for _, sr := range srs {
+			if len(sr.Files) == 0 {
+				t.Logf("got search result with 0 file matches after split")
+				return false
+			}
+		}
+		return true
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+func mkFileMatch(n int, repoID uint32) []zoekt.FileMatch {
+	fm := make([]zoekt.FileMatch, 0, n)
+	for i := 0; i < n; i++ {
+		fm = append(fm, zoekt.FileMatch{Repository: fmt.Sprintf("repo%d", repoID), RepositoryID: repoID})
+	}
+	return fm
 }
