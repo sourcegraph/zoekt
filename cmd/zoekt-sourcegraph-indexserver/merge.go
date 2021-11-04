@@ -31,12 +31,12 @@ func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) err
 	}
 
 	shards, excluded := loadCandidates(dir, maxSizeBytes)
-	debug.Printf("merging: found %d candidate shards, %d repos were excluded\n", len(shards), excluded)
+	debug.Printf("merging: found %d candidate shards, %d shards were excluded\n", len(shards), excluded)
 	if len(shards) == 0 {
 		return nil
 	}
 
-	compounds := generateCompounds(shards, targetSizeBytes)
+	compounds, _ := generateCompounds(shards, targetSizeBytes)
 	debug.Printf("merging: generated %d compounds\n", len(compounds))
 	if len(compounds) == 0 {
 		return nil
@@ -160,8 +160,13 @@ func isExcluded(path string, fi os.FileInfo, maxSize int64) bool {
 		return true
 	}
 
+	// Exclude compound shards from being merge targets. Why? We want repositories in a
+	// compound shard to be ordered based on their priority. The easiest way to
+	// enforce this is to delete the compound shard once it drops below a certain
+	// size (handeled by cleanup), reindex the repositories and merge them with other
+	// shards in the correct order.
 	if len(repos) > 1 {
-		return false
+		return true
 	}
 
 	if repos[0].LatestCommitDate.After(time.Now().AddDate(0, 0, -7)) {
@@ -185,26 +190,17 @@ func (c *compound) add(cand candidate) {
 	c.size += cand.sizeBytes
 }
 
-func generateCompounds(shards []candidate, targetSizeBytes int64) []compound {
+func generateCompounds(shards []candidate, targetSizeBytes int64) ([]compound, []candidate) {
 	compounds := make([]compound, 0)
-	for len(shards) > 0 {
-		cur := compound{}
-
-		// Start with the last shard and add more shards until we reach the target size.
-		// We accept compounds with 1 repo because we will ignore them later in
-		// callMerge.
-		cur.add(shards[len(shards)-1])
-		shards = shards[:len(shards)-1]
-		for i := len(shards) - 1; i >= 0; i-- {
-			if cur.size+shards[i].sizeBytes > targetSizeBytes {
-				continue
-			}
-			cur.add(shards[i])
-			shards = append(shards[:i], shards[i+1:]...)
+	cur := compound{}
+	for _, s := range shards {
+		cur.add(s)
+		if cur.size > targetSizeBytes {
+			compounds = append(compounds, cur)
+			cur = compound{}
 		}
-		compounds = append(compounds, cur)
 	}
-	return compounds
+	return compounds, cur.shards
 }
 
 // callMerge calls zoekt-merge-index and captures its output. callMerge is a NOP

@@ -44,7 +44,7 @@ func TestHasMultipleShards(t *testing.T) {
 
 // genTestCompounds is a helper that generates compounds from n shards with sizes
 // in (0, targetSize].
-func genTestCompounds(t *testing.T, n uint8, targetSize int64) ([]compound, int64) {
+func genTestCompounds(t *testing.T, n uint8, targetSize int64) ([]compound, []candidate, int64) {
 	t.Helper()
 
 	candidates := make([]candidate, 0, n)
@@ -56,37 +56,32 @@ func genTestCompounds(t *testing.T, n uint8, targetSize int64) ([]compound, int6
 		totalSize += thisSize
 	}
 
-	compounds := generateCompounds(candidates, targetSize)
-	return compounds, totalSize
+	compounds, excluded := generateCompounds(candidates, targetSize)
+	return compounds, excluded, totalSize
 }
 
-func TestCompoundsContainAllShards(t *testing.T) {
+func TestEitherMergedOrExcluded(t *testing.T) {
 	// n is uint8 to keep the slices reasonably small and the tests performant.
 	f := func(n uint8) bool {
-		compounds, wantTotalSize := genTestCompounds(t, n, 10)
-		shardCount := 0
+		compounds, excluded, wantTotalSize := genTestCompounds(t, n, 10)
+		shardCount := len(excluded)
 		var gotTotalSize int64
 		for _, c := range compounds {
 			shardCount += len(c.shards)
 			gotTotalSize += c.size
 		}
-		return shardCount == int(n) && gotTotalSize == wantTotalSize
-	}
-
-	if err := quick.Check(f, nil); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestFewerCompoundsThanShards(t *testing.T) {
-	f := func(n uint8) bool {
-		compounds, _ := genTestCompounds(t, n, 10)
-
-		shardCount := 0
-		for _, c := range compounds {
-			shardCount += len(c.shards)
+		for _, c := range excluded {
+			gotTotalSize += c.sizeBytes
 		}
-		return shardCount >= len(compounds)
+		if shardCount != int(n) {
+			t.Logf("shards: want %d, got %d", int(n), shardCount)
+			return false
+		}
+		if gotTotalSize != wantTotalSize {
+			t.Logf("total size: want %d, got %d", wantTotalSize, gotTotalSize)
+			return false
+		}
+		return true
 	}
 
 	if err := quick.Check(f, nil); err != nil {
@@ -94,15 +89,15 @@ func TestFewerCompoundsThanShards(t *testing.T) {
 	}
 }
 
-func TestCompoundsHaveSizeBelowTargetSize(t *testing.T) {
+func TestCompoundsHaveSizeAboveTargetSize(t *testing.T) {
 	f := func(n uint8, targetSize int64) bool {
 		if targetSize <= 0 {
 			return true
 		}
 
-		compounds, _ := genTestCompounds(t, n, targetSize)
+		compounds, _, _ := genTestCompounds(t, n, targetSize)
 		for _, c := range compounds {
-			if c.size > targetSize {
+			if c.size < targetSize {
 				return false
 			}
 		}
