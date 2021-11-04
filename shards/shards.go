@@ -670,16 +670,13 @@ search:
 			// For simple shards, send the results immediately.
 			if len(r.SearchResult.RepoURLs) <= 1 {
 				sender.Send(r.SearchResult)
-				break
+				continue
 			}
 
 			// For compound shards, stream results per repo.
 			stats, srs := splitByRepository(r.SearchResult)
 			tr.LazyPrintf("compound shard: results from %d repositories", len(srs))
 			for _, sr := range srs {
-				if len(sr.Files) == 0 {
-					panic("unreachable")
-				}
 				sr.Priority = sr.Files[0].RepositoryPriority
 
 				// TODO (stefan): make sure repos in compound shards are searched in order of their priority.
