@@ -275,8 +275,9 @@ func shardsLog(indexDir, action string, shards []shard) {
 	}
 }
 
-// vacuum removes tombstoned repos from compound shards. Vacuum locks the index
-// directory for each compound shard it vacuums.
+// vacuum removes tombstoned repos from compound shards and removes compound
+// shards if they shrink below minSizeBytes. Vacuum locks the index directory for
+// each compound shard it vacuums.
 func (s *Server) vacuum() {
 	d, err := os.Open(s.IndexDir)
 	if err != nil {
@@ -296,6 +297,21 @@ func (s *Server) vacuum() {
 		info, err := os.Stat(path)
 		if err != nil {
 			debug.Printf("vacuum stat failed: %v", err)
+			continue
+		}
+
+		if info.Size() < s.minSizeBytes {
+			paths, err := zoekt.IndexFilePaths(path)
+			if err != nil {
+				debug.Printf("failed getting all file paths for %s", path)
+				continue
+			}
+			s.muIndexDir.Lock()
+			for _, p := range paths {
+				os.Remove(p)
+			}
+			s.muIndexDir.Unlock()
+			shardsLog(s.IndexDir, "delete", []shard{{Path: path}})
 			continue
 		}
 
