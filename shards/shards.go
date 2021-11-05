@@ -667,44 +667,28 @@ search:
 			r.Priority = r.priority
 			r.MaxPendingPriority = pending.max()
 
-			// For simple shards, send the results immediately.
-			if len(r.SearchResult.RepoURLs) <= 1 {
-				sender.Send(r.SearchResult)
-				continue
-			}
-
-			// For compound shards, stream results per repo.
-			stats, srs := splitByRepository(r.SearchResult)
-			tr.LazyPrintf("compound shard: results from %d repositories", len(srs))
-			for _, sr := range srs {
-				sr.Priority = sr.Files[0].RepositoryPriority
-
-				// TODO (stefan): make sure repos in compound shards are searched in order of their priority.
-				sr.MaxPendingPriority = r.MaxPendingPriority
-				sender.Send(sr)
-			}
-			sender.Send(&zoekt.SearchResult{Stats: stats})
+			sendByRepository(r.SearchResult, sender)
 		}
 	}
 
 	return func() { runtime.KeepAlive(shards) }, err
 }
 
-// splitByRepository splits a zoekt.SearchResult by repository ID. We separate
-// the stats from the searchResult, because stats must be aggregateable.
-func splitByRepository(result *zoekt.SearchResult) (zoekt.Stats, []*zoekt.SearchResult) {
-	if len(result.Files) == 0 {
-		return result.Stats, nil
-	}
-	if len(result.Files) == 1 {
-		stats := result.Stats
-		result.Stats = zoekt.Stats{}
-		return stats, []*zoekt.SearchResult{result}
+// sendByRepository splits a zoekt.SearchResult by repository ID and calls
+// sender.Send for each repository.
+func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
+	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
+		sender.Send(result)
+		return
 	}
 
-	res := []*zoekt.SearchResult{}
-	appendResult := func(repoName string, a, b int) {
-		res = append(res, &zoekt.SearchResult{
+	// stats must be aggregateable, hence we sent them separately.
+	send := func(repoName string, a, b int) {
+		sender.Send(&zoekt.SearchResult{
+			Progress: zoekt.Progress{
+				Priority:           result.Files[a].RepositoryPriority,
+				MaxPendingPriority: result.MaxPendingPriority,
+			},
 			Files:         result.Files[a:b],
 			RepoURLs:      map[string]string{repoName: result.RepoURLs[repoName]},
 			LineFragments: map[string]string{repoName: result.LineFragments[repoName]},
@@ -718,15 +702,15 @@ func splitByRepository(result *zoekt.SearchResult) (zoekt.Stats, []*zoekt.Search
 	fm := zoekt.FileMatch{}
 	for endIndex, fm = range result.Files {
 		if curRepoID != fm.RepositoryID {
-			appendResult(curRepoName, startIndex, endIndex)
+			send(curRepoName, startIndex, endIndex)
 
 			startIndex = endIndex
 			curRepoID = fm.RepositoryID
 			curRepoName = fm.Repository
 		}
 	}
-	appendResult(curRepoName, startIndex, endIndex+1)
-	return result.Stats, res
+	send(curRepoName, startIndex, endIndex+1)
+	sender.Send(&zoekt.SearchResult{Stats: result.Stats})
 }
 
 func observeMetrics(sr *zoekt.SearchResult) {

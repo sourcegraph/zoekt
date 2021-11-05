@@ -714,52 +714,47 @@ func TestPrioritySlice(t *testing.T) {
 	}
 }
 
-func TestSplitByRepository(t *testing.T) {
+func TestSendByRepository(t *testing.T) {
 	wantStats := zoekt.Stats{}
 	wantStats.ShardsScanned = 1
 
-	// i, j, k are the number of file matches for each of the 3 repositories in this
+	// n1, n2, n3 are the number of file matches for each of the 3 repositories in this
 	// test.
-	f := func(i, j, k uint8) bool {
-		fm := make([]zoekt.FileMatch, 0, i+j+k)
-		fm = append(fm, mkFileMatch(int(i), 1)...)
-		fm = append(fm, mkFileMatch(int(j), 2)...)
-		fm = append(fm, mkFileMatch(int(k), 3)...)
+	f := func(n1, n2, n3 uint8) bool {
 
-		sr := &zoekt.SearchResult{
-			Stats: wantStats,
-			Files: fm,
-		}
+		sr := createMockSearchResult(n1, n2, n3, wantStats)
 
-		gotStats, srs := splitByRepository(sr)
+		mock := &mockSender{}
+		sendByRepository(sr, mock)
 
-		if diff := cmp.Diff(wantStats, gotStats); diff != "" {
+		if diff := cmp.Diff(wantStats, mock.stats); diff != "" {
 			t.Logf("-want,+got\n%s", diff)
 			return false
 		}
 
 		nonZero := 0
-		for _, l := range []uint8{i, j, k} {
+		for _, l := range []uint8{n1, n2, n3} {
 			if l > 0 {
 				nonZero++
 			}
 		}
-		if l := len(srs); l != nonZero {
+		if l := len(mock.files); l != nonZero {
 			t.Logf("wanted results from %d repositores, got %d", nonZero, l)
+			return false
 		}
 
 		gotTotal := 0
-		for _, sr := range srs {
-			gotTotal += len(sr.Files)
+		for _, fs := range mock.files {
+			gotTotal += len(fs)
 		}
-		wantTotal := int(i) + int(j) + int(k)
+		wantTotal := int(n1) + int(n2) + int(n3)
 		if gotTotal != wantTotal {
 			t.Logf("wanted %d file matches, got %d", wantTotal, gotTotal)
 			return false
 		}
 
-		for _, sr := range srs {
-			if len(sr.Files) == 0 {
+		for _, fs := range mock.files {
+			if len(fs) == 0 {
 				t.Logf("got search result with 0 file matches after split")
 				return false
 			}
@@ -772,10 +767,43 @@ func TestSplitByRepository(t *testing.T) {
 	}
 }
 
-func mkFileMatch(n int, repoID uint32) []zoekt.FileMatch {
+type mockSender struct {
+	stats zoekt.Stats
+	files [][]zoekt.FileMatch
+}
+
+func (s *mockSender) Send(sr *zoekt.SearchResult) {
+	s.stats.Add(sr.Stats)
+	if len(sr.Files) == 0 {
+		return
+	}
+	s.files = append(s.files, sr.Files)
+}
+
+func createMockSearchResult(n1, n2, n3 uint8, stats zoekt.Stats) *zoekt.SearchResult {
+	sr := &zoekt.SearchResult{RepoURLs: make(map[string]string)}
+	for i, n := range []uint8{n1, n2, n3} {
+		if n == 0 {
+			continue
+		}
+		tmp := mkSearchResult(int(n), uint32(i))
+		sr.Files = append(sr.Files, tmp.Files...)
+		for k := range tmp.RepoURLs {
+			sr.RepoURLs[k] = ""
+		}
+	}
+	sr.Stats = stats
+	return sr
+}
+
+func mkSearchResult(n int, repoID uint32) *zoekt.SearchResult {
+	if n == 0 {
+		return &zoekt.SearchResult{}
+	}
 	fm := make([]zoekt.FileMatch, 0, n)
 	for i := 0; i < n; i++ {
 		fm = append(fm, zoekt.FileMatch{Repository: fmt.Sprintf("repo%d", repoID), RepositoryID: repoID})
 	}
-	return fm
+
+	return &zoekt.SearchResult{Files: fm, RepoURLs: map[string]string{fmt.Sprintf("repo%d", repoID): ""}}
 }
