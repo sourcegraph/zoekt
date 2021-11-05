@@ -678,13 +678,15 @@ search:
 // sender.Send for each repository.
 func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
 	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
+		zoekt.SortFilesByScore(result.Files)
 		sender.Send(result)
 		return
 	}
 
-	// stats must be aggregateable, hence we sent them separately.
 	send := func(repoName string, a, b int) {
+		zoekt.SortFilesByScore(result.Files[a:b])
 		sender.Send(&zoekt.SearchResult{
+			// No stats. Stats must be aggregateable, hence we sent them separately.
 			Progress: zoekt.Progress{
 				Priority:           result.Files[a].RepositoryPriority,
 				MaxPendingPriority: result.MaxPendingPriority,
