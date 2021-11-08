@@ -20,7 +20,6 @@ import (
 	"log"
 	"regexp/syntax"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/google/zoekt/query"
@@ -184,15 +183,6 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 	docCount := uint32(len(d.fileBranchMasks))
 	lastDoc := int(-1)
 
-	var curRepo uint16
-	var repoPriority float64
-	if len(d.repoMetaData) > 0 {
-		repoPriority, err = strconv.ParseFloat(d.repoMetaData[0].RawConfig["priority"], 64)
-		if err != nil {
-			repoPriority = 0
-		}
-	}
-
 nextFileMatch:
 	for {
 		canceled := false
@@ -230,14 +220,6 @@ nextFileMatch:
 
 		md := d.repoMetaData[d.repos[nextDoc]]
 
-		if d.repos[nextDoc] != curRepo {
-			curRepo = d.repos[nextDoc]
-			repoPriority, err = strconv.ParseFloat(md.RawConfig["priority"], 64)
-			if err != nil {
-				repoPriority = 0
-			}
-		}
-
 		for cost := costMin; cost <= costMax; cost++ {
 			v, ok := mt.matches(cp, cost, known)
 			if ok && !v {
@@ -253,7 +235,7 @@ nextFileMatch:
 		fileMatch := FileMatch{
 			Repository:         md.Name,
 			RepositoryID:       md.ID,
-			RepositoryPriority: repoPriority,
+			RepositoryPriority: md.priority,
 			FileName:           string(d.fileName(nextDoc)),
 			Checksum:           d.getChecksum(nextDoc),
 			Language:           d.languageMap[d.languages[nextDoc]],
