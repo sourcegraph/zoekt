@@ -249,32 +249,6 @@ func searcherForTest(t *testing.T, b *IndexBuilder) Searcher {
 	return searcher
 }
 
-func TestFileBasedSearch(t *testing.T) {
-	c1 := []byte("I love bananas without skin")
-	// -----------0123456789012345678901234567890123456789
-	c2 := []byte("In Dutch, ananas means pineapple")
-	// -----------0123456789012345678901234567890123456789
-	b := testIndexBuilder(t, nil,
-		Document{Name: "f1", Content: c1},
-		Document{Name: "f2", Content: c2},
-	)
-	sres := searchForTest(t, b, &query.Substring{
-		CaseSensitive: false,
-		Pattern:       "ananas",
-	})
-
-	matches := sres.Files
-	if len(matches) != 2 {
-		t.Fatalf("got %v, want 2 matches", matches)
-	}
-	if matches[0].FileName != "f2" || matches[1].FileName != "f1" {
-		t.Fatalf("got %v, want matches {f1,f2}", matches)
-	}
-	if matches[0].LineMatches[0].LineFragments[0].Offset != 10 || matches[1].LineMatches[0].LineFragments[0].Offset != 8 {
-		t.Fatalf("got %#v, want offsets 10,8", matches)
-	}
-}
-
 func TestCaseFold(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("I love BaNaNAS.")},
@@ -629,34 +603,6 @@ func TestFileNameBoundary(t *testing.T) {
 	matches := sres.Files
 	if len(matches) != 1 || len(matches[0].LineMatches) != 1 {
 		t.Fatalf("got %v, want 1 match", matches)
-	}
-}
-
-func TestWordBoundaryRanking(t *testing.T) {
-	b := testIndexBuilder(t, nil,
-		Document{Name: "f1", Content: []byte("xbytex xbytex")},
-		Document{Name: "f2", Content: []byte("xbytex\nbytex\nbyte bla")},
-		// -----------------------------------0123456 789012 34567890
-		Document{Name: "f3", Content: []byte("xbytex ybytex")})
-
-	sres := searchForTest(t, b, &query.Substring{
-		Pattern: "byte",
-	})
-
-	if len(sres.Files) != 3 {
-		t.Fatalf("got %#v, want 3 files", sres.Files)
-	}
-
-	file0 := sres.Files[0]
-	if file0.FileName != "f2" || len(file0.LineMatches) != 3 {
-		t.Fatalf("got file %s, num matches %d (%#v), want 3 matches in file f2", file0.FileName, len(file0.LineMatches), file0)
-	}
-
-	if file0.LineMatches[0].LineFragments[0].Offset != 13 {
-		t.Fatalf("got first match %#v, want full word match", sres.Files[0].LineMatches[0])
-	}
-	if file0.LineMatches[1].LineFragments[0].Offset != 7 {
-		t.Fatalf("got second match %#v, want partial word match", sres.Files[0].LineMatches[1])
 	}
 }
 
@@ -1282,34 +1228,6 @@ func TestOr(t *testing.T) {
 
 	if len(sres.Files) != 2 {
 		t.Fatalf("got %v, want 2 files", sres.Files)
-	}
-}
-
-func TestAtomCountScore(t *testing.T) {
-	b := testIndexBuilder(t,
-		&Repository{
-			Branches: []RepositoryBranch{
-				{"branches", "v1"},
-				{"needle", "v2"},
-			},
-		},
-		Document{Name: "f1", Content: []byte("needle the bla"), Branches: []string{"branches"}},
-		Document{Name: "needle-file-branch", Content: []byte("needle content"), Branches: []string{"needle"}},
-		Document{Name: "needle-file", Content: []byte("needle content"), Branches: []string{"branches"}})
-
-	sres := searchForTest(t, b,
-		query.NewOr(
-			&query.Substring{Pattern: "needle"},
-			&query.Substring{Pattern: "needle", FileName: true},
-			&query.Branch{Pattern: "needle"},
-		))
-	var got []string
-	for _, f := range sres.Files {
-		got = append(got, f.FileName)
-	}
-	want := []string{"needle-file-branch", "needle-file", "f1"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
 	}
 }
 

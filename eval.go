@@ -233,11 +233,12 @@ nextFileMatch:
 		}
 
 		fileMatch := FileMatch{
-			Repository:   md.Name,
-			RepositoryID: md.ID,
-			FileName:     string(d.fileName(nextDoc)),
-			Checksum:     d.getChecksum(nextDoc),
-			Language:     d.languageMap[d.languages[nextDoc]],
+			Repository:         md.Name,
+			RepositoryID:       md.ID,
+			RepositoryPriority: md.priority,
+			FileName:           string(d.fileName(nextDoc)),
+			Checksum:           d.getChecksum(nextDoc),
+			Language:           d.languageMap[d.languages[nextDoc]],
 		}
 
 		if s := d.subRepos[nextDoc]; s > 0 {
@@ -313,7 +314,6 @@ nextFileMatch:
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
 		res.Stats.FileCount++
 	}
-	SortFilesByScore(res.Files)
 
 	for _, md := range d.repoMetaData {
 		r := md

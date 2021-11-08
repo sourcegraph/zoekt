@@ -667,11 +667,56 @@ search:
 			r.Priority = r.priority
 			r.MaxPendingPriority = pending.max()
 
-			sender.Send(r.SearchResult)
+			sendByRepository(r.SearchResult, sender)
 		}
 	}
 
 	return func() { runtime.KeepAlive(shards) }, err
+}
+
+// sendByRepository splits a zoekt.SearchResult by repository and calls
+// sender.Send for each batch. Ranking in Sourcegraph expects zoekt.SearchResult
+// to contain results with the same zoekt.SearchResult.Priority only.
+//
+// We split by repository instead of by priority because it is easier to set
+// RepoURLs and LineFragments in zoekt.SearchResult.
+func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
+	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
+		zoekt.SortFilesByScore(result.Files)
+		sender.Send(result)
+		return
+	}
+
+	send := func(repoName string, a, b int) {
+		zoekt.SortFilesByScore(result.Files[a:b])
+		sender.Send(&zoekt.SearchResult{
+			// No stats. Stats must be aggregateable, hence we sent them separately.
+			Progress: zoekt.Progress{
+				Priority:           result.Files[a].RepositoryPriority,
+				MaxPendingPriority: result.MaxPendingPriority,
+			},
+			Files:         result.Files[a:b],
+			RepoURLs:      map[string]string{repoName: result.RepoURLs[repoName]},
+			LineFragments: map[string]string{repoName: result.LineFragments[repoName]},
+		})
+	}
+
+	var startIndex, endIndex int
+	curRepoID := result.Files[0].RepositoryID
+	curRepoName := result.Files[0].Repository
+
+	fm := zoekt.FileMatch{}
+	for endIndex, fm = range result.Files {
+		if curRepoID != fm.RepositoryID {
+			send(curRepoName, startIndex, endIndex)
+
+			startIndex = endIndex
+			curRepoID = fm.RepositoryID
+			curRepoName = fm.Repository
+		}
+	}
+	send(curRepoName, startIndex, endIndex+1)
+	sender.Send(&zoekt.SearchResult{Stats: result.Stats})
 }
 
 func observeMetrics(sr *zoekt.SearchResult) {

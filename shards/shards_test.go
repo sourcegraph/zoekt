@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strconv"
 	"testing"
+	"testing/quick"
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
@@ -34,6 +35,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
+	"github.com/google/zoekt/stream"
 )
 
 type crashSearcher struct{}
@@ -711,4 +713,240 @@ func TestPrioritySlice(t *testing.T) {
 			t.Errorf("%d: got %f, want %f", step, max, oper.expectedMax)
 		}
 	}
+}
+
+func TestSendByRepository(t *testing.T) {
+	wantStats := zoekt.Stats{}
+	wantStats.ShardsScanned = 1
+
+	// n1, n2, n3 are the number of file matches for each of the 3 repositories in this
+	// test.
+	f := func(n1, n2, n3 uint8) bool {
+
+		sr := createMockSearchResult(n1, n2, n3, wantStats)
+
+		mock := &mockSender{}
+		sendByRepository(sr, mock)
+
+		if diff := cmp.Diff(wantStats, mock.stats); diff != "" {
+			t.Logf("-want,+got\n%s", diff)
+			return false
+		}
+
+		nonZero := 0
+		for _, l := range []uint8{n1, n2, n3} {
+			if l > 0 {
+				nonZero++
+			}
+		}
+		if l := len(mock.files); l != nonZero {
+			t.Logf("wanted results from %d repositores, got %d", nonZero, l)
+			return false
+		}
+
+		gotTotal := 0
+		for _, fs := range mock.files {
+			gotTotal += len(fs)
+		}
+		wantTotal := int(n1) + int(n2) + int(n3)
+		if gotTotal != wantTotal {
+			t.Logf("wanted %d file matches, got %d", wantTotal, gotTotal)
+			return false
+		}
+
+		for _, fs := range mock.files {
+			if len(fs) == 0 {
+				t.Logf("got search result with 0 file matches after split")
+				return false
+			}
+		}
+		return true
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+type mockSender struct {
+	stats zoekt.Stats
+	files [][]zoekt.FileMatch
+}
+
+func (s *mockSender) Send(sr *zoekt.SearchResult) {
+	s.stats.Add(sr.Stats)
+	if len(sr.Files) == 0 {
+		return
+	}
+	s.files = append(s.files, sr.Files)
+}
+
+func createMockSearchResult(n1, n2, n3 uint8, stats zoekt.Stats) *zoekt.SearchResult {
+	sr := &zoekt.SearchResult{RepoURLs: make(map[string]string)}
+	for i, n := range []uint8{n1, n2, n3} {
+		if n == 0 {
+			continue
+		}
+		tmp := mkSearchResult(int(n), uint32(i))
+		sr.Files = append(sr.Files, tmp.Files...)
+		for k := range tmp.RepoURLs {
+			sr.RepoURLs[k] = ""
+		}
+	}
+	sr.Stats = stats
+	return sr
+}
+
+func mkSearchResult(n int, repoID uint32) *zoekt.SearchResult {
+	if n == 0 {
+		return &zoekt.SearchResult{}
+	}
+	fm := make([]zoekt.FileMatch, 0, n)
+	for i := 0; i < n; i++ {
+		fm = append(fm, zoekt.FileMatch{Repository: fmt.Sprintf("repo%d", repoID), RepositoryID: repoID})
+	}
+
+	return &zoekt.SearchResult{Files: fm, RepoURLs: map[string]string{fmt.Sprintf("repo%d", repoID): ""}}
+}
+
+func TestFileBasedSearch(t *testing.T) {
+	cases := []struct {
+		name              string
+		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch
+	}{
+		{"Search", testShardedSearch},
+		{"StreamSearch", testShardedStreamSearch},
+	}
+
+	c1 := []byte("I love bananas without skin")
+	// -----------0123456789012345678901234567890123456789
+	c2 := []byte("In Dutch, ananas means pineapple")
+	// -----------0123456789012345678901234567890123456789
+	b := testIndexBuilder(t, nil,
+		zoekt.Document{Name: "f1", Content: c1},
+		zoekt.Document{Name: "f2", Content: c2},
+	)
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			matches := tt.testShardedSearch(t, &query.Substring{
+				CaseSensitive: false,
+				Pattern:       "ananas",
+			}, b)
+
+			if len(matches) != 2 {
+				t.Fatalf("got %v, want 2 matches", matches)
+			}
+			if matches[0].FileName != "f2" || matches[1].FileName != "f1" {
+				t.Fatalf("got %v, want matches {f1,f2}", matches)
+			}
+			if matches[0].LineMatches[0].LineFragments[0].Offset != 10 || matches[1].LineMatches[0].LineFragments[0].Offset != 8 {
+				t.Fatalf("got %#v, want offsets 10,8", matches)
+			}
+		})
+	}
+}
+
+func TestWordBoundaryRanking(t *testing.T) {
+	cases := []struct {
+		name              string
+		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch
+	}{
+		{"Search", testShardedSearch},
+		{"StreamSearch", testShardedStreamSearch},
+	}
+
+	b := testIndexBuilder(t, nil,
+		zoekt.Document{Name: "f1", Content: []byte("xbytex xbytex")},
+		zoekt.Document{Name: "f2", Content: []byte("xbytex\nbytex\nbyte bla")},
+		// -----------------------------------0123456 789012 34567890
+		zoekt.Document{Name: "f3", Content: []byte("xbytex ybytex")})
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+
+			files := tt.testShardedSearch(t, &query.Substring{Pattern: "byte"}, b)
+
+			if len(files) != 3 {
+				t.Fatalf("got %#v, want 3 files", files)
+			}
+
+			file0 := files[0]
+			if file0.FileName != "f2" || len(file0.LineMatches) != 3 {
+				t.Fatalf("got file %s, num matches %d (%#v), want 3 matches in file f2", file0.FileName, len(file0.LineMatches), file0)
+			}
+
+			if file0.LineMatches[0].LineFragments[0].Offset != 13 {
+				t.Fatalf("got first match %#v, want full word match", files[0].LineMatches[0])
+			}
+			if file0.LineMatches[1].LineFragments[0].Offset != 7 {
+				t.Fatalf("got second match %#v, want partial word match", files[0].LineMatches[1])
+			}
+		})
+	}
+}
+
+func TestAtomCountScore(t *testing.T) {
+	cases := []struct {
+		name              string
+		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch
+	}{
+		{"Search", testShardedSearch},
+		{"StreamSearch", testShardedStreamSearch},
+	}
+
+	b := testIndexBuilder(t,
+		&zoekt.Repository{
+			Branches: []zoekt.RepositoryBranch{
+				{"branches", "v1"},
+				{"needle", "v2"},
+			},
+		},
+		zoekt.Document{Name: "f1", Content: []byte("needle the bla"), Branches: []string{"branches"}},
+		zoekt.Document{Name: "needle-file-branch", Content: []byte("needle content"), Branches: []string{"needle"}},
+		zoekt.Document{Name: "needle-file", Content: []byte("needle content"), Branches: []string{"branches"}})
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			files := tt.testShardedSearch(t,
+				query.NewOr(
+					&query.Substring{Pattern: "needle"},
+					&query.Substring{Pattern: "needle", FileName: true},
+					&query.Branch{Pattern: "needle"},
+				), b)
+			var got []string
+			for _, f := range files {
+				got = append(got, f.FileName)
+			}
+			want := []string{"needle-file-branch", "needle-file", "f1"}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("got %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func testShardedStreamSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch {
+	ss := newShardedSearcher(1)
+	searcher := searcherForTest(t, ib)
+	ss.replace(map[string]zoekt.Searcher{"r1": searcher})
+
+	var files []zoekt.FileMatch
+	sender := stream.SenderFunc(func(result *zoekt.SearchResult) {
+		files = append(files, result.Files...)
+	})
+
+	if err := ss.StreamSearch(context.Background(), q, &zoekt.SearchOptions{}, sender); err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+func testShardedSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch {
+	ss := newShardedSearcher(1)
+	searcher := searcherForTest(t, ib)
+	ss.replace(map[string]zoekt.Searcher{"r1": searcher})
+
+	sres, _ := ss.Search(context.Background(), q, &zoekt.SearchOptions{})
+	return sres.Files
 }

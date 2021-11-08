@@ -47,6 +47,10 @@ type FileMatch struct {
 	// Sourcegraph.
 	RepositoryID uint32
 
+	// RepositoryPriority is a Sourcegraph extension. It is used by Sourcegraph to
+	// order results from different repositories relative to each other.
+	RepositoryPriority float64
+
 	// Only set if requested
 	Content []byte
 
