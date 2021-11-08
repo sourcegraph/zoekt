@@ -130,6 +130,9 @@ type Server struct {
 	// Shards larger than MaxSizeBytes are excluded from merging.
 	MaxSizeBytes int64
 
+	// Compound shards smaller than minSizeBytes will be deleted by vacuum.
+	minSizeBytes int64
+
 	// CPUCount is the amount of parallelism to use when indexing a
 	// repository.
 	CPUCount int
@@ -697,6 +700,7 @@ func main() {
 	mergeInterval := flag.Duration("merge_interval", time.Hour, "run merge this often")
 	targetSize := flag.Int64("merge_target_size", getEnvWithDefaultInt64("SRC_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
 	maxSize := flag.Int64("merge_max_size", getEnvWithDefaultInt64("SRC_MAX_SIZE", 1800), "the maximum size in MiB a shard can have to be considered for merging")
+	minSize := flag.Int64("merge_min_size", getEnvWithDefaultInt64("SRC_MIN_SIZE", 1800), "the minimum size of a compound shard in MiB")
 	index := flag.String("index", defaultIndexDir, "set index directory to use")
 	listen := flag.String("listen", ":6072", "listen on this address.")
 	hostname := flag.String("hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
@@ -794,6 +798,7 @@ func main() {
 		CPUCount:        cpuCount,
 		TargetSizeBytes: *targetSize * 1024 * 1024,
 		MaxSizeBytes:    *maxSize * 1024 * 1024,
+		minSizeBytes:    *minSize * 1024 * 1024,
 	}
 
 	if *debugList {

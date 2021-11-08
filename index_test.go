@@ -1156,6 +1156,7 @@ func TestListRepos(t *testing.T) {
 					cmpopts.IgnoreFields(RepoListEntry{}, "IndexMetadata"),
 					cmpopts.IgnoreFields(RepoStats{}, "IndexBytes"),
 					cmpopts.IgnoreFields(Repository{}, "SubRepoMap"),
+					cmpopts.IgnoreFields(Repository{}, "priority"),
 				}
 				if diff := cmp.Diff(want, res, ignored...); diff != "" {
 					t.Fatalf("mismatch (-want +got):\n%s", diff)

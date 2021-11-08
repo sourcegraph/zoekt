@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 )
 
 // Merge files into a compound shard fn in the directory dstDir.
@@ -87,6 +88,10 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 	if len(ds) == 0 {
 		return nil, fmt.Errorf("need 1 or more indexData to merge")
 	}
+
+	sort.Slice(ds, func(i, j int) bool {
+		return ds[i].repoMetaData[0].priority > ds[j].repoMetaData[0].priority
+	})
 
 	ib := newIndexBuilder()
 	ib.indexFormatVersion = NextIndexFormatVersion

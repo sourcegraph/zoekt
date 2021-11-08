@@ -272,6 +272,10 @@ type Repository struct {
 	// separator, generally '#' or ';'.
 	LineFragmentTemplate string
 
+	// Perf optimization: priority is set when we load the shard. It corresponds to
+	// the value of "priority" stored in RawConfig.
+	priority float64
+
 	// All zoekt.* configuration settings.
 	RawConfig map[string]string
 
@@ -313,6 +317,12 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		r.ID = uint32(id)
 	}
 
+	if v, ok := repo.RawConfig["priority"]; ok {
+		r.priority, err = strconv.ParseFloat(v, 64)
+		if err != nil {
+			r.priority = 0
+		}
+	}
 	return nil
 }
 
