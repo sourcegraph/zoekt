@@ -238,7 +238,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.metaData = *md
 	d.repoMetaData = make([]Repository, 0, len(repos))
 	for _, r := range repos {
-
 		d.repoMetaData = append(d.repoMetaData, *r)
 	}
 
