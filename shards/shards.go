@@ -677,6 +677,9 @@ search:
 // sendByRepository splits a zoekt.SearchResult by repository and calls
 // sender.Send for each batch. Ranking in Sourcegraph expects zoekt.SearchResult
 // to contain results with the same zoekt.SearchResult.Priority only.
+//
+// We split by repository instead of by priority because it is easier to set
+// RepoURLs and LineFragments in zoekt.SearchResult.
 func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
 	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
 		zoekt.SortFilesByScore(result.Files)
