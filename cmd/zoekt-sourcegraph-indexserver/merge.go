@@ -191,7 +191,7 @@ func (c *compound) add(cand candidate) {
 }
 
 // generateCompounds groups simple shards into compound shards without performing
-// the acutal merge. Shards that are not contained in any of the compound shards
+// the actual merge. Shards that are not contained in any of the compound shards
 // are returned in the second argument.
 func generateCompounds(shards []candidate, targetSizeBytes int64) ([]compound, []candidate) {
 	compounds := make([]compound, 0)
