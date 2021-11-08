@@ -317,6 +317,12 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		r.ID = uint32(id)
 	}
 
+	if v, ok := repo.RawConfig["priority"]; ok {
+		r.priority, err = strconv.ParseFloat(v, 64)
+		if err != nil {
+			r.priority = 0
+		}
+	}
 	return nil
 }
 

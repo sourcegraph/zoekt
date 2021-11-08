@@ -22,7 +22,6 @@ import (
 	"log"
 	"os"
 	"sort"
-	"strconv"
 
 	"github.com/rs/xid"
 )
@@ -239,11 +238,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.metaData = *md
 	d.repoMetaData = make([]Repository, 0, len(repos))
 	for _, r := range repos {
-		// Performance optimization: parse repo priority on load.
-		r.priority, err = strconv.ParseFloat(r.RawConfig["priority"], 64)
-		if err != nil {
-			r.priority = 0
-		}
+
 		d.repoMetaData = append(d.repoMetaData, *r)
 	}
 
