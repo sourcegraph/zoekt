@@ -289,10 +289,11 @@ func (s *Server) Run() {
 
 			repos.IterateIndexOptions(s.queue.AddOrUpdate)
 
-			// TODO(keegan) with config fingerprint we don't call AddOrUpdate on
-			// everything, just those repos which have changed. We need to bump
-			// everything in repos.IDs back into the queue incase something happened
-			// to the repo on disk.
+			// IterateIndexOptions will only iterate over repositories that have
+			// changed since we last called list. However, we want to add all IDs
+			// back onto the queue just to check that what is on disk is still
+			// correct. This will use the last IndexOptions we stored in the queue.
+			s.queue.Bump(repos.IDs)
 
 			<-cleanupDone
 		}
