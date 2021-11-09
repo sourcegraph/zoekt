@@ -23,7 +23,6 @@ import (
 
 type Sourcegraph interface {
 	GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error)
-	GetCloneURL(name string) string
 	ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error)
 }
 
@@ -81,12 +80,15 @@ func (s *sourcegraphClient) GetIndexOptions(repos ...uint32) ([]indexOptionsItem
 		if err := dec.Decode(&opts[i]); err != nil {
 			return nil, fmt.Errorf("error decoding body: %w", err)
 		}
+		if opts[i].Name != "" {
+			opts[i].CloneURL = s.getCloneURL(opts[i].Name)
+		}
 	}
 
 	return opts, nil
 }
 
-func (s *sourcegraphClient) GetCloneURL(name string) string {
+func (s *sourcegraphClient) getCloneURL(name string) string {
 	return s.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", name)}).String()
 }
 
@@ -172,9 +174,10 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	}
 
 	opts := IndexOptions{
-		RepoID:  fakeID(name),
-		Name:    name,
-		Symbols: true,
+		RepoID:   fakeID(name),
+		Name:     name,
+		CloneURL: sf.getCloneURL(name),
+		Symbols:  true,
 
 		Public:   !exists("SG_PRIVATE"),
 		Fork:     exists("SG_FORK"),
@@ -196,7 +199,7 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	return opts, nil
 }
 
-func (sf sourcegraphFake) GetCloneURL(name string) string {
+func (sf sourcegraphFake) getCloneURL(name string) string {
 	return filepath.Join(sf.RootDir, filepath.FromSlash(name))
 }
 

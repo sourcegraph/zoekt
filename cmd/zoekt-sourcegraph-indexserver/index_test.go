@@ -96,9 +96,9 @@ func TestIndex(t *testing.T) {
 	}{{
 		name: "minimal",
 		args: indexArgs{
-			CloneURL: "http://api.test/.internal/git/test/repo",
 			IndexOptions: IndexOptions{
 				Name:     "test/repo",
+				CloneURL: "http://api.test/.internal/git/test/repo",
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
 			},
 		},
@@ -117,9 +117,9 @@ func TestIndex(t *testing.T) {
 	}, {
 		name: "minimal-id",
 		args: indexArgs{
-			CloneURL: "http://api.test/.internal/git/test/repo",
 			IndexOptions: IndexOptions{
 				Name:     "test/repo",
+				CloneURL: "http://api.test/.internal/git/test/repo",
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
 				RepoID:   123,
 			},
@@ -139,7 +139,6 @@ func TestIndex(t *testing.T) {
 	}, {
 		name: "all",
 		args: indexArgs{
-			CloneURL:          "http://api.test/.internal/git/test/repo",
 			Incremental:       true,
 			IndexDir:          "/data/index",
 			Parallelism:       4,
@@ -147,6 +146,7 @@ func TestIndex(t *testing.T) {
 			DownloadLimitMBPS: "1000",
 			IndexOptions: IndexOptions{
 				Name:       "test/repo",
+				CloneURL:   "http://api.test/.internal/git/test/repo",
 				LargeFiles: []string{"foo", "bar"},
 				Symbols:    true,
 				Branches: []zoekt.RepositoryBranch{
