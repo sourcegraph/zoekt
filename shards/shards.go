@@ -618,6 +618,10 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 		// go-routines to finish but also set work to nil in order for the select statement below to ignore
 		// that case when we want to stop a search. This is needed because sending on a closed channel panics.
 		work = search
+
+		// workCount keeps track of the number of shards we put on the work channel to
+		// space out the progress events we send.
+		workCount = 0
 	)
 
 	stop := func() {
@@ -634,12 +638,15 @@ search:
 
 		select {
 		case work <- next:
-			// We send the max pending priority as we search to keep frontend informed even
-			// if we don't find matches.
-			var r zoekt.SearchResult
 			pending.append(next.priority)
-			r.MaxPendingPriority = pending.max()
-			sender.Send(&r)
+
+			if workCount = (workCount + 1) % 100; workCount == 0 {
+				// We send the max pending priority as we search to keep frontend informed even
+				// if we don't find matches.
+				var r zoekt.SearchResult
+				r.MaxPendingPriority = pending.max()
+				sender.Send(&r)
+			}
 
 			if shard++; shard == len(shards) {
 				stop()
