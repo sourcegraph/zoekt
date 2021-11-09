@@ -238,7 +238,15 @@ func callMerge(shards []candidate) ([]byte, []byte, error) {
 	// delete the candidate shards to avoid duplicate results in case a compound
 	// shard was created after all.
 	for _, s := range shards {
-		os.Remove(s.path)
+		paths, err := zoekt.IndexFilePaths(s.path)
+		if err != nil {
+			debug.Printf("failed to remove s %s: %v", s.path, err)
+		}
+		for _, p := range paths {
+			if err := os.Remove(p); err != nil {
+				debug.Printf("failed to remove shard file %s: %v", p, err)
+			}
+		}
 	}
 	return outBuf.Bytes(), errBuf.Bytes(), err
 }
