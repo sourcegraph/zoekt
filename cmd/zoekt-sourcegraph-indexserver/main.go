@@ -289,6 +289,11 @@ func (s *Server) Run() {
 
 			repos.IterateIndexOptions(s.queue.AddOrUpdate)
 
+			// TODO(keegan) with config fingerprint we don't call AddOrUpdate on
+			// everything, just those repos which have changed. We need to bump
+			// everything in repos.IDs back into the queue incase something happened
+			// to the repo on disk.
+
 			<-cleanupDone
 		}
 	}()
