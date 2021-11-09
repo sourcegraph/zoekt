@@ -16,14 +16,29 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/google/zoekt"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
+	"golang.org/x/net/trace"
 )
 
+type SourcegraphListResult struct {
+	// IDs is the set of Sourcegraph repository IDs that this replica needs
+	// to index.
+	IDs []uint32
+
+	// IterateIndexOptions best effort resolves the IndexOptions for RepoIDs. If
+	// any repository fails it internally logs.
+	IterateIndexOptions func(func(IndexOptions))
+}
+
 type Sourcegraph interface {
+	List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error)
+
+	// GetIndexOptions is deprecated but kept around until we improve our
+	// forceIndex code.
 	GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error)
-	ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error)
 }
 
 // sourcegraphClient contains methods which interact with the sourcegraph API.
@@ -36,7 +51,62 @@ type sourcegraphClient struct {
 	// list of repositories to index.
 	Hostname string
 
+	// BatchSize is how many repository configurations we request at once. If
+	// zero a value of 1000 is used.
+	BatchSize int
+
 	Client *retryablehttp.Client
+}
+
+func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
+	repos, err := s.listRepoIDs(ctx, indexed)
+	if err != nil {
+		return nil, err
+	}
+
+	batchSize := s.BatchSize
+	if batchSize == 0 {
+		batchSize = 1000
+	}
+
+	iterate := func(f func(IndexOptions)) {
+		start := time.Now()
+		tr := trace.New("getIndexOptions", "")
+		tr.LazyPrintf("getting index options for %d repos", len(repos))
+
+		defer func() {
+			metricResolveRevisionsDuration.Observe(time.Since(start).Seconds())
+			tr.Finish()
+		}()
+
+		// We ask the frontend to get index options in batches.
+		for repos := range batched(repos, batchSize) {
+			start := time.Now()
+			opts, err := s.GetIndexOptions(repos...)
+			if err != nil {
+				metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
+				tr.LazyPrintf("failed fetching options batch: %v", err)
+				tr.SetError()
+				continue
+			}
+			metricResolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
+			for i, opt := range opts {
+				name := repos[i]
+				if opt.Error != "" {
+					metricGetIndexOptionsError.Inc()
+					tr.LazyPrintf("failed fetching options for %v: %v", name, opt.Error)
+					tr.SetError()
+					continue
+				}
+				f(opt.IndexOptions)
+			}
+		}
+	}
+
+	return &SourcegraphListResult{
+		IDs:                 repos,
+		IterateIndexOptions: iterate,
+	}, nil
 }
 
 // indexOptionsItem wraps IndexOptions to also include an error returned by
@@ -92,7 +162,7 @@ func (s *sourcegraphClient) getCloneURL(name string) string {
 	return s.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", name)}).String()
 }
 
-func (s *sourcegraphClient) ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
+func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
 	body, err := json.Marshal(&struct {
 		Hostname   string
 		IndexedIDs []uint32
@@ -131,6 +201,32 @@ func (s *sourcegraphClient) ListRepoIDs(ctx context.Context, indexed []uint32) (
 type sourcegraphFake struct {
 	RootDir string
 	Log     *log.Logger
+}
+
+func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
+	repos, err := sf.ListRepoIDs(ctx, indexed)
+	if err != nil {
+		return nil, err
+	}
+
+	iterate := func(f func(IndexOptions)) {
+		opts, err := sf.GetIndexOptions(repos...)
+		if err != nil {
+			sf.Log.Printf("WARN: ignoring GetIndexOptions error: %v", err)
+		}
+		for _, opt := range opts {
+			if opt.Error != "" {
+				sf.Log.Printf("WARN: ignoring GetIndexOptions error for %s: %v", opt.Name, err)
+				continue
+			}
+			f(opt.IndexOptions)
+		}
+	}
+
+	return &SourcegraphListResult{
+		IDs:                 repos,
+		IterateIndexOptions: iterate,
+	}, nil
 }
 
 func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error) {

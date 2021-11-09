@@ -265,16 +265,16 @@ func (s *Server) Run() {
 				continue
 			}
 
-			repos, err := s.Sourcegraph.ListRepoIDs(context.Background(), listIndexed(s.IndexDir))
+			repos, err := s.Sourcegraph.List(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
 				log.Println(err)
 				continue
 			}
 
-			debug.Printf("updating index queue with %d repositories", len(repos))
+			debug.Printf("updating index queue with %d repositories", len(repos.IDs))
 
 			// Stop indexing repos we don't need to track anymore
-			count := s.queue.MaybeRemoveMissing(repos)
+			count := s.queue.MaybeRemoveMissing(repos.IDs)
 			if count > 0 {
 				log.Printf("stopped tracking %d repositories", count)
 			}
@@ -283,39 +283,11 @@ func (s *Server) Run() {
 			go func() {
 				defer close(cleanupDone)
 				s.muIndexDir.Lock()
-				cleanup(s.IndexDir, repos, time.Now())
+				cleanup(s.IndexDir, repos.IDs, time.Now())
 				s.muIndexDir.Unlock()
 			}()
 
-			start := time.Now()
-			tr := trace.New("getIndexOptions", "")
-			tr.LazyPrintf("getting index options for %d repos", len(repos))
-
-			// We ask the frontend to get index options in batches.
-			for repos := range batched(repos, s.BatchSize) {
-				start := time.Now()
-				opts, err := s.Sourcegraph.GetIndexOptions(repos...)
-				if err != nil {
-					metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
-					tr.LazyPrintf("failed fetching options batch: %v", err)
-					tr.SetError()
-					continue
-				}
-				metricResolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
-				for i, opt := range opts {
-					name := repos[i]
-					if opt.Error != "" {
-						metricGetIndexOptionsError.Inc()
-						tr.LazyPrintf("failed fetching options for %v: %v", name, opt.Error)
-						tr.SetError()
-						continue
-					}
-					s.queue.AddOrUpdate(opt.IndexOptions)
-				}
-			}
-
-			metricResolveRevisionsDuration.Observe(time.Since(start).Seconds())
-			tr.Finish()
+			repos.IterateIndexOptions(s.queue.AddOrUpdate)
 
 			<-cleanupDone
 		}
@@ -733,15 +705,6 @@ func main() {
 		log.Fatalf("url.Parse(%v): %v", *root, err)
 	}
 
-	var batchSize int = 1000
-	batchSizeStr := os.Getenv("SRC_REPO_CONFIG_BATCH_SIZE")
-	if batchSizeStr != "" {
-		batchSize, err = strconv.Atoi(batchSizeStr)
-		if err != nil {
-			log.Fatal("Invalid value for SRC_REPO_CONFIG_BATCH_SIZE, must be int")
-		}
-	}
-
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	maxprocs.Set()
 
@@ -769,12 +732,21 @@ func main() {
 
 	var sg Sourcegraph
 	if rootURL.IsAbs() {
+		var batchSize int
+		if v := os.Getenv("SRC_REPO_CONFIG_BATCH_SIZE"); v != "" {
+			batchSize, err = strconv.Atoi(v)
+			if err != nil {
+				log.Fatal("Invalid value for SRC_REPO_CONFIG_BATCH_SIZE, must be int")
+			}
+		}
+
 		client := retryablehttp.NewClient()
 		client.Logger = debug
 		sg = &sourcegraphClient{
-			Root:     rootURL,
-			Client:   client,
-			Hostname: *hostname,
+			Root:      rootURL,
+			Client:    client,
+			Hostname:  *hostname,
+			BatchSize: batchSize,
 		}
 	} else {
 		sg = sourcegraphFake{
@@ -789,7 +761,6 @@ func main() {
 	}
 	s := &Server{
 		Sourcegraph:     sg,
-		BatchSize:       batchSize,
 		IndexDir:        *index,
 		Interval:        *interval,
 		VacuumInterval:  *vacuumInterval,
@@ -801,11 +772,11 @@ func main() {
 	}
 
 	if *debugList {
-		repos, err := s.Sourcegraph.ListRepoIDs(context.Background(), listIndexed(s.IndexDir))
+		repos, err := s.Sourcegraph.List(context.Background(), listIndexed(s.IndexDir))
 		if err != nil {
 			log.Fatal(err)
 		}
-		for _, r := range repos {
+		for _, r := range repos.IDs {
 			fmt.Println(r)
 		}
 		os.Exit(0)
