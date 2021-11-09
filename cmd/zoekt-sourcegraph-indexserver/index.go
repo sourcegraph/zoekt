@@ -41,6 +41,9 @@ type IndexOptions struct {
 	// Name is the Repository Name.
 	Name string
 
+	// CloneURL is the internal clone URL for Name.
+	CloneURL string
+
 	// Priority indicates ranking in results, higher first.
 	Priority float64
 
@@ -57,9 +60,6 @@ type IndexOptions struct {
 // indexArgs represents the arguments we pass to zoekt-git-index
 type indexArgs struct {
 	IndexOptions
-
-	// CloneURL is the remote git URL of the repository for cloning.
-	CloneURL string
 
 	// Incremental indicates to skip indexing if already indexed.
 	Incremental bool

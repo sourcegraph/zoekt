@@ -32,7 +32,6 @@ func TestServer_defaultArgs(t *testing.T) {
 		IndexOptions: IndexOptions{
 			Name: "testName",
 		},
-		CloneURL:          "http://api.test/.internal/git/testName",
 		IndexDir:          "/testdata/index",
 		Parallelism:       6,
 		Incremental:       true,

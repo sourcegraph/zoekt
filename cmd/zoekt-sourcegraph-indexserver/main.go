@@ -476,7 +476,6 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 	return &indexArgs{
-		CloneURL:     s.Sourcegraph.GetCloneURL(opts.Name),
 		IndexOptions: opts,
 
 		IndexDir:    s.IndexDir,
