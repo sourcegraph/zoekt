@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/zoekt"
+	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -201,16 +202,27 @@ func removeAll(shards ...shard) {
 	// exceedingly rare due to it being a mix of partial failure on something in
 	// trash + an admin re-adding a repository.
 	for _, shard := range shards {
-		paths, err := zoekt.IndexFilePaths(shard.Path)
+		err := removeShardAtPath(shard.Path)
 		if err != nil {
-			debug.Printf("failed to remove shard %s: %v", shard.Path, err)
-		}
-		for _, p := range paths {
-			if err := os.Remove(p); err != nil {
-				debug.Printf("failed to remove shard file %s: %v", p, err)
-			}
+			debug.Println(err)
 		}
 	}
+}
+
+// removeShardAtPath removes a shard and all its accompanying files. Check
+// zoekt.IndexFilePaths to see which files are deleted.
+func removeShardAtPath(path string) error {
+	var errs error
+	paths, err := zoekt.IndexFilePaths(path)
+	if err != nil {
+		errs = multierror.Append(errs, fmt.Errorf("failed to removeShardAtPath shard %s: %v", path, err))
+	}
+	for _, p := range paths {
+		if err := os.Remove(p); err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("failed to removeShardAtPath shard file %s: %v", p, err))
+		}
+	}
+	return errs
 }
 
 func moveAll(dstDir string, shards []shard) {

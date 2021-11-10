@@ -17,6 +17,7 @@ require (
 	github.com/google/go-github/v27 v27.0.6
 	github.com/google/slothfs v0.0.0-20190417171004-6b42407d9230
 	github.com/hashicorp/go-hclog v0.12.1 // indirect
+	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-retryablehttp v0.6.4
 	github.com/keegancsmith/rpc v1.1.0
 	github.com/keegancsmith/tmpfriend v0.0.0-20180423180255-86e88902a513
