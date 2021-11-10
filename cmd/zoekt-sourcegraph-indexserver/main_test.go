@@ -74,13 +74,13 @@ func TestListRepoIDs(t *testing.T) {
 		Client:   retryablehttp.NewClient(),
 	}
 
-	gotRepos, err := s.ListRepoIDs(context.Background(), []uint32{1, 3})
+	gotRepos, err := s.List(context.Background(), []uint32{1, 3})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if want := []uint32{1, 2, 3}; !cmp.Equal(gotRepos, want) {
-		t.Errorf("repos mismatch (-want +got):\n%s", cmp.Diff(want, gotRepos))
+	if want := []uint32{1, 2, 3}; !cmp.Equal(gotRepos.IDs, want) {
+		t.Errorf("repos mismatch (-want +got):\n%s", cmp.Diff(want, gotRepos.IDs))
 	}
 	if want := `{"Hostname":"test-indexed-search-1","IndexedIDs":[1,3]}`; gotBody != want {
 		t.Errorf("body mismatch (-want +got):\n%s", cmp.Diff(want, gotBody))
