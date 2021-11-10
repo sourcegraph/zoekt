@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/zoekt"
 	"github.com/hashicorp/go-retryablehttp"
 )
 
@@ -96,4 +97,31 @@ func TestMain(m *testing.M) {
 		log.SetOutput(ioutil.Discard)
 	}
 	os.Exit(m.Run())
+}
+
+func TestCreateEmptyShard(t *testing.T) {
+	dir := t.TempDir()
+
+	args := &indexArgs{
+		IndexOptions: IndexOptions{
+			RepoID:   7,
+			Name:     "empty-repo",
+			CloneURL: "code/host",
+		},
+		Incremental: true,
+		IndexDir:    dir,
+		Parallelism: 1,
+		FileLimit:   1,
+	}
+
+	if err := createEmptyShard(args); err != nil {
+		t.Fatal(err)
+	}
+
+	bo := args.BuildOptions()
+	bo.RepositoryDescription.Branches = []zoekt.RepositoryBranch{{Name: "HEAD", Version: "404aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+
+	if got := bo.IncrementalSkipIndexing(); !got {
+		t.Fatalf("wanted %t, got %t", true, got)
+	}
 }

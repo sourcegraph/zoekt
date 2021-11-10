@@ -416,7 +416,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	tr.LazyPrintf("branches: %v", args.Branches)
 
 	if len(args.Branches) == 0 {
-		return indexStateEmpty, s.createEmptyShard(tr, args.Name)
+		return indexStateEmpty, createEmptyShard(args)
 	}
 
 	reason := "forced"
@@ -480,18 +480,20 @@ func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 	}
 }
 
-func (s *Server) createEmptyShard(tr trace.Trace, name string) error {
-	cmd := exec.Command("zoekt-archive-index",
-		"-index", s.IndexDir,
-		"-incremental",
-		"-branch", "HEAD",
-		// dummy commit
-		"-commit", "404aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		"-name", name,
-		"-")
-	// Empty archive
-	cmd.Stdin = bytes.NewBuffer(bytes.Repeat([]byte{0}, 1024))
-	return s.loggedRun(tr, cmd)
+func createEmptyShard(args *indexArgs) error {
+	bo := args.BuildOptions()
+	bo.SetDefaults()
+	bo.RepositoryDescription.Branches = []zoekt.RepositoryBranch{{Name: "HEAD", Version: "404aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+
+	if args.Incremental && bo.IncrementalSkipIndexing() {
+		return nil
+	}
+
+	builder, err := build.NewBuilder(*bo)
+	if err != nil {
+		return err
+	}
+	return builder.Finish()
 }
 
 var repoTmpl = template.Must(template.New("name").Parse(`
