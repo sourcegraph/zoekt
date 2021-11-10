@@ -89,6 +89,23 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Unlock()
 }
 
+// Bump will take any repository in ids which is not on the queue and
+// re-insert it with the last known IndexOptions.
+func (q *Queue) Bump(ids []uint32) {
+	q.mu.Lock()
+	for _, id := range ids {
+		item := q.get(id)
+		if item.heapIdx < 0 {
+			q.seq++
+			item.seq = q.seq
+			heap.Push(&q.pq, item)
+			metricQueueLen.Set(float64(len(q.pq)))
+			metricQueueCap.Set(float64(len(q.items)))
+		}
+	}
+	q.mu.Unlock()
+}
+
 // Iterate will call f on each item known to the queue, including items that
 // have been popped from the queue. Note: this is done in a random order and
 // the queue mutex is held during all calls to f. Do not mutate the data.
