@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/zoekt"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
+	"go.uber.org/atomic"
 	"golang.org/x/net/trace"
 )
 
@@ -56,6 +57,11 @@ type sourcegraphClient struct {
 	BatchSize int
 
 	Client *retryablehttp.Client
+
+	// configFingerprint is the last config fingerprint returned from
+	// Sourcegraph. It can be used for future calls to the configuration
+	// endpoint.
+	configFingerprint atomic.String
 }
 
 func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
@@ -69,10 +75,18 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 		batchSize = 1000
 	}
 
+	// We want to use a consistent fingerprint for each call. Next time list is
+	// called we want to use the first fingerprint returned from the
+	// configuration endpoint. However, if any of our configuration calls fail,
+	// we need to fallback to our last value.
+	lastFingerprint := s.configFingerprint.Load()
+	first := true
+
 	iterate := func(f func(IndexOptions)) {
 		start := time.Now()
 		tr := trace.New("getIndexOptions", "")
 		tr.LazyPrintf("getting index options for %d repos", len(repos))
+		tr.LazyPrintf("fingerprint: %s", lastFingerprint)
 
 		defer func() {
 			metricResolveRevisionsDuration.Observe(time.Since(start).Seconds())
@@ -82,19 +96,29 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 		// We ask the frontend to get index options in batches.
 		for repos := range batched(repos, batchSize) {
 			start := time.Now()
-			opts, err := s.GetIndexOptions(repos...)
+			opts, fingerprint, err := s.getIndexOptions(lastFingerprint, repos...)
 			if err != nil {
+				// Call failed, restore old fingerprint for next call to List.
+				first = false
+				s.configFingerprint.Store(lastFingerprint)
+
 				metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
 				tr.LazyPrintf("failed fetching options batch: %v", err)
 				tr.SetError()
 				continue
 			}
+
+			if first {
+				first = false
+				tr.LazyPrintf("new fingerprint: %s", fingerprint)
+				s.configFingerprint.Store(fingerprint)
+			}
+
 			metricResolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
-			for i, opt := range opts {
-				name := repos[i]
+			for _, opt := range opts {
 				if opt.Error != "" {
 					metricGetIndexOptionsError.Inc()
-					tr.LazyPrintf("failed fetching options for %v: %v", name, opt.Error)
+					tr.LazyPrintf("failed fetching options for %v: %v", opt.Name, opt.Error)
 					tr.SetError()
 					continue
 				}
@@ -117,6 +141,11 @@ type indexOptionsItem struct {
 }
 
 func (s *sourcegraphClient) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error) {
+	opts, _, err := s.getIndexOptions("", repos...)
+	return opts, err
+}
+
+func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32) ([]indexOptionsItem, string, error) {
 	u := s.Root.ResolveReference(&url.URL{
 		Path: "/.internal/search/configuration",
 	})
@@ -125,9 +154,19 @@ func (s *sourcegraphClient) GetIndexOptions(repos ...uint32) ([]indexOptionsItem
 	for i, id := range repos {
 		repoIDs[i] = strconv.Itoa(int(id))
 	}
-	resp, err := s.Client.PostForm(u.String(), url.Values{"repoID": repoIDs})
+	data := url.Values{"repoID": repoIDs}
+	req, err := retryablehttp.NewRequest("POST", u.String(), []byte(data.Encode()))
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if fingerprint != "" {
+		req.Header.Set("X-Sourcegraph-Config-Fingerprint", fingerprint)
+	}
+
+	resp, err := s.Client.Do(req)
+	if err != nil {
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 
@@ -135,9 +174,9 @@ func (s *sourcegraphClient) GetIndexOptions(repos ...uint32) ([]indexOptionsItem
 		b, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
 		_ = resp.Body.Close()
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return nil, &url.Error{
+		return nil, "", &url.Error{
 			Op:  "Get",
 			URL: u.String(),
 			Err: fmt.Errorf("%s: %s", resp.Status, string(b)),
@@ -148,14 +187,14 @@ func (s *sourcegraphClient) GetIndexOptions(repos ...uint32) ([]indexOptionsItem
 	dec := json.NewDecoder(resp.Body)
 	for i := range opts {
 		if err := dec.Decode(&opts[i]); err != nil {
-			return nil, fmt.Errorf("error decoding body: %w", err)
+			return nil, "", fmt.Errorf("error decoding body: %w", err)
 		}
 		if opts[i].Name != "" {
 			opts[i].CloneURL = s.getCloneURL(opts[i].Name)
 		}
 	}
 
-	return opts, nil
+	return opts, resp.Header.Get("X-Sourcegraph-Config-Fingerprint"), nil
 }
 
 func (s *sourcegraphClient) getCloneURL(name string) string {
