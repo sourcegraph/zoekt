@@ -634,14 +634,18 @@ search:
 
 		select {
 		case work <- next:
-			// We send the max pending priority as we search to keep frontend informed even
-			// if we don't find matches.
-			var r zoekt.SearchResult
 			pending.append(next.priority)
-			r.MaxPendingPriority = pending.max()
-			sender.Send(&r)
 
-			if shard++; shard == len(shards) {
+			shard++
+			if shard%100 == 0 {
+				// We send the max pending priority as we search to keep frontend informed even
+				// if we don't find matches.
+				var r zoekt.SearchResult
+				r.MaxPendingPriority = pending.max()
+				sender.Send(&r)
+			}
+
+			if shard == len(shards) {
 				stop()
 			} else {
 				next = shards[shard]
