@@ -313,17 +313,14 @@ func (s *Server) vacuum() {
 		}
 
 		if info.Size() < s.minSizeBytes {
-			paths, err := zoekt.IndexFilePaths(path)
-			if err != nil {
-				debug.Printf("failed getting all file paths for %s", path)
-				continue
-			}
 			s.muIndexDir.Lock()
-			for _, p := range paths {
-				os.Remove(p)
-			}
+			err = removeShardAtPath(path)
 			s.muIndexDir.Unlock()
-			shardsLog(s.IndexDir, "delete", []shard{{Path: path}})
+			if err != nil {
+				debug.Println(err)
+			} else {
+				shardsLog(s.IndexDir, "delete", []shard{{Path: path}})
+			}
 			continue
 		}
 
