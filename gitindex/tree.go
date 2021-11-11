@@ -77,11 +77,11 @@ func (rw *repoWalker) parseModuleMap(t *object.Tree) error {
 	if modEntry != nil {
 		c, err := blobContents(&modEntry.Blob)
 		if err != nil {
-			return err
+			return fmt.Errorf("blobContents: %w", err)
 		}
 		mods, err := ParseGitModules(c)
 		if err != nil {
-			return err
+			return fmt.Errorf("ParseGitModules: %w", err)
 		}
 		rw.submodules = map[string]*SubmoduleEntry{}
 		for _, entry := range mods {
@@ -110,7 +110,7 @@ func TreeToFiles(r *git.Repository, t *object.Tree,
 			break
 		}
 		if err := rw.handleEntry(name, &entry); err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("handleEntry: %w", err)
 		}
 	}
 	return rw.tree, rw.subRepoVersions, nil

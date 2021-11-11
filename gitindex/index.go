@@ -360,7 +360,7 @@ func IndexGitRepo(opts Options) error {
 	opts.BuildOptions.RepositoryDescription.Source = opts.RepoDir
 	repo, err := git.PlainOpen(opts.RepoDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("git.PlainOpen: %w", err)
 	}
 
 	if err := setTemplatesFromConfig(&opts.BuildOptions.RepositoryDescription, opts.RepoDir); err != nil {
@@ -380,7 +380,7 @@ func IndexGitRepo(opts Options) error {
 
 	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
 	if err != nil {
-		return err
+		return fmt.Errorf("expandBranches: %w", err)
 	}
 	for _, b := range branches {
 		commit, err := getCommit(repo, opts.BranchPrefix, b)
@@ -389,7 +389,7 @@ func IndexGitRepo(opts Options) error {
 				continue
 			}
 
-			return err
+			return fmt.Errorf("getCommit: %w", err)
 		}
 
 		opts.BuildOptions.RepositoryDescription.Branches = append(opts.BuildOptions.RepositoryDescription.Branches, zoekt.RepositoryBranch{
@@ -403,17 +403,18 @@ func IndexGitRepo(opts Options) error {
 
 		tree, err := commit.Tree()
 		if err != nil {
+			return fmt.Errorf("commit.Tree: %w", err)
 			return err
 		}
 
 		ig, err := newIgnoreMatcher(tree)
 		if err != nil {
-			return err
+			return fmt.Errorf("newIgnoreMatcher: %w", err)
 		}
 
 		files, subVersions, err := TreeToFiles(repo, tree, opts.BuildOptions.RepositoryDescription.URL, repoCache)
 		if err != nil {
-			return err
+			return fmt.Errorf("TreeToFiles: %w", err)
 		}
 		for k, v := range files {
 			if ig.Match(k.Path) {
@@ -458,7 +459,7 @@ func IndexGitRepo(opts Options) error {
 
 	builder, err := build.NewBuilder(opts.BuildOptions)
 	if err != nil {
-		return err
+		return fmt.Errorf("build.NewBuilder: %w", err)
 	}
 	defer builder.Finish()
 
@@ -505,7 +506,7 @@ func IndexGitRepo(opts Options) error {
 				Content:           contents,
 				Branches:          brs,
 			}); err != nil {
-				return err
+				return fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
 			}
 		}
 	}
