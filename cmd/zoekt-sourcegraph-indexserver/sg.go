@@ -53,7 +53,7 @@ type sourcegraphClient struct {
 	Hostname string
 
 	// BatchSize is how many repository configurations we request at once. If
-	// zero a value of 1000 is used.
+	// zero a value of 10000 is used.
 	BatchSize int
 
 	Client *retryablehttp.Client
@@ -72,7 +72,7 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 
 	batchSize := s.BatchSize
 	if batchSize == 0 {
-		batchSize = 1000
+		batchSize = 10_000
 	}
 
 	// We want to use a consistent fingerprint for each call. Next time list is
