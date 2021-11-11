@@ -81,11 +81,28 @@ func TestGetIndexOptions(t *testing.T) {
 			continue
 		}
 
+		want.CloneURL = sg.getCloneURL(got[0].IndexOptions.Name)
+
 		if d := cmp.Diff(*want, got[0].IndexOptions); d != "" {
 			t.Log("response", r)
 			t.Errorf("mismatch (-want +got):\n%s", d)
 		}
 	}
+
+	// Special case our fingerprint API which doesn't return anything if the
+	// repo hasn't changed.
+	t.Run("unchanged", func(t *testing.T) {
+		response = []byte(``)
+
+		got, err := sg.GetIndexOptions(123)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(got) != 0 {
+			t.Fatalf("expected no options, got %v", got)
+		}
+	})
 }
 
 func TestIndex(t *testing.T) {

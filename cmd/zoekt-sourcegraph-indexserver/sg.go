@@ -183,15 +183,19 @@ func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32)
 		}
 	}
 
-	opts := make([]indexOptionsItem, len(repos))
 	dec := json.NewDecoder(resp.Body)
-	for i := range opts {
-		if err := dec.Decode(&opts[i]); err != nil {
+	var opts []indexOptionsItem
+	for {
+		var opt indexOptionsItem
+		err := dec.Decode(&opt)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
 			return nil, "", fmt.Errorf("error decoding body: %w", err)
 		}
-		if opts[i].Name != "" {
-			opts[i].CloneURL = s.getCloneURL(opts[i].Name)
-		}
+		opt.CloneURL = s.getCloneURL(opt.Name)
+		opts = append(opts, opt)
 	}
 
 	return opts, resp.Header.Get("X-Sourcegraph-Config-Fingerprint"), nil
