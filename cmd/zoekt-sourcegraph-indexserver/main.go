@@ -292,8 +292,11 @@ func (s *Server) Run() {
 			// IterateIndexOptions will only iterate over repositories that have
 			// changed since we last called list. However, we want to add all IDs
 			// back onto the queue just to check that what is on disk is still
-			// correct. This will use the last IndexOptions we stored in the queue.
-			s.queue.Bump(repos.IDs)
+			// correct. This will use the last IndexOptions we stored in the
+			// queue. The repositories not on the queue (missing) need a forced
+			// fetch of IndexOptions.
+			missing := s.queue.Bump(repos.IDs)
+			s.Sourcegraph.ForceIterateIndexOptions(s.queue.AddOrUpdate, missing...)
 
 			<-cleanupDone
 		}
