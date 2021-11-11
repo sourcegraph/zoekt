@@ -93,9 +93,15 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 // re-insert it with the last known IndexOptions.
 func (q *Queue) Bump(ids []uint32) {
 	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.items == nil {
+		q.init()
+	}
+
 	for _, id := range ids {
-		item := q.get(id)
-		if item.heapIdx < 0 {
+		item, ok := q.items[id]
+		if ok && item.heapIdx < 0 {
 			q.seq++
 			item.seq = q.seq
 			heap.Push(&q.pq, item)
@@ -103,7 +109,6 @@ func (q *Queue) Bump(ids []uint32) {
 			metricQueueCap.Set(float64(len(q.items)))
 		}
 	}
-	q.mu.Unlock()
 }
 
 // Iterate will call f on each item known to the queue, including items that
@@ -185,8 +190,7 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) int {
 // Note: get requires that q.mu is held.
 func (q *Queue) get(repoID uint32) *queueItem {
 	if q.items == nil {
-		q.items = map[uint32]*queueItem{}
-		q.pq = make(pqueue, 0)
+		q.init()
 	}
 
 	item, ok := q.items[repoID]
@@ -199,6 +203,11 @@ func (q *Queue) get(repoID uint32) *queueItem {
 	}
 
 	return item
+}
+
+func (q *Queue) init() {
+	q.items = map[uint32]*queueItem{}
+	q.pq = make(pqueue, 0)
 }
 
 // setIndexedState will set indexedState and update the corresponding metrics
