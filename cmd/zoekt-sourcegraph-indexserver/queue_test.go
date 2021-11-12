@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt"
 )
 
@@ -85,6 +86,34 @@ func TestQueue_MaybeRemoveMissing(t *testing.T) {
 	_, ok := queue.Pop()
 	if ok {
 		t.Fatal("queue should be empty")
+	}
+}
+
+func TestQueue_Bump(t *testing.T) {
+	queue := &Queue{}
+
+	queue.AddOrUpdate(IndexOptions{RepoID: 1, Name: "foo"})
+	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
+
+	// Empty queue
+	for ok := true; ok; _, ok = queue.Pop() {
+	}
+
+	// Bump 2 and 3. 3 doesn't exist, so only 2 should exist.
+	queue.Bump([]uint32{2, 3})
+
+	want := []IndexOptions{{RepoID: 2, Name: "bar"}}
+	var got []IndexOptions
+	for {
+		opts, ok := queue.Pop()
+		if !ok {
+			break
+		}
+		got = append(got, opts)
+	}
+
+	if d := cmp.Diff(want, got); d != "" {
+		t.Fatalf("(-want, +got):\n%s", d)
 	}
 }
 
