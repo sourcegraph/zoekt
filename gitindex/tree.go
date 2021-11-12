@@ -73,6 +73,9 @@ func newRepoWalker(r *git.Repository, repoURL string, repoCache *RepoCache) *rep
 
 // parseModuleMap initializes rw.submodules.
 func (rw *repoWalker) parseModuleMap(t *object.Tree) error {
+	if rw.repoCache == nil {
+		return nil
+	}
 	modEntry, _ := t.File(".gitmodules")
 	if modEntry != nil {
 		c, err := blobContents(&modEntry.Blob)
@@ -99,7 +102,7 @@ func TreeToFiles(r *git.Repository, t *object.Tree,
 	rw := newRepoWalker(r, repoURL, repoCache)
 
 	if err := rw.parseModuleMap(t); err != nil {
-		log.Printf("parseModuleMap: %s, ignoring error", err)
+		return nil, nil, fmt.Errorf("parseModuleMap: %s", err)
 	}
 
 	tw := object.NewTreeWalker(t, true, make(map[plumbing.Hash]bool))

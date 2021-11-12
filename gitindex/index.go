@@ -367,7 +367,10 @@ func IndexGitRepo(opts Options) error {
 		log.Printf("setTemplatesFromConfig(%s): %s", opts.RepoDir, err)
 	}
 
-	repoCache := NewRepoCache(opts.RepoCacheDir)
+	var repoCache *RepoCache
+	if opts.Submodules {
+		repoCache = NewRepoCache(opts.RepoCacheDir)
+	}
 
 	// branch => (path, sha1) => repo.
 	repos := map[fileKey]BlobLocation{}
