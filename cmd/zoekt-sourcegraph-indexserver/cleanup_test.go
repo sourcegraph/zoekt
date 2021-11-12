@@ -130,7 +130,7 @@ func TestCleanup(t *testing.T) {
 				fs = append(fs, f)
 			}
 			for _, f := range fs {
-				createEmptyShard(t, f.RepoName, f.Path)
+				createTestShard(t, f.RepoName, f.Path)
 				if err := os.Chtimes(f.Path, f.ModTime, f.ModTime); err != nil {
 					t.Fatal(err)
 				}
@@ -171,7 +171,7 @@ func TestCleanup(t *testing.T) {
 	}
 }
 
-func createEmptyShard(t *testing.T, repo, path string) {
+func createTestShard(t *testing.T, repo, path string) {
 	t.Helper()
 
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
