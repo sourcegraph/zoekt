@@ -38,7 +38,7 @@ type repoWalker struct {
 	tree    map[fileKey]BlobLocation
 
 	// Path => SubmoduleEntry
-	submodules map[string]*SubmoduleEntry
+	submoduleMap map[string]*SubmoduleEntry
 
 	// Path => commit SHA1
 	subRepoVersions map[string]plumbing.Hash
@@ -71,7 +71,7 @@ func newRepoWalker(r *git.Repository, repoURL string, repoCache *RepoCache) *rep
 	}
 }
 
-// parseModuleMap initializes rw.submodules.
+// parseModuleMap initializes rw.submoduleMap.
 func (rw *repoWalker) parseModuleMap(t *object.Tree) error {
 	modEntry, _ := t.File(".gitmodules")
 	if modEntry != nil {
@@ -83,9 +83,9 @@ func (rw *repoWalker) parseModuleMap(t *object.Tree) error {
 		if err != nil {
 			return fmt.Errorf("ParseGitModules: %w", err)
 		}
-		rw.submodules = map[string]*SubmoduleEntry{}
+		rw.submoduleMap = map[string]*SubmoduleEntry{}
 		for _, entry := range mods {
-			rw.submodules[entry.Path] = entry
+			rw.submoduleMap[entry.Path] = entry
 		}
 	}
 	return nil
@@ -124,7 +124,7 @@ func (r *repoWalker) tryHandleSubmodule(p string, id *plumbing.Hash) error {
 }
 
 func (r *repoWalker) handleSubmodule(p string, id *plumbing.Hash) error {
-	submod := r.submodules[p]
+	submod := r.submoduleMap[p]
 	if submod == nil {
 		return fmt.Errorf("no entry for submodule path %q", r.repoURL)
 	}
