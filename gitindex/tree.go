@@ -37,6 +37,9 @@ type repoWalker struct {
 	repoURL *url.URL
 	tree    map[fileKey]BlobLocation
 
+	// If set, follow submodule links.
+	submodules bool
+
 	// Path => SubmoduleEntry
 	submoduleMap map[string]*SubmoduleEntry
 
@@ -60,7 +63,7 @@ func (w *repoWalker) subURL(relURL string) (*url.URL, error) {
 }
 
 // newRepoWalker creates a new repoWalker.
-func newRepoWalker(r *git.Repository, repoURL string, repoCache *RepoCache) *repoWalker {
+func newRepoWalker(r *git.Repository, repoURL string, repoCache *RepoCache, submodules bool) *repoWalker {
 	u, _ := url.Parse(repoURL)
 	return &repoWalker{
 		repo:            r,
@@ -68,11 +71,15 @@ func newRepoWalker(r *git.Repository, repoURL string, repoCache *RepoCache) *rep
 		tree:            map[fileKey]BlobLocation{},
 		repoCache:       repoCache,
 		subRepoVersions: map[string]plumbing.Hash{},
+		submodules:      submodules,
 	}
 }
 
 // parseModuleMap initializes rw.submoduleMap.
 func (rw *repoWalker) parseModuleMap(t *object.Tree) error {
+	if !rw.submodules {
+		return nil
+	}
 	modEntry, _ := t.File(".gitmodules")
 	if modEntry != nil {
 		c, err := blobContents(&modEntry.Blob)
@@ -95,11 +102,11 @@ func (rw *repoWalker) parseModuleMap(t *object.Tree) error {
 // non-nil, recurse into submodules. In addition, it returns a mapping
 // that indicates in which repo each SHA1 can be found.
 func TreeToFiles(r *git.Repository, t *object.Tree,
-	repoURL string, repoCache *RepoCache) (map[fileKey]BlobLocation, map[string]plumbing.Hash, error) {
-	rw := newRepoWalker(r, repoURL, repoCache)
+	repoURL string, repoCache *RepoCache, submodules bool) (map[fileKey]BlobLocation, map[string]plumbing.Hash, error) {
+	rw := newRepoWalker(r, repoURL, repoCache, submodules)
 
 	if err := rw.parseModuleMap(t); err != nil {
-		log.Printf("parseModuleMap: %s, ignoring error", err)
+		return nil, nil, fmt.Errorf("parseModuleMap: %s", err)
 	}
 
 	tw := object.NewTreeWalker(t, true, make(map[plumbing.Hash]bool))
@@ -150,7 +157,7 @@ func (r *repoWalker) handleSubmodule(p string, id *plumbing.Hash) error {
 
 	r.subRepoVersions[p] = *id
 
-	subTree, subVersions, err := TreeToFiles(subRepo, tree, subURL.String(), r.repoCache)
+	subTree, subVersions, err := TreeToFiles(subRepo, tree, subURL.String(), r.repoCache, r.submodules)
 	if err != nil {
 		return err
 	}
@@ -168,7 +175,7 @@ func (r *repoWalker) handleSubmodule(p string, id *plumbing.Hash) error {
 }
 
 func (r *repoWalker) handleEntry(p string, e *object.TreeEntry) error {
-	if e.Mode == filemode.Submodule && r.repoCache != nil {
+	if e.Mode == filemode.Submodule && r.repoCache != nil && r.submodules {
 		if err := r.tryHandleSubmodule(p, &e.Hash); err != nil {
 			return fmt.Errorf("submodule %s: %v", p, err)
 		}

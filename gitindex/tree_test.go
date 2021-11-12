@@ -161,7 +161,7 @@ func TestTreeToFiles(t *testing.T) {
 		t.Fatalf("AsTree: %v", err)
 	}
 
-	files, versions, err := TreeToFiles(repo, tree, aURL.String(), cache)
+	files, versions, err := TreeToFiles(repo, tree, aURL.String(), cache, true)
 	if err != nil {
 		t.Fatalf("TreeToFiles: %v", err)
 	}

@@ -359,7 +359,7 @@ func iterateManifest(mf *manifest.Manifest,
 			return nil, nil, err
 		}
 
-		files, versions, err := gitindex.TreeToFiles(topRepo, tree, projURL.String(), cache)
+		files, versions, err := gitindex.TreeToFiles(topRepo, tree, projURL.String(), cache, true)
 		if err != nil {
 			return nil, nil, err
 		}

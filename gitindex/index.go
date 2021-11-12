@@ -412,7 +412,7 @@ func IndexGitRepo(opts Options) error {
 			return fmt.Errorf("newIgnoreMatcher: %w", err)
 		}
 
-		files, subVersions, err := TreeToFiles(repo, tree, opts.BuildOptions.RepositoryDescription.URL, repoCache)
+		files, subVersions, err := TreeToFiles(repo, tree, opts.BuildOptions.RepositoryDescription.URL, repoCache, opts.Submodules)
 		if err != nil {
 			return fmt.Errorf("TreeToFiles: %w", err)
 		}
