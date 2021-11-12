@@ -16,6 +16,7 @@ package gitindex
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing/format/config"
@@ -37,7 +38,7 @@ func ParseGitModules(content []byte) (map[string]*SubmoduleEntry, error) {
 	// https://stackoverflow.com/a/21375405
 	r, _, err := buf.ReadRune()
 	if err != nil && err != io.EOF {
-		return nil, err
+		return nil, fmt.Errorf("buf.ReadRune: %w", err)
 	}
 	if r != '\uFEFF' {
 		buf.UnreadRune()
@@ -46,7 +47,7 @@ func ParseGitModules(content []byte) (map[string]*SubmoduleEntry, error) {
 	cfg := &config.Config{}
 
 	if err := dec.Decode(cfg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error decoding content %s: %w", string(content), err)
 	}
 
 	result := map[string]*SubmoduleEntry{}
