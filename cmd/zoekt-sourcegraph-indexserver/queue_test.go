@@ -100,7 +100,10 @@ func TestQueue_Bump(t *testing.T) {
 	}
 
 	// Bump 2 and 3. 3 doesn't exist, so only 2 should exist.
-	queue.Bump([]uint32{2, 3})
+	missing := queue.Bump([]uint32{2, 3})
+	if d := cmp.Diff([]uint32{3}, missing); d != "" {
+		t.Errorf("unexpected missing (-want, +got):\n%s", d)
+	}
 
 	want := []IndexOptions{{RepoID: 2, Name: "bar"}}
 	var got []IndexOptions
@@ -113,7 +116,7 @@ func TestQueue_Bump(t *testing.T) {
 	}
 
 	if d := cmp.Diff(want, got); d != "" {
-		t.Fatalf("(-want, +got):\n%s", d)
+		t.Errorf("unexpected items bumped into the queue (-want, +got):\n%s", d)
 	}
 }
 

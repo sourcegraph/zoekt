@@ -90,8 +90,9 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 }
 
 // Bump will take any repository in ids which is not on the queue and
-// re-insert it with the last known IndexOptions.
-func (q *Queue) Bump(ids []uint32) {
+// re-insert it with the last known IndexOptions. Bump returns ids that are
+// unknown to the queue.
+func (q *Queue) Bump(ids []uint32) []uint32 {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -99,9 +100,12 @@ func (q *Queue) Bump(ids []uint32) {
 		q.init()
 	}
 
+	var missing []uint32
 	for _, id := range ids {
 		item, ok := q.items[id]
-		if ok && item.heapIdx < 0 {
+		if !ok {
+			missing = append(missing, id)
+		} else if item.heapIdx < 0 {
 			q.seq++
 			item.seq = q.seq
 			heap.Push(&q.pq, item)
@@ -109,6 +113,8 @@ func (q *Queue) Bump(ids []uint32) {
 			metricQueueCap.Set(float64(len(q.items)))
 		}
 	}
+
+	return missing
 }
 
 // Iterate will call f on each item known to the queue, including items that

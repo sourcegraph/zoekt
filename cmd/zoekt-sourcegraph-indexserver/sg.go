@@ -31,11 +31,20 @@ type SourcegraphListResult struct {
 
 	// IterateIndexOptions best effort resolves the IndexOptions for RepoIDs. If
 	// any repository fails it internally logs.
+	//
+	// Note: this has a side-effect of setting a the "config fingerprint". The
+	// config fingerprint means we only calculate index options for repositories
+	// that have changed since the last call to IterateIndexOptions. If you want
+	// to force calculation of index options use Sourcegraph.GetIndexOptions.
 	IterateIndexOptions func(func(IndexOptions))
 }
 
 type Sourcegraph interface {
 	List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error)
+
+	// ForceIterateIndexOptions will best-effort calculate the index options for
+	// all of ids. If any repository fails it internally logs.
+	ForceIterateIndexOptions(func(IndexOptions), ...uint32)
 
 	// GetIndexOptions is deprecated but kept around until we improve our
 	// forceIndex code.
@@ -131,6 +140,18 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 		IDs:                 repos,
 		IterateIndexOptions: iterate,
 	}, nil
+}
+
+func (s *sourcegraphClient) ForceIterateIndexOptions(f func(IndexOptions), repos ...uint32) {
+	opts, err := s.GetIndexOptions(repos...)
+	if err != nil {
+		return
+	}
+	for _, o := range opts {
+		if o.Error == "" {
+			f(o.IndexOptions)
+		}
+	}
 }
 
 // indexOptionsItem wraps IndexOptions to also include an error returned by
@@ -270,6 +291,18 @@ func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*Sourcegr
 		IDs:                 repos,
 		IterateIndexOptions: iterate,
 	}, nil
+}
+
+func (sf sourcegraphFake) ForceIterateIndexOptions(f func(IndexOptions), repos ...uint32) {
+	opts, err := sf.GetIndexOptions(repos...)
+	if err != nil {
+		return
+	}
+	for _, o := range opts {
+		if o.Error == "" {
+			f(o.IndexOptions)
+		}
+	}
 }
 
 func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error) {
