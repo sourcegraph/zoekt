@@ -102,7 +102,7 @@ func TreeToFiles(r *git.Repository, t *object.Tree,
 	rw := newRepoWalker(r, repoURL, repoCache)
 
 	if err := rw.parseModuleMap(t); err != nil {
-		return nil, nil, fmt.Errorf("parseModuleMap: %s", err)
+		return nil, nil, fmt.Errorf("parseModuleMap: %w", err)
 	}
 
 	tw := object.NewTreeWalker(t, true, make(map[plumbing.Hash]bool))
