@@ -84,7 +84,7 @@ func TestSimplify(t *testing.T) {
 }
 
 func TestMap(t *testing.T) {
-	in := NewAnd(&Substring{Pattern: "bla"}, &Not{&Repo{"foo"}})
+	in := NewAnd(&Substring{Pattern: "bla"}, &Not{&Repo{&Substring{Pattern: "foo"}}})
 	out := NewAnd(&Substring{Pattern: "bla"}, &Not{&Const{false}})
 
 	f := func(q Q) Q {

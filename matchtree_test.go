@@ -256,7 +256,7 @@ func TestRepo(t *testing.T) {
 		fileBranchMasks: []uint64{1, 1, 1, 1, 1},
 		repos:           []uint16{0, 0, 1, 0, 1},
 	}
-	mt, err := d.newMatchTree(&query.Repo{"ar"})
+	mt, err := d.newMatchTree(&query.Repo{Expr: &query.Substring{Pattern: "ar"}})
 	if err != nil {
 		t.Fatal(err)
 	}

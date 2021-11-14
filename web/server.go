@@ -552,7 +552,7 @@ func (s *Server) servePrintErr(w http.ResponseWriter, r *http.Request) error {
 	}
 	qs := []query.Q{
 		&query.Regexp{Regexp: re, FileName: true, CaseSensitive: true},
-		&query.Repo{Pattern: repoStr},
+		&query.Repo{Expr: &query.Substring{Pattern: repoStr}},
 	}
 
 	if branchStr := qvals.Get("b"); branchStr != "" {

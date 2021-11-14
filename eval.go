@@ -67,7 +67,16 @@ func (d *indexData) simplify(in query.Q) query.Q {
 		switch r := q.(type) {
 		case *query.Repo:
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
-				return strings.Contains(repo.Name, r.Pattern)
+				switch expr := r.Expr.(type) {
+
+				case *query.Substring:
+					return strings.Contains(repo.Name, expr.Pattern)
+
+				case *query.Regexp:
+					return regexp.MustCompile(expr.Regexp.String()).MatchString(repo.Name)
+				}
+
+				return false
 			})
 		case *query.RepoRegexp:
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {

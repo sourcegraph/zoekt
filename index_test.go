@@ -816,7 +816,7 @@ func TestRepoName(t *testing.T) {
 	sres := searchForTest(t, b,
 		query.NewAnd(
 			&query.Substring{Pattern: "needle"},
-			&query.Repo{Pattern: "foo"},
+			&query.Repo{Expr: &query.Substring{Pattern: "foo"}},
 		))
 
 	if len(sres.Files) != 0 {
@@ -830,7 +830,7 @@ func TestRepoName(t *testing.T) {
 	sres = searchForTest(t, b,
 		query.NewAnd(
 			&query.Substring{Pattern: "needle"},
-			&query.Repo{Pattern: "bla"},
+			&query.Repo{Expr: &query.Substring{Pattern: "bla"}},
 		))
 	if len(sres.Files) != 1 {
 		t.Fatalf("got %v, want 1 match", sres.Files)
@@ -1047,7 +1047,7 @@ func TestNegativeRepo(t *testing.T) {
 	sres := searchForTest(t, b,
 		query.NewAnd(
 			&query.Substring{Pattern: "needle"},
-			&query.Not{Child: &query.Repo{Pattern: "bla"}},
+			&query.Not{Child: &query.Repo{Expr: &query.Substring{Pattern: "bla"}}},
 		))
 
 	if len(sres.Files) != 0 {
@@ -1077,7 +1077,7 @@ func TestListRepos(t *testing.T) {
 			{Minimal: true},
 		} {
 			t.Run(fmt.Sprint(opts), func(t *testing.T) {
-				q := &query.Repo{Pattern: "epo"}
+				q := &query.Repo{Expr: &query.Substring{Pattern: "epo"}}
 
 				res, err := searcher.List(context.Background(), q, opts)
 				if err != nil {
@@ -1118,7 +1118,7 @@ func TestListRepos(t *testing.T) {
 					t.Fatalf("mismatch (-want +got):\n%s", diff)
 				}
 
-				q = &query.Repo{Pattern: "bla"}
+				q = &query.Repo{Expr: &query.Substring{Pattern: "bla"}}
 				res, err = searcher.List(context.Background(), q, nil)
 				if err != nil {
 					t.Fatalf("List(%v): %v", q, err)
@@ -1145,7 +1145,7 @@ func TestListRepos(t *testing.T) {
 
 		searcher := searcherForTest(t, b)
 
-		q := &query.Repo{Pattern: "epo"}
+		q := &query.Repo{Expr: &query.Substring{Pattern: "epo"}}
 		res, err := searcher.List(context.Background(), q, &ListOptions{Minimal: true})
 		if err != nil {
 			t.Fatalf("List(%v): %v", q, err)
@@ -1173,7 +1173,7 @@ func TestListRepos(t *testing.T) {
 			t.Fatalf("mismatch (-want +got):\n%s", diff)
 		}
 
-		q = &query.Repo{Pattern: "bla"}
+		q = &query.Repo{Expr: &query.Substring{Pattern: "bla"}}
 		res, err = searcher.List(context.Background(), q, &ListOptions{Minimal: true})
 		if err != nil {
 			t.Fatalf("List(%v): %v", q, err)
@@ -1488,7 +1488,7 @@ func TestEstimateDocCount(t *testing.T) {
 	if sres := searchForTest(t, b,
 		query.NewAnd(
 			&query.Substring{Pattern: "needle"},
-			&query.Repo{Pattern: "reponame"},
+			&query.Repo{Expr: &query.Substring{Pattern: "reponame"}},
 		), SearchOptions{
 			EstimateDocCount: true,
 		}); sres.Stats.ShardFilesConsidered != 2 {
@@ -1497,7 +1497,7 @@ func TestEstimateDocCount(t *testing.T) {
 	if sres := searchForTest(t, b,
 		query.NewAnd(
 			&query.Substring{Pattern: "needle"},
-			&query.Repo{Pattern: "nomatch"},
+			&query.Repo{Expr: &query.Substring{Pattern: "nomatch"}},
 		), SearchOptions{
 			EstimateDocCount: true,
 		}); sres.Stats.ShardFilesConsidered != 0 {
@@ -1599,7 +1599,7 @@ func TestAndOrUnicode(t *testing.T) {
 		t.Errorf("parse: %v", err)
 	}
 	finalQ := query.NewAnd(q,
-		query.NewOr(query.NewAnd(&query.Repo{Pattern: "name"},
+		query.NewOr(query.NewAnd(&query.Repo{Expr: &query.Substring{Pattern: "name"}},
 			query.NewOr(&query.Branch{Pattern: "master"}))))
 
 	b := testIndexBuilder(t, &Repository{
@@ -1726,7 +1726,7 @@ func TestNoPositiveAtoms(t *testing.T) {
 
 	q := query.NewAnd(
 		&query.Not{Child: &query.Substring{Pattern: "xyz"}},
-		&query.Repo{Pattern: "reponame"})
+		&query.Repo{Expr: &query.Substring{Pattern: "reponame"}})
 	res := searchForTest(t, b, q)
 	if len(res.Files) != 2 {
 		t.Fatalf("got %v, want 2 results in f3", res.Files)
