@@ -21,6 +21,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	enry_data "github.com/go-enry/go-enry/v2/data"
+	"github.com/go-enry/go-enry/v2/regex"
+
 	"github.com/google/zoekt/query"
 )
 
@@ -413,7 +416,11 @@ func (t *andMatchTree) String() string {
 }
 
 func (t *regexpMatchTree) String() string {
-	return fmt.Sprintf("re(%s)", t.regexp)
+	f := ""
+	if t.fileName {
+		f = "f"
+	}
+	return fmt.Sprintf("%sre(%s)", f, t.regexp)
 }
 
 func (t *orMatchTree) String() string {
@@ -866,17 +873,41 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			return &noMatchTree{"const"}, nil
 		}
 	case *query.Language:
-		code, ok := d.metaData.LanguageMap[s.Language]
-		if !ok {
-			return &noMatchTree{"lang"}, nil
+		code, codeOk := d.metaData.LanguageMap[s.Language]
+		var mt matchTree
+
+		if !codeOk {
+			mt = &noMatchTree{"lang"}
+		} else {
+			mt = &docMatchTree{
+				reason:  "language:" + s.Language,
+				numDocs: d.numDocs(),
+				predicate: func(docID uint32) bool {
+					return d.languages[docID] == code
+				},
+			}
 		}
-		return &docMatchTree{
-			reason:  "language",
-			numDocs: d.numDocs(),
-			predicate: func(docID uint32) bool {
-				return d.languages[docID] == code
-			},
-		}, nil
+
+		extsForLang := enry_data.ExtensionsByLanguage[s.Language]
+		if extsForLang != nil {
+			extFrags := make([]string, 0, len(extsForLang))
+			for _, ext := range extsForLang {
+				if len(enry_data.LanguagesByExtension[ext]) == 1 || !d.metaData.DisambiguatedLanguages {
+					extFrags = append(extFrags, regexp.QuoteMeta(ext))
+				}
+			}
+			if len(extFrags) > 0 {
+				reMt := &regexpMatchTree{
+					regexp:   regex.MustCompile(fmt.Sprintf("(%s)$", strings.Join(extFrags, "|"))),
+					fileName: true,
+				}
+				if codeOk {
+					return &orMatchTree{children: []matchTree{reMt, mt}}, nil
+				}
+				return reMt, nil
+			}
+		}
+		return mt, nil
 
 	case *query.Symbol:
 		subMT, err := d.newMatchTree(s.Expr)

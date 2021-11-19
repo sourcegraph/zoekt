@@ -55,6 +55,7 @@ func testIndexBuilder(t *testing.T, repo *Repository, docs ...Document) *IndexBu
 			t.Fatalf("Add %d: %v", i, err)
 		}
 	}
+
 	return b
 }
 
@@ -2136,4 +2137,43 @@ func TestSearchTypeFileName(t *testing.T) {
 			Child: &query.Substring{Pattern: "file"},
 		})
 	wantSingleMatch(res, "f2")
+}
+
+func TestSearchTypeLanguage(t *testing.T) {
+	b := testIndexBuilder(t, &Repository{
+		Name: "reponame",
+	},
+		Document{Name: "apex.cls", Content: []byte("public class Car extends Vehicle {")},
+		Document{Name: "tex.cls", Content: []byte(`\DeclareOption*{`)})
+
+	t.Log(b.languageMap)
+
+	wantSingleMatch := func(res *SearchResult, want string) {
+		t.Helper()
+		fmatches := res.Files
+		if len(fmatches) != 1 {
+			t.Errorf("got %v, want 1 matches", len(fmatches))
+			return
+		}
+		if len(fmatches[0].LineMatches) != 1 {
+			t.Errorf("got %d line matches", len(fmatches[0].LineMatches))
+			return
+		}
+		var got string
+		if fmatches[0].LineMatches[0].FileName {
+			got = fmatches[0].FileName
+		} else {
+			got = fmt.Sprintf("%s:%d", fmatches[0].FileName, fmatches[0].LineMatches[0].LineFragments[0].Offset)
+		}
+
+		if got != want {
+			t.Errorf("got %s, want %s", got, want)
+		}
+	}
+
+	res := searchForTest(t, b, &query.Language{Language: "Apex"})
+	wantSingleMatch(res, "apex.cls")
+
+	res = searchForTest(t, b, &query.Language{Language: "TeX"})
+	wantSingleMatch(res, "tex.cls")
 }

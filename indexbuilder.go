@@ -21,10 +21,14 @@ import (
 	"hash/crc64"
 	"html/template"
 	"log"
+	"path"
 	"path/filepath"
 	"sort"
 	"time"
 	"unicode/utf8"
+
+	"github.com/go-enry/go-enry/v2"
+	enry_data "github.com/go-enry/go-enry/v2/data"
 )
 
 var _ = log.Println
@@ -423,6 +427,16 @@ func (b *IndexBuilder) Add(doc Document) error {
 		if doc.Language == "" {
 			doc.Language = "skipped"
 		}
+	}
+
+	// only compute language metadata for ambiguous extensions
+	if doc.Language == "" && len(enry_data.LanguagesByExtension[path.Ext(doc.Name)]) >= 2 {
+		c := doc.Content
+		// classifier is faster on small files without losing much accuracy
+		if len(c) > 2048 {
+			c = c[:2048]
+		}
+		doc.Language = enry.GetLanguage(doc.Name, c)
 	}
 
 	sort.Sort(symbolSlice{doc.Symbols, doc.SymbolsMetaData})

@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 
+	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/google/zoekt/query"
 )
 
@@ -99,6 +100,9 @@ func (d *indexData) simplify(in query.Q) query.Q {
 		case *query.Language:
 			_, has := d.metaData.LanguageMap[r.Language]
 			if !has {
+				_, has = enry_data.ExtensionsByLanguage[r.Language]
+			}
+			if !has {
 				return &query.Const{Value: false}
 			}
 		}
@@ -167,6 +171,8 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 		res.Stats.ShardsSkippedFilter++
 		return &res, nil
 	}
+
+	fmt.Println("MATCHY", mt)
 
 	totalAtomCount := 0
 	visitMatchTree(mt, func(t matchTree) {
