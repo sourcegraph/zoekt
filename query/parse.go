@@ -23,15 +23,6 @@ import (
 
 var _ = log.Printf
 
-type SuggestQueryError struct {
-	Message    string
-	Suggestion string
-}
-
-func (e *SuggestQueryError) Error() string {
-	return fmt.Sprintf("%s. Suggestion: %s", e.Message, e.Suggestion)
-}
-
 // parseStringLiteral parses a string literal, consumes the starting
 // quote too.
 func parseStringLiteral(in []byte) (lit []byte, n int, err error) {

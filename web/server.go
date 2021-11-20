@@ -99,14 +99,13 @@ type Server struct {
 	// domains.
 	HostCustomQueries map[string]string
 
-	// This should contain the following templates: "didyoumean"
-	// (for suggestions), "repolist" (for the repo search result
-	// page), "result" for the search results, "search" (for the
-	// opening page), "box" for the search query input element and
+	// This should contain the following templates: "repolist"
+	// (for the repo search result page), "result" for
+	// the search results, "search" (for the opening page),
+	// "box" for the search query input element and
 	// "print" for the show file functionality.
 	Top *template.Template
 
-	didYouMean *template.Template
 	repolist   *template.Template
 	search     *template.Template
 	result     *template.Template
@@ -148,7 +147,6 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 	}
 
 	for k, v := range map[string]**template.Template{
-		"didyoumean": &s.didYouMean,
 		"results":    &s.result,
 		"print":      &s.print,
 		"search":     &s.search,
@@ -201,16 +199,6 @@ func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 	err := s.serveSearchErr(w, r)
-
-	if suggest, ok := err.(*query.SuggestQueryError); ok {
-		var buf bytes.Buffer
-		if err := s.didYouMean.Execute(&buf, suggest); err != nil {
-			http.Error(w, err.Error(), http.StatusTeapot)
-		}
-
-		w.Write(buf.Bytes())
-		return
-	}
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusTeapot)
