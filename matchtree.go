@@ -139,6 +139,8 @@ type regexpMatchTree struct {
 	reEvaluated bool
 	found       []*candidateMatch
 
+	literalPrefix *substrMatchTree
+
 	// nextDoc, prepare.
 	bruteForceMatchTree
 }
@@ -651,7 +653,32 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	}
 
 	cp.stats.RegexpsConsidered++
-	idxs := t.regexp.FindAllIndex(cp.data(t.fileName), -1)
+
+	data := cp.data(t.fileName)
+
+	var idxs [][]int
+	if t.literalPrefix != nil {
+		t.literalPrefix.prepare(cp.idx)
+		idxs = make([][]int, 0, len(t.literalPrefix.current))
+		offset := 0
+		for _, literalCandidate := range t.literalPrefix.current {
+			if offset > int(literalCandidate.byteOffset) {
+				continue
+			}
+			offset = int(literalCandidate.byteOffset)
+			idx := t.regexp.FindIndex(data[offset:])
+			if idx == nil {
+				break
+			}
+			idx[0] += offset
+			idx[1] += offset
+			idxs = append(idxs, idx)
+			offset = idx[0] + 1
+		}
+	} else {
+		idxs = t.regexp.FindAllIndex(data, -1)
+	}
+
 	found := t.found[:0]
 	for _, idx := range idxs {
 		cm := &candidateMatch{
@@ -786,6 +813,22 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		tr := &regexpMatchTree{
 			regexp:   regexp.MustCompile(prefix + s.Regexp.String()),
 			fileName: s.FileName,
+		}
+
+		// TODO LiteralPrefix is always empty for case insensitive search. We want
+		// this optimization even in that case.
+		if prefix, _ := tr.regexp.LiteralPrefix(); len(prefix) >= ngramSize {
+			mt, err := d.newSubstringMatchTree(&query.Substring{
+				Pattern:       prefix,
+				FileName:      s.FileName,
+				CaseSensitive: s.CaseSensitive,
+			})
+			if err != nil {
+				return nil, err
+			}
+			if prefixMT, ok := mt.(*substrMatchTree); ok {
+				tr.literalPrefix = prefixMT
+			}
 		}
 
 		return &andMatchTree{

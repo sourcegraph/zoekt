@@ -121,6 +121,10 @@ func TestBasic(t *testing.T) {
 			"href=\"file-url#line",
 			"carry <b>water</b>",
 		},
+		"/search?q=water.in": {
+			"href=\"file-url#line",
+			"carry <b>water in</b>",
+		},
 		"/search?q=r:": {
 			"1234\">master",
 			"Found 1 repositories",
