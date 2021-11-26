@@ -25,17 +25,6 @@ var Top = template.New("top").Funcs(Funcmap)
 // TemplateText contains the text of the standard templates.
 var TemplateText = map[string]string{
 
-	"didyoumean": `
-<html>
-<head>
-  <title>Error</title>
-</head>
-<body>
-  <p>{{.Message}}. Did you mean <a href="/search?q={{.Suggestion}}">{{.Suggestion}}</a> ?
-</body>
-</html>
-`,
-
 	"head": `
 <head>
 <meta charset="utf-8">
