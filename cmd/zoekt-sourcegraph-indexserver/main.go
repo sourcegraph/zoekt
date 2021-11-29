@@ -141,6 +141,9 @@ type Server struct {
 
 	// Protects the index directory from concurrent access.
 	muIndexDir sync.Mutex
+
+	// If true, shard merging is enabled.
+	shardMerging bool
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -283,7 +286,7 @@ func (s *Server) Run() {
 			go func() {
 				defer close(cleanupDone)
 				s.muIndexDir.Lock()
-				cleanup(s.IndexDir, repos.IDs, time.Now())
+				cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
 				s.muIndexDir.Unlock()
 			}()
 
@@ -304,7 +307,7 @@ func (s *Server) Run() {
 
 	go func() {
 		for range jitterTicker(s.VacuumInterval, syscall.SIGUSR1) {
-			if zoekt.TombstonesEnabled(s.IndexDir) {
+			if s.shardMerging {
 				s.vacuum()
 			}
 		}
@@ -312,7 +315,7 @@ func (s *Server) Run() {
 
 	go func() {
 		for range jitterTicker(s.MergeInterval, syscall.SIGUSR1) {
-			if zoekt.TombstonesEnabled(s.IndexDir) {
+			if s.shardMerging {
 				err := doMerge(s.IndexDir, s.TargetSizeBytes, s.MaxSizeBytes, false)
 				if err != nil {
 					log.Printf("error during merging: %s", err)
@@ -780,6 +783,7 @@ func main() {
 		TargetSizeBytes: *targetSize * 1024 * 1024,
 		MaxSizeBytes:    *maxSize * 1024 * 1024,
 		minSizeBytes:    *minSize * 1024 * 1024,
+		shardMerging:    zoekt.ShardMergingEnabled(),
 	}
 
 	if *debugList {

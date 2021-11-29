@@ -574,7 +574,7 @@ func (b *Builder) Finish() error {
 
 	for p := range toDelete {
 		// Don't delete compound shards, set tombstones instead.
-		if zoekt.TombstonesEnabled(filepath.Dir(p)) && strings.HasPrefix(filepath.Base(p), "compound-") {
+		if zoekt.ShardMergingEnabled() && strings.HasPrefix(filepath.Base(p), "compound-") {
 			if !strings.HasSuffix(p, ".zoekt") {
 				continue
 			}
