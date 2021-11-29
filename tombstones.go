@@ -12,9 +12,6 @@ import (
 // ShardMergingEnabled returns true if SRC_ENABLE_SHARD_MERGING is set to true.
 func ShardMergingEnabled() bool {
 	t := os.Getenv("SRC_ENABLE_SHARD_MERGING")
-	if t == "" {
-		return false
-	}
 	enabled, _ := strconv.ParseBool(t)
 	return enabled
 }
