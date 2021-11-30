@@ -370,7 +370,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.subRepoPaths = append(d.subRepoPaths, keys)
 	}
 
-	d.languageMap = map[byte]string{}
+	d.languageMap = map[uint16]string{}
 	for k, v := range d.metaData.LanguageMap {
 		d.languageMap[v] = k
 	}

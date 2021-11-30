@@ -42,7 +42,8 @@ const IndexFormatVersion = 16
 // 9: Store ctags metadata & bump default max file size
 // 10: Compound shards; more flexible TOC format.
 // 11: Bloom filters for file names & contents
-const FeatureVersion = 11
+// 12: go-enry for identifying file languages
+const FeatureVersion = 12
 
 // WriteMinFeatureVersion and ReadMinFeatureVersion constrain forwards and backwards
 // compatibility. For example, if a new way to encode filenameNgrams on disk is

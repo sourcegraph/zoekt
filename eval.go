@@ -172,8 +172,6 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 		return &res, nil
 	}
 
-	fmt.Println("MATCHY", mt)
-
 	totalAtomCount := 0
 	visitMatchTree(mt, func(t matchTree) {
 		totalAtomCount++
@@ -244,7 +242,7 @@ nextFileMatch:
 			RepositoryPriority: md.priority,
 			FileName:           string(d.fileName(nextDoc)),
 			Checksum:           d.getChecksum(nextDoc),
-			Language:           d.languageMap[d.languages[nextDoc]],
+			Language:           d.languageMap[d.getLanguage(nextDoc)],
 		}
 
 		if s := d.subRepos[nextDoc]; s > 0 {

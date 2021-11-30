@@ -21,9 +21,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	enry_data "github.com/go-enry/go-enry/v2/data"
-	"github.com/go-enry/go-enry/v2/regex"
-
 	"github.com/google/zoekt/query"
 )
 
@@ -883,28 +880,8 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 				reason:  "language:" + s.Language,
 				numDocs: d.numDocs(),
 				predicate: func(docID uint32) bool {
-					return d.languages[docID] == code
+					return d.getLanguage(docID) == code
 				},
-			}
-		}
-
-		extsForLang := enry_data.ExtensionsByLanguage[s.Language]
-		if extsForLang != nil {
-			extFrags := make([]string, 0, len(extsForLang))
-			for _, ext := range extsForLang {
-				if len(enry_data.LanguagesByExtension[ext]) == 1 || !d.metaData.DisambiguatedLanguages {
-					extFrags = append(extFrags, regexp.QuoteMeta(ext))
-				}
-			}
-			if len(extFrags) > 0 {
-				reMt := &regexpMatchTree{
-					regexp:   regex.MustCompile(fmt.Sprintf("(%s)$", strings.Join(extFrags, "|"))),
-					fileName: true,
-				}
-				if codeOk {
-					return &orMatchTree{children: []matchTree{reMt, mt}}, nil
-				}
-				return reMt, nil
 			}
 		}
 		return mt, nil

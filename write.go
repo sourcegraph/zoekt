@@ -182,15 +182,14 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}
 
 	if err := b.writeJSON(&IndexMetadata{
-		IndexFormatVersion:     b.indexFormatVersion,
-		IndexTime:              indexTime,
-		IndexFeatureVersion:    b.featureVersion,
-		IndexMinReaderVersion:  WriteMinFeatureVersion,
-		PlainASCII:             b.contentPostings.isPlainASCII && b.namePostings.isPlainASCII,
-		LanguageMap:            b.languageMap,
-		ZoektVersion:           Version,
-		DisambiguatedLanguages: true,
-		ID:                     b.ID,
+		IndexFormatVersion:    b.indexFormatVersion,
+		IndexTime:             indexTime,
+		IndexFeatureVersion:   b.featureVersion,
+		IndexMinReaderVersion: WriteMinFeatureVersion,
+		PlainASCII:            b.contentPostings.isPlainASCII && b.namePostings.isPlainASCII,
+		LanguageMap:           b.languageMap,
+		ZoektVersion:          Version,
+		ID:                    b.ID,
 	}, &toc.metaData, w); err != nil {
 		return err
 	}

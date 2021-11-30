@@ -1,6 +1,6 @@
 {
   "FormatVersion": 16,
-  "FeatureVersion": 11,
+  "FeatureVersion": 12,
   "FileMatches": [
     [
       {
@@ -27,9 +27,11 @@
             ]
           }
         ],
+        "RepositoryID": 0,
+        "RepositoryPriority": 0,
         "Content": null,
         "Checksum": "n9fUYqacPXg=",
-        "Language": "",
+        "Language": "Go",
         "SubRepositoryName": "",
         "SubRepositoryPath": "",
         "Version": ""
@@ -60,9 +62,11 @@
             ]
           }
         ],
+        "RepositoryID": 0,
+        "RepositoryPriority": 0,
         "Content": null,
         "Checksum": "n9fUYqacPXg=",
-        "Language": "",
+        "Language": "Go",
         "SubRepositoryName": "",
         "SubRepositoryPath": "",
         "Version": ""

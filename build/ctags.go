@@ -21,7 +21,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/google/zoekt"
@@ -152,7 +151,6 @@ func ctagsAddSymbolsParser(todo []*zoekt.Document, parser ctags.Parser) error {
 		if len(es) == 0 {
 			continue
 		}
-		doc.Language = strings.ToLower(es[0].Language)
 
 		symOffsets, symMetaData, err := tagsToSections(doc.Content, es)
 		if err != nil {
@@ -205,9 +203,6 @@ func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) er
 		}
 		todo[pathIndices[k]].Symbols = symOffsets
 		todo[pathIndices[k]].SymbolsMetaData = symMetaData
-		if len(tags) > 0 {
-			todo[pathIndices[k]].Language = strings.ToLower(tags[0].Language)
-		}
 	}
 	return nil
 }

@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"log"
 	"regexp/syntax"
+
+	"github.com/go-enry/go-enry/v2"
 )
 
 var _ = log.Printf
@@ -138,7 +140,11 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		expr = q
 	case tokLang:
-		expr = &Language{Language: text}
+		canonical, ok := enry.GetLanguageByAlias(text)
+		if !ok {
+			canonical = "UKNNOWN"
+		}
+		expr = &Language{Language: canonical}
 
 	case tokSym:
 		if text == "" {

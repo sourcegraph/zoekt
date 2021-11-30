@@ -2144,7 +2144,9 @@ func TestSearchTypeLanguage(t *testing.T) {
 		Name: "reponame",
 	},
 		Document{Name: "apex.cls", Content: []byte("public class Car extends Vehicle {")},
-		Document{Name: "tex.cls", Content: []byte(`\DeclareOption*{`)})
+		Document{Name: "tex.cls", Content: []byte(`\DeclareOption*{`)},
+		Document{Name: "hello.c", Content: []byte(`void main() {}`)},
+	)
 
 	t.Log(b.languageMap)
 
@@ -2176,4 +2178,7 @@ func TestSearchTypeLanguage(t *testing.T) {
 
 	res = searchForTest(t, b, &query.Language{Language: "TeX"})
 	wantSingleMatch(res, "tex.cls")
+
+	res = searchForTest(t, b, &query.Language{Language: "C"})
+	wantSingleMatch(res, "hello.c")
 }
