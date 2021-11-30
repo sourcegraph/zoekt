@@ -870,6 +870,17 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			return &noMatchTree{"const"}, nil
 		}
 	case *query.Language:
+		if d.metaData.IndexFeatureVersion < 12 {
+			// This is an old index file without more precise language mappings,
+			// assume that the query has file include patterns to approximate the
+			// desired language and match everything for lang: while waiting for
+			// the reindex to complete.
+			//
+			// TODO(rmmh): remove this code when reindex is complete and there
+			// are no more index files where this condition is true.
+			return &bruteForceMatchTree{}, nil
+		}
+
 		code, codeOk := d.metaData.LanguageMap[s.Language]
 		var mt matchTree
 
