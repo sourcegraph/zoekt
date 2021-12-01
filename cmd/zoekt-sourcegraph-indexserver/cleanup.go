@@ -27,7 +27,7 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
 // back into indexDir. Additionally it uses now to remove shards that have
 // been in the trash for 24 hours. It also deletes .tmp files older than 4 hours.
-func cleanup(indexDir string, repos []uint32, now time.Time) {
+func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) {
 	start := time.Now()
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
@@ -36,8 +36,6 @@ func cleanup(indexDir string, repos []uint32, now time.Time) {
 
 	trash := getShards(trashDir)
 	index := getShards(indexDir)
-
-	tombstonesEnabled := zoekt.TombstonesEnabled(indexDir)
 
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
@@ -85,7 +83,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time) {
 			_ = os.Chtimes(shard.Path, now, now)
 		}
 
-		if tombstonesEnabled {
+		if shardMerging {
 			// 1 repo can be split across many simple shards but it should only be contained
 			// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
 			// shard at index 0.

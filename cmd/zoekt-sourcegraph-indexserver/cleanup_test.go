@@ -149,7 +149,7 @@ func TestCleanup(t *testing.T) {
 			for _, name := range tt.repos {
 				repoIDs = append(repoIDs, fakeID(name))
 			}
-			cleanup(dir, repoIDs, now)
+			cleanup(dir, repoIDs, now, false)
 
 			if d := cmp.Diff(tt.wantIndex, glob(filepath.Join(dir, "*.zoekt"))); d != "" {
 				t.Errorf("unexpected index (-want, +got):\n%s", d)

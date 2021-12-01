@@ -5,13 +5,15 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"syscall"
 )
 
-// TombstoneEnabled returns true if a file "RIP" is present in dir.
-func TombstonesEnabled(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "RIP"))
-	return err == nil
+// ShardMergingEnabled returns true if SRC_ENABLE_SHARD_MERGING is set to true.
+func ShardMergingEnabled() bool {
+	t := os.Getenv("SRC_ENABLE_SHARD_MERGING")
+	enabled, _ := strconv.ParseBool(t)
+	return enabled
 }
 
 var mockRepos []*Repository
