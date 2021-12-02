@@ -76,6 +76,7 @@ func main() {
 	dest := flag.String("dest", "", "destination directory")
 	namePattern := flag.String("name", "", "only clone repos whose name matches the regexp.")
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
+	deleteRepos := flag.Bool("delete", false, "delete missing repos")
 	httpCrendentialsPath := flag.String("http-credentials", "", "path to a file containing http credentials stored like 'user:password'.")
 	flag.Parse()
 
@@ -147,7 +148,7 @@ func main() {
 			continue
 		}
 
-		cloneURL, err := url.Parse(strings.Replace(projectURL, "${project}", k, -1))
+		cloneURL, err := url.Parse(strings.Replace(projectURL, "${project}", k, 1))
 		if err != nil {
 			log.Fatalf("url.Parse: %v", err)
 		}
@@ -179,4 +180,30 @@ func main() {
 			fmt.Println(dest)
 		}
 	}
+	if *deleteRepos {
+		if err := deleteStaleRepos(*dest, filter, projects, projectURL); err != nil {
+			log.Fatalf("deleteStaleRepos: %v", err)
+		}
+	}
+}
+
+func deleteStaleRepos(destDir string, filter *gitindex.Filter, repos map[string]gerrit.ProjectInfo, projectURL string) error {
+	u, err := url.Parse(strings.Replace(projectURL, "${project}", "", 1))
+	if err != nil {
+		return err
+	}
+
+	names := map[string]struct{}{}
+	for name, _ := range repos {
+		u, err := url.Parse(strings.Replace(projectURL, "${project}", name, 1))
+		if err != nil {
+			return err
+		}
+		names[filepath.Join(u.Host, u.Path) + ".git"] = struct{}{}
+	}
+
+	if err := gitindex.DeleteRepos(destDir, u, names, filter); err != nil {
+		log.Fatalf("deleteRepos: %v", err)
+	}
+	return nil
 }
