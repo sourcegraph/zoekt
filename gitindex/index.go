@@ -406,8 +406,8 @@ func IndexGitRepo(opts Options) error {
 
 		tree, err := commit.Tree()
 		if err != nil {
-			return fmt.Errorf("commit.Tree: %w", err)
-			return err
+			return fmt.Errorf("commit.Tree: %w", err) //revive:disable-line:unreachable-code
+			return err                                //nolint:unreachable,govet // ignore that the above return statement means we'll never execute this
 		}
 
 		ig, err := newIgnoreMatcher(tree)

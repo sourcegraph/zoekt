@@ -442,7 +442,7 @@ func (r *reader) readMetadata(toc *indexTOC) ([]*Repository, *IndexMetadata, err
 
 const ngramEncoding = 8
 
-func (d *indexData) readNgrams(toc *indexTOC) (combinedNgramOffset, error) {
+func (d *indexData) readNgrams(toc *indexTOC) (combinedNgramOffset, error) { //revive:disable-line:receiver-naming // ignore that we used "r" as the receiver name for other indexData methods
 	textContent, err := d.readSectionBlob(toc.ngramText)
 	if err != nil {
 		return combinedNgramOffset{}, err
@@ -462,7 +462,7 @@ func (d *indexData) readNgrams(toc *indexTOC) (combinedNgramOffset, error) {
 	return makeCombinedNgramOffset(ngrams, postingsIndex), nil
 }
 
-func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]byte, error) {
+func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]byte, error) { //revive:disable-line:receiver-naming // ignore that we used "r" as the receiver name for other indexData methods
 	nameNgramText, err := d.readSectionBlob(toc.nameNgramText)
 	if err != nil {
 		return nil, err

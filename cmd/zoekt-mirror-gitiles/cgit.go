@@ -30,7 +30,7 @@ import (
 var cgitRepoEntryRE = regexp.MustCompile(
 	`class='sublevel-repo'><a title='([^'"]*)' href='([^']*)'>`)
 
-func normalizedGet(u *url.URL) ([]byte, error) {
+func normalizedGet(u *url.URL) ([]byte, error) { //nolint:interfacer // ignore that u can replaced with fmt.Stringer
 	rep, err := http.Get(u.String())
 	if err != nil {
 		return nil, err
@@ -65,7 +65,8 @@ func getCGitRepos(u *url.URL, filter func(string) bool) (map[string]*crawlTarget
 			continue
 		}
 
-		relUrl := string(m[2])
+		//revive:disable-next-line:var-naming
+		relUrl := string(m[2]) //nolint:stylecheck
 
 		u, err := u.Parse(relUrl)
 		if err != nil {

@@ -125,7 +125,7 @@ func hasMultipleShards(path string) bool {
 	}
 	secondShard := reShard.ReplaceAllString(path, ".00001.zoekt")
 	_, err := os.Stat(secondShard)
-	if os.IsNotExist(err) {
+	if os.IsNotExist(err) { //nolint:gosimple // ignore that this could be return !os.IsNotExist
 		return false
 	}
 	return true

@@ -238,15 +238,15 @@ const (
 	scorePartialWordMatch   = 50.0
 	scoreWordMatch          = 500.0
 	scoreImportantThreshold = 2000.0
-	scorePartialSymbol      = 4000.0
-	scoreSymbol             = 7000.0
+	scorePartialSymbol      = 4000.0 //nolint:deadcode,varcheck // ignore that scorePartialSymbol is unused
+	scoreSymbol             = 7000.0 //nolint:deadcode,varcheck // ignore that scoreSymbol is unused
 	scoreFactorAtomMatch    = 400.0
 	scoreShardRankFactor    = 20.0
 	scoreFileOrderFactor    = 10.0
 	scoreLineOrderFactor    = 1.0
 )
 
-func findSection(secs []DocumentSection, off, sz uint32) *DocumentSection {
+func findSection(secs []DocumentSection, off, sz uint32) *DocumentSection { //nolint:deadcode,unused // ignore that findSection is unused
 	j := sort.Search(len(secs), func(i int) bool {
 		return secs[i].End >= off+sz
 	})
@@ -261,7 +261,8 @@ func findSection(secs []DocumentSection, off, sz uint32) *DocumentSection {
 	return nil
 }
 
-func matchScore(secs []DocumentSection, m *LineMatch) float64 {
+//revive:disable-next-line:unused-parameter
+func matchScore(secs []DocumentSection, m *LineMatch) float64 { //nolint:unparam // ignore that "secs" is not referenced in the function
 	var maxScore float64
 	for _, f := range m.LineFragments {
 		startBoundary := f.LineOffset < len(m.Line) && (f.LineOffset == 0 || byteClass(m.Line[f.LineOffset-1]) != byteClass(m.Line[f.LineOffset]))

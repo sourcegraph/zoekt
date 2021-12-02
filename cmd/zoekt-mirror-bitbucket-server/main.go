@@ -246,8 +246,10 @@ func cloneRepos(destDir string, host string, repos []bitbucketv1.Repository, pas
 			"zoekt.name":         filepath.Join(host, fullName),
 		}
 
-		httpsCloneUrl := ""
-		for _, cloneUrl := range r.Links.Clone {
+		//revive:disable-next-line:var-naming
+		httpsCloneUrl := "" //nolint:stylecheck
+		//revive:disable-next-line:var-naming
+		for _, cloneUrl := range r.Links.Clone { //nolint:stylecheck
 			// In fact, this is an https url, i.e. there's no separate Name for https.
 			if cloneUrl.Name == "http" {
 				s := strings.Split(cloneUrl.Href, "@")

@@ -65,7 +65,7 @@ func runCTags(bin string, inputs map[string][]byte) ([]*ctags.Entry, error) {
 		return nil, nil
 	}
 
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.Command(args[0], args[1:]...) //nolint:gosec // G204: Subprocess launched with function call as argument or cmd arguments
 	cmd.Dir = dir
 
 	var errBuf, outBuf bytes.Buffer

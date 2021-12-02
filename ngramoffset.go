@@ -270,7 +270,7 @@ func makeAsciiNgramOffset(ngrams []ngramAscii, offsets []uint32) *asciiNgramOffs
 			if length < ngramAsciiMaxSectionLength {
 				ao.entries = append(ao.entries, uint32(ng)<<11|length)
 				break
-			} else {
+			} else { //revive:disable-line:superfluous-else // ignore that else is unnecessary since we break in the if-block
 				// entries with lengths that are too long can't be represented fully in this
 				// map, but we repeatedly insert offsets to make the next entry's offset computable
 				// by summing the offsets in the preceding entries in the chunk, including

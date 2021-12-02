@@ -46,14 +46,14 @@ func Parse(in string) (*Entry, error) {
 
 field:
 	for _, f := range fields[3:] {
-		if string(f) == "file:" {
+		if string(f) == "file:" { //nolint:unconvert // ignore needless conversion of string(f)
 			e.FileLimited = true
 		}
 		for _, p := range []string{"class", "enum"} {
 			if strings.HasPrefix(f, p+":") {
 				e.Parent = strings.TrimPrefix(f, p+":")
 				e.ParentKind = p
-				continue field
+				continue field //nolint:gocritic // gocritic would like us to use "break" here instead of continue
 			}
 		}
 	}

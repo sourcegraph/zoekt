@@ -178,8 +178,8 @@ func (b *bloom) shrinkToSize(target float64) bloom {
 
 func (b bloom) write(w *writer) {
 	// header: serialization version, hasher id
-	w.Write([]byte{1, bloomHasherIds[reflect.ValueOf(b.hasher).Pointer()]})
-	w.Write(b.bits)
+	w.Write([]byte{1, bloomHasherIds[reflect.ValueOf(b.hasher).Pointer()]}) //nolint:errcheck // ignore that we don't check Write's error status
+	w.Write(b.bits)                                                         //nolint:errcheck // ignore that we don't check Write's error status
 }
 
 func makeBloomFilterFromEncoded(buf []byte) (bloom, error) {

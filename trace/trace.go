@@ -126,7 +126,7 @@ func ContextWithTrace(ctx context.Context, tr *Trace) context.Context {
 
 // TraceFromContext returns the Trace previously associated with ctx, or
 // nil if no such Trace could be found.
-func TraceFromContext(ctx context.Context) *Trace {
+func TraceFromContext(ctx context.Context) *Trace { //revive:disable-line:exported
 	tr, _ := ctx.Value(traceKey).(*Trace)
 	return tr
 }

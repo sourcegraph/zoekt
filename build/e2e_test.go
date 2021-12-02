@@ -172,7 +172,7 @@ func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface
 			done <- true
 		}()
 
-		success, _ := <-done
+		success, _ := <-done //nolint:gosimple // https://staticcheck.io/docs/checks#S1005
 		if success {
 			return
 		}

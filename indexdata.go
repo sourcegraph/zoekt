@@ -343,7 +343,7 @@ func lastMinarg(xs []uint32) uint32 {
 	return uint32(j)
 }
 
-func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
+func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 { //revive:disable-line:receiver-naming // ignore that we used "d" as the receiver name for other indexData methods
 	if filename {
 		return uint32(len(data.fileNameNgrams[ng]))
 	}

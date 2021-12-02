@@ -38,7 +38,7 @@ func TestStreamSearch(t *testing.T) {
 
 	// Start consumer.
 	done := make(chan struct{})
-	go func() {
+	go func() { //nolint:staticcheck // https://staticcheck.io/docs/checks#SA2002
 		defer close(done)
 		for res := range c {
 			if res.Files == nil {
@@ -82,16 +82,16 @@ func TestStreamSearchJustStats(t *testing.T) {
 
 	// Start consumer.
 	done := make(chan struct{})
-	go func() {
+	go func() { //nolint:staticcheck // https://staticcheck.io/docs/checks#SA2002
 		defer close(done)
 		count := 0
 		for res := range c {
 			count += 1
 			if count > 1 {
-				t.Fatal("expected exactly 1 result, got at least 2")
+				t.Fatal("expected exactly 1 result, got at least 2") //nolint:govet // https://staticcheck.io/docs/checks#SA2002
 			}
 			if d := cmp.Diff(wantStats, res.Stats); d != "" {
-				t.Fatalf("zoekt.Stats mismatch (-want +got): %s\n", d)
+				t.Fatalf("zoekt.Stats mismatch (-want +got): %s\n", d) //nolint:govet // https://staticcheck.io/docs/checks#SA2002
 			}
 		}
 		if count != 1 {

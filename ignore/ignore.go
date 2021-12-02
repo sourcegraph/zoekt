@@ -24,7 +24,7 @@ type Matcher struct {
 // - for patterns without any glob-characters, a trailing ** is implicit
 // - lines starting with # are ignored
 // - empty lines are ignored
-func ParseIgnoreFile(r io.Reader) (matcher *Matcher, error error) {
+func ParseIgnoreFile(r io.Reader) (matcher *Matcher, error error) { //nolint:gocritic // ignoring builtinShadow of error for now
 	var patterns []glob.Glob
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {

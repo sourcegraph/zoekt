@@ -94,7 +94,7 @@ var (
 type indexState string
 
 const (
-	indexStateFail        indexState = "fail"
+	indexStateFail        indexState = "fail" //nolint:staticcheck https://staticcheck.io/docs/checks#SA9004
 	indexStateSuccess                = "success"
 	indexStateSuccessMeta            = "success_meta" // We only updated metadata
 	indexStateNoop                   = "noop"         // We didn't need to update index

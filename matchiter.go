@@ -45,7 +45,7 @@ func (m *candidateMatch) matchContent(content []byte) bool {
 
 		m.byteMatchSz = uint32(len(m.substrBytes))
 		return comp
-	} else {
+	} else { //revive:disable-line:indent-error-flow // ignore needless else due to the return in the if-block
 		// It is tempting to try a simple ASCII based
 		// comparison if possible, but we need more
 		// information. Simple ASCII chars have unicode upper

@@ -88,7 +88,7 @@ func Parse(qStr string) (Q, error) {
 // parseExpr parses a single expression, returning the result, and the
 // number of bytes consumed.
 func parseExpr(in []byte) (Q, int, error) {
-	b := in[:]
+	b := in[:] //nolint:gocritic // https://go-critic.com/overview.html#unslice-ref
 	var expr Q
 	for len(b) > 0 && isSpace(b[0]) {
 		b = b[1:]
@@ -263,7 +263,7 @@ func parseOperators(in []Q) (Q, error) {
 // parseExprList parses a list of query expressions. It is the
 // workhorse of the Parse function.
 func parseExprList(in []byte) ([]Q, int, error) {
-	b := in[:]
+	b := in[:] //nolint:gocritic // https://go-critic.com/overview.html#unslice-ref
 	var qs []Q
 	for len(b) > 0 {
 		for len(b) > 0 && isSpace(b[0]) {
@@ -348,7 +348,7 @@ const (
 	tokLang       = 12
 	tokSym        = 13
 	tokType       = 14
-	tokVis        = 15
+	tokVis        = 15 //nolint:deadcode,varcheck // ignore that tokVis is unused
 )
 
 var tokNames = map[int]string{
@@ -420,7 +420,7 @@ func (t *token) setType() {
 
 // nextToken returns the next token from the given input.
 func nextToken(in []byte) (*token, error) {
-	left := in[:]
+	left := in[:] //nolint:gocritic // https://go-critic.com/overview.html#unslice-ref
 	parenCount := 0
 	var cur token
 	if len(left) == 0 {

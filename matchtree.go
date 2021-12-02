@@ -174,7 +174,7 @@ type symbolRegexpMatchTree struct {
 	found       []*candidateMatch
 }
 
-func (t *symbolRegexpMatchTree) prepare(doc uint32) {
+func (t *symbolRegexpMatchTree) prepare(doc uint32) { //revive:disable-line:unused-parameter // ignore that "doc" is not referenced in this function
 	t.reEvaluated = false
 }
 

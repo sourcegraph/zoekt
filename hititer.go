@@ -160,7 +160,7 @@ func (i *inMemoryIterator) first() uint32 {
 	return maxUInt32
 }
 
-func (i *inMemoryIterator) updateStats(s *Stats) {
+func (i *inMemoryIterator) updateStats(s *Stats) { //revive:disable-line:unused-parameter // ignore that "s" is not referenced in this function
 }
 
 func (i *inMemoryIterator) next(limit uint32) {

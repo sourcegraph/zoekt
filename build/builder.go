@@ -285,7 +285,7 @@ func (o *Options) shardNameVersion(version, n int) string {
 type IndexState string
 
 const (
-	IndexStateMissing IndexState = "missing"
+	IndexStateMissing IndexState = "missing" //nolint:staticcheck https://staticcheck.io/docs/checks#SA9004
 	IndexStateCorrupt            = "corrupt"
 	IndexStateVersion            = "version-mismatch"
 	IndexStateOption             = "option-mismatch"

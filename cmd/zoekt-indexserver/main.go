@@ -39,7 +39,7 @@ import (
 
 const day = time.Hour * 24
 
-func loggedRun(cmd *exec.Cmd) (out, err []byte) {
+func loggedRun(cmd *exec.Cmd) (out, err []byte) { //nolint:unparam // ignore that err is never checked anywhere
 	outBuf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
 	cmd.Stdout = outBuf

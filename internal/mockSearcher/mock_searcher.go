@@ -1,4 +1,4 @@
-package mockSearcher
+package mockSearcher //nolint:stylecheck // ST1003 mockSearcher -> mocksearcher
 
 import (
 	"context"

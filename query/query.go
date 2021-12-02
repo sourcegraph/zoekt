@@ -342,7 +342,7 @@ const (
 )
 
 // Type changes the result type returned.
-type Type struct {
+type Type struct { //revive:disable-line:redefines-builtin-id // ignore that our struct name is the same as a builtin
 	Child Q
 	Type  uint8
 }
@@ -405,7 +405,7 @@ func (q *Substring) setCase(k string) {
 	}
 }
 
-func (q *Symbol) setCase(k string) {
+func (q *Symbol) setCase(k string) { //revive:disable-line:receiver-naming // ignore that we used "s" as the receiver name for other symbol methods
 	if sc, ok := q.Expr.(setCaser); ok {
 		sc.setCase(k)
 	}
@@ -615,7 +615,7 @@ func evalAndOrConstants(q Q, children []Q) Q {
 		if ok {
 			if c.Value == isAnd {
 				continue
-			} else {
+			} else { //revive:disable-line:superfluous-else // ignore that we could just return without the "else" block here
 				return ch
 			}
 		}
