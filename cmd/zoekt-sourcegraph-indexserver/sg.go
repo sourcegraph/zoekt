@@ -65,6 +65,8 @@ type sourcegraphClient struct {
 	// zero a value of 10000 is used.
 	BatchSize int
 
+	// Client is used to make requests to the Sourcegraph instance. Prefer to
+	// use .doRequest() to ensure the appropriate headers are set.
 	Client *retryablehttp.Client
 
 	// configFingerprint is the last config fingerprint returned from
@@ -185,7 +187,7 @@ func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32)
 		req.Header.Set("X-Sourcegraph-Config-Fingerprint", fingerprint)
 	}
 
-	resp, err := s.Client.Do(req)
+	resp, err := s.doRequest(req)
 	if err != nil {
 		return nil, "", err
 	}
@@ -239,7 +241,13 @@ func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) (
 	}
 
 	u := s.Root.ResolveReference(&url.URL{Path: "/.internal/repos/index"})
-	resp, err := s.Client.Post(u.String(), "application/json; charset=utf8", bytes.NewReader(body))
+	req, err := retryablehttp.NewRequest(http.MethodPost, u.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf8")
+
+	resp, err := s.doRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -260,6 +268,17 @@ func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) (
 	metricNumAssigned.Set(float64(len(data.RepoIDs)))
 
 	return data.RepoIDs, nil
+}
+
+// doRequest executes the provided request after adding the appropriate headers
+// for interacting with a Sourcegraph instance.
+func (s *sourcegraphClient) doRequest(req *retryablehttp.Request) (*http.Response, error) {
+	// Make all requests as an internal user.
+	//
+	// Should match github.com/sourcegraph/sourcegraph/internal/actor.headerKeyActorUID
+	// and github.com/sourcegraph/sourcegraph/internal/actor.headerValueInternalActor
+	req.Header.Set("X-Sourcegraph-Actor-UID", "internal")
+	return s.Client.Do(req)
 }
 
 type sourcegraphFake struct {
