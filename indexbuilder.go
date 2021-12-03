@@ -191,7 +191,7 @@ type IndexBuilder struct {
 	// language => language code
 	languageMap map[string]uint16
 
-	// languages codes
+	// language codes, uint16 encoded as little-endian
 	languages []uint8
 
 	// IndexTime will be used as the time if non-zero. Otherwise
@@ -508,21 +508,8 @@ func (b *IndexBuilder) Add(doc Document) error {
 		}
 		langCode = uint16(len(b.languageMap))
 		b.languageMap[doc.Language] = langCode
-		if langCode == 256 {
-			// convert from 8-bit to 16-bit encoding
-			// with the first language entry that exceeds it
-			lang := make([]uint8, len(b.languages)*2)
-			for i, v := range b.languages {
-				lang[i*2] = v
-			}
-			b.languages = lang
-		}
 	}
-	if len(b.languageMap) >= 256 {
-		b.languages = append(b.languages, uint8(langCode), uint8(langCode>>8))
-	} else {
-		b.languages = append(b.languages, uint8(langCode))
-	}
+	b.languages = append(b.languages, uint8(langCode), uint8(langCode>>8))
 
 	return nil
 }

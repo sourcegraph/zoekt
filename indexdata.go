@@ -167,11 +167,12 @@ func (d *indexData) getChecksum(idx uint32) []byte {
 }
 
 func (d *indexData) getLanguage(idx uint32) uint16 {
-	if len(d.languageMap) > 256 {
-		return uint16(d.languages[idx*2]) |
-			uint16(d.languages[idx*2+1])<<8
+	if d.metaData.IndexFeatureVersion < 12 {
+		// older zoekt files had 8-bit language entries
+		return uint16(d.languages[idx])
 	}
-	return uint16(d.languages[idx])
+	// newer zoekt files have 16-bit language entries
+	return uint16(d.languages[idx*2]) | uint16(d.languages[idx*2+1])<<8
 }
 
 // calculates stats for files in the range [start, end).
