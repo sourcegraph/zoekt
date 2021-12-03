@@ -142,9 +142,10 @@ func parseExpr(in []byte) (Q, int, error) {
 	case tokLang:
 		canonical, ok := enry.GetLanguageByAlias(text)
 		if !ok {
-			canonical = "UKNNOWN"
+			expr = &Const{false}
+		} else {
+			expr = &Language{Language: canonical}
 		}
-		expr = &Language{Language: canonical}
 
 	case tokSym:
 		if text == "" {

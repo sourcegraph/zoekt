@@ -21,6 +21,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	enry_data "github.com/go-enry/go-enry/v2/data"
+	"github.com/go-enry/go-enry/v2/regex"
 	"github.com/google/zoekt/query"
 )
 
@@ -870,21 +872,28 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			return &noMatchTree{"const"}, nil
 		}
 	case *query.Language:
-		if d.metaData.IndexFeatureVersion < 12 {
-			// This is an old index file without more precise language mappings,
-			// assume that the query has file include patterns to approximate the
-			// desired language and match everything for lang: while waiting for
-			// the reindex to complete.
-			//
-			// TODO(rmmh): remove this code when reindex is complete and there
-			// are no more index files where this condition is true.
-			return &bruteForceMatchTree{}, nil
-		}
-
 		code, codeOk := d.metaData.LanguageMap[s.Language]
 		var mt matchTree
 
 		if !codeOk {
+			if d.metaData.IndexFeatureVersion < 12 {
+				// This is an old index file without more precise language mappings,
+				// fall back to generating file match patterns.
+				extsForLang := enry_data.ExtensionsByLanguage[s.Language]
+				if extsForLang != nil {
+					extFrags := make([]string, 0, len(extsForLang))
+					for _, ext := range extsForLang {
+						extFrags = append(extFrags, regexp.QuoteMeta(ext))
+					}
+					if len(extFrags) > 0 {
+						reMt := &regexpMatchTree{
+							regexp:   regex.MustCompile(fmt.Sprintf("(%s)$", strings.Join(extFrags, "|"))),
+							fileName: true,
+						}
+						return reMt, nil
+					}
+				}
+			}
 			mt = &noMatchTree{"lang"}
 		} else {
 			mt = &docMatchTree{
