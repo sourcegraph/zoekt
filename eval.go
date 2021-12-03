@@ -22,7 +22,6 @@ import (
 	"sort"
 	"strings"
 
-	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/google/zoekt/query"
 )
 
@@ -99,8 +98,11 @@ func (d *indexData) simplify(in query.Q) query.Q {
 			})
 		case *query.Language:
 			_, has := d.metaData.LanguageMap[r.Language]
-			if !has {
-				_, has = enry_data.ExtensionsByLanguage[r.Language]
+			if !has && d.metaData.IndexFeatureVersion < 12 {
+				// For index files that haven't been re-indexed by go-enry,
+				// fall back to file-based matching and continue even if this
+				// repo doesn't have the specific language present.
+				has = true
 			}
 			if !has {
 				return &query.Const{Value: false}

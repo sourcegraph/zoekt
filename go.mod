@@ -11,7 +11,7 @@ require (
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gfleury/go-bitbucket-v1 v0.0.0-20200312180434-e5170e3280fb
-	github.com/go-enry/go-enry/v2 v2.8.0 // indirect
+	github.com/go-enry/go-enry/v2 v2.8.0
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/gobwas/glob v0.2.3
 	github.com/google/go-cmp v0.5.5
