@@ -172,9 +172,9 @@ func TestSimplifyRepoSet(t *testing.T) {
 
 func TestSimplifyRepo(t *testing.T) {
 	d := compoundReposShard(t, "foo", "fool")
-	all := &query.Repo{Expr: &query.Substring{Pattern: "foo"}}
-	some := &query.Repo{Expr: &query.Substring{Pattern: "fool"}}
-	none := &query.Repo{Expr: &query.Substring{Pattern: "bar"}}
+	all := &query.Repo{Regexp: regexp.MustCompile("foo")}
+	some := &query.Repo{Regexp: regexp.MustCompile("fool")}
+	none := &query.Repo{Regexp: regexp.MustCompile("bar")}
 
 	got := d.simplify(all)
 	if d := cmp.Diff(&query.Const{Value: true}, got); d != "" {
@@ -234,7 +234,7 @@ func TestSimplifyRepoBranch(t *testing.T) {
 	d := compoundReposShard(t, "foo", "bar")
 
 	some := &query.RepoBranches{Set: map[string][]string{"bar": {"branch1"}}}
-	none := &query.Repo{Expr: &query.Substring{Pattern: "banana"}}
+	none := &query.Repo{Regexp: regexp.MustCompile("banana")}
 
 	got := d.simplify(some)
 	if d := cmp.Diff(some, got); d != "" {
@@ -255,7 +255,7 @@ func TestSimplifyBranchesRepos(t *testing.T) {
 			{Branch: "branch1", Repos: roaring.BitmapOf(hash("bar"))},
 		},
 	}
-	none := &query.Repo{Expr: &query.Substring{Pattern: "banana"}}
+	none := &query.Repo{Regexp: regexp.MustCompile("banana")}
 
 	got := d.simplify(some)
 	tr := cmp.Transformer("", func(b *roaring.Bitmap) []uint32 { return b.ToArray() })

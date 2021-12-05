@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"regexp"
 	"regexp/syntax"
 	"sort"
 	"strings"
@@ -67,16 +66,7 @@ func (d *indexData) simplify(in query.Q) query.Q {
 		switch r := q.(type) {
 		case *query.Repo:
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
-				switch expr := r.Expr.(type) {
-
-				case *query.Substring:
-					return strings.Contains(repo.Name, expr.Pattern)
-
-				case *query.Regexp:
-					return regexp.MustCompile(expr.Regexp.String()).MatchString(repo.Name)
-				}
-
-				return false
+				return r.Regexp.MatchString(repo.Name)
 			})
 		case *query.RepoRegexp:
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {

@@ -169,11 +169,11 @@ func (q *Const) String() string {
 }
 
 type Repo struct {
-	Expr Q
+	Regexp *regexp.Regexp
 }
 
 func (q *Repo) String() string {
-	return fmt.Sprintf("repo:%s", q.Expr)
+	return fmt.Sprintf("repo:%s", q.Regexp.String())
 }
 
 // RepoRegexp is a Sourcegraph addition which searches documents where the

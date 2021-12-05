@@ -973,24 +973,11 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 
 	case *query.Repo:
 		reposWant := make([]bool, len(d.repoMetaData))
-
-		switch expr := s.Expr.(type) {
-
-		case *query.Substring:
-			for repoIdx, r := range d.repoMetaData {
-				if strings.Contains(r.Name, expr.Pattern) {
-					reposWant[repoIdx] = true
-				}
-			}
-
-		case *query.Regexp:
-			for repoIdx, r := range d.repoMetaData {
-				if regexp.MustCompile(expr.Regexp.String()).MatchString(r.Name) {
-					reposWant[repoIdx] = true
-				}
+		for repoIdx, r := range d.repoMetaData {
+			if s.Regexp.MatchString(r.Name) {
+				reposWant[repoIdx] = true
 			}
 		}
-
 		return &docMatchTree{
 			reason:  "Repo",
 			numDocs: d.numDocs(),

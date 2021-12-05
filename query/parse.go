@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"regexp"
 	"regexp/syntax"
 
 	"github.com/go-enry/go-enry/v2"
@@ -121,12 +122,7 @@ func parseExpr(in []byte) (Q, int, error) {
 			return nil, 0, fmt.Errorf("the repo: expr must have an argument")
 		}
 
-		q, err := regexpQuery(text, false, false)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		expr = &Repo{q}
+		expr = &Repo{regexp.MustCompile(text)}
 	case tokBranch:
 		expr = &Branch{Pattern: text}
 	case tokText, tokRegex:
