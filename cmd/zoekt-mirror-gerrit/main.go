@@ -77,6 +77,7 @@ func main() {
 	namePattern := flag.String("name", "", "only clone repos whose name matches the regexp.")
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	httpCrendentialsPath := flag.String("http-credentials", "", "path to a file containing http credentials stored like 'user:password'.")
+	onlyActive := flag.Bool("only-active", false, "mirror only active projects")
 	flag.Parse()
 
 	if len(flag.Args()) < 1 {
@@ -126,9 +127,9 @@ func main() {
 	}
 
 	projects := make(map[string]gerrit.ProjectInfo)
-	skip := "0"
+	skip := 0
 	for {
-		page, _, err := client.Projects.ListProjects(&gerrit.ProjectOptions{Skip: skip})
+		page, _, err := client.Projects.ListProjects(&gerrit.ProjectOptions{Skip: strconv.Itoa(skip)})
 		if err != nil {
 			log.Fatalf("ListProjects: %v", err)
 		}
@@ -136,10 +137,13 @@ func main() {
 		if len(*page) == 0 {
 			break
 		}
+
 		for k, v := range *page {
-			projects[k] = v
+			if *onlyActive == false || "ACTIVE" == v.State  {
+				projects[k] = v
+			}
+			skip = skip + 1
 		}
-		skip = strconv.Itoa(len(projects))
 	}
 
 	for k, v := range projects {

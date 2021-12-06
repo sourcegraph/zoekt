@@ -48,6 +48,7 @@ type ConfigEntry struct {
 	GerritApiURL           string
 	Topics                 []string
 	ExcludeTopics          []string
+	OnlyActive             bool
 }
 
 func randomize(entries []ConfigEntry) []ConfigEntry {
@@ -250,6 +251,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			}
 			if c.Exclude != "" {
 				cmd.Args = append(cmd.Args, "-exclude", c.Exclude)
+			}
+			if c.OnlyActive {
+				cmd.Args = append(cmd.Args, "-only-active")
 			}
 			cmd.Args = append(cmd.Args, c.GerritApiURL)
 		}
