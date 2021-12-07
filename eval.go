@@ -18,10 +18,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"regexp/syntax"
 	"sort"
 	"strings"
 
+	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/google/zoekt/query"
 )
 
@@ -102,7 +104,19 @@ func (d *indexData) simplify(in query.Q) query.Q {
 				// For index files that haven't been re-indexed by go-enry,
 				// fall back to file-based matching and continue even if this
 				// repo doesn't have the specific language present.
-				has = true
+				extsForLang := enry_data.ExtensionsByLanguage[r.Language]
+				if extsForLang != nil {
+					extFrags := make([]string, 0, len(extsForLang))
+					for _, ext := range extsForLang {
+						extFrags = append(extFrags, regexp.QuoteMeta(ext))
+					}
+					if len(extFrags) > 0 {
+						return &regexpMatchTree{
+							regexp:   regexp.MustCompile(fmt.Sprintf("(%s)$", strings.Join(extFrags, "|"))),
+							fileName: true,
+						}
+					}
+				}
 			}
 			if !has {
 				return &query.Const{Value: false}

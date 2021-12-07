@@ -21,8 +21,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	enry_data "github.com/go-enry/go-enry/v2/data"
-	"github.com/go-enry/go-enry/v2/regex"
 	"github.com/google/zoekt/query"
 )
 
@@ -876,24 +874,6 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		var mt matchTree
 
 		if !codeOk {
-			if d.metaData.IndexFeatureVersion < 12 {
-				// This is an old index file without more precise language mappings,
-				// fall back to generating file match patterns.
-				extsForLang := enry_data.ExtensionsByLanguage[s.Language]
-				if extsForLang != nil {
-					extFrags := make([]string, 0, len(extsForLang))
-					for _, ext := range extsForLang {
-						extFrags = append(extFrags, regexp.QuoteMeta(ext))
-					}
-					if len(extFrags) > 0 {
-						reMt := &regexpMatchTree{
-							regexp:   regex.MustCompile(fmt.Sprintf("(%s)$", strings.Join(extFrags, "|"))),
-							fileName: true,
-						}
-						return reMt, nil
-					}
-				}
-			}
 			mt = &noMatchTree{"lang"}
 		} else {
 			mt = &docMatchTree{
