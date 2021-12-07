@@ -27,8 +27,6 @@
             ]
           }
         ],
-        "RepositoryID": 0,
-        "RepositoryPriority": 0,
         "Content": null,
         "Checksum": "n9fUYqacPXg=",
         "Language": "go",
@@ -62,8 +60,6 @@
             ]
           }
         ],
-        "RepositoryID": 0,
-        "RepositoryPriority": 0,
         "Content": null,
         "Checksum": "n9fUYqacPXg=",
         "Language": "go",
@@ -102,8 +98,6 @@
             ]
           }
         ],
-        "RepositoryID": 0,
-        "RepositoryPriority": 0,
         "Content": null,
         "Checksum": "n9fUYqacPXg=",
         "Language": "go",
@@ -142,8 +136,6 @@
             ]
           }
         ],
-        "RepositoryID": 0,
-        "RepositoryPriority": 0,
         "Content": null,
         "Checksum": "n9fUYqacPXg=",
         "Language": "go",
