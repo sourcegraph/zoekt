@@ -18,10 +18,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"regexp/syntax"
 	"sort"
 	"strings"
 
+	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/google/zoekt/query"
 )
 
@@ -98,6 +100,36 @@ func (d *indexData) simplify(in query.Q) query.Q {
 			})
 		case *query.Language:
 			_, has := d.metaData.LanguageMap[r.Language]
+			if !has && d.metaData.IndexFeatureVersion < 12 {
+				// For index files that haven't been re-indexed by go-enry,
+				// fall back to file-based matching and continue even if this
+				// repo doesn't have the specific language present.
+				extsForLang := enry_data.ExtensionsByLanguage[r.Language]
+				if extsForLang != nil {
+					extFrags := make([]string, 0, len(extsForLang))
+					for _, ext := range extsForLang {
+						extFrags = append(extFrags, regexp.QuoteMeta(ext))
+					}
+					if len(extFrags) > 0 {
+						pattern := fmt.Sprintf("(?i)(%s)$", strings.Join(extFrags, "|"))
+						// inlined copy of query.regexpQuery
+						re, err := syntax.Parse(pattern, syntax.Perl)
+						if err != nil {
+							return &query.Const{Value: false}
+						}
+						if re.Op == syntax.OpLiteral {
+							return &query.Substring{
+								Pattern:  string(re.Rune),
+								FileName: true,
+							}
+						}
+						return &query.Regexp{
+							Regexp:   re,
+							FileName: true,
+						}
+					}
+				}
+			}
 			if !has {
 				return &query.Const{Value: false}
 			}
@@ -238,7 +270,7 @@ nextFileMatch:
 			RepositoryPriority: md.priority,
 			FileName:           string(d.fileName(nextDoc)),
 			Checksum:           d.getChecksum(nextDoc),
-			Language:           d.languageMap[d.languages[nextDoc]],
+			Language:           d.languageMap[d.getLanguage(nextDoc)],
 		}
 
 		if s := d.subRepos[nextDoc]; s > 0 {

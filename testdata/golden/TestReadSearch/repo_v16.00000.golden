@@ -1,6 +1,6 @@
 {
   "FormatVersion": 16,
-  "FeatureVersion": 11,
+  "FeatureVersion": 12,
   "FileMatches": [
     [
       {
@@ -29,7 +29,7 @@
         ],
         "Content": null,
         "Checksum": "n9fUYqacPXg=",
-        "Language": "",
+        "Language": "Go",
         "SubRepositoryName": "",
         "SubRepositoryPath": "",
         "Version": ""
@@ -62,7 +62,7 @@
         ],
         "Content": null,
         "Checksum": "n9fUYqacPXg=",
-        "Language": "",
+        "Language": "Go",
         "SubRepositoryName": "",
         "SubRepositoryPath": "",
         "Version": ""

@@ -25,6 +25,8 @@ import (
 	"sort"
 	"time"
 	"unicode/utf8"
+
+	"github.com/go-enry/go-enry/v2"
 )
 
 var _ = log.Println
@@ -187,10 +189,10 @@ type IndexBuilder struct {
 	subRepoIndices []map[string]uint32
 
 	// language => language code
-	languageMap map[string]byte
+	languageMap map[string]uint16
 
-	// languages codes
-	languages []byte
+	// language codes, uint16 encoded as little-endian
+	languages []uint8
 
 	// IndexTime will be used as the time if non-zero. Otherwise
 	// time.Now(). This is useful for doing reproducible builds in tests.
@@ -242,7 +244,7 @@ func newIndexBuilder() *IndexBuilder {
 		fileEndSymbol:   []uint32{0},
 		symIndex:        make(map[string]uint32),
 		symKindIndex:    make(map[string]uint32),
-		languageMap:     map[string]byte{},
+		languageMap:     map[string]uint16{},
 	}
 }
 
@@ -425,6 +427,15 @@ func (b *IndexBuilder) Add(doc Document) error {
 		}
 	}
 
+	if doc.Language == "" {
+		c := doc.Content
+		// classifier is faster on small files without losing much accuracy
+		if len(c) > 2048 {
+			c = c[:2048]
+		}
+		doc.Language = enry.GetLanguage(doc.Name, c)
+	}
+
 	sort.Sort(symbolSlice{doc.Symbols, doc.SymbolsMetaData})
 	var last DocumentSection
 	for i, s := range doc.Symbols {
@@ -492,13 +503,13 @@ func (b *IndexBuilder) Add(doc Document) error {
 
 	langCode, ok := b.languageMap[doc.Language]
 	if !ok {
-		if len(b.languageMap) >= 255 {
+		if len(b.languageMap) >= 65535 {
 			return fmt.Errorf("too many languages")
 		}
-		langCode = byte(len(b.languageMap))
+		langCode = uint16(len(b.languageMap))
 		b.languageMap[doc.Language] = langCode
 	}
-	b.languages = append(b.languages, langCode)
+	b.languages = append(b.languages, uint8(langCode), uint8(langCode>>8))
 
 	return nil
 }

@@ -87,7 +87,7 @@ type indexData struct {
 	languages []byte
 
 	// inverse of LanguageMap in metaData
-	languageMap map[byte]string
+	languageMap map[uint16]string
 
 	repoListEntry []RepoListEntry
 
@@ -164,6 +164,15 @@ func (d *symbolData) data(i uint32) *Symbol {
 func (d *indexData) getChecksum(idx uint32) []byte {
 	start := crc64.Size * idx
 	return d.checksums[start : start+crc64.Size]
+}
+
+func (d *indexData) getLanguage(idx uint32) uint16 {
+	if d.metaData.IndexFeatureVersion < 12 {
+		// older zoekt files had 8-bit language entries
+		return uint16(d.languages[idx])
+	}
+	// newer zoekt files have 16-bit language entries
+	return uint16(d.languages[idx*2]) | uint16(d.languages[idx*2+1])<<8
 }
 
 // calculates stats for files in the range [start, end).

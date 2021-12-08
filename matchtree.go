@@ -413,7 +413,11 @@ func (t *andMatchTree) String() string {
 }
 
 func (t *regexpMatchTree) String() string {
-	return fmt.Sprintf("re(%s)", t.regexp)
+	f := ""
+	if t.fileName {
+		f = "f"
+	}
+	return fmt.Sprintf("%sre(%s)", f, t.regexp)
 }
 
 func (t *orMatchTree) String() string {
@@ -874,7 +878,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			reason:  "language",
 			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
-				return d.languages[docID] == code
+				return d.getLanguage(docID) == code
 			},
 		}, nil
 
