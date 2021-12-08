@@ -111,9 +111,21 @@ func (d *indexData) simplify(in query.Q) query.Q {
 						extFrags = append(extFrags, regexp.QuoteMeta(ext))
 					}
 					if len(extFrags) > 0 {
-						return &regexpMatchTree{
-							regexp:   regexp.MustCompile(fmt.Sprintf("(%s)$", strings.Join(extFrags, "|"))),
-							fileName: true,
+						pattern := fmt.Sprintf("(?i)(%s)$", strings.Join(extFrags, "|"))
+						// inlined copy of query.regexpQuery
+						re, err := syntax.Parse(pattern, syntax.Perl)
+						if err != nil {
+							return &query.Const{Value: false}
+						}
+						if re.Op == syntax.OpLiteral {
+							return &query.Substring{
+								Pattern:  string(re.Rune),
+								FileName: true,
+							}
+						}
+						return &query.Regexp{
+							Regexp:   re,
+							FileName: true,
 						}
 					}
 				}

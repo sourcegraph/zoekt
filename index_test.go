@@ -2145,7 +2145,7 @@ func TestSearchTypeLanguage(t *testing.T) {
 	},
 		Document{Name: "apex.cls", Content: []byte("public class Car extends Vehicle {")},
 		Document{Name: "tex.cls", Content: []byte(`\DeclareOption*{`)},
-		Document{Name: "hello.c", Content: []byte(`void main() {}`)},
+		Document{Name: "hello.h", Content: []byte(`#include <stdio.h>`)},
 	)
 
 	t.Log(b.languageMap)
@@ -2180,5 +2180,15 @@ func TestSearchTypeLanguage(t *testing.T) {
 	wantSingleMatch(res, "tex.cls")
 
 	res = searchForTest(t, b, &query.Language{Language: "C"})
-	wantSingleMatch(res, "hello.c")
+	wantSingleMatch(res, "hello.h")
+
+	// test fallback language search by pretending it's an older index version
+	res = searchForTest(t, b, &query.Language{Language: "C++"})
+	if len(res.Files) != 0 {
+		t.Errorf("got %d results for C++, want 0", len(res.Files))
+	}
+
+	b.featureVersion = 11 // force fallback
+	res = searchForTest(t, b, &query.Language{Language: "C++"})
+	wantSingleMatch(res, "hello.h")
 }

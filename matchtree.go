@@ -870,21 +870,17 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			return &noMatchTree{"const"}, nil
 		}
 	case *query.Language:
-		code, codeOk := d.metaData.LanguageMap[s.Language]
-		var mt matchTree
-
-		if !codeOk {
-			mt = &noMatchTree{"lang"}
-		} else {
-			mt = &docMatchTree{
-				reason:  "language:" + s.Language,
-				numDocs: d.numDocs(),
-				predicate: func(docID uint32) bool {
-					return d.getLanguage(docID) == code
-				},
-			}
+		code, ok := d.metaData.LanguageMap[s.Language]
+		if !ok {
+			return &noMatchTree{"lang"}, nil
 		}
-		return mt, nil
+		return &docMatchTree{
+			reason:  "language",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return d.getLanguage(docID) == code
+			},
+		}, nil
 
 	case *query.Symbol:
 		subMT, err := d.newMatchTree(s.Expr)
