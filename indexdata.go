@@ -86,8 +86,11 @@ type indexData struct {
 	// languages for all the files.
 	languages []byte
 
+	// copy of LanguageMap from Metadata before wiping
+	languageMap map[string]uint16
+
 	// inverse of LanguageMap in metaData
-	languageMap map[uint16]string
+	languageMapRev []string
 
 	repoListEntry []RepoListEntry
 
