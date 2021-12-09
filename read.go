@@ -370,10 +370,13 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.subRepoPaths = append(d.subRepoPaths, keys)
 	}
 
-	d.languageMap = map[uint16]string{}
-	for k, v := range d.metaData.LanguageMap {
-		d.languageMap[v] = k
+	d.languageMap = d.metaData.LanguageMap
+	d.languageMapRev = make([]string, len(d.languageMap))
+	for k, v := range d.languageMap {
+		d.languageMapRev[v] = k
 	}
+	// LanguageMap is entirely useless for readers
+	d.metaData.LanguageMap = nil
 
 	if err := d.verify(); err != nil {
 		return nil, err

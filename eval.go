@@ -99,7 +99,7 @@ func (d *indexData) simplify(in query.Q) query.Q {
 				return r.Set[repo.Name]
 			})
 		case *query.Language:
-			_, has := d.metaData.LanguageMap[r.Language]
+			_, has := d.languageMap[r.Language]
 			if !has && d.metaData.IndexFeatureVersion < 12 {
 				// For index files that haven't been re-indexed by go-enry,
 				// fall back to file-based matching and continue even if this
@@ -270,7 +270,7 @@ nextFileMatch:
 			RepositoryPriority: md.priority,
 			FileName:           string(d.fileName(nextDoc)),
 			Checksum:           d.getChecksum(nextDoc),
-			Language:           d.languageMap[d.getLanguage(nextDoc)],
+			Language:           d.languageMapRev[d.getLanguage(nextDoc)],
 		}
 
 		if s := d.subRepos[nextDoc]; s > 0 {

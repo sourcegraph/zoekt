@@ -124,7 +124,7 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 				// Content set below since it can return an error
 				// Branches set below since it requires lookups
 				SubRepositoryPath: d.subRepoPaths[repoID][d.subRepos[docID]],
-				Language:          d.languageMap[d.getLanguage(docID)],
+				Language:          d.languageMapRev[d.getLanguage(docID)],
 				// SkipReason not set, will be part of content from original indexer.
 			}
 

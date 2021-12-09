@@ -870,7 +870,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			return &noMatchTree{"const"}, nil
 		}
 	case *query.Language:
-		code, ok := d.metaData.LanguageMap[s.Language]
+		code, ok := d.languageMap[s.Language]
 		if !ok {
 			return &noMatchTree{"lang"}, nil
 		}
