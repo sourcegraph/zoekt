@@ -113,7 +113,7 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 				first = false
 				s.configFingerprint.Store(lastFingerprint)
 
-				metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
+				metricResolveRevisionObserver.Observe(time.Since(start), err, "false")
 				tr.LazyPrintf("failed fetching options batch: %v", err)
 				tr.SetError()
 				continue
@@ -125,10 +125,9 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 				s.configFingerprint.Store(fingerprint)
 			}
 
-			metricResolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
+			metricResolveRevisionObserver.Observe(time.Since(start), err, "false")
 			for _, opt := range opts {
 				if opt.Error != "" {
-					metricGetIndexOptionsError.Inc()
 					tr.LazyPrintf("failed fetching options for %v: %v", opt.Name, opt.Error)
 					tr.SetError()
 					continue

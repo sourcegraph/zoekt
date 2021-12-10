@@ -48,11 +48,10 @@ var (
 		Buckets: prometheus.ExponentialBuckets(1, 10, 6), // 1s -> 27min
 	})
 
-	metricResolveRevisionDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "resolve_revision_seconds",
-		Help:    "A histogram of latencies for resolving a repository revision.",
-		Buckets: prometheus.ExponentialBuckets(.25, 2, 4), // 250ms -> 2s
-	}, []string{"success"}) // success=true|false
+	metricResolveRevisionObserver = NewRedfMetrics("resolve_revision",
+		WithLabels("success"), // success=true|false
+		WithDurationBuckets(prometheus.ExponentialBuckets(.25, 2, 4)), // 250ms -> 2s
+	)
 
 	metricGetIndexOptionsError = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "get_index_options_error_total",
