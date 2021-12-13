@@ -461,6 +461,10 @@ type RepoList struct {
 
 	// Minimal response to a List request. Returned when ListOptions.Minimal is true.
 	Minimal map[uint32]*MinimalRepoListEntry
+
+	// Stats response to a List request.
+	// This is the aggregate RepoStats of all repos matching the input query.
+	Stats RepoStats
 }
 
 type Searcher interface {

@@ -534,6 +534,7 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 			continue
 		}
 
+		l.Stats.Add(&rle.Stats)
 		if id := rle.Repository.ID; id != 0 && minimal {
 			l.Minimal[id] = &MinimalRepoListEntry{
 				HasSymbols: rle.Repository.HasSymbols,
