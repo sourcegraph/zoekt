@@ -688,6 +688,16 @@ type rankedDoc struct {
 }
 
 func rank(d *zoekt.Document, origIdx int) []float64 {
+	generated := 0.0
+	if strings.HasSuffix(d.Name, "min.js") || strings.HasSuffix(d.Name, "js.map") {
+		generated = 1.0
+	}
+
+	vendor := 0.0
+	if strings.Contains(d.Name, "vendor/") || strings.Contains(d.Name, "node_modules/") {
+		vendor = 1.0
+	}
+
 	test := 0.0
 	if testRe.MatchString(d.Name) {
 		test = 1.0
@@ -695,6 +705,12 @@ func rank(d *zoekt.Document, origIdx int) []float64 {
 
 	// Smaller is earlier (=better).
 	return []float64{
+		// Prefer docs that are not generated
+		generated,
+
+		// Prefer docs that are not vendored
+		vendor,
+
 		// Prefer docs that are not tests
 		test,
 
