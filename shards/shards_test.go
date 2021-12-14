@@ -364,14 +364,33 @@ func TestShardedSearcher_List(t *testing.T) {
 		},
 	}
 
+	doc := zoekt.Document{
+		Name:     "foo.go",
+		Content:  []byte("bar\nbaz"),
+		Branches: []string{"main", "dev"},
+	}
+
 	// Test duplicate removal when ListOptions.Minimal is true and false
 	ss := newShardedSearcher(4)
 	ss.replace(map[string]zoekt.Searcher{
-		"1": searcherForTest(t, testIndexBuilder(t, repos[0])),
+		"1": searcherForTest(t, testIndexBuilder(t, repos[0], doc)),
 		"2": searcherForTest(t, testIndexBuilder(t, repos[0])),
-		"3": searcherForTest(t, testIndexBuilder(t, repos[1])),
+		"3": searcherForTest(t, testIndexBuilder(t, repos[1], doc)),
 		"4": searcherForTest(t, testIndexBuilder(t, repos[1])),
 	})
+
+	stats := zoekt.RepoStats{
+		Shards:                     2,
+		Documents:                  1,
+		IndexBytes:                 196,
+		ContentBytes:               13,
+		NewLinesCount:              1,
+		DefaultBranchNewLinesCount: 1,
+		OtherBranchesNewLinesCount: 1,
+	}
+
+	aggStats := stats
+	aggStats.Add(&aggStats) // since both repos have the exact same stats, this works
 
 	for _, tc := range []struct {
 		name string
@@ -385,13 +404,14 @@ func TestShardedSearcher_List(t *testing.T) {
 				Repos: []*zoekt.RepoListEntry{
 					{
 						Repository: *repos[0],
-						Stats:      zoekt.RepoStats{Shards: 2},
+						Stats:      stats,
 					},
 					{
 						Repository: *repos[1],
-						Stats:      zoekt.RepoStats{Shards: 2},
+						Stats:      stats,
 					},
 				},
+				Stats: aggStats,
 			},
 		},
 		{
@@ -401,13 +421,14 @@ func TestShardedSearcher_List(t *testing.T) {
 				Repos: []*zoekt.RepoListEntry{
 					{
 						Repository: *repos[0],
-						Stats:      zoekt.RepoStats{Shards: 2},
+						Stats:      stats,
 					},
 					{
 						Repository: *repos[1],
-						Stats:      zoekt.RepoStats{Shards: 2},
+						Stats:      stats,
 					},
 				},
+				Stats: aggStats,
 			},
 		},
 		{
@@ -417,7 +438,7 @@ func TestShardedSearcher_List(t *testing.T) {
 				Repos: []*zoekt.RepoListEntry{
 					{
 						Repository: *repos[1],
-						Stats:      zoekt.RepoStats{Shards: 2},
+						Stats:      stats,
 					},
 				},
 				Minimal: map[uint32]*zoekt.MinimalRepoListEntry{
@@ -426,6 +447,7 @@ func TestShardedSearcher_List(t *testing.T) {
 						Branches:   repos[0].Branches,
 					},
 				},
+				Stats: aggStats,
 			},
 		},
 	} {
@@ -451,6 +473,7 @@ func TestShardedSearcher_List(t *testing.T) {
 				cmpopts.IgnoreFields(zoekt.Repository{}, "SubRepoMap"),
 				cmpopts.IgnoreFields(zoekt.Repository{}, "priority"),
 			}
+
 			if diff := cmp.Diff(tc.want, res, ignored...); diff != "" {
 				t.Fatalf("mismatch (-want +got):\n%s", diff)
 			}

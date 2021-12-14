@@ -855,6 +855,7 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		}
 
 		agg.Crashes += r.rl.Crashes
+		agg.Stats.Add(&r.rl.Stats)
 
 		for _, r := range r.rl.Repos {
 			prev, ok := uniq[r.Repository.Name]

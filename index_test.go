@@ -1097,6 +1097,15 @@ func TestListRepos(t *testing.T) {
 							OtherBranchesNewLinesCount: 3,
 						},
 					}},
+					Stats: RepoStats{
+						Documents:    4,
+						ContentBytes: 68,
+						Shards:       1,
+
+						NewLinesCount:              4,
+						DefaultBranchNewLinesCount: 2,
+						OtherBranchesNewLinesCount: 3,
+					},
 				}
 				ignored := []cmp.Option{
 					cmpopts.EquateEmpty(),
@@ -1148,6 +1157,15 @@ func TestListRepos(t *testing.T) {
 					HasSymbols: repo.HasSymbols,
 					Branches:   repo.Branches,
 				},
+			},
+			Stats: RepoStats{
+				Shards:                     1,
+				Documents:                  4,
+				IndexBytes:                 308,
+				ContentBytes:               68,
+				NewLinesCount:              4,
+				DefaultBranchNewLinesCount: 2,
+				OtherBranchesNewLinesCount: 3,
 			},
 		}
 
