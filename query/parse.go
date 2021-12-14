@@ -118,11 +118,13 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		expr = &caseQ{text}
 	case tokRepo:
-		if text == "" {
-			return nil, 0, fmt.Errorf("the repo: expr must have an argument")
+		r, err := regexp.Compile(text)
+
+		if err != nil {
+			return nil, 0, err
 		}
 
-		expr = &Repo{regexp.MustCompile(text)}
+		expr = &Repo{r}
 	case tokBranch:
 		expr = &Branch{Pattern: text}
 	case tokText, tokRegex:
