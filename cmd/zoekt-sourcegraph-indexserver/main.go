@@ -155,12 +155,12 @@ var debug = log.New(ioutil.Discard, "", log.LstdFlags)
 // cores... 5m was not enough.
 const noOutputTimeout = 30 * time.Minute
 
-func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
+func (s *Server) loggedRun(tr trace.Trace, description string, cmd *exec.Cmd) (err error) {
 	out := &synchronizedBuffer{}
 	cmd.Stdout = out
 	cmd.Stderr = out
 
-	tr.LazyPrintf("%s", cmd.Args)
+	tr.LazyPrintf("[%s]: %s", description, cmd.Args)
 
 	defer func() {
 		if err != nil {
@@ -261,7 +261,7 @@ func (s *Server) Run() {
 		// We update the list of indexed repos every Interval. To speed up manual
 		// testing we also listen for SIGUSR1 to trigger updates.
 		//
-		// "pkill -SIGUSR1 zoekt-sourcegra"
+		// "pkill -SIGUSR1 zoekt-sourcegraph"
 		for range jitterTicker(s.Interval, syscall.SIGUSR1) {
 			if b, err := os.ReadFile(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
 				log.Printf("indexserver manually paused via PAUSE file: %s", string(bytes.TrimSpace(b)))
@@ -410,6 +410,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 	defer func() {
 		if err != nil {
+
 			tr.SetError()
 			tr.LazyPrintf("error: %v", err)
 			state = indexStateFail
@@ -453,7 +454,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 	log.Printf("updating index %s reason=%s", args.String(), reason)
 
-	runCmd := func(cmd *exec.Cmd) error { return s.loggedRun(tr, cmd) }
+	runCmd := func(description string, cmd *exec.Cmd) error { return s.loggedRun(tr, description, cmd) }
 	metricIndexingTotal.Inc()
 	return indexStateSuccess, gitIndex(args, runCmd)
 }

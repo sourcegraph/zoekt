@@ -126,7 +126,7 @@ func (o *indexArgs) String() string {
 	return s
 }
 
-func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
+func gitIndex(o *indexArgs, runCmd func(description string, c *exec.Cmd) error) error {
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
 	}
@@ -156,22 +156,29 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		"--bare",
 		gitDir)
 	cmd.Stdin = &bytes.Buffer{}
-	if err := runCmd(cmd); err != nil {
+	if err := runCmd("initializing git repository", cmd); err != nil {
 		return err
 	}
+
+	fetchStart := time.Now()
 
 	// We shallow fetch each commit specified in zoekt.Branches. This requires
 	// the server to have configured both uploadpack.allowAnySHA1InWant and
 	// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
 	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
+	var commits []string
 	for _, b := range o.Branches {
-		fetchArgs = append(fetchArgs, b.Version)
+		commits = append(commits, b.Version)
 	}
+	fetchArgs = append(fetchArgs, commits...)
+
 	cmd = exec.CommandContext(ctx, "git", fetchArgs...)
 	cmd.Stdin = &bytes.Buffer{}
-	if err := runCmd(cmd); err != nil {
+	if err := runCmd(fmt.Sprintf("fetching %d commit(s)", len(commits)), cmd); err != nil {
 		return err
 	}
+
+	debug.Printf("fetched git data for %q (%d commit(s)) in %s", o.Name, len(commits), time.Since(fetchStart))
 
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
@@ -181,7 +188,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		}
 		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "update-ref", ref, b.Version)
 		cmd.Stdin = &bytes.Buffer{}
-		if err := runCmd(cmd); err != nil {
+		if err := runCmd("creating ref for commit", cmd); err != nil {
 			return fmt.Errorf("failed update-ref %s to %s: %w", ref, b.Version, err)
 		}
 	}
@@ -204,7 +211,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	for _, kv := range config {
 		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt."+kv.Key, kv.Value)
 		cmd.Stdin = &bytes.Buffer{}
-		if err := runCmd(cmd); err != nil {
+		if err := runCmd("updating git config", cmd); err != nil {
 			return err
 		}
 	}
@@ -231,7 +238,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 
 	cmd = exec.CommandContext(ctx, "zoekt-git-index", args...)
 	cmd.Stdin = &bytes.Buffer{}
-	if err := runCmd(cmd); err != nil {
+	if err := runCmd("calculating index", cmd); err != nil {
 		return err
 	}
 
