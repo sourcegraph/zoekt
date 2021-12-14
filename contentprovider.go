@@ -153,8 +153,9 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 		result = p.fillContentMatches(ms)
 	}
 
+	sects := p.docSections()
 	for i, m := range result {
-		result[i].Score = matchScore(nil, &m)
+		result[i].Score = matchScore(sects, &m)
 	}
 
 	return result
@@ -276,11 +277,18 @@ func matchScore(secs []DocumentSection, m *LineMatch) float64 {
 			score = scorePartialWordMatch
 		}
 
-		// We removed scoring based on symbol boundaries. This is due
-		// to not having a use for result scores at the moment on the
-		// sourcegraph frontend side, so we avoid incurring this
-		// computational overhead. We may reintroduce this later in
-		// the future to improve resutl ranking.
+		sec := findSection(secs, f.Offset, uint32(f.MatchLength))
+		if sec != nil {
+			startMatch := sec.Start == f.Offset
+			endMatch := sec.End == f.Offset+uint32(f.MatchLength)
+			if startMatch && endMatch {
+				score += scoreSymbol
+			} else if startMatch || endMatch {
+				score += (scoreSymbol + scorePartialSymbol) / 2
+			} else {
+				score += scorePartialSymbol
+			}
+		}
 
 		if score > maxScore {
 			maxScore = score

@@ -346,6 +346,7 @@ nextFileMatch:
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
 		res.Stats.FileCount++
 	}
+	SortFilesByScore(res.Files)
 
 	for _, md := range d.repoMetaData {
 		r := md
