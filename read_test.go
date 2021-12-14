@@ -30,6 +30,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt/query"
 )
 
@@ -219,8 +220,8 @@ func TestReadSearch(t *testing.T) {
 				continue
 			}
 
-			if !reflect.DeepEqual(res.Files, want.FileMatches[j]) {
-				t.Errorf("matches for %s on %s\ngot:\n%v\nwant:\n%v", q, name, res.Files[0], want.FileMatches[j])
+			if d := cmp.Diff(res.Files, want.FileMatches[j]); d != "" {
+				t.Errorf("matches for %s on %s\n%s", q, name, d)
 			}
 		}
 	}

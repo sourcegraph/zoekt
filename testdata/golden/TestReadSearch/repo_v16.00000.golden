@@ -27,6 +27,8 @@
             ]
           }
         ],
+        "RepositoryID": 0,
+        "RepositoryPriority": 0,
         "Content": null,
         "Checksum": "n9fUYqacPXg=",
         "Language": "Go",
@@ -60,6 +62,8 @@
             ]
           }
         ],
+        "RepositoryID": 0,
+        "RepositoryPriority": 0,
         "Content": null,
         "Checksum": "n9fUYqacPXg=",
         "Language": "Go",
