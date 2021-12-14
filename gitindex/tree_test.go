@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"testing"
 	"time"
@@ -373,7 +374,7 @@ func TestBranchWildcard(t *testing.T) {
 	}
 	defer searcher.Close()
 
-	if rlist, err := searcher.List(context.Background(), &query.Repo{Pattern: ""}, nil); err != nil {
+	if rlist, err := searcher.List(context.Background(), &query.Repo{Regexp: regexp.MustCompile("repo")}, nil); err != nil {
 		t.Fatalf("List(): %v", err)
 	} else if len(rlist.Repos) != 1 {
 		t.Errorf("got %v, want 1 result", rlist.Repos)
@@ -468,7 +469,7 @@ func TestFullAndShortRefNames(t *testing.T) {
 	}
 	defer searcher.Close()
 
-	if rlist, err := searcher.List(context.Background(), &query.Repo{Pattern: ""}, nil); err != nil {
+	if rlist, err := searcher.List(context.Background(), &query.Repo{Regexp: regexp.MustCompile("repo")}, nil); err != nil {
 		t.Fatalf("List(): %v", err)
 	} else if len(rlist.Repos) != 1 {
 		t.Errorf("got %v, want 1 result", rlist.Repos)
@@ -518,7 +519,7 @@ func TestLatestCommit(t *testing.T) {
 	}
 	defer searcher.Close()
 
-	rlist, err := searcher.List(context.Background(), &query.Repo{Pattern: ""}, nil)
+	rlist, err := searcher.List(context.Background(), &query.Repo{Regexp: regexp.MustCompile("repo")}, nil)
 	if err != nil {
 		t.Fatalf("List(): %v", err)
 	}

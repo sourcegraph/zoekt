@@ -550,9 +550,16 @@ func (s *Server) servePrintErr(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+
+	repoRe, err := regexp.Compile(repoStr)
+
+	if err != nil {
+		return err
+	}
+
 	qs := []query.Q{
 		&query.Regexp{Regexp: re, FileName: true, CaseSensitive: true},
-		&query.Repo{Expr: &query.Substring{Pattern: repoStr}},
+		&query.Repo{Regexp: repoRe},
 	}
 
 	if branchStr := qvals.Get("b"); branchStr != "" {

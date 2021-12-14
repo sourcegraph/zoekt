@@ -152,7 +152,7 @@ func TestEmptyIndex(t *testing.T) {
 		t.Fatalf("Search: %v", err)
 	}
 
-	if _, err := searcher.List(context.Background(), &query.Repo{}, nil); err != nil {
+	if _, err := searcher.List(context.Background(), &query.Repo{Regexp: regexp.MustCompile("")}, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 

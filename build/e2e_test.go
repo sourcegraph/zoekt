@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -275,7 +276,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	repos, err := ss.List(ctx, &query.Repo{Pattern: "repo"}, nil)
+	repos, err := ss.List(ctx, &query.Repo{Regexp: regexp.MustCompile("repo")}, nil)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -309,7 +310,7 @@ func TestUpdate(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	ctx = context.Background()
-	if repos, err = ss.List(ctx, &query.Repo{Pattern: "repo"}, nil); err != nil {
+	if repos, err = ss.List(ctx, &query.Repo{Regexp: regexp.MustCompile("repo")}, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	} else if len(repos.Repos) != 2 {
 		t.Errorf("List(repo): got %v, want 2 repos", repos.Repos)
@@ -325,7 +326,7 @@ func TestUpdate(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	ctx = context.Background()
-	if repos, err = ss.List(ctx, &query.Repo{Pattern: "repo"}, nil); err != nil {
+	if repos, err = ss.List(ctx, &query.Repo{Regexp: regexp.MustCompile("repo")}, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	} else if len(repos.Repos) != 1 {
 		var ss []string
