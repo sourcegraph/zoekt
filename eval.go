@@ -346,7 +346,10 @@ nextFileMatch:
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
 		res.Stats.FileCount++
 	}
-	SortFilesByScore(res.Files)
+
+	// We do not sort Files here, instead we rely on the shards pkg to do file
+	// ranking. If we sorted now, we would break the assumption that results
+	// from the same repo in a shard appear next to each other.
 
 	for _, md := range d.repoMetaData {
 		r := md
