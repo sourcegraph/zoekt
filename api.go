@@ -381,7 +381,7 @@ type IndexMetadata struct {
 	IndexMinReaderVersion int
 	IndexTime             time.Time
 	PlainASCII            bool
-	LanguageMap           map[string]uint16 // not exported in RPCs
+	LanguageMap           map[string]uint16
 	ZoektVersion          string
 	ID                    string
 }
