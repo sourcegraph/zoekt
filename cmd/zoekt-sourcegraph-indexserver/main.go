@@ -261,7 +261,7 @@ func (s *Server) Run() {
 		// We update the list of indexed repos every Interval. To speed up manual
 		// testing we also listen for SIGUSR1 to trigger updates.
 		//
-		// "pkill -SIGUSR1 zoekt-sourcegraph"
+		// "pkill -SIGUSR1 zoekt-sourcegra"
 		for range jitterTicker(s.Interval, syscall.SIGUSR1) {
 			if b, err := os.ReadFile(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
 				log.Printf("indexserver manually paused via PAUSE file: %s", string(bytes.TrimSpace(b)))
