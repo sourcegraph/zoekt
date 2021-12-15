@@ -95,10 +95,10 @@ type indexState string
 
 const (
 	indexStateFail        indexState = "fail"
-	indexStateSuccess                = "success"
-	indexStateSuccessMeta            = "success_meta" // We only updated metadata
-	indexStateNoop                   = "noop"         // We didn't need to update index
-	indexStateEmpty                  = "empty"        // index is empty (empty repo)
+	indexStateSuccess     indexState = "success"
+	indexStateSuccessMeta indexState = "success_meta" // We only updated metadata
+	indexStateNoop        indexState = "noop"         // We didn't need to update index
+	indexStateEmpty       indexState = "empty"        // index is empty (empty repo)
 )
 
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It

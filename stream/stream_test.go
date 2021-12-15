@@ -33,29 +33,22 @@ func TestStreamSearch(t *testing.T) {
 
 	cl := NewClient(s.URL, nil)
 
-	c := make(chan *zoekt.SearchResult)
-	defer close(c)
-
-	// Start consumer.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for res := range c {
-			if res.Files == nil {
-				continue
-			}
-			if res.Files[0].FileName != "bin.go" {
-				t.Fatalf("got %s, wanted %s", res.Files[0].FileName, "bin.go")
-			}
-			return
-		}
-	}()
+	c := make(chan *zoekt.SearchResult, 100)
 
 	err := cl.StreamSearch(context.Background(), q, nil, streamerChan(c))
 	if err != nil {
 		t.Fatal(err)
 	}
-	<-done
+	close(c)
+
+	for res := range c {
+		if res.Files == nil {
+			continue
+		}
+		if res.Files[0].FileName != "bin.go" {
+			t.Errorf("got %s, wanted %s", res.Files[0].FileName, "bin.go")
+		}
+	}
 }
 
 func TestStreamSearchJustStats(t *testing.T) {
@@ -78,33 +71,27 @@ func TestStreamSearchJustStats(t *testing.T) {
 
 	cl := NewClient(s.URL, nil)
 
-	c := make(chan *zoekt.SearchResult)
-
-	// Start consumer.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		count := 0
-		for res := range c {
-			count += 1
-			if count > 1 {
-				t.Fatal("expected exactly 1 result, got at least 2")
-			}
-			if d := cmp.Diff(wantStats, res.Stats); d != "" {
-				t.Fatalf("zoekt.Stats mismatch (-want +got): %s\n", d)
-			}
-		}
-		if count != 1 {
-			t.Fatal("expected exactly 1 result, got 0")
-		}
-	}()
+	c := make(chan *zoekt.SearchResult, 100)
 
 	err := cl.StreamSearch(context.Background(), q, nil, streamerChan(c))
 	if err != nil {
 		t.Fatal(err)
 	}
 	close(c)
-	<-done
+
+	count := 0
+	for res := range c {
+		count += 1
+		if count > 1 {
+			t.Fatal("expected exactly 1 result, got at least 2")
+		}
+		if d := cmp.Diff(wantStats, res.Stats); d != "" {
+			t.Fatalf("zoekt.Stats mismatch (-want +got): %s\n", d)
+		}
+	}
+	if count != 1 {
+		t.Fatal("expected exactly 1 result, got 0")
+	}
 }
 
 func TestEventStreamWriter(t *testing.T) {

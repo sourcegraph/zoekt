@@ -93,6 +93,9 @@ func TestIgnore(t *testing.T) {
 	defer searcher.Close()
 
 	res, err := searcher.Search(context.Background(), &query.Substring{}, &zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(res.Files) != 3 {
 		t.Fatalf("expected 3 file matches")
