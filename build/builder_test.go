@@ -39,7 +39,9 @@ func TestBuildv16(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		b.AddFile(p, blob)
+		if err := b.AddFile(p, blob); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	wantP := filepath.Join("../testdata/shards", "repo_v16.00000.zoekt")

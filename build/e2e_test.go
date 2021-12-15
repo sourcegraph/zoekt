@@ -54,7 +54,9 @@ func TestBasic(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		s := fmt.Sprintf("%d", i)
-		b.AddFile("F"+s, []byte(strings.Repeat(s, 1000)))
+		if err := b.AddFile("F"+s, []byte(strings.Repeat(s, 1000))); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if err := b.Finish(); err != nil {
@@ -213,7 +215,9 @@ func TestLargeFileOption(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		s := fmt.Sprintf("%d", i)
-		b.AddFile("F"+s, []byte(strings.Repeat("a", sizeMax+1)))
+		if err := b.AddFile("F"+s, []byte(strings.Repeat("a", sizeMax+1))); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if err := b.Finish(); err != nil {

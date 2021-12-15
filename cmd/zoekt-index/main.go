@@ -136,7 +136,9 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error 
 			return err
 		}
 
-		builder.AddFile(displayName, content)
+		if err := builder.AddFile(displayName, content); err != nil {
+			return err
+		}
 	}
 
 	return builder.Finish()

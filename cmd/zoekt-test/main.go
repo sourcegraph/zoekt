@@ -90,7 +90,9 @@ func compare(dir, patfile string, caseSensitive bool) error {
 		return err
 	}
 	for k, v := range fileContents {
-		builder.AddFile(k, v)
+		if err := builder.AddFile(k, v); err != nil {
+			return err
+		}
 	}
 	if err := builder.Finish(); err != nil {
 		return err
