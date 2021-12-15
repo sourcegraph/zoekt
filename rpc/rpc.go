@@ -23,7 +23,10 @@ const DefaultRPCPath = "/rpc"
 func Server(searcher zoekt.Searcher) http.Handler {
 	RegisterGob()
 	server := rpc.NewServer()
-	server.Register(&srv.Searcher{Searcher: searcher})
+	if err := server.Register(&srv.Searcher{Searcher: searcher}); err != nil {
+		// this should never fail, so we panic.
+		panic("unexpected error registering rpc server: " + err.Error())
+	}
 	return server
 }
 
