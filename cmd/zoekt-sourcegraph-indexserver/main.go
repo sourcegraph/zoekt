@@ -410,7 +410,6 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 	defer func() {
 		if err != nil {
-
 			tr.SetError()
 			tr.LazyPrintf("error: %v", err)
 			state = indexStateFail
