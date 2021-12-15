@@ -43,6 +43,8 @@ func clearScores(r *SearchResult) {
 }
 
 func testIndexBuilder(t *testing.T, repo *Repository, docs ...Document) *IndexBuilder {
+	t.Helper()
+
 	b, err := NewIndexBuilder(repo)
 	b.contentBloom.bits = b.contentBloom.bits[:bloomSizeTest]
 	b.nameBloom.bits = b.nameBloom.bits[:bloomSizeTest]
@@ -280,15 +282,11 @@ func TestCaseFold(t *testing.T) {
 }
 
 func TestAndSearch(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("f1", []byte("x banana y"))
-	b.AddFile("f2", []byte("x apple y"))
-	b.AddFile("f3", []byte("x banana apple y"))
-	// ---------------------0123456789012345
+	b := testIndexBuilder(t, nil,
+		Document{Name: "f1", Content: []byte("x banana y")},
+		Document{Name: "f2", Content: []byte("x apple y")},
+		Document{Name: "f3", Content: []byte("x banana apple y")})
+	// -------------------------------------0123456789012345
 	sres := searchForTest(t, b, query.NewAnd(
 		&query.Substring{
 			Pattern: "banana",
@@ -322,14 +320,10 @@ func TestAndSearch(t *testing.T) {
 }
 
 func TestAndNegateSearch(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("f1", []byte("x banana y"))
-	b.AddFile("f4", []byte("x banana apple y"))
-	// ---------------------0123456789012345
+	b := testIndexBuilder(t, nil,
+		Document{Name: "f1", Content: []byte("x banana y")},
+		Document{Name: "f4", Content: []byte("x banana apple y")})
+	// -------------------------------------0123456789012345
 	sres := searchForTest(t, b, query.NewAnd(
 		&query.Substring{
 			Pattern: "banana",
@@ -352,15 +346,11 @@ func TestAndNegateSearch(t *testing.T) {
 }
 
 func TestNegativeMatchesOnlyShortcut(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("f1", []byte("x banana y"))
-	b.AddFile("f2", []byte("x appelmoes y"))
-	b.AddFile("f3", []byte("x appelmoes y"))
-	b.AddFile("f3", []byte("x appelmoes y"))
+	b := testIndexBuilder(t, nil,
+		Document{Name: "f1", Content: []byte("x banana y")},
+		Document{Name: "f2", Content: []byte("x appelmoes y")},
+		Document{Name: "f3", Content: []byte("x appelmoes y")},
+		Document{Name: "f3", Content: []byte("x appelmoes y")})
 
 	sres := searchForTest(t, b, query.NewAnd(
 		&query.Substring{
@@ -376,15 +366,12 @@ func TestNegativeMatchesOnlyShortcut(t *testing.T) {
 }
 
 func TestFileSearch(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("banzana", []byte("x orange y"))
-	// --------0123456
-	b.AddFile("banana", []byte("x apple y"))
-	// --------789012
+	b := testIndexBuilder(t, nil,
+		Document{Name: "banzana", Content: []byte("x orange y")},
+		// -------------0123456
+		Document{Name: "banana", Content: []byte("x apple y")},
+		// -------------789012
+	)
 	sres := searchForTest(t, b, &query.Substring{
 		Pattern:  "anan",
 		FileName: true,
@@ -412,12 +399,8 @@ func TestFileSearch(t *testing.T) {
 }
 
 func TestFileCase(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("BANANA", []byte("x orange y"))
+	b := testIndexBuilder(t, nil,
+		Document{Name: "BANANA", Content: []byte("x orange y")})
 	sres := searchForTest(t, b, &query.Substring{
 		Pattern:  "banana",
 		FileName: true,
@@ -430,14 +413,10 @@ func TestFileCase(t *testing.T) {
 }
 
 func TestFileRegexpSearchBruteForce(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("banzana", []byte("x orange y"))
-	// --------------------------0123456879
-	b.AddFile("banana", []byte("x apple y"))
+	b := testIndexBuilder(t, nil,
+		Document{Name: "banzana", Content: []byte("x orange y")},
+		// ----------------------------------------0123456879
+		Document{Name: "banana", Content: []byte("x apple y")})
 	sres := searchForTest(t, b, &query.Regexp{
 		Regexp:   mustParseRE("[qn][zx]"),
 		FileName: true,
@@ -450,12 +429,8 @@ func TestFileRegexpSearchBruteForce(t *testing.T) {
 }
 
 func TestFileRegexpSearchShortString(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("banana.py", []byte("x orange y"))
+	b := testIndexBuilder(t, nil,
+		Document{Name: "banana.py", Content: []byte("x orange y")})
 	sres := searchForTest(t, b, &query.Regexp{
 		Regexp:   mustParseRE("ana.py"),
 		FileName: true,
@@ -468,13 +443,9 @@ func TestFileRegexpSearchShortString(t *testing.T) {
 }
 
 func TestFileSubstringSearchBruteForce(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("BANZANA", []byte("x orange y"))
-	b.AddFile("banana", []byte("x apple y"))
+	b := testIndexBuilder(t, nil,
+		Document{Name: "BANZANA", Content: []byte("x orange y")},
+		Document{Name: "banana", Content: []byte("x apple y")})
 
 	q := &query.Substring{
 		Pattern:  "z",
@@ -488,13 +459,9 @@ func TestFileSubstringSearchBruteForce(t *testing.T) {
 }
 
 func TestFileSubstringSearchBruteForceEnd(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("BANZANA", []byte("x orange y"))
-	b.AddFile("bananaq", []byte("x apple y"))
+	b := testIndexBuilder(t, nil,
+		Document{Name: "BANZANA", Content: []byte("x orange y")},
+		Document{Name: "bananaq", Content: []byte("x apple y")})
 
 	q := &query.Substring{
 		Pattern:  "q",
@@ -508,14 +475,10 @@ func TestFileSubstringSearchBruteForceEnd(t *testing.T) {
 }
 
 func TestSearchMatchAll(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("banzana", []byte("x orange y"))
-	// --------------------------0123456879
-	b.AddFile("banana", []byte("x apple y"))
+	b := testIndexBuilder(t, nil,
+		Document{Name: "banzana", Content: []byte("x orange y")},
+		// ----------------------------------------0123456879
+		Document{Name: "banana", Content: []byte("x apple y")})
 	sres := searchForTest(t, b, &query.Const{Value: true})
 
 	matches := sres.Files
@@ -525,12 +488,8 @@ func TestSearchMatchAll(t *testing.T) {
 }
 
 func TestSearchNewline(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("banzana", []byte("abcd\ndefg"))
+	b := testIndexBuilder(t, nil,
+		Document{Name: "banzana", Content: []byte("abcd\ndefg")})
 	sres := searchForTest(t, b, &query.Substring{Pattern: "d\nd"})
 
 	// Just check that we don't crash.
@@ -542,14 +501,10 @@ func TestSearchNewline(t *testing.T) {
 }
 
 func TestSearchMatchAllRegexp(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-
-	b.AddFile("banzana", []byte("abcd"))
-	// --------------------------0123456879
-	b.AddFile("banana", []byte("pqrs"))
+	b := testIndexBuilder(t, nil,
+		Document{Name: "banzana", Content: []byte("abcd")},
+		// ----------------------------------------0123456879
+		Document{Name: "banana", Content: []byte("pqrs")})
 	sres := searchForTest(t, b, &query.Regexp{Regexp: mustParseRE(".")})
 
 	matches := sres.Files
@@ -562,15 +517,12 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 }
 
 func TestFileRestriction(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
 
-	b.AddFile("banana1", []byte("x orange y"))
-	// --------------------------0123456879
-	b.AddFile("banana2", []byte("x apple y"))
-	b.AddFile("orange", []byte("x apple y"))
+	b := testIndexBuilder(t, nil,
+		Document{Name: "banana1", Content: []byte("x orange y")},
+		// ----------------------------------------0123456879
+		Document{Name: "banana2", Content: []byte("x apple y")},
+		Document{Name: "orange", Content: []byte("x apple y")})
 	sres := searchForTest(t, b, query.NewAnd(
 		&query.Substring{
 			Pattern:  "banana",
