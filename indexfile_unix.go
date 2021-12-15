@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux || darwin
 // +build linux darwin
 
 package zoekt
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"syscall"
 )
@@ -44,7 +46,9 @@ func (f *mmapedIndexFile) Size() (uint32, error) {
 }
 
 func (f *mmapedIndexFile) Close() {
-	syscall.Munmap(f.data)
+	if err := syscall.Munmap(f.data); err != nil {
+		log.Printf("WARN failed to Munmap %s: %v", f.name, err)
+	}
 }
 
 // NewIndexFile returns a new index file. The index file takes
