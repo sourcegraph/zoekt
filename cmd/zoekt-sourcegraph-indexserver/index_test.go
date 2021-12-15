@@ -33,7 +33,7 @@ func TestGetIndexOptions(t *testing.T) {
 			http.Error(w, fmt.Sprintf("got URL %v want %v", got, want), http.StatusBadRequest)
 			return
 		}
-		w.Write(response)
+		_, _ = w.Write(response)
 	}))
 	defer server.Close()
 

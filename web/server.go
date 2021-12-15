@@ -106,12 +106,12 @@ type Server struct {
 	// "print" for the show file functionality.
 	Top *template.Template
 
-	repolist   *template.Template
-	search     *template.Template
-	result     *template.Template
-	print      *template.Template
-	about      *template.Template
-	robots     *template.Template
+	repolist *template.Template
+	search   *template.Template
+	result   *template.Template
+	print    *template.Template
+	about    *template.Template
+	robots   *template.Template
 
 	startTime time.Time
 
@@ -147,12 +147,12 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 	}
 
 	for k, v := range map[string]**template.Template{
-		"results":    &s.result,
-		"print":      &s.print,
-		"search":     &s.search,
-		"repolist":   &s.repolist,
-		"about":      &s.about,
-		"robots":     &s.robots,
+		"results":  &s.result,
+		"print":    &s.print,
+		"search":   &s.search,
+		"repolist": &s.repolist,
+		"about":    &s.about,
+		"robots":   &s.robots,
 	} {
 		*v = s.Top.Lookup(k)
 		if *v == nil {
@@ -302,7 +302,7 @@ func (s *Server) serveSearchErr(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 	return nil
 }
 
@@ -380,7 +380,7 @@ func (s *Server) serveSearchBoxErr(w http.ResponseWriter, r *http.Request) error
 	if err := s.search.Execute(&buf, &d); err != nil {
 		return err
 	}
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 	return nil
 }
 
@@ -406,7 +406,7 @@ func (s *Server) serveAboutErr(w http.ResponseWriter, r *http.Request) error {
 	if err := s.about.Execute(&buf, &d); err != nil {
 		return err
 	}
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 	return nil
 }
 
@@ -422,7 +422,7 @@ func (s *Server) serveRobotsErr(w http.ResponseWriter, r *http.Request) error {
 	if err := s.robots.Execute(&buf, &data); err != nil {
 		return err
 	}
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 	return nil
 }
 
@@ -531,7 +531,7 @@ func (s *Server) serveListReposErr(q query.Q, qStr string, w http.ResponseWriter
 		return err
 	}
 
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 	return nil
 }
 
@@ -603,6 +603,6 @@ func (s *Server) servePrintErr(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 	return nil
 }
