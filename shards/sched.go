@@ -251,7 +251,7 @@ func (p *process) Yield(ctx context.Context) error {
 // release resources.
 func newDeadlineTimer(deadline time.Time) *deadlineTimer {
 	return &deadlineTimer{
-		t: time.NewTimer(deadline.Sub(time.Now())),
+		t: time.NewTimer(time.Until(deadline)),
 	}
 }
 

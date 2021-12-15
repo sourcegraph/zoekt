@@ -101,7 +101,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			event.Stats.Add(aggStats)
 		}
 		send(event)
-		return
 	}))
 
 	if err == nil && !aggStats.Zero() {

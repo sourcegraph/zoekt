@@ -1014,17 +1014,6 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 	return nil, nil
 }
 
-// filterDocs returns a slice of those docIDs for which predicate(docID) = true.
-func (d *indexData) filterDocs(predicate func(docID uint32) bool) []uint32 {
-	var docs []uint32
-	for i := uint32(0); i < uint32(len(d.fileBranchMasks)); i++ {
-		if predicate(i) {
-			docs = append(docs, i)
-		}
-	}
-	return docs
-}
-
 func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error) {
 	st := &substrMatchTree{
 		query:         s,

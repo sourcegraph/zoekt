@@ -355,7 +355,6 @@ const (
 	tokLang       = 12
 	tokSym        = 13
 	tokType       = 14
-	tokVis        = 15
 )
 
 var tokNames = map[int]string{

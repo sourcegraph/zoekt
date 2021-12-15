@@ -15,7 +15,7 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-var reCompound = regexp.MustCompile("compound-.*\\.zoekt")
+var reCompound = regexp.MustCompile(`compound-.*\.zoekt`)
 
 // doMerge drives the merge process.
 func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) error {
@@ -117,7 +117,7 @@ func loadCandidates(dir string, maxSize int64) ([]candidate, int) {
 	return candidates, excluded
 }
 
-var reShard = regexp.MustCompile("\\.[0-9]{5}\\.zoekt$")
+var reShard = regexp.MustCompile(`\.[0-9]{5}\.zoekt$`)
 
 func hasMultipleShards(path string) bool {
 	if !reShard.MatchString(path) {
@@ -125,10 +125,7 @@ func hasMultipleShards(path string) bool {
 	}
 	secondShard := reShard.ReplaceAllString(path, ".00001.zoekt")
 	_, err := os.Stat(secondShard)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return true
+	return !os.IsNotExist(err)
 }
 
 // isExcluded returns true if a shard should not be merged, false otherwise.

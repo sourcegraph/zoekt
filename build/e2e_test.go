@@ -174,7 +174,7 @@ func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface
 			done <- true
 		}()
 
-		success, _ := <-done
+		success := <-done
 		if success {
 			return
 		}

@@ -407,7 +407,6 @@ func IndexGitRepo(opts Options) error {
 		tree, err := commit.Tree()
 		if err != nil {
 			return fmt.Errorf("commit.Tree: %w", err)
-			return err
 		}
 
 		ig, err := newIgnoreMatcher(tree)

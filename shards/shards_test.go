@@ -708,7 +708,7 @@ func TestRawQuerySearch(t *testing.T) {
 			}
 
 			gotRepos := make([]string, 0, len(sr.RepoURLs))
-			for k, _ := range sr.RepoURLs {
+			for k := range sr.RepoURLs {
 				gotRepos = append(gotRepos, k)
 			}
 			sort.Strings(gotRepos)
