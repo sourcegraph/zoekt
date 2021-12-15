@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -73,6 +74,12 @@ type sourcegraphClient struct {
 	// Sourcegraph. It can be used for future calls to the configuration
 	// endpoint.
 	configFingerprint atomic.String
+
+	// configFingerprintReset tracks when we should zero out the
+	// configFingerprint. We want to periodically do this just in case our
+	// configFingerprint logic is faulty. When it is cleared out, we fallback to
+	// calculating everything.
+	configFingerprintReset time.Time
 }
 
 func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
@@ -84,6 +91,13 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 	batchSize := s.BatchSize
 	if batchSize == 0 {
 		batchSize = 10_000
+	}
+
+	// Check if we should recalculate everything.
+	if time.Now().After(s.configFingerprintReset) {
+		jitter := rand.Int63n(int64(10 * time.Minute))
+		s.configFingerprintReset = time.Now().Add(10*time.Minute + time.Duration(jitter))
+		s.configFingerprint.Store("")
 	}
 
 	// We want to use a consistent fingerprint for each call. Next time list is
