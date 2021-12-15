@@ -73,7 +73,9 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		pprof.StartCPUProfile(f)
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal(err)
+		}
 		defer pprof.StopCPUProfile()
 	}
 
@@ -127,10 +129,12 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error 
 	for f := range comm {
 		displayName := strings.TrimPrefix(f.name, dir+"/")
 		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
-			builder.Add(zoekt.Document{
+			if err := builder.Add(zoekt.Document{
 				Name:       displayName,
 				SkipReason: fmt.Sprintf("document size %d larger than limit %d", f.size, opts.SizeMax),
-			})
+			}); err != nil {
+				return err
+			}
 			continue
 		}
 		content, err := ioutil.ReadFile(f.name)

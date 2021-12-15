@@ -227,9 +227,9 @@ func callMerge(shards []candidate) ([]byte, []byte, error) {
 
 	go func() {
 		for _, s := range shards {
-			io.WriteString(wc, fmt.Sprintf("%s\n", s.path))
+			_, _ = io.WriteString(wc, fmt.Sprintf("%s\n", s.path))
 		}
-		wc.Close()
+		_ = wc.Close()
 	}()
 
 	err = cmd.Run()

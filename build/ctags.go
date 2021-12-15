@@ -83,7 +83,7 @@ func runCTags(bin string, inputs map[string][]byte) ([]*ctags.Entry, error) {
 	timeout := time.After(60 * time.Second)
 	select {
 	case <-timeout:
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		return nil, fmt.Errorf("timeout executing ctags")
 	case err := <-errChan:
 		if err != nil {

@@ -527,7 +527,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == "POST" {
-		r.ParseForm()
+		_ = r.ParseForm()
 		if id, err := strconv.Atoi(r.Form.Get("repo")); err != nil {
 			data.IndexMsg = err.Error()
 		} else {
@@ -542,7 +542,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 
-	repoTmpl.Execute(w, data)
+	_ = repoTmpl.Execute(w, data)
 }
 
 // forceIndex will run the index job for repo name now. It will return always

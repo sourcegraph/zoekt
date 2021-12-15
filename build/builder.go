@@ -264,7 +264,7 @@ func (o *Options) SetDefaults() {
 
 func hashString(s string) string {
 	h := sha1.New()
-	io.WriteString(h, s)
+	_, _ = io.WriteString(h, s)
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 

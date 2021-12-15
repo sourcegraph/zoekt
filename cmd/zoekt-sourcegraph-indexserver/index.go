@@ -247,7 +247,7 @@ func tmpGitDir(name string) (string, error) {
 	abs := url.QueryEscape(name)
 	if len(abs) > 200 {
 		h := sha1.New()
-		io.WriteString(h, abs)
+		_, _ = io.WriteString(h, abs)
 		abs = abs[:200] + fmt.Sprintf("%x", h.Sum(nil))[:8]
 	}
 	dir := filepath.Join(os.TempDir(), abs+".git")
