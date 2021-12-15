@@ -21,7 +21,9 @@ func TestSetTombstone(t *testing.T) {
 	dir := t.TempDir()
 	ghostShard := filepath.Join(dir, "test.zoekt")
 
-	SetTombstone(ghostShard, 2)
+	if err := SetTombstone(ghostShard, 2); err != nil {
+		t.Fatal(err)
+	}
 
 	blob := readMeta(ghostShard)
 	gotRepos := []*Repository{}
@@ -39,7 +41,9 @@ func TestSetTombstone(t *testing.T) {
 		t.Fatal("r3 should have been alive")
 	}
 
-	SetTombstone(ghostShard, 1)
+	if err := SetTombstone(ghostShard, 1); err != nil {
+		t.Fatal(err)
+	}
 
 	blob = readMeta(ghostShard)
 	gotRepos = nil

@@ -286,7 +286,9 @@ func TestBackwardsCompat(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		b.Write(&buf)
+		if err := b.Write(&buf); err != nil {
+			t.Fatal(err)
+		}
 
 		outname := fmt.Sprintf("testdata/backcompat/new_v%d.%05d.zoekt", IndexFormatVersion, 0)
 		t.Log("writing new file", outname)

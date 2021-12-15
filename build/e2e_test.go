@@ -268,7 +268,9 @@ func TestUpdate(t *testing.T) {
 	if b, err := NewBuilder(opts); err != nil {
 		t.Fatalf("NewBuilder: %v", err)
 	} else {
-		b.AddFile("F", []byte("hoi"))
+		if err := b.AddFile("F", []byte("hoi")); err != nil {
+			t.Errorf("AddFile: %v", err)
+		}
 		if err := b.Finish(); err != nil {
 			t.Errorf("Finish: %v", err)
 		}
@@ -301,7 +303,9 @@ func TestUpdate(t *testing.T) {
 	if b, err := NewBuilder(opts); err != nil {
 		t.Fatalf("NewBuilder: %v", err)
 	} else {
-		b.AddFile("F", []byte("hoi"))
+		if err := b.AddFile("F", []byte("hoi")); err != nil {
+			t.Errorf("AddFile: %v", err)
+		}
 		if err := b.Finish(); err != nil {
 			t.Errorf("Finish: %v", err)
 		}
@@ -364,7 +368,9 @@ func TestDeleteOldShards(t *testing.T) {
 	}
 	for i := 0; i < 4; i++ {
 		s := fmt.Sprintf("%d\n", i)
-		b.AddFile("F"+s, []byte(strings.Repeat(s, 1024/2)))
+		if err := b.AddFile("F"+s, []byte(strings.Repeat(s, 1024/2))); err != nil {
+			t.Errorf("AddFile: %v", err)
+		}
 	}
 	if err := b.Finish(); err != nil {
 		t.Errorf("Finish: %v", err)
@@ -393,7 +399,9 @@ func TestDeleteOldShards(t *testing.T) {
 	}
 	for i := 0; i < 4; i++ {
 		s := fmt.Sprintf("%d\n", i)
-		b.AddFile("F"+s, []byte(strings.Repeat(s, 1024/2)))
+		if err := b.AddFile("F"+s, []byte(strings.Repeat(s, 1024/2))); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := b.Finish(); err != nil {
 		t.Errorf("Finish: %v", err)
@@ -448,7 +456,7 @@ func TestPartialSuccess(t *testing.T) {
 		nm := fmt.Sprintf("F%d", i)
 
 		// no error checking: the 2nd call will fail
-		b.AddFile(nm, []byte(strings.Repeat("01234567\n", 128)))
+		_ = b.AddFile(nm, []byte(strings.Repeat("01234567\n", 128)))
 		if i == 1 {
 			// force writes to fail.
 			if err := os.Chmod(dir, 0o555); err != nil {

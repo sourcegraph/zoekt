@@ -61,7 +61,9 @@ func BenchmarkYield(b *testing.B) {
 		defer proc.Release()
 
 		for n := 0; n < b.N; n++ {
-			proc.Yield(ctx)
+			if err := proc.Yield(ctx); err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
 }

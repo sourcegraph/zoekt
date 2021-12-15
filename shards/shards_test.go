@@ -525,16 +525,20 @@ func reposForTest(n int) (result []*zoekt.Repository) {
 func testSearcherForRepo(b testing.TB, r *zoekt.Repository, numFiles int) zoekt.Searcher {
 	builder := testIndexBuilder(b, r)
 
-	builder.Add(zoekt.Document{
+	if err := builder.Add(zoekt.Document{
 		Name:    fmt.Sprintf("%s/filename-%d.go", r.Name, 0),
 		Content: []byte("needle needle needle haystack"),
-	})
+	}); err != nil {
+		b.Fatal(err)
+	}
 
 	for i := 1; i < numFiles; i++ {
-		builder.Add(zoekt.Document{
+		if err := builder.Add(zoekt.Document{
 			Name:    fmt.Sprintf("%s/filename-%d.go", r.Name, i),
 			Content: []byte("haystack haystack haystack"),
-		})
+		}); err != nil {
+			b.Fatal(err)
+		}
 	}
 
 	return searcherForTest(b, builder)
