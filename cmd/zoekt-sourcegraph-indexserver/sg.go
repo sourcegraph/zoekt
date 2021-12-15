@@ -95,8 +95,14 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 
 	// Check if we should recalculate everything.
 	if time.Now().After(s.configFingerprintReset) {
-		jitter := rand.Int63n(int64(10 * time.Minute))
-		s.configFingerprintReset = time.Now().Add(10*time.Minute + time.Duration(jitter))
+		// for every 500 repos we wait a minute. 2021-12-15 on sourcegraph.com
+		// this works out to every 100 minutes.
+		next := time.Duration(len(indexed)) * time.Minute / 500
+		if min := 5 * time.Minute; next < min {
+			next = min
+		}
+		next += time.Duration(rand.Int63n(int64(next) / 4)) // jitter
+		s.configFingerprintReset = time.Now().Add(next)
 		s.configFingerprint.Store("")
 	}
 
