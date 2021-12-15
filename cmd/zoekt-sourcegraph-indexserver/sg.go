@@ -145,13 +145,20 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 }
 
 func (s *sourcegraphClient) ForceIterateIndexOptions(f func(IndexOptions), repos ...uint32) {
-	opts, err := s.GetIndexOptions(repos...)
-	if err != nil {
-		return
+	batchSize := s.BatchSize
+	if batchSize == 0 {
+		batchSize = 10_000
 	}
-	for _, o := range opts {
-		if o.Error == "" {
-			f(o.IndexOptions)
+
+	for repos := range batched(repos, batchSize) {
+		opts, err := s.GetIndexOptions(repos...)
+		if err != nil {
+			continue
+		}
+		for _, o := range opts {
+			if o.Error == "" {
+				f(o.IndexOptions)
+			}
 		}
 	}
 }
