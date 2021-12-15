@@ -32,7 +32,7 @@ import (
 func main() {
 	revisionStr := flag.String("revision", "", "hg revision to index")
 	flag.Parse()
-	maxprocs.Set()
+	_, _ = maxprocs.Set()
 	opts := cmd.OptionsFromFlags()
 
 	if len(flag.Args()) < 1 {

@@ -720,7 +720,7 @@ func main() {
 	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
-	maxprocs.Set()
+	_, _ = maxprocs.Set()
 
 	// Automatically prepend our own path at the front, to minimize
 	// required configuration.
