@@ -29,15 +29,14 @@ type writer struct {
 	off uint32
 }
 
-func (w *writer) Write(b []byte) error {
+func (w *writer) Write(b []byte) {
 	if w.err != nil {
-		return w.err
+		return
 	}
 
 	var n int
 	n, w.err = w.w.Write(b)
 	w.off += uint32(n)
-	return w.err
 }
 
 func (w *writer) Off() uint32 { return w.off }
