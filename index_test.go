@@ -239,7 +239,9 @@ func searchForTest(t *testing.T, b *IndexBuilder, q query.Q, o ...SearchOptions)
 
 func searcherForTest(t *testing.T, b *IndexBuilder) Searcher {
 	var buf bytes.Buffer
-	b.Write(&buf)
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
 	f := &memSeeker{buf.Bytes()}
 
 	searcher, err := NewSearcher(f)
@@ -1224,7 +1226,9 @@ func TestMetadata(t *testing.T) {
 		Document{Name: "f2", Content: content})
 
 	var buf bytes.Buffer
-	b.Write(&buf)
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
 	f := &memSeeker{buf.Bytes()}
 
 	rd, _, err := ReadMetadata(f)
@@ -1534,7 +1538,9 @@ func TestBuilderStats(t *testing.T) {
 			Content: []byte(strings.Repeat("abcd", 1024)),
 		})
 	var buf bytes.Buffer
-	b.Write(&buf)
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
 
 	if got, want := b.ContentSize(), uint32(2+4*1024); got != want {
 		t.Errorf("got %d, want %d", got, want)

@@ -47,7 +47,9 @@ func TestReadWrite(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	b.Write(&buf)
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
 	f := &memSeeker{buf.Bytes()}
 
 	r := reader{r: f}
@@ -90,7 +92,9 @@ func TestReadWriteNames(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	b.Write(&buf)
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
 	f := &memSeeker{buf.Bytes()}
 
 	r := reader{r: f}

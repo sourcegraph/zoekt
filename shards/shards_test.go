@@ -310,7 +310,9 @@ func TestUnloadIndex(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	b.Write(&buf)
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
 	indexBytes := buf.Bytes()
 	indexFile := &memSeeker{indexBytes}
 	searcher, err := zoekt.NewSearcher(indexFile)
@@ -497,7 +499,9 @@ func testIndexBuilder(t testing.TB, repo *zoekt.Repository, docs ...zoekt.Docume
 
 func searcherForTest(t testing.TB, b *zoekt.IndexBuilder) zoekt.Searcher {
 	var buf bytes.Buffer
-	b.Write(&buf)
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
 	f := &memSeeker{buf.Bytes()}
 
 	searcher, err := zoekt.NewSearcher(f)

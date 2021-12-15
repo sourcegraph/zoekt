@@ -53,7 +53,9 @@ func (s *memSeeker) Name() string {
 
 func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) zoekt.Streamer {
 	var buf bytes.Buffer
-	b.Write(&buf)
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
 	f := &memSeeker{buf.Bytes()}
 
 	searcher, err := zoekt.NewSearcher(f)
