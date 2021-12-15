@@ -60,7 +60,9 @@ func indexHg(dir, rev string, opts *build.Options) error {
 	if err != nil {
 		return err
 	}
-	defer builder.Finish()
+	// we don't need to check error, since we either already have an error, or
+	// we returning the first call to builder.Finish.
+	defer builder.Finish() // nolint:errcheck
 
 	mfs, err := r.GetFiles(gerc.FilesArgs{
 		Revision: rev,

@@ -106,7 +106,9 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error 
 	if err != nil {
 		return err
 	}
-	defer builder.Finish()
+	// we don't need to check error, since we either already have an error, or
+	// we returning the first call to builder.Finish.
+	defer builder.Finish() // nolint:errcheck
 
 	comm := make(chan fileInfo, 100)
 	agg := fileAggregator{

@@ -464,7 +464,9 @@ func IndexGitRepo(opts Options) error {
 	if err != nil {
 		return fmt.Errorf("build.NewBuilder: %w", err)
 	}
-	defer builder.Finish()
+	// we don't need to check error, since we either already have an error, or
+	// we returning the first call to builder.Finish.
+	defer builder.Finish() // nolint:errcheck
 
 	var names []string
 	fileKeys := map[string][]fileKey{}

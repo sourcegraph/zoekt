@@ -462,7 +462,7 @@ func TestPartialSuccess(t *testing.T) {
 	}
 
 	// No error checking.
-	b.Finish()
+	_ = b.Finish()
 
 	// Finish cleans up temporary files.
 	if fs, err := filepath.Glob(dir + "/*"); err != nil {
