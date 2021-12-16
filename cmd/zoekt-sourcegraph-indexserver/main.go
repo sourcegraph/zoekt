@@ -155,12 +155,12 @@ var debug = log.New(ioutil.Discard, "", log.LstdFlags)
 // cores... 5m was not enough.
 const noOutputTimeout = 30 * time.Minute
 
-func (s *Server) loggedRun(tr trace.Trace, description string, cmd *exec.Cmd) (err error) {
+func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 	out := &synchronizedBuffer{}
 	cmd.Stdout = out
 	cmd.Stderr = out
 
-	tr.LazyPrintf("[%s]: %s", description, cmd.Args)
+	tr.LazyPrintf("%s", cmd.Args)
 
 	defer func() {
 		if err != nil {
@@ -453,7 +453,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 	log.Printf("updating index %s reason=%s", args.String(), reason)
 
-	runCmd := func(description string, cmd *exec.Cmd) error { return s.loggedRun(tr, description, cmd) }
+	runCmd := func(cmd *exec.Cmd) error { return s.loggedRun(tr, cmd) }
 	metricIndexingTotal.Inc()
 	return indexStateSuccess, gitIndex(args, runCmd)
 }
