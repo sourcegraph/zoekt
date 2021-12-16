@@ -504,6 +504,13 @@ type SearchOptions struct {
 	// once we have this many matches across shards.
 	TotalMaxMatchCount int
 
+	// Maximum number of matches: skip processing documents for a repository in
+	// a shard once we have found ShardRepoMaxMatchCount.
+	//
+	// A compound shard may contain multiple repositories. This will most often
+	// be set to 1 to find all repositories containing a result.
+	ShardRepoMaxMatchCount int
+
 	// Maximum number of important matches: skip processing
 	// shard after we found this many important matches.
 	ShardMaxImportantMatch int

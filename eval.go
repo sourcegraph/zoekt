@@ -212,6 +212,13 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 		stats: &res.Stats,
 	}
 
+	// Track the number of documents found in a repository for
+	// ShardRepoMaxMatchCount
+	var (
+		lastRepoID     uint16
+		repoMatchCount int
+	)
+
 	docCount := uint32(len(d.fileBranchMasks))
 	lastDoc := int(-1)
 
@@ -228,14 +235,35 @@ nextFileMatch:
 		if int(nextDoc) <= lastDoc {
 			nextDoc = uint32(lastDoc + 1)
 		}
-		// Skip tombstoned docs
-		for nextDoc < docCount && d.repoMetaData[d.repos[nextDoc]].Tombstone {
-			nextDoc++
+
+		for ; nextDoc < docCount; nextDoc++ {
+			// Skip tombstoned docs
+			if d.repoMetaData[d.repos[nextDoc]].Tombstone {
+				continue
+			}
+
+			// Skip documents over ShardRepoMaxMatchCount if specified.
+			if opts.ShardRepoMaxMatchCount > 0 {
+				if repoMatchCount >= opts.ShardRepoMaxMatchCount && d.repos[nextDoc] == lastRepoID {
+					res.Stats.FilesSkipped++
+					continue
+				}
+			}
+
+			break
 		}
+
 		if nextDoc >= docCount {
 			break
 		}
+
 		lastDoc = int(nextDoc)
+
+		// We track lastRepoID for ShardRepoMaxMatchCount
+		if lastRepoID != d.repos[nextDoc] {
+			lastRepoID = d.repos[nextDoc]
+			repoMatchCount = 0
+		}
 
 		if canceled || (res.Stats.MatchCount >= opts.ShardMaxMatchCount && opts.ShardMaxMatchCount > 0) ||
 			(opts.ShardMaxImportantMatch > 0 && importantMatchCount >= opts.ShardMaxImportantMatch) {
@@ -341,6 +369,8 @@ nextFileMatch:
 		if opts.Whole {
 			fileMatch.Content = cp.data(false)
 		}
+
+		repoMatchCount += len(fileMatch.LineMatches)
 
 		res.Files = append(res.Files, fileMatch)
 		res.Stats.MatchCount += len(fileMatch.LineMatches)

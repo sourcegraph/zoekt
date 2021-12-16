@@ -15,6 +15,7 @@
 package zoekt
 
 import (
+	"context"
 	"hash/fnv"
 	"reflect"
 	"regexp"
@@ -131,6 +132,45 @@ func TestRegexpParse(t *testing.T) {
 	}
 }
 
+func TestSearch_ShardRepoMaxMatchCountOpt(t *testing.T) {
+	cs := compoundReposShard(t, "foo", "bar")
+
+	ctx := context.Background()
+	q := &query.Const{Value: true}
+	opts := &SearchOptions{ShardRepoMaxMatchCount: 1}
+
+	sr, err := cs.Search(ctx, q, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("matches", func(t *testing.T) {
+		var filenames []string
+		for _, r := range sr.Files {
+			filenames = append(filenames, r.FileName)
+		}
+
+		got, want := filenames, []string{"foo.txt", "bar.txt"}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("mismatch (-want, +got): %s", diff)
+		}
+	})
+
+	t.Run("stats", func(t *testing.T) {
+		got, want := sr.Stats, Stats{
+			ContentBytesLoaded: 2,
+			FileCount:          2,
+			FilesConsidered:    2,
+			FilesSkipped:       2,
+			ShardsScanned:      1,
+			MatchCount:         2,
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("mismatch (-want, +got): %s", diff)
+		}
+	})
+}
+
 // compoundReposShard returns a compound shard where each repo has 1 document.
 func compoundReposShard(t *testing.T, names ...string) *indexData {
 	t.Helper()
@@ -141,6 +181,9 @@ func compoundReposShard(t *testing.T, names ...string) *indexData {
 			t.Fatal(err)
 		}
 		if err := b.AddFile(name+".txt", []byte(name+" content")); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.AddFile(name+".2.txt", []byte(name+" content 2")); err != nil {
 			t.Fatal(err)
 		}
 	}
