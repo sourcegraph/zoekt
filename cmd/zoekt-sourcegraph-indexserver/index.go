@@ -160,18 +160,25 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		return err
 	}
 
+	fetchStart := time.Now()
+
 	// We shallow fetch each commit specified in zoekt.Branches. This requires
 	// the server to have configured both uploadpack.allowAnySHA1InWant and
 	// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
 	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
+	var commits []string
 	for _, b := range o.Branches {
-		fetchArgs = append(fetchArgs, b.Version)
+		commits = append(commits, b.Version)
 	}
+	fetchArgs = append(fetchArgs, commits...)
+
 	cmd = exec.CommandContext(ctx, "git", fetchArgs...)
 	cmd.Stdin = &bytes.Buffer{}
 	if err := runCmd(cmd); err != nil {
 		return err
 	}
+
+	debug.Printf("fetched git data for %q (%d commit(s)) in %s", o.Name, len(commits), time.Since(fetchStart))
 
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
