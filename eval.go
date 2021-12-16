@@ -235,23 +235,28 @@ nextFileMatch:
 		if int(nextDoc) <= lastDoc {
 			nextDoc = uint32(lastDoc + 1)
 		}
+
 		for ; nextDoc < docCount; nextDoc++ {
 			// Skip tombstoned docs
 			if d.repoMetaData[d.repos[nextDoc]].Tombstone {
 				continue
 			}
-			// Skip documents over ShardRepoMaxMatchCount if enabled.
+
+			// Skip documents over ShardRepoMaxMatchCount if specified.
 			if opts.ShardRepoMaxMatchCount > 0 {
 				if repoMatchCount >= opts.ShardRepoMaxMatchCount && d.repos[nextDoc] == lastRepoID {
 					res.Stats.FilesSkipped++
 					continue
 				}
 			}
+
 			break
 		}
+
 		if nextDoc >= docCount {
 			break
 		}
+
 		lastDoc = int(nextDoc)
 
 		// We track lastRepoID for ShardRepoMaxMatchCount
