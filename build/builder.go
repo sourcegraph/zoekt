@@ -286,12 +286,12 @@ type IndexState string
 
 const (
 	IndexStateMissing IndexState = "missing"
-	IndexStateCorrupt            = "corrupt"
-	IndexStateVersion            = "version-mismatch"
-	IndexStateOption             = "option-mismatch"
-	IndexStateMeta               = "meta-mismatch"
-	IndexStateContent            = "content-mismatch"
-	IndexStateEqual              = "equal"
+	IndexStateCorrupt IndexState = "corrupt"
+	IndexStateVersion IndexState = "version-mismatch"
+	IndexStateOption  IndexState = "option-mismatch"
+	IndexStateMeta    IndexState = "meta-mismatch"
+	IndexStateContent IndexState = "content-mismatch"
+	IndexStateEqual   IndexState = "equal"
 )
 
 var readVersions = []struct {
