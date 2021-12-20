@@ -12,13 +12,21 @@ import (
 	"time"
 
 	"github.com/google/zoekt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var reCompound = regexp.MustCompile(`compound-.*\.zoekt`)
+var shardMergingRunning = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "zoekt_shard_merging_running",
+	Help: "is merging running?",
+})
 
 // doMerge drives the merge process.
 func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) error {
+	shardMergingRunning.Set(1)
+	defer shardMergingRunning.Set(0)
 
 	wc := &lumberjack.Logger{
 		Filename:   filepath.Join(dir, "zoekt-merge-log.tsv"),
@@ -53,6 +61,7 @@ func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) err
 				debug.Printf("error during merging compound %d, stdErr: %s, err: %s\n", ix, stdErr, err)
 				continue
 			}
+			metricNumberCompoundShards.Inc()
 			// for len(comp.shards)<=1, callMerge is a NOP. Hence there is no need to log
 			// anything here.
 			if len(comp.shards) > 1 {
