@@ -132,14 +132,17 @@ func (q *Queue) Iterate(f func(*IndexOptions)) {
 func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Lock()
 	item := q.get(opts.RepoID)
-	item.setIndexState(state)
+
+	item.indexState = state
 	if state != indexStateFail {
 		item.indexed = reflect.DeepEqual(opts, item.opts)
 	}
+
 	if item.heapIdx >= 0 {
 		// We only update the position in the queue, never add it.
 		heap.Fix(&q.pq, item.heapIdx)
 	}
+
 	q.mu.Unlock()
 }
 
@@ -179,7 +182,9 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) int {
 		if item.heapIdx >= 0 {
 			heap.Remove(&q.pq, item.heapIdx)
 		}
-		item.setIndexState("")
+
+		item.indexState = ""
+
 		delete(q.items, item.opts.RepoID)
 		count++
 	}
@@ -214,21 +219,6 @@ func (q *Queue) get(repoID uint32) *queueItem {
 func (q *Queue) init() {
 	q.items = map[uint32]*queueItem{}
 	q.pq = make(pqueue, 0)
-}
-
-// setIndexedState will set indexedState and update the corresponding metrics
-// if the state is changing.
-func (item *queueItem) setIndexState(state indexState) {
-	if state == item.indexState {
-		return
-	}
-	if item.indexState != "" {
-		metricIndexState.WithLabelValues(string(item.indexState)).Dec()
-	}
-	item.indexState = state
-	if item.indexState != "" {
-		metricIndexState.WithLabelValues(string(item.indexState)).Inc()
-	}
 }
 
 // pqueue implements a priority queue via the interface for container/heap
@@ -286,8 +276,4 @@ var (
 		Name: "index_queue_cap",
 		Help: "The number of repositories tracked by the index queue, including popped items. Should be the same as index_num_assigned.",
 	})
-	metricIndexState = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "index_state_count",
-		Help: "The count of repositories per the state of the last index.",
-	}, []string{"state"})
 )
