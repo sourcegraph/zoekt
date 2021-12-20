@@ -18,15 +18,27 @@ import (
 )
 
 var reCompound = regexp.MustCompile(`compound-.*\.zoekt`)
-var shardMergingRunning = promauto.NewGauge(prometheus.GaugeOpts{
-	Name: "zoekt_shard_merging_running",
+
+var metricShardMergingRunning = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "index_shard_merging_running",
 	Help: "is merging running?",
+})
+
+var metricShardMergingErrors = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "index_shard_merging_errors",
+	Help: "the number of calls to merge that returned an error",
+})
+
+var metricShardMergingDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+	Name:    "index_shard_merging_duration_seconds",
+	Help:    "The duration of 1 shard merge operation",
+	Buckets: prometheus.LinearBuckets(0, 30, 10),
 })
 
 // doMerge drives the merge process.
 func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) error {
-	shardMergingRunning.Set(1)
-	defer shardMergingRunning.Set(0)
+	metricShardMergingRunning.Set(1)
+	defer metricShardMergingRunning.Set(0)
 
 	wc := &lumberjack.Logger{
 		Filename:   filepath.Join(dir, "zoekt-merge-log.tsv"),
@@ -55,9 +67,12 @@ func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) err
 	for ix, comp := range compounds {
 		debug.Printf("compound %d: merging %d shards with total size %.2f MiB\n", ix, len(comp.shards), float64(comp.size)/(1024*1024))
 		if !simulate {
+			start := time.Now()
 			stdOut, stdErr, err := callMerge(comp.shards)
+			metricShardMergingDuration.Observe(time.Since(start).Seconds())
 			debug.Printf("callMerge: OUT: %s, ERR: %s\n", string(stdOut), string(stdErr))
 			if err != nil {
+				metricShardMergingErrors.Inc()
 				debug.Printf("error during merging compound %d, stdErr: %s, err: %s\n", ix, stdErr, err)
 				continue
 			}

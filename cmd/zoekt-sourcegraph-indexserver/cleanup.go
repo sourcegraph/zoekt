@@ -274,12 +274,12 @@ func shardsLog(indexDir, action string, shards []shard) {
 }
 
 var metricVacuumRunning = promauto.NewGauge(prometheus.GaugeOpts{
-	Name: "zoekt_vacuum_running",
+	Name: "index_vacuum_running",
 	Help: "is vacuum running?",
 })
 
 var metricNumberCompoundShards = promauto.NewGauge(prometheus.GaugeOpts{
-	Name: "zoekt_number_compound_shards",
+	Name: "index_number_compound_shards",
 	Help: "the number of compound shards",
 })
 
