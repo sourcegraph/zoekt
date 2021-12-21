@@ -24,11 +24,6 @@ var metricShardMergingRunning = promauto.NewGauge(prometheus.GaugeOpts{
 	Help: "Set to 1 if indexserver's merge job is running.",
 })
 
-var metricShardMergingErrors = promauto.NewCounter(prometheus.CounterOpts{
-	Name: "index_shard_merging_errors",
-	Help: "The number of calls to merge that returned an error.",
-})
-
 var metricShardMergingDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    "index_shard_merging_duration_seconds",
 	Help:    "The duration of 1 shard merge operation.",
@@ -72,7 +67,6 @@ func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) err
 			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
 			debug.Printf("callMerge: OUT: %s, ERR: %s\n", string(stdOut), string(stdErr))
 			if err != nil {
-				metricShardMergingErrors.Inc()
 				debug.Printf("error during merging compound %d, stdErr: %s, err: %s\n", ix, stdErr, err)
 				continue
 			}
