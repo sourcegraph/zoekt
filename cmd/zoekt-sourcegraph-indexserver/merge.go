@@ -21,18 +21,18 @@ var reCompound = regexp.MustCompile(`compound-.*\.zoekt`)
 
 var metricShardMergingRunning = promauto.NewGauge(prometheus.GaugeOpts{
 	Name: "index_shard_merging_running",
-	Help: "is merging running?",
+	Help: "Set to 1 if indexserver's merge job is running.",
 })
 
 var metricShardMergingErrors = promauto.NewCounter(prometheus.CounterOpts{
 	Name: "index_shard_merging_errors",
-	Help: "the number of calls to merge that returned an error",
+	Help: "The number of calls to merge that returned an error.",
 })
 
 var metricShardMergingDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 	Name:    "index_shard_merging_duration_seconds",
-	Help:    "The duration of 1 shard merge operation",
-	Buckets: prometheus.LinearBuckets(0, 30, 10),
+	Help:    "The duration of 1 shard merge operation.",
+	Buckets: prometheus.LinearBuckets(30, 30, 10),
 })
 
 // doMerge drives the merge process.

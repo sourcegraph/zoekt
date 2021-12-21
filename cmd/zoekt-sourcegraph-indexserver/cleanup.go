@@ -275,12 +275,12 @@ func shardsLog(indexDir, action string, shards []shard) {
 
 var metricVacuumRunning = promauto.NewGauge(prometheus.GaugeOpts{
 	Name: "index_vacuum_running",
-	Help: "is vacuum running?",
+	Help: "Set to 1 if indexserver's vacuum job is running.",
 })
 
 var metricNumberCompoundShards = promauto.NewGauge(prometheus.GaugeOpts{
 	Name: "index_number_compound_shards",
-	Help: "the number of compound shards",
+	Help: "The number of compound shards.",
 })
 
 // vacuum removes tombstoned repos from compound shards and removes compound
