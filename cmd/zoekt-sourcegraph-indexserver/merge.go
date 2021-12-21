@@ -29,11 +29,11 @@ var metricShardMergingErrors = promauto.NewCounter(prometheus.CounterOpts{
 	Help: "The number of calls to merge that returned an error.",
 })
 
-var metricShardMergingDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+var metricShardMergingDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    "index_shard_merging_duration_seconds",
 	Help:    "The duration of 1 shard merge operation.",
 	Buckets: prometheus.LinearBuckets(30, 30, 10),
-})
+}, []string{"error"})
 
 // doMerge drives the merge process.
 func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) error {
@@ -69,7 +69,7 @@ func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) err
 		if !simulate {
 			start := time.Now()
 			stdOut, stdErr, err := callMerge(comp.shards)
-			metricShardMergingDuration.Observe(time.Since(start).Seconds())
+			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
 			debug.Printf("callMerge: OUT: %s, ERR: %s\n", string(stdOut), string(stdErr))
 			if err != nil {
 				metricShardMergingErrors.Inc()
