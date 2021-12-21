@@ -673,6 +673,15 @@ func getEnvWithDefaultInt64(k string, defaultVal int64) int64 {
 	return i
 }
 
+func initializeCompoundShardCounter(indexDir string) {
+	fns, err := filepath.Glob(filepath.Join(indexDir, "compound-*.zoekt"))
+	if err != nil {
+		log.Printf("initializeCompoundShardCounter: %s\n", err)
+		return
+	}
+	metricNumberCompoundShards.Set(float64(len(fns)))
+}
+
 func main() {
 	defaultIndexDir := os.Getenv("DATA_DIR")
 	if defaultIndexDir == "" {
@@ -835,6 +844,7 @@ func main() {
 	}
 
 	initializeGoogleCloudProfiler()
+	initializeCompoundShardCounter(s.IndexDir)
 
 	if *listen != "" {
 		go func() {

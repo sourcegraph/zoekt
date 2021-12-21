@@ -12,13 +12,28 @@ import (
 	"time"
 
 	"github.com/google/zoekt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var reCompound = regexp.MustCompile(`compound-.*\.zoekt`)
 
+var metricShardMergingRunning = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "index_shard_merging_running",
+	Help: "Set to 1 if indexserver's merge job is running.",
+})
+
+var metricShardMergingDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name:    "index_shard_merging_duration_seconds",
+	Help:    "The duration of 1 shard merge operation.",
+	Buckets: prometheus.LinearBuckets(30, 30, 10),
+}, []string{"error"})
+
 // doMerge drives the merge process.
 func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) error {
+	metricShardMergingRunning.Set(1)
+	defer metricShardMergingRunning.Set(0)
 
 	wc := &lumberjack.Logger{
 		Filename:   filepath.Join(dir, "zoekt-merge-log.tsv"),
@@ -47,12 +62,15 @@ func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) err
 	for ix, comp := range compounds {
 		debug.Printf("compound %d: merging %d shards with total size %.2f MiB\n", ix, len(comp.shards), float64(comp.size)/(1024*1024))
 		if !simulate {
+			start := time.Now()
 			stdOut, stdErr, err := callMerge(comp.shards)
+			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
 			debug.Printf("callMerge: OUT: %s, ERR: %s\n", string(stdOut), string(stdErr))
 			if err != nil {
 				debug.Printf("error during merging compound %d, stdErr: %s, err: %s\n", ix, stdErr, err)
 				continue
 			}
+			metricNumberCompoundShards.Inc()
 			// for len(comp.shards)<=1, callMerge is a NOP. Hence there is no need to log
 			// anything here.
 			if len(comp.shards) > 1 {

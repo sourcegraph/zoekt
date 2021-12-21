@@ -273,10 +273,23 @@ func shardsLog(indexDir, action string, shards []shard) {
 	}
 }
 
+var metricVacuumRunning = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "index_vacuum_running",
+	Help: "Set to 1 if indexserver's vacuum job is running.",
+})
+
+var metricNumberCompoundShards = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "index_number_compound_shards",
+	Help: "The number of compound shards.",
+})
+
 // vacuum removes tombstoned repos from compound shards and removes compound
 // shards if they shrink below minSizeBytes. Vacuum locks the index directory for
 // each compound shard it vacuums.
 func (s *Server) vacuum() {
+	metricVacuumRunning.Set(1)
+	defer metricVacuumRunning.Set(0)
+
 	d, err := os.Open(s.IndexDir)
 	if err != nil {
 		return
@@ -307,6 +320,7 @@ func (s *Server) vacuum() {
 			s.muIndexDir.Lock()
 			for _, p := range paths {
 				os.Remove(p)
+				metricNumberCompoundShards.Dec()
 			}
 			s.muIndexDir.Unlock()
 			shardsLog(s.IndexDir, "delete", []shard{{Path: path}})
