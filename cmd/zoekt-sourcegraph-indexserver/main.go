@@ -674,20 +674,12 @@ func getEnvWithDefaultInt64(k string, defaultVal int64) int64 {
 }
 
 func initializeCompoundShardCounter(indexDir string) {
-	fns, err := filepath.Glob(filepath.Join(indexDir, "*.zoekt"))
+	fns, err := filepath.Glob(filepath.Join(indexDir, "compound-*.zoekt"))
 	if err != nil {
 		log.Printf("initializeCompoundShardCounter: %s\n", err)
 		return
 	}
-
-	numCompoundShards := 0
-	for _, fn := range fns {
-		if !strings.HasPrefix(fn, "compound-") {
-			continue
-		}
-		numCompoundShards++
-	}
-	metricNumberCompoundShards.Set(float64(numCompoundShards))
+	metricNumberCompoundShards.Set(float64(len(fns)))
 }
 
 func main() {
