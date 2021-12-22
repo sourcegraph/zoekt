@@ -301,6 +301,8 @@ func (s *Server) Run() {
 			missing := s.queue.Bump(repos.IDs)
 			s.Sourcegraph.ForceIterateIndexOptions(s.queue.AddOrUpdate, missing...)
 
+			setCompoundShardCounter(s.IndexDir)
+
 			<-cleanupDone
 		}
 	}()
@@ -673,10 +675,10 @@ func getEnvWithDefaultInt64(k string, defaultVal int64) int64 {
 	return i
 }
 
-func initializeCompoundShardCounter(indexDir string) {
+func setCompoundShardCounter(indexDir string) {
 	fns, err := filepath.Glob(filepath.Join(indexDir, "compound-*.zoekt"))
 	if err != nil {
-		log.Printf("initializeCompoundShardCounter: %s\n", err)
+		log.Printf("setCompoundShardCounter: %s\n", err)
 		return
 	}
 	metricNumberCompoundShards.Set(float64(len(fns)))
@@ -844,7 +846,7 @@ func main() {
 	}
 
 	initializeGoogleCloudProfiler()
-	initializeCompoundShardCounter(s.IndexDir)
+	setCompoundShardCounter(s.IndexDir)
 
 	if *listen != "" {
 		go func() {

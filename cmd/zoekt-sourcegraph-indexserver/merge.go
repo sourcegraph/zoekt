@@ -70,7 +70,6 @@ func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) err
 				debug.Printf("error during merging compound %d, stdErr: %s, err: %s\n", ix, stdErr, err)
 				continue
 			}
-			metricNumberCompoundShards.Inc()
 			// for len(comp.shards)<=1, callMerge is a NOP. Hence there is no need to log
 			// anything here.
 			if len(comp.shards) > 1 {

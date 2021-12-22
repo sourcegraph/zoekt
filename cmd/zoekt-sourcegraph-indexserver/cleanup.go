@@ -320,7 +320,6 @@ func (s *Server) vacuum() {
 			s.muIndexDir.Lock()
 			for _, p := range paths {
 				os.Remove(p)
-				metricNumberCompoundShards.Dec()
 			}
 			s.muIndexDir.Unlock()
 			shardsLog(s.IndexDir, "delete", []shard{{Path: path}})
