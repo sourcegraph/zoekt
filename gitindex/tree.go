@@ -178,7 +178,7 @@ func (r *repoWalker) handleEntry(p string, e *object.TreeEntry) error {
 	}
 
 	switch e.Mode {
-	case filemode.Regular, filemode.Executable:
+	case filemode.Regular, filemode.Executable, filemode.Symlink:
 	default:
 		return nil
 	}
