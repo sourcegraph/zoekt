@@ -243,9 +243,6 @@ type RepositoryBranch struct {
 
 // Repository holds repository metadata.
 type Repository struct {
-	// Sourcergaph's repository ID
-	ID uint32
-
 	// The repository name
 	Name string
 
@@ -276,19 +273,27 @@ type Repository struct {
 	// separator, generally '#' or ';'.
 	LineFragmentTemplate string
 
-	// Perf optimization: priority is set when we load the shard. It corresponds to
-	// the value of "priority" stored in RawConfig.
-	priority float64
-
 	// All zoekt.* configuration settings.
 	RawConfig map[string]string
-
-	// Importance of the repository, bigger is more important
-	Rank uint16
 
 	// IndexOptions is a hash of the options used to create the index for the
 	// repo.
 	IndexOptions string
+
+	// LatestCommitDate is the date of the latest commit among all indexed Branches.
+	// The date might be time.Time's 0-value if the repository was last indexed
+	// before this field was added.
+	LatestCommitDate time.Time
+
+	// Perf optimization: priority is set when we load the shard. It corresponds to
+	// the value of "priority" stored in RawConfig.
+	priority float64
+
+	// Sourcegraph's repository ID
+	ID uint32
+
+	// Importance of the repository, bigger is more important
+	Rank uint16
 
 	// HasSymbols is true if this repository has indexed ctags
 	// output. Sourcegraph specific: This field is more appropriate for
@@ -298,11 +303,6 @@ type Repository struct {
 
 	// Tombstone is true if we are not allowed to search this repo.
 	Tombstone bool
-
-	// LatestCommitDate is the date of the latest commit among all indexed Branches.
-	// The date might be time.Time's 0-value if the repository was last indexed
-	// before this field was added.
-	LatestCommitDate time.Time
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {
@@ -489,12 +489,8 @@ func (o *ListOptions) String() string {
 }
 
 type SearchOptions struct {
-	// Return an upper-bound estimate of eligible documents in
-	// stats.ShardFilesConsidered.
-	EstimateDocCount bool
-
-	// Return the whole file.
-	Whole bool
+	// SpanContext is the opentracing span context, if it exists, from the zoekt client
+	SpanContext map[string]string
 
 	// Maximum number of matches: skip all processing an index
 	// shard after we found this many non-overlapping matches.
@@ -525,12 +521,16 @@ type SearchOptions struct {
 	// results
 	MaxDocDisplayCount int
 
+	// Return an upper-bound estimate of eligible documents in
+	// stats.ShardFilesConsidered.
+	EstimateDocCount bool
+
+	// Return the whole file.
+	Whole bool
+
 	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
 	// a command-line flag
 	Trace bool
-
-	// SpanContext is the opentracing span context, if it exists, from the zoekt client
-	SpanContext map[string]string
 }
 
 func (s *SearchOptions) String() string {

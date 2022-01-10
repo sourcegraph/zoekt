@@ -146,13 +146,15 @@ type regexpMatchTree struct {
 type substrMatchTree struct {
 	matchIterator
 
-	query         *query.Substring
-	caseSensitive bool
-	fileName      bool
+	query *query.Substring
 
 	// mutable
 	current       []*candidateMatch
 	contEvaluated bool
+
+	// immutable
+	caseSensitive bool
+	fileName      bool
 }
 
 type branchQueryMatchTree struct {
@@ -219,14 +221,14 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 type symbolSubstrMatchTree struct {
 	*substrMatchTree
 
-	patternSize   uint32
 	fileEndRunes  []uint32
 	fileEndSymbol []uint32
 
-	doc      uint32
 	sections []DocumentSection
 
-	secID uint32
+	patternSize uint32
+	doc         uint32
+	secID       uint32
 }
 
 func (t *symbolSubstrMatchTree) prepare(doc uint32) {

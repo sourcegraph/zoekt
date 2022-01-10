@@ -150,19 +150,12 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 
 // IndexBuilder builds a single index shard.
 type IndexBuilder struct {
-	// The version we will write to disk. Sourcegraph Specific. This is to
-	// enable feature flagging new format versions.
-	indexFormatVersion int
-	featureVersion     int
-
 	contentStrings  []*searchableString
 	nameStrings     []*searchableString
 	docSections     [][]DocumentSection
 	runeDocSections []DocumentSection
 
-	symID        uint32
 	symIndex     map[string]uint32
-	symKindID    uint32
 	symKindIndex map[string]uint32
 	symMetaData  []uint32
 
@@ -200,6 +193,14 @@ type IndexBuilder struct {
 
 	// a sortable 20 chars long id.
 	ID string
+
+	// The version we will write to disk. Sourcegraph Specific. This is to
+	// enable feature flagging new format versions.
+	indexFormatVersion int
+	featureVersion     int
+
+	symID     uint32
+	symKindID uint32
 }
 
 func (d *Repository) verify() error {

@@ -31,12 +31,12 @@ type contentProvider struct {
 
 	// mutable
 	err      error
-	idx      uint32
 	_data    []byte
 	_nl      []uint32
 	_nlBuf   []uint32
 	_sects   []DocumentSection
 	_sectBuf []DocumentSection
+	idx      uint32
 	fileSize uint32
 }
 
