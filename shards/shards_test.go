@@ -23,6 +23,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -457,7 +458,7 @@ func TestShardedSearcher_List(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			q := &query.Repo{Pattern: "epo"}
+			q := &query.Repo{Regexp: regexp.MustCompile("repo")}
 
 			res, err := ss.List(context.Background(), q, tc.opts)
 			if err != nil {

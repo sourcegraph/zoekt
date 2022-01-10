@@ -974,7 +974,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 	case *query.Repo:
 		reposWant := make([]bool, len(d.repoMetaData))
 		for repoIdx, r := range d.repoMetaData {
-			if strings.Contains(r.Name, s.Pattern) {
+			if s.Regexp.MatchString(r.Name) {
 				reposWant[repoIdx] = true
 			}
 		}

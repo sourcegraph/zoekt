@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"regexp"
 	"regexp/syntax"
 
 	"github.com/go-enry/go-enry/v2"
@@ -117,7 +118,13 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		expr = &caseQ{text}
 	case tokRepo:
-		expr = &Repo{Pattern: text}
+		r, err := regexp.Compile(text)
+
+		if err != nil {
+			return nil, 0, err
+		}
+
+		expr = &Repo{r}
 	case tokBranch:
 		expr = &Branch{Pattern: text}
 	case tokText, tokRegex:
