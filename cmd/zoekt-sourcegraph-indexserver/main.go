@@ -715,7 +715,6 @@ func main() {
 	listen := flag.String("listen", ":6072", "listen on this address.")
 	hostname := flag.String("hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	cpuFraction := flag.Float64("cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
-	indexingMetricsReposAllowlist := flag.String("INDEXING_METRICS_REPOS_ALLOWLIST", os.Getenv("INDEXING_METRICS_REPOS_ALLOWLIST"), "comma separated list of repositories that we capture separate indexing metrics for")
 	dbg := flag.Bool("debug", srcLogLevelIsDebug(), "turn on more verbose logging.")
 
 	// non daemon mode for debugging/testing
@@ -770,10 +769,12 @@ func main() {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	if *indexingMetricsReposAllowlist != "" {
+	indexingMetricsReposAllowlist := os.Getenv("INDEXING_METRICS_REPOS_ALLOWLIST")
+	if indexingMetricsReposAllowlist != "" {
 		var repos []string
 
-		for _, r := range strings.Split(*indexingMetricsReposAllowlist, ",") {
+		for _, r := range strings.Split(indexingMetricsReposAllowlist, ",") {
+			r = strings.TrimSpace(r)
 			if r != "" {
 				repos = append(repos, r)
 			}
