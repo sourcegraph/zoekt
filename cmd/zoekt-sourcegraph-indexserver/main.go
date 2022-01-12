@@ -63,7 +63,10 @@ var (
 		Name:    "index_repo_seconds",
 		Help:    "A histogram of latencies for indexing a repository.",
 		Buckets: prometheus.ExponentialBuckets(.1, 10, 7), // 100ms -> 27min
-	}, []string{"state"}) // state is an indexState
+	}, []string{
+		"state", // state is an indexState
+		"name",  // name of the repository that was indexed
+	})
 
 	metricIndexIncrementalIndexState = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "index_incremental_index_state",
@@ -90,6 +93,9 @@ var (
 		Help: "Counts indexings (indexing activity, should be used with rate())",
 	})
 )
+
+// set of repositories that we want to capture separate indexing metrics for
+var reposWithSeparateIndexingMetrics = make(map[string]struct{})
 
 type indexState string
 
@@ -345,7 +351,15 @@ func (s *Server) Run() {
 		state, err := s.Index(args)
 		s.muIndexDir.Unlock()
 
-		metricIndexDuration.WithLabelValues(string(state)).Observe(time.Since(start).Seconds())
+		// Check to see if we want to be able to capture separate indexing metrics for this repository.
+		// If we don't, set to a default string to keep the cardinality for the Prometheus metric manageable.
+		repoNameForMetric := ""
+		if _, ok = reposWithSeparateIndexingMetrics[opts.Name]; ok {
+			repoNameForMetric = opts.Name
+		}
+
+		metricIndexDuration.WithLabelValues(string(state), repoNameForMetric).Observe(time.Since(start).Seconds())
+
 		if err != nil {
 			log.Printf("error indexing %s: %s", args.String(), err)
 		}
@@ -753,6 +767,24 @@ func main() {
 
 	if *dbg || isDebugCmd {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
+	}
+
+	indexingMetricsReposAllowlist := os.Getenv("INDEXING_METRICS_REPOS_ALLOWLIST")
+	if indexingMetricsReposAllowlist != "" {
+		var repos []string
+
+		for _, r := range strings.Split(indexingMetricsReposAllowlist, ",") {
+			r = strings.TrimSpace(r)
+			if r != "" {
+				repos = append(repos, r)
+			}
+		}
+
+		for _, r := range repos {
+			reposWithSeparateIndexingMetrics[r] = struct{}{}
+		}
+
+		debug.Printf("capturing separate indexing metrics for: %s", repos)
 	}
 
 	var sg Sourcegraph
