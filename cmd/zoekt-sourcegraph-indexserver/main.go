@@ -771,13 +771,20 @@ func main() {
 	}
 
 	if *indexingMetricsReposAllowlist != "" {
-		for _, repo := range strings.Split(*indexingMetricsReposAllowlist, ",") {
-			if repo != "" {
-				reposWithSeparateIndexingMetrics[repo] = struct{}{}
+		var repos []string
+
+		for _, r := range strings.Split(*indexingMetricsReposAllowlist, ",") {
+			if r != "" {
+				repos = append(repos, r)
 			}
 		}
+
+		for _, r := range repos {
+			reposWithSeparateIndexingMetrics[r] = struct{}{}
+		}
+
+		debug.Printf("capturing separate indexing metrics for: %s", repos)
 	}
-	debug.Printf("capturing separate indexing metrics for: %s", reposWithSeparateIndexingMetrics)
 
 	var sg Sourcegraph
 	if rootURL.IsAbs() {
