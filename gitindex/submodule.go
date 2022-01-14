@@ -17,7 +17,6 @@ package gitindex
 import (
 	"bytes"
 	"fmt"
-	"io"
 
 	"github.com/go-git/go-git/v5/plumbing/format/config"
 )
@@ -36,13 +35,8 @@ func ParseGitModules(content []byte) (map[string]*SubmoduleEntry, error) {
 	// Handle the possibility that .gitmodules has a UTF-8 BOM, which would
 	// otherwise break the scanner.
 	// https://stackoverflow.com/a/21375405
-	r, _, err := buf.ReadRune()
-	if err != nil && err != io.EOF {
-		return nil, fmt.Errorf("buf.ReadRune: %w", err)
-	}
-	if r != '\uFEFF' {
-		buf.UnreadRune()
-	}
+	skipIfPrefix(buf, []byte("\uFEFF"))
+
 	dec := config.NewDecoder(buf)
 	cfg := &config.Config{}
 
@@ -75,4 +69,12 @@ func ParseGitModules(content []byte) (map[string]*SubmoduleEntry, error) {
 	}
 
 	return result, nil
+}
+
+// skipIfPrefix will detect if the unread portion of buf starts with
+// prefix. If it does, it will read over those bytes.
+func skipIfPrefix(buf *bytes.Buffer, prefix []byte) {
+	if bytes.HasPrefix(buf.Bytes(), prefix) {
+		buf.Next(len(prefix))
+	}
 }
