@@ -199,40 +199,30 @@ func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 	result, err := s.serveSearchErr(r)
-	if suggest, ok := err.(*query.SuggestQueryError); ok {
-		result = &ApiSearchResult{Suggestion: suggest}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusTeapot)
+		return
 	}
+
 	qvals := r.URL.Query()
 	if qvals.Get("format") == "json" {
 		w.Header().Add("Content-Type", "application/json")
-		if err != nil {
-			w.WriteHeader(http.StatusTeapot)
-		}
 		encoder := json.NewEncoder(w)
 		encoder.Encode(result)
 		return
 	}
 
 	var buf bytes.Buffer
-	if err == nil {
-		if result.Repos != nil {
-			err = s.repolist.Execute(&buf, &result.Repos)
-		} else if result.Result != nil {
-			err = s.result.Execute(&buf, &result.Result)
-		}
-		if err == nil {
-			w.Write(buf.Bytes())
-			return
-		}
+	if result.Repos != nil {
+		err = s.repolist.Execute(&buf, &result.Repos)
+	} else if result.Result != nil {
+		err = s.result.Execute(&buf, &result.Result)
 	}
-
-	http.Error(w, err.Error(), http.StatusTeapot)
-	if result != nil && result.Suggestion != nil {
-		if err = s.didYouMean.Execute(&buf, result.Suggestion); err == nil {
-			w.Write(buf.Bytes())
-		}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusTeapot)
+		return
 	}
-	http.Error(w, err.Error(), http.StatusTeapot)
+	w.Write(buf.Bytes())
 }
 
 func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
@@ -261,7 +251,11 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 	}
 
 	if qt, ok := q.(*query.Type); ok && qt.Type == query.TypeRepo {
-		return s.serveListReposErr(q, queryStr, w, r)
+		repos, err := s.serveListReposErr(q, queryStr, r)
+		if err == nil {
+			return &ApiSearchResult{Repos: repos}, nil
+		}
+		return nil, err
 	}
 
 	numStr := qvals.Get("num")

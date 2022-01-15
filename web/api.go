@@ -18,13 +18,11 @@ import (
 	"time"
 
 	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
 )
 
 type ApiSearchResult struct {
-	Result     *ResultInput             `json:"result,omitempty"`
-	Repos      *RepoListInput           `json:"repos,omitempty"`
-	Suggestion *query.SuggestQueryError `json:"suggestion,omitempty"`
+	Result *ResultInput   `json:"result,omitempty"`
+	Repos  *RepoListInput `json:"repos,omitempty"`
 }
 
 type LastInput struct {
