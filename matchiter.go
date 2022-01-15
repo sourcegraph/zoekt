@@ -18,15 +18,14 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
-	"unicode/utf8"
-
-	"github.com/google/zoekt/query"
 )
 
 // candidateMatch is a candidate match for a substring.
 type candidateMatch struct {
 	caseSensitive bool
 	fileName      bool
+	symbol        bool
+	symbolIdx     uint32
 
 	substrBytes   []byte
 	substrLowered []byte
@@ -207,74 +206,4 @@ func (i *ngramDocIterator) candidates() []*candidateMatch {
 	}
 	i.matchCount += len(candidates)
 	return candidates
-}
-
-type trimBySectionMatchIter struct {
-	matchIterator
-
-	patternSize  uint32
-	fileEndRunes []uint32
-
-	// mutable
-	doc      uint32
-	sections []DocumentSection
-}
-
-func (i *trimBySectionMatchIter) String() string {
-	return fmt.Sprintf("trimSection(sz=%d, %v)", i.patternSize, i.matchIterator)
-}
-
-func (d *indexData) newTrimByDocSectionIter(q *query.Substring, iter matchIterator) *trimBySectionMatchIter {
-	return &trimBySectionMatchIter{
-		matchIterator: iter,
-		patternSize:   uint32(utf8.RuneCountInString(q.Pattern)),
-		fileEndRunes:  d.fileEndRunes,
-		sections:      d.runeDocSections,
-	}
-}
-
-func (i *trimBySectionMatchIter) prepare(doc uint32) {
-	i.matchIterator.prepare(doc)
-	i.doc = doc
-
-	var fileStart uint32
-	if doc > 0 {
-		fileStart = i.fileEndRunes[doc-1]
-	}
-
-	for len(i.sections) > 0 && i.sections[0].Start < fileStart {
-		i.sections = i.sections[1:]
-	}
-}
-
-func (i *trimBySectionMatchIter) candidates() []*candidateMatch {
-	var fileStart uint32
-	if i.doc > 0 {
-		fileStart = i.fileEndRunes[i.doc-1]
-	}
-
-	ms := i.matchIterator.candidates()
-	trimmed := ms[:0]
-	for len(i.sections) > 0 && len(ms) > 0 {
-		start := fileStart + ms[0].runeOffset
-		end := start + i.patternSize
-		if start >= i.sections[0].End {
-			i.sections = i.sections[1:]
-			continue
-		}
-
-		if start < i.sections[0].Start {
-			ms = ms[1:]
-			continue
-		}
-
-		// here we have: sec.Start <= start < sec.End
-		if end <= i.sections[0].End {
-			// complete match falls inside section.
-			trimmed = append(trimmed, ms[0])
-		}
-
-		ms = ms[1:]
-	}
-	return trimmed
 }

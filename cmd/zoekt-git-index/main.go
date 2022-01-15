@@ -39,7 +39,7 @@ func main() {
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
-	maxprocs.Set()
+	_, _ = maxprocs.Set()
 
 	if *repoCacheDir != "" {
 		dir, err := filepath.Abs(*repoCacheDir)

@@ -137,7 +137,9 @@ func main() {
 		}
 
 		t := time.Now()
-		pprof.StartCPUProfile(f)
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal(err)
+		}
 		for {
 			sres, _ = searcher.Search(context.Background(), query, &sOpts)
 			if time.Since(t) > *profileTime {

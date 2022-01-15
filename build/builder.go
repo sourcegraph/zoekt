@@ -23,21 +23,27 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bmatcuk/doublestar"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/ctags"
+	"github.com/rs/xid"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var DefaultDir = filepath.Join(os.Getenv("HOME"), ".zoekt")
@@ -71,6 +77,9 @@ type Options struct {
 	// SubRepositories is a path => sub repository map.
 	SubRepositories map[string]*zoekt.Repository
 
+	// DisableCTags disables the generation of ctags metadata.
+	DisableCTags bool
+
 	// Path to exuberant ctags binary to run
 	CTags string
 
@@ -95,6 +104,7 @@ func (o *Options) HashOptions() string {
 	hasher.Write([]byte(fmt.Sprintf("%t", o.CTagsMustSucceed)))
 	hasher.Write([]byte(fmt.Sprintf("%d", o.SizeMax)))
 	hasher.Write([]byte(fmt.Sprintf("%q", o.LargeFiles)))
+	hasher.Write([]byte(fmt.Sprintf("%t", o.DisableCTags)))
 
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
@@ -118,7 +128,7 @@ func (f largeFilesFlag) Set(value string) error {
 	return nil
 }
 
-// Flags adds flags for build options to fs.
+// Flags adds flags for build options to fs. It is the "inverse" of Args.
 func (o *Options) Flags(fs *flag.FlagSet) {
 	x := *o
 	x.SetDefaults()
@@ -129,6 +139,49 @@ func (o *Options) Flags(fs *flag.FlagSet) {
 	fs.StringVar(&o.IndexDir, "index", x.IndexDir, "directory for search indices")
 	fs.BoolVar(&o.CTagsMustSucceed, "require_ctags", x.CTagsMustSucceed, "If set, ctags calls must succeed.")
 	fs.Var(largeFilesFlag{o}, "large_file", "A glob pattern where matching files are to be index regardless of their size. You can add multiple patterns by setting this more than once.")
+
+	// Sourcegraph specific
+	fs.BoolVar(&o.DisableCTags, "disable_ctags", x.DisableCTags, "If set, ctags will not be called.")
+}
+
+// Args generates command line arguments for o. It is the "inverse" of Flags.
+func (o *Options) Args() []string {
+	var args []string
+
+	if o.SizeMax != 0 {
+		args = append(args, "-file_limit", strconv.Itoa(o.SizeMax))
+	}
+
+	if o.TrigramMax != 0 {
+		args = append(args, "-max_trigram_count", strconv.Itoa(o.TrigramMax))
+	}
+
+	if o.ShardMax != 0 {
+		args = append(args, "-shard_limit", strconv.Itoa(o.ShardMax))
+	}
+
+	if o.Parallelism != 0 {
+		args = append(args, "-parallelism", strconv.Itoa(o.Parallelism))
+	}
+
+	if o.IndexDir != "" {
+		args = append(args, "-index", o.IndexDir)
+	}
+
+	if o.CTagsMustSucceed {
+		args = append(args, "-require_ctags")
+	}
+
+	for _, a := range o.LargeFiles {
+		args = append(args, "-large_file", a)
+	}
+
+	// Sourcegraph specific
+	if o.DisableCTags {
+		args = append(args, "-disable_ctags")
+	}
+
+	return args
 }
 
 // Builder manages (parallel) creation of uniformly sized shards. The
@@ -152,6 +205,14 @@ type Builder struct {
 	// temp name => final name for finished shards. We only rename
 	// them once all shards succeed to avoid Frankstein corpuses.
 	finishedShards map[string]string
+
+	shardLogger io.WriteCloser
+
+	// indexTime is set by tests for doing reproducible builds.
+	indexTime time.Time
+
+	// a sortable 20 chars long id.
+	id string
 }
 
 type finishedShard struct {
@@ -160,6 +221,12 @@ type finishedShard struct {
 
 // SetDefaults sets reasonable default options.
 func (o *Options) SetDefaults() {
+	if o.CTags == "" {
+		if ctags := os.Getenv("CTAGS_COMMAND"); ctags != "" {
+			o.CTags = ctags
+		}
+	}
+
 	if o.CTags == "" {
 		ctags, err := exec.LookPath("universal-ctags")
 		if err == nil {
@@ -173,6 +240,7 @@ func (o *Options) SetDefaults() {
 			o.CTags = ctags
 		}
 	}
+
 	if o.Parallelism == 0 {
 		o.Parallelism = 4
 	}
@@ -196,50 +264,162 @@ func (o *Options) SetDefaults() {
 
 func hashString(s string) string {
 	h := sha1.New()
-	io.WriteString(h, s)
+	_, _ = io.WriteString(h, s)
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 // ShardName returns the name the given index shard.
 func (o *Options) shardName(n int) string {
+	return o.shardNameVersion(zoekt.IndexFormatVersion, n)
+}
+
+func (o *Options) shardNameVersion(version, n int) string {
 	abs := url.QueryEscape(o.RepositoryDescription.Name)
 	if len(abs) > 200 {
 		abs = abs[:200] + hashString(abs)[:8]
 	}
 	return filepath.Join(o.IndexDir,
-		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, zoekt.IndexFormatVersion, n))
+		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, version, n))
 }
+
+type IndexState string
+
+const (
+	IndexStateMissing IndexState = "missing"
+	IndexStateCorrupt IndexState = "corrupt"
+	IndexStateVersion IndexState = "version-mismatch"
+	IndexStateOption  IndexState = "option-mismatch"
+	IndexStateMeta    IndexState = "meta-mismatch"
+	IndexStateContent IndexState = "content-mismatch"
+	IndexStateEqual   IndexState = "equal"
+)
+
+var readVersions = []struct {
+	IndexFormatVersion int
+	FeatureVersion     int
+}{{
+	IndexFormatVersion: zoekt.IndexFormatVersion,
+	FeatureVersion:     zoekt.FeatureVersion,
+}, {
+	IndexFormatVersion: zoekt.NextIndexFormatVersion,
+	FeatureVersion:     zoekt.FeatureVersion,
+}}
 
 // IncrementalSkipIndexing returns true if the index present on disk matches
 // the build options.
 func (o *Options) IncrementalSkipIndexing() bool {
-	fn := o.shardName(0)
+	return o.IndexState() == IndexStateEqual
+}
 
-	f, err := os.Open(fn)
-	if err != nil {
-		return false
+// IndexState checks how the index present on disk compares to the build
+// options.
+func (o *Options) IndexState() IndexState {
+	// Open the latest version we support that is on disk.
+	fn := o.findShard()
+	if fn == "" {
+		return IndexStateMissing
 	}
 
-	iFile, err := zoekt.NewIndexFile(f)
-	if err != nil {
-		return false
-	}
-	defer iFile.Close()
-
-	repo, index, err := zoekt.ReadMetadata(iFile)
-	if err != nil {
-		return false
+	repos, index, err := zoekt.ReadMetadataPathAlive(fn)
+	if os.IsNotExist(err) {
+		return IndexStateMissing
+	} else if err != nil {
+		return IndexStateCorrupt
 	}
 
-	if index.IndexFeatureVersion != zoekt.FeatureVersion {
-		return false
+	for _, v := range readVersions {
+		if v.IndexFormatVersion == index.IndexFormatVersion && v.FeatureVersion != index.IndexFeatureVersion {
+			return IndexStateVersion
+		}
+	}
+
+	var repo *zoekt.Repository
+	for _, cand := range repos {
+		if cand.Name == o.RepositoryDescription.Name {
+			repo = cand
+			break
+		}
+	}
+
+	if repo == nil {
+		return IndexStateCorrupt
 	}
 
 	if repo.IndexOptions != o.HashOptions() {
-		return false
+		return IndexStateOption
 	}
 
-	return reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches)
+	if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
+		return IndexStateContent
+	}
+
+	// We can mutate repo since it lives in the scope of this function call.
+	if updated, err := repo.MergeMutable(&o.RepositoryDescription); err != nil {
+		// non-nil err means we are trying to update an immutable field =>
+		// reindex content.
+		log.Printf("warn: immutable field changed, requires re-index: %s", err)
+		return IndexStateContent
+	} else if updated {
+		return IndexStateMeta
+	}
+
+	return IndexStateEqual
+}
+
+func (o *Options) findShard() string {
+	for _, v := range readVersions {
+		fn := o.shardNameVersion(v.IndexFormatVersion, 0)
+		if _, err := os.Stat(fn); err == nil {
+			return fn
+		}
+	}
+
+	// Brute force finding the shard in compound shards. We should only hit this
+	// code path for repositories that are not already existing or are in
+	// compound shards.
+	//
+	// TODO add an oracle which can speed this up in the case of repositories
+	// already in compound shards.
+	compoundShards, err := filepath.Glob(path.Join(o.IndexDir, "compound-*.zoekt"))
+	if err != nil {
+		return ""
+	}
+	for _, fn := range compoundShards {
+		repos, _, err := zoekt.ReadMetadataPathAlive(fn)
+		if err != nil {
+			continue
+		}
+		for _, repo := range repos {
+			if repo.Name == o.RepositoryDescription.Name {
+				return fn
+			}
+		}
+	}
+
+	return ""
+}
+
+func (o *Options) FindAllShards() []string {
+	for _, v := range readVersions {
+		fn := o.shardNameVersion(v.IndexFormatVersion, 0)
+		if _, err := os.Stat(fn); err == nil {
+			shards := []string{fn}
+			for i := 1; ; i++ {
+				fn := o.shardNameVersion(v.IndexFormatVersion, i)
+				if _, err := os.Stat(fn); err != nil {
+					return shards
+				}
+				shards = append(shards, fn)
+			}
+		}
+	}
+
+	// lazily fallback to findShard which will look for a compound shard.
+	if fn := o.findShard(); fn != "" {
+		return []string{fn}
+	}
+
+	return nil
 }
 
 // IgnoreSizeMax determines whether the max size should be ignored.
@@ -268,6 +448,10 @@ func NewBuilder(opts Options) (*Builder, error) {
 		finishedShards: map[string]string{},
 	}
 
+	if b.opts.DisableCTags {
+		b.opts.CTags = ""
+	}
+
 	if b.opts.CTags == "" && b.opts.CTagsMustSucceed {
 		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
 	}
@@ -280,9 +464,20 @@ func NewBuilder(opts Options) (*Builder, error) {
 
 		b.parser = parser
 	}
+
+	b.shardLogger = &lumberjack.Logger{
+		Filename:   filepath.Join(opts.IndexDir, "zoekt-builder-shard-log.tsv"),
+		MaxSize:    100, // Megabyte
+		MaxBackups: 5,
+	}
+
 	if _, err := b.newShardBuilder(); err != nil {
 		return nil, err
 	}
+
+	now := time.Now()
+	b.indexTime = now
+	b.id = xid.NewWithTime(now).String()
 
 	return b, nil
 }
@@ -293,19 +488,33 @@ func (b *Builder) AddFile(name string, content []byte) error {
 }
 
 func (b *Builder) Add(doc zoekt.Document) error {
-	// We could pass the document on to the shardbuilder, but if
-	// we pass through a part of the source tree with binary/large
-	// files, the corresponding shard would be mostly empty, so
-	// insert a reason here too.
-	if len(doc.Content) > b.opts.SizeMax && !b.opts.IgnoreSizeMax(doc.Name) {
+	allowLargeFile := b.opts.IgnoreSizeMax(doc.Name)
+
+	// Adjust trigramMax for allowed large files so we don't exclude them.
+	trigramMax := b.opts.TrigramMax
+	if allowLargeFile {
+		trigramMax = math.MaxInt64
+	}
+
+	if len(doc.Content) > b.opts.SizeMax && !allowLargeFile {
+		// We could pass the document on to the shardbuilder, but if
+		// we pass through a part of the source tree with binary/large
+		// files, the corresponding shard would be mostly empty, so
+		// insert a reason here too.
 		doc.SkipReason = fmt.Sprintf("document size %d larger than limit %d", len(doc.Content), b.opts.SizeMax)
-	} else if err := zoekt.CheckText(doc.Content, b.opts.TrigramMax); err != nil {
+	} else if err := zoekt.CheckText(doc.Content, trigramMax); err != nil {
 		doc.SkipReason = err.Error()
 		doc.Language = "binary"
 	}
 
 	b.todo = append(b.todo, &doc)
-	b.size += len(doc.Name) + len(doc.Content)
+
+	if doc.SkipReason == "" {
+		b.size += len(doc.Name) + len(doc.Content)
+	} else {
+		b.size += len(doc.Name) + len(doc.SkipReason)
+	}
+
 	if b.size > b.opts.ShardMax {
 		return b.flush()
 	}
@@ -322,34 +531,66 @@ func (b *Builder) Finish() error {
 
 	if b.buildError != nil {
 		for tmp := range b.finishedShards {
+			log.Printf("Builder.Finish %s", tmp)
 			os.Remove(tmp)
 		}
 		b.finishedShards = map[string]string{}
 		return b.buildError
 	}
 
+	// We mark finished shards as empty when we successfully finish. Return now
+	// to allow call sites to call Finish idempotently.
+	if len(b.finishedShards) == 0 {
+		return nil
+	}
+
+	defer b.shardLogger.Close()
+
+	// Collect a map of the old shards on disk. For each new shard we replace we
+	// delete it from toDelete. Anything remaining in toDelete will be removed
+	// after we have renamed everything into place.
+	toDelete := map[string]struct{}{}
+	for _, name := range b.opts.FindAllShards() {
+		paths, err := zoekt.IndexFilePaths(name)
+		if err != nil {
+			b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
+		}
+		for _, p := range paths {
+			toDelete[p] = struct{}{}
+		}
+	}
+
 	for tmp, final := range b.finishedShards {
 		if err := os.Rename(tmp, final); err != nil {
 			b.buildError = err
+			continue
 		}
+
+		delete(toDelete, final)
+
+		b.shardLog("upsert", final, b.opts.RepositoryDescription.Name)
 	}
 	b.finishedShards = map[string]string{}
 
-	if b.nextShardNum > 0 {
-		b.deleteRemainingShards()
-	}
-	return b.buildError
-}
-
-func (b *Builder) deleteRemainingShards() {
-	for {
-		shard := b.nextShardNum
-		b.nextShardNum++
-		name := b.opts.shardName(shard)
-		if err := os.Remove(name); os.IsNotExist(err) {
-			break
+	for p := range toDelete {
+		// Don't delete compound shards, set tombstones instead.
+		if zoekt.ShardMergingEnabled() && strings.HasPrefix(filepath.Base(p), "compound-") {
+			if !strings.HasSuffix(p, ".zoekt") {
+				continue
+			}
+			b.shardLog("tomb", p, b.opts.RepositoryDescription.Name)
+			err := zoekt.SetTombstone(p, b.opts.RepositoryDescription.ID)
+			b.buildError = err
+			continue
+		}
+		log.Printf("removing old shard file: %s", p)
+		b.shardLog("remove", p, b.opts.RepositoryDescription.Name)
+		if err := os.Remove(p); err != nil {
+			b.buildError = err
 		}
 	}
+
+	return b.buildError
 }
 
 func (b *Builder) flush() error {
@@ -407,6 +648,15 @@ func (b *Builder) flush() error {
 	return nil
 }
 
+func (b *Builder) shardLog(action, shard string, repoName string) {
+	shard = filepath.Base(shard)
+	var shardSize int64
+	if fi, err := os.Stat(filepath.Join(b.opts.IndexDir, shard)); err == nil {
+		shardSize = fi.Size()
+	}
+	_, _ = fmt.Fprintf(b.shardLogger, "%d\t%s\t%s\t%d\t%s\n", time.Now().UTC().Unix(), action, shard, shardSize, repoName)
+}
+
 var profileNumber int
 
 func (b *Builder) writeMemProfile(name string) {
@@ -438,6 +688,16 @@ type rankedDoc struct {
 }
 
 func rank(d *zoekt.Document, origIdx int) []float64 {
+	generated := 0.0
+	if strings.HasSuffix(d.Name, "min.js") || strings.HasSuffix(d.Name, "js.map") {
+		generated = 1.0
+	}
+
+	vendor := 0.0
+	if strings.Contains(d.Name, "vendor/") || strings.Contains(d.Name, "node_modules/") {
+		vendor = 1.0
+	}
+
 	test := 0.0
 	if testRe.MatchString(d.Name) {
 		test = 1.0
@@ -445,6 +705,12 @@ func rank(d *zoekt.Document, origIdx int) []float64 {
 
 	// Smaller is earlier (=better).
 	return []float64{
+		// Prefer docs that are not generated
+		generated,
+
+		// Prefer docs that are not vendored
+		vendor,
+
 		// Prefer docs that are not tests
 		test,
 
@@ -519,6 +785,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 
 func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	desc := b.opts.RepositoryDescription
+	desc.HasSymbols = b.opts.CTags != ""
 	desc.SubRepoMap = b.opts.SubRepositories
 	desc.IndexOptions = b.opts.HashOptions()
 
@@ -526,6 +793,8 @@ func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	if err != nil {
 		return nil, err
 	}
+	shardBuilder.IndexTime = b.indexTime
+	shardBuilder.ID = b.id
 	return shardBuilder, nil
 }
 

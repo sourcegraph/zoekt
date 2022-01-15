@@ -16,6 +16,7 @@ package zoekt
 
 import (
 	"encoding/binary"
+	"sort"
 	"unicode"
 	"unicode/utf8"
 )
@@ -250,6 +251,46 @@ func fromSizedDeltas(data []byte, ps []uint32) []uint32 {
 	return ps
 }
 
+func toSizedDeltas16(offsets []uint16) []byte {
+	var enc [8]byte
+
+	deltas := make([]byte, 0, len(offsets)*2)
+
+	m := binary.PutUvarint(enc[:], uint64(len(offsets)))
+	deltas = append(deltas, enc[:m]...)
+
+	var last uint16
+	for _, p := range offsets {
+		delta := p - last
+		last = p
+
+		m := binary.PutUvarint(enc[:], uint64(delta))
+		deltas = append(deltas, enc[:m]...)
+	}
+	return deltas
+}
+
+func fromSizedDeltas16(data []byte, ps []uint16) []uint16 {
+	sz, m := binary.Uvarint(data)
+	data = data[m:]
+
+	if cap(ps) < int(sz) {
+		ps = make([]uint16, 0, sz)
+	} else {
+		ps = ps[:0]
+	}
+
+	var last uint16
+	for len(data) > 0 {
+		delta, m := binary.Uvarint(data)
+		offset := last + uint16(delta)
+		last = offset
+		data = data[m:]
+		ps = append(ps, offset)
+	}
+	return ps
+}
+
 func fromDeltas(data []byte, buf []uint32) []uint32 {
 	buf = buf[:0]
 	if cap(buf) < len(data)/2 {
@@ -265,4 +306,70 @@ func fromDeltas(data []byte, buf []uint32) []uint32 {
 		buf = append(buf, offset)
 	}
 	return buf
+}
+
+type runeOffsetCorrection struct {
+	runeOffset, byteOffset uint32
+}
+
+// runeOffsetMap converts from rune offsets (with granularity runeOffsetFrequency)
+// to byte offsets, by tracking only the points where a span of runes is non-ASCII,
+// and otherwise interpolating expected byte offsets as one byte per rune.
+//
+// Instead of storing [100, 205, 305], it stores [{x: 200, y: 205}].
+//
+// This is very rarely a slight pessimization on repos where there are frequent
+// non-ASCII characters.
+type runeOffsetMap []runeOffsetCorrection
+
+// makeRuneOffsetMap converts the mostly-predictable runeOffset input
+// into a shorter form tracking the unexpected values.
+//
+// The input is a sequence of y values that we expect to increase by 100 each,
+// so we just store (x, y) points where the expectation is violated.
+func makeRuneOffsetMap(off []uint32) runeOffsetMap {
+	expected := uint32(0)
+	tmp := []runeOffsetCorrection{}
+	for runeOffset, byteOffset := range off {
+		if byteOffset != expected {
+			tmp = append(tmp, runeOffsetCorrection{uint32(runeOffset) * runeOffsetFrequency, byteOffset})
+			expected = byteOffset
+		}
+		expected += runeOffsetFrequency
+	}
+	// copy the slice to ensure it doesn't waste unused trailing capacity
+	out := make([]runeOffsetCorrection, len(tmp))
+	copy(out, tmp)
+	return runeOffsetMap(out)
+}
+
+// lookup converts rune index `off` to a byte offset and a number of additional
+// runes to traverse, given the granularity of runeOffsetFrequency.
+//
+// It does this by finding the nearest point to interpolate from in the map.
+func (m runeOffsetMap) lookup(runeOffset uint32) (uint32, uint32) {
+	left := runeOffset % runeOffsetFrequency
+	runeOffset -= left
+	slen := len(m)
+	if slen == 0 {
+		return runeOffset, left
+	}
+	// sort.Search finds the *first* index for which the predicate is true,
+	// but we want to find the *last* index for which the predicate is true.
+	// This involves some work to reverse the index directions.
+	idx := sort.Search(slen, func(i int) bool {
+		return runeOffset >= m[slen-1-i].runeOffset
+	})
+	idx = slen - 1 - idx
+	// idx is now in the range [-1, len(m))-- -1 indicates that the offset is smaller
+	// than the first entry in the map, so no correction is necessary.
+	byteOff := runeOffset
+	if idx >= 0 {
+		byteOff = m[idx].byteOffset + runeOffset - m[idx].runeOffset
+	}
+	return byteOff, left
+}
+
+func (m runeOffsetMap) sizeBytes() int {
+	return 8 * len(m)
 }

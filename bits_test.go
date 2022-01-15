@@ -196,3 +196,58 @@ func sortedUnique(nums []uint32) []uint32 {
 	}
 	return filtered
 }
+
+func TestCondenseRuneOffsets(t *testing.T) {
+	for i, tc := range []struct {
+		arr  []uint32
+		want []runeOffsetCorrection
+	}{
+		{[]uint32{}, []runeOffsetCorrection{}},
+		{[]uint32{0, 100, 200, 300, 400, 500}, []runeOffsetCorrection{}},
+		{[]uint32{0, 105, 205, 310, 420}, []runeOffsetCorrection{{100, 105}, {300, 310}, {400, 420}}},
+	} {
+		got := makeRuneOffsetMap(tc.arr)
+		if !reflect.DeepEqual(got, runeOffsetMap(tc.want)) {
+			t.Errorf("#%d: got %v, want %v", i, got, tc.want)
+		}
+		for j, byteOffset := range tc.arr {
+			runeOffset := uint32(j * runeOffsetFrequency)
+			gotByteOffset, _ := got.lookup(runeOffset)
+			if gotByteOffset != byteOffset {
+				t.Errorf("#%d: lookup(%v) got %v, want %v", i, runeOffset, gotByteOffset, byteOffset)
+			}
+		}
+	}
+}
+
+func TestRuneOffsetLookup(t *testing.T) {
+	for i, tc := range []struct {
+		r                 uint32
+		wantOff, wantLeft uint32
+		offsets           []runeOffsetCorrection
+	}{
+		{0, 0, 0, nil},
+		{1234, 1200, 34, nil},
+		{5, 0, 5, []runeOffsetCorrection{{100, 105}, {400, 430}}},
+		{120, 105, 20, []runeOffsetCorrection{{100, 105}, {400, 430}}},
+		{1234, 1230, 34, []runeOffsetCorrection{{100, 105}, {400, 430}}},
+	} {
+		gotOff, gotLeft := runeOffsetMap(tc.offsets).lookup(tc.r)
+		if gotLeft != tc.wantLeft {
+			t.Errorf("#%d: got left=%v, want left=%v", i, gotLeft, tc.wantLeft)
+		}
+		if gotOff != tc.wantOff {
+			t.Errorf("#%d: got off=%v, want off=%v", i, gotOff, tc.wantOff)
+		}
+	}
+
+	m := runeOffsetMap([]runeOffsetCorrection{{100, 105}, {200, 210}, {400, 430}})
+	inputs := []uint32{0, 1, 99, 100, 101, 199, 200, 201, 300, 399, 400, 401, 510, 610}
+	wanted := []uint32{0, 0, 0, 105, 105, 105, 210, 210, 310, 310, 430, 430, 530, 630}
+	for i, v := range inputs {
+		got, _ := m.lookup(v)
+		if got != wanted[i] {
+			t.Errorf("got off=%v, want off=%v for map=%v", got, wanted[i], m)
+		}
+	}
+}

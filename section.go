@@ -29,15 +29,14 @@ type writer struct {
 	off uint32
 }
 
-func (w *writer) Write(b []byte) error {
+func (w *writer) Write(b []byte) {
 	if w.err != nil {
-		return w.err
+		return
 	}
 
 	var n int
 	n, w.err = w.w.Write(b)
 	w.off += uint32(n)
-	return w.err
 }
 
 func (w *writer) Off() uint32 { return w.off }
@@ -89,8 +88,9 @@ type section interface {
 type sectionKind int
 
 const (
-	sectionKindSimple  sectionKind = 0
-	sectionKindComplex sectionKind = 1
+	sectionKindSimple       sectionKind = 0
+	sectionKindCompound     sectionKind = 1
+	sectionKindCompoundLazy sectionKind = 2
 )
 
 // simpleSection is a simple range of bytes.
@@ -131,7 +131,7 @@ type compoundSection struct {
 }
 
 func (s *compoundSection) kind() sectionKind {
-	return sectionKindComplex
+	return sectionKindCompound
 }
 
 func (s *compoundSection) start(w *writer) {
@@ -180,4 +180,21 @@ func (s *compoundSection) relativeIndex() []uint32 {
 		ri = append(ri, s.data.sz)
 	}
 	return ri
+}
+
+type lazyCompoundSection struct {
+	compoundSection
+}
+
+func (s *lazyCompoundSection) kind() sectionKind {
+	return sectionKindCompoundLazy
+}
+
+func (s *lazyCompoundSection) read(r *reader) error {
+	// We do the same thing compoundSection.read does, except we don't read the
+	// offsets.
+	if err := s.data.read(r); err != nil {
+		return err
+	}
+	return s.index.read(r)
 }

@@ -120,6 +120,11 @@ type notMatchTree struct {
 	child matchTree
 }
 
+// Returns only the filename of child matches.
+type fileNameMatchTree struct {
+	child matchTree
+}
+
 // Don't visit this subtree for collecting matches.
 type noVisitMatchTree struct {
 	matchTree
@@ -152,11 +157,130 @@ type substrMatchTree struct {
 
 type branchQueryMatchTree struct {
 	fileMasks []uint64
-	mask      uint64
+	masks     []uint64
+	repos     []uint16
 
 	// mutable
 	firstDone bool
 	docID     uint32
+}
+
+type symbolRegexpMatchTree struct {
+	matchTree
+	regexp *regexp.Regexp
+	all    bool // skips regex match if .*
+
+	reEvaluated bool
+	found       []*candidateMatch
+}
+
+func (t *symbolRegexpMatchTree) prepare(doc uint32) {
+	t.reEvaluated = false
+}
+
+func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
+	if t.reEvaluated {
+		return len(t.found) > 0, true
+	}
+
+	if cost < costRegexp {
+		return false, false
+	}
+
+	sections := cp.docSections()
+	content := cp.data(false)
+
+	found := t.found[:0]
+	for i, sec := range sections {
+		var idx []int
+		if t.all {
+			idx = []int{0, int(sec.End - sec.Start)}
+		} else {
+			idx = t.regexp.FindIndex(content[sec.Start:sec.End])
+			if idx == nil {
+				continue
+			}
+		}
+
+		cm := &candidateMatch{
+			byteOffset:  sec.Start + uint32(idx[0]),
+			byteMatchSz: uint32(idx[1] - idx[0]),
+			symbol:      true,
+			symbolIdx:   uint32(i),
+		}
+		found = append(found, cm)
+	}
+	t.found = found
+	t.reEvaluated = true
+
+	return len(t.found) > 0, true
+}
+
+type symbolSubstrMatchTree struct {
+	*substrMatchTree
+
+	patternSize   uint32
+	fileEndRunes  []uint32
+	fileEndSymbol []uint32
+
+	doc      uint32
+	sections []DocumentSection
+
+	secID uint32
+}
+
+func (t *symbolSubstrMatchTree) prepare(doc uint32) {
+	t.substrMatchTree.prepare(doc)
+	t.doc = doc
+
+	var fileStart uint32
+	if doc > 0 {
+		fileStart = t.fileEndRunes[doc-1]
+	}
+
+	var sections []DocumentSection
+	if len(t.sections) > 0 {
+		most := t.fileEndSymbol[len(t.fileEndSymbol)-1]
+		if most == uint32(len(t.sections)) {
+			sections = t.sections[t.fileEndSymbol[doc]:t.fileEndSymbol[doc+1]]
+		} else {
+			for t.secID < uint32(len(t.sections)) && t.sections[t.secID].Start < fileStart {
+				t.secID++
+			}
+
+			fileEnd, symbolEnd := t.fileEndRunes[doc], t.secID
+			for symbolEnd < uint32(len(t.sections)) && t.sections[symbolEnd].Start < fileEnd {
+				symbolEnd++
+			}
+
+			sections = t.sections[t.secID:symbolEnd]
+		}
+	}
+
+	secIdx := 0
+	trimmed := t.current[:0]
+	for len(sections) > secIdx && len(t.current) > 0 {
+		start := fileStart + t.current[0].runeOffset
+		end := start + t.patternSize
+		if start >= sections[secIdx].End {
+			secIdx++
+			continue
+		}
+
+		if start < sections[secIdx].Start {
+			t.current = t.current[1:]
+			continue
+		}
+
+		if end <= sections[secIdx].End {
+			t.current[0].symbol = true
+			t.current[0].symbolIdx = uint32(secIdx)
+			trimmed = append(trimmed, t.current[0])
+		}
+
+		t.current = t.current[1:]
+	}
+	t.current = trimmed
 }
 
 // all prepare methods
@@ -190,6 +314,10 @@ func (t *orMatchTree) prepare(doc uint32) {
 }
 
 func (t *notMatchTree) prepare(doc uint32) {
+	t.child.prepare(doc)
+}
+
+func (t *fileNameMatchTree) prepare(doc uint32) {
 	t.child.prepare(doc)
 }
 
@@ -252,6 +380,10 @@ func (t *notMatchTree) nextDoc() uint32 {
 	return 0
 }
 
+func (t *fileNameMatchTree) nextDoc() uint32 {
+	return t.child.nextDoc()
+}
+
 func (t *branchQueryMatchTree) nextDoc() uint32 {
 	var start uint32
 	if t.firstDone {
@@ -259,7 +391,7 @@ func (t *branchQueryMatchTree) nextDoc() uint32 {
 	}
 
 	for i := start; i < uint32(len(t.fileMasks)); i++ {
-		if (t.mask & t.fileMasks[i]) != 0 {
+		if (t.masks[t.repos[i]] & t.fileMasks[i]) != 0 {
 			return i
 		}
 	}
@@ -281,7 +413,11 @@ func (t *andMatchTree) String() string {
 }
 
 func (t *regexpMatchTree) String() string {
-	return fmt.Sprintf("re(%s)", t.regexp)
+	f := ""
+	if t.fileName {
+		f = "f"
+	}
+	return fmt.Sprintf("%sre(%s)", f, t.regexp)
 }
 
 func (t *orMatchTree) String() string {
@@ -290,6 +426,14 @@ func (t *orMatchTree) String() string {
 
 func (t *notMatchTree) String() string {
 	return fmt.Sprintf("not(%v)", t.child)
+}
+
+func (t *noVisitMatchTree) String() string {
+	return fmt.Sprintf("novisit(%v)", t.matchTree)
+}
+
+func (t *fileNameMatchTree) String() string {
+	return fmt.Sprintf("f(%v)", t.child)
 }
 
 func (t *substrMatchTree) String() string {
@@ -302,7 +446,15 @@ func (t *substrMatchTree) String() string {
 }
 
 func (t *branchQueryMatchTree) String() string {
-	return fmt.Sprintf("branch(%x)", t.mask)
+	return fmt.Sprintf("branch(%x)", t.masks)
+}
+
+func (t *symbolSubstrMatchTree) String() string {
+	return fmt.Sprintf("symbol(%v)", t.substrMatchTree)
+}
+
+func (t *symbolRegexpMatchTree) String() string {
+	return fmt.Sprintf("symbol(%v)", t.matchTree)
 }
 
 // visitMatches visits all atoms in matchTree. Note: This visits
@@ -323,6 +475,12 @@ func visitMatchTree(t matchTree, f func(matchTree)) {
 		visitMatchTree(s.matchTree, f)
 	case *notMatchTree:
 		visitMatchTree(s.child, f)
+	case *fileNameMatchTree:
+		visitMatchTree(s.child, f)
+	case *symbolSubstrMatchTree:
+		visitMatchTree(s.substrMatchTree, f)
+	case *symbolRegexpMatchTree:
+		visitMatchTree(s.matchTree, f)
 	default:
 		f(t)
 	}
@@ -346,9 +504,13 @@ func visitMatches(t matchTree, known map[matchTree]bool, f func(matchTree)) {
 				visitMatches(ch, known, f)
 			}
 		}
+	case *symbolSubstrMatchTree:
+		visitMatches(s.substrMatchTree, known, f)
 	case *notMatchTree:
 	case *noVisitMatchTree:
 		// don't collect into negative trees.
+	case *fileNameMatchTree:
+		// We will just gather the filename if we do not visit this tree.
 	default:
 		f(s)
 	}
@@ -480,7 +642,7 @@ func (t *orMatchTree) matches(cp *contentProvider, cost int, known map[matchTree
 }
 
 func (t *branchQueryMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
-	return t.fileMasks[t.docID]&t.mask != 0, true
+	return t.fileMasks[t.docID]&t.masks[t.repos[t.docID]] != 0, true
 }
 
 func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
@@ -561,6 +723,10 @@ func evalMatchTree(cp *contentProvider, cost int, known map[matchTree]bool, mt m
 func (t *notMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
 	v, ok := evalMatchTree(cp, cost, known, t.child)
 	return !v, ok
+}
+
+func (t *fileNameMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
+	return evalMatchTree(cp, cost, known, t.child)
 }
 
 func (t *substrMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
@@ -657,23 +823,45 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			child: ct,
 		}, err
 
+	case *query.Type:
+		if s.Type != query.TypeFileName {
+			break
+		}
+
+		ct, err := d.newMatchTree(s.Child)
+		if err != nil {
+			return nil, err
+		}
+
+		return &fileNameMatchTree{
+			child: ct,
+		}, nil
+
 	case *query.Substring:
 		return d.newSubstringMatchTree(s)
 
 	case *query.Branch:
-		mask := uint64(0)
+		masks := make([]uint64, 0, len(d.repoMetaData))
 		if s.Pattern == "HEAD" {
-			mask = 1
-		} else {
-			for nm, m := range d.branchIDs {
-				if strings.Contains(nm, s.Pattern) {
-					mask |= uint64(m)
-				}
+			for i := 0; i < len(d.repoMetaData); i++ {
+				masks = append(masks, 1)
 			}
+		} else {
+			for _, branchIDs := range d.branchIDs {
+				mask := uint64(0)
+				for nm, m := range branchIDs {
+					if (s.Exact && nm == s.Pattern) || (!s.Exact && strings.Contains(nm, s.Pattern)) {
+						mask |= uint64(m)
+					}
+				}
+				masks = append(masks, mask)
+			}
+
 		}
 		return &branchQueryMatchTree{
-			mask:      mask,
+			masks:     masks,
 			fileMasks: d.fileBranchMasks,
+			repos:     d.repos,
 		}, nil
 	case *query.Const:
 		if s.Value {
@@ -688,28 +876,139 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}
 		return &docMatchTree{
 			reason:  "language",
-			numDocs: uint32(len(d.languages)),
+			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
-				return d.languages[docID] == code
+				return d.getLanguage(docID) == code
 			},
 		}, nil
 
 	case *query.Symbol:
-		mt, err := d.newSubstringMatchTree(s.Atom)
+		subMT, err := d.newMatchTree(s.Expr)
 		if err != nil {
 			return nil, err
 		}
 
-		if _, ok := mt.(*regexpMatchTree); ok {
-			return nil, fmt.Errorf("regexps and short queries not implemented for symbol search")
-		}
-		subMT, ok := mt.(*substrMatchTree)
-		if !ok {
-			return nil, fmt.Errorf("found %T inside query.Symbol", mt)
+		if substr, ok := subMT.(*substrMatchTree); ok {
+			return &symbolSubstrMatchTree{
+				substrMatchTree: substr,
+				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
+				fileEndRunes:    d.fileEndRunes,
+				fileEndSymbol:   d.fileEndSymbol,
+				sections:        unmarshalDocSections(d.runeDocSections, nil),
+			}, nil
 		}
 
-		subMT.matchIterator = d.newTrimByDocSectionIter(s.Atom, subMT.matchIterator)
-		return subMT, nil
+		var regexp *regexp.Regexp
+		visitMatchTree(subMT, func(mt matchTree) {
+			if t, ok := mt.(*regexpMatchTree); ok {
+				regexp = t.regexp
+			}
+		})
+		if regexp == nil {
+			return nil, fmt.Errorf("found %T inside query.Symbol", subMT)
+		}
+
+		return &symbolRegexpMatchTree{
+			regexp:    regexp,
+			all:       regexp.String() == "(?i)(?-s:.)*",
+			matchTree: subMT,
+		}, nil
+
+	case *query.BranchesRepos:
+		reposBranchesWant := make([]uint64, len(d.repoMetaData))
+		for repoIdx := range d.repoMetaData {
+			var mask uint64
+			for _, br := range s.List {
+				if br.Repos.Contains(d.repoMetaData[repoIdx].ID) {
+					mask |= uint64(d.branchIDs[repoIdx][br.Branch])
+				}
+			}
+			reposBranchesWant[repoIdx] = mask
+		}
+		return &docMatchTree{
+			reason:  "BranchesRepos",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return d.fileBranchMasks[docID]&reposBranchesWant[d.repos[docID]] != 0
+			},
+		}, nil
+
+	case *query.RepoBranches:
+		reposBranchesWant := make([]uint64, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
+			if branches, ok := s.Set[r.Name]; ok {
+				var mask uint64
+				for _, branch := range branches {
+					m, ok := d.branchIDs[repoIdx][branch]
+					if !ok {
+						continue
+					}
+					mask = mask | uint64(m)
+				}
+				reposBranchesWant[repoIdx] = mask
+			}
+		}
+		return &docMatchTree{
+			reason:  "RepoBranches",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return d.fileBranchMasks[docID]&reposBranchesWant[d.repos[docID]] != 0
+			},
+		}, nil
+
+	case *query.RepoSet:
+		reposWant := make([]bool, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
+			if _, ok := s.Set[r.Name]; ok {
+				reposWant[repoIdx] = true
+			}
+		}
+		return &docMatchTree{
+			reason:  "RepoSet",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return reposWant[d.repos[docID]]
+			},
+		}, nil
+
+	case *query.Repo:
+		reposWant := make([]bool, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
+			if s.Regexp.MatchString(r.Name) {
+				reposWant[repoIdx] = true
+			}
+		}
+		return &docMatchTree{
+			reason:  "Repo",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return reposWant[d.repos[docID]]
+			},
+		}, nil
+
+	case *query.RepoRegexp:
+		reposWant := make([]bool, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
+			if s.Regexp.MatchString(r.Name) {
+				reposWant[repoIdx] = true
+			}
+		}
+		return &docMatchTree{
+			reason:  "RepoRegexp",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return reposWant[d.repos[docID]]
+			},
+		}, nil
+
+	case query.RawConfig:
+		return &docMatchTree{
+			reason:  s.String(),
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return uint8(s)&d.rawConfigMasks[d.repos[docID]] == uint8(s)
+			},
+		}, nil
 	}
 	log.Panicf("type %T", q)
 	return nil, nil
@@ -740,4 +1039,93 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 	}
 	st.matchIterator = result
 	return st, nil
+}
+
+// pruneMatchTree removes impossible branches from the matchTree, as indicated
+// by substrMatchTree having a noMatchTree and the resulting impossible and clauses and so forth.
+func pruneMatchTree(mt matchTree) (matchTree, error) {
+	var err error
+	switch mt := mt.(type) {
+	// leaf nodes that we test with the filter:
+	case *substrMatchTree:
+		if res, ok := mt.matchIterator.(*ngramIterationResults); ok {
+			if _, ok := res.matchIterator.(*noMatchTree); ok {
+				return nil, nil
+			}
+		}
+	// recursive tree structures:
+	case *andMatchTree:
+		// Any branch of an and becoming impossible means the entire clause
+		// is impossible. Otherwise, just handle rewrites.
+		for i, child := range mt.children {
+			newChild, err := pruneMatchTree(child)
+			if err != nil {
+				return nil, err
+			}
+			if newChild == nil {
+				return nil, nil
+			}
+			mt.children[i] = newChild
+		}
+	case *orMatchTree:
+		// *All* branches of an OR becoming impossible means the entire clause
+		// is impossible. Otherwise, drop impossible subclauses and handle
+		// rewrites, including simplifying to a singular resulting child branch.
+		n := 0
+		for _, child := range mt.children {
+			newChild, err := pruneMatchTree(child)
+			if err != nil {
+				return nil, err
+			}
+			if newChild != nil {
+				mt.children[n] = newChild
+				n++
+			}
+		}
+		mt.children = mt.children[:n]
+		if len(mt.children) == 1 {
+			return mt.children[0], nil
+		} else if len(mt.children) == 0 {
+			return nil, nil
+		}
+	case *noVisitMatchTree:
+		mt.matchTree, err = pruneMatchTree(mt.matchTree)
+		if err != nil {
+			return nil, err
+		}
+		if mt.matchTree == nil {
+			return nil, nil
+		}
+	case *fileNameMatchTree:
+		mt.child, err = pruneMatchTree(mt.child)
+	case *andLineMatchTree:
+		child, err := pruneMatchTree(&mt.andMatchTree)
+		if err != nil {
+			return nil, err
+		}
+		if child == nil {
+			return nil, nil
+		}
+		if c, ok := child.(*andMatchTree); ok {
+			mt.andMatchTree = *c
+		} else {
+			// the and was simplified to a single clause,
+			// so the linematch portion is irrelevant.
+			return mt, nil
+		}
+	case *notMatchTree:
+		mt.child, err = pruneMatchTree(mt.child)
+		if err != nil {
+			return nil, err
+		}
+		if mt.child == nil {
+			// not false => true
+			return &bruteForceMatchTree{}, nil
+		}
+	// unhandled:
+	case *docMatchTree:
+	case *bruteForceMatchTree:
+	case *regexpMatchTree:
+	}
+	return mt, err
 }

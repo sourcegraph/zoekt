@@ -107,8 +107,7 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 		absR += runeEnds[p.idx-1]
 	}
 
-	byteOff := sample[absR/runeOffsetFrequency]
-	left := absR % runeOffsetFrequency
+	byteOff, left := sample.lookup(absR)
 
 	var data []byte
 
@@ -244,6 +243,15 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 				LineOffset:  int(m.byteOffset) - lineStart,
 				MatchLength: int(m.byteMatchSz),
 			}
+			if m.symbol {
+				start := p.id.fileEndSymbol[p.idx]
+				fragment.SymbolInfo = p.id.symbols.data(start + m.symbolIdx)
+				if fragment.SymbolInfo != nil {
+					sec := p.docSections()[m.symbolIdx]
+					fragment.SymbolInfo.Sym = string(data[sec.Start:sec.End])
+				}
+			}
+
 			finalMatch.LineFragments = append(finalMatch.LineFragments, fragment)
 		}
 		result = append(result, finalMatch)
@@ -306,6 +314,7 @@ func matchScore(secs []DocumentSection, m *LineMatch) float64 {
 				score += scorePartialSymbol
 			}
 		}
+
 		if score > maxScore {
 			maxScore = score
 		}

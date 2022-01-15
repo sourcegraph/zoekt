@@ -18,19 +18,13 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"regexp"
 	"regexp/syntax"
+
+	"github.com/go-enry/go-enry/v2"
 )
 
 var _ = log.Printf
-
-type SuggestQueryError struct {
-	Message    string
-	Suggestion string
-}
-
-func (e *SuggestQueryError) Error() string {
-	return fmt.Sprintf("%s. Suggestion: %s", e.Message, e.Suggestion)
-}
 
 // parseStringLiteral parses a string literal, consumes the starting
 // quote too.
@@ -124,7 +118,13 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		expr = &caseQ{text}
 	case tokRepo:
-		expr = &Repo{Pattern: text}
+		r, err := regexp.Compile(text)
+
+		if err != nil {
+			return nil, 0, err
+		}
+
+		expr = &Repo{r}
 	case tokBranch:
 		expr = &Branch{Pattern: text}
 	case tokText, tokRegex:
@@ -147,14 +147,24 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		expr = q
 	case tokLang:
-		expr = &Language{Language: text}
+		canonical, ok := enry.GetLanguageByAlias(text)
+		if !ok {
+			expr = &Const{false}
+		} else {
+			expr = &Language{Language: canonical}
+		}
 
 	case tokSym:
 		if text == "" {
 			return nil, 0, fmt.Errorf("the sym: atom must have an argument")
 		}
-		expr = &Symbol{&Substring{Pattern: text}}
 
+		q, err := regexpQuery(text, false, false)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		expr = &Symbol{q}
 	case tokParenClose:
 		// Caller must consume paren.
 		expr = nil
@@ -190,17 +200,33 @@ func parseExpr(in []byte) (Q, int, error) {
 		b = b[n:]
 		expr = &Not{subQ}
 
+	case tokType:
+		var t uint8
+		switch text {
+		case "filematch":
+			t = TypeFileMatch
+		case "filename", "file":
+			t = TypeFileName
+		case "repo":
+			t = TypeRepo
+		default:
+			return nil, 0, fmt.Errorf("query: unknown type argument %q, want {filematch,filename,repo}", text)
+		}
+		// Later we will lift this into a root, like we do for caseQ
+		expr = &Type{Type: t, Child: nil}
 	}
 
 	return expr, len(in) - len(b), nil
 }
+
+const regexpFlags syntax.Flags = syntax.ClassNL | syntax.PerlX | syntax.UnicodeGroups
 
 // regexpQuery parses an atom into either a regular expression, or a
 // simple substring atom.
 func regexpQuery(text string, content, file bool) (Q, error) {
 	var expr Q
 
-	r, err := syntax.Parse(text, syntax.ClassNL|syntax.PerlX|syntax.UnicodeGroups)
+	r, err := syntax.Parse(text, regexpFlags)
 	if err != nil {
 		return nil, err
 	}
@@ -281,10 +307,16 @@ func parseExprList(in []byte) ([]Q, int, error) {
 
 	setCase := "auto"
 	newQS := qs[:0]
+	typeT := uint8(100)
 	for _, q := range qs {
-		if sc, ok := q.(*caseQ); ok {
-			setCase = sc.Flavor
-		} else {
+		switch s := q.(type) {
+		case *caseQ:
+			setCase = s.Flavor
+		case *Type:
+			if s.Type < typeT {
+				typeT = s.Type
+			}
+		default:
 			newQS = append(newQS, q)
 		}
 	}
@@ -294,6 +326,9 @@ func parseExprList(in []byte) ([]Q, int, error) {
 		}
 		return q
 	})
+	if typeT != 100 {
+		qs = []Q{&Type{Type: typeT, Child: NewAnd(qs...)}}
+	}
 	return qs, len(in) - len(b), nil
 }
 
@@ -326,6 +361,7 @@ const (
 	tokContent    = 11
 	tokLang       = 12
 	tokSym        = 13
+	tokType       = 14
 )
 
 var tokNames = map[int]string{
@@ -342,6 +378,7 @@ var tokNames = map[int]string{
 	tokText:       "Text",
 	tokLang:       "Language",
 	tokSym:        "Symbol",
+	tokType:       "Type",
 }
 
 var prefixes = map[string]int{
@@ -357,6 +394,8 @@ var prefixes = map[string]int{
 	"repo:":    tokRepo,
 	"lang:":    tokLang,
 	"sym:":     tokSym,
+	"t:":       tokType,
+	"type:":    tokType,
 }
 
 var reservedWords = map[string]int{

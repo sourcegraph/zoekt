@@ -15,249 +15,122 @@
 package ctags
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
+	"time"
+
+	goctags "github.com/sourcegraph/go-ctags"
 )
 
 const debug = false
 
-type ctagsProcess struct {
-	cmd     *exec.Cmd
-	in      io.WriteCloser
-	out     *scanner
-	outPipe io.ReadCloser
+type Parser = goctags.Parser
+type Entry = goctags.Entry
+
+type parseReq struct {
+	Name    string
+	Content []byte
 }
 
-func newProcess(bin string) (*ctagsProcess, error) {
-	opt := "default"
-	if runtime.GOOS == "linux" {
-		opt = "sandbox"
-	}
-
-	cmd := exec.Command(bin, "--_interactive="+opt, "--fields=*")
-	in, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		in.Close()
-		return nil, err
-	}
-	cmd.Stderr = os.Stderr
-	proc := ctagsProcess{
-		cmd:     cmd,
-		in:      in,
-		out:     &scanner{r: bufio.NewReaderSize(out, 4096)},
-		outPipe: out,
-	}
-
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-
-	var init reply
-	if err := proc.read(&init); err != nil {
-		return nil, err
-	}
-
-	return &proc, nil
-}
-
-func (p *ctagsProcess) Close() {
-	p.cmd.Process.Kill()
-	p.outPipe.Close()
-	p.in.Close()
-}
-
-func (p *ctagsProcess) read(rep *reply) error {
-	if !p.out.Scan() {
-		// Some errors do not kill the parser. We would deadlock if we waited
-		// for the process to exit.
-		err := p.out.Err()
-		p.Close()
-		return err
-	}
-	if debug {
-		log.Printf("read %q", p.out.Bytes())
-	}
-
-	// See https://github.com/universal-ctags/ctags/issues/1493
-	if bytes.Equal([]byte("(null)"), p.out.Bytes()) {
-		return nil
-	}
-
-	err := json.Unmarshal(p.out.Bytes(), rep)
-	if err != nil {
-		return fmt.Errorf("unmarshal(%q): %v", p.out.Bytes(), err)
-	}
-	return nil
-}
-
-func (p *ctagsProcess) post(req *request, content []byte) error {
-	body, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-	body = append(body, '\n')
-	if debug {
-		log.Printf("post %q", body)
-	}
-
-	if _, err = p.in.Write(body); err != nil {
-		return err
-	}
-	_, err = p.in.Write(content)
-	if debug {
-		log.Println(string(content))
-	}
-	return err
-}
-
-type request struct {
-	Command  string `json:"command"`
-	Filename string `json:"filename"`
-	Size     int    `json:"size"`
-}
-
-type reply struct {
-	// Init
-	Typ     string `json:"_type"`
-	Name    string `json:"name"`
-	Version string `json:"version"`
-
-	// completed
-	Command string `json:"command"`
-
-	// Ignore pattern: we don't use it and universal-ctags
-	// sometimes generates 'false' as value.
-	Path      string `json:"path"`
-	Language  string `json:"language"`
-	Line      int    `json:"line"`
-	Kind      string `json:"kind"`
-	End       int    `json:"end"`
-	Scope     string `json:"scope"`
-	ScopeKind string `json:"scopeKind"`
-	Access    string `json:"access"`
-	Signature string `json:"signature"`
-}
-
-func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
-	req := request{
-		Command:  "generate-tags",
-		Size:     len(content),
-		Filename: name,
-	}
-
-	if err := p.post(&req, content); err != nil {
-		return nil, err
-	}
-
-	var es []*Entry
-	for {
-		var rep reply
-		if err := p.read(&rep); err != nil {
-			return nil, err
-		}
-		if rep.Typ == "completed" {
-			break
-		}
-
-		e := Entry{
-			Sym:      rep.Name,
-			Path:     rep.Path,
-			Line:     rep.Line,
-			Kind:     rep.Kind,
-			Language: rep.Language,
-		}
-
-		es = append(es, &e)
-	}
-
-	return es, nil
-}
-
-// scanner is like bufio.Scanner but skips long lines instead of returning
-// bufio.ErrTooLong.
-//
-// Additionally it will skip empty lines.
-type scanner struct {
-	r    *bufio.Reader
-	line []byte
-	err  error
-}
-
-func (s *scanner) Scan() bool {
-	if s.err != nil {
-		return false
-	}
-
-	var (
-		err  error
-		line []byte
-	)
-
-	for err == nil && len(line) == 0 {
-		line, err = s.r.ReadSlice('\n')
-		for err == bufio.ErrBufferFull {
-			// make line empty so we ignore it
-			line = nil
-			_, err = s.r.ReadSlice('\n')
-		}
-		line = bytes.TrimSuffix(line, []byte{'\n'})
-		line = bytes.TrimSuffix(line, []byte{'\r'})
-	}
-
-	s.line, s.err = line, err
-	return len(line) > 0
-}
-
-func (s *scanner) Bytes() []byte {
-	return s.line
-}
-
-func (s *scanner) Err() error {
-	if s.err == io.EOF {
-		return nil
-	}
-	return s.err
-}
-
-type Parser interface {
-	Parse(name string, content []byte) ([]*Entry, error)
+type parseResp struct {
+	Entries []*Entry
+	Err     error
 }
 
 type lockedParser struct {
-	p Parser
-	l sync.Mutex
+	mu   sync.Mutex
+	opts goctags.Options
+	p    Parser
+	send chan<- parseReq
+	recv <-chan parseResp
 }
 
+// parseTimeout is how long we wait for a response for parsing a single file
+// in ctags. 1 minute is a very conservative timeout which we should only hit
+// if ctags hangs.
+const parseTimeout = time.Minute
+
+// Parse wraps go-ctags Parse. It lazily starts the process and adds a timeout
+// around parse requests. Additionally it serializes access to the parsing
+// process. The timeout is important since we occasionally come across
+// documents which hang universal-ctags.
 func (lp *lockedParser) Parse(name string, content []byte) ([]*Entry, error) {
-	lp.l.Lock()
-	defer lp.l.Unlock()
-	return lp.p.Parse(name, content)
+	lp.mu.Lock()
+	defer lp.mu.Unlock()
+
+	if lp.p == nil {
+		p, err := goctags.New(lp.opts)
+		if err != nil {
+			return nil, err
+		}
+		send := make(chan parseReq)
+		// buf of 1 so we avoid blocking sends in the parser if we exit early.
+		recv := make(chan parseResp, 1)
+
+		go func() {
+			defer close(recv)
+			for req := range send {
+				entries, err := p.Parse(req.Name, req.Content)
+				recv <- parseResp{Entries: entries, Err: err}
+			}
+		}()
+
+		lp.p = p
+		lp.send = send
+		lp.recv = recv
+	}
+
+	lp.send <- parseReq{Name: name, Content: content}
+
+	deadline := time.NewTimer(parseTimeout)
+	defer deadline.Stop()
+
+	select {
+	case resp := <-lp.recv:
+		return resp.Entries, resp.Err
+	case <-deadline.C:
+		// Error out since ctags hanging is a sign something bad is happening.
+		lp.close()
+		return nil, fmt.Errorf("ctags timedout after %s parsing %s", parseTimeout, name)
+	}
+}
+
+func (lp *lockedParser) Close() {
+	lp.mu.Lock()
+	defer lp.mu.Unlock()
+	lp.close()
+}
+
+// close assumes lp.mu is held.
+func (lp *lockedParser) close() {
+	if lp.p == nil {
+		return
+	}
+
+	lp.p.Close()
+	lp.p = nil
+	close(lp.send)
+	lp.send = nil
+	lp.recv = nil
 }
 
 // NewParser creates a parser that is implemented by the given
 // universal-ctags binary. The parser is safe for concurrent use.
 func NewParser(bin string) (Parser, error) {
 	if strings.Contains(bin, "universal-ctags") {
-		// todo: restart, parallelization.
-		proc, err := newProcess(bin)
-		if err != nil {
-			return nil, err
+		opts := goctags.Options{
+			Bin:  bin,
+			Info: log.New(os.Stderr, "CTAGS INF: ", log.LstdFlags),
 		}
-		return &lockedParser{p: proc}, nil
+		if debug {
+			opts.Debug = log.New(os.Stderr, "CTAGS DBG: ", log.LstdFlags)
+		}
+		return &lockedParser{
+			opts: opts,
+		}, nil
 	}
 
 	log.Fatal("not implemented")

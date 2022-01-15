@@ -14,7 +14,7 @@
 
 package zoekt
 
-// FormatVersion is a version number. It is increased every time the
+// IndexFormatVersion is a version number. It is increased every time the
 // on-disk index format is changed.
 // 5: subrepositories.
 // 6: remove size prefix for posting varint list.
@@ -27,8 +27,8 @@ package zoekt
 // 13: content checksums
 // 14: languages
 // 15: rune based symbol sections
-// 16 (TBA): TODO: remove fallback parsing in readTOC
-const IndexFormatVersion = 15
+// 16: ctags metadata
+const IndexFormatVersion = 16
 
 // FeatureVersion is increased if a feature is added that requires reindexing data
 // without changing the format version
@@ -39,9 +39,11 @@ const IndexFormatVersion = 15
 // 6: Include '#' into the LineFragment template
 // 7: Record skip reasons in the index.
 // 8: Record source path in the index.
-// 9: Bump default max file size.
-// 10: Switch to a more flexible TOC format.
-const FeatureVersion = 10
+// 9: Store ctags metadata & bump default max file size
+// 10: Compound shards; more flexible TOC format.
+// 11: Bloom filters for file names & contents
+// 12: go-enry for identifying file languages
+const FeatureVersion = 12
 
 // WriteMinFeatureVersion and ReadMinFeatureVersion constrain forwards and backwards
 // compatibility. For example, if a new way to encode filenameNgrams on disk is
@@ -63,6 +65,9 @@ const WriteMinFeatureVersion = 10
 // load a file with a FeatureVersion below it.
 const ReadMinFeatureVersion = 8
 
+// 17: compound shard (multi repo)
+const NextIndexFormatVersion = 17
+
 type indexTOC struct {
 	fileContents compoundSection
 	fileNames    compoundSection
@@ -73,6 +78,11 @@ type indexTOC struct {
 	runeOffsets  simpleSection
 	fileEndRunes simpleSection
 	languages    simpleSection
+
+	fileEndSymbol  simpleSection
+	symbolMap      lazyCompoundSection
+	symbolKindMap  compoundSection
+	symbolMetaData simpleSection
 
 	branchMasks simpleSection
 	subRepos    simpleSection
@@ -85,6 +95,11 @@ type indexTOC struct {
 	nameEndRunes     simpleSection
 	contentChecksums simpleSection
 	runeDocSections  simpleSection
+
+	contentBloom simpleSection
+	nameBloom    simpleSection
+
+	repos simpleSection
 }
 
 func (t *indexTOC) sections() []section {
@@ -98,6 +113,10 @@ func (t *indexTOC) sections() []section {
 		&t.fileContents,
 		&t.fileNames,
 		&t.fileSections,
+		&t.fileEndSymbol,
+		&t.symbolMap,
+		&t.symbolKindMap,
+		&t.symbolMetaData,
 		&t.newlines,
 		&t.ngramText,
 		&t.postings,
@@ -113,6 +132,10 @@ func (t *indexTOC) sections() []section {
 		&t.languages,
 		&t.runeDocSections,
 	}
+}
+
+func (t *indexTOC) sectionsNext() []section {
+	return append(t.sections(), &t.repos)
 }
 
 type taggedSection struct {
@@ -133,11 +156,15 @@ func (t *indexTOC) sectionsTagged() map[string]section {
 
 func (t *indexTOC) sectionsTaggedList() []taggedSection {
 	return []taggedSection{
-		{"metadata", &t.metaData},
+		{"metaData", &t.metaData},
 		{"repoMetaData", &t.repoMetaData},
 		{"fileContents", &t.fileContents},
 		{"fileNames", &t.fileNames},
 		{"fileSections", &t.fileSections},
+		{"fileEndSymbol", &t.fileEndSymbol},
+		{"symbolMap", &t.symbolMap},
+		{"symbolKindMap", &t.symbolKindMap},
+		{"symbolMetaData", &t.symbolMetaData},
 		{"newlines", &t.newlines},
 		{"ngramText", &t.ngramText},
 		{"postings", &t.postings},
@@ -152,6 +179,9 @@ func (t *indexTOC) sectionsTaggedList() []taggedSection {
 		{"contentChecksums", &t.contentChecksums},
 		{"languages", &t.languages},
 		{"runeDocSections", &t.runeDocSections},
+		{"repos", &t.repos},
+		{"nameBloom", &t.nameBloom},
+		{"contentBloom", &t.contentBloom},
 	}
 }
 

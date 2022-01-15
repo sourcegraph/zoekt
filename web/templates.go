@@ -25,17 +25,6 @@ var Top = template.New("top").Funcs(Funcmap)
 // TemplateText contains the text of the standard templates.
 var TemplateText = map[string]string{
 
-	"didyoumean": `
-<html>
-<head>
-  <title>Error</title>
-</head>
-<body>
-  <p>{{.Message}}. Did you mean <a href="/search?q={{.Suggestion}}">{{.Suggestion}}</a> ?
-</body>
-</html>
-`,
-
 	"head": `
 <head>
 <meta charset="utf-8">
@@ -264,13 +253,17 @@ document.onkeydown=function(e){
     <div class="container">
       {{template "footerBoilerplate"}}
       <p class="navbar-text navbar-right">
-      Took {{.Stats.Duration}}{{if .Stats.Wait}}(queued: {{.Stats.Wait}}){{end}} for
+      Took {{.Stats.Duration}}{{if .Stats.Wait}} (queued: {{.Stats.Wait}}){{end}} for
       {{HumanUnit .Stats.IndexBytesLoaded}}B index data,
       {{.Stats.NgramMatches}} ngram matches,
       {{.Stats.FilesConsidered}} docs considered,
-      {{.Stats.FilesLoaded}} docs ({{HumanUnit .Stats.ContentBytesLoaded}}B)
-      loaded{{if or .Stats.FilesSkipped .Stats.ShardsSkipped}},
-      {{.Stats.FilesSkipped}} docs and {{.Stats.ShardsSkipped}} shards skipped{{else}}.{{end}}
+      {{.Stats.FilesLoaded}} docs ({{HumanUnit .Stats.ContentBytesLoaded}}B) loaded,
+      {{.Stats.ShardsScanned}} shards scanned,
+      {{.Stats.ShardsSkippedFilter}} shards filtered
+      {{- if or .Stats.FilesSkipped .Stats.ShardsSkipped -}}
+        , {{.Stats.FilesSkipped}} docs skipped, {{.Stats.ShardsSkipped}} shards skipped
+      {{- end -}}
+	  .
       </p>
     </div>
   </nav>
@@ -287,28 +280,31 @@ document.onkeydown=function(e){
   <div class="container">
     {{template "navbar" .Last}}
     <div><b>
-    Found {{.Stats.Repos}} repositories ({{.Stats.Documents}} files, {{HumanUnit .Stats.ContentBytes}}b content)
+    Found {{.Stats.Repos}} repositories ({{.Stats.Documents}} files, {{HumanUnit .Stats.ContentBytes}}B content)
     </b></div>
     <table class="table table-hover table-condensed">
       <thead>
 	<tr>
-	  <th>Name <a href="/search?q={{.Last.Query}}&order=name">▼</a><a href="/search?q={{.Last.Query}}&order=revname">▲</a></th>
-	  <th>Last updated <a href="/search?q={{.Last.Query}}&order=revtime">▼</a><a href="/search?q={{.Last.Query}}&order=time">▲</a></th>
+	  {{- define "q"}}q={{.Last.Query}}{{if (gt .Last.Num 0)}}&num={{.Last.Num}}{{end}}{{end}}
+	  <th>Name <a href="/search?{{template "q" .}}&order=name">▼</a><a href="/search?{{template "q" .}}&order=revname">▲</a></th>
+	  <th>Last updated <a href="/search?{{template "q" .}}&order=revtime">▼</a><a href="/search?{{template "q" .}}&order=time">▲</a></th>
 	  <th>Branches</th>
-	  <th>Size <a href="/search?q={{.Last.Query}}&order=revsize">▼</a><a href="/search?q={{.Last.Query}}&order=size">▲</a></th>
+	  <th>Size <a href="/search?{{template "q" .}}&order=revsize">▼</a><a href="/search?{{template "q" .}}&order=size">▲</a></th>
+	  <th>RAM <a href="/search?{{template "q" .}}&order=revram">▼</a><a href="/search?{{template "q" .}}&order=ram">▲</a></th>
 	</tr>
       </thead>
       <tbody>
-	{{range .Repos}}
+	{{range .Repos -}}
 	<tr>
 	  <td>{{if .URL}}<a href="{{.URL}}">{{end}}{{.Name}}{{if .URL}}</a>{{end}}</td>
 	  <td><small>{{.IndexTime.Format "Jan 02, 2006 15:04"}}</small></td>
 	  <td style="vertical-align: middle;">
-	    {{range .Branches}}
+	    {{- range .Branches -}}
 	    {{if .URL}}<tt><a class="label label-default small" href="{{.URL}}">{{end}}{{.Name}}{{if .URL}}</a> </tt>{{end}}&nbsp;
-	    {{end}}
+	    {{- end -}}
 	  </td>
-	  <td><small>{{HumanUnit .Files}} files ({{HumanUnit .Size}})</small></td>
+	  <td><small>{{HumanUnit .Files}} files ({{HumanUnit .Size}}B)</small></td>
+	  <td><small>{{HumanUnit .MemorySize}}B</td>
 	</tr>
 	{{end}}
       </tbody>

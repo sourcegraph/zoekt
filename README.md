@@ -6,6 +6,11 @@
 This is a fast text search engine, intended for use with source
 code. (Pronunciation: roughly as you would pronounce "zooked" in English)
 
+**Note:** This is a [Sourcegraph](https://github.com/sourcegraph/zoekt) fork
+of [github.com/google/zoekt](https://github.com/google/zoekt). It is now the
+main maintained source of Zoekt. The go module is still
+`github.com/google/zoekt` for now, but will be updated in the future.
+
 INSTRUCTIONS
 ============
 
@@ -95,9 +100,39 @@ ranking. See [here](doc/ctags.md) for more information.
 ACKNOWLEDGEMENTS
 ================
 
-Thanks to Alexander Neubeck for coming up with this idea, and helping me flesh
-it out.
+Thanks to Han-Wen Nienhuys for creating Zoekt. Thanks to Alexander Neubeck for
+coming up with this idea, and helping Han-Wen Nienhuys flesh it out.
 
+
+FORK DETAILS
+==============
+
+Originally this fork contained some changes that do not make sense to upstream
+and or have not yet been upstreamed. However, this is now the defacto source
+for Zoekt. This section will remain for historical reasons and contains
+outdated information. It can be removed once the dust settles on moving from
+google/zoekt to sourcegraph/zoekt. Differences:
+
+- [zoekt-sourcegraph-indexserver](cmd/zoekt-sourcegraph-indexserver/main.go)
+  is a Sourcegraph specific command which indexes all enabled repositories on
+  Sourcegraph, as well as keeping the indexes up to date.
+- We have exposed the API via
+  [keegancsmith/rpc](https://github.com/keegancsmith/rpc) (a fork of `net/rpc`
+  which supports cancellation).
+- Query primitive `BranchesRepos` to efficiently specify a set of repositories to
+  search.
+- Allow empty shard directories on startup. Needed when starting a fresh
+  instance which hasn't indexed anything yet.
+- We can return symbol/ctag data in results. Additionally we can run symbol regex queries.
+- We search shards in order of repo name and ignore shard ranking.
+- Other minor changes.
+
+Assuming you have the gerrit upstream configured, a useful way to see what we
+changed is:
+
+``` shellsession
+$ git diff gerrit/master -- ':(exclude)vendor/' ':(exclude)Gopkg*'
+```
 
 DISCLAIMER
 ==========

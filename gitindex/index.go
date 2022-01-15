@@ -31,6 +31,7 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	"github.com/google/zoekt/ignore"
 
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -201,6 +202,8 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 		if err := setTemplates(desc, webURL, webURLType); err != nil {
 			return err
 		}
+	} else if webURLStr != "" {
+		desc.URL = webURLStr
 	}
 
 	name := sec.Options.Get("name")
@@ -219,6 +222,9 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 			return err
 		}
 	}
+
+	id, _ := strconv.ParseUint(sec.Options.Get("repoid"), 10, 32)
+	desc.ID = uint32(id)
 
 	if desc.RawConfig == nil {
 		desc.RawConfig = map[string]string{}
@@ -297,7 +303,9 @@ type Options struct {
 func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string, error) {
 	var result []string
 	for _, b := range bs {
-		if b == "HEAD" {
+		// Sourcegraph: We disable resolving refs. We want to return the exact ref
+		// requested so we can match it up.
+		if b == "HEAD" && false {
 			ref, err := repo.Head()
 			if err != nil {
 				return nil, err
@@ -352,14 +360,17 @@ func IndexGitRepo(opts Options) error {
 	opts.BuildOptions.RepositoryDescription.Source = opts.RepoDir
 	repo, err := git.PlainOpen(opts.RepoDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("git.PlainOpen: %w", err)
 	}
 
 	if err := setTemplatesFromConfig(&opts.BuildOptions.RepositoryDescription, opts.RepoDir); err != nil {
 		log.Printf("setTemplatesFromConfig(%s): %s", opts.RepoDir, err)
 	}
 
-	repoCache := NewRepoCache(opts.RepoCacheDir)
+	var repoCache *RepoCache
+	if opts.Submodules {
+		repoCache = NewRepoCache(opts.RepoCacheDir)
+	}
 
 	// branch => (path, sha1) => repo.
 	repos := map[fileKey]BlobLocation{}
@@ -372,7 +383,7 @@ func IndexGitRepo(opts Options) error {
 
 	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
 	if err != nil {
-		return err
+		return fmt.Errorf("expandBranches: %w", err)
 	}
 	for _, b := range branches {
 		commit, err := getCommit(repo, opts.BranchPrefix, b)
@@ -381,7 +392,7 @@ func IndexGitRepo(opts Options) error {
 				continue
 			}
 
-			return err
+			return fmt.Errorf("getCommit: %w", err)
 		}
 
 		opts.BuildOptions.RepositoryDescription.Branches = append(opts.BuildOptions.RepositoryDescription.Branches, zoekt.RepositoryBranch{
@@ -389,16 +400,28 @@ func IndexGitRepo(opts Options) error {
 			Version: commit.Hash.String(),
 		})
 
+		if when := commit.Committer.When; when.After(opts.BuildOptions.RepositoryDescription.LatestCommitDate) {
+			opts.BuildOptions.RepositoryDescription.LatestCommitDate = when
+		}
+
 		tree, err := commit.Tree()
 		if err != nil {
-			return err
+			return fmt.Errorf("commit.Tree: %w", err)
+		}
+
+		ig, err := newIgnoreMatcher(tree)
+		if err != nil {
+			return fmt.Errorf("newIgnoreMatcher: %w", err)
 		}
 
 		files, subVersions, err := TreeToFiles(repo, tree, opts.BuildOptions.RepositoryDescription.URL, repoCache)
 		if err != nil {
-			return err
+			return fmt.Errorf("TreeToFiles: %w", err)
 		}
 		for k, v := range files {
+			if ig.Match(k.Path) {
+				continue
+			}
 			repos[k] = v
 			branchMap[k] = append(branchMap[k], b)
 		}
@@ -438,9 +461,11 @@ func IndexGitRepo(opts Options) error {
 
 	builder, err := build.NewBuilder(opts.BuildOptions)
 	if err != nil {
-		return err
+		return fmt.Errorf("build.NewBuilder: %w", err)
 	}
-	defer builder.Finish()
+	// we don't need to check error, since we either already have an error, or
+	// we returning the first call to builder.Finish.
+	defer builder.Finish() // nolint:errcheck
 
 	var names []string
 	fileKeys := map[string][]fileKey{}
@@ -485,11 +510,26 @@ func IndexGitRepo(opts Options) error {
 				Content:           contents,
 				Branches:          brs,
 			}); err != nil {
-				return err
+				return fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
 			}
 		}
 	}
 	return builder.Finish()
+}
+
+func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
+	ignoreFile, err := tree.File(ignore.IgnoreFile)
+	if err == object.ErrFileNotFound {
+		return &ignore.Matcher{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	content, err := ignoreFile.Contents()
+	if err != nil {
+		return nil, err
+	}
+	return ignore.ParseIgnoreFile(strings.NewReader(content))
 }
 
 func blobContents(blob *object.Blob) ([]byte, error) {

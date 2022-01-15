@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"sort"
 	"time"
@@ -31,9 +32,9 @@ func (w *writer) writeTOC(toc *indexTOC) {
 	// sections.
 	//
 	// A tagged section is:
-	// Varint TagLen, Tag String, Varint SecType, Section
+	// Varint TagLen, Tag String, Varint Kind, Section
 	//
-	// Section type is indicated because simpleSections and
+	// Section kind is indicated because simpleSections and
 	// compoundSections have different lengths.
 	w.U32(0)
 	secs := toc.sectionsTaggedList()
@@ -50,6 +51,19 @@ func (s *compoundSection) writeStrings(w *writer, strs []*searchableString) {
 		s.addItem(w, f.data)
 	}
 	s.end(w)
+}
+
+func (s *compoundSection) writeMap(w *writer, m map[string]uint32) {
+	keys := make([]*searchableString, 0, len(m))
+	for k := range m {
+		keys = append(keys, &searchableString{
+			data: []byte(k),
+		})
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return m[string(keys[i].data)] < m[string(keys[j].data)]
+	})
+	s.writeStrings(w, keys)
 }
 
 func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
@@ -84,6 +98,8 @@ func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 }
 
 func (b *IndexBuilder) Write(out io.Writer) error {
+	next := b.indexFormatVersion == NextIndexFormatVersion
+
 	buffered := bufio.NewWriterSize(out, 1<<20)
 	defer buffered.Flush()
 
@@ -97,6 +113,20 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}
 	toc.newlines.end(w)
 
+	toc.fileEndSymbol.start(w)
+	for _, m := range b.fileEndSymbol {
+		w.U32(m)
+	}
+	toc.fileEndSymbol.end(w)
+
+	toc.symbolMap.writeMap(w, b.symIndex)
+	toc.symbolKindMap.writeMap(w, b.symKindIndex)
+	toc.symbolMetaData.start(w)
+	for _, m := range b.symMetaData {
+		w.U32(m)
+	}
+	toc.symbolMetaData.end(w)
+
 	toc.branchMasks.start(w)
 	for _, m := range b.branchMasks {
 		w.U64(m)
@@ -108,6 +138,14 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 		toc.fileSections.addItem(w, marshalDocSections(s))
 	}
 	toc.fileSections.end(w)
+
+	toc.nameBloom.start(w)
+	b.nameBloom.shrinkToSize(bloomDefaultLoad).write(w)
+	toc.nameBloom.end(w)
+
+	toc.contentBloom.start(w)
+	b.contentBloom.shrinkToSize(bloomDefaultLoad).write(w)
+	toc.contentBloom.end(w)
 
 	writePostings(w, b.contentPostings, &toc.ngramText, &toc.runeOffsets, &toc.postings, &toc.fileEndRunes)
 
@@ -132,19 +170,41 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	w.Write(marshalDocSections(b.runeDocSections))
 	toc.runeDocSections.end(w)
 
+	if next {
+		toc.repos.start(w)
+		w.Write(toSizedDeltas16(b.repos))
+		toc.repos.end(w)
+	}
+
+	indexTime := b.IndexTime
+	if indexTime.IsZero() {
+		indexTime = time.Now()
+	}
+
 	if err := b.writeJSON(&IndexMetadata{
-		IndexFormatVersion:    IndexFormatVersion,
-		IndexTime:             time.Now(),
-		IndexFeatureVersion:   FeatureVersion,
+		IndexFormatVersion:    b.indexFormatVersion,
+		IndexTime:             indexTime,
+		IndexFeatureVersion:   b.featureVersion,
 		IndexMinReaderVersion: WriteMinFeatureVersion,
 		PlainASCII:            b.contentPostings.isPlainASCII && b.namePostings.isPlainASCII,
 		LanguageMap:           b.languageMap,
 		ZoektVersion:          Version,
+		ID:                    b.ID,
 	}, &toc.metaData, w); err != nil {
 		return err
 	}
-	if err := b.writeJSON(b.repo, &toc.repoMetaData, w); err != nil {
-		return err
+
+	if next {
+		if err := b.writeJSON(b.repoList, &toc.repoMetaData, w); err != nil {
+			return err
+		}
+	} else {
+		if len(b.repoList) != 1 {
+			return fmt.Errorf("have %d repos, but only support 1 in index format version %d", len(b.repoList), b.indexFormatVersion)
+		}
+		if err := b.writeJSON(b.repoList[0], &toc.repoMetaData, w); err != nil {
+			return err
+		}
 	}
 
 	var tocSection simpleSection

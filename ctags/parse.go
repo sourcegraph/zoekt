@@ -20,18 +20,6 @@ import (
 	"strings"
 )
 
-type Entry struct {
-	Sym        string
-	Path       string
-	Line       int
-	Kind       string
-	Language   string
-	Parent     string
-	ParentType string
-
-	FileLimited bool
-}
-
 // Parse parses a single line of exuberant "ctags -n" output.
 func Parse(in string) (*Entry, error) {
 	fields := strings.Split(in, "\t")
@@ -41,7 +29,7 @@ func Parse(in string) (*Entry, error) {
 		return nil, fmt.Errorf("too few fields: %q", in)
 	}
 
-	e.Sym = fields[0]
+	e.Name = fields[0]
 	e.Path = fields[1]
 
 	lstr := fields[2]
@@ -64,7 +52,7 @@ field:
 		for _, p := range []string{"class", "enum"} {
 			if strings.HasPrefix(f, p+":") {
 				e.Parent = strings.TrimPrefix(f, p+":")
-				e.ParentType = p
+				e.ParentKind = p
 				continue field
 			}
 		}

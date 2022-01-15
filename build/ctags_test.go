@@ -28,12 +28,12 @@ func TestTagsToSections(t *testing.T) {
 
 	tags := []*ctags.Entry{
 		{
-			Sym:  "bar",
+			Name: "bar",
 			Line: 2,
 		},
 	}
 
-	secs, err := tagsToSections(c, tags)
+	secs, _, err := tagsToSections(c, tags)
 	if err != nil {
 		t.Fatal("tagsToSections", err)
 	}
@@ -49,16 +49,16 @@ func TestTagsToSectionsMultiple(t *testing.T) {
 
 	tags := []*ctags.Entry{
 		{
-			Sym:  "x",
+			Name: "x",
 			Line: 1,
 		},
 		{
-			Sym:  "b",
+			Name: "b",
 			Line: 1,
 		},
 	}
 
-	got, err := tagsToSections(c, tags)
+	got, _, err := tagsToSections(c, tags)
 	if err != nil {
 		t.Fatal("tagsToSections", err)
 	}
@@ -78,12 +78,12 @@ func TestTagsToSectionsEOF(t *testing.T) {
 
 	tags := []*ctags.Entry{
 		{
-			Sym:  "bar",
+			Name: "bar",
 			Line: 2,
 		},
 	}
 
-	secs, err := tagsToSections(c, tags)
+	secs, _, err := tagsToSections(c, tags)
 	if err != nil {
 		t.Fatal("tagsToSections", err)
 	}

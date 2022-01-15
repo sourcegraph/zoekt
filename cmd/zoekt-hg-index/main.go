@@ -32,7 +32,7 @@ import (
 func main() {
 	revisionStr := flag.String("revision", "", "hg revision to index")
 	flag.Parse()
-	maxprocs.Set()
+	_, _ = maxprocs.Set()
 	opts := cmd.OptionsFromFlags()
 
 	if len(flag.Args()) < 1 {
@@ -60,7 +60,9 @@ func indexHg(dir, rev string, opts *build.Options) error {
 	if err != nil {
 		return err
 	}
-	defer builder.Finish()
+	// we don't need to check error, since we either already have an error, or
+	// we returning the first call to builder.Finish.
+	defer builder.Finish() // nolint:errcheck
 
 	mfs, err := r.GetFiles(gerc.FilesArgs{
 		Revision: rev,

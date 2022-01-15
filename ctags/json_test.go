@@ -15,13 +15,11 @@
 package ctags
 
 import (
-	"bufio"
 	"os/exec"
-	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestJSON(t *testing.T) {
@@ -29,7 +27,7 @@ func TestJSON(t *testing.T) {
 		t.Skip(err)
 	}
 
-	p, err := newProcess("universal-ctags")
+	p, err := NewParser("universal-ctags")
 	if err != nil {
 		t.Fatal("newProcess", err)
 	}
@@ -58,86 +56,66 @@ class Back implements Future extends Frob {
 
 	want := []*Entry{
 		{
-			Sym:      "io.zoekt",
+			Name:     "io.zoekt",
 			Kind:     "package",
 			Language: "Java",
 			Path:     "io/zoekt/Back.java",
 			Line:     2,
 		},
 		{
-			Sym:      "Back",
+			Name:     "Back",
+			Path:     "io/zoekt/Back.java",
+			Line:     4,
+			Kind:     "classes",
+			Language: "Java",
+			Pattern:  "/^class Back implements Future extends Frob {$/",
+		},
+		{
+			Name:     "Back",
 			Path:     "io/zoekt/Back.java",
 			Line:     4,
 			Language: "Java",
 			Kind:     "class",
 		},
-
 		{
-			Sym:      "BLA",
-			Path:     "io/zoekt/Back.java",
-			Line:     5,
-			Kind:     "field",
-			Language: "Java",
+			Name:       "BLA",
+			Path:       "io/zoekt/Back.java",
+			Line:       5,
+			Kind:       "field",
+			Language:   "Java",
+			Parent:     "Back",
+			ParentKind: "class",
 		},
 		{
-			Sym:      "member",
-			Path:     "io/zoekt/Back.java",
-			Line:     6,
-			Language: "Java",
-			Kind:     "field",
+			Name:       "member",
+			Path:       "io/zoekt/Back.java",
+			Line:       6,
+			Language:   "Java",
+			Kind:       "field",
+			Parent:     "Back",
+			ParentKind: "class",
 		},
 		{
-			Sym:      "Back",
-			Path:     "io/zoekt/Back.java",
-			Language: "Java",
-			Line:     7,
-			Kind:     "method",
+			Name:       "Back",
+			Path:       "io/zoekt/Back.java",
+			Language:   "Java",
+			Line:       7,
+			Kind:       "method",
+			Parent:     "Back",
+			ParentKind: "class",
 		},
 		{
-			Sym:      "method",
-			Language: "Java",
-			Path:     "io/zoekt/Back.java",
-			Line:     10,
-			Kind:     "method",
+			Name:       "method",
+			Language:   "Java",
+			Path:       "io/zoekt/Back.java",
+			Line:       10,
+			Kind:       "method",
+			Parent:     "Back",
+			ParentKind: "class",
 		},
 	}
 
-	for i := range want {
-		if !reflect.DeepEqual(got[i], want[i]) {
-			t.Fatalf("got %#v, want %#v", got[i], want[i])
-		}
-	}
-}
-
-func TestScanner(t *testing.T) {
-	size := 20
-
-	input := strings.Join([]string{
-		"aaaaaaaaa",
-		strings.Repeat("B", 3*size+3),
-		strings.Repeat("C", size) + strings.Repeat("D", size+1),
-		"",
-		strings.Repeat("e", size-1),
-		"f\r",
-		"gg",
-	}, "\n")
-	want := []string{
-		"aaaaaaaaa",
-		strings.Repeat("e", size-1),
-		"f",
-		"gg",
-	}
-
-	var got []string
-	r := &scanner{r: bufio.NewReaderSize(strings.NewReader(input), size)}
-	for r.Scan() {
-		got = append(got, string(r.Bytes()))
-	}
-	if err := r.Err(); err != nil {
-		t.Fatal(err)
-	}
-
-	if !cmp.Equal(got, want) {
-		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	if d := cmp.Diff(want, got, cmpopts.IgnoreFields(Entry{}, "Pattern", "Signature")); d != "" {
+		t.Errorf("mismatch (-want +got):\n%s", d)
 	}
 }

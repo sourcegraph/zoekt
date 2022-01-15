@@ -15,8 +15,11 @@
 package zoekt
 
 import (
+	"encoding/binary"
 	"fmt"
 	"hash/crc64"
+	"log"
+	"math/bits"
 	"unicode/utf8"
 
 	"github.com/google/zoekt/query"
@@ -26,9 +29,11 @@ import (
 // in memory to search. Most of the memory is taken up by the ngram =>
 // offset index.
 type indexData struct {
+	symbols symbolData
+
 	file IndexFile
 
-	ngrams map[ngram]simpleSection
+	ngrams combinedNgramOffset
 
 	newlinesStart uint32
 	newlinesIndex []uint32
@@ -36,10 +41,10 @@ type indexData struct {
 	docSectionsStart uint32
 	docSectionsIndex []uint32
 
-	runeDocSections []DocumentSection
+	runeDocSections []byte
 
 	// rune offset=>byte offset mapping, relative to the start of the content corpus
-	runeOffsets []uint32
+	runeOffsets runeOffsetMap
 
 	// offsets of file contents; includes end of last file
 	boundariesStart uint32
@@ -50,10 +55,13 @@ type indexData struct {
 
 	fileNameContent []byte
 	fileNameIndex   []uint32
-	fileNameNgrams  map[ngram][]uint32
+	fileNameNgrams  map[ngram][]byte
+
+	// fileEndSymbol[i] is the index of the first symbol for document i.
+	fileEndSymbol []uint32
 
 	// rune offset=>byte offset mapping, relative to the start of the filename corpus
-	fileNameRuneOffsets []uint32
+	fileNameRuneOffsets runeOffsetMap
 
 	// rune offsets for the file name boundaries
 	fileNameEndRunes []uint32
@@ -61,16 +69,16 @@ type indexData struct {
 	fileBranchMasks []uint64
 
 	// mask (power of 2) => name
-	branchNames map[uint]string
+	branchNames []map[uint]string
 
 	// name => mask (power of 2)
-	branchIDs map[string]uint
+	branchIDs []map[string]uint
 
 	metaData     IndexMetadata
-	repoMetaData Repository
+	repoMetaData []Repository
 
 	subRepos     []uint32
-	subRepoPaths []string
+	subRepoPaths [][]string
 
 	// Checksums for all the files, at 8-byte intervals
 	checksums []byte
@@ -79,9 +87,78 @@ type indexData struct {
 	languages []byte
 
 	// inverse of LanguageMap in metaData
-	languageMap map[byte]string
+	languageMap map[uint16]string
 
-	repoListEntry RepoListEntry
+	repoListEntry []RepoListEntry
+
+	// repository indexes for all the files
+	repos []uint16
+
+	// rawConfigMasks contains the encoded RawConfig for each repository
+	rawConfigMasks []uint8
+
+	// A bloom filter over file contents.
+	bloomContents bloom
+
+	// A bloom filter over filenames.
+	bloomNames bloom
+}
+
+type symbolData struct {
+	// symContent stores Symbol.Sym and Symbol.Parent.
+	// TODO we don't need to store Symbol.Sym.
+	symContent []byte
+	symIndex   []byte
+	// symKindContent is an enum of sym.Kind and sym.ParentKind
+	symKindContent []byte
+	symKindIndex   []uint32
+	// symMetadata is [4]uint32 0 Kind Parent ParentKind
+	symMetaData []byte
+}
+
+func uint32SliceAt(a []byte, n uint32) uint32 {
+	return binary.BigEndian.Uint32(a[n*4:])
+}
+
+func uint32SliceLen(a []byte) uint32 {
+	return uint32(len(a) / 4)
+}
+
+// parent returns index i of the parent enum
+func (d *symbolData) parent(i uint32) []byte {
+	delta := uint32SliceAt(d.symIndex, 0)
+	start := uint32SliceAt(d.symIndex, i) - delta
+	var end uint32
+	if i+1 == uint32SliceLen(d.symIndex) {
+		end = uint32(len(d.symContent))
+	} else {
+		end = uint32SliceAt(d.symIndex, i+1) - delta
+	}
+	return d.symContent[start:end]
+}
+
+// kind returns index i of the kind enum
+func (d *symbolData) kind(i uint32) []byte {
+	return d.symKindContent[d.symKindIndex[i]:d.symKindIndex[i+1]]
+}
+
+// data returns the symbol at index i
+func (d *symbolData) data(i uint32) *Symbol {
+	size := uint32(4 * 4) // 4 uint32s
+	offset := i * size
+	if offset >= uint32(len(d.symMetaData)) {
+		return nil
+	}
+
+	metadata := d.symMetaData[offset : offset+size]
+	sym := &Symbol{}
+	key := uint32SliceAt(metadata, 1)
+	sym.Kind = string(d.kind(key))
+	key = uint32SliceAt(metadata, 2)
+	sym.Parent = string(d.parent(key))
+	key = uint32SliceAt(metadata, 3)
+	sym.ParentKind = string(d.kind(key))
+	return sym
 }
 
 func (d *indexData) getChecksum(idx uint32) []byte {
@@ -89,50 +166,163 @@ func (d *indexData) getChecksum(idx uint32) []byte {
 	return d.checksums[start : start+crc64.Size]
 }
 
-func (d *indexData) calculateStats() {
+func (d *indexData) getLanguage(idx uint32) uint16 {
+	if d.metaData.IndexFeatureVersion < 12 {
+		// older zoekt files had 8-bit language entries
+		return uint16(d.languages[idx])
+	}
+	// newer zoekt files have 16-bit language entries
+	return uint16(d.languages[idx*2]) | uint16(d.languages[idx*2+1])<<8
+}
+
+// calculates stats for files in the range [start, end).
+func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoStats {
+	if start >= end {
+		return RepoStats{
+			IndexBytes: int64(d.memoryUse()),
+			Shards:     1,
+		}
+	}
+
 	var last uint32
-	if len(d.boundaries) > 0 {
-		last += d.boundaries[len(d.boundaries)-1]
+	if len(d.boundaries) > int(end) {
+		last += d.boundaries[end]
 	}
 
 	lastFN := last
-	if len(d.fileNameIndex) > 0 {
-		lastFN = d.fileNameIndex[len(d.fileNameIndex)-1]
+	if len(d.fileNameIndex) > int(end) {
+		lastFN = d.fileNameIndex[end]
 	}
 
-	stats := RepoStats{
-		IndexBytes:   int64(d.memoryUse()),
+	count, defaultCount, otherCount := d.calculateNewLinesStats(start, end)
+
+	// CR keegan for stefan: I think we may want to restructure RepoListEntry so
+	// that we don't change anything, except we have
+	// []Repository. Alternatively, things we can divide up we do (like
+	// here). Right now I don't like that these numbers are not true, especially
+	// after aggregation. For now I will move forward with this until we can
+	// chat more.
+	return RepoStats{
 		ContentBytes: int64(int(last) + int(lastFN)),
-		Documents:    len(d.newlinesIndex) - 1,
-		Shards:       1,
+		Documents:    int(end - start),
+		// CR keegan for stefan: our shard count is going to go out of whack,
+		// since we will aggregate these. So we will report more shards than are
+		// present on disk. What should we do?
+		Shards: 1,
+
+		// Sourcegraph specific
+		NewLinesCount:              count,
+		DefaultBranchNewLinesCount: defaultCount,
+		OtherBranchesNewLinesCount: otherCount,
 	}
-	d.repoListEntry = RepoListEntry{
-		Repository:    d.repoMetaData,
-		IndexMetadata: d.metaData,
-		Stats:         stats,
+}
+
+func (d *indexData) calculateStats() error {
+	d.repoListEntry = make([]RepoListEntry, 0, len(d.repoMetaData))
+	var start, end uint32
+	for repoID, md := range d.repoMetaData {
+		// determine the file range for repo i
+		for end < uint32(len(d.repos)) && d.repos[end] == uint16(repoID) {
+			end++
+		}
+
+		if start < end && d.repos[start] != uint16(repoID) {
+			return fmt.Errorf("shard documents out of order with respect to repositories: expected document %d to be part of repo %d", start, repoID)
+		}
+
+		d.repoListEntry = append(d.repoListEntry, RepoListEntry{
+			Repository:    md,
+			IndexMetadata: d.metaData,
+			Stats:         d.calculateStatsForFileRange(start, end),
+		})
+		start = end
 	}
+
+	// All repos in a compound shard share memoryUse. So we average out the
+	// memoryUse per shard in our reporting. This has the benefit that when you
+	// aggregate the IndexBytes you get back the actual memoryUse.
+	//
+	// TODO take into account tombstones for aggregation. Even better, adjust
+	// API to be shard centric not repo centric.
+	if len(d.repoListEntry) > 0 {
+		indexBytes := d.memoryUse()
+		indexBytesChunk := indexBytes / len(d.repoListEntry)
+		for i := range d.repoListEntry {
+			d.repoListEntry[i].Stats.IndexBytes = int64(indexBytesChunk)
+			indexBytes -= indexBytesChunk
+		}
+		d.repoListEntry[0].Stats.IndexBytes += int64(indexBytes)
+	}
+
+	return nil
+}
+
+// calculateNewLinesStats computes some Sourcegraph specific statistics for files
+// in the range [start, end). These are not as efficient to calculate as the
+// normal statistics. We experimentally measured about a 10% slower shard load
+// time. However, we find these values very useful to track and computing them
+// outside of load time introduces a lot of complexity.
+func (d *indexData) calculateNewLinesStats(start, end uint32) (count, defaultCount, otherCount uint64) {
+	for i := start; i < end; i++ {
+		// branchMask is a bitmask of the branches for a document. Zoekt by
+		// convention represents the default branch as the lowest bit.
+		branchMask := d.fileBranchMasks[i]
+		isDefault := (branchMask & 1) == 1
+		others := uint64(bits.OnesCount64(branchMask >> 1))
+
+		// this is readNewlines but only reading the size of each section which
+		// corresponds to the number of newlines.
+		sec := simpleSection{
+			off: d.newlinesStart + d.newlinesIndex[i],
+			sz:  d.newlinesIndex[i+1] - d.newlinesIndex[i],
+		}
+		// We are only reading the first varint which is the size. So we don't
+		// need to read more than MaxVarintLen64 bytes.
+		if sec.sz > binary.MaxVarintLen64 {
+			sec.sz = binary.MaxVarintLen64
+		}
+		blob, err := d.readSectionBlob(sec)
+		if err != nil {
+			log.Printf("error reading newline index for document %d on shard %s: %v", i, d.file.Name(), err)
+			continue
+		}
+		sz, _ := binary.Uvarint(blob)
+
+		count += sz
+		if isDefault {
+			defaultCount += sz
+		}
+		otherCount += (others * sz)
+	}
+
+	return
 }
 
 func (d *indexData) String() string {
 	return fmt.Sprintf("shard(%s)", d.file.Name())
 }
 
+// calculates an approximate size of indexData in memory in bytes.
 func (d *indexData) memoryUse() int {
 	sz := 0
 	for _, a := range [][]uint32{
 		d.newlinesIndex, d.docSectionsIndex,
 		d.boundaries, d.fileNameIndex,
-		d.runeOffsets, d.fileNameRuneOffsets,
 		d.fileEndRunes, d.fileNameEndRunes,
+		d.fileEndSymbol, d.symbols.symKindIndex,
+		d.subRepos,
 	} {
 		sz += 4 * len(a)
 	}
+	sz += d.runeOffsets.sizeBytes()
+	sz += d.fileNameRuneOffsets.sizeBytes()
+	sz += len(d.languages)
+	sz += len(d.checksums)
+	sz += 2 * len(d.repos)
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
-	sz += 12 * len(d.ngrams)
-	for _, v := range d.fileNameNgrams {
-		sz += 4*len(v) + 4
-	}
+	sz += d.ngrams.SizeBytes()
+	sz += 12 * len(d.fileNameNgrams) // these slices reference mmap-ed memory
 	return sz
 }
 
@@ -167,7 +357,7 @@ func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
 		return uint32(len(data.fileNameNgrams[ng]))
 	}
 
-	return data.ngrams[ng].sz
+	return data.ngrams.Get(ng).sz
 }
 
 type ngramIterationResults struct {
@@ -196,6 +386,24 @@ func (r *ngramIterationResults) candidates() []*candidateMatch {
 
 func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResults, error) {
 	str := query.Pattern
+
+	if len(query.Pattern) >= bloomHashMinWordLength {
+		// test against appropriate content or filename bloom filters
+		pat := []byte(query.Pattern)
+		var match bool
+		if query.FileName {
+			match = d.bloomNames.maybeHasBytes(pat)
+		} else {
+			match = d.bloomContents.maybeHasBytes(pat)
+		}
+		if !match {
+			return &ngramIterationResults{
+				matchIterator: &noMatchTree{
+					Why: "bloomfilter",
+				},
+			}, nil
+		}
+	}
 
 	// Find the 2 least common ngrams from the string.
 	ngramOffs := splitNGrams([]byte(query.Pattern))
@@ -270,6 +478,31 @@ func (d *indexData) fileName(i uint32) []byte {
 	return d.fileNameContent[d.fileNameIndex[i]:d.fileNameIndex[i+1]]
 }
 
+func (d *indexData) numDocs() uint32 {
+	return uint32(len(d.fileBranchMasks))
+}
+
 func (s *indexData) Close() {
 	s.file.Close()
+}
+
+const (
+	rawConfigYes = 1
+	rawConfigNo  = 2
+)
+
+// encodeRawConfig encodes a rawConfig map into a uint8 mask.
+func encodeRawConfig(rawConfig map[string]string) uint8 {
+	var encoded uint8
+	for i, f := range []string{"public", "fork", "archived"} {
+		var e uint8
+		v, ok := rawConfig[f]
+		if ok && v == "1" {
+			e |= rawConfigYes
+		} else {
+			e |= rawConfigNo
+		}
+		encoded = encoded | e<<(2*i)
+	}
+	return encoded
 }

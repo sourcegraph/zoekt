@@ -24,9 +24,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/query"
@@ -52,7 +55,8 @@ cd ..
 cd bdir
 git init -b master
 echo bcont > bfile
-git add bfile
+ln -s bfile bsymlink
+git add bfile bsymlink
 git config user.email "you@example.com"
 git config user.name "Your Name"
 git commit -am bmsg
@@ -178,7 +182,7 @@ func TestTreeToFiles(t *testing.T) {
 	}
 	sort.Strings(paths)
 
-	want := []string{".gitmodules", "afile", "bname/bfile", "subdir/sub-file"}
+	want := []string{".gitmodules", "afile", "bname/bfile", "bname/bsymlink", "subdir/sub-file"}
 	if !reflect.DeepEqual(paths, want) {
 		t.Errorf("got %v, want %v", paths, want)
 	}
@@ -256,6 +260,111 @@ func TestSubmoduleIndex(t *testing.T) {
 	}
 }
 
+func createSymlinkRepo(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	script := `mkdir adir bdir
+git init
+git config user.email "you@example.com"
+git config user.name "Your Name"
+
+echo acont > adir/afile
+git add adir/afile
+
+echo bcont > bdir/bfile
+git add bdir/bfile
+
+ln -s ./adir/afile asymlink
+git add asymlink
+
+git commit -am amsg
+
+cat << EOF  > .git/config
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = true
+[remote "origin"]
+	url = http://codehost.com/arepo
+[branch "master"]
+	remote = origin
+	merge = refs/heads/master
+EOF
+`
+	cmd := exec.Command("/bin/sh", "-euxc", script)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("execution error: %v, output %s", err, out)
+	}
+	return nil
+}
+
+func TestSearchSymlinkByContent(t *testing.T) {
+	dir, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatalf("TempDir: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	if err := createSymlinkRepo(dir); err != nil {
+		t.Fatalf("createSubmoduleRepo: %v", err)
+	}
+
+	indexDir, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(indexDir)
+
+	buildOpts := build.Options{
+		IndexDir: indexDir,
+	}
+	opts := Options{
+		RepoDir:      filepath.Join(dir),
+		BuildOptions: buildOpts,
+		BranchPrefix: "refs/heads/",
+		Branches:     []string{"master"},
+		Submodules:   true,
+		Incremental:  true,
+		RepoCacheDir: dir,
+	}
+	if err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := shards.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	// The content of the symlink and the file path the symlink points to both
+	// contain the string "afile". Hence we expect 1 path match and 1 content match.
+	results, err := searcher.Search(context.Background(),
+		&query.Substring{Pattern: "afile"},
+		&zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal("Search", err)
+	}
+
+	if len(results.Files) != 2 {
+		t.Fatalf("got search result %v, want 2 files", results.Files)
+	}
+
+	got := make([]string, 0, 2)
+	for _, file := range results.Files {
+		got = append(got, file.FileName)
+	}
+	sort.Strings(got)
+
+	want := []string{"adir/afile", "asymlink"}
+
+	if d := cmp.Diff(want, got); d != "" {
+		t.Fatalf("-want, +got %s\n", d)
+	}
+}
+
 func TestAllowMissingBranch(t *testing.T) {
 	dir, err := ioutil.TempDir("", "")
 	if err != nil {
@@ -307,13 +416,13 @@ echo sub-cont > subdir/sub-file
 git add afile subdir/sub-file
 git config user.email "you@example.com"
 git config user.name "Your Name"
-git commit -am amsg
+GIT_COMMITTER_DATE="Mon 5 Oct 2021 11:00:00 +0000" git commit -am amsg
 
 git branch branchdir/a
 
 echo acont >> afile
 git add afile subdir/sub-file
-git commit -am amsg
+GIT_COMMITTER_DATE="Tue 6 Oct 2021 12:00:00 +0000" git commit -am amsg
 
 git branch branchdir/b
 
@@ -372,7 +481,7 @@ func TestBranchWildcard(t *testing.T) {
 	}
 	defer searcher.Close()
 
-	if rlist, err := searcher.List(context.Background(), &query.Repo{Pattern: ""}); err != nil {
+	if rlist, err := searcher.List(context.Background(), &query.Repo{Regexp: regexp.MustCompile("repo")}, nil); err != nil {
 		t.Fatalf("List(): %v", err)
 	} else if len(rlist.Repos) != 1 {
 		t.Errorf("got %v, want 1 result", rlist.Repos)
@@ -467,7 +576,7 @@ func TestFullAndShortRefNames(t *testing.T) {
 	}
 	defer searcher.Close()
 
-	if rlist, err := searcher.List(context.Background(), &query.Repo{Pattern: ""}); err != nil {
+	if rlist, err := searcher.List(context.Background(), &query.Repo{Regexp: regexp.MustCompile("repo")}, nil); err != nil {
 		t.Fatalf("List(): %v", err)
 	} else if len(rlist.Repos) != 1 {
 		t.Errorf("got %v, want 1 result", rlist.Repos)
@@ -482,5 +591,47 @@ func TestUniq(t *testing.T) {
 	got := uniq(in)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestLatestCommit(t *testing.T) {
+	dir := t.TempDir()
+	indexDir := t.TempDir()
+
+	if err := createMultibranchRepo(dir); err != nil {
+		t.Fatalf("createMultibranchRepo: %v", err)
+	}
+
+	buildOpts := build.Options{
+		IndexDir: indexDir,
+		RepositoryDescription: zoekt.Repository{
+			Name: "repo",
+		},
+	}
+	buildOpts.SetDefaults()
+
+	opts := Options{
+		RepoDir:      filepath.Join(dir + "/repo"),
+		BuildOptions: buildOpts,
+		BranchPrefix: "refs/heads",
+		Branches:     []string{"branchdir/a", "branchdir/b"},
+	}
+	if err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := shards.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	rlist, err := searcher.List(context.Background(), &query.Repo{Regexp: regexp.MustCompile("repo")}, nil)
+	if err != nil {
+		t.Fatalf("List(): %v", err)
+	}
+
+	if want := time.Date(2021, 10, 6, 12, 0, 0, 0, time.UTC); rlist.Repos[0].Repository.LatestCommitDate != want {
+		t.Fatalf("want %s, got %s", want, rlist.Repos[0].Repository.LatestCommitDate)
 	}
 }

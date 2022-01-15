@@ -20,7 +20,6 @@ import (
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/cmd"
-	"github.com/google/zoekt/gitindex"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 
@@ -127,15 +126,18 @@ func do(opts Options, bopts build.Options) error {
 	if opts.Name != "" {
 		bopts.RepositoryDescription.Name = opts.Name
 	}
-	if opts.RepoURL != "" {
-		u, err := url.Parse(opts.RepoURL)
-		if err != nil {
-			return err
+	// We do not use this functionality to avoid pulling in the transitive deps of gitindex
+	/*
+		if opts.RepoURL != "" {
+			u, err := url.Parse(opts.RepoURL)
+			if err != nil {
+				return err
+			}
+			if err := gitindex.SetTemplatesFromOrigin(&bopts.RepositoryDescription, u); err != nil {
+				return err
+			}
 		}
-		if err := gitindex.SetTemplatesFromOrigin(&bopts.RepositoryDescription, u); err != nil {
-			return err
-		}
-	}
+	*/
 	bopts.SetDefaults()
 	bopts.RepositoryDescription.Branches = []zoekt.RepositoryBranch{{Name: opts.Branch, Version: opts.Commit}}
 	brs := []string{opts.Branch}
@@ -202,11 +204,13 @@ func main() {
 		branch = flag.String("branch", "", "The branch name for the archive")
 		commit = flag.String("commit", "", "The commit sha for the archive. If incremental this will avoid updating shards already at commit")
 		strip  = flag.Int("strip_components", 0, "Remove the specified number of leading path elements. Pathnames with fewer elements will be silently skipped.")
+
+		downloadLimitMbps = flag.Int64("download-limit-mbps", 0, "If non-zero, limit archive downloads to specified amount in megabits per second")
 	)
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
-	maxprocs.Set()
+	_, _ = maxprocs.Set()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -225,6 +229,9 @@ func main() {
 		Commit:  *commit,
 		Strip:   *strip,
 	}
+
+	// Sourcegraph specific: Limit HTTP traffic
+	limitHTTPDefaultClient(*downloadLimitMbps)
 
 	if err := do(opts, *bopts); err != nil {
 		log.Fatal(err)

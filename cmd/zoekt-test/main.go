@@ -26,8 +26,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
@@ -87,7 +90,9 @@ func compare(dir, patfile string, caseSensitive bool) error {
 		return err
 	}
 	for k, v := range fileContents {
-		builder.AddFile(k, v)
+		if err := builder.AddFile(k, v); err != nil {
+			return err
+		}
 	}
 	if err := builder.Finish(); err != nil {
 		return err
@@ -165,11 +170,59 @@ func compare(dir, patfile string, caseSensitive bool) error {
 	return nil
 }
 
+var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
+var cpuprofile = flag.String("cpuprofile", "", "write memory profile to `file`")
+
+func testLoadIndexDir(indexDir string) {
+	var a, b runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&a)
+	start := time.Now()
+	s, err := shards.NewDirectorySearcher(indexDir)
+	if err != nil {
+		return
+	}
+	duration := time.Since(start)
+	runtime.GC()
+	runtime.ReadMemStats(&b)
+	log.Printf("%s loaded in %d ms, additional memory consumption: %d MiB", s.String(), duration.Milliseconds(), (b.Alloc-a.Alloc)/1024/1024)
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		runtime.GC()    // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+	}
+}
+
 func main() {
 	repo := flag.String("repo", "", "repository to search")
+	indexDir := flag.String("indexDir", "", "indexDir to load and exit")
 	caseSensitive := flag.Bool("case", false, "case sensitive")
+
 	flag.Parse()
 
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
+	if *indexDir != "" {
+		testLoadIndexDir(*indexDir)
+		return
+	}
 	if len(flag.Args()) == 0 {
 		fmt.Fprintf(os.Stderr, "pattern file is missing.\n")
 		flag.Usage()

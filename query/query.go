@@ -15,11 +15,20 @@
 package query
 
 import (
+	"bytes"
+	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"log"
 	"reflect"
+	"regexp"
 	"regexp/syntax"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
+
+	"github.com/RoaringBitmap/roaring"
 )
 
 var _ = log.Println
@@ -29,21 +38,57 @@ type Q interface {
 	String() string
 }
 
+// RPCUnwrap processes q to remove RPC specific elements from q. This is
+// needed because gob isn't flexible enough for us. This should be called by
+// RPC servers at the client/server boundary so that q works with the rest of
+// zoekt.
+func RPCUnwrap(q Q) Q {
+	if cache, ok := q.(*GobCache); ok {
+		return cache.Q
+	}
+	return q
+}
+
+// RawConfig filters repositories based on their encoded RawConfig map.
+type RawConfig uint64
+
+const (
+	RcOnlyPublic   RawConfig = 1
+	RcOnlyPrivate  RawConfig = 2
+	RcOnlyForks    RawConfig = 1 << 2
+	RcNoForks      RawConfig = 2 << 2
+	RcOnlyArchived RawConfig = 1 << 4
+	RcNoArchived   RawConfig = 2 << 4
+)
+
+var flagNames = []struct {
+	Mask  RawConfig
+	Label string
+}{
+	{RcOnlyPublic, "RcOnlyPublic"},
+	{RcOnlyPrivate, "RcOnlyPrivate"},
+	{RcOnlyForks, "RcOnlyForks"},
+	{RcNoForks, "RcNoForks"},
+	{RcOnlyArchived, "RcOnlyArchived"},
+	{RcNoArchived, "RcNoArchived"},
+}
+
+func (r RawConfig) String() string {
+	var s []string
+	for _, fn := range flagNames {
+		if r&fn.Mask != 0 {
+			s = append(s, fn.Label)
+		}
+	}
+	return fmt.Sprintf("rawConfig:%s", strings.Join(s, "|"))
+}
+
 // RegexpQuery is a query looking for regular expressions matches.
 type Regexp struct {
 	Regexp        *syntax.Regexp
 	FileName      bool
 	Content       bool
 	CaseSensitive bool
-}
-
-// Symbol finds a string that is a symbol.
-type Symbol struct {
-	Atom *Substring
-}
-
-func (s *Symbol) String() string {
-	return fmt.Sprintf("sym:%s", s.Atom)
 }
 
 func (q *Regexp) String() string {
@@ -55,6 +100,45 @@ func (q *Regexp) String() string {
 		pref = "case_" + pref
 	}
 	return fmt.Sprintf("%sregex:%q", pref, q.Regexp.String())
+}
+
+// gobRegexp wraps Regexp to make it gob-encodable/decodable. Regexp contains syntax.Regexp, which
+// contains slices/arrays with possibly nil elements, which gob doesn't support
+// (https://github.com/golang/go/issues/1501).
+type gobRegexp struct {
+	Regexp       // Regexp.Regexp (*syntax.Regexp) is set to nil and its string is set in RegexpString
+	RegexpString string
+}
+
+// GobEncode implements gob.Encoder.
+func (q Regexp) GobEncode() ([]byte, error) {
+	gobq := gobRegexp{Regexp: q, RegexpString: q.Regexp.String()}
+	gobq.Regexp.Regexp = nil // can't be gob-encoded/decoded
+	return json.Marshal(gobq)
+}
+
+// GobDecode implements gob.Decoder.
+func (q *Regexp) GobDecode(data []byte) error {
+	var gobq gobRegexp
+	err := json.Unmarshal(data, &gobq)
+	if err != nil {
+		return err
+	}
+	gobq.Regexp.Regexp, err = syntax.Parse(gobq.RegexpString, regexpFlags)
+	if err != nil {
+		return err
+	}
+	*q = gobq.Regexp
+	return nil
+}
+
+// Symbol finds a string that is a symbol.
+type Symbol struct {
+	Expr Q
+}
+
+func (s *Symbol) String() string {
+	return fmt.Sprintf("sym:%s", s.Expr)
 }
 
 type caseQ struct {
@@ -85,11 +169,195 @@ func (q *Const) String() string {
 }
 
 type Repo struct {
-	Pattern string
+	Regexp *regexp.Regexp
 }
 
 func (q *Repo) String() string {
-	return fmt.Sprintf("repo:%s", q.Pattern)
+	return fmt.Sprintf("repo:%s", q.Regexp.String())
+}
+
+// RepoRegexp is a Sourcegraph addition which searches documents where the
+// repository name matches Regexp.
+type RepoRegexp struct {
+	Regexp *regexp.Regexp
+}
+
+func (q *RepoRegexp) String() string {
+	return fmt.Sprintf("reporegex:%q", q.Regexp.String())
+}
+
+// GobEncode implements gob.Encoder.
+func (q *RepoRegexp) GobEncode() ([]byte, error) {
+	// gob can't encode syntax.Regexp
+	return []byte(q.Regexp.String()), nil
+}
+
+// GobDecode implements gob.Decoder.
+func (q *RepoRegexp) GobDecode(data []byte) error {
+	var err error
+	q.Regexp, err = regexp.Compile(string(data))
+	return err
+}
+
+// BranchesRepos is a slice of BranchRepos to match. It is a Sourcegraph
+// addition and only used in the RPC interface for efficient checking of large
+// repo lists.
+type BranchesRepos struct {
+	List []BranchRepos
+}
+
+// NewSingleBranchesRepos is a helper for creating a BranchesRepos which
+// searches a single branch.
+func NewSingleBranchesRepos(branch string, ids ...uint32) *BranchesRepos {
+	return &BranchesRepos{List: []BranchRepos{
+		{branch, roaring.BitmapOf(ids...)},
+	}}
+}
+
+func (q *BranchesRepos) String() string {
+	var sb strings.Builder
+
+	sb.WriteString("(branchesrepos")
+
+	for _, br := range q.List {
+		if size := br.Repos.GetCardinality(); size > 1 {
+			sb.WriteString(" " + br.Branch + ":" + strconv.FormatUint(size, 10))
+		} else {
+			sb.WriteString(" " + br.Branch + "=" + br.Repos.String())
+		}
+	}
+
+	sb.WriteString(")")
+	return sb.String()
+}
+
+// MarshalBinary implements a specialized encoder for BranchesRepos.
+func (q BranchesRepos) MarshalBinary() ([]byte, error) {
+	return branchesReposEncode(q.List)
+}
+
+// UnmarshalBinary implements a specialized decoder for BranchesRepos.
+func (q *BranchesRepos) UnmarshalBinary(b []byte) (err error) {
+	q.List, err = branchesReposDecode(b)
+	return err
+}
+
+// BranchRepos is a (branch, sourcegraph repo ids bitmap) tuple. It is a
+// Sourcegraph addition.
+type BranchRepos struct {
+	Branch string
+	Repos  *roaring.Bitmap
+}
+
+// RepoBranches is a list of branches in repos to match. It is a Sourcegraph
+// addition and only used in the RPC interface for efficient checking of large
+// repo lists.
+type RepoBranches struct {
+	// Set is map reponame -> [branch]
+	Set map[string][]string
+}
+
+func (q *RepoBranches) String() string {
+	var detail string
+	if len(q.Set) > 5 {
+		// Large sets being output are not useful
+		detail = fmt.Sprintf("size=%d", len(q.Set))
+	} else {
+		repos := make([]string, len(q.Set))
+		i := 0
+		for repo, branches := range q.Set {
+			// repo@master:develop:master
+			repos[i] = fmt.Sprintf("%s@%s", repo, strings.Join(branches, ":"))
+			i++
+		}
+		sort.Strings(repos)
+		detail = strings.Join(repos, " ")
+	}
+	return fmt.Sprintf("(repobranches %s)", detail)
+}
+
+// Branches returns a query representing the branches to search for name.
+func (q *RepoBranches) Branches(name string) Q {
+	branches, ok := q.Set[name]
+	if !ok {
+		return &Const{Value: false}
+	}
+
+	// New sub query is (or (branch branches[0]) ...)
+	qs := make([]Q, len(branches))
+	for i, branch := range branches {
+		qs[i] = &Branch{Pattern: branch, Exact: true}
+	}
+	return NewOr(qs...)
+}
+
+// MarshalBinary implements a specialized encoder for RepoBranches.
+func (q *RepoBranches) MarshalBinary() ([]byte, error) {
+	return repoBranchesEncode(q.Set)
+}
+
+// UnmarshalBinary implements a specialized decoder for RepoBranches.
+func (q *RepoBranches) UnmarshalBinary(b []byte) error {
+	var err error
+	q.Set, err = repoBranchesDecode(b)
+	return err
+}
+
+// RepoSet is a list of repos to match. It is a Sourcegraph addition and only
+// used in the RPC interface for efficient checking of large repo lists.
+type RepoSet struct {
+	Set map[string]bool
+}
+
+func (q *RepoSet) String() string {
+	var detail string
+	if len(q.Set) > 5 {
+		// Large sets being output are not useful
+		detail = fmt.Sprintf("size=%d", len(q.Set))
+	} else {
+		repos := make([]string, len(q.Set))
+		i := 0
+		for repo := range q.Set {
+			repos[i] = repo
+			i++
+		}
+		sort.Strings(repos)
+		detail = strings.Join(repos, " ")
+	}
+	return fmt.Sprintf("(reposet %s)", detail)
+}
+
+func NewRepoSet(repo ...string) *RepoSet {
+	s := &RepoSet{Set: make(map[string]bool)}
+	for _, r := range repo {
+		s.Set[r] = true
+	}
+	return s
+}
+
+const (
+	TypeFileMatch uint8 = iota
+	TypeFileName
+	TypeRepo
+)
+
+// Type changes the result type returned.
+type Type struct {
+	Child Q
+	Type  uint8
+}
+
+func (q *Type) String() string {
+	switch q.Type {
+	case TypeFileMatch:
+		return fmt.Sprintf("(type:filematch %s)", q.Child)
+	case TypeFileName:
+		return fmt.Sprintf("(type:filename %s)", q.Child)
+	case TypeRepo:
+		return fmt.Sprintf("(type:repo %s)", q.Child)
+	default:
+		return fmt.Sprintf("(type:UNKNOWN %s)", q.Child)
+	}
 }
 
 // Substring is the most basic query: a query for a substring.
@@ -138,7 +406,9 @@ func (q *Substring) setCase(k string) {
 }
 
 func (q *Symbol) setCase(k string) {
-	q.Atom.setCase(k)
+	if sc, ok := q.Expr.(setCaser); ok {
+		sc.setCase(k)
+	}
 }
 
 func (q *Regexp) setCase(k string) {
@@ -150,6 +420,56 @@ func (q *Regexp) setCase(k string) {
 	case "auto":
 		q.CaseSensitive = (q.Regexp.String() != LowerRegexp(q.Regexp).String())
 	}
+}
+
+// GobCache exists so we only pay the cost of marshalling a query once when we
+// aggregate it out over all the replicas.
+//
+// Our query and eval layer do not support GobCache. Instead, at the gob
+// boundaries (RPC and Streaming) we check if the Q is a GobCache and unwrap
+// it.
+//
+// "I wish we could get rid of this code soon enough" - tomas
+type GobCache struct {
+	Q
+
+	once sync.Once
+	data []byte
+	err  error
+}
+
+// GobEncode implements gob.Encoder.
+func (q *GobCache) GobEncode() ([]byte, error) {
+	q.once.Do(func() {
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		q.err = enc.Encode(&gobWrapper{
+			WrappedQ: q.Q,
+		})
+		q.data = buf.Bytes()
+	})
+	return q.data, q.err
+}
+
+// GobDecode implements gob.Decoder.
+func (q *GobCache) GobDecode(data []byte) error {
+	dec := gob.NewDecoder(bytes.NewBuffer(data))
+	var w gobWrapper
+	err := dec.Decode(&w)
+	if err != nil {
+		return err
+	}
+	q.Q = w.WrappedQ
+	return nil
+}
+
+// gobWrapper is needed so the gob decoder works.
+type gobWrapper struct {
+	WrappedQ Q
+}
+
+func (q *GobCache) String() string {
+	return fmt.Sprintf("GobCache(%s)", q.Q)
 }
 
 // Or is matched when any of its children is matched.
@@ -200,9 +520,15 @@ func NewOr(qs ...Q) Q {
 // Branch limits search to a specific branch.
 type Branch struct {
 	Pattern string
+
+	// exact is true if we want to Pattern to equal branch.
+	Exact bool
 }
 
 func (q *Branch) String() string {
+	if q.Exact {
+		return fmt.Sprintf("branch=%q", q.Pattern)
+	}
 	return fmt.Sprintf("branch:%q", q.Pattern)
 }
 
@@ -254,6 +580,9 @@ func flatten(q Q) (Q, bool) {
 	case *Not:
 		child, changed := flatten(s.Child)
 		return &Not{child}, changed
+	case *Type:
+		child, changed := flatten(s.Child)
+		return &Type{Child: child, Type: s.Type}, changed
 	default:
 		return q, false
 	}
@@ -313,6 +642,18 @@ func evalConstants(q Q) Q {
 			return invertConst(ch)
 		}
 		return &Not{ch}
+	case *Type:
+		ch := evalConstants(s.Child)
+		if _, ok := ch.(*Const); ok {
+			// If q is the root query, then evaluating this to a const changes
+			// the type of result we will return. However, the only case this
+			// makes sense is `type:repo TRUE` to return all repos or
+			// `type:file TRUE` to return all filenames. For other cases we
+			// want to do this constant folding though, so we allow the
+			// unexpected behaviour mentioned previously.
+			return ch
+		}
+		return &Type{Child: ch, Type: s.Type}
 	case *Substring:
 		if len(s.Pattern) == 0 {
 			return &Const{true}
@@ -323,6 +664,10 @@ func evalConstants(q Q) Q {
 		}
 	case *Branch:
 		if s.Pattern == "" {
+			return &Const{true}
+		}
+	case *RepoSet:
+		if len(s.Set) == 0 {
 			return &Const{true}
 		}
 	}
@@ -351,6 +696,8 @@ func Map(q Q, f func(q Q) Q) Q {
 		q = &Or{Children: mapQueryList(s.Children, f)}
 	case *Not:
 		q = &Not{Child: Map(s.Child, f)}
+	case *Type:
+		q = &Type{Type: s.Type, Child: Map(s.Child, f)}
 	}
 	return f(q)
 }
@@ -386,6 +733,7 @@ func VisitAtoms(q Q, v func(q Q)) {
 		case *And:
 		case *Or:
 		case *Not:
+		case *Type:
 		default:
 			v(iQ)
 		}

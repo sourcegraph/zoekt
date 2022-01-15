@@ -19,19 +19,20 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/google/zoekt"
 )
 
 type shardLoader interface {
-	// Load a new file. Should be safe for concurrent calls.
-	load(filename string)
-	drop(filename string)
+	// Load a new file.
+	load(filenames ...string)
+	drop(filenames ...string)
 }
 
 type DirectoryWatcher struct {
@@ -76,24 +77,69 @@ func (s *DirectoryWatcher) String() string {
 	return fmt.Sprintf("shardWatcher(%s)", s.dir)
 }
 
+// versionFromPath extracts url encoded repository name and
+// index format version from a shard name from builder.
+func versionFromPath(path string) (string, int) {
+	und := strings.LastIndex(path, "_")
+	if und < 0 {
+		return path, 0
+	}
+
+	dot := strings.Index(path[und:], ".")
+	if dot < 0 {
+		return path, 0
+	}
+	dot += und
+
+	version, err := strconv.Atoi(path[und+2 : dot])
+	if err != nil {
+		return path, 0
+	}
+
+	return path[:und], version
+}
+
 func (s *DirectoryWatcher) scan() error {
 	fs, err := filepath.Glob(filepath.Join(s.dir, "*.zoekt"))
 	if err != nil {
 		return err
 	}
 
-	if len(s.timestamps) == 0 && len(fs) == 0 {
-		return fmt.Errorf("directory %s is empty", s.dir)
+	latest := map[string]int{}
+	for _, fn := range fs {
+		name, version := versionFromPath(fn)
+
+		// In the case of downgrades, avoid reading
+		// newer index formats.
+		if version > zoekt.IndexFormatVersion && version > zoekt.NextIndexFormatVersion {
+			continue
+		}
+
+		if latest[name] < version {
+			latest[name] = version
+		}
 	}
 
 	ts := map[string]time.Time{}
 	for _, fn := range fs {
+		if name, version := versionFromPath(fn); latest[name] != version {
+			continue
+		}
+
 		fi, err := os.Lstat(fn)
 		if err != nil {
 			continue
 		}
 
 		ts[fn] = fi.ModTime()
+
+		fiMeta, err := os.Lstat(fn + ".meta")
+		if err != nil {
+			continue
+		}
+		if fiMeta.ModTime().After(fi.ModTime()) {
+			ts[fn] = fiMeta.ModTime()
+		}
 	}
 
 	var toLoad []string
@@ -114,38 +160,16 @@ func (s *DirectoryWatcher) scan() error {
 	}
 
 	if len(toDrop) > 0 {
-		log.Printf("unloading %d shard(s)", len(toDrop))
+		log.Printf("unloading %d shard(s): %s", len(toDrop), humanTruncateList(toDrop, 5))
 	}
-	for _, t := range toDrop {
-		log.Printf("unloading: %s", filepath.Base(t))
-		s.loader.drop(t)
-	}
+
+	s.loader.drop(toDrop...)
 
 	if len(toLoad) == 0 {
 		return nil
 	}
 
-	log.Printf("loading %d shard(s): %s", len(toLoad), humanTruncateList(toLoad, 5))
-
-	// Limit amount of concurrent shard loads.
-	throttle := make(chan struct{}, runtime.GOMAXPROCS(0))
-	lastProgress := time.Now()
-	for i, t := range toLoad {
-		// If taking a while to start-up occasionally give a progress message
-		if time.Since(lastProgress) > 10*time.Second {
-			log.Printf("still need to load %d shards...", len(toLoad)-i)
-			lastProgress = time.Now()
-		}
-
-		throttle <- struct{}{}
-		go func(k string) {
-			s.loader.load(k)
-			<-throttle
-		}(t)
-	}
-	for i := 0; i < cap(throttle); i++ {
-		throttle <- struct{}{}
-	}
+	s.loader.load(toLoad...)
 
 	return nil
 }
@@ -204,7 +228,9 @@ func (s *DirectoryWatcher) watch() error {
 	go func() {
 		defer close(s.stopped)
 		for range signal {
-			s.scan()
+			if err := s.scan(); err != nil {
+				log.Println("watcher error:", err)
+			}
 		}
 	}()
 

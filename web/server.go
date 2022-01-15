@@ -34,6 +34,8 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
+	"github.com/google/zoekt/rpc"
+	"github.com/google/zoekt/stream"
 )
 
 var Funcmap = template.FuncMap{
@@ -76,10 +78,13 @@ var Funcmap = template.FuncMap{
 const defaultNumResults = 50
 
 type Server struct {
-	Searcher zoekt.Searcher
+	Searcher zoekt.Streamer
 
 	// Serve HTML interface
 	HTML bool
+
+	// Serve RPC
+	RPC bool
 
 	// If set, show files from the index.
 	Print bool
@@ -94,20 +99,19 @@ type Server struct {
 	// domains.
 	HostCustomQueries map[string]string
 
-	// This should contain the following templates: "didyoumean"
-	// (for suggestions), "repolist" (for the repo search result
-	// page), "result" for the search results, "search" (for the
-	// opening page), "box" for the search query input element and
+	// This should contain the following templates: "repolist"
+	// (for the repo search result page), "result" for
+	// the search results, "search" (for the opening page),
+	// "box" for the search query input element and
 	// "print" for the show file functionality.
 	Top *template.Template
 
-	didYouMean *template.Template
-	repolist   *template.Template
-	search     *template.Template
-	result     *template.Template
-	print      *template.Template
-	about      *template.Template
-	robots     *template.Template
+	repolist *template.Template
+	search   *template.Template
+	result   *template.Template
+	print    *template.Template
+	about    *template.Template
+	robots   *template.Template
 
 	startTime time.Time
 
@@ -143,13 +147,12 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 	}
 
 	for k, v := range map[string]**template.Template{
-		"didyoumean": &s.didYouMean,
-		"results":    &s.result,
-		"print":      &s.print,
-		"search":     &s.search,
-		"repolist":   &s.repolist,
-		"about":      &s.about,
-		"robots":     &s.robots,
+		"results":  &s.result,
+		"print":    &s.print,
+		"search":   &s.search,
+		"repolist": &s.repolist,
+		"about":    &s.about,
+		"robots":   &s.robots,
 	} {
 		*v = s.Top.Lookup(k)
 		if *v == nil {
@@ -169,8 +172,29 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 		mux.HandleFunc("/about", s.serveAbout)
 		mux.HandleFunc("/print", s.servePrint)
 	}
+	if s.RPC {
+		mux.Handle(rpc.DefaultRPCPath, rpc.Server(traceAwareSearcher{s.Searcher}))       // /rpc
+		mux.Handle(stream.DefaultSSEPath, stream.Server(traceAwareSearcher{s.Searcher})) // /stream
+	}
+
+	mux.HandleFunc("/healthz", s.serveHealthz)
 
 	return mux, nil
+}
+
+func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
+	q := &query.Const{Value: true}
+	opts := &zoekt.SearchOptions{ShardMaxMatchCount: 1, TotalMaxMatchCount: 1, MaxDocDisplayCount: 1}
+
+	result, err := s.Searcher.Search(r.Context(), q, opts)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("not ready: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
@@ -234,6 +258,10 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 			return &ApiSearchResult{Repos: repos}, nil
 		}
 		return nil, err
+	}
+
+	if qt, ok := q.(*query.Type); ok && qt.Type == query.TypeRepo {
+		return s.serveListReposErr(q, queryStr, w, r)
 	}
 
 	numStr := qvals.Get("num")
@@ -333,7 +361,7 @@ func (s *Server) fetchStats(ctx context.Context) (*zoekt.RepoStats, error) {
 		return stats, nil
 	}
 
-	repos, err := s.Searcher.List(ctx, &query.Const{Value: true})
+	repos, err := s.Searcher.List(ctx, &query.Const{Value: true}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +414,7 @@ func (s *Server) serveSearchBoxErr(w http.ResponseWriter, r *http.Request) error
 	if err := s.search.Execute(&buf, &d); err != nil {
 		return err
 	}
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 	return nil
 }
 
@@ -412,7 +440,7 @@ func (s *Server) serveAboutErr(w http.ResponseWriter, r *http.Request) error {
 	if err := s.about.Execute(&buf, &d); err != nil {
 		return err
 	}
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 	return nil
 }
 
@@ -428,7 +456,7 @@ func (s *Server) serveRobotsErr(w http.ResponseWriter, r *http.Request) error {
 	if err := s.robots.Execute(&buf, &data); err != nil {
 		return err
 	}
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 	return nil
 }
 
@@ -440,7 +468,7 @@ func (s *Server) serveRobots(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveListReposErr(q query.Q, qStr string, r *http.Request) (*RepoListInput, error) {
 	ctx := r.Context()
-	repos, err := s.Searcher.List(ctx, q)
+	repos, err := s.Searcher.List(ctx, q, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -455,6 +483,10 @@ func (s *Server) serveListReposErr(q query.Q, qStr string, r *http.Request) (*Re
 	case "size", "revsize":
 		sort.Slice(repos.Repos, func(i, j int) bool {
 			return repos.Repos[i].Stats.ContentBytes < repos.Repos[j].Stats.ContentBytes
+		})
+	case "ram", "revram":
+		sort.Slice(repos.Repos, func(i, j int) bool {
+			return repos.Repos[i].Stats.IndexBytes < repos.Repos[j].Stats.IndexBytes
 		})
 	case "time", "revtime":
 		sort.Slice(repos.Repos, func(i, j int) bool {
@@ -479,13 +511,6 @@ func (s *Server) serveListReposErr(q query.Q, qStr string, r *http.Request) (*Re
 	for _, s := range repos.Repos {
 		aggregate.Add(&s.Stats)
 	}
-	res := RepoListInput{
-		Last: LastInput{
-			Query:     qStr,
-			AutoFocus: true,
-		},
-		Stats: aggregate,
-	}
 
 	numStr := qvals.Get("num")
 	num, err := strconv.Atoi(numStr)
@@ -500,15 +525,25 @@ func (s *Server) serveListReposErr(q query.Q, qStr string, r *http.Request) (*Re
 		repos.Repos = repos.Repos[:num]
 	}
 
+	res := RepoListInput{
+		Last: LastInput{
+			Query:     qStr,
+			Num:       num,
+			AutoFocus: true,
+		},
+		Stats: aggregate,
+	}
+
 	for _, r := range repos.Repos {
 		t := s.getTemplate(r.Repository.CommitURLTemplate)
 
 		repo := Repository{
-			Name:      r.Repository.Name,
-			URL:       r.Repository.URL,
-			IndexTime: r.IndexMetadata.IndexTime,
-			Size:      r.Stats.ContentBytes,
-			Files:     int64(r.Stats.Documents),
+			Name:       r.Repository.Name,
+			URL:        r.Repository.URL,
+			IndexTime:  r.IndexMetadata.IndexTime,
+			Size:       r.Stats.ContentBytes,
+			MemorySize: r.Stats.IndexBytes,
+			Files:      int64(r.Stats.Documents),
 		}
 		for _, b := range r.Repository.Branches {
 			var buf bytes.Buffer
@@ -542,9 +577,16 @@ func (s *Server) servePrintErr(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+
+	repoRe, err := regexp.Compile("^" + regexp.QuoteMeta(repoStr) + "$")
+
+	if err != nil {
+		return err
+	}
+
 	qs := []query.Q{
 		&query.Regexp{Regexp: re, FileName: true, CaseSensitive: true},
-		&query.Repo{Pattern: repoStr},
+		&query.Repo{Regexp: repoRe},
 	}
 
 	if branchStr := qvals.Get("b"); branchStr != "" {
@@ -595,6 +637,6 @@ func (s *Server) servePrintErr(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 	return nil
 }

@@ -17,12 +17,13 @@ package query
 import (
 	"log"
 	"reflect"
+	"regexp"
 	"regexp/syntax"
 	"testing"
 )
 
 func mustParseRE(s string) *syntax.Regexp {
-	r, err := syntax.Parse(s, syntax.ClassNL|syntax.PerlX|syntax.UnicodeGroups)
+	r, err := syntax.Parse(s, regexpFlags)
 	if err != nil {
 		log.Panicf("parsing %q: %v", s, err)
 	}
@@ -73,7 +74,8 @@ func TestParseQuery(t *testing.T) {
 		{"regex:abc[p-q]", &Regexp{Regexp: mustParseRE("abc[p-q]")}},
 		{"aBc[p-q]", &Regexp{Regexp: mustParseRE("aBc[p-q]"), CaseSensitive: true}},
 		{"aBc[p-q] case:auto", &Regexp{Regexp: mustParseRE("aBc[p-q]"), CaseSensitive: true}},
-		{"repo:go", &Repo{"go"}},
+		{"repo:go", &Repo{regexp.MustCompile("go")}},
+		{"repo:.*", &Repo{Regexp: regexp.MustCompile(".*")}},
 
 		{"file:\"\"", &Const{true}},
 		{"abc.*def", &Regexp{Regexp: mustParseRE("abc.*def")}},
@@ -83,9 +85,12 @@ func TestParseQuery(t *testing.T) {
 		{"c:abc", &Substring{Pattern: "abc", Content: true}},
 		{"content:abc", &Substring{Pattern: "abc", Content: true}},
 
-		{"lang:c++", &Language{"c++"}},
+		{"lang:c++", &Language{"C++"}},
+		{"lang:cpp", &Language{"C++"}},
 		{"sym:pqr", &Symbol{&Substring{Pattern: "pqr"}}},
 		{"sym:Pqr", &Symbol{&Substring{Pattern: "Pqr", CaseSensitive: true}}},
+		{"sym:.*", &Symbol{&Regexp{Regexp: mustParseRE(".*")}}},
+		{"sym:a(b|d)e", &Symbol{&Regexp{Regexp: mustParseRE("a(b|d)e")}}},
 
 		// case
 		{"abc case:yes", &Substring{Pattern: "abc", CaseSensitive: true}},
@@ -96,6 +101,11 @@ func TestParseQuery(t *testing.T) {
 			&Substring{Pattern: "abc", CaseSensitive: true},
 			&Not{Child: &Substring{Pattern: "def", FileName: true, CaseSensitive: true}},
 		)},
+
+		// type
+		{"type:repo abc", &Type{Type: TypeRepo, Child: &Substring{Pattern: "abc"}}},
+		{"type:file abc def", &Type{Type: TypeFileName, Child: NewAnd(&Substring{Pattern: "abc"}, &Substring{Pattern: "def"})}},
+		{"(type:repo abc) def", NewAnd(&Type{Type: TypeRepo, Child: &Substring{Pattern: "abc"}}, &Substring{Pattern: "def"})},
 
 		// errors.
 		{"--", nil},

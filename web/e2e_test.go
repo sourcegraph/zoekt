@@ -17,11 +17,13 @@ package web
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -49,9 +51,11 @@ func (s *memSeeker) Name() string {
 	return "memSeeker"
 }
 
-func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) zoekt.Searcher {
+func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) zoekt.Streamer {
 	var buf bytes.Buffer
-	b.Write(&buf)
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
 	f := &memSeeker{buf.Bytes()}
 
 	searcher, err := zoekt.NewSearcher(f)
@@ -59,7 +63,20 @@ func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) zoekt.Searcher {
 		t.Fatalf("NewSearcher: %v", err)
 	}
 
-	return searcher
+	return adapter{Searcher: searcher}
+}
+
+type adapter struct {
+	zoekt.Searcher
+}
+
+func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
+	sr, err := a.Searcher.Search(ctx, q, opts)
+	if err != nil {
+		return err
+	}
+	sender.Send(sr)
+	return nil
 }
 
 func TestBasic(t *testing.T) {
@@ -111,7 +128,7 @@ func TestBasic(t *testing.T) {
 			"Found 1 repositories",
 			nowStr,
 			"repo-url\">name",
-			"1 files (36)",
+			"1 files (36B)",
 		},
 		"/search?q=magic": {
 			`value=magic`,
@@ -243,7 +260,7 @@ func checkNeedles(t *testing.T, ts *httptest.Server, req string, needles []strin
 }
 
 type crashSearcher struct {
-	zoekt.Searcher
+	zoekt.Streamer
 }
 
 func (s *crashSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
@@ -438,5 +455,64 @@ func TestTruncateLine(t *testing.T) {
 	}
 	if want := "bytes skipped)..."; !strings.Contains(result, want) {
 		t.Fatalf("got %s, want substring %q", result, want)
+	}
+}
+
+func TestHealthz(t *testing.T) {
+	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+		Name: "name",
+	})
+	if err != nil {
+		t.Fatalf("NewIndexBuilder: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := b.Add(zoekt.Document{
+			Name:    fmt.Sprintf("file%d", i),
+			Content: []byte("bla"),
+		}); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+	}
+	s := searcherForTest(t, b)
+	srv := Server{
+		Searcher: s,
+		Top:      Top,
+		HTML:     true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	req, err := http.NewRequest("GET", ts.URL+"/healthz", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do(%v): %v", req, err)
+	}
+
+	t.Cleanup(func() {
+		res.Body.Close()
+	})
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("want 200 status code, got: %v", res.StatusCode)
+	}
+
+	var result zoekt.SearchResult
+	err = json.NewDecoder(res.Body).Decode(&result)
+	if err != nil {
+		t.Fatalf("json.Decode: %v", err)
+	}
+
+	if reflect.DeepEqual(result, zoekt.SearchResult{}) {
+		t.Fatal("empty result in response")
 	}
 }

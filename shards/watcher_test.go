@@ -15,12 +15,14 @@
 package shards
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/zoekt"
 )
 
 type loggingLoader struct {
@@ -28,12 +30,16 @@ type loggingLoader struct {
 	drops chan string
 }
 
-func (l *loggingLoader) load(k string) {
-	l.loads <- k
+func (l *loggingLoader) load(keys ...string) {
+	for _, key := range keys {
+		l.loads <- key
+	}
 }
 
-func (l *loggingLoader) drop(k string) {
-	l.drops <- k
+func (l *loggingLoader) drop(keys ...string) {
+	for _, key := range keys {
+		l.drops <- key
+	}
 }
 
 func advanceFS() {
@@ -51,10 +57,11 @@ func TestDirWatcherUnloadOnce(t *testing.T) {
 		loads: make(chan string, 10),
 		drops: make(chan string, 10),
 	}
-	_, err = NewDirectoryWatcher(dir, logger)
-	if err == nil || !strings.Contains(err.Error(), "empty") {
-		t.Fatalf("got %v, want 'empty'", err)
-	}
+	// Upstream fails if empty. Sourcegraph does not
+	// _, err := NewDirectoryWatcher(dir, logger)
+	// if err == nil || !strings.Contains(err.Error(), "empty") {
+	// 	t.Fatalf("got %v, want 'empty'", err)
+	// }
 
 	shard := filepath.Join(dir, "foo.zoekt")
 	if err := ioutil.WriteFile(shard, []byte("hello"), 0o644); err != nil {
@@ -95,6 +102,119 @@ func TestDirWatcherUnloadOnce(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
+	dw.Stop()
+
+	select {
+	case k := <-logger.loads:
+		t.Errorf("spurious load of %q", k)
+	case k := <-logger.drops:
+		t.Errorf("spurious drops of %q", k)
+	default:
+	}
+}
+
+func TestDirWatcherLoadEmpty(t *testing.T) {
+	dir, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	logger := &loggingLoader{
+		loads: make(chan string, 10),
+		drops: make(chan string, 10),
+	}
+	dw, err := NewDirectoryWatcher(dir, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	advanceFS()
+	dw.Stop()
+
+	select {
+	case k := <-logger.loads:
+		t.Errorf("spurious load of %q", k)
+	case k := <-logger.drops:
+		t.Errorf("spurious drops of %q", k)
+	default:
+	}
+}
+
+func TestVersionFromPath(t *testing.T) {
+	cases := map[string]struct {
+		name    string
+		version int
+	}{
+		"github.com%2Fgoogle%2Fzoekt_v16.00000.zoekt": {
+			name:    "github.com%2Fgoogle%2Fzoekt",
+			version: 16,
+		},
+		"github.com%2Fgoogle%2Fsre_yield_v15.00000.zoekt": {
+			name:    "github.com%2Fgoogle%2Fsre_yield",
+			version: 15,
+		},
+		"repos/github.com%2Fgoogle%2Fsre_yield_v15.00000.zoekt": {
+			name:    "repos/github.com%2Fgoogle%2Fsre_yield",
+			version: 15,
+		},
+		"foo": {
+			name:    "foo",
+			version: 0,
+		},
+		"foo_bar": {
+			name:    "foo_bar",
+			version: 0,
+		},
+		"github.com%2Fgoogle%2Fzoekt_vfoo.00000.zoekt": {
+			name:    "github.com%2Fgoogle%2Fzoekt_vfoo.00000.zoekt",
+			version: 0,
+		},
+	}
+	for path, tc := range cases {
+		name, version := versionFromPath(path)
+		if name != tc.name || version != tc.version {
+			t.Errorf("%s: got name %s and version %d, want name %s and version %d", path, name, version, tc.name, tc.version)
+		}
+	}
+}
+
+func TestDirWatcherLoadLatest(t *testing.T) {
+	dir, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	logger := &loggingLoader{
+		loads: make(chan string, 10),
+		drops: make(chan string, 10),
+	}
+	// Upstream fails if empty. Sourcegraph does not
+	// _, err := NewDirectoryWatcher(dir, logger)
+	// if err == nil || !strings.Contains(err.Error(), "empty") {
+	// 	t.Fatalf("got %v, want 'empty'", err)
+	// }
+
+	want := zoekt.NextIndexFormatVersion
+	shardLatest := filepath.Join(dir, fmt.Sprintf("foo_v%d.00000.zoekt", want))
+
+	for delta := -1; delta <= 1; delta++ {
+		repo := fmt.Sprintf("foo_v%d.00000.zoekt", want+delta)
+		shard := filepath.Join(dir, repo)
+		if err := ioutil.WriteFile(shard, []byte("hello"), 0644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+
+	dw, err := NewDirectoryWatcher(dir, logger)
+	if err != nil {
+		t.Fatalf("NewDirectoryWatcher: %v", err)
+	}
+	defer dw.Stop()
+
+	if got := <-logger.loads; got != shardLatest {
+		t.Fatalf("got load event %v, want %v", got, shardLatest)
+	}
+
+	advanceFS()
 	dw.Stop()
 
 	select {

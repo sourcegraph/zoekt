@@ -21,7 +21,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/google/zoekt"
@@ -81,10 +80,10 @@ func runCTags(bin string, inputs map[string][]byte) ([]*ctags.Entry, error) {
 		err := cmd.Wait()
 		errChan <- err
 	}()
-	timeout := time.After(5 * time.Second)
+	timeout := time.After(60 * time.Second)
 	select {
 	case <-timeout:
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		return nil, fmt.Errorf("timeout executing ctags")
 	case err := <-errChan:
 		if err != nil {
@@ -102,7 +101,7 @@ func runCTags(bin string, inputs map[string][]byte) ([]*ctags.Entry, error) {
 			return nil, err
 		}
 
-		if len(e.Sym) == 1 {
+		if len(e.Name) == 1 {
 			continue
 		}
 		entries = append(entries, e)
@@ -152,13 +151,13 @@ func ctagsAddSymbolsParser(todo []*zoekt.Document, parser ctags.Parser) error {
 		if len(es) == 0 {
 			continue
 		}
-		doc.Language = strings.ToLower(es[0].Language)
 
-		symOffsets, err := tagsToSections(doc.Content, es)
+		symOffsets, symMetaData, err := tagsToSections(doc.Content, es)
 		if err != nil {
 			return fmt.Errorf("%s: %v", doc.Name, err)
 		}
 		doc.Symbols = symOffsets
+		doc.SymbolsMetaData = symMetaData
 	}
 
 	return nil
@@ -198,22 +197,21 @@ func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) er
 	}
 
 	for k, tags := range fileTags {
-		symOffsets, err := tagsToSections(contents[k], tags)
+		symOffsets, symMetaData, err := tagsToSections(contents[k], tags)
 		if err != nil {
 			return fmt.Errorf("%s: %v", k, err)
 		}
 		todo[pathIndices[k]].Symbols = symOffsets
-		if len(tags) > 0 {
-			todo[pathIndices[k]].Language = strings.ToLower(tags[0].Language)
-		}
+		todo[pathIndices[k]].SymbolsMetaData = symMetaData
 	}
 	return nil
 }
 
-func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSection, error) {
+func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSection, []*zoekt.Symbol, error) {
 	nls := newLinesIndices(content)
 	nls = append(nls, uint32(len(content)))
 	var symOffsets []zoekt.DocumentSection
+	var symMetaData []*zoekt.Symbol
 	var lastEnd uint32
 	var lastLine int
 	var lastIntraEnd int
@@ -224,7 +222,7 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 		}
 		lineIdx := t.Line - 1
 		if lineIdx >= len(nls) {
-			return nil, fmt.Errorf("linenum for entry out of range %v", t)
+			return nil, nil, fmt.Errorf("linenum for entry out of range %v", t)
 		}
 
 		lineOff := uint32(0)
@@ -240,7 +238,7 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 			lastIntraEnd = 0
 		}
 
-		intraOff := lastIntraEnd + bytes.Index(line, []byte(t.Sym))
+		intraOff := lastIntraEnd + bytes.Index(line, []byte(t.Name))
 		if intraOff < 0 {
 			// for Go code, this is very common, since
 			// ctags barfs on multi-line declarations
@@ -253,18 +251,24 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 			continue
 		}
 
-		endSym := start + uint32(len(t.Sym))
+		endSym := start + uint32(len(t.Name))
 
 		symOffsets = append(symOffsets, zoekt.DocumentSection{
 			Start: start,
 			End:   endSym,
 		})
+		symMetaData = append(symMetaData, &zoekt.Symbol{
+			Sym:        t.Name,
+			Kind:       t.Kind,
+			Parent:     t.Parent,
+			ParentKind: t.ParentKind,
+		})
 		lastEnd = endSym
 		lastLine = lineIdx
-		lastIntraEnd = intraOff + len(t.Sym)
+		lastIntraEnd = intraOff + len(t.Name)
 	}
 
-	return symOffsets, nil
+	return symOffsets, symMetaData, nil
 }
 
 func newLinesIndices(in []byte) []uint32 {
