@@ -16,6 +16,11 @@ From this version on, universal ctags will be called using seccomp,
 which guarantees that security problems in ctags cannot escalate to
 access to the indexing machine.
 
+Ubuntu, Debian and Arch provide universal ctags with seccomp support
+compiled in. Zoekt expects the `universal-ctags` binary to be on
+`$PATH`. Note: only Ubuntu names the binary `universal-ctags`, while
+most distributions name it `ctags`.
+
 Use the following invocation to compile and install universal-ctags:
 
 ```
