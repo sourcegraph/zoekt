@@ -1,7 +1,7 @@
 FROM alpine
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
-    apk add --no-cache ca-certificates bind-tools tini git python3 expat~=2.4.3
+    apk add --no-cache ca-certificates bind-tools tini git python3 expat=~2.4.3
 
 # Run as non-root user sourcegraph. External volumes should be mounted under /data (which will be owned by sourcegraph).
 RUN mkdir -p /home/sourcegraph
