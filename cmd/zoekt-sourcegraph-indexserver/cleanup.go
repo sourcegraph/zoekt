@@ -59,6 +59,44 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		delete(trash, repo)
 	}
 
+	// index: We are ID based, but store shards by name still. If we end up with
+	// shards that have the same ID but different names delete and start over.
+	// This can happen when a repository is renamed. In future we should make
+	// shard file names based on ID.
+	for repo, shards := range index {
+		if consistentRepoName(shards) {
+			continue
+		}
+
+		// prevent further processing since we will delete
+		delete(index, repo)
+
+		// This should be rare, so give an informative log message.
+		var paths []string
+		for _, shard := range shards {
+			paths = append(paths, filepath.Base(shard.Path))
+		}
+		log.Printf("removing shards for %v due to multiple repository names: %s", repo, strings.Join(paths, " "))
+
+		// We may be in both normal and compound shards in this case. First
+		// tombstone the compound shards so we don't just rm them.
+		simple := shards[0:]
+		for _, s := range shards {
+			if shardMerging && maybeSetTombstone([]shard{s}, repo) {
+				shardsLog(indexDir, "tombname", []shard{s})
+			} else {
+				simple = append(simple, s)
+			}
+		}
+
+		if len(simple) == 0 {
+			continue
+		}
+
+		removeAll(simple...)
+		shardsLog(indexDir, "removename", simple)
+	}
+
 	// index: Move missing repos from trash into index
 	for _, repo := range repos {
 		// Delete from index so that index will only contain shards to be
@@ -88,7 +126,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			continue
 		}
 		moveAll(trashDir, shards)
-		shardsLog(indexDir, "remove", shards)
+		shardsLog(indexDir, "removename", shards)
 	}
 
 	// Remove old .tmp files from crashed indexer runs-- for example, if
@@ -244,6 +282,21 @@ func moveAll(dstDir string, shards []shard) {
 		// update shards so partial failure removes the dst path
 		shards[i] = dstShard
 	}
+}
+
+// consistentRepoName returns true if the list of shards have a unique
+// repository name.
+func consistentRepoName(shards []shard) bool {
+	if len(shards) <= 1 {
+		return true
+	}
+	name := shards[0].RepoName
+	for _, shard := range shards[1:] {
+		if shard.RepoName != name {
+			return false
+		}
+	}
+	return true
 }
 
 // maybeSetTombstone will call zoekt.SetTombstone for repoID if shards
