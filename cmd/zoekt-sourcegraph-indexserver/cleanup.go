@@ -126,7 +126,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			continue
 		}
 		moveAll(trashDir, shards)
-		shardsLog(indexDir, "removename", shards)
+		shardsLog(indexDir, "remove", shards)
 	}
 
 	// Remove old .tmp files from crashed indexer runs-- for example, if
@@ -311,7 +311,7 @@ func maybeSetTombstone(shards []shard, repoID uint32) bool {
 	}
 
 	if err := zoekt.SetTombstone(shards[0].Path, repoID); err != nil {
-		log.Printf("error setting tombstone for %v in shard %s: %s. Removing shard\n", repoID, shards[0].Path, err)
+		log.Printf("error setting tombstone for %d in shard %s: %s. Removing shard\n", repoID, shards[0].Path, err)
 		_ = os.Remove(shards[0].Path)
 	}
 	return true
