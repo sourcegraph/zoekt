@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/zoekt"
@@ -359,7 +360,7 @@ func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, 
 
 	items := make([]indexOptionsItem, len(repos))
 	err := sf.visitRepos(func(name string) {
-		idx, ok := reposIdx[fakeID(name)]
+		idx, ok := reposIdx[sf.id(name)]
 		if !ok {
 			return
 		}
@@ -392,7 +393,7 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	}
 
 	opts := IndexOptions{
-		RepoID:   fakeID(name),
+		RepoID:   sf.id(name),
 		Name:     name,
 		CloneURL: sf.getCloneURL(name),
 		Symbols:  true,
@@ -417,6 +418,18 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	return opts, nil
 }
 
+func (sf sourcegraphFake) id(name string) uint32 {
+	// allow overriding the ID.
+	idPath := filepath.Join(sf.RootDir, filepath.FromSlash(name), "SG_ID")
+	if b, _ := os.ReadFile(idPath); len(b) > 0 {
+		id, err := strconv.Atoi(strings.TrimSpace(string(b)))
+		if err == nil {
+			return uint32(id)
+		}
+	}
+	return fakeID(name)
+}
+
 func (sf sourcegraphFake) getCloneURL(name string) string {
 	return filepath.Join(sf.RootDir, filepath.FromSlash(name))
 }
@@ -424,7 +437,7 @@ func (sf sourcegraphFake) getCloneURL(name string) string {
 func (sf sourcegraphFake) ListRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
 	var repos []uint32
 	err := sf.visitRepos(func(name string) {
-		repos = append(repos, fakeID(name))
+		repos = append(repos, sf.id(name))
 	})
 	return repos, err
 }
