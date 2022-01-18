@@ -68,6 +68,15 @@ var (
 		"name",  // name of the repository that was indexed
 	})
 
+	metricFetchDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "index_fetch_seconds",
+		Help:    "A histogram of latencies for fetching a repository.",
+		Buckets: []float64{.05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30, 60, 180, 300, 600, 900, 1200}, // 50ms -> 20 minutes
+	}, []string{
+		"success", // true|false
+		"name",    // the name of the repository that the commits were fetched from
+	})
+
 	metricIndexIncrementalIndexState = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "index_incremental_index_state",
 		Help: "A count of the state on disk vs what we want to build. See zoekt/build.IndexState.",
@@ -351,26 +360,34 @@ func (s *Server) Run() {
 		state, err := s.Index(args)
 		s.muIndexDir.Unlock()
 
-		// Check to see if we want to be able to capture separate indexing metrics for this repository.
-		// If we don't, set to a default string to keep the cardinality for the Prometheus metric manageable.
-		repoNameForMetric := ""
-		if _, ok = reposWithSeparateIndexingMetrics[opts.Name]; ok {
-			repoNameForMetric = opts.Name
-		}
+		elapsed := time.Since(start)
 
-		metricIndexDuration.WithLabelValues(string(state), repoNameForMetric).Observe(time.Since(start).Seconds())
+		metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
 
 		if err != nil {
 			log.Printf("error indexing %s: %s", args.String(), err)
 		}
+
 		switch state {
 		case indexStateSuccess:
-			log.Printf("updated index %s in %v", args.String(), time.Since(start))
+			log.Printf("updated index %s in %v", args.String(), elapsed)
 		case indexStateSuccessMeta:
-			log.Printf("updated meta %s in %v", args.String(), time.Since(start))
+			log.Printf("updated meta %s in %v", args.String(), elapsed)
 		}
 		s.queue.SetIndexed(opts, state)
 	}
+}
+
+// repoNameForMetric returns a normalized version of the given repository name that is
+// suitable for use with Prometheus metrics.
+func repoNameForMetric(repo string) string {
+	// Check to see if we want to be able to capture separate indexing metrics for this repository.
+	// If we don't, set to a default string to keep the cardinality for the Prometheus metric manageable.
+	if _, ok := reposWithSeparateIndexingMetrics[repo]; ok {
+		return repo
+	}
+
+	return ""
 }
 
 func batched(slice []uint32, size int) <-chan []uint32 {
