@@ -83,18 +83,9 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			_ = os.Chtimes(shard.Path, now, now)
 		}
 
-		if shardMerging {
-			// 1 repo can be split across many simple shards but it should only be contained
-			// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
-			// shard at index 0.
-			if len(shards) == 1 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
-				shardsLog(indexDir, "tomb", shards)
-				if err := zoekt.SetTombstone(shards[0].Path, repo); err != nil {
-					log.Printf("error setting tombstone for %v in shard %s: %s. Removing shard\n", repo, shards[0].Path, err)
-					_ = os.Remove(shards[0].Path)
-				}
-				continue
-			}
+		if shardMerging && maybeSetTombstone(shards, repo) {
+			shardsLog(indexDir, "tomb", shards)
+			continue
 		}
 		moveAll(trashDir, shards)
 		shardsLog(indexDir, "remove", shards)
@@ -253,6 +244,24 @@ func moveAll(dstDir string, shards []shard) {
 		// update shards so partial failure removes the dst path
 		shards[i] = dstShard
 	}
+}
+
+// maybeSetTombstone will call zoekt.SetTombstone for repoID if shards
+// represents a compound shard. It returns true if shards represents a
+// compound shard.
+func maybeSetTombstone(shards []shard, repoID uint32) bool {
+	// 1 repo can be split across many simple shards but it should only be contained
+	// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
+	// shard at index 0.
+	if len(shards) != 1 || !strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
+		return false
+	}
+
+	if err := zoekt.SetTombstone(shards[0].Path, repoID); err != nil {
+		log.Printf("error setting tombstone for %v in shard %s: %s. Removing shard\n", repoID, shards[0].Path, err)
+		_ = os.Remove(shards[0].Path)
+	}
+	return true
 }
 
 func shardsLog(indexDir, action string, shards []shard) {
