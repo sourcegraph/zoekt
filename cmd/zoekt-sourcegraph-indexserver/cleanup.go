@@ -59,6 +59,44 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		delete(trash, repo)
 	}
 
+	// index: We are ID based, but store shards by name still. If we end up with
+	// shards that have the same ID but different names delete and start over.
+	// This can happen when a repository is renamed. In future we should make
+	// shard file names based on ID.
+	for repo, shards := range index {
+		if consistentRepoName(shards) {
+			continue
+		}
+
+		// prevent further processing since we will delete
+		delete(index, repo)
+
+		// This should be rare, so give an informative log message.
+		var paths []string
+		for _, shard := range shards {
+			paths = append(paths, filepath.Base(shard.Path))
+		}
+		log.Printf("removing shards for %v due to multiple repository names: %s", repo, strings.Join(paths, " "))
+
+		// We may be in both normal and compound shards in this case. First
+		// tombstone the compound shards so we don't just rm them.
+		simple := shards[0:]
+		for _, s := range shards {
+			if shardMerging && maybeSetTombstone([]shard{s}, repo) {
+				shardsLog(indexDir, "tombname", []shard{s})
+			} else {
+				simple = append(simple, s)
+			}
+		}
+
+		if len(simple) == 0 {
+			continue
+		}
+
+		removeAll(simple...)
+		shardsLog(indexDir, "removename", simple)
+	}
+
 	// index: Move missing repos from trash into index
 	for _, repo := range repos {
 		// Delete from index so that index will only contain shards to be
@@ -83,18 +121,9 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			_ = os.Chtimes(shard.Path, now, now)
 		}
 
-		if shardMerging {
-			// 1 repo can be split across many simple shards but it should only be contained
-			// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
-			// shard at index 0.
-			if len(shards) == 1 && strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
-				shardsLog(indexDir, "tomb", shards)
-				if err := zoekt.SetTombstone(shards[0].Path, repo); err != nil {
-					log.Printf("error setting tombstone for %v in shard %s: %s. Removing shard\n", repo, shards[0].Path, err)
-					_ = os.Remove(shards[0].Path)
-				}
-				continue
-			}
+		if shardMerging && maybeSetTombstone(shards, repo) {
+			shardsLog(indexDir, "tomb", shards)
+			continue
 		}
 		moveAll(trashDir, shards)
 		shardsLog(indexDir, "remove", shards)
@@ -253,6 +282,39 @@ func moveAll(dstDir string, shards []shard) {
 		// update shards so partial failure removes the dst path
 		shards[i] = dstShard
 	}
+}
+
+// consistentRepoName returns true if the list of shards have a unique
+// repository name.
+func consistentRepoName(shards []shard) bool {
+	if len(shards) <= 1 {
+		return true
+	}
+	name := shards[0].RepoName
+	for _, shard := range shards[1:] {
+		if shard.RepoName != name {
+			return false
+		}
+	}
+	return true
+}
+
+// maybeSetTombstone will call zoekt.SetTombstone for repoID if shards
+// represents a compound shard. It returns true if shards represents a
+// compound shard.
+func maybeSetTombstone(shards []shard, repoID uint32) bool {
+	// 1 repo can be split across many simple shards but it should only be contained
+	// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
+	// shard at index 0.
+	if len(shards) != 1 || !strings.HasPrefix(filepath.Base(shards[0].Path), "compound-") {
+		return false
+	}
+
+	if err := zoekt.SetTombstone(shards[0].Path, repoID); err != nil {
+		log.Printf("error setting tombstone for %d in shard %s: %s. Removing shard\n", repoID, shards[0].Path, err)
+		_ = os.Remove(shards[0].Path)
+	}
+	return true
 }
 
 func shardsLog(indexDir, action string, shards []shard) {
