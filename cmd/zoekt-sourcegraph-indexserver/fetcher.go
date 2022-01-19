@@ -152,7 +152,7 @@ func (lf *localFetcher) Fetch(ctx context.Context, branches ...zoekt.RepositoryB
 
 		d, err := todoNoopParseDiff(outB)
 		if err != nil {
-			return nil, fmt.Errorf("failed to process parse diff for %q: %w", commitRange, err)
+			return nil, fmt.Errorf("failed to process diff for %q: %w", commitRange, err)
 		}
 
 		deltas[b.Name] = d
