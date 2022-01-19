@@ -174,11 +174,16 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 
 	cmd = exec.CommandContext(ctx, "git", fetchArgs...)
 	cmd.Stdin = &bytes.Buffer{}
-	if err := runCmd(cmd); err != nil {
+
+	err = runCmd(cmd)
+	fetchDuration := time.Since(fetchStart)
+	if err != nil {
+		metricFetchDuration.WithLabelValues("false", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
 		return err
 	}
 
-	debug.Printf("fetched git data for %q (%d commit(s)) in %s", o.Name, len(commits), time.Since(fetchStart))
+	metricFetchDuration.WithLabelValues("true", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
+	debug.Printf("fetched git data for %q (%d commit(s)) in %s", o.Name, len(commits), fetchDuration)
 
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
