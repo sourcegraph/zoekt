@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -170,10 +171,21 @@ var debug = log.New(ioutil.Discard, "", log.LstdFlags)
 // cores... 5m was not enough.
 const noOutputTimeout = 30 * time.Minute
 
+type runCommand func(cmd *exec.Cmd) error
+
 func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 	out := &synchronizedBuffer{}
-	cmd.Stdout = out
-	cmd.Stderr = out
+	writers := []io.Writer{out}
+
+	if cmd.Stdout != nil {
+		writers = append(writers, cmd.Stdout)
+	}
+	if cmd.Stderr != nil {
+		writers = append(writers, cmd.Stderr)
+	}
+
+	cmd.Stdout = io.MultiWriter(writers...)
+	cmd.Stderr = io.MultiWriter(writers...)
 
 	tr.LazyPrintf("%s", cmd.Args)
 
