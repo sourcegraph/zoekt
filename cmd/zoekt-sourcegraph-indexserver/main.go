@@ -71,7 +71,7 @@ var (
 	metricFetchDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "index_fetch_seconds",
 		Help:    "A histogram of latencies for fetching a repository.",
-		Buckets: []float64{.05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30, 60, 180, 300, 600, 900, 1200}, // 50ms -> 20 minutes
+		Buckets: []float64{.05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30, 60, 180, 300, 600}, // 50ms -> 10 minutes
 	}, []string{
 		"success", // true|false
 		"name",    // the name of the repository that the commits were fetched from
