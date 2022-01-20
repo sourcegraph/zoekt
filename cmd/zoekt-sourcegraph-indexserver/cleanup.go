@@ -80,7 +80,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 
 		// We may be in both normal and compound shards in this case. First
 		// tombstone the compound shards so we don't just rm them.
-		simple := shards[0:]
+		simple := shards[:0]
 		for _, s := range shards {
 			if shardMerging && maybeSetTombstone([]shard{s}, repo) {
 				shardsLog(indexDir, "tombname", []shard{s})
