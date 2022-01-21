@@ -31,7 +31,7 @@ var metricShardMergingDuration = promauto.NewHistogramVec(prometheus.HistogramOp
 }, []string{"error"})
 
 // doMerge drives the merge process.
-func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) error {
+func doMerge(dir string, targetSizeBytes int64, simulate bool) error {
 	metricShardMergingRunning.Set(1)
 	defer metricShardMergingRunning.Set(0)
 
@@ -45,7 +45,7 @@ func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) err
 		debug.Println("simulating")
 	}
 
-	shards, excluded := loadCandidates(dir, maxSizeBytes)
+	shards, excluded := loadCandidates(dir)
 	debug.Printf("merging: found %d candidate shards, %d shards were excluded\n", len(shards), excluded)
 	if len(shards) == 0 {
 		return nil
@@ -96,7 +96,7 @@ type candidate struct {
 }
 
 // loadCandidates returns all shards eligable for merging.
-func loadCandidates(dir string, maxSize int64) ([]candidate, int) {
+func loadCandidates(dir string) ([]candidate, int) {
 	excluded := 0
 
 	d, err := os.Open(dir)
@@ -121,7 +121,7 @@ func loadCandidates(dir string, maxSize int64) ([]candidate, int) {
 			continue
 		}
 
-		if isExcluded(path, fi, maxSize) {
+		if isExcluded(path, fi) {
 			excluded++
 			continue
 		}
@@ -149,21 +149,7 @@ func hasMultipleShards(path string) bool {
 //
 // We need path and FileInfo because FileInfo does not contain the full path, see
 // discussion here https://github.com/golang/go/issues/32300.
-func isExcluded(path string, fi os.FileInfo, maxSize int64) bool {
-
-	// It takes around 2 minutes to create a compound shard of 2 GiB. This is true
-	// even if we just add 1 repo to an existing compound shard. The reason is that
-	// we don't support incremental merging, but instead create a compound shard from
-	// scratch for each merge operation. Hence we want to avoid merging a compound
-	// shard with other smaller candidate shards if the compound shard already has a
-	// decent size.
-	//
-	// The concrete value of maxSize is not important as long as it is smaller than
-	// the targetSize and large enough to see sufficient benefits from merging.
-	if fi.Size() > maxSize {
-		return true
-	}
-
+func isExcluded(path string, fi os.FileInfo) bool {
 	if hasMultipleShards(path) {
 		return true
 	}
