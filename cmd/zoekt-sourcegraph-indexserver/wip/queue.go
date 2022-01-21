@@ -1,4 +1,4 @@
-package main
+package wipindexserver
 
 import (
 	"container/heap"

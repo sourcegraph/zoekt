@@ -21,37 +21,11 @@ import (
 	"time"
 
 	"github.com/google/zoekt"
+	wipindexserver "github.com/google/zoekt/cmd/zoekt-sourcegraph-indexserver/wip"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"go.uber.org/atomic"
 	"golang.org/x/net/trace"
 )
-
-type SourcegraphListResult struct {
-	// IDs is the set of Sourcegraph repository IDs that this replica needs
-	// to index.
-	IDs []uint32
-
-	// IterateIndexOptions best effort resolves the IndexOptions for RepoIDs. If
-	// any repository fails it internally logs.
-	//
-	// Note: this has a side-effect of setting a the "config fingerprint". The
-	// config fingerprint means we only calculate index options for repositories
-	// that have changed since the last call to IterateIndexOptions. If you want
-	// to force calculation of index options use Sourcegraph.GetIndexOptions.
-	IterateIndexOptions func(func(IndexOptions))
-}
-
-type Sourcegraph interface {
-	List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error)
-
-	// ForceIterateIndexOptions will best-effort calculate the index options for
-	// all of ids. If any repository fails it internally logs.
-	ForceIterateIndexOptions(func(IndexOptions), ...uint32)
-
-	// GetIndexOptions is deprecated but kept around until we improve our
-	// forceIndex code.
-	GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error)
-}
 
 // sourcegraphClient contains methods which interact with the sourcegraph API.
 type sourcegraphClient struct {
@@ -83,7 +57,7 @@ type sourcegraphClient struct {
 	configFingerprintReset time.Time
 }
 
-func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
+func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*wipindexserver.SourcegraphListResult, error) {
 	repos, err := s.listRepoIDs(ctx, indexed)
 	if err != nil {
 		return nil, err
@@ -114,7 +88,7 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 	lastFingerprint := s.configFingerprint.Load()
 	first := true
 
-	iterate := func(f func(IndexOptions)) {
+	iterate := func(f func(wipindexserver.IndexOptions)) {
 		start := time.Now()
 		tr := trace.New("getIndexOptions", "")
 		tr.LazyPrintf("getting index options for %d repos", len(repos))
@@ -159,13 +133,13 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 		}
 	}
 
-	return &SourcegraphListResult{
+	return &wipindexserver.SourcegraphListResult{
 		IDs:                 repos,
 		IterateIndexOptions: iterate,
 	}, nil
 }
 
-func (s *sourcegraphClient) ForceIterateIndexOptions(f func(IndexOptions), repos ...uint32) {
+func (s *sourcegraphClient) ForceIterateIndexOptions(f func(wipindexserver.IndexOptions), repos ...uint32) {
 	batchSize := s.BatchSize
 	if batchSize == 0 {
 		batchSize = 10_000
@@ -184,19 +158,12 @@ func (s *sourcegraphClient) ForceIterateIndexOptions(f func(IndexOptions), repos
 	}
 }
 
-// indexOptionsItem wraps IndexOptions to also include an error returned by
-// the API.
-type indexOptionsItem struct {
-	IndexOptions
-	Error string
-}
-
-func (s *sourcegraphClient) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error) {
+func (s *sourcegraphClient) GetIndexOptions(repos ...uint32) ([]wipindexserver.IndexOptionsItem, error) {
 	opts, _, err := s.getIndexOptions("", repos...)
 	return opts, err
 }
 
-func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32) ([]indexOptionsItem, string, error) {
+func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32) ([]wipindexserver.IndexOptionsItem, string, error) {
 	u := s.Root.ResolveReference(&url.URL{
 		Path: "/.internal/search/configuration",
 	})
@@ -235,9 +202,9 @@ func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32)
 	}
 
 	dec := json.NewDecoder(resp.Body)
-	var opts []indexOptionsItem
+	var opts []wipindexserver.IndexOptionsItem
 	for {
-		var opt indexOptionsItem
+		var opt wipindexserver.IndexOptionsItem
 		err := dec.Decode(&opt)
 		if err == io.EOF {
 			break
@@ -314,13 +281,13 @@ type sourcegraphFake struct {
 	Log     *log.Logger
 }
 
-func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
+func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*wipindexserver.SourcegraphListResult, error) {
 	repos, err := sf.ListRepoIDs(ctx, indexed)
 	if err != nil {
 		return nil, err
 	}
 
-	iterate := func(f func(IndexOptions)) {
+	iterate := func(f func(wipindexserver.IndexOptions)) {
 		opts, err := sf.GetIndexOptions(repos...)
 		if err != nil {
 			sf.Log.Printf("WARN: ignoring GetIndexOptions error: %v", err)
@@ -334,13 +301,13 @@ func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*Sourcegr
 		}
 	}
 
-	return &SourcegraphListResult{
+	return &wipindexserver.SourcegraphListResult{
 		IDs:                 repos,
 		IterateIndexOptions: iterate,
 	}, nil
 }
 
-func (sf sourcegraphFake) ForceIterateIndexOptions(f func(IndexOptions), repos ...uint32) {
+func (sf sourcegraphFake) ForceIterateIndexOptions(f func(wipindexserver.IndexOptions), repos ...uint32) {
 	opts, err := sf.GetIndexOptions(repos...)
 	if err != nil {
 		return
@@ -352,13 +319,13 @@ func (sf sourcegraphFake) ForceIterateIndexOptions(f func(IndexOptions), repos .
 	}
 }
 
-func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error) {
+func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]wipindexserver.IndexOptionsItem, error) {
 	reposIdx := map[uint32]int{}
 	for i, id := range repos {
 		reposIdx[id] = i
 	}
 
-	items := make([]indexOptionsItem, len(repos))
+	items := make([]wipindexserver.IndexOptionsItem, len(repos))
 	err := sf.visitRepos(func(name string) {
 		idx, ok := reposIdx[sf.id(name)]
 		if !ok {
@@ -366,9 +333,9 @@ func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, 
 		}
 		opts, err := sf.getIndexOptions(name)
 		if err != nil {
-			items[idx] = indexOptionsItem{Error: err.Error()}
+			items[idx] = wipindexserver.IndexOptionsItem{Error: err.Error()}
 		} else {
-			items[idx] = indexOptionsItem{IndexOptions: opts}
+			items[idx] = wipindexserver.IndexOptionsItem{IndexOptions: opts}
 		}
 	})
 
@@ -385,14 +352,14 @@ func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, 
 	return items, nil
 }
 
-func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
+func (sf sourcegraphFake) getIndexOptions(name string) (wipindexserver.IndexOptions, error) {
 	dir := filepath.Join(sf.RootDir, filepath.FromSlash(name))
 	exists := func(p string) bool {
 		_, err := os.Stat(filepath.Join(dir, "SG_PRIVATE"))
 		return err == nil
 	}
 
-	opts := IndexOptions{
+	opts := wipindexserver.IndexOptions{
 		RepoID:   sf.id(name),
 		Name:     name,
 		CloneURL: sf.getCloneURL(name),

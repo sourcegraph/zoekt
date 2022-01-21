@@ -1,4 +1,4 @@
-package main
+package wipindexserver
 
 import (
 	"bytes"
@@ -178,11 +178,13 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	err = runCmd(cmd)
 	fetchDuration := time.Since(fetchStart)
 	if err != nil {
-		metricFetchDuration.WithLabelValues("false", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
+		// TODO
+		// metricFetchDuration.WithLabelValues("false", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
 		return err
 	}
 
-	metricFetchDuration.WithLabelValues("true", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
+	// TODO
+	// metricFetchDuration.WithLabelValues("true", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
 	debug.Printf("fetched git data for %q (%d commit(s)) in %s", o.Name, len(commits), fetchDuration)
 
 	// We then create the relevant refs for each fetched commit.
