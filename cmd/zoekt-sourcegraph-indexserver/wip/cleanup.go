@@ -1,4 +1,4 @@
-package main
+package wipindexserver
 
 import (
 	"fmt"
@@ -34,8 +34,8 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		log.Printf("failed to create trash dir: %v", err)
 	}
 
-	trash := getShards(trashDir)
-	index := getShards(indexDir)
+	trash := GetShards(trashDir)
+	index := GetShards(indexDir)
 
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
@@ -157,7 +157,7 @@ type shard struct {
 	ModTime  time.Time
 }
 
-func getShards(dir string) map[uint32][]shard {
+func GetShards(dir string) map[uint32][]shard {
 	d, err := os.Open(dir)
 	if err != nil {
 		debug.Printf("failed to getShards: %s", dir)
@@ -373,7 +373,7 @@ func (s *Server) vacuum() {
 			continue
 		}
 
-		if info.Size() < s.minSizeBytes {
+		if info.Size() < s.MinSizeBytes {
 			paths, err := zoekt.IndexFilePaths(path)
 			if err != nil {
 				debug.Printf("failed getting all file paths for %s", path)

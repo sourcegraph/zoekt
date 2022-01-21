@@ -1,4 +1,4 @@
-package main
+package wipindexserver
 
 import (
 	"bytes"
@@ -30,8 +30,8 @@ var metricShardMergingDuration = promauto.NewHistogramVec(prometheus.HistogramOp
 	Buckets: prometheus.LinearBuckets(30, 30, 10),
 }, []string{"error"})
 
-// doMerge drives the merge process.
-func doMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) error {
+// DoMerge drives the merge process.
+func DoMerge(dir string, targetSizeBytes, maxSizeBytes int64, simulate bool) error {
 	metricShardMergingRunning.Set(1)
 	defer metricShardMergingRunning.Set(0)
 
