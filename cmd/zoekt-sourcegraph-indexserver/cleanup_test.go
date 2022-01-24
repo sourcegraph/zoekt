@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 )
@@ -130,7 +131,7 @@ func TestCleanup(t *testing.T) {
 				fs = append(fs, f)
 			}
 			for _, f := range fs {
-				createTestShard(t, f.RepoName, f.Path)
+				createTestShard(t, f.RepoName, fakeID(f.RepoName), f.Path)
 				if err := os.Chtimes(f.Path, f.ModTime, f.ModTime); err != nil {
 					t.Fatal(err)
 				}
@@ -171,16 +172,20 @@ func TestCleanup(t *testing.T) {
 	}
 }
 
-func createTestShard(t *testing.T, repo, path string) {
+func createTestShard(t *testing.T, repo string, id uint32, path string, optFns ...func(in *zoekt.Repository)) {
 	t.Helper()
 
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
-		ID:   fakeID(repo),
+	r := &zoekt.Repository{
+		ID:   id,
 		Name: repo,
-	})
+	}
+	for _, optFn := range optFns {
+		optFn(r)
+	}
+	b, err := zoekt.NewIndexBuilder(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,6 +321,126 @@ func TestGetTombstonedRepos(t *testing.T) {
 		t.Fatalf("want %s, got %s", csNew, v.Path)
 	}
 }
+
+// HAVE
+// ----
+// index/
+// CS 1
+// 		r1, tombstoned, old
+//		r2, tombstoned, old
+//		r3, tombstoned, old
+// CS 2
+// 		r1, tombstoned, recent
+//		r2, tombstoned, recent
+//		r4, tombstoned, recent
+// SS 1
+//		r1, now
+// .trash/
+// SS 3
+//		r3, now
+// SS 5
+//		r5, now
+//
+// TO BE INDEXED
+// -------------
+// repos r1, r2, r3, r4, r5
+//
+// WANT
+// ----
+// index/
+// CS 1
+// 		r1, tombstoned, old
+//		r2, tombstoned, old
+//		r3, tombstoned, old
+// CS 2
+// 		r1, tombstoned, recent
+//		r2, recent
+//		r4, recent
+// SS 1
+//		r1, now
+// SS 3
+//		r3, now
+// SS 5
+//		r5, now
+// .trash/ --> empty
+//
+func TestCleanupCompoundShards(t *testing.T) {
+	dir := t.TempDir()
+
+	// timestamps
+	now := time.Now()
+	recent := now.Add(-1 * time.Hour)
+	old := now.Add(-2 * time.Hour)
+
+	cs1 := createCompoundShard(t, dir, []uint32{1, 2, 3}, func(in *zoekt.Repository) {
+		in.LatestCommitDate = old
+	})
+	zoekt.SetTombstone(cs1, 1)
+	zoekt.SetTombstone(cs1, 2)
+	zoekt.SetTombstone(cs1, 3)
+
+	cs2 := createCompoundShard(t, dir, []uint32{1, 2, 4}, func(in *zoekt.Repository) {
+		in.LatestCommitDate = recent
+	})
+	zoekt.SetTombstone(cs2, 1)
+	zoekt.SetTombstone(cs2, 2)
+	zoekt.SetTombstone(cs2, 4)
+
+	createTestShard(t, "repo1", 1, filepath.Join(dir, "repo1.zoekt"), func(in *zoekt.Repository) {
+		in.LatestCommitDate = now
+	})
+	createTestShard(t, "repo3", 3, filepath.Join(dir, ".trash", "repo3.zoekt"), func(in *zoekt.Repository) {
+		in.LatestCommitDate = now
+	})
+	createTestShard(t, "repo5", 5, filepath.Join(dir, ".trash", "repo5.zoekt"), func(in *zoekt.Repository) {
+		in.LatestCommitDate = now
+	})
+
+	// want indexed
+	repos := []uint32{1, 2, 3, 4, 5}
+
+	cleanup(dir, repos, now, true)
+
+	index := getShards(dir)
+	trash := getShards(filepath.Join(dir, ".trash"))
+
+	if len(trash) != 0 {
+		t.Fatalf("expected empty trash, got %+v", trash)
+	}
+
+	wantIndex := map[uint32][]shard{
+		1: []shard{{
+			RepoID:   1,
+			RepoName: "repo1",
+			Path:     filepath.Join(dir, "repo1.zoekt"),
+		}},
+		2: []shard{{
+			RepoID:   2,
+			RepoName: "repo2",
+			Path:     cs2,
+		}},
+		3: []shard{{
+			RepoID:   3,
+			RepoName: "repo3",
+			Path:     filepath.Join(dir, "repo3.zoekt"),
+		}},
+		4: []shard{{
+			RepoID:   4,
+			RepoName: "repo4",
+			Path:     cs2,
+		}},
+		5: []shard{{
+			RepoID:   5,
+			RepoName: "repo5",
+			Path:     filepath.Join(dir, "repo5.zoekt"),
+		}},
+	}
+
+	if d := cmp.Diff(wantIndex, index, cmpopts.IgnoreFields(shard{}, "ModTime")); d != "" {
+		t.Fatalf("-want, +got: %s", d)
+	}
+}
+
 // createCompoundShard returns a path to a compound shard containing repos with
 // ids. Use optsFns to overwrite fields of zoekt.Repository for all repos.
 func createCompoundShard(t *testing.T, dir string, ids []uint32, optFns ...func(in *zoekt.Repository)) string {

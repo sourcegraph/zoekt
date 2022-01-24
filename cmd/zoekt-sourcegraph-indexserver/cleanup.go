@@ -35,6 +35,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	}
 
 	trash := getShards(trashDir)
+	tombtones := getTombstonedRepos(indexDir)
 	index := getShards(indexDir)
 
 	// trash: Remove old shards and conflicts with index
@@ -57,6 +58,16 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		log.Printf("removing old shards from trash for %v", repo)
 		removeAll(shards...)
 		delete(trash, repo)
+	}
+
+	for repo, _ := range tombtones {
+		if _, conflicts := index[repo]; conflicts {
+			delete(tombtones, repo)
+		}
+		// Trash takes precedence over tombstones.
+		if _, conflicts := trash[repo]; conflicts {
+			delete(tombtones, repo)
+		}
 	}
 
 	// index: We are ID based, but store shards by name still. If we end up with
@@ -98,19 +109,25 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	}
 
 	// index: Move missing repos from trash into index
+	// index: Restore deleted or tombstoned repos.
 	for _, repo := range repos {
 		// Delete from index so that index will only contain shards to be
 		// trashed.
 		delete(index, repo)
 
-		shards, ok := trash[repo]
-		if !ok {
-			continue
+		if shards, ok := trash[repo]; ok {
+			log.Printf("restoring shards from trash for %v", repo)
+			moveAll(indexDir, shards)
+			shardsLog(indexDir, "restore", shards)
 		}
 
-		log.Printf("restoring shards from trash for %v", repo)
-		moveAll(indexDir, shards)
-		shardsLog(indexDir, "restore", shards)
+		if shardMerging {
+			if s, ok := tombtones[repo]; ok {
+				log.Printf("removing tombstone for %v", repo)
+				zoekt.UnsetTombstone(s.Path, repo)
+				shardsLog(indexDir, "untomb", []shard{s})
+			}
+		}
 	}
 
 	// index: Move non-existent repos into trash
