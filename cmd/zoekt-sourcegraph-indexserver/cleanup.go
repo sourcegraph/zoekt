@@ -197,6 +197,43 @@ func getShards(dir string) map[uint32][]shard {
 	return shards
 }
 
+// getTombstonedRepos return a map of tombstoned repositories in dir. If a
+// repository is tombstoned in more than one compound shard, only the latest one,
+// as determined by the date of the latest commit, is returned.
+func getTombstonedRepos(dir string) map[uint32]shard {
+	paths, err := filepath.Glob(filepath.Join(dir, "compound-*.zoekt"))
+	if err != nil {
+		return nil
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+
+	m := make(map[uint32]shard)
+
+	for _, p := range paths {
+		repos, _, err := zoekt.ReadMetadataPath(p)
+		if err != nil {
+			continue
+		}
+		for _, repo := range repos {
+			if !repo.Tombstone {
+				continue
+			}
+			if v, ok := m[repo.ID]; ok && v.ModTime.After(repo.LatestCommitDate) {
+				continue
+			}
+			m[repo.ID] = shard{
+				RepoID:   repo.ID,
+				RepoName: repo.Name,
+				Path:     p,
+				ModTime:  repo.LatestCommitDate,
+			}
+		}
+	}
+	return m
+}
+
 var incompleteRE = regexp.MustCompile(`\.zoekt[0-9]+(\.\w+)?$`)
 
 func removeIncompleteShards(dir string) {

@@ -242,7 +242,8 @@ func TestRemoveIncompleteShards(t *testing.T) {
 }
 
 func TestVacuum(t *testing.T) {
-	fn := createCompoundShard(t)
+	tmpDir := t.TempDir()
+	fn := createCompoundShard(t, tmpDir, []uint32{1, 2, 3, 4})
 
 	err := zoekt.SetTombstone(fn, 2)
 	if err != nil {
@@ -259,12 +260,7 @@ func TestVacuum(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dir := filepath.Dir(fn)
-	d, err := os.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	shards, err := d.Readdirnames(-1)
+	shards, err := filepath.Glob(tmpDir + "/compound-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +269,7 @@ func TestVacuum(t *testing.T) {
 		t.Fatalf("expected 1 shard, but instead got %d", len(shards))
 	}
 
-	repos, _, err := zoekt.ReadMetadataPath(filepath.Join(dir, shards[0]))
+	repos, _, err := zoekt.ReadMetadataPath(shards[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,26 +285,59 @@ func TestVacuum(t *testing.T) {
 	}
 }
 
-// createCompoundShard returns a path to a compound shard containing repos
-// repo0..repo3
-func createCompoundShard(t *testing.T) string {
-	t.Helper()
+// Create 2 compound shards, each of which contains the same tombstoned repo but
+// from different commit dates.
+func TestGetTombstonedRepos(t *testing.T) {
+	setLastCommitDate := func(lastCommitDate time.Time) func(repository *zoekt.Repository) {
+		return func(repository *zoekt.Repository) {
+			repository.LatestCommitDate = lastCommitDate
+		}
+	}
 
 	dir := t.TempDir()
+	var repoID uint32 = 2
+	csOld := createCompoundShard(t, dir, []uint32{1, 2, 3, 4}, setLastCommitDate(time.Now().Add(-1*time.Hour)))
+	zoekt.SetTombstone(csOld, repoID)
 
-	repoNames := []string{"repo1", "repo2", "repo3", "repo4"}
+	now := time.Now()
+	csNew := createCompoundShard(t, dir, []uint32{5, 2, 6, 7}, setLastCommitDate(now))
+	zoekt.SetTombstone(csNew, repoID)
+
+	// Check that getTombstonedRepos returns the compound shard containing the
+	// tombstoned repo with id repoID with the latest commit.
+	got := getTombstonedRepos(dir)
+
+	if len(got) != 1 {
+		t.Fatalf("want 1 shard, got %d shards", len(got))
+	}
+
+	v, ok := got[repoID]
+	if !ok || v.Path != csNew {
+		t.Fatalf("want %s, got %s", csNew, v.Path)
+	}
+}
+// createCompoundShard returns a path to a compound shard containing repos with
+// ids. Use optsFns to overwrite fields of zoekt.Repository for all repos.
+func createCompoundShard(t *testing.T, dir string, ids []uint32, optFns ...func(in *zoekt.Repository)) string {
+	t.Helper()
+
 	var repoFns []string
 
-	for i, name := range repoNames {
-		opts := build.Options{
-			IndexDir: dir,
-			RepositoryDescription: zoekt.Repository{
-				ID:   uint32(i + 1),
-				Name: name,
-				RawConfig: map[string]string{
-					"public": "1",
-				},
+	for _, id := range ids {
+		repo := zoekt.Repository{
+			ID:   id,
+			Name: fmt.Sprintf("repo%d", id),
+			RawConfig: map[string]string{
+				"public": "1",
 			},
+		}
+		for _, optsFn := range optFns {
+			optsFn(&repo)
+		}
+
+		opts := build.Options{
+			IndexDir:              dir,
+			RepositoryDescription: repo,
 		}
 		opts.SetDefaults()
 		b, err := build.NewBuilder(opts)
@@ -326,10 +355,12 @@ func createCompoundShard(t *testing.T) string {
 	}
 
 	// create a compound shard.
-	dir = t.TempDir()
 	fn, err := merge(dir, repoFns)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, old := range repoFns {
+		os.Remove(old)
 	}
 	return fn
 }
