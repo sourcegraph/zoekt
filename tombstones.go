@@ -20,6 +20,15 @@ var mockRepos []*Repository
 
 // SetTombstone idempotently sets a tombstone for repoName in .meta.
 func SetTombstone(shardPath string, repoID uint32) error {
+	return setTombstone(shardPath, repoID, true)
+}
+
+// UnsetTombstone idempotently removes a tombstones for reopName in .meta.
+func UnsetTombstone(shardPath string, repoID uint32) error {
+	return setTombstone(shardPath, repoID, false)
+}
+
+func setTombstone(shardPath string, repoID uint32, tombstone bool) error {
 	var repos []*Repository
 	var err error
 
@@ -34,7 +43,7 @@ func SetTombstone(shardPath string, repoID uint32) error {
 
 	for _, repo := range repos {
 		if repo.ID == repoID {
-			repo.Tombstone = true
+			repo.Tombstone = tombstone
 		}
 	}
 
