@@ -439,6 +439,60 @@ func TestContextLines(t *testing.T) {
 				},
 			},
 		},
+		"/search?q=seventh&format=json&ctx=10": {
+			{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  7,
+						Fragments: []Fragment{
+							{
+								Pre:   "",
+								Match: "seventh",
+								Post:  "",
+							},
+						},
+						Before: []string{
+							"one line",
+							"second snippet",
+							"third thing",
+							"fourth",
+							"fifth block",
+							"sixth example",
+						},
+					},
+				},
+			},
+		},
+		"/search?q=one&format=json&ctx=10": {
+			{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  1,
+						Fragments: []Fragment{
+							{
+								Pre:   "",
+								Match: "one",
+								Post:  " line",
+							},
+						},
+						After: []string{
+							"second snippet",
+							"third thing",
+							"fourth",
+							"fifth block",
+							"sixth example",
+							"seventh",
+						},
+					},
+				},
+			},
+		},
 	} {
 		checkResultMatches(t, ts, req, needles)
 	}
@@ -495,8 +549,6 @@ func checkResultMatches(t *testing.T, ts *httptest.Server, req string, needles [
 	if err := json.Unmarshal(resultBytes, &result); err != nil {
 		log.Fatal(err)
 	}
-	cute, _ := json.MarshalIndent(result.Result, "", " ")
-	log.Printf("Cute is: %+v", string(cute))
 	for i, want := range needles {
 		found := false
 		for _, match := range result.Result.FileMatches {
