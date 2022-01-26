@@ -101,6 +101,11 @@ var (
 		Name: "index_indexing_total",
 		Help: "Counts indexings (indexing activity, should be used with rate())",
 	})
+
+	metricNumStoppedTracking = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "index_num_stopped_tracking",
+		Help: "Number of repos we stopped tracking based on the last call to frontend.",
+	})
 )
 
 // set of repositories that we want to capture separate indexing metrics for
@@ -290,6 +295,7 @@ func (s *Server) Run() {
 
 			// Stop indexing repos we don't need to track anymore
 			count := s.queue.MaybeRemoveMissing(repos.IDs)
+			metricNumStoppedTracking.Set(float64(count))
 			if count > 0 {
 				log.Printf("stopped tracking %d repositories", count)
 			}
