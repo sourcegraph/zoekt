@@ -60,6 +60,8 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		delete(trash, repo)
 	}
 
+	// tombstones: Remove tombstones that conflict with index or trash. After this,
+	// tombstones only contain repos that are neither in the trash nor in the index.
 	for repo, _ := range tombtones {
 		if _, conflicts := index[repo]; conflicts {
 			delete(tombtones, repo)
@@ -119,12 +121,15 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			log.Printf("restoring shards from trash for %v", repo)
 			moveAll(indexDir, shards)
 			shardsLog(indexDir, "restore", shards)
+			continue
 		}
 
-		if shardMerging {
-			if s, ok := tombtones[repo]; ok {
-				log.Printf("removing tombstone for %v", repo)
-				zoekt.UnsetTombstone(s.Path, repo)
+		if s, ok := tombtones[repo]; ok {
+			log.Printf("removing tombstone for %v", repo)
+			err := zoekt.UnsetTombstone(s.Path, repo)
+			if err != nil {
+				log.Printf("error removing tombstone for %v: %s", repo, err)
+			} else {
 				shardsLog(indexDir, "untomb", []shard{s})
 			}
 		}
