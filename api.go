@@ -80,6 +80,7 @@ type LineMatch struct {
 	LineEnd    int
 	LineNumber int
 
+	// LinesBefore and LinesAfter are only set when SearchOptions.NumContextLines is > 0
 	LinesBefore [][]byte
 	LinesAfter  [][]byte
 
