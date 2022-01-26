@@ -35,6 +35,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	}
 
 	trash := getShards(trashDir)
+	tombtones := getTombstonedRepos(indexDir)
 	index := getShards(indexDir)
 
 	// trash: Remove old shards and conflicts with index
@@ -57,6 +58,18 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		log.Printf("removing old shards from trash for %v", repo)
 		removeAll(shards...)
 		delete(trash, repo)
+	}
+
+	// tombstones: Remove tombstones that conflict with index or trash. After this,
+	// tombstones only contain repos that are neither in the trash nor in the index.
+	for repo, _ := range tombtones {
+		if _, conflicts := index[repo]; conflicts {
+			delete(tombtones, repo)
+		}
+		// Trash takes precedence over tombstones.
+		if _, conflicts := trash[repo]; conflicts {
+			delete(tombtones, repo)
+		}
 	}
 
 	// index: We are ID based, but store shards by name still. If we end up with
@@ -98,19 +111,28 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	}
 
 	// index: Move missing repos from trash into index
+	// index: Restore deleted or tombstoned repos.
 	for _, repo := range repos {
 		// Delete from index so that index will only contain shards to be
 		// trashed.
 		delete(index, repo)
 
-		shards, ok := trash[repo]
-		if !ok {
+		if shards, ok := trash[repo]; ok {
+			log.Printf("restoring shards from trash for %v", repo)
+			moveAll(indexDir, shards)
+			shardsLog(indexDir, "restore", shards)
 			continue
 		}
 
-		log.Printf("restoring shards from trash for %v", repo)
-		moveAll(indexDir, shards)
-		shardsLog(indexDir, "restore", shards)
+		if s, ok := tombtones[repo]; ok {
+			log.Printf("removing tombstone for %v", repo)
+			err := zoekt.UnsetTombstone(s.Path, repo)
+			if err != nil {
+				log.Printf("error removing tombstone for %v: %s", repo, err)
+			} else {
+				shardsLog(indexDir, "untomb", []shard{s})
+			}
+		}
 	}
 
 	// index: Move non-existent repos into trash
@@ -195,6 +217,43 @@ func getShards(dir string) map[uint32][]shard {
 		}
 	}
 	return shards
+}
+
+// getTombstonedRepos return a map of tombstoned repositories in dir. If a
+// repository is tombstoned in more than one compound shard, only the latest one,
+// as determined by the date of the latest commit, is returned.
+func getTombstonedRepos(dir string) map[uint32]shard {
+	paths, err := filepath.Glob(filepath.Join(dir, "compound-*.zoekt"))
+	if err != nil {
+		return nil
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+
+	m := make(map[uint32]shard)
+
+	for _, p := range paths {
+		repos, _, err := zoekt.ReadMetadataPath(p)
+		if err != nil {
+			continue
+		}
+		for _, repo := range repos {
+			if !repo.Tombstone {
+				continue
+			}
+			if v, ok := m[repo.ID]; ok && v.ModTime.After(repo.LatestCommitDate) {
+				continue
+			}
+			m[repo.ID] = shard{
+				RepoID:   repo.ID,
+				RepoName: repo.Name,
+				Path:     p,
+				ModTime:  repo.LatestCommitDate,
+			}
+		}
+	}
+	return m
 }
 
 var incompleteRE = regexp.MustCompile(`\.zoekt[0-9]+(\.\w+)?$`)
