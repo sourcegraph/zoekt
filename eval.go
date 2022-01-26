@@ -154,9 +154,6 @@ func (o *SearchOptions) SetDefaults() {
 	if o.TotalMaxImportantMatch == 0 {
 		o.TotalMaxImportantMatch = 10 * o.ShardMaxImportantMatch
 	}
-	if o.NumContextLines > 5 {
-		o.NumContextLines = 5
-	}
 }
 
 func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) (sr *SearchResult, err error) {

@@ -259,6 +259,317 @@ func checkNeedles(t *testing.T, ts *httptest.Server, req string, needles []strin
 	}
 }
 
+func TestFormatJson(t *testing.T) {
+	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+		Name:     "name",
+		URL:      "repo-url",
+		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
+	})
+	if err != nil {
+		t.Fatalf("NewIndexBuilder: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f2",
+		Content:  []byte("to carry water in the no later bla"),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	s := searcherForTest(t, b)
+	srv := Server{
+		Searcher: s,
+		Top:      Top,
+		HTML:     true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	for req, needles := range map[string][]FileMatch{
+		"/search?q=water&format=json": {
+			{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  1,
+						Fragments: []Fragment{
+							{
+								Pre:   "to carry ",
+								Match: "water",
+								Post:  " in the no later bla",
+							},
+						},
+					},
+				},
+			},
+		},
+	} {
+		checkResultMatches(t, ts, req, needles)
+	}
+}
+
+func TestContextLines(t *testing.T) {
+	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+		Name:     "name",
+		URL:      "repo-url",
+		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
+	})
+	if err != nil {
+		t.Fatalf("NewIndexBuilder: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f2",
+		Content:  []byte("one line\nsecond snippet\nthird thing\nfourth\nfifth block\nsixth example\nseventh"),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	s := searcherForTest(t, b)
+	srv := Server{
+		Searcher: s,
+		Top:      Top,
+		HTML:     true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	for req, needles := range map[string][]FileMatch{
+		"/search?q=our&format=json&ctx=0": {
+			{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  4,
+						Fragments: []Fragment{
+							{
+								Pre:   "f",
+								Match: "our",
+								Post:  "th",
+							},
+						},
+					},
+				},
+			},
+		},
+		"/search?q=our&format=json&ctx=2": {
+			{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  4,
+						Fragments: []Fragment{
+							{
+								Pre:   "f",
+								Match: "our",
+								Post:  "th",
+							},
+						},
+						Before: []string{
+							"second snippet",
+							"third thing",
+						},
+						After: []string{
+							"fifth block",
+							"sixth example",
+						},
+					},
+				},
+			},
+		},
+		"/search?q=one&format=json&ctx=2": {
+			{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  1,
+						Fragments: []Fragment{
+							{
+								Pre:   "",
+								Match: "one",
+								Post:  " line",
+							},
+						},
+						After: []string{
+							"second snippet",
+							"third thing",
+						},
+					},
+				},
+			},
+		},
+		"/search?q=seventh&format=json&ctx=2": {
+			{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  7,
+						Fragments: []Fragment{
+							{
+								Pre:   "",
+								Match: "seventh",
+								Post:  "",
+							},
+						},
+						Before: []string{
+							"fifth block",
+							"sixth example",
+						},
+					},
+				},
+			},
+		},
+	} {
+		checkResultMatches(t, ts, req, needles)
+	}
+}
+
+func fragmentsPartiallyEqual(a, b []Fragment) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, _ := range a {
+		if !reflect.DeepEqual(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func matchesPartiallyEqual(a, b []Match) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, _ := range a {
+		if a[i].FileName != b[i].FileName {
+			return false
+		}
+		if a[i].LineNum != b[i].LineNum {
+			return false
+		}
+		if !reflect.DeepEqual(a[i].Before, b[i].Before) {
+			return false
+		}
+		if !reflect.DeepEqual(a[i].After, b[i].After) {
+			return false
+		}
+		if !fragmentsPartiallyEqual(a[i].Fragments, b[i].Fragments) {
+			return false
+		}
+	}
+	return true
+}
+
+func checkResultMatches(t *testing.T, ts *httptest.Server, req string, needles []FileMatch) {
+	res, err := http.Get(ts.URL + req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultBytes, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var result ApiSearchResult
+	if err := json.Unmarshal(resultBytes, &result); err != nil {
+		log.Fatal(err)
+	}
+	cute, _ := json.MarshalIndent(result.Result, "", " ")
+	log.Printf("Cute is: %+v", string(cute))
+	for i, want := range needles {
+		found := false
+		for _, match := range result.Result.FileMatches {
+			if match.FileName != want.FileName || match.Repo != want.Repo {
+				continue
+			}
+			if !matchesPartiallyEqual(match.Matches, want.Matches) {
+				continue
+			}
+			found = true
+			break
+		}
+		if !found {
+			w, _ := json.MarshalIndent(want, "", " ")
+			t.Errorf("result doesn't have needles[%d]: %v", i, string(w))
+		}
+	}
+}
+
+func TestConextLinesMustBeValid(t *testing.T) {
+	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+		Name:     "name",
+		URL:      "repo-url",
+		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
+	})
+	if err != nil {
+		t.Fatalf("NewIndexBuilder: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f2",
+		Content:  []byte("to carry water in the no later bla"),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	s := searcherForTest(t, b)
+	srv := Server{
+		Searcher: s,
+		Top:      Top,
+		HTML:     true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// Don't care about ctx if format is not json
+	code := getHttpStatusCode(t, ts, "/search?q=water&ctx=10")
+	if code != 200 {
+		t.Errorf("Expected 200 but got %v", code)
+	}
+
+	// ctx must be a valid integer in the right range.
+	for _, want := range []string{"foo", "-1", "20"} {
+		code := getHttpStatusCode(t, ts, "/search?q=water&format=json&ctx="+want)
+		if code != 418 {
+			t.Errorf("Expected 418 but got %v", code)
+		}
+	}
+}
+
+func getHttpStatusCode(t *testing.T, ts *httptest.Server, req string) int {
+	res, err := http.Get(ts.URL + req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res.StatusCode
+}
+
 type crashSearcher struct {
 	zoekt.Streamer
 }

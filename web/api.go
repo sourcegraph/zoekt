@@ -66,8 +66,8 @@ type Match struct {
 	LineNum  int
 
 	Fragments []Fragment
-	Before    []string
-	After     []string
+	Before    []string `json:",omitempty"`
+	After     []string `json:",omitempty"`
 }
 
 // Fragment holds data of a single contiguous match within in a line

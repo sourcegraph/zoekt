@@ -269,10 +269,13 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 		MaxWallTime: 10 * time.Second,
 	}
 
-	ctxLinesStr := qvals.Get("ctx")
-	numCtxLines, err := strconv.Atoi(ctxLinesStr)
-	if err != nil || numCtxLines < 0 {
-		numCtxLines = 0
+	numCtxLines := 0
+	if qvals.Get("format") == "json" && qvals.Has("ctx") {
+		ctxLinesStr := qvals.Get("ctx")
+		numCtxLines, err = strconv.Atoi(ctxLinesStr)
+		if err != nil || numCtxLines < 0 || numCtxLines > 10 {
+			return nil, fmt.Errorf("Number of context lines must be between 0 and 10")
+		}
 	}
 	sOpts.NumContextLines = numCtxLines
 

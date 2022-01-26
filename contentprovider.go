@@ -213,27 +213,43 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 		finalMatch.Line = data[lineStart:lineEnd]
 
 		if numContextLines > 0 {
+			newLinesIndexes := p.newlines()
+
+			// Get context lines before the current line.
 			var before [][]byte
-			var after [][]byte
-			lineNum := 0
-			prev := -1
-			for lineNum < num+numContextLines && prev < len(data) {
-				next := bytes.IndexByte(data[prev+1:], '\n')
-				if next == -1 {
-					next = len(data)
+			curLine := num - numContextLines - 1
+			if curLine < 0 {
+				curLine = 0
+			}
+			var startIndex uint32
+			var endIndex uint32
+			for curLine < num-1 {
+				endIndex = newLinesIndexes[curLine]
+				startIndex = 0
+				if curLine > 0 {
+					startIndex = newLinesIndexes[curLine-1]
+					before = append(before, data[startIndex+1:endIndex])
 				} else {
-					next += prev + 1
+					before = append(before, data[startIndex:endIndex])
 				}
-				lineNum += 1
-				if (lineNum < num) && (num-lineNum <= numContextLines) {
-					before = append(before, data[prev+1:next])
-				}
-				if (lineNum > num) && (lineNum-num <= numContextLines) {
-					after = append(after, data[prev+1:next])
-				}
-				prev = next
+				curLine += 1
 			}
 			finalMatch.LinesBefore = before
+
+			// Get context lines after the current line.
+			var after [][]byte
+			numLines := len(newLinesIndexes)
+			curLine = num - 1
+			for curLine < num+numContextLines-1 && curLine < numLines {
+				startIndex = newLinesIndexes[curLine]
+				endIndex = p.fileSize
+				if curLine < numLines-1 {
+					endIndex = newLinesIndexes[curLine+1]
+				}
+				after = append(after, data[startIndex+1:endIndex])
+				curLine += 1
+			}
+
 			finalMatch.LinesAfter = after
 		}
 
