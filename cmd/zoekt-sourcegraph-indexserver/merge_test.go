@@ -129,7 +129,7 @@ func TestDoNotDeleteSingleShards(t *testing.T) {
 		t.Errorf("Finish: %v", err)
 	}
 
-	err = doMerge(dir, 2000*1024*1024, 1800*1024*1024, false)
+	err = doMerge(dir, 2000*1024*1024, false)
 	if err != nil {
 		t.Fatal(err)
 	}

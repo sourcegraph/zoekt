@@ -142,9 +142,6 @@ type Server struct {
 	// degraded search performance.
 	TargetSizeBytes int64
 
-	// Shards larger than MaxSizeBytes are excluded from merging.
-	MaxSizeBytes int64
-
 	// Compound shards smaller than minSizeBytes will be deleted by vacuum.
 	minSizeBytes int64
 
@@ -333,7 +330,7 @@ func (s *Server) Run() {
 	go func() {
 		for range jitterTicker(s.MergeInterval, syscall.SIGUSR1) {
 			if s.shardMerging {
-				err := doMerge(s.IndexDir, s.TargetSizeBytes, s.MaxSizeBytes, false)
+				err := doMerge(s.IndexDir, s.TargetSizeBytes, false)
 				if err != nil {
 					log.Printf("error during merging: %s", err)
 				}
@@ -726,7 +723,6 @@ func main() {
 	vacuumInterval := flag.Duration("vacuum_interval", time.Hour, "run vacuum this often")
 	mergeInterval := flag.Duration("merge_interval", time.Hour, "run merge this often")
 	targetSize := flag.Int64("merge_target_size", getEnvWithDefaultInt64("SRC_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
-	maxSize := flag.Int64("merge_max_size", getEnvWithDefaultInt64("SRC_MAX_SIZE", 1800), "the maximum size in MiB a shard can have to be considered for merging")
 	minSize := flag.Int64("merge_min_size", getEnvWithDefaultInt64("SRC_MIN_SIZE", 1800), "the minimum size of a compound shard in MiB")
 	index := flag.String("index", defaultIndexDir, "set index directory to use")
 	listen := flag.String("listen", ":6072", "listen on this address.")
@@ -841,7 +837,6 @@ func main() {
 		MergeInterval:   *mergeInterval,
 		CPUCount:        cpuCount,
 		TargetSizeBytes: *targetSize * 1024 * 1024,
-		MaxSizeBytes:    *maxSize * 1024 * 1024,
 		minSizeBytes:    *minSize * 1024 * 1024,
 		shardMerging:    zoekt.ShardMergingEnabled(),
 	}
@@ -887,7 +882,7 @@ func main() {
 	}
 
 	if *debugMerge {
-		err = doMerge(*index, *targetSize*1024*1024, *maxSize*1024*1024, *debugMergeSimulate)
+		err = doMerge(*index, *targetSize*1024*1024, *debugMergeSimulate)
 		if err != nil {
 			log.Fatal(err)
 		}
