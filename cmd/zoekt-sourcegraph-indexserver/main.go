@@ -720,7 +720,7 @@ func main() {
 
 	root := flag.String("sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	interval := flag.Duration("interval", time.Minute, "sync with sourcegraph this often")
-	vacuumInterval := flag.Duration("vacuum_interval", time.Hour, "run vacuum this often")
+	vacuumInterval := flag.Duration("vacuum_interval", 24*time.Hour, "run vacuum this often")
 	mergeInterval := flag.Duration("merge_interval", time.Hour, "run merge this often")
 	targetSize := flag.Int64("merge_target_size", getEnvWithDefaultInt64("SRC_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
 	minSize := flag.Int64("merge_min_size", getEnvWithDefaultInt64("SRC_MIN_SIZE", 1800), "the minimum size of a compound shard in MiB")
