@@ -146,9 +146,9 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Unlock()
 }
 
-// MaybeRemoveMissing will remove all queue items not in ids. It will
-// heuristically not run to conserve resources and return -1. Otherwise it
-// will return the number of names removed from the queue.
+// MaybeRemoveMissing will remove all queue items not in ids and return the
+// number of names removed from the queue. It will heuristically not run to
+// conserve resources.
 //
 // In the server's steady state we expect that the list of names is equal to
 // the items in queue. As such in the steady state this function should do no
