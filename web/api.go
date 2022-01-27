@@ -35,13 +35,12 @@ type LastInput struct {
 
 // Result holds the data provided to the search results template.
 type ResultInput struct {
-	Last          LastInput
-	QueryStr      string
-	Query         string
-	Stats         zoekt.Stats
-	Duration      time.Duration
-	FileMatches   []*FileMatch
-	SearchOptions zoekt.SearchOptions
+	Last        LastInput
+	QueryStr    string
+	Query       string
+	Stats       zoekt.Stats
+	Duration    time.Duration
+	FileMatches []*FileMatch
 }
 
 // FileMatch holds the per file data provided to search results template
@@ -66,8 +65,8 @@ type Match struct {
 	LineNum  int
 
 	Fragments []Fragment
-	Before    []string `json:",omitempty"`
-	After     []string `json:",omitempty"`
+	Before    string `json:",omitempty"`
+	After     string `json:",omitempty"`
 }
 
 // Fragment holds data of a single contiguous match within in a line

@@ -80,9 +80,9 @@ type LineMatch struct {
 	LineEnd    int
 	LineNumber int
 
-	// LinesBefore and LinesAfter are only set when SearchOptions.NumContextLines is > 0
-	LinesBefore [][]byte
-	LinesAfter  [][]byte
+	// Before and After are only set when SearchOptions.NumContextLines is > 0
+	Before []byte
+	After  []byte
 
 	// If set, this was a match on the filename.
 	FileName bool

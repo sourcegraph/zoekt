@@ -325,11 +325,10 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 			Num:       num,
 			AutoFocus: true,
 		},
-		Stats:         result.Stats,
-		Query:         q.String(),
-		QueryStr:      queryStr,
-		SearchOptions: sOpts,
-		FileMatches:   fileMatches,
+		Stats:       result.Stats,
+		Query:       q.String(),
+		QueryStr:    queryStr,
+		FileMatches: fileMatches,
 	}
 	if res.Stats.Wait < res.Stats.Duration/10 {
 		// Suppress queueing stats if they are neglible.

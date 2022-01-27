@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 )
@@ -259,6 +260,11 @@ func checkNeedles(t *testing.T, ts *httptest.Server, req string, needles []strin
 	}
 }
 
+type Expectation struct {
+	title     string
+	fileMatch FileMatch
+}
+
 func TestFormatJson(t *testing.T) {
 	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
 		Name:     "name",
@@ -290,29 +296,28 @@ func TestFormatJson(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 
-	for req, needles := range map[string][]FileMatch{
-		"/search?q=water&format=json": {
-			{
-				FileName: "f2",
-				Repo:     "name",
-				Matches: []Match{
-					{
-						FileName: "f2",
-						LineNum:  1,
-						Fragments: []Fragment{
-							{
-								Pre:   "to carry ",
-								Match: "water",
-								Post:  " in the no later bla",
-							},
+	expected := Expectation{
+		"json basic test",
+		FileMatch{
+			FileName: "f2",
+			Repo:     "name",
+			Matches: []Match{
+				{
+					FileName: "f2",
+					LineNum:  1,
+					Fragments: []Fragment{
+						{
+							Pre:   "to carry ",
+							Match: "water",
+							Post:  " in the no later bla",
 						},
 					},
 				},
 			},
 		},
-	} {
-		checkResultMatches(t, ts, req, needles)
 	}
+
+	checkResultMatches(t, ts, "/search?q=water&format=json", expected)
 }
 
 func TestContextLines(t *testing.T) {
@@ -327,6 +332,27 @@ func TestContextLines(t *testing.T) {
 	if err := b.Add(zoekt.Document{
 		Name:     "f2",
 		Content:  []byte("one line\nsecond snippet\nthird thing\nfourth\nfifth block\nsixth example\nseventh"),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f3",
+		Content:  []byte("\n\n\n\nto carry water in the no later bla\n\n\n\n"),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f4",
+		Content:  []byte("un   \n \n\ttrois\n     \n\nsix\n     "),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f5",
+		Content:  []byte("\ngreen\npastures\n\nhere"),
 		Branches: []string{"master"},
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -346,9 +372,10 @@ func TestContextLines(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 
-	for req, needles := range map[string][]FileMatch{
+	for req, expected := range map[string]Expectation{
 		"/search?q=our&format=json&ctx=0": {
-			{
+			"no context doesn't return Before or After",
+			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
 				Matches: []Match{
@@ -360,6 +387,24 @@ func TestContextLines(t *testing.T) {
 								Pre:   "f",
 								Match: "our",
 								Post:  "th",
+							},
+						},
+					},
+				},
+			},
+		},
+		"/search?q=f:f2&format=json&ctx=2": {
+			"filename does not return Before or After",
+			FileMatch{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  0,
+						Fragments: []Fragment{
+							{
+								Match: "f2",
 							},
 						},
 					},
@@ -367,7 +412,8 @@ func TestContextLines(t *testing.T) {
 			},
 		},
 		"/search?q=our&format=json&ctx=2": {
-			{
+			"context returns Before and After",
+			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
 				Matches: []Match{
@@ -381,20 +427,15 @@ func TestContextLines(t *testing.T) {
 								Post:  "th",
 							},
 						},
-						Before: []string{
-							"second snippet",
-							"third thing",
-						},
-						After: []string{
-							"fifth block",
-							"sixth example",
-						},
+						Before: "second snippet\nthird thing",
+						After:  "fifth block\nsixth example",
 					},
 				},
 			},
 		},
 		"/search?q=one&format=json&ctx=2": {
-			{
+			"match at start returns After but no Before",
+			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
 				Matches: []Match{
@@ -408,16 +449,14 @@ func TestContextLines(t *testing.T) {
 								Post:  " line",
 							},
 						},
-						After: []string{
-							"second snippet",
-							"third thing",
-						},
+						After: "second snippet\nthird thing",
 					},
 				},
 			},
 		},
 		"/search?q=seventh&format=json&ctx=2": {
-			{
+			"match at end returns Before but no After",
+			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
 				Matches: []Match{
@@ -431,16 +470,14 @@ func TestContextLines(t *testing.T) {
 								Post:  "",
 							},
 						},
-						Before: []string{
-							"fifth block",
-							"sixth example",
-						},
+						Before: "fifth block\nsixth example",
 					},
 				},
 			},
 		},
 		"/search?q=seventh&format=json&ctx=10": {
-			{
+			"match with large context at end returns whole document",
+			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
 				Matches: []Match{
@@ -454,20 +491,14 @@ func TestContextLines(t *testing.T) {
 								Post:  "",
 							},
 						},
-						Before: []string{
-							"one line",
-							"second snippet",
-							"third thing",
-							"fourth",
-							"fifth block",
-							"sixth example",
-						},
+						Before: "one line\nsecond snippet\nthird thing\nfourth\nfifth block\nsixth example",
 					},
 				},
 			},
 		},
 		"/search?q=one&format=json&ctx=10": {
-			{
+			"match with large context at start returns whole document",
+			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
 				Matches: []Match{
@@ -481,40 +512,87 @@ func TestContextLines(t *testing.T) {
 								Post:  " line",
 							},
 						},
-						After: []string{
-							"second snippet",
-							"third thing",
-							"fourth",
-							"fifth block",
-							"sixth example",
-							"seventh",
+						After: "second snippet\nthird thing\nfourth\nfifth block\nsixth example\nseventh",
+					},
+				},
+			},
+		},
+		"/search?q=trois&format=json&ctx=2": {
+			"context returns whitespaces lines",
+			FileMatch{
+				FileName: "f4",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f4",
+						LineNum:  3,
+						Fragments: []Fragment{
+							{
+								Pre:   "\t",
+								Match: "trois",
+							},
 						},
+						Before: "un   \n ",
+						After:  "     \n",
+					},
+				},
+			},
+		},
+		"/search?q=water&format=json&ctx=4": {
+			"context returns new lines",
+			FileMatch{
+				FileName: "f3",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f3",
+						LineNum:  5,
+						Fragments: []Fragment{
+							{
+								Pre:   "to carry ",
+								Match: "water",
+								Post:  " in the no later bla",
+							},
+						},
+						// Returns 3 instead of 4 new line characters since we swallow
+						// the last new line in Before, Fragments and After.
+						Before: "\n\n\n",
+						After:  "\n\n\n",
+					},
+				},
+			},
+		},
+		"/search?q=pastures&format=json&ctx=1": {
+			"context returns empty end line",
+			FileMatch{
+				FileName: "f5",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f5",
+						LineNum:  3,
+						Fragments: []Fragment{
+							{
+								Pre:   "",
+								Match: "pastures",
+							},
+						},
+						Before: "green",
+						After:  "",
 					},
 				},
 			},
 		},
 	} {
-		checkResultMatches(t, ts, req, needles)
+		checkResultMatches(t, ts, req, expected)
 	}
-}
-
-func fragmentsPartiallyEqual(a, b []Fragment) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, _ := range a {
-		if !reflect.DeepEqual(a[i], b[i]) {
-			return false
-		}
-	}
-	return true
 }
 
 func matchesPartiallyEqual(a, b []Match) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i, _ := range a {
+	for i := range a {
 		if a[i].FileName != b[i].FileName {
 			return false
 		}
@@ -527,14 +605,14 @@ func matchesPartiallyEqual(a, b []Match) bool {
 		if !reflect.DeepEqual(a[i].After, b[i].After) {
 			return false
 		}
-		if !fragmentsPartiallyEqual(a[i].Fragments, b[i].Fragments) {
+		if !reflect.DeepEqual(a[i].Fragments, b[i].Fragments) {
 			return false
 		}
 	}
 	return true
 }
 
-func checkResultMatches(t *testing.T, ts *httptest.Server, req string, needles []FileMatch) {
+func checkResultMatches(t *testing.T, ts *httptest.Server, req string, expected Expectation) {
 	res, err := http.Get(ts.URL + req)
 	if err != nil {
 		t.Fatal(err)
@@ -549,26 +627,24 @@ func checkResultMatches(t *testing.T, ts *httptest.Server, req string, needles [
 	if err := json.Unmarshal(resultBytes, &result); err != nil {
 		log.Fatal(err)
 	}
-	for i, want := range needles {
-		found := false
-		for _, match := range result.Result.FileMatches {
-			if match.FileName != want.FileName || match.Repo != want.Repo {
-				continue
-			}
-			if !matchesPartiallyEqual(match.Matches, want.Matches) {
-				continue
-			}
-			found = true
-			break
-		}
-		if !found {
-			w, _ := json.MarshalIndent(want, "", " ")
-			t.Errorf("result doesn't have needles[%d]: %v", i, string(w))
+
+	if len(result.Result.FileMatches) != 1 {
+		t.Fatal("Expected search to return just one result")
+	}
+	match := result.Result.FileMatches[0]
+	if match.FileName == expected.fileMatch.FileName && match.Repo == expected.fileMatch.Repo {
+		if matchesPartiallyEqual(match.Matches, expected.fileMatch.Matches) {
+			return
 		}
 	}
+
+	t.Errorf(
+		"result doesn't match case <%s>:\nDiff:\n %v",
+		expected.title,
+		cmp.Diff(expected.fileMatch.Matches, result.Result.FileMatches[0].Matches))
 }
 
-func TestConextLinesMustBeValid(t *testing.T) {
+func TestContextLinesMustBeValid(t *testing.T) {
 	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
 		Name:     "name",
 		URL:      "repo-url",
