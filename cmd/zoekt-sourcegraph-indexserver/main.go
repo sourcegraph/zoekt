@@ -835,6 +835,8 @@ func main() {
 	if cpuCount < 1 {
 		cpuCount = 1
 	}
+	log.Printf("Using %d CPU cores.", cpuCount)
+
 	s := &Server{
 		Sourcegraph:     sg,
 		IndexDir:        *index,
