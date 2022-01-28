@@ -146,23 +146,24 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Unlock()
 }
 
-// MaybeRemoveMissing will remove all queue items not in ids. It will
-// heuristically not run to conserve resources and return -1. Otherwise it
-// will return the number of names removed from the queue.
+// MaybeRemoveMissing will remove all queue items not in ids and return the
+// number of names removed from the queue. It will heuristically not run to
+// conserve resources.
 //
 // In the server's steady state we expect that the list of names is equal to
 // the items in queue. As such in the steady state this function should do no
 // removals. Removal requires memory allocation and coarse locking. To avoid
 // that we use a heuristic which can falsely decide it doesn't need to
 // remove. However, we will converge onto removing items.
-func (q *Queue) MaybeRemoveMissing(ids []uint32) int {
+func (q *Queue) MaybeRemoveMissing(ids []uint32) uint {
 	q.mu.Lock()
 	sameSize := len(q.items) == len(ids)
 	q.mu.Unlock()
 
 	// heuristically skip expensive work
 	if sameSize {
-		return -1
+		debug.Printf("skipping MaybeRemoveMissing due to same size: %d", len(ids))
+		return 0
 	}
 
 	set := make(map[uint32]struct{}, len(ids))
@@ -173,7 +174,7 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	count := 0
+	var count uint
 	for _, item := range q.items {
 		if _, ok := set[item.opts.RepoID]; ok {
 			continue
