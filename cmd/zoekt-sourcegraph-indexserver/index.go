@@ -15,10 +15,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	"golang.org/x/sync/semaphore"
 )
 
 // IndexOptions are the options that Sourcegraph can set via it's search
@@ -76,6 +78,10 @@ type indexArgs struct {
 	// DownloadLimitMBPS is the maximum MB/s to use when downloading the
 	// archive.
 	DownloadLimitMBPS string
+}
+
+func TODOReplaceuseIncrementalFetching() bool {
+	return false
 }
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
@@ -162,20 +168,84 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 
 	fetchStart := time.Now()
 
-	// We shallow fetch each commit specified in zoekt.Branches. This requires
-	// the server to have configured both uploadpack.allowAnySHA1InWant and
-	// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
-	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
+	var gitFetch = func(commits ...string) error {
+
+		// We shallow fetch each commit specified in zoekt.Branches. This requires
+		// the server to have configured both uploadpack.allowAnySHA1InWant and
+		// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
+		args := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
+		args = append(args, commits...)
+
+		cmd = exec.CommandContext(ctx, "git", args...)
+		cmd.Stdin = &bytes.Buffer{}
+
+		return runCmd(cmd)
+	}
+
 	var commits []string
 	for _, b := range o.Branches {
 		commits = append(commits, b.Version)
 	}
-	fetchArgs = append(fetchArgs, commits...)
 
-	cmd = exec.CommandContext(ctx, "git", fetchArgs...)
-	cmd.Stdin = &bytes.Buffer{}
+	if TODOReplaceuseIncrementalFetching() {
+		// If we're incrementally fetching, we also need to fetch the git data
+		// for the commit that we most recently indexed (so that we can "git diff" later).
 
-	err = runCmd(cmd)
+		indexedCommits := make(map[string]struct{})
+
+		// walk through the metadata for the repository's shards
+		for _, fn := range buildOptions.FindAllShards() {
+			repos, _, err := zoekt.ReadMetadataPathAlive(fn)
+			if err != nil {
+				return fmt.Errorf("reading shard metadata from %q: %w", fn, err)
+			}
+
+			// extract all the branches from the metadata
+			for _, r := range repos {
+				if r.ID != o.RepoID {
+					// a compound shard has repos other than the one we're currently indexing -
+					// skip these
+					continue
+				}
+
+				for _, b := range r.Branches {
+					indexedCommits[b.Version] = struct{}{}
+				}
+			}
+		}
+
+		// Keegan brought up the point that we need to handle fetches of invalid commits
+		// (commits that the repo doesn't know about).
+		// If a single commit in "git fetch A B ..." is invalid, the whole fetch isn't performed.
+		// We still want to be able to proceed in this case, since zoekt-git-index can still recover by re-calculating the entire index from scratch.
+
+		// limit to 4 conccurent fetches at a time
+		// TODO: replace this with an option or env var
+		sem := semaphore.NewWeighted(4)
+
+		var wg sync.WaitGroup
+		for c, _ := range indexedCommits {
+			sem.Acquire(ctx, 1)
+			wg.Add(1)
+
+			go func(commit string) {
+				defer sem.Release(1)
+				defer wg.Done()
+
+				err := gitFetch(commit)
+				if err != nil {
+					log.Printf("failed to fetch ref %q for repo %q: %w", commit, o.Name, err)
+				}
+			}(c)
+		}
+		wg.Done()
+
+		// TODO: fix fetch metrics for incremental case
+		// TODO: consider whether we can make non-incremental and incremental fetching use same code path
+		// (e.g. issue one git fetch commend per commit - but we might want to turn that off)
+	}
+
+	err = gitFetch(commits...)
 	fetchDuration := time.Since(fetchStart)
 	if err != nil {
 		metricFetchDuration.WithLabelValues("false", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
@@ -191,6 +261,16 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		if ref != "HEAD" {
 			ref = "refs/heads/" + ref
 		}
+		// zoekt-git-index needs to be able to read the old shards on disk and be able to determine what has changed.
+		//
+		// assuming that we have the old commits in the local repository
+		// then zoekt-git-index can purely look as inputs:
+		// - the current shards => RepositoryBranches used to be
+		// - repository => RepositoryBranches should be
+		//
+		// zoekt-git-index can do git diff on repo
+		//
+		// current shards give them the commit hashes, so zoekt-git-index can find out the changed paths using that and the repository.
 		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "update-ref", ref, b.Version)
 		cmd.Stdin = &bytes.Buffer{}
 		if err := runCmd(cmd); err != nil {
