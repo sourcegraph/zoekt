@@ -238,7 +238,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 				}
 			}(c)
 		}
-		wg.Done()
+		wg.Wait()
 
 		// TODO: fix fetch metrics for incremental case
 		// TODO: consider whether we can make non-incremental and incremental fetching use same code path
