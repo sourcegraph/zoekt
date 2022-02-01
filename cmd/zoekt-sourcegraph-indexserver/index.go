@@ -15,12 +15,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
-	"golang.org/x/sync/semaphore"
 )
 
 // IndexOptions are the options that Sourcegraph can set via it's search
@@ -66,6 +64,9 @@ type indexArgs struct {
 	// Incremental indicates to skip indexing if already indexed.
 	Incremental bool
 
+	// EnableIncrementalFetching indicates whether the experimental incremental fetching logic is enabled.
+	EnableIncrementalFetching bool
+
 	// IndexDir is the index directory to store the shards.
 	IndexDir string
 
@@ -78,10 +79,6 @@ type indexArgs struct {
 	// DownloadLimitMBPS is the maximum MB/s to use when downloading the
 	// archive.
 	DownloadLimitMBPS string
-}
-
-func TODOReplaceuseIncrementalFetching() bool {
-	return false
 }
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
@@ -132,7 +129,43 @@ func (o *indexArgs) String() string {
 	return s
 }
 
-func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
+// TODO: Perhaps this should be a general function? I think all but
+// one of the call-sites of zoekt.ReadMetadataPath could be replaced with this.
+type repoMetadataSource interface {
+	// GetMetadata returns the repository metadata for the given build options,
+	// or nil if the metadata couldn't be found.
+	GetMetadata(o *build.Options) (*zoekt.Repository, error)
+}
+
+// TODO: should I just replace this with a function type?
+type shardSource struct{}
+
+func (*shardSource) GetMetadata(o *build.Options) (*zoekt.Repository, error) {
+	shardFiles := o.FindAllShards()
+	if len(shardFiles) == 0 {
+		return nil, nil
+	}
+
+	fn := shardFiles[0] // all shard files contain the same metadata, so the first one is fine.
+	repos, _, err := zoekt.ReadMetadataPath(fn)
+	if err != nil {
+		return nil, fmt.Errorf("reading shard metadata from %q: %w", fn, err)
+	}
+
+	for _, r := range repos {
+		// A compound shard has repositories other than the one we're currently indexing.
+		// Only return the metadata for the repository that we're looking for.
+		if r.ID == o.RepositoryDescription.ID {
+			return r, nil
+		}
+	}
+
+	// We didn't find a matching repository even though we found a matching shard.
+	// This should never happen.
+	return nil, fmt.Errorf("unable to find repository metadata even though we found a matching shard at %q", fn)
+}
+
+func gitIndex(o *indexArgs, metadataSource repoMetadataSource, runCmd func(*exec.Cmd) error) error {
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
 	}
@@ -166,10 +199,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		return err
 	}
 
-	fetchStart := time.Now()
-
 	var gitFetch = func(commits ...string) error {
-
 		// We shallow fetch each commit specified in zoekt.Branches. This requires
 		// the server to have configured both uploadpack.allowAnySHA1InWant and
 		// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
@@ -187,73 +217,65 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		commits = append(commits, b.Version)
 	}
 
-	if TODOReplaceuseIncrementalFetching() {
+	allFetchesSucceeded := true
+	totalFetchedCommits := 0
+	var totalFetchDuration time.Duration
+
+	if o.EnableIncrementalFetching {
 		// If we're incrementally fetching, we also need to fetch the git data
 		// for the commit that we most recently indexed (so that we can "git diff" later).
 
-		indexedCommits := make(map[string]struct{})
-
-		// walk through the metadata for the repository's shards
-		for _, fn := range buildOptions.FindAllShards() {
-			repos, _, err := zoekt.ReadMetadataPathAlive(fn)
-			if err != nil {
-				return fmt.Errorf("reading shard metadata from %q: %w", fn, err)
-			}
-
-			// extract all the branches from the metadata
-			for _, r := range repos {
-				if r.ID != o.RepoID {
-					// a compound shard has repos other than the one we're currently indexing -
-					// skip these
-					continue
-				}
-
-				for _, b := range r.Branches {
-					indexedCommits[b.Version] = struct{}{}
+		metadata, err := metadataSource.GetMetadata(o.BuildOptions())
+		if err != nil {
+			log.Printf("failed to get repository metadata: %s", err)
+		} else {
+			var indexedCommits []string
+			if metadata != nil {
+				for _, b := range metadata.Branches {
+					indexedCommits = append(indexedCommits, b.Version)
 				}
 			}
-		}
 
-		// Keegan brought up the point that we need to handle fetches of invalid commits
-		// (commits that the repo doesn't know about).
-		// If a single commit in "git fetch A B ..." is invalid, the whole fetch isn't performed.
-		// We still want to be able to proceed in this case, since zoekt-git-index can still recover by re-calculating the entire index from scratch.
+			// We need to handle fetches of invalid commits (commits that the remote doesn't know about).
+			// When running, "git fetch A B ...", the whole fetch isn't performed if a single commit is invalid.
+			//
+			// We still want to be able to proceed in this case, since zoekt-git-index can still recover by
+			// re-calculating the entire index from scratch. Therefore, we fetch these previously indexed commits separately
+			// from the new commits. Unlike the fetches for the new commits, we don't fail outright if we can't fetch
+			// these old ones.
 
-		// limit to 4 conccurent fetches at a time
-		// TODO: replace this with an option or env var
-		sem := semaphore.NewWeighted(4)
+			// TODO: we can parallelize these fetches if necessary, but I thought it'd be
+			// simpler to do this sequentially at first.
+			for _, c := range indexedCommits {
+				start := time.Now()
 
-		var wg sync.WaitGroup
-		for c, _ := range indexedCommits {
-			sem.Acquire(ctx, 1)
-			wg.Add(1)
-
-			go func(commit string) {
-				defer sem.Release(1)
-				defer wg.Done()
-
-				err := gitFetch(commit)
+				err := gitFetch(c)
 				if err != nil {
-					log.Printf("failed to fetch ref %q for repo %q: %w", commit, o.Name, err)
+					allFetchesSucceeded = false
+					log.Printf("failed to fetch commit %q for repo %q: %s", c, o.Name, err)
 				}
-			}(c)
+
+				totalFetchDuration += time.Since(start)
+				totalFetchedCommits++
+			}
 		}
-		wg.Wait()
 
-		// TODO: fix fetch metrics for incremental case
-		// TODO: consider whether we can make non-incremental and incremental fetching use same code path
-		// (e.g. issue one git fetch commend per commit - but we might want to turn that off)
 	}
 
+	// fetch new requested commits from IndexArgs
+	fetchStart := time.Now()
 	err = gitFetch(commits...)
-	fetchDuration := time.Since(fetchStart)
+
+	totalFetchDuration += time.Since(fetchStart)
+	totalFetchedCommits += len(commits)
+	allFetchesSucceeded = allFetchesSucceeded && (err == nil)
+
+	metricFetchDuration.WithLabelValues(strconv.FormatBool(allFetchesSucceeded), repoNameForMetric(o.Name)).Observe(totalFetchDuration.Seconds())
 	if err != nil {
-		metricFetchDuration.WithLabelValues("false", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
-		return err
+		return fmt.Errorf("fetching git data for commits %s: %w", strings.Join(commits, ", "), err)
 	}
 
-	metricFetchDuration.WithLabelValues("true", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
-	debug.Printf("fetched git data for %q (%d commit(s)) in %s", o.Name, len(commits), fetchDuration)
+	debug.Printf("fetched git data for %q (%d commit(s)) in %s", o.Name, totalFetchedCommits, totalFetchDuration)
 
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {

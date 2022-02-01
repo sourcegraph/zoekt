@@ -491,7 +491,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 	runCmd := func(cmd *exec.Cmd) error { return s.loggedRun(tr, cmd) }
 	metricIndexingTotal.Inc()
-	return indexStateSuccess, gitIndex(args, runCmd)
+	return indexStateSuccess, gitIndex(args, &shardSource{}, runCmd)
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {

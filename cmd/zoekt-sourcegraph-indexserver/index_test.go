@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/google/zoekt/build"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -107,9 +108,10 @@ func TestGetIndexOptions(t *testing.T) {
 
 func TestIndex(t *testing.T) {
 	cases := []struct {
-		name string
-		args indexArgs
-		want []string
+		name           string
+		args           indexArgs
+		metadataSource repoMetadataSource
+		want           []string
 	}{{
 		name: "minimal",
 		args: indexArgs{
@@ -152,6 +154,37 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 123",
 			"zoekt-git-index -submodules=false -branches HEAD -disable_ctags $TMPDIR/test%2Frepo.git",
+		},
+	}, {
+		name: "experimental-incremental-fetching",
+		args: indexArgs{
+			IndexOptions: IndexOptions{
+				Name:     "test/repo",
+				CloneURL: "http://api.test/.internal/git/test/repo",
+				Branches: []zoekt.RepositoryBranch{{Name: "main", Version: "deadbeef"}},
+				RepoID:   123,
+			},
+			EnableIncrementalFetching: true,
+		},
+		metadataSource: &testMetadataSource{
+			fakeMetadata: &zoekt.Repository{
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "main", Version: "deadc0de"},
+				},
+			},
+		},
+		want: []string{
+			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadc0de",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/main deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 123",
+			"zoekt-git-index -submodules=false -branches main -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}, {
 		name: "all",
@@ -199,7 +232,12 @@ func TestIndex(t *testing.T) {
 				return nil
 			}
 
-			if err := gitIndex(&tc.args, runCmd); err != nil {
+			var metadataSource repoMetadataSource = &testMetadataSource{}
+			if tc.metadataSource != nil {
+				metadataSource = tc.metadataSource
+			}
+
+			if err := gitIndex(&tc.args, metadataSource, runCmd); err != nil {
 				t.Fatal(err)
 			}
 			if !cmp.Equal(got, tc.want) {
@@ -207,6 +245,14 @@ func TestIndex(t *testing.T) {
 			}
 		})
 	}
+}
+
+type testMetadataSource struct {
+	fakeMetadata *zoekt.Repository
+}
+
+func (t *testMetadataSource) GetMetadata(o *build.Options) (*zoekt.Repository, error) {
+	return t.fakeMetadata, nil
 }
 
 var splitargs = cmpopts.AcyclicTransformer("splitargs", func(cmd string) []string {
