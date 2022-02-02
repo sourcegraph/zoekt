@@ -16,6 +16,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ import (
 func main() {
 	allowMissing := flag.Bool("allow_missing_branches", false, "allow missing branches.")
 	submodules := flag.Bool("submodules", true, "if set to false, do not recurse into submodules")
-	branchesStr := flag.String("branches", "HEAD", "git branches to index.")
+	branchesStr := flag.String("branches", "HEAD", "comma separated list of branch names (ex: HEAD,main) or commit ranges (ex: deadbeef..HEAD) to index.")
 	branchPrefix := flag.String("prefix", "refs/heads/", "prefix for branch names")
 
 	incremental := flag.Bool("incremental", true, "only index changed repositories")
@@ -50,9 +51,14 @@ func main() {
 	}
 	opts := cmd.OptionsFromFlags()
 
-	var branches []string
+	var branches []gitindex.Branch
 	if *branchesStr != "" {
-		branches = strings.Split(*branchesStr, ",")
+		bs, err := parseBranchString(*branchesStr)
+		if err != nil {
+			log.Fatalf("failed to parse 'branches' argument %q: %s", bs, err)
+		}
+
+		branches = bs
 	}
 
 	gitRepos := map[string]string{}
@@ -93,4 +99,40 @@ func main() {
 		}
 	}
 	os.Exit(exitStatus)
+}
+
+func parseBranchString(s string) ([]gitindex.Branch, error) {
+	var out []gitindex.Branch
+
+	for _, b := range strings.Split(s, ",") {
+		if b == "" {
+			continue
+		}
+
+		var priorCommit string
+		var name string
+
+		parts := strings.Split(b, "..")
+
+		switch len(parts) {
+		case 1:
+			name = parts[0]
+		case 2:
+			priorCommit = parts[0]
+			name = parts[1]
+		default:
+			return nil, fmt.Errorf("expected 1 or 2 parts when splitting %q, got: %d", b, len(parts))
+		}
+
+		if name == "" {
+			return nil, fmt.Errorf("%q has no branch name", b)
+		}
+
+		out = append(out, gitindex.Branch{
+			Name:        name,
+			PriorCommit: priorCommit,
+		})
+	}
+
+	return out, nil
 }

@@ -297,7 +297,18 @@ type Options struct {
 	BranchPrefix string
 
 	// List of branch names to index, e.g. []string{"HEAD", "stable"}
-	Branches []string
+	Branches []Branch
+}
+
+// Branch represents a branch that should be indexed
+type Branch struct {
+	// Name is the name of the branch (e.g. "HEAD", "stable")
+	Name string
+
+	// PriorCommit, if defined, is the commit should be used as a comparison
+	// point with "Name" to see what files have been changed.
+	// TODO: This isn't referenced anywhere at the moment.
+	PriorCommit string
 }
 
 func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string, error) {
@@ -381,7 +392,12 @@ func IndexGitRepo(opts Options) error {
 	// Branch => Repo => SHA1
 	branchVersions := map[string]map[string]plumbing.Hash{}
 
-	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
+	var branchNames []string
+	for _, b := range opts.Branches {
+		branchNames = append(branchNames, b.Name)
+	}
+
+	branches, err := expandBranches(repo, branchNames, opts.BranchPrefix)
 	if err != nil {
 		return fmt.Errorf("expandBranches: %w", err)
 	}
