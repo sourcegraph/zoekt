@@ -738,6 +738,9 @@ func observeMetrics(sr *zoekt.SearchResult) {
 }
 
 func copySlice(src *[]byte) {
+	if src == nil {
+		return
+	}
 	dst := make([]byte, len(*src))
 	copy(dst, *src)
 	*src = dst

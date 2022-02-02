@@ -213,6 +213,11 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 		finalMatch.Line = data[lineStart:lineEnd]
 
 		if numContextLines > 0 {
+			// Why "-2"?
+			// "num" is 1-based, and "p.newlines()" returns an array of "\n" positions in the doc.
+			// If we do "num-1" then high will be the index of the "\n" where the matched line ends
+			// which is not what we want.
+			// We want the index of the "\n" where the matched line begins so we "num-2" to get that.
 			finalMatch.Before = getLines(
 				data, p.newlines(), num-numContextLines-2, num-2)
 			finalMatch.After = getLines(
