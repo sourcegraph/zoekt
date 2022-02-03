@@ -311,53 +311,47 @@ type Branch struct {
 	PriorCommit string
 }
 
-func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string, error) {
-	var result []string
+func expandWildcards(repo *git.Repository, bs []Branch, prefix string) ([]Branch, error) {
+	var result []Branch
 	for _, b := range bs {
-		// Sourcegraph: We disable resolving refs. We want to return the exact ref
-		// requested so we can match it up.
-		if b == "HEAD" && false {
-			ref, err := repo.Head()
+		if !strings.Contains(b.Name, "*") {
+			result = append(result, b)
+			continue
+		}
+
+		iter, err := repo.Branches()
+		if err != nil {
+			return nil, err
+		}
+
+		defer iter.Close()
+		for {
+			ref, err := iter.Next()
+			if err == io.EOF {
+				break
+			}
 			if err != nil {
 				return nil, err
 			}
 
-			result = append(result, strings.TrimPrefix(ref.Name().String(), prefix))
-			continue
-		}
-
-		if strings.Contains(b, "*") {
-			iter, err := repo.Branches()
-			if err != nil {
+			name := ref.Name().Short()
+			if matched, err := filepath.Match(b.Name, name); err != nil {
 				return nil, err
+			} else if !matched {
+				continue
 			}
 
-			defer iter.Close()
-			for {
-				ref, err := iter.Next()
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					return nil, err
-				}
-
-				name := ref.Name().Short()
-				if matched, err := filepath.Match(b, name); err != nil {
-					return nil, err
-				} else if !matched {
-					continue
-				}
-
-				result = append(result, strings.TrimPrefix(name, prefix))
-			}
-			continue
+			name = strings.TrimPrefix(name, prefix)
+			result = append(result, Branch{
+				Name:        name,
+				PriorCommit: b.PriorCommit})
 		}
-
-		result = append(result, b)
 	}
-
 	return result, nil
+}
+
+func newDiffMatcher(sha1 string, tree git.Tree) {
+	
 }
 
 // IndexGitRepo indexes the git repository as specified by the options.
@@ -397,12 +391,12 @@ func IndexGitRepo(opts Options) error {
 		branchNames = append(branchNames, b.Name)
 	}
 
-	branches, err := expandBranches(repo, branchNames, opts.BranchPrefix)
+	branches, err := expandWildcards(repo, opts.Branches, opts.BranchPrefix)
 	if err != nil {
-		return fmt.Errorf("expandBranches: %w", err)
+		return fmt.Errorf("expandWildcards: %w", err)
 	}
 	for _, b := range branches {
-		commit, err := getCommit(repo, opts.BranchPrefix, b)
+		commit, err := getCommit(repo, opts.BranchPrefix, b.Name)
 		if err != nil {
 			if opts.AllowMissingBranch && err.Error() == "reference not found" {
 				continue
@@ -412,7 +406,7 @@ func IndexGitRepo(opts Options) error {
 		}
 
 		opts.BuildOptions.RepositoryDescription.Branches = append(opts.BuildOptions.RepositoryDescription.Branches, zoekt.RepositoryBranch{
-			Name:    b,
+			Name:    b.Name,
 			Version: commit.Hash.String(),
 		})
 
@@ -430,6 +424,11 @@ func IndexGitRepo(opts Options) error {
 			return fmt.Errorf("newIgnoreMatcher: %w", err)
 		}
 
+		df, err := newDiffMatcher(prevCommit, tree)
+		if err!=nil {
+			return fmt.Errorf("newDiffMatcher")
+		}
+
 		files, subVersions, err := TreeToFiles(repo, tree, opts.BuildOptions.RepositoryDescription.URL, repoCache)
 		if err != nil {
 			return fmt.Errorf("TreeToFiles: %w", err)
@@ -438,11 +437,12 @@ func IndexGitRepo(opts Options) error {
 			if ig.Match(k.Path) {
 				continue
 			}
+			if
 			repos[k] = v
-			branchMap[k] = append(branchMap[k], b)
+			branchMap[k] = append(branchMap[k], b.Name)
 		}
 
-		branchVersions[b] = subVersions
+		branchVersions[b.Name] = subVersions
 	}
 
 	if opts.Incremental && opts.BuildOptions.IncrementalSkipIndexing() {
