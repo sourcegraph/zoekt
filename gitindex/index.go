@@ -350,8 +350,57 @@ func expandWildcards(repo *git.Repository, bs []Branch, prefix string) ([]Branch
 	return result, nil
 }
 
-func newDiffMatcher(sha1 string, tree git.Tree) {
-	
+// diffMatcher is a map of file paths to their modification status
+type diffMatcher map[string]mod
+
+type mod uint8
+
+const (
+	fileAdded mod = iota
+	fileModified
+	fileDeleted
+)
+
+// NewDiffMatcher returns a diffMatcher based on two commits.
+func (df *diffMatcher) NewDiffMatcher(old, new object.Commit) (diffMatcher, error) {
+	oldTree, err := old.Tree()
+	if err != nil {
+		return diffMatcher{}, fmt.Errorf("generating worktree for old commit %s: %w", old, err)
+	}
+	newTree, err := new.Tree()
+	if err != nil {
+		return diffMatcher{}, fmt.Errorf("generating worktree for new commit %s: %w", new, err)
+	}
+
+	changes, err := oldTree.Diff(newTree)
+	if err != nil {
+		return diffMatcher{}, fmt.Errorf("calculating diff: %w", err)
+	}
+
+	p, err := changes.Patch()
+	if err != nil {
+		return diffMatcher{}, fmt.Errorf("generating patch object: %w", err)
+	}
+
+	diff := make(map[string]mod)
+
+	for _, p := range p.FilePatches() {
+		oldFile, newFile := p.Files()
+
+		if oldFile == nil {
+			diff[newFile.Path()] = fileAdded
+			continue
+		}
+
+		if newFile == nil {
+			diff[newFile.Path()] = fileDeleted
+			continue
+		}
+
+		diff[newFile.Path()] = fileModified
+	}
+
+	return diff, nil
 }
 
 // IndexGitRepo indexes the git repository as specified by the options.
@@ -396,7 +445,7 @@ func IndexGitRepo(opts Options) error {
 		return fmt.Errorf("expandWildcards: %w", err)
 	}
 	for _, b := range branches {
-		commit, err := getCommit(repo, opts.BranchPrefix, b.Name)
+		latestCommit, err := getCommit(repo, opts.BranchPrefix, b.Name)
 		if err != nil {
 			if opts.AllowMissingBranch && err.Error() == "reference not found" {
 				continue
@@ -407,16 +456,16 @@ func IndexGitRepo(opts Options) error {
 
 		opts.BuildOptions.RepositoryDescription.Branches = append(opts.BuildOptions.RepositoryDescription.Branches, zoekt.RepositoryBranch{
 			Name:    b.Name,
-			Version: commit.Hash.String(),
+			Version: latestCommit.Hash.String(),
 		})
 
-		if when := commit.Committer.When; when.After(opts.BuildOptions.RepositoryDescription.LatestCommitDate) {
+		if when := latestCommit.Committer.When; when.After(opts.BuildOptions.RepositoryDescription.LatestCommitDate) {
 			opts.BuildOptions.RepositoryDescription.LatestCommitDate = when
 		}
 
-		tree, err := commit.Tree()
+		tree, err := latestCommit.Tree()
 		if err != nil {
-			return fmt.Errorf("commit.Tree: %w", err)
+			return fmt.Errorf("latestCommit.Tree: %w", err)
 		}
 
 		ig, err := newIgnoreMatcher(tree)
@@ -424,8 +473,17 @@ func IndexGitRepo(opts Options) error {
 			return fmt.Errorf("newIgnoreMatcher: %w", err)
 		}
 
+		df := make(diffMatcher)
+
+		if b.PriorCommit != "" {
+			oldCommit, err := getCommit(repo, "", b.PriorCommit)
+			if err != nil {
+				return fmt.Errorf("getting commit object for priorCommit %q: %w", b.PriorCommit, err)
+			}
+		}
+
 		df, err := newDiffMatcher(prevCommit, tree)
-		if err!=nil {
+		if err != nil {
 			return fmt.Errorf("newDiffMatcher")
 		}
 
@@ -437,7 +495,11 @@ func IndexGitRepo(opts Options) error {
 			if ig.Match(k.Path) {
 				continue
 			}
-			if
+			if df.Match(k.Path) {
+				// do things
+				log.Printf("diff containts %q", k.Path)
+				continue
+			}
 			repos[k] = v
 			branchMap[k] = append(branchMap[k], b.Name)
 		}
