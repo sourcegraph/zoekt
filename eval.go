@@ -242,6 +242,10 @@ nextFileMatch:
 				continue
 			}
 
+			if d.fileTombstones[nextDoc] {
+				continue
+			}
+
 			// Skip documents over ShardRepoMaxMatchCount if specified.
 			if opts.ShardRepoMaxMatchCount > 0 {
 				if repoMatchCount >= opts.ShardRepoMaxMatchCount && d.repos[nextDoc] == lastRepoID {

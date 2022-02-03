@@ -68,6 +68,8 @@ type indexData struct {
 
 	fileBranchMasks []uint64
 
+	fileTombstones []bool
+
 	// mask (power of 2) => name
 	branchNames []map[uint]string
 

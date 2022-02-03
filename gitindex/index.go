@@ -361,8 +361,8 @@ const (
 	fileDeleted
 )
 
-// NewDiffMatcher returns a diffMatcher based on two commits.
-func (df *diffMatcher) NewDiffMatcher(old, new object.Commit) (diffMatcher, error) {
+// newDiffMatcher returns a diffMatcher based on two commits.
+func newDiffMatcher(old, new *object.Commit) (diffMatcher, error) {
 	oldTree, err := old.Tree()
 	if err != nil {
 		return diffMatcher{}, fmt.Errorf("generating worktree for old commit %s: %w", old, err)
@@ -480,11 +480,10 @@ func IndexGitRepo(opts Options) error {
 			if err != nil {
 				return fmt.Errorf("getting commit object for priorCommit %q: %w", b.PriorCommit, err)
 			}
-		}
-
-		df, err := newDiffMatcher(prevCommit, tree)
-		if err != nil {
-			return fmt.Errorf("newDiffMatcher")
+			df, err = newDiffMatcher(oldCommit, latestCommit)
+			if err != nil {
+				return fmt.Errorf("newDiffMatcher: %w", err)
+			}
 		}
 
 		files, subVersions, err := TreeToFiles(repo, tree, opts.BuildOptions.RepositoryDescription.URL, repoCache)
@@ -495,11 +494,25 @@ func IndexGitRepo(opts Options) error {
 			if ig.Match(k.Path) {
 				continue
 			}
-			if df.Match(k.Path) {
-				// do things
-				log.Printf("diff containts %q", k.Path)
-				continue
+
+			if b.PriorCommit != "" {
+				m, ok := df[k.Path]
+
+				if !ok {
+					// file didn't change
+					continue
+				}
+
+				switch m {
+				case fileAdded, fileModified:
+				case fileDeleted:
+					continue
+				}
 			}
+
+			// TODO: Set shard counter properly
+			// TODO: Tombstone files
+			//
 			repos[k] = v
 			branchMap[k] = append(branchMap[k], b.Name)
 		}
