@@ -629,7 +629,7 @@ func checkResultMatches(t *testing.T, ts *httptest.Server, req string, expected 
 	}
 
 	if len(result.Result.FileMatches) != 1 {
-		t.Fatal("Expected search to return just one result")
+		t.Fatalf("Expected search to return just one result but it was %d", len(result.Result.FileMatches))
 	}
 	match := result.Result.FileMatches[0]
 	if match.FileName == expected.fileMatch.FileName && match.Repo == expected.fileMatch.Repo {

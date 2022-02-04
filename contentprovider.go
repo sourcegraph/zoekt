@@ -213,15 +213,8 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 		finalMatch.Line = data[lineStart:lineEnd]
 
 		if numContextLines > 0 {
-			// Why "-2"?
-			// "num" is 1-based, and "p.newlines()" returns an array of "\n" positions in the doc.
-			// If we do "num-1" then high will be the index of the "\n" where the matched line ends
-			// which is not what we want.
-			// We want the index of the "\n" where the matched line begins so we "num-2" to get that.
-			finalMatch.Before = getLines(
-				data, p.newlines(), num-numContextLines-2, num-2)
-			finalMatch.After = getLines(
-				data, p.newlines(), num-1, num+numContextLines-1)
+			finalMatch.Before = getLines(data, p.newlines(), num-numContextLines, num)
+			finalMatch.After = getLines(data, p.newlines(), num+1, num+1+numContextLines)
 		}
 
 		for _, m := range lineCands {
@@ -246,8 +239,14 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 	return result
 }
 
+// getLines returns a slice of data containing the lines [low, high).
+// low is 1-based and inclusive. high is exclusive.
 func getLines(data []byte, newLines []uint32, low, high int) []byte {
-	if high < 0 || low >= len(newLines) || len(newLines) == 0 {
+	// newlines[0] is the start of the 2nd line in data.
+	// So adjust low and high to be based on newLines.
+	low -= 2
+	high -= 2
+	if low >= high || high < 0 || low >= len(newLines) || len(newLines) == 0 {
 		return nil
 	}
 
