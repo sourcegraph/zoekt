@@ -737,7 +737,9 @@ func main() {
 	dbg := flag.Bool("debug", srcLogLevelIsDebug(), "turn on more verbose logging.")
 
 	// non daemon mode for debugging/testing
+	debugFind := flag.String("debug-find", "", "find a shard by repo name.")
 	debugList := flag.Bool("debug-list", false, "do not start the indexserver, rather list the repositories owned by this indexserver then quit.")
+	debugListIndexed := flag.Bool("debug-list-indexed", false, "do not start the indexserver, rather list the repositories indexed by this indexserver then quit.")
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repository ID then quit.")
 	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
 	debugMeta := flag.String("debug-meta", "", "do not start the indexserver, rather print shard metadata then quit.")
@@ -778,7 +780,7 @@ func main() {
 		}
 	}
 
-	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != "" || *debugMerge
+	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != "" || *debugMerge || *debugFind != "" || *debugListIndexed
 
 	if err := setupTmpDir(*index, !isDebugCmd); err != nil {
 		log.Fatalf("failed to setup TMPDIR under %s: %v", *index, err)
@@ -855,6 +857,27 @@ func main() {
 		for _, r := range repos.IDs {
 			fmt.Println(r)
 		}
+		os.Exit(0)
+	}
+
+	if *debugListIndexed {
+		indexed := listIndexed(s.IndexDir)
+		for _, r := range indexed {
+			fmt.Println(r)
+		}
+		os.Exit(0)
+	}
+
+	if *debugFind != "" {
+		args := indexArgs{
+			IndexOptions: IndexOptions{
+				Name: *debugFind,
+			},
+			IndexDir: *index,
+		}
+		bo := args.BuildOptions()
+		shards := bo.FindAllShards()
+		fmt.Printf("shards=%+v\n", shards)
 		os.Exit(0)
 	}
 
