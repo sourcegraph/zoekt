@@ -372,6 +372,12 @@ func newDiffMatcher(old, new *object.Commit) (diffMatcher, error) {
 		return diffMatcher{}, fmt.Errorf("generating worktree for new commit %s: %w", new, err)
 	}
 
+	// TODO: What happens if old > new or they have completely different histories?
+	// This can happen from an error or from a force push.
+	// Need to check what the behavior of "diff" is in this case. Ideally,
+	// we'd always check that b.PriorCommit is _always_ the last commit that we
+	// actually indexed. Otherwise, we reindex from scratch.
+
 	changes, err := oldTree.Diff(newTree)
 	if err != nil {
 		return diffMatcher{}, fmt.Errorf("calculating diff: %w", err)
@@ -496,23 +502,23 @@ func IndexGitRepo(opts Options) error {
 			}
 
 			if b.PriorCommit != "" {
-				m, ok := df[k.Path]
+				opts.BuildOptions.IsDelta = true
+
+				status, ok := df[k.Path]
 
 				if !ok {
-					// file didn't change
+					// file hasn't changed since the prior commit
 					continue
 				}
 
-				switch m {
+				switch status {
 				case fileAdded, fileModified:
 				case fileDeleted:
 					continue
 				}
 			}
 
-			// TODO: Set shard counter properly
 			// TODO: Tombstone files
-			//
 			repos[k] = v
 			branchMap[k] = append(branchMap[k], b.Name)
 		}
@@ -555,7 +561,7 @@ func IndexGitRepo(opts Options) error {
 		return fmt.Errorf("build.NewBuilder: %w", err)
 	}
 	// we don't need to check error, since we either already have an error, or
-	// we returning the first call to builder.Finish.
+	// we are returning the first call to builder.Finish.
 	defer builder.Finish() // nolint:errcheck
 
 	var names []string

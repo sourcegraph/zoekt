@@ -80,6 +80,10 @@ type Options struct {
 	// DisableCTags disables the generation of ctags metadata.
 	DisableCTags bool
 
+	// IsDelta is true if this run contains only the changed documents since the
+	// last run.
+	IsDelta bool
+
 	// Path to exuberant ctags binary to run
 	CTags string
 
@@ -471,6 +475,14 @@ func NewBuilder(opts Options) (*Builder, error) {
 		MaxBackups: 5,
 	}
 
+	if opts.IsDelta {
+		// if we're a delta shard, we continue the shard numbering
+		// from where we left off before so that all the shards are
+		// together as a set
+		shards := b.opts.FindAllShards()
+		b.nextShardNum = len(shards) // shards are zero indexed, so len() provides the next number after the last one
+	}
+
 	if _, err := b.newShardBuilder(); err != nil {
 		return nil, err
 	}
@@ -549,14 +561,19 @@ func (b *Builder) Finish() error {
 	// Collect a map of the old shards on disk. For each new shard we replace we
 	// delete it from toDelete. Anything remaining in toDelete will be removed
 	// after we have renamed everything into place.
-	toDelete := map[string]struct{}{}
-	for _, name := range b.opts.FindAllShards() {
-		paths, err := zoekt.IndexFilePaths(name)
-		if err != nil {
-			b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
-		}
-		for _, p := range paths {
-			toDelete[p] = struct{}{}
+
+	var toDelete map[string]struct{}
+	if !b.opts.IsDelta {
+		// non-delta shards replace all the old shards, delta shards only add new shards
+		toDelete = make(map[string]struct{})
+		for _, name := range b.opts.FindAllShards() {
+			paths, err := zoekt.IndexFilePaths(name)
+			if err != nil {
+				b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
+			}
+			for _, p := range paths {
+				toDelete[p] = struct{}{}
+			}
 		}
 	}
 
