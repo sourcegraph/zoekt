@@ -465,12 +465,12 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	if args.Incremental {
 		bo := args.BuildOptions()
 		bo.SetDefaults()
-		incrementalState := bo.IndexState()
+		incrementalState, fn := bo.IndexState()
 		reason = string(incrementalState)
 		metricIndexIncrementalIndexState.WithLabelValues(string(incrementalState)).Inc()
 		switch incrementalState {
 		case build.IndexStateEqual:
-			debug.Printf("%s index already up to date", args.String())
+			debug.Printf("%s index already up to date. Shard=%s", args.String(), fn)
 			return indexStateNoop, nil
 
 		case build.IndexStateMeta:

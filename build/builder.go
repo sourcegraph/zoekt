@@ -308,28 +308,29 @@ var readVersions = []struct {
 // IncrementalSkipIndexing returns true if the index present on disk matches
 // the build options.
 func (o *Options) IncrementalSkipIndexing() bool {
-	return o.IndexState() == IndexStateEqual
+	state, _ := o.IndexState()
+	return state == IndexStateEqual
 }
 
 // IndexState checks how the index present on disk compares to the build
-// options.
-func (o *Options) IndexState() IndexState {
+// options and returns the IndexState and the name of the first shard.
+func (o *Options) IndexState() (IndexState, string) {
 	// Open the latest version we support that is on disk.
 	fn := o.findShard()
 	if fn == "" {
-		return IndexStateMissing
+		return IndexStateMissing, fn
 	}
 
 	repos, index, err := zoekt.ReadMetadataPathAlive(fn)
 	if os.IsNotExist(err) {
-		return IndexStateMissing
+		return IndexStateMissing, fn
 	} else if err != nil {
-		return IndexStateCorrupt
+		return IndexStateCorrupt, fn
 	}
 
 	for _, v := range readVersions {
 		if v.IndexFormatVersion == index.IndexFormatVersion && v.FeatureVersion != index.IndexFeatureVersion {
-			return IndexStateVersion
+			return IndexStateVersion, fn
 		}
 	}
 
@@ -342,15 +343,15 @@ func (o *Options) IndexState() IndexState {
 	}
 
 	if repo == nil {
-		return IndexStateCorrupt
+		return IndexStateCorrupt, fn
 	}
 
 	if repo.IndexOptions != o.HashOptions() {
-		return IndexStateOption
+		return IndexStateOption, fn
 	}
 
 	if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
-		return IndexStateContent
+		return IndexStateContent, fn
 	}
 
 	// We can mutate repo since it lives in the scope of this function call.
@@ -358,12 +359,12 @@ func (o *Options) IndexState() IndexState {
 		// non-nil err means we are trying to update an immutable field =>
 		// reindex content.
 		log.Printf("warn: immutable field changed, requires re-index: %s", err)
-		return IndexStateContent
+		return IndexStateContent, fn
 	} else if updated {
-		return IndexStateMeta
+		return IndexStateMeta, fn
 	}
 
-	return IndexStateEqual
+	return IndexStateEqual, fn
 }
 
 func (o *Options) findShard() string {
