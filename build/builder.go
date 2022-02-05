@@ -366,6 +366,35 @@ func (o *Options) IndexState() IndexState {
 	return IndexStateEqual
 }
 
+// RepositoryMetadata returns the index metadata for the repository specified in the options, or
+// nil if the metadata couldn't be found.
+func (o *Options) RepositoryMetadata() (*zoekt.Repository, error) {
+	shard := o.findShard()
+	if shard == "" {
+		return nil, nil
+	}
+
+	repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+	if err != nil {
+		return nil, fmt.Errorf("reading metadata for shard %q: %w", shard, err)
+	}
+
+	ID := o.RepositoryDescription.ID
+	for _, r := range repositories {
+		// compound shards contain multiple repositories, so we
+		// have to pick only the one we're looking for
+		if r.ID == ID {
+			return r, nil
+		}
+	}
+
+	// If we're here, then we're somehow in a state where we found a matching
+	// shard that's missing the repository metadata we're looking for. This
+	// should never happen.
+	name := o.RepositoryDescription.Name
+	return nil, fmt.Errorf("matching shard %q doesn't contain metadata for repo id %d (%q)", shard, ID, name)
+}
+
 func (o *Options) findShard() string {
 	for _, v := range readVersions {
 		fn := o.shardNameVersion(v.IndexFormatVersion, 0)
