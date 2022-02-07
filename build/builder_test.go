@@ -2,10 +2,13 @@ package build
 
 import (
 	"flag"
+	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -229,4 +232,182 @@ func TestDontCountContentOfSkippedFiles(t *testing.T) {
 	if b.size >= 100 {
 		t.Fatalf("content of skipped documents should not count towards shard size thresold")
 	}
+}
+
+func TestOptions_FindAllShards(t *testing.T) {
+
+	type fields struct {
+		IndexDir              string
+		SizeMax               int
+		Parallelism           int
+		ShardMax              int
+		TrigramMax            int
+		RepositoryDescription zoekt.Repository
+		SubRepositories       map[string]*zoekt.Repository
+		DisableCTags          bool
+		CTags                 string
+		CTagsMustSucceed      bool
+		MemProfile            string
+		LargeFiles            []string
+	}
+	tests := []struct {
+		name                    string
+		fields                  fields
+		normalShardRepositories []zoekt.Repository
+		compoundShards          [][]zoekt.Repository
+		expectedShardCount      int
+		expectedRepository      zoekt.Repository
+	}{
+		{
+			name: "single normal shard",
+			normalShardRepositories: []zoekt.Repository{
+				{Name: "repoA", ID: 1},
+			},
+			expectedShardCount: 1,
+			expectedRepository: zoekt.Repository{Name: "repoA", ID: 1},
+		},
+		{
+			name: "single compound shard",
+			compoundShards: [][]zoekt.Repository{
+				{
+					{Name: "repoA", ID: 1},
+					{Name: "repoB", ID: 2},
+					{Name: "repoC", ID: 3},
+				},
+			},
+			expectedShardCount: 1,
+			expectedRepository: zoekt.Repository{Name: "repoB", ID: 2},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			indexDir := t.TempDir()
+
+			for _, r := range tt.normalShardRepositories {
+				createTestShard(t, indexDir, r)
+			}
+
+			for _, repositoryGroup := range tt.compoundShards {
+				createTestCompoundShard(t, indexDir, repositoryGroup)
+			}
+
+			o := &Options{
+				IndexDir:              indexDir,
+				RepositoryDescription: tt.expectedRepository,
+			}
+			o.SetDefaults()
+
+			shards := o.FindAllShards()
+			if len(shards) != tt.expectedShardCount {
+				t.Fatalf("expected %d shard(s), received %d shard(s)", tt.expectedShardCount, len(shards))
+			}
+
+			if tt.expectedShardCount > 0 {
+				for _, s := range shards {
+					// all shards should contain the metadata for the desired repository
+					repos, _, err := zoekt.ReadMetadataPathAlive(s)
+					if err != nil {
+						t.Fatalf("reading metadata from shard %q: %s", s, err)
+					}
+
+					foundRepository := false
+					for _, r := range repos {
+						if r.ID == tt.expectedRepository.ID {
+							foundRepository = true
+							break
+						}
+					}
+
+					if !foundRepository {
+						t.Errorf("shard %q doesn't contain metadata for repository %d", s, tt.expectedRepository.ID)
+					}
+				}
+			}
+		})
+	}
+}
+
+func createTestShard(t *testing.T, indexDir string, r zoekt.Repository) {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(indexDir), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	o := Options{
+		IndexDir:              indexDir,
+		RepositoryDescription: r,
+	}
+	o.SetDefaults()
+
+	b, err := NewBuilder(o)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+
+	if err := b.Finish(); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+}
+
+func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt.Repository) {
+	t.Helper()
+
+	// create a stash space to create normal shards in
+	normalShardIndexDir := t.TempDir()
+
+	for _, r := range repositories {
+		createTestShard(t, normalShardIndexDir, r)
+	}
+
+	var shardNames []string
+
+	// walk through stash space to discover
+	// file names for all the normal shards we created
+	err := fs.WalkDir(os.DirFS(normalShardIndexDir), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("processing %q: %s", path, err)
+		}
+
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".zoekt") {
+			return nil
+		}
+
+		shardNames = append(shardNames, filepath.Join(normalShardIndexDir, path))
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("while walking %q to find normal shards: %s", normalShardIndexDir, err)
+	}
+
+	var files []zoekt.IndexFile
+	for _, shard := range shardNames {
+		f, err := os.Open(shard)
+		if err != nil {
+			t.Fatalf("opening shard file: %s", err)
+		}
+		defer f.Close()
+
+		indexFile, err := zoekt.NewIndexFile(f)
+		if err != nil {
+			t.Fatalf("creating index file: %s", err)
+		}
+		defer indexFile.Close()
+
+		files = append(files, indexFile)
+	}
+
+	compoundShard, err := zoekt.Merge(normalShardIndexDir, files...)
+	if err != nil {
+		t.Fatalf("merging index files into compound shard: %s", err)
+	}
+
+	// move compound shard from scratch directory to final index
+	// directory
+	err = os.Rename(compoundShard, filepath.Join(indexDir, filepath.Base(compoundShard)))
+	if err != nil {
+		t.Fatalf("failed to move compound shard %q to index directory %q: %s", compoundShard, indexDir, err)
+	}
+
 }
