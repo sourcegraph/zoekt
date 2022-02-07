@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 )
@@ -257,6 +258,444 @@ func checkNeedles(t *testing.T, ts *httptest.Server, req string, needles []strin
 	if notWant := "bytes skipped)..."; strings.Contains(result, notWant) {
 		t.Errorf("result has %q: %s", notWant, result)
 	}
+}
+
+type Expectation struct {
+	title     string
+	fileMatch FileMatch
+}
+
+func TestFormatJson(t *testing.T) {
+	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+		Name:     "name",
+		URL:      "repo-url",
+		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
+	})
+	if err != nil {
+		t.Fatalf("NewIndexBuilder: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f2",
+		Content:  []byte("to carry water in the no later bla"),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	s := searcherForTest(t, b)
+	srv := Server{
+		Searcher: s,
+		Top:      Top,
+		HTML:     true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	expected := Expectation{
+		"json basic test",
+		FileMatch{
+			FileName: "f2",
+			Repo:     "name",
+			Matches: []Match{
+				{
+					FileName: "f2",
+					LineNum:  1,
+					Fragments: []Fragment{
+						{
+							Pre:   "to carry ",
+							Match: "water",
+							Post:  " in the no later bla",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	checkResultMatches(t, ts, "/search?q=water&format=json", expected)
+}
+
+func TestContextLines(t *testing.T) {
+	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+		Name:     "name",
+		URL:      "repo-url",
+		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
+	})
+	if err != nil {
+		t.Fatalf("NewIndexBuilder: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f2",
+		Content:  []byte("one line\nsecond snippet\nthird thing\nfourth\nfifth block\nsixth example\nseventh"),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f3",
+		Content:  []byte("\n\n\n\nto carry water in the no later bla\n\n\n\n"),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f4",
+		Content:  []byte("un   \n \n\ttrois\n     \n\nsix\n     "),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f5",
+		Content:  []byte("\ngreen\npastures\n\nhere"),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	s := searcherForTest(t, b)
+	srv := Server{
+		Searcher: s,
+		Top:      Top,
+		HTML:     true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	for req, expected := range map[string]Expectation{
+		"/search?q=our&format=json&ctx=0": {
+			"no context doesn't return Before or After",
+			FileMatch{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  4,
+						Fragments: []Fragment{
+							{
+								Pre:   "f",
+								Match: "our",
+								Post:  "th",
+							},
+						},
+					},
+				},
+			},
+		},
+		"/search?q=f:f2&format=json&ctx=2": {
+			"filename does not return Before or After",
+			FileMatch{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  0,
+						Fragments: []Fragment{
+							{
+								Match: "f2",
+							},
+						},
+					},
+				},
+			},
+		},
+		"/search?q=our&format=json&ctx=2": {
+			"context returns Before and After",
+			FileMatch{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  4,
+						Fragments: []Fragment{
+							{
+								Pre:   "f",
+								Match: "our",
+								Post:  "th",
+							},
+						},
+						Before: "second snippet\nthird thing",
+						After:  "fifth block\nsixth example",
+					},
+				},
+			},
+		},
+		"/search?q=one&format=json&ctx=2": {
+			"match at start returns After but no Before",
+			FileMatch{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  1,
+						Fragments: []Fragment{
+							{
+								Pre:   "",
+								Match: "one",
+								Post:  " line",
+							},
+						},
+						After: "second snippet\nthird thing",
+					},
+				},
+			},
+		},
+		"/search?q=seventh&format=json&ctx=2": {
+			"match at end returns Before but no After",
+			FileMatch{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  7,
+						Fragments: []Fragment{
+							{
+								Pre:   "",
+								Match: "seventh",
+								Post:  "",
+							},
+						},
+						Before: "fifth block\nsixth example",
+					},
+				},
+			},
+		},
+		"/search?q=seventh&format=json&ctx=10": {
+			"match with large context at end returns whole document",
+			FileMatch{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  7,
+						Fragments: []Fragment{
+							{
+								Pre:   "",
+								Match: "seventh",
+								Post:  "",
+							},
+						},
+						Before: "one line\nsecond snippet\nthird thing\nfourth\nfifth block\nsixth example",
+					},
+				},
+			},
+		},
+		"/search?q=one&format=json&ctx=10": {
+			"match with large context at start returns whole document",
+			FileMatch{
+				FileName: "f2",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f2",
+						LineNum:  1,
+						Fragments: []Fragment{
+							{
+								Pre:   "",
+								Match: "one",
+								Post:  " line",
+							},
+						},
+						After: "second snippet\nthird thing\nfourth\nfifth block\nsixth example\nseventh",
+					},
+				},
+			},
+		},
+		"/search?q=trois&format=json&ctx=2": {
+			"context returns whitespaces lines",
+			FileMatch{
+				FileName: "f4",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f4",
+						LineNum:  3,
+						Fragments: []Fragment{
+							{
+								Pre:   "\t",
+								Match: "trois",
+							},
+						},
+						Before: "un   \n ",
+						After:  "     \n",
+					},
+				},
+			},
+		},
+		"/search?q=water&format=json&ctx=4": {
+			"context returns new lines",
+			FileMatch{
+				FileName: "f3",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f3",
+						LineNum:  5,
+						Fragments: []Fragment{
+							{
+								Pre:   "to carry ",
+								Match: "water",
+								Post:  " in the no later bla",
+							},
+						},
+						// Returns 3 instead of 4 new line characters since we swallow
+						// the last new line in Before, Fragments and After.
+						Before: "\n\n\n",
+						After:  "\n\n\n",
+					},
+				},
+			},
+		},
+		"/search?q=pastures&format=json&ctx=1": {
+			"context returns empty end line",
+			FileMatch{
+				FileName: "f5",
+				Repo:     "name",
+				Matches: []Match{
+					{
+						FileName: "f5",
+						LineNum:  3,
+						Fragments: []Fragment{
+							{
+								Pre:   "",
+								Match: "pastures",
+							},
+						},
+						Before: "green",
+						After:  "",
+					},
+				},
+			},
+		},
+	} {
+		checkResultMatches(t, ts, req, expected)
+	}
+}
+
+func matchesPartiallyEqual(a, b []Match) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].FileName != b[i].FileName {
+			return false
+		}
+		if a[i].LineNum != b[i].LineNum {
+			return false
+		}
+		if !reflect.DeepEqual(a[i].Before, b[i].Before) {
+			return false
+		}
+		if !reflect.DeepEqual(a[i].After, b[i].After) {
+			return false
+		}
+		if !reflect.DeepEqual(a[i].Fragments, b[i].Fragments) {
+			return false
+		}
+	}
+	return true
+}
+
+func checkResultMatches(t *testing.T, ts *httptest.Server, req string, expected Expectation) {
+	res, err := http.Get(ts.URL + req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultBytes, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var result ApiSearchResult
+	if err := json.Unmarshal(resultBytes, &result); err != nil {
+		log.Fatal(err)
+	}
+
+	if len(result.Result.FileMatches) != 1 {
+		t.Fatalf("Expected search to return just one result but it was %d", len(result.Result.FileMatches))
+	}
+	match := result.Result.FileMatches[0]
+	if match.FileName == expected.fileMatch.FileName && match.Repo == expected.fileMatch.Repo {
+		if matchesPartiallyEqual(match.Matches, expected.fileMatch.Matches) {
+			return
+		}
+	}
+
+	t.Errorf(
+		"result doesn't match case <%s>:\nDiff:\n %v",
+		expected.title,
+		cmp.Diff(expected.fileMatch.Matches, result.Result.FileMatches[0].Matches))
+}
+
+func TestContextLinesMustBeValid(t *testing.T) {
+	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+		Name:     "name",
+		URL:      "repo-url",
+		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
+	})
+	if err != nil {
+		t.Fatalf("NewIndexBuilder: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:     "f2",
+		Content:  []byte("to carry water in the no later bla"),
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	s := searcherForTest(t, b)
+	srv := Server{
+		Searcher: s,
+		Top:      Top,
+		HTML:     true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// Don't care about ctx if format is not json
+	code := getHttpStatusCode(t, ts, "/search?q=water&ctx=10")
+	if code != 200 {
+		t.Errorf("Expected 200 but got %v", code)
+	}
+
+	// ctx must be a valid integer in the right range.
+	for _, want := range []string{"foo", "-1", "20"} {
+		code := getHttpStatusCode(t, ts, "/search?q=water&format=json&ctx="+want)
+		if code != 418 {
+			t.Errorf("Expected 418 but got %v", code)
+		}
+	}
+}
+
+func getHttpStatusCode(t *testing.T, ts *httptest.Server, req string) int {
+	res, err := http.Get(ts.URL + req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res.StatusCode
 }
 
 type crashSearcher struct {

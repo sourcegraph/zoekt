@@ -124,6 +124,8 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 				URL:      fMatch.URL + fragment,
 			}
 
+			md.Before = string(m.Before)
+			md.After = string(m.After)
 			lastEnd := 0
 			line := m.Line
 			for i, f := range m.LineFragments {
