@@ -1,4 +1,4 @@
-FROM golang:alpine AS builder
+FROM golang:1.17.6-alpine3.15 AS builder
 
 RUN apk add --no-cache ca-certificates
 
@@ -13,7 +13,7 @@ COPY . ./
 ARG VERSION
 RUN go install -ldflags "-X github.com/google/zoekt.Version=$VERSION" ./cmd/...
 
-FROM alpine:3.11 AS ctags
+FROM alpine:3.15.0 AS ctags
 
 RUN apk add --no-cache --virtual build-deps ca-certificates curl jansson-dev \
     libseccomp-dev linux-headers autoconf pkgconfig make automake \
@@ -28,7 +28,7 @@ RUN curl -fsSL -o ctags.tar.gz "https://codeload.github.com/universal-ctags/ctag
     rm -rf /tmp/ctags-$CTAGS_VERSION && \
     apk --no-cache --purge del build-deps
 
-FROM alpine AS zoekt
+FROM alpine:3.15.0 AS zoekt
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
     apk add --no-cache git ca-certificates bind-tools tini
