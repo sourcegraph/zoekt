@@ -876,8 +876,9 @@ func main() {
 			IndexDir: *index,
 		}
 		bo := args.BuildOptions()
-		shards := bo.FindAllShards()
-		fmt.Printf("shards=%+v\n", shards)
+		for _, s := range bo.FindAllShards() {
+			fmt.Println(s)
+		}
 		os.Exit(0)
 	}
 
