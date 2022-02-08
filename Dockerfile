@@ -13,7 +13,8 @@ COPY . ./
 ARG VERSION
 RUN go install -ldflags "-X github.com/google/zoekt.Version=$VERSION" ./cmd/...
 
-FROM alpine:3.15.0 AS ctags
+# >3.11 don't have a statically linkable jansson-dev
+FROM alpine:3.11 AS ctags
 
 RUN apk add --no-cache --virtual build-deps ca-certificates curl jansson-dev \
     libseccomp-dev linux-headers autoconf pkgconfig make automake \
