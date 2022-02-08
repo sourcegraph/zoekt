@@ -704,7 +704,19 @@ func getEnvWithDefaultInt64(k string, defaultVal int64) int64 {
 	}
 	i, err := strconv.ParseInt(v, 10, 64)
 	if err != nil {
-		log.Fatalf("error parsing ENV %s: %s", k, err)
+		log.Fatalf("error parsing ENV %s to int64: %s", k, err)
+	}
+	return i
+}
+
+func getEnvWithDefaultInt(k string, defaultVal int) int {
+	v := os.Getenv(k)
+	if v == "" {
+		return defaultVal
+	}
+	i, err := strconv.Atoi(k)
+	if err != nil {
+		log.Fatalf("error parsing ENV %s to int: %s", k, err)
 	}
 	return i
 }
@@ -735,6 +747,7 @@ func main() {
 	hostname := flag.String("hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	cpuFraction := flag.Float64("cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
 	dbg := flag.Bool("debug", srcLogLevelIsDebug(), "turn on more verbose logging.")
+	blockProfileRate := flag.Int("block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler (default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
 
 	// non daemon mode for debugging/testing
 	debugList := flag.Bool("debug-list", false, "do not start the indexserver, rather list the repositories owned by this indexserver then quit.")
@@ -765,6 +778,12 @@ func main() {
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
+
+	// Set the sampling rate of Go's block profiler: https://github.com/DataDog/go-profiler-notes/blob/main/guide/README.md#block-profiler.
+	// The block profiler is disabled by default.
+	if blockProfileRate != nil {
+		runtime.SetBlockProfileRate(*blockProfileRate)
+	}
 
 	// Automatically prepend our own path at the front, to minimize
 	// required configuration.
