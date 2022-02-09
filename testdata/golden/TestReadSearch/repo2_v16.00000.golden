@@ -1,0 +1,82 @@
+{
+  "FormatVersion": 16,
+  "FeatureVersion": 12,
+  "FileMatches": [
+    [
+      {
+        "Score": 910,
+        "Debug": "",
+        "FileName": "main.go",
+        "Repository": "repo2",
+        "Branches": null,
+        "LineMatches": [
+          {
+            "Line": "ZnVuYyBtYWluKCkgew==",
+            "LineStart": 33,
+            "LineEnd": 46,
+            "LineNumber": 7,
+            "Before": null,
+            "After": null,
+            "FileName": false,
+            "Score": 501,
+            "LineFragments": [
+              {
+                "LineOffset": 0,
+                "Offset": 33,
+                "MatchLength": 9,
+                "SymbolInfo": null
+              }
+            ]
+          }
+        ],
+        "RepositoryID": 0,
+        "RepositoryPriority": 0,
+        "Content": null,
+        "Checksum": "Ju1TnQKZ6mE=",
+        "Language": "Go",
+        "SubRepositoryName": "",
+        "SubRepositoryPath": "",
+        "Version": ""
+      }
+    ],
+    [
+      {
+        "Score": 710,
+        "Debug": "",
+        "FileName": "main.go",
+        "Repository": "repo2",
+        "Branches": null,
+        "LineMatches": [
+          {
+            "Line": "cGFja2FnZSBtYWlu",
+            "LineStart": 0,
+            "LineEnd": 12,
+            "LineNumber": 1,
+            "Before": null,
+            "After": null,
+            "FileName": false,
+            "Score": 501,
+            "LineFragments": [
+              {
+                "LineOffset": 0,
+                "Offset": 0,
+                "MatchLength": 7,
+                "SymbolInfo": null
+              }
+            ]
+          }
+        ],
+        "RepositoryID": 0,
+        "RepositoryPriority": 0,
+        "Content": null,
+        "Checksum": "Ju1TnQKZ6mE=",
+        "Language": "Go",
+        "SubRepositoryName": "",
+        "SubRepositoryPath": "",
+        "Version": ""
+      }
+    ],
+    null,
+    null
+  ]
+}
