@@ -11,45 +11,61 @@ of [github.com/google/zoekt](https://github.com/google/zoekt). It is now the
 main maintained source of Zoekt. The go module is still
 `github.com/google/zoekt` for now, but will be updated in the future.
 
-INSTRUCTIONS
-============
+# INSTRUCTIONS
 
-Downloading:
+## Downloading
 
     go get github.com/google/zoekt/
 
-Indexing:
+## Indexing
+
+### Directory
 
     go install github.com/google/zoekt/cmd/zoekt-index
     $GOPATH/bin/zoekt-index .
 
-Searching
-
-    go install github.com/google/zoekt/cmd/zoekt
-    $GOPATH/bin/zoekt 'ngram f:READ'
-
-Indexing git repositories:
+### Git repository
 
     go install github.com/google/zoekt/cmd/zoekt-git-index
     $GOPATH/bin/zoekt-git-index -branches master,stable-1.4 -prefix origin/ .
 
-Indexing repo repositories:
+### Repo repositories
 
     go install github.com/google/zoekt/cmd/zoekt-{repo-index,mirror-gitiles}
     zoekt-mirror-gitiles -dest ~/repos/ https://gfiber.googlesource.com
     zoekt-repo-index \
-       -name gfiber \
-       -base_url https://gfiber.googlesource.com/ \
-       -manifest_repo ~/repos/gfiber.googlesource.com/manifests.git \
-       -repo_cache ~/repos \
-       -manifest_rev_prefix=refs/heads/ --rev_prefix= \
-       master:default_unrestricted.xml
+        -name gfiber \
+        -base_url https://gfiber.googlesource.com/ \
+        -manifest_repo ~/repos/gfiber.googlesource.com/manifests.git \
+        -repo_cache ~/repos \
+        -manifest_rev_prefix=refs/heads/ --rev_prefix= \
+        master:default_unrestricted.xml
 
-Starting the web interface
+## Searching
+
+### Web interface
 
     go install github.com/google/zoekt/cmd/zoekt-webserver
     $GOPATH/bin/zoekt-webserver -listen :6070
 
+### JSON API
+
+You can retrieve search results as JSON by sending a GET request to zoekt-webserver.
+
+    curl --get \
+        --url "http://localhost:6070/search" \
+        --data-urlencode "q=ngram f:READ" \
+        --data-urlencode "num=50" \
+        --data-urlencode "format=json"
+
+The response data is a JSON object. You can refer to [web.ApiSearchResult](https://sourcegraph.com/github.com/sourcegraph/zoekt@6b1df4f8a3d7b34f13ba0cafd8e1a9b3fc728cf0/-/blob/web/api.go?L23:6&subtree=true) to learn about the structure of the object.
+
+### CLI
+
+    go install github.com/google/zoekt/cmd/zoekt
+    $GOPATH/bin/zoekt 'ngram f:READ'
+
+## Installation
 A more organized installation on a Linux server should use a systemd unit file,
 eg.
 
@@ -64,8 +80,7 @@ eg.
     WantedBy=default.target
 
 
-SEARCH SERVICE
-==============
+# SEARCH SERVICE
 
 Zoekt comes with a small service management program:
 
@@ -89,23 +104,20 @@ The webserver can be started from a standard service management framework, such
 as systemd.
 
 
-SYMBOL SEARCH
-=============
+# SYMBOL SEARCH
 
 It is recommended to install [Universal
 ctags](https://github.com/universal-ctags/ctags) to improve
 ranking. See [here](doc/ctags.md) for more information.
 
 
-ACKNOWLEDGEMENTS
-================
+# ACKNOWLEDGEMENTS
 
 Thanks to Han-Wen Nienhuys for creating Zoekt. Thanks to Alexander Neubeck for
 coming up with this idea, and helping Han-Wen Nienhuys flesh it out.
 
 
-FORK DETAILS
-==============
+# FORK DETAILS
 
 Originally this fork contained some changes that do not make sense to upstream
 and or have not yet been upstreamed. However, this is now the defacto source
@@ -134,7 +146,6 @@ changed is:
 $ git diff gerrit/master -- ':(exclude)vendor/' ':(exclude)Gopkg*'
 ```
 
-DISCLAIMER
-==========
+# DISCLAIMER
 
 This is not an official Google product
