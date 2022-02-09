@@ -3,8 +3,10 @@ package zoekt
 import (
 	"crypto/sha1"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -162,4 +164,126 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 	}
 
 	return ib, nil
+}
+
+// Explode takes an IndexFile f and creates 1 simple shard per repository f
+// contains. The new shard(s) will be returned with a ".tmp" suffix. It is the
+// responsibility of the caller to rename the output shards and delete the input
+// shard.
+func Explode(dstDir string, f IndexFile) ([]string, error) {
+	searcher, err := NewSearcher(f)
+	if err != nil {
+		return nil, err
+	}
+
+	ibs, err := explode(searcher.(*indexData))
+	if err != nil {
+		return nil, err
+	}
+
+	shardNames := make([]string, 0, len(ibs))
+	for _, ib := range ibs {
+		if len(ib.repoList) != 1 {
+			return shardNames, fmt.Errorf("expected each IndexBuilder to contain exactly 1 repository")
+		}
+		fn := filepath.Join(dstDir, shardName(ib.repoList[0].Name, ib.indexFormatVersion, 0))
+		fn = fn + ".tmp"
+		shardNames = append(shardNames, fn)
+		if err := builderWriteAll(fn, ib); err != nil {
+			return shardNames, err
+		}
+	}
+	return shardNames, nil
+}
+
+func explode(d *indexData) ([]*IndexBuilder, error) {
+	var ib *IndexBuilder
+	ibs := make([]*IndexBuilder, 0, len(d.repoMetaData))
+
+	lastRepoID := -1
+	for docID := uint32(0); int(docID) < len(d.fileBranchMasks); docID++ {
+		repoID := int(d.repos[docID])
+
+		if d.repoMetaData[repoID].Tombstone {
+			continue
+		}
+
+		if repoID != lastRepoID {
+			if lastRepoID > repoID {
+				return nil, fmt.Errorf("non-contiguous repo ids in %s for document %d: old=%d current=%d", d.String(), docID, lastRepoID, repoID)
+			}
+			lastRepoID = repoID
+
+			if ib != nil {
+				ibs = append(ibs, ib)
+			}
+
+			ib = newIndexBuilder()
+			ib.indexFormatVersion = IndexFormatVersion
+			if err := ib.setRepository(&d.repoMetaData[repoID]); err != nil {
+				return nil, err
+			}
+		}
+
+		doc := Document{
+			Name: string(d.fileName(docID)),
+			// Content set below since it can return an error
+			// Branches set below since it requires lookups
+			SubRepositoryPath: d.subRepoPaths[repoID][d.subRepos[docID]],
+			Language:          d.languageMap[d.getLanguage(docID)],
+			// SkipReason not set, will be part of content from original indexer.
+		}
+
+		var err error
+		if doc.Content, err = d.readContents(docID); err != nil {
+			return nil, err
+		}
+
+		if doc.Symbols, _, err = d.readDocSections(docID, nil); err != nil {
+			return nil, err
+		}
+
+		doc.SymbolsMetaData = make([]*Symbol, len(doc.Symbols))
+		for i := range doc.SymbolsMetaData {
+			doc.SymbolsMetaData[i] = d.symbols.data(d.fileEndSymbol[docID] + uint32(i))
+		}
+
+		// calculate branches
+		{
+			mask := d.fileBranchMasks[docID]
+			id := uint32(1)
+			for mask != 0 {
+				if mask&0x1 != 0 {
+					doc.Branches = append(doc.Branches, d.branchNames[repoID][uint(id)])
+				}
+				id <<= 1
+				mask >>= 1
+			}
+		}
+
+		if err := ib.Add(doc); err != nil {
+			return nil, err
+		}
+	}
+
+	if ib != nil {
+		ibs = append(ibs, ib)
+	}
+	return ibs, nil
+}
+
+// copied from builder package to avoid circular imports.
+func hashString(s string) string {
+	h := sha1.New()
+	_, _ = io.WriteString(h, s)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// copied from builder package to avoid circular imports.
+func shardName(name string, version, n int) string {
+	abs := url.QueryEscape(name)
+	if len(abs) > 200 {
+		abs = abs[:200] + hashString(abs)[:8]
+	}
+	return fmt.Sprintf("%s_v%d.%05d.zoekt", abs, version, n)
 }
