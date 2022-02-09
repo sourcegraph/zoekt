@@ -474,7 +474,7 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 	if mockMerger != nil {
 		runMerge = mockMerger
 	} else {
-		runMerge = exec.Command("zoekt-merge-index", fn).Run
+		runMerge = exec.Command("zoekt-merge-index", "merge", fn).Run
 	}
 
 	repos, _, err := zoekt.ReadMetadataPath(fn)
