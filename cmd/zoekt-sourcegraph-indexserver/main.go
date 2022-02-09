@@ -54,6 +54,10 @@ var (
 		Buckets: prometheus.ExponentialBuckets(.25, 2, 4), // 250ms -> 2s
 	}, []string{"success"}) // success=true|false
 
+	metricGetIndexOptions = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "get_index_options_total",
+		Help: "The total number of times we tried to get index options for a repository. Includes errors.",
+	})
 	metricGetIndexOptionsError = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "get_index_options_error_total",
 		Help: "The total number of times we failed to get index options for a repository.",

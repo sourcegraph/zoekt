@@ -148,6 +148,7 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 
 			metricResolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
 			for _, opt := range opts {
+				metricGetIndexOptions.Inc()
 				if opt.Error != "" {
 					metricGetIndexOptionsError.Inc()
 					tr.LazyPrintf("failed fetching options for %v: %v", opt.Name, opt.Error)
