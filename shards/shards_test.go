@@ -484,6 +484,92 @@ func TestShardedSearcher_List(t *testing.T) {
 	}
 }
 
+func TestSearchFileTombstones(t *testing.T) {
+	type shard struct {
+		repository zoekt.Repository
+		documents  []zoekt.Document
+	}
+	tests := []struct {
+		name                   string
+		shards                 []shard
+		query                  string
+		expectedNumLineMatches int
+		forbidden              []string
+	}{
+		{
+			name: "should ignore content from files that are in filetombs",
+			shards: []shard{
+				{
+					repository: zoekt.Repository{
+						ID:       1,
+						Name:     "repoA",
+						Branches: []zoekt.RepositoryBranch{{Name: "main"}},
+					},
+					documents: []zoekt.Document{
+						{
+							Name:     "foo.go",
+							Branches: []string{"main"},
+							Content:  []byte("bar baz"),
+						},
+						{
+							Name:     "qux.go",
+							Branches: []string{"main"},
+							Content:  []byte("baz quux quuz"),
+						},
+					},
+				},
+			},
+			query:                  "baz",
+			expectedNumLineMatches: 1,
+			forbidden:              []string{"bar"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// setup
+			ss := newShardedSearcher(4)
+
+			shardMap := make(map[string]zoekt.Searcher)
+
+			for i, s := range test.shards {
+				shardMap[strconv.Itoa(i)] = searcherForTest(t, testIndexBuilder(t, &s.repository, s.documents...))
+			}
+			ss.replace(shardMap)
+
+			opts := &zoekt.SearchOptions{}
+			q := &query.Substring{Pattern: test.query}
+
+			// test
+			res, err := ss.Search(context.Background(), q, opts)
+			if err != nil {
+				t.Fatalf("Search(%v, %s): %v", q, opts, err)
+			}
+
+			// verify
+
+			// TODO: This seems brittle, but let's roll with it for now
+			actualNumLineMatches := 0
+
+			for _, file := range res.Files {
+				for _, match := range file.LineMatches {
+					actualNumLineMatches++
+
+					for _, f := range test.forbidden {
+						if bytes.Contains(match.Line, []byte(f)) {
+							t.Errorf("line match %q contains forbidden string %q", match.Line, f)
+						}
+					}
+				}
+			}
+
+			if actualNumLineMatches != test.expectedNumLineMatches {
+				t.Errorf("expected %d line matches, got %d", test.expectedNumLineMatches, actualNumLineMatches)
+			}
+		})
+	}
+}
+
 func testIndexBuilder(t testing.TB, repo *zoekt.Repository, docs ...zoekt.Document) *zoekt.IndexBuilder {
 	b, err := zoekt.NewIndexBuilder(repo)
 	if err != nil {

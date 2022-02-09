@@ -303,6 +303,10 @@ type Repository struct {
 	// The date might be time.Time's 0-value if the repository was last indexed
 	// before this field was added.
 	LatestCommitDate time.Time
+
+	// FileTombstones is a set of file paths that should be ignored across all branches
+	// in this shard.
+	FileTombstones map[string]struct{}
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {
@@ -314,6 +318,14 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 	err := json.Unmarshal(data, repo)
 	if err != nil {
 		return err
+	}
+
+	// TODO: What happens when a map is serialized / deserialized as JSON? We need
+	// to make sure to handle nil maps since maps are reference types.
+	// Maybe we can just store the fileTombstone set as a list, and then create a map
+	// everytime we load it?
+	if r.FileTombstones == nil {
+		r.FileTombstones = make(map[string]struct{})
 	}
 
 	if v, ok := repo.RawConfig["repoid"]; ok {
@@ -531,6 +543,9 @@ type SearchOptions struct {
 
 	// SpanContext is the opentracing span context, if it exists, from the zoekt client
 	SpanContext map[string]string
+
+	// EnableIncrementalFetching indicates whether the experimental incremental fetching logic is enabled.
+	EnableIncrementalFetching bool
 }
 
 func (s *SearchOptions) String() string {

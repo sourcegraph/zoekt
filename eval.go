@@ -237,13 +237,20 @@ nextFileMatch:
 		}
 
 		for ; nextDoc < docCount; nextDoc++ {
+			repositoryMetadata := d.repoMetaData[d.repos[nextDoc]]
+
 			// Skip tombstoned docs
-			if d.repoMetaData[d.repos[nextDoc]].Tombstone {
+			if repositoryMetadata.Tombstone {
 				continue
 			}
 
-			if d.fileTombstones[nextDoc] {
-				continue
+			if opts.EnableIncrementalFetching {
+				// Skip over documents whose paths are in our file tombstones
+				fileName := string(d.fileName(nextDoc))
+				_, fileTombstoned := repositoryMetadata.FileTombstones[fileName]
+				if fileTombstoned {
+					continue
+				}
 			}
 
 			// Skip documents over ShardRepoMaxMatchCount if specified.
