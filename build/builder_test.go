@@ -245,6 +245,7 @@ func TestOptions_FindAllShards(t *testing.T) {
 
 	tests := []struct {
 		name               string
+		skipReason         string
 		normalShards       []normalShard
 		compoundShards     [][]zoekt.Repository
 		expectedShardCount int
@@ -304,7 +305,25 @@ func TestOptions_FindAllShards(t *testing.T) {
 			expectedShardCount: 0,
 		},
 		{
-			name: "match on ID, not name",
+			name: "match on ID, not name (compound only)",
+			compoundShards: [][]zoekt.Repository{
+				{
+					{Name: "repoA", ID: 1},
+					{Name: "sameName", ID: 2},
+					{Name: "sameName", ID: 3},
+				},
+				{
+					{Name: "repoB", ID: 4},
+					{Name: "sameName", ID: 5},
+					{Name: "sameName", ID: 6},
+				},
+			},
+			expectedShardCount: 1,
+			expectedRepository: zoekt.Repository{Name: "sameName", ID: 5},
+		},
+		{
+			name:       "match on ID, not name",
+			skipReason: "We only support matching on IDS for compound shards. For normal shards, repositories wih the same name will produce shards with the same filename (which breaks our matching logic).",
 			normalShards: []normalShard{
 				{Repository: zoekt.Repository{Name: "sameName", ID: 1}},
 				{Repository: zoekt.Repository{Name: "sameName", ID: 2}},
@@ -328,6 +347,10 @@ func TestOptions_FindAllShards(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.skipReason != "" {
+				t.Skip(tt.skipReason)
+			}
+
 			// prepare
 			indexDir := t.TempDir()
 
@@ -423,33 +446,33 @@ func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShard
 func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt.Repository) {
 	t.Helper()
 
-	// create a scratch space to store normal shards
-	scratchDir := t.TempDir()
-
-	for _, r := range repositories {
-		// create normal shards that'll be merged later
-		createTestShard(t, scratchDir, r, 1)
-	}
-
 	var shardNames []string
 
-	// walk through scratch space to discover
-	// file names for all the normal shards we created
-	err := fs.WalkDir(os.DirFS(scratchDir), ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return fmt.Errorf("processing %q: %s", path, err)
-		}
+	for _, r := range repositories {
+		// create an isolated scratch space to store normal shards for this repository
+		scratchDir := t.TempDir()
 
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".zoekt") {
+		// create shards that'll be merged later
+		createTestShard(t, scratchDir, r, 1)
+
+		// walk through scratch space to discover
+		// file names for all the normal shards we created
+		err := fs.WalkDir(os.DirFS(scratchDir), ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return fmt.Errorf("processing %q: %s", path, err)
+			}
+
+			if d.IsDir() || !strings.HasSuffix(d.Name(), ".zoekt") {
+				return nil
+			}
+
+			s := filepath.Join(scratchDir, path)
+			shardNames = append(shardNames, s)
 			return nil
+		})
+		if err != nil {
+			t.Fatalf("while walking %q to find normal shards: %s", scratchDir, err)
 		}
-
-		s := filepath.Join(scratchDir, path)
-		shardNames = append(shardNames, s)
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("while walking %q to find normal shards: %s", scratchDir, err)
 	}
 
 	// load the normal shards that we created
@@ -471,15 +494,8 @@ func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt
 	}
 
 	// merge all the normal shards into a compound shard
-	scratchCompoundShard, err := zoekt.Merge(scratchDir, files...)
+	_, err := zoekt.Merge(indexDir, files...)
 	if err != nil {
 		t.Fatalf("merging index files into compound shard: %s", err)
-	}
-
-	// move compound shard from scratch directory to final index directory
-	finalShard := filepath.Join(indexDir, filepath.Base(scratchCompoundShard))
-	err = os.Rename(scratchCompoundShard, finalShard)
-	if err != nil {
-		t.Fatalf("failed to move compound shard %q to index directory %q: %s", scratchCompoundShard, indexDir, err)
 	}
 }
