@@ -236,7 +236,7 @@ func TestDontCountContentOfSkippedFiles(t *testing.T) {
 }
 
 func TestOptions_FindAllShards(t *testing.T) {
-	type normalShard struct {
+	type simpleShard struct {
 		Repository zoekt.Repository
 		// NumShards is the number of shards that should be created that
 		// contain data for "Repository".
@@ -245,14 +245,14 @@ func TestOptions_FindAllShards(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		normalShards       []normalShard
+		simpleShards       []simpleShard
 		compoundShards     [][]zoekt.Repository
 		expectedShardCount int
 		expectedRepository zoekt.Repository
 	}{
 		{
 			name: "repository in normal shard",
-			normalShards: []normalShard{
+			simpleShards: []simpleShard{
 				{Repository: zoekt.Repository{Name: "repoA", ID: 1}},
 				{Repository: zoekt.Repository{Name: "repoB", ID: 2}},
 				{Repository: zoekt.Repository{Name: "repoC", ID: 3}},
@@ -279,7 +279,7 @@ func TestOptions_FindAllShards(t *testing.T) {
 		},
 		{
 			name: "repository split across multiple shards",
-			normalShards: []normalShard{
+			simpleShards: []simpleShard{
 				{Repository: zoekt.Repository{Name: "repoA", ID: 1}},
 				{Repository: zoekt.Repository{Name: "repoB", ID: 2}, NumShards: 2},
 				{Repository: zoekt.Repository{Name: "repoC", ID: 3}},
@@ -289,7 +289,7 @@ func TestOptions_FindAllShards(t *testing.T) {
 		},
 		{
 			name: "unknown repository",
-			normalShards: []normalShard{
+			simpleShards: []simpleShard{
 				{Repository: zoekt.Repository{Name: "repoA", ID: 1}},
 				{Repository: zoekt.Repository{Name: "repoB", ID: 2}},
 				{Repository: zoekt.Repository{Name: "repoC", ID: 3}},
@@ -326,7 +326,7 @@ func TestOptions_FindAllShards(t *testing.T) {
 			// prepare
 			indexDir := t.TempDir()
 
-			for _, s := range tt.normalShards {
+			for _, s := range tt.simpleShards {
 				createTestShard(t, indexDir, s.Repository, s.NumShards)
 			}
 
