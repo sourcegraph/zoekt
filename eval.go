@@ -247,6 +247,13 @@ nextFileMatch:
 			if opts.EnableIncrementalFetching {
 				// Skip over documents whose paths are in our file tombstones
 				fileName := string(d.fileName(nextDoc))
+
+				// TODO: This is ugly, but this will work for now. Introducing a constructor
+				// for FileTombstones seems a bit invasive.
+				if repositoryMetadata.FileTombstones == nil {
+					repositoryMetadata.FileTombstones = make(map[string]struct{})
+				}
+
 				_, fileTombstoned := repositoryMetadata.FileTombstones[fileName]
 				if fileTombstoned {
 					continue

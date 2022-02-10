@@ -27,6 +27,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"testing/quick"
 	"time"
@@ -497,8 +498,59 @@ func TestSearchFileTombstones(t *testing.T) {
 		forbidden              []string
 	}{
 		{
-			name: "should ignore content from files that are in filetombs",
+			name: "ignore content from files that are in filetombs",
 			shards: []shard{
+				{
+					repository: zoekt.Repository{
+						ID:       1,
+						Name:     "repoA",
+						Branches: []zoekt.RepositoryBranch{{Name: "main"}},
+						FileTombstones: map[string]struct{}{
+							"foo.go": {},
+						},
+					},
+					documents: []zoekt.Document{
+						{
+							Name:     "foo.go",
+							Branches: []string{"main"},
+							Content:  []byte("poison bar"),
+						},
+						{
+							Name:     "qux.go",
+							Branches: []string{"main"},
+							Content:  []byte("bar not-forbidden-1 not-forbidden-2"),
+						},
+					},
+				},
+			},
+			query:                  "bar",
+			expectedNumLineMatches: 1,
+			forbidden:              []string{"poison"},
+		}, {
+			name: "include results from other shards that haven't tombstoned the file",
+			shards: []shard{
+				{
+					repository: zoekt.Repository{
+						ID:       1,
+						Name:     "repoA",
+						Branches: []zoekt.RepositoryBranch{{Name: "main"}},
+						FileTombstones: map[string]struct{}{
+							"foo.go": {},
+						},
+					},
+					documents: []zoekt.Document{
+						{
+							Name:     "foo.go",
+							Branches: []string{"main"},
+							Content:  []byte("poison bar"),
+						},
+						{
+							Name:     "qux.go",
+							Branches: []string{"main"},
+							Content:  []byte("bar not-forbidden-1 not-forbidden-2"),
+						},
+					},
+				},
 				{
 					repository: zoekt.Repository{
 						ID:       1,
@@ -509,19 +561,50 @@ func TestSearchFileTombstones(t *testing.T) {
 						{
 							Name:     "foo.go",
 							Branches: []string{"main"},
-							Content:  []byte("bar baz"),
-						},
-						{
-							Name:     "qux.go",
-							Branches: []string{"main"},
-							Content:  []byte("baz quux quuz"),
+							Content:  []byte("bar not-forbidden-3 not-forbidden-4"),
 						},
 					},
 				},
 			},
-			query:                  "baz",
+			query:                  "bar",
+			expectedNumLineMatches: 2,
+			forbidden:              []string{"poison"},
+		},
+		{
+			name: "file tombstones affect all branches in a shard",
+			shards: []shard{
+				{
+					repository: zoekt.Repository{
+						ID:       1,
+						Name:     "repoA",
+						Branches: []zoekt.RepositoryBranch{{Name: "main"}, {Name: "release"}},
+						FileTombstones: map[string]struct{}{
+							"foo.go": {},
+						},
+					},
+					documents: []zoekt.Document{
+						{
+							Name:     "foo.go",
+							Branches: []string{"main"},
+							Content:  []byte("poison bar"),
+						},
+						{
+							// should be ignored even though the content is different that the one on the "main" branch
+							Name:     "foo.go",
+							Branches: []string{"release"},
+							Content:  []byte("bar not-forbidden-1"),
+						},
+						{
+							Name:     "qux.go",
+							Branches: []string{"main", "release"},
+							Content:  []byte("bar not-forbidden-2  not-forbidden-3"),
+						},
+					},
+				},
+			},
+			query:                  "bar",
 			expectedNumLineMatches: 1,
-			forbidden:              []string{"bar"},
+			forbidden:              []string{"poison"},
 		},
 	}
 
@@ -537,7 +620,9 @@ func TestSearchFileTombstones(t *testing.T) {
 			}
 			ss.replace(shardMap)
 
-			opts := &zoekt.SearchOptions{}
+			opts := &zoekt.SearchOptions{
+				EnableIncrementalFetching: true,
+			}
 			q := &query.Substring{Pattern: test.query}
 
 			// test
@@ -557,7 +642,7 @@ func TestSearchFileTombstones(t *testing.T) {
 
 					for _, f := range test.forbidden {
 						if bytes.Contains(match.Line, []byte(f)) {
-							t.Errorf("line match %q contains forbidden string %q", match.Line, f)
+							t.Errorf("line match %q (file: %q, branches: %q) contains forbidden string %q", match.Line, file.FileName, strings.Join(file.Branches, ","), f)
 						}
 					}
 				}

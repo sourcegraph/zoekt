@@ -310,7 +310,7 @@ type Repository struct {
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {
-	// We define a new type so that we can use json.Unmarhsal
+	// We define a new type so that we can use json.Unmarshal
 	// without recursing into this same method.
 	type repository *Repository
 	repo := repository(r)
@@ -321,9 +321,9 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 	}
 
 	// TODO: What happens when a map is serialized / deserialized as JSON? We need
-	// to make sure to handle nil maps since maps are reference types.
-	// Maybe we can just store the fileTombstone set as a list, and then create a map
-	// everytime we load it?
+	// to make sure to handle nil maps since maps are reference types. Maybe we can
+	// just store the fileTombstone set as a list, and then create a map everytime
+	// we load it?
 	if r.FileTombstones == nil {
 		r.FileTombstones = make(map[string]struct{})
 	}
@@ -339,6 +339,7 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 			r.priority = 0
 		}
 	}
+
 	return nil
 }
 
