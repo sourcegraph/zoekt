@@ -18,8 +18,8 @@ FROM alpine:3.15.0 AS zoekt
 RUN apk update --no-cache && apk upgrade --no-cache && \
     apk add --no-cache git ca-certificates bind-tools tini jansson
 
-# Commit from 2022-02-09. Please always pick a commit from the main branch.
-ENV SOURCEGRAPH_COMMIT=70028a0bde4bbffe1919635b3d1fee99c2e28625
+# Commit from 2022-02-10. Please always pick a commit from the main branch.
+ENV SOURCEGRAPH_COMMIT=d9f1ea582042a98a5ab1e6f0e9147ad0ca996df8
 ADD https://raw.githubusercontent.com/sourcegraph/sourcegraph/$SOURCEGRAPH_COMMIT/cmd/symbols/ctags-install-alpine.sh /tmp/
 RUN sh /tmp/ctags-install-alpine.sh && rm /tmp/ctags-install-alpine.sh
 
