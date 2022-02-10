@@ -453,12 +453,19 @@ func (s *Server) vacuum() {
 					debug.Printf("failed getting all file paths for %s", path)
 					continue
 				}
+				var shards []shard
+				if repos, _, err := zoekt.ReadMetadataPathAlive(path); err == nil {
+					for _, r := range repos {
+						shards = append(shards,
+							shard{RepoID: r.ID, RepoName: r.Name, Path: path})
+					}
+				}
 				s.muIndexDir.Lock()
 				for _, p := range paths {
 					os.Remove(p)
 				}
 				s.muIndexDir.Unlock()
-				shardsLog(s.IndexDir, "delete", []shard{{Path: path}})
+				shardsLog(s.IndexDir, "delete", shards)
 				continue
 			}
 		}
