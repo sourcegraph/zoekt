@@ -245,7 +245,6 @@ func TestOptions_FindAllShards(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		skipReason         string
 		normalShards       []normalShard
 		compoundShards     [][]zoekt.Repository
 		expectedShardCount int
@@ -321,36 +320,9 @@ func TestOptions_FindAllShards(t *testing.T) {
 			expectedShardCount: 1,
 			expectedRepository: zoekt.Repository{Name: "sameName", ID: 5},
 		},
-		{
-			name:       "match on ID, not name",
-			skipReason: "We only support matching on IDS for compound shards. For normal shards, repositories wih the same name will produce shards with the same filename (which breaks our matching logic).",
-			normalShards: []normalShard{
-				{Repository: zoekt.Repository{Name: "sameName", ID: 1}},
-				{Repository: zoekt.Repository{Name: "sameName", ID: 2}},
-				{Repository: zoekt.Repository{Name: "sameName", ID: 3}},
-			},
-			compoundShards: [][]zoekt.Repository{
-				{
-					{Name: "sameName", ID: 4},
-					{Name: "sameName", ID: 5},
-					{Name: "sameName", ID: 6},
-				},
-				{
-					{Name: "sameName", ID: 7},
-					{Name: "sameName", ID: 8},
-					{Name: "sameName", ID: 9},
-				},
-			},
-			expectedShardCount: 1,
-			expectedRepository: zoekt.Repository{Name: "sameName", ID: 5},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.skipReason != "" {
-				t.Skip(tt.skipReason)
-			}
-
 			// prepare
 			indexDir := t.TempDir()
 
