@@ -389,7 +389,7 @@ func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, 
 func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	dir := filepath.Join(sf.RootDir, filepath.FromSlash(name))
 	exists := func(p string) bool {
-		_, err := os.Stat(filepath.Join(dir, "SG_PRIVATE"))
+		_, err := os.Stat(filepath.Join(dir, p))
 		return err == nil
 	}
 
