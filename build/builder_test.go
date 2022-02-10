@@ -2,9 +2,7 @@ package build
 
 import (
 	"flag"
-	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -427,24 +425,14 @@ func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt
 		// create shards that'll be merged later
 		createTestShard(t, scratchDir, r, 1)
 
-		// walk through scratch space to discover
-		// file names for all the normal shards we created
-		err := fs.WalkDir(os.DirFS(scratchDir), ".", func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return fmt.Errorf("processing %q: %s", path, err)
-			}
-
-			if d.IsDir() || !strings.HasSuffix(d.Name(), ".zoekt") {
-				return nil
-			}
-
-			s := filepath.Join(scratchDir, path)
-			shardNames = append(shardNames, s)
-			return nil
-		})
+		// discover file names for all the normal shards we created
+		// note: this only looks in the immediate 'scratchDir' folder and doesn't recurse
+		shards, err := filepath.Glob(filepath.Join(scratchDir, "*.zoekt"))
 		if err != nil {
-			t.Fatalf("while walking %q to find normal shards: %s", scratchDir, err)
+			t.Fatalf("while globbing %q to find normal shards: %s", scratchDir, err)
 		}
+
+		shardNames = append(shardNames, shards...)
 	}
 
 	// load the normal shards that we created
