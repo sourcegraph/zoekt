@@ -17,11 +17,11 @@ package zoekt
 import (
 	"fmt"
 	"log"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/google/zoekt/query"
+	"github.com/grafana/regexp"
 )
 
 // A docIterator iterates over documents in order.

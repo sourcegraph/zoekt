@@ -24,7 +24,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"sort"
 	"testing"
 	"time"
@@ -34,6 +33,7 @@ import (
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
+	"github.com/grafana/regexp"
 )
 
 func createSubmoduleRepo(dir string) error {

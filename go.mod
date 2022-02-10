@@ -17,6 +17,7 @@ require (
 	github.com/google/go-cmp v0.5.5
 	github.com/google/go-github/v27 v27.0.6
 	github.com/google/slothfs v0.0.0-20190417171004-6b42407d9230
+	github.com/grafana/regexp v0.0.0-20220202152701-6a046c4caf32
 	github.com/hashicorp/go-hclog v0.12.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.6.4
 	github.com/keegancsmith/rpc v1.1.0

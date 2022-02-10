@@ -16,13 +16,13 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
 	"net"
 	"net/http"
-	"regexp"
 	"regexp/syntax"
 	"sort"
 	"strconv"
@@ -30,12 +30,11 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
-
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/rpc"
 	"github.com/google/zoekt/stream"
+	"github.com/grafana/regexp"
 )
 
 var Funcmap = template.FuncMap{

@@ -18,13 +18,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"regexp"
 	"regexp/syntax"
 	"sort"
 	"strings"
 
 	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/google/zoekt/query"
+	"github.com/grafana/regexp"
 )
 
 const maxUInt16 = 0xffff
