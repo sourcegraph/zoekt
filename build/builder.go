@@ -391,7 +391,7 @@ func (o *Options) findShard() string {
 			continue
 		}
 		for _, repo := range repos {
-			if repo.Name == o.RepositoryDescription.Name {
+			if repo.ID == o.RepositoryDescription.ID {
 				return fn
 			}
 		}
