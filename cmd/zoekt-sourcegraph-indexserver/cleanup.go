@@ -433,18 +433,34 @@ func (s *Server) vacuum() {
 		}
 
 		if info.Size() < s.minSizeBytes {
-			paths, err := zoekt.IndexFilePaths(path)
-			if err != nil {
-				debug.Printf("failed getting all file paths for %s", path)
+			// feature flag: place file EXPLODE in IndexDir
+			if _, err := os.Stat(filepath.Join(s.IndexDir, "EXPLODE")); err == nil {
+				cmd := exec.Command("zoekt-merge-index", "explode", path)
+
+				s.muIndexDir.Lock()
+				b, err := cmd.CombinedOutput()
+				s.muIndexDir.Unlock()
+
+				if err != nil {
+					debug.Printf("failed to explode compound shard %s: %s", path, string(b))
+				} else {
+					shardsLog(s.IndexDir, "explode", []shard{{Path: path}})
+				}
+				continue
+			} else {
+				paths, err := zoekt.IndexFilePaths(path)
+				if err != nil {
+					debug.Printf("failed getting all file paths for %s", path)
+					continue
+				}
+				s.muIndexDir.Lock()
+				for _, p := range paths {
+					os.Remove(p)
+				}
+				s.muIndexDir.Unlock()
+				shardsLog(s.IndexDir, "delete", []shard{{Path: path}})
 				continue
 			}
-			s.muIndexDir.Lock()
-			for _, p := range paths {
-				os.Remove(p)
-			}
-			s.muIndexDir.Unlock()
-			shardsLog(s.IndexDir, "delete", []shard{{Path: path}})
-			continue
 		}
 
 		s.muIndexDir.Lock()
@@ -474,7 +490,7 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 	if mockMerger != nil {
 		runMerge = mockMerger
 	} else {
-		runMerge = exec.Command("zoekt-merge-index", fn).Run
+		runMerge = exec.Command("zoekt-merge-index", "merge", fn).Run
 	}
 
 	repos, _, err := zoekt.ReadMetadataPath(fn)

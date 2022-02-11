@@ -213,7 +213,7 @@ func callMerge(shards []candidate) ([]byte, []byte, error) {
 		return nil, nil, nil
 	}
 
-	cmd := exec.Command("zoekt-merge-index", "-")
+	cmd := exec.Command("zoekt-merge-index", "merge", "-")
 
 	outBuf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}

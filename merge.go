@@ -3,8 +3,10 @@ package zoekt
 import (
 	"crypto/sha1"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -119,47 +121,132 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 				}
 			}
 
-			doc := Document{
-				Name: string(d.fileName(docID)),
-				// Content set below since it can return an error
-				// Branches set below since it requires lookups
-				SubRepositoryPath: d.subRepoPaths[repoID][d.subRepos[docID]],
-				Language:          d.languageMap[d.getLanguage(docID)],
-				// SkipReason not set, will be part of content from original indexer.
-			}
-
-			var err error
-			if doc.Content, err = d.readContents(docID); err != nil {
-				return nil, err
-			}
-
-			if doc.Symbols, _, err = d.readDocSections(docID, nil); err != nil {
-				return nil, err
-			}
-
-			doc.SymbolsMetaData = make([]*Symbol, len(doc.Symbols))
-			for i := range doc.SymbolsMetaData {
-				doc.SymbolsMetaData[i] = d.symbols.data(d.fileEndSymbol[docID] + uint32(i))
-			}
-
-			// calculate branches
-			{
-				mask := d.fileBranchMasks[docID]
-				id := uint32(1)
-				for mask != 0 {
-					if mask&0x1 != 0 {
-						doc.Branches = append(doc.Branches, d.branchNames[repoID][uint(id)])
-					}
-					id <<= 1
-					mask >>= 1
-				}
-			}
-
-			if err := ib.Add(doc); err != nil {
+			if err := addDocument(d, ib, repoID, docID); err != nil {
 				return nil, err
 			}
 		}
 	}
 
 	return ib, nil
+}
+
+// Explode takes an IndexFile f and creates 1 simple shard per repository
+// contained in f. Explode returns a map of tmpName -> dstName. It is the
+// responsibility of the caller to rename the temporary shard(s) and delete the
+// input shard.
+func Explode(dstDir string, f IndexFile) (map[string]string, error) {
+	searcher, err := NewSearcher(f)
+	if err != nil {
+		return nil, err
+	}
+	d := searcher.(*indexData)
+
+	shardNames := make(map[string]string, len(d.repoMetaData))
+
+	writeShard := func(ib *IndexBuilder) error {
+		if len(ib.repoList) != 1 {
+			return fmt.Errorf("expected ib to contain exactly 1 repository")
+		}
+		fn := filepath.Join(dstDir, shardName(ib.repoList[0].Name, ib.indexFormatVersion, 0))
+		fnTmp := fn + ".tmp"
+		shardNames[fnTmp] = fn
+		return builderWriteAll(fnTmp, ib)
+	}
+
+	var ib *IndexBuilder
+	lastRepoID := -1
+	for docID := uint32(0); int(docID) < len(d.fileBranchMasks); docID++ {
+		repoID := int(d.repos[docID])
+
+		if d.repoMetaData[repoID].Tombstone {
+			continue
+		}
+
+		if repoID != lastRepoID {
+			if lastRepoID > repoID {
+				return shardNames, fmt.Errorf("non-contiguous repo ids in %s for document %d: old=%d current=%d", d.String(), docID, lastRepoID, repoID)
+			}
+			lastRepoID = repoID
+
+			if ib != nil {
+				if err := writeShard(ib); err != nil {
+					return shardNames, err
+				}
+			}
+
+			ib = newIndexBuilder()
+			ib.indexFormatVersion = IndexFormatVersion
+			if err := ib.setRepository(&d.repoMetaData[repoID]); err != nil {
+				return shardNames, err
+			}
+		}
+
+		err := addDocument(d, ib, repoID, docID)
+		if err != nil {
+			return shardNames, err
+		}
+	}
+
+	if ib != nil {
+		if err := writeShard(ib); err != nil {
+			return shardNames, err
+		}
+	}
+
+	return shardNames, nil
+}
+
+func addDocument(d *indexData, ib *IndexBuilder, repoID int, docID uint32) error {
+	doc := Document{
+		Name: string(d.fileName(docID)),
+		// Content set below since it can return an error
+		// Branches set below since it requires lookups
+		SubRepositoryPath: d.subRepoPaths[repoID][d.subRepos[docID]],
+		Language:          d.languageMap[d.getLanguage(docID)],
+		// SkipReason not set, will be part of content from original indexer.
+	}
+
+	var err error
+	if doc.Content, err = d.readContents(docID); err != nil {
+		return err
+	}
+
+	if doc.Symbols, _, err = d.readDocSections(docID, nil); err != nil {
+		return err
+	}
+
+	doc.SymbolsMetaData = make([]*Symbol, len(doc.Symbols))
+	for i := range doc.SymbolsMetaData {
+		doc.SymbolsMetaData[i] = d.symbols.data(d.fileEndSymbol[docID] + uint32(i))
+	}
+
+	// calculate branches
+	{
+		mask := d.fileBranchMasks[docID]
+		id := uint32(1)
+		for mask != 0 {
+			if mask&0x1 != 0 {
+				doc.Branches = append(doc.Branches, d.branchNames[repoID][uint(id)])
+			}
+			id <<= 1
+			mask >>= 1
+		}
+	}
+	return ib.Add(doc)
+}
+
+// copied from builder package to avoid circular imports.
+func hashString(s string) string {
+	h := sha1.New()
+	_, _ = io.WriteString(h, s)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// copied from builder package to avoid circular imports.
+func shardName(name string, version, n int) string {
+	abs := url.QueryEscape(name)
+	if len(abs) > 200 {
+		abs = abs[:200] + hashString(abs)[:8]
+	}
+	return fmt.Sprintf("%s_v%d.%05d.zoekt", abs, version, n)
 }
