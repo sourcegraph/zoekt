@@ -57,8 +57,8 @@ type IndexOptions struct {
 	Archived bool
 }
 
-// indexArgs represents the arguments we pass to zoekt-git-index
-type indexArgs struct {
+// IndexArgs represents the arguments we pass to zoekt-git-index
+type IndexArgs struct {
 	IndexOptions
 
 	// Incremental indicates to skip indexing if already indexed.
@@ -80,7 +80,7 @@ type indexArgs struct {
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
-func (o *indexArgs) BuildOptions() *build.Options {
+func (o *IndexArgs) BuildOptions() *build.Options {
 	return &build.Options{
 		// It is important that this RepositoryDescription exactly matches what
 		// the indexer we call will produce. This is to ensure that
@@ -114,7 +114,7 @@ func marshalBool(b bool) string {
 	return "0"
 }
 
-func (o *indexArgs) String() string {
+func (o *IndexArgs) String() string {
 	s := fmt.Sprintf("%d %s", o.RepoID, o.Name)
 	for i, b := range o.Branches {
 		if i == 0 {
@@ -126,7 +126,7 @@ func (o *indexArgs) String() string {
 	return s
 }
 
-func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
+func gitIndex(o *IndexArgs, runCmd func(*exec.Cmd) error) error {
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
 	}

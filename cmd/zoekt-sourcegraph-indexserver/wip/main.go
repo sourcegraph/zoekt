@@ -354,7 +354,7 @@ func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 }
 
 // Index starts an index job for repo name at commit.
-func (s *Server) Index(args *indexArgs) (state indexState, err error) {
+func (s *Server) Index(args *IndexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
 
 	defer func() {
@@ -410,8 +410,8 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	return indexStateSuccess, gitIndex(args, runCmd)
 }
 
-func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
-	return &indexArgs{
+func (s *Server) indexArgs(opts IndexOptions) *IndexArgs {
+	return &IndexArgs{
 		IndexOptions: opts,
 
 		IndexDir:    s.IndexDir,
@@ -438,7 +438,7 @@ func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 	}
 }
 
-func createEmptyShard(args *indexArgs) error {
+func createEmptyShard(args *IndexArgs) error {
 	bo := args.BuildOptions()
 	bo.SetDefaults()
 	bo.RepositoryDescription.Branches = []zoekt.RepositoryBranch{{Name: "HEAD", Version: "404aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
