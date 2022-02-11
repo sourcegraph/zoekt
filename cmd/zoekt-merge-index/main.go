@@ -79,7 +79,7 @@ func explode(dstDir string, inputShard string) error {
 		}
 	}()
 	if err != nil {
-		return fmt.Errorf("exloded failed: %w", err)
+		return fmt.Errorf("zoekt.Explode: %w", err)
 	}
 	var fns []string
 	for tmpFn, dstFn := range exploded {
@@ -126,7 +126,7 @@ func explode(dstDir string, inputShard string) error {
 	}
 
 	if err = removeInputShard(); err != nil {
-		return fmt.Errorf("explode: error removing shard %s: %w", inputShard, err)
+		return fmt.Errorf("explode: error removing input shard %s: %w", inputShard, err)
 	}
 	return nil
 }
