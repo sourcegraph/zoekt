@@ -17,8 +17,9 @@ package query
 import (
 	"log"
 	"reflect"
-	"regexp"
 	"testing"
+
+	"github.com/grafana/regexp"
 )
 
 var _ = log.Println

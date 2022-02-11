@@ -23,7 +23,6 @@ import (
 	"math"
 	"os"
 	"reflect"
-	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -37,6 +36,7 @@ import (
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/stream"
+	"github.com/grafana/regexp"
 )
 
 type crashSearcher struct{}

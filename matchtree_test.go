@@ -16,11 +16,11 @@ package zoekt
 
 import (
 	"reflect"
-	"regexp"
 	"testing"
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/google/zoekt/query"
+	"github.com/grafana/regexp"
 )
 
 func Test_breakOnNewlines(t *testing.T) {

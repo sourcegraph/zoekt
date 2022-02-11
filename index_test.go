@@ -20,16 +20,15 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"regexp"
 	"regexp/syntax"
 	"strings"
 	"testing"
 
-	"github.com/kylelemons/godebug/pretty"
-
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt/query"
+	"github.com/grafana/regexp"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 func clearScores(r *SearchResult) {

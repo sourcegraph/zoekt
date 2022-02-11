@@ -30,7 +30,6 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"sort"
@@ -42,6 +41,7 @@ import (
 	"github.com/bmatcuk/doublestar"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/ctags"
+	"github.com/grafana/regexp"
 	"github.com/rs/xid"
 	"gopkg.in/natefinch/lumberjack.v2"
 )

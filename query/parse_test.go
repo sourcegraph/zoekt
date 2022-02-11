@@ -17,9 +17,10 @@ package query
 import (
 	"log"
 	"reflect"
-	"regexp"
 	"regexp/syntax"
 	"testing"
+
+	"github.com/grafana/regexp"
 )
 
 func mustParseRE(s string) *syntax.Regexp {
