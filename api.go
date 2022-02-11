@@ -80,6 +80,10 @@ type LineMatch struct {
 	LineEnd    int
 	LineNumber int
 
+	// Before and After are only set when SearchOptions.NumContextLines is > 0
+	Before []byte
+	After  []byte
+
 	// If set, this was a match on the filename.
 	FileName bool
 
@@ -537,6 +541,12 @@ type SearchOptions struct {
 	// Trim the number of results after collating and sorting the
 	// results
 	MaxDocDisplayCount int
+
+	// If set to a number greater than zero then up to this many number
+	// of context lines will be added before and after each matched line.
+	// Note that the included context lines might contain matches and
+	// it's up to the consumer of the result to remove those lines.
+	NumContextLines int
 
 	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
 	// a command-line flag

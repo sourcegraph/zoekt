@@ -18,7 +18,6 @@ import (
 	"context"
 	"hash/fnv"
 	"reflect"
-	"regexp"
 	"regexp/syntax"
 	"strings"
 	"testing"
@@ -26,6 +25,7 @@ import (
 	"github.com/RoaringBitmap/roaring"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt/query"
+	"github.com/grafana/regexp"
 )
 
 var opnames = map[syntax.Op]string{

@@ -15,6 +15,7 @@
 package build
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -22,17 +23,15 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
-	"golang.org/x/net/context"
-
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
+	"github.com/grafana/regexp"
 )
 
 func TestBasic(t *testing.T) {

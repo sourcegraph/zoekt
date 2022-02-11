@@ -130,7 +130,7 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
-func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
+func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
 	var result []LineMatch
 	if ms[0].fileName {
 		// There is only "line" in a filename.
@@ -150,7 +150,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 		}
 	} else {
 		ms = breakMatchesOnNewlines(ms, p.data(false))
-		result = p.fillContentMatches(ms)
+		result = p.fillContentMatches(ms, numContextLines)
 	}
 
 	sects := p.docSections()
@@ -161,7 +161,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch) []LineMatch {
 	return result
 }
 
-func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
+func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
 	var result []LineMatch
 	for len(ms) > 0 {
 		m := ms[0]
@@ -212,6 +212,11 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
 		}
 		finalMatch.Line = data[lineStart:lineEnd]
 
+		if numContextLines > 0 {
+			finalMatch.Before = getLines(data, p.newlines(), num-numContextLines, num)
+			finalMatch.After = getLines(data, p.newlines(), num+1, num+1+numContextLines)
+		}
+
 		for _, m := range lineCands {
 			fragment := LineFragmentMatch{
 				Offset:      m.byteOffset,
@@ -232,6 +237,30 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch) []LineMatch {
 		result = append(result, finalMatch)
 	}
 	return result
+}
+
+// getLines returns a slice of data containing the lines [low, high).
+// low is 1-based and inclusive. high is exclusive.
+func getLines(data []byte, newLines []uint32, low, high int) []byte {
+	// newlines[0] is the start of the 2nd line in data.
+	// So adjust low and high to be based on newLines.
+	low -= 2
+	high -= 2
+	if low >= high || high < 0 || low >= len(newLines) || len(newLines) == 0 {
+		return nil
+	}
+
+	var startIndex uint32
+	if low < 0 {
+		startIndex = 0
+	} else {
+		startIndex = newLines[low] + 1
+	}
+
+	if high >= len(newLines) {
+		return data[startIndex:]
+	}
+	return data[startIndex:newLines[high]]
 }
 
 const (

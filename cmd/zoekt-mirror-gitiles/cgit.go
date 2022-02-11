@@ -21,8 +21,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
+
+	"github.com/grafana/regexp"
 )
 
 // I will go to programmer hell for trying to parse HTML with

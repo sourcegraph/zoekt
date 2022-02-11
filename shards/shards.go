@@ -738,6 +738,9 @@ func observeMetrics(sr *zoekt.SearchResult) {
 }
 
 func copySlice(src *[]byte) {
+	if *src == nil {
+		return
+	}
 	dst := make([]byte, len(*src))
 	copy(dst, *src)
 	*src = dst
@@ -749,6 +752,8 @@ func copyFiles(sr *zoekt.SearchResult) {
 		copySlice(&sr.Files[i].Checksum)
 		for l := range sr.Files[i].LineMatches {
 			copySlice(&sr.Files[i].LineMatches[l].Line)
+			copySlice(&sr.Files[i].LineMatches[l].Before)
+			copySlice(&sr.Files[i].LineMatches[l].After)
 		}
 	}
 }

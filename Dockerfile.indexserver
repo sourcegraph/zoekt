@@ -1,7 +1,7 @@
-FROM alpine
+FROM alpine:3.15.0
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
-    apk add --no-cache ca-certificates bind-tools tini git python3 expat=~2.4.3
+    apk add --no-cache ca-certificates bind-tools tini git jansson
 
 # Run as non-root user sourcegraph. External volumes should be mounted under /data (which will be owned by sourcegraph).
 RUN mkdir -p /home/sourcegraph
@@ -19,10 +19,6 @@ COPY --from=zoekt \
     /usr/local/bin/zoekt-archive-index \
     /usr/local/bin/zoekt-git-index \
     /usr/local/bin/zoekt-merge-index \
-    /usr/local/bin/
-
-COPY \
-    cmd/zoekt-merge-index/zoekt-merge-small.py \
     /usr/local/bin/
 
 # zoekt indexing has a large stable heap size (gigs), and as such the default

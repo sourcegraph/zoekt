@@ -17,6 +17,7 @@ require (
 	github.com/google/go-cmp v0.5.5
 	github.com/google/go-github/v27 v27.0.6
 	github.com/google/slothfs v0.0.0-20190417171004-6b42407d9230
+	github.com/grafana/regexp v0.0.0-20220202152701-6a046c4caf32
 	github.com/hashicorp/go-hclog v0.12.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.6.4
 	github.com/keegancsmith/rpc v1.1.0
@@ -29,7 +30,7 @@ require (
 	github.com/prometheus/procfs v0.0.10 // indirect
 	github.com/rs/xid v1.3.0
 	github.com/sergi/go-diff v1.2.0 // indirect
-	github.com/sourcegraph/go-ctags v0.0.0-20210923201916-00b9c039141c
+	github.com/sourcegraph/go-ctags v0.0.0-20220210084826-96f4236f0a78
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible
 	github.com/xanzy/go-gitlab v0.28.0

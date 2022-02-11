@@ -148,6 +148,7 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 
 			metricResolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
 			for _, opt := range opts {
+				metricGetIndexOptions.Inc()
 				if opt.Error != "" {
 					metricGetIndexOptionsError.Inc()
 					tr.LazyPrintf("failed fetching options for %v: %v", opt.Name, opt.Error)
@@ -388,7 +389,7 @@ func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, 
 func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 	dir := filepath.Join(sf.RootDir, filepath.FromSlash(name))
 	exists := func(p string) bool {
-		_, err := os.Stat(filepath.Join(dir, "SG_PRIVATE"))
+		_, err := os.Stat(filepath.Join(dir, p))
 		return err == nil
 	}
 

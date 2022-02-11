@@ -54,6 +54,10 @@ var (
 		Buckets: prometheus.ExponentialBuckets(.25, 2, 4), // 250ms -> 2s
 	}, []string{"success"}) // success=true|false
 
+	metricGetIndexOptions = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "get_index_options_total",
+		Help: "The total number of times we tried to get index options for a repository. Includes errors.",
+	})
 	metricGetIndexOptionsError = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "get_index_options_error_total",
 		Help: "The total number of times we failed to get index options for a repository.",
@@ -465,12 +469,12 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	if args.Incremental {
 		bo := args.BuildOptions()
 		bo.SetDefaults()
-		incrementalState := bo.IndexState()
+		incrementalState, fn := bo.IndexState()
 		reason = string(incrementalState)
 		metricIndexIncrementalIndexState.WithLabelValues(string(incrementalState)).Inc()
 		switch incrementalState {
 		case build.IndexStateEqual:
-			debug.Printf("%s index already up to date", args.String())
+			debug.Printf("%s index already up to date. Shard=%s", args.String(), fn)
 			return indexStateNoop, nil
 
 		case build.IndexStateMeta:
@@ -704,7 +708,19 @@ func getEnvWithDefaultInt64(k string, defaultVal int64) int64 {
 	}
 	i, err := strconv.ParseInt(v, 10, 64)
 	if err != nil {
-		log.Fatalf("error parsing ENV %s: %s", k, err)
+		log.Fatalf("error parsing ENV %s to int64: %s", k, err)
+	}
+	return i
+}
+
+func getEnvWithDefaultInt(k string, defaultVal int) int {
+	v := os.Getenv(k)
+	if v == "" {
+		return defaultVal
+	}
+	i, err := strconv.Atoi(k)
+	if err != nil {
+		log.Fatalf("error parsing ENV %s to int: %s", k, err)
 	}
 	return i
 }
@@ -735,9 +751,12 @@ func main() {
 	hostname := flag.String("hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	cpuFraction := flag.Float64("cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
 	dbg := flag.Bool("debug", srcLogLevelIsDebug(), "turn on more verbose logging.")
+	blockProfileRate := flag.Int("block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler (default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
 
 	// non daemon mode for debugging/testing
+	debugFind := flag.String("debug-find", "", "find a shard by repo name.")
 	debugList := flag.Bool("debug-list", false, "do not start the indexserver, rather list the repositories owned by this indexserver then quit.")
+	debugListIndexed := flag.Bool("debug-list-indexed", false, "do not start the indexserver, rather list the repositories indexed by this indexserver then quit.")
 	debugIndex := flag.String("debug-index", "", "do not start the indexserver, rather index the repository ID then quit.")
 	debugShard := flag.String("debug-shard", "", "do not start the indexserver, rather print shard stats then quit.")
 	debugMeta := flag.String("debug-meta", "", "do not start the indexserver, rather print shard metadata then quit.")
@@ -766,6 +785,12 @@ func main() {
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
 
+	// Set the sampling rate of Go's block profiler: https://github.com/DataDog/go-profiler-notes/blob/main/guide/README.md#block-profiler.
+	// The block profiler is disabled by default.
+	if blockProfileRate != nil {
+		runtime.SetBlockProfileRate(*blockProfileRate)
+	}
+
 	// Automatically prepend our own path at the front, to minimize
 	// required configuration.
 	if l, err := os.Readlink("/proc/self/exe"); err == nil {
@@ -778,7 +803,7 @@ func main() {
 		}
 	}
 
-	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != "" || *debugMerge
+	isDebugCmd := *debugList || *debugIndex != "" || *debugShard != "" || *debugMeta != "" || *debugMerge || *debugFind != "" || *debugListIndexed
 
 	if err := setupTmpDir(*index, !isDebugCmd); err != nil {
 		log.Fatalf("failed to setup TMPDIR under %s: %v", *index, err)
@@ -854,6 +879,28 @@ func main() {
 		}
 		for _, r := range repos.IDs {
 			fmt.Println(r)
+		}
+		os.Exit(0)
+	}
+
+	if *debugListIndexed {
+		indexed := listIndexed(s.IndexDir)
+		for _, r := range indexed {
+			fmt.Println(r)
+		}
+		os.Exit(0)
+	}
+
+	if *debugFind != "" {
+		args := indexArgs{
+			IndexOptions: IndexOptions{
+				Name: *debugFind,
+			},
+			IndexDir: *index,
+		}
+		bo := args.BuildOptions()
+		for _, s := range bo.FindAllShards() {
+			fmt.Println(s)
 		}
 		os.Exit(0)
 	}

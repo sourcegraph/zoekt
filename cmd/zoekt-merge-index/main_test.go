@@ -49,3 +49,93 @@ func TestMerge(t *testing.T) {
 		t.Errorf("got %v, want 2 files.", result.Files)
 	}
 }
+
+// TODO (stefan): make zoekt-git-index deterministic to compare the simple shards
+// byte by byte instead of by search results.
+
+// Merge 2 simple shards and then explode them.
+func TestExplode(t *testing.T) {
+	dir := t.TempDir()
+
+	v16Shards, err := filepath.Glob("../../testdata/shards/repo*_v16.*.zoekt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(v16Shards)
+	t.Log(v16Shards)
+
+	err = merge(dir, v16Shards)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cs, err := filepath.Glob(filepath.Join(dir, "compound-*.zoekt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = explode(dir, cs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cs, err = filepath.Glob(filepath.Join(dir, "compound-*.zoekt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(cs) != 0 {
+		t.Fatalf("explode should have deleted the compound shard if it returned without error")
+	}
+
+	exploded, err := filepath.Glob(filepath.Join(dir, "*.zoekt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(exploded) != len(v16Shards) {
+		t.Fatalf("the number of simple shards before %d and after %d should be the same", len(v16Shards), len(exploded))
+	}
+
+	ss, err := shards.NewDirectorySearcher(dir)
+	if err != nil {
+		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
+	}
+	defer ss.Close()
+
+	var sOpts zoekt.SearchOptions
+	ctx := context.Background()
+
+	cases := []struct {
+		searchLiteral string
+		wantResults   int
+	}{
+		{
+			searchLiteral: "apple",
+			wantResults:   1,
+		},
+		{
+			searchLiteral: "hello",
+			wantResults:   1,
+		},
+		{
+			searchLiteral: "main",
+			wantResults:   2,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.searchLiteral, func(t *testing.T) {
+			q, err := query.Parse(c.searchLiteral)
+			if err != nil {
+				t.Fatalf("Parse(%s): %v", c.searchLiteral, err)
+			}
+			result, err := ss.Search(ctx, q, &sOpts)
+			if err != nil {
+				t.Fatalf("Search(%v): %v", q, err)
+			}
+			if got := len(result.Files); got != c.wantResults {
+				t.Fatalf("wanted %d results, got %d", c.wantResults, got)
+			}
+		})
+	}
+}

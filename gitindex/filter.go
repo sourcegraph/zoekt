@@ -14,7 +14,7 @@
 
 package gitindex
 
-import "regexp"
+import "github.com/grafana/regexp"
 
 // Filter is a include/exclude filter to be used for repo names.
 type Filter struct {

@@ -18,10 +18,10 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"regexp"
 	"regexp/syntax"
 
 	"github.com/go-enry/go-enry/v2"
+	"github.com/grafana/regexp"
 )
 
 var _ = log.Printf

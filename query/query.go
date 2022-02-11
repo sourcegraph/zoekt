@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"log"
 	"reflect"
-	"regexp"
 	"regexp/syntax"
 	"sort"
 	"strconv"
@@ -29,6 +28,7 @@ import (
 	"sync"
 
 	"github.com/RoaringBitmap/roaring"
+	"github.com/grafana/regexp"
 )
 
 var _ = log.Println

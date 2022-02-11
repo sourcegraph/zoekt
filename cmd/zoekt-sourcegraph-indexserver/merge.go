@@ -7,11 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"time"
 
 	"github.com/google/zoekt"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -213,7 +213,7 @@ func callMerge(shards []candidate) ([]byte, []byte, error) {
 		return nil, nil, nil
 	}
 
-	cmd := exec.Command("zoekt-merge-index", "-")
+	cmd := exec.Command("zoekt-merge-index", "merge", "-")
 
 	outBuf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
