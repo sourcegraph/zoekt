@@ -139,31 +139,21 @@ func Explode(dstDir string, f IndexFile) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	d := searcher.(*indexData)
 
-	ibs, err := explode(searcher.(*indexData))
-	if err != nil {
-		return nil, err
-	}
+	shardNames := make(map[string]string, len(d.repoMetaData))
 
-	shardNames := make(map[string]string, len(ibs))
-	for _, ib := range ibs {
+	writeShard := func(ib *IndexBuilder) error {
 		if len(ib.repoList) != 1 {
-			return shardNames, fmt.Errorf("expected each IndexBuilder to contain exactly 1 repository")
+			return fmt.Errorf("expected ib to contain exactly 1 repository")
 		}
 		fn := filepath.Join(dstDir, shardName(ib.repoList[0].Name, ib.indexFormatVersion, 0))
 		fnTmp := fn + ".tmp"
 		shardNames[fnTmp] = fn
-		if err := builderWriteAll(fnTmp, ib); err != nil {
-			return shardNames, err
-		}
+		return builderWriteAll(fnTmp, ib)
 	}
-	return shardNames, nil
-}
 
-func explode(d *indexData) ([]*IndexBuilder, error) {
 	var ib *IndexBuilder
-	ibs := make([]*IndexBuilder, 0, len(d.repoMetaData))
-
 	lastRepoID := -1
 	for docID := uint32(0); int(docID) < len(d.fileBranchMasks); docID++ {
 		repoID := int(d.repos[docID])
@@ -174,31 +164,36 @@ func explode(d *indexData) ([]*IndexBuilder, error) {
 
 		if repoID != lastRepoID {
 			if lastRepoID > repoID {
-				return nil, fmt.Errorf("non-contiguous repo ids in %s for document %d: old=%d current=%d", d.String(), docID, lastRepoID, repoID)
+				return shardNames, fmt.Errorf("non-contiguous repo ids in %s for document %d: old=%d current=%d", d.String(), docID, lastRepoID, repoID)
 			}
 			lastRepoID = repoID
 
 			if ib != nil {
-				ibs = append(ibs, ib)
+				if err := writeShard(ib); err != nil {
+					return shardNames, err
+				}
 			}
 
 			ib = newIndexBuilder()
 			ib.indexFormatVersion = IndexFormatVersion
 			if err := ib.setRepository(&d.repoMetaData[repoID]); err != nil {
-				return nil, err
+				return shardNames, err
 			}
 		}
 
 		err := addDocument(d, ib, repoID, docID)
 		if err != nil {
-			return nil, err
+			return shardNames, err
 		}
 	}
 
 	if ib != nil {
-		ibs = append(ibs, ib)
+		if err := writeShard(ib); err != nil {
+			return shardNames, err
+		}
 	}
-	return ibs, nil
+
+	return shardNames, nil
 }
 
 func addDocument(d *indexData, ib *IndexBuilder, repoID int, docID uint32) error {
