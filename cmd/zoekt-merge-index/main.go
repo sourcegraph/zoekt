@@ -57,7 +57,7 @@ func mergeCmd(paths []string) error {
 // result contains the list of all new shards.
 //
 // explode cleans up tmp files created in the process on a best effort basis.
-func explode(dstDir string, inputShard string) ([]string, error) {
+func explode(dstDir string, inputShard string) error {
 	var tmpFns []string
 	var err error
 
@@ -71,19 +71,19 @@ func explode(dstDir string, inputShard string) ([]string, error) {
 
 	f, err := os.Open(inputShard)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
 
 	indexFile, err := zoekt.NewIndexFile(f)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer indexFile.Close()
 
 	tmpFns, err = zoekt.Explode(dstDir, indexFile)
 	if err != nil {
-		return nil, fmt.Errorf("exloded failed: %w", err)
+		return fmt.Errorf("exloded failed: %w", err)
 	}
 	var fns []string
 	for _, tmpFn := range tmpFns {
@@ -94,7 +94,7 @@ func explode(dstDir string, inputShard string) ([]string, error) {
 			for _, fn := range fns {
 				os.Remove(fn)
 			}
-			return nil, fmt.Errorf("explode: rename failed: %w", err)
+			return fmt.Errorf("explode: rename failed: %w", err)
 		}
 		fns = append(fns, fn)
 	}
@@ -105,7 +105,7 @@ func explode(dstDir string, inputShard string) ([]string, error) {
 	// is due to the fact that simple shards are named based on the name of the repo
 	// they contain.
 	if len(tmpFns) == 1 && strings.TrimSuffix(tmpFns[0], ".tmp") == inputShard {
-		return fns, nil
+		return nil
 	}
 
 	removeInputShard := func() (err error) {
@@ -132,14 +132,13 @@ func explode(dstDir string, inputShard string) ([]string, error) {
 	}
 
 	if err = removeInputShard(); err != nil {
-		return nil, fmt.Errorf("explode: error removing shard %s: %w", inputShard, err)
+		return fmt.Errorf("explode: error removing shard %s: %w", inputShard, err)
 	}
-	return fns, nil
+	return nil
 }
 
 func explodeCmd(path string) error {
-	_, err := explode(filepath.Dir(path), path)
-	return err
+	return explode(filepath.Dir(path), path)
 }
 
 func main() {
@@ -155,5 +154,4 @@ func main() {
 	default:
 		log.Fatalf("unknown subcommand %s", subCommand)
 	}
-
 }

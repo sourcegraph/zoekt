@@ -73,7 +73,7 @@ func TestExplode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	exploded, err := explode(dir, cs[0])
+	err = explode(dir, cs[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +85,11 @@ func TestExplode(t *testing.T) {
 
 	if len(cs) != 0 {
 		t.Fatalf("explode should have deleted the compound shard if it returned without error")
+	}
+
+	exploded, err := filepath.Glob(filepath.Join(dir, "*.zoekt"))
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	if len(exploded) != len(v16Shards) {
