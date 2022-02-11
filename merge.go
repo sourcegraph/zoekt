@@ -121,43 +121,7 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 				}
 			}
 
-			doc := Document{
-				Name: string(d.fileName(docID)),
-				// Content set below since it can return an error
-				// Branches set below since it requires lookups
-				SubRepositoryPath: d.subRepoPaths[repoID][d.subRepos[docID]],
-				Language:          d.languageMap[d.getLanguage(docID)],
-				// SkipReason not set, will be part of content from original indexer.
-			}
-
-			var err error
-			if doc.Content, err = d.readContents(docID); err != nil {
-				return nil, err
-			}
-
-			if doc.Symbols, _, err = d.readDocSections(docID, nil); err != nil {
-				return nil, err
-			}
-
-			doc.SymbolsMetaData = make([]*Symbol, len(doc.Symbols))
-			for i := range doc.SymbolsMetaData {
-				doc.SymbolsMetaData[i] = d.symbols.data(d.fileEndSymbol[docID] + uint32(i))
-			}
-
-			// calculate branches
-			{
-				mask := d.fileBranchMasks[docID]
-				id := uint32(1)
-				for mask != 0 {
-					if mask&0x1 != 0 {
-						doc.Branches = append(doc.Branches, d.branchNames[repoID][uint(id)])
-					}
-					id <<= 1
-					mask >>= 1
-				}
-			}
-
-			if err := ib.Add(doc); err != nil {
+			if err := addDocument(d, ib, repoID, docID); err != nil {
 				return nil, err
 			}
 		}
@@ -225,43 +189,8 @@ func explode(d *indexData) ([]*IndexBuilder, error) {
 			}
 		}
 
-		doc := Document{
-			Name: string(d.fileName(docID)),
-			// Content set below since it can return an error
-			// Branches set below since it requires lookups
-			SubRepositoryPath: d.subRepoPaths[repoID][d.subRepos[docID]],
-			Language:          d.languageMap[d.getLanguage(docID)],
-			// SkipReason not set, will be part of content from original indexer.
-		}
-
-		var err error
-		if doc.Content, err = d.readContents(docID); err != nil {
-			return nil, err
-		}
-
-		if doc.Symbols, _, err = d.readDocSections(docID, nil); err != nil {
-			return nil, err
-		}
-
-		doc.SymbolsMetaData = make([]*Symbol, len(doc.Symbols))
-		for i := range doc.SymbolsMetaData {
-			doc.SymbolsMetaData[i] = d.symbols.data(d.fileEndSymbol[docID] + uint32(i))
-		}
-
-		// calculate branches
-		{
-			mask := d.fileBranchMasks[docID]
-			id := uint32(1)
-			for mask != 0 {
-				if mask&0x1 != 0 {
-					doc.Branches = append(doc.Branches, d.branchNames[repoID][uint(id)])
-				}
-				id <<= 1
-				mask >>= 1
-			}
-		}
-
-		if err := ib.Add(doc); err != nil {
+		err := addDocument(d, ib, repoID, docID)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -270,6 +199,45 @@ func explode(d *indexData) ([]*IndexBuilder, error) {
 		ibs = append(ibs, ib)
 	}
 	return ibs, nil
+}
+
+func addDocument(d *indexData, ib *IndexBuilder, repoID int, docID uint32) error {
+	doc := Document{
+		Name: string(d.fileName(docID)),
+		// Content set below since it can return an error
+		// Branches set below since it requires lookups
+		SubRepositoryPath: d.subRepoPaths[repoID][d.subRepos[docID]],
+		Language:          d.languageMap[d.getLanguage(docID)],
+		// SkipReason not set, will be part of content from original indexer.
+	}
+
+	var err error
+	if doc.Content, err = d.readContents(docID); err != nil {
+		return err
+	}
+
+	if doc.Symbols, _, err = d.readDocSections(docID, nil); err != nil {
+		return err
+	}
+
+	doc.SymbolsMetaData = make([]*Symbol, len(doc.Symbols))
+	for i := range doc.SymbolsMetaData {
+		doc.SymbolsMetaData[i] = d.symbols.data(d.fileEndSymbol[docID] + uint32(i))
+	}
+
+	// calculate branches
+	{
+		mask := d.fileBranchMasks[docID]
+		id := uint32(1)
+		for mask != 0 {
+			if mask&0x1 != 0 {
+				doc.Branches = append(doc.Branches, d.branchNames[repoID][uint(id)])
+			}
+			id <<= 1
+			mask >>= 1
+		}
+	}
+	return ib.Add(doc)
 }
 
 // copied from builder package to avoid circular imports.
