@@ -58,14 +58,14 @@ func mergeCmd(paths []string) error {
 //
 // explode cleans up tmp files created in the process on a best effort basis.
 func explode(dstDir string, inputShard string) error {
-	var tmpFns []string
+	var exploded map[string]string
 	var err error
 
 	defer func() {
 		// best effort removal of tmp files. If os.Remove failes, indexserver will delete
 		// the leftover tmp files during the next cleanup.
-		for _, fn := range tmpFns {
-			os.Remove(fn)
+		for tmpFn := range exploded {
+			os.Remove(tmpFn)
 		}
 	}()
 
@@ -81,14 +81,13 @@ func explode(dstDir string, inputShard string) error {
 	}
 	defer indexFile.Close()
 
-	tmpFns, err = zoekt.Explode(dstDir, indexFile)
+	exploded, err = zoekt.Explode(dstDir, indexFile)
 	if err != nil {
 		return fmt.Errorf("exloded failed: %w", err)
 	}
 	var fns []string
-	for _, tmpFn := range tmpFns {
-		fn := strings.TrimSuffix(tmpFn, ".tmp")
-		err = os.Rename(tmpFn, fn)
+	for tmpFn, dstFn := range exploded {
+		err = os.Rename(tmpFn, dstFn)
 		if err != nil {
 			// clean up the shards we already renamed to avoid duplicate results.
 			for _, fn := range fns {
@@ -96,16 +95,15 @@ func explode(dstDir string, inputShard string) error {
 			}
 			return fmt.Errorf("explode: rename failed: %w", err)
 		}
-		fns = append(fns, fn)
+		fns = append(fns, dstFn)
 	}
 
-	// Special case: If the input shard was a simple shard, then we have already
-	// overwritten the original shard in the previous step with os.Rename. Deleting
-	// the input shard in the next step would leave us with no shard. This behavior
-	// is due to the fact that simple shards are named based on the name of the repo
-	// they contain.
-	if len(tmpFns) == 1 && strings.TrimSuffix(tmpFns[0], ".tmp") == inputShard {
-		return nil
+	// Don't remove the input shard if its name matches one of the destination
+	// shards. This can happen, for example, if the input shard is a simple shard.
+	for _, dstFn := range exploded {
+		if dstFn == inputShard {
+			return nil
+		}
 	}
 
 	removeInputShard := func() (err error) {

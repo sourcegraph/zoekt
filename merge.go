@@ -166,11 +166,11 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 	return ib, nil
 }
 
-// Explode takes an IndexFile f and creates 1 simple shard per repository f
-// contains. The new shard(s) will be returned with a ".tmp" suffix. It is the
-// responsibility of the caller to rename the output shards and delete the input
-// shard.
-func Explode(dstDir string, f IndexFile) ([]string, error) {
+// Explode takes an IndexFile f and creates 1 simple shard per repository
+// contained in f. Explode returns a map of tmpName -> dstName. It is the
+// responsibility of the caller to rename the temporary shard(s) and delete the
+// input shard.
+func Explode(dstDir string, f IndexFile) (map[string]string, error) {
 	searcher, err := NewSearcher(f)
 	if err != nil {
 		return nil, err
@@ -181,15 +181,15 @@ func Explode(dstDir string, f IndexFile) ([]string, error) {
 		return nil, err
 	}
 
-	shardNames := make([]string, 0, len(ibs))
+	shardNames := make(map[string]string, len(ibs))
 	for _, ib := range ibs {
 		if len(ib.repoList) != 1 {
 			return shardNames, fmt.Errorf("expected each IndexBuilder to contain exactly 1 repository")
 		}
 		fn := filepath.Join(dstDir, shardName(ib.repoList[0].Name, ib.indexFormatVersion, 0))
-		fn = fn + ".tmp"
-		shardNames = append(shardNames, fn)
-		if err := builderWriteAll(fn, ib); err != nil {
+		fnTmp := fn + ".tmp"
+		shardNames[fnTmp] = fn
+		if err := builderWriteAll(fnTmp, ib); err != nil {
 			return shardNames, err
 		}
 	}

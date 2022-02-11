@@ -93,7 +93,7 @@ func TestExplode(t *testing.T) {
 	}
 
 	if len(exploded) != len(v16Shards) {
-		t.Fatalf("the number of simpled shards should be the same before and after")
+		t.Fatalf("the number of simple shards before %d and after %d should be the same", len(v16Shards), len(exploded))
 	}
 
 	ss, err := shards.NewDirectorySearcher(dir)
