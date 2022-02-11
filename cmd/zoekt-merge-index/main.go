@@ -58,17 +58,6 @@ func mergeCmd(paths []string) error {
 //
 // explode cleans up tmp files created in the process on a best effort basis.
 func explode(dstDir string, inputShard string) error {
-	var exploded map[string]string
-	var err error
-
-	defer func() {
-		// best effort removal of tmp files. If os.Remove failes, indexserver will delete
-		// the leftover tmp files during the next cleanup.
-		for tmpFn := range exploded {
-			os.Remove(tmpFn)
-		}
-	}()
-
 	f, err := os.Open(inputShard)
 	if err != nil {
 		return err
@@ -81,7 +70,14 @@ func explode(dstDir string, inputShard string) error {
 	}
 	defer indexFile.Close()
 
-	exploded, err = zoekt.Explode(dstDir, indexFile)
+	exploded, err := zoekt.Explode(dstDir, indexFile)
+	defer func() {
+		// best effort removal of tmp files. If os.Remove failes, indexserver will delete
+		// the leftover tmp files during the next cleanup.
+		for tmpFn := range exploded {
+			os.Remove(tmpFn)
+		}
+	}()
 	if err != nil {
 		return fmt.Errorf("exloded failed: %w", err)
 	}
