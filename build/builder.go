@@ -18,6 +18,7 @@ package build
 
 import (
 	"crypto/sha1"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -83,6 +84,12 @@ type Options struct {
 	// IsDelta is true if this run contains only the changed documents since the
 	// last run.
 	IsDelta bool
+
+	// FileTombstones is a list of file paths that have changed since the
+	// last indexing job for this repository, and should be tombstoned in the
+	// older shards.
+	// TODO: Should I give this a more general name, like "changed files"?
+	FileTombstones []string
 
 	// Path to exuberant ctags binary to run
 	CTags string
@@ -559,6 +566,8 @@ func (b *Builder) Finish() error {
 
 	defer b.shardLogger.Close()
 
+	oldShards := b.opts.FindAllShards()
+
 	// Collect a map of the old shards on disk. For each new shard we replace we
 	// delete it from toDelete. Anything remaining in toDelete will be removed
 	// after we have renamed everything into place.
@@ -567,7 +576,7 @@ func (b *Builder) Finish() error {
 	if !b.opts.IsDelta {
 		// non-delta shards replace all the old shards, delta shards only add new shards
 		toDelete = make(map[string]struct{})
-		for _, name := range b.opts.FindAllShards() {
+		for _, name := range oldShards {
 			paths, err := zoekt.IndexFilePaths(name)
 			if err != nil {
 				b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
@@ -588,6 +597,72 @@ func (b *Builder) Finish() error {
 
 		b.shardLog("upsert", final, b.opts.RepositoryDescription.Name)
 	}
+
+	if b.opts.IsDelta {
+		// TODO: figure out how to write test that checks that we properly roll back if there is an error
+		if b.buildError != nil {
+			// we need to remove the shards we just added, otherwise
+			// we have a partially completed commit on disk that
+			// will case cascading issues and inconsistency
+			for _, final := range b.finishedShards {
+				if err := os.Remove(final); err != nil {
+					log.Printf("error when removing delta shard %q: %s", final, err)
+				}
+			}
+
+			return b.buildError
+		}
+
+		// now tombstone the files in the old shards (if applicable)
+		if len(b.opts.FileTombstones) > 0 {
+			for _, shard := range oldShards {
+				repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+				if err != nil {
+					b.buildError = fmt.Errorf("failed to read metadata from shard %q while tombstoning files: %w", shard, err)
+
+					// TODO: We need to undo all changes if this occurs
+					// Maybe add a defer that checks to see if we returned an error, and
+					// then has the logic to rollback?
+					return b.buildError
+				}
+
+				// TODO: Ideally, we'd want to this atomically, and rollback if any of these metadata updates fail
+				// figure out how to do that later. Also figure out how to test this behavior.
+				for _, r := range repositories {
+					if r.ID == b.opts.RepositoryDescription.ID {
+						if r.FileTombstones == nil {
+							r.FileTombstones = make(map[string]struct{})
+						}
+
+						for _, tombstone := range b.opts.FileTombstones {
+							r.FileTombstones[tombstone] = struct{}{}
+						}
+					}
+				}
+				log.Printf("%v", repositories)
+
+				// TODO: I see the tombstone logic  uses some custom marshaling function. Understand why later.
+
+				data, err := json.Marshal(repositories)
+				if err != nil {
+					// TODO: also we need to undo if we ever hit this conidtion
+					b.buildError = fmt.Errorf("failed to marshal updated filetomb metadata for shard %q: %w", shard, err)
+					return err
+				}
+
+				err = ioutil.WriteFile(shard+".meta", data, 0644)
+				if err != nil {
+					// TODO: also need to rollback here
+					b.buildError = fmt.Errorf("failed to write updated filetomb metadata for shard %q: %w", shard, err)
+					return err
+				}
+
+			}
+		}
+
+		return nil
+	}
+
 	b.finishedShards = map[string]string{}
 
 	for p := range toDelete {

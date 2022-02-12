@@ -233,6 +233,187 @@ func TestDontCountContentOfSkippedFiles(t *testing.T) {
 	}
 }
 
+func TestDeltaShards(t *testing.T) {
+	indexDir := t.TempDir()
+
+	repository := zoekt.Repository{Name: "repoA", ID: 1}
+
+	// TODO: can't use createShard helper test function I wrote because we need to manipulate the options
+	// struct. Find better abstraction.
+	oldOptions := Options{
+		IndexDir:              indexDir,
+		RepositoryDescription: repository,
+		ShardMax:              1, // force creation of more than one shard since we add two files
+	}
+	oldOptions.SetDefaults()
+	oldBuilder, err := NewBuilder(oldOptions)
+	if err != nil {
+		t.Fatalf("NewBuilder: %shard", err)
+	}
+
+	for _, name := range []string{"foo.go", "bar.go"} {
+		err := oldBuilder.AddFile(name, []byte("doesn't matter"))
+		if err != nil {
+			t.Fatalf("error when adding %q: %s", name, err)
+		}
+	}
+
+	err = oldBuilder.Finish()
+	if err != nil {
+		t.Fatalf("finishing building shards for old repository: %shard", err)
+	}
+
+	oldShards := make(map[string]struct{})
+	for _, s := range oldOptions.FindAllShards() {
+		oldShards[s] = struct{}{}
+	}
+
+	// TODO: This is very brittle
+	if len(oldShards) <= 1 {
+		t.Fatalf("expected at least two shards for old repository build, got %d", len(oldShards))
+	}
+
+	// TODO: I can imagine two designs here for specifying the file tombstones.
+	//
+	// 1. Specify filetombstones as a field inside the repository description. The nuance here is that all the
+	// _other_ existing shards get these file tombstones, but any new shards created during the latest shouldn't get any.
+	// This behavior seems surprising to me. I like the idea that the "repository" description is pure - whatever is
+	// in there directly is reflected in the new shards and doesn't manipulate older shards.
+	//
+	// 2. Specify filestombstones as a field inside the builder options. I do think it'shard strange to have "two" places
+	// that we could specify this same information (repository metadata and the builder options). Putting in the
+	// builder options "feels" more correct to me though. File tombstones feel more like a global flag, and putting
+	// in as a builder option is right in line with that.
+	//
+	// This does bring up the question of what happens if someone specifies filetombstones in both the builder options
+	// and the repository description. Error? Should we go ahead and also write the filestombtones in the newly created
+	// shards (why would someone want to do this)? It almost seems as if we should be handling this at the type level.
+	// filetombstones shouldn't be a field that a user is allowed to specify on a repository description - the builder handles the semantics of that.
+	//
+	// for now I'll just go with option 2 and punt on the error handling questions.
+	//
+
+	expectedTombstones := []string{"evil.go", "poison.go"}
+
+	newOptions := Options{
+		IndexDir:              indexDir,
+		RepositoryDescription: repository,
+		IsDelta:               true,
+		FileTombstones:        expectedTombstones,
+	}
+	newOptions.SetDefaults()
+	newBuilder, err := NewBuilder(newOptions)
+	if err != nil {
+		t.Fatalf("failed to initialize new shard builder: %shard", err)
+	}
+
+	err = newBuilder.AddFile("whatever.go", []byte("doesn't matter"))
+	if err != nil {
+		t.Fatalf("error when adding %q: %s", "whatever.go", err)
+	}
+
+	err = newBuilder.Finish()
+	if err != nil {
+		t.Fatalf("finishing building shards for new repository: %shard", err)
+	}
+
+	newShards := make(map[string]struct{})
+	for _, s := range newBuilder.opts.FindAllShards() {
+		newShards[s] = struct{}{}
+	}
+
+	// TODO: Is this assuming too much about the state of the system
+	// (assuming a certain number of shards) after the processing?
+
+	for shard := range oldShards {
+		// ensure that old shards are still there
+		if _, ok := newShards[shard]; !ok {
+			t.Fatalf("old shard %q not present in list of new shards", shard)
+		}
+
+		repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+		if err != nil {
+			t.Fatalf("error reading repository metadata: %s", err)
+		}
+
+		// find the repository we made inside the shard
+		var foundRepository *zoekt.Repository
+		for _, r := range repositories {
+			if r.ID == repository.ID {
+				foundRepository = r
+				break
+			}
+		}
+
+		if foundRepository == nil {
+			t.Fatalf("didn't find repository ID %d in old shard %q", repository.ID, shard)
+		}
+
+		// ensure that the filetombstones are set for the repositories in the
+		// old shard
+		for _, fileTomb := range expectedTombstones {
+			if _, ok := foundRepository.FileTombstones[fileTomb]; !ok {
+				t.Errorf("repository (ID=%d) from shard %q  doesn't contain file tombstone %q", foundRepository.ID, shard, fileTomb)
+			}
+		}
+	}
+
+	// only examine the shards that were newly created
+	// after the latest run
+	uniqueShards := make(map[string]struct{})
+	for s := range newShards {
+		if _, ok := oldShards[s]; !ok {
+			uniqueShards[s] = struct{}{}
+		}
+	}
+
+	if len(uniqueShards) == 0 {
+		t.Fatalf("didn't create any new unique shards for latest build")
+	}
+
+	// TODO: find an abstraction here, I'm basically duplicating the for loop above
+	for shard := range newShards {
+		repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+		if err != nil {
+			t.Fatalf("error reading repository metadata: %shard", err)
+		}
+
+		// find the repository we made inside the shard
+		var foundRepository *zoekt.Repository
+		for _, r := range repositories {
+			if r.ID == repository.ID {
+				foundRepository = r
+				break
+			}
+		}
+
+		if foundRepository == nil {
+			t.Fatalf("didn't find repository ID %d in new shard %q", repository.ID, shard)
+		}
+
+		// ensure that new shards don't have file tombstones
+		for _, fileTomb := range expectedTombstones {
+			if _, ok := foundRepository.FileTombstones[fileTomb]; ok {
+				t.Errorf("repository (ID=%d) from shard %shard contains file tombstone %q when it shouldn't", foundRepository.ID, shard, fileTomb)
+			}
+		}
+	}
+
+	// build old version of repository
+
+	// say that some paths have been updated
+
+	// build new version of the repository with this above information
+
+	// verify that paths in all old shards have been tombstoned
+
+	// TODO: ensure above steps work on simple and compound shards
+
+	// TODO: What owns ensuring that new shards contain new versions of the files?
+	// it can't be the builder - files could be deleted, or renamed
+	// zoekt-git-index?
+}
+
 func TestOptions_FindAllShards(t *testing.T) {
 	type simpleShard struct {
 		Repository zoekt.Repository
@@ -411,6 +592,7 @@ func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShard
 	if err := b.Finish(); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
+
 }
 
 func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt.Repository) {
