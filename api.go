@@ -310,7 +310,13 @@ type Repository struct {
 
 	// FileTombstones is a set of file paths that should be ignored across all branches
 	// in this shard.
-	FileTombstones map[string]struct{}
+	[]string[]
+
+	for _, tombtone := range []uint32{
+		if tombstone == currentDoc {}
+
+}
+	FileTombstones map[uint32]struct{}
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {

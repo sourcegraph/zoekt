@@ -399,6 +399,8 @@ func TestDeltaShards(t *testing.T) {
 		}
 	}
 
+	// TODO: assert that version is updated in every shard to match the latest one
+
 	// build old version of repository
 
 	// say that some paths have been updated
@@ -408,6 +410,8 @@ func TestDeltaShards(t *testing.T) {
 	// verify that paths in all old shards have been tombstoned
 
 	// TODO: ensure above steps work on simple and compound shards
+
+	// TODO: write test to make sure file tombstones are additive
 
 	// TODO: What owns ensuring that new shards contain new versions of the files?
 	// it can't be the builder - files could be deleted, or renamed

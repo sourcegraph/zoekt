@@ -587,6 +587,8 @@ func (b *Builder) Finish() error {
 		}
 	}
 
+	// foo.meta.tmp -> foo.meta in b.finishedShards (or maybe a better name?)
+
 	for tmp, final := range b.finishedShards {
 		if err := os.Rename(tmp, final); err != nil {
 			b.buildError = err
@@ -598,6 +600,8 @@ func (b *Builder) Finish() error {
 		b.shardLog("upsert", final, b.opts.RepositoryDescription.Name)
 	}
 
+	// TODO: assert that repository for versions is consistent at the start of a run
+	// TODO: write test for this
 	if b.opts.IsDelta {
 		// TODO: figure out how to write test that checks that we properly roll back if there is an error
 		if b.buildError != nil {
