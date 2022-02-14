@@ -237,14 +237,28 @@ nextFileMatch:
 		}
 
 		for ; nextDoc < docCount; nextDoc++ {
+			repoID := d.repos[nextDoc]
+			repoMetadata := d.repoMetaData[repoID]
+
 			// Skip tombstoned docs
-			if d.repoMetaData[d.repos[nextDoc]].Tombstone {
+			if repoMetadata.Tombstone {
 				continue
+			}
+
+			if opts.EvaluateFileTombstones {
+
+				if repoMetadata.FileTombstones != nil {
+					fileName := string(d.fileName(nextDoc))
+					if _, tombstoned := repoMetadata.FileTombstones[fileName]; tombstoned {
+						continue
+					}
+				}
+
 			}
 
 			// Skip documents over ShardRepoMaxMatchCount if specified.
 			if opts.ShardRepoMaxMatchCount > 0 {
-				if repoMatchCount >= opts.ShardRepoMaxMatchCount && d.repos[nextDoc] == lastRepoID {
+				if repoMatchCount >= opts.ShardRepoMaxMatchCount && repoID == lastRepoID {
 					res.Stats.FilesSkipped++
 					continue
 				}

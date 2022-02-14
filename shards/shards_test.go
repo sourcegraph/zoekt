@@ -26,6 +26,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"testing/quick"
 	"time"
@@ -953,6 +954,175 @@ func TestAtomCountScore(t *testing.T) {
 			want := []string{"needle-file-branch", "needle-file", "f1"}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("got %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestSearchFileTombstones(t *testing.T) {
+	type shard struct {
+		repository zoekt.Repository
+		documents  []zoekt.Document
+	}
+	tests := []struct {
+		name                   string
+		shards                 []shard
+		query                  string
+		expectedNumLineMatches int
+		forbidden              []string
+	}{
+		{
+			name: "ignore content from files that are in filetombs",
+			shards: []shard{
+				{
+					repository: zoekt.Repository{
+						ID:       1,
+						Name:     "repoA",
+						Branches: []zoekt.RepositoryBranch{{Name: "main"}},
+						FileTombstones: map[string]struct{}{
+							"foo.go": {},
+						},
+					},
+					documents: []zoekt.Document{
+						{
+							Name:     "foo.go",
+							Branches: []string{"main"},
+							Content:  []byte("poison bar"),
+						},
+						{
+							Name:     "qux.go",
+							Branches: []string{"main"},
+							Content:  []byte("bar not-forbidden-1 not-forbidden-2"),
+						},
+					},
+				},
+			},
+			query:                  "bar",
+			expectedNumLineMatches: 1,
+			forbidden:              []string{"poison"},
+		}, {
+			name: "include results from other shards that haven't tombstoned the file",
+			shards: []shard{
+				{
+					repository: zoekt.Repository{
+						ID:       1,
+						Name:     "repoA",
+						Branches: []zoekt.RepositoryBranch{{Name: "main"}},
+						FileTombstones: map[string]struct{}{
+							"foo.go": {},
+						},
+					},
+					documents: []zoekt.Document{
+						{
+							Name:     "foo.go",
+							Branches: []string{"main"},
+							Content:  []byte("poison bar"),
+						},
+						{
+							Name:     "qux.go",
+							Branches: []string{"main"},
+							Content:  []byte("bar not-forbidden-1 not-forbidden-2"),
+						},
+					},
+				},
+				{
+					repository: zoekt.Repository{
+						ID:       1,
+						Name:     "repoA",
+						Branches: []zoekt.RepositoryBranch{{Name: "main"}},
+					},
+					documents: []zoekt.Document{
+						{
+							Name:     "foo.go",
+							Branches: []string{"main"},
+							Content:  []byte("bar not-forbidden-3 not-forbidden-4"),
+						},
+					},
+				},
+			},
+			query:                  "bar",
+			expectedNumLineMatches: 2,
+			forbidden:              []string{"poison"},
+		},
+		{
+			name: "file tombstones affect all branches in a shard",
+			shards: []shard{
+				{
+					repository: zoekt.Repository{
+						ID:       1,
+						Name:     "repoA",
+						Branches: []zoekt.RepositoryBranch{{Name: "main"}, {Name: "release"}},
+						FileTombstones: map[string]struct{}{
+							"foo.go": {},
+						},
+					},
+					documents: []zoekt.Document{
+						{
+							Name:     "foo.go",
+							Branches: []string{"main"},
+							Content:  []byte("poison bar"),
+						},
+						{
+							// should be ignored even though the content is different that the one on the "main" branch
+							Name:     "foo.go",
+							Branches: []string{"release"},
+							Content:  []byte("bar not-forbidden-1"),
+						},
+						{
+							Name:     "qux.go",
+							Branches: []string{"main", "release"},
+							Content:  []byte("bar not-forbidden-2  not-forbidden-3"),
+						},
+					},
+				},
+			},
+			query:                  "bar",
+			expectedNumLineMatches: 1,
+			forbidden:              []string{"poison"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// setup
+			ss := newShardedSearcher(4)
+
+			shardMap := make(map[string]zoekt.Searcher)
+
+			for i, s := range test.shards {
+				shardMap[strconv.Itoa(i)] = searcherForTest(t, testIndexBuilder(t, &s.repository, s.documents...))
+			}
+			ss.replace(shardMap)
+
+			opts := &zoekt.SearchOptions{
+				EvaluateFileTombstones: true,
+			}
+			q := &query.Substring{Pattern: test.query}
+
+			// test
+			res, err := ss.Search(context.Background(), q, opts)
+			if err != nil {
+				t.Fatalf("Search(%v, %s): %v", q, opts, err)
+			}
+
+			// verify
+
+			actualNumLineMatches := 0
+
+			for _, file := range res.Files {
+				for _, match := range file.LineMatches {
+					actualNumLineMatches++
+
+					for _, f := range test.forbidden {
+						if bytes.Contains(match.Line, []byte(f)) {
+							t.Errorf("line match %q (file: %q, branches: %q) contains forbidden string %q", match.Line, file.FileName, strings.Join(file.Branches, ","), f)
+						}
+					}
+				}
+			}
+
+			if actualNumLineMatches != test.expectedNumLineMatches {
+				t.Errorf("expected %d line matches, got %d", test.expectedNumLineMatches, actualNumLineMatches)
 			}
 		})
 	}
