@@ -238,7 +238,7 @@ nextFileMatch:
 
 		for ; nextDoc < docCount; nextDoc++ {
 			repoID := d.repos[nextDoc]
-			repoMetadata := d.repoMetaData[repoID]
+			repoMetadata := &d.repoMetaData[repoID]
 
 			// Skip tombstoned docs
 			if repoMetadata.Tombstone {
