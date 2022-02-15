@@ -246,14 +246,10 @@ nextFileMatch:
 			}
 
 			if opts.EvaluateFileTombstones {
-
-				if repoMetadata.FileTombstones != nil {
-					fileName := string(d.fileName(nextDoc))
-					if _, tombstoned := repoMetadata.FileTombstones[fileName]; tombstoned {
-						continue
-					}
+				fileName := string(d.fileName(nextDoc))
+				if _, tombstoned := repoMetadata.FileTombstones[fileName]; tombstoned {
+					continue
 				}
-
 			}
 
 			// Skip documents over ShardRepoMaxMatchCount if specified.
