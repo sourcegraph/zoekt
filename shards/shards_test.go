@@ -26,7 +26,6 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
-	"strings"
 	"testing"
 	"testing/quick"
 	"time"
@@ -960,169 +959,161 @@ func TestAtomCountScore(t *testing.T) {
 }
 
 func TestSearchFileTombstones(t *testing.T) {
-	type shard struct {
-		repository zoekt.Repository
-		documents  []zoekt.Document
+	type simpleDocument struct {
+		Name     string
+		Branches []string
+		Content  []byte
 	}
+
+	type shard struct {
+		fileTombstones []string
+		documents      []simpleDocument
+	}
+
+	var (
+		fooForbidden = simpleDocument{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-should-never-be-in-search-results")}
+		fooAtMain    = simpleDocument{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main")}
+		fooAtRelease = simpleDocument{Name: "foo.go", Branches: []string{"release"}, Content: []byte("common foo-release")}
+
+		barAtMain           = simpleDocument{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main")}
+		barAtMainAndRelease = simpleDocument{Name: "bar.go", Branches: []string{"main", "release"}, Content: []byte("common bar-main-and-release")}
+	)
+
 	tests := []struct {
-		name                   string
-		shards                 []shard
-		query                  string
-		expectedNumLineMatches int
-		forbidden              []string
+		name              string
+		shards            []shard
+		expectedDocuments []simpleDocument
 	}{
 		{
 			name: "ignore content from files that are in filetombs",
 			shards: []shard{
 				{
-					repository: zoekt.Repository{
-						ID:       1,
-						Name:     "repoA",
-						Branches: []zoekt.RepositoryBranch{{Name: "main"}},
-						FileTombstones: map[string]struct{}{
-							"foo.go": {},
-						},
-					},
-					documents: []zoekt.Document{
-						{
-							Name:     "foo.go",
-							Branches: []string{"main"},
-							Content:  []byte("poison bar"),
-						},
-						{
-							Name:     "qux.go",
-							Branches: []string{"main"},
-							Content:  []byte("bar not-forbidden-1 not-forbidden-2"),
-						},
-					},
+					documents:      []simpleDocument{fooForbidden, barAtMain},
+					fileTombstones: []string{"foo.go"},
 				},
 			},
-			query:                  "bar",
-			expectedNumLineMatches: 1,
-			forbidden:              []string{"poison"},
-		}, {
+			expectedDocuments: []simpleDocument{barAtMain},
+		},
+		{
 			name: "include results from other shards that haven't tombstoned the file",
 			shards: []shard{
 				{
-					repository: zoekt.Repository{
-						ID:       1,
-						Name:     "repoA",
-						Branches: []zoekt.RepositoryBranch{{Name: "main"}},
-						FileTombstones: map[string]struct{}{
-							"foo.go": {},
-						},
-					},
-					documents: []zoekt.Document{
-						{
-							Name:     "foo.go",
-							Branches: []string{"main"},
-							Content:  []byte("poison bar"),
-						},
-						{
-							Name:     "qux.go",
-							Branches: []string{"main"},
-							Content:  []byte("bar not-forbidden-1 not-forbidden-2"),
-						},
-					},
+					documents:      []simpleDocument{fooForbidden, barAtMain},
+					fileTombstones: []string{"foo.go"},
 				},
 				{
-					repository: zoekt.Repository{
-						ID:       1,
-						Name:     "repoA",
-						Branches: []zoekt.RepositoryBranch{{Name: "main"}},
-					},
-					documents: []zoekt.Document{
-						{
-							Name:     "foo.go",
-							Branches: []string{"main"},
-							Content:  []byte("bar not-forbidden-3 not-forbidden-4"),
-						},
-					},
+					documents: []simpleDocument{fooAtMain},
 				},
 			},
-			query:                  "bar",
-			expectedNumLineMatches: 2,
-			forbidden:              []string{"poison"},
+			expectedDocuments: []simpleDocument{fooAtMain, barAtMain},
 		},
 		{
-			name: "file tombstones affect all branches in a shard",
+			name: "filetombstones affect all branches in a shard",
 			shards: []shard{
 				{
-					repository: zoekt.Repository{
-						ID:       1,
-						Name:     "repoA",
-						Branches: []zoekt.RepositoryBranch{{Name: "main"}, {Name: "release"}},
-						FileTombstones: map[string]struct{}{
-							"foo.go": {},
-						},
+					documents: []simpleDocument{
+						fooForbidden,
+
+						// the contents from this file should all ignored even though it's using a different branch
+						fooAtRelease,
+
+						barAtMainAndRelease,
 					},
-					documents: []zoekt.Document{
-						{
-							Name:     "foo.go",
-							Branches: []string{"main"},
-							Content:  []byte("poison bar"),
-						},
-						{
-							// should be ignored even though the content is different that the one on the "main" branch
-							Name:     "foo.go",
-							Branches: []string{"release"},
-							Content:  []byte("bar not-forbidden-1"),
-						},
-						{
-							Name:     "qux.go",
-							Branches: []string{"main", "release"},
-							Content:  []byte("bar not-forbidden-2  not-forbidden-3"),
-						},
-					},
+					fileTombstones: []string{"foo.go"},
 				},
 			},
-			query:                  "bar",
-			expectedNumLineMatches: 1,
-			forbidden:              []string{"poison"},
+			expectedDocuments: []simpleDocument{barAtMainAndRelease},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			// setup
-			ss := newShardedSearcher(4)
 
 			shardMap := make(map[string]zoekt.Searcher)
+			for i, shard := range test.shards {
+				repository := zoekt.Repository{Name: "repository"}
 
-			for i, s := range test.shards {
-				shardMap[strconv.Itoa(i)] = searcherForTest(t, testIndexBuilder(t, &s.repository, s.documents...))
+				// set of unique branches in the repository
+				branchesSet := make(map[string]struct{})
+
+				var zoektDocuments []zoekt.Document
+
+				for _, d := range shard.documents {
+					// de-duplicate branches from given documents
+					for _, b := range d.Branches {
+						branchesSet[b] = struct{}{}
+					}
+
+					// lift simple documents into zoekt.Documents
+					zoektDocuments = append(zoektDocuments, zoekt.Document{Name: d.Name, Branches: d.Branches, Content: d.Content})
+				}
+
+				for b := range branchesSet {
+					repository.Branches = append(repository.Branches, zoekt.RepositoryBranch{Name: b})
+				}
+
+				if len(shard.fileTombstones) > 0 {
+					repository.FileTombstones = make(map[string]struct{})
+					for _, s := range shard.fileTombstones {
+						repository.FileTombstones[s] = struct{}{}
+					}
+				}
+
+				shardMap[strconv.Itoa(i)] = searcherForTest(t, testIndexBuilder(t, &repository, zoektDocuments...))
 			}
+			ss := newShardedSearcher(4)
 			ss.replace(shardMap)
 
 			opts := &zoekt.SearchOptions{
+				Whole:                  true,
 				EvaluateFileTombstones: true,
 			}
-			q := &query.Substring{Pattern: test.query}
+
+			q := &query.Substring{Pattern: "common"}
 
 			// test
-			res, err := ss.Search(context.Background(), q, opts)
+			result, err := ss.Search(context.Background(), q, opts)
 			if err != nil {
 				t.Fatalf("Search(%v, %s): %v", q, opts, err)
 			}
 
 			// verify
 
-			actualNumLineMatches := 0
+			// extract a subset of the fields from each received fileMatch for
+			// easier comparisons
 
-			for _, file := range res.Files {
-				for _, match := range file.LineMatches {
-					actualNumLineMatches++
-
-					for _, f := range test.forbidden {
-						if bytes.Contains(match.Line, []byte(f)) {
-							t.Errorf("line match %q (file: %q, branches: %q) contains forbidden string %q", match.Line, file.FileName, strings.Join(file.Branches, ","), f)
-						}
-					}
-				}
+			var receivedDocuments []simpleDocument
+			for _, f := range result.Files {
+				receivedDocuments = append(receivedDocuments, simpleDocument{
+					Name:     f.FileName,
+					Branches: f.Branches,
+					Content:  f.Content,
+				})
 			}
 
-			if actualNumLineMatches != test.expectedNumLineMatches {
-				t.Errorf("expected %d line matches, got %d", test.expectedNumLineMatches, actualNumLineMatches)
+			// normalize ordering in both document lists
+			for _, docList := range [][]simpleDocument{test.expectedDocuments, receivedDocuments} {
+				// first, sort the "Branches" slice for each element
+				for _, d := range docList {
+					sort.Strings(d.Branches)
+				}
+
+				// then, sort the entire list
+				sort.Slice(docList, func(i, j int) bool {
+					a := docList[i]
+					b := docList[j]
+
+					if a.Name < b.Name {
+						return true
+					}
+
+					return bytes.Compare(a.Content, b.Content) < 0
+				})
+			}
+
+			if diff := cmp.Diff(test.expectedDocuments, receivedDocuments); diff != "" {
+				t.Errorf("unexpected difference in received documents (-want +got):%s\n:", diff)
 			}
 		})
 	}
