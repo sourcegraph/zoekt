@@ -15,6 +15,8 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -27,6 +29,7 @@ import (
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/cmd"
+	"github.com/google/zoekt/ignore"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 
@@ -36,10 +39,14 @@ type fileInfo struct {
 }
 
 type fileAggregator struct {
-	ignoreDirs map[string]struct{}
-	sizeMax    int64
-	sink       chan fileInfo
+	ignoreDirs     map[string]struct{}
+	ignoreMatchers []*ignore.Matcher
+	sizeMax        int64
+	baseDir        string
+	sink           chan fileInfo
 }
+
+var SkipFile error = errors.New("Skipped this file")
 
 func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 	if err != nil {
@@ -50,6 +57,15 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 		base := filepath.Base(path)
 		if _, ok := a.ignoreDirs[base]; ok {
 			return filepath.SkipDir
+		}
+		relPath, err := filepath.Rel(a.baseDir, path)
+		if err != nil {
+			return err
+		}
+		for _, m := range a.ignoreMatchers {
+			if m.Match(relPath) {
+				return filepath.SkipDir
+			}
 		}
 	}
 
@@ -62,6 +78,8 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 func main() {
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to file")
 	ignoreDirs := flag.String("ignore_dirs", ".git,.hg,.svn", "comma separated list of directories to ignore.")
+	ignoreFiles := flag.String("ignore_files", ".gitignore,.ignore", "comma separated list of files containing "+
+		"git-style ignore patterns. Paths matching the patterns in these files will not be indexed")
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
@@ -89,15 +107,30 @@ func main() {
 			}
 		}
 	}
+	var ignoreMatchers []*ignore.Matcher
+	if *ignoreFiles != "" {
+		files := strings.Split(*ignoreFiles, ",")
+		for _, f := range files {
+			content, err := ioutil.ReadFile(f)
+			if err != nil {
+				continue
+			}
+			m, err := ignore.ParseIgnoreFile(bytes.NewReader(content))
+			if err != nil {
+				continue
+			}
+			ignoreMatchers = append(ignoreMatchers, m)
+		}
+	}
 	for _, arg := range flag.Args() {
 		opts.RepositoryDescription.Source = arg
-		if err := indexArg(arg, *opts, ignoreDirMap); err != nil {
+		if err := indexArg(arg, *opts, ignoreDirMap, ignoreMatchers); err != nil {
 			log.Fatal(err)
 		}
 	}
 }
 
-func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error {
+func indexArg(arg string, opts build.Options, ignore map[string]struct{}, ignoreMatchers []*ignore.Matcher) error {
 	dir, err := filepath.Abs(filepath.Clean(arg))
 	if err != nil {
 		return err
@@ -114,9 +147,11 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error 
 
 	comm := make(chan fileInfo, 100)
 	agg := fileAggregator{
-		ignoreDirs: ignore,
-		sink:       comm,
-		sizeMax:    int64(opts.SizeMax),
+		ignoreDirs:     ignore,
+		ignoreMatchers: ignoreMatchers,
+		baseDir:        dir,
+		sink:           comm,
+		sizeMax:        int64(opts.SizeMax),
 	}
 
 	go func() {
@@ -127,6 +162,22 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error 
 	}()
 
 	for f := range comm {
+		relPath, err := filepath.Rel(dir, f.name)
+		if err != nil {
+			return err
+		}
+		skip := false
+		for _, m := range ignoreMatchers {
+			if m.Match(relPath) {
+				log.Printf("Skipping %v", f.name)
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+
 		displayName := strings.TrimPrefix(f.name, dir+"/")
 		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
 			if err := builder.Add(zoekt.Document{
