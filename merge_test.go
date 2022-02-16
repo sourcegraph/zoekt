@@ -88,7 +88,7 @@ func TestExplode(t *testing.T) {
 	}
 }
 
-// checkSameShards compare 2 shards byte by byte. The shards are expected to be
+// checkSameShards compares 2 shards byte by byte. The shards are expected to be
 // small enough to be read in all at once.
 func checkSameShards(t *testing.T, shard1, shard2 string) {
 	t.Helper()
