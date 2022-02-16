@@ -385,12 +385,12 @@ func shardsLog(indexDir, action string, shards []shard) {
 	defer shardLogger.Close()
 
 	for _, s := range shards {
-		shard := filepath.Base(s.Path)
+		shardName := filepath.Base(s.Path)
 		var shardSize int64
-		if fi, err := os.Stat(filepath.Join(indexDir, shard)); err == nil {
+		if fi, err := os.Stat(filepath.Join(indexDir, shardName)); err == nil {
 			shardSize = fi.Size()
 		}
-		_, _ = fmt.Fprintf(shardLogger, "%s\t%s\t%s\t%d\t%s\t%d\n", time.Now().UTC().Format(time.RFC3339), action, shard, shardSize, s.RepoName, s.RepoID)
+		_, _ = fmt.Fprintf(shardLogger, "%s\t%s\t%s\t%d\t%s\t%d\n", time.Now().UTC().Format(time.RFC3339), action, shardName, shardSize, s.RepoName, s.RepoID)
 	}
 }
 
