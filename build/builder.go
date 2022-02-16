@@ -655,7 +655,7 @@ func (b *Builder) shardLog(action, shard string, repoName string) {
 	if fi, err := os.Stat(filepath.Join(b.opts.IndexDir, shard)); err == nil {
 		shardSize = fi.Size()
 	}
-	_, _ = fmt.Fprintf(b.shardLogger, "%d\t%s\t%s\t%d\t%s\n", time.Now().UTC().Unix(), action, shard, shardSize, repoName)
+	_, _ = fmt.Fprintf(b.shardLogger, "%s\t%s\t%s\t%d\t%s\n", time.Now().UTC().Format(time.RFC3339), action, shard, shardSize, repoName)
 }
 
 var profileNumber int

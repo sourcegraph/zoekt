@@ -390,7 +390,7 @@ func shardsLog(indexDir, action string, shards []shard) {
 		if fi, err := os.Stat(filepath.Join(indexDir, shard)); err == nil {
 			shardSize = fi.Size()
 		}
-		_, _ = fmt.Fprintf(shardLogger, "%d\t%s\t%s\t%d\t%s\t%d\n", time.Now().UTC().Unix(), action, shard, shardSize, s.RepoName, s.RepoID)
+		_, _ = fmt.Fprintf(shardLogger, "%s\t%s\t%s\t%d\t%s\t%d\n", time.Now().UTC().Format(time.RFC3339), action, shard, shardSize, s.RepoName, s.RepoID)
 	}
 }
 
