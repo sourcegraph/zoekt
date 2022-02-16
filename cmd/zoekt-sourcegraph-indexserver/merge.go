@@ -76,7 +76,7 @@ func doMerge(dir string, targetSizeBytes int64, simulate bool) error {
 				newCompoundName := reCompound.Find(stdErr)
 				now := time.Now()
 				for _, s := range comp.shards {
-					_, _ = fmt.Fprintf(wc, "%d\t%s\t%s\t%s\n", now.UTC().Unix(), "merge", filepath.Base(s.path), string(newCompoundName))
+					_, _ = fmt.Fprintf(wc, "%s\t%s\t%s\t%s\n", now.UTC().Format(time.RFC3339), "merge", filepath.Base(s.path), string(newCompoundName))
 				}
 			}
 		}
