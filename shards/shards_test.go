@@ -959,59 +959,53 @@ func TestAtomCountScore(t *testing.T) {
 }
 
 func TestSearchFileTombstones(t *testing.T) {
-	type simpleDocument struct {
-		Name     string
-		Branches []string
-		Content  []byte
-	}
-
 	type shard struct {
 		fileTombstones []string
-		documents      []simpleDocument
+		documents      []zoekt.Document
 	}
 
 	var (
-		fooForbidden = simpleDocument{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-should-never-be-in-search-results")}
-		fooAtMain    = simpleDocument{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main")}
-		fooAtRelease = simpleDocument{Name: "foo.go", Branches: []string{"release"}, Content: []byte("common foo-release")}
+		fooForbidden = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-should-never-be-in-search-results")}
+		fooAtMain    = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main")}
+		fooAtRelease = zoekt.Document{Name: "foo.go", Branches: []string{"release"}, Content: []byte("common foo-release")}
 
-		barAtMain           = simpleDocument{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main")}
-		barAtMainAndRelease = simpleDocument{Name: "bar.go", Branches: []string{"main", "release"}, Content: []byte("common bar-main-and-release")}
+		barAtMain           = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main")}
+		barAtMainAndRelease = zoekt.Document{Name: "bar.go", Branches: []string{"main", "release"}, Content: []byte("common bar-main-and-release")}
 	)
 
 	tests := []struct {
 		name              string
 		shards            []shard
-		expectedDocuments []simpleDocument
+		expectedDocuments []zoekt.Document
 	}{
 		{
 			name: "ignore content from files that are in filetombs",
 			shards: []shard{
 				{
-					documents:      []simpleDocument{fooForbidden, barAtMain},
+					documents:      []zoekt.Document{fooForbidden, barAtMain},
 					fileTombstones: []string{"foo.go"},
 				},
 			},
-			expectedDocuments: []simpleDocument{barAtMain},
+			expectedDocuments: []zoekt.Document{barAtMain},
 		},
 		{
 			name: "include results from other shards that haven't tombstoned the file",
 			shards: []shard{
 				{
-					documents:      []simpleDocument{fooForbidden, barAtMain},
+					documents:      []zoekt.Document{fooForbidden, barAtMain},
 					fileTombstones: []string{"foo.go"},
 				},
 				{
-					documents: []simpleDocument{fooAtMain},
+					documents: []zoekt.Document{fooAtMain},
 				},
 			},
-			expectedDocuments: []simpleDocument{fooAtMain, barAtMain},
+			expectedDocuments: []zoekt.Document{fooAtMain, barAtMain},
 		},
 		{
 			name: "filetombstones affect all branches in a shard",
 			shards: []shard{
 				{
-					documents: []simpleDocument{
+					documents: []zoekt.Document{
 						fooForbidden,
 
 						// the contents from this file should all ignored even though it's using a different branch
@@ -1022,7 +1016,7 @@ func TestSearchFileTombstones(t *testing.T) {
 					fileTombstones: []string{"foo.go"},
 				},
 			},
-			expectedDocuments: []simpleDocument{barAtMainAndRelease},
+			expectedDocuments: []zoekt.Document{barAtMainAndRelease},
 		},
 	}
 
@@ -1037,16 +1031,11 @@ func TestSearchFileTombstones(t *testing.T) {
 				// set of unique branches in the repository
 				branchesSet := make(map[string]struct{})
 
-				var zoektDocuments []zoekt.Document
-
 				for _, d := range shard.documents {
 					// de-duplicate branches from given documents
 					for _, b := range d.Branches {
 						branchesSet[b] = struct{}{}
 					}
-
-					// lift simple documents into zoekt.Documents
-					zoektDocuments = append(zoektDocuments, zoekt.Document{Name: d.Name, Branches: d.Branches, Content: d.Content})
 				}
 
 				for b := range branchesSet {
@@ -1060,7 +1049,7 @@ func TestSearchFileTombstones(t *testing.T) {
 					}
 				}
 
-				shardMap[strconv.Itoa(i)] = searcherForTest(t, testIndexBuilder(t, &repository, zoektDocuments...))
+				shardMap[strconv.Itoa(i)] = searcherForTest(t, testIndexBuilder(t, &repository, shard.documents...))
 			}
 			ss := newShardedSearcher(4)
 			ss.replace(shardMap)
@@ -1081,37 +1070,26 @@ func TestSearchFileTombstones(t *testing.T) {
 
 			// extract a subset of the fields from each received fileMatch for
 			// easier comparisons
-
-			var receivedDocuments []simpleDocument
+			var receivedDocuments []zoekt.Document
 			for _, f := range result.Files {
-				receivedDocuments = append(receivedDocuments, simpleDocument{
-					Name:     f.FileName,
-					Branches: f.Branches,
-					Content:  f.Content,
+				receivedDocuments = append(receivedDocuments, zoekt.Document{
+					Name:    f.FileName,
+					Content: f.Content,
 				})
 			}
 
-			// normalize ordering in both document lists
-			for _, docList := range [][]simpleDocument{test.expectedDocuments, receivedDocuments} {
-				// first, sort the "Branches" slice for each element
-				for _, d := range docList {
-					sort.Strings(d.Branches)
-				}
-
-				// then, sort the entire list
-				sort.Slice(docList, func(i, j int) bool {
-					a := docList[i]
-					b := docList[j]
-
+			cmpOpts := []cmp.Option{
+				cmpopts.IgnoreFields(zoekt.Document{}, "Branches"),
+				cmpopts.SortSlices(func(a, b zoekt.Document) bool {
 					if a.Name < b.Name {
 						return true
 					}
 
 					return bytes.Compare(a.Content, b.Content) < 0
-				})
+				}),
 			}
 
-			if diff := cmp.Diff(test.expectedDocuments, receivedDocuments); diff != "" {
+			if diff := cmp.Diff(test.expectedDocuments, receivedDocuments, cmpOpts...); diff != "" {
 				t.Errorf("unexpected difference in received documents (-want +got):%s\n:", diff)
 			}
 		})
