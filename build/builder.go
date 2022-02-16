@@ -549,6 +549,10 @@ func (b *Builder) Finish() error {
 	b.flush()
 	b.building.Wait()
 
+	// delta shards
+	// finished shards - include new shards and updates for all older metafiles
+	//
+
 	if b.buildError != nil {
 		for tmp := range b.finishedShards {
 			log.Printf("Builder.Finish %s", tmp)
@@ -558,15 +562,60 @@ func (b *Builder) Finish() error {
 		return b.buildError
 	}
 
+
+	oldShards := b.opts.FindAllShards()
+
+	// maps temp -> final names of updated shard metadata files
+	// TODO: Make this a struct field?
+	updatedMetaData := make(map[string]string)
+
+	// for delta shards we need to update all the shard metadata, even if
+	// we didn't generate any new shards (could be a commit with just deletions)
+	if b.opts.IsDelta {
+		for _, shard := range oldShards {
+			repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+			if err == nil {
+				b.buildError = err
+				return b.buildError
+			}
+
+			for _, r := range repositories {
+				if r.ID == b.opts.RepositoryDescription.ID {
+
+					if len(b.opts.FileTombstones) > 0  && r.FileTombstones == nil {
+						r.FileTombstones = make(map[string]struct{})
+					}
+
+					for _, f := range b.opts.FileTombstones {
+						r.FileTombstones[f]= struct{}{}
+					}
+
+					// TODO: Also update all the version information in all the older shards too
+					break
+				}
+			}
+
+			finalPath := shard + ".meta"
+			tmpPath , err := zoekt.JsonMarshalTemp(repositories, filepath.Dir(finalPath), filepath.Base(finalPath)+".*.tmp")
+			if err != nil {
+				b.buildError = err
+				return b.buildError
+			}
+
+			updatedMetaData[tmpPath]=finalPath
+
+		}
+	}
+
 	// We mark finished shards as empty when we successfully finish. Return now
 	// to allow call sites to call Finish idempotently.
+	// TODO: Update this logic to update all the older metadata too, something like
+	// if len(b.finishedShards) && b.updatedMetadata ==0
 	if len(b.finishedShards) == 0 {
 		return nil
 	}
 
 	defer b.shardLogger.Close()
-
-	oldShards := b.opts.FindAllShards()
 
 	// Collect a map of the old shards on disk. For each new shard we replace we
 	// delete it from toDelete. Anything remaining in toDelete will be removed
@@ -912,6 +961,8 @@ func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	shardBuilder.ID = b.id
 	return shardBuilder, nil
 }
+
+func (b *Builder)
 
 func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard, error) {
 	dir := filepath.Dir(fn)

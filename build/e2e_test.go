@@ -15,6 +15,7 @@
 package build
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
@@ -598,5 +601,167 @@ func TestEmptyContent(t *testing.T) {
 
 	if len(result.Repos) != 1 || result.Repos[0].Repository.Name != "repo" {
 		t.Errorf("got %+v, want 1 repo.", result.Repos)
+	}
+}
+
+func TestDeltaShardsE2E(t *testing.T) {
+	var (
+
+		//fooForbidden = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-should-never-be-in-search-results")}
+		fooAtMain   = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main-v1")}
+		fooAtMainV2 = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main-v2")}
+
+		//fooAtRelease = zoekt.Document{Name: "foo.go", Branches: []string{"release"}, Content: []byte("common foo-release")}
+
+		barAtMain = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main")}
+		//barAtMainAndRelease = zoekt.Document{Name: "bar.go", Branches: []string{"main", "release"}, Content: []byte("common bar-main-and-release")}
+	)
+
+	// TODO: Still need a test to make sure that version information for all older shards is updated too.
+	// Can this be implemented with a commit search?
+
+	type step struct {
+		name      string
+		documents []zoekt.Document
+		optFns    []func(o *Options)
+
+		query             string
+		expectedDocuments []zoekt.Document
+	}
+
+	for _, test := range []struct {
+		name  string
+		steps []step
+	}{
+		{
+			name: "tombstone older documents",
+			steps: []step{
+				{
+					name:              "setup",
+					documents:         []zoekt.Document{barAtMain, fooAtMain},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain, fooAtMain},
+				},
+				{
+					name:      "add new version of foo, tombstone older ones",
+					documents: []zoekt.Document{fooAtMainV2},
+					optFns: []func(o *Options){
+						func(o *Options) {
+							o.IsDelta = true
+							o.FileTombstones = []string{"foo.go"}
+						},
+					},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain, fooAtMainV2},
+				},
+			},
+		},
+		{
+			name: "tombstone older documents even if the latest shard has no documents",
+			steps: []step{
+				{
+					name:              "setup",
+					documents:         []zoekt.Document{barAtMain, fooAtMain},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain, fooAtMain},
+				},
+				{
+					name:      "tombstone older documents",
+					documents: []zoekt.Document{},
+					optFns: []func(o *Options){
+						func(o *Options) {
+							o.IsDelta = true
+							o.FileTombstones = []string{"foo.go"}
+						},
+					},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain},
+				},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			indexDir := t.TempDir()
+
+			for _, step := range test.steps {
+				repository := zoekt.Repository{ID: 1, Name: "repository"}
+
+				branchesSet := make(map[string]struct{})
+
+				for _, d := range step.documents {
+					// de-duplicate branches from given documents
+					for _, b := range d.Branches {
+						branchesSet[b] = struct{}{}
+					}
+				}
+
+				for b := range branchesSet {
+					repository.Branches = append(repository.Branches, zoekt.RepositoryBranch{Name: b})
+				}
+
+				buildOpts := Options{
+					IndexDir:              indexDir,
+					RepositoryDescription: repository,
+				}
+				for _, fn := range step.optFns {
+					fn(&buildOpts)
+				}
+				buildOpts.SetDefaults()
+
+				b, err := NewBuilder(buildOpts)
+				if err != nil {
+					t.Fatalf("step %q: NewBuilder: %s", step.name, err)
+				}
+
+				for _, d := range step.documents {
+					err := b.Add(d)
+					if err != nil {
+						t.Fatalf("step %q: adding document %q to builder: %s", step.name, d.Name, err)
+					}
+				}
+
+				err = b.Finish()
+				if err != nil {
+					t.Fatalf("step %q: finishing builder: %s", step.name, err)
+				}
+
+				ss, err := shards.NewDirectorySearcher(indexDir)
+				if err != nil {
+					t.Fatalf("step %q: NewDirectorySearcher(%s): %s", step.name, indexDir, err)
+				}
+				defer ss.Close()
+
+				searchOpts := &zoekt.SearchOptions{Whole: true}
+				q := &query.Substring{Pattern: step.query}
+
+				result, err := ss.Search(context.Background(), q, searchOpts)
+				if err != nil {
+					t.Fatalf("step %q: Search(%q): %s", step.name, step.query, err)
+				}
+
+				var receivedDocuments []zoekt.Document
+				for _, f := range result.Files {
+					receivedDocuments = append(receivedDocuments, zoekt.Document{
+						Name:    f.FileName,
+						Content: f.Content,
+					})
+				}
+
+				cmpOpts := []cmp.Option{
+					cmpopts.IgnoreFields(zoekt.Document{}, "Branches"),
+					cmpopts.SortSlices(func(a, b zoekt.Document) bool {
+						if a.Name < b.Name {
+							return true
+						}
+
+						return bytes.Compare(a.Content, b.Content) < 0
+					}),
+				}
+
+				if diff := cmp.Diff(step.expectedDocuments, receivedDocuments, cmpOpts...); diff != "" {
+					t.Errorf("step %q: diff in received documents (-want +got):%s\n:", step.name, diff)
+				}
+			}
+		})
 	}
 }
