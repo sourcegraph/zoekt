@@ -237,14 +237,28 @@ nextFileMatch:
 		}
 
 		for ; nextDoc < docCount; nextDoc++ {
-			// Skip tombstoned docs
-			if d.repoMetaData[d.repos[nextDoc]].Tombstone {
+			repoID := d.repos[nextDoc]
+			repoMetadata := &d.repoMetaData[repoID]
+
+			// Skip tombstoned repositories
+			if repoMetadata.Tombstone {
 				continue
+			}
+
+			// Skip documents that are tombstoned
+			// TODO: This FileTombstones implementation (looking up by filenames) creates a lot of small allocations
+			// (string filenames) and can have poor cache performance. This should be addressed before we officially
+			// roll this out.
+			if len(repoMetadata.FileTombstones) > 0 {
+				fileName := string(d.fileName(nextDoc))
+				if _, tombstoned := repoMetadata.FileTombstones[fileName]; tombstoned {
+					continue
+				}
 			}
 
 			// Skip documents over ShardRepoMaxMatchCount if specified.
 			if opts.ShardRepoMaxMatchCount > 0 {
-				if repoMatchCount >= opts.ShardRepoMaxMatchCount && d.repos[nextDoc] == lastRepoID {
+				if repoMatchCount >= opts.ShardRepoMaxMatchCount && repoID == lastRepoID {
 					res.Stats.FilesSkipped++
 					continue
 				}

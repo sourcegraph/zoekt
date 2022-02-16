@@ -958,6 +958,144 @@ func TestAtomCountScore(t *testing.T) {
 	}
 }
 
+func TestSearchFileTombstones(t *testing.T) {
+	type shard struct {
+		fileTombstones []string
+		documents      []zoekt.Document
+	}
+
+	var (
+		fooForbidden = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-should-never-be-in-search-results")}
+		fooAtMain    = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main")}
+		fooAtRelease = zoekt.Document{Name: "foo.go", Branches: []string{"release"}, Content: []byte("common foo-release")}
+
+		barAtMain           = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main")}
+		barAtMainAndRelease = zoekt.Document{Name: "bar.go", Branches: []string{"main", "release"}, Content: []byte("common bar-main-and-release")}
+	)
+
+	tests := []struct {
+		name              string
+		shards            []shard
+		expectedDocuments []zoekt.Document
+	}{
+		{
+			name: "ignore content from files that are in filetombs",
+			shards: []shard{
+				{
+					documents:      []zoekt.Document{fooForbidden, barAtMain},
+					fileTombstones: []string{"foo.go"},
+				},
+			},
+			expectedDocuments: []zoekt.Document{barAtMain},
+		},
+		{
+			name: "include results from other shards that haven't tombstoned the file",
+			shards: []shard{
+				{
+					documents:      []zoekt.Document{fooForbidden, barAtMain},
+					fileTombstones: []string{"foo.go"},
+				},
+				{
+					documents: []zoekt.Document{fooAtMain},
+				},
+			},
+			expectedDocuments: []zoekt.Document{fooAtMain, barAtMain},
+		},
+		{
+			name: "filetombstones affect all branches in a shard",
+			shards: []shard{
+				{
+					documents: []zoekt.Document{
+						fooForbidden,
+
+						// the contents from this file should all ignored even though it's using a different branch
+						fooAtRelease,
+
+						barAtMainAndRelease,
+					},
+					fileTombstones: []string{"foo.go"},
+				},
+			},
+			expectedDocuments: []zoekt.Document{barAtMainAndRelease},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// setup
+
+			shardMap := make(map[string]zoekt.Searcher)
+			for i, shard := range test.shards {
+				repository := zoekt.Repository{Name: "repository"}
+
+				// set of unique branches in the repository
+				branchesSet := make(map[string]struct{})
+
+				for _, d := range shard.documents {
+					// de-duplicate branches from given documents
+					for _, b := range d.Branches {
+						branchesSet[b] = struct{}{}
+					}
+				}
+
+				for b := range branchesSet {
+					repository.Branches = append(repository.Branches, zoekt.RepositoryBranch{Name: b})
+				}
+
+				if len(shard.fileTombstones) > 0 {
+					repository.FileTombstones = make(map[string]struct{})
+					for _, s := range shard.fileTombstones {
+						repository.FileTombstones[s] = struct{}{}
+					}
+				}
+
+				shardMap[strconv.Itoa(i)] = searcherForTest(t, testIndexBuilder(t, &repository, shard.documents...))
+			}
+			ss := newShardedSearcher(4)
+			ss.replace(shardMap)
+
+			opts := &zoekt.SearchOptions{
+				Whole: true,
+			}
+
+			q := &query.Substring{Pattern: "common"}
+
+			// test
+			result, err := ss.Search(context.Background(), q, opts)
+			if err != nil {
+				t.Fatalf("Search(%v, %s): %v", q, opts, err)
+			}
+
+			// verify
+
+			// extract a subset of the fields from each received fileMatch for
+			// easier comparisons
+			var receivedDocuments []zoekt.Document
+			for _, f := range result.Files {
+				receivedDocuments = append(receivedDocuments, zoekt.Document{
+					Name:    f.FileName,
+					Content: f.Content,
+				})
+			}
+
+			cmpOpts := []cmp.Option{
+				cmpopts.IgnoreFields(zoekt.Document{}, "Branches"),
+				cmpopts.SortSlices(func(a, b zoekt.Document) bool {
+					if a.Name < b.Name {
+						return true
+					}
+
+					return bytes.Compare(a.Content, b.Content) < 0
+				}),
+			}
+
+			if diff := cmp.Diff(test.expectedDocuments, receivedDocuments, cmpOpts...); diff != "" {
+				t.Errorf("unexpected difference in received documents (-want +got):%s\n:", diff)
+			}
+		})
+	}
+}
+
 func testShardedStreamSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch {
 	ss := newShardedSearcher(1)
 	searcher := searcherForTest(t, ib)

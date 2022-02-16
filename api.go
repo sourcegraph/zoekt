@@ -307,6 +307,10 @@ type Repository struct {
 	// The date might be time.Time's 0-value if the repository was last indexed
 	// before this field was added.
 	LatestCommitDate time.Time
+
+	// FileTombstones is a set of file paths that should be ignored across all branches
+	// in this shard.
+	FileTombstones map[string]struct{} `json:",omitempty"`
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {
