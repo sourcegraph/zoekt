@@ -58,14 +58,12 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 		if _, ok := a.ignoreDirs[base]; ok {
 			return filepath.SkipDir
 		}
-		relPath, err := filepath.Rel(a.baseDir, path)
+		skip, err := shouldSkip(a.baseDir, path, a.ignoreMatchers)
 		if err != nil {
 			return err
 		}
-		for _, m := range a.ignoreMatchers {
-			if m.Match(relPath) {
-				return filepath.SkipDir
-			}
+		if skip {
+			return filepath.SkipDir
 		}
 	}
 
@@ -111,6 +109,9 @@ func main() {
 	if *ignoreFiles != "" {
 		files := strings.Split(*ignoreFiles, ",")
 		for _, f := range files {
+			if _, err := os.Stat(f); errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			content, err := ioutil.ReadFile(f)
 			if err != nil {
 				continue
@@ -162,19 +163,12 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}, ignore
 	}()
 
 	for f := range comm {
-		relPath, err := filepath.Rel(dir, f.name)
+		skip, err := shouldSkip(dir, f.name, ignoreMatchers)
 		if err != nil {
 			return err
 		}
-		skip := false
-		for _, m := range ignoreMatchers {
-			if m.Match(relPath) {
-				log.Printf("Skipping %v", f.name)
-				skip = true
-				break
-			}
-		}
 		if skip {
+			log.Printf("Skipping %v", f.name)
 			continue
 		}
 
@@ -199,4 +193,17 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}, ignore
 	}
 
 	return builder.Finish()
+}
+
+func shouldSkip(baseDir, path string, ignoreMatchers []*ignore.Matcher) (bool, error) {
+	relPath, err := filepath.Rel(baseDir, path)
+	if err != nil {
+		return false, err
+	}
+	for _, m := range ignoreMatchers {
+		if m.Match(relPath) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
