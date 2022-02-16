@@ -240,7 +240,7 @@ nextFileMatch:
 			repoID := d.repos[nextDoc]
 			repoMetadata := &d.repoMetaData[repoID]
 
-			// Skip tombstoned docs
+			// Skip tombstoned repositories
 			if repoMetadata.Tombstone {
 				continue
 			}
