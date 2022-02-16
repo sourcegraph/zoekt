@@ -135,6 +135,14 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 // responsibility of the caller to rename the temporary shard(s) and delete the
 // input shard.
 func Explode(dstDir string, f IndexFile) (map[string]string, error) {
+	return explode(dstDir, f)
+}
+
+type indexBuilderFunc func(ib *IndexBuilder)
+
+// explode offers a richer signature compared to Explode for testing. You
+// probably want to call Explode instead.
+func explode(dstDir string, f IndexFile, ibFuncs ...indexBuilderFunc) (map[string]string, error) {
 	searcher, err := NewSearcher(f)
 	if err != nil {
 		return nil, err
@@ -146,6 +154,9 @@ func Explode(dstDir string, f IndexFile) (map[string]string, error) {
 	writeShard := func(ib *IndexBuilder) error {
 		if len(ib.repoList) != 1 {
 			return fmt.Errorf("expected ib to contain exactly 1 repository")
+		}
+		for _, ibFunc := range ibFuncs {
+			ibFunc(ib)
 		}
 		fn := filepath.Join(dstDir, shardName(ib.repoList[0].Name, ib.indexFormatVersion, 0))
 		fnTmp := fn + ".tmp"
