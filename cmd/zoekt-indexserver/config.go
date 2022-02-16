@@ -189,6 +189,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			for _, topic := range c.ExcludeTopics {
 				cmd.Args = append(cmd.Args, "-exclude_topic", topic)
 			}
+			if c.OnlyActive {
+				cmd.Args = append(cmd.Args, "-only-active")
+			}
 		} else if c.GitilesURL != "" {
 			cmd = exec.Command("zoekt-mirror-gitiles",
 				"-dest", repoDir, "-name", c.Name)

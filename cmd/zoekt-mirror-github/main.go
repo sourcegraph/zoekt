@@ -50,6 +50,7 @@ func (f *topicsFlag) Set(value string) error {
 type reposFilters struct {
 	topics        []string
 	excludeTopics []string
+	onlyActive    *bool
 }
 
 func main() {
@@ -68,6 +69,7 @@ func main() {
 	flag.Var(&topics, "topic", "only clone repos whose have one of given topics. You can add multiple topics by setting this more than once.")
 	excludeTopics := topicsFlag{}
 	flag.Var(&excludeTopics, "exclude_topic", "don't clone repos whose have one of given topics. You can add multiple topics by setting this more than once.")
+	onlyActive := flag.Bool("only-active", false, "mirror only active projects")
 
 	flag.Parse()
 
@@ -130,6 +132,7 @@ func main() {
 	reposFilters := reposFilters{
 		topics:        topics,
 		excludeTopics: excludeTopics,
+		onlyActive:    onlyActive,
 	}
 	var repos []*github.Repository
 	var err error
@@ -233,6 +236,15 @@ func filterByTopic(repos []*github.Repository, include []string, exclude []strin
 	return
 }
 
+func filterByState(repos []*github.Repository, onlyActive *bool) (filteredRepos []*github.Repository) {
+	for _, repo := range repos {
+		if !*onlyActive || !*repo.Archived {
+			filteredRepos = append(filteredRepos, repo)
+		}
+	}
+	return
+}
+
 func getOrgRepos(client *github.Client, org string, reposFilters reposFilters) ([]*github.Repository, error) {
 	var allRepos []*github.Repository
 	opt := &github.RepositoryListByOrgOptions{}
@@ -247,6 +259,7 @@ func getOrgRepos(client *github.Client, org string, reposFilters reposFilters) (
 
 		opt.Page = resp.NextPage
 		repos = filterByTopic(repos, reposFilters.topics, reposFilters.excludeTopics)
+		repos = filterByState(repos, reposFilters.onlyActive)
 		allRepos = append(allRepos, repos...)
 		if resp.NextPage == 0 {
 			break
@@ -269,6 +282,7 @@ func getUserRepos(client *github.Client, user string, reposFilters reposFilters)
 
 		opt.Page = resp.NextPage
 		repos = filterByTopic(repos, reposFilters.topics, reposFilters.excludeTopics)
+		repos = filterByState(repos, reposFilters.onlyActive)
 		allRepos = append(allRepos, repos...)
 		if resp.NextPage == 0 {
 			break
