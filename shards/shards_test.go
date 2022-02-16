@@ -1066,8 +1066,7 @@ func TestSearchFileTombstones(t *testing.T) {
 			ss.replace(shardMap)
 
 			opts := &zoekt.SearchOptions{
-				Whole:                  true,
-				EvaluateFileTombstones: true,
+				Whole: true,
 			}
 
 			q := &query.Substring{Pattern: "common"}

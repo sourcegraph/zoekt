@@ -245,7 +245,7 @@ nextFileMatch:
 				continue
 			}
 
-			if opts.EvaluateFileTombstones && len(repoMetadata.FileTombstones) > 0 {
+			if len(repoMetadata.FileTombstones) > 0 {
 				fileName := string(d.fileName(nextDoc))
 				if _, tombstoned := repoMetadata.FileTombstones[fileName]; tombstoned {
 					continue
