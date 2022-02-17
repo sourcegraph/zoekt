@@ -18,7 +18,6 @@ package build
 
 import (
 	"crypto/sha1"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -549,10 +548,6 @@ func (b *Builder) Finish() error {
 	b.flush()
 	b.building.Wait()
 
-	// delta shards
-	// finished shards - include new shards and updates for all older metafiles
-	//
-
 	if b.buildError != nil {
 		for tmp := range b.finishedShards {
 			log.Printf("Builder.Finish %s", tmp)
@@ -562,57 +557,74 @@ func (b *Builder) Finish() error {
 		return b.buildError
 	}
 
+	// maps temp -> final names of updated shards + shard metadata files
+	// TODO: Make this a struct field?
+	artifactPaths := make(map[string]string)
+	for tmp, final := range b.finishedShards {
+		artifactPaths[tmp] = final
+	}
 
 	oldShards := b.opts.FindAllShards()
 
-	// maps temp -> final names of updated shard metadata files
-	// TODO: Make this a struct field?
-	updatedMetaData := make(map[string]string)
-
-	// for delta shards we need to update all the shard metadata, even if
-	// we didn't generate any new shards (could be a commit with just deletions)
 	if b.opts.IsDelta {
+		// update repository metadata (filetombs, commit information, etc.) for all prior shards
 		for _, shard := range oldShards {
-			repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
-			if err == nil {
+			repositories, indexMetadata, err := zoekt.ReadMetadataPathAlive(shard)
+			if err != nil {
 				b.buildError = err
-				return b.buildError
+				continue
 			}
 
 			for _, r := range repositories {
 				if r.ID == b.opts.RepositoryDescription.ID {
 
-					if len(b.opts.FileTombstones) > 0  && r.FileTombstones == nil {
+					if len(b.opts.FileTombstones) > 0 && r.FileTombstones == nil {
 						r.FileTombstones = make(map[string]struct{})
 					}
 
 					for _, f := range b.opts.FileTombstones {
-						r.FileTombstones[f]= struct{}{}
+						r.FileTombstones[f] = struct{}{}
 					}
+
+					//r.Branches = b.opts.RepositoryDescription.Branches
+					// TODO: I saw a panic when the above line was uncommented.
 
 					// TODO: Also update all the version information in all the older shards too
 					break
 				}
 			}
 
-			finalPath := shard + ".meta"
-			tmpPath , err := zoekt.JsonMarshalTemp(repositories, filepath.Dir(finalPath), filepath.Base(finalPath)+".*.tmp")
-			if err != nil {
-				b.buildError = err
-				return b.buildError
+			// TODO It would be nice to a single function that automatically knows to write out either a list of repos (>=17) or
+			// a single repository (<=16). Right now, this logic is duplicated across a few different places.
+			// TODO also very surprised that the only error I saw was in the logs - not any searcher error - 2022/02/17 08:42:32 reloading: /var/folders/n7/k2jmz8g557l74bprwq7br_c40000gn/T/TestDeltaShardsE2Etombstone_older_documents3374360741/001/repository_v16.00000.zoekt, err NewSearcher(/var/folders/n7/k2jmz8g557l74bprwq7br_c40000gn/T/TestDeltaShardsE2Etombstone_older_documents3374360741/001/repository_v16.00000.zoekt): json: cannot unmarshal array into Go value of type zoekt.Repository
+			var updatedRepositories interface{}
+
+			if indexMetadata.IndexFormatVersion >= 17 {
+				updatedRepositories = &repositories
+			} else {
+				if len(repositories) == 0 {
+					b.buildError = fmt.Errorf("failed to update repository metadata for shard %q - shard contains no repositories", shard)
+					continue
+				}
+
+				updatedRepositories = repositories[0]
 			}
 
-			updatedMetaData[tmpPath]=finalPath
+			finalPath := shard + ".meta"
+			tmpPath, err := zoekt.JsonMarshalRepoMetaTemp(updatedRepositories, filepath.Dir(finalPath), filepath.Base(finalPath)+".*.tmp")
+			if err != nil {
+				b.buildError = err
+				continue
+			}
 
+			artifactPaths[tmpPath] = finalPath
 		}
 	}
 
 	// We mark finished shards as empty when we successfully finish. Return now
 	// to allow call sites to call Finish idempotently.
-	// TODO: Update this logic to update all the older metadata too, something like
-	// if len(b.finishedShards) && b.updatedMetadata ==0
-	if len(b.finishedShards) == 0 {
-		return nil
+	if len(artifactPaths) == 0 {
+		return b.buildError
 	}
 
 	defer b.shardLogger.Close()
@@ -623,7 +635,7 @@ func (b *Builder) Finish() error {
 
 	var toDelete map[string]struct{}
 	if !b.opts.IsDelta {
-		// non-delta shards replace all the old shards, delta shards only add new shards
+		// non-delta shards replace all the old ones
 		toDelete = make(map[string]struct{})
 		for _, name := range oldShards {
 			paths, err := zoekt.IndexFilePaths(name)
@@ -636,9 +648,7 @@ func (b *Builder) Finish() error {
 		}
 	}
 
-	// foo.meta.tmp -> foo.meta in b.finishedShards (or maybe a better name?)
-
-	for tmp, final := range b.finishedShards {
+	for tmp, final := range artifactPaths {
 		if err := os.Rename(tmp, final); err != nil {
 			b.buildError = err
 			continue
@@ -651,88 +661,7 @@ func (b *Builder) Finish() error {
 
 	// TODO: write test for builder to make sure that the metadata for all a repo's shards have the _same_ version. If
 	// if it doesn't then we've screwed up somewhere and should blow up.
-	if b.opts.IsDelta {
-		// TODO: figure out how to write test that checks that we properly roll back if there is an error
-
-		// TODO: This logic can be somewhat simplified if I have a set of all the files that need to be updated (similar to finished shards) that contains
-		// mappings of temporary names to final names for _ALL_ of the following:
-		//
-		// - the latest delta shards that we've created for this run
-		// - the "modified" versions of all the json metadata files for all the old shards (these files have version bumps and updated filetombstones).
-		//
-		// We need to do all these renames at once, and rollback _all_ of them if any of the renames fail. We also need
-		// to backup all the "oldShards" to a scratch space that we only delete after a successul rename. Otherwise, we can
-		// use this to store our old change prior to this build.
-		//
-		// Because delta shards require stacking changes ontop of older ones, any break/corruption in the change, results in bad search results.
-		// Unlike non-delta shards that delete all existing shards on disk to "assert" their new state, we can't recover from this
-		// (eventually consistent) by running a fresh indexing job.
-		//
-		// We don't need to solve this immediately, but we have a solution to this before we run it in prod.
-		//
-		if b.buildError != nil {
-			// we need to remove the shards we just added, otherwise
-			// we have a partially completed commit on disk that
-			// will case cascading issues and inconsistency
-			for _, final := range b.finishedShards {
-				if err := os.Remove(final); err != nil {
-					log.Printf("error when removing delta shard %q: %s", final, err)
-				}
-			}
-
-			return b.buildError
-		}
-
-		// now tombstone the files in the old shards (if applicable)
-		if len(b.opts.FileTombstones) > 0 {
-			for _, shard := range oldShards {
-				repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
-				if err != nil {
-					b.buildError = fmt.Errorf("failed to read metadata from shard %q while tombstoning files: %w", shard, err)
-
-					// TODO: We need to undo all changes if this occurs
-					// Maybe add a defer that checks to see if we returned an error, and
-					// then has the logic to rollback?
-					return b.buildError
-				}
-
-				// TODO: Ideally, we'd want to this atomically, and rollback if any of these metadata updates fail
-				// figure out how to do that later. Also figure out how to test this behavior.
-				for _, r := range repositories {
-					if r.ID == b.opts.RepositoryDescription.ID {
-						if r.FileTombstones == nil {
-							r.FileTombstones = make(map[string]struct{})
-						}
-
-						for _, tombstone := range b.opts.FileTombstones {
-							r.FileTombstones[tombstone] = struct{}{}
-						}
-					}
-				}
-				log.Printf("%v", repositories)
-
-				// TODO: I see the tombstone logic  uses some custom marshaling function. Understand why later.
-
-				data, err := json.Marshal(repositories)
-				if err != nil {
-					// TODO: also we need to undo if we ever hit this conidtion
-					b.buildError = fmt.Errorf("failed to marshal updated filetomb metadata for shard %q: %w", shard, err)
-					return err
-				}
-
-				// TODO: This needs to change to write to a temporary file.
-				err = ioutil.WriteFile(shard+".meta", data, 0644)
-				if err != nil {
-					// TODO: also need to rollback here
-					b.buildError = fmt.Errorf("failed to write updated filetomb metadata for shard %q: %w", shard, err)
-					return err
-				}
-
-			}
-		}
-
-		return nil
-	}
+	// TODO: figure out how to write test that checks that we properly roll back if there is an error
 
 	b.finishedShards = map[string]string{}
 
@@ -961,8 +890,6 @@ func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	shardBuilder.ID = b.id
 	return shardBuilder, nil
 }
-
-func (b *Builder)
 
 func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard, error) {
 	dir := filepath.Dir(fn)

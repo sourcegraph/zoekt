@@ -604,26 +604,23 @@ func TestEmptyContent(t *testing.T) {
 	}
 }
 
-func TestDeltaShardsE2E(t *testing.T) {
+func TestDeltaShards(t *testing.T) {
 	var (
-
-		//fooForbidden = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-should-never-be-in-search-results")}
 		fooAtMain   = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main-v1")}
 		fooAtMainV2 = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main-v2")}
 
-		//fooAtRelease = zoekt.Document{Name: "foo.go", Branches: []string{"release"}, Content: []byte("common foo-release")}
+		fooAtMainAndRelease = zoekt.Document{Name: "foo.go", Branches: []string{"main", "release"}, Content: []byte("common foo-main-and-release")}
 
 		barAtMain = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main")}
-		//barAtMainAndRelease = zoekt.Document{Name: "bar.go", Branches: []string{"main", "release"}, Content: []byte("common bar-main-and-release")}
+		bazAtMain = zoekt.Document{Name: "baz.go", Branches: []string{"main"}, Content: []byte("common baz-main")}
 	)
 
 	// TODO: Still need a test to make sure that version information for all older shards is updated too.
-	// Can this be implemented with a commit search?
-
+	// TODO: Need to write a test for compound shards as well.
 	type step struct {
 		name      string
 		documents []zoekt.Document
-		optFns    []func(o *Options)
+		optFn     func(o *Options)
 
 		query             string
 		expectedDocuments []zoekt.Document
@@ -645,11 +642,9 @@ func TestDeltaShardsE2E(t *testing.T) {
 				{
 					name:      "add new version of foo, tombstone older ones",
 					documents: []zoekt.Document{fooAtMainV2},
-					optFns: []func(o *Options){
-						func(o *Options) {
-							o.IsDelta = true
-							o.FileTombstones = []string{"foo.go"}
-						},
+					optFn: func(o *Options) {
+						o.IsDelta = true
+						o.FileTombstones = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain, fooAtMainV2},
@@ -666,13 +661,67 @@ func TestDeltaShardsE2E(t *testing.T) {
 					expectedDocuments: []zoekt.Document{barAtMain, fooAtMain},
 				},
 				{
+					// a build with no documents could represent a deletion
 					name:      "tombstone older documents",
-					documents: []zoekt.Document{},
-					optFns: []func(o *Options){
-						func(o *Options) {
-							o.IsDelta = true
-							o.FileTombstones = []string{"foo.go"}
-						},
+					documents: nil,
+					optFn: func(o *Options) {
+						o.IsDelta = true
+						o.FileTombstones = []string{"foo.go"}
+					},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain},
+				},
+			},
+		},
+		{
+			name: "tombstones affect document across branches",
+			steps: []step{
+				{
+					name:              "setup",
+					documents:         []zoekt.Document{barAtMain, fooAtMainAndRelease},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain, fooAtMainAndRelease},
+				},
+				{
+
+					name:      "tombstone foo",
+					documents: nil,
+					optFn: func(o *Options) {
+						o.IsDelta = true
+						o.FileTombstones = []string{"foo.go"}
+					},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain},
+				},
+			},
+		},
+		{
+			name: "tombstones are cumulative",
+			steps: []step{
+				{
+					name:              "setup",
+					documents:         []zoekt.Document{barAtMain, bazAtMain, fooAtMain},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain, bazAtMain, fooAtMain},
+				},
+				{
+
+					name:      "tombstone foo",
+					documents: nil,
+					optFn: func(o *Options) {
+						o.IsDelta = true
+						o.FileTombstones = []string{"foo.go"}
+					},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain, bazAtMain},
+				},
+				{
+
+					name:      "tombstone baz",
+					documents: nil,
+					optFn: func(o *Options) {
+						o.IsDelta = true
+						o.FileTombstones = []string{"baz.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain},
@@ -703,8 +752,9 @@ func TestDeltaShardsE2E(t *testing.T) {
 					IndexDir:              indexDir,
 					RepositoryDescription: repository,
 				}
-				for _, fn := range step.optFns {
-					fn(&buildOpts)
+
+				if step.optFn != nil {
+					step.optFn(&buildOpts)
 				}
 				buildOpts.SetDefaults()
 
