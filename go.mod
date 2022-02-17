@@ -26,6 +26,7 @@ require (
 	github.com/kylelemons/godebug v1.1.0
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
 	github.com/opentracing/opentracing-go v1.2.0
+	github.com/peterbourgon/ff/v3 v3.1.2
 	github.com/prometheus/client_golang v1.5.1
 	github.com/prometheus/procfs v0.0.10 // indirect
 	github.com/rs/xid v1.3.0
