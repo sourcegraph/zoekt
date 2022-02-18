@@ -283,7 +283,7 @@ func shutdownOnSignal(srv *http.Server) error {
 	signal.Notify(c, os.Interrupt)    // terminal C-c and goreman
 	signal.Notify(c, syscall.SIGTERM) // Kubernetes
 
-	sig := <-c
+	<-c
 
 	// If we receive another signal, immediate shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -296,26 +296,6 @@ func shutdownOnSignal(srv *http.Server) error {
 			cancel()
 		}
 	}()
-
-	// Feature flagged. If we are not respecting ready status, we don't need to
-	// wait for it to propogate. This is the case currently for sourcegraph.com
-	// due to using our custom statefulset service discovery.
-	fast := os.Getenv("SHUTDOWN_MODE") == "fast"
-	if fast {
-		log.Println("SHUTDOWN_MODE=fast so not waiting for unready state to propogate")
-	}
-
-	// SIGTERM is sent by kubernetes. We give 15s to allow our endpoint to be
-	// removed from service discovery before draining traffic.
-	if sig == syscall.SIGTERM && !fast {
-		wait := 15 * time.Second
-		log.Printf("received SIGTERM, waiting %v before shutting down", wait)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(wait):
-		}
-	}
 
 	// Wait for 10s to drain ongoing requests. Kubernetes gives us 30s to
 	// shutdown, we have already used 15s waiting for our endpoint removal to
