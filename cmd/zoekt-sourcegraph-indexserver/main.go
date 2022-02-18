@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -321,7 +320,7 @@ func (s *Server) Run() {
 			// queue. The repositories not on the queue (missing) need a forced
 			// fetch of IndexOptions.
 			missing := s.queue.Bump(repos.IDs)
-			s.Sourcegraph.ForceIterateIndexOptions(s.queue.AddOrUpdate, missing...)
+			s.Sourcegraph.ForceIterateIndexOptions(s.queue.AddOrUpdate, func(uint32, error) {}, missing...)
 
 			setCompoundShardCounter(s.IndexDir)
 
@@ -588,15 +587,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // forceIndex will run the index job for repo name now. It will return always
 // return a string explaining what it did, even if it failed.
 func (s *Server) forceIndex(id uint32) (string, error) {
-	opts, err := s.Sourcegraph.GetIndexOptions(id)
+	var opts IndexOptions
+	var err error
+	s.Sourcegraph.ForceIterateIndexOptions(func(o IndexOptions) {
+		opts = o
+	}, func(_ uint32, e error) {
+		err = e
+	}, id)
 	if err != nil {
 		return fmt.Sprintf("Indexing %d failed: %v", id, err), err
 	}
-	if errS := opts[0].Error; errS != "" {
-		return fmt.Sprintf("Indexing %d failed: %s", id, errS), errors.New(errS)
-	}
 
-	args := s.indexArgs(opts[0].IndexOptions)
+	args := s.indexArgs(opts)
 	args.Incremental = false // force re-index
 	state, err := s.Index(args)
 	if err != nil {
