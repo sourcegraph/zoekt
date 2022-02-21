@@ -26,13 +26,21 @@ import (
 	"golang.org/x/net/trace"
 )
 
+// SourcegraphListResult is the return value of Sourcegraph.List. It is its
+// own type since internally we batch the calculation of index options. This
+// is exposed via IterateIndexOptions.
+//
+// This type has state and is coupled to the Sourcegraph implementation.
 type SourcegraphListResult struct {
 	// IDs is the set of Sourcegraph repository IDs that this replica needs
 	// to index.
 	IDs []uint32
 
 	// IterateIndexOptions best effort resolves the IndexOptions for RepoIDs. If
-	// any repository fails it internally logs.
+	// any repository fails it internally logs. It uses the "config fingerprint"
+	// to reduce the amount of work done. This means we only resolve options for
+	// repositories which have been mutated since the last Sourcegraph.List
+	// call.
 	//
 	// Note: this has a side-effect of setting a the "config fingerprint". The
 	// config fingerprint means we only calculate index options for repositories
@@ -44,6 +52,8 @@ type SourcegraphListResult struct {
 	IterateIndexOptions func(func(IndexOptions))
 }
 
+// Sourcegraph represents the Sourcegraph service. It informs the indexserver
+// what to index and which options to use.
 type Sourcegraph interface {
 	// List returns a list of repository IDs to index as well as a facility to
 	// fetch the indexing options.
@@ -53,7 +63,9 @@ type Sourcegraph interface {
 	List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error)
 
 	// ForceIterateIndexOptions will best-effort calculate the index options for
-	// all repos. For each repo it will call either onSuccess or onError.
+	// all repos. For each repo it will call either onSuccess or onError. This
+	// is the forced version of IterateIndexOptions, so will always calculate
+	// options for each id in repos.
 	ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32)
 }
 
