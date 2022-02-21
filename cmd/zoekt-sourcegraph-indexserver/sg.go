@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -25,23 +26,34 @@ import (
 	"golang.org/x/net/trace"
 )
 
+// SourcegraphListResult is the return value of Sourcegraph.List. It is its
+// own type since internally we batch the calculation of index options. This
+// is exposed via IterateIndexOptions.
+//
+// This type has state and is coupled to the Sourcegraph implementation.
 type SourcegraphListResult struct {
 	// IDs is the set of Sourcegraph repository IDs that this replica needs
 	// to index.
 	IDs []uint32
 
 	// IterateIndexOptions best effort resolves the IndexOptions for RepoIDs. If
-	// any repository fails it internally logs.
+	// any repository fails it internally logs. It uses the "config fingerprint"
+	// to reduce the amount of work done. This means we only resolve options for
+	// repositories which have been mutated since the last Sourcegraph.List
+	// call.
 	//
 	// Note: this has a side-effect of setting a the "config fingerprint". The
 	// config fingerprint means we only calculate index options for repositories
 	// that have changed since the last call to IterateIndexOptions. If you want
-	// to force calculation of index options use Sourcegraph.GetIndexOptions.
+	// to force calculation of index options use
+	// Sourcegraph.ForceIterateIndexOptions.
 	//
 	// Note: This should not be called concurrently with the Sourcegraph client.
 	IterateIndexOptions func(func(IndexOptions))
 }
 
+// Sourcegraph represents the Sourcegraph service. It informs the indexserver
+// what to index and which options to use.
 type Sourcegraph interface {
 	// List returns a list of repository IDs to index as well as a facility to
 	// fetch the indexing options.
@@ -51,12 +63,10 @@ type Sourcegraph interface {
 	List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error)
 
 	// ForceIterateIndexOptions will best-effort calculate the index options for
-	// all of ids. If any repository fails it internally logs.
-	ForceIterateIndexOptions(func(IndexOptions), ...uint32)
-
-	// GetIndexOptions is deprecated but kept around until we improve our
-	// forceIndex code.
-	GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error)
+	// all repos. For each repo it will call either onSuccess or onError. This
+	// is the forced version of IterateIndexOptions, so will always calculate
+	// options for each id in repos.
+	ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32)
 }
 
 // sourcegraphClient contains methods which interact with the sourcegraph API.
@@ -172,20 +182,26 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 	}, nil
 }
 
-func (s *sourcegraphClient) ForceIterateIndexOptions(f func(IndexOptions), repos ...uint32) {
+func (s *sourcegraphClient) ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32) {
 	batchSize := s.BatchSize
 	if batchSize == 0 {
 		batchSize = 10_000
 	}
 
 	for repos := range batched(repos, batchSize) {
-		opts, err := s.GetIndexOptions(repos...)
+		opts, _, err := s.getIndexOptions("", repos...)
 		if err != nil {
+			for _, id := range repos {
+				onError(id, err)
+			}
 			continue
 		}
 		for _, o := range opts {
+			if o.RepoID > 0 && o.Error != "" {
+				onError(o.RepoID, errors.New(o.Error))
+			}
 			if o.Error == "" {
-				f(o.IndexOptions)
+				onSuccess(o.IndexOptions)
 			}
 		}
 	}
@@ -196,11 +212,6 @@ func (s *sourcegraphClient) ForceIterateIndexOptions(f func(IndexOptions), repos
 type indexOptionsItem struct {
 	IndexOptions
 	Error string
-}
-
-func (s *sourcegraphClient) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, error) {
-	opts, _, err := s.getIndexOptions("", repos...)
-	return opts, err
 }
 
 func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32) ([]indexOptionsItem, string, error) {
@@ -347,14 +358,20 @@ func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*Sourcegr
 	}, nil
 }
 
-func (sf sourcegraphFake) ForceIterateIndexOptions(f func(IndexOptions), repos ...uint32) {
+func (sf sourcegraphFake) ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32) {
 	opts, err := sf.GetIndexOptions(repos...)
 	if err != nil {
+		for _, id := range repos {
+			onError(id, err)
+		}
 		return
 	}
 	for _, o := range opts {
+		if o.RepoID > 0 && o.Error != "" {
+			onError(o.RepoID, errors.New(o.Error))
+		}
 		if o.Error == "" {
-			f(o.IndexOptions)
+			onSuccess(o.IndexOptions)
 		}
 	}
 }

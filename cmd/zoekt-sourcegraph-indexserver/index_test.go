@@ -73,7 +73,14 @@ func TestGetIndexOptions(t *testing.T) {
 	for r, want := range cases {
 		response = []byte(r)
 
-		got, err := sg.GetIndexOptions(123)
+		var got IndexOptions
+		var err error
+		sg.ForceIterateIndexOptions(func(o IndexOptions) {
+			got = o
+		}, func(_ uint32, e error) {
+			err = e
+		}, 123)
+
 		if err != nil && want != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -81,9 +88,9 @@ func TestGetIndexOptions(t *testing.T) {
 			continue
 		}
 
-		want.CloneURL = sg.getCloneURL(got[0].IndexOptions.Name)
+		want.CloneURL = sg.getCloneURL(got.Name)
 
-		if d := cmp.Diff(*want, got[0].IndexOptions); d != "" {
+		if d := cmp.Diff(*want, got); d != "" {
 			t.Log("response", r)
 			t.Errorf("mismatch (-want +got):\n%s", d)
 		}
@@ -94,12 +101,18 @@ func TestGetIndexOptions(t *testing.T) {
 	t.Run("unchanged", func(t *testing.T) {
 		response = []byte(``)
 
-		got, err := sg.GetIndexOptions(123)
+		got := false
+		var err error
+		sg.ForceIterateIndexOptions(func(_ IndexOptions) {
+			got = true
+		}, func(_ uint32, e error) {
+			err = e
+		}, 123)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(got) != 0 {
+		if got {
 			t.Fatalf("expected no options, got %v", got)
 		}
 	})
