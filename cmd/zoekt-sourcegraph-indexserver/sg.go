@@ -22,7 +22,6 @@ import (
 
 	"github.com/google/zoekt"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
-	"go.uber.org/atomic"
 	"golang.org/x/net/trace"
 )
 
@@ -38,10 +37,17 @@ type SourcegraphListResult struct {
 	// config fingerprint means we only calculate index options for repositories
 	// that have changed since the last call to IterateIndexOptions. If you want
 	// to force calculation of index options use Sourcegraph.GetIndexOptions.
+	//
+	// Note: This should not be called concurrently with the Sourcegraph client.
 	IterateIndexOptions func(func(IndexOptions))
 }
 
 type Sourcegraph interface {
+	// List returns a list of repository IDs to index as well as a facility to
+	// fetch the indexing options.
+	//
+	// Note: The return value is not safe to use concurrently with future calls
+	// to List.
 	List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error)
 
 	// ForceIterateIndexOptions will best-effort calculate the index options for
@@ -74,7 +80,7 @@ type sourcegraphClient struct {
 	// configFingerprint is the last config fingerprint returned from
 	// Sourcegraph. It can be used for future calls to the configuration
 	// endpoint.
-	configFingerprint atomic.String
+	configFingerprint string
 
 	// configFingerprintReset tracks when we should zero out the
 	// configFingerprint. We want to periodically do this just in case our
@@ -104,14 +110,14 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 		}
 		next += time.Duration(rand.Int63n(int64(next) / 4)) // jitter
 		s.configFingerprintReset = time.Now().Add(next)
-		s.configFingerprint.Store("")
+		s.configFingerprint = ""
 	}
 
 	// We want to use a consistent fingerprint for each call. Next time list is
 	// called we want to use the first fingerprint returned from the
 	// configuration endpoint. However, if any of our configuration calls fail,
 	// we need to fallback to our last value.
-	lastFingerprint := s.configFingerprint.Load()
+	lastFingerprint := s.configFingerprint
 	first := true
 
 	iterate := func(f func(IndexOptions)) {
@@ -132,7 +138,7 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 			if err != nil {
 				// Call failed, restore old fingerprint for next call to List.
 				first = false
-				s.configFingerprint.Store(lastFingerprint)
+				s.configFingerprint = lastFingerprint
 
 				metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
 				tr.LazyPrintf("failed fetching options batch: %v", err)
@@ -143,7 +149,7 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 			if first {
 				first = false
 				tr.LazyPrintf("new fingerprint: %s", fingerprint)
-				s.configFingerprint.Store(fingerprint)
+				s.configFingerprint = fingerprint
 			}
 
 			metricResolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
