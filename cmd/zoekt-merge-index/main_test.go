@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -21,7 +22,7 @@ func TestMerge(t *testing.T) {
 	sort.Strings(v16Shards)
 	t.Log(v16Shards)
 
-	err = merge(dir, v16Shards)
+	err = merge(dir, v16Shards, renameCompoundShard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestExplode(t *testing.T) {
 	sort.Strings(v16Shards)
 	t.Log(v16Shards)
 
-	err = merge(dir, v16Shards)
+	err = merge(dir, v16Shards, renameCompoundShard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,4 +139,11 @@ func TestExplode(t *testing.T) {
 			}
 		})
 	}
+}
+
+// helper function. Renames the compound shard but leaves the input files
+// untouched. This is just useful for testing where we don't want each test to
+// delete the shards in testdata.
+func renameCompoundShard(tmpName, dstName string, _ []string) error {
+	return os.Rename(tmpName, dstName)
 }
