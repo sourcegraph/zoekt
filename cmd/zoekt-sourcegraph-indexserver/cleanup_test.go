@@ -480,14 +480,19 @@ func createCompoundShard(t *testing.T, dir string, ids []uint32, optFns ...func(
 	}
 
 	// create a compound shard.
-	fn, err := merge(dir, repoFns)
+	tmpFn, dstFn, err := merge(dir, repoFns)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, old := range repoFns {
-		os.Remove(old)
+		if err := os.Remove(old); err != nil {
+			t.Fatal(err)
+		}
 	}
-	return fn
+	if err := os.Rename(tmpFn, dstFn); err != nil {
+		t.Fatal(err)
+	}
+	return dstFn
 }
 
 func mergeHelper(t *testing.T, fn string) error {
@@ -505,6 +510,6 @@ func mergeHelper(t *testing.T, fn string) error {
 	}
 	defer indexFile.Close()
 
-	_, err = zoekt.Merge(filepath.Dir(fn), indexFile)
+	_, _, err = zoekt.Merge(filepath.Dir(fn), indexFile)
 	return err
 }
