@@ -13,20 +13,22 @@ import (
 	"sort"
 )
 
-// Merge files into a compound shard fn in the directory dstDir.
-func Merge(dstDir string, files ...IndexFile) (fn string, _ error) {
+// Merge files into a compound shard in dstDir. Merge returns tmpName and a
+// dstName. It is the responsibility of the caller to delete the input shards and
+// rename the temporary compound shard from tmpName to dstName.
+func Merge(dstDir string, files ...IndexFile) (tmpName, dstName string, _ error) {
 	var ds []*indexData
 	for _, f := range files {
 		searcher, err := NewSearcher(f)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		ds = append(ds, searcher.(*indexData))
 	}
 
 	ib, err := merge(ds...)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	hasher := sha1.New()
@@ -40,11 +42,12 @@ func Merge(dstDir string, files ...IndexFile) (fn string, _ error) {
 		}
 	}
 
-	fn = filepath.Join(dstDir, fmt.Sprintf("compound-%x_v%d.%05d.zoekt", hasher.Sum(nil), NextIndexFormatVersion, 0))
-	if err := builderWriteAll(fn, ib); err != nil {
-		return "", err
+	dstName = filepath.Join(dstDir, fmt.Sprintf("compound-%x_v%d.%05d.zoekt", hasher.Sum(nil), NextIndexFormatVersion, 0))
+	tmpName = dstName + ".tmp"
+	if err := builderWriteAll(tmpName, ib); err != nil {
+		return "", "", err
 	}
-	return fn, nil
+	return tmpName, dstName, nil
 }
 
 func builderWriteAll(fn string, ib *IndexBuilder) error {
