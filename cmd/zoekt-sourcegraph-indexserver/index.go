@@ -172,6 +172,8 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	}
 	fetchArgs = append(fetchArgs, commits...)
 
+	debug.Printf("starting fetch of git data for %q (%d commit(s))", o.Name, len(commits))
+
 	cmd = exec.CommandContext(ctx, "git", fetchArgs...)
 	cmd.Stdin = &bytes.Buffer{}
 
