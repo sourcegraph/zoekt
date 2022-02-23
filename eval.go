@@ -246,7 +246,7 @@ nextFileMatch:
 			}
 
 			// Skip documents that are tombstoned
-			// TODO: This ChangedOrRemovedFiles implementation (looking up by filenames) creates a lot of small allocations
+			// TODO: This FileTombstones implementation (looking up by filenames) creates a lot of small allocations
 			// (string filenames) and can have poor cache performance. This should be addressed before we officially
 			// roll this out.
 			if len(repoMetadata.FileTombstones) > 0 {
