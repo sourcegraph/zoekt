@@ -101,11 +101,10 @@ type Options struct {
 	// last run.
 	IsDelta bool
 
-	// FileTombstones is a list of file paths that have changed since the
-	// last indexing job for this repository, and should be tombstoned in the
-	// older shards.
-	// TODO: Should I give this a more general name, like "changed files"?
-	FileTombstones []string
+	// ChangedOrRemovedFiles is a list of file paths that have been changed or removed
+	// since the last indexing job for this repository. These files will be tombstoned
+	// in the older shards for this repository.
+	ChangedOrRemovedFiles []string
 }
 
 // HashOptions creates a hash of the options that affect an index.
@@ -602,11 +601,11 @@ func (b *Builder) Finish() error {
 			for _, r := range repositories {
 				if r.ID == b.opts.RepositoryDescription.ID {
 
-					if len(b.opts.FileTombstones) > 0 && r.FileTombstones == nil {
+					if len(b.opts.ChangedOrRemovedFiles) > 0 && r.FileTombstones == nil {
 						r.FileTombstones = make(map[string]struct{})
 					}
 
-					for _, f := range b.opts.FileTombstones {
+					for _, f := range b.opts.ChangedOrRemovedFiles {
 						r.FileTombstones[f] = struct{}{}
 					}
 
@@ -620,9 +619,6 @@ func (b *Builder) Finish() error {
 				}
 			}
 
-			// TODO It would be nice to a single function that automatically knows to write out either a list of repos (>=17) or
-			// a single repository (<=16). Right now, this logic is duplicated across a few different places.
-			// TODO also very surprised that the only error I saw was in the logs - not any searcher error - 2022/02/17 08:42:32 reloading: /var/folders/n7/k2jmz8g557l74bprwq7br_c40000gn/T/TestDeltaShardsE2Etombstone_older_documents3374360741/001/repository_v16.00000.zoekt, err NewSearcher(/var/folders/n7/k2jmz8g557l74bprwq7br_c40000gn/T/TestDeltaShardsE2Etombstone_older_documents3374360741/001/repository_v16.00000.zoekt): json: cannot unmarshal array into Go value of type zoekt.Repository
 			var updatedRepositories interface{}
 
 			if indexMetadata.IndexFormatVersion >= 17 {

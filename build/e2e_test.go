@@ -646,7 +646,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: []zoekt.Document{fooAtMainV2},
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.FileTombstones = []string{"foo.go"}
+						o.ChangedOrRemovedFiles = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain, fooAtMainV2},
@@ -656,7 +656,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: []zoekt.Document{barAtMainV2},
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.FileTombstones = []string{"bar.go"}
+						o.ChangedOrRemovedFiles = []string{"bar.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMainV2, fooAtMainV2},
@@ -678,7 +678,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: nil,
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.FileTombstones = []string{"foo.go"}
+						o.ChangedOrRemovedFiles = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain},
@@ -700,7 +700,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: nil,
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.FileTombstones = []string{"foo.go"}
+						o.ChangedOrRemovedFiles = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain},
@@ -722,7 +722,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: nil,
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.FileTombstones = []string{"foo.go"}
+						o.ChangedOrRemovedFiles = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain, bazAtMain},
@@ -733,7 +733,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: nil,
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.FileTombstones = []string{"baz.go"}
+						o.ChangedOrRemovedFiles = []string{"baz.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain},
