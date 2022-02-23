@@ -11,7 +11,7 @@ import (
 	"github.com/google/zoekt"
 )
 
-func merge(dstDir string, names []string, onSuccess func(tmpName, dstName string, ss []string) error) error {
+func merge(dstDir string, names []string) error {
 	var files []zoekt.IndexFile
 	for _, fn := range names {
 		f, err := os.Open(fn)
@@ -34,7 +34,25 @@ func merge(dstDir string, names []string, onSuccess func(tmpName, dstName string
 		return err
 	}
 
-	return onSuccess(tmpName, dstName, names)
+	// Delete input shards.
+	for _, name := range names {
+		paths, err := zoekt.IndexFilePaths(name)
+		if err != nil {
+			return fmt.Errorf("zoekt-merge-index: %w", err)
+		}
+		for _, p := range paths {
+			if err := os.Remove(p); err != nil {
+				return fmt.Errorf("zoekt-merge-index: failed to remove simple shard: %w", err)
+			}
+		}
+	}
+
+	// We only rename the compound shard if all simple shards could be deleted in the
+	// previous step. This guarantees we won't have duplicate indexes.
+	if err := os.Rename(tmpName, dstName); err != nil {
+		return fmt.Errorf("zoekt-merge-index: failed to rename compound shard: %w", err)
+	}
+	return nil
 }
 
 func mergeCmd(paths []string) error {
@@ -50,30 +68,7 @@ func mergeCmd(paths []string) error {
 		log.Printf("merging %d paths from stdin", len(paths))
 	}
 
-	// The purpose of this callback is to leave a consistent state on disk without the
-	// possibility of duplicate indexes.
-	onSuccess := func(tmpName, dstName string, ss []string) error {
-		// Delete input shards.
-		for _, name := range ss {
-			paths, err := zoekt.IndexFilePaths(name)
-			if err != nil {
-				return fmt.Errorf("zoekt-merge-index: %w", err)
-			}
-			for _, p := range paths {
-				if err := os.Remove(p); err != nil {
-					return fmt.Errorf("zoekt-merge-index: failed to remove simple shard: %w", err)
-				}
-			}
-		}
-
-		// We only rename the compound shard if all simple shards could be deleted in the
-		// previous step. This guarantees we won't have duplicate indexes.
-		if err := os.Rename(tmpName, dstName); err != nil {
-			return fmt.Errorf("zoekt-merge-index: failed to rename compound shard: %w", err)
-		}
-		return nil
-	}
-	return merge(filepath.Dir(paths[0]), paths, onSuccess)
+	return merge(filepath.Dir(paths[0]), paths)
 }
 
 // explode splits a shard into individual shards and places them in dstDir.
