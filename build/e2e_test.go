@@ -605,26 +605,28 @@ func TestEmptyContent(t *testing.T) {
 }
 
 func TestDeltaShards(t *testing.T) {
+	// TODO: Need to write a test for compound shards as well.
+	type step struct {
+		name      string
+		documents []zoekt.Document
+		branches  []zoekt.RepositoryBranch
+		optFn     func(t *testing.T, o *Options)
+
+		query             string
+		expectedDocuments []zoekt.Document
+	}
+
 	var (
 		fooAtMain   = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main-v1")}
 		fooAtMainV2 = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main-v2")}
 
 		fooAtMainAndRelease = zoekt.Document{Name: "foo.go", Branches: []string{"main", "release"}, Content: []byte("common foo-main-and-release")}
 
-		barAtMain = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main")}
+		barAtMain   = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main")}
+		barAtMainV2 = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main-v2")}
+
 		bazAtMain = zoekt.Document{Name: "baz.go", Branches: []string{"main"}, Content: []byte("common baz-main")}
 	)
-
-	// TODO: Still need a test to make sure that version information for all older shards is updated too.
-	// TODO: Need to write a test for compound shards as well.
-	type step struct {
-		name      string
-		documents []zoekt.Document
-		optFn     func(o *Options)
-
-		query             string
-		expectedDocuments []zoekt.Document
-	}
 
 	for _, test := range []struct {
 		name  string
@@ -642,12 +644,22 @@ func TestDeltaShards(t *testing.T) {
 				{
 					name:      "add new version of foo, tombstone older ones",
 					documents: []zoekt.Document{fooAtMainV2},
-					optFn: func(o *Options) {
+					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
 						o.FileTombstones = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain, fooAtMainV2},
+				},
+				{
+					name:      "add new version of bar, tombstone older ones",
+					documents: []zoekt.Document{barAtMainV2},
+					optFn: func(t *testing.T, o *Options) {
+						o.IsDelta = true
+						o.FileTombstones = []string{"bar.go"}
+					},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMainV2, fooAtMainV2},
 				},
 			},
 		},
@@ -664,7 +676,7 @@ func TestDeltaShards(t *testing.T) {
 					// a build with no documents could represent a deletion
 					name:      "tombstone older documents",
 					documents: nil,
-					optFn: func(o *Options) {
+					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
 						o.FileTombstones = []string{"foo.go"}
 					},
@@ -686,7 +698,7 @@ func TestDeltaShards(t *testing.T) {
 
 					name:      "tombstone foo",
 					documents: nil,
-					optFn: func(o *Options) {
+					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
 						o.FileTombstones = []string{"foo.go"}
 					},
@@ -708,7 +720,7 @@ func TestDeltaShards(t *testing.T) {
 
 					name:      "tombstone foo",
 					documents: nil,
-					optFn: func(o *Options) {
+					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
 						o.FileTombstones = []string{"foo.go"}
 					},
@@ -719,7 +731,7 @@ func TestDeltaShards(t *testing.T) {
 
 					name:      "tombstone baz",
 					documents: nil,
-					optFn: func(o *Options) {
+					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
 						o.FileTombstones = []string{"baz.go"}
 					},
@@ -732,19 +744,20 @@ func TestDeltaShards(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			indexDir := t.TempDir()
 
+			branchSet := make(map[string]struct{})
+
+			for _, s := range test.steps {
+				for _, d := range s.documents {
+					for _, b := range d.Branches {
+						branchSet[b] = struct{}{}
+					}
+				}
+			}
+
 			for _, step := range test.steps {
 				repository := zoekt.Repository{ID: 1, Name: "repository"}
 
-				branchesSet := make(map[string]struct{})
-
-				for _, d := range step.documents {
-					// de-duplicate branches from given documents
-					for _, b := range d.Branches {
-						branchesSet[b] = struct{}{}
-					}
-				}
-
-				for b := range branchesSet {
+				for b := range branchSet {
 					repository.Branches = append(repository.Branches, zoekt.RepositoryBranch{Name: b})
 				}
 
@@ -752,11 +765,11 @@ func TestDeltaShards(t *testing.T) {
 					IndexDir:              indexDir,
 					RepositoryDescription: repository,
 				}
+				buildOpts.SetDefaults()
 
 				if step.optFn != nil {
-					step.optFn(&buildOpts)
+					step.optFn(t, &buildOpts)
 				}
-				buildOpts.SetDefaults()
 
 				b, err := NewBuilder(buildOpts)
 				if err != nil {
@@ -773,6 +786,11 @@ func TestDeltaShards(t *testing.T) {
 				err = b.Finish()
 				if err != nil {
 					t.Fatalf("step %q: finishing builder: %s", step.name, err)
+				}
+
+				state, _ := buildOpts.IndexState()
+				if diff := cmp.Diff(IndexStateEqual, state); diff != "" {
+					t.Errorf("unexpected diff in index state (-want +got):\n%s", diff)
 				}
 
 				ss, err := shards.NewDirectorySearcher(indexDir)

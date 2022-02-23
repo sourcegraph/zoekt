@@ -39,6 +39,8 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/ctags"
 	"github.com/grafana/regexp"
@@ -295,13 +297,15 @@ func (o *Options) shardNameVersion(version, n int) string {
 type IndexState string
 
 const (
-	IndexStateMissing IndexState = "missing"
-	IndexStateCorrupt IndexState = "corrupt"
-	IndexStateVersion IndexState = "version-mismatch"
-	IndexStateOption  IndexState = "option-mismatch"
-	IndexStateMeta    IndexState = "meta-mismatch"
-	IndexStateContent IndexState = "content-mismatch"
-	IndexStateEqual   IndexState = "equal"
+	IndexStateMissing       IndexState = "missing"
+	IndexStateCorrupt       IndexState = "corrupt"
+	IndexStateVersion       IndexState = "version-mismatch"
+	IndexStateOption        IndexState = "option-mismatch"
+	IndexStateMeta          IndexState = "meta-mismatch"
+	IndexStateContent       IndexState = "content-mismatch"
+	IndexStateBranchSet     IndexState = "branch-set-mismatch"
+	IndexStateBranchVersion IndexState = "branch-version-mismatch"
+	IndexStateEqual         IndexState = "equal"
 )
 
 var readVersions = []struct {
@@ -360,8 +364,28 @@ func (o *Options) IndexState() (IndexState, string) {
 		return IndexStateOption, fn
 	}
 
-	if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
-		return IndexStateContent, fn
+	if o.IsDelta {
+		// TODO: Get rid of this guard once the delta shard behavior is the default
+		ignoreVersionOption := cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")
+		sortBranchesOption := cmpopts.SortSlices(func(a, b zoekt.RepositoryBranch) bool {
+			if a.Name < b.Name {
+				return true
+			}
+
+			return a.Version < b.Version
+		})
+
+		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches, ignoreVersionOption, sortBranchesOption) {
+			return IndexStateBranchSet, fn
+		}
+
+		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches, sortBranchesOption) {
+			return IndexStateBranchVersion, fn
+		}
+	} else {
+		if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
+			return IndexStateContent, fn
+		}
 	}
 
 	// We can mutate repo since it lives in the scope of this function call.
@@ -586,10 +610,12 @@ func (b *Builder) Finish() error {
 						r.FileTombstones[f] = struct{}{}
 					}
 
-					//r.Branches = b.opts.RepositoryDescription.Branches
-					// TODO: I saw a panic when the above line was uncommented.
+					// TODO: Should we fail early here if we detect that the set of branch names
+					// in the builder options differs from what's inside the repository?
+					//
+					// Otherwise, we'll only get a panic when we actually search the shard.
+					r.Branches = b.opts.RepositoryDescription.Branches
 
-					// TODO: Also update all the version information in all the older shards too
 					break
 				}
 			}
@@ -659,8 +685,6 @@ func (b *Builder) Finish() error {
 		b.shardLog("upsert", final, b.opts.RepositoryDescription.Name)
 	}
 
-	// TODO: write test for builder to make sure that the metadata for all a repo's shards have the _same_ version. If
-	// if it doesn't then we've screwed up somewhere and should blow up.
 	// TODO: figure out how to write test that checks that we properly roll back if there is an error
 
 	b.finishedShards = map[string]string{}
