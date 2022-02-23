@@ -29,8 +29,30 @@ func merge(dstDir string, names []string) error {
 		files = append(files, indexFile)
 	}
 
-	_, err := zoekt.Merge(dstDir, files...)
-	return err
+	tmpName, dstName, err := zoekt.Merge(dstDir, files...)
+	if err != nil {
+		return err
+	}
+
+	// Delete input shards.
+	for _, name := range names {
+		paths, err := zoekt.IndexFilePaths(name)
+		if err != nil {
+			return fmt.Errorf("zoekt-merge-index: %w", err)
+		}
+		for _, p := range paths {
+			if err := os.Remove(p); err != nil {
+				return fmt.Errorf("zoekt-merge-index: failed to remove simple shard: %w", err)
+			}
+		}
+	}
+
+	// We only rename the compound shard if all simple shards could be deleted in the
+	// previous step. This guarantees we won't have duplicate indexes.
+	if err := os.Rename(tmpName, dstName); err != nil {
+		return fmt.Errorf("zoekt-merge-index: failed to rename compound shard: %w", err)
+	}
+	return nil
 }
 
 func mergeCmd(paths []string) error {
@@ -45,14 +67,11 @@ func mergeCmd(paths []string) error {
 		}
 		log.Printf("merging %d paths from stdin", len(paths))
 	}
-	err := merge(filepath.Dir(paths[0]), paths)
-	if err != nil {
-		return err
-	}
-	return nil
+
+	return merge(filepath.Dir(paths[0]), paths)
 }
 
-// explode splits a shard into indiviual shards and places them in dstDir.
+// explode splits a shard into individual shards and places them in dstDir.
 // If it returns without error, the input shard was deleted and the first
 // result contains the list of all new shards.
 //

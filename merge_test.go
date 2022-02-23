@@ -50,13 +50,17 @@ func TestExplode(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	cs, err := Merge(tmpDir, files...)
+	tmpName, dstName, err := Merge(tmpDir, files...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Rename(tmpName, dstName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// explode
-	f, err := os.Open(cs)
+	f, err := os.Open(dstName)
 	if err != nil {
 		t.Fatal(err)
 	}

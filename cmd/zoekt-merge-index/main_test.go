@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -12,16 +14,20 @@ import (
 )
 
 func TestMerge(t *testing.T) {
-	dir := t.TempDir()
-
 	v16Shards, err := filepath.Glob("../../testdata/shards/*_v16.*.zoekt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	sort.Strings(v16Shards)
-	t.Log(v16Shards)
 
-	err = merge(dir, v16Shards)
+	testShards, err := copyTestShards(t.TempDir(), v16Shards)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(testShards)
+
+	dir := t.TempDir()
+	err = merge(dir, testShards)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,16 +61,20 @@ func TestMerge(t *testing.T) {
 
 // Merge 2 simple shards and then explode them.
 func TestExplode(t *testing.T) {
-	dir := t.TempDir()
-
 	v16Shards, err := filepath.Glob("../../testdata/shards/repo*_v16.*.zoekt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	sort.Strings(v16Shards)
-	t.Log(v16Shards)
 
-	err = merge(dir, v16Shards)
+	testShards, err := copyTestShards(t.TempDir(), v16Shards)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(testShards)
+
+	dir := t.TempDir()
+	err = merge(dir, testShards)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,8 +102,8 @@ func TestExplode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(exploded) != len(v16Shards) {
-		t.Fatalf("the number of simple shards before %d and after %d should be the same", len(v16Shards), len(exploded))
+	if len(exploded) != len(testShards) {
+		t.Fatalf("the number of simple shards before %d and after %d should be the same", len(testShards), len(exploded))
 	}
 
 	ss, err := shards.NewDirectorySearcher(dir)
@@ -138,4 +148,34 @@ func TestExplode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func copyTestShards(dstDir string, srcShards []string) ([]string, error) {
+	var tmpShards []string
+	for _, s := range srcShards {
+		dst := filepath.Join(dstDir, filepath.Base(s))
+		tmpShards = append(tmpShards, dst)
+		if err := copyFile(s, dst); err != nil {
+			return nil, err
+		}
+	}
+	return tmpShards, nil
+}
+
+func copyFile(src, dst string) (err error) {
+	s, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	d, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(d, s); err != nil {
+		d.Close()
+		return err
+	}
+	return d.Close()
 }

@@ -62,14 +62,17 @@ func TestMergeMeta(t *testing.T) {
 	// create a compound shard. Use a new indexdir to avoid the need to cleanup
 	// old shards.
 	dir = t.TempDir()
-	fn, err := merge(dir, repoFns)
+	tmpFn, dstFn, err := merge(dir, repoFns)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmpFn, dstFn); err != nil {
 		t.Fatal(err)
 	}
 
 	readPublic := func() []string {
-		repos, _, _ := zoekt.ReadMetadataPath(fn)
 		var public []string
+		repos, _, _ := zoekt.ReadMetadataPath(dstFn)
 		for _, r := range repos {
 			public = append(public, r.RawConfig["public"])
 		}
@@ -99,18 +102,18 @@ func TestMergeMeta(t *testing.T) {
 	}
 }
 
-func merge(dstDir string, names []string) (string, error) {
+func merge(dstDir string, names []string) (string, string, error) {
 	var files []zoekt.IndexFile
 	for _, fn := range names {
 		f, err := os.Open(fn)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		defer f.Close()
 
 		indexFile, err := zoekt.NewIndexFile(f)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		defer indexFile.Close()
 
