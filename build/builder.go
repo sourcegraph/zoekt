@@ -506,9 +506,12 @@ func NewBuilder(opts Options) (*Builder, error) {
 	}
 
 	if opts.IsDelta {
-		// if we're a delta shard, we continue the shard numbering
-		// from where we left off before so that all the shards are
-		// together as a set
+		// Delta shards build on top of previously existing shards.
+		// As a consequence, the shardNum for delta shards starts from
+		// the number following the most recently generated shard - not 0.
+		//
+		// Using this numbering scheme allows all the shards to be
+		// discovered as a set.
 		shards := b.opts.FindAllShards()
 		b.nextShardNum = len(shards) // shards are zero indexed, so len() provides the next number after the last one
 	}
