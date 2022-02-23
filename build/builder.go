@@ -583,8 +583,7 @@ func (b *Builder) Finish() error {
 		return b.buildError
 	}
 
-	// maps temp -> final names of updated shards + shard metadata files
-	// TODO: Make this a struct field?
+	// map of temporary -> final names for all updated shards + shard metadata files
 	artifactPaths := make(map[string]string)
 	for tmp, final := range b.finishedShards {
 		artifactPaths[tmp] = final
@@ -593,7 +592,8 @@ func (b *Builder) Finish() error {
 	oldShards := b.opts.FindAllShards()
 
 	if b.opts.IsDelta {
-		// update repository metadata (filetombs, commit information, etc.) for all prior shards
+		// Delta shard builds need to update FileTombstone and branch commit information for all
+		// existing shards
 		for _, shard := range oldShards {
 			repositories, indexMetadata, err := zoekt.ReadMetadataPathAlive(shard)
 			if err != nil {
@@ -613,9 +613,8 @@ func (b *Builder) Finish() error {
 					}
 
 					// TODO: Should we fail early here if we detect that the set of branch names
-					// in the builder options differs from what's inside the repository?
-					//
-					// Otherwise, we'll only get a panic when we actually search the shard.
+					// in the builder options differs from what's inside the repository? Otherwise,
+					// the only error we'll get is a panic when we actually search the shard.
 					r.Branches = b.opts.RepositoryDescription.Branches
 
 					break
@@ -660,7 +659,11 @@ func (b *Builder) Finish() error {
 
 	var toDelete map[string]struct{}
 	if !b.opts.IsDelta {
-		// non-delta shards replace all the old ones
+		// Non-delta shard builds delete all existing shards before they write out
+		// new ones.
+		// By contrast, delta shard builds work by stacking changes on top of existing shards.
+		// So, we skip populating the toDelete map if we're building delta shards.
+
 		toDelete = make(map[string]struct{})
 		for _, name := range oldShards {
 			paths, err := zoekt.IndexFilePaths(name)
@@ -683,8 +686,6 @@ func (b *Builder) Finish() error {
 
 		b.shardLog("upsert", final, b.opts.RepositoryDescription.Name)
 	}
-
-	// TODO: figure out how to write test that checks that we properly roll back if there is an error
 
 	b.finishedShards = map[string]string{}
 
