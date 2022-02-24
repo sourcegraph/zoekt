@@ -613,7 +613,7 @@ func (b *Builder) Finish() error {
 				sortBranches(b.opts.RepositoryDescription.Branches)
 				sortBranches(r.Branches)
 
-				if diff := cmp.Diff(b.opts.RepositoryDescription.Branches, r.Branches); diff != "" {
+				if diff := cmp.Diff(b.opts.RepositoryDescription.Branches, r.Branches, cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")); diff != "" {
 					b.buildError = deltaBranchSetError{shardName: shard, diff: diff}
 					continue
 				}
