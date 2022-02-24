@@ -597,50 +597,42 @@ func (b *Builder) Finish() error {
 				continue
 			}
 
-			for _, r := range repositories {
-				if !(r.ID == b.opts.RepositoryDescription.ID) {
-					continue
-				}
-
-				if len(b.opts.ChangedOrRemovedFiles) > 0 && r.FileTombstones == nil {
-					r.FileTombstones = make(map[string]struct{}, len(b.opts.ChangedOrRemovedFiles))
-				}
-
-				for _, f := range b.opts.ChangedOrRemovedFiles {
-					r.FileTombstones[f] = struct{}{}
-				}
-
-				sortBranches(b.opts.RepositoryDescription.Branches)
-				sortBranches(r.Branches)
-
-				if diff := cmp.Diff(b.opts.RepositoryDescription.Branches, r.Branches, cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")); diff != "" {
-					b.buildError = deltaBranchSetError{shardName: shard, diff: diff}
-					continue
-				}
-
-				r.Branches = b.opts.RepositoryDescription.Branches
-				break
-			}
-
-			if b.buildError != nil {
+			if indexMetadata.IndexFormatVersion > 16 {
+				b.buildError = fmt.Errorf("delta shard builds don't support repositories contained in compound shards (shard %q)", shard)
 				continue
 			}
 
-			var updatedRepositories interface{}
-
-			if indexMetadata.IndexFormatVersion >= 17 {
-				updatedRepositories = &repositories
-			} else {
-				if len(repositories) == 0 {
-					b.buildError = fmt.Errorf("failed to update repository metadata for shard %q - shard contains no repositories", shard)
-					continue
-				}
-
-				updatedRepositories = repositories[0]
+			if len(repositories) == 0 {
+				b.buildError = fmt.Errorf("failed to update repository metadata for shard %q - shard contains no repositories", shard)
+				continue
 			}
 
+			repository := repositories[0]
+			if repository.ID != b.opts.RepositoryDescription.ID {
+				b.buildError = fmt.Errorf("shard %q doesn't contain repository ID %d (%q)", shard, b.opts.RepositoryDescription.ID, b.opts.RepositoryDescription.Name)
+				continue
+			}
+
+			if len(b.opts.ChangedOrRemovedFiles) > 0 && repository.FileTombstones == nil {
+				repository.FileTombstones = make(map[string]struct{}, len(b.opts.ChangedOrRemovedFiles))
+			}
+
+			for _, f := range b.opts.ChangedOrRemovedFiles {
+				repository.FileTombstones[f] = struct{}{}
+			}
+
+			sortBranches(b.opts.RepositoryDescription.Branches)
+			sortBranches(repository.Branches)
+
+			if diff := cmp.Diff(b.opts.RepositoryDescription.Branches, repository.Branches, cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")); diff != "" {
+				b.buildError = deltaBranchSetError{shardName: shard, diff: diff}
+				continue
+			}
+
+			repository.Branches = b.opts.RepositoryDescription.Branches
+
 			finalPath := shard + ".meta"
-			tmpPath, err := zoekt.JsonMarshalRepoMetaTemp(updatedRepositories, filepath.Dir(finalPath), filepath.Base(finalPath)+".*.tmp")
+			tmpPath, err := zoekt.JsonMarshalRepoMetaTemp(repository, filepath.Dir(finalPath), filepath.Base(finalPath)+".*.tmp")
 			if err != nil {
 				b.buildError = err
 				continue
