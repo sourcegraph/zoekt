@@ -602,23 +602,24 @@ func (b *Builder) Finish() error {
 			}
 
 			for _, r := range repositories {
-				if r.ID == b.opts.RepositoryDescription.ID {
-
-					if len(b.opts.ChangedOrRemovedFiles) > 0 && r.FileTombstones == nil {
-						r.FileTombstones = make(map[string]struct{}, len(b.opts.ChangedOrRemovedFiles))
-					}
-
-					for _, f := range b.opts.ChangedOrRemovedFiles {
-						r.FileTombstones[f] = struct{}{}
-					}
-
-					// TODO: Should we fail early here if we detect that the set of branch names
-					// in the builder options differs from what's inside the repository? Otherwise,
-					// the only error we'll get is a panic when we actually search the shard.
-					r.Branches = b.opts.RepositoryDescription.Branches
-
-					break
+				if !(r.ID == b.opts.RepositoryDescription.ID) {
+					continue
 				}
+
+				if len(b.opts.ChangedOrRemovedFiles) > 0 && r.FileTombstones == nil {
+					r.FileTombstones = make(map[string]struct{}, len(b.opts.ChangedOrRemovedFiles))
+				}
+
+				for _, f := range b.opts.ChangedOrRemovedFiles {
+					r.FileTombstones[f] = struct{}{}
+				}
+
+				// TODO: Should we fail early here if we detect that the set of branch names
+				// in the builder options differs from what's inside the repository? Otherwise,
+				// the only error we'll get is a panic when we actually search the shard.
+				r.Branches = b.opts.RepositoryDescription.Branches
+
+				break
 			}
 
 			var updatedRepositories interface{}
