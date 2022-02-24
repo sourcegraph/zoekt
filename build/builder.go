@@ -363,22 +363,18 @@ func (o *Options) IndexState() (IndexState, string) {
 		return IndexStateOption, fn
 	}
 
+	sortBranches(o.RepositoryDescription.Branches)
+	sortBranches(repo.Branches)
+
 	if o.IsDelta {
 		// TODO: Get rid of this guard once the delta shard behavior is the default
 		ignoreVersionOption := cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")
-		sortBranchesOption := cmpopts.SortSlices(func(a, b zoekt.RepositoryBranch) bool {
-			if a.Name < b.Name {
-				return true
-			}
 
-			return a.Version < b.Version
-		})
-
-		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches, ignoreVersionOption, sortBranchesOption) {
+		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches, ignoreVersionOption) {
 			return IndexStateBranchSet, fn
 		}
 
-		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches, sortBranchesOption) {
+		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches) {
 			return IndexStateBranchVersion, fn
 		}
 	} else {
@@ -614,12 +610,20 @@ func (b *Builder) Finish() error {
 					r.FileTombstones[f] = struct{}{}
 				}
 
-				// TODO: Should we fail early here if we detect that the set of branch names
-				// in the builder options differs from what's inside the repository? Otherwise,
-				// the only error we'll get is a panic when we actually search the shard.
-				r.Branches = b.opts.RepositoryDescription.Branches
+				sortBranches(b.opts.RepositoryDescription.Branches)
+				sortBranches(r.Branches)
 
+				if diff := cmp.Diff(b.opts.RepositoryDescription.Branches, r.Branches); diff != "" {
+					b.buildError = deltaBranchSetError{shardName: shard, diff: diff}
+					continue
+				}
+
+				r.Branches = b.opts.RepositoryDescription.Branches
 				break
+			}
+
+			if b.buildError != nil {
+				continue
 			}
 
 			var updatedRepositories interface{}
@@ -874,6 +878,19 @@ func sortDocuments(todo []*zoekt.Document) {
 	}
 }
 
+func sortBranches(branches []zoekt.RepositoryBranch) {
+	sort.SliceStable(branches, func(i, j int) bool {
+		a, b := branches[i], branches[j]
+
+		if a.Name < b.Name {
+			return true
+		}
+
+		return a.Version < b.Version
+
+	})
+}
+
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
 	if b.opts.CTags != "" {
 		err := ctagsAddSymbols(todo, b.parser, b.opts.CTags)
@@ -948,6 +965,15 @@ func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard,
 		float64(fi.Size())/float64(ib.ContentSize()+1))
 
 	return &finishedShard{f.Name(), fn}, nil
+}
+
+type deltaBranchSetError struct {
+	shardName string
+	diff      string
+}
+
+func (e deltaBranchSetError) Error() string {
+	return fmt.Sprintf("repository metadata in shard %q contains a different set of branch names than what was requested, which is unsupported in a delta shard build (-expected +actual): %s", e.shardName, e.diff)
 }
 
 // umask holds the Umask of the current process

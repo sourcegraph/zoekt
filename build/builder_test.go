@@ -1,6 +1,7 @@
 package build
 
 import (
+	"errors"
 	"flag"
 	"io"
 	"log"
@@ -420,6 +421,40 @@ func TestBuilder_DeltaShardsIndexState(t *testing.T) {
 				t.Errorf("unexpected diff in index state (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestBuilder_DeltaShardsBuildsShouldErrorOnBranchSet(t *testing.T) {
+	indexDir := t.TempDir()
+
+	repository := zoekt.Repository{
+		Name:     "repo",
+		ID:       1,
+		Branches: []zoekt.RepositoryBranch{{Name: "foo"}, {Name: "bar"}},
+	}
+	createTestShard(t, indexDir, repository, 2)
+
+	repositoryNewBranches := zoekt.Repository{
+		Name:     "repo",
+		ID:       1,
+		Branches: []zoekt.RepositoryBranch{{Name: "foo"}, {Name: "baz"}},
+	}
+
+	o := Options{
+		IndexDir:              indexDir,
+		RepositoryDescription: repositoryNewBranches,
+		IsDelta:               true,
+	}
+	o.SetDefaults()
+
+	b, err := NewBuilder(o)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+
+	err = b.Finish()
+	if !errors.As(err, &deltaBranchSetError{}) {
+		t.Fatalf("expected error complaning about different branch names, got: %s", err)
 	}
 }
 
