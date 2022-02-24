@@ -624,8 +624,6 @@ func TestDeltaShards(t *testing.T) {
 
 		barAtMain   = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main")}
 		barAtMainV2 = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main-v2")}
-
-		bazAtMain = zoekt.Document{Name: "baz.go", Branches: []string{"main"}, Content: []byte("common baz-main")}
 	)
 
 	for _, test := range []struct {
@@ -701,39 +699,6 @@ func TestDeltaShards(t *testing.T) {
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
 						o.ChangedOrRemovedFiles = []string{"foo.go"}
-					},
-					query:             "common",
-					expectedDocuments: []zoekt.Document{barAtMain},
-				},
-			},
-		},
-		{
-			name: "tombstones are cumulative",
-			steps: []step{
-				{
-					name:              "setup",
-					documents:         []zoekt.Document{barAtMain, bazAtMain, fooAtMain},
-					query:             "common",
-					expectedDocuments: []zoekt.Document{barAtMain, bazAtMain, fooAtMain},
-				},
-				{
-
-					name:      "tombstone foo",
-					documents: nil,
-					optFn: func(t *testing.T, o *Options) {
-						o.IsDelta = true
-						o.ChangedOrRemovedFiles = []string{"foo.go"}
-					},
-					query:             "common",
-					expectedDocuments: []zoekt.Document{barAtMain, bazAtMain},
-				},
-				{
-
-					name:      "tombstone baz",
-					documents: nil,
-					optFn: func(t *testing.T, o *Options) {
-						o.IsDelta = true
-						o.ChangedOrRemovedFiles = []string{"baz.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain},
