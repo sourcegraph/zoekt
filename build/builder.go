@@ -631,14 +631,13 @@ func (b *Builder) Finish() error {
 
 			repository.Branches = b.opts.RepositoryDescription.Branches
 
-			finalPath := shard + ".meta"
-			tmpPath, err := zoekt.JsonMarshalRepoMetaTemp(repository, filepath.Dir(finalPath), filepath.Base(finalPath)+".*.tmp")
+			tempPath, finalPath, err := zoekt.JsonMarshalRepoMetaTemp(shard, repository)
 			if err != nil {
 				b.buildError = err
 				continue
 			}
 
-			artifactPaths[tmpPath] = finalPath
+			artifactPaths[tempPath] = finalPath
 		}
 	}
 
