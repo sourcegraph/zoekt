@@ -605,7 +605,7 @@ func (b *Builder) Finish() error {
 				if r.ID == b.opts.RepositoryDescription.ID {
 
 					if len(b.opts.ChangedOrRemovedFiles) > 0 && r.FileTombstones == nil {
-						r.FileTombstones = make(map[string]struct{})
+						r.FileTombstones = make(map[string]struct{}, len(b.opts.ChangedOrRemovedFiles))
 					}
 
 					for _, f := range b.opts.ChangedOrRemovedFiles {
