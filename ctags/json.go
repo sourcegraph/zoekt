@@ -122,10 +122,10 @@ func (lp *lockedParser) close() {
 func NewParser(bin string) (Parser, error) {
 	if strings.Contains(bin, "universal-ctags") {
 		opts := goctags.Options{
-			Bin:  bin,
-			Info: log.New(os.Stderr, "CTAGS INF: ", log.LstdFlags),
+			Bin: bin,
 		}
 		if debug {
+			opts.Info = log.New(os.Stderr, "CTAGS INF: ", log.LstdFlags)
 			opts.Debug = log.New(os.Stderr, "CTAGS DBG: ", log.LstdFlags)
 		}
 		return &lockedParser{
