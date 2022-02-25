@@ -593,24 +593,20 @@ func (b *Builder) Finish() error {
 		for _, shard := range oldShards {
 			repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
 			if err != nil {
-				b.buildError = err
-				continue
+				return fmt.Errorf("reading metadata from shard %q: %w", shard, err)
 			}
 
 			if len(repositories) > 1 {
-				b.buildError = fmt.Errorf("delta shard builds don't support repositories contained in compound shards (shard %q)", shard)
-				continue
+				return fmt.Errorf("delta shard builds don't support repositories contained in compound shards (shard %q)", shard)
 			}
 
 			if len(repositories) == 0 {
-				b.buildError = fmt.Errorf("failed to update repository metadata for shard %q - shard contains no repositories", shard)
-				continue
+				return fmt.Errorf("failed to update repository metadata for shard %q - shard contains no repositories", shard)
 			}
 
 			repository := repositories[0]
 			if repository.ID != b.opts.RepositoryDescription.ID {
-				b.buildError = fmt.Errorf("shard %q doesn't contain repository ID %d (%q)", shard, b.opts.RepositoryDescription.ID, b.opts.RepositoryDescription.Name)
-				continue
+				return fmt.Errorf("shard %q doesn't contain repository ID %d (%q)", shard, b.opts.RepositoryDescription.ID, b.opts.RepositoryDescription.Name)
 			}
 
 			if len(b.opts.ChangedOrRemovedFiles) > 0 && repository.FileTombstones == nil {
@@ -625,16 +621,14 @@ func (b *Builder) Finish() error {
 			sortBranches(repository.Branches)
 
 			if diff := cmp.Diff(b.opts.RepositoryDescription.Branches, repository.Branches, cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")); diff != "" {
-				b.buildError = deltaBranchSetError{shardName: shard, diff: diff}
-				continue
+				return deltaBranchSetError{shardName: shard, diff: diff}
 			}
 
 			repository.Branches = b.opts.RepositoryDescription.Branches
 
 			tempPath, finalPath, err := zoekt.JsonMarshalRepoMetaTemp(shard, repository)
 			if err != nil {
-				b.buildError = err
-				continue
+				return fmt.Errorf("writing repository metadta for shard %q: %w", shard, err)
 			}
 
 			artifactPaths[tempPath] = finalPath
