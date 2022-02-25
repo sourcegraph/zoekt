@@ -1,6 +1,7 @@
 package build
 
 import (
+	"errors"
 	"flag"
 	"io"
 	"log"
@@ -371,7 +372,154 @@ func TestOptions_FindAllShards(t *testing.T) {
 	}
 }
 
-func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShards int) {
+func TestBuilder_DeltaShardsIndexState(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		oldBranches   []zoekt.RepositoryBranch
+		newBranches   []zoekt.RepositoryBranch
+		expectedState IndexState
+	}{
+		{
+			name:          "should report only a branch-version difference if only the version changed",
+			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v2"}},
+			expectedState: IndexStateBranchVersion,
+		},
+		{
+			name:          "should report a branch-set difference branches have been added or removed",
+			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			newBranches:   []zoekt.RepositoryBranch{{Name: "release", Version: "v1"}},
+			expectedState: IndexStateBranchSet,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			indexDir := t.TempDir()
+
+			repositoryV1 := zoekt.Repository{
+				Name:     "repo",
+				ID:       1,
+				Branches: test.oldBranches,
+			}
+
+			createTestShard(t, indexDir, repositoryV1, 2)
+
+			repositoryV2 := zoekt.Repository{
+				Name:     "repo",
+				ID:       1,
+				Branches: test.newBranches,
+			}
+
+			o := Options{
+				IndexDir:              indexDir,
+				RepositoryDescription: repositoryV2,
+				IsDelta:               true,
+			}
+			o.SetDefaults()
+
+			state, _ := o.IndexState()
+			if diff := cmp.Diff(test.expectedState, state); diff != "" {
+				t.Errorf("unexpected diff in index state (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestBuilder_DeltaShardsBuildsShouldErrorOnBranchSet(t *testing.T) {
+	indexDir := t.TempDir()
+
+	repository := zoekt.Repository{
+		Name:     "repo",
+		ID:       1,
+		Branches: []zoekt.RepositoryBranch{{Name: "foo"}, {Name: "bar"}},
+	}
+	createTestShard(t, indexDir, repository, 2)
+
+	repositoryNewBranches := zoekt.Repository{
+		Name:     "repo",
+		ID:       1,
+		Branches: []zoekt.RepositoryBranch{{Name: "foo"}, {Name: "baz"}},
+	}
+
+	o := Options{
+		IndexDir:              indexDir,
+		RepositoryDescription: repositoryNewBranches,
+		IsDelta:               true,
+	}
+	o.SetDefaults()
+
+	b, err := NewBuilder(o)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+
+	err = b.Finish()
+	if !errors.As(err, &deltaBranchSetError{}) {
+		t.Fatalf("expected error complaning about different branch names, got: %s", err)
+	}
+}
+
+func TestBuilder_DeltaShardsUpdateVersionsInOlderShards(t *testing.T) {
+	indexDir := t.TempDir()
+
+	repositoryV1 := zoekt.Repository{
+		Name: "repo",
+		ID:   1,
+		Branches: []zoekt.RepositoryBranch{
+			{Name: "main", Version: "v1"},
+			{Name: "release", Version: "v1"},
+		},
+	}
+
+	createTestShard(t, indexDir, repositoryV1, 2)
+
+	repositoryV2 := zoekt.Repository{
+		Name: "repo",
+		ID:   1,
+		Branches: []zoekt.RepositoryBranch{
+			{Name: "main", Version: "v2"},
+			{Name: "release", Version: "v2"},
+		},
+	}
+
+	shards := createTestShard(t, indexDir, repositoryV2, 1, func(o *Options) {
+		o.IsDelta = true
+	})
+
+	if len(shards) < 3 {
+		t.Fatalf("expected at least 3 shards, got %d (%s)", len(shards), strings.Join(shards, ", "))
+	}
+
+	for _, s := range shards {
+		repositories, _, err := zoekt.ReadMetadataPathAlive(s)
+		if err != nil {
+			t.Fatalf("reading repository metadata from shard %q", s)
+		}
+
+		var foundRepository *zoekt.Repository
+		for _, r := range repositories {
+			if r.ID == repositoryV2.ID {
+				foundRepository = r
+				break
+			}
+		}
+
+		if foundRepository == nil {
+			t.Fatalf("repository ID %d not in shard %q", repositoryV2.ID, s)
+		}
+
+		diffOptions := []cmp.Option{
+			cmpopts.IgnoreUnexported(zoekt.Repository{}),
+			cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions"),
+			cmpopts.EquateEmpty(),
+		}
+
+		if diff := cmp.Diff(&repositoryV2, foundRepository, diffOptions...); diff != "" {
+			t.Errorf("shard %q: unexpected diff in repository metadata (-want +got):\n%s", s, diff)
+		}
+	}
+}
+
+func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShards int, optFns ...func(options *Options)) []string {
 	t.Helper()
 
 	if err := os.MkdirAll(filepath.Dir(indexDir), 0700); err != nil {
@@ -384,6 +532,10 @@ func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShard
 		ShardMax:              75, // create a new shard every 75 bytes
 	}
 	o.SetDefaults()
+
+	for _, fn := range optFns {
+		fn(&o)
+	}
 
 	b, err := NewBuilder(o)
 	if err != nil {
@@ -400,9 +552,12 @@ func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShard
 		// This (along with our shardMax setting of 75 bytes) means that each shard
 		// will contain at most one of these.
 		fileName := strconv.Itoa(i)
-		contents := []byte(strings.Repeat("A", 100))
+		document := zoekt.Document{Name: fileName, Content: []byte(strings.Repeat("A", 100))}
+		for _, branch := range o.RepositoryDescription.Branches {
+			document.Branches = append(document.Branches, branch.Name)
+		}
 
-		err := b.AddFile(fileName, contents)
+		err := b.Add(document)
 		if err != nil {
 			t.Fatalf("failed to add file %q to builder: %s", fileName, err)
 		}
@@ -411,6 +566,8 @@ func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShard
 	if err := b.Finish(); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
+
+	return o.FindAllShards()
 }
 
 func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt.Repository) {

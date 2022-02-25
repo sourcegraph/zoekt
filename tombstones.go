@@ -2,7 +2,7 @@ package zoekt
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -47,25 +47,39 @@ func setTombstone(shardPath string, repoID uint32, tombstone bool) error {
 		}
 	}
 
-	dest := shardPath + ".meta"
-	err = jsonMarshalMeta(repos, dest)
+	tempPath, finalPath, err := JsonMarshalRepoMetaTemp(shardPath, repos)
 	if err != nil {
 		return err
+	}
+
+	err = os.Rename(tempPath, finalPath)
+	if err != nil {
+		os.Remove(tempPath)
 	}
 
 	return nil
 }
 
-func jsonMarshalMeta(v interface{}, p string) (err error) {
-	b, err := json.Marshal(v)
+// JsonMarshalRepoMetaTemp writes the json encoding of the given repository metadata to a temporary file
+// in the same directory as the given shard path. It returns both the path of the temporary file and the
+// path of the final file that the caller should use.
+//
+// The caller is responsible for renaming the temporary file to the final file path, or removing
+// the temporary file if it is no longer needed.
+// TODO: Should we stick this in a util package?
+func JsonMarshalRepoMetaTemp(shardPath string, repositoryMetadata interface{}) (tempPath, finalPath string, err error) {
+	finalPath = shardPath + ".meta"
+
+	b, err := json.Marshal(repositoryMetadata)
 	if err != nil {
-		return err
+		return "", "", fmt.Errorf("marshalling json: %w", err)
 	}
 
-	f, err := ioutil.TempFile(filepath.Dir(p), filepath.Base(p)+".*.tmp")
+	f, err := os.CreateTemp(filepath.Dir(finalPath), filepath.Base(finalPath)+".*.tmp")
 	if err != nil {
-		return err
+		return "", "", fmt.Errorf("writing temporary file: %s", err)
 	}
+
 	defer func() {
 		f.Close()
 		if err != nil {
@@ -75,15 +89,15 @@ func jsonMarshalMeta(v interface{}, p string) (err error) {
 
 	err = f.Chmod(0o666 &^ umask)
 	if err != nil {
-		return err
+		return "", "", fmt.Errorf("chmoding temporary file: %s", err)
 	}
 
 	_, err = f.Write(b)
 	if err != nil {
-		return err
+		return "", "", fmt.Errorf("writing json to temporary file: %s", err)
 	}
 
-	return os.Rename(f.Name(), p)
+	return f.Name(), finalPath, nil
 }
 
 // umask holds the Umask of the current process

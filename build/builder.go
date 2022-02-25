@@ -39,6 +39,8 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/ctags"
 	"github.com/grafana/regexp"
@@ -94,6 +96,15 @@ type Options struct {
 	// regardless of their size. The full pattern syntax is here:
 	// https://github.com/bmatcuk/doublestar/tree/v1#patterns.
 	LargeFiles []string
+
+	// IsDelta is true if this run contains only the changed documents since the
+	// last run.
+	IsDelta bool
+
+	// ChangedOrRemovedFiles is a list of file paths that have been changed or removed
+	// since the last indexing job for this repository. These files will be tombstoned
+	// in the older shards for this repository.
+	ChangedOrRemovedFiles []string
 }
 
 // HashOptions creates a hash of the options that affect an index.
@@ -285,13 +296,15 @@ func (o *Options) shardNameVersion(version, n int) string {
 type IndexState string
 
 const (
-	IndexStateMissing IndexState = "missing"
-	IndexStateCorrupt IndexState = "corrupt"
-	IndexStateVersion IndexState = "version-mismatch"
-	IndexStateOption  IndexState = "option-mismatch"
-	IndexStateMeta    IndexState = "meta-mismatch"
-	IndexStateContent IndexState = "content-mismatch"
-	IndexStateEqual   IndexState = "equal"
+	IndexStateMissing       IndexState = "missing"
+	IndexStateCorrupt       IndexState = "corrupt"
+	IndexStateVersion       IndexState = "version-mismatch"
+	IndexStateOption        IndexState = "option-mismatch"
+	IndexStateMeta          IndexState = "meta-mismatch"
+	IndexStateContent       IndexState = "content-mismatch"
+	IndexStateBranchSet     IndexState = "branch-set-mismatch"
+	IndexStateBranchVersion IndexState = "branch-version-mismatch"
+	IndexStateEqual         IndexState = "equal"
 )
 
 var readVersions = []struct {
@@ -350,8 +363,24 @@ func (o *Options) IndexState() (IndexState, string) {
 		return IndexStateOption, fn
 	}
 
-	if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
-		return IndexStateContent, fn
+	sortBranches(o.RepositoryDescription.Branches)
+	sortBranches(repo.Branches)
+
+	if o.IsDelta {
+		// TODO: Get rid of this guard once the delta shard behavior is the default
+		ignoreVersionOption := cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")
+
+		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches, ignoreVersionOption) {
+			return IndexStateBranchSet, fn
+		}
+
+		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches) {
+			return IndexStateBranchVersion, fn
+		}
+	} else {
+		if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
+			return IndexStateContent, fn
+		}
 	}
 
 	// We can mutate repo since it lives in the scope of this function call.
@@ -472,6 +501,17 @@ func NewBuilder(opts Options) (*Builder, error) {
 		MaxBackups: 5,
 	}
 
+	if opts.IsDelta {
+		// Delta shards build on top of previously existing shards.
+		// As a consequence, the shardNum for delta shards starts from
+		// the number following the most recently generated shard - not 0.
+		//
+		// Using this numbering scheme allows all the shards to be
+		// discovered as a set.
+		shards := b.opts.FindAllShards()
+		b.nextShardNum = len(shards) // shards are zero indexed, so len() provides the next number after the last one
+	}
+
 	if _, err := b.newShardBuilder(); err != nil {
 		return nil, err
 	}
@@ -539,10 +579,66 @@ func (b *Builder) Finish() error {
 		return b.buildError
 	}
 
+	// map of temporary -> final names for all updated shards + shard metadata files
+	artifactPaths := make(map[string]string)
+	for tmp, final := range b.finishedShards {
+		artifactPaths[tmp] = final
+	}
+
+	oldShards := b.opts.FindAllShards()
+
+	if b.opts.IsDelta {
+		// Delta shard builds need to update FileTombstone and branch commit information for all
+		// existing shards
+		for _, shard := range oldShards {
+			repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+			if err != nil {
+				return fmt.Errorf("reading metadata from shard %q: %w", shard, err)
+			}
+
+			if len(repositories) > 1 {
+				return fmt.Errorf("delta shard builds don't support repositories contained in compound shards (shard %q)", shard)
+			}
+
+			if len(repositories) == 0 {
+				return fmt.Errorf("failed to update repository metadata for shard %q - shard contains no repositories", shard)
+			}
+
+			repository := repositories[0]
+			if repository.ID != b.opts.RepositoryDescription.ID {
+				return fmt.Errorf("shard %q doesn't contain repository ID %d (%q)", shard, b.opts.RepositoryDescription.ID, b.opts.RepositoryDescription.Name)
+			}
+
+			if len(b.opts.ChangedOrRemovedFiles) > 0 && repository.FileTombstones == nil {
+				repository.FileTombstones = make(map[string]struct{}, len(b.opts.ChangedOrRemovedFiles))
+			}
+
+			for _, f := range b.opts.ChangedOrRemovedFiles {
+				repository.FileTombstones[f] = struct{}{}
+			}
+
+			sortBranches(b.opts.RepositoryDescription.Branches)
+			sortBranches(repository.Branches)
+
+			if diff := cmp.Diff(b.opts.RepositoryDescription.Branches, repository.Branches, cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")); diff != "" {
+				return deltaBranchSetError{shardName: shard, diff: diff}
+			}
+
+			repository.Branches = b.opts.RepositoryDescription.Branches
+
+			tempPath, finalPath, err := zoekt.JsonMarshalRepoMetaTemp(shard, repository)
+			if err != nil {
+				return fmt.Errorf("writing repository metadta for shard %q: %w", shard, err)
+			}
+
+			artifactPaths[tempPath] = finalPath
+		}
+	}
+
 	// We mark finished shards as empty when we successfully finish. Return now
 	// to allow call sites to call Finish idempotently.
-	if len(b.finishedShards) == 0 {
-		return nil
+	if len(artifactPaths) == 0 {
+		return b.buildError
 	}
 
 	defer b.shardLogger.Close()
@@ -550,18 +646,27 @@ func (b *Builder) Finish() error {
 	// Collect a map of the old shards on disk. For each new shard we replace we
 	// delete it from toDelete. Anything remaining in toDelete will be removed
 	// after we have renamed everything into place.
-	toDelete := map[string]struct{}{}
-	for _, name := range b.opts.FindAllShards() {
-		paths, err := zoekt.IndexFilePaths(name)
-		if err != nil {
-			b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
-		}
-		for _, p := range paths {
-			toDelete[p] = struct{}{}
+
+	var toDelete map[string]struct{}
+	if !b.opts.IsDelta {
+		// Non-delta shard builds delete all existing shards before they write out
+		// new ones.
+		// By contrast, delta shard builds work by stacking changes on top of existing shards.
+		// So, we skip populating the toDelete map if we're building delta shards.
+
+		toDelete = make(map[string]struct{})
+		for _, name := range oldShards {
+			paths, err := zoekt.IndexFilePaths(name)
+			if err != nil {
+				b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
+			}
+			for _, p := range paths {
+				toDelete[p] = struct{}{}
+			}
 		}
 	}
 
-	for tmp, final := range b.finishedShards {
+	for tmp, final := range artifactPaths {
 		if err := os.Rename(tmp, final); err != nil {
 			b.buildError = err
 			continue
@@ -571,6 +676,7 @@ func (b *Builder) Finish() error {
 
 		b.shardLog("upsert", final, b.opts.RepositoryDescription.Name)
 	}
+
 	b.finishedShards = map[string]string{}
 
 	for p := range toDelete {
@@ -757,6 +863,19 @@ func sortDocuments(todo []*zoekt.Document) {
 	}
 }
 
+func sortBranches(branches []zoekt.RepositoryBranch) {
+	sort.SliceStable(branches, func(i, j int) bool {
+		a, b := branches[i], branches[j]
+
+		if a.Name < b.Name {
+			return true
+		}
+
+		return a.Version < b.Version
+
+	})
+}
+
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
 	if b.opts.CTags != "" {
 		err := ctagsAddSymbols(todo, b.parser, b.opts.CTags)
@@ -831,6 +950,15 @@ func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard,
 		float64(fi.Size())/float64(ib.ContentSize()+1))
 
 	return &finishedShard{f.Name(), fn}, nil
+}
+
+type deltaBranchSetError struct {
+	shardName string
+	diff      string
+}
+
+func (e deltaBranchSetError) Error() string {
+	return fmt.Sprintf("repository metadata in shard %q contains a different set of branch names than what was requested, which is unsupported in a delta shard build (-expected +actual): %s", e.shardName, e.diff)
 }
 
 // umask holds the Umask of the current process

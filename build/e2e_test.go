@@ -15,6 +15,7 @@
 package build
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
@@ -598,5 +601,200 @@ func TestEmptyContent(t *testing.T) {
 
 	if len(result.Repos) != 1 || result.Repos[0].Repository.Name != "repo" {
 		t.Errorf("got %+v, want 1 repo.", result.Repos)
+	}
+}
+
+func TestDeltaShards(t *testing.T) {
+	// TODO: Need to write a test for compound shards as well.
+	type step struct {
+		name      string
+		documents []zoekt.Document
+		branches  []zoekt.RepositoryBranch
+		optFn     func(t *testing.T, o *Options)
+
+		query             string
+		expectedDocuments []zoekt.Document
+	}
+
+	var (
+		fooAtMain   = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main-v1")}
+		fooAtMainV2 = zoekt.Document{Name: "foo.go", Branches: []string{"main"}, Content: []byte("common foo-main-v2")}
+
+		fooAtMainAndRelease = zoekt.Document{Name: "foo.go", Branches: []string{"main", "release"}, Content: []byte("common foo-main-and-release")}
+
+		barAtMain   = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main")}
+		barAtMainV2 = zoekt.Document{Name: "bar.go", Branches: []string{"main"}, Content: []byte("common bar-main-v2")}
+	)
+
+	for _, test := range []struct {
+		name  string
+		steps []step
+	}{
+		{
+			name: "tombstone older documents",
+			steps: []step{
+				{
+					name:              "setup",
+					documents:         []zoekt.Document{barAtMain, fooAtMain},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain, fooAtMain},
+				},
+				{
+					name:      "add new version of foo, tombstone older ones",
+					documents: []zoekt.Document{fooAtMainV2},
+					optFn: func(t *testing.T, o *Options) {
+						o.IsDelta = true
+						o.ChangedOrRemovedFiles = []string{"foo.go"}
+					},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain, fooAtMainV2},
+				},
+				{
+					name:      "add new version of bar, tombstone older ones",
+					documents: []zoekt.Document{barAtMainV2},
+					optFn: func(t *testing.T, o *Options) {
+						o.IsDelta = true
+						o.ChangedOrRemovedFiles = []string{"bar.go"}
+					},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMainV2, fooAtMainV2},
+				},
+			},
+		},
+		{
+			name: "tombstone older documents even if the latest shard has no documents",
+			steps: []step{
+				{
+					name:              "setup",
+					documents:         []zoekt.Document{barAtMain, fooAtMain},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain, fooAtMain},
+				},
+				{
+					// a build with no documents could represent a deletion
+					name:      "tombstone older documents",
+					documents: nil,
+					optFn: func(t *testing.T, o *Options) {
+						o.IsDelta = true
+						o.ChangedOrRemovedFiles = []string{"foo.go"}
+					},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain},
+				},
+			},
+		},
+		{
+			name: "tombstones affect document across branches",
+			steps: []step{
+				{
+					name:              "setup",
+					documents:         []zoekt.Document{barAtMain, fooAtMainAndRelease},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain, fooAtMainAndRelease},
+				},
+				{
+
+					name:      "tombstone foo",
+					documents: nil,
+					optFn: func(t *testing.T, o *Options) {
+						o.IsDelta = true
+						o.ChangedOrRemovedFiles = []string{"foo.go"}
+					},
+					query:             "common",
+					expectedDocuments: []zoekt.Document{barAtMain},
+				},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			indexDir := t.TempDir()
+
+			branchSet := make(map[string]struct{})
+
+			for _, s := range test.steps {
+				for _, d := range s.documents {
+					for _, b := range d.Branches {
+						branchSet[b] = struct{}{}
+					}
+				}
+			}
+
+			for _, step := range test.steps {
+				repository := zoekt.Repository{ID: 1, Name: "repository"}
+
+				for b := range branchSet {
+					repository.Branches = append(repository.Branches, zoekt.RepositoryBranch{Name: b})
+				}
+
+				buildOpts := Options{
+					IndexDir:              indexDir,
+					RepositoryDescription: repository,
+				}
+				buildOpts.SetDefaults()
+
+				if step.optFn != nil {
+					step.optFn(t, &buildOpts)
+				}
+
+				b, err := NewBuilder(buildOpts)
+				if err != nil {
+					t.Fatalf("step %q: NewBuilder: %s", step.name, err)
+				}
+
+				for _, d := range step.documents {
+					err := b.Add(d)
+					if err != nil {
+						t.Fatalf("step %q: adding document %q to builder: %s", step.name, d.Name, err)
+					}
+				}
+
+				err = b.Finish()
+				if err != nil {
+					t.Fatalf("step %q: finishing builder: %s", step.name, err)
+				}
+
+				state, _ := buildOpts.IndexState()
+				if diff := cmp.Diff(IndexStateEqual, state); diff != "" {
+					t.Errorf("unexpected diff in index state (-want +got):\n%s", diff)
+				}
+
+				ss, err := shards.NewDirectorySearcher(indexDir)
+				if err != nil {
+					t.Fatalf("step %q: NewDirectorySearcher(%s): %s", step.name, indexDir, err)
+				}
+				defer ss.Close()
+
+				searchOpts := &zoekt.SearchOptions{Whole: true}
+				q := &query.Substring{Pattern: step.query}
+
+				result, err := ss.Search(context.Background(), q, searchOpts)
+				if err != nil {
+					t.Fatalf("step %q: Search(%q): %s", step.name, step.query, err)
+				}
+
+				var receivedDocuments []zoekt.Document
+				for _, f := range result.Files {
+					receivedDocuments = append(receivedDocuments, zoekt.Document{
+						Name:    f.FileName,
+						Content: f.Content,
+					})
+				}
+
+				cmpOpts := []cmp.Option{
+					cmpopts.IgnoreFields(zoekt.Document{}, "Branches"),
+					cmpopts.SortSlices(func(a, b zoekt.Document) bool {
+						if a.Name < b.Name {
+							return true
+						}
+
+						return bytes.Compare(a.Content, b.Content) < 0
+					}),
+				}
+
+				if diff := cmp.Diff(step.expectedDocuments, receivedDocuments, cmpOpts...); diff != "" {
+					t.Errorf("step %q: diff in received documents (-want +got):%s\n:", step.name, diff)
+				}
+			}
+		})
 	}
 }
