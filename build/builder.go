@@ -591,7 +591,7 @@ func (b *Builder) Finish() error {
 		// Delta shard builds need to update FileTombstone and branch commit information for all
 		// existing shards
 		for _, shard := range oldShards {
-			repositories, indexMetadata, err := zoekt.ReadMetadataPathAlive(shard)
+			repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
 			if err != nil {
 				b.buildError = err
 				continue
