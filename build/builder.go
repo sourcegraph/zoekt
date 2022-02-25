@@ -597,7 +597,7 @@ func (b *Builder) Finish() error {
 				continue
 			}
 
-			if indexMetadata.IndexFormatVersion > 16 {
+			if len(repositories) > 1 {
 				b.buildError = fmt.Errorf("delta shard builds don't support repositories contained in compound shards (shard %q)", shard)
 				continue
 			}
