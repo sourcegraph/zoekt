@@ -130,7 +130,7 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
-func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
+func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string) []LineMatch {
 	var result []LineMatch
 	if ms[0].fileName {
 		// There is only "line" in a filename.
@@ -155,7 +155,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int)
 
 	sects := p.docSections()
 	for i, m := range result {
-		result[i].Score = matchScore(sects, &m)
+		result[i].Score = matchScore(sects, &m, language)
 	}
 
 	return result
@@ -291,7 +291,7 @@ func findSection(secs []DocumentSection, off, sz uint32) *DocumentSection {
 	return nil
 }
 
-func matchScore(secs []DocumentSection, m *LineMatch) float64 {
+func matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
 	var maxScore float64
 	for _, f := range m.LineFragments {
 		startBoundary := f.LineOffset < len(m.Line) && (f.LineOffset == 0 || byteClass(m.Line[f.LineOffset-1]) != byteClass(m.Line[f.LineOffset]))
@@ -316,6 +316,16 @@ func matchScore(secs []DocumentSection, m *LineMatch) float64 {
 				score += (scoreSymbol + scorePartialSymbol) / 2
 			} else {
 				score += scorePartialSymbol
+			}
+		}
+
+		if f.SymbolInfo != nil {
+			switch language {
+			case "Java":
+				switch f.SymbolInfo.Kind {
+				case "c":
+					score += 4000
+				}
 			}
 		}
 

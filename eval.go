@@ -353,7 +353,7 @@ nextFileMatch:
 					byteMatchSz:   uint32(len(nm)),
 				})
 		}
-		fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines)
+		fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, d.languageMap[d.getLanguage(nextDoc)])
 
 		maxFileScore := 0.0
 		for i := range fileMatch.LineMatches {
