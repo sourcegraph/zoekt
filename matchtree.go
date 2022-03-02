@@ -226,66 +226,26 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 type symbolSubstrMatchTree struct {
 	*substrMatchTree
 
-	patternSize   uint32
-	fileEndRunes  []uint32
-	fileEndSymbol []uint32
+	patternSize uint32
+	//fileEndRunes  []uint32
+	//fileEndSymbol []uint32
+	//
+	doc uint32
+	//sections []DocumentSection
 
-	doc      uint32
-	sections []DocumentSection
-
-	secID uint32
+	//secID uint32
 }
 
 func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 	t.substrMatchTree.prepare(doc)
 	t.doc = doc
 
-	var fileStart uint32
-	if doc > 0 {
-		fileStart = t.fileEndRunes[doc-1]
-	}
-
-	var sections []DocumentSection
-	if len(t.sections) > 0 {
-		most := t.fileEndSymbol[len(t.fileEndSymbol)-1]
-		if most == uint32(len(t.sections)) {
-			sections = t.sections[t.fileEndSymbol[doc]:t.fileEndSymbol[doc+1]]
-		} else {
-			for t.secID < uint32(len(t.sections)) && t.sections[t.secID].Start < fileStart {
-				t.secID++
-			}
-
-			fileEnd, symbolEnd := t.fileEndRunes[doc], t.secID
-			for symbolEnd < uint32(len(t.sections)) && t.sections[symbolEnd].Start < fileEnd {
-				symbolEnd++
-			}
-
-			sections = t.sections[t.secID:symbolEnd]
-		}
-	}
-
-	secIdx := 0
 	trimmed := t.current[:0]
-	for len(sections) > secIdx && len(t.current) > 0 {
-		start := fileStart + t.current[0].runeOffset
-		end := start + t.patternSize
-		if start >= sections[secIdx].End {
-			secIdx++
+	for _, c := range t.current {
+		if !c.symbol {
 			continue
 		}
-
-		if start < sections[secIdx].Start {
-			t.current = t.current[1:]
-			continue
-		}
-
-		if end <= sections[secIdx].End {
-			t.current[0].symbol = true
-			t.current[0].symbolIdx = uint32(secIdx)
-			trimmed = append(trimmed, t.current[0])
-		}
-
-		t.current = t.current[1:]
+		trimmed = append(trimmed, c)
 	}
 	t.current = trimmed
 }
@@ -947,12 +907,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}
 
 		if substr, ok := subMT.(*substrMatchTree); ok {
+			substr.fileEndRunes = d.fileEndRunes
+			substr.fileEndSymbol = d.fileEndSymbol
+			substr.sections = unmarshalDocSections(d.runeDocSections, nil)
 			return &symbolSubstrMatchTree{
 				substrMatchTree: substr,
 				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
-				fileEndRunes:    d.fileEndRunes,
-				fileEndSymbol:   d.fileEndSymbol,
-				sections:        unmarshalDocSections(d.runeDocSections, nil),
 			}, nil
 		}
 
