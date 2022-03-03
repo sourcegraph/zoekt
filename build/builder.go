@@ -224,6 +224,8 @@ type Builder struct {
 
 	// a sortable 20 chars long id.
 	id string
+
+	existingShards []string
 }
 
 type finishedShard struct {
@@ -475,6 +477,7 @@ func NewBuilder(opts Options) (*Builder, error) {
 	b := &Builder{
 		opts:           opts,
 		throttle:       make(chan int, opts.Parallelism),
+		existingShards: opts.FindAllShards(),
 		finishedShards: map[string]string{},
 	}
 
@@ -585,12 +588,10 @@ func (b *Builder) Finish() error {
 		artifactPaths[tmp] = final
 	}
 
-	oldShards := b.opts.FindAllShards()
-
 	if b.opts.IsDelta {
 		// Delta shard builds need to update FileTombstone and branch commit information for all
 		// existing shards
-		for _, shard := range oldShards {
+		for _, shard := range b.existingShards {
 			repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
 			if err != nil {
 				return fmt.Errorf("reading metadata from shard %q: %w", shard, err)
@@ -655,7 +656,7 @@ func (b *Builder) Finish() error {
 		// So, we skip populating the toDelete map if we're building delta shards.
 
 		toDelete = make(map[string]struct{})
-		for _, name := range oldShards {
+		for _, name := range b.existingShards {
 			paths, err := zoekt.IndexFilePaths(name)
 			if err != nil {
 				b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
