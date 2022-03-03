@@ -71,6 +71,10 @@ mkdir gerrit.googlesource.com/bogus.git
 mkdir gerrit.googlesource.com/sub
 git clone --bare bdir gerrit.googlesource.com/sub/bdir.git
 
+mkdir -p gerrit.googlesource.com/team/scope/
+cp -r gerrit.googlesource.com/adir.git gerrit.googlesource.com/team/scope/repoa.git
+cp -r gerrit.googlesource.com/bdir.git gerrit.googlesource.com/team/scope/repob.git
+
 cat << EOF  > gerrit.googlesource.com/adir.git/config
 [core]
 	repositoryformatversion = 0
@@ -117,11 +121,13 @@ func TestFindGitRepos(t *testing.T) {
 	}
 
 	want := map[string]bool{
-		"gerrit.googlesource.com/bdir.git":     true,
-		"gerrit.googlesource.com/sub/bdir.git": true,
-		"adir/.git":                            true,
-		"bdir/.git":                            true,
-		"gerrit.googlesource.com/adir.git":     true,
+		"adir/.git":                                    true,
+		"bdir/.git":                                    true,
+		"gerrit.googlesource.com/adir.git":             true,
+		"gerrit.googlesource.com/bdir.git":             true,
+		"gerrit.googlesource.com/sub/bdir.git":         true,
+		"gerrit.googlesource.com/team/scope/repoa.git": true,
+		"gerrit.googlesource.com/team/scope/repob.git": true,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v want %v", got, want)
