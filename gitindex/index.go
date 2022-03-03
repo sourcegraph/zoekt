@@ -17,6 +17,7 @@ package gitindex
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -24,6 +25,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -367,20 +369,6 @@ func IndexGitRepo(opts Options) error {
 		log.Printf("setTemplatesFromConfig(%s): %s", opts.RepoDir, err)
 	}
 
-	var repoCache *RepoCache
-	if opts.Submodules {
-		repoCache = NewRepoCache(opts.RepoCacheDir)
-	}
-
-	// branch => (path, sha1) => repo.
-	repos := map[fileKey]BlobLocation{}
-
-	// fileKey => branches
-	branchMap := map[fileKey][]string{}
-
-	// Branch => Repo => SHA1
-	branchVersions := map[string]map[string]plumbing.Hash{}
-
 	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
 	if err != nil {
 		return fmt.Errorf("expandBranches: %w", err)
@@ -403,34 +391,41 @@ func IndexGitRepo(opts Options) error {
 		if when := commit.Committer.When; when.After(opts.BuildOptions.RepositoryDescription.LatestCommitDate) {
 			opts.BuildOptions.RepositoryDescription.LatestCommitDate = when
 		}
-
-		tree, err := commit.Tree()
-		if err != nil {
-			return fmt.Errorf("commit.Tree: %w", err)
-		}
-
-		ig, err := newIgnoreMatcher(tree)
-		if err != nil {
-			return fmt.Errorf("newIgnoreMatcher: %w", err)
-		}
-
-		files, subVersions, err := TreeToFiles(repo, tree, opts.BuildOptions.RepositoryDescription.URL, repoCache)
-		if err != nil {
-			return fmt.Errorf("TreeToFiles: %w", err)
-		}
-		for k, v := range files {
-			if ig.Match(k.Path) {
-				continue
-			}
-			repos[k] = v
-			branchMap[k] = append(branchMap[k], b)
-		}
-
-		branchVersions[b] = subVersions
 	}
 
 	if opts.Incremental && opts.BuildOptions.IncrementalSkipIndexing() {
 		return nil
+	}
+
+	// branch => (path, sha1) => repo.
+	var repos map[fileKey]BlobLocation
+
+	// fileKey => branches
+	var branchMap map[fileKey][]string
+
+	// Branch => Repo => SHA1
+	var branchVersions map[string]map[string]plumbing.Hash
+
+	if opts.BuildOptions.IsDelta {
+		output, err := prepareDeltaBuild(&opts, repo)
+		if err != nil {
+			return fmt.Errorf("preparing delta build: %w", err)
+		}
+
+		repos = output.repos
+		branchMap = output.branchMap
+		branchVersions = output.branchVersions
+
+		opts.BuildOptions.ChangedOrRemovedFiles = output.changedOrDeletedPaths
+	} else {
+		output, err := prepareNormalBuild(&opts, repo)
+		if err != nil {
+			return fmt.Errorf("preparing normal build: %w", err)
+		}
+
+		repos = output.repos
+		branchMap = output.branchMap
+		branchVersions = output.branchVersions
 	}
 
 	reposByPath := map[string]BlobLocation{}
@@ -449,6 +444,7 @@ func IndexGitRepo(opts Options) error {
 		}
 		opts.BuildOptions.SubRepositories[path] = &tpl
 	}
+
 	for _, br := range opts.BuildOptions.RepositoryDescription.Branches {
 		for path, repo := range opts.BuildOptions.SubRepositories {
 			id := branchVersions[br.Name][path]
@@ -530,6 +526,248 @@ func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 		return nil, err
 	}
 	return ignore.ParseIgnoreFile(strings.NewReader(content))
+}
+
+type buildOutput struct {
+	// branch => (path, sha1) => repo.
+	repos map[fileKey]BlobLocation
+
+	// fileKey => branches
+	branchMap map[fileKey][]string
+
+	// Branch => Repo => SHA1
+	branchVersions map[string]map[string]plumbing.Hash
+
+	// list of changed or deleted
+	changedOrDeletedPaths []string
+}
+
+func prepareDeltaBuild(options *Options, repository *git.Repository) (*buildOutput, error) {
+	// discover what commits we indexed during our last build
+	shards := options.BuildOptions.FindAllShards()
+	if len(shards) == 0 {
+		return nil, fmt.Errorf("no existing shards found for repository")
+	}
+
+	shard := shards[0]
+	repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+	if err != nil {
+		return nil, fmt.Errorf("reading reposistory metadata from shard %q: %w", shard, err)
+	}
+
+	var existingRepository *zoekt.Repository
+
+	for _, r := range repositories {
+		if r.ID == options.BuildOptions.RepositoryDescription.ID {
+			existingRepository = r
+			break
+		}
+	}
+
+	if existingRepository == nil {
+		return nil, fmt.Errorf("shard %q doesn't contain repository", shard)
+	}
+
+	// Check to see if the branch set is consistent with what we last indexed.
+	// If it isn't consistent, that we can't proceed with a delta build (and the caller should fall back to a
+	// normal one).
+
+	var existingBranchNames []string
+	for _, b := range existingRepository.Branches {
+		existingBranchNames = append(existingBranchNames, b.Name)
+	}
+
+	sort.Strings(existingBranchNames)
+	sort.Strings(options.Branches)
+
+	if !reflect.DeepEqual(options.Branches, existingBranchNames) {
+		return nil, fmt.Errorf("requested branch set in build options (%q) != branch set found on disk (%q) - branch set must be the same for delta shards", strings.Join(options.Branches, ", "), strings.Join(existingBranchNames, ", "))
+	}
+
+	// branch => (path, sha1) => repo.
+	repos := map[fileKey]BlobLocation{}
+
+	// fileKey => branches
+	branchMap := map[fileKey][]string{}
+
+	// Branch => Repo => SHA1
+	//branchVersions := map[string]map[string]plumbing.Hash{}
+
+	var changedOrDeletedPaths []string
+
+	// branch name -> git worktree at most current commit
+	branchToCurrentTree := make(map[string]*object.Tree, len(options.Branches))
+
+	for _, b := range options.Branches {
+		commit, err := getCommit(repository, options.BranchPrefix, b)
+		if err != nil {
+			return nil, fmt.Errorf("getting last current commit for branch %q: %w", b, err)
+		}
+
+		tree, err := commit.Tree()
+		if err != nil {
+			return nil, fmt.Errorf("getting current git tree for branch %q: %w", b, err)
+		}
+
+		branchToCurrentTree[b] = tree
+	}
+
+	rawURL := options.BuildOptions.RepositoryDescription.URL
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse repository URL %q: %w", rawURL, err)
+	}
+
+	// TODO: Support repository submodules for delta builds
+	// For this prototype, we are ignoring repository submodules, which means that we can use the same
+	// blob location for all files
+	hackSharedBlobLocation := BlobLocation{
+		Repo: repository,
+		URL:  u,
+	}
+
+	// loop over all branches, calculate the diff between our
+	// last indexed commit and the current commit, and add files mentioned in the diff
+	for _, branch := range existingRepository.Branches {
+		lastIndexedCommit, err := getCommit(repository, "", branch.Version)
+		if err != nil {
+			return nil, fmt.Errorf("getting last indexed commit for branch %q: %w", branch.Name, err)
+		}
+
+		lastIndexedTree, err := lastIndexedCommit.Tree()
+		if err != nil {
+			return nil, fmt.Errorf("getting lasted indexed git tree for branch %q: %w", branch.Name, err)
+		}
+
+		changes, err := lastIndexedTree.Diff(branchToCurrentTree[branch.Name])
+		if err != nil {
+			return nil, fmt.Errorf("generating changeset for branch %q: %w", branch.Name, err)
+		}
+
+		patch, err := changes.Patch()
+		if err != nil {
+			return nil, fmt.Errorf("generating patch from changeset for branch %q: %w", branch.Name, err)
+		}
+
+		for _, fp := range patch.FilePatches() {
+			fromFile, toFile := fp.Files()
+
+			if fromFile == nil {
+				// file added
+				file := fileKey{Path: toFile.Path(), ID: toFile.Hash()}
+				repos[file] = hackSharedBlobLocation
+				branchMap[file] = append(branchMap[file], branch.Name)
+				continue
+			}
+
+			changedOrDeletedFile := fileKey{Path: fromFile.Path(), ID: fromFile.Hash()}
+
+			// If the file is either modified or deleted, we need to add ALL versions
+			// of this file (across all branches) to the build
+			for b, currentTree := range branchToCurrentTree {
+				f, err := currentTree.File(changedOrDeletedFile.Path)
+				if err != nil {
+					// the file doesn't exist in this branch
+					if errors.Is(err, object.ErrFileNotFound) {
+						continue
+					}
+
+					return nil, fmt.Errorf("getting hash for file %q in branch %q: %w", changedOrDeletedFile.Path, b, err)
+				}
+
+				file := fileKey{Path: changedOrDeletedFile.Path, ID: f.ID()}
+
+				repos[file] = hackSharedBlobLocation
+				branchMap[file] = append(branchMap[file], b)
+			}
+
+			changedOrDeletedPaths = append(changedOrDeletedPaths, changedOrDeletedFile.Path)
+		}
+	}
+
+	// we need to de-duplicate the branch map before returning it - it's possible for the same
+	// branch to have been added multiple times if a file has been modified across multiple commits
+
+	for file, branches := range branchMap {
+		sort.Strings(branches)
+		branchMap[file] = uniq(branches)
+	}
+
+	// we also need to de-duplicate the list of changed or deleted file paths, it's also possible to have duplicates
+	// for the same reasoning as above
+
+	sort.Strings(changedOrDeletedPaths)
+	changedOrDeletedPaths = uniq(changedOrDeletedPaths)
+
+	return &buildOutput{
+		repos:                 repos,
+		branchMap:             branchMap,
+		branchVersions:        nil,
+		changedOrDeletedPaths: changedOrDeletedPaths,
+	}, nil
+}
+
+func prepareNormalBuild(options *Options, repository *git.Repository) (*buildOutput, error) {
+	var repoCache *RepoCache
+	if options.Submodules {
+		repoCache = NewRepoCache(options.RepoCacheDir)
+	}
+
+	// branch => (path, sha1) => repo.
+	repos := map[fileKey]BlobLocation{}
+
+	// fileKey => branches
+	branchMap := map[fileKey][]string{}
+
+	// Branch => Repo => SHA1
+	branchVersions := map[string]map[string]plumbing.Hash{}
+
+	branches, err := expandBranches(repository, options.Branches, options.BranchPrefix)
+	if err != nil {
+		return nil, fmt.Errorf("expandBranches: %w", err)
+	}
+
+	for _, b := range branches {
+		commit, err := getCommit(repository, options.BranchPrefix, b)
+		if err != nil {
+			if options.AllowMissingBranch && err.Error() == "reference not found" {
+				continue
+			}
+
+			return nil, fmt.Errorf("getCommit: %w", err)
+		}
+
+		tree, err := commit.Tree()
+		if err != nil {
+			return nil, fmt.Errorf("commit.Tree: %w", err)
+		}
+
+		ig, err := newIgnoreMatcher(tree)
+		if err != nil {
+			return nil, fmt.Errorf("newIgnoreMatcher: %w", err)
+		}
+
+		files, subVersions, err := TreeToFiles(repository, tree, options.BuildOptions.RepositoryDescription.URL, repoCache)
+		if err != nil {
+			return nil, fmt.Errorf("TreeToFiles: %w", err)
+		}
+		for k, v := range files {
+			if ig.Match(k.Path) {
+				continue
+			}
+			repos[k] = v
+			branchMap[k] = append(branchMap[k], b)
+		}
+
+		branchVersions[b] = subVersions
+	}
+
+	return &buildOutput{
+		repos:                 repos,
+		branchMap:             branchMap,
+		branchVersions:        branchVersions,
+		changedOrDeletedPaths: nil,
+	}, nil
 }
 
 func blobContents(blob *object.Blob) ([]byte, error) {
