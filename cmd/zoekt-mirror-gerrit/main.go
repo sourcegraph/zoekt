@@ -77,7 +77,7 @@ func main() {
 	namePattern := flag.String("name", "", "only clone repos whose name matches the regexp.")
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	httpCrendentialsPath := flag.String("http-credentials", "", "path to a file containing http credentials stored like 'user:password'.")
-	onlyActive := flag.Bool("only-active", false, "mirror only active projects")
+	active := flag.Bool("active", false, "mirror only active projects")
 	flag.Parse()
 
 	if len(flag.Args()) < 1 {
@@ -139,7 +139,7 @@ func main() {
 		}
 
 		for k, v := range *page {
-			if *onlyActive == false || "ACTIVE" == v.State  {
+			if *active == false || "ACTIVE" == v.State  {
 				projects[k] = v
 			}
 			skip = skip + 1

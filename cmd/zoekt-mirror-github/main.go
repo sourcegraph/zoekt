@@ -50,7 +50,7 @@ func (f *topicsFlag) Set(value string) error {
 type reposFilters struct {
 	topics        []string
 	excludeTopics []string
-	onlyActive    *bool
+	noArchived    *bool
 }
 
 func main() {
@@ -69,7 +69,7 @@ func main() {
 	flag.Var(&topics, "topic", "only clone repos whose have one of given topics. You can add multiple topics by setting this more than once.")
 	excludeTopics := topicsFlag{}
 	flag.Var(&excludeTopics, "exclude_topic", "don't clone repos whose have one of given topics. You can add multiple topics by setting this more than once.")
-	onlyActive := flag.Bool("only-active", false, "mirror only active projects")
+	noArchived := flag.Bool("no_archived", false, "mirror only projects that are not archived")
 
 	flag.Parse()
 
@@ -132,7 +132,7 @@ func main() {
 	reposFilters := reposFilters{
 		topics:        topics,
 		excludeTopics: excludeTopics,
-		onlyActive:    onlyActive,
+		noArchived:    noArchived,
 	}
 	var repos []*github.Repository
 	var err error
@@ -226,19 +226,13 @@ func hasIntersection(s1, s2 []string) bool {
 	return false
 }
 
-func filterByTopic(repos []*github.Repository, include []string, exclude []string) (filteredRepos []*github.Repository) {
+func filterRepositories(repos []*github.Repository, include []string, exclude []string, noArchived bool) (filteredRepos []*github.Repository) {
 	for _, repo := range repos {
+		if noArchived && *repo.Archived {
+			continue
+		}
 		if (len(include) == 0 || hasIntersection(include, repo.Topics)) &&
 			!hasIntersection(exclude, repo.Topics) {
-			filteredRepos = append(filteredRepos, repo)
-		}
-	}
-	return
-}
-
-func filterByState(repos []*github.Repository, onlyActive *bool) (filteredRepos []*github.Repository) {
-	for _, repo := range repos {
-		if !*onlyActive || !*repo.Archived {
 			filteredRepos = append(filteredRepos, repo)
 		}
 	}
@@ -258,8 +252,7 @@ func getOrgRepos(client *github.Client, org string, reposFilters reposFilters) (
 		}
 
 		opt.Page = resp.NextPage
-		repos = filterByTopic(repos, reposFilters.topics, reposFilters.excludeTopics)
-		repos = filterByState(repos, reposFilters.onlyActive)
+		repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived)
 		allRepos = append(allRepos, repos...)
 		if resp.NextPage == 0 {
 			break
@@ -281,8 +274,7 @@ func getUserRepos(client *github.Client, user string, reposFilters reposFilters)
 		}
 
 		opt.Page = resp.NextPage
-		repos = filterByTopic(repos, reposFilters.topics, reposFilters.excludeTopics)
-		repos = filterByState(repos, reposFilters.onlyActive)
+		repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived)
 		allRepos = append(allRepos, repos...)
 		if resp.NextPage == 0 {
 			break
