@@ -748,6 +748,15 @@ func TestDeltaShards(t *testing.T) {
 					}
 				}
 
+				// Call b.Finish() multiple times to ensure that it is idempotent
+				for i := 0; i < 3; i++ {
+
+					err = b.Finish()
+					if err != nil {
+						t.Fatalf("step %q: finishing builder (call #%d): %s", step.name, i, err)
+					}
+				}
+
 				err = b.Finish()
 				if err != nil {
 					t.Fatalf("step %q: finishing builder: %s", step.name, err)
