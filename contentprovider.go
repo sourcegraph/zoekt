@@ -274,6 +274,7 @@ const (
 	scoreShardRankFactor    = 20.0
 	scoreFileOrderFactor    = 10.0
 	scoreLineOrderFactor    = 1.0
+	scoreKindMatch          = 4000
 )
 
 func findSection(secs []DocumentSection, off, sz uint32) *DocumentSection {
@@ -320,13 +321,7 @@ func matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
 		}
 
 		if f.SymbolInfo != nil {
-			switch language {
-			case "Java":
-				switch f.SymbolInfo.Kind {
-				case "c":
-					score += 4000
-				}
-			}
+			score += scoreKind(language, f.SymbolInfo.Kind)
 		}
 
 		if score > maxScore {
@@ -334,6 +329,17 @@ func matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
 		}
 	}
 	return maxScore
+}
+
+func scoreKind(language string, kind string) float64 {
+	switch language {
+	case "Java":
+		switch kind {
+		case "c":
+			return scoreKindMatch
+		}
+	}
+	return 0
 }
 
 type matchScoreSlice []LineMatch
