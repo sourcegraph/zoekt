@@ -62,151 +62,110 @@ func TestIndexEmptyRepo(t *testing.T) {
 	}
 }
 
-func TestDeltaShard(t *testing.T) {
-	// prepare repository + whatever options
+func TestIndexDeltaBasic(t *testing.T) {
+	type step struct {
+		name           string
+		addedDocuments []zoekt.Document
+		optFn          func(t *testing.T, options *Options)
+
+		expectedDocuments []zoekt.Document
+	}
 
 	helloWorld := zoekt.Document{Name: "hello_world.txt", Content: []byte("hello")}
 	fruitV1 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("strawberry")}
 	fruitV2 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("grapes")}
 
 	indexDir := t.TempDir()
-	repositoryDir := filepath.Join(indexDir, "repo")
 
+	repositoryDir := t.TempDir()
 	runScript(t, repositoryDir, "git init")
 
-	step1ExpectedDocuments := []zoekt.Document{
-		helloWorld,
-		fruitV1,
-	}
+	for _, step := range []step{
+		{
+			name:           "setup",
+			addedDocuments: []zoekt.Document{helloWorld, fruitV1},
 
-	for _, d := range step1ExpectedDocuments {
-		addDocument(t, repositoryDir, d)
-	}
-
-	runScript(t, repositoryDir, `git commit -m "initial commit"`)
-
-	buildOptions := build.Options{
-		IndexDir: indexDir,
-		RepositoryDescription: zoekt.Repository{
-			Name: "repository",
+			expectedDocuments: []zoekt.Document{helloWorld, fruitV1},
 		},
-		IsDelta: false,
-	}
-	buildOptions.SetDefaults()
+		{
+			name:           "add newer version of fruits",
+			addedDocuments: []zoekt.Document{fruitV2},
+			optFn: func(t *testing.T, options *Options) {
+				options.BuildOptions.IsDelta = true
+			},
 
-	opts := Options{
-		RepoDir:      filepath.Join(repositoryDir, ".git"),
-		BuildOptions: buildOptions,
-		Branches:     []string{"HEAD"},
-	}
-
-	err := IndexGitRepo(opts)
-	if err != nil {
-		t.Fatalf("IndexGitRepo: %s", err)
-	}
-
-	ss, err := shards.NewDirectorySearcher(indexDir)
-	if err != nil {
-		t.Fatalf("NewDirectorySearcher(%s): %s", indexDir, err)
-	}
-	defer ss.Close()
-
-	searchOpts := &zoekt.SearchOptions{Whole: true}
-	result, err := ss.Search(context.Background(), &query.Const{Value: true}, searchOpts)
-
-	if err != nil {
-		t.Fatalf("Search: %s", err)
-	}
-
-	var receivedDocuments []zoekt.Document
-	for _, f := range result.Files {
-		receivedDocuments = append(receivedDocuments, zoekt.Document{
-			Name:    f.FileName,
-			Content: f.Content,
-		})
-	}
-
-	for _, docs := range [][]zoekt.Document{receivedDocuments, step1ExpectedDocuments} {
-		sort.Slice(docs, func(i, j int) bool {
-			a, b := docs[i], docs[j]
-
-			return a.Name < b.Name
-		})
-	}
-
-	if diff := cmp.Diff(step1ExpectedDocuments, receivedDocuments, cmpopts.IgnoreFields(zoekt.Document{}, "Branches")); diff != "" {
-		t.Errorf("diff in received documents (-want +got):%s\n:", diff)
-	}
-
-	addDocument(t, repositoryDir, fruitV2)
-	runScript(t, repositoryDir, `git commit -m "grapes are better"`)
-
-	buildOptionsDelta := build.Options{
-		IndexDir: indexDir,
-		RepositoryDescription: zoekt.Repository{
-			Name: "repository",
+			expectedDocuments: []zoekt.Document{helloWorld, fruitV2},
 		},
-		IsDelta: true,
-	}
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			for _, d := range step.addedDocuments {
+				err := os.WriteFile(filepath.Join(repositoryDir, d.Name), d.Content, 0644)
+				if err != nil {
+					t.Fatalf("writing file %q: %s", d.Name, err)
+				}
 
-	buildOptions.SetDefaults()
+				runScript(t, repositoryDir, fmt.Sprintf("git add %s", d.Name))
+			}
 
-	optsDelta := Options{
-		RepoDir:      filepath.Join(repositoryDir, ".git"),
-		BuildOptions: buildOptionsDelta,
-		Branches:     []string{"HEAD"},
-	}
+			runScript(t, repositoryDir, fmt.Sprintf("git commit -m %q", step.name))
 
-	err = IndexGitRepo(optsDelta)
-	if err != nil {
-		t.Fatalf("IndexGitRepo: %s", err)
-	}
+			buildOptions := build.Options{
+				IndexDir: indexDir,
+				RepositoryDescription: zoekt.Repository{
+					Name: "repository",
+				},
+				IsDelta: false,
+			}
+			buildOptions.SetDefaults()
 
-	ss, err = shards.NewDirectorySearcher(indexDir)
-	if err != nil {
-		t.Fatalf("NewDirectorySearcher(%s): %s", indexDir, err)
-	}
-	defer ss.Close()
+			options := Options{
+				RepoDir:      filepath.Join(repositoryDir, ".git"),
+				BuildOptions: buildOptions,
+				Branches:     []string{"HEAD"},
+			}
 
-	searchOpts = &zoekt.SearchOptions{Whole: true}
-	result, err = ss.Search(context.Background(), &query.Const{Value: true}, searchOpts)
+			if step.optFn != nil {
+				step.optFn(t, &options)
+			}
 
-	//result, err := ss.Search(context.Background(), &query.Regexp{Regexp: mustParseRE(".*")}, searchOpts)
-	if err != nil {
-		t.Fatalf("Search: %s", err)
-	}
+			err := IndexGitRepo(options)
+			if err != nil {
+				t.Fatalf("IndexGitRepo: %s", err)
+			}
 
-	var receivedDocumentsDelta []zoekt.Document
-	for _, f := range result.Files {
-		receivedDocumentsDelta = append(receivedDocumentsDelta, zoekt.Document{
-			Name:    f.FileName,
-			Content: f.Content,
+			ss, err := shards.NewDirectorySearcher(indexDir)
+			if err != nil {
+				t.Fatalf("NewDirectorySearcher(%s): %s", indexDir, err)
+			}
+			defer ss.Close()
+
+			searchOpts := &zoekt.SearchOptions{Whole: true}
+			result, err := ss.Search(context.Background(), &query.Const{Value: true}, searchOpts)
+			if err != nil {
+				t.Fatalf("Search: %s", err)
+			}
+
+			var receivedDocuments []zoekt.Document
+			for _, f := range result.Files {
+				receivedDocuments = append(receivedDocuments, zoekt.Document{
+					Name:    f.FileName,
+					Content: f.Content,
+				})
+			}
+
+			for _, docs := range [][]zoekt.Document{step.expectedDocuments, receivedDocuments} {
+				sort.Slice(docs, func(i, j int) bool {
+					a, b := docs[i], docs[j]
+
+					return a.Name < b.Name
+				})
+			}
+
+			if diff := cmp.Diff(step.expectedDocuments, receivedDocuments, cmpopts.IgnoreFields(zoekt.Document{}, "Branches")); diff != "" {
+				t.Errorf("diff in received documents (-want +got):%s\n:", diff)
+			}
 		})
 	}
-
-	deltaExpectedDocuments := []zoekt.Document{helloWorld, fruitV2}
-
-	for _, docs := range [][]zoekt.Document{deltaExpectedDocuments, receivedDocumentsDelta} {
-		sort.Slice(docs, func(i, j int) bool {
-			a, b := docs[i], docs[j]
-
-			return a.Name < b.Name
-		})
-	}
-
-	if diff := cmp.Diff(deltaExpectedDocuments, receivedDocumentsDelta, cmpopts.IgnoreFields(zoekt.Document{}, "Branches")); diff != "" {
-		t.Errorf("diff in received documents (-want +got):%s\n:", diff)
-	}
-
-}
-
-func addDocument(t *testing.T, repositoryDir string, d zoekt.Document) {
-	err := os.WriteFile(filepath.Join(repositoryDir, d.Name), d.Content, 0644)
-	if err != nil {
-		t.Fatalf("writing file %q: %s", d.Name, err)
-	}
-
-	runScript(t, repositoryDir, fmt.Sprintf("git add %s", d.Name))
 }
 
 func runScript(t *testing.T, cwd string, script string) {
@@ -217,6 +176,7 @@ func runScript(t *testing.T, cwd string, script string) {
 
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = cwd
+
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("execution error: %v, output %s", err, out)
 	}
