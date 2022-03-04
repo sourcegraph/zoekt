@@ -48,6 +48,8 @@ type ConfigEntry struct {
 	GerritApiURL           string
 	Topics                 []string
 	ExcludeTopics          []string
+	Active                 bool
+	NoArchived             bool
 }
 
 func randomize(entries []ConfigEntry) []ConfigEntry {
@@ -188,6 +190,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			for _, topic := range c.ExcludeTopics {
 				cmd.Args = append(cmd.Args, "-exclude_topic", topic)
 			}
+			if c.NoArchived {
+				cmd.Args = append(cmd.Args, "-no_archived")
+			}
 		} else if c.GitilesURL != "" {
 			cmd = exec.Command("zoekt-mirror-gitiles",
 				"-dest", repoDir, "-name", c.Name)
@@ -250,6 +255,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			}
 			if c.Exclude != "" {
 				cmd.Args = append(cmd.Args, "-exclude", c.Exclude)
+			}
+			if c.Active {
+				cmd.Args = append(cmd.Args, "-active")
 			}
 			cmd.Args = append(cmd.Args, c.GerritApiURL)
 		}
