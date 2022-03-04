@@ -268,13 +268,13 @@ const (
 	scorePartialWordMatch   = 50.0
 	scoreWordMatch          = 500.0
 	scoreImportantThreshold = 2000.0
-	scorePartialSymbol      = 4000.0
 	scoreSymbol             = 7000.0
+	scorePartialSymbol      = 4000.0
+	scoreKindMatch          = 1000.0
 	scoreFactorAtomMatch    = 400.0
 	scoreShardRankFactor    = 20.0
 	scoreFileOrderFactor    = 10.0
 	scoreLineOrderFactor    = 1.0
-	scoreKindMatch          = 4000
 )
 
 func findSection(secs []DocumentSection, off, sz uint32) *DocumentSection {
