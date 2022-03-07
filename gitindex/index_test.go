@@ -15,6 +15,7 @@
 package gitindex
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -63,10 +64,12 @@ func TestIndexEmptyRepo(t *testing.T) {
 }
 
 func TestIndexDeltaBasic(t *testing.T) {
+	type branchToDocumentMap map[string][]zoekt.Document
+
 	type step struct {
 		name             string
-		addedDocuments   []zoekt.Document
-		deletedDocuments []zoekt.Document
+		addedDocuments   branchToDocumentMap
+		deletedDocuments branchToDocumentMap
 		optFn            func(t *testing.T, options *Options)
 
 		expectedDocuments []zoekt.Document
@@ -76,25 +79,33 @@ func TestIndexDeltaBasic(t *testing.T) {
 
 	fruitV1 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("strawberry")}
 	fruitV2 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("grapes")}
+	fruitV3 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("oranges")}
+	fruitV4 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("apples")}
 
 	foo := zoekt.Document{Name: "foo.txt", Content: []byte("bar")}
 
 	for _, test := range []struct {
-		name  string
-		steps []step
+		name     string
+		branches []string
+		steps    []step
 	}{
 		{
-			name: "modification",
+			name:     "modification",
+			branches: []string{"main"},
 			steps: []step{
 				{
-					name:           "setup",
-					addedDocuments: []zoekt.Document{helloWorld, fruitV1},
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{helloWorld, fruitV1},
+					},
 
 					expectedDocuments: []zoekt.Document{helloWorld, fruitV1},
 				},
 				{
-					name:           "add newer version of fruits",
-					addedDocuments: []zoekt.Document{fruitV2},
+					name: "add newer version of fruits",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV2},
+					},
 					optFn: func(t *testing.T, options *Options) {
 						options.BuildOptions.IsDelta = true
 					},
@@ -104,17 +115,22 @@ func TestIndexDeltaBasic(t *testing.T) {
 			},
 		},
 		{
-			name: "addition",
+			name:     "addition",
+			branches: []string{"main"},
 			steps: []step{
 				{
-					name:           "setup",
-					addedDocuments: []zoekt.Document{helloWorld, fruitV1},
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{helloWorld, fruitV1},
+					},
 
 					expectedDocuments: []zoekt.Document{helloWorld, fruitV1},
 				},
 				{
-					name:           "add new file - foo",
-					addedDocuments: []zoekt.Document{foo},
+					name: "add new file - foo",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{foo},
+					},
 					optFn: func(t *testing.T, options *Options) {
 						options.BuildOptions.IsDelta = true
 					},
@@ -124,18 +140,24 @@ func TestIndexDeltaBasic(t *testing.T) {
 			},
 		},
 		{
-			name: "deletion",
+			name:     "deletion",
+			branches: []string{"main"},
 			steps: []step{
 				{
-					name:           "setup",
-					addedDocuments: []zoekt.Document{helloWorld, fruitV1, foo},
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{helloWorld, fruitV1, foo},
+					},
 
 					expectedDocuments: []zoekt.Document{helloWorld, fruitV1, foo},
 				},
 				{
-					name:             "delete foo file",
-					addedDocuments:   nil,
-					deletedDocuments: []zoekt.Document{foo},
+					name:           "delete foo file",
+					addedDocuments: nil,
+					deletedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{foo},
+					},
+
 					optFn: func(t *testing.T, options *Options) {
 						options.BuildOptions.IsDelta = true
 					},
@@ -144,34 +166,86 @@ func TestIndexDeltaBasic(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:     "addition and deletion on only one branch",
+			branches: []string{"main", "release", "dev"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main":    []zoekt.Document{fruitV1},
+						"release": []zoekt.Document{fruitV2},
+						"dev":     []zoekt.Document{fruitV3},
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV1, fruitV2, fruitV3},
+				},
+				{
+					name: "delete v1, replace v3 with v4",
+					addedDocuments: branchToDocumentMap{
+						"dev": []zoekt.Document{fruitV4},
+					},
+					deletedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV1},
+					},
+
+					optFn: func(t *testing.T, options *Options) {
+						options.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV2, fruitV4},
+				},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			indexDir := t.TempDir()
 
 			repositoryDir := t.TempDir()
 			runScript(t, repositoryDir, "git init")
 
+			for _, b := range test.branches {
+				runScript(t, repositoryDir, fmt.Sprintf("git checkout -b %q", b))
+				runScript(t, repositoryDir, fmt.Sprintf("git commit --allow-empty -m %q", "empty commit"))
+			}
+
 			for _, step := range test.steps {
 				t.Run(step.name, func(t *testing.T) {
-					for _, d := range step.deletedDocuments {
-						err := os.Remove(filepath.Join(repositoryDir, d.Name))
-						if err != nil {
-							t.Fatalf("deleting file %q: %s", d.Name, err)
+					for _, b := range test.branches {
+						hadChange := false
+
+						runScript(t, repositoryDir, fmt.Sprintf("git checkout %q", b))
+
+						for _, d := range step.deletedDocuments[b] {
+							hadChange = true
+
+							err := os.Remove(filepath.Join(repositoryDir, d.Name))
+							if err != nil {
+								t.Fatalf("deleting file %q: %s", d.Name, err)
+							}
+
+							runScript(t, repositoryDir, fmt.Sprintf("git add %q", d.Name))
 						}
 
-						runScript(t, repositoryDir, fmt.Sprintf("git add %q", d.Name))
-					}
+						for _, d := range step.addedDocuments[b] {
+							hadChange = true
 
-					for _, d := range step.addedDocuments {
-						err := os.WriteFile(filepath.Join(repositoryDir, d.Name), d.Content, 0644)
-						if err != nil {
-							t.Fatalf("writing file %q: %s", d.Name, err)
+							err := os.WriteFile(filepath.Join(repositoryDir, d.Name), d.Content, 0644)
+							if err != nil {
+								t.Fatalf("writing file %q: %s", d.Name, err)
+							}
+
+							runScript(t, repositoryDir, fmt.Sprintf("git add %q", d.Name))
 						}
 
-						runScript(t, repositoryDir, fmt.Sprintf("git add %q", d.Name))
-					}
+						if !hadChange {
+							continue
+						}
 
-					runScript(t, repositoryDir, fmt.Sprintf("git commit -m %q", step.name))
+						runScript(t, repositoryDir, fmt.Sprintf("git commit -m %q", step.name))
+					}
 
 					buildOptions := build.Options{
 						IndexDir: indexDir,
@@ -182,10 +256,12 @@ func TestIndexDeltaBasic(t *testing.T) {
 					}
 					buildOptions.SetDefaults()
 
+					branches := append([]string{"HEAD"}, test.branches...)
+
 					options := Options{
 						RepoDir:      filepath.Join(repositoryDir, ".git"),
 						BuildOptions: buildOptions,
-						Branches:     []string{"HEAD"},
+						Branches:     branches,
 					}
 
 					if step.optFn != nil {
@@ -221,7 +297,11 @@ func TestIndexDeltaBasic(t *testing.T) {
 						sort.Slice(docs, func(i, j int) bool {
 							a, b := docs[i], docs[j]
 
-							return a.Name < b.Name
+							if a.Name < b.Name {
+								return true
+							}
+
+							return bytes.Compare(a.Content, b.Content) < 0
 						})
 					}
 

@@ -618,10 +618,17 @@ func (b *Builder) Finish() error {
 				repository.FileTombstones[f] = struct{}{}
 			}
 
-			sortBranches(b.opts.RepositoryDescription.Branches)
-			sortBranches(repository.Branches)
+			shardBranchNames := make(map[string]struct{}, len(repository.Branches))
+			for _, b := range repository.Branches {
+				shardBranchNames[b.Name] = struct{}{}
+			}
 
-			if diff := cmp.Diff(b.opts.RepositoryDescription.Branches, repository.Branches, cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")); diff != "" {
+			requestedBranchNames := make(map[string]struct{}, len(b.opts.RepositoryDescription.Branches))
+			for _, b := range b.opts.RepositoryDescription.Branches {
+				requestedBranchNames[b.Name] = struct{}{}
+			}
+
+			if diff := cmp.Diff(shardBranchNames, requestedBranchNames, cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version"), cmpopts.EquateEmpty()); diff != "" {
 				return deltaBranchSetError{shardName: shard, diff: diff}
 			}
 
@@ -873,7 +880,6 @@ func sortBranches(branches []zoekt.RepositoryBranch) {
 		}
 
 		return a.Version < b.Version
-
 	})
 }
 
