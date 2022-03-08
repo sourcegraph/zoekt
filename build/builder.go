@@ -363,18 +363,33 @@ func (o *Options) IndexState() (IndexState, string) {
 		return IndexStateOption, fn
 	}
 
-	sortBranches(o.RepositoryDescription.Branches)
-	sortBranches(repo.Branches)
-
 	if o.IsDelta {
 		// TODO: Get rid of this guard once the delta shard behavior is the default
-		ignoreVersionOption := cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")
+		existingBranchNames := make(map[string]struct{}, len(repo.Branches))
+		for _, b := range repo.Branches {
+			existingBranchNames[b.Name] = struct{}{}
+		}
 
-		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches, ignoreVersionOption) {
+		requestedBranchNames := make(map[string]struct{}, len(o.RepositoryDescription.Branches))
+		for _, b := range o.RepositoryDescription.Branches {
+			requestedBranchNames[b.Name] = struct{}{}
+		}
+
+		if diff := cmp.Diff(existingBranchNames, requestedBranchNames, cmpopts.EquateEmpty()); diff != "" {
 			return IndexStateBranchSet, fn
 		}
 
-		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches) {
+		existingBranchSet := make(map[zoekt.RepositoryBranch]struct{}, len(repo.Branches))
+		for _, b := range repo.Branches {
+			existingBranchSet[b] = struct{}{}
+		}
+
+		requestedBranchSet := make(map[zoekt.RepositoryBranch]struct{}, len(o.RepositoryDescription.Branches))
+		for _, b := range o.RepositoryDescription.Branches {
+			requestedBranchSet[b] = struct{}{}
+		}
+
+		if !cmp.Equal(existingBranchSet, requestedBranchSet, cmpopts.EquateEmpty()) {
 			return IndexStateBranchVersion, fn
 		}
 	} else {
@@ -617,10 +632,17 @@ func (b *Builder) Finish() error {
 				repository.FileTombstones[f] = struct{}{}
 			}
 
-			sortBranches(b.opts.RepositoryDescription.Branches)
-			sortBranches(repository.Branches)
+			existingBranchNames := make(map[string]struct{}, len(repository.Branches))
+			for _, b := range repository.Branches {
+				existingBranchNames[b.Name] = struct{}{}
+			}
 
-			if diff := cmp.Diff(b.opts.RepositoryDescription.Branches, repository.Branches, cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")); diff != "" {
+			requestedBranchNames := make(map[string]struct{}, len(b.opts.RepositoryDescription.Branches))
+			for _, b := range b.opts.RepositoryDescription.Branches {
+				requestedBranchNames[b.Name] = struct{}{}
+			}
+
+			if diff := cmp.Diff(existingBranchNames, requestedBranchNames, cmpopts.EquateEmpty()); diff != "" {
 				return deltaBranchSetError{shardName: shard, diff: diff}
 			}
 
@@ -861,19 +883,6 @@ func sortDocuments(todo []*zoekt.Document) {
 	for i := range todo {
 		todo[i] = rs[i].Document
 	}
-}
-
-func sortBranches(branches []zoekt.RepositoryBranch) {
-	sort.SliceStable(branches, func(i, j int) bool {
-		a, b := branches[i], branches[j]
-
-		if a.Name < b.Name {
-			return true
-		}
-
-		return a.Version < b.Version
-
-	})
 }
 
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
