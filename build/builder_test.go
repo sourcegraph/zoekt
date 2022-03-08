@@ -373,26 +373,54 @@ func TestOptions_FindAllShards(t *testing.T) {
 }
 
 func TestBuilder_DeltaShardsIndexState(t *testing.T) {
-	for _, test := range []struct {
-		name          string
+	for i, test := range []struct {
 		oldBranches   []zoekt.RepositoryBranch
 		newBranches   []zoekt.RepositoryBranch
 		expectedState IndexState
 	}{
 		{
-			name:          "should report only a branch-version difference if only the version changed",
 			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
 			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v2"}},
 			expectedState: IndexStateBranchVersion,
 		},
 		{
-			name:          "should report a branch-set difference branches have been added or removed",
+			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			newBranches: []zoekt.RepositoryBranch{
+				{Name: "main", Version: "v2"},
+				{Name: "release", Version: "v1"},
+			},
+			expectedState: IndexStateBranchSet,
+		},
+		{
 			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
 			newBranches:   []zoekt.RepositoryBranch{{Name: "release", Version: "v1"}},
 			expectedState: IndexStateBranchSet,
 		},
+		{
+			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			newBranches:   []zoekt.RepositoryBranch{},
+			expectedState: IndexStateBranchSet,
+		},
+		{
+			oldBranches:   []zoekt.RepositoryBranch{},
+			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			expectedState: IndexStateBranchSet,
+		},
+		{
+			oldBranches:   []zoekt.RepositoryBranch{},
+			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			expectedState: IndexStateBranchSet,
+		},
+		{
+			oldBranches: []zoekt.RepositoryBranch{
+				{Name: "main", Version: "v1"},
+				{Name: "main", Version: "v2"},
+			},
+			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v3"}},
+			expectedState: IndexStateCorrupt,
+		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			indexDir := t.TempDir()
 
 			repositoryV1 := zoekt.Repository{

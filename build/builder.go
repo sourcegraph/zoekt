@@ -363,39 +363,28 @@ func (o *Options) IndexState() (IndexState, string) {
 		return IndexStateOption, fn
 	}
 
-	if o.IsDelta {
-		// TODO: Get rid of this guard once the delta shard behavior is the default
-		existingBranchNames := make(map[string]struct{}, len(repo.Branches))
+	if o.IsDelta { // TODO: Get rid of this guard once the delta shard behavior is the default
+		branches := make(map[string]string, len(repo.Branches))
 		for _, b := range repo.Branches {
-			existingBranchNames[b.Name] = struct{}{}
+			if _, ok := branches[b.Name]; ok { // Duplicate branch
+				return IndexStateCorrupt, fn
+			}
+			branches[b.Name] = b.Version
 		}
 
-		requestedBranchNames := make(map[string]struct{}, len(o.RepositoryDescription.Branches))
-		for _, b := range o.RepositoryDescription.Branches {
-			requestedBranchNames[b.Name] = struct{}{}
-		}
-
-		if diff := cmp.Diff(existingBranchNames, requestedBranchNames, cmpopts.EquateEmpty()); diff != "" {
+		if len(branches) != len(o.RepositoryDescription.Branches) {
 			return IndexStateBranchSet, fn
 		}
 
-		existingBranchSet := make(map[zoekt.RepositoryBranch]struct{}, len(repo.Branches))
-		for _, b := range repo.Branches {
-			existingBranchSet[b] = struct{}{}
-		}
-
-		requestedBranchSet := make(map[zoekt.RepositoryBranch]struct{}, len(o.RepositoryDescription.Branches))
 		for _, b := range o.RepositoryDescription.Branches {
-			requestedBranchSet[b] = struct{}{}
+			if version, ok := branches[b.Name]; !ok {
+				return IndexStateBranchSet, fn
+			} else if version != b.Version {
+				return IndexStateBranchVersion, fn
+			}
 		}
-
-		if !cmp.Equal(existingBranchSet, requestedBranchSet, cmpopts.EquateEmpty()) {
-			return IndexStateBranchVersion, fn
-		}
-	} else {
-		if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
-			return IndexStateContent, fn
-		}
+	} else if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
+		return IndexStateContent, fn
 	}
 
 	// We can mutate repo since it lives in the scope of this function call.
