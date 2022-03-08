@@ -604,7 +604,8 @@ func (b *Builder) Finish() error {
 				repository.FileTombstones[f] = struct{}{}
 			}
 
-			if compareBranches(repository.Branches, b.opts.RepositoryDescription.Branches) != IndexStateEqual {
+			if compareBranches(repository.Branches, b.opts.RepositoryDescription.Branches) == IndexStateBranchSet {
+				// NOTE: Should we be handling IndexStateBranchVersion and IndexStateCorrupt here too?
 				return deltaBranchSetError{
 					shardName: shard,
 					old:       repository.Branches,
