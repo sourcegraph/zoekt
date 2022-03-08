@@ -15,34 +15,6 @@ import (
 	"github.com/google/zoekt/build"
 )
 
-func debugFind() *ffcli.Command {
-	fs := flag.NewFlagSet("debug find", flag.ExitOnError)
-	debugFindIndex := fs.String("index", getEnvWithDefaultString("DATA_DIR", build.DefaultDir), "set index directory to use")
-
-	return &ffcli.Command{
-		Name:       "find",
-		ShortUsage: "find [flags] <repository name>",
-		ShortHelp:  "find a shard by repo name",
-		FlagSet:    fs,
-		Exec: func(ctx context.Context, args []string) error {
-			if len(args) == 0 {
-				return fmt.Errorf("missing repository name")
-			}
-			ia := indexArgs{
-				IndexOptions: IndexOptions{
-					Name: args[0],
-				},
-				IndexDir: *debugFindIndex,
-			}
-			bo := ia.BuildOptions()
-			for _, s := range bo.FindAllShards() {
-				fmt.Println(s)
-			}
-			return nil
-		},
-	}
-}
-
 func debugIndex() *ffcli.Command {
 	fs := flag.NewFlagSet("debug index", flag.ExitOnError)
 	conf := rootConfig{}
@@ -184,7 +156,6 @@ func debugCmd() *ffcli.Command {
 		ShortHelp:  "a set of commands for debugging and testing",
 		FlagSet:    fs,
 		Subcommands: []*ffcli.Command{
-			debugFind(),
 			debugIndex(),
 			debugList(),
 			debugListIndexed(),

@@ -56,9 +56,6 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-// TODO (stefan): make zoekt-git-index deterministic to compare the simple shards
-// byte by byte instead of by search results.
-
 // Merge 2 simple shards and then explode them.
 func TestExplode(t *testing.T) {
 	v16Shards, err := filepath.Glob("../../testdata/shards/repo*_v16.*.zoekt")
@@ -92,7 +89,6 @@ func TestExplode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	if len(cs) != 0 {
 		t.Fatalf("explode should have deleted the compound shard if it returned without error")
 	}
