@@ -292,6 +292,7 @@ func (t *substrMatchTree) prepare(doc uint32) {
 		fileStart = t.fileEndRunes[doc-1]
 	}
 
+	// enrich candidates with ctags information
 	var sections []DocumentSection
 	if len(t.sections) > 0 {
 		most := t.fileEndSymbol[len(t.fileEndSymbol)-1]
@@ -312,9 +313,9 @@ func (t *substrMatchTree) prepare(doc uint32) {
 	}
 
 	secIdx := 0
-	trimmed := t.current[:0]
-	for len(sections) > secIdx && len(t.current) > 0 {
-		start := fileStart + t.current[0].runeOffset
+	i := 0
+	for len(sections) > secIdx && len(t.current) > i {
+		start := fileStart + t.current[i].runeOffset
 		end := start + uint32(len(t.query.Pattern))
 		if start >= sections[secIdx].End {
 			secIdx++
@@ -322,21 +323,16 @@ func (t *substrMatchTree) prepare(doc uint32) {
 		}
 
 		if start < sections[secIdx].Start {
-			trimmed = append(trimmed, t.current[0])
-			t.current = t.current[1:]
+			i++
 			continue
 		}
 
 		if end <= sections[secIdx].End {
-			t.current[0].symbol = true
-			t.current[0].symbolIdx = uint32(secIdx)
+			t.current[i].symbol = true
+			t.current[i].symbolIdx = uint32(secIdx)
 		}
-
-		trimmed = append(trimmed, t.current[0])
-		t.current = t.current[1:]
+		i++
 	}
-	trimmed = append(trimmed, t.current...)
-	t.current = trimmed
 }
 
 func (t *branchQueryMatchTree) prepare(doc uint32) {
