@@ -39,8 +39,6 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar"
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/ctags"
 	"github.com/grafana/regexp"
@@ -365,24 +363,13 @@ func (o *Options) IndexState() (IndexState, string) {
 		return IndexStateOption, fn
 	}
 
-	sortBranches(o.RepositoryDescription.Branches)
-	sortBranches(repo.Branches)
-
-	if o.IsDelta {
-		// TODO: Get rid of this guard once the delta shard behavior is the default
-		ignoreVersionOption := cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version")
-
-		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches, ignoreVersionOption) {
-			return IndexStateBranchSet, fn
+	if o.IsDelta { // TODO: Get rid of this guard once the delta shard behavior is the default
+		state := compareBranches(repo.Branches, o.RepositoryDescription.Branches)
+		if state != IndexStateEqual {
+			return state, fn
 		}
-
-		if !cmp.Equal(repo.Branches, o.RepositoryDescription.Branches) {
-			return IndexStateBranchVersion, fn
-		}
-	} else {
-		if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
-			return IndexStateContent, fn
-		}
+	} else if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
+		return IndexStateContent, fn
 	}
 
 	// We can mutate repo since it lives in the scope of this function call.
@@ -618,18 +605,13 @@ func (b *Builder) Finish() error {
 				repository.FileTombstones[f] = struct{}{}
 			}
 
-			shardBranchNames := make(map[string]struct{}, len(repository.Branches))
-			for _, b := range repository.Branches {
-				shardBranchNames[b.Name] = struct{}{}
-			}
-
-			requestedBranchNames := make(map[string]struct{}, len(b.opts.RepositoryDescription.Branches))
-			for _, b := range b.opts.RepositoryDescription.Branches {
-				requestedBranchNames[b.Name] = struct{}{}
-			}
-
-			if diff := cmp.Diff(shardBranchNames, requestedBranchNames, cmpopts.IgnoreFields(zoekt.RepositoryBranch{}, "Version"), cmpopts.EquateEmpty()); diff != "" {
-				return deltaBranchSetError{shardName: shard, diff: diff}
+			if compareBranches(repository.Branches, b.opts.RepositoryDescription.Branches) == IndexStateBranchSet {
+				// NOTE: Should we be handling IndexStateBranchVersion and IndexStateCorrupt here too?
+				return deltaBranchSetError{
+					shardName: shard,
+					old:       repository.Branches,
+					new:       b.opts.RepositoryDescription.Branches,
+				}
 			}
 
 			repository.Branches = b.opts.RepositoryDescription.Branches
@@ -706,6 +688,30 @@ func (b *Builder) Finish() error {
 	}
 
 	return b.buildError
+}
+
+func compareBranches(a, b []zoekt.RepositoryBranch) IndexState {
+	set := make(map[string]string, len(a))
+	for _, branch := range a {
+		if _, ok := set[branch.Name]; ok { // Duplicate branch
+			return IndexStateCorrupt
+		}
+		set[branch.Name] = branch.Version
+	}
+
+	if len(set) != len(b) {
+		return IndexStateBranchSet
+	}
+
+	for _, branch := range b {
+		if version, ok := set[branch.Name]; !ok {
+			return IndexStateBranchSet
+		} else if version != branch.Version {
+			return IndexStateBranchVersion
+		}
+	}
+
+	return IndexStateEqual
 }
 
 func (b *Builder) flush() error {
@@ -871,18 +877,6 @@ func sortDocuments(todo []*zoekt.Document) {
 	}
 }
 
-func sortBranches(branches []zoekt.RepositoryBranch) {
-	sort.SliceStable(branches, func(i, j int) bool {
-		a, b := branches[i], branches[j]
-
-		if a.Name < b.Name {
-			return true
-		}
-
-		return a.Version < b.Version
-	})
-}
-
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
 	if b.opts.CTags != "" {
 		err := ctagsAddSymbols(todo, b.parser, b.opts.CTags)
@@ -961,11 +955,11 @@ func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard,
 
 type deltaBranchSetError struct {
 	shardName string
-	diff      string
+	old, new  []zoekt.RepositoryBranch
 }
 
 func (e deltaBranchSetError) Error() string {
-	return fmt.Sprintf("repository metadata in shard %q contains a different set of branch names than what was requested, which is unsupported in a delta shard build (-expected +actual): %s", e.shardName, e.diff)
+	return fmt.Sprintf("repository metadata in shard %q contains a different set of branch names than what was requested, which is unsupported in a delta shard build. old: %+v, new: %+v", e.shardName, e.old, e.new)
 }
 
 // umask holds the Umask of the current process
