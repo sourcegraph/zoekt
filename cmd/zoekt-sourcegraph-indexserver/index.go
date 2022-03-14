@@ -76,6 +76,10 @@ type indexArgs struct {
 	// DownloadLimitMBPS is the maximum MB/s to use when downloading the
 	// archive.
 	DownloadLimitMBPS string
+
+	// UseDelta is true if we want to use the new delta indexer. This should
+	// only be true for repositories we explicitly enable.
+	UseDelta bool
 }
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
@@ -237,6 +241,10 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		branches = append(branches, b.Name)
 	}
 	args = append(args, "-branches", strings.Join(branches, ","))
+
+	if o.UseDelta {
+		args = append(args, "-delta")
+	}
 
 	args = append(args, buildOptions.Args()...)
 	args = append(args, gitDir)

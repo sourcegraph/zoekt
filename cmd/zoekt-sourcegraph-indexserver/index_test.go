@@ -200,6 +200,41 @@ func TestIndex(t *testing.T) {
 				"-file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
 		},
+	}, {
+		name: "delta",
+		args: indexArgs{
+			Incremental:       true,
+			IndexDir:          "/data/index",
+			Parallelism:       4,
+			FileLimit:         123,
+			DownloadLimitMBPS: "1000",
+			UseDelta:          true,
+			IndexOptions: IndexOptions{
+				Name:       "test/repo",
+				CloneURL:   "http://api.test/.internal/git/test/repo",
+				LargeFiles: []string{"foo", "bar"},
+				Symbols:    true,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "HEAD", Version: "deadbeef"},
+					{Name: "dev", Version: "feebdaed"}, // ignored for archive
+				},
+			},
+		},
+		want: []string{
+			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef feebdaed",
+			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
+			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev " +
+				"-delta -file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
+				"$TMPDIR/test%2Frepo.git",
+		},
 	}}
 
 	for _, tc := range cases {
