@@ -736,6 +736,17 @@ func getEnvWithDefaultString(k string, defaultVal string) string {
 	return v
 }
 
+func getEnvWithDefaultEmptySet(k string) map[string]struct{} {
+	set := map[string]struct{}{}
+	for _, v := range strings.Split(os.Getenv(k), ",") {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			set[v] = struct{}{}
+		}
+	}
+	return set
+}
+
 func setCompoundShardCounter(indexDir string) {
 	fns, err := filepath.Glob(filepath.Join(indexDir, "compound-*.zoekt"))
 	if err != nil {
@@ -857,22 +868,9 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	indexingMetricsReposAllowlist := os.Getenv("INDEXING_METRICS_REPOS_ALLOWLIST")
-	if indexingMetricsReposAllowlist != "" {
-		var repos []string
-
-		for _, r := range strings.Split(indexingMetricsReposAllowlist, ",") {
-			r = strings.TrimSpace(r)
-			if r != "" {
-				repos = append(repos, r)
-			}
-		}
-
-		for _, r := range repos {
-			reposWithSeparateIndexingMetrics[r] = struct{}{}
-		}
-
-		debug.Printf("capturing separate indexing metrics for: %s", repos)
+	reposWithSeparateIndexingMetrics = getEnvWithDefaultEmptySet("INDEXING_METRICS_REPOS_ALLOWLIST")
+	if len(reposWithSeparateIndexingMetrics) > 0 {
+		debug.Printf("capturing separate indexing metrics for: %v", reposWithSeparateIndexingMetrics)
 	}
 
 	var sg Sourcegraph
