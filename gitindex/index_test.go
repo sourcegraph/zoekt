@@ -181,7 +181,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					expectedDocuments: []zoekt.Document{fruitV1, fruitV2, fruitV3},
 				},
 				{
-					name: "delete v1, replace v3 with v4",
+					name: "replace fruits v3 with v4 on 'dev', delete fruits on 'main'",
 					addedDocuments: branchToDocumentMap{
 						"dev": []zoekt.Document{fruitV4},
 					},
@@ -198,6 +198,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 			},
 		},
 	} {
+		test := test
+
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -299,8 +301,14 @@ func TestIndexDeltaBasic(t *testing.T) {
 						sort.Slice(docs, func(i, j int) bool {
 							a, b := docs[i], docs[j]
 
+							// first compare names, then fallback to contents if the names are equal
+
 							if a.Name < b.Name {
 								return true
+							}
+
+							if a.Name > b.Name {
+								return false
 							}
 
 							return bytes.Compare(a.Content, b.Content) < 0
