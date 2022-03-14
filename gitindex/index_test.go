@@ -202,9 +202,11 @@ func TestIndexDeltaBasic(t *testing.T) {
 			t.Parallel()
 
 			indexDir := t.TempDir()
-
 			repositoryDir := t.TempDir()
+
 			runScript(t, repositoryDir, "git init")
+			runScript(t, repositoryDir, fmt.Sprintf("git config user.email %q", "you@example.com"))
+			runScript(t, repositoryDir, fmt.Sprintf("git config user.name %q", "Your Name"))
 
 			for _, b := range test.branches {
 				runScript(t, repositoryDir, fmt.Sprintf("git checkout -b %q", b))
