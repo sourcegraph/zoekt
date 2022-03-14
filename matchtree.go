@@ -227,13 +227,7 @@ type symbolSubstrMatchTree struct {
 	*substrMatchTree
 
 	patternSize uint32
-	//fileEndRunes  []uint32
-	//fileEndSymbol []uint32
-	//
-	doc uint32
-	//sections []DocumentSection
-
-	//secID uint32
+	doc         uint32
 }
 
 func (t *symbolSubstrMatchTree) prepare(doc uint32) {
