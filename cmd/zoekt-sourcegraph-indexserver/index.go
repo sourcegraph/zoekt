@@ -108,6 +108,7 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		LargeFiles:       o.LargeFiles,
 		CTagsMustSucceed: o.Symbols,
 		DisableCTags:     !o.Symbols,
+		IsDelta:          o.UseDelta,
 	}
 }
 
@@ -164,30 +165,145 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		return err
 	}
 
-	fetchStart := time.Now()
+	var fetchCommits = func(commits []string) error {
+		fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
+		fetchArgs = append(fetchArgs, commits...)
+
+		cmd = exec.CommandContext(ctx, "git", fetchArgs...)
+		cmd.Stdin = &bytes.Buffer{}
+
+		return runCmd(cmd)
+	}
 
 	// We shallow fetch each commit specified in zoekt.Branches. This requires
 	// the server to have configured both uploadpack.allowAnySHA1InWant and
 	// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
-	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
-	var commits []string
+	var branchCommits []string
 	for _, b := range o.Branches {
-		commits = append(commits, b.Version)
+		branchCommits = append(branchCommits, b.Version)
 	}
-	fetchArgs = append(fetchArgs, commits...)
 
-	cmd = exec.CommandContext(ctx, "git", fetchArgs...)
-	cmd.Stdin = &bytes.Buffer{}
+	commitCount := 0
+	commitCount += len(branchCommits)
 
-	err = runCmd(cmd)
+	fetchStart := time.Now()
+	err = fetchCommits(branchCommits)
 	fetchDuration := time.Since(fetchStart)
+
 	if err != nil {
 		metricFetchDuration.WithLabelValues("false", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
 		return err
 	}
 
+	if o.UseDelta {
+		repositoryID := buildOptions.RepositoryDescription.ID
+
+		shards := buildOptions.FindAllShards()
+		if len(shards) == 0 {
+			// TODO @ggilmore: This is an example of where we could try a non-delta build immediately. Should we special case this error to allow for
+			// errors.As inspection, or should we rely on IndexState() eventually telling us that we need to fallback?
+			return &deltaBuildError{
+				repositoryName: o.Name,
+				repositoryID:   repositoryID,
+				err:            fmt.Errorf("no prior shards exist"),
+			}
+		}
+
+		shard := shards[0]
+		repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+		if err != nil {
+			// TODO @ggilmore: This is an example of where we could try a non-delta build immediately. Should we special case this error to allow for
+			// errors.As inspection, or should we rely on IndexState() eventually telling us that we need to fallback?
+			return &deltaBuildError{
+				repositoryName: o.Name,
+				repositoryID:   repositoryID,
+				err:            fmt.Errorf("loading repository metadata from shard %q: %w", shard, err),
+			}
+		}
+
+		var existingRepository *zoekt.Repository
+
+		for _, r := range repositories {
+			if r.ID == repositoryID {
+				existingRepository = r
+				break
+			}
+		}
+
+		if existingRepository == nil {
+			// TODO @ggilmore: This is an example of where we could try a non-delta build immediately. Should we special case this error to allow for
+			// errors.As inspection, or should we rely on IndexState() eventually telling us that we need to fallback?
+			return &deltaBuildError{
+				repositoryName: o.Name,
+				repositoryID:   repositoryID,
+				err:            fmt.Errorf("shard %q doesn't contain repository", shard),
+			}
+		}
+
+		// check delta build invariant - the branch names need to be the same
+		switch build.CompareBranches(existingRepository.Branches, o.Branches) {
+		case build.IndexStateBranchSet:
+			var existingBranchNames []string
+			for _, b := range existingRepository.Branches {
+				existingBranchNames = append(existingBranchNames, b.Name)
+			}
+
+			var providedBranchNames []string
+			for _, b := range o.Branches {
+				providedBranchNames = append(providedBranchNames, b.Name)
+			}
+
+			// TODO @ggilmore: This is an example of where we could try a non-delta build immediately. Should we special case this error to allow for
+			// errors.As inspection, or should we rely on IndexState() eventually telling us that we need to fallback?
+			return &deltaBuildError{
+				repositoryName: o.Name,
+				repositoryID:   repositoryID,
+				err:            fmt.Errorf("set of branch names differs between existing repository (%s) and provided options (%s) (shard %q)", strings.Join(existingBranchNames, ", "), strings.Join(providedBranchNames, ", "), shard),
+			}
+
+		case build.IndexStateCorrupt:
+			return &deltaBuildError{
+				repositoryName: o.Name,
+				repositoryID:   repositoryID,
+				err:            fmt.Errorf("either set of branches in existing repository (%s) and or in provided options (%s) (shard %q) is invalid", existingRepository.Branches, o.Branches, shard),
+			}
+		}
+
+		var priorCommits []string
+		for _, b := range o.Branches {
+			priorCommits = append(priorCommits, b.Version)
+		}
+
+		if len(priorCommits) > 0 {
+			start := time.Now()
+			err := fetchCommits(priorCommits)
+
+			fetchDuration += time.Since(start)
+
+			if err != nil {
+				// TODO @ggilmore: This is an example of where we must try a non delta build immediately. IndexState() will never run into this situation. Should we try a normal build within this same function
+				// invocation, or should we bubble this up to the caller?
+				//
+				// Think about this more later. a "normal" build could be accomplished by just setting UseDelta = false and not returning?
+				//
+
+				// TODO @ggilmore: If we continue with a normal build here, is it right to still capture a "failed" fetch metric?
+				metricFetchDuration.WithLabelValues("false", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
+
+				return &deltaBuildError{
+					repositoryName: o.Name,
+					repositoryID:   repositoryID,
+					err:            fmt.Errorf("fetching prior commits: %w", err),
+				}
+			}
+
+			// we should only update the total commit count if we're proceeding with a delta build
+			commitCount += len(priorCommits)
+		}
+	}
+
 	metricFetchDuration.WithLabelValues("true", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
-	debug.Printf("fetched git data for %q (%d commit(s)) in %s", o.Name, len(commits), fetchDuration)
+	debug.Printf("fetched git data for %q (%d commit(s)) in %s", o.Name, commitCount, fetchDuration)
 
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
@@ -261,6 +377,21 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	}
 
 	return nil
+}
+
+type deltaBuildError struct {
+	repositoryName string
+	repositoryID   uint32
+
+	err error
+}
+
+func (e *deltaBuildError) Error() string {
+	return fmt.Sprintf("preparing delta build for %q (ID %d): %s", e.repositoryName, e.repositoryID, e.err.Error())
+}
+
+func (e *deltaBuildError) Unwrap() error {
+	return e.err
 }
 
 func tmpGitDir(name string) (string, error) {

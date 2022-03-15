@@ -364,7 +364,7 @@ func (o *Options) IndexState() (IndexState, string) {
 	}
 
 	if o.IsDelta { // TODO: Get rid of this guard once the delta shard behavior is the default
-		state := compareBranches(repo.Branches, o.RepositoryDescription.Branches)
+		state := CompareBranches(repo.Branches, o.RepositoryDescription.Branches)
 		if state != IndexStateEqual {
 			return state, fn
 		}
@@ -605,7 +605,7 @@ func (b *Builder) Finish() error {
 				repository.FileTombstones[f] = struct{}{}
 			}
 
-			if compareBranches(repository.Branches, b.opts.RepositoryDescription.Branches) == IndexStateBranchSet {
+			if CompareBranches(repository.Branches, b.opts.RepositoryDescription.Branches) == IndexStateBranchSet {
 				// NOTE: Should we be handling IndexStateBranchVersion and IndexStateCorrupt here too?
 				return deltaBranchSetError{
 					shardName: shard,
@@ -690,7 +690,15 @@ func (b *Builder) Finish() error {
 	return b.buildError
 }
 
-func compareBranches(a, b []zoekt.RepositoryBranch) IndexState {
+// CompareBranches returns an IndexState comparing the two zoekt.RepositoryBranch
+// slices.
+//
+// The result will be IndexStateEqual if both slices specify the same set
+// of branch names and versions, IndexStateBranchSet if either slice specifies a different
+// set of branch names than the other, IndexStateBranchVersion if both slices specify the same set of
+// branch names but have different accompanying versions, or IndexStateCorrupt if one of the slices contains
+// an "invalid" branch set (such as duplicate branch names).
+func CompareBranches(a, b []zoekt.RepositoryBranch) IndexState {
 	set := make(map[string]string, len(a))
 	for _, branch := range a {
 		if _, ok := set[branch.Name]; ok { // Duplicate branch

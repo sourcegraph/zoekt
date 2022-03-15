@@ -165,6 +165,10 @@ type Server struct {
 
 	// If true, shard merging is enabled.
 	shardMerging bool
+
+	// deltaBuildRepositoriesAllowList is an allowlist for repositories that we
+	// use delta-builds for instead of normal builds
+	deltaBuildRepositoriesAllowList map[string]struct{}
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -465,29 +469,74 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		return indexStateEmpty, createEmptyShard(args)
 	}
 
+	repositoryName := args.BuildOptions().RepositoryDescription.Name
+	if _, ok := s.deltaBuildRepositoriesAllowList[repositoryName]; ok {
+		repositoryID := args.BuildOptions().RepositoryDescription.ID
+		debug.Printf("Server.Index: marking %q (ID %d) for delta build", repositoryName, repositoryID)
+
+		args.UseDelta = true
+	}
+
 	reason := "forced"
+
 	if args.Incremental {
 		bo := args.BuildOptions()
 		bo.SetDefaults()
 		incrementalState, fn := bo.IndexState()
 		reason = string(incrementalState)
 		metricIndexIncrementalIndexState.WithLabelValues(string(incrementalState)).Inc()
-		switch incrementalState {
-		case build.IndexStateEqual:
-			debug.Printf("%s index already up to date. Shard=%s", args.String(), fn)
-			return indexStateNoop, nil
 
-		case build.IndexStateMeta:
-			log.Printf("updating index.meta %s", args.String())
+		if !args.UseDelta {
+			switch incrementalState {
+			case build.IndexStateEqual:
+				debug.Printf("%s index already up to date. Shard=%s", args.String(), fn)
+				return indexStateNoop, nil
 
-			if err := mergeMeta(bo); err != nil {
-				log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
-			} else {
-				return indexStateSuccessMeta, nil
+			case build.IndexStateMeta:
+				log.Printf("updating index.meta %s", args.String())
+
+				if err := mergeMeta(bo); err != nil {
+					log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
+				} else {
+					return indexStateSuccessMeta, nil
+				}
+
+			case build.IndexStateCorrupt:
+				log.Printf("falling back to full update: corrupt index: %s", args.String())
+			}
+		} else {
+			if incrementalState == build.IndexStateEqual {
+				debug.Printf("%s index already up to date. Shard=%s", args.String(), fn)
+				return indexStateNoop, nil
 			}
 
-		case build.IndexStateCorrupt:
-			log.Printf("falling back to full update: corrupt index: %s", args.String())
+			// TODO @ggilmore: This switch statement flow is absolutely horrendous. Revisit this.
+			fallbackReason := reason
+			switch incrementalState {
+
+			case build.IndexStateEqual:
+				debug.Printf("%s index already up to date. Shard=%s", args.String(), fn)
+				return indexStateNoop, nil
+
+			case build.IndexStateMeta:
+				log.Printf("updating index.meta %s", args.String())
+
+				if err := mergeMeta(bo); err != nil {
+					fallbackReason = fmt.Sprintf("failed to update index.meta %s: %s", args.String(), err)
+				} else {
+					return indexStateSuccessMeta, nil
+				}
+
+			case build.IndexStateBranchSet:
+				fallbackReason = fmt.Sprintf("set of branch names has changed %s: %s", args.String(), err)
+			case build.IndexStateCorrupt:
+				fallbackReason = fmt.Sprintf("corrupt index: %s", args.String())
+			}
+
+			if incrementalState != build.IndexStateBranchVersion {
+				log.Printf("falling back to non-delta build update: %s", fallbackReason)
+				args.UseDelta = false
+			}
 		}
 	}
 
@@ -870,7 +919,12 @@ func newServer(conf rootConfig) (*Server, error) {
 
 	reposWithSeparateIndexingMetrics = getEnvWithDefaultEmptySet("INDEXING_METRICS_REPOS_ALLOWLIST")
 	if len(reposWithSeparateIndexingMetrics) > 0 {
-		debug.Printf("capturing separate indexing metrics for: %v", reposWithSeparateIndexingMetrics)
+		var repos []string
+		for r := range reposWithSeparateIndexingMetrics {
+			repos = append(repos, r)
+		}
+
+		debug.Printf("capturing separate indexing metrics for: %s", strings.Join(repos, ", "))
 	}
 
 	var sg Sourcegraph
