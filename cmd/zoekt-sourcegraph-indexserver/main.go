@@ -509,20 +509,6 @@ func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 
 		// 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
 		FileLimit: 1 << 20,
-
-		// We are downloading archives from within the same network from
-		// another Sourcegraph service (gitserver). This can end up being
-		// so fast that we harm gitserver's network connectivity and our
-		// own. In the case of zoekt-indexserver and gitserver running on
-		// the same host machine, we can even reach up to ~100 Gbps and
-		// effectively DoS the Docker network, temporarily disrupting other
-		// containers running on the host.
-		//
-		// Google Compute Engine has a network bandwidth of about 1.64 Gbps
-		// between nodes, and AWS varies widely depending on instance type.
-		// We play it safe and default to 1 Gbps here (~119 MiB/s), which
-		// means we can fetch a 1 GiB archive in ~8.5 seconds.
-		DownloadLimitMBPS: "1000", // 1 Gbps
 	}
 }
 

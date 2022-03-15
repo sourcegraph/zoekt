@@ -33,11 +33,10 @@ func TestServer_defaultArgs(t *testing.T) {
 		IndexOptions: IndexOptions{
 			Name: "testName",
 		},
-		IndexDir:          "/testdata/index",
-		Parallelism:       6,
-		Incremental:       true,
-		FileLimit:         1 << 20,
-		DownloadLimitMBPS: "1000",
+		IndexDir:    "/testdata/index",
+		Parallelism: 6,
+		Incremental: true,
+		FileLimit:   1 << 20,
 	}
 	got := s.indexArgs(IndexOptions{Name: "testName"})
 	if !cmp.Equal(got, want) {

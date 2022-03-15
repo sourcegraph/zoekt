@@ -72,10 +72,6 @@ type indexArgs struct {
 
 	// FileLimit is the maximum size of a file
 	FileLimit int
-
-	// DownloadLimitMBPS is the maximum MB/s to use when downloading the
-	// archive.
-	DownloadLimitMBPS string
 }
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
