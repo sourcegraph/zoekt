@@ -217,6 +217,17 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 			finalMatch.After = getLines(data, p.newlines(), num+1, num+1+numContextLines)
 		}
 
+		secs := p.docSections()
+
+		addSymbolInfo := func(f *LineFragmentMatch, symbolIdx uint32) {
+			start := p.id.fileEndSymbol[p.idx]
+			f.SymbolInfo = p.id.symbols.data(start + symbolIdx)
+			if f.SymbolInfo != nil {
+				sec := secs[symbolIdx]
+				f.SymbolInfo.Sym = string(data[sec.Start:sec.End])
+			}
+		}
+
 		for _, m := range lineCands {
 			fragment := LineFragmentMatch{
 				Offset:      m.byteOffset,
@@ -224,11 +235,12 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 				MatchLength: int(m.byteMatchSz),
 			}
 			if m.symbol {
-				start := p.id.fileEndSymbol[p.idx]
-				fragment.SymbolInfo = p.id.symbols.data(start + m.symbolIdx)
-				if fragment.SymbolInfo != nil {
-					sec := p.docSections()[m.symbolIdx]
-					fragment.SymbolInfo.Sym = string(data[sec.Start:sec.End])
+				addSymbolInfo(&fragment, m.symbolIdx)
+			} else {
+				if secIdx, ok := findSection(secs, fragment.Offset, uint32(fragment.MatchLength)); ok {
+					m.symbol = true
+					m.symbolIdx = uint32(secIdx)
+					addSymbolInfo(&fragment, m.symbolIdx)
 				}
 			}
 
@@ -277,19 +289,21 @@ const (
 	scoreLineOrderFactor    = 1.0
 )
 
-func findSection(secs []DocumentSection, off, sz uint32) *DocumentSection {
+// findSection checks whether a section defined by offset and size lies within
+// one of the sections in secs.
+func findSection(secs []DocumentSection, off, sz uint32) (int, bool) {
 	j := sort.Search(len(secs), func(i int) bool {
 		return secs[i].End >= off+sz
 	})
 
 	if j == len(secs) {
-		return nil
+		return 0, false
 	}
 
 	if secs[j].Start <= off && off+sz <= secs[j].End {
-		return &secs[j]
+		return j, true
 	}
-	return nil
+	return 0, false
 }
 
 func matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
@@ -307,8 +321,8 @@ func matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
 			score = scorePartialWordMatch
 		}
 
-		sec := findSection(secs, f.Offset, uint32(f.MatchLength))
-		if sec != nil {
+		if secIdx, ok := findSection(secs, f.Offset, uint32(f.MatchLength)); ok {
+			sec := secs[secIdx]
 			startMatch := sec.Start == f.Offset
 			endMatch := sec.End == f.Offset+uint32(f.MatchLength)
 			if startMatch && endMatch {
