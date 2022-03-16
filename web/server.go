@@ -203,7 +203,7 @@ func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 		debugScore = true
 		fmt.Println("debug for scores enabled")
 	}
-	result, err := s.serveSearchErr(r, serveSearchErrOpts{score: debugScore})
+	result, err := s.serveSearchErr(r, serveSearchErrOpts{debugScore: debugScore})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusTeapot)
 		return
@@ -232,7 +232,7 @@ func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 type serveSearchErrOpts struct {
 	// If set, searches will gather debug information for scoring and return it as
 	// part of ApiSearchResult.
-	score bool
+	debugScore bool
 }
 
 func (s *Server) serveSearchErr(r *http.Request, opts serveSearchErrOpts) (*ApiSearchResult, error) {
@@ -318,7 +318,7 @@ func (s *Server) serveSearchErr(r *http.Request, opts serveSearchErrOpts) (*ApiS
 		sOpts.TotalMaxImportantMatch = n
 	}
 	sOpts.MaxDocDisplayCount = num
-	sOpts.DebugScore = opts.score
+	sOpts.DebugScore = opts.debugScore
 
 	result, err := s.Searcher.Search(ctx, q, &sOpts)
 	if err != nil {
