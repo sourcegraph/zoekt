@@ -92,11 +92,13 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 	seenFiles := map[string]string{}
 	for _, f := range result.Files {
 		fMatch := FileMatch{
-			FileName: f.FileName,
-			Repo:     f.Repository,
-			ResultID: f.Repository + ":" + f.FileName,
-			Branches: f.Branches,
-			Language: f.Language,
+			FileName:   f.FileName,
+			Repo:       f.Repository,
+			ResultID:   f.Repository + ":" + f.FileName,
+			Branches:   f.Branches,
+			Language:   f.Language,
+			Score:      f.Score,
+			ScoreDebug: f.Debug,
 		}
 
 		if dup, ok := seenFiles[string(f.Checksum)]; ok {
@@ -122,6 +124,7 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 				FileName: f.FileName,
 				LineNum:  m.LineNumber,
 				URL:      fMatch.URL + fragment,
+				Score:    m.Score,
 			}
 
 			md.Before = string(m.Before)

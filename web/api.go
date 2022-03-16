@@ -33,6 +33,13 @@ type LastInput struct {
 	AutoFocus bool
 }
 
+// resultInputDebug is a helper type that lets us send additional information to
+// the templates we render without polluting the exported types.
+type resultInputDebug struct {
+	*ResultInput
+	ShowScoreDebug bool `json:"-"`
+}
+
 // Result holds the data provided to the search results template.
 type ResultInput struct {
 	Last        LastInput
@@ -56,6 +63,10 @@ type FileMatch struct {
 	Branches []string
 	Matches  []Match
 	URL      string
+
+	// Don't expose to caller of JSON API
+	Score      float64 `json:"-"`
+	ScoreDebug string  `json:"-"`
 }
 
 // Match holds the per line data provided to the search results template
@@ -67,6 +78,9 @@ type Match struct {
 	Fragments []Fragment
 	Before    string `json:",omitempty"`
 	After     string `json:",omitempty"`
+
+	// Don't expose to caller of JSON API
+	Score float64 `json:"-"`
 }
 
 // Fragment holds data of a single contiguous match within in a line

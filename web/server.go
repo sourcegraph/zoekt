@@ -197,13 +197,18 @@ func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
-	result, err := s.serveSearchErr(r)
+	qvals := r.URL.Query()
+	debugScore := false
+	if qvals.Get("debug") == "1" {
+		debugScore = true
+		fmt.Println("debug for scores enabled")
+	}
+	result, err := s.serveSearchErr(r, serveSearchErrOpts{score: debugScore})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusTeapot)
 		return
 	}
 
-	qvals := r.URL.Query()
 	if qvals.Get("format") == "json" {
 		w.Header().Add("Content-Type", "application/json")
 		encoder := json.NewEncoder(w)
@@ -215,7 +220,7 @@ func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 	if result.Repos != nil {
 		err = s.repolist.Execute(&buf, &result.Repos)
 	} else if result.Result != nil {
-		err = s.result.Execute(&buf, &result.Result)
+		err = s.result.Execute(&buf, &resultInputDebug{ResultInput: result.Result, ShowScoreDebug: debugScore})
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusTeapot)
@@ -224,7 +229,13 @@ func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
-func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
+type serveSearchErrOpts struct {
+	// If set, searches will gather debug information for scoring and return it as
+	// part of ApiSearchResult.
+	score bool
+}
+
+func (s *Server) serveSearchErr(r *http.Request, opts serveSearchErrOpts) (*ApiSearchResult, error) {
 	qvals := r.URL.Query()
 	queryStr := qvals.Get("q")
 	if queryStr == "" {
@@ -307,6 +318,7 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 		sOpts.TotalMaxImportantMatch = n
 	}
 	sOpts.MaxDocDisplayCount = num
+	sOpts.DebugScore = opts.score
 
 	result, err := s.Searcher.Search(ctx, q, &sOpts)
 	if err != nil {

@@ -543,6 +543,9 @@ type SearchOptions struct {
 	// a command-line flag
 	Trace bool
 
+	// If set, the search results will contain debug information for scoring.
+	DebugScore bool
+
 	// SpanContext is the opentracing span context, if it exists, from the zoekt client
 	SpanContext map[string]string
 }
