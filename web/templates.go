@@ -218,7 +218,7 @@ document.onkeydown=function(e){
            href="search?q={{.Last.Query}}&num={{More .Last.Num}}">show more</a>).
       {{else}}.{{end}}
     </h5>
-	{{$showScoreDebug := .ShowScoreDebug}}
+    {{$showScoreDebug := .ShowScoreDebug}}
     {{range .FileMatches}}
     <table class="table table-hover table-condensed">
       <thead>
