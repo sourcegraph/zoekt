@@ -330,7 +330,7 @@ func runScript(t *testing.T, cwd string, script string) {
 		t.Fatalf("ensuring path %q exists: %s", cwd, err)
 	}
 
-	cmd := exec.Command("/bin/sh", "-euxc", script)
+	cmd := exec.Command("sh", "-euxc", script)
 	cmd.Dir = cwd
 
 	if out, err := cmd.CombinedOutput(); err != nil {
