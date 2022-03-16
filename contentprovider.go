@@ -31,13 +31,17 @@ type contentProvider struct {
 
 	// mutable
 	err      error
+	fileSize uint32
 	idx      uint32
 	_data    []byte
 	_nl      []uint32
 	_nlBuf   []uint32
-	_sects   []DocumentSection
-	_sectBuf []DocumentSection
-	fileSize uint32
+
+	// docSectionsDone acts like a sync.Once. However since we don't have concurrent
+	// access to the contentProvider, we can work with just a bool.
+	docSectionsDone bool
+	_sects          []DocumentSection
+	_sectBuf        []DocumentSection
 }
 
 // setDocument skips to the given document.
@@ -50,13 +54,15 @@ func (p *contentProvider) setDocument(docID uint32) {
 	p._nl = nil
 	p._sects = nil
 	p._data = nil
+	p.docSectionsDone = false
 }
 
 func (p *contentProvider) docSections() []DocumentSection {
-	if p._sects == nil {
+	if !p.docSectionsDone {
 		var sz uint32
 		p._sects, sz, p.err = p.id.readDocSections(p.idx, p._sectBuf)
 		p.stats.ContentBytesLoaded += int64(sz)
+		p.docSectionsDone = true
 		p._sectBuf = p._sects
 	}
 	return p._sects
@@ -220,6 +226,8 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 		secs := p.docSections()
 
 		addSymbolInfo := func(f *LineFragmentMatch, symbolIdx uint32) {
+			f.symbolSectionIdx = &symbolIdx
+
 			start := p.id.fileEndSymbol[p.idx]
 			f.SymbolInfo = p.id.symbols.data(start + symbolIdx)
 			if f.SymbolInfo != nil {
@@ -234,14 +242,12 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 				LineOffset:  int(m.byteOffset) - lineStart,
 				MatchLength: int(m.byteMatchSz),
 			}
+			// for symbolSubstrMatchTree and symbolRegexpMatchTree, m.symbol is true and
+			// m.symbolIdx is already set .
 			if m.symbol {
 				addSymbolInfo(&fragment, m.symbolIdx)
-			} else {
-				if secIdx, ok := findSection(secs, fragment.Offset, uint32(fragment.MatchLength)); ok {
-					m.symbol = true
-					m.symbolIdx = uint32(secIdx)
-					addSymbolInfo(&fragment, m.symbolIdx)
-				}
+			} else if secIdx, ok := findSection(secs, fragment.Offset, uint32(fragment.MatchLength)); ok {
+				addSymbolInfo(&fragment, uint32(secIdx))
 			}
 
 			finalMatch.LineFragments = append(finalMatch.LineFragments, fragment)
@@ -321,8 +327,8 @@ func matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
 			score = scorePartialWordMatch
 		}
 
-		if secIdx, ok := findSection(secs, f.Offset, uint32(f.MatchLength)); ok {
-			sec := secs[secIdx]
+		if f.symbolSectionIdx != nil {
+			sec := secs[*f.symbolSectionIdx]
 			startMatch := sec.Start == f.Offset
 			endMatch := sec.End == f.Offset+uint32(f.MatchLength)
 			if startMatch && endMatch {
