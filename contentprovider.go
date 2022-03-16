@@ -58,6 +58,8 @@ func (p *contentProvider) setDocument(docID uint32) {
 }
 
 func (p *contentProvider) docSections() []DocumentSection {
+	// It is not sufficient to test for p._sects == nil, because for documents
+	// without symbols p._sects = nil, and we always ignore the cache.
 	if !p.docSectionsDone {
 		var sz uint32
 		p._sects, sz, p.err = p.id.readDocSections(p.idx, p._sectBuf)
