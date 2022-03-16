@@ -351,11 +351,15 @@ func matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
 	return maxScore
 }
 
+// scoreKind boosts a match based on the combination of language and kind. The
+// language string comes from go-enry, the kind string from ctags.
 func scoreKind(language string, kind string) float64 {
+	// Refer to universal-ctags --list-kinds=<language> to learn about the mappings
+	// for a language.
 	switch language {
 	case "Java":
 		switch kind {
-		case "c":
+		case "c": // classes
 			return scoreKindMatch
 		}
 	}
