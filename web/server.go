@@ -198,11 +198,12 @@ func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 	qvals := r.URL.Query()
+
 	debugScore := false
 	if qvals.Get("debug") == "1" {
 		debugScore = true
-		fmt.Println("debug for scores enabled")
 	}
+
 	result, err := s.serveSearchErr(r, serveSearchErrOpts{debugScore: debugScore})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusTeapot)
