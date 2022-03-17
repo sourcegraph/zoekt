@@ -270,7 +270,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		}
 
 		var priorCommits []string
-		for _, b := range o.Branches {
+		for _, b := range existingRepository.Branches {
 			priorCommits = append(priorCommits, b.Version)
 		}
 

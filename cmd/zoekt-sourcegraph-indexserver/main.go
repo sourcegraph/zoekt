@@ -469,7 +469,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		return indexStateEmpty, createEmptyShard(args)
 	}
 
-	repositoryName := args.BuildOptions().RepositoryDescription.Name
+	repositoryName := args.Name
 	if _, ok := s.deltaBuildRepositoriesAllowList[repositoryName]; ok {
 		repositoryID := args.BuildOptions().RepositoryDescription.ID
 		debug.Printf("Server.Index: marking %q (ID %d) for delta build", repositoryName, repositoryID)
@@ -927,6 +927,16 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug.Printf("capturing separate indexing metrics for: %s", strings.Join(repos, ", "))
 	}
 
+	deltaBuildRepositoriesAllowList := getEnvWithDefaultEmptySet("DELTA_BUILD_REPOS_ALLOWLIST")
+	if len(deltaBuildRepositoriesAllowList) > 0 {
+		var repos []string
+		for r := range deltaBuildRepositoriesAllowList {
+			repos = append(repos, r)
+		}
+
+		debug.Printf("using delta shard builds for: %s", strings.Join(repos, ", "))
+	}
+
 	var sg Sourcegraph
 	if rootURL.IsAbs() {
 		var batchSize int
@@ -956,16 +966,18 @@ func newServer(conf rootConfig) (*Server, error) {
 	if cpuCount < 1 {
 		cpuCount = 1
 	}
+
 	return &Server{
-		Sourcegraph:     sg,
-		IndexDir:        conf.index,
-		Interval:        conf.interval,
-		VacuumInterval:  conf.vacuumInterval,
-		MergeInterval:   conf.mergeInterval,
-		CPUCount:        cpuCount,
-		TargetSizeBytes: conf.targetSize * 1024 * 1024,
-		minSizeBytes:    conf.minSize * 1024 * 1024,
-		shardMerging:    zoekt.ShardMergingEnabled(),
+		Sourcegraph:                     sg,
+		IndexDir:                        conf.index,
+		Interval:                        conf.interval,
+		VacuumInterval:                  conf.vacuumInterval,
+		MergeInterval:                   conf.mergeInterval,
+		CPUCount:                        cpuCount,
+		TargetSizeBytes:                 conf.targetSize * 1024 * 1024,
+		minSizeBytes:                    conf.minSize * 1024 * 1024,
+		shardMerging:                    zoekt.ShardMergingEnabled(),
+		deltaBuildRepositoriesAllowList: deltaBuildRepositoriesAllowList,
 	}, err
 }
 
