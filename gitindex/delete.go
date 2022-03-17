@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // DeleteRepos deletes stale repos under a specific path in disk. The `names`
@@ -19,7 +20,9 @@ func DeleteRepos(baseDir string, urlPrefix *url.URL, names map[string]struct{}, 
 	var toDelete []string
 	for _, p := range paths {
 		_, exists := names[p]
-		if filter.Include(filepath.Base(p)) && !exists {
+		repoName := strings.Replace(p, filepath.Join(urlPrefix.Host, urlPrefix.Path), "", 1)
+		repoName = strings.TrimPrefix(repoName, "/")
+		if filter.Include(repoName) && !exists {
 			toDelete = append(toDelete, p)
 		}
 	}

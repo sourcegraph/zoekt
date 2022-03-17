@@ -169,11 +169,10 @@ func TestIndex(t *testing.T) {
 	}, {
 		name: "all",
 		args: indexArgs{
-			Incremental:       true,
-			IndexDir:          "/data/index",
-			Parallelism:       4,
-			FileLimit:         123,
-			DownloadLimitMBPS: "1000",
+			Incremental: true,
+			IndexDir:    "/data/index",
+			Parallelism: 4,
+			FileLimit:   123,
 			IndexOptions: IndexOptions{
 				Name:       "test/repo",
 				CloneURL:   "http://api.test/.internal/git/test/repo",

@@ -58,6 +58,8 @@ func TestListRepos(t *testing.T) {
 		"gerrit.googlesource.com/adir.git",
 		"gerrit.googlesource.com/bdir.git",
 		"gerrit.googlesource.com/sub/bdir.git",
+		"gerrit.googlesource.com/team/scope/repoa.git",
+		"gerrit.googlesource.com/team/scope/repob.git",
 	}
 	sort.Strings(rs)
 

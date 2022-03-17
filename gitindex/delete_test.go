@@ -36,11 +36,13 @@ func TestDeleteRepos(t *testing.T) {
 	}
 
 	wantBefore := map[string]struct{}{
-		"gerrit.googlesource.com/bdir.git":     {},
-		"gerrit.googlesource.com/sub/bdir.git": {},
-		"adir/.git":                            {},
-		"bdir/.git":                            {},
-		"gerrit.googlesource.com/adir.git":     {},
+		"adir/.git":                                    {},
+		"bdir/.git":                                    {},
+		"gerrit.googlesource.com/adir.git":             {},
+		"gerrit.googlesource.com/bdir.git":             {},
+		"gerrit.googlesource.com/sub/bdir.git":         {},
+		"gerrit.googlesource.com/team/scope/repoa.git": {},
+		"gerrit.googlesource.com/team/scope/repob.git": {},
 	}
 
 	if !reflect.DeepEqual(gotBefore, wantBefore) {
@@ -59,6 +61,20 @@ func TestDeleteRepos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeleteRepos: %T", err)
 	}
+
+	bURL, _ := url.Parse("http://gerrit.googlesource.com")
+	bURL.Path = ""
+	names = map[string]struct{}{
+		"gerrit.googlesource.com/adir.git":             {},
+		"gerrit.googlesource.com/bdir.git":             {},
+		"gerrit.googlesource.com/team/scope/repob.git": {},
+	}
+
+	err = DeleteRepos(dir, bURL, names, filter)
+	if err != nil {
+		t.Fatalf("DeleteRepos: %T", err)
+	}
+
 	reposAfter, err := FindGitRepos(dir)
 	if err != nil {
 		t.Error("FindGitRepos", err)
@@ -74,10 +90,11 @@ func TestDeleteRepos(t *testing.T) {
 		gotAfter[p] = struct{}{}
 	}
 	wantAfter := map[string]struct{}{
-		"gerrit.googlesource.com/bdir.git": {},
-		"adir/.git":                        {},
-		"bdir/.git":                        {},
-		"gerrit.googlesource.com/adir.git": {},
+		"adir/.git":                                    {},
+		"bdir/.git":                                    {},
+		"gerrit.googlesource.com/adir.git":             {},
+		"gerrit.googlesource.com/bdir.git":             {},
+		"gerrit.googlesource.com/team/scope/repob.git": {},
 	}
 
 	if !reflect.DeepEqual(gotAfter, wantAfter) {

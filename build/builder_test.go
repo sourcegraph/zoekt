@@ -413,14 +413,6 @@ func TestBuilder_DeltaShardsIndexState(t *testing.T) {
 			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
 			expectedState: IndexStateBranchSet,
 		},
-		{
-			oldBranches: []zoekt.RepositoryBranch{
-				{Name: "main", Version: "v1"},
-				{Name: "main", Version: "v2"},
-			},
-			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v3"}},
-			expectedState: IndexStateCorrupt,
-		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			indexDir := t.TempDir()

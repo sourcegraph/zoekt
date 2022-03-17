@@ -246,7 +246,7 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			}
 		} else if c.GerritApiURL != "" {
 			cmd = exec.Command("zoekt-mirror-gerrit",
-				"-dest", repoDir)
+				"-dest", repoDir, "-delete")
 			if c.CredentialPath != "" {
 				cmd.Args = append(cmd.Args, "-http-credentials", c.CredentialPath)
 			}
