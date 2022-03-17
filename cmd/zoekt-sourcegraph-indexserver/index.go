@@ -131,12 +131,43 @@ func (o *indexArgs) String() string {
 	return s
 }
 
-func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
+type gitIndexConfig struct {
+	// runCmd, if not nil, is used to execute all external commands (such as calls to "git" or "zoekt-git-index")
+	// that gitIndex may construct.
+	//
+	// If runCmd is nil, then (*exec.Cmd).Run() will be used instead.
+	runCmd func(*exec.Cmd) error
+
+	// getRepositoryMetadata, if not nil, returns the repository metadata for the
+	// repository specified in args (or nil if the repository metadata couldn't be found).
+	//
+	// If getRepositoryMetadata is nil, then the repository metadata is retrieved
+	// from any existing shards on disk.
+	getRepositoryMetadata func(args *indexArgs) (*zoekt.Repository, error)
+}
+
+func gitIndex(o *indexArgs, c gitIndexConfig) error {
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
 	}
 
+	runCmd := func(cmd *exec.Cmd) error {
+		return cmd.Run()
+	}
+
+	if c.runCmd != nil {
+		runCmd = c.runCmd
+	}
+
 	buildOptions := o.BuildOptions()
+
+	getRepositoryMetadata := func(args *indexArgs) (*zoekt.Repository, error) {
+		return buildOptions.RepositoryMetadata()
+	}
+
+	if c.getRepositoryMetadata != nil {
+		getRepositoryMetadata = c.getRepositoryMetadata
+	}
 
 	// An index should never take longer than an hour.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
@@ -196,7 +227,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	}
 
 	if o.UseDelta {
-		existingRepository, err := buildOptions.RepositoryMetadata()
+		existingRepository, err := getRepositoryMetadata(o)
 		if err != nil {
 			// TODO @ggilmore: This is an example of where we could try a non-delta build immediately. Should we special case this error to allow for
 			// errors.As inspection, or should we rely on IndexState() eventually telling us that we need to fallback?
@@ -294,7 +325,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		}
 	}
 
-	// create git config with options
+	// create git gitConfiguration with options
 	type configKV struct{ Key, Value string }
 	config := []configKV{{
 		// zoekt.name is used by zoekt-git-index to set the repository name.
@@ -308,7 +339,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		return config[i].Key < config[j].Key
 	})
 
-	// write config to repo
+	// write gitConfiguration to repo
 	for _, kv := range config {
 		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt."+kv.Key, kv.Value)
 		cmd.Stdin = &bytes.Buffer{}

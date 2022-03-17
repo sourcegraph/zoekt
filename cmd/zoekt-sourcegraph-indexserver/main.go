@@ -542,9 +542,12 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 	log.Printf("updating index %s reason=%s", args.String(), reason)
 
-	runCmd := func(cmd *exec.Cmd) error { return s.loggedRun(tr, cmd) }
 	metricIndexingTotal.Inc()
-	return indexStateSuccess, gitIndex(args, runCmd)
+	c := gitIndexConfig{
+		runCmd: func(cmd *exec.Cmd) error {
+			return s.loggedRun(tr, cmd)
+		}}
+	return indexStateSuccess, gitIndex(args, c)
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
