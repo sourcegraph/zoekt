@@ -196,37 +196,14 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 	}
 
 	if o.UseDelta {
-		repositoryID := buildOptions.RepositoryDescription.ID
-
-		shards := buildOptions.FindAllShards()
-		if len(shards) == 0 {
-			// TODO @ggilmore: This is an example of where we could try a non-delta build immediately. Should we special case this error to allow for
-			// errors.As inspection, or should we rely on IndexState() eventually telling us that we need to fallback?
-			return &deltaBuildError{
-				repositoryName: o.Name,
-				repositoryID:   repositoryID,
-				err:            fmt.Errorf("no prior shards exist"),
-			}
-		}
-
-		shard := shards[0]
-		repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+		existingRepository, err := buildOptions.RepositoryMetadata()
 		if err != nil {
 			// TODO @ggilmore: This is an example of where we could try a non-delta build immediately. Should we special case this error to allow for
 			// errors.As inspection, or should we rely on IndexState() eventually telling us that we need to fallback?
 			return &deltaBuildError{
-				repositoryName: o.Name,
-				repositoryID:   repositoryID,
-				err:            fmt.Errorf("loading repository metadata from shard %q: %w", shard, err),
-			}
-		}
-
-		var existingRepository *zoekt.Repository
-
-		for _, r := range repositories {
-			if r.ID == repositoryID {
-				existingRepository = r
-				break
+				repositoryName: buildOptions.RepositoryDescription.Name,
+				repositoryID:   buildOptions.RepositoryDescription.ID,
+				err:            fmt.Errorf("failed to get repository metadata: %w", err),
 			}
 		}
 
@@ -234,9 +211,9 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 			// TODO @ggilmore: This is an example of where we could try a non-delta build immediately. Should we special case this error to allow for
 			// errors.As inspection, or should we rely on IndexState() eventually telling us that we need to fallback?
 			return &deltaBuildError{
-				repositoryName: o.Name,
-				repositoryID:   repositoryID,
-				err:            fmt.Errorf("shard %q doesn't contain repository", shard),
+				repositoryName: buildOptions.RepositoryDescription.Name,
+				repositoryID:   buildOptions.RepositoryDescription.ID,
+				err:            fmt.Errorf("no prior shards found"),
 			}
 		}
 
@@ -256,16 +233,16 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 			// TODO @ggilmore: This is an example of where we could try a non-delta build immediately. Should we special case this error to allow for
 			// errors.As inspection, or should we rely on IndexState() eventually telling us that we need to fallback?
 			return &deltaBuildError{
-				repositoryName: o.Name,
-				repositoryID:   repositoryID,
-				err:            fmt.Errorf("set of branch names differs between existing repository (%s) and provided options (%s) (shard %q)", strings.Join(existingBranchNames, ", "), strings.Join(providedBranchNames, ", "), shard),
+				repositoryName: buildOptions.RepositoryDescription.Name,
+				repositoryID:   buildOptions.RepositoryDescription.ID,
+				err:            fmt.Errorf("set of branch names differs between existing repository (%s) and provided options (%s)", strings.Join(existingBranchNames, ", "), strings.Join(providedBranchNames, ", ")),
 			}
 
 		case build.IndexStateCorrupt:
 			return &deltaBuildError{
-				repositoryName: o.Name,
-				repositoryID:   repositoryID,
-				err:            fmt.Errorf("either set of branches in existing repository (%s) and or in provided options (%s) (shard %q) is invalid", existingRepository.Branches, o.Branches, shard),
+				repositoryName: buildOptions.RepositoryDescription.Name,
+				repositoryID:   buildOptions.RepositoryDescription.ID,
+				err:            fmt.Errorf("either set of branches in existing repository (%s) and or in provided options (%s) is invalid", existingRepository.Branches, o.Branches),
 			}
 		}
 
@@ -285,14 +262,13 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 				// invocation, or should we bubble this up to the caller?
 				//
 				// Think about this more later. a "normal" build could be accomplished by just setting UseDelta = false and not returning?
-				//
 
 				// TODO @ggilmore: If we continue with a normal build here, is it right to still capture a "failed" fetch metric?
 				metricFetchDuration.WithLabelValues("false", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
 
 				return &deltaBuildError{
-					repositoryName: o.Name,
-					repositoryID:   repositoryID,
+					repositoryName: buildOptions.RepositoryDescription.Name,
+					repositoryID:   buildOptions.RepositoryDescription.ID,
 					err:            fmt.Errorf("fetching prior commits: %w", err),
 				}
 			}

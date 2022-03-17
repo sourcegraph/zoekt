@@ -520,28 +520,14 @@ func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 
 func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
 	// discover what commits we indexed during our last build
-	shards := options.BuildOptions.FindAllShards()
-	if len(shards) == 0 {
-		return nil, nil, nil, nil, fmt.Errorf("no existing shards found for repository")
-	}
 
-	shard := shards[0]
-	repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+	existingRepository, err := options.BuildOptions.RepositoryMetadata()
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("reading reposistory metadata from shard %q: %w", shard, err)
-	}
-
-	var existingRepository *zoekt.Repository
-
-	for _, r := range repositories {
-		if r.ID == options.BuildOptions.RepositoryDescription.ID {
-			existingRepository = r
-			break
-		}
+		return nil, nil, nil, nil, fmt.Errorf("failed to get repository metadata: %w", err)
 	}
 
 	if existingRepository == nil {
-		return nil, nil, nil, nil, fmt.Errorf("shard %q doesn't contain repository", shard)
+		return nil, nil, nil, nil, fmt.Errorf("no existing shards found for repository")
 	}
 
 	// Check to see if the branch set is consistent with what we last indexed.
