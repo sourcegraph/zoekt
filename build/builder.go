@@ -690,22 +690,16 @@ func (b *Builder) Finish() error {
 }
 
 func compareBranches(a, b []zoekt.RepositoryBranch) IndexState {
-	set := make(map[string]string, len(a))
-	for _, branch := range a {
-		if _, ok := set[branch.Name]; ok { // Duplicate branch
-			return IndexStateCorrupt
-		}
-		set[branch.Name] = branch.Version
-	}
-
-	if len(set) != len(b) {
+	if len(a) != len(b) {
 		return IndexStateBranchSet
 	}
 
-	for _, branch := range b {
-		if version, ok := set[branch.Name]; !ok {
+	for i := range a {
+		x, y := a[i], b[i]
+		if x.Name != y.Name {
 			return IndexStateBranchSet
-		} else if version != branch.Version {
+		}
+		if x.Version != y.Version {
 			return IndexStateBranchVersion
 		}
 	}
