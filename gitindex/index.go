@@ -25,7 +25,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -534,17 +533,20 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	// If it isn't consistent, that we can't proceed with a delta build (and the caller should fall back to a
 	// normal one).
 
-	var existingBranchNames []string
-	for _, b := range existingRepository.Branches {
-		existingBranchNames = append(existingBranchNames, b.Name)
-	}
+	indexState := build.CompareBranches(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches)
+	if indexState == build.IndexStateBranchSet {
+		var existingBranchNames []string
+		for _, b := range existingRepository.Branches {
+			existingBranchNames = append(existingBranchNames, b.Name)
+		}
 
-	sort.Strings(existingBranchNames)
-	sort.Strings(options.Branches)
+		var optionsBranchNames []string
+		for _, b := range options.BuildOptions.RepositoryDescription.Branches {
+			optionsBranchNames = append(optionsBranchNames, b.Name)
+		}
 
-	if !reflect.DeepEqual(options.Branches, existingBranchNames) {
-		optionsBranchList := strings.Join(options.Branches, ", ")
 		existingBranchList := strings.Join(existingBranchNames, ", ")
+		optionsBranchList := strings.Join(optionsBranchNames, ", ")
 
 		return nil, nil, nil, nil, fmt.Errorf("requested branch set in build options (%q) != branch set found on disk (%q) - branch set must be the same for delta shards", optionsBranchList, existingBranchList)
 	}

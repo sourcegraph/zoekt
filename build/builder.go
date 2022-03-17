@@ -724,9 +724,8 @@ func (b *Builder) Finish() error {
 //
 // The result will be IndexStateEqual if both slices specify the same set
 // of branch names and versions, IndexStateBranchSet if either slice specifies a different
-// set of branch names than the other, IndexStateBranchVersion if both slices specify the same set of
-// branch names but have different accompanying versions, or IndexStateCorrupt if one of the slices contains
-// an "invalid" branch set (such as duplicate branch names).
+// set of branch names than the other, or IndexStateBranchVersion if both slices specify the same set of
+// branch names but have different accompanying versions.
 func CompareBranches(a, b []zoekt.RepositoryBranch) IndexState {
 	if len(a) != len(b) {
 		return IndexStateBranchSet
