@@ -37,7 +37,7 @@ type LastInput struct {
 // the templates we render without polluting the exported types.
 type resultInputDebug struct {
 	*ResultInput
-	ShowScoreDebug bool `json:"-"`
+	ShowScoreDebug bool
 }
 
 // Result holds the data provided to the search results template.
