@@ -226,6 +226,12 @@ func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 	qvals := r.URL.Query()
+
+	debugScore := false
+	if qvals.Get("debug") == "1" {
+		debugScore = true
+	}
+
 	queryStr := qvals.Get("q")
 	if queryStr == "" {
 		return nil, fmt.Errorf("no query found")
@@ -307,6 +313,7 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 		sOpts.TotalMaxImportantMatch = n
 	}
 	sOpts.MaxDocDisplayCount = num
+	sOpts.DebugScore = debugScore
 
 	result, err := s.Searcher.Search(ctx, q, &sOpts)
 	if err != nil {

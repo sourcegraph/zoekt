@@ -56,6 +56,10 @@ type FileMatch struct {
 	Branches []string
 	Matches  []Match
 	URL      string
+
+	// Don't expose to caller of JSON API
+	Score      float64 `json:"-"`
+	ScoreDebug string  `json:"-"`
 }
 
 // Match holds the per line data provided to the search results template
@@ -67,6 +71,9 @@ type Match struct {
 	Fragments []Fragment
 	Before    string `json:",omitempty"`
 	After     string `json:",omitempty"`
+
+	// Don't expose to caller of JSON API
+	Score float64 `json:"-"`
 }
 
 // Fragment holds data of a single contiguous match within in a line

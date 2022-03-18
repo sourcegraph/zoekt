@@ -29,12 +29,8 @@ import (
 
 const maxUInt16 = 0xffff
 
-// DebugScore controls whether we collect data on match scores are
-// constructed. Intended for use in tests.
-var DebugScore = false
-
-func (m *FileMatch) addScore(what string, s float64) {
-	if DebugScore {
+func (m *FileMatch) addScore(what string, s float64, debugScore bool) {
+	if debugScore {
 		m.Debug += fmt.Sprintf("%s:%f, ", what, s)
 	}
 	m.Score += s
@@ -368,12 +364,12 @@ nextFileMatch:
 		// Maintain ordering of input files. This
 		// strictly dominates the in-file ordering of
 		// the matches.
-		fileMatch.addScore("fragment", maxFileScore)
-		fileMatch.addScore("atom", float64(atomMatchCount)/float64(totalAtomCount)*scoreFactorAtomMatch)
+		fileMatch.addScore("fragment", maxFileScore, opts.DebugScore)
+		fileMatch.addScore("atom", float64(atomMatchCount)/float64(totalAtomCount)*scoreFactorAtomMatch, opts.DebugScore)
 
 		// Prefer earlier docs.
-		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))))
-		fileMatch.addScore("shard-order", scoreShardRankFactor*float64(md.Rank)/maxUInt16)
+		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))), opts.DebugScore)
+		fileMatch.addScore("shard-order", scoreShardRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)
 
 		if fileMatch.Score > scoreImportantThreshold {
 			importantMatchCount++
