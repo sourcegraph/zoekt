@@ -33,13 +33,6 @@ type LastInput struct {
 	AutoFocus bool
 }
 
-// resultInputDebug is a helper type that lets us send additional information to
-// the templates we render without polluting the exported types.
-type resultInputDebug struct {
-	*ResultInput
-	ShowScoreDebug bool
-}
-
 // Result holds the data provided to the search results template.
 type ResultInput struct {
 	Last        LastInput
