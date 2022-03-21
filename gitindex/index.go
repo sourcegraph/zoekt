@@ -352,6 +352,24 @@ func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string,
 
 // IndexGitRepo indexes the git repository as specified by the options.
 func IndexGitRepo(opts Options) error {
+	return indexGitRepo(opts, gitIndexConfig{
+		prepareDeltaBuildMetadata:  prepareDeltaBuild,
+		prepareNormalBuildMetadata: prepareNormalBuild,
+	})
+}
+
+// indexGitRepo indexes the git repository as specified by the options and the provided gitIndexConfig.
+func indexGitRepo(opts Options, config gitIndexConfig) error {
+	prepareDeltaBuildMetadata := prepareDeltaBuild
+	if config.prepareDeltaBuildMetadata != nil {
+		prepareDeltaBuildMetadata = config.prepareDeltaBuildMetadata
+	}
+
+	prepareNormalBuildMetadata := prepareNormalBuild
+	if config.prepareNormalBuildMetadata != nil {
+		prepareNormalBuildMetadata = config.prepareNormalBuildMetadata
+	}
+
 	// Set max thresholds, since we use them in this function.
 	opts.BuildOptions.SetDefaults()
 	if opts.RepoDir == "" {
@@ -406,17 +424,21 @@ func IndexGitRepo(opts Options) error {
 	var branchVersions map[string]map[string]plumbing.Hash
 
 	if opts.BuildOptions.IsDelta {
-		repos, branchMap, branchVersions, opts.BuildOptions.ChangedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
-		if err != nil {
-			return fmt.Errorf("preparing delta build: %w", err)
+		repos, branchMap, branchVersions, opts.BuildOptions.ChangedOrRemovedFiles, err = prepareDeltaBuildMetadata(opts, repo)
+		if err == nil {
+			goto beginIndexing
 		}
-	} else {
-		repos, branchMap, branchVersions, err = prepareNormalBuild(opts, repo)
-		if err != nil {
-			return fmt.Errorf("preparing normal build: %w", err)
-		}
+
+		log.Printf("(delta build) falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
+		opts.BuildOptions.IsDelta = false
 	}
 
+	repos, branchMap, branchVersions, err = prepareNormalBuildMetadata(opts, repo)
+	if err != nil {
+		return fmt.Errorf("preparing normal build: %w", err)
+	}
+
+beginIndexing:
 	reposByPath := map[string]BlobLocation{}
 	for key, location := range repos {
 		reposByPath[key.SubRepoPath] = location
@@ -517,6 +539,20 @@ func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 	return ignore.ParseIgnoreFile(strings.NewReader(content))
 }
 
+type gitIndexConfig struct {
+	// prepareDeltaBuildMetadata, if not nil, is the function is used to calculate the metadata that will be used to
+	// prepare the build.Builder instance for generating a delta build.
+	//
+	// If prepareDeltaBuildMetadata is nil, gitindex.prepareDeltaBuild will be used instead.
+	prepareDeltaBuildMetadata func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error)
+
+	// prepareNormalBuildMetadata, if not nil, is the function is used to calculate the metadata that will be used to
+	// prepare the build.Builder instance for generating a normal build.
+	//
+	// If prepareNormalBuildMetadata is nil, gitindex.prepareNormalBuild will be used instead.
+	prepareNormalBuildMetadata func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error)
+}
+
 func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
 	// discover what commits we indexed during our last build
 
@@ -534,7 +570,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	// normal one).
 
 	indexState := build.CompareBranches(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches)
-	if indexState == build.IndexStateBranchSet {
+	if indexState != build.IndexStateBranchVersion {
 		var existingBranchNames []string
 		for _, b := range existingRepository.Branches {
 			existingBranchNames = append(existingBranchNames, b.Name)
@@ -580,7 +616,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	rawURL := options.BuildOptions.RepositoryDescription.URL
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("paring repository URL %q: %w", rawURL, err)
+		return nil, nil, nil, nil, fmt.Errorf("parsing repository URL %q: %w", rawURL, err)
 	}
 
 	// TODO: Support repository submodules for delta builds

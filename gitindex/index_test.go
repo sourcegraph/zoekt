@@ -25,6 +25,8 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
@@ -72,7 +74,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 		deletedDocuments branchToDocumentMap
 		optFn            func(t *testing.T, options *Options)
 
-		expectedDocuments []zoekt.Document
+		expectedFallbackToNormalBuild bool
+		expectedDocuments             []zoekt.Document
 	}
 
 	helloWorld := zoekt.Document{Name: "hello_world.txt", Content: []byte("hello")}
@@ -197,6 +200,59 @@ func TestIndexDeltaBasic(t *testing.T) {
 				},
 			},
 		},
+		// TODO@ggilmore: I'm a bit torn as to whether or not these
+		// fallback tests should be here or in their own separate test.
+		//
+		// I can see arguments for both (whether or not it a delta build)
+		// is an internal detail from the perspective of the caller, but it's
+		// also externally observable (from the shards that are produced).
+		{
+			name:     "should fallback to normal build if no prior shards exist",
+			branches: []string{"main"},
+			steps: []step{
+				{
+					name: "attempt delta build on a repository that hasn't been indexed yet",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{helloWorld},
+					},
+					optFn: func(t *testing.T, options *Options) {
+						options.BuildOptions.IsDelta = true
+					},
+
+					expectedFallbackToNormalBuild: true,
+					expectedDocuments:             []zoekt.Document{helloWorld},
+				},
+			},
+		},
+		{
+			name:     "should fallback to normal build if the set of requested repository branches changes on",
+			branches: []string{"main", "release", "dev"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main":    []zoekt.Document{fruitV1},
+						"release": []zoekt.Document{fruitV2},
+						"dev":     []zoekt.Document{fruitV3},
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV1, fruitV2, fruitV3},
+				},
+				{
+					name: "try delta build after dropping 'main' branch from index",
+					addedDocuments: branchToDocumentMap{
+						"release": []zoekt.Document{fruitV4},
+					},
+					optFn: func(t *testing.T, options *Options) {
+						options.Branches = []string{"HEAD", "release", "dev"}
+						options.BuildOptions.IsDelta = true
+					},
+
+					expectedFallbackToNormalBuild: true,
+					expectedDocuments:             []zoekt.Document{fruitV3, fruitV4},
+				},
+			},
+		},
 	} {
 		test := test
 
@@ -272,9 +328,32 @@ func TestIndexDeltaBasic(t *testing.T) {
 						step.optFn(t, &options)
 					}
 
-					err := IndexGitRepo(options)
+					deltaBuildCalled := false
+					prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+						deltaBuildCalled = true
+						return prepareDeltaBuild(options, repository)
+					}
+
+					normalBuildCalled := false
+					prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error) {
+						normalBuildCalled = true
+						return prepareNormalBuild(options, repository)
+					}
+
+					err := indexGitRepo(options, gitIndexConfig{
+						prepareDeltaBuildMetadata:  prepareDeltaSpy,
+						prepareNormalBuildMetadata: prepareNormalSpy,
+					})
 					if err != nil {
 						t.Fatalf("IndexGitRepo: %s", err)
+					}
+
+					if options.BuildOptions.IsDelta != deltaBuildCalled {
+						t.Fatalf("expected deltaBuildCalled to be %t, got %t", options.BuildOptions.IsDelta, deltaBuildCalled)
+					}
+
+					if options.BuildOptions.IsDelta && (step.expectedFallbackToNormalBuild != normalBuildCalled) {
+						t.Fatalf("expected normalBuildCalled to be %t, got %t", step.expectedFallbackToNormalBuild, normalBuildCalled)
 					}
 
 					ss, err := shards.NewDirectorySearcher(indexDir)
