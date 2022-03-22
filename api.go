@@ -110,7 +110,8 @@ type LineFragmentMatch struct {
 
 	// Number bytes that match.
 	MatchLength int
-	SymbolInfo  *Symbol
+
+	SymbolInfo *Symbol
 }
 
 // Stats contains interesting numbers on the search
