@@ -321,15 +321,15 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 				score += scorePartialSymbol
 			}
 
-			if f.SymbolInfo != nil {
-				// for symbol queries, we hydrate SymbolInfo already in fillContentMatches.
-				score += scoreKind(language, f.SymbolInfo.Kind)
-			} else {
+			si := f.SymbolInfo
+			if si == nil {
+				// for non-symbol queries, we need to hydrate in SymbolInfo.
 				start := p.id.fileEndSymbol[p.idx]
-				si := p.id.symbols.data(start + uint32(secIdx))
-				if si != nil {
-					score += scoreKind(language, si.Kind)
-				}
+				si = p.id.symbols.data(start + uint32(secIdx))
+			}
+			if si != nil {
+				// the LineFragment may not be on a symbol, then si will be nil.
+				score += scoreKind(language, si.Kind)
 			}
 		}
 
