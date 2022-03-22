@@ -11,9 +11,9 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v2
-      - name: install-go
+      - name: install go
         run: apk add go
-      - name: build-ctags
+      - name: build ctags
         run: |
           export SOURCEGRAPH_COMMIT=70028a0bde4bbffe1919635b3d1fee99c2e28625
           apk add curl
