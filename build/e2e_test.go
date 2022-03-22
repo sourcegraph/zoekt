@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -725,6 +726,12 @@ func TestDeltaShards(t *testing.T) {
 				for b := range branchSet {
 					repository.Branches = append(repository.Branches, zoekt.RepositoryBranch{Name: b})
 				}
+
+				sort.Slice(repository.Branches, func(i, j int) bool {
+					a, b := repository.Branches[i], repository.Branches[j]
+
+					return a.Name < b.Name
+				})
 
 				buildOpts := Options{
 					IndexDir:              indexDir,
