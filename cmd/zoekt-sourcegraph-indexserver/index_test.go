@@ -120,9 +120,10 @@ func TestGetIndexOptions(t *testing.T) {
 
 func TestIndex(t *testing.T) {
 	cases := []struct {
-		name string
-		args indexArgs
-		want []string
+		name                      string
+		args                      indexArgs
+		mockGetRepositoryMetadata func(args *indexArgs) (*zoekt.Repository, error)
+		want                      []string
 	}{{
 		name: "minimal",
 		args: indexArgs{
@@ -199,10 +200,61 @@ func TestIndex(t *testing.T) {
 				"-file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
 		},
+	}, {
+		name: "delta",
+		args: indexArgs{
+			Incremental:       true,
+			IndexDir:          "/data/index",
+			Parallelism:       4,
+			FileLimit:         123,
+			DownloadLimitMBPS: "1000",
+			UseDelta:          true,
+			IndexOptions: IndexOptions{
+				RepoID:     0,
+				Name:       "test/repo",
+				CloneURL:   "http://api.test/.internal/git/test/repo",
+				LargeFiles: []string{"foo", "bar"},
+				Symbols:    true,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "HEAD", Version: "deadbeef"},
+					{Name: "dev", Version: "feebdaed"},
+					{Name: "release", Version: "12345678"},
+				},
+			},
+		},
+		mockGetRepositoryMetadata: func(args *indexArgs) (*zoekt.Repository, error) {
+			return &zoekt.Repository{
+				ID:   0,
+				Name: args.IndexOptions.Name,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "HEAD", Version: "oldhead"},
+					{Name: "dev", Version: "olddev"},
+					{Name: "release", Version: "oldrelease"},
+				},
+			}, nil
+		},
+		want: []string{
+			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef feebdaed 12345678",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo oldhead olddev oldrelease",
+			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",
+			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/release 12345678",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
+			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev,release " +
+				"-delta -file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
+				"$TMPDIR/test%2Frepo.git",
+		},
 	}}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+
 			var got []string
 			runCmd := func(c *exec.Cmd) error {
 				cmd := strings.Join(c.Args, " ")
@@ -211,7 +263,12 @@ func TestIndex(t *testing.T) {
 				return nil
 			}
 
-			if err := gitIndex(&tc.args, runCmd); err != nil {
+			c := gitIndexConfig{
+				runCmd:                runCmd,
+				getRepositoryMetadata: tc.mockGetRepositoryMetadata,
+			}
+
+			if err := gitIndex(&tc.args, c); err != nil {
 				t.Fatal(err)
 			}
 			if !cmp.Equal(got, tc.want) {
