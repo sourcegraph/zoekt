@@ -651,38 +651,39 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		}
 
 		for _, fp := range patch.FilePatches() {
-			fromFile, toFile := fp.Files()
+			oldFile, newFile := fp.Files()
 
-			if fromFile == nil {
-				// file added
-				file := fileKey{Path: toFile.Path(), ID: toFile.Hash()}
+			if newFile != nil {
+				// either file is added or renamed, so we need to add the new version to the build
+				file := fileKey{Path: newFile.Path(), ID: newFile.Hash()}
 				repos[file] = hackSharedBlobLocation
 				branchMap[file] = append(branchMap[file], branch.Name)
+			}
+
+			if oldFile == nil {
+				// file added - nothing more to do
 				continue
 			}
 
-			changedOrDeletedFile := fileKey{Path: fromFile.Path(), ID: fromFile.Hash()}
-
-			// If the file is either modified or deleted, we need to add ALL versions
-			// of this file (across all branches) to the build
+			// The file is either modified or deleted. So, we need to add ALL versions
+			// of the old file (across all branches) to the build.
 			for b, currentTree := range branchToCurrentTree {
-				f, err := currentTree.File(changedOrDeletedFile.Path)
+				f, err := currentTree.File(oldFile.Path())
 				if err != nil {
 					// the file doesn't exist in this branch
 					if errors.Is(err, object.ErrFileNotFound) {
 						continue
 					}
 
-					return nil, nil, nil, nil, fmt.Errorf("getting hash for file %q in branch %q: %w", changedOrDeletedFile.Path, b, err)
+					return nil, nil, nil, nil, fmt.Errorf("getting hash for file %q in branch %q: %w", oldFile.Path(), b, err)
 				}
 
-				file := fileKey{Path: changedOrDeletedFile.Path, ID: f.ID()}
-
+				file := fileKey{Path: oldFile.Path(), ID: f.ID()}
 				repos[file] = hackSharedBlobLocation
 				branchMap[file] = append(branchMap[file], b)
 			}
 
-			changedOrDeletedPaths = append(changedOrDeletedPaths, changedOrDeletedFile.Path)
+			changedOrDeletedPaths = append(changedOrDeletedPaths, oldFile.Path())
 		}
 	}
 

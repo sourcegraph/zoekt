@@ -81,6 +81,9 @@ func TestIndexDeltaBasic(t *testing.T) {
 	helloWorld := zoekt.Document{Name: "hello_world.txt", Content: []byte("hello")}
 
 	fruitV1 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("strawberry")}
+	fruitV1WithNewName := fruitV1
+	fruitV1WithNewName.Name = "new_fruit.txt"
+
 	fruitV2 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("grapes")}
 	fruitV3 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("oranges")}
 	fruitV4 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("apples")}
@@ -200,6 +203,35 @@ func TestIndexDeltaBasic(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:     "rename",
+			branches: []string{"main", "release"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main":    []zoekt.Document{fruitV1},
+						"release": []zoekt.Document{fruitV2},
+					},
+					expectedDocuments: []zoekt.Document{fruitV1, fruitV2},
+				},
+				{
+					name: "rename fruits file on main branch",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV1WithNewName},
+					},
+					deletedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV1},
+					},
+
+					optFn: func(t *testing.T, options *Options) {
+						options.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV1WithNewName, fruitV2},
+				},
+			},
+		},
 		// TODO@ggilmore: I'm a bit torn as to whether or not these
 		// fallback tests should be here or in their own separate test.
 		//
@@ -244,7 +276,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 						"release": []zoekt.Document{fruitV4},
 					},
 					optFn: func(t *testing.T, options *Options) {
-						options.Branches = []string{"HEAD", "release", "dev"}
+						options.Branches = []string{"HEAD", "release", "dev"} // a bit of a hack to override it this way, but it gets the job done
 						options.BuildOptions.IsDelta = true
 					},
 
@@ -349,10 +381,13 @@ func TestIndexDeltaBasic(t *testing.T) {
 					}
 
 					if options.BuildOptions.IsDelta != deltaBuildCalled {
+						// We should always try a delta build if we request it in the options.
 						t.Fatalf("expected deltaBuildCalled to be %t, got %t", options.BuildOptions.IsDelta, deltaBuildCalled)
 					}
 
 					if options.BuildOptions.IsDelta && (step.expectedFallbackToNormalBuild != normalBuildCalled) {
+						// We only check the normal spy on delta builds because it's only considered a "fallback" if we
+						// asked for a delta build in the first place.
 						t.Fatalf("expected normalBuildCalled to be %t, got %t", step.expectedFallbackToNormalBuild, normalBuildCalled)
 					}
 
