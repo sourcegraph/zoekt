@@ -36,6 +36,7 @@ func main() {
 	repoCacheDir := flag.String("repo_cache", "", "directory holding bare git repos, named by URL. "+
 		"this is used to find repositories for submodules. "+
 		"It also affects name if the indexed repository is under this directory.")
+	isDelta := flag.Bool("delta", false, "whether we should use delta build")
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
@@ -49,6 +50,7 @@ func main() {
 		*repoCacheDir = dir
 	}
 	opts := cmd.OptionsFromFlags()
+	opts.IsDelta = *isDelta
 
 	var branches []string
 	if *branchesStr != "" {
@@ -88,6 +90,10 @@ func main() {
 		}
 
 		if err := gitindex.IndexGitRepo(gitOpts); err != nil {
+			if gitOpts.BuildOptions.IsDelta {
+				log.Printf("(delta build) indexGitRepo(%s): %v", dir, err)
+			}
+
 			log.Printf("indexGitRepo(%s): %v", dir, err)
 			exitStatus = 1
 		}

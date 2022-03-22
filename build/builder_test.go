@@ -322,6 +322,8 @@ func TestOptions_FindAllShards(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			// prepare
 			indexDir := t.TempDir()
 
@@ -529,13 +531,107 @@ func TestBuilder_DeltaShardsUpdateVersionsInOlderShards(t *testing.T) {
 
 		diffOptions := []cmp.Option{
 			cmpopts.IgnoreUnexported(zoekt.Repository{}),
-			cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions"),
+			cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions", "HasSymbols"),
 			cmpopts.EquateEmpty(),
 		}
 
 		if diff := cmp.Diff(&repositoryV2, foundRepository, diffOptions...); diff != "" {
 			t.Errorf("shard %q: unexpected diff in repository metadata (-want +got):\n%s", s, diff)
 		}
+	}
+}
+
+func TestRepositoryMetadata(t *testing.T) {
+	tests := []struct {
+		name                      string
+		normalShardRepositories   []zoekt.Repository
+		compoundShardRepositories []zoekt.Repository
+		input                     *zoekt.Repository
+		expected                  *zoekt.Repository
+	}{
+		{
+			name: "repository in normal shards",
+			normalShardRepositories: []zoekt.Repository{
+				{Name: "repoA", ID: 1},
+				{Name: "repoB", ID: 2},
+				{Name: "repoC", ID: 3},
+			},
+			compoundShardRepositories: []zoekt.Repository{
+				{Name: "repoD", ID: 4},
+				{Name: "repoE", ID: 5},
+				{Name: "repoF", ID: 6},
+			},
+			input:    &zoekt.Repository{Name: "repoB", ID: 2},
+			expected: &zoekt.Repository{Name: "repoB", ID: 2},
+		},
+		{
+			name: "repository in compound shards",
+			normalShardRepositories: []zoekt.Repository{
+				{Name: "repoA", ID: 1},
+				{Name: "repoB", ID: 2},
+				{Name: "repoC", ID: 3},
+			},
+			compoundShardRepositories: []zoekt.Repository{
+				{Name: "repoD", ID: 4},
+				{Name: "repoE", ID: 5},
+				{Name: "repoF", ID: 6},
+			},
+			input:    &zoekt.Repository{Name: "repoE", ID: 5},
+			expected: &zoekt.Repository{Name: "repoE", ID: 5},
+		},
+		{
+			name: "repository not in any shard",
+			normalShardRepositories: []zoekt.Repository{
+				{Name: "repoA", ID: 1},
+				{Name: "repoB", ID: 2},
+				{Name: "repoC", ID: 3},
+			},
+			compoundShardRepositories: []zoekt.Repository{
+				{Name: "repoD", ID: 4},
+				{Name: "repoE", ID: 5},
+				{Name: "repoF", ID: 6},
+			},
+			input:    &zoekt.Repository{Name: "notPresent", ID: 123},
+			expected: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// setup
+			indexDir := t.TempDir()
+
+			for _, r := range tt.normalShardRepositories {
+				createTestShard(t, indexDir, r, 1)
+			}
+
+			if len(tt.compoundShardRepositories) > 0 {
+				createTestCompoundShard(t, indexDir, tt.compoundShardRepositories)
+			}
+
+			o := &Options{
+				IndexDir:              indexDir,
+				RepositoryDescription: *tt.input,
+			}
+			o.SetDefaults()
+
+			// run test
+			got, err := o.RepositoryMetadata()
+			if err != nil {
+				t.Errorf("received unexpected error: %v", err)
+				return
+			}
+
+			// check outcome
+			compareOptions := []cmp.Option{
+				cmpopts.IgnoreUnexported(zoekt.Repository{}),
+				cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions"),
+				cmpopts.EquateEmpty(),
+			}
+
+			if diff := cmp.Diff(tt.expected, got, compareOptions...); diff != "" {
+				t.Errorf("unexpected difference (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

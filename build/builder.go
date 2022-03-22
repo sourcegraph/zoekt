@@ -222,6 +222,8 @@ type Builder struct {
 
 	// a sortable 20 chars long id.
 	id string
+
+	existingShards []string
 }
 
 type finishedShard struct {
@@ -362,7 +364,7 @@ func (o *Options) IndexState() (IndexState, string) {
 	}
 
 	if o.IsDelta { // TODO: Get rid of this guard once the delta shard behavior is the default
-		state := compareBranches(repo.Branches, o.RepositoryDescription.Branches)
+		state := CompareBranches(repo.Branches, o.RepositoryDescription.Branches)
 		if state != IndexStateEqual {
 			return state, fn
 		}
@@ -381,6 +383,35 @@ func (o *Options) IndexState() (IndexState, string) {
 	}
 
 	return IndexStateEqual, fn
+}
+
+// RepositoryMetadata returns the index metadata for the repository specified in the options, or
+// nil if the metadata couldn't be found.
+func (o *Options) RepositoryMetadata() (*zoekt.Repository, error) {
+	shard := o.findShard()
+	if shard == "" {
+		return nil, nil
+	}
+
+	repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+	if err != nil {
+		return nil, fmt.Errorf("reading metadata for shard %q: %w", shard, err)
+	}
+
+	ID := o.RepositoryDescription.ID
+	for _, r := range repositories {
+		// compound shards contain multiple repositories, so we
+		// have to pick only the one we're looking for
+		if r.ID == ID {
+			return r, nil
+		}
+	}
+
+	// If we're here, then we're somehow in a state where we found a matching
+	// shard that's missing the repository metadata we're looking for. This
+	// should never happen.
+	name := o.RepositoryDescription.Name
+	return nil, fmt.Errorf("matching shard %q doesn't contain metadata for repo id %d (%q)", shard, ID, name)
 }
 
 func (o *Options) findShard() string {
@@ -462,6 +493,7 @@ func NewBuilder(opts Options) (*Builder, error) {
 	b := &Builder{
 		opts:           opts,
 		throttle:       make(chan int, opts.Parallelism),
+		existingShards: opts.FindAllShards(),
 		finishedShards: map[string]string{},
 	}
 
@@ -572,12 +604,10 @@ func (b *Builder) Finish() error {
 		artifactPaths[tmp] = final
 	}
 
-	oldShards := b.opts.FindAllShards()
-
 	if b.opts.IsDelta {
 		// Delta shard builds need to update FileTombstone and branch commit information for all
 		// existing shards
-		for _, shard := range oldShards {
+		for _, shard := range b.existingShards {
 			repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
 			if err != nil {
 				return fmt.Errorf("reading metadata from shard %q: %w", shard, err)
@@ -604,7 +634,7 @@ func (b *Builder) Finish() error {
 				repository.FileTombstones[f] = struct{}{}
 			}
 
-			if compareBranches(repository.Branches, b.opts.RepositoryDescription.Branches) == IndexStateBranchSet {
+			if CompareBranches(repository.Branches, b.opts.RepositoryDescription.Branches) == IndexStateBranchSet {
 				// NOTE: Should we be handling IndexStateBranchVersion and IndexStateCorrupt here too?
 				return deltaBranchSetError{
 					shardName: shard,
@@ -644,7 +674,7 @@ func (b *Builder) Finish() error {
 		// So, we skip populating the toDelete map if we're building delta shards.
 
 		toDelete = make(map[string]struct{})
-		for _, name := range oldShards {
+		for _, name := range b.existingShards {
 			paths, err := zoekt.IndexFilePaths(name)
 			if err != nil {
 				b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
@@ -689,7 +719,14 @@ func (b *Builder) Finish() error {
 	return b.buildError
 }
 
-func compareBranches(a, b []zoekt.RepositoryBranch) IndexState {
+// CompareBranches returns an IndexState comparing the two zoekt.RepositoryBranch
+// slices.
+//
+// The result will be IndexStateEqual if both slices specify the same set
+// of branch names and versions, IndexStateBranchSet if either slice specifies a different
+// set of branch names than the other, or IndexStateBranchVersion if both slices specify the same set of
+// branch names but have different accompanying versions.
+func CompareBranches(a, b []zoekt.RepositoryBranch) IndexState {
 	if len(a) != len(b) {
 		return IndexStateBranchSet
 	}
