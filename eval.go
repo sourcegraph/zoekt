@@ -349,7 +349,7 @@ nextFileMatch:
 					byteMatchSz:   uint32(len(nm)),
 				})
 		}
-		fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines)
+		fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language)
 
 		maxFileScore := 0.0
 		for i := range fileMatch.LineMatches {

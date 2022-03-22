@@ -130,7 +130,7 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
-func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
+func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string) []LineMatch {
 	var result []LineMatch
 	if ms[0].fileName {
 		// There is only "line" in a filename.
@@ -155,7 +155,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int)
 
 	sects := p.docSections()
 	for i, m := range result {
-		result[i].Score = matchScore(sects, &m)
+		result[i].Score = p.matchScore(sects, &m, language)
 	}
 
 	return result
@@ -268,30 +268,33 @@ const (
 	scorePartialWordMatch   = 50.0
 	scoreWordMatch          = 500.0
 	scoreImportantThreshold = 2000.0
-	scorePartialSymbol      = 4000.0
 	scoreSymbol             = 7000.0
+	scorePartialSymbol      = 4000.0
+	scoreKindMatch          = 1000.0
 	scoreFactorAtomMatch    = 400.0
 	scoreShardRankFactor    = 20.0
 	scoreFileOrderFactor    = 10.0
 	scoreLineOrderFactor    = 1.0
 )
 
-func findSection(secs []DocumentSection, off, sz uint32) *DocumentSection {
+// findSection checks whether a section defined by offset and size lies within
+// one of the sections in secs.
+func findSection(secs []DocumentSection, off, sz uint32) (int, bool) {
 	j := sort.Search(len(secs), func(i int) bool {
 		return secs[i].End >= off+sz
 	})
 
 	if j == len(secs) {
-		return nil
+		return 0, false
 	}
 
 	if secs[j].Start <= off && off+sz <= secs[j].End {
-		return &secs[j]
+		return j, true
 	}
-	return nil
+	return 0, false
 }
 
-func matchScore(secs []DocumentSection, m *LineMatch) float64 {
+func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
 	var maxScore float64
 	for _, f := range m.LineFragments {
 		startBoundary := f.LineOffset < len(m.Line) && (f.LineOffset == 0 || byteClass(m.Line[f.LineOffset-1]) != byteClass(m.Line[f.LineOffset]))
@@ -306,8 +309,8 @@ func matchScore(secs []DocumentSection, m *LineMatch) float64 {
 			score = scorePartialWordMatch
 		}
 
-		sec := findSection(secs, f.Offset, uint32(f.MatchLength))
-		if sec != nil {
+		if secIdx, ok := findSection(secs, f.Offset, uint32(f.MatchLength)); ok {
+			sec := secs[secIdx]
 			startMatch := sec.Start == f.Offset
 			endMatch := sec.End == f.Offset+uint32(f.MatchLength)
 			if startMatch && endMatch {
@@ -317,6 +320,17 @@ func matchScore(secs []DocumentSection, m *LineMatch) float64 {
 			} else {
 				score += scorePartialSymbol
 			}
+
+			si := f.SymbolInfo
+			if si == nil {
+				// for non-symbol queries, we need to hydrate in SymbolInfo.
+				start := p.id.fileEndSymbol[p.idx]
+				si = p.id.symbols.data(start + uint32(secIdx))
+			}
+			if si != nil {
+				// the LineFragment may not be on a symbol, then si will be nil.
+				score += scoreKind(language, si.Kind)
+			}
 		}
 
 		if score > maxScore {
@@ -324,6 +338,21 @@ func matchScore(secs []DocumentSection, m *LineMatch) float64 {
 		}
 	}
 	return maxScore
+}
+
+// scoreKind boosts a match based on the combination of language and kind. The
+// language string comes from go-enry, the kind string from ctags.
+func scoreKind(language string, kind string) float64 {
+	// Refer to universal-ctags --list-kinds=<language> to learn about the mappings
+	// for a language.
+	switch language {
+	case "Java":
+		switch kind {
+		case "c": // classes
+			return scoreKindMatch
+		}
+	}
+	return 0
 }
 
 type matchScoreSlice []LineMatch
