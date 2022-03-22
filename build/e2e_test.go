@@ -798,3 +798,71 @@ func TestDeltaShards(t *testing.T) {
 		})
 	}
 }
+
+// With this test we want to capture regressions in the names returned by our
+// language detection. We rely on the detected language and its spelling, for
+// example, in scoring (see scoreKind).
+func TestDetectLanguage(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := Options{
+		IndexDir: dir,
+		RepositoryDescription: zoekt.Repository{
+			Name: "repo",
+		},
+	}
+
+	cases := []struct {
+		fileName     string
+		content      []byte
+		wantLanguage string
+	}{
+		{
+			fileName: "hw.java",
+			content: []byte(`
+public class HelloWorld
+{
+       public static void main (String[] args)
+       {
+             System.out.println("Hello World!");
+       }
+}
+`),
+			wantLanguage: "Java",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.wantLanguage, func(t *testing.T) {
+			b, err := NewBuilder(opts)
+			if err != nil {
+				t.Fatalf("NewBuilder: %v", err)
+			}
+			if err := b.AddFile(c.fileName, c.content); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.Finish(); err != nil {
+				t.Fatalf("Finish: %v", err)
+			}
+
+			ss, err := shards.NewDirectorySearcher(dir)
+			if err != nil {
+				t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
+			}
+			defer ss.Close()
+
+			srs, err := ss.Search(context.Background(), &query.Const{true}, new(zoekt.SearchOptions))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got, want := len(srs.Files), 1; got != want {
+				t.Fatalf("file matches: want %d, got %d", want, got)
+			}
+
+			if got := srs.Files[0].Language; got != c.wantLanguage {
+				t.Fatalf("want %s, got %s", c.wantLanguage, got)
+			}
+		})
+	}
+}
