@@ -31,17 +31,13 @@ type contentProvider struct {
 
 	// mutable
 	err      error
-	fileSize uint32
 	idx      uint32
 	_data    []byte
 	_nl      []uint32
 	_nlBuf   []uint32
-
-	// docSectionsDone acts like a sync.Once. However since we don't have concurrent
-	// access to the contentProvider, we can work with just a bool.
-	docSectionsDone bool
-	_sects          []DocumentSection
-	_sectBuf        []DocumentSection
+	_sects   []DocumentSection
+	_sectBuf []DocumentSection
+	fileSize uint32
 }
 
 // setDocument skips to the given document.
@@ -54,17 +50,13 @@ func (p *contentProvider) setDocument(docID uint32) {
 	p._nl = nil
 	p._sects = nil
 	p._data = nil
-	p.docSectionsDone = false
 }
 
 func (p *contentProvider) docSections() []DocumentSection {
-	// It is not sufficient to test for p._sects == nil, because for documents
-	// without symbols p._sects = nil, and we always ignore the cache.
-	if !p.docSectionsDone {
+	if p._sects == nil {
 		var sz uint32
 		p._sects, sz, p.err = p.id.readDocSections(p.idx, p._sectBuf)
 		p.stats.ContentBytesLoaded += int64(sz)
-		p.docSectionsDone = true
 		p._sectBuf = p._sects
 	}
 	return p._sects
