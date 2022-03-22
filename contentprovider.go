@@ -163,7 +163,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 
 	sects := p.docSections()
 	for i, m := range result {
-		result[i].Score = matchScore(sects, &m, language)
+		result[i].Score = p.matchScore(sects, &m, language)
 	}
 
 	return result
@@ -225,31 +225,19 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 			finalMatch.After = getLines(data, p.newlines(), num+1, num+1+numContextLines)
 		}
 
-		secs := p.docSections()
-
-		addSymbolInfo := func(f *LineFragmentMatch, symbolIdx uint32) {
-			f.symbolSectionIdx = &symbolIdx
-
-			start := p.id.fileEndSymbol[p.idx]
-			f.SymbolInfo = p.id.symbols.data(start + symbolIdx)
-			if f.SymbolInfo != nil {
-				sec := secs[symbolIdx]
-				f.SymbolInfo.Sym = string(data[sec.Start:sec.End])
-			}
-		}
-
 		for _, m := range lineCands {
 			fragment := LineFragmentMatch{
 				Offset:      m.byteOffset,
 				LineOffset:  int(m.byteOffset) - lineStart,
 				MatchLength: int(m.byteMatchSz),
 			}
-			// for symbolSubstrMatchTree and symbolRegexpMatchTree, m.symbol is true and
-			// m.symbolIdx is already set .
 			if m.symbol {
-				addSymbolInfo(&fragment, m.symbolIdx)
-			} else if secIdx, ok := findSection(secs, fragment.Offset, uint32(fragment.MatchLength)); ok {
-				addSymbolInfo(&fragment, uint32(secIdx))
+				start := p.id.fileEndSymbol[p.idx]
+				fragment.SymbolInfo = p.id.symbols.data(start + m.symbolIdx)
+				if fragment.SymbolInfo != nil {
+					sec := p.docSections()[m.symbolIdx]
+					fragment.SymbolInfo.Sym = string(data[sec.Start:sec.End])
+				}
 			}
 
 			finalMatch.LineFragments = append(finalMatch.LineFragments, fragment)
@@ -314,7 +302,7 @@ func findSection(secs []DocumentSection, off, sz uint32) (int, bool) {
 	return 0, false
 }
 
-func matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
+func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
 	var maxScore float64
 	for _, f := range m.LineFragments {
 		startBoundary := f.LineOffset < len(m.Line) && (f.LineOffset == 0 || byteClass(m.Line[f.LineOffset-1]) != byteClass(m.Line[f.LineOffset]))
@@ -329,8 +317,8 @@ func matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
 			score = scorePartialWordMatch
 		}
 
-		if f.symbolSectionIdx != nil {
-			sec := secs[*f.symbolSectionIdx]
+		if secIdx, ok := findSection(secs, f.Offset, uint32(f.MatchLength)); ok {
+			sec := secs[secIdx]
 			startMatch := sec.Start == f.Offset
 			endMatch := sec.End == f.Offset+uint32(f.MatchLength)
 			if startMatch && endMatch {
@@ -340,10 +328,17 @@ func matchScore(secs []DocumentSection, m *LineMatch, language string) float64 {
 			} else {
 				score += scorePartialSymbol
 			}
-		}
 
-		if f.SymbolInfo != nil {
-			score += scoreKind(language, f.SymbolInfo.Kind)
+			if f.SymbolInfo != nil {
+				// for symbol queries, we hydrate SymbolInfo already in fillContentMatches.
+				score += scoreKind(language, f.SymbolInfo.Kind)
+			} else {
+				start := p.id.fileEndSymbol[p.idx]
+				si := p.id.symbols.data(start + uint32(secIdx))
+				if si != nil {
+					score += scoreKind(language, si.Kind)
+				}
+			}
 		}
 
 		if score > maxScore {

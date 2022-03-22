@@ -110,12 +110,7 @@ type LineFragmentMatch struct {
 
 	// Number bytes that match.
 	MatchLength int
-
-	SymbolInfo *Symbol
-
-	// PERF: we store the symbol section index during fillContentMatches and reuse it
-	// during scoring.
-	symbolSectionIdx *uint32
+	SymbolInfo  *Symbol
 }
 
 // Stats contains interesting numbers on the search
