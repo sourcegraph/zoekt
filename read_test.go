@@ -31,7 +31,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt/query"
 )
 
@@ -225,10 +224,7 @@ func TestReadSearch(t *testing.T) {
 				continue
 			}
 
-			diffOptions := []cmp.Option{
-				cmpopts.IgnoreUnexported(LineFragmentMatch{}),
-			}
-			if d := cmp.Diff(res.Files, want.FileMatches[j], diffOptions...); d != "" {
+			if d := cmp.Diff(res.Files, want.FileMatches[j]); d != "" {
 				t.Errorf("matches for %s on %s\n%s", q, name, d)
 			}
 		}
