@@ -340,7 +340,12 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.runeDocSections = blob
+	lazyTODO := true
+	if lazyTODO {
+		d.runeDocSections = unmarshalDocSections(blob, nil)
+	} else {
+		d.runeDocSectionsRaw = blob
+	}
 
 	var runeOffsets, fileNameRuneOffsets []uint32
 

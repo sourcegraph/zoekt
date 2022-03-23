@@ -184,6 +184,12 @@ func marshalDocSections(secs []DocumentSection) []byte {
 }
 
 func unmarshalDocSections(in []byte, buf []DocumentSection) (secs []DocumentSection) {
+	// Defensive, this shouldn't happen. While we have the feature flag for lazy
+	// doc section decoding lets be extra defensive.
+	if len(in) == 0 {
+		return nil
+	}
+
 	// TODO - ints is unnecessary garbage here.
 	ints := fromSizedDeltas(in, nil)
 	if cap(buf) >= len(ints)/2 {

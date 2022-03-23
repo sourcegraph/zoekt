@@ -889,12 +889,19 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}
 
 		if substr, ok := subMT.(*substrMatchTree); ok {
+			// Temporary: We have a feature flag for lazy decoding. If
+			// runeDocSections is nil it means we need to lazily decode on request.
+			sections := d.runeDocSections
+			if sections == nil {
+				sections = unmarshalDocSections(d.runeDocSectionsRaw, nil)
+			}
+
 			return &symbolSubstrMatchTree{
 				substrMatchTree: substr,
 				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
 				fileEndRunes:    d.fileEndRunes,
 				fileEndSymbol:   d.fileEndSymbol,
-				sections:        unmarshalDocSections(d.runeDocSections, nil),
+				sections:        sections,
 			}, nil
 		}
 
