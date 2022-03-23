@@ -16,7 +16,7 @@ jobs:
       - name: install ctags
         run: |
           $GITHUB_WORKSPACE/download-ctags-installer.sh
-          ./ctags-install-alpine.sh && rm ./ctags-install-alpine.sh
+          $GITHUB_WORKSPACE/ctags-install-alpine.sh && rm $GITHUB_WORKSPACE/ctags-install-alpine.sh
       - name: test
         run: go test ./...
 
