@@ -14,7 +14,7 @@ jobs:
       - name: install go
         run: apk add go
       - name: install ctags
-        run: ./ctags-install-alpine.sh
+        run: $GITHUB_WORKSPACE/ctags-install-alpine.sh
       - name: test
         run: go test ./...
 
