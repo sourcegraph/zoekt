@@ -13,11 +13,8 @@ jobs:
         uses: actions/checkout@v2
       - name: install go
         run: apk add go
-      - name: build ctags
-        run: |
-          export SOURCEGRAPH_COMMIT=70028a0bde4bbffe1919635b3d1fee99c2e28625
-          apk add curl
-          curl https://raw.githubusercontent.com/sourcegraph/sourcegraph/$SOURCEGRAPH_COMMIT/cmd/symbols/ctags-install-alpine.sh -sSf | sh
+      - name: install ctags
+        run: ./ctags-install-alpine.sh
       - name: test
         run: go test ./...
 
