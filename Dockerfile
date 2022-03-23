@@ -18,8 +18,8 @@ FROM alpine:3.15.0 AS zoekt
 RUN apk update --no-cache && apk upgrade --no-cache && \
     apk add --no-cache git ca-certificates bind-tools tini jansson
 
-COPY ctags-install-alpine.sh .
-RUN sh ctags-install-alpine.sh && rm ctags-install-alpine.sh
+COPY download-ctags-installer.sh .
+RUN sh download-ctags-installer.sh /tmp/ && sh /tmp/ctags-install-alpine.sh
 
 COPY --from=builder /go/bin/* /usr/local/bin/
 
