@@ -19,7 +19,7 @@ RUN apk update --no-cache && apk upgrade --no-cache && \
     apk add --no-cache git ca-certificates bind-tools tini jansson
 
 COPY download-ctags-installer.sh .
-RUN sh download-ctags-installer.sh /tmp/ && sh /tmp/ctags-install-alpine.sh
+RUN sh download-ctags-installer.sh /tmp && sh /tmp/ctags-install-alpine.sh
 
 COPY --from=builder /go/bin/* /usr/local/bin/
 
