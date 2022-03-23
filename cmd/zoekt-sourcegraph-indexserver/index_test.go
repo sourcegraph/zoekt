@@ -203,12 +203,11 @@ func TestIndex(t *testing.T) {
 	}, {
 		name: "delta",
 		args: indexArgs{
-			Incremental:       true,
-			IndexDir:          "/data/index",
-			Parallelism:       4,
-			FileLimit:         123,
-			DownloadLimitMBPS: "1000",
-			UseDelta:          true,
+			Incremental: true,
+			IndexDir:    "/data/index",
+			Parallelism: 4,
+			FileLimit:   123,
+			UseDelta:    true,
 			IndexOptions: IndexOptions{
 				RepoID:     0,
 				Name:       "test/repo",
