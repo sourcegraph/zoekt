@@ -294,6 +294,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 			indexDir := t.TempDir()
 			repositoryDir := t.TempDir()
 
+			// setup: initialize the repository and all of its branches
 			runScript(t, repositoryDir, "git init")
 			runScript(t, repositoryDir, fmt.Sprintf("git config user.email %q", "you@example.com"))
 			runScript(t, repositoryDir, fmt.Sprintf("git config user.name %q", "Your Name"))
@@ -306,6 +307,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 			for _, step := range test.steps {
 				t.Run(step.name, func(t *testing.T) {
 					for _, b := range test.branches {
+						// setup: for each branch, process any document deletions / additions and commit those changes
+
 						hadChange := false
 
 						runScript(t, repositoryDir, fmt.Sprintf("git checkout %q", b))
@@ -339,6 +342,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 						runScript(t, repositoryDir, fmt.Sprintf("git commit -m %q", step.name))
 					}
 
+					// setup: prepare indexOptions with given overrides
 					buildOptions := build.Options{
 						IndexDir: indexDir,
 						RepositoryDescription: zoekt.Repository{
@@ -360,6 +364,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 						step.optFn(t, &options)
 					}
 
+					// setup: prepare spy versions of prepare delta / normal build so that we can observe
+					// whether they were called appropriately
 					deltaBuildCalled := false
 					prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
 						deltaBuildCalled = true
@@ -372,6 +378,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 						return prepareNormalBuild(options, repository)
 					}
 
+					// run test
 					err := indexGitRepo(options, gitIndexConfig{
 						prepareDeltaBuildMetadata:  prepareDeltaSpy,
 						prepareNormalBuildMetadata: prepareNormalSpy,
@@ -390,6 +397,11 @@ func TestIndexDeltaBasic(t *testing.T) {
 						// asked for a delta build in the first place.
 						t.Fatalf("expected normalBuildCalled to be %t, got %t", step.expectedFallbackToNormalBuild, normalBuildCalled)
 					}
+
+					// examine outcome: load shards into a searcher instance and run a dummy search query
+					// that returns every document contained in the shards
+					//
+					// then, compare returned set of documents with the expected set for the step and see if they agree
 
 					ss, err := shards.NewDirectorySearcher(indexDir)
 					if err != nil {
