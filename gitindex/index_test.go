@@ -257,7 +257,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 			},
 		},
 		{
-			name:     "should fallback to normal build if the set of requested repository branches changes on",
+			name:     "should fallback to normal build if the set of requested repository branches changes",
 			branches: []string{"main", "release", "dev"},
 			steps: []step{
 				{
