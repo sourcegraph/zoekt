@@ -216,7 +216,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					expectedDocuments: []zoekt.Document{fruitV1, fruitV2},
 				},
 				{
-					name: "rename fruits file on main branch",
+					name: "rename fruits file on 'main' + ensure that unmodified fruits file on 'release' is still searchable",
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{fruitV1WithNewName},
 					},
@@ -271,7 +271,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					expectedDocuments: []zoekt.Document{fruitV1, fruitV2, fruitV3},
 				},
 				{
-					name: "try delta build after dropping 'main' branch from index",
+					name: "try delta build after dropping 'main' branch from index ",
 					addedDocuments: branchToDocumentMap{
 						"release": []zoekt.Document{fruitV4},
 					},
