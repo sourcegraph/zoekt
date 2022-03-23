@@ -490,7 +490,9 @@ func TestBuilder_DeltaShardsUpdateVersionsInOlderShards(t *testing.T) {
 		},
 	}
 
-	createTestShard(t, indexDir, repositoryV1, 2)
+	createTestShard(t, indexDir, repositoryV1, 2, func(o *Options) {
+		o.DisableCTags = true
+	})
 
 	repositoryV2 := zoekt.Repository{
 		Name: "repo",
@@ -503,6 +505,7 @@ func TestBuilder_DeltaShardsUpdateVersionsInOlderShards(t *testing.T) {
 
 	shards := createTestShard(t, indexDir, repositoryV2, 1, func(o *Options) {
 		o.IsDelta = true
+		o.DisableCTags = true
 	})
 
 	if len(shards) < 3 {
