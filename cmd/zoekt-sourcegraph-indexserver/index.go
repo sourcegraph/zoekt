@@ -73,10 +73,6 @@ type indexArgs struct {
 	// FileLimit is the maximum size of a file
 	FileLimit int
 
-	// DownloadLimitMBPS is the maximum MB/s to use when downloading the
-	// archive.
-	DownloadLimitMBPS string
-
 	// UseDelta is true if we want to use the new delta indexer. This should
 	// only be true for repositories we explicitly enable.
 	UseDelta bool
