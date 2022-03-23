@@ -11,8 +11,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v2
-      - name: install go
-        run: apk add go
+      - name: add dependencies
+        run: apk add go git
       - name: install ctags
         run: $GITHUB_WORKSPACE/ctags-install-alpine.sh
       - name: test
