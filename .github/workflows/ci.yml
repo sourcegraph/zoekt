@@ -15,8 +15,8 @@ jobs:
         run: apk add go git
       - name: install ctags
         run: |
-          ./download-ctags-installer.sh /tmp/
-          /tmp/ctags-install-alpine.sh && rm /tmp/ctags-install-alpine.sh
+          ./download-ctags-installer.sh /tmp
+          /tmp/ctags-install-alpine.sh
       - name: test
         run: go test ./...
 
