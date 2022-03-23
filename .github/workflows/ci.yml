@@ -15,8 +15,6 @@ jobs:
         run: apk add go git
       - name: install ctags
         run: |
-          ls -alh $GITHUB_WORKSPACE
-          chmod +x $GITHUB_WORKSPACE/download-ctags-installer.sh
           $GITHUB_WORKSPACE/download-ctags-installer.sh /tmp/
           /tmp/ctags-install-alpine.sh && rm /tmp/ctags-install-alpine.sh
       - name: test
