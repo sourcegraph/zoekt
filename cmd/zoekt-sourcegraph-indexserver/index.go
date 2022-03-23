@@ -202,6 +202,17 @@ func gitIndex(o *indexArgs, c gitIndexConfig) error {
 		return runCmd(cmd)
 	}
 
+	successfullyFetchedCommitsCount := 0
+
+	var fetchDuration time.Duration
+	allFetchesSucceeded := true
+
+	defer func() {
+		success := strconv.FormatBool(allFetchesSucceeded)
+		name := repoNameForMetric(o.Name)
+		metricFetchDuration.WithLabelValues(success, name).Observe(fetchDuration.Seconds())
+	}()
+
 	// We shallow fetch each commit specified in zoekt.Branches. This requires
 	// the server to have configured both uploadpack.allowAnySHA1InWant and
 	// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
@@ -210,27 +221,21 @@ func gitIndex(o *indexArgs, c gitIndexConfig) error {
 		branchCommits = append(branchCommits, b.Version)
 	}
 
-	successfullyFetchedCommitsCount := 0
-	var fetchDuration time.Duration
-
-	allFetchesSucceeded := true
-
 	start := time.Now()
 	err = fetchCommits(branchCommits)
 	fetchDuration += time.Since(start)
 	successfullyFetchedCommitsCount += len(branchCommits)
 
 	if err != nil {
-		successfullyFetchedCommitsCount -= len(branchCommits)
 		allFetchesSucceeded = false
+		successfullyFetchedCommitsCount -= len(branchCommits)
 
-		metricFetchDuration.WithLabelValues(strconv.FormatBool(allFetchesSucceeded), repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
 		return err
 	}
 
 	if o.UseDelta {
-		// try fetching prior commits for delta builds
-		// if we're unable to fetch prior commits, we continue anyway
+		// Try fetching prior commits for delta builds
+		// If we're unable to fetch prior commits, we continue anyway
 		// knowing that zoekt-git-index will fall back to a "full" normal build
 
 		repositoryName := buildOptions.RepositoryDescription.Name
@@ -267,9 +272,6 @@ func gitIndex(o *indexArgs, c gitIndexConfig) error {
 			}
 		}
 	}
-
-	metricFetchSuccessLabel := strconv.FormatBool(allFetchesSucceeded)
-	metricFetchDuration.WithLabelValues(metricFetchSuccessLabel, repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
 
 	debug.Printf("successfully fetched git data for %q (%d commit(s)) in %s", o.Name, successfullyFetchedCommitsCount, fetchDuration)
 
