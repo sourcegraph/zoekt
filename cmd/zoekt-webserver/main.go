@@ -154,7 +154,7 @@ func main() {
 	initializeJaeger()
 	err := profiler.Init(ServiceName, zoekt.Version, -1)
 	if err != nil {
-		log.Printf("could not initialize google cloud profiler: %s", err.Error())
+		log.Printf("could not initialize profiler: %s", err.Error())
 	}
 
 	if *logDir != "" {

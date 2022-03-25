@@ -811,7 +811,7 @@ func newServer(conf rootConfig) (*Server, error) {
 
 	err = profiler.Init(ServiceName, zoekt.Version, conf.blockProfileRate)
 	if err != nil {
-		log.Printf("could not initialize google cloud profiler: %s", err.Error())
+		log.Printf("could not initialize profiler: %s", err.Error())
 	}
 	// Automatically prepend our own path at the front, to minimize
 	// required configuration.
