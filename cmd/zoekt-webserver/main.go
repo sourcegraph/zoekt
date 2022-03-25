@@ -136,7 +136,7 @@ func main() {
 	templateDir := flag.String("template_dir", "", "set directory from which to load custom .html.tpl template files")
 	dumpTemplates := flag.Bool("dump_templates", false, "dump templates into --template_dir and exit.")
 	version := flag.Bool("version", false, "Print version number")
-
+	
 	flag.Parse()
 
 	if *version {
@@ -168,10 +168,7 @@ func main() {
 	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
-	_, err = maxprocs.Set()
-	if err != nil {
-		log.Printf("could not set GOMAXPROCS: %v\n", err)
-	}
+	_, _ = maxprocs.Set()
 
 	if err := os.MkdirAll(*index, 0o755); err != nil {
 		log.Fatal(err)

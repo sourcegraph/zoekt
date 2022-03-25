@@ -210,10 +210,8 @@ func main() {
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
-	_, err := maxprocs.Set()
-	if err != nil {
-		log.Printf("could not set GOMAXPROCS: %v\n", err)
-	}
+	_, _ = maxprocs.Set()
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	if len(flag.Args()) != 1 {
