@@ -232,6 +232,33 @@ func TestIndexDeltaBasic(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:     "modification: update one branch with version of document from another branch (a.k.a. Keegan's test)",
+			branches: []string{"main", "dev"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV1},
+						"dev":  []zoekt.Document{fruitV2},
+					},
+					expectedDocuments: []zoekt.Document{fruitV1, fruitV2},
+				},
+				{
+					name: "switch main to dev's older version of fruits + bump dev's fruits to new version",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV2},
+						"dev":  []zoekt.Document{fruitV3},
+					},
+
+					optFn: func(t *testing.T, options *Options) {
+						options.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV2, fruitV3},
+				},
+			},
+		},
 		// TODO@ggilmore: I'm a bit torn as to whether or not these
 		// fallback tests should be here or in their own separate test.
 		//
