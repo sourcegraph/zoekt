@@ -353,21 +353,21 @@ func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string,
 // IndexGitRepo indexes the git repository as specified by the options.
 func IndexGitRepo(opts Options) error {
 	return indexGitRepo(opts, gitIndexConfig{
-		prepareDeltaBuildMetadata:  prepareDeltaBuild,
-		prepareNormalBuildMetadata: prepareNormalBuild,
+		prepareDeltaBuild:  prepareDeltaBuild,
+		prepareNormalBuild: prepareNormalBuild,
 	})
 }
 
 // indexGitRepo indexes the git repository as specified by the options and the provided gitIndexConfig.
 func indexGitRepo(opts Options, config gitIndexConfig) error {
-	prepareDeltaBuildMetadata := prepareDeltaBuild
-	if config.prepareDeltaBuildMetadata != nil {
-		prepareDeltaBuildMetadata = config.prepareDeltaBuildMetadata
+	prepareDeltaBuild := prepareDeltaBuild
+	if config.prepareDeltaBuild != nil {
+		prepareDeltaBuild = config.prepareDeltaBuild
 	}
 
-	prepareNormalBuildMetadata := prepareNormalBuild
-	if config.prepareNormalBuildMetadata != nil {
-		prepareNormalBuildMetadata = config.prepareNormalBuildMetadata
+	prepareNormalBuild := prepareNormalBuild
+	if config.prepareNormalBuild != nil {
+		prepareNormalBuild = config.prepareNormalBuild
 	}
 
 	// Set max thresholds, since we use them in this function.
@@ -424,7 +424,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 	var branchVersions map[string]map[string]plumbing.Hash
 
 	if opts.BuildOptions.IsDelta {
-		repos, branchMap, branchVersions, opts.BuildOptions.ChangedOrRemovedFiles, err = prepareDeltaBuildMetadata(opts, repo)
+		repos, branchMap, branchVersions, opts.BuildOptions.ChangedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
 		if err == nil {
 			goto beginIndexing
 		}
@@ -433,7 +433,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		opts.BuildOptions.IsDelta = false
 	}
 
-	repos, branchMap, branchVersions, err = prepareNormalBuildMetadata(opts, repo)
+	repos, branchMap, branchVersions, err = prepareNormalBuild(opts, repo)
 	if err != nil {
 		return fmt.Errorf("preparing normal build: %w", err)
 	}
@@ -539,18 +539,26 @@ func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 	return ignore.ParseIgnoreFile(strings.NewReader(content))
 }
 
+// prepareDeltaBuildFunc is a function that calculates the necessary metadata for preparing
+// a build.Builder instance for generating a delta build.
+type prepareDeltaBuildFunc func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error)
+
+// prepareNormalBuildFunc is a function that calculates the necessary metadata for preparing
+// a build.Builder instance for generating a normal build.
+type prepareNormalBuildFunc func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error)
+
 type gitIndexConfig struct {
-	// prepareDeltaBuildMetadata, if not nil, is the function is used to calculate the metadata that will be used to
+	// prepareDeltaBuild, if not nil, is the function that is used to calculate the metadata that will be used to
 	// prepare the build.Builder instance for generating a delta build.
 	//
-	// If prepareDeltaBuildMetadata is nil, gitindex.prepareDeltaBuild will be used instead.
-	prepareDeltaBuildMetadata func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error)
+	// If prepareDeltaBuild is nil, gitindex.prepareDeltaBuild will be used instead.
+	prepareDeltaBuild prepareDeltaBuildFunc
 
-	// prepareNormalBuildMetadata, if not nil, is the function is used to calculate the metadata that will be used to
+	// prepareNormalBuild, if not nil, is the function that is used to calculate the metadata that will be used to
 	// prepare the build.Builder instance for generating a normal build.
 	//
-	// If prepareNormalBuildMetadata is nil, gitindex.prepareNormalBuild will be used instead.
-	prepareNormalBuildMetadata func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error)
+	// If prepareNormalBuild is nil, gitindex.prepareNormalBuild will be used instead.
+	prepareNormalBuild prepareNormalBuildFunc
 }
 
 func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {

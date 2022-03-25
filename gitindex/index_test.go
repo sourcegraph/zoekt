@@ -380,8 +380,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 
 					// run test
 					err := indexGitRepo(options, gitIndexConfig{
-						prepareDeltaBuildMetadata:  prepareDeltaSpy,
-						prepareNormalBuildMetadata: prepareNormalSpy,
+						prepareDeltaBuild:  prepareDeltaSpy,
+						prepareNormalBuild: prepareNormalSpy,
 					})
 					if err != nil {
 						t.Fatalf("IndexGitRepo: %s", err)
