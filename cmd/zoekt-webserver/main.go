@@ -136,7 +136,7 @@ func main() {
 	templateDir := flag.String("template_dir", "", "set directory from which to load custom .html.tpl template files")
 	dumpTemplates := flag.Bool("dump_templates", false, "dump templates into --template_dir and exit.")
 	version := flag.Bool("version", false, "Print version number")
-	
+
 	flag.Parse()
 
 	if *version {
@@ -152,7 +152,7 @@ func main() {
 	}
 
 	initializeJaeger()
-	err := profiler.Init(ServiceName, zoekt.Version, -1)
+	err := profiler.Init("zoekt-webserver", zoekt.Version, -1)
 	if err != nil {
 		log.Printf("could not initialize profiler: %s", err.Error())
 	}
