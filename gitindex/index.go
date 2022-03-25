@@ -352,10 +352,7 @@ func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string,
 
 // IndexGitRepo indexes the git repository as specified by the options.
 func IndexGitRepo(opts Options) error {
-	return indexGitRepo(opts, gitIndexConfig{
-		prepareDeltaBuild:  prepareDeltaBuild,
-		prepareNormalBuild: prepareNormalBuild,
-	})
+	return indexGitRepo(opts, gitIndexConfig{})
 }
 
 // indexGitRepo indexes the git repository as specified by the options and the provided gitIndexConfig.
