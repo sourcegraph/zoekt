@@ -422,20 +422,19 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 
 	if opts.BuildOptions.IsDelta {
 		repos, branchMap, branchVersions, opts.BuildOptions.ChangedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
-		if err == nil {
-			goto beginIndexing
+		if err != nil {
+			log.Printf("(delta build) falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
+			opts.BuildOptions.IsDelta = false
 		}
-
-		log.Printf("(delta build) falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
-		opts.BuildOptions.IsDelta = false
 	}
 
-	repos, branchMap, branchVersions, err = prepareNormalBuild(opts, repo)
-	if err != nil {
-		return fmt.Errorf("preparing normal build: %w", err)
+	if !opts.BuildOptions.IsDelta {
+		repos, branchMap, branchVersions, err = prepareNormalBuild(opts, repo)
+		if err != nil {
+			return fmt.Errorf("preparing normal build: %w", err)
+		}
 	}
 
-beginIndexing:
 	reposByPath := map[string]BlobLocation{}
 	for key, location := range repos {
 		reposByPath[key.SubRepoPath] = location
