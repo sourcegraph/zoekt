@@ -152,10 +152,7 @@ func main() {
 	}
 
 	initializeJaeger()
-	err := profiler.Init("zoekt-webserver", zoekt.Version, -1)
-	if err != nil {
-		log.Printf("could not initialize profiler: %s", err.Error())
-	}
+	profiler.Init("zoekt-webserver", zoekt.Version, -1)
 
 	if *logDir != "" {
 		if fi, err := os.Lstat(*logDir); err != nil || !fi.IsDir() {
