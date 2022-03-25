@@ -804,10 +804,7 @@ func newServer(conf rootConfig) (*Server, error) {
 	// The block profiler is disabled by default and should be enabled with care in production
 	runtime.SetBlockProfileRate(conf.blockProfileRate)
 
-	err = profiler.Init("zoekt-sourcegraph-indexserver", zoekt.Version, conf.blockProfileRate)
-	if err != nil {
-		log.Printf("could not initialize profiler: %s", err.Error())
-	}
+	profiler.Init("zoekt-sourcegraph-indexserver", zoekt.Version, conf.blockProfileRate)
 	// Automatically prepend our own path at the front, to minimize
 	// required configuration.
 	if l, err := os.Readlink("/proc/self/exe"); err == nil {
