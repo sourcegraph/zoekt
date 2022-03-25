@@ -33,12 +33,11 @@ require (
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible
 	github.com/xanzy/go-gitlab v0.28.0
-	go.uber.org/atomic v1.9.0
 	go.uber.org/automaxprocs v1.3.0
 	golang.org/x/net v0.0.0-20211020060615-d418f374d309
 	golang.org/x/oauth2 v0.0.0-20210514164344-f6687ab2804c
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	gopkg.in/DataDog/dd-trace-go.v1 v1.37.0 // indirect
+	gopkg.in/DataDog/dd-trace-go.v1 v1.37.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	humungus.tedunangst.com/r/gerc v0.1.2
 )
