@@ -27,7 +27,6 @@ import (
 	"syscall"
 	"time"
 
-	"cloud.google.com/go/profiler"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/peterbourgon/ff/v3/ffcli"
@@ -39,6 +38,7 @@ import (
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/debugserver"
+	"github.com/google/zoekt/internal/profiler"
 )
 
 var (
@@ -124,6 +124,8 @@ const (
 	indexStateNoop        indexState = "noop"         // We didn't need to update index
 	indexStateEmpty       indexState = "empty"        // index is empty (empty repo)
 )
+
+const ServiceName = "zoekt-sourcegraph-indexserver"
 
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
 // exists to conveniently use all the options passed in via func main.
@@ -667,24 +669,6 @@ func printShardStats(fn string) error {
 	return zoekt.PrintNgramStats(iFile)
 }
 
-func initializeGoogleCloudProfiler() {
-	// Google cloud profiler is opt-in since we only want to run it on
-	// Sourcegraph.com.
-	if os.Getenv("GOOGLE_CLOUD_PROFILER_ENABLED") == "" {
-		return
-	}
-
-	err := profiler.Start(profiler.Config{
-		Service:        "zoekt-sourcegraph-indexserver",
-		ServiceVersion: zoekt.Version,
-		MutexProfiling: true,
-		AllocForceGC:   true,
-	})
-	if err != nil {
-		log.Printf("could not initialize google cloud profiler: %s", err.Error())
-	}
-}
-
 func srcLogLevelIsDebug() bool {
 	lvl := os.Getenv("SRC_LOG_LEVEL")
 	return strings.EqualFold(lvl, "dbug") || strings.EqualFold(lvl, "debug")
@@ -784,7 +768,6 @@ func startServer(conf rootConfig) error {
 		return err
 	}
 
-	initializeGoogleCloudProfiler()
 	setCompoundShardCounter(s.IndexDir)
 
 	if conf.listen != "" {
@@ -820,9 +803,13 @@ func newServer(conf rootConfig) (*Server, error) {
 	_, _ = maxprocs.Set()
 
 	// Set the sampling rate of Go's block profiler: https://github.com/DataDog/go-profiler-notes/blob/main/guide/README.md#block-profiler.
-	// The block profiler is disabled by default.
+	// The block profiler is disabled by default and should be enabled with care in production
 	runtime.SetBlockProfileRate(conf.blockProfileRate)
 
+	err = profiler.Init(ServiceName, zoekt.Version, conf.blockProfileRate)
+	if err != nil {
+		log.Printf("could not initialize google cloud profiler: %s", err.Error())
+	}
 	// Automatically prepend our own path at the front, to minimize
 	// required configuration.
 	if l, err := os.Readlink("/proc/self/exe"); err == nil {
