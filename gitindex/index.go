@@ -560,6 +560,10 @@ type gitIndexConfig struct {
 func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
 	// discover what commits we indexed during our last build
 
+	if options.Submodules {
+		return nil, nil, nil, nil, fmt.Errorf("delta builds currently don't support submodule indexing")
+	}
+
 	existingRepository, err := options.BuildOptions.RepositoryMetadata()
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to get repository metadata: %w", err)
