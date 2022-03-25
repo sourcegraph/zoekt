@@ -22,7 +22,6 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"github.com/google/zoekt/internal/profiler"
 	"html/template"
 	"io/ioutil"
 	"log"
@@ -39,6 +38,7 @@ import (
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/debugserver"
+	"github.com/google/zoekt/internal/profiler"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
 	"github.com/google/zoekt/stream"
@@ -54,7 +54,6 @@ import (
 )
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
-const ServiceName = "zoekt-webserver"
 
 func divertLogs(dir string, interval time.Duration) {
 	t := time.NewTicker(interval)
