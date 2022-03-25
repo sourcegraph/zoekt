@@ -90,11 +90,7 @@ func main() {
 		}
 
 		if err := gitindex.IndexGitRepo(gitOpts); err != nil {
-			if gitOpts.BuildOptions.IsDelta {
-				log.Printf("(delta build) indexGitRepo(%s): %v", dir, err)
-			}
-
-			log.Printf("indexGitRepo(%s): %v", dir, err)
+			log.Printf("indexGitRepo(%s, delta=%t): %v", dir, gitOpts.BuildOptions.IsDelta, err)
 			exitStatus = 1
 		}
 	}
