@@ -800,7 +800,10 @@ func newServer(conf rootConfig) (*Server, error) {
 	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
-	_, _ = maxprocs.Set()
+	_, err = maxprocs.Set()
+	if err != nil {
+		log.Printf("could not set GOMAXPROCS: %v\n", err)
+	}
 
 	// Set the sampling rate of Go's block profiler: https://github.com/DataDog/go-profiler-notes/blob/main/guide/README.md#block-profiler.
 	// The block profiler is disabled by default and should be enabled with care in production

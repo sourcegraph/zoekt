@@ -32,7 +32,11 @@ import (
 func main() {
 	revisionStr := flag.String("revision", "", "hg revision to index")
 	flag.Parse()
-	_, _ = maxprocs.Set()
+	// Tune GOMAXPROCS to match Linux container CPU quota.
+	_, err := maxprocs.Set()
+	if err != nil {
+		log.Printf("could not set GOMAXPROCS: %v\n", err)
+	}
 	opts := cmd.OptionsFromFlags()
 
 	if len(flag.Args()) < 1 {
