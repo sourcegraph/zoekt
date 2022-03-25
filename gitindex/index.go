@@ -597,9 +597,6 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	// fileKey => branches
 	branchMap = map[fileKey][]string{}
 
-	// Branch => Repo => SHA1
-	//branchVersions := map[string]map[string]plumbing.Hash{}
-
 	// branch name -> git worktree at most current commit
 	branchToCurrentTree := make(map[string]*object.Tree, len(options.Branches))
 
