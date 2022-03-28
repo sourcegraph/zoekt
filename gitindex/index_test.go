@@ -127,19 +127,19 @@ func TestIndexDeltaBasic(t *testing.T) {
 			},
 		},
 		{
-			name:     "modification in nested folder",
+			name:     "modification only inside nested folder",
 			branches: []string{"main"},
 			steps: []step{
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV1InFolder},
+						"main": []zoekt.Document{foo, fruitV1InFolder},
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV1InFolder},
+					expectedDocuments: []zoekt.Document{foo, fruitV1InFolder},
 				},
 				{
-					name: "add newer version of fruits",
+					name: "add newer version of fruits inside folder",
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{fruitV2InFolder},
 					},
@@ -147,7 +147,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 						options.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV2InFolder},
+					expectedDocuments: []zoekt.Document{foo, fruitV2InFolder},
 				},
 			},
 		},
