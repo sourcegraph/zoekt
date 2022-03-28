@@ -277,7 +277,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		}
 	}
 
-	// create git gitConfiguration with options
+	// create git configuration with options
 	type configKV struct{ Key, Value string }
 	config := []configKV{{
 		// zoekt.name is used by zoekt-git-index to set the repository name.
@@ -291,7 +291,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		return config[i].Key < config[j].Key
 	})
 
-	// write gitConfiguration to repo
+	// write git configuration to repo
 	for _, kv := range config {
 		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt."+kv.Key, kv.Value)
 		cmd.Stdin = &bytes.Buffer{}
