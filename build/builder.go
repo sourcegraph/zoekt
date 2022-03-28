@@ -223,7 +223,7 @@ type Builder struct {
 	// a sortable 20 chars long id.
 	id string
 
-	existingShards []string
+	finishCalled bool
 }
 
 type finishedShard struct {
@@ -487,7 +487,6 @@ func NewBuilder(opts Options) (*Builder, error) {
 	b := &Builder{
 		opts:           opts,
 		throttle:       make(chan int, opts.Parallelism),
-		existingShards: opts.FindAllShards(),
 		finishedShards: map[string]string{},
 	}
 
@@ -550,6 +549,10 @@ func (b *Builder) AddFile(name string, content []byte) error {
 }
 
 func (b *Builder) Add(doc zoekt.Document) error {
+	if b.finishCalled {
+		return nil
+	}
+
 	allowLargeFile := b.opts.IgnoreSizeMax(doc.Name)
 
 	// Adjust trigramMax for allowed large files so we don't exclude them.
@@ -587,7 +590,15 @@ func (b *Builder) Add(doc zoekt.Document) error {
 // Finish creates a last shard from the buffered documents, and clears
 // stale shards from previous runs. This should always be called, also
 // in failure cases, to ensure cleanup.
+//
+// It is safe to call Finish() multiple times.
 func (b *Builder) Finish() error {
+	if b.finishCalled {
+		return b.buildError
+	}
+
+	b.finishCalled = true
+
 	b.flush()
 	b.building.Wait()
 
@@ -606,10 +617,12 @@ func (b *Builder) Finish() error {
 		artifactPaths[tmp] = final
 	}
 
+	oldShards := b.opts.FindAllShards()
+
 	if b.opts.IsDelta {
 		// Delta shard builds need to update FileTombstone and branch commit information for all
 		// existing shards
-		for _, shard := range b.existingShards {
+		for _, shard := range oldShards {
 			repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
 			if err != nil {
 				return fmt.Errorf("reading metadata from shard %q: %w", shard, err)
@@ -675,7 +688,7 @@ func (b *Builder) Finish() error {
 		// So, we skip populating the toDelete map if we're building delta shards.
 
 		toDelete = make(map[string]struct{})
-		for _, name := range b.existingShards {
+		for _, name := range oldShards {
 			paths, err := zoekt.IndexFilePaths(name)
 			if err != nil {
 				b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
