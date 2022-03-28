@@ -547,7 +547,8 @@ func TestRepositoryMetadata(t *testing.T) {
 		normalShardRepositories   []zoekt.Repository
 		compoundShardRepositories []zoekt.Repository
 		input                     *zoekt.Repository
-		expected                  *zoekt.Repository
+		expectedRepository        *zoekt.Repository
+		expectedOk                bool
 	}{
 		{
 			name: "repository in normal shards",
@@ -561,8 +562,9 @@ func TestRepositoryMetadata(t *testing.T) {
 				{Name: "repoE", ID: 5},
 				{Name: "repoF", ID: 6},
 			},
-			input:    &zoekt.Repository{Name: "repoB", ID: 2},
-			expected: &zoekt.Repository{Name: "repoB", ID: 2},
+			input:              &zoekt.Repository{Name: "repoB", ID: 2},
+			expectedRepository: &zoekt.Repository{Name: "repoB", ID: 2},
+			expectedOk:         true,
 		},
 		{
 			name: "repository in compound shards",
@@ -576,8 +578,9 @@ func TestRepositoryMetadata(t *testing.T) {
 				{Name: "repoE", ID: 5},
 				{Name: "repoF", ID: 6},
 			},
-			input:    &zoekt.Repository{Name: "repoE", ID: 5},
-			expected: &zoekt.Repository{Name: "repoE", ID: 5},
+			input:              &zoekt.Repository{Name: "repoE", ID: 5},
+			expectedRepository: &zoekt.Repository{Name: "repoE", ID: 5},
+			expectedOk:         true,
 		},
 		{
 			name: "repository not in any shard",
@@ -591,8 +594,9 @@ func TestRepositoryMetadata(t *testing.T) {
 				{Name: "repoE", ID: 5},
 				{Name: "repoF", ID: 6},
 			},
-			input:    &zoekt.Repository{Name: "notPresent", ID: 123},
-			expected: nil,
+			input:              &zoekt.Repository{Name: "notPresent", ID: 123},
+			expectedRepository: nil,
+			expectedOk:         false,
 		},
 	}
 	for _, tt := range tests {
@@ -615,7 +619,7 @@ func TestRepositoryMetadata(t *testing.T) {
 			o.SetDefaults()
 
 			// run test
-			got, err := o.RepositoryMetadata()
+			got, gotOk, err := o.RepositoryMetadata()
 			if err != nil {
 				t.Errorf("received unexpected error: %v", err)
 				return
@@ -628,8 +632,12 @@ func TestRepositoryMetadata(t *testing.T) {
 				cmpopts.EquateEmpty(),
 			}
 
-			if diff := cmp.Diff(tt.expected, got, compareOptions...); diff != "" {
-				t.Errorf("unexpected difference (-want +got):\n%s", diff)
+			if diff := cmp.Diff(tt.expectedRepository, got, compareOptions...); diff != "" {
+				t.Errorf("unexpected difference in repositories (-want +got):\n%s", diff)
+			}
+
+			if tt.expectedOk != gotOk {
+				t.Errorf("unexpected difference in 'ok' value: wanted %t, got %t", tt.expectedOk, gotOk)
 			}
 		})
 	}

@@ -564,12 +564,12 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		return nil, nil, nil, nil, fmt.Errorf("delta builds currently don't support submodule indexing")
 	}
 
-	existingRepository, err := options.BuildOptions.RepositoryMetadata()
+	existingRepository, ok, err := options.BuildOptions.RepositoryMetadata()
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to get repository metadata: %w", err)
 	}
 
-	if existingRepository == nil {
+	if !ok {
 		return nil, nil, nil, nil, fmt.Errorf("no existing shards found for repository")
 	}
 
