@@ -425,7 +425,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		var changedOrRemovedFiles []string
 		repos, branchMap, branchVersions, changedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
 		if err != nil {
-			log.Printf("(delta build) falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
+			log.Printf("delta build: falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
 			opts.BuildOptions.IsDelta = false
 		} else {
 			for _, f := range changedOrRemovedFiles {
