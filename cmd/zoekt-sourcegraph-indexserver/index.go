@@ -132,13 +132,13 @@ type gitIndexConfig struct {
 	// that gitIndex may construct.
 	runCmd func(*exec.Cmd) error
 
-	// getRepositoryMetadata is the function that returns the repository metadata for the
+	// findRepositoryMetadata is the function that returns the repository metadata for the
 	// repository specified in args. 'ok' is false if the repository's metadata
 	// couldn't be found or if an error occurred.
 	//
 	// The primary purpose of this configuration option is to be able to provide a stub
 	// implementation for this in our test suite. All other callers should use build.Options.FindRepositoryMetadata().
-	getRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
+	findRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
 }
 
 func gitIndex(c gitIndexConfig, o *indexArgs) error {
@@ -151,10 +151,10 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 	runCmd := c.runCmd
 
-	if c.getRepositoryMetadata == nil {
-		return errors.New("getRepositoryMetadata in provided configuration was nil - a function must be provided")
+	if c.findRepositoryMetadata == nil {
+		return errors.New("findRepositoryMetadata in provided configuration was nil - a function must be provided")
 	}
-	getRepositoryMetadata := c.getRepositoryMetadata
+	findRepositoryMetadata := c.findRepositoryMetadata
 
 	buildOptions := o.BuildOptions()
 
@@ -224,11 +224,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 
 	err = fetchCommits(branchCommits)
-
 	if err != nil {
-		allFetchesSucceeded = false
-		successfullyFetchedCommitsCount -= len(branchCommits)
-
 		return err
 	}
 
@@ -237,28 +233,25 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		// If we're unable to fetch prior commits, we continue anyway
 		// knowing that zoekt-git-index will fall back to a "full" normal build
 
-		repositoryName := buildOptions.RepositoryDescription.Name
-		repositoryID := buildOptions.RepositoryDescription.ID
+		var priorCommits []string
 
-		existingRepository, ok, err := getRepositoryMetadata(o)
+		existingRepository, found, err := findRepositoryMetadata(o)
 		if err != nil {
 			return fmt.Errorf("(delta build) failed to get repository metadata: %w", err)
 		}
 
-		if !ok {
-			log.Printf("(delta build) failed to prepare delta build for %q (ID %d): no prior shards found", repositoryName, repositoryID)
-		}
-
-		if existingRepository == nil {
-			log.Printf("(delta build) failed to prepare delta build for %q (ID %d): no prior shards found", repositoryName, repositoryID)
-		} else {
-			var priorCommits []string
+		if found {
 			for _, b := range existingRepository.Branches {
 				priorCommits = append(priorCommits, b.Version)
 			}
+		}
 
+		if len(priorCommits) > 0 {
 			err = fetchCommits(priorCommits)
 			if err != nil {
+				repositoryName := buildOptions.RepositoryDescription.Name
+				repositoryID := buildOptions.RepositoryDescription.ID
+
 				var formattedCommits []string
 				for _, b := range existingRepository.Branches {
 					formattedCommits = append(formattedCommits, fmt.Sprintf("%s@%s", b.Name, b.Version))

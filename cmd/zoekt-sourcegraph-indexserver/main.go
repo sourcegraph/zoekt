@@ -511,9 +511,14 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	c := gitIndexConfig{
 		runCmd: func(cmd *exec.Cmd) error {
 			return s.loggedRun(tr, cmd)
-		}}
+		},
 
-	return indexStateSuccess, gitIndex(args, c)
+		findRepositoryMetadata: func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error) {
+			return args.BuildOptions().FindRepositoryMetadata()
+		},
+	}
+
+	return indexStateSuccess, gitIndex(c, args)
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {

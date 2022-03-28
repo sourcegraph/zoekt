@@ -120,10 +120,10 @@ func TestGetIndexOptions(t *testing.T) {
 
 func TestIndex(t *testing.T) {
 	cases := []struct {
-		name                      string
-		args                      indexArgs
-		mockGetRepositoryMetadata func(args *indexArgs) (*zoekt.Repository, bool, error)
-		want                      []string
+		name                   string
+		args                   indexArgs
+		mockRepositoryMetadata *zoekt.Repository
+		want                   []string
 	}{{
 		name: "minimal",
 		args: indexArgs{
@@ -221,16 +221,14 @@ func TestIndex(t *testing.T) {
 				},
 			},
 		},
-		mockGetRepositoryMetadata: func(args *indexArgs) (*zoekt.Repository, bool, error) {
-			return &zoekt.Repository{
-				ID:   0,
-				Name: args.IndexOptions.Name,
-				Branches: []zoekt.RepositoryBranch{
-					{Name: "HEAD", Version: "oldhead"},
-					{Name: "dev", Version: "olddev"},
-					{Name: "release", Version: "oldrelease"},
-				},
-			}, true, nil
+		mockRepositoryMetadata: &zoekt.Repository{
+			ID:   0,
+			Name: "test/repo",
+			Branches: []zoekt.RepositoryBranch{
+				{Name: "HEAD", Version: "oldhead"},
+				{Name: "dev", Version: "olddev"},
+				{Name: "release", Version: "oldrelease"},
+			},
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
@@ -262,12 +260,20 @@ func TestIndex(t *testing.T) {
 				return nil
 			}
 
-			c := gitIndexConfig{
-				runCmd:                runCmd,
-				getRepositoryMetadata: tc.mockGetRepositoryMetadata,
+			findRepositoryMetadata := func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error) {
+				if tc.mockRepositoryMetadata == nil {
+					return args.BuildOptions().FindRepositoryMetadata()
+				}
+
+				return tc.mockRepositoryMetadata, true, nil
 			}
 
-			if err := gitIndex(&tc.args, c); err != nil {
+			c := gitIndexConfig{
+				runCmd:                 runCmd,
+				findRepositoryMetadata: findRepositoryMetadata,
+			}
+
+			if err := gitIndex(c, &tc.args); err != nil {
 				t.Fatal(err)
 			}
 			if !cmp.Equal(got, tc.want) {
