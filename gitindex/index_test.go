@@ -31,6 +31,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	"github.com/google/zoekt/ignore"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
 )
@@ -81,14 +82,19 @@ func TestIndexDeltaBasic(t *testing.T) {
 	helloWorld := zoekt.Document{Name: "hello_world.txt", Content: []byte("hello")}
 
 	fruitV1 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("strawberry")}
-	fruitV1WithNewName := fruitV1
-	fruitV1WithNewName.Name = "new_fruit.txt"
+	fruitV1InFolder := zoekt.Document{Name: "the_best/best_fruit.txt", Content: fruitV1.Content}
+	fruitV1WithNewName := zoekt.Document{Name: "new_fruit.txt", Content: fruitV1.Content}
 
 	fruitV2 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("grapes")}
+	fruitV2InFolder := zoekt.Document{Name: "the_best/best_fruit.txt", Content: fruitV2.Content}
+
 	fruitV3 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("oranges")}
 	fruitV4 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("apples")}
 
 	foo := zoekt.Document{Name: "foo.txt", Content: []byte("bar")}
+
+	emptySourcegraphIgnore := zoekt.Document{Name: ignore.IgnoreFile}
+	sourcegraphIgnoreWithContent := zoekt.Document{Name: ignore.IgnoreFile, Content: []byte("good_content.txt")}
 
 	for _, test := range []struct {
 		name     string
@@ -117,6 +123,31 @@ func TestIndexDeltaBasic(t *testing.T) {
 					},
 
 					expectedDocuments: []zoekt.Document{helloWorld, fruitV2},
+				},
+			},
+		},
+		{
+			name:     "modification in nested folder",
+			branches: []string{"main"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV1InFolder},
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV1InFolder},
+				},
+				{
+					name: "add newer version of fruits",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV2InFolder},
+					},
+					optFn: func(t *testing.T, options *Options) {
+						options.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV2InFolder},
 				},
 			},
 		},
@@ -342,6 +373,32 @@ func TestIndexDeltaBasic(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:     "should fallback to normal build if repository has unsupported Sourcegraph ignore file",
+			branches: []string{"main"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{emptySourcegraphIgnore},
+					},
+
+					expectedDocuments: []zoekt.Document{emptySourcegraphIgnore},
+				},
+				{
+					name: "attempt delta build after modifying ignore file",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{sourcegraphIgnoreWithContent},
+					},
+					optFn: func(t *testing.T, options *Options) {
+						options.BuildOptions.IsDelta = true
+					},
+
+					expectedFallbackToNormalBuild: true,
+					expectedDocuments:             []zoekt.Document{sourcegraphIgnoreWithContent},
+				},
+			},
+		},
 	} {
 		test := test
 
@@ -373,23 +430,32 @@ func TestIndexDeltaBasic(t *testing.T) {
 						for _, d := range step.deletedDocuments[b] {
 							hadChange = true
 
-							err := os.Remove(filepath.Join(repositoryDir, d.Name))
+							file := filepath.Join(repositoryDir, d.Name)
+
+							err := os.Remove(file)
 							if err != nil {
 								t.Fatalf("deleting file %q: %s", d.Name, err)
 							}
 
-							runScript(t, repositoryDir, fmt.Sprintf("git add %q", d.Name))
+							runScript(t, repositoryDir, fmt.Sprintf("git add %q", file))
 						}
 
 						for _, d := range step.addedDocuments[b] {
 							hadChange = true
 
-							err := os.WriteFile(filepath.Join(repositoryDir, d.Name), d.Content, 0644)
+							file := filepath.Join(repositoryDir, d.Name)
+
+							err := os.MkdirAll(filepath.Dir(file), 0755)
+							if err != nil {
+								t.Fatalf("ensuring that folders exist for file %q: %s", file, err)
+							}
+
+							err = os.WriteFile(file, d.Content, 0644)
 							if err != nil {
 								t.Fatalf("writing file %q: %s", d.Name, err)
 							}
 
-							runScript(t, repositoryDir, fmt.Sprintf("git add %q", d.Name))
+							runScript(t, repositoryDir, fmt.Sprintf("git add %q", file))
 						}
 
 						if !hadChange {
@@ -498,7 +564,12 @@ func TestIndexDeltaBasic(t *testing.T) {
 						})
 					}
 
-					if diff := cmp.Diff(step.expectedDocuments, receivedDocuments, cmpopts.IgnoreFields(zoekt.Document{}, "Branches")); diff != "" {
+					compareOptions := []cmp.Option{
+						cmpopts.IgnoreFields(zoekt.Document{}, "Branches"),
+						cmpopts.EquateEmpty(),
+					}
+
+					if diff := cmp.Diff(step.expectedDocuments, receivedDocuments, compareOptions...); diff != "" {
 						t.Errorf("diff in received documents (-want +got):%s\n:", diff)
 					}
 				})
