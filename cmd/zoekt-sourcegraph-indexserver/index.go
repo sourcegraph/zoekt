@@ -193,19 +193,8 @@ func gitIndex(o *indexArgs, c gitIndexConfig) error {
 		return err
 	}
 
-	var fetchCommits = func(commits []string) error {
-		fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
-		fetchArgs = append(fetchArgs, commits...)
-
-		cmd = exec.CommandContext(ctx, "git", fetchArgs...)
-		cmd.Stdin = &bytes.Buffer{}
-
-		return runCmd(cmd)
-	}
-
-	successfullyFetchedCommitsCount := 0
-
 	var fetchDuration time.Duration
+	successfullyFetchedCommitsCount := 0
 	allFetchesSucceeded := true
 
 	defer func() {
@@ -213,6 +202,26 @@ func gitIndex(o *indexArgs, c gitIndexConfig) error {
 		name := repoNameForMetric(o.Name)
 		metricFetchDuration.WithLabelValues(success, name).Observe(fetchDuration.Seconds())
 	}()
+
+	var fetchCommits = func(commits []string) error {
+		fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
+		fetchArgs = append(fetchArgs, commits...)
+
+		cmd = exec.CommandContext(ctx, "git", fetchArgs...)
+		cmd.Stdin = &bytes.Buffer{}
+
+		start := time.Now()
+		err := runCmd(cmd)
+		fetchDuration += time.Since(start)
+
+		if err != nil {
+			allFetchesSucceeded = false
+			return err
+		}
+
+		successfullyFetchedCommitsCount += len(commits)
+		return nil
+	}
 
 	// We shallow fetch each commit specified in zoekt.Branches. This requires
 	// the server to have configured both uploadpack.allowAnySHA1InWant and
@@ -222,10 +231,7 @@ func gitIndex(o *indexArgs, c gitIndexConfig) error {
 		branchCommits = append(branchCommits, b.Version)
 	}
 
-	start := time.Now()
 	err = fetchCommits(branchCommits)
-	fetchDuration += time.Since(start)
-	successfullyFetchedCommitsCount += len(branchCommits)
 
 	if err != nil {
 		allFetchesSucceeded = false
@@ -259,15 +265,8 @@ func gitIndex(o *indexArgs, c gitIndexConfig) error {
 				priorCommits = append(priorCommits, b.Version)
 			}
 
-			start := time.Now()
 			err = fetchCommits(priorCommits)
-			fetchDuration += time.Since(start)
-			successfullyFetchedCommitsCount += len(priorCommits)
-
 			if err != nil {
-				allFetchesSucceeded = false
-				successfullyFetchedCommitsCount -= len(priorCommits)
-
 				var formattedCommits []string
 				for _, b := range existingRepository.Branches {
 					formattedCommits = append(formattedCommits, fmt.Sprintf("%s@%s", b.Name, b.Version))
