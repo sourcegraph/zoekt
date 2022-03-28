@@ -135,11 +135,12 @@ type gitIndexConfig struct {
 	runCmd func(*exec.Cmd) error
 
 	// getRepositoryMetadata, if not nil, returns the repository metadata for the
-	// repository specified in args (or nil if the repository metadata couldn't be found).
+	// repository specified in args. 'ok' is false if the repository's metadata
+	// couldn't be found or if an error occurred.
 	//
 	// If getRepositoryMetadata is nil, then the repository metadata is retrieved
 	// from any existing shards on disk.
-	getRepositoryMetadata func(args *indexArgs) (*zoekt.Repository, error)
+	getRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
 }
 
 func gitIndex(o *indexArgs, c gitIndexConfig) error {
@@ -157,8 +158,8 @@ func gitIndex(o *indexArgs, c gitIndexConfig) error {
 
 	buildOptions := o.BuildOptions()
 
-	getRepositoryMetadata := func(args *indexArgs) (*zoekt.Repository, error) {
-		return buildOptions.RepositoryMetadata()
+	getRepositoryMetadata := func(args *indexArgs) (*zoekt.Repository, bool, error) {
+		return buildOptions.FindRepositoryMetadata()
 	}
 
 	if c.getRepositoryMetadata != nil {
@@ -241,9 +242,13 @@ func gitIndex(o *indexArgs, c gitIndexConfig) error {
 		repositoryName := buildOptions.RepositoryDescription.Name
 		repositoryID := buildOptions.RepositoryDescription.ID
 
-		existingRepository, err := getRepositoryMetadata(o)
+		existingRepository, ok, err := getRepositoryMetadata(o)
 		if err != nil {
 			return fmt.Errorf("(delta build) failed to get repository metadata: %w", err)
+		}
+
+		if !ok {
+			log.Printf("(delta build) failed to prepare delta build for %q (ID %d): no prior shards found", repositoryName, repositoryID)
 		}
 
 		if existingRepository == nil {

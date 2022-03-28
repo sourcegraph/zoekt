@@ -122,7 +122,7 @@ func TestIndex(t *testing.T) {
 	cases := []struct {
 		name                      string
 		args                      indexArgs
-		mockGetRepositoryMetadata func(args *indexArgs) (*zoekt.Repository, error)
+		mockGetRepositoryMetadata func(args *indexArgs) (*zoekt.Repository, bool, error)
 		want                      []string
 	}{{
 		name: "minimal",
@@ -221,7 +221,7 @@ func TestIndex(t *testing.T) {
 				},
 			},
 		},
-		mockGetRepositoryMetadata: func(args *indexArgs) (*zoekt.Repository, error) {
+		mockGetRepositoryMetadata: func(args *indexArgs) (*zoekt.Repository, bool, error) {
 			return &zoekt.Repository{
 				ID:   0,
 				Name: args.IndexOptions.Name,
@@ -230,7 +230,7 @@ func TestIndex(t *testing.T) {
 					{Name: "dev", Version: "olddev"},
 					{Name: "release", Version: "oldrelease"},
 				},
-			}, nil
+			}, true, nil
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
