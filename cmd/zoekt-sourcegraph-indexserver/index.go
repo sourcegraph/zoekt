@@ -128,43 +128,35 @@ func (o *indexArgs) String() string {
 }
 
 type gitIndexConfig struct {
-	// runCmd, if not nil, is used to execute all external commands (such as calls to "git" or "zoekt-git-index")
+	// runCmd is the function that's used to execute all external commands (such as calls to "git" or "zoekt-git-index")
 	// that gitIndex may construct.
-	//
-	// If runCmd is nil, then (*exec.Cmd).Run() will be used instead.
 	runCmd func(*exec.Cmd) error
 
-	// getRepositoryMetadata, if not nil, returns the repository metadata for the
+	// getRepositoryMetadata is the function that returns the repository metadata for the
 	// repository specified in args. 'ok' is false if the repository's metadata
 	// couldn't be found or if an error occurred.
 	//
-	// If getRepositoryMetadata is nil, then the repository metadata is retrieved
-	// from any existing shards on disk.
+	// The primary purpose of this configuration option is to be able to provide a stub
+	// implementation for this in our test suite. All other callers should use build.Options.FindRepositoryMetadata().
 	getRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
 }
 
-func gitIndex(o *indexArgs, c gitIndexConfig) error {
+func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
 	}
 
-	runCmd := func(cmd *exec.Cmd) error {
-		return cmd.Run()
+	if c.runCmd == nil {
+		return errors.New("runCmd in provided configuration was nil - a function must be provided")
 	}
+	runCmd := c.runCmd
 
-	if c.runCmd != nil {
-		runCmd = c.runCmd
+	if c.getRepositoryMetadata == nil {
+		return errors.New("getRepositoryMetadata in provided configuration was nil - a function must be provided")
 	}
+	getRepositoryMetadata := c.getRepositoryMetadata
 
 	buildOptions := o.BuildOptions()
-
-	getRepositoryMetadata := func(args *indexArgs) (*zoekt.Repository, bool, error) {
-		return buildOptions.FindRepositoryMetadata()
-	}
-
-	if c.getRepositoryMetadata != nil {
-		getRepositoryMetadata = c.getRepositoryMetadata
-	}
 
 	// An index should never take longer than an hour.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
