@@ -579,7 +579,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	// normal one).
 
 	indexState := build.CompareBranches(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches)
-	if indexState != build.IndexStateBranchVersion {
+	if !(indexState == build.IndexStateBranchVersion || indexState == build.IndexStateEqual) {
 		var existingBranchNames []string
 		for _, b := range existingRepository.Branches {
 			existingBranchNames = append(existingBranchNames, b.Name)

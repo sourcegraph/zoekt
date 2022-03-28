@@ -259,6 +259,36 @@ func TestIndexDeltaBasic(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:     "no-op delta builds (reindexing the same commits)",
+			branches: []string{"main", "dev"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV1, foo},
+						"dev":  []zoekt.Document{helloWorld},
+					},
+					expectedDocuments: []zoekt.Document{fruitV1, foo, helloWorld},
+				},
+				{
+					name: "first no-op (normal build -> delta build)",
+					optFn: func(t *testing.T, options *Options) {
+						options.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV1, foo, helloWorld},
+				},
+				{
+					name: "second no-op (delta build -> delta build)",
+					optFn: func(t *testing.T, options *Options) {
+						options.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV1, foo, helloWorld},
+				},
+			},
+		},
 		// TODO@ggilmore: I'm a bit torn as to whether or not these
 		// fallback tests should be here or in their own separate test.
 		//
