@@ -237,7 +237,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 
 		existingRepository, found, err := findRepositoryMetadata(o)
 		if err != nil {
-			return fmt.Errorf("(delta build) failed to get repository metadata: %w", err)
+			return fmt.Errorf("delta build: failed to get repository metadata: %w", err)
 		}
 
 		if found {
@@ -257,7 +257,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 					formattedCommits = append(formattedCommits, fmt.Sprintf("%s@%s", b.Name, b.Version))
 				}
 
-				log.Printf("(delta build) failed to prepare delta build for %q (ID %d): failed to fetch prior commits (%s): %s", repositoryName, repositoryID, strings.Join(formattedCommits, ", "), err)
+				log.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch prior commits (%s): %s", repositoryName, repositoryID, strings.Join(formattedCommits, ", "), err)
 			}
 		}
 	}

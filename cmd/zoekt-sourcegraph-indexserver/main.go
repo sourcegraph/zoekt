@@ -472,7 +472,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	repositoryName := args.Name
 	if _, ok := s.deltaBuildRepositoriesAllowList[repositoryName]; ok {
 		repositoryID := args.BuildOptions().RepositoryDescription.ID
-		debug.Printf("(delta build) Server.Index: marking %q (ID %d) for delta build", repositoryName, repositoryID)
+		debug.Printf("delta build: Server.Index: marking %q (ID %d) for delta build", repositoryName, repositoryID)
 
 		args.UseDelta = true
 	}
