@@ -120,6 +120,7 @@ func TestFlags(t *testing.T) {
 	ignored := []cmp.Option{
 		// depends on $PATH setting.
 		cmpopts.IgnoreFields(Options{}, "CTags"),
+		cmpopts.IgnoreFields(Options{}, "changedOrRemovedFiles"),
 		cmpopts.IgnoreFields(zoekt.Repository{}, "priority"),
 	}
 

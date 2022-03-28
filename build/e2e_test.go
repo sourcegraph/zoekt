@@ -645,7 +645,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: []zoekt.Document{fooAtMainV2},
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.ChangedOrRemovedFiles = []string{"foo.go"}
+						o.changedOrRemovedFiles = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain, fooAtMainV2},
@@ -655,7 +655,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: []zoekt.Document{barAtMainV2},
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.ChangedOrRemovedFiles = []string{"bar.go"}
+						o.changedOrRemovedFiles = []string{"bar.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMainV2, fooAtMainV2},
@@ -677,7 +677,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: nil,
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.ChangedOrRemovedFiles = []string{"foo.go"}
+						o.changedOrRemovedFiles = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain},
@@ -699,7 +699,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: nil,
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.ChangedOrRemovedFiles = []string{"foo.go"}
+						o.changedOrRemovedFiles = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain},

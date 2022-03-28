@@ -99,10 +99,10 @@ type Options struct {
 	// last run.
 	IsDelta bool
 
-	// ChangedOrRemovedFiles is a list of file paths that have been changed or removed
+	// changedOrRemovedFiles is a list of file paths that have been changed or removed
 	// since the last indexing job for this repository. These files will be tombstoned
 	// in the older shards for this repository.
-	ChangedOrRemovedFiles []string
+	changedOrRemovedFiles []string
 }
 
 // HashOptions creates a hash of the options that affect an index.
@@ -536,6 +536,14 @@ func NewBuilder(opts Options) (*Builder, error) {
 	return b, nil
 }
 
+// MarkFileAsChangedOrRemoved indicates that the file specified by the given path
+// has been changed or removed since the last indexing job for this repository.
+//
+// If this build is a delta build, these files will be tombstoned in the older shards for this repository.
+func (o *Options) MarkFileAsChangedOrRemoved(path string) {
+	o.changedOrRemovedFiles = append(o.changedOrRemovedFiles, path)
+}
+
 // AddFile is a convenience wrapper for the Add method
 func (b *Builder) AddFile(name string, content []byte) error {
 	return b.Add(zoekt.Document{Name: name, Content: content})
@@ -620,11 +628,11 @@ func (b *Builder) Finish() error {
 				return fmt.Errorf("shard %q doesn't contain repository ID %d (%q)", shard, b.opts.RepositoryDescription.ID, b.opts.RepositoryDescription.Name)
 			}
 
-			if len(b.opts.ChangedOrRemovedFiles) > 0 && repository.FileTombstones == nil {
-				repository.FileTombstones = make(map[string]struct{}, len(b.opts.ChangedOrRemovedFiles))
+			if len(b.opts.changedOrRemovedFiles) > 0 && repository.FileTombstones == nil {
+				repository.FileTombstones = make(map[string]struct{}, len(b.opts.changedOrRemovedFiles))
 			}
 
-			for _, f := range b.opts.ChangedOrRemovedFiles {
+			for _, f := range b.opts.changedOrRemovedFiles {
 				repository.FileTombstones[f] = struct{}{}
 			}
 

@@ -422,10 +422,15 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 	var branchVersions map[string]map[string]plumbing.Hash
 
 	if opts.BuildOptions.IsDelta {
-		repos, branchMap, branchVersions, opts.BuildOptions.ChangedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
+		var changedOrRemovedFiles []string
+		repos, branchMap, branchVersions, changedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
 		if err != nil {
 			log.Printf("(delta build) falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
 			opts.BuildOptions.IsDelta = false
+		} else {
+			for _, f := range changedOrRemovedFiles {
+				opts.BuildOptions.MarkFileAsChangedOrRemoved(f)
+			}
 		}
 	}
 
