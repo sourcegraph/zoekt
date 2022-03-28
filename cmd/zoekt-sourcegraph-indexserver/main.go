@@ -756,6 +756,15 @@ func getEnvWithDefaultEmptySet(k string) map[string]struct{} {
 	return set
 }
 
+func joinStringSet(set map[string]struct{}, sep string) string {
+	var xs []string
+	for x := range set {
+		xs = append(xs, x)
+	}
+
+	return strings.Join(xs, sep)
+}
+
 func setCompoundShardCounter(indexDir string) {
 	fns, err := filepath.Glob(filepath.Join(indexDir, "compound-*.zoekt"))
 	if err != nil {
@@ -879,22 +888,12 @@ func newServer(conf rootConfig) (*Server, error) {
 
 	reposWithSeparateIndexingMetrics = getEnvWithDefaultEmptySet("INDEXING_METRICS_REPOS_ALLOWLIST")
 	if len(reposWithSeparateIndexingMetrics) > 0 {
-		var repos []string
-		for r := range reposWithSeparateIndexingMetrics {
-			repos = append(repos, r)
-		}
-
-		debug.Printf("capturing separate indexing metrics for: %s", strings.Join(repos, ", "))
+		debug.Printf("capturing separate indexing metrics for: %s", joinStringSet(reposWithSeparateIndexingMetrics, ", "))
 	}
 
 	deltaBuildRepositoriesAllowList := getEnvWithDefaultEmptySet("DELTA_BUILD_REPOS_ALLOWLIST")
 	if len(deltaBuildRepositoriesAllowList) > 0 {
-		var repos []string
-		for r := range deltaBuildRepositoriesAllowList {
-			repos = append(repos, r)
-		}
-
-		debug.Printf("using delta shard builds for: %s", strings.Join(repos, ", "))
+		debug.Printf("using delta shard builds for: %s", joinStringSet(deltaBuildRepositoriesAllowList, ", "))
 	}
 
 	var sg Sourcegraph
