@@ -17,6 +17,7 @@ package gitindex
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -645,22 +646,20 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 			return nil, nil, nil, nil, fmt.Errorf("getting lasted indexed git tree for branch %q: %w", branch.Name, err)
 		}
 
-		changes, err := lastIndexedTree.Diff(branchToCurrentTree[branch.Name])
+		changes, err := object.DiffTreeWithOptions(context.Background(), lastIndexedTree, branchToCurrentTree[branch.Name], &object.DiffTreeOptions{DetectRenames: false})
 		if err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("generating changeset for branch %q: %w", branch.Name, err)
 		}
 
-		patch, err := changes.Patch()
-		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("generating patch from changeset for branch %q: %w", branch.Name, err)
-		}
-
-		for _, fp := range patch.FilePatches() {
-			oldFile, newFile := fp.Files()
+		for i, c := range changes {
+			oldFile, newFile, err := c.Files()
+			if err != nil {
+				return nil, nil, nil, nil, fmt.Errorf("change #%d: getting files before and after change: %w", i, err)
+			}
 
 			if newFile != nil {
 				// either file is added or renamed, so we need to add the new version to the build
-				file := fileKey{Path: newFile.Path(), ID: newFile.Hash()}
+				file := fileKey{Path: newFile.Name, ID: newFile.Hash}
 				repos[file] = hackSharedBlobLocation
 				branchMap[file] = append(branchMap[file], branch.Name)
 			}
@@ -673,22 +672,22 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 			// The file is either modified or deleted. So, we need to add ALL versions
 			// of the old file (across all branches) to the build.
 			for b, currentTree := range branchToCurrentTree {
-				f, err := currentTree.File(oldFile.Path())
+				f, err := currentTree.File(oldFile.Name)
 				if err != nil {
 					// the file doesn't exist in this branch
 					if errors.Is(err, object.ErrFileNotFound) {
 						continue
 					}
 
-					return nil, nil, nil, nil, fmt.Errorf("getting hash for file %q in branch %q: %w", oldFile.Path(), b, err)
+					return nil, nil, nil, nil, fmt.Errorf("getting hash for file %q in branch %q: %w", oldFile.Name, b, err)
 				}
 
-				file := fileKey{Path: oldFile.Path(), ID: f.ID()}
+				file := fileKey{Path: oldFile.Name, ID: f.ID()}
 				repos[file] = hackSharedBlobLocation
 				branchMap[file] = append(branchMap[file], b)
 			}
 
-			changedOrDeletedPaths = append(changedOrDeletedPaths, oldFile.Path())
+			changedOrDeletedPaths = append(changedOrDeletedPaths, oldFile.Name)
 		}
 	}
 
