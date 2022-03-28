@@ -506,7 +506,7 @@ func TestBuilder_DeltaShardsUpdateVersionsInOlderShards(t *testing.T) {
 
 		diffOptions := []cmp.Option{
 			cmpopts.IgnoreUnexported(zoekt.Repository{}),
-			cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions", "HasSymbols"),
+			cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions"),
 			cmpopts.EquateEmpty(),
 		}
 
