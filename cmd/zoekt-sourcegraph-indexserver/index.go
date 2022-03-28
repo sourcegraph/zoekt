@@ -196,6 +196,9 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}()
 
 	var fetchCommits = func(commits []string) error {
+		// We shallow fetch each commit specified in zoekt.Branches. This requires
+		// the server to have configured both uploadpack.allowAnySHA1InWant and
+		// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
 		fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
 		fetchArgs = append(fetchArgs, commits...)
 
@@ -215,9 +218,6 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		return nil
 	}
 
-	// We shallow fetch each commit specified in zoekt.Branches. This requires
-	// the server to have configured both uploadpack.allowAnySHA1InWant and
-	// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
 	var branchCommits []string
 	for _, b := range o.Branches {
 		branchCommits = append(branchCommits, b.Version)
