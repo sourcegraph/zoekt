@@ -570,7 +570,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		return nil, nil, nil, nil, fmt.Errorf("delta builds currently don't support submodule indexing")
 	}
 
-	existingRepository, ok, err := options.BuildOptions.RepositoryMetadata()
+	existingRepository, ok, err := options.BuildOptions.FindRepositoryMetadata()
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to get repository metadata: %w", err)
 	}

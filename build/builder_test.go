@@ -516,7 +516,7 @@ func TestBuilder_DeltaShardsUpdateVersionsInOlderShards(t *testing.T) {
 	}
 }
 
-func TestRepositoryMetadata(t *testing.T) {
+func TestFindRepositoryMetadata(t *testing.T) {
 	tests := []struct {
 		name                      string
 		normalShardRepositories   []zoekt.Repository
@@ -594,7 +594,7 @@ func TestRepositoryMetadata(t *testing.T) {
 			o.SetDefaults()
 
 			// run test
-			got, gotOk, err := o.RepositoryMetadata()
+			got, gotOk, err := o.FindRepositoryMetadata()
 			if err != nil {
 				t.Errorf("received unexpected error: %v", err)
 				return

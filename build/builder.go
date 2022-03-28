@@ -378,10 +378,10 @@ func (o *Options) IndexState() (IndexState, string) {
 	return IndexStateEqual, fn
 }
 
-// RepositoryMetadata returns the index metadata for the repository
+// FindRepositoryMetadata returns the index metadata for the repository
 // specified in the options. 'ok' is false if the repository's metadata
 // couldn't be found or if an error occurred.
-func (o *Options) RepositoryMetadata() (repository *zoekt.Repository, ok bool, err error) {
+func (o *Options) FindRepositoryMetadata() (repository *zoekt.Repository, ok bool, err error) {
 	shard := o.findShard()
 	if shard == "" {
 		return nil, false, nil
