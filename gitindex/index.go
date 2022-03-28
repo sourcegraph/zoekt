@@ -574,12 +574,11 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		return nil, nil, nil, nil, fmt.Errorf("no existing shards found for repository")
 	}
 
-	// Check to see if the branch set is consistent with what we last indexed.
+	// Check to see if the set of branch names is consistent with what we last indexed.
 	// If it isn't consistent, that we can't proceed with a delta build (and the caller should fall back to a
 	// normal one).
 
-	indexState := build.CompareBranches(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches)
-	if !(indexState == build.IndexStateBranchVersion || indexState == build.IndexStateEqual) {
+	if !build.BranchNamesEqual(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches) {
 		var existingBranchNames []string
 		for _, b := range existingRepository.Branches {
 			existingBranchNames = append(existingBranchNames, b.Name)

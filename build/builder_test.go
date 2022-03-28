@@ -374,73 +374,47 @@ func TestOptions_FindAllShards(t *testing.T) {
 	}
 }
 
-func TestBuilder_DeltaShardsIndexState(t *testing.T) {
+func TestBuilder_BranchNamesEqual(t *testing.T) {
 	for i, test := range []struct {
-		oldBranches   []zoekt.RepositoryBranch
-		newBranches   []zoekt.RepositoryBranch
-		expectedState IndexState
+		oldBranches []zoekt.RepositoryBranch
+		newBranches []zoekt.RepositoryBranch
+		expected    bool
 	}{
 		{
-			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v2"}},
-			expectedState: IndexStateBranchVersion,
+			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}, {Name: "release", Version: "v1"}},
+			newBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}, {Name: "release", Version: "v1"}},
+			expected:    true,
+		},
+		{
+			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}, {Name: "release", Version: "v3"}},
+			newBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v2"}, {Name: "release", Version: "v4"}},
+			expected:    true,
 		},
 		{
 			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			newBranches: []zoekt.RepositoryBranch{
-				{Name: "main", Version: "v2"},
-				{Name: "release", Version: "v1"},
-			},
-			expectedState: IndexStateBranchSet,
+			newBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v2"}, {Name: "release", Version: "v1"}},
+			expected:    false,
 		},
 		{
-			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			newBranches:   []zoekt.RepositoryBranch{{Name: "release", Version: "v1"}},
-			expectedState: IndexStateBranchSet,
+			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			newBranches: []zoekt.RepositoryBranch{{Name: "release", Version: "v1"}},
+			expected:    false,
 		},
 		{
-			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			newBranches:   []zoekt.RepositoryBranch{},
-			expectedState: IndexStateBranchSet,
+			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			newBranches: []zoekt.RepositoryBranch{},
+			expected:    false,
 		},
 		{
-			oldBranches:   []zoekt.RepositoryBranch{},
-			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			expectedState: IndexStateBranchSet,
-		},
-		{
-			oldBranches:   []zoekt.RepositoryBranch{},
-			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			expectedState: IndexStateBranchSet,
+			oldBranches: []zoekt.RepositoryBranch{},
+			newBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			expected:    false,
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			indexDir := t.TempDir()
-
-			repositoryV1 := zoekt.Repository{
-				Name:     "repo",
-				ID:       1,
-				Branches: test.oldBranches,
-			}
-
-			createTestShard(t, indexDir, repositoryV1, 2)
-
-			repositoryV2 := zoekt.Repository{
-				Name:     "repo",
-				ID:       1,
-				Branches: test.newBranches,
-			}
-
-			o := Options{
-				IndexDir:              indexDir,
-				RepositoryDescription: repositoryV2,
-				IsDelta:               true,
-			}
-			o.SetDefaults()
-
-			state, _ := o.IndexState()
-			if diff := cmp.Diff(test.expectedState, state); diff != "" {
-				t.Errorf("unexpected diff in index state (-want +got):\n%s", diff)
+			actual := BranchNamesEqual(test.oldBranches, test.newBranches)
+			if test.expected != actual {
+				t.Errorf("expected: %t, got: %t", test.expected, actual)
 			}
 		})
 	}

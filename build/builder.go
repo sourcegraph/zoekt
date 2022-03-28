@@ -296,15 +296,13 @@ func (o *Options) shardNameVersion(version, n int) string {
 type IndexState string
 
 const (
-	IndexStateMissing       IndexState = "missing"
-	IndexStateCorrupt       IndexState = "corrupt"
-	IndexStateVersion       IndexState = "version-mismatch"
-	IndexStateOption        IndexState = "option-mismatch"
-	IndexStateMeta          IndexState = "meta-mismatch"
-	IndexStateContent       IndexState = "content-mismatch"
-	IndexStateBranchSet     IndexState = "branch-set-mismatch"
-	IndexStateBranchVersion IndexState = "branch-version-mismatch"
-	IndexStateEqual         IndexState = "equal"
+	IndexStateMissing IndexState = "missing"
+	IndexStateCorrupt IndexState = "corrupt"
+	IndexStateVersion IndexState = "version-mismatch"
+	IndexStateOption  IndexState = "option-mismatch"
+	IndexStateMeta    IndexState = "meta-mismatch"
+	IndexStateContent IndexState = "content-mismatch"
+	IndexStateEqual   IndexState = "equal"
 )
 
 var readVersions = []struct {
@@ -363,12 +361,7 @@ func (o *Options) IndexState() (IndexState, string) {
 		return IndexStateOption, fn
 	}
 
-	if o.IsDelta { // TODO: Get rid of this guard once the delta shard behavior is the default
-		state := CompareBranches(repo.Branches, o.RepositoryDescription.Branches)
-		if state != IndexStateEqual {
-			return state, fn
-		}
-	} else if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
+	if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
 		return IndexStateContent, fn
 	}
 
@@ -635,8 +628,7 @@ func (b *Builder) Finish() error {
 				repository.FileTombstones[f] = struct{}{}
 			}
 
-			if CompareBranches(repository.Branches, b.opts.RepositoryDescription.Branches) == IndexStateBranchSet {
-				// NOTE: Should we be handling IndexStateBranchVersion and IndexStateCorrupt here too?
+			if !BranchNamesEqual(repository.Branches, b.opts.RepositoryDescription.Branches) {
 				return deltaBranchSetError{
 					shardName: shard,
 					old:       repository.Branches,
@@ -720,29 +712,21 @@ func (b *Builder) Finish() error {
 	return b.buildError
 }
 
-// CompareBranches returns an IndexState comparing the two zoekt.RepositoryBranch
-// slices.
-//
-// The result will be IndexStateEqual if both slices specify the same set
-// of branch names and versions, IndexStateBranchSet if either slice specifies a different
-// set of branch names than the other, or IndexStateBranchVersion if both slices specify the same set of
-// branch names but have different accompanying versions.
-func CompareBranches(a, b []zoekt.RepositoryBranch) IndexState {
+// BranchNamesEqual compares the given zoekt.RepositoryBranch slices, and returns true
+// iff both slices specify the same set of branch names in the same order.
+func BranchNamesEqual(a, b []zoekt.RepositoryBranch) bool {
 	if len(a) != len(b) {
-		return IndexStateBranchSet
+		return false
 	}
 
 	for i := range a {
 		x, y := a[i], b[i]
 		if x.Name != y.Name {
-			return IndexStateBranchSet
-		}
-		if x.Version != y.Version {
-			return IndexStateBranchVersion
+			return false
 		}
 	}
 
-	return IndexStateEqual
+	return true
 }
 
 func (b *Builder) flush() error {
