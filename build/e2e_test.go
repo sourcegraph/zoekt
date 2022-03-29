@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -457,20 +458,9 @@ func TestPartialSuccess(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		nm := fmt.Sprintf("F%d", i)
-
-		// no error checking: the 2nd call will fail
 		_ = b.AddFile(nm, []byte(strings.Repeat("01234567\n", 128)))
-		if i == 1 {
-			// force writes to fail.
-			if err := os.Chmod(dir, 0o555); err != nil {
-				t.Fatalf("chmod(%s): %s", dir, err)
-			}
-		}
 	}
-
-	if err := os.Chmod(dir, 0o755); err != nil {
-		t.Fatalf("chmod(%s, writable): %s", dir, err)
-	}
+	b.buildError = fmt.Errorf("any error")
 
 	// No error checking.
 	_ = b.Finish()
@@ -644,7 +634,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: []zoekt.Document{fooAtMainV2},
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.ChangedOrRemovedFiles = []string{"foo.go"}
+						o.changedOrRemovedFiles = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain, fooAtMainV2},
@@ -654,7 +644,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: []zoekt.Document{barAtMainV2},
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.ChangedOrRemovedFiles = []string{"bar.go"}
+						o.changedOrRemovedFiles = []string{"bar.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMainV2, fooAtMainV2},
@@ -676,7 +666,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: nil,
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.ChangedOrRemovedFiles = []string{"foo.go"}
+						o.changedOrRemovedFiles = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain},
@@ -698,7 +688,7 @@ func TestDeltaShards(t *testing.T) {
 					documents: nil,
 					optFn: func(t *testing.T, o *Options) {
 						o.IsDelta = true
-						o.ChangedOrRemovedFiles = []string{"foo.go"}
+						o.changedOrRemovedFiles = []string{"foo.go"}
 					},
 					query:             "common",
 					expectedDocuments: []zoekt.Document{barAtMain},
@@ -726,6 +716,12 @@ func TestDeltaShards(t *testing.T) {
 					repository.Branches = append(repository.Branches, zoekt.RepositoryBranch{Name: b})
 				}
 
+				sort.Slice(repository.Branches, func(i, j int) bool {
+					a, b := repository.Branches[i], repository.Branches[j]
+
+					return a.Name < b.Name
+				})
+
 				buildOpts := Options{
 					IndexDir:              indexDir,
 					RepositoryDescription: repository,
@@ -745,6 +741,15 @@ func TestDeltaShards(t *testing.T) {
 					err := b.Add(d)
 					if err != nil {
 						t.Fatalf("step %q: adding document %q to builder: %s", step.name, d.Name, err)
+					}
+				}
+
+				// Call b.Finish() multiple times to ensure that it is idempotent
+				for i := 0; i < 3; i++ {
+
+					err = b.Finish()
+					if err != nil {
+						t.Fatalf("step %q: finishing builder (call #%d): %s", step.name, i, err)
 					}
 				}
 

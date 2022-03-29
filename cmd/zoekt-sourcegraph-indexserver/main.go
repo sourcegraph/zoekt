@@ -165,6 +165,10 @@ type Server struct {
 
 	// If true, shard merging is enabled.
 	shardMerging bool
+
+	// deltaBuildRepositoriesAllowList is an allowlist for repositories that we
+	// use delta-builds for instead of normal builds
+	deltaBuildRepositoriesAllowList map[string]struct{}
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -465,13 +469,23 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		return indexStateEmpty, createEmptyShard(args)
 	}
 
+	repositoryName := args.Name
+	if _, ok := s.deltaBuildRepositoriesAllowList[repositoryName]; ok {
+		repositoryID := args.BuildOptions().RepositoryDescription.ID
+		debug.Printf("delta build: Server.Index: marking %q (ID %d) for delta build", repositoryName, repositoryID)
+
+		args.UseDelta = true
+	}
+
 	reason := "forced"
+
 	if args.Incremental {
 		bo := args.BuildOptions()
 		bo.SetDefaults()
 		incrementalState, fn := bo.IndexState()
 		reason = string(incrementalState)
 		metricIndexIncrementalIndexState.WithLabelValues(string(incrementalState)).Inc()
+
 		switch incrementalState {
 		case build.IndexStateEqual:
 			debug.Printf("%s index already up to date. Shard=%s", args.String(), fn)
@@ -493,9 +507,18 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 	log.Printf("updating index %s reason=%s", args.String(), reason)
 
-	runCmd := func(cmd *exec.Cmd) error { return s.loggedRun(tr, cmd) }
 	metricIndexingTotal.Inc()
-	return indexStateSuccess, gitIndex(args, runCmd)
+	c := gitIndexConfig{
+		runCmd: func(cmd *exec.Cmd) error {
+			return s.loggedRun(tr, cmd)
+		},
+
+		findRepositoryMetadata: func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error) {
+			return args.BuildOptions().FindRepositoryMetadata()
+		},
+	}
+
+	return indexStateSuccess, gitIndex(c, args)
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
@@ -704,6 +727,26 @@ func getEnvWithDefaultString(k string, defaultVal string) string {
 	return v
 }
 
+func getEnvWithDefaultEmptySet(k string) map[string]struct{} {
+	set := map[string]struct{}{}
+	for _, v := range strings.Split(os.Getenv(k), ",") {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			set[v] = struct{}{}
+		}
+	}
+	return set
+}
+
+func joinStringSet(set map[string]struct{}, sep string) string {
+	var xs []string
+	for x := range set {
+		xs = append(xs, x)
+	}
+
+	return strings.Join(xs, sep)
+}
+
 func setCompoundShardCounter(indexDir string) {
 	fns, err := filepath.Glob(filepath.Join(indexDir, "compound-*.zoekt"))
 	if err != nil {
@@ -825,22 +868,14 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	indexingMetricsReposAllowlist := os.Getenv("INDEXING_METRICS_REPOS_ALLOWLIST")
-	if indexingMetricsReposAllowlist != "" {
-		var repos []string
+	reposWithSeparateIndexingMetrics = getEnvWithDefaultEmptySet("INDEXING_METRICS_REPOS_ALLOWLIST")
+	if len(reposWithSeparateIndexingMetrics) > 0 {
+		debug.Printf("capturing separate indexing metrics for: %s", joinStringSet(reposWithSeparateIndexingMetrics, ", "))
+	}
 
-		for _, r := range strings.Split(indexingMetricsReposAllowlist, ",") {
-			r = strings.TrimSpace(r)
-			if r != "" {
-				repos = append(repos, r)
-			}
-		}
-
-		for _, r := range repos {
-			reposWithSeparateIndexingMetrics[r] = struct{}{}
-		}
-
-		debug.Printf("capturing separate indexing metrics for: %s", repos)
+	deltaBuildRepositoriesAllowList := getEnvWithDefaultEmptySet("DELTA_BUILD_REPOS_ALLOWLIST")
+	if len(deltaBuildRepositoriesAllowList) > 0 {
+		debug.Printf("using delta shard builds for: %s", joinStringSet(deltaBuildRepositoriesAllowList, ", "))
 	}
 
 	var sg Sourcegraph
@@ -872,16 +907,18 @@ func newServer(conf rootConfig) (*Server, error) {
 	if cpuCount < 1 {
 		cpuCount = 1
 	}
+
 	return &Server{
-		Sourcegraph:     sg,
-		IndexDir:        conf.index,
-		Interval:        conf.interval,
-		VacuumInterval:  conf.vacuumInterval,
-		MergeInterval:   conf.mergeInterval,
-		CPUCount:        cpuCount,
-		TargetSizeBytes: conf.targetSize * 1024 * 1024,
-		minSizeBytes:    conf.minSize * 1024 * 1024,
-		shardMerging:    zoekt.ShardMergingEnabled(),
+		Sourcegraph:                     sg,
+		IndexDir:                        conf.index,
+		Interval:                        conf.interval,
+		VacuumInterval:                  conf.vacuumInterval,
+		MergeInterval:                   conf.mergeInterval,
+		CPUCount:                        cpuCount,
+		TargetSizeBytes:                 conf.targetSize * 1024 * 1024,
+		minSizeBytes:                    conf.minSize * 1024 * 1024,
+		shardMerging:                    zoekt.ShardMergingEnabled(),
+		deltaBuildRepositoriesAllowList: deltaBuildRepositoriesAllowList,
 	}, err
 }
 

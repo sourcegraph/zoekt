@@ -99,10 +99,10 @@ type Options struct {
 	// last run.
 	IsDelta bool
 
-	// ChangedOrRemovedFiles is a list of file paths that have been changed or removed
+	// changedOrRemovedFiles is a list of file paths that have been changed or removed
 	// since the last indexing job for this repository. These files will be tombstoned
 	// in the older shards for this repository.
-	ChangedOrRemovedFiles []string
+	changedOrRemovedFiles []string
 }
 
 // HashOptions creates a hash of the options that affect an index.
@@ -222,6 +222,8 @@ type Builder struct {
 
 	// a sortable 20 chars long id.
 	id string
+
+	finishCalled bool
 }
 
 type finishedShard struct {
@@ -294,15 +296,13 @@ func (o *Options) shardNameVersion(version, n int) string {
 type IndexState string
 
 const (
-	IndexStateMissing       IndexState = "missing"
-	IndexStateCorrupt       IndexState = "corrupt"
-	IndexStateVersion       IndexState = "version-mismatch"
-	IndexStateOption        IndexState = "option-mismatch"
-	IndexStateMeta          IndexState = "meta-mismatch"
-	IndexStateContent       IndexState = "content-mismatch"
-	IndexStateBranchSet     IndexState = "branch-set-mismatch"
-	IndexStateBranchVersion IndexState = "branch-version-mismatch"
-	IndexStateEqual         IndexState = "equal"
+	IndexStateMissing IndexState = "missing"
+	IndexStateCorrupt IndexState = "corrupt"
+	IndexStateVersion IndexState = "version-mismatch"
+	IndexStateOption  IndexState = "option-mismatch"
+	IndexStateMeta    IndexState = "meta-mismatch"
+	IndexStateContent IndexState = "content-mismatch"
+	IndexStateEqual   IndexState = "equal"
 )
 
 var readVersions = []struct {
@@ -361,12 +361,7 @@ func (o *Options) IndexState() (IndexState, string) {
 		return IndexStateOption, fn
 	}
 
-	if o.IsDelta { // TODO: Get rid of this guard once the delta shard behavior is the default
-		state := compareBranches(repo.Branches, o.RepositoryDescription.Branches)
-		if state != IndexStateEqual {
-			return state, fn
-		}
-	} else if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
+	if !reflect.DeepEqual(repo.Branches, o.RepositoryDescription.Branches) {
 		return IndexStateContent, fn
 	}
 
@@ -381,6 +376,36 @@ func (o *Options) IndexState() (IndexState, string) {
 	}
 
 	return IndexStateEqual, fn
+}
+
+// FindRepositoryMetadata returns the index metadata for the repository
+// specified in the options. 'ok' is false if the repository's metadata
+// couldn't be found or if an error occurred.
+func (o *Options) FindRepositoryMetadata() (repository *zoekt.Repository, ok bool, err error) {
+	shard := o.findShard()
+	if shard == "" {
+		return nil, false, nil
+	}
+
+	repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+	if err != nil {
+		return nil, false, fmt.Errorf("reading metadata for shard %q: %w", shard, err)
+	}
+
+	ID := o.RepositoryDescription.ID
+	for _, r := range repositories {
+		// compound shards contain multiple repositories, so we
+		// have to pick only the one we're looking for
+		if r.ID == ID {
+			return r, true, nil
+		}
+	}
+
+	// If we're here, then we're somehow in a state where we found a matching
+	// shard that's missing the repository metadata we're looking for. This
+	// should never happen.
+	name := o.RepositoryDescription.Name
+	return nil, false, fmt.Errorf("matching shard %q doesn't contain metadata for repo id %d (%q)", shard, ID, name)
 }
 
 func (o *Options) findShard() string {
@@ -516,6 +541,10 @@ func (b *Builder) AddFile(name string, content []byte) error {
 }
 
 func (b *Builder) Add(doc zoekt.Document) error {
+	if b.finishCalled {
+		return nil
+	}
+
 	allowLargeFile := b.opts.IgnoreSizeMax(doc.Name)
 
 	// Adjust trigramMax for allowed large files so we don't exclude them.
@@ -550,10 +579,26 @@ func (b *Builder) Add(doc zoekt.Document) error {
 	return nil
 }
 
+// MarkFileAsChangedOrRemoved indicates that the file specified by the given path
+// has been changed or removed since the last indexing job for this repository.
+//
+// If this build is a delta build, these files will be tombstoned in the older shards for this repository.
+func (b *Builder) MarkFileAsChangedOrRemoved(path string) {
+	b.opts.changedOrRemovedFiles = append(b.opts.changedOrRemovedFiles, path)
+}
+
 // Finish creates a last shard from the buffered documents, and clears
 // stale shards from previous runs. This should always be called, also
 // in failure cases, to ensure cleanup.
+//
+// It is safe to call Finish() multiple times.
 func (b *Builder) Finish() error {
+	if b.finishCalled {
+		return b.buildError
+	}
+
+	b.finishCalled = true
+
 	b.flush()
 	b.building.Wait()
 
@@ -596,16 +641,15 @@ func (b *Builder) Finish() error {
 				return fmt.Errorf("shard %q doesn't contain repository ID %d (%q)", shard, b.opts.RepositoryDescription.ID, b.opts.RepositoryDescription.Name)
 			}
 
-			if len(b.opts.ChangedOrRemovedFiles) > 0 && repository.FileTombstones == nil {
-				repository.FileTombstones = make(map[string]struct{}, len(b.opts.ChangedOrRemovedFiles))
+			if len(b.opts.changedOrRemovedFiles) > 0 && repository.FileTombstones == nil {
+				repository.FileTombstones = make(map[string]struct{}, len(b.opts.changedOrRemovedFiles))
 			}
 
-			for _, f := range b.opts.ChangedOrRemovedFiles {
+			for _, f := range b.opts.changedOrRemovedFiles {
 				repository.FileTombstones[f] = struct{}{}
 			}
 
-			if compareBranches(repository.Branches, b.opts.RepositoryDescription.Branches) == IndexStateBranchSet {
-				// NOTE: Should we be handling IndexStateBranchVersion and IndexStateCorrupt here too?
+			if !BranchNamesEqual(repository.Branches, b.opts.RepositoryDescription.Branches) {
 				return deltaBranchSetError{
 					shardName: shard,
 					old:       repository.Branches,
@@ -689,22 +733,21 @@ func (b *Builder) Finish() error {
 	return b.buildError
 }
 
-func compareBranches(a, b []zoekt.RepositoryBranch) IndexState {
+// BranchNamesEqual compares the given zoekt.RepositoryBranch slices, and returns true
+// iff both slices specify the same set of branch names in the same order.
+func BranchNamesEqual(a, b []zoekt.RepositoryBranch) bool {
 	if len(a) != len(b) {
-		return IndexStateBranchSet
+		return false
 	}
 
 	for i := range a {
 		x, y := a[i], b[i]
 		if x.Name != y.Name {
-			return IndexStateBranchSet
-		}
-		if x.Version != y.Version {
-			return IndexStateBranchVersion
+			return false
 		}
 	}
 
-	return IndexStateEqual
+	return true
 }
 
 func (b *Builder) flush() error {
