@@ -245,6 +245,10 @@ type RepositoryBranch struct {
 	Version string
 }
 
+func (r RepositoryBranch) String() string {
+	return fmt.Sprintf("%s@%s", r.Name, r.Version)
+}
+
 // Repository holds repository metadata.
 type Repository struct {
 	// Sourcergaph's repository ID

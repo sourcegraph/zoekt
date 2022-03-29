@@ -195,11 +195,17 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		metricFetchDuration.WithLabelValues(success, name).Observe(fetchDuration.Seconds())
 	}()
 
-	var fetchCommits = func(commits []string) error {
+	var fetch = func(branches []zoekt.RepositoryBranch) error {
 		// We shallow fetch each commit specified in zoekt.Branches. This requires
 		// the server to have configured both uploadpack.allowAnySHA1InWant and
 		// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
 		fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
+
+		var commits []string
+		for _, b := range branches {
+			commits = append(commits, b.Version)
+		}
+
 		fetchArgs = append(fetchArgs, commits...)
 
 		cmd = exec.CommandContext(ctx, "git", fetchArgs...)
@@ -218,12 +224,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		return nil
 	}
 
-	var branchCommits []string
-	for _, b := range o.Branches {
-		branchCommits = append(branchCommits, b.Version)
-	}
-
-	err = fetchCommits(branchCommits)
+	err = fetch(o.Branches)
 	if err != nil {
 		return err
 	}
@@ -238,22 +239,18 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		}
 
 		if found && len(existingRepository.Branches) > 0 {
-			var priorCommits []string
-			for _, b := range existingRepository.Branches {
-				priorCommits = append(priorCommits, b.Version)
-			}
-
-			err := fetchCommits(priorCommits)
+			err := fetch(existingRepository.Branches)
 			if err != nil {
-				repositoryName := buildOptions.RepositoryDescription.Name
-				repositoryID := buildOptions.RepositoryDescription.ID
-
-				var formattedCommits []string
+				var bs []string
 				for _, b := range existingRepository.Branches {
-					formattedCommits = append(formattedCommits, fmt.Sprintf("%s@%s", b.Name, b.Version))
+					bs = append(bs, b.String())
 				}
 
-				log.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch prior commits (%s): %s", repositoryName, repositoryID, strings.Join(formattedCommits, ", "), err)
+				formattedBranches := strings.Join(bs, ", ")
+				name := buildOptions.RepositoryDescription.Name
+				id := buildOptions.RepositoryDescription.ID
+
+				log.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch prior commits (%s): %s", name, id, formattedBranches, err)
 			}
 		}
 	}
