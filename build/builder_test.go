@@ -582,12 +582,20 @@ func TestFindRepositoryMetadata(t *testing.T) {
 			// setup
 			indexDir := t.TempDir()
 
+			optFns := []func(o *Options){
+				// ctags aren't important for this test, and the equality checks
+				// for diffing repositories can break due to local configuration
+				func(o *Options) {
+					o.DisableCTags = true
+				},
+			}
+
 			for _, r := range tt.normalShardRepositories {
-				createTestShard(t, indexDir, r, 1)
+				createTestShard(t, indexDir, r, 1, optFns...)
 			}
 
 			if len(tt.compoundShardRepositories) > 0 {
-				createTestCompoundShard(t, indexDir, tt.compoundShardRepositories)
+				createTestCompoundShard(t, indexDir, tt.compoundShardRepositories, optFns...)
 			}
 
 			o := &Options{
@@ -672,7 +680,7 @@ func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShard
 	return o.FindAllShards()
 }
 
-func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt.Repository) {
+func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt.Repository, optFns ...func(options *Options)) {
 	t.Helper()
 
 	var shardNames []string
@@ -682,7 +690,7 @@ func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt
 		scratchDir := t.TempDir()
 
 		// create shards that'll be merged later
-		createTestShard(t, scratchDir, r, 1)
+		createTestShard(t, scratchDir, r, 1, optFns...)
 
 		// discover file names for all the normal shards we created
 		// note: this only looks in the immediate 'scratchDir' folder and doesn't recurse
