@@ -232,22 +232,18 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		// Try fetching prior commits for delta builds
 		// If we're unable to fetch prior commits, we continue anyway
 		// knowing that zoekt-git-index will fall back to a "full" normal build
-
-		var priorCommits []string
-
 		existingRepository, found, err := findRepositoryMetadata(o)
 		if err != nil {
 			return fmt.Errorf("delta build: failed to get repository metadata: %w", err)
 		}
 
-		if found {
+		if found && len(existingRepository.Branches) > 0 {
+			var priorCommits []string
 			for _, b := range existingRepository.Branches {
 				priorCommits = append(priorCommits, b.Version)
 			}
-		}
 
-		if len(priorCommits) > 0 {
-			err = fetchCommits(priorCommits)
+			err := fetchCommits(priorCommits)
 			if err != nil {
 				repositoryName := buildOptions.RepositoryDescription.Name
 				repositoryID := buildOptions.RepositoryDescription.ID
