@@ -458,20 +458,9 @@ func TestPartialSuccess(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		nm := fmt.Sprintf("F%d", i)
-
-		// no error checking: the 2nd call will fail
 		_ = b.AddFile(nm, []byte(strings.Repeat("01234567\n", 128)))
-		if i == 1 {
-			// force writes to fail.
-			if err := os.Chmod(dir, 0o555); err != nil {
-				t.Fatalf("chmod(%s): %s", dir, err)
-			}
-		}
 	}
-
-	if err := os.Chmod(dir, 0o755); err != nil {
-		t.Fatalf("chmod(%s, writable): %s", dir, err)
-	}
+	b.buildError = fmt.Errorf("any error")
 
 	// No error checking.
 	_ = b.Finish()
