@@ -320,12 +320,6 @@ func TestIndexDeltaBasic(t *testing.T) {
 				},
 			},
 		},
-		// TODO@ggilmore: I'm a bit torn as to whether or not these
-		// fallback tests should be here or in their own separate test.
-		//
-		// I can see arguments for both (whether or not it a delta build)
-		// is an internal detail from the perspective of the caller, but it's
-		// also externally observable (from the shards that are produced).
 		{
 			name:     "should fallback to normal build if no prior shards exist",
 			branches: []string{"main"},
