@@ -72,6 +72,10 @@ type indexArgs struct {
 
 	// FileLimit is the maximum size of a file
 	FileLimit int
+
+	// UseDelta is true if we want to use the new delta indexer. This should
+	// only be true for repositories we explicitly enable.
+	UseDelta bool
 }
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
@@ -100,6 +104,7 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		LargeFiles:       o.LargeFiles,
 		CTagsMustSucceed: o.Symbols,
 		DisableCTags:     !o.Symbols,
+		IsDelta:          o.UseDelta,
 	}
 }
 
@@ -122,10 +127,34 @@ func (o *indexArgs) String() string {
 	return s
 }
 
-func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
+type gitIndexConfig struct {
+	// runCmd is the function that's used to execute all external commands (such as calls to "git" or "zoekt-git-index")
+	// that gitIndex may construct.
+	runCmd func(*exec.Cmd) error
+
+	// findRepositoryMetadata is the function that returns the repository metadata for the
+	// repository specified in args. 'ok' is false if the repository's metadata
+	// couldn't be found or if an error occurred.
+	//
+	// The primary purpose of this configuration option is to be able to provide a stub
+	// implementation for this in our test suite. All other callers should use build.Options.FindRepositoryMetadata().
+	findRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
+}
+
+func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
 	}
+
+	if c.runCmd == nil {
+		return errors.New("runCmd in provided configuration was nil - a function must be provided")
+	}
+	runCmd := c.runCmd
+
+	if c.findRepositoryMetadata == nil {
+		return errors.New("findRepositoryMetadata in provided configuration was nil - a function must be provided")
+	}
+	findRepositoryMetadata := c.findRepositoryMetadata
 
 	buildOptions := o.BuildOptions()
 
@@ -156,30 +185,77 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		return err
 	}
 
-	fetchStart := time.Now()
+	var fetchDuration time.Duration
+	successfullyFetchedCommitsCount := 0
+	allFetchesSucceeded := true
 
-	// We shallow fetch each commit specified in zoekt.Branches. This requires
-	// the server to have configured both uploadpack.allowAnySHA1InWant and
-	// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
-	fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
-	var commits []string
-	for _, b := range o.Branches {
-		commits = append(commits, b.Version)
+	defer func() {
+		success := strconv.FormatBool(allFetchesSucceeded)
+		name := repoNameForMetric(o.Name)
+		metricFetchDuration.WithLabelValues(success, name).Observe(fetchDuration.Seconds())
+	}()
+
+	var fetch = func(branches []zoekt.RepositoryBranch) error {
+		// We shallow fetch each commit specified in zoekt.Branches. This requires
+		// the server to have configured both uploadpack.allowAnySHA1InWant and
+		// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
+		fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
+
+		var commits []string
+		for _, b := range branches {
+			commits = append(commits, b.Version)
+		}
+
+		fetchArgs = append(fetchArgs, commits...)
+
+		cmd = exec.CommandContext(ctx, "git", fetchArgs...)
+		cmd.Stdin = &bytes.Buffer{}
+
+		start := time.Now()
+		err := runCmd(cmd)
+		fetchDuration += time.Since(start)
+
+		if err != nil {
+			allFetchesSucceeded = false
+			return err
+		}
+
+		successfullyFetchedCommitsCount += len(commits)
+		return nil
 	}
-	fetchArgs = append(fetchArgs, commits...)
 
-	cmd = exec.CommandContext(ctx, "git", fetchArgs...)
-	cmd.Stdin = &bytes.Buffer{}
-
-	err = runCmd(cmd)
-	fetchDuration := time.Since(fetchStart)
+	err = fetch(o.Branches)
 	if err != nil {
-		metricFetchDuration.WithLabelValues("false", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
 		return err
 	}
 
-	metricFetchDuration.WithLabelValues("true", repoNameForMetric(o.Name)).Observe(fetchDuration.Seconds())
-	debug.Printf("fetched git data for %q (%d commit(s)) in %s", o.Name, len(commits), fetchDuration)
+	if o.UseDelta {
+		// Try fetching prior commits for delta builds
+		// If we're unable to fetch prior commits, we continue anyway
+		// knowing that zoekt-git-index will fall back to a "full" normal build
+		existingRepository, found, err := findRepositoryMetadata(o)
+		if err != nil {
+			return fmt.Errorf("delta build: failed to get repository metadata: %w", err)
+		}
+
+		if found && len(existingRepository.Branches) > 0 {
+			err := fetch(existingRepository.Branches)
+			if err != nil {
+				var bs []string
+				for _, b := range existingRepository.Branches {
+					bs = append(bs, b.String())
+				}
+
+				formattedBranches := strings.Join(bs, ", ")
+				name := buildOptions.RepositoryDescription.Name
+				id := buildOptions.RepositoryDescription.ID
+
+				log.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch prior commits (%s): %s", name, id, formattedBranches, err)
+			}
+		}
+	}
+
+	debug.Printf("successfully fetched git data for %q (%d commit(s)) in %s", o.Name, successfullyFetchedCommitsCount, fetchDuration)
 
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
@@ -194,7 +270,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		}
 	}
 
-	// create git config with options
+	// create git configuration with options
 	type configKV struct{ Key, Value string }
 	config := []configKV{{
 		// zoekt.name is used by zoekt-git-index to set the repository name.
@@ -208,7 +284,7 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		return config[i].Key < config[j].Key
 	})
 
-	// write config to repo
+	// write git configuration to repo
 	for _, kv := range config {
 		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt."+kv.Key, kv.Value)
 		cmd.Stdin = &bytes.Buffer{}
@@ -233,6 +309,10 @@ func gitIndex(o *indexArgs, runCmd func(*exec.Cmd) error) error {
 		branches = append(branches, b.Name)
 	}
 	args = append(args, "-branches", strings.Join(branches, ","))
+
+	if o.UseDelta {
+		args = append(args, "-delta")
+	}
 
 	args = append(args, buildOptions.Args()...)
 	args = append(args, gitDir)
