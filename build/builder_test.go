@@ -120,6 +120,7 @@ func TestFlags(t *testing.T) {
 	ignored := []cmp.Option{
 		// depends on $PATH setting.
 		cmpopts.IgnoreFields(Options{}, "CTags"),
+		cmpopts.IgnoreFields(Options{}, "changedOrRemovedFiles"),
 		cmpopts.IgnoreFields(zoekt.Repository{}, "priority"),
 	}
 
@@ -322,6 +323,8 @@ func TestOptions_FindAllShards(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			// prepare
 			indexDir := t.TempDir()
 
@@ -372,73 +375,47 @@ func TestOptions_FindAllShards(t *testing.T) {
 	}
 }
 
-func TestBuilder_DeltaShardsIndexState(t *testing.T) {
+func TestBuilder_BranchNamesEqual(t *testing.T) {
 	for i, test := range []struct {
-		oldBranches   []zoekt.RepositoryBranch
-		newBranches   []zoekt.RepositoryBranch
-		expectedState IndexState
+		oldBranches []zoekt.RepositoryBranch
+		newBranches []zoekt.RepositoryBranch
+		expected    bool
 	}{
 		{
-			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v2"}},
-			expectedState: IndexStateBranchVersion,
+			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}, {Name: "release", Version: "v1"}},
+			newBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}, {Name: "release", Version: "v1"}},
+			expected:    true,
+		},
+		{
+			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}, {Name: "release", Version: "v3"}},
+			newBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v2"}, {Name: "release", Version: "v4"}},
+			expected:    true,
 		},
 		{
 			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			newBranches: []zoekt.RepositoryBranch{
-				{Name: "main", Version: "v2"},
-				{Name: "release", Version: "v1"},
-			},
-			expectedState: IndexStateBranchSet,
+			newBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v2"}, {Name: "release", Version: "v1"}},
+			expected:    false,
 		},
 		{
-			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			newBranches:   []zoekt.RepositoryBranch{{Name: "release", Version: "v1"}},
-			expectedState: IndexStateBranchSet,
+			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			newBranches: []zoekt.RepositoryBranch{{Name: "release", Version: "v1"}},
+			expected:    false,
 		},
 		{
-			oldBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			newBranches:   []zoekt.RepositoryBranch{},
-			expectedState: IndexStateBranchSet,
+			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			newBranches: []zoekt.RepositoryBranch{},
+			expected:    false,
 		},
 		{
-			oldBranches:   []zoekt.RepositoryBranch{},
-			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			expectedState: IndexStateBranchSet,
-		},
-		{
-			oldBranches:   []zoekt.RepositoryBranch{},
-			newBranches:   []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
-			expectedState: IndexStateBranchSet,
+			oldBranches: []zoekt.RepositoryBranch{},
+			newBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			expected:    false,
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			indexDir := t.TempDir()
-
-			repositoryV1 := zoekt.Repository{
-				Name:     "repo",
-				ID:       1,
-				Branches: test.oldBranches,
-			}
-
-			createTestShard(t, indexDir, repositoryV1, 2)
-
-			repositoryV2 := zoekt.Repository{
-				Name:     "repo",
-				ID:       1,
-				Branches: test.newBranches,
-			}
-
-			o := Options{
-				IndexDir:              indexDir,
-				RepositoryDescription: repositoryV2,
-				IsDelta:               true,
-			}
-			o.SetDefaults()
-
-			state, _ := o.IndexState()
-			if diff := cmp.Diff(test.expectedState, state); diff != "" {
-				t.Errorf("unexpected diff in index state (-want +got):\n%s", diff)
+			actual := BranchNamesEqual(test.oldBranches, test.newBranches)
+			if test.expected != actual {
+				t.Errorf("expected: %t, got: %t", test.expected, actual)
 			}
 		})
 	}
@@ -542,6 +519,116 @@ func TestBuilder_DeltaShardsUpdateVersionsInOlderShards(t *testing.T) {
 	}
 }
 
+func TestFindRepositoryMetadata(t *testing.T) {
+	tests := []struct {
+		name                      string
+		normalShardRepositories   []zoekt.Repository
+		compoundShardRepositories []zoekt.Repository
+		input                     *zoekt.Repository
+		expectedRepository        *zoekt.Repository
+		expectedOk                bool
+	}{
+		{
+			name: "repository in normal shards",
+			normalShardRepositories: []zoekt.Repository{
+				{Name: "repoA", ID: 1},
+				{Name: "repoB", ID: 2},
+				{Name: "repoC", ID: 3},
+			},
+			compoundShardRepositories: []zoekt.Repository{
+				{Name: "repoD", ID: 4},
+				{Name: "repoE", ID: 5},
+				{Name: "repoF", ID: 6},
+			},
+			input:              &zoekt.Repository{Name: "repoB", ID: 2},
+			expectedRepository: &zoekt.Repository{Name: "repoB", ID: 2},
+			expectedOk:         true,
+		},
+		{
+			name: "repository in compound shards",
+			normalShardRepositories: []zoekt.Repository{
+				{Name: "repoA", ID: 1},
+				{Name: "repoB", ID: 2},
+				{Name: "repoC", ID: 3},
+			},
+			compoundShardRepositories: []zoekt.Repository{
+				{Name: "repoD", ID: 4},
+				{Name: "repoE", ID: 5},
+				{Name: "repoF", ID: 6},
+			},
+			input:              &zoekt.Repository{Name: "repoE", ID: 5},
+			expectedRepository: &zoekt.Repository{Name: "repoE", ID: 5},
+			expectedOk:         true,
+		},
+		{
+			name: "repository not in any shard",
+			normalShardRepositories: []zoekt.Repository{
+				{Name: "repoA", ID: 1},
+				{Name: "repoB", ID: 2},
+				{Name: "repoC", ID: 3},
+			},
+			compoundShardRepositories: []zoekt.Repository{
+				{Name: "repoD", ID: 4},
+				{Name: "repoE", ID: 5},
+				{Name: "repoF", ID: 6},
+			},
+			input:              &zoekt.Repository{Name: "notPresent", ID: 123},
+			expectedRepository: nil,
+			expectedOk:         false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// setup
+			indexDir := t.TempDir()
+
+			optFns := []func(o *Options){
+				// ctags aren't important for this test, and the equality checks
+				// for diffing repositories can break due to local configuration
+				func(o *Options) {
+					o.DisableCTags = true
+				},
+			}
+
+			for _, r := range tt.normalShardRepositories {
+				createTestShard(t, indexDir, r, 1, optFns...)
+			}
+
+			if len(tt.compoundShardRepositories) > 0 {
+				createTestCompoundShard(t, indexDir, tt.compoundShardRepositories, optFns...)
+			}
+
+			o := &Options{
+				IndexDir:              indexDir,
+				RepositoryDescription: *tt.input,
+			}
+			o.SetDefaults()
+
+			// run test
+			got, gotOk, err := o.FindRepositoryMetadata()
+			if err != nil {
+				t.Errorf("received unexpected error: %v", err)
+				return
+			}
+
+			// check outcome
+			compareOptions := []cmp.Option{
+				cmpopts.IgnoreUnexported(zoekt.Repository{}),
+				cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions"),
+				cmpopts.EquateEmpty(),
+			}
+
+			if diff := cmp.Diff(tt.expectedRepository, got, compareOptions...); diff != "" {
+				t.Errorf("unexpected difference in repositories (-want +got):\n%s", diff)
+			}
+
+			if tt.expectedOk != gotOk {
+				t.Errorf("unexpected difference in 'ok' value: wanted %t, got %t", tt.expectedOk, gotOk)
+			}
+		})
+	}
+}
+
 func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShards int, optFns ...func(options *Options)) []string {
 	t.Helper()
 
@@ -593,7 +680,7 @@ func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShard
 	return o.FindAllShards()
 }
 
-func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt.Repository) {
+func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt.Repository, optFns ...func(options *Options)) {
 	t.Helper()
 
 	var shardNames []string
@@ -603,7 +690,7 @@ func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt
 		scratchDir := t.TempDir()
 
 		// create shards that'll be merged later
-		createTestShard(t, scratchDir, r, 1)
+		createTestShard(t, scratchDir, r, 1, optFns...)
 
 		// discover file names for all the normal shards we created
 		// note: this only looks in the immediate 'scratchDir' folder and doesn't recurse
