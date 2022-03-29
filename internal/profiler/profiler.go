@@ -19,8 +19,7 @@ func Init(svcName, version string, blockProfileRate int) {
 		err := ddprofiler.Start(
 			ddprofiler.WithService(svcName),
 			ddprofiler.WithVersion(version),
-			ddprofiler.WithProfileTypes(profileTypes...,
-			),
+			ddprofiler.WithProfileTypes(profileTypes...),
 			ddprofiler.BlockProfileRate(blockProfileRate),
 		)
 		if err != nil {
