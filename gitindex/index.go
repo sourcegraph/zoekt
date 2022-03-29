@@ -421,16 +421,17 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 	// Branch => Repo => SHA1
 	var branchVersions map[string]map[string]plumbing.Hash
 
+	// set of file paths that have been changed or deleted since
+	// the last indexed commit
+	//
+	// These only have an effect on delta builds
+	var changedOrRemovedFiles []string
+
 	if opts.BuildOptions.IsDelta {
-		var changedOrRemovedFiles []string
 		repos, branchMap, branchVersions, changedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
 		if err != nil {
 			log.Printf("delta build: falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
 			opts.BuildOptions.IsDelta = false
-		} else {
-			for _, f := range changedOrRemovedFiles {
-				opts.BuildOptions.MarkFileAsChangedOrRemoved(f)
-			}
 		}
 	}
 
@@ -475,6 +476,10 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 	// we don't need to check error, since we either already have an error, or
 	// we returning the first call to builder.Finish.
 	defer builder.Finish() // nolint:errcheck
+
+	for _, f := range changedOrRemovedFiles {
+		builder.MarkFileAsChangedOrRemoved(f)
+	}
 
 	var names []string
 	fileKeys := map[string][]fileKey{}

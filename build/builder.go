@@ -535,14 +535,6 @@ func NewBuilder(opts Options) (*Builder, error) {
 	return b, nil
 }
 
-// MarkFileAsChangedOrRemoved indicates that the file specified by the given path
-// has been changed or removed since the last indexing job for this repository.
-//
-// If this build is a delta build, these files will be tombstoned in the older shards for this repository.
-func (o *Options) MarkFileAsChangedOrRemoved(path string) {
-	o.changedOrRemovedFiles = append(o.changedOrRemovedFiles, path)
-}
-
 // AddFile is a convenience wrapper for the Add method
 func (b *Builder) AddFile(name string, content []byte) error {
 	return b.Add(zoekt.Document{Name: name, Content: content})
@@ -585,6 +577,14 @@ func (b *Builder) Add(doc zoekt.Document) error {
 	}
 
 	return nil
+}
+
+// MarkFileAsChangedOrRemoved indicates that the file specified by the given path
+// has been changed or removed since the last indexing job for this repository.
+//
+// If this build is a delta build, these files will be tombstoned in the older shards for this repository.
+func (b *Builder) MarkFileAsChangedOrRemoved(path string) {
+	b.opts.changedOrRemovedFiles = append(b.opts.changedOrRemovedFiles, path)
 }
 
 // Finish creates a last shard from the buffered documents, and clears
