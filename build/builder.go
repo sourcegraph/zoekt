@@ -230,26 +230,25 @@ type finishedShard struct {
 	temp, final string
 }
 
+func checkCTags() string {
+	if ctags := os.Getenv("CTAGS_COMMAND"); ctags != "" {
+		return ctags
+	}
+
+	if ctags, err := exec.LookPath("universal-ctags"); err == nil {
+		return ctags
+	}
+
+	if ctags, err := exec.LookPath("ctags-exuberant"); err == nil {
+		return ctags
+	}
+	return ""
+}
+
 // SetDefaults sets reasonable default options.
 func (o *Options) SetDefaults() {
 	if o.CTags == "" {
-		if ctags := os.Getenv("CTAGS_COMMAND"); ctags != "" {
-			o.CTags = ctags
-		}
-	}
-
-	if o.CTags == "" {
-		ctags, err := exec.LookPath("universal-ctags")
-		if err == nil {
-			o.CTags = ctags
-		}
-	}
-
-	if o.CTags == "" {
-		ctags, err := exec.LookPath("ctags-exuberant")
-		if err == nil {
-			o.CTags = ctags
-		}
+		o.CTags = checkCTags()
 	}
 
 	if o.Parallelism == 0 {

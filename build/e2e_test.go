@@ -805,9 +805,12 @@ func TestDeltaShards(t *testing.T) {
 }
 
 // With this test we want to capture regressions in the names returned by our
-// language detection. We rely on the detected language and its spelling, for
-// example, in scoring (see scoreKind).
-func TestDetectLanguage(t *testing.T) {
+// language detection and the scores assigned to file matches. We rely on the
+// detected language and its spelling, for example, in scoring (see scoreKind).
+func TestScoring(t *testing.T) {
+	if os.Getenv("CI") == "" && checkCTags() == "" {
+		t.Skip("ctags not available")
+	}
 	dir := t.TempDir()
 
 	opts := Options{
@@ -820,7 +823,9 @@ func TestDetectLanguage(t *testing.T) {
 	cases := []struct {
 		fileName     string
 		content      []byte
+		query        query.Q
 		wantLanguage string
+		wantScore    float64
 	}{
 		{
 			fileName: "hw.java",
@@ -833,7 +838,10 @@ public class HelloWorld
        }
 }
 `),
+			query:        &query.Substring{Content: true, Pattern: "lloWorld"},
 			wantLanguage: "Java",
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 50 (partial word) + 400 (atom) + 10 (file order)
+			wantScore: 6960,
 		},
 	}
 
@@ -856,13 +864,17 @@ public class HelloWorld
 			}
 			defer ss.Close()
 
-			srs, err := ss.Search(context.Background(), &query.Const{true}, new(zoekt.SearchOptions))
+			srs, err := ss.Search(context.Background(), c.query, new(zoekt.SearchOptions))
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			if got, want := len(srs.Files), 1; got != want {
 				t.Fatalf("file matches: want %d, got %d", want, got)
+			}
+
+			if got := srs.Files[0].Score; got != c.wantScore {
+				t.Fatalf("score: want %f, got %f", c.wantScore, got)
 			}
 
 			if got := srs.Files[0].Language; got != c.wantLanguage {
