@@ -19,7 +19,7 @@ jobs:
         run: go test ./...
 
   shellcheck:
-    name: Shellcheck
+    name: shellcheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
