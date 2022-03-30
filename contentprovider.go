@@ -348,8 +348,8 @@ func scoreKind(language string, kind string) float64 {
 	switch language {
 	case "Java":
 		switch kind {
-		// 2022-03-30 go-ctags contains a regex rule for Java classes that sets kind to
-		// "classes" instead of "c". We have to cover both cases to support existing
+		// 2022-03-30: go-ctags contains a regex rule for Java classes that sets "kind"
+		// to "classes" instead of "c". We have to cover both cases to support existing
 		// indexes.
 		case "c", "classes":
 			return scoreKindMatch
