@@ -792,7 +792,7 @@ func TestDeltaShards(t *testing.T) {
 // language detection and the scores assigned to file matches. We rely on the
 // detected language and its spelling, for example, in scoring (see scoreKind).
 func TestScoring(t *testing.T) {
-	if checkCTags() == "" {
+	if os.Getenv("CI") == "" && checkCTags() == "" {
 		t.Skip("ctags not available")
 	}
 	dir := t.TempDir()
