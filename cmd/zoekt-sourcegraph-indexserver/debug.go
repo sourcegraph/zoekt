@@ -8,7 +8,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
+	"text/tabwriter"
+	"time"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 
@@ -147,7 +151,74 @@ func debugListIndexed() *ffcli.Command {
 	}
 }
 
-func debugCmd() *ffcli.Command {
+func debugQueue(rootConfig *rootConfig) *ffcli.Command {
+	var serverRunningTimeout time.Duration
+	var printHeader bool
+
+	fs := flag.NewFlagSet("debug queue", flag.ExitOnError)
+	fs.DurationVar(&serverRunningTimeout, "timeout", 5*time.Second, "the amount of time to wait for the server to start running")
+	fs.BoolVar(&printHeader, "header", false, "whether to print the headers for each column")
+
+	rootConfig.registerRootFlags(fs)
+
+	return &ffcli.Command{
+		Name:       "queue",
+		ShortUsage: "queue [flags]",
+		ShortHelp:  "list the repositories in the indexing queue, sorted by descending priority",
+		FlagSet:    fs,
+		Exec: func(ctx context.Context, args []string) error {
+			select {
+			case <-time.After(serverRunningTimeout):
+				return fmt.Errorf("timed out after waiting %s for server to start", serverRunningTimeout.Round(time.Second).String())
+			case <-rootConfig.server.serverRunning:
+			}
+
+			// take pointer to avoid copying the queue's lock
+			queue := &rootConfig.server.queue
+
+			queue.mu.Lock()
+			defer queue.mu.Unlock()
+
+			queueItems := make([]*queueItem, len(queue.items))
+
+			for i, item := range rootConfig.server.queue.items {
+				queueItems[i] = item
+			}
+
+			sort.Slice(queueItems, func(i, j int) bool {
+				x, y := queueItems[i], queueItems[j]
+
+				return lessQueueItem(x, y)
+			})
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 8, 0, '\t', 0)
+			w.Flush()
+
+			if printHeader {
+				_, err := fmt.Fprintf(w, "position\tname\tid\tbranches\n")
+				if err != nil {
+					return fmt.Errorf("writing headers to output: %w", err)
+				}
+			}
+
+			for position, item := range queueItems {
+				var branches []string
+				for _, b := range item.opts.Branches {
+					branches = append(branches, b.String())
+				}
+
+				_, err := fmt.Fprintf(w, "%d\t%s\t%d\t%s\n", position, item.opts.Name, item.repoID, strings.Join(branches, ", "))
+				if err != nil {
+					return fmt.Errorf("writing entry to output: %w", err)
+				}
+			}
+
+			return nil
+		},
+	}
+}
+
+func debugCmd(config *rootConfig) *ffcli.Command {
 	fs := flag.NewFlagSet("debug", flag.ExitOnError)
 
 	return &ffcli.Command{
@@ -162,6 +233,7 @@ func debugCmd() *ffcli.Command {
 			debugMerge(),
 			debugMeta(),
 			debugTrigrams(),
+			debugQueue(config),
 		},
 	}
 }

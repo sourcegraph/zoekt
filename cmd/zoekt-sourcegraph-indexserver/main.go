@@ -169,6 +169,9 @@ type Server struct {
 	// deltaBuildRepositoriesAllowList is an allowlist for repositories that we
 	// use delta-builds for instead of normal builds
 	deltaBuildRepositoriesAllowList map[string]struct{}
+
+	// serverRunning is a channel that will be closed when the server starts running
+	serverRunning chan struct{}
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -352,6 +355,9 @@ func (s *Server) Run() {
 		}
 	}()
 
+	s.serverRunning <- struct{}{}
+	close(s.serverRunning)
+
 	// In the current goroutine process the queue forever.
 	for {
 		if _, err := os.Stat(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
@@ -495,7 +501,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 			log.Printf("updating index.meta %s", args.String())
 
 			if err := mergeMeta(bo); err != nil {
-				log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
+				//log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
 			} else {
 				return indexStateSuccessMeta, nil
 			}
@@ -782,7 +788,7 @@ func rootCmd() *ffcli.Command {
 	return &ffcli.Command{
 		FlagSet:     rootFs,
 		ShortUsage:  "zoekt-sourcegraph-indexserver [flags] [<subcommand>]",
-		Subcommands: []*ffcli.Command{debugCmd()},
+		Subcommands: []*ffcli.Command{debugCmd(&conf)},
 		Exec: func(ctx context.Context, args []string) error {
 			return startServer(conf)
 		},
@@ -804,6 +810,8 @@ type rootConfig struct {
 	mergeInterval  time.Duration
 	targetSize     int64
 	minSize        int64
+
+	server *Server
 }
 
 func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
