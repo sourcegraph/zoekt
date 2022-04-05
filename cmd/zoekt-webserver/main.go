@@ -35,10 +35,10 @@ import (
 	"syscall"
 	"time"
 
-	"cloud.google.com/go/profiler"
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/debugserver"
+	"github.com/google/zoekt/internal/profiler"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
 	"github.com/google/zoekt/stream"
@@ -135,6 +135,7 @@ func main() {
 	templateDir := flag.String("template_dir", "", "set directory from which to load custom .html.tpl template files")
 	dumpTemplates := flag.Bool("dump_templates", false, "dump templates into --template_dir and exit.")
 	version := flag.Bool("version", false, "Print version number")
+
 	flag.Parse()
 
 	if *version {
@@ -150,7 +151,7 @@ func main() {
 	}
 
 	initializeJaeger()
-	initializeGoogleCloudProfiler()
+	profiler.Init("zoekt-webserver", zoekt.Version, -1)
 
 	if *logDir != "" {
 		if fi, err := os.Lstat(*logDir); err != nil || !fi.IsDir() {
@@ -526,24 +527,6 @@ func (l *jaegerLogger) Error(msg string) {
 // Infof logs a message at info priority
 func (l *jaegerLogger) Infof(msg string, args ...interface{}) {
 	log.Printf(msg, args...)
-}
-
-func initializeGoogleCloudProfiler() {
-	// Google cloud profiler is opt-in since we only want to run it on
-	// Sourcegraph.com.
-	if os.Getenv("GOOGLE_CLOUD_PROFILER_ENABLED") == "" {
-		return
-	}
-
-	err := profiler.Start(profiler.Config{
-		Service:        "zoekt-webserver",
-		ServiceVersion: zoekt.Version,
-		MutexProfiling: true,
-		AllocForceGC:   true,
-	})
-	if err != nil {
-		log.Printf("could not initialize google cloud profiler: %s", err.Error())
-	}
 }
 
 var (
