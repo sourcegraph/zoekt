@@ -294,7 +294,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	if os.Getenv("ZOEKT_DISABLE_BLOOM") == "" {
+	if os.Getenv("ZOEKT_ENABLE_BLOOM") != "" {
 		d.bloomContents, err = d.readBloom(toc.contentBloom)
 		if err != nil {
 			return nil, err
