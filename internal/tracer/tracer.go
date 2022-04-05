@@ -1,14 +1,12 @@
 package tracer
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"reflect"
 	"strconv"
 
 	"github.com/opentracing/opentracing-go"
-	"github.com/pkg/errors"
 	"github.com/uber/jaeger-client-go"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 	jaegermetrics "github.com/uber/jaeger-lib/metrics"
@@ -19,32 +17,28 @@ import (
 // Init should only be called from main and only once
 // It will initialize the configured tracer, and register it as the global tracer
 // This MUST be the same tracer as the one used by Sourcegraph
-func Init(svcName, version string) error {
+func Init(svcName, version string) {
 
 	if os.Getenv("DD_ENV") != "" {
 		tracer := configureDatadogTracer(svcName, version)
 		log.Printf("INFO: using Datadog tracer")
 		opentracing.SetGlobalTracer(tracer)
-		return nil
 	}
 
 	isJaegerDisabled, err := strconv.ParseBool(os.Getenv("JAEGER_DISABLED"))
 	if err != nil {
-		err := fmt.Errorf("failed to parse JAEGER_DISABLED: %v", err)
-		return err
+		log.Printf("failed to parse JAEGER_DISABLED: %v", err)
 	}
 	if isJaegerDisabled {
-		return nil
+		return
 	}
 
 	tracer, err := configureJaerger(svcName, version)
 	if err != nil {
-		err = errors.Wrap(err, "failed to configure Jaeger tracer")
-		return err
+		log.Printf("failed to configure Jaeger tracer: %v", err)
 	}
 	log.Printf("INFO: using Jaeger tracer")
 	opentracing.SetGlobalTracer(tracer)
-	return nil
 }
 
 // configureDatadogTracer only sets service name & version and relies on external configuration for other settings
