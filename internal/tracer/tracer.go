@@ -23,11 +23,13 @@ func Init(svcName, version string) {
 		tracer := configureDatadogTracer(svcName, version)
 		log.Printf("INFO: using Datadog tracer")
 		opentracing.SetGlobalTracer(tracer)
+		return
 	}
 
 	isJaegerDisabled, err := strconv.ParseBool(os.Getenv("JAEGER_DISABLED"))
 	if err != nil {
 		log.Printf("failed to parse JAEGER_DISABLED: %v", err)
+		return
 	}
 	if isJaegerDisabled {
 		return
@@ -36,6 +38,7 @@ func Init(svcName, version string) {
 	tracer, err := configureJaerger(svcName, version)
 	if err != nil {
 		log.Printf("failed to configure Jaeger tracer: %v", err)
+		return
 	}
 	log.Printf("INFO: using Jaeger tracer")
 	opentracing.SetGlobalTracer(tracer)
