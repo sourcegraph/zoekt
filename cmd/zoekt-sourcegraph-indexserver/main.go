@@ -170,8 +170,7 @@ type Server struct {
 	// use delta-builds for instead of normal builds
 	deltaBuildRepositoriesAllowList map[string]struct{}
 
-	// serverRunning is a channel that will be closed when the server starts running
-	serverRunning chan struct{}
+	httpHandlersRegisteredOnce sync.Once
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -355,9 +354,6 @@ func (s *Server) Run() {
 		}
 	}()
 
-	s.serverRunning <- struct{}{}
-	close(s.serverRunning)
-
 	// In the current goroutine process the queue forever.
 	for {
 		if _, err := os.Stat(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
@@ -501,7 +497,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 			log.Printf("updating index.meta %s", args.String())
 
 			if err := mergeMeta(bo); err != nil {
-				//log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
+				log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
 			} else {
 				return indexStateSuccessMeta, nil
 			}
@@ -557,6 +553,13 @@ func createEmptyShard(args *indexArgs) error {
 	return builder.Finish()
 }
 
+func (s *Server) AddHandlers(mux *http.ServeMux) {
+	s.httpHandlersRegisteredOnce.Do(func() {
+		mux.Handle("/", http.HandlerFunc(s.handleHTTPRoot))
+		mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
+	})
+}
+
 var repoTmpl = template.Must(template.New("name").Parse(`
 <html><body>
 <a href="debug/requests">Traces</a><br>
@@ -571,7 +574,7 @@ var repoTmpl = template.Must(template.New("name").Parse(`
 </body></html>
 `))
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHTTPRoot(w http.ResponseWriter, r *http.Request) {
 	type Repo struct {
 		ID   uint32
 		Name string
@@ -788,7 +791,7 @@ func rootCmd() *ffcli.Command {
 	return &ffcli.Command{
 		FlagSet:     rootFs,
 		ShortUsage:  "zoekt-sourcegraph-indexserver [flags] [<subcommand>]",
-		Subcommands: []*ffcli.Command{debugCmd(&conf)},
+		Subcommands: []*ffcli.Command{debugCmd()},
 		Exec: func(ctx context.Context, args []string) error {
 			return startServer(conf)
 		},
@@ -810,8 +813,6 @@ type rootConfig struct {
 	mergeInterval  time.Duration
 	targetSize     int64
 	minSize        int64
-
-	server *Server
 }
 
 func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
@@ -842,7 +843,7 @@ func startServer(conf rootConfig) error {
 		go func() {
 			mux := http.NewServeMux()
 			debugserver.AddHandlers(mux, true)
-			mux.Handle("/", s)
+			s.AddHandlers(mux)
 			debug.Printf("serving HTTP on %s", conf.listen)
 			log.Fatal(http.ListenAndServe(conf.listen, mux))
 		}()

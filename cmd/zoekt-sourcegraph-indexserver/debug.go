@@ -6,9 +6,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -151,15 +154,17 @@ func debugListIndexed() *ffcli.Command {
 	}
 }
 
-func debugQueue(rootConfig *rootConfig) *ffcli.Command {
-	var serverRunningTimeout time.Duration
+func debugQueue() *ffcli.Command {
+	var connectionTimeout time.Duration
 	var printHeader bool
 
+	var serverAddress string
+
 	fs := flag.NewFlagSet("debug queue", flag.ExitOnError)
-	fs.DurationVar(&serverRunningTimeout, "timeout", 5*time.Second, "the amount of time to wait for the server to start running")
+	fs.DurationVar(&connectionTimeout, "timeout", 10*time.Second, "max timeout for establishing a connection to a zoekt-sourcegraph-indexserver instance")
 	fs.BoolVar(&printHeader, "header", false, "whether to print the headers for each column")
 
-	rootConfig.registerRootFlags(fs)
+	fs.StringVar(&serverAddress, "address", "http://localhost:6072", "the address of the zoekt-sourcegraph-indexserver instance to connect to")
 
 	return &ffcli.Command{
 		Name:       "queue",
@@ -167,50 +172,73 @@ func debugQueue(rootConfig *rootConfig) *ffcli.Command {
 		ShortHelp:  "list the repositories in the indexing queue, sorted by descending priority",
 		FlagSet:    fs,
 		Exec: func(ctx context.Context, args []string) error {
-			select {
-			case <-time.After(serverRunningTimeout):
-				return fmt.Errorf("timed out after waiting %s for server to start", serverRunningTimeout.Round(time.Second).String())
-			case <-rootConfig.server.serverRunning:
+
+			fullAddress := fmt.Sprintf("%s/debug/queue", serverAddress)
+			request, err := http.NewRequest(http.MethodGet, fullAddress, nil)
+			if err != nil {
+				return fmt.Errorf("constructing request: %w", err)
 			}
 
-			// take pointer to avoid copying the queue's lock
-			queue := &rootConfig.server.queue
+			request.Header.Set("Accept", "application/x-gob-stream")
+			request.Header.Set("Cache-Control", "no-cache")
+			request.Header.Set("Connection", "keep-alive")
+			request.Header.Set("Transfer-Encoding", "chunked")
 
-			queue.mu.Lock()
-			defer queue.mu.Unlock()
+			ctx, cancel := context.WithTimeout(ctx, connectionTimeout)
+			defer cancel()
 
-			queueItems := make([]*queueItem, len(queue.items))
-
-			for i, item := range rootConfig.server.queue.items {
-				queueItems[i] = item
+			request = request.WithContext(ctx)
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				return fmt.Errorf("connecting to %q: %w", fullAddress, err)
 			}
 
-			sort.Slice(queueItems, func(i, j int) bool {
-				x, y := queueItems[i], queueItems[j]
+			defer response.Body.Close()
 
-				return lessQueueItem(x, y)
-			})
+			if response.StatusCode != http.StatusOK {
+				b, err := ioutil.ReadAll(io.LimitReader(response.Body, 1024))
+				if err != nil {
+					return fmt.Errorf("reading response body from failed request: %w", err)
+				}
 
-			w := tabwriter.NewWriter(os.Stdout, 0, 8, 0, '\t', 0)
-			w.Flush()
+				return &url.Error{
+					Op:  "Get",
+					URL: fullAddress,
+					Err: fmt.Errorf("%s: %s", response.Status, string(b)),
+				}
+			}
+
+			writer := tabwriter.NewWriter(os.Stdout, 0, 8, 4, ' ', 0)
+			defer writer.Flush()
 
 			if printHeader {
-				_, err := fmt.Fprintf(w, "position\tname\tid\tbranches\n")
+				_, err := fmt.Fprintf(writer, "Position\tName\tID\tBranches\n")
 				if err != nil {
 					return fmt.Errorf("writing headers to output: %w", err)
 				}
 			}
 
-			for position, item := range queueItems {
+			decoder := newQueueItemStreamDecoder(response.Body)
+			position := 0
+			for decoder.Next() {
+				item := decoder.Item()
+
 				var branches []string
-				for _, b := range item.opts.Branches {
+				for _, b := range item.Opts.Branches {
 					branches = append(branches, b.String())
 				}
 
-				_, err := fmt.Fprintf(w, "%d\t%s\t%d\t%s\n", position, item.opts.Name, item.repoID, strings.Join(branches, ", "))
+				_, err := fmt.Fprintf(writer, "%d\t%s\t%d\t%s\n", position, item.Opts.Name, item.RepoID, strings.Join(branches, ", "))
 				if err != nil {
-					return fmt.Errorf("writing entry to output: %w", err)
+					return fmt.Errorf("writing entry to stdout: %w", err)
 				}
+
+				position++
+			}
+
+			err = decoder.Err()
+			if err != nil {
+				return fmt.Errorf("decoding item stream: %w", err)
 			}
 
 			return nil
@@ -218,7 +246,7 @@ func debugQueue(rootConfig *rootConfig) *ffcli.Command {
 	}
 }
 
-func debugCmd(config *rootConfig) *ffcli.Command {
+func debugCmd() *ffcli.Command {
 	fs := flag.NewFlagSet("debug", flag.ExitOnError)
 
 	return &ffcli.Command{
@@ -233,7 +261,7 @@ func debugCmd(config *rootConfig) *ffcli.Command {
 			debugMerge(),
 			debugMeta(),
 			debugTrigrams(),
-			debugQueue(config),
+			debugQueue(),
 		},
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"testing"
@@ -120,29 +121,52 @@ func TestQueue_Bump(t *testing.T) {
 	}
 }
 
-func TestQueue_GobListSorted(t *testing.T) {
+func TestQueue_DebugEncodeDecodeSortedGobStream(t *testing.T) {
 	queue := &Queue{}
 
 	numRepositories := 100
-	repositories := make([]IndexOptions, numRepositories)
+	expectedRepositories := make([]IndexOptions, numRepositories)
 
 	for i := 0; i < numRepositories; i++ {
-		repositories[i] = mkHEADIndexOptions(i, strconv.Itoa(i))
+		// setup: initialize repositories
+		expectedRepositories[i] = mkHEADIndexOptions(i, strconv.Itoa(i))
 	}
 
-	for _, r := range repositories {
+	// setup: add expectedRepositories to queue
+	for _, r := range expectedRepositories {
 		queue.AddOrUpdate(r)
 	}
 
-	for _, test := range []struct {
-		name  string
-		items []IndexOptions
-	}{} {
-		t.Run(test.name, func(t *testing.T) {
-			queue := &Queue{}
+	// setup: allocate buffer to store gob-encoded streams
+	var buf bytes.Buffer
 
-			queue.AddOrUpdate()
-		})
+	// test: write all gob-encoded queue entries to the buffer
+	err := queue.debugEncodeSortedGobStream(&buf)
+	if err != nil {
+		t.Fatalf("encoding gob stream: %s", err)
+	}
+
+	// test: decode stream of gob entries and extract
+	// all the index options for later comparison
+	var receivedRepositories []IndexOptions
+
+	decoder := newQueueItemStreamDecoder(&buf)
+
+	for decoder.Next() {
+		item := decoder.Item()
+		receivedRepositories = append(receivedRepositories, item.Opts)
+	}
+	if decoder.Err() != nil {
+		t.Fatalf("newQueueItemStreamDecoder.Decoder: %s", err)
+	}
+
+	// verify: ensure that we get the same repositories (modeled by indexOptions) in the same order
+	// after a round of gob-encoding and gob-decoding
+	//
+	// note: I thought it would be brittle to compare the queueItems directly (since we can't add a queueItem
+	// via the queue API), so I thought only looking at the indexOptions was a good substitute
+	if diff := cmp.Diff(expectedRepositories, receivedRepositories); diff != "" {
+		t.Errorf("unexpected diff in recieved indexOptions (-want +got):\n%s", diff)
 	}
 }
 

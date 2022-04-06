@@ -15,20 +15,20 @@ import (
 )
 
 type queueItem struct {
-	// repoID is the ID of the repo
-	repoID uint32
-	// opts are the options to use when indexing repoID.
-	opts IndexOptions
+	// RepoID is the ID of the repo
+	RepoID uint32
+	// Opts are the options to use when indexing repoID.
+	Opts IndexOptions
 	// indexed is true if opts has been indexed.
-	indexed bool
-	// indexState is the indexState of the last attempt at indexing repoID.
-	indexState indexState
-	// heapIdx is the index of the item in the heap. If < 0 then the item is
+	Indexed bool
+	// IndexState is the indexState of the last attempt at indexing repoID.
+	IndexState indexState
+	// HeapIdx is the index of the item in the heap. If < 0 then the item is
 	// not on the heap.
-	heapIdx int
-	// seq is a sequence number used as a tie breaker. This is to ensure we
+	HeapIdx int
+	// Seq is a sequence number used as a tiebreaker. This is to ensure we
 	// act like a FIFO queue.
-	seq int64
+	Seq int64
 }
 
 // Queue is a priority queue which returns the next repo to index. It is safe
@@ -56,7 +56,7 @@ func (q *Queue) Pop() (opts IndexOptions, ok bool) {
 		return IndexOptions{}, false
 	}
 	item := heap.Pop(&q.pq).(*queueItem)
-	opts = item.opts
+	opts = item.Opts
 
 	metricQueueLen.Set(float64(len(q.pq)))
 	metricQueueCap.Set(float64(len(q.items)))
@@ -78,18 +78,18 @@ func (q *Queue) Len() int {
 func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Lock()
 	item := q.get(opts.RepoID)
-	if !reflect.DeepEqual(item.opts, opts) {
-		item.indexed = false
-		item.opts = opts
+	if !reflect.DeepEqual(item.Opts, opts) {
+		item.Indexed = false
+		item.Opts = opts
 	}
-	if item.heapIdx < 0 {
+	if item.HeapIdx < 0 {
 		q.seq++
-		item.seq = q.seq
+		item.Seq = q.seq
 		heap.Push(&q.pq, item)
 		metricQueueLen.Set(float64(len(q.pq)))
 		metricQueueCap.Set(float64(len(q.items)))
 	} else {
-		heap.Fix(&q.pq, item.heapIdx)
+		heap.Fix(&q.pq, item.HeapIdx)
 	}
 	q.mu.Unlock()
 }
@@ -110,9 +110,9 @@ func (q *Queue) Bump(ids []uint32) []uint32 {
 		item, ok := q.items[id]
 		if !ok {
 			missing = append(missing, id)
-		} else if item.heapIdx < 0 {
+		} else if item.HeapIdx < 0 {
 			q.seq++
-			item.seq = q.seq
+			item.Seq = q.seq
 			heap.Push(&q.pq, item)
 			metricQueueLen.Set(float64(len(q.pq)))
 			metricQueueCap.Set(float64(len(q.items)))
@@ -129,49 +129,71 @@ func (q *Queue) Iterate(f func(*IndexOptions)) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	for _, item := range q.items {
-		f(&item.opts)
+		f(&item.Opts)
 	}
 }
 
-func (q *Queue) encodeSortedGobStream(w io.Writer) error {
+// debugEncodeSortedGobStream gob-encodes all items contained in the queue
+// (sorted by priority) to the provided writer.
+func (q *Queue) debugEncodeSortedGobStream(w io.Writer) error {
 	enc := gob.NewEncoder(w)
+
 	var err error
-	q.iteratedOrdered(func(item *queueItem) {
+	q.debugIteratedOrdered(func(item *queueItem) {
 		if err != nil {
 			return
 		}
 
 		err = enc.Encode(streamQueueReply{
-			Type: streamQueueItem,
+			Type: streamReplyQueueItem,
 			Item: item,
 		})
 	})
 
-	if err == nil {
-		err = enc.Encode(streamQueueReply{
-			Type: streamDone,
-		})
+	if err != nil {
+		reply := streamQueueReply{
+			Type:        streamReplyError,
+			ErrorString: fmt.Sprintf("encoding queueItem: %s", err),
+		}
+
+		replyErr := enc.Encode(reply)
+		if replyErr != nil {
+			return fmt.Errorf("encoding streamError reply: %w", replyErr)
+		}
+
+		return fmt.Errorf("encoding queueItem: %w", err)
 	}
 
+	err = enc.Encode(streamQueueReply{
+		Type: streamReplyDone,
+	})
+
 	if err != nil {
-		return fmt.Errorf("encoding gob stream: %w", err)
+		return fmt.Errorf("terminating stream: %w", err)
 	}
 
 	return nil
 }
 
-func (q *Queue) iteratedOrdered(f func(*queueItem)) {
+// debugIteratedOrdered will call f on each queueItem (sorted by indexing priority)
+// known to the queue, including queueItems that have been popped from the queue).
+//
+// Note: The mutex is held during all calls to f. Callers must not modify the queueItems.
+func (q *Queue) debugIteratedOrdered(f func(*queueItem)) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	queueItems := make([]*queueItem, len(q.items))
-	for i, item := range q.items {
+
+	i := 0
+	for _, item := range q.items {
 		queueItems[i] = item
+		i++
 	}
 
 	sort.Slice(queueItems, func(i, j int) bool {
 		x, y := queueItems[i], queueItems[j]
-		return lessQueueItem(x, y)
+		return lessQueueItemPriority(x, y)
 	})
 
 	for _, item := range queueItems {
@@ -182,55 +204,38 @@ func (q *Queue) iteratedOrdered(f func(*queueItem)) {
 type queueStreamReplyKind int
 
 const (
-	streamQueueItem queueStreamReplyKind = iota
-	streamDone
-	streamError
+	streamReplyQueueItem queueStreamReplyKind = iota
+	streamReplyDone
+	streamReplyError
 )
 
 type streamQueueReply struct {
-	Type  queueStreamReplyKind
-	Item  *queueItem
-	Error error
+	Type        queueStreamReplyKind
+	Item        *queueItem
+	ErrorString string
 }
 
-func (q *Queue) ServeHTTPList(w http.ResponseWriter, r *http.Request) {
+func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method must be GET", http.StatusBadRequest)
 		return
 	}
 
-	contentType := r.Header.Get("content-type")
-	if contentType != "application/x-gob-stream" {
-		http.Error(w, fmt.Sprintf("unsupported content type: %q", contentType), http.StatusBadRequest)
+	desiredContentType := r.Header.Get("Accept")
+	if desiredContentType != "application/x-gob-stream" {
+		http.Error(w, fmt.Sprintf("unsupported content type: %q", desiredContentType), http.StatusBadRequest)
 		return
 	}
 
-	w.Header().Set("content-type", "application/x-gob-stream")
+	w.Header().Set("Content-Type", "application/x-gob-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
 
-	var enc gob.Encoder
-	var encodingErr error
-	q.iteratedOrdered(func(item *queueItem) {
-		if encodingErr != nil {
-			return
-		}
-
-		encodingErr = enc.Encode(streamQueueReply{
-			Type: streamQueueItem,
-			Item: item,
-		})
-	})
-
-	if encodingErr != nil {
-		enc.Encode(streamQueueReply{
-			Type:  streamError,
-			Error: fmt.Errorf("encoding queue item: %w", encodingErr),
-		})
-		return
+	err := q.debugEncodeSortedGobStream(w)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("encoding gob stream: %s", err), http.StatusInternalServerError)
 	}
-
-	enc.Encode(streamQueueReply{
-		Type: streamDone,
-	})
 }
 
 // SetIndexed sets what the currently indexed options are for opts.RepoID.
@@ -238,14 +243,14 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Lock()
 	item := q.get(opts.RepoID)
 
-	item.indexState = state
+	item.IndexState = state
 	if state != indexStateFail {
-		item.indexed = reflect.DeepEqual(opts, item.opts)
+		item.Indexed = reflect.DeepEqual(opts, item.Opts)
 	}
 
-	if item.heapIdx >= 0 {
+	if item.HeapIdx >= 0 {
 		// We only update the position in the queue, never add it.
-		heap.Fix(&q.pq, item.heapIdx)
+		heap.Fix(&q.pq, item.HeapIdx)
 	}
 
 	q.mu.Unlock()
@@ -281,17 +286,17 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) uint {
 
 	var count uint
 	for _, item := range q.items {
-		if _, ok := set[item.opts.RepoID]; ok {
+		if _, ok := set[item.Opts.RepoID]; ok {
 			continue
 		}
 
-		if item.heapIdx >= 0 {
-			heap.Remove(&q.pq, item.heapIdx)
+		if item.HeapIdx >= 0 {
+			heap.Remove(&q.pq, item.HeapIdx)
 		}
 
-		item.indexState = ""
+		item.IndexState = ""
 
-		delete(q.items, item.opts.RepoID)
+		delete(q.items, item.Opts.RepoID)
 		count++
 	}
 
@@ -313,8 +318,8 @@ func (q *Queue) get(repoID uint32) *queueItem {
 	item, ok := q.items[repoID]
 	if !ok {
 		item = &queueItem{
-			repoID:  repoID,
-			heapIdx: -1,
+			RepoID:  repoID,
+			HeapIdx: -1,
 		}
 		q.items[repoID] = item
 	}
@@ -335,19 +340,19 @@ func (pq pqueue) Len() int { return len(pq) }
 func (pq pqueue) Less(i, j int) bool {
 	x := pq[i]
 	y := pq[j]
-	return lessQueueItem(x, y)
+	return lessQueueItemPriority(x, y)
 }
 
 func (pq pqueue) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].heapIdx = i
-	pq[j].heapIdx = j
+	pq[i].HeapIdx = i
+	pq[j].HeapIdx = j
 }
 
 func (pq *pqueue) Push(x interface{}) {
 	n := len(*pq)
 	item := x.(*queueItem)
-	item.heapIdx = n
+	item.HeapIdx = n
 	*pq = append(*pq, item)
 }
 
@@ -355,66 +360,106 @@ func (pq *pqueue) Pop() interface{} {
 	old := *pq
 	n := len(old)
 	item := old[n-1]
-	item.heapIdx = -1
+	item.HeapIdx = -1
 	*pq = old[0 : n-1]
 	return item
 }
 
-//
-func lessQueueItem(x, y *queueItem) bool {
+// lessQueueItemPriority returns true if the indexing priority x is less than that of y.
+func lessQueueItemPriority(x, y *queueItem) bool {
 	// If we know x needs an update and y doesn't, then return true. Otherwise
 	// they are either equal priority or y is more urgent.
-	if x.indexed != y.indexed {
-		return !x.indexed
+	if x.Indexed != y.Indexed {
+		return !x.Indexed
 	}
 
-	if xFail, yFail := x.indexState == indexStateFail, y.indexState == indexStateFail; xFail != yFail {
+	if xFail, yFail := x.IndexState == indexStateFail, y.IndexState == indexStateFail; xFail != yFail {
 		// if you failed to index, you are likely to fail again. So prefer
 		// non-failed.
 		return !xFail
 	}
 
-	// tie breaker is to prefer the item added to the queue first
-	return x.seq < y.seq
+	// tiebreaker is to prefer the item added to the queue first
+	return x.Seq < y.Seq
 }
 
-func NewQueueItemStreamDecoder(r io.Reader) *queueItemStreamDecoder {
+// queueItemStreamDecoder processes streams of gob-encoded queueItems.
+type queueItemStreamDecoder struct {
+	gobDecoder *gob.Decoder
+	item       *queueItem
+
+	err error
+}
+
+// newQueueItemStreamDecoder returns a decoder that will process the stream
+// from the provided reader.
+func newQueueItemStreamDecoder(r io.Reader) *queueItemStreamDecoder {
+	d := gob.NewDecoder(r)
+
 	return &queueItemStreamDecoder{
-		gobDecoder: gob.NewDecoder(r),
+		gobDecoder: d,
+
+		item: nil,
+		err:  nil,
 	}
 }
 
-type queueItemStreamDecoder struct {
-	gobDecoder *gob.Decoder
-	err        error
-}
-
-func (d *queueItemStreamDecoder) Decode(v *queueItem) error {
+// Next advances the decoder to the next queueItem in the stream, which can then
+// be retrieved using the Item method. Next returns false when the
+// decoder reaches the end of the input, or if the decoder encountered an error
+// while decoding the stream.
+//
+// After Next returns false, the Err method can be used to retrieve the first error
+// (besides io.EOF) that the decoder may have encountered while processing the stream.
+func (d *queueItemStreamDecoder) Next() bool {
 	if d.err != nil {
-		return d.err
+		return false
 	}
 
 	var reply streamQueueReply
 	err := d.gobDecoder.Decode(&reply)
 	if err != nil {
+		if err == io.EOF {
+			// the input terminated before it yielded all of its items
+			d.err = io.ErrUnexpectedEOF
+			return false
+		}
+
 		d.err = fmt.Errorf("decoding gob value: %w", err)
-		return d.err
+		return false
+	}
+
+	if reply.Type == streamReplyQueueItem {
+		d.item = reply.Item
+		return true
 	}
 
 	switch reply.Type {
-	case streamQueueItem:
-		v = reply.Item
-		return nil
-
-	case streamDone:
+	case streamReplyDone:
 		d.err = io.EOF
-	case streamError:
-		d.err = reply.Error
+	case streamReplyError:
+		d.err = fmt.Errorf(reply.ErrorString)
 	default:
 		d.err = fmt.Errorf("unknown stream reply type: %d", reply.Type)
 	}
 
-	return d.err
+	return false
+}
+
+// Err returns the first non io.EOF error that was encountered by the decoder while processing
+// the stream.
+func (d *queueItemStreamDecoder) Err() error {
+	if d.err != nil && d.err != io.EOF {
+		return d.err
+	}
+
+	return nil
+}
+
+// Item returns the most recent queueItem that was decoded by a call to
+// Next.
+func (d *queueItemStreamDecoder) Item() *queueItem {
+	return d.item
 }
 
 var (
