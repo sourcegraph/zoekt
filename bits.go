@@ -16,6 +16,7 @@ package zoekt
 
 import (
 	"encoding/binary"
+	"log"
 	"sort"
 	"unicode"
 	"unicode/utf8"
@@ -187,6 +188,7 @@ func unmarshalDocSections(in []byte, buf []DocumentSection) (secs []DocumentSect
 	// Defensive, this shouldn't happen. While we have the feature flag for lazy
 	// doc section decoding lets be extra defensive.
 	if len(in) == 0 {
+		log.Println("WARN unmarshalDocSections received an empty slice to unmarshal")
 		return nil
 	}
 
