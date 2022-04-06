@@ -473,12 +473,12 @@ func traceID(ctx context.Context) string {
 
 // traceIDFromSpan returns a trace ID, if any, found in the given span.
 func traceIDFromSpan(span opentracing.Span) string {
-	if spanCtx, ok := span.Context().(jaeger.SpanContext); ok {
-		return spanCtx.TraceID().String()
-	}
+	switch span.Context().(type) {
+	case jaeger.SpanContext:
+		return span.Context().(jaeger.SpanContext).TraceID().String()
 
-	if spanCtx, ok := span.Context().(ddtrace.SpanContext); ok {
-		return strconv.FormatUint(spanCtx.SpanID(), 10)
+	case ddtrace.SpanContext:
+		return strconv.FormatUint(span.Context().(ddtrace.SpanContext).TraceID(), 10)
 	}
 	return ""
 }

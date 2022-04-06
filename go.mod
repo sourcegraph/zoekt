@@ -31,7 +31,7 @@ require (
 	golang.org/x/net v0.0.0-20211020060615-d418f374d309
 	golang.org/x/oauth2 v0.0.0-20210514164344-f6687ab2804c
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	gopkg.in/DataDog/dd-trace-go.v1 v1.37.0
+	gopkg.in/DataDog/dd-trace-go.v1 v1.37.1
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	humungus.tedunangst.com/r/gerc v0.1.2
 )

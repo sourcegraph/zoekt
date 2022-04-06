@@ -35,7 +35,7 @@ func Init(svcName, version string) {
 		return
 	}
 
-	tracer, err := configureJaerger(svcName, version)
+	tracer, err := configureJaeger(svcName, version)
 	if err != nil {
 		log.Printf("failed to configure Jaeger tracer: %v", err)
 		return
@@ -52,7 +52,7 @@ func configureDatadogTracer(svcName, version string) opentracing.Tracer {
 	return tracer
 }
 
-func configureJaerger(svcName string, version string) (opentracing.Tracer, error) {
+func configureJaeger(svcName string, version string) (opentracing.Tracer, error) {
 	cfg, err := jaegercfg.FromEnv()
 	cfg.ServiceName = svcName
 	if err != nil {
