@@ -2,7 +2,12 @@ package main
 
 import (
 	"container/heap"
+	"encoding/gob"
+	"fmt"
+	"io"
+	"net/http"
 	"reflect"
+	"sort"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -126,6 +131,106 @@ func (q *Queue) Iterate(f func(*IndexOptions)) {
 	for _, item := range q.items {
 		f(&item.opts)
 	}
+}
+
+func (q *Queue) encodeSortedGobStream(w io.Writer) error {
+	enc := gob.NewEncoder(w)
+	var err error
+	q.iteratedOrdered(func(item *queueItem) {
+		if err != nil {
+			return
+		}
+
+		err = enc.Encode(streamQueueReply{
+			Type: streamQueueItem,
+			Item: item,
+		})
+	})
+
+	if err == nil {
+		err = enc.Encode(streamQueueReply{
+			Type: streamDone,
+		})
+	}
+
+	if err != nil {
+		return fmt.Errorf("encoding gob stream: %w", err)
+	}
+
+	return nil
+}
+
+func (q *Queue) iteratedOrdered(f func(*queueItem)) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	queueItems := make([]*queueItem, len(q.items))
+	for i, item := range q.items {
+		queueItems[i] = item
+	}
+
+	sort.Slice(queueItems, func(i, j int) bool {
+		x, y := queueItems[i], queueItems[j]
+		return lessQueueItem(x, y)
+	})
+
+	for _, item := range queueItems {
+		f(item)
+	}
+}
+
+type queueStreamReplyKind int
+
+const (
+	streamQueueItem queueStreamReplyKind = iota
+	streamDone
+	streamError
+)
+
+type streamQueueReply struct {
+	Type  queueStreamReplyKind
+	Item  *queueItem
+	Error error
+}
+
+func (q *Queue) ServeHTTPList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method must be GET", http.StatusBadRequest)
+		return
+	}
+
+	contentType := r.Header.Get("content-type")
+	if contentType != "application/x-gob-stream" {
+		http.Error(w, fmt.Sprintf("unsupported content type: %q", contentType), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("content-type", "application/x-gob-stream")
+
+	var enc gob.Encoder
+	var encodingErr error
+	q.iteratedOrdered(func(item *queueItem) {
+		if encodingErr != nil {
+			return
+		}
+
+		encodingErr = enc.Encode(streamQueueReply{
+			Type: streamQueueItem,
+			Item: item,
+		})
+	})
+
+	if encodingErr != nil {
+		enc.Encode(streamQueueReply{
+			Type:  streamError,
+			Error: fmt.Errorf("encoding queue item: %w", encodingErr),
+		})
+		return
+	}
+
+	enc.Encode(streamQueueReply{
+		Type: streamDone,
+	})
 }
 
 // SetIndexed sets what the currently indexed options are for opts.RepoID.
@@ -271,6 +376,45 @@ func lessQueueItem(x, y *queueItem) bool {
 
 	// tie breaker is to prefer the item added to the queue first
 	return x.seq < y.seq
+}
+
+func NewQueueItemStreamDecoder(r io.Reader) *queueItemStreamDecoder {
+	return &queueItemStreamDecoder{
+		gobDecoder: gob.NewDecoder(r),
+	}
+}
+
+type queueItemStreamDecoder struct {
+	gobDecoder *gob.Decoder
+	err        error
+}
+
+func (d *queueItemStreamDecoder) Decode(v *queueItem) error {
+	if d.err != nil {
+		return d.err
+	}
+
+	var reply streamQueueReply
+	err := d.gobDecoder.Decode(&reply)
+	if err != nil {
+		d.err = fmt.Errorf("decoding gob value: %w", err)
+		return d.err
+	}
+
+	switch reply.Type {
+	case streamQueueItem:
+		v = reply.Item
+		return nil
+
+	case streamDone:
+		d.err = io.EOF
+	case streamError:
+		d.err = reply.Error
+	default:
+		d.err = fmt.Errorf("unknown stream reply type: %d", reply.Type)
+	}
+
+	return d.err
 }
 
 var (

@@ -120,6 +120,32 @@ func TestQueue_Bump(t *testing.T) {
 	}
 }
 
+func TestQueue_GobListSorted(t *testing.T) {
+	queue := &Queue{}
+
+	numRepositories := 100
+	repositories := make([]IndexOptions, numRepositories)
+
+	for i := 0; i < numRepositories; i++ {
+		repositories[i] = mkHEADIndexOptions(i, strconv.Itoa(i))
+	}
+
+	for _, r := range repositories {
+		queue.AddOrUpdate(r)
+	}
+
+	for _, test := range []struct {
+		name  string
+		items []IndexOptions
+	}{} {
+		t.Run(test.name, func(t *testing.T) {
+			queue := &Queue{}
+
+			queue.AddOrUpdate()
+		})
+	}
+}
+
 func mkHEADIndexOptions(id int, version string) IndexOptions {
 	return IndexOptions{
 		RepoID:   uint32(id),
