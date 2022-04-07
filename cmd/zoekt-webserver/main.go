@@ -116,7 +116,6 @@ func writeTemplates(dir string) error {
 }
 
 func main() {
-	logDir := flag.String("log_dir", "", "log to this directory rather than stderr.")
 	logRefresh := flag.Duration("log_refresh", 24*time.Hour, "if using --log_dir, start writing a new file this often.")
 
 	listen := flag.String("listen", ":6070", "listen on this address.")
@@ -137,6 +136,20 @@ func main() {
 
 	flag.Parse()
 
+	logDirFlag := flag.Lookup("log_dir")
+	if logDirFlag != nil {
+		logDir := logDirFlag.Value.String()
+		if logDir != "" {
+			if fi, err := os.Lstat(logDir); err != nil || !fi.IsDir() {
+				log.Fatalf("%s is not a directory", logDir)
+			}
+			// We could do fdup acrobatics to also redirect
+			// stderr, but it is simpler and more portable for the
+			// caller to divert stderr output if necessary.
+			go divertLogs(logDir, *logRefresh)
+		}
+	}
+
 	if *version {
 		fmt.Printf("zoekt-webserver version %q\n", zoekt.Version)
 		os.Exit(0)
@@ -151,16 +164,6 @@ func main() {
 
 	tracer.Init("zoekt-webserver", zoekt.Version)
 	profiler.Init("zoekt-webserver", zoekt.Version, -1)
-
-	if *logDir != "" {
-		if fi, err := os.Lstat(*logDir); err != nil || !fi.IsDir() {
-			log.Fatalf("%s is not a directory", *logDir)
-		}
-		// We could do fdup acrobatics to also redirect
-		// stderr, but it is simpler and more portable for the
-		// caller to divert stderr output if necessary.
-		go divertLogs(*logDir, *logRefresh)
-	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
@@ -473,7 +476,7 @@ func traceID(ctx context.Context) string {
 
 // traceIDFromSpan returns a trace ID, if any, found in the given span.
 func traceIDFromSpan(span opentracing.Span) string {
-	switch v = span.Context().(type) {
+	switch v := span.Context().(type) {
 	case jaeger.SpanContext:
 		return v.TraceID().String()
 
