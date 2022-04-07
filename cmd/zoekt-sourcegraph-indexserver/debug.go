@@ -212,7 +212,7 @@ func debugQueue() *ffcli.Command {
 			defer writer.Flush()
 
 			if printHeader {
-				_, err := fmt.Fprintf(writer, "Position\tName\tID\tBranches\n")
+				_, err := fmt.Fprintf(writer, "Position\tName\tID\tBranches\t\n")
 				if err != nil {
 					return fmt.Errorf("writing headers to output: %w", err)
 				}
@@ -228,7 +228,7 @@ func debugQueue() *ffcli.Command {
 					branches = append(branches, b.String())
 				}
 
-				_, err := fmt.Fprintf(writer, "%d\t%s\t%d\t%s\n", position, item.Opts.Name, item.RepoID, strings.Join(branches, ", "))
+				_, err := fmt.Fprintf(writer, "%d\t%s\t%d\t%s\t\n", position, item.Opts.Name, item.RepoID, strings.Join(branches, ", "))
 				if err != nil {
 					return fmt.Errorf("writing entry to stdout: %w", err)
 				}
