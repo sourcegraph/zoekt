@@ -2,10 +2,13 @@ package main
 
 import (
 	"container/heap"
+	"context"
 	"encoding/gob"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"reflect"
 	"sort"
 	"sync"
@@ -215,7 +218,7 @@ type streamQueueReply struct {
 	ErrorString string
 }
 
-const gobStreamContentType = "application/x-gob-stream"
+const gobStreamMIMEType = "application/x-gob-stream"
 
 func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -224,12 +227,12 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	desiredContentType := r.Header.Get("Accept")
-	if desiredContentType != gobStreamContentType {
+	if desiredContentType != gobStreamMIMEType {
 		http.Error(w, fmt.Sprintf("unsupported content type: %q", desiredContentType), http.StatusBadRequest)
 		return
 	}
 
-	w.Header().Set("Content-Type", gobStreamContentType)
+	w.Header().Set("Content-Type", gobStreamMIMEType)
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
@@ -393,10 +396,10 @@ type queueItemStreamDecoder struct {
 	err error
 }
 
-// newQueueItemStreamDecoder returns a decoder that will process the stream
-// from the provided reader.
-func newQueueItemStreamDecoder(r io.Reader) *queueItemStreamDecoder {
-	d := gob.NewDecoder(r)
+// newQueueItemStreamDecoder returns a decoder that will process the provided
+// stream.
+func newQueueItemStreamDecoder(stream io.Reader) *queueItemStreamDecoder {
+	d := gob.NewDecoder(stream)
 
 	return &queueItemStreamDecoder{
 		gobDecoder: d,
@@ -404,6 +407,57 @@ func newQueueItemStreamDecoder(r io.Reader) *queueItemStreamDecoder {
 		item: nil,
 		err:  nil,
 	}
+}
+
+// createQueueItemStream creates a gob-encoded stream of queueItems from the resource
+// at the given address.
+//
+// Callers must Close() the returned stream object after use.
+func createQueueItemStream(ctx context.Context, address string) (io.ReadCloser, error) {
+	request, err := http.NewRequest(http.MethodGet, address, nil)
+	if err != nil {
+		return nil, fmt.Errorf("constructing request: %w", err)
+	}
+
+	request.Header.Set("Accept", gobStreamMIMEType)
+	request.Header.Set("Cache-Control", "no-cache")
+	request.Header.Set("Connection", "keep-alive")
+	request.Header.Set("Transfer-Encoding", "chunked")
+
+	request = request.WithContext(ctx)
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+
+	if response.StatusCode != http.StatusOK {
+		var statusErr error
+
+		rawBody, err := ioutil.ReadAll(io.LimitReader(response.Body, 2048))
+		if err != nil {
+			statusErr = fmt.Errorf("reading response body from failed request: %w", err)
+		} else {
+			statusErr = fmt.Errorf("%s: %s", response.Status, string(rawBody))
+		}
+
+		return nil, &url.Error{
+			Op:  "Get",
+			URL: address,
+			Err: statusErr,
+		}
+	}
+
+	contentType := response.Header.Get("Content-Type")
+	if contentType != gobStreamMIMEType {
+		return nil, &url.Error{
+			Op:  "Get",
+			URL: address,
+			Err: fmt.Errorf("expected %q content-type, got %q", gobStreamMIMEType, contentType),
+		}
+	}
+
+	return response.Body, nil
 }
 
 // Next advances the decoder to the next queueItem in the stream, which can then

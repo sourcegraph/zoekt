@@ -1,8 +1,10 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
@@ -121,7 +123,7 @@ func TestQueue_Bump(t *testing.T) {
 	}
 }
 
-func TestQueue_DebugEncodeDecodeSortedGobStream(t *testing.T) {
+func TestQueue_Integration_DebugQueue(t *testing.T) {
 	queue := &Queue{}
 
 	numRepositories := 100
@@ -137,21 +139,23 @@ func TestQueue_DebugEncodeDecodeSortedGobStream(t *testing.T) {
 		queue.AddOrUpdate(r)
 	}
 
-	// setup: allocate buffer to store gob-encoded streams
-	var buf bytes.Buffer
+	// setup: start test http server that forwards requests to the
+	// queue instance
+	server := httptest.NewServer(http.HandlerFunc(queue.handleDebugQueue))
+	defer server.Close()
 
-	// test: write all gob-encoded queue entries to the buffer
-	err := queue.debugEncodeSortedGobStream(&buf)
+	// test: create stream of queueItems from test server
+	stream, err := createQueueItemStream(context.Background(), server.URL)
 	if err != nil {
-		t.Fatalf("encoding gob stream: %s", err)
+		t.Fatalf("creating queueItem stream: %s", err)
 	}
+	defer stream.Close()
 
 	// test: decode stream of gob entries and extract
 	// all the index options for later comparison
+	decoder := newQueueItemStreamDecoder(stream)
+
 	var receivedRepositories []IndexOptions
-
-	decoder := newQueueItemStreamDecoder(&buf)
-
 	for decoder.Next() {
 		item := decoder.Item()
 		receivedRepositories = append(receivedRepositories, item.Opts)

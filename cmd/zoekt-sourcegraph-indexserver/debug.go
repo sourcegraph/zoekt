@@ -6,10 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -157,8 +154,8 @@ func debugListIndexed() *ffcli.Command {
 func debugQueue() *ffcli.Command {
 	fs := flag.NewFlagSet("debug queue", flag.ExitOnError)
 
-	connectionTimeout := fs.Duration("timeout", 10*time.Second, "max timeout for establishing a connection to a zoekt-sourcegraph-indexserver instance")
-	printHeader := fs.Bool("header", false, "whether to print the headers for each column")
+	connectionTimeout := fs.Duration("timeout", 10*time.Second, "max timeout for establishing a connection to the zoekt-sourcegraph-indexserver instance")
+	printHeader := fs.Bool("header", false, "add a header row to each column")
 
 	hostname := fs.String("hostname", "localhost", "the hostname of the zoekt-sourcegraph-indexserver instance to connect to")
 	port := fs.Uint("port", 6072, "the port of the zoekt-sourcegraph-indexserver instance to connect to")
@@ -169,58 +166,20 @@ func debugQueue() *ffcli.Command {
 		ShortHelp:  "list the repositories in the indexing queue, sorted by descending priority",
 		FlagSet:    fs,
 		Exec: func(ctx context.Context, args []string) error {
-			raw := fmt.Sprintf("http://%s:%d/debug/queue", *hostname, *port)
-			address, err := url.Parse(raw)
-			if err != nil {
-				return fmt.Errorf("parsing server address %q: %w", raw, err)
-			}
-
-			request, err := http.NewRequest(http.MethodGet, address.String(), nil)
-			if err != nil {
-				return fmt.Errorf("constructing request: %w", err)
-			}
-
-			request.Header.Set("Accept", gobStreamContentType)
-			request.Header.Set("Cache-Control", "no-cache")
-			request.Header.Set("Connection", "keep-alive")
-			request.Header.Set("Transfer-Encoding", "chunked")
-
 			ctx, cancel := context.WithTimeout(ctx, *connectionTimeout)
 			defer cancel()
 
-			request = request.WithContext(ctx)
-			response, err := http.DefaultClient.Do(request)
+			raw := fmt.Sprintf("http://%s:%d/debug/queue", *hostname, *port)
+			address, err := url.Parse(raw)
 			if err != nil {
-				return err
+				return fmt.Errorf("parsing URL %q: %s", raw, err)
 			}
 
-			defer response.Body.Close()
-
-			if response.StatusCode != http.StatusOK {
-				b, err := ioutil.ReadAll(io.LimitReader(response.Body, 2048))
-				if err != nil {
-					return &url.Error{
-						Op:  "Get",
-						URL: address.String(),
-						Err: fmt.Errorf("reading response body from failed request: %w", err),
-					}
-				}
-
-				return &url.Error{
-					Op:  "Get",
-					URL: address.String(),
-					Err: fmt.Errorf("%s: %s", response.Status, string(b)),
-				}
+			stream, err := createQueueItemStream(ctx, address.String())
+			if err != nil {
+				return fmt.Errorf("creating queueItem stream from %q: %w", address.String(), err)
 			}
-
-			contentType := response.Header.Get("Content-Type")
-			if contentType != gobStreamContentType {
-				return &url.Error{
-					Op:  "Get",
-					URL: address.String(),
-					Err: fmt.Errorf("expected %q content-type, got %q", gobStreamContentType, contentType),
-				}
-			}
+			defer stream.Close()
 
 			writer := tabwriter.NewWriter(os.Stdout, 0, 8, 4, ' ', 0)
 			defer writer.Flush()
@@ -232,8 +191,9 @@ func debugQueue() *ffcli.Command {
 				}
 			}
 
+			decoder := newQueueItemStreamDecoder(stream)
+
 			position := 0
-			decoder := newQueueItemStreamDecoder(response.Body)
 			for decoder.Next() {
 				item := decoder.Item()
 
