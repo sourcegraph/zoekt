@@ -215,6 +215,8 @@ type streamQueueReply struct {
 	ErrorString string
 }
 
+const gobStreamContentType = "application/x-gob-stream"
+
 func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method must be GET", http.StatusBadRequest)
@@ -222,12 +224,12 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	desiredContentType := r.Header.Get("Accept")
-	if desiredContentType != "application/x-gob-stream" {
+	if desiredContentType != gobStreamContentType {
 		http.Error(w, fmt.Sprintf("unsupported content type: %q", desiredContentType), http.StatusBadRequest)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/x-gob-stream")
+	w.Header().Set("Content-Type", gobStreamContentType)
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
