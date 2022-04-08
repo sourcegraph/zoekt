@@ -135,7 +135,7 @@ func main() {
 	version := flag.Bool("version", false, "Print version number")
 
 	flag.Parse()
-
+	// avoid a panic due to log_dir flag already being defined in glog (a transient dependency)
 	logDirFlag := flag.Lookup("log_dir")
 	if logDirFlag != nil {
 		logDir := logDirFlag.Value.String()
