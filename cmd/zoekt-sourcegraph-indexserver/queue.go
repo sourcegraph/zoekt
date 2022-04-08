@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"text/tabwriter"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -32,6 +33,9 @@ type queueItem struct {
 	// seq is a sequence number used as a tiebreaker. This is to ensure we
 	// act like a FIFO queue.
 	seq int64
+	// dateAddedToQueue is the time when this indexing job was added to the queue. If this item is no longer
+	// in the heap (i.e. it has been processed already), this value is nonsensical.
+	dateAddedToQueue time.Time
 }
 
 // Queue is a priority queue which returns the next repo to index. It is safe
@@ -80,6 +84,7 @@ func (q *Queue) Len() int {
 // queue, it is updated.
 func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Lock()
+	now := time.Now()
 	item := q.get(opts.RepoID)
 	if !reflect.DeepEqual(item.opts, opts) {
 		item.indexed = false
@@ -88,6 +93,8 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	if item.heapIdx < 0 {
 		q.seq++
 		item.seq = q.seq
+		item.dateAddedToQueue = now
+
 		heap.Push(&q.pq, item)
 		metricQueueLen.Set(float64(len(q.pq)))
 		metricQueueCap.Set(float64(len(q.items)))
@@ -194,12 +201,15 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 	defer writer.Flush()
 
 	if printHeaders {
-		_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsPending\tBranches\t\n")
+		_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsPending\tTimeSpentAwaitingIndex\tBranches\t\n")
 		if err != nil {
 			http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
 			return
 		}
 	}
+
+	// TODO@ggilmore: Mock this so that we can test it in the command output?
+	now := time.Now()
 
 	position := -1
 	var err error
@@ -216,8 +226,12 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 		}
 
 		isPending := item.heapIdx >= 0
+		timeSpentAwaitingIndex := "-"
+		if isPending {
+			timeSpentAwaitingIndex = now.Sub(item.dateAddedToQueue).Round(time.Second).String()
+		}
 
-		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t\n", position, item.opts.Name, item.repoID, isPending, strings.Join(branches, ", "))
+		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t%s\t\n", position, item.opts.Name, item.repoID, isPending, timeSpentAwaitingIndex, strings.Join(branches, ", "))
 	})
 
 	if err != nil {
