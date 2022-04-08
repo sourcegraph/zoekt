@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func Test_LogDirFlag(t *testing.T) {
+func TestLogDirFlag(t *testing.T) {
 
 	logDirFlag := flag.Lookup("log_dir")
 	if logDirFlag == nil {
