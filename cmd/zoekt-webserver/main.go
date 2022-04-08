@@ -481,7 +481,7 @@ func traceIDFromSpan(span opentracing.Span) string {
 		return v.TraceID().String()
 
 	case ddtrace.SpanContext:
-		return strconv.FormatUint(span.Context().(ddtrace.SpanContext).TraceID(), 10)
+		return strconv.FormatUint(v.TraceID(), 10)
 	}
 	return ""
 }
