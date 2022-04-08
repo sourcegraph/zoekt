@@ -6,12 +6,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"strconv"
-	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
@@ -154,8 +154,9 @@ func debugListIndexed() *ffcli.Command {
 func debugQueue() *ffcli.Command {
 	fs := flag.NewFlagSet("debug queue", flag.ExitOnError)
 
+	printHeader := fs.Bool("header", true, "print column headers")
+
 	connectionTimeout := fs.Duration("timeout", 10*time.Second, "max timeout for establishing a connection to the zoekt-sourcegraph-indexserver instance")
-	printHeader := fs.Bool("header", false, "add a header row to each column")
 
 	hostname := fs.String("hostname", "localhost", "the hostname of the zoekt-sourcegraph-indexserver instance to connect to")
 	port := fs.Uint("port", 6072, "the port of the zoekt-sourcegraph-indexserver instance to connect to")
@@ -174,45 +175,24 @@ func debugQueue() *ffcli.Command {
 			if err != nil {
 				return fmt.Errorf("parsing URL %q: %s", raw, err)
 			}
+			address.Query().Add("header", strconv.FormatBool(*printHeader))
 
-			stream, err := createQueueItemStream(ctx, address.String())
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, address.String(), nil)
 			if err != nil {
-				return fmt.Errorf("creating queueItem stream from %q: %w", address.String(), err)
-			}
-			defer stream.Close()
-
-			writer := tabwriter.NewWriter(os.Stdout, 0, 8, 4, ' ', 0)
-			defer writer.Flush()
-
-			if *printHeader {
-				_, err := fmt.Fprintf(writer, "Position\tName\tID\tBranches\t\n")
-				if err != nil {
-					return fmt.Errorf("writing headers to output: %w", err)
-				}
+				return fmt.Errorf("constructing request: %w", err)
 			}
 
-			decoder := newQueueItemStreamDecoder(stream)
-
-			position := 0
-			for decoder.Next() {
-				item := decoder.Item()
-
-				var branches []string
-				for _, b := range item.Opts.Branches {
-					branches = append(branches, b.String())
-				}
-
-				_, err := fmt.Fprintf(writer, "%d\t%s\t%d\t%s\t\n", position, item.Opts.Name, item.RepoID, strings.Join(branches, ", "))
-				if err != nil {
-					return fmt.Errorf("writing entry to stdout: %w", err)
-				}
-
-				position++
-			}
-
-			err = decoder.Err()
+			request.Header.Set("Accept", "text/plain")
+			response, err := http.DefaultClient.Do(request)
 			if err != nil {
-				return fmt.Errorf("decoding item stream: %w", err)
+				return err
+			}
+
+			defer response.Body.Close()
+
+			_, err = io.Copy(os.Stdout, response.Body)
+			if err != nil {
+				return fmt.Errorf("writing to stdout: %w", err)
 			}
 
 			return nil

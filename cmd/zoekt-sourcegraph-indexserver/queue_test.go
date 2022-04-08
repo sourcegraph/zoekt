@@ -1,12 +1,15 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
+	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt"
@@ -124,53 +127,69 @@ func TestQueue_Bump(t *testing.T) {
 }
 
 func TestQueue_Integration_DebugQueue(t *testing.T) {
+	// helper function to normalize the queue's debug output - this makes the test less brittle
+	// + makes it much less annoying to make edits to the expected output in a way that doesn't
+	// materially affect the caller
+	normalizeDebugOutput := func(output string) string {
+		// remove any leading or trailing whitespace
+		output = strings.TrimSpace(output)
+
+		// remove trailing whitespace at the of each row (could come from column padding)
+		var lines []string
+		for _, l := range strings.Split(output, "\n") {
+			lines = append(lines, strings.TrimRightFunc(l, unicode.IsSpace))
+		}
+
+		return strings.Join(lines, "\n")
+	}
+
 	queue := &Queue{}
 
-	numRepositories := 100
-	expectedRepositories := make([]IndexOptions, numRepositories)
+	// setup: add two repositories to the queue and pop one of them
+	poppedRepository := mkHEADIndexOptions(0, "popped")
+	queuedRepository := mkHEADIndexOptions(1, "stillQueued")
 
-	for i := 0; i < numRepositories; i++ {
-		// setup: initialize repositories
-		expectedRepositories[i] = mkHEADIndexOptions(i, strconv.Itoa(i))
-	}
+	queue.AddOrUpdate(poppedRepository)
+	queue.Pop()
 
-	// setup: add expectedRepositories to queue
-	for _, r := range expectedRepositories {
-		queue.AddOrUpdate(r)
-	}
+	queue.AddOrUpdate(queuedRepository)
 
 	// setup: start test http server that forwards requests to the
 	// queue instance
 	server := httptest.NewServer(http.HandlerFunc(queue.handleDebugQueue))
 	defer server.Close()
 
-	// test: create stream of queueItems from test server
-	stream, err := createQueueItemStream(context.Background(), server.URL)
+	// setup: add the ?header=true query parameter to ensure that we fetch column headers
+	address, _ := url.Parse(server.URL)
+	params := address.Query()
+	params.Set("header", "true")
+	address.RawQuery = params.Encode()
+
+	// test: send a request to the queue's debug endpoint
+	response, err := http.Get(address.String())
 	if err != nil {
-		t.Fatalf("creating queueItem stream: %s", err)
-	}
-	defer stream.Close()
-
-	// test: decode stream of gob entries and extract
-	// all the index options for later comparison
-	decoder := newQueueItemStreamDecoder(stream)
-
-	var receivedRepositories []IndexOptions
-	for decoder.Next() {
-		item := decoder.Item()
-		receivedRepositories = append(receivedRepositories, item.Opts)
-	}
-	if decoder.Err() != nil {
-		t.Fatalf("newQueueItemStreamDecoder.Decoder: %s", err)
+		t.Fatalf(err.Error())
 	}
 
-	// verify: ensure that we get the same repositories (modeled by indexOptions) in the same order
-	// after a round of gob-encoding and gob-decoding
-	//
-	// note: I thought it would be brittle to compare the queueItems directly (since we can't add a queueItem
-	// via the queue API), so I thought only looking at the indexOptions was a good substitute
-	if diff := cmp.Diff(expectedRepositories, receivedRepositories); diff != "" {
-		t.Errorf("unexpected diff in recieved indexOptions (-want +got):\n%s", diff)
+	defer response.Body.Close()
+	raw, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Errorf("reading response body: %s", err)
+	}
+
+	actualOutput := normalizeDebugOutput(string(raw))
+
+	expectedOutput := `
+Position        Name            ID              IsPending       Branches
+0               item-1          1               true            HEAD@stillQueued
+1               item-0          0               false           HEAD@popped
+`
+
+	expectedOutput = normalizeDebugOutput(expectedOutput)
+
+	// verify: ensure that the received output matches what we expect
+	if diff := cmp.Diff(expectedOutput, actualOutput); diff != "" {
+		t.Errorf("unexpected diff in output (-want +got):\n%s", diff)
 	}
 }
 
