@@ -86,7 +86,6 @@ func (q *Queue) Len() int {
 // queue, it is updated.
 func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Lock()
-	now := time.Now()
 	item := q.get(opts.RepoID)
 	if !reflect.DeepEqual(item.opts, opts) {
 		item.indexed = false
@@ -95,7 +94,7 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	if item.heapIdx < 0 {
 		q.seq++
 		item.seq = q.seq
-		item.dateAddedToQueue = now
+		item.dateAddedToQueue = time.Now()
 
 		heap.Push(&q.pq, item)
 		metricQueueLen.Set(float64(len(q.pq)))
