@@ -2,9 +2,7 @@ package main
 
 import (
 	"container/heap"
-	"encoding/gob"
 	"fmt"
-	"io"
 	"net/http"
 	"reflect"
 	"sort"
@@ -364,27 +362,6 @@ func lessQueueItemPriority(x, y *queueItem) bool {
 
 	// tiebreaker is to prefer the item added to the queue first
 	return x.seq < y.seq
-}
-
-// queueItemStreamDecoder processes streams of gob-encoded queueItems.
-type queueItemStreamDecoder struct {
-	gobDecoder *gob.Decoder
-	item       *queueItem
-
-	err error
-}
-
-// newQueueItemStreamDecoder returns a decoder that will process the provided
-// stream.
-func newQueueItemStreamDecoder(stream io.Reader) *queueItemStreamDecoder {
-	d := gob.NewDecoder(stream)
-
-	return &queueItemStreamDecoder{
-		gobDecoder: d,
-
-		item: nil,
-		err:  nil,
-	}
 }
 
 var (
