@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"container/heap"
 	"fmt"
+	"io"
 	"net/http"
 	"reflect"
 	"sort"
@@ -172,7 +174,6 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 
 	printHeaders := true
-
 	if raw := r.URL.Query().Get("header"); raw != "" {
 		parsed, err := strconv.ParseBool(raw)
 		if err != nil {
@@ -183,8 +184,9 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 		printHeaders = parsed
 	}
 
-	writer := tabwriter.NewWriter(w, 16, 8, 4, ' ', 0)
-	defer writer.Flush()
+	var bufferedWriter bytes.Buffer
+
+	writer := tabwriter.NewWriter(&bufferedWriter, 16, 8, 4, ' ', 0)
 
 	if printHeaders {
 		_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsOnQueue\tBranches\t\n")
@@ -215,6 +217,18 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		http.Error(w, fmt.Sprintf("writing queueItem: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	err = writer.Flush()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("flushing tabwriter: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = io.Copy(w, &bufferedWriter)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
 		return
 	}
 }
