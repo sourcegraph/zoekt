@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -159,14 +158,8 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(queue.handleDebugQueue))
 	defer server.Close()
 
-	// setup: add the ?header=true query parameter to ensure that we fetch column headers
-	address, _ := url.Parse(server.URL)
-	params := address.Query()
-	params.Set("header", "true")
-	address.RawQuery = params.Encode()
-
 	// test: send a request to the queue's debug endpoint
-	response, err := http.Get(address.String())
+	response, err := http.Get(server.URL)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}

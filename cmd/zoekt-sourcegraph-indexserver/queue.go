@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -173,31 +172,17 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 
-	printHeaders := true
-	if raw := r.URL.Query().Get("header"); raw != "" {
-		parsed, err := strconv.ParseBool(raw)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid %q parameter: %s", "header", err), http.StatusBadRequest)
-			return
-		}
-
-		printHeaders = parsed
-	}
-
 	var bufferedWriter bytes.Buffer
 
 	writer := tabwriter.NewWriter(&bufferedWriter, 16, 8, 4, ' ', 0)
 
-	if printHeaders {
-		_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsOnQueue\tBranches\t\n")
-		if err != nil {
-			http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
-			return
-		}
+	_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsOnQueue\tBranches\t\n")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
+		return
 	}
 
 	position := -1
-	var err error
 	q.debugIteratedOrdered(func(item *queueItem) {
 		position++
 

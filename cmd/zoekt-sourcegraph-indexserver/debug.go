@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 
@@ -154,10 +153,6 @@ func debugListIndexed() *ffcli.Command {
 func debugQueue() *ffcli.Command {
 	fs := flag.NewFlagSet("debug queue", flag.ExitOnError)
 
-	printHeader := fs.Bool("header", true, "print column headers")
-
-	connectionTimeout := fs.Duration("timeout", 10*time.Second, "max timeout for establishing a connection to the zoekt-sourcegraph-indexserver instance")
-
 	hostname := fs.String("hostname", "localhost", "the hostname of the zoekt-sourcegraph-indexserver instance to connect to")
 	port := fs.Uint("port", 6072, "the port of the zoekt-sourcegraph-indexserver instance to connect to")
 
@@ -167,15 +162,12 @@ func debugQueue() *ffcli.Command {
 		ShortHelp:  "list the repositories in the indexing queue, sorted by descending priority",
 		FlagSet:    fs,
 		Exec: func(ctx context.Context, args []string) error {
-			ctx, cancel := context.WithTimeout(ctx, *connectionTimeout)
-			defer cancel()
 
 			raw := fmt.Sprintf("http://%s:%d/debug/queue", *hostname, *port)
 			address, err := url.Parse(raw)
 			if err != nil {
 				return fmt.Errorf("parsing URL %q: %s", raw, err)
 			}
-			address.Query().Add("header", strconv.FormatBool(*printHeader))
 
 			request, err := http.NewRequestWithContext(ctx, http.MethodGet, address.String(), nil)
 			if err != nil {
