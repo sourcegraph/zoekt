@@ -551,6 +551,11 @@ func createEmptyShard(args *indexArgs) error {
 	return builder.Finish()
 }
 
+func (s *Server) AddHandlers(mux *http.ServeMux) {
+	mux.Handle("/", http.HandlerFunc(s.handleHTTPRoot))
+	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
+}
+
 var repoTmpl = template.Must(template.New("name").Parse(`
 <html><body>
 <a href="debug/requests">Traces</a><br>
@@ -565,7 +570,7 @@ var repoTmpl = template.Must(template.New("name").Parse(`
 </body></html>
 `))
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHTTPRoot(w http.ResponseWriter, r *http.Request) {
 	type Repo struct {
 		ID   uint32
 		Name string
@@ -816,7 +821,7 @@ func startServer(conf rootConfig) error {
 		go func() {
 			mux := http.NewServeMux()
 			debugserver.AddHandlers(mux, true)
-			mux.Handle("/", s)
+			s.AddHandlers(mux)
 			debug.Printf("serving HTTP on %s", conf.listen)
 			log.Fatal(http.ListenAndServe(conf.listen, mux))
 		}()

@@ -6,7 +6,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 
@@ -147,6 +150,48 @@ func debugListIndexed() *ffcli.Command {
 	}
 }
 
+func debugQueue() *ffcli.Command {
+	fs := flag.NewFlagSet("debug queue", flag.ExitOnError)
+
+	hostname := fs.String("hostname", "localhost", "the hostname of the zoekt-sourcegraph-indexserver instance to connect to")
+	port := fs.Uint("port", 6072, "the port of the zoekt-sourcegraph-indexserver instance to connect to")
+
+	return &ffcli.Command{
+		Name:       "queue",
+		ShortUsage: "queue [flags]",
+		ShortHelp:  "list the repositories in the indexing queue, sorted by descending priority",
+		FlagSet:    fs,
+		Exec: func(ctx context.Context, args []string) error {
+
+			raw := fmt.Sprintf("http://%s:%d/debug/queue", *hostname, *port)
+			address, err := url.Parse(raw)
+			if err != nil {
+				return fmt.Errorf("parsing URL %q: %s", raw, err)
+			}
+
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, address.String(), nil)
+			if err != nil {
+				return fmt.Errorf("constructing request: %w", err)
+			}
+
+			request.Header.Set("Accept", "text/plain")
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				return err
+			}
+
+			defer response.Body.Close()
+
+			_, err = io.Copy(os.Stdout, response.Body)
+			if err != nil {
+				return fmt.Errorf("writing to stdout: %w", err)
+			}
+
+			return nil
+		},
+	}
+}
+
 func debugCmd() *ffcli.Command {
 	fs := flag.NewFlagSet("debug", flag.ExitOnError)
 
@@ -162,6 +207,7 @@ func debugCmd() *ffcli.Command {
 			debugMerge(),
 			debugMeta(),
 			debugTrigrams(),
+			debugQueue(),
 		},
 	}
 }

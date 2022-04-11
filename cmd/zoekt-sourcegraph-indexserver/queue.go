@@ -1,9 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"container/heap"
+	"fmt"
+	"io"
+	"net/http"
 	"reflect"
+	"sort"
+	"strings"
 	"sync"
+	"text/tabwriter"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -21,7 +28,7 @@ type queueItem struct {
 	// heapIdx is the index of the item in the heap. If < 0 then the item is
 	// not on the heap.
 	heapIdx int
-	// seq is a sequence number used as a tie breaker. This is to ensure we
+	// seq is a sequence number used as a tiebreaker. This is to ensure we
 	// act like a FIFO queue.
 	seq int64
 }
@@ -128,6 +135,89 @@ func (q *Queue) Iterate(f func(*IndexOptions)) {
 	}
 }
 
+// debugIteratedOrdered will call f on each queueItem (sorted by indexing priority)
+// known to the queue, including queueItems that have been popped from the queue).
+//
+// Note: The mutex is held during all calls to f. Callers must not modify the queueItems.
+func (q *Queue) debugIteratedOrdered(f func(*queueItem)) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	queueItems := make([]*queueItem, 0, len(q.items))
+	for _, item := range q.items {
+		queueItems = append(queueItems, item)
+	}
+
+	sort.Slice(queueItems, func(i, j int) bool {
+		x, y := queueItems[i], queueItems[j]
+
+		xOnQueue, yOnQueue := x.heapIdx >= 0, y.heapIdx >= 0
+		if xOnQueue != yOnQueue {
+			return xOnQueue
+		}
+
+		return lessQueueItemPriority(x, y)
+	})
+
+	for _, item := range queueItems {
+		f(item)
+	}
+}
+
+func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method must be GET", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+
+	var bufferedWriter bytes.Buffer
+
+	writer := tabwriter.NewWriter(&bufferedWriter, 16, 8, 4, ' ', 0)
+
+	_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsOnQueue\tBranches\t\n")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	position := -1
+	q.debugIteratedOrdered(func(item *queueItem) {
+		position++
+
+		if err != nil {
+			return
+		}
+
+		var branches []string
+		for _, b := range item.opts.Branches {
+			branches = append(branches, b.String())
+		}
+
+		isOnQueue := item.heapIdx >= 0
+
+		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t\n", position, item.opts.Name, item.repoID, isOnQueue, strings.Join(branches, ", "))
+	})
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("writing queueItem: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	err = writer.Flush()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("flushing tabwriter: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = io.Copy(w, &bufferedWriter)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
+		return
+	}
+}
+
 // SetIndexed sets what the currently indexed options are for opts.RepoID.
 func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Lock()
@@ -228,22 +318,9 @@ type pqueue []*queueItem
 func (pq pqueue) Len() int { return len(pq) }
 
 func (pq pqueue) Less(i, j int) bool {
-	// If we know x needs an update and y doesn't, then return true. Otherwise
-	// they are either equal priority or y is more urgent.
 	x := pq[i]
 	y := pq[j]
-	if x.indexed != y.indexed {
-		return !x.indexed
-	}
-
-	if xFail, yFail := x.indexState == indexStateFail, y.indexState == indexStateFail; xFail != yFail {
-		// if you failed to index, you are likely to fail again. So prefer
-		// non-failed.
-		return !xFail
-	}
-
-	// tie breaker is to prefer the item added to the queue first
-	return x.seq < y.seq
+	return lessQueueItemPriority(x, y)
 }
 
 func (pq pqueue) Swap(i, j int) {
@@ -266,6 +343,24 @@ func (pq *pqueue) Pop() interface{} {
 	item.heapIdx = -1
 	*pq = old[0 : n-1]
 	return item
+}
+
+// lessQueueItemPriority returns true if the indexing priority x is less than that of y.
+func lessQueueItemPriority(x, y *queueItem) bool {
+	// If we know x needs an update and y doesn't, then return true. Otherwise
+	// they are either equal priority or y is more urgent.
+	if x.indexed != y.indexed {
+		return !x.indexed
+	}
+
+	if xFail, yFail := x.indexState == indexStateFail, y.indexState == indexStateFail; xFail != yFail {
+		// if you failed to index, you are likely to fail again. So prefer
+		// non-failed.
+		return !xFail
+	}
+
+	// tiebreaker is to prefer the item added to the queue first
+	return x.seq < y.seq
 }
 
 var (
