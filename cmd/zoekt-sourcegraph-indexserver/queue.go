@@ -61,8 +61,10 @@ func (q *Queue) Pop() (opts IndexOptions, ok bool) {
 		q.mu.Unlock()
 		return IndexOptions{}, false
 	}
+
 	item := heap.Pop(&q.pq).(*queueItem)
 	opts = item.opts
+	item.dateAddedToQueue = time.Unix(0, 0)
 
 	metricQueueLen.Set(float64(len(q.pq)))
 	metricQueueCap.Set(float64(len(q.items)))
@@ -210,7 +212,7 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 			timeSpentAwaitingIndex = now.Sub(item.dateAddedToQueue).Round(time.Second).String()
 		}
 
-		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t\t%s\n", position, item.opts.Name, item.repoID, isOnQueue, timeSpentAwaitingIndex, strings.Join(branches, ", "))
+		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t%s\n", position, item.opts.Name, item.repoID, isOnQueue, timeSpentAwaitingIndex, strings.Join(branches, ", "))
 	})
 
 	if err != nil {
