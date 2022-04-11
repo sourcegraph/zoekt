@@ -185,7 +185,7 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 
 	writer := tabwriter.NewWriter(&bufferedWriter, 16, 8, 4, ' ', 0)
 
-	_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsOnQueue\tTimeSpentAwaitingIndex\tBranches\t\n")
+	_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsOnQueue\tAge\tBranches\t\n")
 	if err != nil {
 		http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
 		return
@@ -207,12 +207,12 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 		}
 
 		isOnQueue := item.heapIdx >= 0
-		timeSpentAwaitingIndex := "-"
+		age := "-"
 		if isOnQueue {
-			timeSpentAwaitingIndex = now.Sub(item.dateAddedToQueue).Round(time.Second).String()
+			age = now.Sub(item.dateAddedToQueue).Round(time.Second).String()
 		}
 
-		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t%s\n", position, item.opts.Name, item.repoID, isOnQueue, timeSpentAwaitingIndex, strings.Join(branches, ", "))
+		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t%s\n", position, item.opts.Name, item.repoID, isOnQueue, age, strings.Join(branches, ", "))
 	})
 
 	if err != nil {

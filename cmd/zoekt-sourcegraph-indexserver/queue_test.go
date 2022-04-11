@@ -134,7 +134,7 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 
 		var outputLines []string
 		for i, line := range strings.Split(output, "\n") {
-			columns := []string{"Position", "Name", "ID", "IsOnQueue", "TimeSpentAwaitingIndex", "Branches"}
+			columns := []string{"Position", "Name", "ID", "IsOnQueue", "Age", "Branches"}
 			parts := strings.Fields(line) // Note: splitting on spaces like this would break for repositories that have more than one branch, but it's fine for just this test
 			if len(columns) != len(parts) {
 				t.Fatalf("normalizeDebugOutput: line %d: expected %d columns, got %d columns: %q", i, len(columns), len(parts), line)
@@ -191,7 +191,7 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 	actualOutput := normalizeDebugOutput(string(raw))
 
 	expectedOutput := `
-Position        Name            ID              IsOnQueue       TimeSpentAwaitingIndex Branches
+Position        Name            ID              IsOnQueue       Age                    Branches
 0               item-1          1               true            *                      HEAD@stillQueued
 1               item-0          0               false           -                      HEAD@popped
 `
