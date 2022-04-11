@@ -169,8 +169,6 @@ type Server struct {
 	// deltaBuildRepositoriesAllowList is an allowlist for repositories that we
 	// use delta-builds for instead of normal builds
 	deltaBuildRepositoriesAllowList map[string]struct{}
-
-	httpHandlersRegisteredOnce sync.Once
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -554,10 +552,8 @@ func createEmptyShard(args *indexArgs) error {
 }
 
 func (s *Server) AddHandlers(mux *http.ServeMux) {
-	s.httpHandlersRegisteredOnce.Do(func() {
-		mux.Handle("/", http.HandlerFunc(s.handleHTTPRoot))
-		mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
-	})
+	mux.Handle("/", http.HandlerFunc(s.handleHTTPRoot))
+	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
 }
 
 var repoTmpl = template.Must(template.New("name").Parse(`
