@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -225,6 +226,8 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("flushing tabwriter: %s", err), http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(bufferedWriter.Len()))
 
 	_, err = io.Copy(w, &bufferedWriter)
 	if err != nil {
