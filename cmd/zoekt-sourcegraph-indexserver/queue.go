@@ -1,14 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"container/heap"
-	"encoding/gob"
 	"fmt"
 	"io"
 	"net/http"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -159,14 +158,9 @@ func (q *Queue) debugIteratedOrdered(f func(*queueItem)) {
 	sort.Slice(queueItems, func(i, j int) bool {
 		x, y := queueItems[i], queueItems[j]
 
-		if x.heapIdx < 0 && y.heapIdx >= 0 {
-			// if x is popped, but y isn't - then put x at the back
-			return false
-		}
-
-		if y.heapIdx < 0 && x.heapIdx >= 0 {
-			// if y is popped, but x isn't - then ensure x is at the front
-			return true
+		xOnQueue, yOnQueue := x.heapIdx >= 0, y.heapIdx >= 0
+		if xOnQueue != yOnQueue {
+			return xOnQueue
 		}
 
 		return lessQueueItemPriority(x, y)
@@ -185,34 +179,19 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 
-	printHeaders := true
+	var bufferedWriter bytes.Buffer
 
-	if raw := r.URL.Query().Get("header"); raw != "" {
-		parsed, err := strconv.ParseBool(raw)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid %q parameter: %s", "header", err), http.StatusBadRequest)
-			return
-		}
+	writer := tabwriter.NewWriter(&bufferedWriter, 16, 8, 4, ' ', 0)
 
-		printHeaders = parsed
+	_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsOnQueue\tTimeSpentAwaitingIndex\tBranches\t\n")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
+		return
 	}
 
-	writer := tabwriter.NewWriter(w, 16, 8, 4, ' ', 0)
-	defer writer.Flush()
-
-	if printHeaders {
-		_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsPending\tTimeSpentAwaitingIndex\tBranches\t\n")
-		if err != nil {
-			http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	// TODO@ggilmore: Mock this so that we can test it in the command output?
 	now := time.Now()
 
 	position := -1
-	var err error
 	q.debugIteratedOrdered(func(item *queueItem) {
 		position++
 
@@ -225,17 +204,29 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 			branches = append(branches, b.String())
 		}
 
-		isPending := item.heapIdx >= 0
+		isOnQueue := item.heapIdx >= 0
 		timeSpentAwaitingIndex := "-"
-		if isPending {
+		if isOnQueue {
 			timeSpentAwaitingIndex = now.Sub(item.dateAddedToQueue).Round(time.Second).String()
 		}
 
-		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t%s\t\n", position, item.opts.Name, item.repoID, isPending, timeSpentAwaitingIndex, strings.Join(branches, ", "))
+		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t\t%s\n", position, item.opts.Name, item.repoID, isOnQueue, timeSpentAwaitingIndex, strings.Join(branches, ", "))
 	})
 
 	if err != nil {
 		http.Error(w, fmt.Sprintf("writing queueItem: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	err = writer.Flush()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("flushing tabwriter: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = io.Copy(w, &bufferedWriter)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
 		return
 	}
 }
@@ -383,27 +374,6 @@ func lessQueueItemPriority(x, y *queueItem) bool {
 
 	// tiebreaker is to prefer the item added to the queue first
 	return x.seq < y.seq
-}
-
-// queueItemStreamDecoder processes streams of gob-encoded queueItems.
-type queueItemStreamDecoder struct {
-	gobDecoder *gob.Decoder
-	item       *queueItem
-
-	err error
-}
-
-// newQueueItemStreamDecoder returns a decoder that will process the provided
-// stream.
-func newQueueItemStreamDecoder(stream io.Reader) *queueItemStreamDecoder {
-	d := gob.NewDecoder(stream)
-
-	return &queueItemStreamDecoder{
-		gobDecoder: d,
-
-		item: nil,
-		err:  nil,
-	}
 }
 
 var (

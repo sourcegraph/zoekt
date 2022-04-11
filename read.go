@@ -294,7 +294,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	if os.Getenv("ZOEKT_DISABLE_BLOOM") == "" {
+	if os.Getenv("ZOEKT_ENABLE_BLOOM") != "" {
 		d.bloomContents, err = d.readBloom(toc.contentBloom)
 		if err != nil {
 			return nil, err
@@ -340,7 +340,12 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.runeDocSections = blob
+
+	if os.Getenv("ZOEKT_DISABLE_LAZY_DOC_SECTIONS") == "" {
+		d.runeDocSectionsRaw = blob
+	} else {
+		d.runeDocSections = unmarshalDocSections(blob, nil)
+	}
 
 	var runeOffsets, fileNameRuneOffsets []uint32
 

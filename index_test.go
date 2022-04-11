@@ -105,8 +105,8 @@ func TestBloomSkip(t *testing.T) {
 		{false, 1},
 		{true, 0},
 	} {
-		if tc.skip {
-			os.Setenv("ZOEKT_DISABLE_BLOOM", "1")
+		if !tc.skip {
+			os.Setenv("ZOEKT_ENABLE_BLOOM", "1")
 		}
 		b := testIndexBuilder(t, nil,
 			Document{Name: "f1", Content: []byte("reader derre errea")},
@@ -116,7 +116,7 @@ func TestBloomSkip(t *testing.T) {
 			t.Errorf("bloom disabled=%v filtered out %v shards, want %v",
 				tc.skip, res.Stats.ShardsSkippedFilter, tc.want)
 		}
-		os.Unsetenv("ZOEKT_DISABLE_BLOOM")
+		os.Unsetenv("ZOEKT_ENABLE_BLOOM")
 	}
 }
 
@@ -1115,7 +1115,7 @@ func TestListRepos(t *testing.T) {
 			Stats: RepoStats{
 				Shards:                     1,
 				Documents:                  4,
-				IndexBytes:                 308,
+				IndexBytes:                 300,
 				ContentBytes:               68,
 				NewLinesCount:              4,
 				DefaultBranchNewLinesCount: 2,
