@@ -152,14 +152,9 @@ func (q *Queue) debugIteratedOrdered(f func(*queueItem)) {
 	sort.Slice(queueItems, func(i, j int) bool {
 		x, y := queueItems[i], queueItems[j]
 
-		if x.heapIdx < 0 && y.heapIdx >= 0 {
-			// if x is popped, but y isn't - then put x at the back
-			return false
-		}
-
-		if y.heapIdx < 0 && x.heapIdx >= 0 {
-			// if y is popped, but x isn't - then ensure x is at the front
-			return true
+		xOnQueue, yOnQueue := x.heapIdx >= 0, y.heapIdx >= 0
+		if xOnQueue != yOnQueue {
+			return xOnQueue
 		}
 
 		return lessQueueItemPriority(x, y)
@@ -194,7 +189,7 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 	defer writer.Flush()
 
 	if printHeaders {
-		_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsPending\tBranches\t\n")
+		_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsOnQueue\tBranches\t\n")
 		if err != nil {
 			http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
 			return
@@ -215,9 +210,9 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 			branches = append(branches, b.String())
 		}
 
-		isPending := item.heapIdx >= 0
+		isOnQueue := item.heapIdx >= 0
 
-		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t\n", position, item.opts.Name, item.repoID, isPending, strings.Join(branches, ", "))
+		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t\n", position, item.opts.Name, item.repoID, isOnQueue, strings.Join(branches, ", "))
 	})
 
 	if err != nil {

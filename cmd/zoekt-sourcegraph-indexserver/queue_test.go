@@ -180,7 +180,7 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 	actualOutput := normalizeDebugOutput(string(raw))
 
 	expectedOutput := `
-Position        Name            ID              IsPending       Branches
+Position        Name            ID              IsOnQueue       Branches
 0               item-1          1               true            HEAD@stillQueued
 1               item-0          0               false           HEAD@popped
 `
