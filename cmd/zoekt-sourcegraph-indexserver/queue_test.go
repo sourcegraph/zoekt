@@ -134,9 +134,6 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 
 		var outputLines []string
 		for i, line := range strings.Split(output, "\n") {
-			// remove any leading or trailing whitespace at the end of each row (column padding)
-			line = strings.TrimSpace(line)
-
 			columns := []string{"Position", "Name", "ID", "IsOnQueue", "TimeSpentAwaitingIndex", "Branches"}
 			parts := strings.Fields(line) // Note: splitting on spaces like this would break for repositories that have more than one branch, but it's fine for just this test
 			if len(columns) != len(parts) {
