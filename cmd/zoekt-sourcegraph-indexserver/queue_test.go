@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"unicode"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/zoekt"
@@ -126,20 +125,39 @@ func TestQueue_Bump(t *testing.T) {
 }
 
 func TestQueue_Integration_DebugQueue(t *testing.T) {
+
 	// helper function to normalize the queue's debug output - this makes the test less brittle
 	// + makes it much less annoying to make edits to the expected output in a way that doesn't
 	// materially affect the caller
 	normalizeDebugOutput := func(output string) string {
-		// remove any leading or trailing whitespace
 		output = strings.TrimSpace(output)
 
-		// remove trailing whitespace at the of each row (could come from column padding)
-		var lines []string
-		for _, l := range strings.Split(output, "\n") {
-			lines = append(lines, strings.TrimRightFunc(l, unicode.IsSpace))
+		var outputLines []string
+		for i, line := range strings.Split(output, "\n") {
+			columns := []string{"Position", "Name", "ID", "IsOnQueue", "Age", "Branches"}
+			parts := strings.Fields(line) // Note: splitting on spaces like this would break for repositories that have more than one branch, but it's fine for just this test
+			if len(columns) != len(parts) {
+				t.Fatalf("normalizeDebugOutput: line %d: expected %d columns, got %d columns: %q", i, len(columns), len(parts), line)
+			}
+
+			if i > 0 { // skip past the first line which just contains the column headings
+
+				// The debug output contains time.Durations for tracking the amount of time an indexing job
+				// spent in the queue, but it's not reasonable to assert on this kind of timing minutia.
+				// So, for comparison purposes, we massage the contents of this field in the following manner:
+				//
+				// - "1m30s" -> "*" (for jobs that are still enqueued)
+				// - "-"     -> "-" (for jobs that are tracked, but are not currently enqueued)
+
+				if parts[4] != "-" {
+					parts[4] = "*"
+				}
+			}
+
+			outputLines = append(outputLines, strings.Join(parts, " "))
 		}
 
-		return strings.Join(lines, "\n")
+		return strings.Join(outputLines, "\n")
 	}
 
 	queue := &Queue{}
@@ -173,9 +191,9 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 	actualOutput := normalizeDebugOutput(string(raw))
 
 	expectedOutput := `
-Position        Name            ID              IsOnQueue       Branches
-0               item-1          1               true            HEAD@stillQueued
-1               item-0          0               false           HEAD@popped
+Position        Name            ID              IsOnQueue       Age                    Branches
+0               item-1          1               true            *                      HEAD@stillQueued
+1               item-0          0               false           -                      HEAD@popped
 `
 
 	expectedOutput = normalizeDebugOutput(expectedOutput)

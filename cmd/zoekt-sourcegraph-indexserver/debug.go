@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 
@@ -151,6 +152,24 @@ func debugListIndexed() *ffcli.Command {
 }
 
 func debugQueue() *ffcli.Command {
+	longHelp := `
+COLUMN HEADERS
+  Position     zero-indexed position of this repository in the indexing queue (sorted by priority).
+  Name         name for this repository
+  ID           ID for this repository
+  IsOnQueue    "true" if this repository has an outstanding indexing job that's enqueued for future work. "false" 
+               otherwise.
+  Age          amount of time that this repository has spent in the indexing queue since its outstanding indexing job 
+               was first added (ignoring any job metadata updates that may have occurred while it was still enqueued). 
+               A "-" is printed instead if this repository doesn't have an outstanding job.
+  Branches     comma-separated list of branches in $BRANCH_NAME@$COMMIT_HASH format. 
+               If the repository has a job on the indexing queue, this list represents the desired set of 
+               branches + associated commits that will be process during the next indexing job. 
+               However, if the repository  doesn't have a job on the queue, this list represents the set of 
+               branches + associated commits that was indexed during its most recent indexing job.
+`
+	longHelp = strings.TrimSpace(longHelp)
+
 	fs := flag.NewFlagSet("debug queue", flag.ExitOnError)
 
 	hostname := fs.String("hostname", "localhost", "the hostname of the zoekt-sourcegraph-indexserver instance to connect to")
@@ -160,6 +179,7 @@ func debugQueue() *ffcli.Command {
 		Name:       "queue",
 		ShortUsage: "queue [flags]",
 		ShortHelp:  "list the repositories in the indexing queue, sorted by descending priority",
+		LongHelp:   longHelp,
 		FlagSet:    fs,
 		Exec: func(ctx context.Context, args []string) error {
 

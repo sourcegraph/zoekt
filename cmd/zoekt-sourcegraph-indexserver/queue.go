@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"text/tabwriter"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -31,6 +33,9 @@ type queueItem struct {
 	// seq is a sequence number used as a tiebreaker. This is to ensure we
 	// act like a FIFO queue.
 	seq int64
+	// dateAddedToQueue is the time when this indexing job was added to the queue. If this item is no longer
+	// in the heap (i.e. it has been processed already), this value is nonsensical.
+	dateAddedToQueue time.Time
 }
 
 // Queue is a priority queue which returns the next repo to index. It is safe
@@ -57,8 +62,10 @@ func (q *Queue) Pop() (opts IndexOptions, ok bool) {
 		q.mu.Unlock()
 		return IndexOptions{}, false
 	}
+
 	item := heap.Pop(&q.pq).(*queueItem)
 	opts = item.opts
+	item.dateAddedToQueue = time.Unix(0, 0)
 
 	metricQueueLen.Set(float64(len(q.pq)))
 	metricQueueCap.Set(float64(len(q.items)))
@@ -87,6 +94,8 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	if item.heapIdx < 0 {
 		q.seq++
 		item.seq = q.seq
+		item.dateAddedToQueue = time.Now()
+
 		heap.Push(&q.pq, item)
 		metricQueueLen.Set(float64(len(q.pq)))
 		metricQueueCap.Set(float64(len(q.items)))
@@ -176,11 +185,13 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 
 	writer := tabwriter.NewWriter(&bufferedWriter, 16, 8, 4, ' ', 0)
 
-	_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsOnQueue\tBranches\t\n")
+	_, err := fmt.Fprintf(writer, "Position\tName\tID\tIsOnQueue\tAge\tBranches\t\n")
 	if err != nil {
 		http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
 		return
 	}
+
+	now := time.Now()
 
 	position := -1
 	q.debugIteratedOrdered(func(item *queueItem) {
@@ -196,8 +207,12 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 		}
 
 		isOnQueue := item.heapIdx >= 0
+		age := "-"
+		if isOnQueue {
+			age = now.Sub(item.dateAddedToQueue).Round(time.Second).String()
+		}
 
-		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t\n", position, item.opts.Name, item.repoID, isOnQueue, strings.Join(branches, ", "))
+		_, err = fmt.Fprintf(writer, "%d\t%s\t%d\t%t\t%s\t%s\n", position, item.opts.Name, item.repoID, isOnQueue, age, strings.Join(branches, ", "))
 	})
 
 	if err != nil {
@@ -210,6 +225,8 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("flushing tabwriter: %s", err), http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(bufferedWriter.Len()))
 
 	_, err = io.Copy(w, &bufferedWriter)
 	if err != nil {
