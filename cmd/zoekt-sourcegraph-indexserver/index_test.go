@@ -220,6 +220,7 @@ func TestIndex(t *testing.T) {
 					{Name: "release", Version: "12345678"},
 				},
 			},
+			DeltaShardNumberFallbackThreshold: 22,
 		},
 		mockRepositoryMetadata: &zoekt.Repository{
 			ID:   0,
@@ -244,7 +245,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev,release " +
-				"-delta -file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
+				"-delta -delta_threshold 22 -file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
 		},
 	}}

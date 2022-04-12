@@ -274,6 +274,8 @@ func SetTemplatesFromOrigin(desc *zoekt.Repository, u *url.URL) error {
 	}
 }
 
+const DefaultDeltaShardNumberFallbackThreshold uint64 = 150
+
 // The Options structs controls details of the indexing process.
 type Options struct {
 	// The repository to be indexed.
@@ -300,6 +302,14 @@ type Options struct {
 
 	// List of branch names to index, e.g. []string{"HEAD", "stable"}
 	Branches []string
+
+	// DeltaShardNumberFallbackThreshold defines an upper limit (inclusive) on the number of preexisting shards
+	// that can exist before attempting another delta build. If the number of preexisting shards exceeds this threshold,
+	// then a normal build will be performed instead.
+	//
+	// If DeltaShardNumberFallbackThreshold is 0, then the default threshold defined by
+	// gitindex.DefaultDeltaShardNumberFallbackThreshold will be used instead.
+	DeltaShardNumberFallbackThreshold uint64
 }
 
 func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string, error) {
@@ -569,12 +579,11 @@ type gitIndexConfig struct {
 }
 
 func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
-	// discover what commits we indexed during our last build
-
 	if options.Submodules {
 		return nil, nil, nil, nil, fmt.Errorf("delta builds currently don't support submodule indexing")
 	}
 
+	// discover what commits we indexed during our last build
 	existingRepository, ok, err := options.BuildOptions.FindRepositoryMetadata()
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to get repository metadata: %w", err)
@@ -582,6 +591,22 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 
 	if !ok {
 		return nil, nil, nil, nil, fmt.Errorf("no existing shards found for repository")
+	}
+
+	if options.DeltaShardNumberFallbackThreshold == 0 {
+		options.DeltaShardNumberFallbackThreshold = DefaultDeltaShardNumberFallbackThreshold
+	}
+
+	// HACK: For our interim compaction strategy, we force a full normal index once
+	// the number of shards on disk for this repository exceeds the provided threshold.
+	//
+	// This strategy obviously isn't optimal (as an example: we currently can't differentiate
+	// between "normal" and "delta" shards, so repositories like the gigarepo that generate a large number of shards per
+	// build would be disproportionately affected by this), but it'll allow us to continue experimenting on real workloads
+	// while we create a better compaction strategy).
+	oldShards := options.BuildOptions.FindAllShards()
+	if uint64(len(oldShards)) > options.DeltaShardNumberFallbackThreshold {
+		return nil, nil, nil, nil, fmt.Errorf("number of existing shards (%d) > requested shard threshold (%d)", len(oldShards), options.DeltaShardNumberFallbackThreshold)
 	}
 
 	// Check to see if the set of branch names is consistent with what we last indexed.

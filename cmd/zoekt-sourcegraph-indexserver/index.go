@@ -76,6 +76,10 @@ type indexArgs struct {
 	// UseDelta is true if we want to use the new delta indexer. This should
 	// only be true for repositories we explicitly enable.
 	UseDelta bool
+
+	// DeltaShardNumberFallbackThreshold is an upper limit on the number of preexisting shards that can exist
+	// before attempting a delta build.
+	DeltaShardNumberFallbackThreshold uint64
 }
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
@@ -312,6 +316,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 
 	if o.UseDelta {
 		args = append(args, "-delta")
+		args = append(args, "-delta_threshold", strconv.FormatUint(o.DeltaShardNumberFallbackThreshold, 10))
 	}
 
 	args = append(args, buildOptions.Args()...)

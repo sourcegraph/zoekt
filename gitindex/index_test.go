@@ -118,8 +118,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{fruitV2},
 					},
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedDocuments: []zoekt.Document{helloWorld, fruitV2},
@@ -143,8 +143,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{fruitV2InFolder},
 					},
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedDocuments: []zoekt.Document{foo, fruitV2InFolder},
@@ -168,8 +168,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{foo},
 					},
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedDocuments: []zoekt.Document{helloWorld, fruitV1, foo},
@@ -195,8 +195,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 						"main": []zoekt.Document{foo},
 					},
 
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedDocuments: []zoekt.Document{helloWorld, fruitV1},
@@ -226,8 +226,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 						"main": []zoekt.Document{fruitV1},
 					},
 
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedDocuments: []zoekt.Document{fruitV2, fruitV4},
@@ -255,8 +255,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 						"main": []zoekt.Document{fruitV1},
 					},
 
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedDocuments: []zoekt.Document{fruitV1WithNewName, fruitV2},
@@ -282,8 +282,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 						"dev":  []zoekt.Document{fruitV3},
 					},
 
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedDocuments: []zoekt.Document{fruitV2, fruitV3},
@@ -304,16 +304,16 @@ func TestIndexDeltaBasic(t *testing.T) {
 				},
 				{
 					name: "first no-op (normal build -> delta build)",
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedDocuments: []zoekt.Document{fruitV1, foo, helloWorld},
 				},
 				{
 					name: "second no-op (delta build -> delta build)",
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedDocuments: []zoekt.Document{fruitV1, foo, helloWorld},
@@ -329,8 +329,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{helloWorld},
 					},
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedFallbackToNormalBuild: true,
@@ -357,9 +357,9 @@ func TestIndexDeltaBasic(t *testing.T) {
 					addedDocuments: branchToDocumentMap{
 						"release": []zoekt.Document{fruitV4},
 					},
-					optFn: func(t *testing.T, options *Options) {
-						options.Branches = []string{"HEAD", "release", "dev"} // a bit of a hack to override it this way, but it gets the job done
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.Branches = []string{"HEAD", "release", "dev"} // a bit of a hack to override it this way, but it gets the job done
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedFallbackToNormalBuild: true,
@@ -384,12 +384,61 @@ func TestIndexDeltaBasic(t *testing.T) {
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{sourcegraphIgnoreWithContent},
 					},
-					optFn: func(t *testing.T, options *Options) {
-						options.BuildOptions.IsDelta = true
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
 					},
 
 					expectedFallbackToNormalBuild: true,
 					expectedDocuments:             []zoekt.Document{sourcegraphIgnoreWithContent},
+				},
+			},
+		},
+		{
+			name:     "should fallback to a full, normal build if the repository has more than the specified threshold of shards",
+			branches: []string{"main"},
+			steps: []step{
+				{
+					name: "setup: first shard",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{foo},
+					},
+
+					expectedDocuments: []zoekt.Document{foo},
+				},
+				{
+					name: "setup: second shard (delta)",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV1},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []zoekt.Document{foo, fruitV1},
+				},
+				{
+					name: "setup: third shard (delta)",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{helloWorld},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []zoekt.Document{foo, fruitV1, helloWorld},
+				},
+				{
+					name: "attempt another delta build after we already blew past the shard threshold",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV2InFolder},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.DeltaShardNumberFallbackThreshold = 2
+						o.BuildOptions.IsDelta = true
+					},
+
+					expectedFallbackToNormalBuild: true,
+					expectedDocuments:             []zoekt.Document{foo, fruitV1, helloWorld, fruitV2InFolder},
 				},
 			},
 		},

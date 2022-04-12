@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/zoekt/gitindex"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/peterbourgon/ff/v3/ffcli"
@@ -169,6 +170,10 @@ type Server struct {
 	// deltaBuildRepositoriesAllowList is an allowlist for repositories that we
 	// use delta-builds for instead of normal builds
 	deltaBuildRepositoriesAllowList map[string]struct{}
+
+	// deltaShardNumberFallbackThreshold is an upper limit on the number of preexisting shards that can exist
+	// before attempting a delta build.
+	deltaShardNumberFallbackThreshold uint64
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -724,6 +729,18 @@ func getEnvWithDefaultInt(k string, defaultVal int) int {
 	return i
 }
 
+func getEnvWithDefaultUint64(k string, defaultVal uint64) uint64 {
+	v := os.Getenv(k)
+	if v == "" {
+		return defaultVal
+	}
+	i, err := strconv.ParseUint(k, 10, 64)
+	if err != nil {
+		log.Fatalf("error parsing ENV %s to uint64: %s", k, err)
+	}
+	return i
+}
+
 func getEnvWithDefaultString(k string, defaultVal string) string {
 	v := os.Getenv(k)
 	if v == "" {
@@ -883,6 +900,9 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug.Printf("using delta shard builds for: %s", joinStringSet(deltaBuildRepositoriesAllowList, ", "))
 	}
 
+	deltaShardNumberFallbackThreshold := getEnvWithDefaultUint64("DELTA_SHARD_NUMBER_FALLBACK_THRESHOLD", gitindex.DefaultDeltaShardNumberFallbackThreshold)
+	debug.Printf("setting delta shard fallback threshold to %d shard(s)", deltaShardNumberFallbackThreshold)
+
 	var sg Sourcegraph
 	if rootURL.IsAbs() {
 		var batchSize int
@@ -914,16 +934,17 @@ func newServer(conf rootConfig) (*Server, error) {
 	}
 
 	return &Server{
-		Sourcegraph:                     sg,
-		IndexDir:                        conf.index,
-		Interval:                        conf.interval,
-		VacuumInterval:                  conf.vacuumInterval,
-		MergeInterval:                   conf.mergeInterval,
-		CPUCount:                        cpuCount,
-		TargetSizeBytes:                 conf.targetSize * 1024 * 1024,
-		minSizeBytes:                    conf.minSize * 1024 * 1024,
-		shardMerging:                    zoekt.ShardMergingEnabled(),
-		deltaBuildRepositoriesAllowList: deltaBuildRepositoriesAllowList,
+		Sourcegraph:                       sg,
+		IndexDir:                          conf.index,
+		Interval:                          conf.interval,
+		VacuumInterval:                    conf.vacuumInterval,
+		MergeInterval:                     conf.mergeInterval,
+		CPUCount:                          cpuCount,
+		TargetSizeBytes:                   conf.targetSize * 1024 * 1024,
+		minSizeBytes:                      conf.minSize * 1024 * 1024,
+		shardMerging:                      zoekt.ShardMergingEnabled(),
+		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
+		deltaShardNumberFallbackThreshold: deltaShardNumberFallbackThreshold,
 	}, err
 }
 
