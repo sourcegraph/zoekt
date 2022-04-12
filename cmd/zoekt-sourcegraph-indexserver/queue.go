@@ -124,6 +124,8 @@ func (q *Queue) Bump(ids []uint32) []uint32 {
 		} else if item.heapIdx < 0 {
 			q.seq++
 			item.seq = q.seq
+			item.dateAddedToQueue = time.Now()
+
 			heap.Push(&q.pq, item)
 			metricQueueLen.Set(float64(len(q.pq)))
 			metricQueueCap.Set(float64(len(q.items)))
