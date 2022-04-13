@@ -27,7 +27,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/zoekt/gitindex"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/peterbourgon/ff/v3/ffcli"
@@ -900,8 +899,12 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug.Printf("using delta shard builds for: %s", joinStringSet(deltaBuildRepositoriesAllowList, ", "))
 	}
 
-	deltaShardNumberFallbackThreshold := getEnvWithDefaultUint64("DELTA_SHARD_NUMBER_FALLBACK_THRESHOLD", gitindex.DefaultDeltaShardNumberFallbackThreshold)
-	debug.Printf("setting delta shard fallback threshold to %d shard(s)", deltaShardNumberFallbackThreshold)
+	deltaShardNumberFallbackThreshold := getEnvWithDefaultUint64("DELTA_SHARD_NUMBER_FALLBACK_THRESHOLD", 150)
+	if deltaShardNumberFallbackThreshold > 0 {
+		debug.Printf("setting delta shard fallback threshold to %d shard(s)", deltaShardNumberFallbackThreshold)
+	} else {
+		debug.Printf("disabling delta build fallback behavior - delta builds will be performed regardless of the number of preexisting shards")
+	}
 
 	var sg Sourcegraph
 	if rootURL.IsAbs() {

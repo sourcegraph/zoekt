@@ -37,7 +37,7 @@ func main() {
 		"this is used to find repositories for submodules. "+
 		"It also affects name if the indexed repository is under this directory.")
 	isDelta := flag.Bool("delta", false, "whether we should use delta build")
-	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", gitindex.DefaultDeltaShardNumberFallbackThreshold, "upper limit on the number of preexisting shards that can exist before attempting a delta build")
+	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
