@@ -74,8 +74,8 @@ func main() {
 	}
 	apiToken := strings.TrimSpace(string(content))
 
-	client := gitlab.NewClient(nil, apiToken)
-	if err := client.SetBaseURL(*gitlabURL); err != nil {
+	client, err := gitlab.NewClient(apiToken, gitlab.WithBaseURL(*gitlabURL))
+	if err != nil {
 		log.Fatal(err)
 	}
 
