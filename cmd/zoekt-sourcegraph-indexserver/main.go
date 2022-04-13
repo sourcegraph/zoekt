@@ -733,7 +733,7 @@ func getEnvWithDefaultUint64(k string, defaultVal uint64) uint64 {
 	if v == "" {
 		return defaultVal
 	}
-	i, err := strconv.ParseUint(k, 10, 64)
+	i, err := strconv.ParseUint(v, 10, 64)
 	if err != nil {
 		log.Fatalf("error parsing ENV %s to uint64: %s", k, err)
 	}
