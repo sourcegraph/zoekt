@@ -481,6 +481,8 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		args.UseDelta = true
 	}
 
+	args.DeltaShardNumberFallbackThreshold = s.deltaShardNumberFallbackThreshold
+
 	reason := "forced"
 
 	if args.Incremental {
