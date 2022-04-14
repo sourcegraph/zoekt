@@ -196,11 +196,7 @@ func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface
 }
 
 func TestLargeFileOption(t *testing.T) {
-	dir, err := ioutil.TempDir("", "large_files_test")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	sizeMax := 1000
 	opts := Options{
@@ -252,11 +248,7 @@ func TestLargeFileOption(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	opts := Options{
 		IndexDir: dir,
@@ -349,11 +341,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDeleteOldShards(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	opts := Options{
 		IndexDir: dir,
@@ -436,11 +424,7 @@ func TestDeleteOldShards(t *testing.T) {
 }
 
 func TestPartialSuccess(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	opts := Options{
 		IndexDir:    dir,
@@ -550,11 +534,7 @@ func TestFileRank(t *testing.T) {
 }
 
 func TestEmptyContent(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	opts := Options{
 		IndexDir: dir,

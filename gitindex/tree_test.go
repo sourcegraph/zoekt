@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -99,11 +98,7 @@ EOF
 }
 
 func TestFindGitRepos(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
 		t.Error("createSubmoduleRepo", err)
@@ -138,11 +133,7 @@ func TestFindGitRepos(t *testing.T) {
 }
 
 func TestTreeToFiles(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
 		t.Fatalf("TempDir: %v", err)
@@ -195,21 +186,13 @@ func TestTreeToFiles(t *testing.T) {
 }
 
 func TestSubmoduleIndex(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
 		t.Fatalf("createSubmoduleRepo: %v", err)
 	}
 
-	indexDir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(indexDir)
+	indexDir := t.TempDir()
 
 	buildOpts := build.Options{
 		IndexDir: indexDir,
@@ -307,21 +290,13 @@ EOF
 }
 
 func TestSearchSymlinkByContent(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	if err := createSymlinkRepo(dir); err != nil {
 		t.Fatalf("createSubmoduleRepo: %v", err)
 	}
 
-	indexDir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(indexDir)
+	indexDir := t.TempDir()
 
 	buildOpts := build.Options{
 		IndexDir: indexDir,
@@ -372,20 +347,12 @@ func TestSearchSymlinkByContent(t *testing.T) {
 }
 
 func TestAllowMissingBranch(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	if err := createSubmoduleRepo(dir); err != nil {
 		t.Fatalf("createSubmoduleRepo: %v", err)
 	}
 
-	indexDir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(indexDir)
+	indexDir := t.TempDir()
 
 	buildOpts := build.Options{
 		IndexDir: indexDir,
@@ -445,21 +412,13 @@ git update-ref refs/meta/config HEAD
 }
 
 func TestBranchWildcard(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	if err := createMultibranchRepo(dir); err != nil {
 		t.Fatalf("createMultibranchRepo: %v", err)
 	}
 
-	indexDir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(indexDir)
+	indexDir := t.TempDir()
 
 	buildOpts := build.Options{
 		IndexDir: indexDir,
@@ -499,21 +458,13 @@ func TestBranchWildcard(t *testing.T) {
 }
 
 func TestSkipSubmodules(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
 		t.Fatalf("createMultibranchRepo: %v", err)
 	}
 
-	indexDir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(indexDir)
+	indexDir := t.TempDir()
 
 	buildOpts := build.Options{
 		IndexDir: indexDir,
@@ -539,21 +490,13 @@ func TestSkipSubmodules(t *testing.T) {
 }
 
 func TestFullAndShortRefNames(t *testing.T) {
-	dir, err := ioutil.TempDir("", "git")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	if err := createMultibranchRepo(dir); err != nil {
 		t.Fatalf("createMultibranchRepo: %v", err)
 	}
 
-	indexDir, err := ioutil.TempDir("", "index-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.RemoveAll(indexDir)
+	indexDir := t.TempDir()
 
 	buildOpts := build.Options{
 		IndexDir: indexDir,

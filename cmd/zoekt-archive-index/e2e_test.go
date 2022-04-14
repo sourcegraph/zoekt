@@ -96,11 +96,7 @@ func TestIndexIncrementally(t *testing.T) {
 }
 
 func testIndexIncrementally(t *testing.T, format string) {
-	indexdir, err := ioutil.TempDir("", "TestIndexArg-index")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(indexdir)
+	indexdir := t.TempDir()
 	archive, err := ioutil.TempFile("", "TestIndexArg-archive")
 	if err != nil {
 		t.Fatalf("TempFile: %v", err)

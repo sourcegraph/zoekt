@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,11 +36,7 @@ import (
 )
 
 func TestIndexEmptyRepo(t *testing.T) {
-	tmp, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir %v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	cmd := exec.Command("git", "init", "-b", "master", "repo")
 	cmd.Dir = tmp
