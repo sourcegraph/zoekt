@@ -69,13 +69,15 @@ func (q *Queue) Pop() (opts IndexOptions, ok bool) {
 	metricQueueLen.Set(float64(len(q.pq)))
 	metricQueueCap.Set(float64(len(q.items)))
 
-	name := repoNameForMetric(opts.Name)
-	age := time.Since(item.dateAddedToQueue)
-	metricQueueAge.WithLabelValues(name).Observe(age.Seconds())
-
+	dateAdded := item.dateAddedToQueue
 	item.dateAddedToQueue = time.Unix(0, 0)
 
 	q.mu.Unlock()
+
+	name := repoNameForMetric(opts.Name)
+	age := time.Since(dateAdded)
+	metricQueueAge.WithLabelValues(name).Observe(age.Seconds())
+
 	return opts, true
 }
 
