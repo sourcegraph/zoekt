@@ -64,9 +64,12 @@ var (
 	})
 
 	metricIndexDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "index_repo_seconds",
-		Help:    "A histogram of latencies for indexing a repository.",
-		Buckets: prometheus.ExponentialBuckets(.1, 10, 7), // 100ms -> 27min
+		Name: "index_repo_seconds",
+		Help: "A histogram of latencies for indexing a repository.",
+		Buckets: prometheus.ExponentialBucketsRange(
+			(100 * time.Millisecond).Seconds(),
+			(40*time.Minute + indexTimeout).Seconds(), // add an extra 40 minutes to account for the time it takes to clone the repo
+			20),
 	}, []string{
 		"state", // state is an indexState
 		"name",  // name of the repository that was indexed

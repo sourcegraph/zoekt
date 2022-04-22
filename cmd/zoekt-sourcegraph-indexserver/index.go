@@ -21,6 +21,10 @@ import (
 	"github.com/google/zoekt/build"
 )
 
+// indexTimeout defines how long the indexserver waits before
+// killing an indexing job.
+const indexTimeout = 1*time.Hour + 30*time.Minute // an index should never take longer than an hour and a half
+
 // IndexOptions are the options that Sourcegraph can set via it's search
 // configuration endpoint.
 type IndexOptions struct {
@@ -162,8 +166,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 
 	buildOptions := o.BuildOptions()
 
-	// An index should never take longer than an hour.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	ctx, cancel := context.WithTimeout(context.Background(), indexTimeout)
 	defer cancel()
 
 	gitDir, err := tmpGitDir(o.Name)
