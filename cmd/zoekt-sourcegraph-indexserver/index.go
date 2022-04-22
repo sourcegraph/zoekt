@@ -23,7 +23,7 @@ import (
 
 // indexTimeout defines how long the indexserver waits before
 // killing an indexing job.
-const indexTimeout = 1 * time.Hour // an index should never take longer than an hour.
+const indexTimeout = 1*time.Hour + 30*time.Minute // an index should never take longer than an hour and a half
 
 // IndexOptions are the options that Sourcegraph can set via it's search
 // configuration endpoint.
