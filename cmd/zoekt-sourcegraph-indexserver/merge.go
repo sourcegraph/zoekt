@@ -163,7 +163,7 @@ func isExcluded(path string, fi os.FileInfo) bool {
 	// Exclude compound shards from being merge targets. Why? We want repositories in a
 	// compound shard to be ordered based on their priority. The easiest way to
 	// enforce this is to delete the compound shard once it drops below a certain
-	// size (handeled by cleanup), reindex the repositories and merge them with other
+	// size (handled by cleanup), reindex the repositories and merge them with other
 	// shards in the correct order.
 	if len(repos) > 1 {
 		return true
