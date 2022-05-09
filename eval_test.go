@@ -289,23 +289,6 @@ func TestSimplifyRepoRegexp(t *testing.T) {
 	}
 }
 
-func TestSimplifyRepoBranch(t *testing.T) {
-	d := compoundReposShard(t, "foo", "bar")
-
-	some := &query.RepoBranches{Set: map[string][]string{"bar": {"branch1"}}}
-	none := &query.Repo{Regexp: regexp.MustCompile("banana")}
-
-	got := d.simplify(some)
-	if d := cmp.Diff(some, got); d != "" {
-		t.Fatalf("-want, +got:\n%s", d)
-	}
-
-	got = d.simplify(none)
-	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
-		t.Fatalf("-want, +got:\n%s", d)
-	}
-}
-
 func TestSimplifyBranchesRepos(t *testing.T) {
 	d := compoundReposShard(t, "foo", "bar")
 
@@ -324,24 +307,6 @@ func TestSimplifyBranchesRepos(t *testing.T) {
 
 	got = d.simplify(none)
 	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
-		t.Fatalf("-want, +got:\n%s", d)
-	}
-}
-
-func TestSimplifyRepoBranchSimple(t *testing.T) {
-	d := compoundReposShard(t, "foo")
-	q := &query.RepoBranches{Set: map[string][]string{"foo": {"HEAD", "b1"}, "bar": {"HEAD"}}}
-
-	want := &query.Or{[]query.Q{&query.Branch{
-		Pattern: "HEAD",
-		Exact:   true,
-	}, &query.Branch{
-		Pattern: "b1",
-		Exact:   true,
-	}}}
-
-	got := d.simplify(q)
-	if d := cmp.Diff(want, got); d != "" {
 		t.Fatalf("-want, +got:\n%s", d)
 	}
 }

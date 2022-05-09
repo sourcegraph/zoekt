@@ -117,42 +117,6 @@ func repoBranchesEncode(repoBranches map[string][]string) ([]byte, error) {
 // repoBranches slice, so it is safe to share this slice.
 var head = []string{"HEAD"}
 
-// repoBranchesDecode implements an efficient decoder for RepoBranches.
-func repoBranchesDecode(b []byte) (map[string][]string, error) {
-	// binaryReader returns strings pointing into b to avoid allocations. We
-	// don't own b, so we create a copy of it.
-	r := binaryReader{b: append([]byte{}, b...)}
-
-	// Version
-	if v := r.byt(); v != 1 {
-		return nil, fmt.Errorf("unsupported RepoBranches encoding version %d", v)
-	}
-
-	// Length
-	l := r.uvarint()
-	repoBranches := make(map[string][]string, l)
-
-	for i := 0; i < l; i++ {
-		name := r.str()
-
-		branchesLen := int(r.byt())
-
-		// Special case "HEAD"
-		if branchesLen == 0 {
-			repoBranches[name] = head
-			continue
-		}
-
-		branches := make([]string, branchesLen)
-		for j := 0; j < branchesLen; j++ {
-			branches[j] = r.str()
-		}
-		repoBranches[name] = branches
-	}
-
-	return repoBranches, r.err
-}
-
 func branchesReposEncode(brs []BranchRepos) ([]byte, error) {
 	var b bytes.Buffer
 	var enc [binary.MaxVarintLen64]byte

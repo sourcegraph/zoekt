@@ -241,13 +241,11 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 		t.Fatalf("no reposet: got %d results, want %d", len(res.Files), n)
 	}
 
-	repoBranchesSet := &query.RepoBranches{Set: make(map[string][]string)}
 	branchesRepos := &query.BranchesRepos{List: []query.BranchRepos{
 		{Branch: "HEAD", Repos: roaring.New()},
 	}}
 
 	for _, name := range repoSetNames {
-		repoBranchesSet.Set[name] = []string{"HEAD"}
 		branchesRepos.List[0].Repos.Add(hash(name))
 	}
 
@@ -258,10 +256,6 @@ func TestFilteringShardsByRepoSet(t *testing.T) {
 		query.NewAnd(set, sub),
 		// Test with the same reposet again
 		query.NewAnd(set, sub),
-
-		query.NewAnd(repoBranchesSet, sub),
-		// Test with the same repoBranches again
-		query.NewAnd(repoBranchesSet, sub),
 
 		query.NewAnd(branchesRepos, sub),
 		// Test with the same repoBranches with IDs again

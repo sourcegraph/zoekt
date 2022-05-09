@@ -78,18 +78,6 @@ func (d *indexData) simplify(in query.Q) query.Q {
 				}
 			}
 			return &query.Const{Value: false}
-		case *query.RepoBranches:
-			if len(d.repoMetaData) == 1 {
-				// Can simplify query now. compound too complicated since each repo
-				// may have different branches.
-				return r.Branches(d.repoMetaData[0].Name)
-			}
-			for _, md := range d.repoMetaData {
-				if _, ok := r.Set[md.Name]; ok {
-					return q
-				}
-			}
-			return &query.Const{Value: false}
 		case *query.RepoSet:
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
 				return r.Set[repo.Name]
