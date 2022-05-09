@@ -1481,10 +1481,6 @@ honnef.co/go/tools v0.0.0-20190523083050-ea95bdfd59fc/go.mod h1:rf3lG4BRIbNafJWh
 honnef.co/go/tools v0.0.1-2019.2.3/go.mod h1:a3bituU0lyd329TUQxRnasdCoJDkEUEAqEt0JzvZhAg=
 honnef.co/go/tools v0.0.1-2020.1.3/go.mod h1:X/FiERA/W4tHapMX5mGpAtMSVEeEUOyHaw9vFzvIQ3k=
 honnef.co/go/tools v0.0.1-2020.1.4/go.mod h1:X/FiERA/W4tHapMX5mGpAtMSVEeEUOyHaw9vFzvIQ3k=
-humungus.tedunangst.com/r/gerc v0.1.3 h1:ibxG27yAHGQ58fXLB8kzTIsjuDJHnra/Lh2x2FlD/iM=
-humungus.tedunangst.com/r/gerc v0.1.3/go.mod h1:0md8E4G7RmYfqX2tUCMTUTLO8sEaZ5NSIYhWHq2dOCU=
-humungus.tedunangst.com/r/gozstd v0.0.0-20190128071614-16e5174354c5 h1:gtAr1s4EZKvfON3rarLDrmZ5k52gV0Ge8NjvWcKxAAc=
-humungus.tedunangst.com/r/gozstd v0.0.0-20190128071614-16e5174354c5/go.mod h1:E58RX1e6Qk7Yyi8HaeF2obiEtIJ7AcRze5M/L3gbHaY=
 k8s.io/api v0.17.0/go.mod h1:npsyOePkeP0CPwyGfXDHxvypiYMJxBWAMpQxCaJ4ZxI=
 k8s.io/apimachinery v0.17.0/go.mod h1:b9qmWdKlLuU9EBh+06BtLcSf/Mu89rWL33naRxs1uZg=
 k8s.io/client-go v0.17.0/go.mod h1:TYgR6EUHs6k45hb6KWjVD6jFZvJV4gHDikv/It0xz+k=

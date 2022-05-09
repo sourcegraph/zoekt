@@ -33,7 +33,6 @@ require (
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	gopkg.in/DataDog/dd-trace-go.v1 v1.38.1
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	humungus.tedunangst.com/r/gerc v0.1.3
 )
 
 require (
@@ -93,7 +92,6 @@ require (
 	google.golang.org/grpc v1.46.0 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	humungus.tedunangst.com/r/gozstd v0.0.0-20190128071614-16e5174354c5 // indirect
 )
 
 go 1.17
