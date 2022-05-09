@@ -249,60 +249,6 @@ type BranchRepos struct {
 	Repos  *roaring.Bitmap
 }
 
-// RepoBranches is a list of branches in repos to match. It is a Sourcegraph
-// addition and only used in the RPC interface for efficient checking of large
-// repo lists.
-type RepoBranches struct {
-	// Set is map reponame -> [branch]
-	Set map[string][]string
-}
-
-func (q *RepoBranches) String() string {
-	var detail string
-	if len(q.Set) > 5 {
-		// Large sets being output are not useful
-		detail = fmt.Sprintf("size=%d", len(q.Set))
-	} else {
-		repos := make([]string, len(q.Set))
-		i := 0
-		for repo, branches := range q.Set {
-			// repo@master:develop:master
-			repos[i] = fmt.Sprintf("%s@%s", repo, strings.Join(branches, ":"))
-			i++
-		}
-		sort.Strings(repos)
-		detail = strings.Join(repos, " ")
-	}
-	return fmt.Sprintf("(repobranches %s)", detail)
-}
-
-// Branches returns a query representing the branches to search for name.
-func (q *RepoBranches) Branches(name string) Q {
-	branches, ok := q.Set[name]
-	if !ok {
-		return &Const{Value: false}
-	}
-
-	// New sub query is (or (branch branches[0]) ...)
-	qs := make([]Q, len(branches))
-	for i, branch := range branches {
-		qs[i] = &Branch{Pattern: branch, Exact: true}
-	}
-	return NewOr(qs...)
-}
-
-// MarshalBinary implements a specialized encoder for RepoBranches.
-func (q *RepoBranches) MarshalBinary() ([]byte, error) {
-	return repoBranchesEncode(q.Set)
-}
-
-// UnmarshalBinary implements a specialized decoder for RepoBranches.
-func (q *RepoBranches) UnmarshalBinary(b []byte) error {
-	var err error
-	q.Set, err = repoBranchesDecode(b)
-	return err
-}
-
 // RepoSet is a list of repos to match. It is a Sourcegraph addition and only
 // used in the RPC interface for efficient checking of large repo lists.
 type RepoSet struct {

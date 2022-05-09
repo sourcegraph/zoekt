@@ -348,11 +348,6 @@ func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
 				}
 				return false
 			})
-		case *query.RepoBranches:
-			setSize = len(setQuery.Set)
-			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
-				return len(setQuery.Set[repo.Name]) > 0
-			})
 		default:
 			continue
 		}
@@ -408,22 +403,6 @@ func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
 			// Every repo wants the same branches, so we can replace RepoBranches
 			// with a list of branch queries.
 			and.Children[i] = &query.Branch{Pattern: c.List[0].Branch, Exact: true}
-			return filtered, query.Simplify(and)
-
-		case *query.RepoBranches:
-			// We can only replace if all the repos want the same branches.
-			want := c.Set[filtered[0].repos[0].Name]
-			for _, s := range filtered {
-				for _, repo := range s.repos {
-					if !strSliceEqual(want, c.Set[repo.Name]) {
-						return filtered, and
-					}
-				}
-			}
-
-			// Every repo wants the same branches, so we can replace RepoBranches
-			// with a list of branch queries.
-			and.Children[i] = c.Branches(filtered[0].repos[0].Name)
 			return filtered, query.Simplify(and)
 		}
 
