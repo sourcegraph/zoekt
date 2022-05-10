@@ -202,7 +202,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		metricFetchDuration.WithLabelValues(success, name).Observe(fetchDuration.Seconds())
 	}()
 
-	var fetch = func(branches []zoekt.RepositoryBranch) error {
+	var runFetch = func(branches []zoekt.RepositoryBranch) error {
 		// We shallow fetch each commit specified in zoekt.Branches. This requires
 		// the server to have configured both uploadpack.allowAnySHA1InWant and
 		// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
@@ -231,34 +231,54 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		return nil
 	}
 
-	err = fetch(o.Branches)
-	if err != nil {
-		return err
+	fetchPriorAndLatestCommits := func() error {
+		existingRepository, found, err := findRepositoryMetadata(o)
+		if err != nil {
+			return fmt.Errorf("loading repository metadata: %w", err)
+		}
+
+		if !found || len(existingRepository.Branches) == 0 {
+			return fmt.Errorf("no prior shards found")
+		}
+
+		var allBranches []zoekt.RepositoryBranch
+		allBranches = append(allBranches, o.Branches...)
+		allBranches = append(allBranches, existingRepository.Branches...)
+
+		err = runFetch(allBranches)
+		if err != nil {
+			var bs []string
+			for _, b := range allBranches {
+				bs = append(bs, b.String())
+			}
+
+			formattedBranches := strings.Join(bs, ", ")
+			return fmt.Errorf("fetching %s: %w", formattedBranches, err)
+		}
+
+		return nil
+	}
+
+	fetchOnlyLatestCommits := func() error {
+		return runFetch(o.Branches)
 	}
 
 	if o.UseDelta {
-		// Try fetching prior commits for delta builds
-		// If we're unable to fetch prior commits, we continue anyway
-		// knowing that zoekt-git-index will fall back to a "full" normal build
-		existingRepository, found, err := findRepositoryMetadata(o)
+		err := fetchPriorAndLatestCommits()
 		if err != nil {
-			return fmt.Errorf("delta build: failed to get repository metadata: %w", err)
-		}
+			name := buildOptions.RepositoryDescription.Name
+			id := buildOptions.RepositoryDescription.ID
 
-		if found && len(existingRepository.Branches) > 0 {
-			err := fetch(existingRepository.Branches)
+			log.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch both latest and prior commits: %s", name, id, err)
+			err = fetchOnlyLatestCommits()
 			if err != nil {
-				var bs []string
-				for _, b := range existingRepository.Branches {
-					bs = append(bs, b.String())
-				}
-
-				formattedBranches := strings.Join(bs, ", ")
-				name := buildOptions.RepositoryDescription.Name
-				id := buildOptions.RepositoryDescription.ID
-
-				log.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch prior commits (%s): %s", name, id, formattedBranches, err)
+				return err
 			}
+		}
+	} else {
+		err := fetchOnlyLatestCommits()
+		if err != nil {
+			return err
 		}
 	}
 
