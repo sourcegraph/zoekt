@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
- echo            "Running benchmarks..."
+echo "Running benchmarks..."
