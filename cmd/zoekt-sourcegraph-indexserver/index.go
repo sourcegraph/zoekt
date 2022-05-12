@@ -224,7 +224,13 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 
 		if err != nil {
 			allFetchesSucceeded = false
-			return err
+			var bs []string
+			for _, b := range branches {
+				bs = append(bs, b.String())
+			}
+
+			formattedBranches := strings.Join(bs, ", ")
+			return fmt.Errorf("fetching %s: %w", formattedBranches, err)
 		}
 
 		successfullyFetchedCommitsCount += len(commits)
@@ -245,18 +251,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		allBranches = append(allBranches, o.Branches...)
 		allBranches = append(allBranches, existingRepository.Branches...)
 
-		err = runFetch(allBranches)
-		if err != nil {
-			var bs []string
-			for _, b := range allBranches {
-				bs = append(bs, b.String())
-			}
-
-			formattedBranches := strings.Join(bs, ", ")
-			return fmt.Errorf("fetching %s: %w", formattedBranches, err)
-		}
-
-		return nil
+		return runFetch(allBranches)
 	}
 
 	fetchOnlyLatestCommits := func() error {
