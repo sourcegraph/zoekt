@@ -233,8 +233,7 @@ func TestIndex(t *testing.T) {
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef feebdaed 12345678",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo oldhead olddev oldrelease",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 http://api.test/.internal/git/test/repo deadbeef feebdaed 12345678 oldhead olddev oldrelease",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/release 12345678",
