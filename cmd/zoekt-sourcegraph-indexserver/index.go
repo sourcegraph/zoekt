@@ -162,7 +162,6 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	if c.findRepositoryMetadata == nil {
 		return errors.New("findRepositoryMetadata in provided configuration was nil - a function must be provided")
 	}
-	findRepositoryMetadata := c.findRepositoryMetadata
 
 	buildOptions := o.BuildOptions()
 
@@ -238,18 +237,14 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 
 	fetchPriorAndLatestCommits := func() error {
-		existingRepository, found, err := findRepositoryMetadata(o)
+		prior, err := priorBranches(c, o)
 		if err != nil {
-			return fmt.Errorf("loading repository metadata: %w", err)
-		}
-
-		if !found || len(existingRepository.Branches) == 0 {
-			return fmt.Errorf("no prior shards found")
+			return err
 		}
 
 		var allBranches []zoekt.RepositoryBranch
 		allBranches = append(allBranches, o.Branches...)
-		allBranches = append(allBranches, existingRepository.Branches...)
+		allBranches = append(allBranches, prior...)
 
 		return runFetch(allBranches)
 	}
@@ -352,6 +347,19 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 
 	return nil
+}
+
+func priorBranches(c gitIndexConfig, o *indexArgs) ([]zoekt.RepositoryBranch, error) {
+	existingRepository, found, err := c.findRepositoryMetadata(o)
+	if err != nil {
+		return nil, fmt.Errorf("loading repository metadata: %w", err)
+	}
+
+	if !found || len(existingRepository.Branches) == 0 {
+		return nil, fmt.Errorf("no prior shards found")
+	}
+
+	return existingRepository.Branches, nil
 }
 
 func tmpGitDir(name string) (string, error) {
