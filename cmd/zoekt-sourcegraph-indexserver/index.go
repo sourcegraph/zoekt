@@ -162,7 +162,6 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	if c.findRepositoryMetadata == nil {
 		return errors.New("findRepositoryMetadata in provided configuration was nil - a function must be provided")
 	}
-	findRepositoryMetadata := c.findRepositoryMetadata
 
 	buildOptions := o.BuildOptions()
 
@@ -224,31 +223,8 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 
 		if err != nil {
 			allFetchesSucceeded = false
-			return err
-		}
-
-		successfullyFetchedCommitsCount += len(commits)
-		return nil
-	}
-
-	fetchPriorAndLatestCommits := func() error {
-		existingRepository, found, err := findRepositoryMetadata(o)
-		if err != nil {
-			return fmt.Errorf("loading repository metadata: %w", err)
-		}
-
-		if !found || len(existingRepository.Branches) == 0 {
-			return fmt.Errorf("no prior shards found")
-		}
-
-		var allBranches []zoekt.RepositoryBranch
-		allBranches = append(allBranches, o.Branches...)
-		allBranches = append(allBranches, existingRepository.Branches...)
-
-		err = runFetch(allBranches)
-		if err != nil {
 			var bs []string
-			for _, b := range allBranches {
+			for _, b := range branches {
 				bs = append(bs, b.String())
 			}
 
@@ -256,7 +232,21 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 			return fmt.Errorf("fetching %s: %w", formattedBranches, err)
 		}
 
+		successfullyFetchedCommitsCount += len(commits)
 		return nil
+	}
+
+	fetchPriorAndLatestCommits := func() error {
+		prior, err := priorBranches(c, o)
+		if err != nil {
+			return err
+		}
+
+		var allBranches []zoekt.RepositoryBranch
+		allBranches = append(allBranches, o.Branches...)
+		allBranches = append(allBranches, prior...)
+
+		return runFetch(allBranches)
 	}
 
 	fetchOnlyLatestCommits := func() error {
@@ -357,6 +347,19 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 
 	return nil
+}
+
+func priorBranches(c gitIndexConfig, o *indexArgs) ([]zoekt.RepositoryBranch, error) {
+	existingRepository, found, err := c.findRepositoryMetadata(o)
+	if err != nil {
+		return nil, fmt.Errorf("loading repository metadata: %w", err)
+	}
+
+	if !found || len(existingRepository.Branches) == 0 {
+		return nil, fmt.Errorf("no prior shards found")
+	}
+
+	return existingRepository.Branches, nil
 }
 
 func tmpGitDir(name string) (string, error) {
