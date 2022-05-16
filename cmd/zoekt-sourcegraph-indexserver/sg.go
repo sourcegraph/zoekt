@@ -21,9 +21,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/zoekt"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"golang.org/x/net/trace"
+
+	"github.com/google/zoekt"
 )
 
 // SourcegraphListResult is the return value of Sourcegraph.List. It is its
@@ -102,7 +103,7 @@ type sourcegraphClient struct {
 func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
 	repos, err := s.listRepoIDs(ctx, indexed)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listRepoIDs: %w", err)
 	}
 
 	batchSize := s.BatchSize

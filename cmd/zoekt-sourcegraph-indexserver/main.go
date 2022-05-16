@@ -302,7 +302,7 @@ func (s *Server) Run() {
 
 			repos, err := s.Sourcegraph.List(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
-				log.Println(err)
+				log.Printf("error listing repos: %s", err)
 				continue
 			}
 
