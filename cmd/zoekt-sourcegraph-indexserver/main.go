@@ -865,7 +865,7 @@ func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sou
 	client.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
 		shouldRetry, checkErr := retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
 
-		if resp.StatusCode == http.StatusInternalServerError {
+		if resp != nil && resp.StatusCode == http.StatusInternalServerError {
 			if b, e := io.ReadAll(resp.Body); e == nil {
 				checkErr = fmt.Errorf("%w: body=%q", checkErr, string(b))
 			}
