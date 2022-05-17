@@ -88,6 +88,8 @@ func TestListRepoIDs(t *testing.T) {
 func TestListRepoIDs_Error(t *testing.T) {
 	msg := "deadbeaf deadbeaf"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		// This is how Sourcegraph returns error messages to the caller.
 		http.Error(w, msg, http.StatusInternalServerError)
 	}))
 	defer ts.Close()
