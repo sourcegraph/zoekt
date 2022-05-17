@@ -660,8 +660,15 @@ func hostnameBestEffort() string {
 //
 // If main is true we will delete older temp directories left around. main is
 // false when this is a debug command.
-func setupTmpDir(index string) error {
-	tmpRoot := filepath.Join(index, ".indexserver.tmp")
+func setupTmpDir(main bool, index string) error {
+	// change the target tmp directory depending on if its our main daemon or a
+	// debug sub command.
+	dir := ".indexserver.debug.tmp"
+	if main {
+		dir = ".indexserver.tmp"
+	}
+
+	tmpRoot := filepath.Join(index, dir)
 	if err := os.MkdirAll(tmpRoot, 0755); err != nil {
 		return err
 	}
@@ -784,7 +791,9 @@ func setCompoundShardCounter(indexDir string) {
 
 func rootCmd() *ffcli.Command {
 	rootFs := flag.NewFlagSet("rootFs", flag.ExitOnError)
-	conf := rootConfig{}
+	conf := rootConfig{
+		Main: true,
+	}
 	conf.registerRootFlags(rootFs)
 
 	return &ffcli.Command{
@@ -798,6 +807,11 @@ func rootCmd() *ffcli.Command {
 }
 
 type rootConfig struct {
+	// Main is true if this rootConfig is for our main long running command (the
+	// indexserver). Debug commands should not set this value. This is used to
+	// determine if we need to run tmpfriend.
+	Main bool
+
 	root             string
 	interval         time.Duration
 	index            string
@@ -886,7 +900,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		}
 	}
 
-	if err := setupTmpDir(conf.index); err != nil {
+	if err := setupTmpDir(conf.Main, conf.index); err != nil {
 		return nil, fmt.Errorf("failed to setup TMPDIR under %s: %v", conf.index, err)
 	}
 
