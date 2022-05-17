@@ -9,11 +9,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/zoekt"
 	"github.com/hashicorp/go-retryablehttp"
+
+	"github.com/google/zoekt"
 )
 
 func TestServer_defaultArgs(t *testing.T) {
@@ -87,6 +89,29 @@ func TestListRepoIDs(t *testing.T) {
 	}
 	if want := "/.internal/repos/index"; gotURL.Path != want {
 		t.Errorf("request path mismatch (-want +got):\n%s", cmp.Diff(want, gotURL.Path))
+	}
+}
+
+func TestListRepoIDs_Error(t *testing.T) {
+	msg := "deadbeaf deadbeaf"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, msg, http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := newSourcegraphClient(u, "test-indexed-search-1", 0)
+	s.Client.RetryMax = 0
+
+	_, err = s.List(context.Background(), []uint32{1, 3})
+
+	if !strings.Contains(err.Error(), msg) {
+		t.Fatalf("%s does not contain %s", err.Error(), msg)
 	}
 }
 

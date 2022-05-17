@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -852,6 +853,35 @@ func startServer(conf rootConfig) error {
 	return nil
 }
 
+// Sourcegraph might return an error message in the body if StatusCode==500. The
+// default behavior of the go-retryablehttp client is to drain the body and not
+// to propagate the error. Hence, we call ErrorPropagatedRetryPolicy instead of
+// DefaultRetryPolicy and augment the error with the response body if possible.
+func checkRetry(ctx context.Context, resp *http.Response, err error) (bool, error) {
+	shouldRetry, checkErr := retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
+
+	if resp.StatusCode == http.StatusInternalServerError {
+		if b, e := io.ReadAll(resp.Body); e == nil {
+			checkErr = fmt.Errorf("%w: body=%q", checkErr, string(b))
+		}
+	}
+
+	return shouldRetry, checkErr
+}
+
+func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sourcegraphClient {
+	client := retryablehttp.NewClient()
+	client.Logger = debug
+	client.CheckRetry = checkRetry
+
+	return &sourcegraphClient{
+		Root:      rootURL,
+		Client:    client,
+		Hostname:  hostname,
+		BatchSize: batchSize,
+	}
+}
+
 func newServer(conf rootConfig) (*Server, error) {
 	if conf.cpuFraction <= 0.0 || conf.cpuFraction > 1.0 {
 		return nil, fmt.Errorf("cpu_fraction must be between 0.0 and 1.0")
@@ -921,14 +951,8 @@ func newServer(conf rootConfig) (*Server, error) {
 			}
 		}
 
-		client := retryablehttp.NewClient()
-		client.Logger = debug
-		sg = &sourcegraphClient{
-			Root:      rootURL,
-			Client:    client,
-			Hostname:  conf.hostname,
-			BatchSize: batchSize,
-		}
+		sg = newSourcegraphClient(rootURL, conf.hostname, batchSize)
+
 	} else {
 		sg = sourcegraphFake{
 			RootDir: rootURL.String(),
