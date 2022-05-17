@@ -14,8 +14,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/google/zoekt"
-	"github.com/hashicorp/go-retryablehttp"
 )
 
 func TestGetIndexOptions(t *testing.T) {
@@ -42,10 +42,7 @@ func TestGetIndexOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sg := &sourcegraphClient{
-		Root:   u,
-		Client: retryablehttp.NewClient(),
-	}
+	sg := newSourcegraphClient(u, "", 0)
 
 	cases := map[string]*IndexOptions{
 		`{"Symbols": true, "LargeFiles": ["foo","bar"]}`: {

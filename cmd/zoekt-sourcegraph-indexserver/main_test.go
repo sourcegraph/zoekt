@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/hashicorp/go-retryablehttp"
 
 	"github.com/google/zoekt"
 )
@@ -25,11 +24,9 @@ func TestServer_defaultArgs(t *testing.T) {
 	}
 
 	s := &Server{
-		Sourcegraph: &sourcegraphClient{
-			Root: root,
-		},
-		IndexDir: "/testdata/index",
-		CPUCount: 6,
+		Sourcegraph: newSourcegraphClient(root, "", 0),
+		IndexDir:    "/testdata/index",
+		CPUCount:    6,
 	}
 	want := &indexArgs{
 		IndexOptions: IndexOptions{
@@ -70,11 +67,7 @@ func TestListRepoIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := &sourcegraphClient{
-		Root:     u,
-		Hostname: "test-indexed-search-1",
-		Client:   retryablehttp.NewClient(),
-	}
+	s := newSourcegraphClient(u, "test-indexed-search-1", 0)
 
 	gotRepos, err := s.List(context.Background(), []uint32{1, 3})
 	if err != nil {
@@ -94,7 +87,6 @@ func TestListRepoIDs(t *testing.T) {
 
 func TestListRepoIDs_Error(t *testing.T) {
 	msg := "deadbeaf deadbeaf"
-
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, http.StatusInternalServerError)
 	}))

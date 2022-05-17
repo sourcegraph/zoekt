@@ -952,7 +952,6 @@ func newServer(conf rootConfig) (*Server, error) {
 		}
 
 		sg = newSourcegraphClient(rootURL, conf.hostname, batchSize)
-
 	} else {
 		sg = sourcegraphFake{
 			RootDir: rootURL.String(),
