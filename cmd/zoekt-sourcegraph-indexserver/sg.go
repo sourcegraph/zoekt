@@ -70,6 +70,35 @@ type Sourcegraph interface {
 	ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32)
 }
 
+func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sourcegraphClient {
+
+	client := retryablehttp.NewClient()
+	client.Logger = debug
+
+	// Sourcegraph might return an error message in the body if StatusCode==500. The
+	// default behavior of the go-retryablehttp client is to drain the body and not
+	// to propagate the error. Hence, we call ErrorPropagatedRetryPolicy instead of
+	// DefaultRetryPolicy and augment the error with the response body if possible.
+	client.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+		shouldRetry, checkErr := retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
+
+		if resp != nil && resp.StatusCode == http.StatusInternalServerError {
+			if b, e := io.ReadAll(resp.Body); e == nil {
+				checkErr = fmt.Errorf("%w: body=%q", checkErr, string(b))
+			}
+		}
+
+		return shouldRetry, checkErr
+	}
+
+	return &sourcegraphClient{
+		Root:      rootURL,
+		Client:    client,
+		Hostname:  hostname,
+		BatchSize: batchSize,
+	}
+}
+
 // sourcegraphClient contains methods which interact with the sourcegraph API.
 type sourcegraphClient struct {
 	// Root is the base URL for the Sourcegraph instance to index. Normally
