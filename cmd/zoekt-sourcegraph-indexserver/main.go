@@ -853,26 +853,26 @@ func startServer(conf rootConfig) error {
 	return nil
 }
 
-// Sourcegraph might return an error message in the body if StatusCode==500. The
-// default behavior of the go-retryablehttp client is to drain the body and not
-// to propagate the error. Hence, we call ErrorPropagatedRetryPolicy instead of
-// DefaultRetryPolicy and augment the error with the response body if possible.
-func checkRetry(ctx context.Context, resp *http.Response, err error) (bool, error) {
-	shouldRetry, checkErr := retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
-
-	if resp.StatusCode == http.StatusInternalServerError {
-		if b, e := io.ReadAll(resp.Body); e == nil {
-			checkErr = fmt.Errorf("%w: body=%q", checkErr, string(b))
-		}
-	}
-
-	return shouldRetry, checkErr
-}
-
 func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sourcegraphClient {
+
 	client := retryablehttp.NewClient()
 	client.Logger = debug
-	client.CheckRetry = checkRetry
+
+	// Sourcegraph might return an error message in the body if StatusCode==500. The
+	// default behavior of the go-retryablehttp client is to drain the body and not
+	// to propagate the error. Hence, we call ErrorPropagatedRetryPolicy instead of
+	// DefaultRetryPolicy and augment the error with the response body if possible.
+	client.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+		shouldRetry, checkErr := retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
+
+		if resp.StatusCode == http.StatusInternalServerError {
+			if b, e := io.ReadAll(resp.Body); e == nil {
+				checkErr = fmt.Errorf("%w: body=%q", checkErr, string(b))
+			}
+		}
+
+		return shouldRetry, checkErr
+	}
 
 	return &sourcegraphClient{
 		Root:      rootURL,
