@@ -27,7 +27,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/prometheus/client_golang/prometheus"
@@ -302,7 +301,7 @@ func (s *Server) Run() {
 
 			repos, err := s.Sourcegraph.List(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
-				log.Println(err)
+				log.Printf("error listing repos: %s", err)
 				continue
 			}
 
@@ -935,14 +934,7 @@ func newServer(conf rootConfig) (*Server, error) {
 			}
 		}
 
-		client := retryablehttp.NewClient()
-		client.Logger = debug
-		sg = &sourcegraphClient{
-			Root:      rootURL,
-			Client:    client,
-			Hostname:  conf.hostname,
-			BatchSize: batchSize,
-		}
+		sg = newSourcegraphClient(rootURL, conf.hostname, batchSize)
 	} else {
 		sg = sourcegraphFake{
 			RootDir: rootURL.String(),
