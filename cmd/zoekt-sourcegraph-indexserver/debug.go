@@ -105,6 +105,8 @@ func debugList() *ffcli.Command {
 	conf := rootConfig{}
 	conf.registerRootFlags(fs)
 
+	excludeIndexed := fs.Bool("exclude_indexed", false, "Do not send the current index to Sourcegraph. When set the repositories listed will not include transient repositories. Transient repositories are currently indexed on this replica, but will be moved to another.")
+
 	return &ffcli.Command{
 		Name:       "list",
 		ShortUsage: "list [flags]",
@@ -115,13 +117,21 @@ func debugList() *ffcli.Command {
 			if err != nil {
 				return err
 			}
-			repos, err := s.Sourcegraph.List(context.Background(), listIndexed(s.IndexDir))
+
+			var indexed []uint32
+			if !*excludeIndexed {
+				indexed = listIndexed(s.IndexDir)
+			}
+
+			repos, err := s.Sourcegraph.List(context.Background(), indexed)
 			if err != nil {
 				return err
 			}
+
 			for _, r := range repos.IDs {
 				fmt.Println(r)
 			}
+
 			return nil
 		},
 	}
