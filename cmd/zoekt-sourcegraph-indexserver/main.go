@@ -481,16 +481,15 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	}
 
 	repositoryName := args.Name
-	repositoryID := args.BuildOptions().RepositoryDescription.ID
 	if _, ok := s.deltaBuildRepositoriesAllowList[repositoryName]; ok {
-		debug.Printf("delta build: Server.Index: marking %q (ID %d) for delta build", repositoryName, repositoryID)
+		tr.LazyPrintf("marking this repository for delta build")
 		args.UseDelta = true
 	}
 
 	args.DeltaShardNumberFallbackThreshold = s.deltaShardNumberFallbackThreshold
 
 	if _, ok := s.repositoriesSkipSymbolsCalculationAllowList[repositoryName]; ok {
-		debug.Printf("Server.Index: skipping symbols calculation for %q (ID %d)", repositoryName, repositoryID)
+		tr.LazyPrintf("skipping symbols calculation")
 		args.Symbols = false
 	}
 
