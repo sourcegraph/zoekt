@@ -175,6 +175,10 @@ type Server struct {
 	// deltaShardNumberFallbackThreshold is an upper limit on the number of preexisting shards that can exist
 	// before attempting a delta build.
 	deltaShardNumberFallbackThreshold uint64
+
+	// repositoriesSkipSymbolsCalculationAllowList is an allowlist for repositories that
+	// we skip calculating symbols metadata for during builds
+	repositoriesSkipSymbolsCalculationAllowList map[string]struct{}
 }
 
 var debug = log.New(ioutil.Discard, "", log.LstdFlags)
@@ -477,13 +481,16 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 	repositoryName := args.Name
 	if _, ok := s.deltaBuildRepositoriesAllowList[repositoryName]; ok {
-		repositoryID := args.BuildOptions().RepositoryDescription.ID
-		debug.Printf("delta build: Server.Index: marking %q (ID %d) for delta build", repositoryName, repositoryID)
-
+		tr.LazyPrintf("marking this repository for delta build")
 		args.UseDelta = true
 	}
 
 	args.DeltaShardNumberFallbackThreshold = s.deltaShardNumberFallbackThreshold
+
+	if _, ok := s.repositoriesSkipSymbolsCalculationAllowList[repositoryName]; ok {
+		tr.LazyPrintf("skipping symbols calculation")
+		args.Symbols = false
+	}
 
 	reason := "forced"
 
@@ -924,6 +931,11 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug.Printf("disabling delta build fallback behavior - delta builds will be performed regardless of the number of preexisting shards")
 	}
 
+	reposShouldSkipSymbolsCalculation := getEnvWithDefaultEmptySet("SKIP_SYMBOLS_REPOS_ALLOWLIST")
+	if len(reposShouldSkipSymbolsCalculation) > 0 {
+		debug.Printf("skipping generating symbols metadata for: %s", joinStringSet(reposShouldSkipSymbolsCalculation, ", "))
+	}
+
 	var sg Sourcegraph
 	if rootURL.IsAbs() {
 		var batchSize int
@@ -959,6 +971,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		shardMerging:                      zoekt.ShardMergingEnabled(),
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
 		deltaShardNumberFallbackThreshold: deltaShardNumberFallbackThreshold,
+		repositoriesSkipSymbolsCalculationAllowList: reposShouldSkipSymbolsCalculation,
 	}, err
 }
 
