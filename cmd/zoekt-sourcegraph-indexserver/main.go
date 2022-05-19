@@ -624,7 +624,10 @@ func (s *Server) handleReIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
-	withIndexed, _ := strconv.ParseBool(r.URL.Query().Get("indexed"))
+	withIndexed := true
+	if b, err := strconv.ParseBool(r.URL.Query().Get("indexed")); err == nil {
+		withIndexed = b
+	}
 
 	var indexed []uint32
 	if withIndexed {
