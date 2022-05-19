@@ -868,6 +868,12 @@ func startServer(conf rootConfig) error {
 		}()
 	}
 
+	oc := &ownerChecker{
+		Path:     filepath.Join(conf.index, "owner.txt"),
+		Hostname: conf.hostname,
+	}
+	go oc.Run()
+
 	s.Run()
 	return nil
 }
