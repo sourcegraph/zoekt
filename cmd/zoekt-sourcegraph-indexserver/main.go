@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/keegancsmith/tmpfriend"
@@ -569,7 +570,10 @@ func createEmptyShard(args *indexArgs) error {
 
 // addDebugHandlers adds handlers specific to indexserver.
 func (s *Server) addDebugHandlers(mux *http.ServeMux) {
+	// Sourcegraph's site admin view requires indexserver to serve it's admin view
+	// on "/".
 	mux.Handle("/", http.HandlerFunc(s.handleReIndex))
+
 	mux.Handle("/debug/indexed", http.HandlerFunc(s.handleDebugIndexed))
 	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
 	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
@@ -635,6 +639,14 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 
 	bw := bytes.Buffer{}
 
+	tw := tabwriter.NewWriter(&bw, 16, 8, 4, ' ', 0)
+
+	_, err = fmt.Fprintf(tw, "ID\tName\n")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
+		return
+	}
+
 	s.queue.mu.Lock()
 	name := ""
 	for _, id := range repos.IDs {
@@ -643,7 +655,7 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 		} else {
 			name = ""
 		}
-		_, err = fmt.Fprintf(&bw, "%d\t%s\n", id, name)
+		_, err = fmt.Fprintf(tw, "%d\t%s\n", id, name)
 		if err != nil {
 			debug.Printf("handleDebugList: %s\n", err.Error())
 		}
@@ -655,6 +667,14 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	err = tw.Flush()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("flushing tabwriter: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(bw.Len()))
+
 	if _, err := io.Copy(w, &bw); err != nil {
 		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
 		return
@@ -665,7 +685,14 @@ func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
 	indexed := listIndexed(s.IndexDir)
 
 	bw := bytes.Buffer{}
-	var err error
+
+	tw := tabwriter.NewWriter(&bw, 16, 8, 4, ' ', 0)
+
+	_, err := fmt.Fprintf(tw, "ID\tName\n")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
+		return
+	}
 
 	s.queue.mu.Lock()
 	name := ""
@@ -675,7 +702,7 @@ func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
 		} else {
 			name = ""
 		}
-		_, err = fmt.Fprintf(&bw, "%d\t%s\n", id, name)
+		_, err = fmt.Fprintf(tw, "%d\t%s\n", id, name)
 		if err != nil {
 			debug.Printf("handleDebugIndexed: %s\n", err.Error())
 		}
@@ -686,6 +713,14 @@ func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	err = tw.Flush()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("flushing tabwriter: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(bw.Len()))
 
 	if _, err := io.Copy(w, &bw); err != nil {
 		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
