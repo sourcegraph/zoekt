@@ -566,18 +566,21 @@ func createEmptyShard(args *indexArgs) error {
 	return builder.Finish()
 }
 
-func (s *Server) AddHandlers(mux *http.ServeMux) {
-	mux.Handle("/", http.HandlerFunc(s.handleHTTPRoot))
+// addDebugHandlers adds handlers specific to indexserver.
+func (s *Server) addDebugHandlers(mux *http.ServeMux) {
+	mux.Handle("/debug/indexed", http.HandlerFunc(s.handleDebugIndexed))
+	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
 	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
+	mux.Handle("/debug/reindex", http.HandlerFunc(s.handleReIndex))
 }
 
 var repoTmpl = template.Must(template.New("name").Parse(`
 <html><body>
-<a href="debug/requests">Traces</a><br>
+<a href="/debug/requests">Traces</a><br>
 {{.IndexMsg}}<br />
 <br />
 <h3>Re-index repository</h3>
-<form action="/" method="post">
+<form action="/debug/reindex" method="post">
 {{range .Repos}}
 <button type="submit" name="repo" value="{{ .ID }}" />{{ .Name }}</button><br />
 {{end}}
@@ -585,7 +588,7 @@ var repoTmpl = template.Must(template.New("name").Parse(`
 </body></html>
 `))
 
-func (s *Server) handleHTTPRoot(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleReIndex(w http.ResponseWriter, r *http.Request) {
 	type Repo struct {
 		ID   uint32
 		Name string
@@ -612,6 +615,59 @@ func (s *Server) handleHTTPRoot(w http.ResponseWriter, r *http.Request) {
 	})
 
 	_ = repoTmpl.Execute(w, data)
+}
+
+func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
+	withIndexed := false
+	indexedStr := r.URL.Query().Get("indexed")
+	if b, err := strconv.ParseBool(indexedStr); err != nil {
+		withIndexed = b
+	}
+
+	var indexed []uint32
+	if withIndexed {
+		indexed = listIndexed(s.IndexDir)
+	}
+
+	repos, err := s.Sourcegraph.List(context.Background(), indexed)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	repoName := ""
+	for _, id := range repos.IDs {
+		if item := s.queue.get(id); item != nil {
+			repoName = item.opts.Name
+		} else {
+			repoName = ""
+		}
+
+		_, err := fmt.Fprintf(w, "%d\t%s\n", id, repoName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
+	indexed := listIndexed(s.IndexDir)
+
+	repoName := ""
+	for _, id := range indexed {
+		if item := s.queue.get(id); item != nil {
+			repoName = item.opts.Name
+		} else {
+			repoName = ""
+		}
+
+		_, err := fmt.Fprintf(w, "%d\t%s\n", id, repoName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 }
 
 // forceIndex will run the index job for repo name now. It will return always
@@ -861,8 +917,14 @@ func startServer(conf rootConfig) error {
 	if conf.listen != "" {
 		go func() {
 			mux := http.NewServeMux()
-			debugserver.AddHandlers(mux, true)
-			s.AddHandlers(mux)
+			debugserver.AddHandlers(mux, true, []debugserver.DebugPage{
+				{Href: "debug/indexed", Text: "Indexed"},
+				{Href: "debug/list?indexed=true", Text: "Assigned (all)", Description: "includes repositories which this instance temporarily holds during re-balancing"},
+				{Href: "debug/list?indexed=false", Text: "Assigned (this instance)"},
+				{Href: "debug/queue", Text: "Queue"},
+				{Href: "debug/reindex", Text: "Re-index"},
+			}...)
+			s.addDebugHandlers(mux)
 			debug.Printf("serving HTTP on %s", conf.listen)
 			log.Fatal(http.ListenAndServe(conf.listen, mux))
 		}()
