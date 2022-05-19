@@ -19,6 +19,7 @@ var registerOnce sync.Once
 var debugTmpl = template.Must(template.New("name").Parse(`
 <html>
 	<head>
+		<title>/debug</title>
 		<style>
 			.profile-name{
 				display:inline-block;
@@ -28,6 +29,8 @@ var debugTmpl = template.Must(template.New("name").Parse(`
 	</head>
 
 	<body>
+		/debug<br>
+		<br>
 		<a class="profile-name" href="vars">Vars</a><br>
 		{{if .EnablePprof}}<a class="profile-name" href="debug/pprof/">PProf</a>{{else}}PProf disabled{{end}}<br>
 		<a class="profile-name" href="metrics">Metrics</a><br>
