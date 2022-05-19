@@ -635,15 +635,18 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoName := ""
+	s.queue.mu.Lock()
+	defer s.queue.mu.Unlock()
+
+	name := ""
 	for _, id := range repos.IDs {
 		if item := s.queue.get(id); item != nil {
-			repoName = item.opts.Name
+			name = item.opts.Name
 		} else {
-			repoName = ""
+			name = ""
 		}
 
-		_, err := fmt.Fprintf(w, "%d\t%s\n", id, repoName)
+		_, err := fmt.Fprintf(w, "%d\t%s\n", id, name)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -654,15 +657,18 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
 	indexed := listIndexed(s.IndexDir)
 
-	repoName := ""
+	s.queue.mu.Lock()
+	defer s.queue.mu.Unlock()
+
+	name := ""
 	for _, id := range indexed {
 		if item := s.queue.get(id); item != nil {
-			repoName = item.opts.Name
+			name = item.opts.Name
 		} else {
-			repoName = ""
+			name = ""
 		}
 
-		_, err := fmt.Fprintf(w, "%d\t%s\n", id, repoName)
+		_, err := fmt.Fprintf(w, "%d\t%s\n", id, name)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
