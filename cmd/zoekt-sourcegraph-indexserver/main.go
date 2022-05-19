@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -625,15 +626,15 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 		indexed = listIndexed(s.IndexDir)
 	}
 
-	repos, err := s.Sourcegraph.List(context.Background(), indexed)
+	repos, err := s.Sourcegraph.List(r.Context(), indexed)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	s.queue.mu.Lock()
-	defer s.queue.mu.Unlock()
+	bw := bytes.Buffer{}
 
+	s.queue.mu.Lock()
 	name := ""
 	for _, id := range repos.IDs {
 		if item := s.queue.get(id); item != nil {
@@ -641,21 +642,31 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 		} else {
 			name = ""
 		}
-
-		_, err := fmt.Fprintf(w, "%d\t%s\n", id, name)
+		_, err = fmt.Fprintf(&bw, "%d\t%s\n", id, name)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			debug.Printf("handleDebugList: %s\n", err.Error())
 		}
+	}
+	defer s.queue.mu.Unlock()
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := io.Copy(w, &bw); err != nil {
+		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
+		return
 	}
 }
 
 func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
 	indexed := listIndexed(s.IndexDir)
 
-	s.queue.mu.Lock()
-	defer s.queue.mu.Unlock()
+	bw := bytes.Buffer{}
+	var err error
 
+	s.queue.mu.Lock()
 	name := ""
 	for _, id := range indexed {
 		if item := s.queue.get(id); item != nil {
@@ -663,12 +674,21 @@ func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
 		} else {
 			name = ""
 		}
-
-		_, err := fmt.Fprintf(w, "%d\t%s\n", id, name)
+		_, err = fmt.Fprintf(&bw, "%d\t%s\n", id, name)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			debug.Printf("handleDebugIndexed: %s\n", err.Error())
 		}
+	}
+	s.queue.mu.Unlock()
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := io.Copy(w, &bw); err != nil {
+		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
+		return
 	}
 }
 
