@@ -569,19 +569,20 @@ func createEmptyShard(args *indexArgs) error {
 
 // addDebugHandlers adds handlers specific to indexserver.
 func (s *Server) addDebugHandlers(mux *http.ServeMux) {
+	mux.Handle("/", http.HandlerFunc(s.handleReIndex))
 	mux.Handle("/debug/indexed", http.HandlerFunc(s.handleDebugIndexed))
 	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
 	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
-	mux.Handle("/debug/reindex", http.HandlerFunc(s.handleReIndex))
 }
 
 var repoTmpl = template.Must(template.New("name").Parse(`
 <html><body>
-<a href="/debug/requests">Traces</a><br>
+<a href="debug">Debug</a><br>
+<a href="debug/requests">Traces</a><br>
 {{.IndexMsg}}<br />
 <br />
 <h3>Re-index repository</h3>
-<form action="/debug/reindex" method="post">
+<form action="." method="post">
 {{range .Repos}}
 <button type="submit" name="repo" value="{{ .ID }}" />{{ .Name }}</button><br />
 {{end}}
@@ -944,7 +945,6 @@ func startServer(conf rootConfig) error {
 				{Href: "debug/list?indexed=true", Text: "Assigned (all)", Description: "includes repositories which this instance temporarily holds during re-balancing"},
 				{Href: "debug/list?indexed=false", Text: "Assigned (this instance)"},
 				{Href: "debug/queue", Text: "Queue"},
-				{Href: "debug/reindex", Text: "Re-index"},
 			}...)
 			s.addDebugHandlers(mux)
 			debug.Printf("serving HTTP on %s", conf.listen)
