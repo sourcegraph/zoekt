@@ -663,7 +663,7 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 			debug.Printf("handleDebugList: %s\n", err.Error())
 		}
 	}
-	defer s.queue.mu.Unlock()
+	s.queue.mu.Unlock()
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
