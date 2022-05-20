@@ -1,20 +1,58 @@
 package debugserver
 
 import (
+	"html/template"
 	"net/http"
 	"net/http/pprof"
 	"sync"
 
-	"github.com/google/zoekt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/trace"
+
+	"github.com/google/zoekt"
 )
 
 var registerOnce sync.Once
 
-func AddHandlers(mux *http.ServeMux, enablePprof bool) {
+var debugTmpl = template.Must(template.New("name").Parse(`
+<html>
+	<head>
+		<title>/debug</title>
+		<style>
+			.debug-page{
+				display:inline-block;
+				width:12rem;
+			}
+		</style>
+	</head>
+	<body>
+		/debug<br>
+		<br>
+		<a class="debug-page" href="vars">Vars</a><br>
+		{{if .EnablePprof}}<a class="debug-page" href="debug/pprof/">PProf</a>{{else}}PProf disabled{{end}}<br>
+		<a class="debug-page" href="metrics">Metrics</a><br>
+		<a class="debug-page" href="debug/requests">Requests</a><br>
+		<a class="debug-page" href="debug/events">Events</a><br>
+
+		{{/* links which are specific to webserver or indexserver */}}
+		{{range .DebugPages}}<a class="debug-page" href={{.Href}}>{{.Text}}</a>{{.Description}}<br>{{end}}
+
+		<br>
+		<form method="post" action="gc" style="display: inline;"><input type="submit" value="GC"></form>
+		<form method="post" action="freeosmemory" style="display: inline;"><input type="submit" value="Free OS Memory"></form>
+	</body>
+</html>
+`))
+
+type DebugPage struct {
+	Href        string
+	Text        string
+	Description string
+}
+
+func AddHandlers(mux *http.ServeMux, enablePprof bool, p ...DebugPage) {
 	registerOnce.Do(register)
 
 	trace.AuthRequest = func(req *http.Request) (any, sensitive bool) {
@@ -22,18 +60,13 @@ func AddHandlers(mux *http.ServeMux, enablePprof bool) {
 	}
 
 	index := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`
-				<a href="vars">Vars</a><br>
-				<a href="debug/pprof/">PProf</a><br>
-				<a href="metrics">Metrics</a><br>
-				<a href="debug/requests">Requests</a><br>
-				<a href="debug/events">Events</a><br>
-			`))
-		_, _ = w.Write([]byte(`
-				<br>
-				<form method="post" action="gc" style="display: inline;"><input type="submit" value="GC"></form>
-				<form method="post" action="freeosmemory" style="display: inline;"><input type="submit" value="Free OS Memory"></form>
-			`))
+		_ = debugTmpl.Execute(w, struct {
+			DebugPages  []DebugPage
+			EnablePprof bool
+		}{
+			DebugPages:  p,
+			EnablePprof: enablePprof,
+		})
 	})
 	mux.Handle("/debug", index)
 	mux.Handle("/vars", http.HandlerFunc(expvarHandler))
