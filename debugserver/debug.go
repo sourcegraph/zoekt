@@ -21,24 +21,23 @@ var debugTmpl = template.Must(template.New("name").Parse(`
 	<head>
 		<title>/debug</title>
 		<style>
-			.profile-name{
+			.debug-page{
 				display:inline-block;
 				width:12rem;
 			}
 		</style>
 	</head>
-
 	<body>
 		/debug<br>
 		<br>
-		<a class="profile-name" href="vars">Vars</a><br>
-		{{if .EnablePprof}}<a class="profile-name" href="debug/pprof/">PProf</a>{{else}}PProf disabled{{end}}<br>
-		<a class="profile-name" href="metrics">Metrics</a><br>
-		<a class="profile-name" href="debug/requests">Requests</a><br>
-		<a class="profile-name" href="debug/events">Events</a><br>
+		<a class="debug-page" href="vars">Vars</a><br>
+		{{if .EnablePprof}}<a class="debug-page" href="debug/pprof/">PProf</a>{{else}}PProf disabled{{end}}<br>
+		<a class="debug-page" href="metrics">Metrics</a><br>
+		<a class="debug-page" href="debug/requests">Requests</a><br>
+		<a class="debug-page" href="debug/events">Events</a><br>
 
 		{{/* links which are specific to webserver or indexserver */}}
-		{{range .DebugPages}}<a class="profile-name" href={{.Href}}>{{.Text}}</a>{{.Description}}<br>{{end}}
+		{{range .DebugPages}}<a class="debug-page" href={{.Href}}>{{.Text}}</a>{{.Description}}<br>{{end}}
 
 		<br>
 		<form method="post" action="gc" style="display: inline;"><input type="submit" value="GC"></form>
