@@ -267,6 +267,8 @@ const (
 	// TODO - how to scale this relative to rank?
 	scorePartialWordMatch   = 50.0
 	scoreWordMatch          = 500.0
+	scoreBase               = 7000.0
+	scorePartialBase        = 4000.0
 	scoreImportantThreshold = 2000.0
 	scoreSymbol             = 7000.0
 	scorePartialSymbol      = 4000.0
@@ -309,7 +311,18 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 			score = scorePartialWordMatch
 		}
 
-		if secIdx, ok := findSection(secs, f.Offset, uint32(f.MatchLength)); ok {
+		if m.FileName {
+			sep := bytes.LastIndexByte(m.Line, '/')
+			startMatch := sep+1 == f.LineOffset
+			endMatch := len(m.Line) == f.LineOffset+f.MatchLength
+			if startMatch && endMatch {
+				score += scoreBase
+			} else if startMatch || endMatch {
+				score += (scoreBase + scorePartialBase) / 2
+			} else if sep < f.LineOffset {
+				score += scorePartialBase
+			}
+		} else if secIdx, ok := findSection(secs, f.Offset, uint32(f.MatchLength)); ok {
 			sec := secs[secIdx]
 			startMatch := sec.Start == f.Offset
 			endMatch := sec.End == f.Offset+uint32(f.MatchLength)
