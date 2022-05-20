@@ -445,6 +445,11 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 		_, err := os.Stat(filepath.Join(dir, p))
 		return err == nil
 	}
+	float := func(p string) float64 {
+		b, _ := os.ReadFile(filepath.Join(dir, p))
+		f, _ := strconv.ParseFloat(string(bytes.TrimSpace(b)), 64)
+		return f
+	}
 
 	opts := IndexOptions{
 		RepoID:   sf.id(name),
@@ -455,6 +460,8 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 		Public:   !exists("SG_PRIVATE"),
 		Fork:     exists("SG_FORK"),
 		Archived: exists("SG_ARCHIVED"),
+
+		Priority: float("SG_PRIORITY"),
 	}
 
 	cmd := exec.Command("git", "rev-parse", "HEAD")
