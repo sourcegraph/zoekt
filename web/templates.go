@@ -241,7 +241,7 @@ document.onkeydown=function(e){
         {{range .Matches}}
         <tr>
           <td style="background-color: rgba(238, 238, 255, 0.6);">
-            <pre class="inline-pre"><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 .Post}}{{end}} {{if $showScoreDebug}}<i>(score:{{.Score}})</i>{{end}}</pre>
+            <pre class="inline-pre"><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 .Post}}{{end}} {{if $showScoreDebug}}<i>(score:{{.Score}} <-- {{.ScoreDebug}})</i>{{end}}</pre>
           </td>
         </tr>
         {{end}}
