@@ -299,23 +299,36 @@ func (d *indexData) String() string {
 func (d *indexData) memoryUse() int {
 	sz := 0
 	for _, a := range [][]uint32{
-		d.newlinesIndex, d.docSectionsIndex,
-		d.boundaries, d.fileNameIndex,
-		d.fileEndRunes, d.fileNameEndRunes,
-		d.fileEndSymbol, d.symbols.symKindIndex,
+		d.symbols.symKindIndex,
+		d.newlinesIndex,
+		d.docSectionsIndex,
+		d.boundaries,
+		d.fileEndRunes,
+		d.fileNameIndex,
+		d.fileEndSymbol,
+		d.fileNameEndRunes,
 		d.subRepos,
 	} {
 		sz += 4 * len(a)
 	}
-	sz += d.runeOffsets.sizeBytes()
-	sz += d.fileNameRuneOffsets.sizeBytes()
-	sz += len(d.languages)
-	sz += len(d.checksums)
-	sz += 2 * len(d.repos)
-	sz += 8 * len(d.runeDocSections)
-	sz += 8 * len(d.fileBranchMasks)
+
+	// All []byte fields are mmap-ed.
+
 	sz += d.ngrams.SizeBytes()
+	sz += 8 * len(d.runeDocSections)
+	sz += d.runeOffsets.sizeBytes()
 	sz += 12 * len(d.fileNameNgrams) // these slices reference mmap-ed memory
+	sz += d.fileNameRuneOffsets.sizeBytes()
+	sz += 8 * len(d.fileBranchMasks)
+	// branchNames
+	// branchIDs
+	// repoMetaData
+	// subRepoPaths
+	// repoListEntry
+	sz += 2 * len(d.repos)
+	sz += len(d.rawConfigMasks)
+	// bloomContents
+	// bloomNames
 	return sz
 }
 
