@@ -124,7 +124,9 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 				FileName: f.FileName,
 				LineNum:  m.LineNumber,
 				URL:      fMatch.URL + fragment,
-				Score:    m.Score,
+
+				Score:      m.Score,
+				ScoreDebug: m.DebugScore,
 			}
 
 			md.Before = string(m.Before)

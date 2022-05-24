@@ -73,7 +73,8 @@ type Match struct {
 	After     string `json:",omitempty"`
 
 	// Don't expose to caller of JSON API
-	Score float64 `json:"-"`
+	Score      float64 `json:"-"`
+	ScoreDebug string  `json:"-"`
 }
 
 // Fragment holds data of a single contiguous match within in a line
