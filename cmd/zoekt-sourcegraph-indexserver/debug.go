@@ -102,8 +102,9 @@ func debugMerge() *ffcli.Command {
 
 func debugList() *ffcli.Command {
 	fs := flag.NewFlagSet("debug list", flag.ExitOnError)
-	conf := rootConfig{}
-	conf.registerRootFlags(fs)
+
+	hostname := fs.String("hostname", "localhost", "the hostname of the zoekt-sourcegraph-indexserver instance to connect to")
+	listen := fs.String("listen", ":6072", "indexserver is listening on this port")
 
 	excludeIndexed := fs.Bool("exclude_indexed", false, "Do not send the current index to Sourcegraph. When set the repositories listed will not include transient repositories. Transient repositories are currently indexed on this replica, but will be moved to another.")
 
@@ -113,34 +114,27 @@ func debugList() *ffcli.Command {
 		ShortHelp:  "list the repositories that are OWNED by this indexserver",
 		FlagSet:    fs,
 		Exec: func(ctx context.Context, args []string) error {
-			s, err := newServer(conf)
+			u, err := url.Parse(fmt.Sprintf("http://%s%s/debug/list", *hostname, *listen))
 			if err != nil {
 				return err
 			}
 
-			var indexed []uint32
-			if !*excludeIndexed {
-				indexed = listIndexed(s.IndexDir)
+			if *excludeIndexed {
+				values := u.Query()
+				values.Set("indexed", "false")
+				u.RawQuery = values.Encode()
 			}
 
-			repos, err := s.Sourcegraph.List(context.Background(), indexed)
-			if err != nil {
-				return err
-			}
-
-			for _, r := range repos.IDs {
-				fmt.Println(r)
-			}
-
-			return nil
+			return get(u)
 		},
 	}
 }
 
 func debugListIndexed() *ffcli.Command {
 	fs := flag.NewFlagSet("debug list-indexed", flag.ExitOnError)
-	conf := rootConfig{}
-	conf.registerRootFlags(fs)
+
+	hostname := fs.String("hostname", "localhost", "the hostname of the zoekt-sourcegraph-indexserver instance to connect to")
+	listen := fs.String("listen", ":6072", "indexserver is listening on this port")
 
 	return &ffcli.Command{
 		Name:       "list-indexed",
@@ -148,15 +142,11 @@ func debugListIndexed() *ffcli.Command {
 		ShortHelp:  "list the repositories that are INDEXED by this indexserver",
 		FlagSet:    fs,
 		Exec: func(ctx context.Context, args []string) error {
-			s, err := newServer(conf)
+			u, err := url.Parse(fmt.Sprintf("http://%s%s/debug/indexed", *hostname, *listen))
 			if err != nil {
 				return err
 			}
-			indexed := listIndexed(s.IndexDir)
-			for _, r := range indexed {
-				fmt.Println(r)
-			}
-			return nil
+			return get(u)
 		},
 	}
 }
@@ -183,7 +173,7 @@ COLUMN HEADERS
 	fs := flag.NewFlagSet("debug queue", flag.ExitOnError)
 
 	hostname := fs.String("hostname", "localhost", "the hostname of the zoekt-sourcegraph-indexserver instance to connect to")
-	port := fs.Uint("port", 6072, "the port of the zoekt-sourcegraph-indexserver instance to connect to")
+	listen := fs.String("listen", ":6072", "indexserver is listening on this port")
 
 	return &ffcli.Command{
 		Name:       "queue",
@@ -192,34 +182,36 @@ COLUMN HEADERS
 		LongHelp:   longHelp,
 		FlagSet:    fs,
 		Exec: func(ctx context.Context, args []string) error {
-
-			raw := fmt.Sprintf("http://%s:%d/debug/queue", *hostname, *port)
-			address, err := url.Parse(raw)
-			if err != nil {
-				return fmt.Errorf("parsing URL %q: %s", raw, err)
-			}
-
-			request, err := http.NewRequestWithContext(ctx, http.MethodGet, address.String(), nil)
-			if err != nil {
-				return fmt.Errorf("constructing request: %w", err)
-			}
-
-			request.Header.Set("Accept", "text/plain")
-			response, err := http.DefaultClient.Do(request)
+			u, err := url.Parse(fmt.Sprintf("http://%s%s/debug/queue", *hostname, *listen))
 			if err != nil {
 				return err
 			}
 
-			defer response.Body.Close()
-
-			_, err = io.Copy(os.Stdout, response.Body)
-			if err != nil {
-				return fmt.Errorf("writing to stdout: %w", err)
-			}
-
-			return nil
+			return get(u)
 		},
 	}
+}
+
+func get(u *url.URL) error {
+	request, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("constructing request: %w", err)
+	}
+
+	request.Header.Set("Accept", "text/plain")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+
+	defer response.Body.Close()
+
+	_, err = io.Copy(os.Stdout, response.Body)
+	if err != nil {
+		return fmt.Errorf("writing to stdout: %w", err)
+	}
+
+	return nil
 }
 
 func debugCmd() *ffcli.Command {
