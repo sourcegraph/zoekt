@@ -178,23 +178,8 @@ func (d *indexData) getLanguage(idx uint32) uint16 {
 
 // calculates stats for files in the range [start, end).
 func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoStats {
-	if start >= end {
-		return RepoStats{
-			IndexBytes: int64(d.memoryUse()),
-			Shards:     1,
-		}
-	}
-
-	var last uint32
-	if len(d.boundaries) > int(end) {
-		last += d.boundaries[end]
-	}
-
-	lastFN := last
-	if len(d.fileNameIndex) > int(end) {
-		lastFN = d.fileNameIndex[end]
-	}
-
+	bytesContent := d.boundaries[end] - d.boundaries[start]
+	bytesFN := d.fileNameIndex[end] - d.fileNameIndex[start]
 	count, defaultCount, otherCount := d.calculateNewLinesStats(start, end)
 
 	// CR keegan for stefan: I think we may want to restructure RepoListEntry so
@@ -204,7 +189,7 @@ func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoStats {
 	// after aggregation. For now I will move forward with this until we can
 	// chat more.
 	return RepoStats{
-		ContentBytes: int64(int(last) + int(lastFN)),
+		ContentBytes: int64(bytesContent) + int64(bytesFN),
 		Documents:    int(end - start),
 		// CR keegan for stefan: our shard count is going to go out of whack,
 		// since we will aggregate these. So we will report more shards than are
@@ -221,22 +206,32 @@ func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoStats {
 func (d *indexData) calculateStats() error {
 	d.repoListEntry = make([]RepoListEntry, 0, len(d.repoMetaData))
 	var start, end uint32
+
 	for repoID, md := range d.repoMetaData {
+		if start < uint32(len(d.repos)) && d.repos[start] != uint16(repoID) {
+			return fmt.Errorf("shard documents out of order with respect to repositories: expected document %d to be part of repo %d", start, repoID)
+		}
 		// determine the file range for repo i
 		for end < uint32(len(d.repos)) && d.repos[end] == uint16(repoID) {
 			end++
 		}
-
-		if start < end && d.repos[start] != uint16(repoID) {
-			return fmt.Errorf("shard documents out of order with respect to repositories: expected document %d to be part of repo %d", start, repoID)
+		if start < uint32(len(d.repos)) {
+			d.repoListEntry = append(d.repoListEntry, RepoListEntry{
+				Repository:    md,
+				IndexMetadata: d.metaData,
+				Stats:         d.calculateStatsForFileRange(start, end),
+			})
 		}
-
-		d.repoListEntry = append(d.repoListEntry, RepoListEntry{
-			Repository:    md,
-			IndexMetadata: d.metaData,
-			Stats:         d.calculateStatsForFileRange(start, end),
-		})
 		start = end
+	}
+
+	// An empty shard for an empty repository.
+	if len(d.repos) == 0 && len(d.repoMetaData) == 1 {
+		d.repoListEntry = append(d.repoListEntry, RepoListEntry{
+			Repository:    d.repoMetaData[0],
+			IndexMetadata: d.metaData,
+			Stats:         RepoStats{Shards: 1},
+		})
 	}
 
 	// All repos in a compound shard share memoryUse. So we average out the
