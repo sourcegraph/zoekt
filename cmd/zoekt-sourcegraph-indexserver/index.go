@@ -173,9 +173,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	if err != nil {
 		return err
 	}
-	// We intentionally leave behind gitdir if indexing failed so we can
-	// investigate. This is only during the experimental phase of indexing a
-	// clone. So don't defer os.RemoveAll here
+	defer os.RemoveAll(gitDir) // best-effort cleanup
 
 	// Create a repo to fetch into
 	cmd := exec.CommandContext(ctx, "git",
@@ -346,11 +344,6 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	cmd.Stdin = &bytes.Buffer{}
 	if err := runCmd(cmd); err != nil {
 		return err
-	}
-
-	// Do not return error, since we have successfully indexed. Just log it
-	if err := os.RemoveAll(gitDir); err != nil {
-		log.Printf("WARN: failed to cleanup %s after successfully indexing %s: %v", gitDir, o.String(), err)
 	}
 
 	return nil

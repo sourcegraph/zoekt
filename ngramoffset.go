@@ -18,7 +18,7 @@ import (
 	"sort"
 )
 
-// shrinkUint32Slice copies slices with excess capacity to precisely seized ones
+// shrinkUint32Slice copies slices with excess capacity to precisely sized ones
 // to avoid wasting memory. It should be used on slices with long static durations.
 func shrinkUint32Slice(a []uint32) []uint32 {
 	if cap(a)-len(a) < 32 {

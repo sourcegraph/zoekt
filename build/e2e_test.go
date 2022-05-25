@@ -32,10 +32,11 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/grafana/regexp"
+
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/query"
 	"github.com/google/zoekt/shards"
-	"github.com/grafana/regexp"
 )
 
 func TestBasic(t *testing.T) {
@@ -842,6 +843,27 @@ public class HelloWorld
 			wantLanguage: "Java",
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 50 (partial word) + 400 (atom) + 10 (file order)
 			wantScore: 6960,
+		},
+		{
+			fileName:     "a/b/c/config.go",
+			query:        &query.Substring{FileName: true, Pattern: "config"},
+			wantLanguage: "Go",
+			// 5500 (partial base at boundary) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 6410,
+		},
+		{
+			fileName:     "a/b/c/config.go",
+			query:        &query.Substring{FileName: true, Pattern: "config.go"},
+			wantLanguage: "Go",
+			// 7000 (full base match) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 7910,
+		},
+		{
+			fileName:     "a/config/c/d.go",
+			query:        &query.Substring{FileName: true, Pattern: "config"},
+			wantLanguage: "Go",
+			// 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 910,
 		},
 	}
 

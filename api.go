@@ -89,7 +89,9 @@ type LineMatch struct {
 
 	// The higher the better. Only ranks the quality of the match
 	// within the file, does not take rank of file into account
-	Score         float64
+	Score      float64
+	DebugScore string
+
 	LineFragments []LineFragmentMatch
 }
 

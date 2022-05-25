@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"go.uber.org/zap"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -26,6 +27,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/keegancsmith/tmpfriend"
@@ -572,18 +574,25 @@ func createEmptyShard(args *indexArgs) error {
 	return builder.Finish()
 }
 
-func (s *Server) AddHandlers(mux *http.ServeMux) {
-	mux.Handle("/", http.HandlerFunc(s.handleHTTPRoot))
+// addDebugHandlers adds handlers specific to indexserver.
+func (s *Server) addDebugHandlers(mux *http.ServeMux) {
+	// Sourcegraph's site admin view requires indexserver to serve it's admin view
+	// on "/".
+	mux.Handle("/", http.HandlerFunc(s.handleReIndex))
+
+	mux.Handle("/debug/indexed", http.HandlerFunc(s.handleDebugIndexed))
+	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
 	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
 }
 
 var repoTmpl = template.Must(template.New("name").Parse(`
 <html><body>
+<a href="debug">Debug</a><br>
 <a href="debug/requests">Traces</a><br>
 {{.IndexMsg}}<br />
 <br />
 <h3>Re-index repository</h3>
-<form action="/" method="post">
+<form action="." method="post">
 {{range .Repos}}
 <button type="submit" name="repo" value="{{ .ID }}" />{{ .Name }}</button><br />
 {{end}}
@@ -591,7 +600,7 @@ var repoTmpl = template.Must(template.New("name").Parse(`
 </body></html>
 `))
 
-func (s *Server) handleHTTPRoot(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleReIndex(w http.ResponseWriter, r *http.Request) {
 	type Repo struct {
 		ID   uint32
 		Name string
@@ -618,6 +627,114 @@ func (s *Server) handleHTTPRoot(w http.ResponseWriter, r *http.Request) {
 	})
 
 	_ = repoTmpl.Execute(w, data)
+}
+
+func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
+	withIndexed := true
+	if b, err := strconv.ParseBool(r.URL.Query().Get("indexed")); err == nil {
+		withIndexed = b
+	}
+
+	var indexed []uint32
+	if withIndexed {
+		indexed = listIndexed(s.IndexDir)
+	}
+
+	repos, err := s.Sourcegraph.List(r.Context(), indexed)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	bw := bytes.Buffer{}
+
+	tw := tabwriter.NewWriter(&bw, 16, 8, 4, ' ', 0)
+
+	_, err = fmt.Fprintf(tw, "ID\tName\n")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.queue.mu.Lock()
+	name := ""
+	for _, id := range repos.IDs {
+		if item := s.queue.get(id); item != nil {
+			name = item.opts.Name
+		} else {
+			name = ""
+		}
+		_, err = fmt.Fprintf(tw, "%d\t%s\n", id, name)
+		if err != nil {
+			debug.Printf("handleDebugList: %s\n", err.Error())
+		}
+	}
+	s.queue.mu.Unlock()
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = tw.Flush()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("flushing tabwriter: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(bw.Len()))
+
+	if _, err := io.Copy(w, &bw); err != nil {
+		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
+	indexed := listIndexed(s.IndexDir)
+
+	bw := bytes.Buffer{}
+
+	tw := tabwriter.NewWriter(&bw, 16, 8, 4, ' ', 0)
+
+	_, err := fmt.Fprintf(tw, "ID\tName\n")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("writing column headers: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.queue.mu.Lock()
+	name := ""
+	for _, id := range indexed {
+		if item := s.queue.get(id); item != nil {
+			name = item.opts.Name
+		} else {
+			name = ""
+		}
+		_, err = fmt.Fprintf(tw, "%d\t%s\n", id, name)
+		if err != nil {
+			debug.Printf("handleDebugIndexed: %s\n", err.Error())
+		}
+	}
+	s.queue.mu.Unlock()
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = tw.Flush()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("flushing tabwriter: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(bw.Len()))
+
+	if _, err := io.Copy(w, &bw); err != nil {
+		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 // forceIndex will run the index job for repo name now. It will return always
@@ -867,12 +984,23 @@ func startServer(conf rootConfig) error {
 	if conf.listen != "" {
 		go func() {
 			mux := http.NewServeMux()
-			debugserver.AddHandlers(mux, true)
-			s.AddHandlers(mux)
+			debugserver.AddHandlers(mux, true, []debugserver.DebugPage{
+				{Href: "debug/indexed", Text: "Indexed"},
+				{Href: "debug/list?indexed=true", Text: "Assigned (all)", Description: "includes repositories which this instance temporarily holds during re-balancing"},
+				{Href: "debug/list?indexed=false", Text: "Assigned (this instance)"},
+				{Href: "debug/queue", Text: "Queue"},
+			}...)
+			s.addDebugHandlers(mux)
 			debug.Printf("serving HTTP on %s", conf.listen)
 			log.Fatal(http.ListenAndServe(conf.listen, mux))
 		}()
 	}
+
+	oc := &ownerChecker{
+		Path:     filepath.Join(conf.index, "owner.txt"),
+		Hostname: conf.hostname,
+	}
+	go oc.Run()
 
 	s.Run()
 	return nil

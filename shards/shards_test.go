@@ -924,8 +924,8 @@ func TestAtomCountScore(t *testing.T) {
 	b := testIndexBuilder(t,
 		&zoekt.Repository{
 			Branches: []zoekt.RepositoryBranch{
-				{"branches", "v1"},
-				{"needle", "v2"},
+				{Name: "branches", Version: "v1"},
+				{Name: "needle", Version: "v2"},
 			},
 		},
 		zoekt.Document{Name: "f1", Content: []byte("needle the bla"), Branches: []string{"branches"}},

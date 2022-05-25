@@ -93,7 +93,7 @@ func (q *Queue) Len() int {
 // queue, it is updated.
 func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Lock()
-	item := q.get(opts.RepoID)
+	item := q.getOrAdd(opts.RepoID)
 	if !reflect.DeepEqual(item.opts, opts) {
 		item.indexed = false
 		item.opts = opts
@@ -247,7 +247,7 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 // SetIndexed sets what the currently indexed options are for opts.RepoID.
 func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Lock()
-	item := q.get(opts.RepoID)
+	item := q.getOrAdd(opts.RepoID)
 
 	item.indexState = state
 	if state != indexStateFail {
@@ -312,11 +312,11 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) uint {
 	return count
 }
 
-// get returns the item for repoID. If the repoID hasn't been seen before, it
+// getOrAdd returns the item for repoID. If the repoID hasn't been seen before, it
 // is added to q.items.
 //
-// Note: get requires that q.mu is held.
-func (q *Queue) get(repoID uint32) *queueItem {
+// Note: getOrAdd requires that q.mu is held.
+func (q *Queue) getOrAdd(repoID uint32) *queueItem {
 	if q.items == nil {
 		q.init()
 	}
@@ -331,6 +331,13 @@ func (q *Queue) get(repoID uint32) *queueItem {
 	}
 
 	return item
+}
+
+// get returns the item for repoID.
+//
+// Note: get requires that q.mu is held.
+func (q *Queue) get(repoID uint32) *queueItem {
+	return q.items[repoID]
 }
 
 func (q *Queue) init() {
