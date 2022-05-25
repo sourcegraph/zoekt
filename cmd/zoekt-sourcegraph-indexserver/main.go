@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go.uber.org/zap"
 	"html/template"
 	"io/ioutil"
 	"log"
@@ -41,6 +42,7 @@ import (
 )
 
 var (
+	logger                         *zap.Logger
 	metricResolveRevisionsDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "resolve_revisions_seconds",
 		Help:    "A histogram of latencies for resolving all repository revisions.",
@@ -392,6 +394,10 @@ func (s *Server) Run() {
 		switch state {
 		case indexStateSuccess:
 			log.Printf("updated index %s in %v", args.String(), elapsed)
+			logger.Info("updated index",
+				zap.String("index", args.String()),
+				zap.Int64("description", elapsed.Milliseconds()),
+			)
 		case indexStateSuccessMeta:
 			log.Printf("updated meta %s in %v", args.String(), elapsed)
 		}
@@ -976,7 +982,19 @@ func newServer(conf rootConfig) (*Server, error) {
 }
 
 func main() {
-	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
+	var err error
+	logger, err = zap.NewProduction()
+	if srcLogLevelIsDebug() {
+		logger, err = zap.NewDevelopment()
+	} else {
+		logger, err = zap.NewProduction()
+	}
+
+	if err != nil {
+		log.Fatalf("initializing zap logger: %s", err)
+	}
+
+	if err = rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
 }

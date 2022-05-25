@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	"go.uber.org/zap"
 )
 
 // indexTimeout defines how long the indexserver waits before
@@ -273,7 +274,13 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 
 	debug.Printf("successfully fetched git data for %q (%d commit(s)) in %s", o.Name, successfullyFetchedCommitsCount, fetchDuration)
-
+	// Structured Logging
+	logger.Info("successfully fetched git data",
+		zap.String("name", o.Name),
+		zap.Uint32("id", o.RepoID),
+		zap.Int("commits_count", successfullyFetchedCommitsCount),
+		zap.Int64("fetch_duration", fetchDuration.Milliseconds()), // GL fetchDuration.Seconds ? milliseconds?
+	)
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
 		ref := b.Name
