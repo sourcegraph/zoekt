@@ -397,8 +397,11 @@ func (s *Server) Run() {
 		case indexStateSuccess:
 			log.Printf("updated index %s in %v", args.String(), elapsed)
 			logger.Info("updated index",
-				zap.String("index", args.String()),
-				zap.Int64("description", elapsed.Milliseconds()),
+				zap.String("repo", args.Name),
+				zap.Uint32("id", args.RepoID),
+				zap.Strings("branches", args.BranchesStrings()),
+				zap.Int64("duration_ms", elapsed.Milliseconds()),
+				zap.String("duration_str", elapsed.String()),
 			)
 		case indexStateSuccessMeta:
 			log.Printf("updated meta %s in %v", args.String(), elapsed)

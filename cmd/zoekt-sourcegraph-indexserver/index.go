@@ -136,6 +136,14 @@ func (o *indexArgs) String() string {
 	return s
 }
 
+func (o *indexArgs) BranchesStrings() []string {
+	var branches []string
+	for _, b := range o.Branches {
+		branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
+	}
+	return branches
+}
+
 type gitIndexConfig struct {
 	// runCmd is the function that's used to execute all external commands (such as calls to "git" or "zoekt-git-index")
 	// that gitIndex may construct.
@@ -272,12 +280,13 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 
 	debug.Printf("successfully fetched git data for %q (%d commit(s)) in %s", o.Name, successfullyFetchedCommitsCount, fetchDuration)
-	// Structured Logging
+
 	logger.Info("successfully fetched git data",
 		zap.String("name", o.Name),
 		zap.Uint32("id", o.RepoID),
 		zap.Int("commits_count", successfullyFetchedCommitsCount),
-		zap.Int64("fetch_duration", fetchDuration.Milliseconds()), // GL fetchDuration.Seconds ? milliseconds?
+		zap.Int64("duration_ms", fetchDuration.Milliseconds()),
+		zap.String("duration_str", fetchDuration.String()),
 	)
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
