@@ -275,7 +275,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 
 	logger.Info("successfully fetched git data",
 		zap.String("name", o.Name),
-		zap.Uint32("id", o.RepoID),
+		zap.Uint32("repoid", o.RepoID),
 		zap.Int("commits_count", successfullyFetchedCommitsCount),
 		zap.Int64("duration_ms", fetchDuration.Milliseconds()),
 		zap.String("duration_str", fetchDuration.String()),
