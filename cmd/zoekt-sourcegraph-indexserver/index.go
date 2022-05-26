@@ -125,15 +125,7 @@ func marshalBool(b bool) string {
 }
 
 func (o *indexArgs) String() string {
-	s := fmt.Sprintf("%d %s", o.RepoID, o.Name)
-	for i, b := range o.Branches {
-		if i == 0 {
-			s = fmt.Sprintf("%s@%s=%s", s, b.Name, b.Version)
-		} else {
-			s = fmt.Sprintf("%s,%s=%s", s, b.Name, b.Version)
-		}
-	}
-	return s
+	return fmt.Sprintf("%d %s@%s", o.RepoID, o.Name, strings.Join(o.BranchesStrings(), ","))
 }
 
 func (o *indexArgs) BranchesStrings() []string {
