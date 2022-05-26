@@ -44,7 +44,7 @@ import (
 )
 
 var (
-	logger                         *zap.Logger
+	logger                         = initializeZapLogger()
 	metricResolveRevisionsDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "resolve_revisions_seconds",
 		Help:    "A histogram of latencies for resolving all repository revisions.",
@@ -1112,20 +1112,25 @@ func newServer(conf rootConfig) (*Server, error) {
 	}, err
 }
 
-func main() {
+func initializeZapLogger() *zap.Logger {
 	var err error
-	logger, err = zap.NewProduction()
+	var newLogger *zap.Logger
+
 	if srcLogLevelIsDebug() {
-		logger, err = zap.NewDevelopment()
+		newLogger, err = zap.NewDevelopment()
 	} else {
-		logger, err = zap.NewProduction()
+		newLogger, err = zap.NewProduction()
 	}
 
 	if err != nil {
 		log.Fatalf("initializing zap logger: %s", err)
 	}
 
-	if err = rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
+	return newLogger
+}
+
+func main() {
+	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
 }
