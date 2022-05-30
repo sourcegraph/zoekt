@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,14 +36,10 @@ import (
 )
 
 func TestIndexEmptyRepo(t *testing.T) {
-	tmp, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir %v", err)
-	}
-	defer os.RemoveAll(tmp)
+	dir := t.TempDir()
 
 	cmd := exec.Command("git", "init", "-b", "master", "repo")
-	cmd.Dir = tmp
+	cmd.Dir = dir
 
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("cmd.Run: %v", err)
@@ -54,10 +49,10 @@ func TestIndexEmptyRepo(t *testing.T) {
 		Name: "repo",
 	}
 	opts := Options{
-		RepoDir: filepath.Join(tmp, "repo", ".git"),
+		RepoDir: filepath.Join(dir, "repo", ".git"),
 		BuildOptions: build.Options{
 			RepositoryDescription: desc,
-			IndexDir:              tmp,
+			IndexDir:              dir,
 		},
 	}
 

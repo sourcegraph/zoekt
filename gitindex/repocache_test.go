@@ -15,9 +15,7 @@
 package gitindex
 
 import (
-	"io/ioutil"
 	"net/url"
-	"os"
 	"reflect"
 	"sort"
 	"testing"
@@ -36,12 +34,9 @@ func TestListReposNonExistent(t *testing.T) {
 }
 
 func TestListRepos(t *testing.T) {
-	tmp, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir %v", err)
-	}
-	defer os.RemoveAll(tmp)
-	if err := createSubmoduleRepo(tmp); err != nil {
+	dir := t.TempDir()
+
+	if err := createSubmoduleRepo(dir); err != nil {
 		t.Fatalf("createSubmoduleRepo %v", err)
 	}
 
@@ -49,7 +44,7 @@ func TestListRepos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("url.Parse: %v", err)
 	}
-	rs, err := ListRepos(tmp, u)
+	rs, err := ListRepos(dir, u)
 	if err != nil {
 		t.Fatalf("ListRepos(%s): %v", u, err)
 	}
