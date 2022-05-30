@@ -43,7 +43,7 @@ func (a *tarArchive) Next() (*File, error) {
 		}
 
 		return &File{
-			ReadCloser: ioutil.NopCloser(a.tr),
+			ReadCloser: io.NopCloser(a.tr),
 			Name:       hdr.Name,
 			Size:       hdr.Size,
 		}, nil
@@ -147,7 +147,7 @@ func openReader(u string) (io.ReadCloser, error) {
 		}
 		return resp.Body, nil
 	} else if u == "-" {
-		return ioutil.NopCloser(os.Stdin), nil
+		return io.NopCloser(os.Stdin), nil
 	}
 
 	return os.Open(u)
