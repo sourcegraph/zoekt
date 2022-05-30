@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -270,7 +269,7 @@ func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		b, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
+		b, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		_ = resp.Body.Close()
 		if err != nil {
 			return nil, "", err

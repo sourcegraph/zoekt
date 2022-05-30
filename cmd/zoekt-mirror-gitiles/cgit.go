@@ -17,7 +17,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -41,7 +41,7 @@ func normalizedGet(u *url.URL) ([]byte, error) {
 		return nil, fmt.Errorf("status %s", rep.Status)
 	}
 
-	c, err := ioutil.ReadAll(rep.Body)
+	c, err := io.ReadAll(rep.Body)
 	if err != nil {
 		return nil, err
 	}

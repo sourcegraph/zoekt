@@ -19,7 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -240,7 +240,7 @@ func checkNeedles(t *testing.T, ts *httptest.Server, req string, needles []strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		log.Fatal(err)
@@ -617,7 +617,7 @@ func checkResultMatches(t *testing.T, ts *httptest.Server, req string, expected 
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		log.Fatal(err)
@@ -727,7 +727,7 @@ func TestCrash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -780,7 +780,7 @@ func TestHostCustomization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do(%v): %v", req, err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
@@ -830,7 +830,7 @@ func TestDupResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do(%v): %v", req, err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
@@ -879,7 +879,7 @@ func TestTruncateLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do(%v): %v", req, err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)

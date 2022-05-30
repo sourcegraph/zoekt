@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -54,7 +54,7 @@ func (rt *loggingRT) RoundTrip(req *http.Request) (rep *http.Response, err error
 		log.Println("Rep: ", rep, err)
 	}
 	if err == nil {
-		body, _ := ioutil.ReadAll(rep.Body)
+		body, _ := io.ReadAll(rep.Body)
 
 		rep.Body.Close()
 		if debug {

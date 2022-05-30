@@ -17,7 +17,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -79,7 +79,7 @@ func readConfigURL(u string) ([]ConfigEntry, error) {
 		}
 		defer rep.Body.Close()
 
-		body, readErr = ioutil.ReadAll(rep.Body)
+		body, readErr = io.ReadAll(rep.Body)
 	} else {
 		body, readErr = os.ReadFile(u)
 	}

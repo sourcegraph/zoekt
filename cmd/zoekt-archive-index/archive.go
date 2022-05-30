@@ -7,7 +7,6 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -134,7 +133,7 @@ func openReader(u string) (io.ReadCloser, error) {
 			return nil, err
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			b, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
+			b, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
 			_ = resp.Body.Close()
 			if err != nil {
 				return nil, err
