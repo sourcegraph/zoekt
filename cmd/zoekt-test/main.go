@@ -67,7 +67,7 @@ func readTree(dir string) (map[string][]byte, error) {
 }
 
 func compare(dir, patfile string, caseSensitive bool) error {
-	indexDir, err := ioutil.TempDir("", "")
+	indexDir, err := os.MkdirTemp("", "")
 	if err != nil {
 		return err
 	}

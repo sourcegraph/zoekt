@@ -32,7 +32,7 @@ func runCTags(bin string, inputs map[string][]byte) ([]*ctags.Entry, error) {
 	if len(inputs) == 0 {
 		return nil, nil
 	}
-	dir, err := ioutil.TempDir("", "ctags-input")
+	dir, err := os.MkdirTemp("", "ctags-input")
 	if err != nil {
 		return nil, err
 	}
