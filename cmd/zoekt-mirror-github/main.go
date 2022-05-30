@@ -22,7 +22,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -109,7 +108,7 @@ func main() {
 	}
 
 	if *token != "" {
-		content, err := ioutil.ReadFile(*token)
+		content, err := os.ReadFile(*token)
 		if err != nil {
 			log.Fatal(err)
 		}

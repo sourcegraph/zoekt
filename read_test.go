@@ -196,7 +196,7 @@ func TestReadSearch(t *testing.T) {
 		}
 
 		var want out
-		if buf, err := ioutil.ReadFile(golden); err != nil {
+		if buf, err := os.ReadFile(golden); err != nil {
 			t.Fatalf("failed reading search results for %s: %v", name, err)
 		} else if err := json.Unmarshal(buf, &want); err != nil {
 			t.Fatalf("failed unmarshalling search results for %s: %v", name, err)

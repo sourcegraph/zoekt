@@ -24,6 +24,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -91,7 +92,7 @@ func main() {
 	}
 
 	if *httpCrendentialsPath != "" {
-		creds, err := ioutil.ReadFile(*httpCrendentialsPath)
+		creds, err := os.ReadFile(*httpCrendentialsPath)
 		if err != nil {
 			log.Print("Cannot read gerrit http credentials, going Anonymous")
 		} else {
@@ -206,7 +207,7 @@ func deleteStaleRepos(destDir string, filter *gitindex.Filter, repos map[string]
 		if err != nil {
 			return err
 		}
-		names[filepath.Join(u.Host, u.Path) + ".git"] = struct{}{}
+		names[filepath.Join(u.Host, u.Path)+".git"] = struct{}{}
 	}
 
 	if err := gitindex.DeleteRepos(destDir, u, names, filter); err != nil {

@@ -21,7 +21,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -55,7 +54,7 @@ func readTree(dir string) (map[string][]byte, error) {
 
 	res := map[string][]byte{}
 	for _, n := range fns {
-		c, err := ioutil.ReadFile(n)
+		c, err := os.ReadFile(n)
 		if err != nil {
 			return nil, err
 		}

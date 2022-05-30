@@ -87,7 +87,7 @@ func loadTemplates(tpl *template.Template, dir string) error {
 
 	log.Printf("loading templates: %v", fs)
 	for _, fn := range fs {
-		content, err := ioutil.ReadFile(fn)
+		content, err := os.ReadFile(fn)
 		if err != nil {
 			return err
 		}

@@ -81,7 +81,7 @@ func readConfigURL(u string) ([]ConfigEntry, error) {
 
 		body, readErr = ioutil.ReadAll(rep.Body)
 	} else {
-		body, readErr = ioutil.ReadFile(u)
+		body, readErr = os.ReadFile(u)
 	}
 
 	if readErr != nil {

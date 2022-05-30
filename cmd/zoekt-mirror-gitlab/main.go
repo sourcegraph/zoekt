@@ -21,13 +21,11 @@
 //   machine gitlab.com
 //   login oauth
 //   password <personal access token>
-//
 package main
 
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -68,7 +66,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	content, err := ioutil.ReadFile(*token)
+	content, err := os.ReadFile(*token)
 	if err != nil {
 		log.Fatal(err)
 	}
