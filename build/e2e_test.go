@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -134,7 +133,7 @@ func TestBasic(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if err := ioutil.WriteFile(p+".meta", b, 0600); err != nil {
+				if err := os.WriteFile(p+".meta", b, 0600); err != nil {
 					t.Fatal(err)
 				}
 			}

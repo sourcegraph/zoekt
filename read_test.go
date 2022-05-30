@@ -21,7 +21,6 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -189,7 +188,7 @@ func TestReadSearch(t *testing.T) {
 			if raw, err := json.MarshalIndent(got, "", "  "); err != nil {
 				t.Errorf("failed marshalling search results for %s during updating: %v", name, err)
 				continue
-			} else if err := ioutil.WriteFile(golden, raw, 0644); err != nil {
+			} else if err := os.WriteFile(golden, raw, 0644); err != nil {
 				t.Errorf("failed writing search results for %s during updating: %v", name, err)
 				continue
 			}
