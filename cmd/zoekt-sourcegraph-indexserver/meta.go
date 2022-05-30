@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -89,7 +88,7 @@ func jsonMarshalTmpFile(v interface{}, p string) (_ string, err error) {
 		return "", err
 	}
 
-	f, err := ioutil.TempFile(filepath.Dir(p), filepath.Base(p)+".*.tmp")
+	f, err := os.CreateTemp(filepath.Dir(p), filepath.Base(p)+".*.tmp")
 	if err != nil {
 		return "", err
 	}

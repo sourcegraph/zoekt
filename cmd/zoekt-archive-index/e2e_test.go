@@ -98,7 +98,7 @@ func TestIndexIncrementally(t *testing.T) {
 func testIndexIncrementally(t *testing.T, format string) {
 	indexDir := t.TempDir()
 
-	archive, err := ioutil.TempFile("", "TestIndexArg-archive")
+	archive, err := os.CreateTemp("", "TestIndexArg-archive")
 	if err != nil {
 		t.Fatalf("TempFile: %v", err)
 	}
