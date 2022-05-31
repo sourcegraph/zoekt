@@ -417,9 +417,7 @@ func TestFileCase(t *testing.T) {
 func TestFileRegexpSearchBruteForce(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "banzana", Content: []byte("x orange y")},
-		// -------------0123456
 		Document{Name: "banana", Content: []byte("x apple y")},
-		// -------------012345
 	)
 	sres := searchForTest(t, b, &query.Regexp{
 		Regexp:   mustParseRE("[qn][zx]"),
