@@ -114,11 +114,7 @@ func TestCleanup(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "TestCleanup")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer os.RemoveAll(dir)
+			dir := t.TempDir()
 
 			// Create index files
 			var fs []shard
@@ -221,11 +217,7 @@ func TestRemoveIncompleteShards(t *testing.T) {
 	}
 	sort.Strings(shards)
 
-	dir, err := ioutil.TempDir("", "TestRemoveIncompleteShards")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	for _, shard := range append(shards, incomplete...) {
 		_, err := os.Create(filepath.Join(dir, shard))

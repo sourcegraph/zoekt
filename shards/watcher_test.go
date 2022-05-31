@@ -47,11 +47,7 @@ func advanceFS() {
 }
 
 func TestDirWatcherUnloadOnce(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	logger := &loggingLoader{
 		loads: make(chan string, 10),
@@ -114,10 +110,7 @@ func TestDirWatcherUnloadOnce(t *testing.T) {
 }
 
 func TestDirWatcherLoadEmpty(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := t.TempDir()
 
 	logger := &loggingLoader{
 		loads: make(chan string, 10),
@@ -178,10 +171,7 @@ func TestVersionFromPath(t *testing.T) {
 }
 
 func TestDirWatcherLoadLatest(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := t.TempDir()
 
 	logger := &loggingLoader{
 		loads: make(chan string, 10),
