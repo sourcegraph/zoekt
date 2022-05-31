@@ -125,7 +125,7 @@ func TestBasic(t *testing.T) {
 		Document{
 			Name:    "f2",
 			Content: []byte("to carry water in the no later bla"),
-			// ------------- 0123456789012345678901234567890123456789
+			// --------------0123456789012345678901234567890123
 		})
 
 	res := searchForTest(t, b, &query.Substring{
@@ -182,6 +182,7 @@ func (s *memSeeker) Size() (uint32, error) {
 func TestNewlines(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "filename", Content: []byte("line1\nline2\nbla")})
+	// -------------------------------------------------012345-678901-234
 
 	sres := searchForTest(t, b, &query.Substring{Pattern: "ne2"})
 
@@ -257,7 +258,7 @@ func searcherForTest(t *testing.T, b *IndexBuilder) Searcher {
 func TestCaseFold(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("I love BaNaNAS.")},
-		// ---------- 012345678901234567890123456
+		// -----------------------------------012345678901234
 	)
 	sres := searchForTest(t, b, &query.Substring{
 		Pattern:       "bananas",
@@ -285,8 +286,9 @@ func TestAndSearch(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("x banana y")},
 		Document{Name: "f2", Content: []byte("x apple y")},
-		Document{Name: "f3", Content: []byte("x banana apple y")})
-	// -------------------------------------0123456789012345
+		Document{Name: "f3", Content: []byte("x banana apple y")},
+	// -------------------------------------------0123456789012345
+	)
 	sres := searchForTest(t, b, query.NewAnd(
 		&query.Substring{
 			Pattern: "banana",
@@ -322,8 +324,8 @@ func TestAndSearch(t *testing.T) {
 func TestAndNegateSearch(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("x banana y")},
+		// -----------------------------------0123456789
 		Document{Name: "f4", Content: []byte("x banana apple y")})
-	// -------------------------------------0123456789012345
 	sres := searchForTest(t, b, query.NewAnd(
 		&query.Substring{
 			Pattern: "banana",
@@ -341,7 +343,7 @@ func TestAndNegateSearch(t *testing.T) {
 		t.Fatalf("got match %#v, want FileName: f1", matches[0])
 	}
 	if matches[0].LineMatches[0].LineFragments[0].Offset != 2 {
-		t.Fatalf("got %v, want offsets 2,9", matches)
+		t.Fatalf("got %v, want offset 2", matches)
 	}
 }
 
@@ -370,7 +372,7 @@ func TestFileSearch(t *testing.T) {
 		Document{Name: "banzana", Content: []byte("x orange y")},
 		// -------------0123456
 		Document{Name: "banana", Content: []byte("x apple y")},
-		// -------------789012
+		// -------------012345
 	)
 	sres := searchForTest(t, b, &query.Substring{
 		Pattern:  "anan",
@@ -415,8 +417,8 @@ func TestFileCase(t *testing.T) {
 func TestFileRegexpSearchBruteForce(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "banzana", Content: []byte("x orange y")},
-		// ----------------------------------------0123456879
-		Document{Name: "banana", Content: []byte("x apple y")})
+		Document{Name: "banana", Content: []byte("x apple y")},
+	)
 	sres := searchForTest(t, b, &query.Regexp{
 		Regexp:   mustParseRE("[qn][zx]"),
 		FileName: true,
@@ -477,7 +479,6 @@ func TestFileSubstringSearchBruteForceEnd(t *testing.T) {
 func TestSearchMatchAll(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "banzana", Content: []byte("x orange y")},
-		// ----------------------------------------0123456879
 		Document{Name: "banana", Content: []byte("x apple y")})
 	sres := searchForTest(t, b, &query.Const{Value: true})
 
@@ -503,7 +504,6 @@ func TestSearchNewline(t *testing.T) {
 func TestSearchMatchAllRegexp(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "banzana", Content: []byte("abcd")},
-		// ----------------------------------------0123456879
 		Document{Name: "banana", Content: []byte("pqrs")})
 	sres := searchForTest(t, b, &query.Regexp{Regexp: mustParseRE(".")})
 
@@ -517,12 +517,10 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 }
 
 func TestFileRestriction(t *testing.T) {
-
 	b := testIndexBuilder(t, nil,
 		Document{Name: "banana1", Content: []byte("x orange y")},
-		// ----------------------------------------0123456879
 		Document{Name: "banana2", Content: []byte("x apple y")},
-		Document{Name: "orange", Content: []byte("x apple y")})
+		Document{Name: "orange", Content: []byte("x apple z")})
 	sres := searchForTest(t, b, query.NewAnd(
 		&query.Substring{
 			Pattern:  "banana",
@@ -686,12 +684,13 @@ func mustParseRE(s string) *syntax.Regexp {
 
 func TestRegexp(t *testing.T) {
 	content := []byte("needle the bla")
+	// ----------------01234567890123
+
 	b := testIndexBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: content,
 		})
-	// ------------------------------01234567890123
 
 	sres := searchForTest(t, b,
 		&query.Regexp{
@@ -723,7 +722,6 @@ func TestRegexp(t *testing.T) {
 
 func TestRegexpFile(t *testing.T) {
 	content := []byte("needle the bla")
-	// ----------------01234567890123
 
 	name := "let's play: find the mussel"
 	b := testIndexBuilder(t, nil,
@@ -748,6 +746,7 @@ func TestRegexpFile(t *testing.T) {
 func TestRegexpOrder(t *testing.T) {
 	content := []byte("bla the needle")
 	// ----------------01234567890123
+
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
@@ -764,6 +763,7 @@ func TestRegexpOrder(t *testing.T) {
 func TestRepoName(t *testing.T) {
 	content := []byte("bla the needle")
 	// ----------------01234567890123
+
 	b := testIndexBuilder(t, &Repository{Name: "bla"},
 		Document{Name: "f1", Content: content})
 
@@ -1011,8 +1011,9 @@ func TestNegativeRepo(t *testing.T) {
 
 func TestListRepos(t *testing.T) {
 	content := []byte("bla the needle\n")
+	// ----------------012345678901234-
+
 	t.Run("default and minimal fallback", func(t *testing.T) {
-		// ----------------01234567890123
 		repo := &Repository{
 			Name:     "reponame",
 			Branches: []RepositoryBranch{{Name: "main"}, {Name: "dev"}},
@@ -1043,7 +1044,7 @@ func TestListRepos(t *testing.T) {
 						Repository: *repo,
 						Stats: RepoStats{
 							Documents:    4,
-							ContentBytes: 68,
+							ContentBytes: 68, // (15 bytes of content and 2 bytes of filename) x 4
 							Shards:       1,
 
 							NewLinesCount:              4,
@@ -1140,7 +1141,7 @@ func TestListRepos(t *testing.T) {
 
 func TestListReposByContent(t *testing.T) {
 	content := []byte("bla the needle")
-	// ----------------01234567890123
+
 	b := testIndexBuilder(t, &Repository{
 		Name: "reponame",
 	},
@@ -1171,7 +1172,7 @@ func TestListReposByContent(t *testing.T) {
 
 func TestMetadata(t *testing.T) {
 	content := []byte("bla the needle")
-	// ----------------01234567890123
+
 	b := testIndexBuilder(t, &Repository{
 		Name: "reponame",
 	}, Document{Name: "f1", Content: content},
@@ -1232,7 +1233,7 @@ func TestImportantCutoff(t *testing.T) {
 
 func TestFrequency(t *testing.T) {
 	content := []byte("sla _Py_HashDouble(double v sla las las shd dot dot")
-	// ----------------012345678901234
+
 	b := testIndexBuilder(t, nil,
 		Document{
 			Name:    "f1",
@@ -1252,7 +1253,7 @@ func TestMatchNewline(t *testing.T) {
 	}
 
 	content := []byte("pqr\nalex")
-	// ----------------0123 4567
+
 	b := testIndexBuilder(t, nil,
 		Document{
 			Name:    "f1",
@@ -1276,7 +1277,6 @@ func TestSubRepo(t *testing.T) {
 	}
 
 	content := []byte("pqr\nalex")
-	// ----------------0123 4567
 
 	b := testIndexBuilder(t, &Repository{
 		SubRepoMap: subRepos,
@@ -1324,7 +1324,7 @@ func TestSearchEither(t *testing.T) {
 func TestUnicodeExactMatch(t *testing.T) {
 	needle := "néédlÉ"
 	content := []byte("blá blá " + needle + " blâ")
-	// ----------------01234567    8
+
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
@@ -1336,6 +1336,7 @@ func TestUnicodeExactMatch(t *testing.T) {
 func TestUnicodeCoverContent(t *testing.T) {
 	needle := "néédlÉ"
 	content := []byte("blá blá " + needle + " blâ")
+
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
@@ -1355,9 +1356,8 @@ func TestUnicodeCoverContent(t *testing.T) {
 
 func TestUnicodeNonCoverContent(t *testing.T) {
 	needle := "nééáádlÉ"
-	//---------01234567
 	content := []byte("blá blá " + needle + " blâ")
-	// ----------------01234567    8901234   5678
+
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
@@ -1693,7 +1693,7 @@ func TestNoPositiveAtoms(t *testing.T) {
 
 func TestSymbolBoundaryStart(t *testing.T) {
 	content := []byte("start\nbla bla\nend")
-	// ----------------012345 67890123 456
+	// ----------------012345-67890123-456
 
 	b := testIndexBuilder(t, &Repository{Name: "reponame"},
 		Document{
@@ -1717,7 +1717,7 @@ func TestSymbolBoundaryStart(t *testing.T) {
 
 func TestSymbolBoundaryEnd(t *testing.T) {
 	content := []byte("start\nbla bla\nend")
-	// ----------------012345 67890123 456
+	// ----------------012345-67890123-456
 
 	b := testIndexBuilder(t, &Repository{Name: "reponame"},
 		Document{
@@ -1741,7 +1741,7 @@ func TestSymbolBoundaryEnd(t *testing.T) {
 
 func TestSymbolSubstring(t *testing.T) {
 	content := []byte("bla\nsymblabla\nbla")
-	// ----------------0123 456789012
+	// ----------------0123-4567890123-456
 
 	b := testIndexBuilder(t, &Repository{Name: "reponame"},
 		Document{
@@ -1765,7 +1765,7 @@ func TestSymbolSubstring(t *testing.T) {
 
 func TestSymbolSubstringExact(t *testing.T) {
 	content := []byte("bla\nsym\nbla\nsym\nasymb")
-	// ----------------0123 4567 89012
+	// ----------------0123-4567-890123456-78901
 
 	b := testIndexBuilder(t, &Repository{Name: "reponame"},
 		Document{
@@ -1789,7 +1789,7 @@ func TestSymbolSubstringExact(t *testing.T) {
 
 func TestSymbolRegexpExact(t *testing.T) {
 	content := []byte("blah\nbla\nbl")
-	// ----------------01234 5678 90
+	// ----------------01234-5678-90
 
 	b := testIndexBuilder(t, &Repository{Name: "reponame"},
 		Document{
@@ -1843,11 +1843,13 @@ func TestSymbolRegexpAll(t *testing.T) {
 		Document{
 			Name:    "f1",
 			Content: []byte("Hello Zoekt"),
+			// --------------01234567890
 			Symbols: []DocumentSection{{0, 5}, {6, 11}},
 		},
 		Document{
 			Name:    "f2",
 			Content: []byte("Second Zoekt Third"),
+			// --------------012345678901234567
 			Symbols: []DocumentSection{{0, 6}, {7, 12}, {13, 18}},
 		},
 	}
@@ -2072,7 +2074,9 @@ func TestSearchTypeFileName(t *testing.T) {
 		Name: "reponame",
 	},
 		Document{Name: "f1", Content: []byte("bla the needle")},
-		Document{Name: "f2", Content: []byte("another file another\nneedle")})
+		Document{Name: "f2", Content: []byte("another file another\nneedle")},
+		// -----------------------------------012345678901234567890-123456
+	)
 
 	wantSingleMatch := func(res *SearchResult, want string) {
 		t.Helper()
