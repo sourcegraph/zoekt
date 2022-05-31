@@ -20,10 +20,11 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -53,7 +54,7 @@ func (rt *loggingRT) RoundTrip(req *http.Request) (rep *http.Response, err error
 		log.Println("Rep: ", rep, err)
 	}
 	if err == nil {
-		body, _ := ioutil.ReadAll(rep.Body)
+		body, _ := io.ReadAll(rep.Body)
 
 		rep.Body.Close()
 		if debug {
@@ -91,7 +92,7 @@ func main() {
 	}
 
 	if *httpCrendentialsPath != "" {
-		creds, err := ioutil.ReadFile(*httpCrendentialsPath)
+		creds, err := os.ReadFile(*httpCrendentialsPath)
 		if err != nil {
 			log.Print("Cannot read gerrit http credentials, going Anonymous")
 		} else {
@@ -206,7 +207,7 @@ func deleteStaleRepos(destDir string, filter *gitindex.Filter, repos map[string]
 		if err != nil {
 			return err
 		}
-		names[filepath.Join(u.Host, u.Path) + ".git"] = struct{}{}
+		names[filepath.Join(u.Host, u.Path)+".git"] = struct{}{}
 	}
 
 	if err := gitindex.DeleteRepos(destDir, u, names, filter); err != nil {

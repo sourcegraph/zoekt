@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"math/rand"
@@ -183,7 +182,7 @@ type Server struct {
 	repositoriesSkipSymbolsCalculationAllowList map[string]struct{}
 }
 
-var debug = log.New(ioutil.Discard, "", log.LstdFlags)
+var debug = log.New(io.Discard, "", log.LstdFlags)
 
 // our index commands should output something every 100mb they process.
 //

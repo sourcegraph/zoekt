@@ -32,7 +32,7 @@ import (
 	"crypto/sha1"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/url"
 	"path"
@@ -318,7 +318,7 @@ func getManifest(repo *git.Repository, branch, path string) (*manifest.Manifest,
 	}
 	defer r.Close()
 
-	content, _ := ioutil.ReadAll(r)
+	content, _ := io.ReadAll(r)
 	return manifest.Parse(content)
 }
 

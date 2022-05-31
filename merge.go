@@ -4,7 +4,6 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -56,7 +55,7 @@ func builderWriteAll(fn string, ib *IndexBuilder) error {
 		return err
 	}
 
-	f, err := ioutil.TempFile(dir, filepath.Base(fn)+".*.tmp")
+	f, err := os.CreateTemp(dir, filepath.Base(fn)+".*.tmp")
 	if err != nil {
 		return err
 	}

@@ -21,7 +21,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"net/url"
@@ -960,7 +959,7 @@ func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard,
 		return nil, err
 	}
 
-	f, err := ioutil.TempFile(dir, filepath.Base(fn)+".*.tmp")
+	f, err := os.CreateTemp(dir, filepath.Base(fn)+".*.tmp")
 	if err != nil {
 		return nil, err
 	}

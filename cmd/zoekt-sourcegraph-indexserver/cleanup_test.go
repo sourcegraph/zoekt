@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -159,7 +158,7 @@ func TestCleanup(t *testing.T) {
 			}
 
 			if testing.Verbose() {
-				data, _ := ioutil.ReadFile(filepath.Join(dir, "zoekt-indexserver-shard-log.tsv"))
+				data, _ := os.ReadFile(filepath.Join(dir, "zoekt-indexserver-shard-log.tsv"))
 				if len(data) > 0 {
 					t.Log("shard log contents:\n" + strings.TrimSpace(string(data)))
 				}

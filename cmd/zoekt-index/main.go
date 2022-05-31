@@ -17,7 +17,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -137,7 +136,7 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error 
 			}
 			continue
 		}
-		content, err := ioutil.ReadFile(f.name)
+		content, err := os.ReadFile(f.name)
 		if err != nil {
 			return err
 		}

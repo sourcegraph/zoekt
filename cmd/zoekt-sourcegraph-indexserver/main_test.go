@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"flag"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -49,7 +49,7 @@ func TestListRepoIDs(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotURL = r.URL
 
-		b, err := ioutil.ReadAll(r.Body)
+		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -112,7 +112,7 @@ func TestListRepoIDs_Error(t *testing.T) {
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if !testing.Verbose() {
-		log.SetOutput(ioutil.Discard)
+		log.SetOutput(io.Discard)
 	}
 	os.Exit(m.Run())
 }

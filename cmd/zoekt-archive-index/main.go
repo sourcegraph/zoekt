@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"strings"
@@ -161,7 +160,7 @@ func do(opts Options, bopts build.Options) error {
 	add := func(f *File) error {
 		defer f.Close()
 
-		contents, err := ioutil.ReadAll(f)
+		contents, err := io.ReadAll(f)
 		if err != nil {
 			return err
 		}

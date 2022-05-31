@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -24,7 +23,7 @@ import (
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if !testing.Verbose() {
-		log.SetOutput(ioutil.Discard)
+		log.SetOutput(io.Discard)
 	}
 	os.Exit(m.Run())
 }
@@ -98,7 +97,7 @@ func TestIndexIncrementally(t *testing.T) {
 func testIndexIncrementally(t *testing.T, format string) {
 	indexDir := t.TempDir()
 
-	archive, err := ioutil.TempFile("", "TestIndexArg-archive")
+	archive, err := os.CreateTemp("", "TestIndexArg-archive")
 	if err != nil {
 		t.Fatalf("TempFile: %v", err)
 	}
