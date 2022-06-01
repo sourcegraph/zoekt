@@ -657,6 +657,8 @@ func (b *Builder) Finish() error {
 
 			repository.Branches = b.opts.RepositoryDescription.Branches
 
+			repository.LatestCommitDate = b.opts.RepositoryDescription.LatestCommitDate
+
 			tempPath, finalPath, err := zoekt.JsonMarshalRepoMetaTemp(shard, repository)
 			if err != nil {
 				return fmt.Errorf("writing repository metadta for shard %q: %w", shard, err)

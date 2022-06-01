@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -456,66 +457,124 @@ func TestBuilder_DeltaShardsBuildsShouldErrorOnBranchSet(t *testing.T) {
 }
 
 func TestBuilder_DeltaShardsUpdateVersionsInOlderShards(t *testing.T) {
-	indexDir := t.TempDir()
+	olderTime := time.Unix(0, 0)
+	newerTime := time.Unix(10000, 0)
 
-	repositoryV1 := zoekt.Repository{
-		Name: "repo",
-		ID:   1,
-		Branches: []zoekt.RepositoryBranch{
-			{Name: "main", Version: "v1"},
-			{Name: "release", Version: "v1"},
+	for _, test := range []struct {
+		name               string
+		originalRepository zoekt.Repository
+		updatedRepository  zoekt.Repository
+	}{
+		{
+			name: "update commit information",
+			originalRepository: zoekt.Repository{
+				Name: "repo",
+				ID:   1,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "main", Version: "v1"},
+					{Name: "release", Version: "v1"},
+				},
+			},
+			updatedRepository: zoekt.Repository{
+				Name: "repo",
+				ID:   1,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "main", Version: "v2"},
+					{Name: "release", Version: "v2"},
+				},
+			},
 		},
-	}
-
-	createTestShard(t, indexDir, repositoryV1, 2, func(o *Options) {
-		o.DisableCTags = true
-	})
-
-	repositoryV2 := zoekt.Repository{
-		Name: "repo",
-		ID:   1,
-		Branches: []zoekt.RepositoryBranch{
-			{Name: "main", Version: "v2"},
-			{Name: "release", Version: "v2"},
+		{
+			name: "update latest commit date (older -> newer)",
+			originalRepository: zoekt.Repository{
+				Name: "repo",
+				ID:   1,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "main", Version: "v1"},
+					{Name: "release", Version: "v1"},
+				},
+				LatestCommitDate: olderTime,
+			},
+			updatedRepository: zoekt.Repository{
+				Name: "repo",
+				ID:   1,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "main", Version: "v2"},
+					{Name: "release", Version: "v2"},
+				},
+				LatestCommitDate: newerTime,
+			},
 		},
-	}
+		{
+			name: "update latest commit date (even if latest commit date is older)",
+			originalRepository: zoekt.Repository{
+				Name: "repo",
+				ID:   1,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "main", Version: "v1"},
+					{Name: "release", Version: "v1"},
+				},
+				LatestCommitDate: newerTime,
+			},
+			updatedRepository: zoekt.Repository{
+				Name: "repo",
+				ID:   1,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "main", Version: "v2"},
+					{Name: "release", Version: "v2"},
+				},
+				LatestCommitDate: olderTime,
+			},
+		},
+	} {
+		test := test
 
-	shards := createTestShard(t, indexDir, repositoryV2, 1, func(o *Options) {
-		o.IsDelta = true
-		o.DisableCTags = true
-	})
+		t.Run(test.name, func(t *testing.T) {
+			indexDir := t.TempDir()
 
-	if len(shards) < 3 {
-		t.Fatalf("expected at least 3 shards, got %d (%s)", len(shards), strings.Join(shards, ", "))
-	}
+			createTestShard(t, indexDir, test.originalRepository, 2, func(o *Options) {
+				o.DisableCTags = true
+			})
 
-	for _, s := range shards {
-		repositories, _, err := zoekt.ReadMetadataPathAlive(s)
-		if err != nil {
-			t.Fatalf("reading repository metadata from shard %q", s)
-		}
+			shards := createTestShard(t, indexDir, test.updatedRepository, 1, func(o *Options) {
+				o.IsDelta = true
+				o.DisableCTags = true
+			})
 
-		var foundRepository *zoekt.Repository
-		for _, r := range repositories {
-			if r.ID == repositoryV2.ID {
-				foundRepository = r
-				break
+			if len(shards) < 3 {
+				t.Fatalf("expected at least 3 shards, got %d (%s)", len(shards), strings.Join(shards, ", "))
 			}
-		}
 
-		if foundRepository == nil {
-			t.Fatalf("repository ID %d not in shard %q", repositoryV2.ID, s)
-		}
+			for _, s := range shards {
+				repositories, _, err := zoekt.ReadMetadataPathAlive(s)
+				if err != nil {
+					t.Fatalf("reading repository metadata from shard %q", s)
+				}
 
-		diffOptions := []cmp.Option{
-			cmpopts.IgnoreUnexported(zoekt.Repository{}),
-			cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions"),
-			cmpopts.EquateEmpty(),
-		}
+				var foundRepository *zoekt.Repository
+				for _, r := range repositories {
+					if r.ID == test.updatedRepository.ID {
+						foundRepository = r
+						break
+					}
+				}
 
-		if diff := cmp.Diff(&repositoryV2, foundRepository, diffOptions...); diff != "" {
-			t.Errorf("shard %q: unexpected diff in repository metadata (-want +got):\n%s", s, diff)
-		}
+				if foundRepository == nil {
+					t.Fatalf("repository ID %d not in shard %q", test.updatedRepository.ID, s)
+				}
+
+				diffOptions := []cmp.Option{
+					cmpopts.IgnoreUnexported(zoekt.Repository{}),
+					cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions"),
+					cmpopts.EquateEmpty(),
+				}
+
+				if diff := cmp.Diff(&test.updatedRepository, foundRepository, diffOptions...); diff != "" {
+					t.Errorf("shard %q: unexpected diff in repository metadata (-want +got):\n%s", s, diff)
+				}
+			}
+
+		})
 	}
 }
 
