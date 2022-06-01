@@ -491,7 +491,6 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 				ID:   1,
 				Branches: []zoekt.RepositoryBranch{
 					{Name: "main", Version: "v1"},
-					{Name: "release", Version: "v1"},
 				},
 				LatestCommitDate: olderTime,
 			},
@@ -500,7 +499,6 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 				ID:   1,
 				Branches: []zoekt.RepositoryBranch{
 					{Name: "main", Version: "v2"},
-					{Name: "release", Version: "v2"},
 				},
 				LatestCommitDate: newerTime,
 			},
@@ -512,7 +510,6 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 				ID:   1,
 				Branches: []zoekt.RepositoryBranch{
 					{Name: "main", Version: "v1"},
-					{Name: "release", Version: "v1"},
 				},
 				LatestCommitDate: newerTime,
 			},
@@ -521,7 +518,6 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 				ID:   1,
 				Branches: []zoekt.RepositoryBranch{
 					{Name: "main", Version: "v2"},
-					{Name: "release", Version: "v2"},
 				},
 				LatestCommitDate: olderTime,
 			},
