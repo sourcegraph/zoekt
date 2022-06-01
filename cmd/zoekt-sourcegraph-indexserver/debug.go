@@ -103,7 +103,36 @@ func debugCmd() *ffcli.Command {
 		Name:       "debug",
 		ShortUsage: "debug <subcommand>",
 		ShortHelp:  "a set of commands for debugging and testing",
-		FlagSet:    fs,
+		LongHelp: `
+CURL
+  Zoekt-sourcegraph-indexserver exposes debug information on several pages linked on the /debug landing page.
+  You can use the following curl commands to access this information from the command line.
+
+  curl http://localhost:6072/debug/indexed
+    list the repositories that are INDEXED by this instance.
+
+  curl http://localhost:6072/debug/list[?indexed=TRUE/false]
+    list the repositories that are OWNED by this instance. If indexed=true (default), the list may contain repositories
+    that this instance holds temporarily, for example during rebalancing.
+
+  curl http://localhost:6072/debug/queue
+    list the repositories in the indexing queue, sorted by descending priority.
+
+    COLUMN HEADERS
+      Position     zero-indexed position of this repository in the indexing queue (sorted by priority).
+      Name         name for this repository
+      ID           ID for this repository
+      IsOnQueue    "true" if this repository has an outstanding indexing job that's enqueued for future work. "false" otherwise.
+      Age          amount of time that this repository has spent in the indexing queue since its outstanding indexing job
+                   was first added (ignoring any job metadata updates that may have occurred while it was still enqueued).
+                   A "-" is printed instead if this repository doesn't have an outstanding job.
+      Branches     comma-separated list of branches in $BRANCH_NAME@$COMMIT_HASH format.
+                   If the repository has a job on the indexing queue, this list represents the desired set of
+                   branches + associated commits that will be process during the next indexing job.
+                   However, if the repository  doesn't have a job on the queue, this list represents the set of
+                   branches + associated commits that was indexed during its most recent indexing job.
+`,
+		FlagSet: fs,
 		Subcommands: []*ffcli.Command{
 			debugIndex(),
 			debugMerge(),
