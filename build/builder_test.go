@@ -456,7 +456,7 @@ func TestBuilder_DeltaShardsBuildsShouldErrorOnBranchSet(t *testing.T) {
 	}
 }
 
-func TestBuilder_DeltaShardsUpdateVersionsInOlderShards(t *testing.T) {
+func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 	olderTime := time.Unix(0, 0)
 	newerTime := time.Unix(10000, 0)
 
