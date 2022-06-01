@@ -103,9 +103,8 @@ func debugCmd() *ffcli.Command {
 		Name:       "debug",
 		ShortUsage: "debug <subcommand>",
 		ShortHelp:  "a set of commands for debugging and testing",
-		LongHelp: `
-CURL
-  Zoekt-sourcegraph-indexserver exposes debug information on several pages linked on the /debug landing page.
+		LongHelp: `CURL
+  Zoekt-sourcegraph-indexserver exposes debug information on the /debug landing page.
   You can use the following curl commands to access this information from the command line.
 
   curl http://localhost:6072/debug/indexed
@@ -130,8 +129,7 @@ CURL
                    If the repository has a job on the indexing queue, this list represents the desired set of
                    branches + associated commits that will be process during the next indexing job.
                    However, if the repository  doesn't have a job on the queue, this list represents the set of
-                   branches + associated commits that was indexed during its most recent indexing job.
-`,
+                   branches + associated commits that was indexed during its most recent indexing job.`,
 		FlagSet: fs,
 		Subcommands: []*ffcli.Command{
 			debugIndex(),
