@@ -573,7 +573,6 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 					t.Errorf("shard %q: unexpected diff in repository metadata (-want +got):\n%s", s, diff)
 				}
 			}
-
 		})
 	}
 }
