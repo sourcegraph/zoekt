@@ -65,3 +65,20 @@ func TestLowerRegexp(t *testing.T) {
 		t.Errorf("got mutated original %s want %s", re.String(), in)
 	}
 }
+
+func TestConvertCapture(t *testing.T) {
+	in := "(hello)world"
+	re := mustParseRE(in)
+
+	got, err := ConvertCapture(re)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := mustParseRE("(?:hello)world")
+	if !got.Equal(want) {
+		printRegexp(t, got, 0)
+		printRegexp(t, want, 0)
+		t.Errorf("got %s, want %s", got, want)
+	}
+}

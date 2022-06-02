@@ -15,6 +15,7 @@
 package query
 
 import (
+	"fmt"
 	"log"
 	"regexp/syntax"
 )
@@ -41,4 +42,52 @@ func LowerRegexp(r *syntax.Regexp) *syntax.Regexp {
 	}
 
 	return &newRE
+}
+
+// Convert Regexp with captures to Regexp with non captures.
+// Makes a copy leaving orginal Regexp unchanged
+func ConvertCapture(re *syntax.Regexp) (*syntax.Regexp, error) {
+	// Make a copy so in unlikely event of an error the original can be used as a fallback
+	r, err := syntax.Parse(re.String(), regexpFlags)
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy regexp: `%s`: %s", re, err)
+	}
+
+	r = uncapture(r)
+
+	// Parse again for new structure to take effect
+	r, err = syntax.Parse(r.String(), regexpFlags)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse regexp after uncapture: `%s`: %s", r, err)
+	}
+
+	r = r.Simplify()
+	return r, nil
+}
+
+func hasCapture(r *syntax.Regexp) bool {
+	if r.Op == syntax.OpCapture {
+		return true
+	}
+
+	for _, s := range r.Sub {
+		if hasCapture(s) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func uncapture(r *syntax.Regexp) *syntax.Regexp {
+	if r.Op == syntax.OpCapture {
+		// Captures only have one subexpression
+		return uncapture(r.Sub[0])
+	}
+
+	for i, s := range r.Sub {
+		r.Sub[i] = uncapture(s)
+	}
+
+	return r
 }

@@ -46,11 +46,11 @@ func TestParseQuery(t *testing.T) {
 			NewAnd(&Substring{Pattern: "ppp"}, &Substring{Pattern: "qqq"}),
 			NewAnd(&Substring{Pattern: "rrr"}, &Substring{Pattern: "sss"}))},
 		{"((x) ora b(z(d)))", NewAnd(
-			&Regexp{Regexp: mustParseRE("(x)")},
+			&Substring{Pattern: "x"},
 			&Substring{Pattern: "ora"},
-			&Regexp{Regexp: mustParseRE("b(z(d))")})},
+			&Substring{Pattern: "bzd"})},
 		{"( )", &Const{Value: true}},
-		{"(abc)(de)", &Regexp{Regexp: mustParseRE("(abc)(de)")}},
+		{"(abc)(de)", &Substring{Pattern: "abcde"}},
 		{"sub-pixel", &Substring{Pattern: "sub-pixel"}},
 		{"abc", &Substring{Pattern: "abc"}},
 		{"ABC", &Substring{Pattern: "ABC", CaseSensitive: true}},
@@ -64,7 +64,7 @@ func TestParseQuery(t *testing.T) {
 		{"abccase:yes", &Substring{Pattern: "abccase:yes"}},
 		{"file:abc", &Substring{Pattern: "abc", FileName: true}},
 		{"branch:pqr", &Branch{Pattern: "pqr"}},
-		{"((x) )", &Regexp{Regexp: mustParseRE("(x)")}},
+		{"((x) )", &Substring{Pattern: "x"}},
 		{"file:helpers\\.go byte", NewAnd(
 			&Substring{Pattern: "helpers.go", FileName: true},
 			&Substring{Pattern: "byte"})},
@@ -81,7 +81,7 @@ func TestParseQuery(t *testing.T) {
 		{"file:\"\"", &Const{true}},
 		{"abc.*def", &Regexp{Regexp: mustParseRE("abc.*def")}},
 		{"abc\\.\\*def", &Substring{Pattern: "abc.*def"}},
-		{"(abc)", &Regexp{Regexp: mustParseRE("(abc)")}},
+		{"(abc)", &Substring{Pattern: "abc"}},
 
 		{"c:abc", &Substring{Pattern: "abc", Content: true}},
 		{"content:abc", &Substring{Pattern: "abc", Content: true}},
@@ -91,7 +91,7 @@ func TestParseQuery(t *testing.T) {
 		{"sym:pqr", &Symbol{&Substring{Pattern: "pqr"}}},
 		{"sym:Pqr", &Symbol{&Substring{Pattern: "Pqr", CaseSensitive: true}}},
 		{"sym:.*", &Symbol{&Regexp{Regexp: mustParseRE(".*")}}},
-		{"sym:a(b|d)e", &Symbol{&Regexp{Regexp: mustParseRE("a(b|d)e")}}},
+		{"sym:a(b|d)e", &Symbol{&Regexp{Regexp: mustParseRE("a[bd]e")}}},
 
 		// case
 		{"abc case:yes", &Substring{Pattern: "abc", CaseSensitive: true}},

@@ -562,6 +562,15 @@ func BenchmarkShardedSearch(b *testing.B) {
 	needleSub := &query.Substring{Pattern: "needle"}
 	haystackSub := &query.Substring{Pattern: "haystack"}
 	helloworldSub := &query.Substring{Pattern: "helloworld"}
+	haystackCap, err := query.Parse("hay(s(t))(a)ck")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	haystackNonCap, err := query.Parse("hay(?:s(?:t))(?:a)ck")
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	setAnd := func(q query.Q) func() query.Q {
 		return func() query.Q {
@@ -589,6 +598,8 @@ func BenchmarkShardedSearch(b *testing.B) {
 		{"substring all results", func() query.Q { return haystackSub }, len(repos) * filesPerRepo},
 		{"substring no results", func() query.Q { return helloworldSub }, 0},
 		{"substring some results", func() query.Q { return needleSub }, len(repos)},
+		{"regexp all results capture", func() query.Q { return haystackCap }, len(repos) * filesPerRepo},
+		{"regexp all results non-capture", func() query.Q { return haystackNonCap }, len(repos) * filesPerRepo},
 
 		{"substring all results and repo set", setAnd(haystackSub), len(repoSetIDs) * filesPerRepo},
 		{"substring some results and repo set", setAnd(needleSub), len(repoSetIDs)},
