@@ -504,7 +504,7 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 			},
 		},
 		{
-			name: "update latest commit date (even if latest commit date is older)",
+			name: "update latest commit date (even if latest commit date is older - the most recent commits are the source of truth)",
 			originalRepository: zoekt.Repository{
 				Name: "repo",
 				ID:   1,
