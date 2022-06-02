@@ -7,23 +7,26 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestGetLines(t *testing.T) {
-	data := []byte(`one
-two
-three
-four`)
-
+func getNewlines(data []byte) newlines {
 	var locs []uint32
 	for i, c := range data {
 		if c == '\n' {
 			locs = append(locs, uint32(i))
 		}
 	}
-	newLines := newlines{
+	return newlines{
 		locs:     locs,
 		fileSize: uint32(len(data)),
 	}
+}
 
+func TestGetLines(t *testing.T) {
+	data := []byte(`one
+two
+three
+four`)
+
+	newLines := getNewlines(data)
 	lines := bytes.Split(data, []byte{'\n'}) // TODO does split group consecutive sep?
 	wantGetLines := func(low, high int) []byte {
 		low--
