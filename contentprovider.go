@@ -251,8 +251,11 @@ type newlines struct {
 	fileSize uint32
 }
 
-// atOffset takes a byte offset and returns the 1-based line number of the line
-// containing the offset as well as the start and end offsets of that line.
+// atOffset returns the line containing the offset. If the offset lands on
+// the newline ending line M, we return M.  The line is characterized
+// by its linenumber (base-1, byte index of line start, byte index of
+// line end). The line end is the index of a newline, or the filesize
+// (if matching the last line of the file.)
 func (nls newlines) atOffset(offset uint32) (lineNumber, lineStart, lineEnd int) {
 	idx := sort.Search(len(nls.locs), func(n int) bool {
 		return nls.locs[n] >= offset
