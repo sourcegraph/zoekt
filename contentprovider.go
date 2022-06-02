@@ -242,7 +242,12 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 }
 
 type newlines struct {
-	locs     []uint32
+	// locs is the sorted set of byte offsets of the newlines in the file
+	locs []uint32
+
+	// fileSize is just the number of bytes in the file. It is stored
+	// on this struct so we can safely know the length of the last line
+	// in the file since not all files end in a newline.
 	fileSize uint32
 }
 
