@@ -13,12 +13,17 @@ two
 three
 four`)
 
-	var newLines []uint32
+	var locs []uint32
 	for i, c := range data {
 		if c == '\n' {
-			newLines = append(newLines, uint32(i))
+			locs = append(locs, uint32(i))
 		}
 	}
+	newLines := newlines{
+		locs:     locs,
+		fileSize: uint32(len(data)),
+	}
+
 	lines := bytes.Split(data, []byte{'\n'}) // TODO does split group consecutive sep?
 	wantGetLines := func(low, high int) []byte {
 		low--
@@ -41,7 +46,7 @@ four`)
 	for low := -1; low <= len(lines)+2; low++ {
 		for high := low; high <= len(lines)+2; high++ {
 			want := wantGetLines(low, high)
-			got := getLines(data, newLines, low, high)
+			got := newLines.getLines(data, low, high)
 			if d := cmp.Diff(string(want), string(got)); d != "" {
 				t.Fatal(d)
 			}
