@@ -355,6 +355,15 @@ nextFileMatch:
 			fileMatch.LineMatches[i].Score += scoreLineOrderFactor * (1.0 - (float64(i) / float64(len(fileMatch.LineMatches))))
 		}
 
+		for i := range fileMatch.ChunkMatches {
+			if maxFileScore < fileMatch.ChunkMatches[i].Score {
+				maxFileScore = fileMatch.ChunkMatches[i].Score
+			}
+
+			// Order by ordering in file.
+			fileMatch.ChunkMatches[i].Score += scoreLineOrderFactor * (1.0 - (float64(i) / float64(len(fileMatch.ChunkMatches))))
+		}
+
 		// Maintain ordering of input files. This
 		// strictly dominates the in-file ordering of
 		// the matches.
@@ -375,9 +384,11 @@ nextFileMatch:
 		}
 
 		repoMatchCount += len(fileMatch.LineMatches)
+		repoMatchCount += len(fileMatch.ChunkMatches)
 
 		res.Files = append(res.Files, fileMatch)
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
+		res.Stats.MatchCount += len(fileMatch.ChunkMatches)
 		res.Stats.FileCount++
 	}
 
