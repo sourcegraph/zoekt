@@ -76,7 +76,9 @@ type FileMatch struct {
 type ChunkMatch struct {
 	Content      []byte
 	ContentStart Location
-	Ranges       []Range
+
+	Ranges     []Range
+	SymbolInfo []*Symbol
 
 	FileName bool
 
