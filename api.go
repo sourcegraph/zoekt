@@ -77,8 +77,7 @@ type ChunkMatch struct {
 	Content      []byte
 	ContentStart Location
 
-	Ranges     []Range
-	SymbolInfo []*Symbol
+	Ranges []Range
 
 	FileName bool
 
@@ -87,8 +86,9 @@ type ChunkMatch struct {
 }
 
 type Range struct {
-	Start Location
-	End   Location
+	Start      Location
+	End        Location
+	SymbolInfo *Symbol
 }
 
 type Location struct {
