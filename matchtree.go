@@ -558,6 +558,7 @@ func (t *andLineMatchTree) matches(cp *contentProvider, cost int, known map[matc
 	lines := make([]lineRange, 0, len(t.children[fewestChildren].(*substrMatchTree).current))
 	prev := -1
 	for _, candidate := range t.children[fewestChildren].(*substrMatchTree).current {
+		// TODO why does this care about lines at all? Will and queries break multiline matches?
 		line, byteStart, byteEnd := cp.newlines().atOffset(candidate.byteOffset)
 		if line == prev {
 			continue
