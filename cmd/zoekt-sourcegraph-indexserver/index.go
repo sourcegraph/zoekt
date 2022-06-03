@@ -279,6 +279,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		zap.Int("commits_count", successfullyFetchedCommitsCount),
 		zap.Int64("duration_ms", fetchDuration.Milliseconds()),
 		zap.String("duration_str", fetchDuration.String()),
+		zap.Duration("duration", fetchDuration),
 	)
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {

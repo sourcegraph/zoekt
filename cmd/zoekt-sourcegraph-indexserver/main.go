@@ -41,10 +41,11 @@ import (
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/debugserver"
 	"github.com/google/zoekt/internal/profiler"
+	sglog "github.com/google/zoekt/log"
 )
 
 var (
-	logger                         = initializeZapLogger()
+	logger                         = initializeLogger()
 	metricResolveRevisionsDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "resolve_revisions_seconds",
 		Help:    "A histogram of latencies for resolving all repository revisions.",
@@ -402,6 +403,7 @@ func (s *Server) Run() {
 				zap.Strings("branches", args.BranchesStrings()),
 				zap.Int64("duration_ms", elapsed.Milliseconds()),
 				zap.String("duration_str", elapsed.String()),
+				zap.Duration("duration", elapsed),
 			)
 		case indexStateSuccessMeta:
 			log.Printf("updated meta %s in %v", args.String(), elapsed)
@@ -903,6 +905,22 @@ func getEnvWithDefaultEmptySet(k string) map[string]struct{} {
 	return set
 }
 
+// findName returns the name of the current process, that being the
+// part of argv[0] after the last slash if any, and also the lowercase
+// letters from that, suitable for use as a likely key for lookups
+// in things like shell environment variables which can't contain
+// hyphens.
+// Copied from https://sourcegraph.com/github.com/sourcegraph/sourcegraph/-/blob/internal/env/env.go?L55:6
+func findName() (string, string) {
+	// Environment variable names can't contain, for instance, hyphens.
+	origName := filepath.Base(os.Args[0])
+	name := strings.ReplaceAll(origName, "-", "_")
+	if name == "" {
+		name = "unknown"
+	}
+	return origName, name
+}
+
 func joinStringSet(set map[string]struct{}, sep string) string {
 	var xs []string
 	for x := range set {
@@ -1112,21 +1130,18 @@ func newServer(conf rootConfig) (*Server, error) {
 	}, err
 }
 
-func initializeZapLogger() *zap.Logger {
-	var err error
-	var newLogger *zap.Logger
+func initializeLogger() *zap.Logger {
+	name, _ := findName()
+	syncLogs := sglog.Init(sglog.Resource{
+		Name:       name,
+		Version:    zoekt.Version,
+		InstanceID: hostnameBestEffort(),
+	})
+	defer syncLogs()
 
-	if srcLogLevelIsDebug() {
-		newLogger, err = zap.NewDevelopment()
-	} else {
-		newLogger, err = zap.NewProduction()
-	}
-
-	if err != nil {
-		log.Fatalf("initializing zap logger: %s", err)
-	}
-
-	return newLogger
+	devMode := sglog.DevMode()
+	safeGet := !devMode // do not panic in prod
+	return sglog.Get(safeGet)
 }
 
 func main() {
