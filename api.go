@@ -39,9 +39,10 @@ type FileMatch struct {
 
 	// Repository is the globally unique name of the repo of the
 	// match
-	Repository  string
-	Branches    []string
-	LineMatches []LineMatch
+	Repository   string
+	Branches     []string
+	LineMatches  []LineMatch
+	ChunkMatches []ChunkMatch
 
 	// RepositoryID is a Sourcegraph extension. This is the ID of Repository in
 	// Sourcegraph.
@@ -70,6 +71,31 @@ type FileMatch struct {
 
 	// Commit SHA1 (hex) of the (sub)repo holding the file.
 	Version string
+}
+
+type ChunkMatch struct {
+	Content      []byte
+	ContentStart Location
+	Ranges       []Range
+
+	FileName bool
+
+	Score      float64
+	DebugScore string
+}
+
+type Range struct {
+	Start Location
+	End   Location
+}
+
+type Location struct {
+	// 0-based byte offset from the beginning of the file
+	ByteOffset int
+	// 1-based
+	LineNumber int
+	// 1-based
+	Column int
 }
 
 // LineMatch holds the matches within a single line in a file.
@@ -544,6 +570,9 @@ type SearchOptions struct {
 	// Note that the included context lines might contain matches and
 	// it's up to the consumer of the result to remove those lines.
 	NumContextLines int
+
+	// TODO comments
+	ChunkMatches bool
 
 	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
 	// a command-line flag

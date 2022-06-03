@@ -322,7 +322,7 @@ nextFileMatch:
 		visitMatches(mt, known, func(mt matchTree) {
 			atomMatchCount++
 		})
-		finalCands := gatherMatches(mt, known)
+		finalCands := gatherMatches(mt, known, !opts.ChunkMatches)
 
 		if len(finalCands) == 0 {
 			nm := d.fileName(nextDoc)
@@ -338,7 +338,12 @@ nextFileMatch:
 					byteMatchSz:   uint32(len(nm)),
 				})
 		}
-		fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+
+		if opts.ChunkMatches {
+			fileMatch.ChunkMatches = cp.fillChunkMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+		} else {
+			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+		}
 
 		maxFileScore := 0.0
 		for i := range fileMatch.LineMatches {
@@ -420,7 +425,7 @@ func (m sortByOffsetSlice) Less(i, j int) bool {
 // filename/content matches: if there are content matches, all
 // filename matches are trimmed from the result. The matches are
 // returned in document order and are non-overlapping.
-func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
+func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candidateMatch {
 	var cands []*candidateMatch
 	visitMatches(mt, known, func(mt matchTree) {
 		if smt, ok := mt.(*substrMatchTree); ok {
@@ -450,26 +455,47 @@ func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
 	}
 	cands = res
 
-	// Merge adjacent candidates. This guarantees that the matches
-	// are non-overlapping.
-	sort.Sort((sortByOffsetSlice)(cands))
-	res = cands[:0]
-	for i, c := range cands {
-		if i == 0 {
-			res = append(res, c)
-			continue
-		}
-		last := res[len(res)-1]
-		lastEnd := last.byteOffset + last.byteMatchSz
-		end := c.byteOffset + c.byteMatchSz
-		if lastEnd >= c.byteOffset {
-			if end > lastEnd {
-				last.byteMatchSz = end - last.byteOffset
+	if merge {
+		// Merge adjacent candidates. This guarantees that the matches
+		// are non-overlapping.
+		sort.Sort((sortByOffsetSlice)(cands))
+		res = cands[:0]
+		for i, c := range cands {
+			if i == 0 {
+				res = append(res, c)
+				continue
 			}
-			continue
-		}
+			last := res[len(res)-1]
+			lastEnd := last.byteOffset + last.byteMatchSz
+			end := c.byteOffset + c.byteMatchSz
+			if lastEnd >= c.byteOffset {
+				if end > lastEnd {
+					last.byteMatchSz = end - last.byteOffset
+				}
+				continue
+			}
 
-		res = append(res, c)
+			res = append(res, c)
+		}
+	} else {
+		// Remove overlapping candidates. This guarantees that the matches
+		// are non-overlapping, but also preserves expected match counts.
+		// TODO do we actually need this guarantee?
+		sort.Sort((sortByOffsetSlice)(cands))
+		res = cands[:0]
+		for i, c := range cands {
+			if i == 0 {
+				res = append(res, c)
+				continue
+			}
+			last := res[len(res)-1]
+			lastEnd := last.byteOffset + last.byteMatchSz
+			if lastEnd > c.byteOffset {
+				continue
+			}
+
+			res = append(res, c)
+		}
 	}
 
 	return res
