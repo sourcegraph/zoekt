@@ -132,6 +132,139 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
+func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
+	var result []ChunkMatch
+	if ms[0].fileName {
+		// There is only "line" in a filename.
+		fileName := p.id.fileName(p.idx)
+		ranges := make([]Range, 0, len(ms))
+		for _, m := range ms {
+			ranges = append(ranges, Range{
+				Start: Location{
+					ByteOffset: int(m.byteOffset),
+					LineNumber: 1,
+					Column:     utf8.RuneCount(fileName[:m.byteOffset]) + 1,
+				},
+				End: Location{
+					ByteOffset: int(m.byteOffset + m.byteMatchSz),
+					LineNumber: 1,
+					Column:     utf8.RuneCount(fileName[:m.byteOffset+m.byteMatchSz]) + 1,
+				},
+			})
+		}
+
+		result = []ChunkMatch{{
+			Content:      fileName,
+			ContentStart: Location{ByteOffset: 0, LineNumber: 1, Column: 1},
+		}}
+	} else {
+		result = p.fillContentChunkMatches(ms, numContextLines)
+	}
+
+	sects := p.docSections()
+	for i, m := range result {
+		result[i].Score, result[i].DebugScore = p.chunkMatchScore(sects, &m, language, debug)
+	}
+
+	return result
+}
+
+func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int) []ChunkMatch {
+	chunks := p.chunkMatches(ms, numContextLines)
+	newlines := p.newlines()
+	data := p.data(false)
+	chunkMatches := make([]ChunkMatch, 0, len(chunks))
+	for _, chunk := range chunks {
+		ranges := make([]Range, 0, len(chunk.candidates))
+		for _, cm := range chunk.candidates {
+			startOffset := cm.byteOffset
+			endOffset := cm.byteOffset + cm.byteMatchSz
+			startLine, startLineOffset, _ := newlines.atOffset(startOffset)
+			endLine, endLineOffset, _ := newlines.atOffset(endOffset)
+
+			ranges = append(ranges, Range{
+				Start: Location{
+					ByteOffset: int(startOffset),
+					LineNumber: startLine,
+					Column:     utf8.RuneCount(data[startLineOffset:startOffset]) + 1,
+				},
+				End: Location{
+					ByteOffset: int(endOffset),
+					LineNumber: endLine,
+					Column:     utf8.RuneCount(data[endLineOffset:endOffset]) + 1,
+				},
+			})
+		}
+
+		firstLineNumber := chunk.minLine - numContextLines
+		firstLineStart, _ := newlines.lineBounds(firstLineNumber)
+		lastLineNumber := chunk.maxLine + numContextLines
+
+		chunkMatches = append(chunkMatches, ChunkMatch{
+			Content: newlines.getLines(data, firstLineNumber, lastLineNumber+1),
+			ContentStart: Location{
+				ByteOffset: int(firstLineStart),
+				LineNumber: firstLineNumber,
+				Column:     1,
+			},
+			FileName: false,
+			Ranges:   ranges,
+		})
+	}
+	return chunkMatches
+}
+
+type candidateChunk struct {
+	minLine    int
+	minOffset  uint32
+	maxLine    int
+	maxOffset  uint32
+	candidates []*candidateMatch
+}
+
+func (p *contentProvider) chunkMatches(ms []*candidateMatch, numContextLines int) []candidateChunk {
+	// TODO can we guarantee these are sorted at this point?
+	sort.Sort((sortByOffsetSlice)(ms))
+
+	var chunks []candidateChunk
+	newlines := p.newlines()
+	for _, m := range ms {
+		startOffset := m.byteOffset
+		endOffset := m.byteOffset + m.byteMatchSz
+		firstLine, _, _ := newlines.atOffset(startOffset)
+		lastLine, _, _ := newlines.atOffset(endOffset)
+
+		if len(chunks) == 0 {
+			chunks = append(chunks, candidateChunk{
+				minLine:    firstLine,
+				minOffset:  startOffset,
+				maxLine:    lastLine,
+				maxOffset:  endOffset,
+				candidates: []*candidateMatch{m},
+			})
+			continue
+		}
+
+		last := &chunks[len(chunks)-1]
+		if last.maxLine+numContextLines*2 >= firstLine {
+			last.candidates = append(last.candidates, m)
+			if last.maxOffset < endOffset {
+				last.maxLine = lastLine
+				last.maxOffset = endOffset
+			}
+		} else {
+			chunks = append(chunks, candidateChunk{
+				minLine:    firstLine,
+				minOffset:  startOffset,
+				maxLine:    lastLine,
+				maxOffset:  endOffset,
+				candidates: []*candidateMatch{m},
+			})
+		}
+	}
+	return chunks
+}
+
 func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
 	var result []LineMatch
 	if ms[0].fileName {
@@ -337,6 +470,74 @@ func findSection(secs []DocumentSection, off, sz uint32) (int, bool) {
 		return j, true
 	}
 	return 0, false
+}
+
+func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch, language string, debug bool) (float64, string) {
+	type debugScore struct {
+		score float64
+		what  string
+	}
+
+	score := &debugScore{}
+	maxScore := &debugScore{}
+
+	addScore := func(what string, s float64) {
+		if debug {
+			score.what += fmt.Sprintf("%s:%f, ", what, s)
+		}
+		score.score += s
+	}
+
+	for _, r := range m.Ranges {
+		// calculate the start and end offset relative to the start of the content
+		relStartOffset := r.Start.ByteOffset - m.ContentStart.ByteOffset
+		relEndOffset := r.End.ByteOffset - m.ContentStart.ByteOffset
+
+		startBoundary := relStartOffset < len(m.Content) && (relStartOffset == 0 || byteClass(m.Content[relStartOffset]) != byteClass(m.Content[relStartOffset]))
+		endBoundary := relEndOffset > 0 && (relEndOffset == len(m.Content) || byteClass(m.Content[relEndOffset-1]) != byteClass(m.Content[relEndOffset]))
+
+		score.score = 0
+		score.what = ""
+
+		if startBoundary && endBoundary {
+			addScore("WordMatch", scoreWordMatch)
+		} else if startBoundary || endBoundary {
+			addScore("PartialWordMatch", scorePartialWordMatch)
+		}
+
+		if m.FileName {
+			sep := bytes.LastIndexByte(m.Content, '/')
+			startMatch := relStartOffset == sep+1
+			endMatch := relEndOffset == len(m.Content)
+			if startMatch && endMatch {
+				addScore("Base", scoreBase)
+			} else if startMatch || endMatch {
+				addScore("EdgeBase", (scoreBase+scorePartialBase)/2)
+			} else if sep < relStartOffset {
+				addScore("InnerBase", scorePartialBase)
+			}
+		} else if secIdx, ok := findSection(secs, uint32(r.Start.ByteOffset), uint32(r.End.ByteOffset-r.Start.ByteOffset)); ok {
+			sec := secs[secIdx]
+			startMatch := sec.Start == uint32(r.Start.ByteOffset)
+			endMatch := sec.End == uint32(r.End.ByteOffset)
+			if startMatch && endMatch {
+				addScore("Symbol", scoreSymbol)
+			} else if startMatch || endMatch {
+				addScore("EdgeSymbol", (scoreSymbol+scorePartialSymbol)/2)
+			} else {
+				addScore("InnerSymbol", scorePartialSymbol)
+			}
+
+			// TODO add symbol info score
+		}
+
+		if score.score > maxScore.score {
+			maxScore.score = score.score
+			maxScore.what = score.what
+		}
+	}
+
+	return maxScore.score, strings.TrimRight(maxScore.what, ", ")
 }
 
 func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, language string, debug bool) (float64, string) {
