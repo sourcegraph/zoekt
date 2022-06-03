@@ -126,3 +126,57 @@ func TestAtOffset(t *testing.T) {
 		})
 	}
 }
+
+func TestLineBounds(t *testing.T) {
+	cases := []struct {
+		data       []byte
+		lineNumber int
+		start      uint32
+		end        uint32
+	}{{
+		data:       []byte("0.2.4.\n7.9.11.\n"),
+		lineNumber: 1,
+		start:      0, end: 6,
+	}, {
+		data:       []byte("0.2.4.\n7.9.11.\n"),
+		lineNumber: 2,
+		start:      7, end: 14,
+	}, {
+		data:       []byte("0.2.4.\n7.9.11.\n"),
+		lineNumber: 0,
+		start:      0, end: 0,
+	}, {
+		data:       []byte("0.2.4.\n7.9.11.\n"),
+		lineNumber: -1,
+		start:      0, end: 0,
+	}, {
+		data:       []byte("0.2.4.\n7.9.11.\n"),
+		lineNumber: 202002,
+		start:      15, end: 15,
+	}, {
+		data:       []byte("\n\n"),
+		lineNumber: 1,
+		start:      0, end: 0,
+	}, {
+		data:       []byte("\n\n"),
+		lineNumber: 2,
+		start:      1, end: 1,
+	}, {
+		data:       []byte("\n\n"),
+		lineNumber: 3,
+		start:      2, end: 2,
+	}}
+
+	for _, tt := range cases {
+		t.Run("", func(t *testing.T) {
+			nls := getNewlines(tt.data)
+			gotStart, gotEnd := nls.lineBounds(tt.lineNumber)
+			if gotStart != tt.start {
+				t.Fatalf("expected line start %d, got %d", tt.start, gotStart)
+			}
+			if gotEnd != tt.end {
+				t.Fatalf("expected line end %d, got %d", tt.end, gotEnd)
+			}
+		})
+	}
+}

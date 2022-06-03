@@ -261,41 +261,49 @@ func (nls newlines) atOffset(offset uint32) (lineNumber, lineStart, lineEnd int)
 		return nls.locs[n] >= offset
 	})
 
-	end := int(nls.fileSize)
-	if idx < len(nls.locs) {
-		end = int(nls.locs[idx])
+	start, end := nls.lineBounds(idx + 1)
+	return idx + 1, int(start), int(end)
+}
+
+// lineBounds returns the byte offsets of the start and end of the 1-based
+// lineNumber. The end offset is exclusive and will not contain the line-ending
+// newline. If the line number is out of range of the lines in the file, start
+// and end will be clamped to [0,fileSize].
+func (nls newlines) lineBounds(lineNumber int) (start, end uint32) {
+	// newlines[0] is the start of the 2nd line in data.
+	startIdx := lineNumber - 2
+	endIdx := lineNumber - 1
+
+	if startIdx >= 0 && startIdx < len(nls.locs) {
+		start = nls.locs[startIdx] + 1
+	} else if startIdx < 0 {
+		start = 0
+	} else if startIdx >= len(nls.locs) {
+		start = nls.fileSize
 	}
 
-	start := 0
-	if idx > 0 {
-		start = int(nls.locs[idx-1] + 1)
+	if endIdx >= 0 && endIdx < len(nls.locs) {
+		end = nls.locs[endIdx]
+	} else if endIdx < 0 {
+		end = 0
+	} else if endIdx >= len(nls.locs) {
+		end = nls.fileSize
 	}
 
-	return idx + 1, start, end
+	return start, end
 }
 
 // getLines returns a slice of data containing the lines [low, high).
 // low is 1-based and inclusive. high is exclusive.
 func (nls newlines) getLines(data []byte, low, high int) []byte {
-	// newlines[0] is the start of the 2nd line in data.
-	// So adjust low and high to be based on newLines.
-	low -= 2
-	high -= 2
-	if low >= high || high < 0 || low >= len(nls.locs) || len(nls.locs) == 0 {
+	if low >= high {
 		return nil
 	}
 
-	var startIndex uint32
-	if low < 0 {
-		startIndex = 0
-	} else {
-		startIndex = nls.locs[low] + 1
-	}
+	lowStart, _ := nls.lineBounds(low)
+	_, highEnd := nls.lineBounds(high - 1)
 
-	if high >= len(nls.locs) {
-		return data[startIndex:]
-	}
-	return data[startIndex:nls.locs[high]]
+	return data[lowStart:highEnd]
 }
 
 const (
