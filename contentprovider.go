@@ -294,7 +294,7 @@ func (nls newlines) lineBounds(lineNumber int) (start, end uint32) {
 }
 
 // getLines returns a slice of data containing the lines [low, high).
-// low is 1-based and inclusive. high is exclusive.
+// low is 1-based and inclusive. high is 1-based and exclusive.
 func (nls newlines) getLines(data []byte, low, high int) []byte {
 	if low >= high {
 		return nil
