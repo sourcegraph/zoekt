@@ -274,20 +274,20 @@ func (nls newlines) lineBounds(lineNumber int) (start, end uint32) {
 	startIdx := lineNumber - 2
 	endIdx := lineNumber - 1
 
-	if startIdx >= 0 && startIdx < len(nls.locs) {
-		start = nls.locs[startIdx] + 1
-	} else if startIdx < 0 {
+	if startIdx < 0 {
 		start = 0
 	} else if startIdx >= len(nls.locs) {
 		start = nls.fileSize
+	} else {
+		start = nls.locs[startIdx] + 1
 	}
 
-	if endIdx >= 0 && endIdx < len(nls.locs) {
-		end = nls.locs[endIdx]
-	} else if endIdx < 0 {
+	if endIdx < 0 {
 		end = 0
 	} else if endIdx >= len(nls.locs) {
 		end = nls.fileSize
+	} else {
+		end = nls.locs[endIdx]
 	}
 
 	return start, end
