@@ -17,7 +17,6 @@ package zoekt
 import (
 	"bytes"
 	"fmt"
-	"sort"
 )
 
 // candidateMatch is a candidate match for a substring.
@@ -57,29 +56,6 @@ func (m *candidateMatch) matchContent(content []byte) bool {
 		m.byteMatchSz = uint32(sz)
 		return ok
 	}
-}
-
-// line returns the line holding the match. If the match starts with
-// the newline ending line M, we return M.  The line is characterized
-// by its linenumber (base-1, byte index of line start, byte index of
-// line end).  The line end is the index of a newline, or the filesize
-// (if matching the last line of the file.)
-func (m *candidateMatch) line(newlines []uint32, fileSize uint32) (lineNum, lineStart, lineEnd int) {
-	idx := sort.Search(len(newlines), func(n int) bool {
-		return newlines[n] >= m.byteOffset
-	})
-
-	end := int(fileSize)
-	if idx < len(newlines) {
-		end = int(newlines[idx])
-	}
-
-	start := 0
-	if idx > 0 {
-		start = int(newlines[idx-1] + 1)
-	}
-
-	return idx + 1, start, end
 }
 
 // matchIterator is a docIterator that produces candidateMatches for a given document

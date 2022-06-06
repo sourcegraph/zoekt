@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -24,7 +23,7 @@ import (
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if !testing.Verbose() {
-		log.SetOutput(ioutil.Discard)
+		log.SetOutput(io.Discard)
 	}
 	os.Exit(m.Run())
 }
@@ -96,12 +95,9 @@ func TestIndexIncrementally(t *testing.T) {
 }
 
 func testIndexIncrementally(t *testing.T, format string) {
-	indexdir, err := ioutil.TempDir("", "TestIndexArg-index")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(indexdir)
-	archive, err := ioutil.TempFile("", "TestIndexArg-archive")
+	indexDir := t.TempDir()
+
+	archive, err := os.CreateTemp("", "TestIndexArg-archive")
 	if err != nil {
 		t.Fatalf("TempFile: %v", err)
 	}
@@ -142,7 +138,7 @@ func testIndexIncrementally(t *testing.T, format string) {
 
 		bopts := build.Options{
 			SizeMax:    fileSize - 1,
-			IndexDir:   indexdir,
+			IndexDir:   indexDir,
 			LargeFiles: largeFiles,
 		}
 		opts := Options{
@@ -158,9 +154,9 @@ func testIndexIncrementally(t *testing.T, format string) {
 			t.Fatalf("error creating index: %v", err)
 		}
 
-		ss, err := shards.NewDirectorySearcher(indexdir)
+		ss, err := shards.NewDirectorySearcher(indexDir)
 		if err != nil {
-			t.Fatalf("NewDirectorySearcher(%s): %v", indexdir, err)
+			t.Fatalf("NewDirectorySearcher(%s): %v", indexDir, err)
 		}
 		defer ss.Close()
 

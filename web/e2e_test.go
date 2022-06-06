@@ -19,7 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -95,8 +95,8 @@ func TestBasic(t *testing.T) {
 	if err := b.Add(zoekt.Document{
 		Name:    "f2",
 		Content: []byte("to carry water in the no later bla"),
-		// ------------- 0123456789012345678901234567890123
-		// ------------- 0         1         2         3
+		// --------------0123456789012345678901234567890123
+		// --------------0         1         2         3
 		Branches: []string{"master"},
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -240,7 +240,7 @@ func checkNeedles(t *testing.T, ts *httptest.Server, req string, needles []strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		log.Fatal(err)
@@ -617,7 +617,7 @@ func checkResultMatches(t *testing.T, ts *httptest.Server, req string, expected 
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		log.Fatal(err)
@@ -727,7 +727,7 @@ func TestCrash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -780,7 +780,7 @@ func TestHostCustomization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do(%v): %v", req, err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
@@ -830,7 +830,7 @@ func TestDupResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do(%v): %v", req, err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
@@ -879,7 +879,7 @@ func TestTruncateLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do(%v): %v", req, err)
 	}
-	resultBytes, err := ioutil.ReadAll(res.Body)
+	resultBytes, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)

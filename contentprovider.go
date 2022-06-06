@@ -64,14 +64,14 @@ func (p *contentProvider) docSections() []DocumentSection {
 	return p._sects
 }
 
-func (p *contentProvider) newlines() []uint32 {
+func (p *contentProvider) newlines() newlines {
 	if p._nl == nil {
 		var sz uint32
 		p._nl, sz, p.err = p.id.readNewlines(p.idx, p._nlBuf)
 		p._nlBuf = p._nl
 		p.stats.ContentBytesLoaded += int64(sz)
 	}
-	return p._nl
+	return newlines{locs: p._nl, fileSize: p.fileSize}
 }
 
 func (p *contentProvider) data(fileName bool) []byte {
@@ -167,7 +167,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 	var result []LineMatch
 	for len(ms) > 0 {
 		m := ms[0]
-		num, lineStart, lineEnd := m.line(p.newlines(), p.fileSize)
+		num, lineStart, lineEnd := p.newlines().atOffset(m.byteOffset)
 
 		var lineCands []*candidateMatch
 
@@ -215,8 +215,8 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 		finalMatch.Line = data[lineStart:lineEnd]
 
 		if numContextLines > 0 {
-			finalMatch.Before = getLines(data, p.newlines(), num-numContextLines, num)
-			finalMatch.After = getLines(data, p.newlines(), num+1, num+1+numContextLines)
+			finalMatch.Before = p.newlines().getLines(data, num-numContextLines, num)
+			finalMatch.After = p.newlines().getLines(data, num+1, num+1+numContextLines)
 		}
 
 		for _, m := range lineCands {
@@ -241,14 +241,47 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 	return result
 }
 
+type newlines struct {
+	// locs is the sorted set of byte offsets of the newlines in the file
+	locs []uint32
+
+	// fileSize is just the number of bytes in the file. It is stored
+	// on this struct so we can safely know the length of the last line
+	// in the file since not all files end in a newline.
+	fileSize uint32
+}
+
+// atOffset returns the line containing the offset. If the offset lands on
+// the newline ending line M, we return M.  The line is characterized
+// by its linenumber (base-1, byte index of line start, byte index of
+// line end). The line end is the index of a newline, or the filesize
+// (if matching the last line of the file.)
+func (nls newlines) atOffset(offset uint32) (lineNumber, lineStart, lineEnd int) {
+	idx := sort.Search(len(nls.locs), func(n int) bool {
+		return nls.locs[n] >= offset
+	})
+
+	end := int(nls.fileSize)
+	if idx < len(nls.locs) {
+		end = int(nls.locs[idx])
+	}
+
+	start := 0
+	if idx > 0 {
+		start = int(nls.locs[idx-1] + 1)
+	}
+
+	return idx + 1, start, end
+}
+
 // getLines returns a slice of data containing the lines [low, high).
 // low is 1-based and inclusive. high is exclusive.
-func getLines(data []byte, newLines []uint32, low, high int) []byte {
+func (nls newlines) getLines(data []byte, low, high int) []byte {
 	// newlines[0] is the start of the 2nd line in data.
 	// So adjust low and high to be based on newLines.
 	low -= 2
 	high -= 2
-	if low >= high || high < 0 || low >= len(newLines) || len(newLines) == 0 {
+	if low >= high || high < 0 || low >= len(nls.locs) || len(nls.locs) == 0 {
 		return nil
 	}
 
@@ -256,13 +289,13 @@ func getLines(data []byte, newLines []uint32, low, high int) []byte {
 	if low < 0 {
 		startIndex = 0
 	} else {
-		startIndex = newLines[low] + 1
+		startIndex = nls.locs[low] + 1
 	}
 
-	if high >= len(newLines) {
+	if high >= len(nls.locs) {
 		return data[startIndex:]
 	}
-	return data[startIndex:newLines[high]]
+	return data[startIndex:nls.locs[high]]
 }
 
 const (

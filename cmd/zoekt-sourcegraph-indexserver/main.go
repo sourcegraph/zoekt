@@ -11,7 +11,6 @@ import (
 	"go.uber.org/zap"
 	"html/template"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"math/rand"
@@ -186,7 +185,7 @@ type Server struct {
 	repositoriesSkipSymbolsCalculationAllowList map[string]struct{}
 }
 
-var debug = log.New(ioutil.Discard, "", log.LstdFlags)
+var debug = log.New(io.Discard, "", log.LstdFlags)
 
 // our index commands should output something every 100mb they process.
 //
@@ -1004,10 +1003,10 @@ func startServer(conf rootConfig) error {
 		go func() {
 			mux := http.NewServeMux()
 			debugserver.AddHandlers(mux, true, []debugserver.DebugPage{
-				{Href: "debug/indexed", Text: "Indexed"},
-				{Href: "debug/list?indexed=true", Text: "Assigned (all)", Description: "includes repositories which this instance temporarily holds during re-balancing"},
-				{Href: "debug/list?indexed=false", Text: "Assigned (this instance)"},
-				{Href: "debug/queue", Text: "Queue"},
+				{Href: "debug/indexed", Text: "Indexed", Description: "list of all indexed repositories"},
+				{Href: "debug/list?indexed=false", Text: "Assigned (this instance)", Description: "list of all repositories that are assigned to this instance"},
+				{Href: "debug/list?indexed=true", Text: "Assigned (all)", Description: "same as above, but includes repositories which this instance temporarily holds during re-balancing"},
+				{Href: "debug/queue", Text: "Indexing Queue State", Description: "list of all repositories in the indexing queue, sorted by descending priority"},
 			}...)
 			s.addDebugHandlers(mux)
 			debug.Printf("serving HTTP on %s", conf.listen)

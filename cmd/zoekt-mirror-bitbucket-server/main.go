@@ -20,7 +20,6 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -74,7 +73,7 @@ func main() {
 	if *credentialsFile == "" {
 		log.Fatal("must set --credentials")
 	} else {
-		content, err := ioutil.ReadFile(*credentialsFile)
+		content, err := os.ReadFile(*credentialsFile)
 		if err != nil {
 			log.Fatal(err)
 		}

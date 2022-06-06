@@ -16,7 +16,6 @@ package shards
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,11 +46,7 @@ func advanceFS() {
 }
 
 func TestDirWatcherUnloadOnce(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	logger := &loggingLoader{
 		loads: make(chan string, 10),
@@ -64,7 +59,7 @@ func TestDirWatcherUnloadOnce(t *testing.T) {
 	// }
 
 	shard := filepath.Join(dir, "foo.zoekt")
-	if err := ioutil.WriteFile(shard, []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(shard, []byte("hello"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -80,7 +75,7 @@ func TestDirWatcherUnloadOnce(t *testing.T) {
 
 	// Must sleep because of FS timestamp resolution.
 	advanceFS()
-	if err := ioutil.WriteFile(shard, []byte("changed"), 0o644); err != nil {
+	if err := os.WriteFile(shard, []byte("changed"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -98,7 +93,7 @@ func TestDirWatcherUnloadOnce(t *testing.T) {
 	}
 
 	advanceFS()
-	if err := ioutil.WriteFile(shard+".bla", []byte("changed"), 0o644); err != nil {
+	if err := os.WriteFile(shard+".bla", []byte("changed"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -114,10 +109,7 @@ func TestDirWatcherUnloadOnce(t *testing.T) {
 }
 
 func TestDirWatcherLoadEmpty(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := t.TempDir()
 
 	logger := &loggingLoader{
 		loads: make(chan string, 10),
@@ -178,10 +170,7 @@ func TestVersionFromPath(t *testing.T) {
 }
 
 func TestDirWatcherLoadLatest(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := t.TempDir()
 
 	logger := &loggingLoader{
 		loads: make(chan string, 10),
@@ -199,7 +188,7 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 	for delta := -1; delta <= 1; delta++ {
 		repo := fmt.Sprintf("foo_v%d.00000.zoekt", want+delta)
 		shard := filepath.Join(dir, repo)
-		if err := ioutil.WriteFile(shard, []byte("hello"), 0644); err != nil {
+		if err := os.WriteFile(shard, []byte("hello"), 0644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
 	}

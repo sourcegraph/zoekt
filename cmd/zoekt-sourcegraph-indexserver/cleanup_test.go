@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -114,11 +113,7 @@ func TestCleanup(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "TestCleanup")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer os.RemoveAll(dir)
+			dir := t.TempDir()
 
 			// Create index files
 			var fs []shard
@@ -163,7 +158,7 @@ func TestCleanup(t *testing.T) {
 			}
 
 			if testing.Verbose() {
-				data, _ := ioutil.ReadFile(filepath.Join(dir, "zoekt-indexserver-shard-log.tsv"))
+				data, _ := os.ReadFile(filepath.Join(dir, "zoekt-indexserver-shard-log.tsv"))
 				if len(data) > 0 {
 					t.Log("shard log contents:\n" + strings.TrimSpace(string(data)))
 				}
@@ -221,11 +216,7 @@ func TestRemoveIncompleteShards(t *testing.T) {
 	}
 	sort.Strings(shards)
 
-	dir, err := ioutil.TempDir("", "TestRemoveIncompleteShards")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	for _, shard := range append(shards, incomplete...) {
 		_, err := os.Create(filepath.Join(dir, shard))

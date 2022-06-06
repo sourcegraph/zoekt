@@ -17,7 +17,6 @@ package build
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,7 +31,7 @@ func runCTags(bin string, inputs map[string][]byte) ([]*ctags.Entry, error) {
 	if len(inputs) == 0 {
 		return nil, nil
 	}
-	dir, err := ioutil.TempDir("", "ctags-input")
+	dir, err := os.MkdirTemp("", "ctags-input")
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +52,7 @@ func runCTags(bin string, inputs map[string][]byte) ([]*ctags.Entry, error) {
 		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
 			return nil, err
 		}
-		err := ioutil.WriteFile(full, c, 0o600)
+		err := os.WriteFile(full, c, 0o600)
 		if err != nil {
 			return nil, err
 		}

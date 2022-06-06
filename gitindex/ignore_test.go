@@ -3,7 +3,6 @@ package gitindex
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,21 +49,13 @@ git update-ref refs/meta/config HEAD
 }
 
 func TestIgnore(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("TempDir: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	if err := createSourcegraphignoreRepo(dir); err != nil {
 		t.Fatalf("createSourcegraphignoreRepo: %v", err)
 	}
 
-	indexDir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(indexDir)
+	indexDir := t.TempDir()
 
 	buildOpts := build.Options{
 		IndexDir: indexDir,

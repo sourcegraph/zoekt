@@ -885,12 +885,11 @@ func TestWordBoundaryRanking(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		zoekt.Document{Name: "f1", Content: []byte("xbytex xbytex")},
 		zoekt.Document{Name: "f2", Content: []byte("xbytex\nbytex\nbyte bla")},
-		// -----------------------------------0123456 789012 34567890
+		// -----------------------------------------0123456 789012 34567890
 		zoekt.Document{Name: "f3", Content: []byte("xbytex ybytex")})
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-
 			files := tt.testShardedSearch(t, &query.Substring{Pattern: "byte"}, b)
 
 			if len(files) != 3 {

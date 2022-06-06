@@ -23,7 +23,6 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -87,7 +86,7 @@ func loadTemplates(tpl *template.Template, dir string) error {
 
 	log.Printf("loading templates: %v", fs)
 	for _, fn := range fs {
-		content, err := ioutil.ReadFile(fn)
+		content, err := os.ReadFile(fn)
 		if err != nil {
 			return err
 		}
@@ -108,7 +107,7 @@ func writeTemplates(dir string) error {
 
 	for k, v := range web.TemplateText {
 		nm := filepath.Join(dir, k+templateExtension)
-		if err := ioutil.WriteFile(nm, []byte(v), 0o644); err != nil {
+		if err := os.WriteFile(nm, []byte(v), 0o644); err != nil {
 			return err
 		}
 	}
