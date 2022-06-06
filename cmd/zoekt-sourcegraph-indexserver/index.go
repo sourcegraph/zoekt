@@ -274,11 +274,9 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	debug.Printf("successfully fetched git data for %q (%d commit(s)) in %s", o.Name, successfullyFetchedCommitsCount, fetchDuration)
 
 	logger.Info("successfully fetched git data",
-		zap.String("name", o.Name),
+		zap.String("repo", o.Name),
 		zap.Uint32("id", o.RepoID),
 		zap.Int("commits_count", successfullyFetchedCommitsCount),
-		zap.Int64("duration_ms", fetchDuration.Milliseconds()),
-		zap.String("duration_str", fetchDuration.String()),
 		zap.Duration("duration", fetchDuration),
 	)
 	// We then create the relevant refs for each fetched commit.

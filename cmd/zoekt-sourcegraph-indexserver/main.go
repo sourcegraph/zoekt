@@ -401,8 +401,6 @@ func (s *Server) Run() {
 				zap.String("repo", args.Name),
 				zap.Uint32("id", args.RepoID),
 				zap.Strings("branches", args.BranchesStrings()),
-				zap.Int64("duration_ms", elapsed.Milliseconds()),
-				zap.String("duration_str", elapsed.String()),
 				zap.Duration("duration", elapsed),
 			)
 		case indexStateSuccessMeta:
@@ -1139,9 +1137,7 @@ func initializeLogger() *zap.Logger {
 	})
 	defer syncLogs()
 
-	devMode := sglog.DevMode()
-	safeGet := !devMode // do not panic in prod
-	return sglog.Get(safeGet)
+	return sglog.Get()
 }
 
 func main() {

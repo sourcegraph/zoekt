@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/google/zoekt/log/logtest"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/google/zoekt"
+	zoektlog "github.com/google/zoekt/log"
 )
 
 func TestServer_defaultArgs(t *testing.T) {
@@ -112,6 +114,7 @@ func TestListRepoIDs_Error(t *testing.T) {
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if !testing.Verbose() {
+		logtest.InitWithLevel(m, zoektlog.LevelNone)
 		log.SetOutput(ioutil.Discard)
 	}
 	os.Exit(m.Run())
