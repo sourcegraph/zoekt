@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	zoektlog "github.com/google/zoekt/log"
 	"go.uber.org/zap"
 )
 
@@ -165,6 +166,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 
 	buildOptions := o.BuildOptions()
+	logger := zoektlog.Get()
 
 	ctx, cancel := context.WithTimeout(context.Background(), indexTimeout)
 	defer cancel()
@@ -279,6 +281,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		zap.Int("commits_count", successfullyFetchedCommitsCount),
 		zap.Duration("duration", fetchDuration),
 	)
+
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
 		ref := b.Name

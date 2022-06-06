@@ -17,7 +17,6 @@ const (
 type Resource = otfields.Resource
 
 // Get retrieves the initialized logger
-// panics for development mode
 func Get() *zap.Logger {
 	devMode := logger.DevMode()
 	safeGet := !devMode

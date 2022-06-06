@@ -40,11 +40,10 @@ import (
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/debugserver"
 	"github.com/google/zoekt/internal/profiler"
-	sglog "github.com/google/zoekt/log"
+	zoektlog "github.com/google/zoekt/log"
 )
 
 var (
-	logger                         = initializeLogger()
 	metricResolveRevisionsDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "resolve_revisions_seconds",
 		Help:    "A histogram of latencies for resolving all repository revisions.",
@@ -365,6 +364,8 @@ func (s *Server) Run() {
 			}
 		}
 	}()
+
+	logger := zoektlog.Get()
 
 	// In the current goroutine process the queue forever.
 	for {
@@ -1127,19 +1128,15 @@ func newServer(conf rootConfig) (*Server, error) {
 	}, err
 }
 
-func initializeLogger() *zap.Logger {
+func main() {
 	name, _ := findName()
-	syncLogs := sglog.Init(sglog.Resource{
+	syncLogs := zoektlog.Init(zoektlog.Resource{
 		Name:       name,
 		Version:    zoekt.Version,
 		InstanceID: hostnameBestEffort(),
 	})
 	defer syncLogs()
 
-	return sglog.Get()
-}
-
-func main() {
 	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}

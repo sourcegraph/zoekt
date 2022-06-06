@@ -32,7 +32,7 @@ func Init(_ *testing.M) {
 	}
 }
 
-// InitWithLevel does the same thing as Init, but uses the provided log level to configur
+// InitWithLevel does the same thing as Init, but uses the provided log level to configure
 // the log level for this package's tests, which can be helpful for exceptionally noisy
 // tests.
 //
@@ -43,7 +43,7 @@ func InitWithLevel(_ *testing.M, level log.Level) {
 }
 
 func initLogger(level zapcore.Level) {
-	// use empty resource development skips including it
+	// use empty resource since development does not include it
 	logger.Init(log.Resource{}, level, encoders.OutputConsole, true)
 }
 
@@ -62,14 +62,14 @@ type LoggerOptions struct {
 	FailOnErrorLogs bool
 }
 
-func testLoggerOutput(t testing.TB, options LoggerOptions) *zap.Logger {
+func testLogger(t testing.TB, options LoggerOptions) *zap.Logger {
 	// initialize just in case - the underlying call to log.Init is no-op if this has
 	// already been done. We allow this in testing for convenience.
 	Init(nil)
 
 	initialLogger := logger.Get(true)
 
-	// On cleanup, flush the global logger.
+	// On cleanup, flush the logger.
 	t.Cleanup(func() { initialLogger.Sync() })
 
 	// Hook test output with cloned logger
@@ -87,7 +87,7 @@ func testLoggerOutput(t testing.TB, options LoggerOptions) *zap.Logger {
 // Captured retrieves a logger from scoped to the the given test, and returns a callback,
 // dumpLogs, which flushes the logger buffer and returns log entries.
 func Captured(t testing.TB) (newLogger *zap.Logger, exportLogs func() []CapturedLog) {
-	testLogger := testLoggerOutput(t, LoggerOptions{})
+	testLogger := testLogger(t, LoggerOptions{})
 
 	observerCore, entries := observer.New(zap.DebugLevel) // capture all levels
 	newLogger = testLogger.
@@ -109,4 +109,9 @@ func Captured(t testing.TB) (newLogger *zap.Logger, exportLogs func() []Captured
 		}
 		return logs
 	}
+}
+
+// NoOp returns a no-op Logger, useful for silencing all output in a specific test.
+func NoOp(t *testing.T) *zap.Logger {
+	return testLogger(t, LoggerOptions{"none", false})
 }
