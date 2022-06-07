@@ -16,8 +16,8 @@ const (
 
 type Resource = otfields.Resource
 
-// Get retrieves the initialized logger
-func Get() *zap.Logger {
+// Retrieves the initialized global logger
+func Global() *zap.Logger {
 	devMode := logger.DevMode()
 	safeGet := !devMode
 	return logger.Get(safeGet)

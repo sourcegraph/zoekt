@@ -36,6 +36,10 @@ func Get(safe bool) *zap.Logger {
 // Init initializes the logger once. Subsequent calls are no-op. Returns the
 // callback to sync the root core.
 func Init(r otfields.Resource, level zapcore.LevelEnabler, format encoders.OutputFormat, development bool) func() error {
+	if IsInitialized() {
+		panic("log.Init initialized multiple times")
+	}
+
 	loggerInit.Do(func() {
 		logger = initLogger(r, level, format, development)
 	})

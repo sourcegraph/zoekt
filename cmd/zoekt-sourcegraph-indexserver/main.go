@@ -365,7 +365,7 @@ func (s *Server) Run() {
 		}
 	}()
 
-	logger := zoektlog.Get()
+	logger := zoektlog.Global()
 
 	// In the current goroutine process the queue forever.
 	for {

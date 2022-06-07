@@ -166,7 +166,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 
 	buildOptions := o.BuildOptions()
-	logger := zoektlog.Get()
+	logger := zoektlog.Global()
 
 	ctx, cancel := context.WithTimeout(context.Background(), indexTimeout)
 	defer cancel()
