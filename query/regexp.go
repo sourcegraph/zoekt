@@ -15,7 +15,6 @@
 package query
 
 import (
-	"fmt"
 	"log"
 	"regexp/syntax"
 )
@@ -44,25 +43,36 @@ func LowerRegexp(r *syntax.Regexp) *syntax.Regexp {
 	return &newRE
 }
 
-// Convert Regexp with captures to Regexp with non captures.
-// Makes a copy leaving orginal Regexp unchanged
-func ConvertCapture(re *syntax.Regexp) (*syntax.Regexp, error) {
-	// Make a copy so in unlikely event of an error the original can be used as a fallback
-	r, err := syntax.Parse(re.String(), regexpFlags)
-	if err != nil {
-		return nil, fmt.Errorf("failed to copy regexp: `%s`: %s", re, err)
-	}
-
-	r = uncapture(r)
-
-	// Parse again for new structure to take effect
-	r, err = syntax.Parse(r.String(), regexpFlags)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse regexp after uncapture: `%s`: %s", r, err)
-	}
-
+// Optimize Regexp.
+// Convert capturing groups to non-capturing groups.
+// Returns original input if an error is encountered
+func optimizeRegexp(re *syntax.Regexp) *syntax.Regexp {
+	r := convertCapture(re)
 	r = r.Simplify()
-	return r, nil
+	return r
+}
+
+func convertCapture(re *syntax.Regexp) *syntax.Regexp {
+	if hasCapture(re) {
+		// Make a copy so in unlikely event of an error the original can be used as a fallback
+		r, err := syntax.Parse(re.String(), regexpFlags)
+		if err != nil {
+			log.Printf("failed to copy regexp `%s`: %v", re, err)
+			return re
+		}
+
+		r = uncapture(r)
+
+		// Parse again for new structure to take effect
+		r, err = syntax.Parse(r.String(), regexpFlags)
+		if err != nil {
+			log.Printf("failed to parse regexp after uncapture `%s`: %v", r, err)
+			return re
+		}
+
+		return r
+	}
+	return re
 }
 
 func hasCapture(r *syntax.Regexp) bool {

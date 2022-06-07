@@ -64,7 +64,7 @@ func TestParseQuery(t *testing.T) {
 		{"abccase:yes", &Substring{Pattern: "abccase:yes"}},
 		{"file:abc", &Substring{Pattern: "abc", FileName: true}},
 		{"branch:pqr", &Branch{Pattern: "pqr"}},
-		{"((x) )", &Substring{Pattern: "x"}},
+		{"((x|y) )", &Regexp{Regexp: mustParseRE("[xy]")}},
 		{"file:helpers\\.go byte", NewAnd(
 			&Substring{Pattern: "helpers.go", FileName: true},
 			&Substring{Pattern: "byte"})},

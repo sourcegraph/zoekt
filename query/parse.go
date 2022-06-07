@@ -231,14 +231,7 @@ func regexpQuery(text string, content, file bool) (Q, error) {
 		return nil, err
 	}
 
-	if hasCapture(r) {
-		re, err := ConvertCapture(r)
-		if err == nil {
-			r = re
-		} else {
-			log.Printf("WARN: ConvertCapture error: %s", err)
-		}
-	}
+	r = optimizeRegexp(r)
 
 	if r.Op == syntax.OpLiteral {
 		expr = &Substring{

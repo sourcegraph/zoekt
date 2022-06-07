@@ -598,6 +598,7 @@ func BenchmarkShardedSearch(b *testing.B) {
 		{"substring all results", func() query.Q { return haystackSub }, len(repos) * filesPerRepo},
 		{"substring no results", func() query.Q { return helloworldSub }, 0},
 		{"substring some results", func() query.Q { return needleSub }, len(repos)},
+
 		{"regexp all results capture", func() query.Q { return haystackCap }, len(repos) * filesPerRepo},
 		{"regexp all results non-capture", func() query.Q { return haystackNonCap }, len(repos) * filesPerRepo},
 

@@ -66,19 +66,36 @@ func TestLowerRegexp(t *testing.T) {
 	}
 }
 
-func TestConvertCapture(t *testing.T) {
-	in := "(hello)world"
-	re := mustParseRE(in)
-
-	got, err := ConvertCapture(re)
-	if err != nil {
-		t.Fatal(err)
+func TestOptimize(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "simple capture", in: "(hello)world", want: "(?:hello)world"},
+		{name: "simple capture == literal", in: "(hello)world", want: "helloworld"},
+		{name: "capture alternative", in: "test(ing|ed)", want: "test(?:ing|ed)"},
+		{name: "capture repeat", in: "ba(na){1,2}", want: "ba(?:na){1,2}"},
+		{name: "nested captures", in: "b(a(n(a(n(a)))))", want: "banana"},
 	}
 
-	want := mustParseRE("(?:hello)world")
-	if !got.Equal(want) {
-		printRegexp(t, got, 0)
-		printRegexp(t, want, 0)
-		t.Errorf("got %s, want %s", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// optimizeRegexp always calls Simplify
+			// calling Simplify here makes test cases more predictable
+			simplifiedWant := mustParseRE(tt.want).Simplify()
+
+			in := mustParseRE(tt.in)
+			got := optimizeRegexp(in)
+
+			// String comparison as the same Regexp string can have different ASTs
+			// e.g. optimize of `ba(na){1,2}` == `bana(?:na)?`
+			//      however the AST is different from directly parsing `bana(?:na)?`
+			if got.String() != simplifiedWant.String() {
+				printRegexp(t, got, 0)
+				printRegexp(t, simplifiedWant, 0)
+				t.Errorf("got %s, want %s\n", got, tt.want)
+			}
+		})
 	}
 }
