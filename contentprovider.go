@@ -270,7 +270,7 @@ func (nls newlines) atOffset(offset uint32) (lineNumber, lineStart, lineEnd int)
 // newline. If the line number is out of range of the lines in the file, start
 // and end will be clamped to [0,fileSize].
 func (nls newlines) lineBounds(lineNumber int) (start, end uint32) {
-	// newlines[0] is the start of the 2nd line in data.
+	// nls.locs[0] + 1 is the start of the 2nd line of data.
 	startIdx := lineNumber - 2
 	endIdx := lineNumber - 1
 
