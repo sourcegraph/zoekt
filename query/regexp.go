@@ -43,13 +43,11 @@ func LowerRegexp(r *syntax.Regexp) *syntax.Regexp {
 	return &newRE
 }
 
-// Optimize Regexp.
-// Convert capturing groups to non-capturing groups.
+// optimizeRegexp converts capturing groups to non-capturing groups.
 // Returns original input if an error is encountered
 func optimizeRegexp(re *syntax.Regexp) *syntax.Regexp {
 	r := convertCapture(re)
-	r = r.Simplify()
-	return r
+	return r.Simplify()
 }
 
 func convertCapture(re *syntax.Regexp) *syntax.Regexp {
