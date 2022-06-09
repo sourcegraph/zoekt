@@ -51,26 +51,27 @@ func optimizeRegexp(re *syntax.Regexp) *syntax.Regexp {
 }
 
 func convertCapture(re *syntax.Regexp) *syntax.Regexp {
-	if hasCapture(re) {
-		// Make a copy so in unlikely event of an error the original can be used as a fallback
-		r, err := syntax.Parse(re.String(), regexpFlags)
-		if err != nil {
-			log.Printf("failed to copy regexp `%s`: %v", re, err)
-			return re
-		}
-
-		r = uncapture(r)
-
-		// Parse again for new structure to take effect
-		r, err = syntax.Parse(r.String(), regexpFlags)
-		if err != nil {
-			log.Printf("failed to parse regexp after uncapture `%s`: %v", r, err)
-			return re
-		}
-
-		return r
+	if !hasCapture(re) {
+		return re
 	}
-	return re
+
+	// Make a copy so in unlikely event of an error the original can be used as a fallback
+	r, err := syntax.Parse(re.String(), regexpFlags)
+	if err != nil {
+		log.Printf("failed to copy regexp `%s`: %v", re, err)
+		return re
+	}
+
+	r = uncapture(r)
+
+	// Parse again for new structure to take effect
+	r, err = syntax.Parse(r.String(), regexpFlags)
+	if err != nil {
+		log.Printf("failed to parse regexp after uncapture `%s`: %v", r, err)
+		return re
+	}
+
+	return r
 }
 
 func hasCapture(r *syntax.Regexp) bool {
