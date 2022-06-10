@@ -231,6 +231,8 @@ func regexpQuery(text string, content, file bool) (Q, error) {
 		return nil, err
 	}
 
+	r = optimizeRegexp(r)
+
 	if r.Op == syntax.OpLiteral {
 		expr = &Substring{
 			Pattern:  string(r.Rune),
