@@ -91,7 +91,9 @@ func hasCapture(r *syntax.Regexp) bool {
 func uncapture(r *syntax.Regexp) *syntax.Regexp {
 	if r.Op == syntax.OpCapture {
 		// Captures only have one subexpression
-		return uncapture(r.Sub[0])
+		r.Op = syntax.OpConcat
+		r.Cap = 0
+		r.Name = ""
 	}
 
 	for i, s := range r.Sub {
