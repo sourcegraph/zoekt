@@ -289,9 +289,18 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	d.ngrams, err = d.readNgrams(toc)
-	if err != nil {
-		return nil, err
+	if os.Getenv("ZOEKT_ENABLE_NGRAM_BS") != "" {
+		bsMap, err := d.readBinarySearchNgrams(toc)
+		if err != nil {
+			return nil, err
+		}
+		d.ngrams = ngramMap{bsMap: bsMap}
+	} else {
+		offsetMap, err := d.readNgrams(toc)
+		if err != nil {
+			return nil, err
+		}
+		d.ngrams = ngramMap{offsetMap: offsetMap}
 	}
 
 	if os.Getenv("ZOEKT_ENABLE_BLOOM") != "" {
@@ -469,6 +478,19 @@ func (d *indexData) readNgrams(toc *indexTOC) (combinedNgramOffset, error) {
 	}
 
 	return makeCombinedNgramOffset(ngrams, postingsIndex), nil
+}
+
+func (d *indexData) readBinarySearchNgrams(toc *indexTOC) (binarySearchNgram, error) {
+	ngramText, err := d.readSectionBlob(toc.ngramText)
+	if err != nil {
+		return binarySearchNgram{}, err
+	}
+
+	return binarySearchNgram{
+		ngramText:                 ngramText,
+		postingOffsets:            toc.postings.offsets,
+		postingDataSentinelOffset: toc.postings.data.off + toc.postings.data.sz,
+	}, nil
 }
 
 func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]byte, error) {
