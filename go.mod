@@ -23,7 +23,7 @@ require (
 	github.com/peterbourgon/ff/v3 v3.1.2
 	github.com/prometheus/client_golang v1.12.1
 	github.com/rs/xid v1.4.0
-	github.com/sourcegraph/go-ctags v0.0.0-20220404085534-f974026334d7
+	github.com/sourcegraph/go-ctags v0.0.0-20220611154803-db463692f037
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	github.com/xanzy/go-gitlab v0.64.0
