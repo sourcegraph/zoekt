@@ -489,7 +489,7 @@ func (d *indexData) readBinarySearchNgrams(toc *indexTOC) (binarySearchNgram, er
 	return binarySearchNgram{
 		ngramText:                 ngramText,
 		postingOffsets:            toc.postings.offsets,
-		postingDataSentinalOffset: toc.postings.data.off + toc.postings.data.sz,
+		postingDataSentinelOffset: toc.postings.data.off + toc.postings.data.sz,
 	}, nil
 }
 

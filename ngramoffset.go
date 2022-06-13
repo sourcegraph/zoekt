@@ -400,9 +400,9 @@ type binarySearchNgram struct {
 	// It is a list of offsets in the a order corresponding with ngramText. It
 	// is marshalled as a list of bigendian uint32s.
 	postingOffsets []uint32
-	// postingDataSentinalOffset is where postingData ends in the index file.
+	// postingDataSentinelOffset is where postingData ends in the index file.
 	// This is used to calculate the size of the last posting.
-	postingDataSentinalOffset uint32
+	postingDataSentinelOffset uint32
 }
 
 func (b binarySearchNgram) Get(gram ngram) (ss simpleSection) {
@@ -428,17 +428,17 @@ func (b binarySearchNgram) Get(gram ngram) (ss simpleSection) {
 	} else {
 		return simpleSection{
 			off: b.postingOffsets[x],
-			sz:  b.postingDataSentinalOffset - b.postingOffsets[x],
+			sz:  b.postingDataSentinelOffset - b.postingOffsets[x],
 		}
 	}
 }
 
 func (b binarySearchNgram) DumpMap() map[ngram]simpleSection {
-	m := map[ngram]simpleSection{}
 	ngramText := b.ngramText
+	m := make(map[ngram]simpleSection, len(ngramText)/ngramEncoding)
 	for len(ngramText) > 0 {
 		gram := ngram(binary.BigEndian.Uint64(ngramText))
-		ngramText = ngramText[8:]
+		ngramText = ngramText[ngramEncoding:]
 		m[gram] = b.Get(gram)
 	}
 	return m
