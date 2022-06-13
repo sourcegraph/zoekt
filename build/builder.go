@@ -655,6 +655,12 @@ func (b *Builder) Finish() error {
 				}
 			}
 
+			if b.opts.HashOptions() != repository.IndexOptions {
+				log.Printf("HashOptions() stored on shard: %s", repository.IndexOptions)
+				log.Printf("HashOptions() from builder Options: %s", b.opts.RepositoryDescription.IndexOptions)
+				return fmt.Errorf("Index options have changed since last build; Cannot proceed with delta build for shard: %s", shard)
+			}
+
 			repository.Branches = b.opts.RepositoryDescription.Branches
 
 			repository.LatestCommitDate = b.opts.RepositoryDescription.LatestCommitDate
