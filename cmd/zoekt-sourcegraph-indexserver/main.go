@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go.uber.org/zap"
 	"html/template"
 	"io"
 	"log"
@@ -35,6 +36,8 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
+	sglog "github.com/sourcegraph/log"
+
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/debugserver"
@@ -42,6 +45,8 @@ import (
 )
 
 var (
+	//logger sglog.Logger
+
 	metricResolveRevisionsDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "resolve_revisions_seconds",
 		Help:    "A histogram of latencies for resolving all repository revisions.",
@@ -363,6 +368,12 @@ func (s *Server) Run() {
 		}
 	}()
 
+	//logger := sglog.Scoped("zoekt-sourcegraph-indexserver", "periodically reindexes enabled repositories on sourcegraph")
+	logger := sglog.Scoped("zoekt-sourcegraph-indexserver", "periodically reindexes enabled repositories on sourcegraph")
+	logger2 := logger.IncreaseLevel("zoekt-sourcegraph-indexserver",
+		"periodically reindexes enabled repositories on sourcegraph",
+		"info")
+	logger2.Info("test")
 	// In the current goroutine process the queue forever.
 	for {
 		if _, err := os.Stat(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
@@ -379,7 +390,7 @@ func (s *Server) Run() {
 		args := s.indexArgs(opts)
 
 		s.muIndexDir.Lock()
-		state, err := s.Index(args)
+		state, err := s.Index(args, logger)
 		s.muIndexDir.Unlock()
 
 		elapsed := time.Since(start)
@@ -392,7 +403,18 @@ func (s *Server) Run() {
 
 		switch state {
 		case indexStateSuccess:
+			var branches []string
+			for _, b := range args.Branches {
+				branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
+			}
 			log.Printf("updated index %s in %v", args.String(), elapsed)
+
+			logger.Info("updated index",
+				zap.String("repo", args.Name),
+				zap.Uint32("id", args.RepoID),
+				zap.Strings("branches", branches),
+				zap.Duration("duration", elapsed),
+			)
 		case indexStateSuccessMeta:
 			log.Printf("updated meta %s in %v", args.String(), elapsed)
 		}
@@ -460,7 +482,7 @@ func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 }
 
 // Index starts an index job for repo name at commit.
-func (s *Server) Index(args *indexArgs) (state indexState, err error) {
+func (s *Server) Index(args *indexArgs, logger sglog.Logger) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
 
 	defer func() {
@@ -534,7 +556,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		},
 	}
 
-	return indexStateSuccess, gitIndex(c, args)
+	return indexStateSuccess, gitIndex(c, args, logger)
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
@@ -746,7 +768,8 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 
 	args := s.indexArgs(opts)
 	args.Incremental = false // force re-index
-	state, err := s.Index(args)
+	logger := sglog.Scoped("", "")
+	state, err := s.Index(args, logger)
 	if err != nil {
 		return fmt.Sprintf("Indexing %s failed: %s", args.String(), err), err
 	}
@@ -891,6 +914,22 @@ func getEnvWithDefaultEmptySet(k string) map[string]struct{} {
 		}
 	}
 	return set
+}
+
+// findName returns the name of the current process, that being the
+// part of argv[0] after the last slash if any, and also the lowercase
+// letters from that, suitable for use as a likely key for lookups
+// in things like shell environment variables which can't contain
+// hyphens.
+// Copied from https://sourcegraph.com/github.com/sourcegraph/sourcegraph/-/blob/internal/env/env.go?L55:6
+func findName() (string, string) {
+	// Environment variable names can't contain, for instance, hyphens.
+	origName := filepath.Base(os.Args[0])
+	name := strings.ReplaceAll(origName, "-", "_")
+	if name == "" {
+		name = "unknown"
+	}
+	return origName, name
 }
 
 func joinStringSet(set map[string]struct{}, sep string) string {
@@ -1103,6 +1142,13 @@ func newServer(conf rootConfig) (*Server, error) {
 }
 
 func main() {
+	name, _ := findName()
+	syncLogs := sglog.Init(sglog.Resource{
+		Name:       name,
+		Version:    zoekt.Version,
+		InstanceID: hostnameBestEffort(),
+	})
+	defer syncLogs.Sync()
 	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}

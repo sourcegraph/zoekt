@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"io"
 	"log"
 	"net/url"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+	sglog "github.com/sourcegraph/log"
 )
 
 // indexTimeout defines how long the indexserver waits before
@@ -149,7 +151,7 @@ type gitIndexConfig struct {
 	findRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
 }
 
-func gitIndex(c gitIndexConfig, o *indexArgs) error {
+func gitIndex(c gitIndexConfig, o *indexArgs, logger sglog.Logger) error {
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
 	}
@@ -271,6 +273,12 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 
 	debug.Printf("successfully fetched git data for %q (%d commit(s)) in %s", o.Name, successfullyFetchedCommitsCount, fetchDuration)
+	logger.Debug("successfully fetched git data",
+		zap.String("repo", o.Name),
+		zap.Uint32("id", o.RepoID),
+		zap.Int("commits_count", successfullyFetchedCommitsCount),
+		zap.Duration("duration", fetchDuration),
+	)
 
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
