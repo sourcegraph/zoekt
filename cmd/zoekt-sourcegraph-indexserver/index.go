@@ -271,7 +271,6 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		}
 	}
 
-	debug.Printf("successfully fetched git data for %q (%d commit(s)) in %s", o.Name, successfullyFetchedCommitsCount, fetchDuration)
 	logger.Debug("successfully fetched git data",
 		zap.String("repo", o.Name),
 		zap.Uint32("id", o.RepoID),

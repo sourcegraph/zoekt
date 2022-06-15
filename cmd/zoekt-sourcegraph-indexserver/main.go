@@ -403,7 +403,6 @@ func (s *Server) Run() {
 			for _, b := range args.Branches {
 				branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
 			}
-			log.Printf("updated index %s in %v", args.String(), elapsed)
 
 			logger.Info("updated index",
 				zap.String("repo", args.Name),
