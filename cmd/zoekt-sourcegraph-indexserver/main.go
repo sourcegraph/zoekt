@@ -45,7 +45,7 @@ import (
 )
 
 var (
-	//logger sglog.Logger
+	logger sglog.Logger
 
 	metricResolveRevisionsDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "resolve_revisions_seconds",
@@ -368,12 +368,8 @@ func (s *Server) Run() {
 		}
 	}()
 
-	//logger := sglog.Scoped("zoekt-sourcegraph-indexserver", "periodically reindexes enabled repositories on sourcegraph")
-	logger := sglog.Scoped("zoekt-sourcegraph-indexserver", "periodically reindexes enabled repositories on sourcegraph")
-	logger2 := logger.IncreaseLevel("zoekt-sourcegraph-indexserver",
-		"periodically reindexes enabled repositories on sourcegraph",
-		"info")
-	logger2.Info("test")
+	logger = sglog.Scoped("zoekt-sourcegraph-indexserver", "periodically reindexes enabled repositories on sourcegraph")
+
 	// In the current goroutine process the queue forever.
 	for {
 		if _, err := os.Stat(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
@@ -390,7 +386,7 @@ func (s *Server) Run() {
 		args := s.indexArgs(opts)
 
 		s.muIndexDir.Lock()
-		state, err := s.Index(args, logger)
+		state, err := s.Index(args)
 		s.muIndexDir.Unlock()
 
 		elapsed := time.Since(start)
@@ -482,7 +478,7 @@ func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 }
 
 // Index starts an index job for repo name at commit.
-func (s *Server) Index(args *indexArgs, logger sglog.Logger) (state indexState, err error) {
+func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
 
 	defer func() {
@@ -556,7 +552,7 @@ func (s *Server) Index(args *indexArgs, logger sglog.Logger) (state indexState, 
 		},
 	}
 
-	return indexStateSuccess, gitIndex(c, args, logger)
+	return indexStateSuccess, gitIndex(c, args)
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
@@ -768,8 +764,7 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 
 	args := s.indexArgs(opts)
 	args.Incremental = false // force re-index
-	logger := sglog.Scoped("", "")
-	state, err := s.Index(args, logger)
+	state, err := s.Index(args)
 	if err != nil {
 		return fmt.Sprintf("Indexing %s failed: %s", args.String(), err), err
 	}

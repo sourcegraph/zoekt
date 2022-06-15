@@ -20,7 +20,6 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
-	sglog "github.com/sourcegraph/log"
 )
 
 // indexTimeout defines how long the indexserver waits before
@@ -151,7 +150,7 @@ type gitIndexConfig struct {
 	findRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
 }
 
-func gitIndex(c gitIndexConfig, o *indexArgs, logger sglog.Logger) error {
+func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
 	}

@@ -15,6 +15,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/google/zoekt"
+	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/log/logtest"
 )
 
 func TestServer_defaultArgs(t *testing.T) {
@@ -111,9 +113,14 @@ func TestListRepoIDs_Error(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	flag.Parse()
+	level := sglog.LevelInfo
 	if !testing.Verbose() {
 		log.SetOutput(io.Discard)
+		level = sglog.LevelNone
 	}
+
+	logtest.InitWithLevel(m, level)
+	logger = sglog.Scoped("zoekt-sourcegraph-indexserver", "Zoekt-sourcegraph-indexserver logger for testing")
 	os.Exit(m.Run())
 }
 
