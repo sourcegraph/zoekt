@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"go.uber.org/zap"
 	"html/template"
 	"io"
 	"log"
@@ -405,10 +404,10 @@ func (s *Server) Run() {
 			}
 
 			logger.Info("updated index",
-				zap.String("repo", args.Name),
-				zap.Uint32("id", args.RepoID),
-				zap.Strings("branches", branches),
-				zap.Duration("duration", elapsed),
+				sglog.String("repo", args.Name),
+				sglog.Uint64("id", uint64(args.RepoID)),
+				sglog.Strings("branches", branches),
+				sglog.Duration("duration", elapsed),
 			)
 		case indexStateSuccessMeta:
 			log.Printf("updated meta %s in %v", args.String(), elapsed)

@@ -6,7 +6,7 @@ import (
 	"crypto/sha1"
 	"errors"
 	"fmt"
-	"go.uber.org/zap"
+	sglog "github.com/sourcegraph/log"
 	"io"
 	"log"
 	"net/url"
@@ -272,10 +272,10 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 	}
 
 	logger.Debug("successfully fetched git data",
-		zap.String("repo", o.Name),
-		zap.Uint32("id", o.RepoID),
-		zap.Int("commits_count", successfullyFetchedCommitsCount),
-		zap.Duration("duration", fetchDuration),
+		sglog.String("repo", o.Name),
+		sglog.Uint64("id", uint64(o.RepoID)),
+		sglog.Int("commits_count", successfullyFetchedCommitsCount),
+		sglog.Duration("duration", fetchDuration),
 	)
 
 	// We then create the relevant refs for each fetched commit.
