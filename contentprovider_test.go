@@ -190,3 +190,10 @@ func TestLineBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestChunkMatches(t *testing.T) {
+
+	cases := []struct {
+
+	}
+}

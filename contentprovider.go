@@ -172,7 +172,7 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 
 func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int) []ChunkMatch {
 	newlines := p.newlines()
-	chunks := chunkMatches(ms, newlines, numContextLines)
+	chunks := chunkCandidates(ms, newlines, numContextLines)
 	data := p.data(false)
 	chunkMatches := make([]ChunkMatch, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -234,10 +234,10 @@ type candidateChunk struct {
 	candidates []*candidateMatch
 }
 
-// chunkMatches groups a set of sorted, non-overlapping candidate matches by line number. Adjacent
+// chunkCandidates groups a set of sorted, non-overlapping candidate matches by line number. Adjacent
 // chunks will be merged if adding `numContextLines` to the beginning and end of the chunk would cause
 // it to overlap with an adjacent chunk.
-func chunkMatches(ms []*candidateMatch, newlines newlines, numContextLines int) []candidateChunk {
+func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines int) []candidateChunk {
 	var chunks []candidateChunk
 	for _, m := range ms {
 		startOffset := m.byteOffset
