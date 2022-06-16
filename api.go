@@ -39,8 +39,11 @@ type FileMatch struct {
 
 	// Repository is the globally unique name of the repo of the
 	// match
-	Repository   string
-	Branches     []string
+	Repository string
+	Branches   []string
+
+	// One of LineMatches or ChunkMatches will be returned depending on whether
+	// the SearchOptions.ChunkMatches is set.
 	LineMatches  []LineMatch
 	ChunkMatches []ChunkMatch
 
@@ -73,12 +76,22 @@ type FileMatch struct {
 	Version string
 }
 
+// ChunkMatch is a set of non-overlapping matches within a contiguous range of
+// lines in the file.
 type ChunkMatch struct {
-	Content      []byte
+	// Content is a contiguous range of complete lines that fully contains Ranges.
+	Content []byte
+	// ContentStart is the location (inclusive) of the beginning of content
+	// relative to the beginning of the file. It will always be at the
+	// beginning of a line (Column will always be zero).
 	ContentStart Location
 
+	// Ranges is a set of matching ranges within this chunk. Each range is relative
+	// to the beginning of the file (not the beginning of Content).
 	Ranges []Range
 
+	// FileName indicates whether this match is a match on the file name, in
+	// which case Content will contain the file name.
 	FileName bool
 
 	Score      float64
@@ -86,17 +99,20 @@ type ChunkMatch struct {
 }
 
 type Range struct {
-	Start      Location
-	End        Location
+	// The inclusive beginning of the range.
+	Start Location
+	// The exclusive end of the range.
+	End Location
+
 	SymbolInfo *Symbol
 }
 
 type Location struct {
 	// 0-based byte offset from the beginning of the file
 	ByteOffset int
-	// 1-based
+	// 1-based line number from the beginning of the file
 	LineNumber int
-	// 1-based
+	// 1-based column number (in runes) from the beginning of line
 	Column int
 }
 

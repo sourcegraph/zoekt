@@ -171,8 +171,8 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 }
 
 func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int) []ChunkMatch {
-	chunks := p.chunkMatches(ms, numContextLines)
 	newlines := p.newlines()
+	chunks := chunkMatches(ms, newlines, numContextLines)
 	data := p.data(false)
 	chunkMatches := make([]ChunkMatch, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -234,18 +234,18 @@ type candidateChunk struct {
 	candidates []*candidateMatch
 }
 
-func (p *contentProvider) chunkMatches(ms []*candidateMatch, numContextLines int) []candidateChunk {
-	// TODO can we guarantee these are sorted at this point?
-	sort.Sort((sortByOffsetSlice)(ms))
-
+// chunkMatches groups a set of sorted, non-overlapping candidate matches by line number. Adjacent
+// chunks will be merged if adding `numContextLines` to the beginning and end of the chunk would cause
+// it to overlap with an adjacent chunk.
+func chunkMatches(ms []*candidateMatch, newlines newlines, numContextLines int) []candidateChunk {
 	var chunks []candidateChunk
-	newlines := p.newlines()
 	for _, m := range ms {
 		startOffset := m.byteOffset
 		endOffset := m.byteOffset + m.byteMatchSz
 		firstLine, _, _ := newlines.atOffset(startOffset)
 		lastLine, _, _ := newlines.atOffset(endOffset)
 
+		// If there is no previous chunk, create a new one
 		if len(chunks) == 0 {
 			chunks = append(chunks, candidateChunk{
 				minLine:    firstLine,
@@ -259,6 +259,9 @@ func (p *contentProvider) chunkMatches(ms []*candidateMatch, numContextLines int
 
 		last := &chunks[len(chunks)-1]
 		if last.maxLine+numContextLines*2 >= firstLine {
+			// If a new chunk created with the current candidateMatch would
+			// overlap with the previous chunk, instead add the candidateMatch
+			// to the last chunk and extend end of the last chunk.
 			last.candidates = append(last.candidates, m)
 			if last.maxOffset < endOffset {
 				last.maxLine = lastLine

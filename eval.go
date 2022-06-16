@@ -436,6 +436,10 @@ func (m sortByOffsetSlice) Less(i, j int) bool {
 // filename/content matches: if there are content matches, all
 // filename matches are trimmed from the result. The matches are
 // returned in document order and are non-overlapping.
+//
+// If `merge` is set, overlapping and adjacent matches will be merged
+// into a single match. Otherwise, overlapping matches will be removed,
+// but adjacent matches will remain.
 func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candidateMatch {
 	var cands []*candidateMatch
 	visitMatches(mt, known, func(mt matchTree) {
