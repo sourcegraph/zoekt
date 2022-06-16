@@ -188,12 +188,21 @@ type Server struct {
 
 var debug = log.New(io.Discard, "", log.LstdFlags)
 
-// our index commands should output something every 100mb they process.
-//
-// 2020-11-24 Keegan. "This should be rather quick so 5m is more than enough
-// time."  famous last words. A client was indexing a monorepo with 42
-// cores... 5m was not enough.
-const noOutputTimeout = 30 * time.Minute
+const (
+	// our index commands should output something every 100mb they process.
+	//
+	// 2020-11-24 Keegan. "This should be rather quick so 5m is more than enough
+	// time."  famous last words. A client was indexing a monorepo with 42
+	// cores... 5m was not enough.
+	noOutputTimeout = 30 * time.Minute
+
+	loggerScope = "zoekt-sourcegraph-indexserver"
+
+	loggerDescription = "periodically reindexes enabled repositories on sourcegraph"
+
+	// Environment variable for logging level
+	srcLogLevel = "SRC_LOG_LEVEL"
+)
 
 func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 	out := &synchronizedBuffer{}
@@ -366,8 +375,6 @@ func (s *Server) Run() {
 			}
 		}
 	}()
-
-	logger = sglog.Scoped("zoekt-sourcegraph-indexserver", "periodically reindexes enabled repositories on sourcegraph")
 
 	// In the current goroutine process the queue forever.
 	for {
@@ -850,7 +857,7 @@ func printShardStats(fn string) error {
 }
 
 func srcLogLevelIsDebug() bool {
-	lvl := os.Getenv("SRC_LOG_LEVEL")
+	lvl := os.Getenv(srcLogLevel)
 	return strings.EqualFold(lvl, "dbug") || strings.EqualFold(lvl, "debug")
 }
 
@@ -1135,14 +1142,42 @@ func newServer(conf rootConfig) (*Server, error) {
 }
 
 func main() {
+	cmd := rootCmd()
+	if err := cmd.Parse(os.Args[1:]); err != nil {
+		log.Fatal(err)
+	}
+
+	// Visit the flags to determine if debug flag is included and enabled
+	debugEnabled := false
+	cmd.FlagSet.Visit(func(flag *flag.Flag) {
+		if flag.Name == "debug" {
+			if toBool, err := strconv.ParseBool(flag.Value.String()); err == nil {
+				debugEnabled = toBool
+			}
+		}
+	})
+
 	name, _ := findName()
+	originalLogLevel := os.Getenv(srcLogLevel)
+
+	// if debug flag is included and enabled then modify srcLogLevel
+	// for logger's Init(). Otherwise rely on srcLogLevel original value.
+	if debugEnabled {
+		os.Setenv(srcLogLevel, "debug")
+	}
+
 	syncLogs := sglog.Init(sglog.Resource{
 		Name:       name,
 		Version:    zoekt.Version,
 		InstanceID: hostnameBestEffort(),
 	})
+
+	os.Setenv(srcLogLevel, originalLogLevel)
 	defer syncLogs.Sync()
-	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
+
+	logger = sglog.Scoped(loggerScope, loggerDescription)
+
+	if err := cmd.Run(context.Background()); err != nil {
 		log.Fatal(err)
 	}
 }
