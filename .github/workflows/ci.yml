@@ -7,7 +7,7 @@ name: CI
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: alpine:edge # go1.18 needs > alpine 3.15
+    container: alpine:3.15
     steps:
       - name: checkout
         uses: actions/checkout@v2
