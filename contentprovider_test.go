@@ -2,6 +2,7 @@ package zoekt
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -192,8 +193,136 @@ func TestLineBounds(t *testing.T) {
 }
 
 func TestChunkMatches(t *testing.T) {
+	content := []byte(`0.2.4.6.8.10.
+13.16.19.22.
+26.29.32.35.
+39.42.45.48.
+52.55.58.61.
+65.68.71.74.
+78.81.84.87.
+`)
+	match_0_2 := &candidateMatch{byteOffset: 0, byteMatchSz: 2}
+	match_6_10 := &candidateMatch{byteOffset: 6, byteMatchSz: 4}
+	match_10_16 := &candidateMatch{byteOffset: 10, byteMatchSz: 6}
+	match_19_42 := &candidateMatch{byteOffset: 19, byteMatchSz: 23}
+	match_45_48 := &candidateMatch{byteOffset: 45, byteMatchSz: 3}
+	match_71_72 := &candidateMatch{byteOffset: 71, byteMatchSz: 1}
 
 	cases := []struct {
+		candidateMatches []*candidateMatch
+		numContextLines  int
+		want             []candidateChunk
+	}{{
+		candidateMatches: []*candidateMatch{match_0_2},
+		numContextLines:  0,
+		want: []candidateChunk{{
+			minLine:    1,
+			minOffset:  0,
+			maxLine:    1,
+			maxOffset:  2,
+			candidates: []*candidateMatch{match_0_2},
+		}},
+	}, {
+		candidateMatches: []*candidateMatch{match_0_2},
+		numContextLines:  5,
+		want: []candidateChunk{{
+			minLine:    1,
+			minOffset:  0,
+			maxLine:    1,
+			maxOffset:  2,
+			candidates: []*candidateMatch{match_0_2},
+		}},
+	}, {
+		candidateMatches: []*candidateMatch{match_0_2, match_6_10},
+		numContextLines:  0,
+		want: []candidateChunk{{
+			minLine:    1,
+			minOffset:  0,
+			maxLine:    1,
+			maxOffset:  10,
+			candidates: []*candidateMatch{match_0_2, match_6_10},
+		}},
+	}, {
+		candidateMatches: []*candidateMatch{match_0_2, match_10_16},
+		numContextLines:  0,
+		want: []candidateChunk{{
+			minLine:    1,
+			minOffset:  0,
+			maxLine:    2,
+			maxOffset:  16,
+			candidates: []*candidateMatch{match_0_2, match_10_16},
+		}},
+	}, {
+		candidateMatches: []*candidateMatch{match_0_2, match_19_42},
+		numContextLines:  0,
+		want: []candidateChunk{{
+			minLine:    1,
+			minOffset:  0,
+			maxLine:    1,
+			maxOffset:  2,
+			candidates: []*candidateMatch{match_0_2},
+		}, {
+			minLine:    2,
+			minOffset:  19,
+			maxLine:    4,
+			maxOffset:  42,
+			candidates: []*candidateMatch{match_19_42},
+		}},
+	}, {
+		candidateMatches: []*candidateMatch{match_0_2, match_19_42},
+		numContextLines:  1,
+		want: []candidateChunk{{
+			minLine:    1,
+			minOffset:  0,
+			maxLine:    4,
+			maxOffset:  42,
+			candidates: []*candidateMatch{match_0_2, match_19_42},
+		}},
+	}, {
+		candidateMatches: []*candidateMatch{
+			match_0_2, match_19_42, match_45_48, match_71_72,
+		},
+		numContextLines: 0,
+		want: []candidateChunk{{
+			minLine:    1,
+			minOffset:  0,
+			maxLine:    1,
+			maxOffset:  2,
+			candidates: []*candidateMatch{match_0_2},
+		}, {
+			minLine:    2,
+			minOffset:  19,
+			maxLine:    4,
+			maxOffset:  48,
+			candidates: []*candidateMatch{match_19_42, match_45_48},
+		}, {
+			minLine:    6,
+			minOffset:  71,
+			maxLine:    6,
+			maxOffset:  72,
+			candidates: []*candidateMatch{match_71_72},
+		}},
+	}, {
+		candidateMatches: []*candidateMatch{
+			match_0_2, match_19_42, match_45_48, match_71_72,
+		},
+		numContextLines: 100,
+		want: []candidateChunk{{
+			minLine:    1,
+			minOffset:  0,
+			maxLine:    6,
+			maxOffset:  72,
+			candidates: []*candidateMatch{match_0_2, match_19_42, match_45_48, match_71_72},
+		}},
+	}}
 
+	newlines := getNewlines(content)
+	for _, tt := range cases {
+		t.Run("", func(t *testing.T) {
+			got := chunkCandidates(tt.candidateMatches, newlines, tt.numContextLines)
+			if diff := cmp.Diff(fmt.Sprintf("%#v\n", tt.want), fmt.Sprintf("%#v\n", got)); diff != "" {
+				t.Fatal(diff)
+			}
+		})
 	}
 }
