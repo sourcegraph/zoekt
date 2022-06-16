@@ -273,7 +273,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 
 	logger.Debug("successfully fetched git data",
 		sglog.String("repo", o.Name),
-		sglog.Uint64("id", uint64(o.RepoID)),
+		sglog.Uint32("id", o.RepoID),
 		sglog.Int("commits_count", successfullyFetchedCommitsCount),
 		sglog.Duration("duration", fetchDuration),
 	)

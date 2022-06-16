@@ -412,7 +412,7 @@ func (s *Server) Run() {
 
 			logger.Info("updated index",
 				sglog.String("repo", args.Name),
-				sglog.Uint64("id", uint64(args.RepoID)),
+				sglog.Uint32("id", args.RepoID),
 				sglog.Strings("branches", branches),
 				sglog.Duration("duration", elapsed),
 			)
