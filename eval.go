@@ -379,6 +379,7 @@ nextFileMatch:
 		}
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
 		sortMatchesByScore(fileMatch.LineMatches)
+		sortChunkMatchesByScore(fileMatch.ChunkMatches)
 		if opts.Whole {
 			fileMatch.Content = cp.data(false)
 		}

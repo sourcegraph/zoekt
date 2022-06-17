@@ -662,6 +662,12 @@ func (m matchScoreSlice) Len() int           { return len(m) }
 func (m matchScoreSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 func (m matchScoreSlice) Less(i, j int) bool { return m[i].Score > m[j].Score }
 
+type chunkMatchScoreSlice []ChunkMatch
+
+func (m chunkMatchScoreSlice) Len() int           { return len(m) }
+func (m chunkMatchScoreSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
+func (m chunkMatchScoreSlice) Less(i, j int) bool { return m[i].Score > m[j].Score }
+
 type fileMatchSlice []FileMatch
 
 func (m fileMatchSlice) Len() int           { return len(m) }
@@ -670,6 +676,10 @@ func (m fileMatchSlice) Less(i, j int) bool { return m[i].Score > m[j].Score }
 
 func sortMatchesByScore(ms []LineMatch) {
 	sort.Sort(matchScoreSlice(ms))
+}
+
+func sortChunkMatchesByScore(ms []ChunkMatch) {
+	sort.Sort(chunkMatchScoreSlice(ms))
 }
 
 // Sort a slice of results.
