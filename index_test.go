@@ -1171,19 +1171,37 @@ func TestRegexpFile(t *testing.T) {
 		Document{Name: name, Content: content},
 		Document{Name: "play.txt", Content: content})
 
-	sres := searchForTest(t, b,
-		&query.Regexp{
-			Regexp:   mustParseRE("play.*mussel"),
-			FileName: true,
-		})
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			&query.Regexp{
+				Regexp:   mustParseRE("play.*mussel"),
+				FileName: true,
+			})
 
-	if len(sres.Files) != 1 || len(sres.Files[0].LineMatches) != 1 {
-		t.Fatalf("got %v, want 1 match in 1 file", sres.Files)
-	}
+		if len(sres.Files) != 1 || len(sres.Files[0].LineMatches) != 1 {
+			t.Fatalf("got %v, want 1 match in 1 file", sres.Files)
+		}
 
-	if sres.Files[0].FileName != name {
-		t.Errorf("got match %#v, want name %q", sres.Files[0], name)
-	}
+		if sres.Files[0].FileName != name {
+			t.Errorf("got match %#v, want name %q", sres.Files[0], name)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			&query.Regexp{
+				Regexp:   mustParseRE("play.*mussel"),
+				FileName: true,
+			}, SearchOptions{ChunkMatches: true})
+
+		if len(sres.Files) != 1 || len(sres.Files[0].ChunkMatches) != 1 {
+			t.Fatalf("got %v, want 1 match in 1 file", sres.Files)
+		}
+
+		if sres.Files[0].FileName != name {
+			t.Errorf("got match %#v, want name %q", sres.Files[0], name)
+		}
+	})
 }
 
 func TestRegexpOrder(t *testing.T) {
@@ -1193,14 +1211,27 @@ func TestRegexpOrder(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
-	sres := searchForTest(t, b,
-		&query.Regexp{
-			Regexp: mustParseRE("dle.*bla"),
-		})
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			&query.Regexp{
+				Regexp: mustParseRE("dle.*bla"),
+			})
 
-	if len(sres.Files) != 0 {
-		t.Fatalf("got %v, want 0 matches", sres.Files)
-	}
+		if len(sres.Files) != 0 {
+			t.Fatalf("got %v, want 0 matches", sres.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			&query.Regexp{
+				Regexp: mustParseRE("dle.*bla"),
+			})
+
+		if len(sres.Files) != 0 {
+			t.Fatalf("got %v, want 0 matches", sres.Files)
+		}
+	})
 }
 
 func TestRepoName(t *testing.T) {
@@ -1210,28 +1241,57 @@ func TestRepoName(t *testing.T) {
 	b := testIndexBuilder(t, &Repository{Name: "bla"},
 		Document{Name: "f1", Content: content})
 
-	sres := searchForTest(t, b,
-		query.NewAnd(
-			&query.Substring{Pattern: "needle"},
-			&query.Repo{Regexp: regexp.MustCompile("foo")},
-		))
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			query.NewAnd(
+				&query.Substring{Pattern: "needle"},
+				&query.Repo{Regexp: regexp.MustCompile("foo")},
+			))
 
-	if len(sres.Files) != 0 {
-		t.Fatalf("got %v, want 0 matches", sres.Files)
-	}
+		if len(sres.Files) != 0 {
+			t.Fatalf("got %v, want 0 matches", sres.Files)
+		}
 
-	if sres.Stats.FilesConsidered > 0 {
-		t.Fatalf("got FilesConsidered %d, should have short circuited", sres.Stats.FilesConsidered)
-	}
+		if sres.Stats.FilesConsidered > 0 {
+			t.Fatalf("got FilesConsidered %d, should have short circuited", sres.Stats.FilesConsidered)
+		}
 
-	sres = searchForTest(t, b,
-		query.NewAnd(
-			&query.Substring{Pattern: "needle"},
-			&query.Repo{Regexp: regexp.MustCompile("bla")},
-		))
-	if len(sres.Files) != 1 {
-		t.Fatalf("got %v, want 1 match", sres.Files)
-	}
+		sres = searchForTest(t, b,
+			query.NewAnd(
+				&query.Substring{Pattern: "needle"},
+				&query.Repo{Regexp: regexp.MustCompile("bla")},
+			))
+		if len(sres.Files) != 1 {
+			t.Fatalf("got %v, want 1 match", sres.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			query.NewAnd(
+				&query.Substring{Pattern: "needle"},
+				&query.Repo{Regexp: regexp.MustCompile("foo")},
+			),
+			SearchOptions{ChunkMatches: true},
+		)
+
+		if len(sres.Files) != 0 {
+			t.Fatalf("got %v, want 0 matches", sres.Files)
+		}
+
+		if sres.Stats.FilesConsidered > 0 {
+			t.Fatalf("got FilesConsidered %d, should have short circuited", sres.Stats.FilesConsidered)
+		}
+
+		sres = searchForTest(t, b,
+			query.NewAnd(
+				&query.Substring{Pattern: "needle"},
+				&query.Repo{Regexp: regexp.MustCompile("bla")},
+			))
+		if len(sres.Files) != 1 {
+			t.Fatalf("got %v, want 1 match", sres.Files)
+		}
+	})
 }
 
 func TestMergeMatches(t *testing.T) {
@@ -1239,11 +1299,23 @@ func TestMergeMatches(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
-	sres := searchForTest(t, b,
-		&query.Substring{Pattern: "bla"})
-	if len(sres.Files) != 1 || len(sres.Files[0].LineMatches) != 1 {
-		t.Fatalf("got %v, want 1 match", sres.Files)
-	}
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			&query.Substring{Pattern: "bla"})
+		if len(sres.Files) != 1 || len(sres.Files[0].LineMatches) != 1 {
+			t.Fatalf("got %v, want 1 match", sres.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			&query.Substring{Pattern: "bla"},
+			SearchOptions{ChunkMatches: true},
+		)
+		if len(sres.Files) != 1 || len(sres.Files[0].ChunkMatches) != 1 {
+			t.Fatalf("got %v, want 1 match", sres.Files)
+		}
+	})
 }
 
 func TestRepoURL(t *testing.T) {
@@ -1273,15 +1345,31 @@ func TestRegexpCaseSensitive(t *testing.T) {
 		Content: content,
 	})
 
-	res := searchForTest(t, b,
-		&query.Regexp{
-			Regexp:        mustParseRE("func.*Gitiles"),
-			CaseSensitive: true,
-		})
+	t.Run("LineMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			&query.Regexp{
+				Regexp:        mustParseRE("func.*Gitiles"),
+				CaseSensitive: true,
+			})
 
-	if len(res.Files) != 1 {
-		t.Fatalf("got %v, want one match", res.Files)
-	}
+		if len(res.Files) != 1 {
+			t.Fatalf("got %v, want one match", res.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			&query.Regexp{
+				Regexp:        mustParseRE("func.*Gitiles"),
+				CaseSensitive: true,
+			},
+			SearchOptions{ChunkMatches: true},
+		)
+
+		if len(res.Files) != 1 {
+			t.Fatalf("got %v, want one match", res.Files)
+		}
+	})
 }
 
 func TestRegexpCaseFolding(t *testing.T) {
@@ -1304,35 +1392,74 @@ func TestCaseRegexp(t *testing.T) {
 	content := []byte("BLABLABLA")
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: content})
-	res := searchForTest(t, b,
-		&query.Regexp{
-			Regexp:        mustParseRE("[xb][xl][xa]"),
-			CaseSensitive: true,
-		})
 
-	if len(res.Files) > 0 {
-		t.Fatalf("got %v, want no matches", res.Files)
-	}
+	t.Run("LineMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			&query.Regexp{
+				Regexp:        mustParseRE("[xb][xl][xa]"),
+				CaseSensitive: true,
+			})
+
+		if len(res.Files) > 0 {
+			t.Fatalf("got %v, want no matches", res.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			&query.Regexp{
+				Regexp:        mustParseRE("[xb][xl][xa]"),
+				CaseSensitive: true,
+			},
+			SearchOptions{ChunkMatches: true},
+		)
+
+		if len(res.Files) > 0 {
+			t.Fatalf("got %v, want no matches", res.Files)
+		}
+	})
 }
 
 func TestNegativeRegexp(t *testing.T) {
 	content := []byte("BLABLABLA needle bla")
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: content})
-	res := searchForTest(t, b,
-		query.NewAnd(
-			&query.Substring{
-				Pattern: "needle",
-			},
-			&query.Not{
-				Child: &query.Regexp{
-					Regexp: mustParseRE(".cs"),
-				},
-			}))
 
-	if len(res.Files) != 1 {
-		t.Fatalf("got %v, want 1 match", res.Files)
-	}
+	t.Run("LineMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			query.NewAnd(
+				&query.Substring{
+					Pattern: "needle",
+				},
+				&query.Not{
+					Child: &query.Regexp{
+						Regexp: mustParseRE(".cs"),
+					},
+				}))
+
+		if len(res.Files) != 1 {
+			t.Fatalf("got %v, want 1 match", res.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			query.NewAnd(
+				&query.Substring{
+					Pattern: "needle",
+				},
+				&query.Not{
+					Child: &query.Regexp{
+						Regexp: mustParseRE(".cs"),
+					},
+				},
+			),
+			SearchOptions{ChunkMatches: true})
+
+		if len(res.Files) != 1 {
+			t.Fatalf("got %v, want 1 match", res.Files)
+		}
+	})
 }
 
 func TestSymbolRank(t *testing.T) {
@@ -1353,18 +1480,35 @@ func TestSymbolRank(t *testing.T) {
 			Content: content,
 		})
 
-	res := searchForTest(t, b,
-		&query.Substring{
-			CaseSensitive: false,
-			Pattern:       "bla",
-		})
+	t.Run("LineMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			&query.Substring{
+				CaseSensitive: false,
+				Pattern:       "bla",
+			})
 
-	if len(res.Files) != 3 {
-		t.Fatalf("got %d files, want 3 files. Full data: %v", len(res.Files), res.Files)
-	}
-	if res.Files[0].FileName != "f2" {
-		t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
-	}
+		if len(res.Files) != 3 {
+			t.Fatalf("got %d files, want 3 files. Full data: %v", len(res.Files), res.Files)
+		}
+		if res.Files[0].FileName != "f2" {
+			t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			&query.Substring{
+				CaseSensitive: false,
+				Pattern:       "bla",
+			}, SearchOptions{ChunkMatches: true})
+
+		if len(res.Files) != 3 {
+			t.Fatalf("got %d files, want 3 files. Full data: %v", len(res.Files), res.Files)
+		}
+		if res.Files[0].FileName != "f2" {
+			t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
+		}
+	})
 }
 
 func TestSymbolRankRegexpUTF8(t *testing.T) {
@@ -1387,17 +1531,33 @@ func TestSymbolRankRegexpUTF8(t *testing.T) {
 			Content: content,
 		})
 
-	res := searchForTest(t, b,
-		&query.Regexp{
-			Regexp: mustParseRE("b.a"),
-		})
+	t.Run("LineMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			&query.Regexp{
+				Regexp: mustParseRE("b.a"),
+			})
 
-	if len(res.Files) != 3 {
-		t.Fatalf("got %#v, want 3 files", res.Files)
-	}
-	if res.Files[0].FileName != "f2" {
-		t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
-	}
+		if len(res.Files) != 3 {
+			t.Fatalf("got %#v, want 3 files", res.Files)
+		}
+		if res.Files[0].FileName != "f2" {
+			t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
+		}
+	})
+
+	t.Run("ChunjkMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			&query.Regexp{
+				Regexp: mustParseRE("b.a"),
+			}, SearchOptions{ChunkMatches: true})
+
+		if len(res.Files) != 3 {
+			t.Fatalf("got %#v, want 3 files", res.Files)
+		}
+		if res.Files[0].FileName != "f2" {
+			t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
+		}
+	})
 }
 
 func TestPartialSymbolRank(t *testing.T) {
@@ -1421,17 +1581,33 @@ func TestPartialSymbolRank(t *testing.T) {
 			Symbols: []DocumentSection{{4, 9}},
 		})
 
-	res := searchForTest(t, b,
-		&query.Substring{
-			Pattern: "bla",
-		})
+	t.Run("LineMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			&query.Substring{
+				Pattern: "bla",
+			})
 
-	if len(res.Files) != 3 {
-		t.Fatalf("got %#v, want 3 files", res.Files)
-	}
-	if res.Files[0].FileName != "f2" {
-		t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
-	}
+		if len(res.Files) != 3 {
+			t.Fatalf("got %#v, want 3 files", res.Files)
+		}
+		if res.Files[0].FileName != "f2" {
+			t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		res := searchForTest(t, b,
+			&query.Substring{
+				Pattern: "bla",
+			}, SearchOptions{ChunkMatches: true})
+
+		if len(res.Files) != 3 {
+			t.Fatalf("got %#v, want 3 files", res.Files)
+		}
+		if res.Files[0].FileName != "f2" {
+			t.Errorf("got %#v, want 'f2' as top match", res.Files[0])
+		}
+	})
 }
 
 func TestNegativeRepo(t *testing.T) {
@@ -1441,15 +1617,29 @@ func TestNegativeRepo(t *testing.T) {
 		Name: "bla",
 	}, Document{Name: "f1", Content: content})
 
-	sres := searchForTest(t, b,
-		query.NewAnd(
-			&query.Substring{Pattern: "needle"},
-			&query.Not{Child: &query.Repo{Regexp: regexp.MustCompile("bla")}},
-		))
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			query.NewAnd(
+				&query.Substring{Pattern: "needle"},
+				&query.Not{Child: &query.Repo{Regexp: regexp.MustCompile("bla")}},
+			))
 
-	if len(sres.Files) != 0 {
-		t.Fatalf("got %v, want 0 matches", sres.Files)
-	}
+		if len(sres.Files) != 0 {
+			t.Fatalf("got %v, want 0 matches", sres.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			query.NewAnd(
+				&query.Substring{Pattern: "needle"},
+				&query.Not{Child: &query.Repo{Regexp: regexp.MustCompile("bla")}},
+			), SearchOptions{ChunkMatches: true})
+
+		if len(sres.Files) != 0 {
+			t.Fatalf("got %v, want 0 matches", sres.Files)
+		}
+	})
 }
 
 func TestListRepos(t *testing.T) {
@@ -1645,13 +1835,25 @@ func TestOr(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("needle")},
 		Document{Name: "f2", Content: []byte("banana")})
-	sres := searchForTest(t, b, query.NewOr(
-		&query.Substring{Pattern: "needle"},
-		&query.Substring{Pattern: "banana"}))
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, query.NewOr(
+			&query.Substring{Pattern: "needle"},
+			&query.Substring{Pattern: "banana"}))
 
-	if len(sres.Files) != 2 {
-		t.Fatalf("got %v, want 2 files", sres.Files)
-	}
+		if len(sres.Files) != 2 {
+			t.Fatalf("got %v, want 2 files", sres.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, query.NewOr(
+			&query.Substring{Pattern: "needle"},
+			&query.Substring{Pattern: "banana"}))
+
+		if len(sres.Files) != 2 {
+			t.Fatalf("got %v, want 2 files", sres.Files)
+		}
+	})
 }
 
 func TestImportantCutoff(t *testing.T) {
@@ -1668,14 +1870,27 @@ func TestImportantCutoff(t *testing.T) {
 			Name:    "f2",
 			Content: content,
 		})
-	opts := SearchOptions{
-		ShardMaxImportantMatch: 1,
-	}
 
-	sres := searchForTest(t, b, &query.Substring{Pattern: "bla"}, opts)
-	if len(sres.Files) != 1 || sres.Files[0].FileName != "f1" {
-		t.Errorf("got %v, wanted 1 match 'f1'", sres.Files)
-	}
+	t.Run("LineMatches", func(t *testing.T) {
+		opts := SearchOptions{
+			ShardMaxImportantMatch: 1,
+		}
+		sres := searchForTest(t, b, &query.Substring{Pattern: "bla"}, opts)
+		if len(sres.Files) != 1 || sres.Files[0].FileName != "f1" {
+			t.Errorf("got %v, wanted 1 match 'f1'", sres.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		opts := SearchOptions{
+			ShardMaxImportantMatch: 1,
+			ChunkMatches:           true,
+		}
+		sres := searchForTest(t, b, &query.Substring{Pattern: "bla"}, opts)
+		if len(sres.Files) != 1 || sres.Files[0].FileName != "f1" {
+			t.Errorf("got %v, wanted 1 match 'f1'", sres.Files)
+		}
+	})
 }
 
 func TestFrequency(t *testing.T) {
@@ -1687,10 +1902,19 @@ func TestFrequency(t *testing.T) {
 			Content: content,
 		})
 
-	sres := searchForTest(t, b, &query.Substring{Pattern: "slashdot"})
-	if len(sres.Files) != 0 {
-		t.Errorf("got %v, wanted 0 matches", sres.Files)
-	}
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Substring{Pattern: "slashdot"})
+		if len(sres.Files) != 0 {
+			t.Errorf("got %v, wanted 0 matches", sres.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Substring{Pattern: "slashdot"}, SearchOptions{ChunkMatches: true})
+		if len(sres.Files) != 0 {
+			t.Errorf("got %v, wanted 0 matches", sres.Files)
+		}
+	})
 }
 
 func TestMatchNewline(t *testing.T) {
@@ -1707,12 +1931,23 @@ func TestMatchNewline(t *testing.T) {
 			Content: content,
 		})
 
-	sres := searchForTest(t, b, &query.Regexp{Regexp: re, CaseSensitive: true})
-	if len(sres.Files) != 1 {
-		t.Errorf("got %v, wanted 1 matches", sres.Files)
-	} else if l := sres.Files[0].LineMatches[0].Line; !bytes.Equal(l, content[len("pqr\n"):]) {
-		t.Errorf("got match line %q, want %q", l, content)
-	}
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Regexp{Regexp: re, CaseSensitive: true})
+		if len(sres.Files) != 1 {
+			t.Errorf("got %v, wanted 1 matches", sres.Files)
+		} else if l := sres.Files[0].LineMatches[0].Line; !bytes.Equal(l, content[len("pqr\n"):]) {
+			t.Errorf("got match line %q, want %q", l, content)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Regexp{Regexp: re, CaseSensitive: true}, SearchOptions{ChunkMatches: true})
+		if len(sres.Files) != 1 {
+			t.Errorf("got %v, wanted 1 matches", sres.Files)
+		} else if c := sres.Files[0].ChunkMatches[0].Content; !bytes.Equal(c, content) {
+			t.Errorf("got match line %q, want %q", c, content)
+		}
+	})
 }
 
 func TestSubRepo(t *testing.T) {
@@ -1753,19 +1988,37 @@ func TestSearchEither(t *testing.T) {
 		Document{Name: "f1", Content: []byte("bla needle bla")},
 		Document{Name: "needle-file-branch", Content: []byte("bla content")})
 
-	sres := searchForTest(t, b, &query.Substring{Pattern: "needle"})
-	if len(sres.Files) != 2 {
-		t.Fatalf("got %v, wanted 2 matches", sres.Files)
-	}
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Substring{Pattern: "needle"})
+		if len(sres.Files) != 2 {
+			t.Fatalf("got %v, wanted 2 matches", sres.Files)
+		}
 
-	sres = searchForTest(t, b, &query.Substring{Pattern: "needle", Content: true})
-	if len(sres.Files) != 1 {
-		t.Fatalf("got %v, wanted 1 match", sres.Files)
-	}
+		sres = searchForTest(t, b, &query.Substring{Pattern: "needle", Content: true})
+		if len(sres.Files) != 1 {
+			t.Fatalf("got %v, wanted 1 match", sres.Files)
+		}
 
-	if got, want := sres.Files[0].FileName, "f1"; got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
+		if got, want := sres.Files[0].FileName, "f1"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Substring{Pattern: "needle"}, SearchOptions{ChunkMatches: true})
+		if len(sres.Files) != 2 {
+			t.Fatalf("got %v, wanted 2 matches", sres.Files)
+		}
+
+		sres = searchForTest(t, b, &query.Substring{Pattern: "needle", Content: true}, SearchOptions{ChunkMatches: true})
+		if len(sres.Files) != 1 {
+			t.Fatalf("got %v, wanted 1 match", sres.Files)
+		}
+
+		if got, want := sres.Files[0].FileName, "f1"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
 }
 
 func TestUnicodeExactMatch(t *testing.T) {
