@@ -37,6 +37,9 @@ func clearScores(r *SearchResult) {
 		for j := range r.Files[i].LineMatches {
 			r.Files[i].LineMatches[j].Score = 0.0
 		}
+		for j := range r.Files[i].ChunkMatches {
+			r.Files[i].ChunkMatches[j].Score = 0.0
+		}
 		r.Files[i].Checksum = nil
 		r.Files[i].Debug = ""
 	}
@@ -128,20 +131,39 @@ func TestBasic(t *testing.T) {
 			// --------------0123456789012345678901234567890123
 		})
 
-	res := searchForTest(t, b, &query.Substring{
-		Pattern:       "water",
-		CaseSensitive: true,
-	})
-	fmatches := res.Files
-	if len(fmatches) != 1 || len(fmatches[0].LineMatches) != 1 {
-		t.Fatalf("got %v, want 1 matches", fmatches)
-	}
+	t.Run("LineMatch", func(t *testing.T) {
+		res := searchForTest(t, b, &query.Substring{
+			Pattern:       "water",
+			CaseSensitive: true,
+		})
+		fmatches := res.Files
+		if len(fmatches) != 1 || len(fmatches[0].LineMatches) != 1 {
+			t.Fatalf("got %v, want 1 matches", fmatches)
+		}
 
-	got := fmt.Sprintf("%s:%d", fmatches[0].FileName, fmatches[0].LineMatches[0].LineFragments[0].Offset)
-	want := "f2:9"
-	if got != want {
-		t.Errorf("1: got %s, want %s", got, want)
-	}
+		got := fmt.Sprintf("%s:%d", fmatches[0].FileName, fmatches[0].LineMatches[0].LineFragments[0].Offset)
+		want := "f2:9"
+		if got != want {
+			t.Errorf("1: got %s, want %s", got, want)
+		}
+	})
+
+	t.Run("ChunkMatch", func(t *testing.T) {
+		res := searchForTest(t, b, &query.Substring{
+			Pattern:       "water",
+			CaseSensitive: true,
+		}, SearchOptions{ChunkMatches: true})
+		fmatches := res.Files
+		if len(fmatches) != 1 || len(fmatches[0].ChunkMatches) != 1 {
+			t.Fatalf("got %v, want 1 matches", fmatches)
+		}
+
+		got := fmt.Sprintf("%s:%d", fmatches[0].FileName, fmatches[0].ChunkMatches[0].Ranges[0].Start.ByteOffset)
+		want := "f2:9"
+		if got != want {
+			t.Errorf("1: got %s, want %s", got, want)
+		}
+	})
 }
 
 func TestEmptyIndex(t *testing.T) {
@@ -182,15 +204,15 @@ func (s *memSeeker) Size() (uint32, error) {
 func TestNewlines(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "filename", Content: []byte("line1\nline2\nbla")})
-	// -------------------------------------------------012345-678901-234
+	// ---------------------------------------------012345-678901-234
 
-	sres := searchForTest(t, b, &query.Substring{Pattern: "ne2"})
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Substring{Pattern: "ne2"})
 
-	matches := sres.Files
-	want := []FileMatch{{
-		FileName: "filename",
-		LineMatches: []LineMatch{
-			{
+		matches := sres.Files
+		want := []FileMatch{{
+			FileName: "filename",
+			LineMatches: []LineMatch{{
 				LineFragments: []LineFragmentMatch{{
 					Offset:      8,
 					LineOffset:  2,
@@ -200,13 +222,38 @@ func TestNewlines(t *testing.T) {
 				LineStart:  6,
 				LineEnd:    11,
 				LineNumber: 2,
-			},
-		},
-	}}
+			}},
+		}}
 
-	if !reflect.DeepEqual(matches, want) {
-		t.Errorf("got %v, want %v", matches, want)
-	}
+		if !reflect.DeepEqual(matches, want) {
+			t.Errorf("got %v, want %v", matches, want)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Substring{Pattern: "ne2"}, SearchOptions{ChunkMatches: true})
+
+		matches := sres.Files
+		want := []FileMatch{{
+			FileName: "filename",
+			ChunkMatches: []ChunkMatch{{
+				Content: []byte("line2"),
+				ContentStart: Location{
+					ByteOffset: 6,
+					LineNumber: 2,
+					Column:     1,
+				},
+				Ranges: []Range{{
+					Start: Location{ByteOffset: 8, LineNumber: 2, Column: 3},
+					End:   Location{ByteOffset: 11, LineNumber: 2, Column: 6},
+				}},
+			}},
+		}}
+
+		if diff := cmp.Diff(want, matches); diff != "" {
+			t.Fatal(diff)
+		}
+	})
 }
 
 // A result spanning multiple lines should have LineMatches that only cover
