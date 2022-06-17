@@ -383,14 +383,17 @@ nextFileMatch:
 			fileMatch.Content = cp.data(false)
 		}
 
+		matchedChunkRanges := 0
+		for _, cm := range fileMatch.ChunkMatches {
+			matchedChunkRanges += len(cm.Ranges)
+		}
+
 		repoMatchCount += len(fileMatch.LineMatches)
-		repoMatchCount += len(fileMatch.ChunkMatches)
+		repoMatchCount += matchedChunkRanges
 
 		res.Files = append(res.Files, fileMatch)
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
-		for _, cm := range fileMatch.ChunkMatches {
-			res.Stats.MatchCount += len(cm.Ranges)
-		}
+		res.Stats.MatchCount += matchedChunkRanges
 		res.Stats.FileCount++
 	}
 
