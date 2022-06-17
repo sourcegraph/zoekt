@@ -509,7 +509,7 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 		relStartOffset := r.Start.ByteOffset - m.ContentStart.ByteOffset
 		relEndOffset := r.End.ByteOffset - m.ContentStart.ByteOffset
 
-		startBoundary := relStartOffset < len(m.Content) && (relStartOffset == 0 || byteClass(m.Content[relStartOffset]) != byteClass(m.Content[relStartOffset+1]))
+		startBoundary := relStartOffset < len(m.Content) && (relStartOffset == 0 || byteClass(m.Content[relStartOffset-1]) != byteClass(m.Content[relStartOffset]))
 		endBoundary := relEndOffset > 0 && (relEndOffset == len(m.Content) || byteClass(m.Content[relEndOffset-1]) != byteClass(m.Content[relEndOffset]))
 
 		score.score = 0

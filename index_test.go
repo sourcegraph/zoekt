@@ -601,15 +601,30 @@ func TestFileSearch(t *testing.T) {
 func TestFileCase(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "BANANA", Content: []byte("x orange y")})
-	sres := searchForTest(t, b, &query.Substring{
-		Pattern:  "banana",
-		FileName: true,
+
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Substring{
+			Pattern:  "banana",
+			FileName: true,
+		})
+
+		matches := sres.Files
+		if len(matches) != 1 || matches[0].FileName != "BANANA" {
+			t.Fatalf("got %v, want 1 match 'BANANA'", matches)
+		}
 	})
 
-	matches := sres.Files
-	if len(matches) != 1 || matches[0].FileName != "BANANA" {
-		t.Fatalf("got %v, want 1 match 'BANANA'", matches)
-	}
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Substring{
+			Pattern:  "banana",
+			FileName: true,
+		}, SearchOptions{ChunkMatches: true})
+
+		matches := sres.Files
+		if len(matches) != 1 || matches[0].FileName != "BANANA" {
+			t.Fatalf("got %v, want 1 match 'BANANA'", matches)
+		}
+	})
 }
 
 func TestFileRegexpSearchBruteForce(t *testing.T) {
@@ -617,29 +632,57 @@ func TestFileRegexpSearchBruteForce(t *testing.T) {
 		Document{Name: "banzana", Content: []byte("x orange y")},
 		Document{Name: "banana", Content: []byte("x apple y")},
 	)
-	sres := searchForTest(t, b, &query.Regexp{
-		Regexp:   mustParseRE("[qn][zx]"),
-		FileName: true,
-	})
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Regexp{
+			Regexp:   mustParseRE("[qn][zx]"),
+			FileName: true,
+		})
 
-	matches := sres.Files
-	if len(matches) != 1 || matches[0].FileName != "banzana" {
-		t.Fatalf("got %v, want 1 match on 'banzana'", matches)
-	}
+		matches := sres.Files
+		if len(matches) != 1 || matches[0].FileName != "banzana" {
+			t.Fatalf("got %v, want 1 match on 'banzana'", matches)
+		}
+	})
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Regexp{
+			Regexp:   mustParseRE("[qn][zx]"),
+			FileName: true,
+		}, SearchOptions{ChunkMatches: true})
+
+		matches := sres.Files
+		if len(matches) != 1 || matches[0].FileName != "banzana" {
+			t.Fatalf("got %v, want 1 match on 'banzana'", matches)
+		}
+	})
 }
 
 func TestFileRegexpSearchShortString(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "banana.py", Content: []byte("x orange y")})
-	sres := searchForTest(t, b, &query.Regexp{
-		Regexp:   mustParseRE("ana.py"),
-		FileName: true,
+
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Regexp{
+			Regexp:   mustParseRE("ana.py"),
+			FileName: true,
+		})
+
+		matches := sres.Files
+		if len(matches) != 1 || matches[0].FileName != "banana.py" {
+			t.Fatalf("got %v, want 1 match on 'banana.py'", matches)
+		}
 	})
 
-	matches := sres.Files
-	if len(matches) != 1 || matches[0].FileName != "banana.py" {
-		t.Fatalf("got %v, want 1 match on 'banana.py'", matches)
-	}
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b, &query.Regexp{
+			Regexp:   mustParseRE("ana.py"),
+			FileName: true,
+		}, SearchOptions{ChunkMatches: true})
+
+		matches := sres.Files
+		if len(matches) != 1 || matches[0].FileName != "banana.py" {
+			t.Fatalf("got %v, want 1 match on 'banana.py'", matches)
+		}
+	})
 }
 
 func TestFileSubstringSearchBruteForce(t *testing.T) {
@@ -652,10 +695,19 @@ func TestFileSubstringSearchBruteForce(t *testing.T) {
 		FileName: true,
 	}
 
-	res := searchForTest(t, b, q)
-	if len(res.Files) != 1 || res.Files[0].FileName != "BANZANA" {
-		t.Fatalf("got %v, want 1 match on 'BANZANA''", res.Files)
-	}
+	t.Run("LineMatches", func(t *testing.T) {
+		res := searchForTest(t, b, q)
+		if len(res.Files) != 1 || res.Files[0].FileName != "BANZANA" {
+			t.Fatalf("got %v, want 1 match on 'BANZANA''", res.Files)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		res := searchForTest(t, b, q, SearchOptions{ChunkMatches: true})
+		if len(res.Files) != 1 || res.Files[0].FileName != "BANZANA" {
+			t.Fatalf("got %v, want 1 match on 'BANZANA''", res.Files)
+		}
+	})
 }
 
 func TestFileSubstringSearchBruteForceEnd(t *testing.T) {
@@ -667,11 +719,19 @@ func TestFileSubstringSearchBruteForceEnd(t *testing.T) {
 		Pattern:  "q",
 		FileName: true,
 	}
+	t.Run("LineMatches", func(t *testing.T) {
+		res := searchForTest(t, b, q)
+		if want := "bananaq"; len(res.Files) != 1 || res.Files[0].FileName != want {
+			t.Fatalf("got %v, want 1 match in %q", res.Files, want)
+		}
+	})
 
-	res := searchForTest(t, b, q)
-	if want := "bananaq"; len(res.Files) != 1 || res.Files[0].FileName != want {
-		t.Fatalf("got %v, want 1 match in %q", res.Files, want)
-	}
+	t.Run("LineMatches", func(t *testing.T) {
+		res := searchForTest(t, b, q, SearchOptions{ChunkMatches: true})
+		if want := "bananaq"; len(res.Files) != 1 || res.Files[0].FileName != want {
+			t.Fatalf("got %v, want 1 match in %q", res.Files, want)
+		}
+	})
 }
 
 func TestSearchMatchAll(t *testing.T) {
