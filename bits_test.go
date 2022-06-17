@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"reflect"
 	"sort"
+	"strconv"
 	"testing"
 	"testing/quick"
 
@@ -258,5 +259,59 @@ func TestRuneOffsetLookup(t *testing.T) {
 		if got != wanted[i] {
 			t.Errorf("got off=%v, want off=%v for map=%v", got, wanted[i], m)
 		}
+	}
+}
+
+func TestUnmarshalDocSections(t *testing.T) {
+	f := func(nums []uint32) bool {
+		nums = sortedUnique(nums)
+
+		ds := make([]DocumentSection, 0, len(nums)/2)
+		// Drop the unmatched last one in case of odd len(nums).
+		// Better than skipping the test entirely.
+		for i := 0; i+1 < len(nums); i += 2 {
+			ds = append(ds, DocumentSection{Start: nums[i], End: nums[i+1]})
+		}
+
+		data := marshalDocSections(ds)
+		got := unmarshalDocSections(data, nil)
+		if len(ds) == len(got) && len(ds) == 0 {
+			return true
+		}
+		if !reflect.DeepEqual(ds, got) {
+			t.Log(cmp.Diff(ds, got))
+			return false
+		}
+		return true
+	}
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+func BenchmarkUnmarshalDocSections(b *testing.B) {
+	rng := rand.New(rand.NewSource(0))
+
+	for size := 10; size <= 10000; size *= 10 {
+		ds := make([]DocumentSection, 0, size)
+		var last uint32
+		for i := 0; i < size; i++ {
+			var d DocumentSection
+			last += 1 + uint32(rng.Int31n(200))
+			d.Start = last
+			last += 1 + uint32(rng.Int31n(10))
+			d.End = last
+			ds = append(ds, d)
+		}
+		data := marshalDocSections(ds)
+
+		b.Run(strconv.Itoa(size), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if ds := unmarshalDocSections(data, nil); len(ds) != size {
+					b.Fatalf("wrong size: got %d, want %d", len(ds), size)
+				}
+			}
+		})
 	}
 }
