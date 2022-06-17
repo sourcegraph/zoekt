@@ -387,8 +387,11 @@ nextFileMatch:
 		repoMatchCount += len(fileMatch.ChunkMatches)
 
 		res.Files = append(res.Files, fileMatch)
+		// TODO why doesn't this count the ranges within the line match?
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
-		res.Stats.MatchCount += len(fileMatch.ChunkMatches)
+		for _, cm := range fileMatch.ChunkMatches {
+			res.Stats.MatchCount += len(cm.Ranges)
+		}
 		res.Stats.FileCount++
 	}
 
