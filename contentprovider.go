@@ -157,6 +157,7 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 			Content:      fileName,
 			ContentStart: Location{ByteOffset: 0, LineNumber: 1, Column: 1},
 			Ranges:       ranges,
+			FileName:     true,
 		}}
 	} else {
 		result = p.fillContentChunkMatches(ms, numContextLines)
