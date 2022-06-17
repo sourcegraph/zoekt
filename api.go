@@ -589,7 +589,8 @@ type SearchOptions struct {
 	// it's up to the consumer of the result to remove those lines.
 	NumContextLines int
 
-	// TODO comments
+	// If true, ChunkMatches will be returned in each FileMatch rather than LineMatches
+	// EXPERIMENTAL: the behavior of this flag may be changed in future versions.
 	ChunkMatches bool
 
 	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
