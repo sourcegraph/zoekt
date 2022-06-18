@@ -199,9 +199,6 @@ const (
 	loggerScope = "zoekt-sourcegraph-indexserver"
 
 	loggerDescription = "periodically reindexes enabled repositories on sourcegraph"
-
-	// Environment variable for logging level
-	srcLogLevel = "SRC_LOG_LEVEL"
 )
 
 func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
@@ -857,7 +854,7 @@ func printShardStats(fn string) error {
 }
 
 func srcLogLevelIsDebug() bool {
-	lvl := os.Getenv(srcLogLevel)
+	lvl := os.Getenv(sglog.EnvLogLevel)
 	return strings.EqualFold(lvl, "dbug") || strings.EqualFold(lvl, "debug")
 }
 
@@ -1147,23 +1144,22 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Visit the flags to determine if debug flag is included and enabled
-	debugEnabled := false
-	cmd.FlagSet.Visit(func(flag *flag.Flag) {
-		if flag.Name == "debug" {
-			if toBool, err := strconv.ParseBool(flag.Value.String()); err == nil {
-				debugEnabled = toBool
-			}
-		}
-	})
+	// Debug flag overrides a non-debug logging level
+	debugFlagOverride := false
+
+	flag := cmd.FlagSet.Lookup("debug")
+	if debugFlag, err := strconv.ParseBool(flag.Value.String()); err == nil {
+		// logger must use debug logging level instead of the level set by EnvLogLevel
+		debugFlagOverride = debugFlag && !srcLogLevelIsDebug()
+	}
 
 	name, _ := findName()
-	originalLogLevel := os.Getenv(srcLogLevel)
+	originalLogLevel := os.Getenv(sglog.EnvLogLevel)
 
-	// if debug flag is included and enabled then modify srcLogLevel
-	// for logger's Init(). Otherwise rely on srcLogLevel original value.
-	if debugEnabled {
-		os.Setenv(srcLogLevel, "debug")
+	// if debug flag is included and enabled then update EnvLogLevel
+	// before logger's Init() so that logger level is set to debug
+	if debugFlagOverride {
+		os.Setenv(sglog.EnvLogLevel, "debug")
 	}
 
 	syncLogs := sglog.Init(sglog.Resource{
@@ -1172,7 +1168,11 @@ func main() {
 		InstanceID: hostnameBestEffort(),
 	})
 
-	os.Setenv(srcLogLevel, originalLogLevel)
+	// Revert previous EnvLogLevel update
+	if debugFlagOverride {
+		os.Setenv(sglog.EnvLogLevel, originalLogLevel)
+	}
+
 	defer syncLogs.Sync()
 
 	logger = sglog.Scoped(loggerScope, loggerDescription)
