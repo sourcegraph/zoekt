@@ -456,6 +456,65 @@ func TestBuilder_DeltaShardsBuildsShouldErrorOnBranchSet(t *testing.T) {
 	}
 }
 
+func TestBuilder_DeltaShardsBuildsShouldErrorOnIndexOptionsMismatch(t *testing.T) {
+	repository := zoekt.Repository{
+		Name:     "repo",
+		ID:       1,
+		Branches: []zoekt.RepositoryBranch{{Name: "foo"}},
+	}
+
+	for _, test := range []struct {
+		name    string
+		options func(options *Options)
+	}{
+		{
+			name:    "update option CTags to non default",
+			options: func(options *Options) { options.CTags = "ctags_updated_test" },
+		},
+		{
+			name:    "update option DisableCTags to non default",
+			options: func(options *Options) { options.DisableCTags = true },
+		},
+		{
+			name:    "update option SizeMax to non default",
+			options: func(options *Options) { options.SizeMax -= 10 },
+		},
+		{
+			name:    "update option LargeFiles to non default",
+			options: func(options *Options) { options.LargeFiles = []string{"-large_file", "*.md", "-large_file", "*.yaml"} },
+		},
+	} {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			indexDir := t.TempDir()
+
+			// initially use default options
+			createTestShard(t, indexDir, repository, 2)
+
+			o := Options{
+				IndexDir:              indexDir,
+				RepositoryDescription: repository,
+				IsDelta:               true,
+			}
+			test.options(&o)
+
+			b, err := NewBuilder(o)
+			if err != nil {
+				t.Fatalf("NewBuilder: %v", err)
+			}
+
+			err = b.Finish()
+			if err == nil {
+				t.Fatalf("no error regarding index options mismatch")
+			}
+			if !errors.As(err, &deltaIndexOptionsMismatchError{}) {
+				t.Fatalf("expected error complaining about index options mismatch, got: %s", err)
+			}
+		})
+	}
+}
+
 func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 	olderTime := time.Unix(0, 0)
 	newerTime := time.Unix(10000, 0)

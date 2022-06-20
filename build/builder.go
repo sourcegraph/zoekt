@@ -656,9 +656,10 @@ func (b *Builder) Finish() error {
 			}
 
 			if b.opts.HashOptions() != repository.IndexOptions {
-				log.Printf("HashOptions() stored on shard: %s", repository.IndexOptions)
-				log.Printf("HashOptions() from builder Options: %s", b.opts.RepositoryDescription.IndexOptions)
-				return fmt.Errorf("Index options have changed since last build; Cannot proceed with delta build for shard: %s", shard)
+				return deltaIndexOptionsMismatchError{
+					shardName:  shard,
+					newOptions: b.opts,
+				}
 			}
 
 			repository.Branches = b.opts.RepositoryDescription.Branches
@@ -1002,6 +1003,15 @@ type deltaBranchSetError struct {
 
 func (e deltaBranchSetError) Error() string {
 	return fmt.Sprintf("repository metadata in shard %q contains a different set of branch names than what was requested, which is unsupported in a delta shard build. old: %+v, new: %+v", e.shardName, e.old, e.new)
+}
+
+type deltaIndexOptionsMismatchError struct {
+	shardName  string
+	newOptions Options
+}
+
+func (e deltaIndexOptionsMismatchError) Error() string {
+	return fmt.Sprintf("One or more Index Options for shard %q does not match Builder's Index options; These index option updates are incompatible with delta build. new index options: %+v", e.shardName, e.newOptions)
 }
 
 // umask holds the Umask of the current process
