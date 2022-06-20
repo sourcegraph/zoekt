@@ -6,7 +6,6 @@ import (
 	"crypto/sha1"
 	"errors"
 	"fmt"
-	sglog "github.com/sourcegraph/log"
 	"io"
 	"log"
 	"net/url"
@@ -20,6 +19,8 @@ import (
 
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
+
+	sglog "github.com/sourcegraph/log"
 )
 
 // indexTimeout defines how long the indexserver waits before

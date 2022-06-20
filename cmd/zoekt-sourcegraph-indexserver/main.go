@@ -196,7 +196,7 @@ const (
 	// cores... 5m was not enough.
 	noOutputTimeout = 30 * time.Minute
 
-	loggerScope = "zoekt-sourcegraph-indexserver"
+	loggerScope = "server"
 
 	loggerDescription = "periodically reindexes enabled repositories on sourcegraph"
 )
@@ -1144,20 +1144,19 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Debug flag overrides a non-debug logging level
 	debugFlagOverride := false
 
 	flag := cmd.FlagSet.Lookup("debug")
 	if debugFlag, err := strconv.ParseBool(flag.Value.String()); err == nil {
-		// logger must use debug logging level instead of the level set by EnvLogLevel
+		// Debug flag overrides a non-debug logging level
 		debugFlagOverride = debugFlag && !srcLogLevelIsDebug()
 	}
 
 	name, _ := findName()
 	originalLogLevel := os.Getenv(sglog.EnvLogLevel)
 
-	// if debug flag is included and enabled then update EnvLogLevel
-	// before logger's Init() so that logger level is set to debug
+	// if debug flag overrides the logging level set by environment var EnvLogLevel
+	// then update it before we call logger's Init()
 	if debugFlagOverride {
 		os.Setenv(sglog.EnvLogLevel, "debug")
 	}
@@ -1168,7 +1167,7 @@ func main() {
 		InstanceID: hostnameBestEffort(),
 	})
 
-	// Revert previous EnvLogLevel update
+	// Revert the EnvLogLevel update
 	if debugFlagOverride {
 		os.Setenv(sglog.EnvLogLevel, originalLogLevel)
 	}
