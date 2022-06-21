@@ -171,22 +171,21 @@ func TestSearch_ShardRepoMaxMatchCountOpt(t *testing.T) {
 	})
 }
 
-// compoundReposShard returns a compound shard where each repo has 1 document.
 func compoundReposShard(t *testing.T, names ...string) *indexData {
 	t.Helper()
-	b := newIndexBuilder()
-	b.indexFormatVersion = NextIndexFormatVersion
+
+	repos := make([]*Repository, 0, len(names))
+	docs := make([][]Document, 0, len(names))
 	for _, name := range names {
-		if err := b.setRepository(&Repository{ID: hash(name), Name: name}); err != nil {
-			t.Fatal(err)
+		repos = append(repos, &Repository{ID: hash(name), Name: name})
+		ds := []Document{
+			Document{Name: name + ".txt", Content: []byte(name + " content")},
+			Document{Name: name + ".2.txt", Content: []byte(name + " content 2")},
 		}
-		if err := b.AddFile(name+".txt", []byte(name+" content")); err != nil {
-			t.Fatal(err)
-		}
-		if err := b.AddFile(name+".2.txt", []byte(name+" content 2")); err != nil {
-			t.Fatal(err)
-		}
+		docs = append(docs, ds)
 	}
+
+	b := testIndexBuilderCompound(t, repos, docs)
 	s := searcherForTest(t, b)
 	return s.(*indexData)
 }
