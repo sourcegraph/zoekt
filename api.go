@@ -83,7 +83,7 @@ type ChunkMatch struct {
 	Content []byte
 	// ContentStart is the location (inclusive) of the beginning of content
 	// relative to the beginning of the file. It will always be at the
-	// beginning of a line (Column will always be zero).
+	// beginning of a line (Column will always be 1).
 	ContentStart Location
 
 	// Ranges is a set of matching ranges within this chunk. Each range is relative

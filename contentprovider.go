@@ -135,7 +135,9 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
 	var result []ChunkMatch
 	if ms[0].fileName {
-		// There is only "line" in a filename.
+		// If the first match is a filename match, there will only be
+		// one match and the matched content will be the filename.
+
 		fileName := p.id.fileName(p.idx)
 		ranges := make([]Range, 0, len(ms))
 		for _, m := range ms {
@@ -209,9 +211,9 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 			})
 		}
 
-		firstLineNumber := chunk.minLine - numContextLines
+		firstLineNumber := chunk.firstLine - numContextLines
 		firstLineStart, _ := newlines.lineBounds(firstLineNumber)
-		lastLineNumber := chunk.maxLine + numContextLines
+		lastLineNumber := chunk.lastLine + numContextLines
 
 		chunkMatches = append(chunkMatches, ChunkMatch{
 			Content: newlines.getLines(data, firstLineNumber, lastLineNumber+1),
@@ -228,10 +230,10 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 }
 
 type candidateChunk struct {
-	minLine    int
-	minOffset  uint32
-	maxLine    int
-	maxOffset  uint32
+	firstLine  int    // 1-based, inclusive
+	lastLine   int    // 1-based, inclusive
+	minOffset  uint32 // 0-based, inclusive
+	maxOffset  uint32 // 0-based, exclusive
 	candidates []*candidateMatch
 }
 
@@ -249,9 +251,9 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 		// If there is no previous chunk, create a new one
 		if len(chunks) == 0 {
 			chunks = append(chunks, candidateChunk{
-				minLine:    firstLine,
+				firstLine:  firstLine,
 				minOffset:  startOffset,
-				maxLine:    lastLine,
+				lastLine:   lastLine,
 				maxOffset:  endOffset,
 				candidates: []*candidateMatch{m},
 			})
@@ -259,20 +261,20 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 		}
 
 		last := &chunks[len(chunks)-1]
-		if last.maxLine+numContextLines*2 >= firstLine {
+		if last.lastLine+numContextLines*2 >= firstLine {
 			// If a new chunk created with the current candidateMatch would
 			// overlap with the previous chunk, instead add the candidateMatch
 			// to the last chunk and extend end of the last chunk.
 			last.candidates = append(last.candidates, m)
 			if last.maxOffset < endOffset {
-				last.maxLine = lastLine
+				last.lastLine = lastLine
 				last.maxOffset = endOffset
 			}
 		} else {
 			chunks = append(chunks, candidateChunk{
-				minLine:    firstLine,
+				firstLine:  firstLine,
 				minOffset:  startOffset,
-				maxLine:    lastLine,
+				lastLine:   lastLine,
 				maxOffset:  endOffset,
 				candidates: []*candidateMatch{m},
 			})
