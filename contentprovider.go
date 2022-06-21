@@ -132,6 +132,37 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
+func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
+	var result []LineMatch
+	if ms[0].fileName {
+		// There is only "line" in a filename.
+		res := LineMatch{
+			Line:     p.id.fileName(p.idx),
+			FileName: true,
+		}
+
+		for _, m := range ms {
+			res.LineFragments = append(res.LineFragments, LineFragmentMatch{
+				LineOffset:  int(m.byteOffset),
+				MatchLength: int(m.byteMatchSz),
+				Offset:      m.byteOffset,
+			})
+
+			result = []LineMatch{res}
+		}
+	} else {
+		ms = breakMatchesOnNewlines(ms, p.data(false))
+		result = p.fillContentMatches(ms, numContextLines)
+	}
+
+	sects := p.docSections()
+	for i, m := range result {
+		result[i].Score, result[i].DebugScore = p.matchScore(sects, &m, language, debug)
+	}
+
+	return result
+}
+
 func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
 	var result []ChunkMatch
 	if ms[0].fileName {
@@ -170,6 +201,84 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 		result[i].Score, result[i].DebugScore = p.chunkMatchScore(sects, &m, language, debug)
 	}
 
+	return result
+}
+
+func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
+	var result []LineMatch
+	for len(ms) > 0 {
+		m := ms[0]
+		num, lineStart, lineEnd := p.newlines().atOffset(m.byteOffset)
+
+		var lineCands []*candidateMatch
+
+		endMatch := m.byteOffset + m.byteMatchSz
+
+		for len(ms) > 0 {
+			m := ms[0]
+			if int(m.byteOffset) <= lineEnd {
+				endMatch = m.byteOffset + m.byteMatchSz
+				lineCands = append(lineCands, m)
+				ms = ms[1:]
+			} else {
+				break
+			}
+		}
+
+		if len(lineCands) == 0 {
+			log.Panicf(
+				"%s %v infinite loop: num %d start,end %d,%d, offset %d",
+				p.id.fileName(p.idx), p.id.metaData,
+				num, lineStart, lineEnd,
+				m.byteOffset)
+		}
+
+		data := p.data(false)
+
+		// Due to merging matches, we may have a match that
+		// crosses a line boundary. Prevent confusion by
+		// taking lines until we pass the last match
+		for lineEnd < len(data) && endMatch > uint32(lineEnd) {
+			next := bytes.IndexByte(data[lineEnd+1:], '\n')
+			if next == -1 {
+				lineEnd = len(data)
+			} else {
+				// TODO(hanwen): test that checks "+1" part here.
+				lineEnd += next + 1
+			}
+		}
+
+		finalMatch := LineMatch{
+			LineStart:  lineStart,
+			LineEnd:    lineEnd,
+			LineNumber: num,
+		}
+		finalMatch.Line = data[lineStart:lineEnd]
+
+		if numContextLines > 0 {
+			finalMatch.Before = p.newlines().getLines(data, num-numContextLines, num)
+			finalMatch.After = p.newlines().getLines(data, num+1, num+1+numContextLines)
+		}
+
+		for _, m := range lineCands {
+			fragment := LineFragmentMatch{
+				Offset:      m.byteOffset,
+				LineOffset:  int(m.byteOffset) - lineStart,
+				MatchLength: int(m.byteMatchSz),
+			}
+			if m.symbol {
+				start := p.id.fileEndSymbol[p.idx]
+				fragment.SymbolInfo = p.id.symbols.data(start + m.symbolIdx)
+				if fragment.SymbolInfo != nil {
+					sec := p.docSections()[m.symbolIdx]
+					fragment.SymbolInfo.Sym = string(data[sec.Start:sec.End])
+				}
+			}
+
+			finalMatch.LineFragments = append(finalMatch.LineFragments, fragment)
+		}
+		result = append(result, finalMatch)
+	}
 	return result
 }
 
@@ -281,115 +390,6 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 		}
 	}
 	return chunks
-}
-
-func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
-	var result []LineMatch
-	if ms[0].fileName {
-		// There is only "line" in a filename.
-		res := LineMatch{
-			Line:     p.id.fileName(p.idx),
-			FileName: true,
-		}
-
-		for _, m := range ms {
-			res.LineFragments = append(res.LineFragments, LineFragmentMatch{
-				LineOffset:  int(m.byteOffset),
-				MatchLength: int(m.byteMatchSz),
-				Offset:      m.byteOffset,
-			})
-
-			result = []LineMatch{res}
-		}
-	} else {
-		ms = breakMatchesOnNewlines(ms, p.data(false))
-		result = p.fillContentMatches(ms, numContextLines)
-	}
-
-	sects := p.docSections()
-	for i, m := range result {
-		result[i].Score, result[i].DebugScore = p.matchScore(sects, &m, language, debug)
-	}
-
-	return result
-}
-
-func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
-	var result []LineMatch
-	for len(ms) > 0 {
-		m := ms[0]
-		num, lineStart, lineEnd := p.newlines().atOffset(m.byteOffset)
-
-		var lineCands []*candidateMatch
-
-		endMatch := m.byteOffset + m.byteMatchSz
-
-		for len(ms) > 0 {
-			m := ms[0]
-			if int(m.byteOffset) <= lineEnd {
-				endMatch = m.byteOffset + m.byteMatchSz
-				lineCands = append(lineCands, m)
-				ms = ms[1:]
-			} else {
-				break
-			}
-		}
-
-		if len(lineCands) == 0 {
-			log.Panicf(
-				"%s %v infinite loop: num %d start,end %d,%d, offset %d",
-				p.id.fileName(p.idx), p.id.metaData,
-				num, lineStart, lineEnd,
-				m.byteOffset)
-		}
-
-		data := p.data(false)
-
-		// Due to merging matches, we may have a match that
-		// crosses a line boundary. Prevent confusion by
-		// taking lines until we pass the last match
-		for lineEnd < len(data) && endMatch > uint32(lineEnd) {
-			next := bytes.IndexByte(data[lineEnd+1:], '\n')
-			if next == -1 {
-				lineEnd = len(data)
-			} else {
-				// TODO(hanwen): test that checks "+1" part here.
-				lineEnd += next + 1
-			}
-		}
-
-		finalMatch := LineMatch{
-			LineStart:  lineStart,
-			LineEnd:    lineEnd,
-			LineNumber: num,
-		}
-		finalMatch.Line = data[lineStart:lineEnd]
-
-		if numContextLines > 0 {
-			finalMatch.Before = p.newlines().getLines(data, num-numContextLines, num)
-			finalMatch.After = p.newlines().getLines(data, num+1, num+1+numContextLines)
-		}
-
-		for _, m := range lineCands {
-			fragment := LineFragmentMatch{
-				Offset:      m.byteOffset,
-				LineOffset:  int(m.byteOffset) - lineStart,
-				MatchLength: int(m.byteMatchSz),
-			}
-			if m.symbol {
-				start := p.id.fileEndSymbol[p.idx]
-				fragment.SymbolInfo = p.id.symbols.data(start + m.symbolIdx)
-				if fragment.SymbolInfo != nil {
-					sec := p.docSections()[m.symbolIdx]
-					fragment.SymbolInfo.Sym = string(data[sec.Start:sec.End])
-				}
-			}
-
-			finalMatch.LineFragments = append(finalMatch.LineFragments, fragment)
-		}
-		result = append(result, finalMatch)
-	}
-	return result
 }
 
 type newlines struct {
