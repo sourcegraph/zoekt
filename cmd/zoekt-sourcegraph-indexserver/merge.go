@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -10,11 +9,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/zoekt"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/google/zoekt"
 )
 
 var reCompound = regexp.MustCompile(`compound-.*\.zoekt`)
@@ -30,62 +31,79 @@ var metricShardMergingDuration = promauto.NewHistogramVec(prometheus.HistogramOp
 	Buckets: prometheus.LinearBuckets(30, 30, 10),
 }, []string{"error"})
 
-// doMerge drives the merge process.
-func doMerge(dir string, targetSizeBytes int64, simulate bool) error {
+func pickCandidates(shards []candidate, targetSizeBytes int64) compound {
+	c := compound{}
+	for _, shard := range shards {
+		c.add(shard)
+		if c.size >= targetSizeBytes {
+			return c
+		}
+	}
+	return compound{}
+}
+
+var mergeRunning atomic.Bool
+
+// doMerge drives the merge process. It holds the lock on s.indexDir for the
+// duration of 1 merge, which might be several minutes, depending on the target
+// size of the compound shard.
+func (s *Server) doMerge() {
+
+	// Guard against the user triggering competing merge jobs with the debug
+	// command.
+	if !mergeRunning.CAS(false, true) {
+		debug.Printf("merge already running\n")
+		return
+	}
+	defer mergeRunning.Store(false)
+
 	metricShardMergingRunning.Set(1)
 	defer metricShardMergingRunning.Set(0)
 
 	wc := &lumberjack.Logger{
-		Filename:   filepath.Join(dir, "zoekt-merge-log.tsv"),
+		Filename:   filepath.Join(s.IndexDir, "zoekt-merge-log.tsv"),
 		MaxSize:    100, // Megabyte
 		MaxBackups: 5,
 	}
 
-	if simulate {
-		debug.Println("simulating")
-	}
+	createOneCompoundShard := func() bool {
+		s.muIndexDir.Lock()
+		defer s.muIndexDir.Unlock()
 
-	shards, excluded := loadCandidates(dir)
-	debug.Printf("merging: found %d candidate shards, %d shards were excluded\n", len(shards), excluded)
-	if len(shards) == 0 {
-		return nil
-	}
+		candidates, excluded := loadCandidates(s.IndexDir)
+		debug.Printf("loadCandidates: candidates=%d excluded=%d\n", len(candidates), excluded)
+		c := pickCandidates(candidates, s.TargetSizeBytes)
+		if len(c.shards) <= 1 {
+			debug.Printf("could not find enough shards to build a compound shard\n")
+			return false
+		}
+		debug.Printf("start merging: shards=%d total_size=%.2fMiB\n", len(c.shards), float64(c.size)/(1024*1024))
 
-	compounds, _ := generateCompounds(shards, targetSizeBytes)
-	debug.Printf("merging: generated %d compounds\n", len(compounds))
-	if len(compounds) == 0 {
-		return nil
-	}
+		start := time.Now()
+		out, err := callMerge(c.shards)
 
-	var totalSizeBytes int64 = 0
-	totalShards := 0
-	for ix, comp := range compounds {
-		debug.Printf("compound %d: merging %d shards with total size %.2f MiB\n", ix, len(comp.shards), float64(comp.size)/(1024*1024))
-		if !simulate {
-			start := time.Now()
-			stdOut, stdErr, err := callMerge(comp.shards)
-			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
-			debug.Printf("callMerge: OUT: %s, ERR: %s\n", string(stdOut), string(stdErr))
-			if err != nil {
-				debug.Printf("error during merging compound %d, stdErr: %s, err: %s\n", ix, stdErr, err)
-				continue
-			}
-			// for len(comp.shards)<=1, callMerge is a NOP. Hence there is no need to log
-			// anything here.
-			if len(comp.shards) > 1 {
-				newCompoundName := reCompound.Find(stdErr)
-				now := time.Now()
-				for _, s := range comp.shards {
-					_, _ = fmt.Fprintf(wc, "%s\t%s\t%s\t%s\n", now.UTC().Format(time.RFC3339), "merge", filepath.Base(s.path), string(newCompoundName))
-				}
+		metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
+		if err != nil {
+			debug.Printf("callMerge: out=%s, err=%s\n", out, err)
+			return false
+		}
+
+		// for len(c.shards)<=1, callMerge is a NOP. Hence, there is no need to log
+		// anything here.
+		if len(c.shards) > 1 {
+			newCompoundName := reCompound.Find(out)
+			now := time.Now()
+			for _, s := range c.shards {
+				_, _ = fmt.Fprintf(wc, "%s\t%s\t%s\t%s\n", now.UTC().Format(time.RFC3339), "merge", filepath.Base(s.path), string(newCompoundName))
 			}
 		}
-		totalShards += len(comp.shards)
-		totalSizeBytes += comp.size
+		return true
 	}
 
-	debug.Printf("total size: %.2f MiB, number of shards merged: %d\n", float64(totalSizeBytes)/(1024*1024), totalShards)
-	return nil
+	// We keep creating compound shards until we run out of shards to merge or until
+	// we encounter an error during merging.
+	for createOneCompoundShard() {
+	}
 }
 
 type candidate struct {
@@ -95,7 +113,7 @@ type candidate struct {
 	sizeBytes int64
 }
 
-// loadCandidates returns all shards eligable for merging.
+// loadCandidates returns all shards eligible for merging.
 func loadCandidates(dir string) ([]candidate, int) {
 	excluded := 0
 
@@ -190,39 +208,18 @@ func (c *compound) add(cand candidate) {
 	c.size += cand.sizeBytes
 }
 
-// generateCompounds groups simple shards into compound shards without performing
-// the actual merge. Shards that are not contained in any of the compound shards
-// are returned in the second argument.
-func generateCompounds(shards []candidate, targetSizeBytes int64) ([]compound, []candidate) {
-	compounds := make([]compound, 0)
-	cur := compound{}
-	for _, s := range shards {
-		cur.add(s)
-		if cur.size > targetSizeBytes {
-			compounds = append(compounds, cur)
-			cur = compound{}
-		}
-	}
-	return compounds, cur.shards
-}
-
 // callMerge calls zoekt-merge-index and captures its output. callMerge is a NOP
 // if len(shards) <= 1.
-func callMerge(shards []candidate) ([]byte, []byte, error) {
+func callMerge(shards []candidate) ([]byte, error) {
 	if len(shards) <= 1 {
-		return nil, nil, nil
+		return nil, nil
 	}
 
 	cmd := exec.Command("zoekt-merge-index", "merge", "-")
 
-	outBuf := &bytes.Buffer{}
-	errBuf := &bytes.Buffer{}
-	cmd.Stdout = outBuf
-	cmd.Stderr = errBuf
-
 	wc, err := cmd.StdinPipe()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	go func() {
@@ -232,6 +229,5 @@ func callMerge(shards []candidate) ([]byte, []byte, error) {
 		_ = wc.Close()
 	}()
 
-	err = cmd.Run()
-	return outBuf.Bytes(), errBuf.Bytes(), err
+	return cmd.CombinedOutput()
 }
