@@ -558,7 +558,6 @@ func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candid
 	} else {
 		// Remove overlapping candidates. This guarantees that the matches
 		// are non-overlapping, but also preserves expected match counts.
-		// TODO do we actually need this guarantee?
 		sort.Sort((sortByOffsetSlice)(cands))
 		res = cands[:0]
 		for i, c := range cands {
