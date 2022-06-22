@@ -428,7 +428,7 @@ func TestAndSearch(t *testing.T) {
 			ContentBytesLoaded: 18,
 			IndexBytesLoaded:   8,
 			NgramMatches:       3, // we look at doc 1, because it's max(0,1) due to AND
-			MatchCount:         1,
+			MatchCount:         2,
 			FileCount:          1,
 			FilesConsidered:    2,
 			ShardsScanned:      1,
@@ -2507,7 +2507,7 @@ func TestNoCollectRegexpSubstring(t *testing.T) {
 			t.Fatalf("got %v, want 1 result", res.Files)
 		}
 		if f := res.Files[0]; len(f.ChunkMatches) != 1 {
-			t.Fatalf("got line matches %v, want 1 line match", printLineMatches(f.LineMatches))
+			t.Fatalf("got chunk matches %#v, want 1 line match", f.ChunkMatches)
 		}
 	})
 }
