@@ -132,7 +132,7 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
-func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
+func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
 	var result []ChunkMatch
 	if ms[0].fileName {
 		// If the first match is a filename match, there will only be
@@ -162,18 +162,18 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 			FileName:     true,
 		}}
 	} else {
-		result = p.fillContentChunkMatches(ms, numContextLines)
+		result = p.fillContentMatches(ms, numContextLines)
 	}
 
 	sects := p.docSections()
 	for i, m := range result {
-		result[i].Score, result[i].DebugScore = p.chunkMatchScore(sects, &m, language, debug)
+		result[i].Score, result[i].DebugScore = p.matchScore(sects, &m, language, debug)
 	}
 
 	return result
 }
 
-func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int) []ChunkMatch {
+func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int) []ChunkMatch {
 	newlines := p.newlines()
 	chunks := chunkCandidates(ms, newlines, numContextLines)
 	data := p.data(false)
@@ -375,7 +375,7 @@ func findSection(secs []DocumentSection, off, sz uint32) (int, bool) {
 	return 0, false
 }
 
-func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch, language string, debug bool) (float64, string) {
+func (p *contentProvider) matchScore(secs []DocumentSection, m *ChunkMatch, language string, debug bool) (float64, string) {
 	type debugScore struct {
 		score float64
 		what  string
