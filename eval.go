@@ -411,8 +411,8 @@ func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 	for _, cm := range cms {
 		lines := bytes.Split(cm.Content, []byte("\n"))
 		currentLineStart := cm.ContentStart.ByteOffset
-		var fragments []LineFragmentMatch
 		for i, line := range lines {
+			var fragments []LineFragmentMatch
 			lineNumber := cm.ContentStart.LineNumber + i
 			for _, rr := range cm.Ranges {
 				for rangeLine := rr.Start.LineNumber; rangeLine <= rr.End.LineNumber; rangeLine++ {
@@ -457,7 +457,7 @@ func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 
 					afterEnd := len(lines)
 					if i+contextLines < afterEnd {
-						afterEnd = i + contextLines
+						afterEnd = i + 1 + contextLines
 					}
 					lm.After = bytes.Join(lines[i+1:afterEnd], []byte("\n"))
 				}
