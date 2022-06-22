@@ -15,6 +15,7 @@
 package zoekt
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -339,22 +340,9 @@ nextFileMatch:
 				})
 		}
 
-		if opts.ChunkMatches {
-			fileMatch.ChunkMatches = cp.fillChunkMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
-		} else {
-			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
-		}
+		fileMatch.ChunkMatches = cp.fillChunkMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
 
 		maxFileScore := 0.0
-		for i := range fileMatch.LineMatches {
-			if maxFileScore < fileMatch.LineMatches[i].Score {
-				maxFileScore = fileMatch.LineMatches[i].Score
-			}
-
-			// Order by ordering in file.
-			fileMatch.LineMatches[i].Score += scoreLineOrderFactor * (1.0 - (float64(i) / float64(len(fileMatch.LineMatches))))
-		}
-
 		for i := range fileMatch.ChunkMatches {
 			if maxFileScore < fileMatch.ChunkMatches[i].Score {
 				maxFileScore = fileMatch.ChunkMatches[i].Score
@@ -378,7 +366,6 @@ nextFileMatch:
 			importantMatchCount++
 		}
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
-		sortMatchesByScore(fileMatch.LineMatches)
 		sortChunkMatchesByScore(fileMatch.ChunkMatches)
 		if opts.Whole {
 			fileMatch.Content = cp.data(false)
@@ -388,14 +375,15 @@ nextFileMatch:
 		for _, cm := range fileMatch.ChunkMatches {
 			matchedChunkRanges += len(cm.Ranges)
 		}
-
-		repoMatchCount += len(fileMatch.LineMatches)
 		repoMatchCount += matchedChunkRanges
-
-		res.Files = append(res.Files, fileMatch)
-		res.Stats.MatchCount += len(fileMatch.LineMatches)
 		res.Stats.MatchCount += matchedChunkRanges
 		res.Stats.FileCount++
+
+		if !opts.ChunkMatches {
+			fileMatch.LineMatches = chunkMatchesToLineMatches(fileMatch.ChunkMatches, opts.NumContextLines)
+			fileMatch.ChunkMatches = nil
+		}
+		res.Files = append(res.Files, fileMatch)
 	}
 
 	// We do not sort Files here, instead we rely on the shards pkg to do file
@@ -416,6 +404,75 @@ nextFileMatch:
 		}
 	})
 	return &res, nil
+}
+
+func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
+	lms := make([]LineMatch, 0, len(cms))
+	for _, cm := range cms {
+		lines := bytes.Split(cm.Content, []byte("\n"))
+		currentLineStart := cm.ContentStart.ByteOffset
+		var fragments []LineFragmentMatch
+		for i, line := range lines {
+			lineNumber := cm.ContentStart.LineNumber + i
+			for _, rr := range cm.Ranges {
+				for rangeLine := rr.Start.LineNumber; rangeLine <= rr.End.LineNumber; rangeLine++ {
+					if rangeLine == lineNumber {
+						startOffset := currentLineStart
+						if rangeLine == rr.Start.LineNumber {
+							startOffset = rr.Start.ByteOffset
+						}
+
+						endOffset := currentLineStart + len(line)
+						if rangeLine == rr.End.LineNumber {
+							endOffset = rr.End.ByteOffset
+						}
+
+						if endOffset != startOffset {
+							fragments = append(fragments, LineFragmentMatch{
+								LineOffset:  startOffset - currentLineStart,
+								Offset:      uint32(startOffset),
+								MatchLength: endOffset - startOffset,
+								SymbolInfo:  rr.SymbolInfo,
+							})
+						}
+					}
+				}
+			}
+			// Only create a line match if there are fragments for this line.
+			// There can be no fragments for a line if context lines were requested.
+			if len(fragments) > 0 {
+				lm := LineMatch{
+					Line:          line,
+					FileName:      cm.FileName,
+					Score:         cm.Score,
+					DebugScore:    cm.DebugScore,
+					LineFragments: fragments,
+				}
+				if contextLines > 0 {
+					beforeStart := 0
+					if i-contextLines > beforeStart {
+						beforeStart = i - contextLines
+					}
+					lm.Before = bytes.Join(lines[beforeStart:i], []byte("\n"))
+
+					afterEnd := len(lines)
+					if i+contextLines < afterEnd {
+						afterEnd = i + contextLines
+					}
+					lm.After = bytes.Join(lines[i+1:afterEnd], []byte("\n"))
+				}
+				if !cm.FileName {
+					// Line info is not set for filename matches
+					lm.LineStart = currentLineStart
+					lm.LineEnd = currentLineStart + len(line)
+					lm.LineNumber = lineNumber
+				}
+				lms = append(lms, lm)
+			}
+			currentLineStart += len(line) + len("\n")
+		}
+	}
+	return lms
 }
 
 func addRepo(res *SearchResult, repo *Repository) {

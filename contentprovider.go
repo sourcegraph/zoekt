@@ -132,37 +132,6 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
-func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
-	var result []LineMatch
-	if ms[0].fileName {
-		// There is only "line" in a filename.
-		res := LineMatch{
-			Line:     p.id.fileName(p.idx),
-			FileName: true,
-		}
-
-		for _, m := range ms {
-			res.LineFragments = append(res.LineFragments, LineFragmentMatch{
-				LineOffset:  int(m.byteOffset),
-				MatchLength: int(m.byteMatchSz),
-				Offset:      m.byteOffset,
-			})
-
-			result = []LineMatch{res}
-		}
-	} else {
-		ms = breakMatchesOnNewlines(ms, p.data(false))
-		result = p.fillContentMatches(ms, numContextLines)
-	}
-
-	sects := p.docSections()
-	for i, m := range result {
-		result[i].Score, result[i].DebugScore = p.matchScore(sects, &m, language, debug)
-	}
-
-	return result
-}
-
 func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
 	var result []ChunkMatch
 	if ms[0].fileName {
@@ -201,84 +170,6 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 		result[i].Score, result[i].DebugScore = p.chunkMatchScore(sects, &m, language, debug)
 	}
 
-	return result
-}
-
-func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
-	var result []LineMatch
-	for len(ms) > 0 {
-		m := ms[0]
-		num, lineStart, lineEnd := p.newlines().atOffset(m.byteOffset)
-
-		var lineCands []*candidateMatch
-
-		endMatch := m.byteOffset + m.byteMatchSz
-
-		for len(ms) > 0 {
-			m := ms[0]
-			if int(m.byteOffset) <= lineEnd {
-				endMatch = m.byteOffset + m.byteMatchSz
-				lineCands = append(lineCands, m)
-				ms = ms[1:]
-			} else {
-				break
-			}
-		}
-
-		if len(lineCands) == 0 {
-			log.Panicf(
-				"%s %v infinite loop: num %d start,end %d,%d, offset %d",
-				p.id.fileName(p.idx), p.id.metaData,
-				num, lineStart, lineEnd,
-				m.byteOffset)
-		}
-
-		data := p.data(false)
-
-		// Due to merging matches, we may have a match that
-		// crosses a line boundary. Prevent confusion by
-		// taking lines until we pass the last match
-		for lineEnd < len(data) && endMatch > uint32(lineEnd) {
-			next := bytes.IndexByte(data[lineEnd+1:], '\n')
-			if next == -1 {
-				lineEnd = len(data)
-			} else {
-				// TODO(hanwen): test that checks "+1" part here.
-				lineEnd += next + 1
-			}
-		}
-
-		finalMatch := LineMatch{
-			LineStart:  lineStart,
-			LineEnd:    lineEnd,
-			LineNumber: num,
-		}
-		finalMatch.Line = data[lineStart:lineEnd]
-
-		if numContextLines > 0 {
-			finalMatch.Before = p.newlines().getLines(data, num-numContextLines, num)
-			finalMatch.After = p.newlines().getLines(data, num+1, num+1+numContextLines)
-		}
-
-		for _, m := range lineCands {
-			fragment := LineFragmentMatch{
-				Offset:      m.byteOffset,
-				LineOffset:  int(m.byteOffset) - lineStart,
-				MatchLength: int(m.byteMatchSz),
-			}
-			if m.symbol {
-				start := p.id.fileEndSymbol[p.idx]
-				fragment.SymbolInfo = p.id.symbols.data(start + m.symbolIdx)
-				if fragment.SymbolInfo != nil {
-					sec := p.docSections()[m.symbolIdx]
-					fragment.SymbolInfo.Sym = string(data[sec.Start:sec.End])
-				}
-			}
-
-			finalMatch.LineFragments = append(finalMatch.LineFragments, fragment)
-		}
-		result = append(result, finalMatch)
-	}
 	return result
 }
 
@@ -566,80 +457,6 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 	return maxScore.score, strings.TrimRight(maxScore.what, ", ")
 }
 
-func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, language string, debug bool) (float64, string) {
-	type debugScore struct {
-		score float64
-		what  string
-	}
-
-	score := &debugScore{}
-	maxScore := &debugScore{}
-
-	addScore := func(what string, s float64) {
-		if debug {
-			score.what += fmt.Sprintf("%s:%f, ", what, s)
-		}
-		score.score += s
-	}
-
-	for _, f := range m.LineFragments {
-		startBoundary := f.LineOffset < len(m.Line) && (f.LineOffset == 0 || byteClass(m.Line[f.LineOffset-1]) != byteClass(m.Line[f.LineOffset]))
-
-		end := int(f.LineOffset) + f.MatchLength
-		endBoundary := end > 0 && (end == len(m.Line) || byteClass(m.Line[end-1]) != byteClass(m.Line[end]))
-
-		score.score = 0
-		score.what = ""
-
-		if startBoundary && endBoundary {
-			addScore("WordMatch", scoreWordMatch)
-		} else if startBoundary || endBoundary {
-			addScore("PartialWordMatch", scorePartialWordMatch)
-		}
-
-		if m.FileName {
-			sep := bytes.LastIndexByte(m.Line, '/')
-			startMatch := sep+1 == f.LineOffset
-			endMatch := len(m.Line) == f.LineOffset+f.MatchLength
-			if startMatch && endMatch {
-				addScore("Base", scoreBase)
-			} else if startMatch || endMatch {
-				addScore("EdgeBase", (scoreBase+scorePartialBase)/2)
-			} else if sep < f.LineOffset {
-				addScore("InnerBase", scorePartialBase)
-			}
-		} else if secIdx, ok := findSection(secs, f.Offset, uint32(f.MatchLength)); ok {
-			sec := secs[secIdx]
-			startMatch := sec.Start == f.Offset
-			endMatch := sec.End == f.Offset+uint32(f.MatchLength)
-			if startMatch && endMatch {
-				addScore("Symbol", scoreSymbol)
-			} else if startMatch || endMatch {
-				addScore("EdgeSymbol", (scoreSymbol+scorePartialSymbol)/2)
-			} else {
-				addScore("InnerSymbol", scorePartialSymbol)
-			}
-
-			si := f.SymbolInfo
-			if si == nil {
-				// for non-symbol queries, we need to hydrate in SymbolInfo.
-				start := p.id.fileEndSymbol[p.idx]
-				si = p.id.symbols.data(start + uint32(secIdx))
-			}
-			if si != nil {
-				// the LineFragment may not be on a symbol, then si will be nil.
-				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreKind(language, si.Kind))
-			}
-		}
-
-		if score.score > maxScore.score {
-			maxScore.score = score.score
-			maxScore.what = score.what
-		}
-	}
-	return maxScore.score, strings.TrimRight(maxScore.what, ", ")
-}
-
 // scoreKind boosts a match based on the combination of language and kind. The
 // language string comes from go-enry, the kind string from ctags.
 func scoreKind(language string, kind string) float64 {
@@ -658,12 +475,6 @@ func scoreKind(language string, kind string) float64 {
 	return 0
 }
 
-type matchScoreSlice []LineMatch
-
-func (m matchScoreSlice) Len() int           { return len(m) }
-func (m matchScoreSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
-func (m matchScoreSlice) Less(i, j int) bool { return m[i].Score > m[j].Score }
-
 type chunkMatchScoreSlice []ChunkMatch
 
 func (m chunkMatchScoreSlice) Len() int           { return len(m) }
@@ -675,10 +486,6 @@ type fileMatchSlice []FileMatch
 func (m fileMatchSlice) Len() int           { return len(m) }
 func (m fileMatchSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 func (m fileMatchSlice) Less(i, j int) bool { return m[i].Score > m[j].Score }
-
-func sortMatchesByScore(ms []LineMatch) {
-	sort.Sort(matchScoreSlice(ms))
-}
 
 func sortChunkMatchesByScore(ms []ChunkMatch) {
 	sort.Sort(chunkMatchScoreSlice(ms))
