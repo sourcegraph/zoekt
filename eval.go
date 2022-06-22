@@ -340,7 +340,7 @@ nextFileMatch:
 				})
 		}
 
-		fileMatch.ChunkMatches = cp.fillChunkMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+		fileMatch.ChunkMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
 
 		maxFileScore := 0.0
 		for i := range fileMatch.ChunkMatches {
