@@ -178,6 +178,13 @@ func (d *indexData) getLanguage(idx uint32) uint16 {
 
 // calculates stats for files in the range [start, end).
 func (d *indexData) calculateStatsForFileRange(start, end uint32) RepoStats {
+	if start >= end {
+		// An empty shard for an empty repository.
+		return RepoStats{
+			Shards: 1,
+		}
+	}
+
 	bytesContent := d.boundaries[end] - d.boundaries[start]
 	bytesFN := d.fileNameIndex[end] - d.fileNameIndex[start]
 	count, defaultCount, otherCount := d.calculateNewLinesStats(start, end)
@@ -208,30 +215,20 @@ func (d *indexData) calculateStats() error {
 	var start, end uint32
 
 	for repoID, md := range d.repoMetaData {
-		if start < uint32(len(d.repos)) && d.repos[start] != uint16(repoID) {
-			return fmt.Errorf("shard documents out of order with respect to repositories: expected document %d to be part of repo %d", start, repoID)
-		}
 		// determine the file range for repo i
 		for end < uint32(len(d.repos)) && d.repos[end] == uint16(repoID) {
 			end++
 		}
-		if start < uint32(len(d.repos)) {
-			d.repoListEntry = append(d.repoListEntry, RepoListEntry{
-				Repository:    md,
-				IndexMetadata: d.metaData,
-				Stats:         d.calculateStatsForFileRange(start, end),
-			})
+		if start < end && d.repos[start] != uint16(repoID) {
+			return fmt.Errorf("shard documents out of order with respect to repositories: expected document %d to be part of repo %d", start, repoID)
 		}
-		start = end
-	}
 
-	// An empty shard for an empty repository.
-	if len(d.repos) == 0 && len(d.repoMetaData) == 1 {
 		d.repoListEntry = append(d.repoListEntry, RepoListEntry{
-			Repository:    d.repoMetaData[0],
+			Repository:    md,
 			IndexMetadata: d.metaData,
-			Stats:         RepoStats{Shards: 1},
+			Stats:         d.calculateStatsForFileRange(start, end),
 		})
+		start = end
 	}
 
 	// All repos in a compound shard share memoryUse. So we average out the

@@ -2208,6 +2208,7 @@ func TestStats(t *testing.T) {
 		cmpopts.EquateEmpty(),
 		cmpopts.IgnoreFields(RepoListEntry{}, "Repository"),
 		cmpopts.IgnoreFields(RepoListEntry{}, "IndexMetadata"),
+		cmpopts.IgnoreFields(RepoStats{}, "IndexBytes"),
 	}
 
 	repoListEntries := func(b *IndexBuilder) []RepoListEntry {
@@ -2315,5 +2316,49 @@ func TestStats(t *testing.T) {
 		if diff := cmp.Diff(want, got, ignored...); diff != "" {
 			t.Fatalf("mismatch (-want +got):\n%s", diff)
 		}
+	})
+
+	t.Run("compound shard with empty repos", func(t *testing.T) {
+		b := testIndexBuilderCompound(t,
+			[]*Repository{
+				&Repository{Name: "repo 0"},
+				&Repository{Name: "repo 1"},
+				&Repository{Name: "repo 2"},
+				&Repository{Name: "repo 3"},
+				&Repository{Name: "repo 4"},
+			},
+			[][]Document{
+				[]Document{Document{Name: "doc 0", Content: []byte("content 0")}},
+				nil,
+				[]Document{Document{Name: "doc 1", Content: []byte("content 1")}},
+				nil,
+				nil,
+			},
+		)
+		got := repoListEntries(b)
+
+		entryEmpty := RepoListEntry{Stats: RepoStats{
+			Shards:       1,
+			Documents:    0,
+			ContentBytes: 0,
+		}}
+		entryNonEmpty := RepoListEntry{Stats: RepoStats{
+			Shards:       1,
+			Documents:    1,
+			ContentBytes: 14,
+		}}
+
+		want := []RepoListEntry{
+			entryNonEmpty,
+			entryEmpty,
+			entryNonEmpty,
+			entryEmpty,
+			entryEmpty,
+		}
+
+		if diff := cmp.Diff(want, got, ignored...); diff != "" {
+			t.Fatalf("mismatch (-want +got):\n%s", diff)
+		}
+
 	})
 }
