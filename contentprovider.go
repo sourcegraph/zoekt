@@ -250,23 +250,11 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 		firstLine, _, _ := newlines.atOffset(startOffset)
 		lastLine, _, _ := newlines.atOffset(endOffset)
 
-		// If there is no previous chunk, create a new one
-		if len(chunks) == 0 {
-			chunks = append(chunks, candidateChunk{
-				firstLine:  firstLine,
-				minOffset:  startOffset,
-				lastLine:   lastLine,
-				maxOffset:  endOffset,
-				candidates: []*candidateMatch{m},
-			})
-			continue
-		}
-
-		last := &chunks[len(chunks)-1]
-		if last.lastLine+numContextLines*2 >= firstLine {
+		if len(chunks) > 0 && chunks[len(chunks)-1].lastLine+numContextLines >= firstLine-numContextLines {
 			// If a new chunk created with the current candidateMatch would
 			// overlap with the previous chunk, instead add the candidateMatch
 			// to the last chunk and extend end of the last chunk.
+			last := &chunks[len(chunks)-1]
 			last.candidates = append(last.candidates, m)
 			if last.maxOffset < endOffset {
 				last.lastLine = lastLine
