@@ -414,6 +414,9 @@ type RepoStats struct {
 	// IndexBytes is the amount of RAM used for index overhead.
 	IndexBytes int64
 
+	// IndexMmappedBytes is the amount of memory mmapped by the index.
+	IndexMmappedBytes int64
+
 	// ContentBytes is the amount of RAM used for raw content.
 	ContentBytes int64
 
@@ -446,6 +449,7 @@ func (s *RepoStats) Add(o *RepoStats) {
 	// shards.
 	s.Shards += o.Shards
 	s.IndexBytes += o.IndexBytes
+	s.IndexMmappedBytes += o.IndexMmappedBytes
 	s.Documents += o.Documents
 	s.ContentBytes += o.ContentBytes
 

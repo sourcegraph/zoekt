@@ -233,18 +233,22 @@ func (d *indexData) calculateStats() error {
 
 	// All repos in a compound shard share memoryUse. So we average out the
 	// memoryUse per shard in our reporting. This has the benefit that when you
-	// aggregate the IndexBytes you get back the actual memoryUse.
+	// aggregate the IndexBytes and IndexMmappedBytes you get back the actual memoryUse.
 	//
 	// TODO take into account tombstones for aggregation. Even better, adjust
 	// API to be shard centric not repo centric.
 	if len(d.repoListEntry) > 0 {
-		indexBytes := d.memoryUse()
-		indexBytesChunk := indexBytes / len(d.repoListEntry)
+		ram, mmap := d.memoryUse()
+		chunkRam := ram / len(d.repoListEntry)
+		chunkMmap := mmap / len(d.repoListEntry)
 		for i := range d.repoListEntry {
-			d.repoListEntry[i].Stats.IndexBytes = int64(indexBytesChunk)
-			indexBytes -= indexBytesChunk
+			d.repoListEntry[i].Stats.IndexBytes = int64(chunkRam)
+			d.repoListEntry[i].Stats.IndexMmappedBytes = int64(chunkMmap)
+			ram -= chunkRam
+			mmap -= chunkMmap
 		}
-		d.repoListEntry[0].Stats.IndexBytes += int64(indexBytes)
+		d.repoListEntry[0].Stats.IndexBytes += int64(ram)
+		d.repoListEntry[0].Stats.IndexMmappedBytes += int64(mmap)
 	}
 
 	return nil
@@ -296,8 +300,7 @@ func (d *indexData) String() string {
 }
 
 // calculates an approximate size of indexData in memory in bytes.
-func (d *indexData) memoryUse() int {
-	sz := 0
+func (d *indexData) memoryUse() (ram, mmapped int) {
 	for _, a := range [][]uint32{
 		d.symbols.symKindIndex,
 		d.newlinesIndex,
@@ -309,27 +312,45 @@ func (d *indexData) memoryUse() int {
 		d.fileNameEndRunes,
 		d.subRepos,
 	} {
-		sz += 4 * len(a)
+		ram += 4 * len(a)
 	}
 
-	// All []byte fields are mmap-ed.
+	for _, a := range [][]byte{
+		d.symbols.symContent,
+		d.symbols.symIndex,
+		d.symbols.symKindContent,
+		d.symbols.symMetaData,
+		d.runeDocSectionsRaw,
+		d.fileNameContent,
+		// fileNameNgrams
+		d.checksums,
+		d.languages,
+	} {
+		mmapped += len(a)
+	}
 
-	sz += d.ngrams.SizeBytes()
-	sz += 8 * len(d.runeDocSections)
-	sz += d.runeOffsets.sizeBytes()
-	sz += 12 * len(d.fileNameNgrams) // these slices reference mmap-ed memory
-	sz += d.fileNameRuneOffsets.sizeBytes()
-	sz += 8 * len(d.fileBranchMasks)
+	// This is the slowest part but the result is a non-negligible fraction of total.
+	// len(d.fileNameNgrams) is several thousand for an average simple shard.
+	for _, v := range d.fileNameNgrams {
+		mmapped += len(v)
+	}
+
+	ram += d.ngrams.SizeBytes()
+	ram += 8 * len(d.runeDocSections)
+	ram += d.runeOffsets.sizeBytes()
+	ram += 12 * len(d.fileNameNgrams) // these slices reference mmap-ed memory
+	ram += d.fileNameRuneOffsets.sizeBytes()
+	ram += 8 * len(d.fileBranchMasks)
 	// branchNames
 	// branchIDs
 	// repoMetaData
 	// subRepoPaths
 	// repoListEntry
-	sz += 2 * len(d.repos)
-	sz += len(d.rawConfigMasks)
+	ram += 2 * len(d.repos)
+	ram += len(d.rawConfigMasks)
 	// bloomContents
 	// bloomNames
-	return sz
+	return
 }
 
 const maxUInt32 = 0xffffffff

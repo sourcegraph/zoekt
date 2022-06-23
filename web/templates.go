@@ -381,6 +381,9 @@ document.onkeydown=function(e){
     {{.Stats.Documents}} documents ({{HumanUnit .Stats.ContentBytes}})
     from {{.Stats.Repos}} repositories.
     </p>
+    <p>
+    Memory-mapped {{HumanUnit .Stats.IndexMmappedBytes}} bytes.
+    </p>
   </div>
 
   <nav class="navbar navbar-default navbar-bottom">

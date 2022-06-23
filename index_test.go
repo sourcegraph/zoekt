@@ -1092,6 +1092,7 @@ func TestListRepos(t *testing.T) {
 					cmpopts.EquateEmpty(),
 					cmpopts.IgnoreFields(RepoListEntry{}, "IndexMetadata"),
 					cmpopts.IgnoreFields(RepoStats{}, "IndexBytes"),
+					cmpopts.IgnoreFields(RepoStats{}, "IndexMmappedBytes"),
 					cmpopts.IgnoreFields(Repository{}, "SubRepoMap"),
 					cmpopts.IgnoreFields(Repository{}, "priority"),
 				}
@@ -1143,6 +1144,7 @@ func TestListRepos(t *testing.T) {
 				Shards:                     1,
 				Documents:                  4,
 				IndexBytes:                 261,
+				IndexMmappedBytes:          49,
 				ContentBytes:               68,
 				NewLinesCount:              4,
 				DefaultBranchNewLinesCount: 2,
@@ -2209,6 +2211,7 @@ func TestStats(t *testing.T) {
 		cmpopts.IgnoreFields(RepoListEntry{}, "Repository"),
 		cmpopts.IgnoreFields(RepoListEntry{}, "IndexMetadata"),
 		cmpopts.IgnoreFields(RepoStats{}, "IndexBytes"),
+		cmpopts.IgnoreFields(RepoStats{}, "IndexMmappedBytes"),
 	}
 
 	repoListEntries := func(b *IndexBuilder) []RepoListEntry {
