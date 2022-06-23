@@ -1,10 +1,11 @@
 package main
 
 import (
-	"bytes"
+	"crypto/sha1"
+	"fmt"
 	"io"
-	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -64,7 +65,7 @@ func TestDoNotDeleteSingleShards(t *testing.T) {
 	}
 
 	s := &Server{IndexDir: dir, TargetSizeBytes: 2000 * 1024 * 1024}
-	s.doMerge()
+	s.merge(helperCallMerge)
 
 	_, err = os.Stat(filepath.Join(dir, "test-repo_v16.00000.zoekt"))
 	if err != nil {
@@ -72,7 +73,51 @@ func TestDoNotDeleteSingleShards(t *testing.T) {
 	}
 }
 
-func TestDoMerge(t *testing.T) {
+func helperCallMerge(s ...string) *exec.Cmd {
+	cs := []string{"-test.run=TestCallMerge", "--"}
+	cs = append(cs, s...)
+	env := []string{
+		"GO_TEST_WANT_CALL_MERGE=1",
+	}
+	cmd := exec.Command(os.Args[0], cs...)
+	cmd.Env = append(env, os.Environ()...)
+	return cmd
+}
+
+func TestCallMerge(t *testing.T) {
+	if os.Getenv("GO_TEST_WANT_CALL_MERGE") != "1" {
+		return
+	}
+	defer os.Exit(0)
+
+	args := os.Args
+	for len(args) > 0 {
+		if args[0] == "--" {
+			args = args[1:]
+			break
+		}
+		args = args[1:]
+	}
+
+	// We mock the merge process by deleting the input shards and creating an empty
+	// compound shard with a proper name.
+	h := sha1.New()
+	for _, a := range args {
+		h.Write([]byte(filepath.Base(a)))
+		h.Write([]byte{0})
+		_ = os.Remove(a)
+	}
+
+	compoundShardName := filepath.Join(filepath.Dir(args[1]), fmt.Sprintf("compound-%x_v%d.%05d.zoekt", h.Sum(nil), 17, 0))
+	f, _ := os.Create(compoundShardName)
+	_ = f.Close()
+
+	// Just like zoekt-merge-index, we write the name of the compound shard to
+	// stdout.
+	_, _ = fmt.Fprint(os.Stdout, compoundShardName)
+}
+
+func TestMerge(t *testing.T) {
 
 	// A fixed set of shards gives us reliable shard sizes which makes it easy to
 	// define a cutoff with targetSizeBytes.
@@ -141,22 +186,12 @@ func TestDoMerge(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			s := &Server{IndexDir: dir, TargetSizeBytes: tc.targetSizeBytes}
-
-			// temp hack to find out why this test is failing on CI.
-			b := bytes.Buffer{}
-			old := debug
-			defer func() {
-				debug = old
-			}()
-			debug = log.New(&b, "TestDoMerge: ", log.LstdFlags)
-			s.doMerge()
-			t.Log(b.String())
-
-			fs, _ := filepath.Glob(filepath.Join(dir, "*"))
-			for _, f := range fs {
-				t.Log(filepath.Base(f))
+			s := &Server{
+				IndexDir:        dir,
+				TargetSizeBytes: tc.targetSizeBytes,
 			}
+
+			s.merge(helperCallMerge)
 
 			checkCount(dir, "compound-*", tc.wantCompound)
 			checkCount(dir, "*_v16.00000.zoekt", tc.wantSimple)

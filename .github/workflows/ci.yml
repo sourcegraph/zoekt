@@ -16,7 +16,7 @@ jobs:
       - name: install ctags
         run: ./install-ctags-alpine.sh
       - name: test
-        run: go test ./... -v
+        run: go test ./...
 
   shellcheck:
     name: shellcheck
