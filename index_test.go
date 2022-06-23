@@ -61,6 +61,32 @@ func testIndexBuilder(t *testing.T, repo *Repository, docs ...Document) *IndexBu
 	return b
 }
 
+func testIndexBuilderCompound(t *testing.T, repos []*Repository, docs [][]Document) *IndexBuilder {
+	t.Helper()
+
+	b := newIndexBuilder()
+	b.indexFormatVersion = NextIndexFormatVersion
+	b.contentBloom.bits = b.contentBloom.bits[:bloomSizeTest]
+	b.nameBloom.bits = b.nameBloom.bits[:bloomSizeTest]
+
+	if len(repos) != len(docs) {
+		t.Fatalf("testIndexBuilderCompound: repos must be the same length as docs, got: len(repos)=%d len(docs)=%d", len(repos), len(docs))
+	}
+
+	for i, repo := range repos {
+		if err := b.setRepository(repo); err != nil {
+			t.Fatal(err)
+		}
+		for j, d := range docs[i] {
+			if err := b.Add(d); err != nil {
+				t.Fatalf("Add %d %d: %v", i, j, err)
+			}
+		}
+	}
+
+	return b
+}
+
 func TestBoundary(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("x the")},
@@ -2175,4 +2201,164 @@ func TestSearchTypeLanguage(t *testing.T) {
 	b.featureVersion = 11 // force fallback
 	res = searchForTest(t, b, &query.Language{Language: "C++"})
 	wantSingleMatch(res, "hello.h")
+}
+
+func TestStats(t *testing.T) {
+	ignored := []cmp.Option{
+		cmpopts.EquateEmpty(),
+		cmpopts.IgnoreFields(RepoListEntry{}, "Repository"),
+		cmpopts.IgnoreFields(RepoListEntry{}, "IndexMetadata"),
+		cmpopts.IgnoreFields(RepoStats{}, "IndexBytes"),
+	}
+
+	repoListEntries := func(b *IndexBuilder) []RepoListEntry {
+		searcher := searcherForTest(t, b)
+		indexdata := searcher.(*indexData)
+		return indexdata.repoListEntry
+	}
+
+	t.Run("one empty repo", func(t *testing.T) {
+		b := testIndexBuilder(t, nil)
+		got := repoListEntries(b)
+		want := []RepoListEntry{
+			RepoListEntry{
+				Stats: RepoStats{
+					Repos:                      0,
+					Shards:                     1,
+					Documents:                  0,
+					IndexBytes:                 20,
+					ContentBytes:               0,
+					NewLinesCount:              0,
+					DefaultBranchNewLinesCount: 0,
+					OtherBranchesNewLinesCount: 0,
+				},
+			},
+		}
+
+		if diff := cmp.Diff(want, got, ignored...); diff != "" {
+			t.Fatalf("mismatch (-want +got):\n%s", diff)
+		}
+
+	})
+
+	t.Run("one simple shard", func(t *testing.T) {
+		b := testIndexBuilder(t, nil,
+			Document{Name: "doc 0", Content: []byte("content 0")},
+			Document{Name: "doc 1", Content: []byte("content 1")},
+		)
+		got := repoListEntries(b)
+		want := []RepoListEntry{
+			RepoListEntry{
+				Stats: RepoStats{
+					Repos:                      0,
+					Shards:                     1,
+					Documents:                  2,
+					IndexBytes:                 224,
+					ContentBytes:               28,
+					NewLinesCount:              0,
+					DefaultBranchNewLinesCount: 0,
+					OtherBranchesNewLinesCount: 0,
+				},
+			},
+		}
+
+		if diff := cmp.Diff(want, got, ignored...); diff != "" {
+			t.Fatalf("mismatch (-want +got):\n%s", diff)
+		}
+
+	})
+
+	t.Run("one compound shard", func(t *testing.T) {
+		b := testIndexBuilderCompound(t,
+			[]*Repository{
+				&Repository{Name: "repo 0"},
+				&Repository{Name: "repo 1"},
+			},
+			[][]Document{
+				[]Document{
+					Document{Name: "doc 0", Content: []byte("content 0")},
+					Document{Name: "doc 1", Content: []byte("content 1")},
+				},
+				[]Document{
+					Document{Name: "doc 2", Content: []byte("content 2")},
+					Document{Name: "doc 3", Content: []byte("content 3")},
+				},
+			},
+		)
+		got := repoListEntries(b)
+		want := []RepoListEntry{
+			RepoListEntry{
+				Stats: RepoStats{
+					Repos:                      0,
+					Shards:                     1,
+					Documents:                  2,
+					IndexBytes:                 180,
+					ContentBytes:               28,
+					NewLinesCount:              0,
+					DefaultBranchNewLinesCount: 0,
+					OtherBranchesNewLinesCount: 0,
+				},
+			},
+			RepoListEntry{
+				Stats: RepoStats{
+					Repos:                      0,
+					Shards:                     1,
+					Documents:                  2,
+					IndexBytes:                 180,
+					ContentBytes:               28,
+					NewLinesCount:              0,
+					DefaultBranchNewLinesCount: 0,
+					OtherBranchesNewLinesCount: 0,
+				},
+			},
+		}
+
+		if diff := cmp.Diff(want, got, ignored...); diff != "" {
+			t.Fatalf("mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("compound shard with empty repos", func(t *testing.T) {
+		b := testIndexBuilderCompound(t,
+			[]*Repository{
+				&Repository{Name: "repo 0"},
+				&Repository{Name: "repo 1"},
+				&Repository{Name: "repo 2"},
+				&Repository{Name: "repo 3"},
+				&Repository{Name: "repo 4"},
+			},
+			[][]Document{
+				[]Document{Document{Name: "doc 0", Content: []byte("content 0")}},
+				nil,
+				[]Document{Document{Name: "doc 1", Content: []byte("content 1")}},
+				nil,
+				nil,
+			},
+		)
+		got := repoListEntries(b)
+
+		entryEmpty := RepoListEntry{Stats: RepoStats{
+			Shards:       1,
+			Documents:    0,
+			ContentBytes: 0,
+		}}
+		entryNonEmpty := RepoListEntry{Stats: RepoStats{
+			Shards:       1,
+			Documents:    1,
+			ContentBytes: 14,
+		}}
+
+		want := []RepoListEntry{
+			entryNonEmpty,
+			entryEmpty,
+			entryNonEmpty,
+			entryEmpty,
+			entryEmpty,
+		}
+
+		if diff := cmp.Diff(want, got, ignored...); diff != "" {
+			t.Fatalf("mismatch (-want +got):\n%s", diff)
+		}
+
+	})
 }
