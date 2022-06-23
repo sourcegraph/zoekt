@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,7 +142,21 @@ func TestDoMerge(t *testing.T) {
 			}
 
 			s := &Server{IndexDir: dir, TargetSizeBytes: tc.targetSizeBytes}
+
+			// temp hack to find out why this test is failing on CI.
+			b := bytes.Buffer{}
+			old := debug
+			defer func() {
+				debug = old
+			}()
+			debug = log.New(&b, "TestDoMerge: ", log.LstdFlags)
 			s.doMerge()
+			t.Log(b.String())
+
+			fs, _ := filepath.Glob(filepath.Join(dir, "*"))
+			for _, f := range fs {
+				t.Log(filepath.Base(f))
+			}
 
 			checkCount(dir, "compound-*", tc.wantCompound)
 			checkCount(dir, "*_v16.00000.zoekt", tc.wantSimple)
