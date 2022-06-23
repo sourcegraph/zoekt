@@ -413,7 +413,7 @@ func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 		currentLineStart := cm.ContentStart.ByteOffset
 		for i, line := range lines {
 			var fragments []LineFragmentMatch
-			lineNumber := cm.ContentStart.LineNumber + i
+			lineNumber := cm.ContentStart.LineNumber + uint32(i)
 			for _, rr := range cm.Ranges {
 				for rangeLine := rr.Start.LineNumber; rangeLine <= rr.End.LineNumber; rangeLine++ {
 					if rangeLine == lineNumber {
@@ -422,16 +422,16 @@ func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 							startOffset = rr.Start.ByteOffset
 						}
 
-						endOffset := currentLineStart + len(line)
+						endOffset := currentLineStart + uint32(len(line))
 						if rangeLine == rr.End.LineNumber {
 							endOffset = rr.End.ByteOffset
 						}
 
 						if endOffset != startOffset {
 							fragments = append(fragments, LineFragmentMatch{
-								LineOffset:  startOffset - currentLineStart,
+								LineOffset:  int(startOffset - currentLineStart),
 								Offset:      uint32(startOffset),
-								MatchLength: endOffset - startOffset,
+								MatchLength: int(endOffset - startOffset),
 								SymbolInfo:  rr.SymbolInfo,
 							})
 						}
@@ -463,13 +463,13 @@ func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 				}
 				if !cm.FileName {
 					// Line info is not set for filename matches
-					lm.LineStart = currentLineStart
-					lm.LineEnd = currentLineStart + len(line)
-					lm.LineNumber = lineNumber
+					lm.LineStart = int(currentLineStart)
+					lm.LineEnd = int(currentLineStart) + len(line)
+					lm.LineNumber = int(lineNumber)
 				}
 				lms = append(lms, lm)
 			}
-			currentLineStart += len(line) + len("\n")
+			currentLineStart += uint32(len(line) + len("\n"))
 		}
 	}
 	return lms

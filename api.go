@@ -109,11 +109,11 @@ type Range struct {
 
 type Location struct {
 	// 0-based byte offset from the beginning of the file
-	ByteOffset int
+	ByteOffset uint32
 	// 1-based line number from the beginning of the file
-	LineNumber int
+	LineNumber uint32
 	// 1-based column number (in runes) from the beginning of line
-	Column int
+	Column uint32
 }
 
 // LineMatch holds the matches within a single line in a file.

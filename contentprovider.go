@@ -143,14 +143,14 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 		for _, m := range ms {
 			ranges = append(ranges, Range{
 				Start: Location{
-					ByteOffset: int(m.byteOffset),
+					ByteOffset: m.byteOffset,
 					LineNumber: 1,
-					Column:     utf8.RuneCount(fileName[:m.byteOffset]) + 1,
+					Column:     uint32(utf8.RuneCount(fileName[:m.byteOffset]) + 1),
 				},
 				End: Location{
-					ByteOffset: int(m.byteOffset + m.byteMatchSz),
+					ByteOffset: m.byteOffset + m.byteMatchSz,
 					LineNumber: 1,
-					Column:     utf8.RuneCount(fileName[:m.byteOffset+m.byteMatchSz]) + 1,
+					Column:     uint32(utf8.RuneCount(fileName[:m.byteOffset+m.byteMatchSz]) + 1),
 				},
 			})
 		}
@@ -198,14 +198,14 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 
 			ranges = append(ranges, Range{
 				Start: Location{
-					ByteOffset: int(startOffset),
-					LineNumber: startLine,
-					Column:     utf8.RuneCount(data[startLineOffset:startOffset]) + 1,
+					ByteOffset: startOffset,
+					LineNumber: uint32(startLine),
+					Column:     uint32(utf8.RuneCount(data[startLineOffset:startOffset]) + 1),
 				},
 				End: Location{
-					ByteOffset: int(endOffset),
-					LineNumber: endLine,
-					Column:     utf8.RuneCount(data[endLineOffset:endOffset]) + 1,
+					ByteOffset: endOffset,
+					LineNumber: uint32(endLine),
+					Column:     uint32(utf8.RuneCount(data[endLineOffset:endOffset]) + 1),
 				},
 				SymbolInfo: si,
 			})
@@ -220,8 +220,8 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 		chunkMatches = append(chunkMatches, ChunkMatch{
 			Content: newlines.getLines(data, firstLineNumber, chunk.lastLine+numContextLines+1),
 			ContentStart: Location{
-				ByteOffset: int(firstLineStart),
-				LineNumber: firstLineNumber,
+				ByteOffset: firstLineStart,
+				LineNumber: uint32(firstLineNumber),
 				Column:     1,
 			},
 			FileName: false,
@@ -389,8 +389,8 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *ChunkMatch, lang
 
 	for _, r := range m.Ranges {
 		// calculate the start and end offset relative to the start of the content
-		relStartOffset := r.Start.ByteOffset - m.ContentStart.ByteOffset
-		relEndOffset := r.End.ByteOffset - m.ContentStart.ByteOffset
+		relStartOffset := int(r.Start.ByteOffset - m.ContentStart.ByteOffset)
+		relEndOffset := int(r.End.ByteOffset - m.ContentStart.ByteOffset)
 
 		startBoundary := relStartOffset < len(m.Content) && (relStartOffset == 0 || byteClass(m.Content[relStartOffset-1]) != byteClass(m.Content[relStartOffset]))
 		endBoundary := relEndOffset > 0 && (relEndOffset == len(m.Content) || byteClass(m.Content[relEndOffset-1]) != byteClass(m.Content[relEndOffset]))
