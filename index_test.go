@@ -2078,7 +2078,7 @@ func TestUnicodeCoverContent(t *testing.T) {
 		}
 
 		got := res.Files[0].ChunkMatches[0].Ranges[0].Start.ByteOffset
-		want := strings.Index(string(content), needle)
+		want := uint32(strings.Index(string(content), needle))
 		if got != want {
 			t.Errorf("got %d want %d", got, want)
 		}
@@ -2110,7 +2110,7 @@ func TestUnicodeNonCoverContent(t *testing.T) {
 		}
 
 		got := res.Files[0].ChunkMatches[0].Ranges[0].Start.ByteOffset
-		want := strings.Index(string(content), needle)
+		want := uint32(strings.Index(string(content), needle))
 		if got != want {
 			t.Errorf("got %d want %d", got, want)
 		}
@@ -3008,7 +3008,7 @@ func TestUnicodeQuery(t *testing.T) {
 			t.Fatalf("want 1 line fragment, got %v", cm.Ranges)
 		}
 		rr := cm.Ranges[0]
-		if matchLen := rr.End.ByteOffset - rr.Start.ByteOffset; matchLen != len(content) {
+		if matchLen := rr.End.ByteOffset - rr.Start.ByteOffset; int(matchLen) != len(content) {
 			t.Fatalf("got MatchLength %d want %d", matchLen, len(content))
 		}
 	})
