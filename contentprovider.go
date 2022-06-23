@@ -321,11 +321,13 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 		}
 
 		firstLineNumber := chunk.firstLine - numContextLines
+		if firstLineNumber < 1 {
+			firstLineNumber = 1
+		}
 		firstLineStart, _ := newlines.lineBounds(firstLineNumber)
-		lastLineNumber := chunk.lastLine + numContextLines
 
 		chunkMatches = append(chunkMatches, ChunkMatch{
-			Content: newlines.getLines(data, firstLineNumber, lastLineNumber+1),
+			Content: newlines.getLines(data, firstLineNumber, chunk.lastLine+numContextLines+1),
 			ContentStart: Location{
 				ByteOffset: int(firstLineStart),
 				LineNumber: firstLineNumber,
