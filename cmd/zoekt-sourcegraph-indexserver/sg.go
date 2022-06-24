@@ -374,7 +374,7 @@ func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*Sourcegr
 		}
 		for _, opt := range opts {
 			if opt.Error != "" {
-				sf.Log.Printf("WARN: ignoring GetIndexOptions error for %s: %v", opt.Name, err)
+				sf.Log.Printf("WARN: ignoring GetIndexOptions error for %s: %v", opt.Name, opt.Error)
 				continue
 			}
 			f(opt.IndexOptions)

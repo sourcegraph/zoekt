@@ -110,6 +110,9 @@ func debugCmd() *ffcli.Command {
   curl http://localhost:6072/debug/indexed
     list the repositories that are INDEXED by this instance.
 
+  curl -X POST http://localhost:6072/debug/tombstone-repo?repo=ID[&val=t/f]
+    set tombstone the repo number ID to val (default true)
+
   curl http://localhost:6072/debug/list[?indexed=TRUE/false]
     list the repositories that are OWNED by this instance. If indexed=true (default), the list may contain repositories
     that this instance holds temporarily, for example during rebalancing.

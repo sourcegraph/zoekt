@@ -575,6 +575,7 @@ func (s *Server) addDebugHandlers(mux *http.ServeMux) {
 
 	mux.Handle("/debug/indexed", http.HandlerFunc(s.handleDebugIndexed))
 	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
+	mux.Handle("/debug/tombstone-repo", http.HandlerFunc(s.handleTombstoneRepo))
 	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
 }
 
@@ -680,6 +681,28 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, &bw); err != nil {
 		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
 		return
+	}
+}
+
+func (s *Server) handleTombstoneRepo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		return
+	}
+	if !s.shardMerging {
+		log.Println("cannot change tombstone for repo: shard merging is disabled")
+		return
+	}
+
+	r.ParseForm()
+	if id, err := strconv.Atoi(r.Form.Get("repo")); err == nil {
+		val := true
+		if v, err := strconv.ParseBool(r.Form.Get("val")); err == nil {
+			val = v
+		}
+		log.Println("handle tombstone repo", id, val)
+		s.muIndexDir.Lock()
+		setTombstone(s.IndexDir, uint32(id), val)
+		s.muIndexDir.Unlock()
 	}
 }
 

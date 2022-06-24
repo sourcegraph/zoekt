@@ -95,7 +95,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		// tombstone the compound shards so we don't just rm them.
 		simple := shards[:0]
 		for _, s := range shards {
-			if shardMerging && maybeSetTombstone([]shard{s}, repo) {
+			if shardMerging && maybeSetTombstone([]shard{s}, repo, true) {
 				shardsLog(indexDir, "tombname", []shard{s})
 			} else {
 				simple = append(simple, s)
@@ -143,7 +143,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			_ = os.Chtimes(shard.Path, now, now)
 		}
 
-		if shardMerging && maybeSetTombstone(shards, repo) {
+		if shardMerging && maybeSetTombstone(shards, repo, true) {
 			shardsLog(indexDir, "tomb", shards)
 			continue
 		}
@@ -358,10 +358,11 @@ func consistentRepoName(shards []shard) bool {
 	return true
 }
 
-// maybeSetTombstone will call zoekt.SetTombstone for repoID if shards
+// maybeSetTombstone will call zoekt.SetTombstone or zoekt.UnsetTombstone
+// for val true and false, respectively, for repoID if shards
 // represents a compound shard. It returns true if shards represents a
 // compound shard.
-func maybeSetTombstone(shards []shard, repoID uint32) bool {
+func maybeSetTombstone(shards []shard, repoID uint32, val bool) bool {
 	// 1 repo can be split across many simple shards but it should only be contained
 	// in 1 compound shard. Hence we check that len(shards)==1 and only consider the
 	// shard at index 0.
@@ -369,11 +370,55 @@ func maybeSetTombstone(shards []shard, repoID uint32) bool {
 		return false
 	}
 
-	if err := zoekt.SetTombstone(shards[0].Path, repoID); err != nil {
-		log.Printf("error setting tombstone for %d in shard %s: %s. Removing shard\n", repoID, shards[0].Path, err)
+	var err error
+	if val {
+		err = zoekt.SetTombstone(shards[0].Path, repoID)
+	} else {
+		err = zoekt.UnsetTombstone(shards[0].Path, repoID)
+	}
+	if err != nil {
+		if val {
+			log.Printf("error setting tombstone for %d in shard %s: %s. Removing shard\n", repoID, shards[0].Path, err)
+		} else {
+			log.Printf("error removing tombstone for %d in shard %s: %s. Removing shard\n", repoID, shards[0].Path, err)
+		}
 		_ = os.Remove(shards[0].Path)
 	}
 	return true
+}
+
+// setTombstone sets or removes, for val equal to true and false respectively,
+// tombstone for repoID, if such repository exists and is located in a compound shard.
+// This function must be called when muIndexDir is locked.
+func setTombstone(indexDir string, repoID uint32, val bool) {
+	log.Println("setting tombstone for", repoID, "to", val)
+
+	found := false
+	if val {
+		index := getShards(indexDir)
+		if shards, ok := index[repoID]; ok {
+			found = true
+			for _, s := range shards {
+				if maybeSetTombstone([]shard{s}, repoID, val) {
+					shardsLog(indexDir, "tombname", []shard{s})
+				}
+			}
+		}
+	} else {
+		tombstonedRepos := getTombstonedRepos(indexDir)
+		for repo, s := range tombstonedRepos {
+			if repo != repoID {
+				continue
+			}
+			found = true
+			if maybeSetTombstone([]shard{s}, repoID, val) {
+				shardsLog(indexDir, "untomb", []shard{s})
+			}
+		}
+	}
+	if !found {
+		log.Println("setTombstone: could not find repository with ID", repoID)
+	}
 }
 
 func shardsLog(indexDir, action string, shards []shard) {
