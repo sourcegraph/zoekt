@@ -38,6 +38,7 @@ import (
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 	"github.com/google/zoekt/debugserver"
+	"github.com/google/zoekt/internal/check"
 	"github.com/google/zoekt/internal/profiler"
 )
 
@@ -576,6 +577,7 @@ func (s *Server) addDebugHandlers(mux *http.ServeMux) {
 	mux.Handle("/debug/indexed", http.HandlerFunc(s.handleDebugIndexed))
 	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
 	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
+	mux.Handle("/debug/check", http.HandlerFunc(handleHealthCheck))
 }
 
 var repoTmpl = template.Must(template.New("name").Parse(`
@@ -620,6 +622,20 @@ func (s *Server) handleReIndex(w http.ResponseWriter, r *http.Request) {
 	})
 
 	_ = repoTmpl.Execute(w, data)
+}
+
+func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	switch r.Header.Get("Accept") {
+	case "application/json":
+		w.Header().Set("content", "application/json")
+		payload, err := json.Marshal(hc)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		_, _ = w.Write(payload)
+	default:
+		hc.Print(w)
+	}
 }
 
 func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
@@ -965,6 +981,8 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.IntVar(&rc.blockProfileRate, "block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler Var(default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
 }
 
+var hc *check.HealthChecker
+
 func startServer(conf rootConfig) error {
 	s, err := newServer(conf)
 	if err != nil {
@@ -994,6 +1012,13 @@ func startServer(conf rootConfig) error {
 		Hostname: conf.hostname,
 	}
 	go oc.Run()
+
+	hc = &check.HealthChecker{
+		Checks: []check.Check{
+			canConnectToFrontendInternal(s.Sourcegraph),
+		},
+	}
+	go hc.Run()
 
 	s.Run()
 	return nil
