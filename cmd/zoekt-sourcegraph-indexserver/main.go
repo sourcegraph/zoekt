@@ -163,8 +163,8 @@ type Server struct {
 
 	queue Queue
 
-	// Protects the index directory from concurrent access.
-	muIndexDir sync.Mutex
+	// muIndexDir protects the index directory from concurrent access.
+	muIndexDir indexMutex
 
 	// If true, shard merging is enabled.
 	shardMerging bool
@@ -322,9 +322,9 @@ func (s *Server) Run() {
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
-				s.muIndexDir.Lock()
-				cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
-				s.muIndexDir.Unlock()
+				s.muIndexDir.Global(func() {
+					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
+				})
 			}()
 
 			repos.IterateIndexOptions(s.queue.AddOrUpdate)
@@ -375,12 +375,27 @@ func (s *Server) Run() {
 			time.Sleep(time.Second)
 			continue
 		}
-		start := time.Now()
 		args := s.indexArgs(opts)
 
-		s.muIndexDir.Lock()
-		state, err := s.Index(args)
-		s.muIndexDir.Unlock()
+		var (
+			start time.Time
+			state indexState
+			err   error
+		)
+		alreadyRunning := s.muIndexDir.With(opts.Name, func() {
+			// only record time taken once we hold the lock. This avoids us
+			// recording time taken while merging/cleanup runs.
+			start = time.Now()
+			state, err = s.Index(args)
+		})
+
+		if alreadyRunning {
+			// Someone else is processing the repository. We can just skip this job
+			// since the repository will be added back to the queue and we will
+			// converge to the correct behaviour.
+			debug.Printf("index job for repository already running: %s", args)
+			continue
+		}
 
 		elapsed := time.Since(start)
 
