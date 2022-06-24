@@ -810,7 +810,7 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 }
 
 func listIndexed(indexDir string) []uint32 {
-	index := getShards(indexDir)
+	index := getShards(indexDir, alive)
 	metricNumIndexed.Set(float64(len(index)))
 	repoIDs := make([]uint32, 0, len(index))
 	for id := range index {

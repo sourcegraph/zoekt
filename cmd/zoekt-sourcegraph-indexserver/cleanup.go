@@ -35,9 +35,9 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		log.Printf("failed to create trash dir: %v", err)
 	}
 
-	trash := getShards(trashDir)
+	trash := getShards(trashDir, alive)
 	tombtones := getTombstonedRepos(indexDir)
-	index := getShards(indexDir)
+	index := getShards(indexDir, alive)
 
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
@@ -170,17 +170,31 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			}
 		}
 	}
+
+	// feature flag: place file TOMBSTONE_DUPLICATES in IndexDir
+	if _, err := os.Stat(filepath.Join(indexDir, "TOMBSTONE_DUPLICATES")); err == nil && shardMerging {
+		tombstoneDuplicates(indexDir)
+	}
+
 	metricCleanupDuration.Observe(time.Since(start).Seconds())
 }
 
 type shard struct {
-	RepoID   uint32
-	RepoName string
-	Path     string
-	ModTime  time.Time
+	RepoID        uint32
+	RepoName      string
+	Path          string
+	ModTime       time.Time
+	RepoTombstone bool
 }
 
-func getShards(dir string) map[uint32][]shard {
+type getShardsOpt int
+
+const (
+	all getShardsOpt = iota
+	alive
+)
+
+func getShards(dir string, opt getShardsOpt) map[uint32][]shard {
 	d, err := os.Open(dir)
 	if err != nil {
 		debug.Printf("failed to getShards: %s", dir)
@@ -202,7 +216,13 @@ func getShards(dir string) map[uint32][]shard {
 			continue
 		}
 
-		repos, _, err := zoekt.ReadMetadataPathAlive(path)
+		var repos []*zoekt.Repository
+		switch opt {
+		case all:
+			repos, _, err = zoekt.ReadMetadataPath(path)
+		case alive:
+			repos, _, err = zoekt.ReadMetadataPathAlive(path)
+		}
 		if err != nil {
 			debug.Printf("failed to read shard: %v", err)
 			continue
@@ -210,14 +230,68 @@ func getShards(dir string) map[uint32][]shard {
 
 		for _, repo := range repos {
 			shards[repo.ID] = append(shards[repo.ID], shard{
-				RepoID:   repo.ID,
-				RepoName: repo.Name,
-				Path:     path,
-				ModTime:  fi.ModTime(),
+				RepoID:        repo.ID,
+				RepoName:      repo.Name,
+				Path:          path,
+				ModTime:       fi.ModTime(),
+				RepoTombstone: repo.Tombstone,
 			})
 		}
 	}
 	return shards
+}
+
+// tombstoneDuplicates finds duplicate shards in indexDir and sets tombstones
+// to all of them but one. If at most one of the duplicates was without a tombstone,
+// the function is a no-op. Otherwise, the one that was modified the latest remains
+// alive.
+// The assumption is that duplicate shards exist only as parts of compound shards:
+// we haven't seen simple duplicate shards in the wild.
+// Duplicate shards should not occur at all but we rarely see them due to a bug somewhere (probably fixed).
+// This function is intended to wait for a subsequent call to vacuum that will delete the
+// tombstoned repos.
+func tombstoneDuplicates(indexDir string) {
+	index := getShards(indexDir, all)
+
+	for repoID, shardsAll := range index {
+		shards := make([]shard, 0, len(shardsAll))
+		for _, s := range shardsAll {
+			// One repoID corresponds to multiple shards if either
+			// a) it is a large repo split across multiple shards, or
+			// b) it is a repo that is duplicated in several compound shards.
+			// We are only interested in case b).
+			if strings.HasPrefix(filepath.Base(s.Path), "compound-") {
+				shards = append(shards, s)
+			}
+		}
+		if len(shards) <= 1 {
+			continue
+		}
+
+		log.Printf("found %d duplicate shards for repoID=%d. Tombstoning all but one", len(shards), repoID)
+
+		maybeAliveIdx := 0
+		for i, s := range shards {
+			var mustChange bool
+			if shards[maybeAliveIdx].RepoTombstone == s.RepoTombstone {
+				mustChange = shards[maybeAliveIdx].ModTime.Before(s.ModTime)
+			} else {
+				mustChange = shards[maybeAliveIdx].RepoTombstone
+			}
+			if mustChange {
+				maybeAliveIdx = i
+			}
+		}
+		if maybeAliveIdx != 0 {
+			shards[0], shards[maybeAliveIdx] = shards[maybeAliveIdx], shards[0]
+		}
+
+		for i, s := range shards {
+			if i > 0 && !s.RepoTombstone && maybeSetTombstone([]shard{s}, repoID) {
+				shardsLog(indexDir, "tomb", []shard{s})
+			}
+		}
+	}
 }
 
 // getTombstonedRepos return a map of tombstoned repositories in dir. If a
@@ -247,10 +321,11 @@ func getTombstonedRepos(dir string) map[uint32]shard {
 				continue
 			}
 			m[repo.ID] = shard{
-				RepoID:   repo.ID,
-				RepoName: repo.Name,
-				Path:     p,
-				ModTime:  repo.LatestCommitDate,
+				RepoID:        repo.ID,
+				RepoName:      repo.Name,
+				Path:          p,
+				ModTime:       repo.LatestCommitDate,
+				RepoTombstone: true,
 			}
 		}
 	}
