@@ -508,7 +508,9 @@ func TestBuilder_DeltaShardsBuildsShouldErrorOnIndexOptionsMismatch(t *testing.T
 			if err == nil {
 				t.Fatalf("no error regarding index options mismatch")
 			}
-			if !errors.As(err, &deltaIndexOptionsMismatchError{}) {
+
+			var optionsMismatchError *deltaIndexOptionsMismatchError
+			if !errors.As(err, &optionsMismatchError) {
 				t.Fatalf("expected error complaining about index options mismatch, got: %s", err)
 			}
 		})

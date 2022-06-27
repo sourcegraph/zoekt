@@ -656,7 +656,7 @@ func (b *Builder) Finish() error {
 			}
 
 			if b.opts.HashOptions() != repository.IndexOptions {
-				return deltaIndexOptionsMismatchError{
+				return &deltaIndexOptionsMismatchError{
 					shardName:  shard,
 					newOptions: b.opts,
 				}
@@ -1010,8 +1010,8 @@ type deltaIndexOptionsMismatchError struct {
 	newOptions Options
 }
 
-func (e deltaIndexOptionsMismatchError) Error() string {
-	return fmt.Sprintf("One or more Index Options for shard %q does not match Builder's Index options; These index option updates are incompatible with delta build. new index options: %+v", e.shardName, e.newOptions)
+func (e *deltaIndexOptionsMismatchError) Error() string {
+	return fmt.Sprintf("one or more index options for shard %q do not match Builder's index options. These index option updates are incompatible with delta build. New index options: %+v", e.shardName, e.newOptions)
 }
 
 // umask holds the Umask of the current process
