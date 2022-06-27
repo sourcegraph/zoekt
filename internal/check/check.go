@@ -71,15 +71,13 @@ func (c *HealthChecker) doRun() {
 	sem := semaphore.NewWeighted(int64(runtime.GOMAXPROCS(0)))
 	wg := sync.WaitGroup{}
 
-	next := c.Checks[:0]
-
-	for _, check := range c.Checks {
+	for i, check := range c.Checks {
 		err := sem.Acquire(ctx, 1)
 		if err != nil {
 			return
 		}
 		wg.Add(1)
-		go func(check Check) {
+		go func(i int, check Check) {
 			defer sem.Release(1)
 			defer wg.Done()
 
@@ -87,9 +85,9 @@ func (c *HealthChecker) doRun() {
 			check.LastRun = time.Now().UTC()
 
 			c.mu.Lock()
-			next = append(next, check)
+			c.Checks[i] = check
 			c.mu.Unlock()
-		}(check)
+		}(i, check)
 	}
 	wg.Wait()
 }
