@@ -163,8 +163,8 @@ type Server struct {
 
 	queue Queue
 
-	// Protects the index directory from concurrent access.
-	muIndexDir sync.Mutex
+	// muIndexDir protects the index directory from concurrent access.
+	muIndexDir indexMutex
 
 	// If true, shard merging is enabled.
 	shardMerging bool
@@ -322,9 +322,9 @@ func (s *Server) Run() {
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
-				s.muIndexDir.Lock()
-				cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
-				s.muIndexDir.Unlock()
+				s.muIndexDir.Global(func() {
+					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
+				})
 			}()
 
 			repos.IterateIndexOptions(s.queue.AddOrUpdate)
@@ -375,28 +375,40 @@ func (s *Server) Run() {
 			time.Sleep(time.Second)
 			continue
 		}
-		start := time.Now()
+
 		args := s.indexArgs(opts)
 
-		s.muIndexDir.Lock()
-		state, err := s.Index(args)
-		s.muIndexDir.Unlock()
+		alreadyRunning := s.muIndexDir.With(opts.Name, func() {
+			// only record time taken once we hold the lock. This avoids us
+			// recording time taken while merging/cleanup runs.
+			start := time.Now()
 
-		elapsed := time.Since(start)
+			state, err := s.Index(args)
 
-		metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
+			elapsed := time.Since(start)
 
-		if err != nil {
-			log.Printf("error indexing %s: %s", args.String(), err)
+			metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
+
+			if err != nil {
+				log.Printf("error indexing %s: %s", args.String(), err)
+			}
+
+			switch state {
+			case indexStateSuccess:
+				log.Printf("updated index %s in %v", args.String(), elapsed)
+			case indexStateSuccessMeta:
+				log.Printf("updated meta %s in %v", args.String(), elapsed)
+			}
+			s.queue.SetIndexed(opts, state)
+		})
+
+		if alreadyRunning {
+			// Someone else is processing the repository. We can just skip this job
+			// since the repository will be added back to the queue and we will
+			// converge to the correct behaviour.
+			debug.Printf("index job for repository already running: %s", args)
+			continue
 		}
-
-		switch state {
-		case indexStateSuccess:
-			log.Printf("updated index %s in %v", args.String(), elapsed)
-		case indexStateSuccessMeta:
-			log.Printf("updated meta %s in %v", args.String(), elapsed)
-		}
-		s.queue.SetIndexed(opts, state)
 	}
 }
 
