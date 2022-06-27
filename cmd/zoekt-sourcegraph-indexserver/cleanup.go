@@ -173,6 +173,14 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 
 	// feature flag: place file TOMBSTONE_DUPLICATES in IndexDir
 	if _, err := os.Stat(filepath.Join(indexDir, "TOMBSTONE_DUPLICATES")); err == nil && shardMerging {
+		// This breaks an invariant of cleanup() where we guarantee that right
+		// after a cleanup the index state is consistent with the repos parameter.
+		// If the duplicates are tombstoned, the same repoID may seem both
+		// alive and tombstoned, depending on which compound shard you look into.
+		// However, introducing duplicates in the first place breaks another invariant
+		// (of having no duplicates), so
+		// 1. This is bad, but we are fixing an even worse situation.
+		// 2. This code should be removed as soon as the situation is fixed.
 		tombstoneDuplicates(indexDir)
 	}
 
