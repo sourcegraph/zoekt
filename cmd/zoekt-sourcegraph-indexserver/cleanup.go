@@ -35,9 +35,9 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		log.Printf("failed to create trash dir: %v", err)
 	}
 
-	trash := getShards(trashDir, alive)
+	trash := getShards(trashDir)
 	tombtones := getTombstonedRepos(indexDir)
-	index := getShards(indexDir, alive)
+	index := getShards(indexDir)
 
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
@@ -187,14 +187,7 @@ type shard struct {
 	RepoTombstone bool
 }
 
-type getShardsOpt int
-
-const (
-	all getShardsOpt = iota
-	alive
-)
-
-func getShards(dir string, opt getShardsOpt) map[uint32][]shard {
+func getShards(dir string) map[uint32][]shard {
 	d, err := os.Open(dir)
 	if err != nil {
 		debug.Printf("failed to getShards: %s", dir)
@@ -216,13 +209,7 @@ func getShards(dir string, opt getShardsOpt) map[uint32][]shard {
 			continue
 		}
 
-		var repos []*zoekt.Repository
-		switch opt {
-		case all:
-			repos, _, err = zoekt.ReadMetadataPath(path)
-		case alive:
-			repos, _, err = zoekt.ReadMetadataPathAlive(path)
-		}
+		repos, _, err := zoekt.ReadMetadataPathAlive(path)
 		if err != nil {
 			debug.Printf("failed to read shard: %v", err)
 			continue
@@ -242,14 +229,18 @@ func getShards(dir string, opt getShardsOpt) map[uint32][]shard {
 }
 
 // tombstoneDuplicates finds duplicate shards in indexDir and makes it so
-// that all of them except for the one modified the latest have a tombstone.
+// that all of them except one have a tombstone. It tries, on a best effort basis,
+// to select the non-tombstoned shard with the latest modification time as the one to
+// remain alive.
 // The assumption is that duplicate shards exist only as parts of compound shards:
 // we haven't seen simple duplicate shards in the wild.
 // Duplicate shards should not occur at all but we rarely see them due to a bug somewhere (probably fixed).
 // This function is intended to wait for a subsequent call to vacuum that will delete the
 // tombstoned repos.
 func tombstoneDuplicates(indexDir string) {
-	index := getShards(indexDir, all)
+	// We are only receiving alive shards in this call, so we may skip a
+	// newer shard if it already has a tombstone.
+	index := getShards(indexDir)
 
 	for repoID, shardsAll := range index {
 		shards := make([]shard, 0, len(shardsAll))

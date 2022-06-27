@@ -393,8 +393,8 @@ func TestCleanupCompoundShards(t *testing.T) {
 
 	cleanup(dir, repos, now, true)
 
-	index := getShards(dir, alive)
-	trash := getShards(filepath.Join(dir, ".trash"), alive)
+	index := getShards(dir)
+	trash := getShards(filepath.Join(dir, ".trash"))
 
 	if len(trash) != 0 {
 		t.Fatalf("expected empty trash, got %+v", trash)
@@ -474,8 +474,8 @@ func TestTombstoneDuplicateShards(t *testing.T) {
 
 	cleanup(dir, repos, now, true)
 
-	index := getShards(dir, alive)
-	trash := getShards(filepath.Join(dir, ".trash"), alive)
+	index := getShards(dir)
+	trash := getShards(filepath.Join(dir, ".trash"))
 
 	if len(trash) != 0 {
 		t.Fatalf("expected empty trash, got %+v", trash)
