@@ -10,11 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/zoekt"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/google/zoekt"
 )
 
 var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -433,35 +434,19 @@ func (s *Server) vacuum() {
 		}
 
 		if info.Size() < s.minSizeBytes {
-			// feature flag: place file EXPLODE in IndexDir
-			if _, err := os.Stat(filepath.Join(s.IndexDir, "EXPLODE")); err == nil {
-				cmd := exec.Command("zoekt-merge-index", "explode", path)
+			cmd := exec.Command("zoekt-merge-index", "explode", path)
 
-				var b []byte
-				s.muIndexDir.Global(func() {
-					b, err = cmd.CombinedOutput()
-				})
+			var b []byte
+			s.muIndexDir.Global(func() {
+				b, err = cmd.CombinedOutput()
+			})
 
-				if err != nil {
-					debug.Printf("failed to explode compound shard %s: %s", path, string(b))
-				} else {
-					shardsLog(s.IndexDir, "explode", []shard{{Path: path}})
-				}
-				continue
+			if err != nil {
+				debug.Printf("failed to explode compound shard %s: %s", path, string(b))
 			} else {
-				paths, err := zoekt.IndexFilePaths(path)
-				if err != nil {
-					debug.Printf("failed getting all file paths for %s", path)
-					continue
-				}
-				s.muIndexDir.Global(func() {
-					for _, p := range paths {
-						os.Remove(p)
-					}
-				})
-				shardsLog(s.IndexDir, "delete", []shard{{Path: path}})
-				continue
+				shardsLog(s.IndexDir, "explode", []shard{{Path: path}})
 			}
+			continue
 		}
 
 		var removed []*zoekt.Repository
