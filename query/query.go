@@ -124,7 +124,7 @@ func (q *Regexp) GobDecode(data []byte) error {
 	if err != nil {
 		return err
 	}
-	gobq.Regexp.Regexp, err = syntax.Parse(gobq.RegexpString, regexpFlags)
+	gobq.Regexp.Regexp, err = syntax.Parse(gobq.RegexpString, RegexpFlags)
 	if err != nil {
 		return err
 	}

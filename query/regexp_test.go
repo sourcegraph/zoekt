@@ -86,7 +86,7 @@ func TestOptimize(t *testing.T) {
 			simplifiedWant := mustParseRE(tt.want).Simplify()
 
 			in := mustParseRE(tt.in)
-			got := optimizeRegexp(in)
+			got := OptimizeRegexp(in, RegexpFlags)
 
 			// String comparison as the same Regexp string can have different ASTs
 			// e.g. optimize of `ba(na){1,2}` == `bana(?:na)?`

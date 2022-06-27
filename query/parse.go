@@ -24,6 +24,8 @@ import (
 	"github.com/grafana/regexp"
 )
 
+const RegexpFlags syntax.Flags = syntax.ClassNL | syntax.PerlX | syntax.UnicodeGroups
+
 var _ = log.Printf
 
 // parseStringLiteral parses a string literal, consumes the starting
@@ -137,20 +139,20 @@ func parseExpr(in []byte) (Q, int, error) {
 	case tokBranch:
 		expr = &Branch{Pattern: text}
 	case tokText, tokRegex:
-		q, err := regexpQuery(text, false, false)
+		q, err := RegexpQuery(text, false, false)
 		if err != nil {
 			return nil, 0, err
 		}
 		expr = q
 	case tokFile:
-		q, err := regexpQuery(text, false, true)
+		q, err := RegexpQuery(text, false, true)
 		if err != nil {
 			return nil, 0, err
 		}
 		expr = q
 
 	case tokContent:
-		q, err := regexpQuery(text, true, false)
+		q, err := RegexpQuery(text, true, false)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -168,7 +170,7 @@ func parseExpr(in []byte) (Q, int, error) {
 			return nil, 0, fmt.Errorf("the sym: atom must have an argument")
 		}
 
-		q, err := regexpQuery(text, false, false)
+		q, err := RegexpQuery(text, false, false)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -228,19 +230,17 @@ func parseExpr(in []byte) (Q, int, error) {
 	return expr, len(in) - len(b), nil
 }
 
-const regexpFlags syntax.Flags = syntax.ClassNL | syntax.PerlX | syntax.UnicodeGroups
-
-// regexpQuery parses an atom into either a regular expression, or a
+// RegexpQuery parses an atom into either a regular expression, or a
 // simple substring atom.
-func regexpQuery(text string, content, file bool) (Q, error) {
+func RegexpQuery(text string, content, file bool) (Q, error) {
 	var expr Q
 
-	r, err := syntax.Parse(text, regexpFlags)
+	r, err := syntax.Parse(text, RegexpFlags)
 	if err != nil {
 		return nil, err
 	}
 
-	r = optimizeRegexp(r)
+	r = OptimizeRegexp(r, RegexpFlags)
 
 	if r.Op == syntax.OpLiteral {
 		expr = &Substring{
