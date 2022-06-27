@@ -49,7 +49,7 @@ func getTraceContext(
 	if traceEnabled && spanContext != nil {
 		spanContext, err := trace.GetOpenTracer(ctx, nil).
 			Extract(opentracing.TextMap, opentracing.TextMapCarrier(spanContext))
-		if err != nil {
+		if err != nil && err != opentracing.ErrSpanContextNotFound {
 			log.Printf("Error extracting span from opts: %s", err)
 		}
 		if spanContext != nil {

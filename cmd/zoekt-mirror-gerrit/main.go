@@ -166,6 +166,7 @@ func main() {
 			"zoekt.name":           name,
 			"zoekt.gerrit-project": k,
 			"zoekt.gerrit-host":    rootURL.String(),
+			"zoekt.archived":       marshalBool(v.State == "READ_ONLY"),
 		}
 
 		for _, wl := range v.WebLinks {
@@ -214,4 +215,11 @@ func deleteStaleRepos(destDir string, filter *gitindex.Filter, repos map[string]
 		log.Fatalf("deleteRepos: %v", err)
 	}
 	return nil
+}
+
+func marshalBool(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
 }
