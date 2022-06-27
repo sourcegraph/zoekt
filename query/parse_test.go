@@ -65,6 +65,8 @@ func TestParseQuery(t *testing.T) {
 		{"file:abc", &Substring{Pattern: "abc", FileName: true}},
 		{"branch:pqr", &Branch{Pattern: "pqr"}},
 		{"((x|y) )", &Regexp{Regexp: mustParseRE("[xy]")}},
+		{"archived:yes", RawConfig(RcOnlyArchived)},
+		{"archived:no", RawConfig(RcNoArchived)},
 		{"file:helpers\\.go byte", NewAnd(
 			&Substring{Pattern: "helpers.go", FileName: true},
 			&Substring{Pattern: "byte"})},

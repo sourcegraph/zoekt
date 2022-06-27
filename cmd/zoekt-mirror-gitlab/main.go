@@ -174,6 +174,8 @@ func fetchProjects(destDir, token string, projects []*gitlab.Project) {
 
 			"zoekt.gitlab-stars": strconv.Itoa(p.StarCount),
 			"zoekt.gitlab-forks": strconv.Itoa(p.ForksCount),
+
+			"zoekt.archived": marshalBool(p.Archived),
 		}
 
 		cloneURL := p.HTTPURLToRepo
@@ -186,4 +188,11 @@ func fetchProjects(destDir, token string, projects []*gitlab.Project) {
 			fmt.Println(dest)
 		}
 	}
+}
+
+func marshalBool(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
 }

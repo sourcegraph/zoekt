@@ -125,6 +125,15 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 
 		expr = &Repo{r}
+	case tokArchived:
+		switch text {
+		case "yes":
+			expr = RawConfig(RcOnlyArchived)
+		case "no":
+			expr = RawConfig(RcNoArchived)
+		default:
+			return nil, 0, fmt.Errorf("query: unknown archived argument %q, want {yes,no}", text)
+		}
 	case tokBranch:
 		expr = &Branch{Pattern: text}
 	case tokText, tokRegex:
@@ -364,9 +373,11 @@ const (
 	tokLang       = 12
 	tokSym        = 13
 	tokType       = 14
+	tokArchived   = 15
 )
 
 var tokNames = map[int]string{
+	tokArchived:   "Archived",
 	tokBranch:     "Branch",
 	tokCase:       "Case",
 	tokError:      "Error",
@@ -384,20 +395,21 @@ var tokNames = map[int]string{
 }
 
 var prefixes = map[string]int{
-	"b:":       tokBranch,
-	"branch:":  tokBranch,
-	"c:":       tokContent,
-	"case:":    tokCase,
-	"content:": tokContent,
-	"f:":       tokFile,
-	"file:":    tokFile,
-	"r:":       tokRepo,
-	"regex:":   tokRegex,
-	"repo:":    tokRepo,
-	"lang:":    tokLang,
-	"sym:":     tokSym,
-	"t:":       tokType,
-	"type:":    tokType,
+	"archived:": tokArchived,
+	"b:":        tokBranch,
+	"branch:":   tokBranch,
+	"c:":        tokContent,
+	"case:":     tokCase,
+	"content:":  tokContent,
+	"f:":        tokFile,
+	"file:":     tokFile,
+	"r:":        tokRepo,
+	"regex:":    tokRegex,
+	"repo:":     tokRepo,
+	"lang:":     tokLang,
+	"sym:":      tokSym,
+	"t:":        tokType,
+	"type:":     tokType,
 }
 
 var reservedWords = map[string]int{
