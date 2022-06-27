@@ -241,10 +241,8 @@ func getShards(dir string, opt getShardsOpt) map[uint32][]shard {
 	return shards
 }
 
-// tombstoneDuplicates finds duplicate shards in indexDir and sets tombstones
-// to all of them but one. If at most one of the duplicates was without a tombstone,
-// the function is a no-op. Otherwise, the one that was modified the latest remains
-// alive.
+// tombstoneDuplicates finds duplicate shards in indexDir and makes it so
+// that all of them except for the one modified the latest have a tombstone.
 // The assumption is that duplicate shards exist only as parts of compound shards:
 // we haven't seen simple duplicate shards in the wild.
 // Duplicate shards should not occur at all but we rarely see them due to a bug somewhere (probably fixed).
@@ -270,24 +268,24 @@ func tombstoneDuplicates(indexDir string) {
 
 		log.Printf("found %d duplicate shards for repoID=%d. Tombstoning all but one", len(shards), repoID)
 
-		maybeAliveIdx := 0
+		latest := 0
 		for i, s := range shards {
-			var mustChange bool
-			if shards[maybeAliveIdx].RepoTombstone == s.RepoTombstone {
-				mustChange = shards[maybeAliveIdx].ModTime.Before(s.ModTime)
-			} else {
-				mustChange = shards[maybeAliveIdx].RepoTombstone
-			}
-			if mustChange {
-				maybeAliveIdx = i
+			if shards[latest].ModTime.Before(s.ModTime) {
+				latest = i
 			}
 		}
-		if maybeAliveIdx != 0 {
-			shards[0], shards[maybeAliveIdx] = shards[maybeAliveIdx], shards[0]
+		if latest != 0 {
+			shards[0], shards[latest] = shards[latest], shards[0]
+			latest = 0
 		}
 
-		for i, s := range shards {
-			if i > 0 && !s.RepoTombstone && maybeSetTombstone([]shard{s}, repoID) {
+		if err := zoekt.UnsetTombstone(shards[0].Path, repoID); err != nil {
+			log.Printf("error removing tombstone for %v: %s", repoID, err)
+		} else {
+			shardsLog(indexDir, "untomb", shards[:1])
+		}
+		for _, s := range shards[1:] {
+			if !s.RepoTombstone && maybeSetTombstone([]shard{s}, repoID) {
 				shardsLog(indexDir, "tomb", []shard{s})
 			}
 		}
