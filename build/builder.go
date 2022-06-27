@@ -104,15 +104,34 @@ type Options struct {
 	changedOrRemovedFiles []string
 }
 
-// HashOptions creates a hash of the options that affect an index.
-func (o *Options) HashOptions() string {
+// HashOptions contains only the options in Options that upon modification leads to IndexState of IndexStateMismatch during the next index building.
+type HashOptions struct {
+	sizeMax          int
+	disableCTags     bool
+	cTags            string
+	cTagsMustSucceed bool
+	largeFiles       []string
+}
+
+func (o *Options) HashOptions() HashOptions {
+	return HashOptions{
+		sizeMax:          o.SizeMax,
+		disableCTags:     o.DisableCTags,
+		cTags:            o.CTags,
+		cTagsMustSucceed: o.CTagsMustSucceed,
+		largeFiles:       o.LargeFiles,
+	}
+}
+
+func (o *Options) GetHash() string {
+	h := o.HashOptions()
 	hasher := sha1.New()
 
-	hasher.Write([]byte(o.CTags))
-	hasher.Write([]byte(fmt.Sprintf("%t", o.CTagsMustSucceed)))
-	hasher.Write([]byte(fmt.Sprintf("%d", o.SizeMax)))
-	hasher.Write([]byte(fmt.Sprintf("%q", o.LargeFiles)))
-	hasher.Write([]byte(fmt.Sprintf("%t", o.DisableCTags)))
+	hasher.Write([]byte(h.cTags))
+	hasher.Write([]byte(fmt.Sprintf("%t", h.cTagsMustSucceed)))
+	hasher.Write([]byte(fmt.Sprintf("%d", h.sizeMax)))
+	hasher.Write([]byte(fmt.Sprintf("%q", h.largeFiles)))
+	hasher.Write([]byte(fmt.Sprintf("%t", h.disableCTags)))
 
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
@@ -355,7 +374,7 @@ func (o *Options) IndexState() (IndexState, string) {
 		return IndexStateCorrupt, fn
 	}
 
-	if repo.IndexOptions != o.HashOptions() {
+	if repo.IndexOptions != o.GetHash() {
 		return IndexStateOption, fn
 	}
 
@@ -655,10 +674,10 @@ func (b *Builder) Finish() error {
 				}
 			}
 
-			if b.opts.HashOptions() != repository.IndexOptions {
+			if b.opts.GetHash() != repository.IndexOptions {
 				return &deltaIndexOptionsMismatchError{
 					shardName:  shard,
-					newOptions: b.opts,
+					newOptions: b.opts.HashOptions(),
 				}
 			}
 
@@ -951,7 +970,7 @@ func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	desc := b.opts.RepositoryDescription
 	desc.HasSymbols = b.opts.CTags != ""
 	desc.SubRepoMap = b.opts.SubRepositories
-	desc.IndexOptions = b.opts.HashOptions()
+	desc.IndexOptions = b.opts.GetHash()
 
 	shardBuilder, err := zoekt.NewIndexBuilder(&desc)
 	if err != nil {
@@ -1007,7 +1026,7 @@ func (e deltaBranchSetError) Error() string {
 
 type deltaIndexOptionsMismatchError struct {
 	shardName  string
-	newOptions Options
+	newOptions HashOptions
 }
 
 func (e *deltaIndexOptionsMismatchError) Error() string {
