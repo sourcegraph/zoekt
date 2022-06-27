@@ -137,6 +137,9 @@ type Server struct {
 	// IndexDir is the index directory to use.
 	IndexDir string
 
+	// IndexConcurrency is the number of repositories we index at once.
+	IndexConcurrency int
+
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
 
@@ -363,7 +366,15 @@ func (s *Server) Run() {
 		}
 	}()
 
-	// In the current goroutine process the queue forever.
+	for i := 0; i < s.IndexConcurrency; i++ {
+		go s.processQueue()
+	}
+
+	// block forever
+	select {}
+}
+
+func (s *Server) processQueue() {
 	for {
 		if _, err := os.Stat(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
 			time.Sleep(time.Second)
@@ -949,6 +960,7 @@ type rootConfig struct {
 	root             string
 	interval         time.Duration
 	index            string
+	indexConcurrency int64
 	listen           string
 	hostname         string
 	cpuFraction      float64
@@ -969,6 +981,7 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&rc.mergeInterval, "merge_interval", time.Hour, "run merge this often")
 	fs.Int64Var(&rc.targetSize, "merge_target_size", getEnvWithDefaultInt64("SRC_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
 	fs.Int64Var(&rc.minSize, "merge_min_size", getEnvWithDefaultInt64("SRC_MIN_SIZE", 1800), "the minimum size of a compound shard in MiB")
+	fs.Int64Var(&rc.indexConcurrency, "index_concurrency", getEnvWithDefaultInt64("SRC_INDEX_CONCURRENCY", 1), "the number of concurrent index jobs to run.")
 	fs.StringVar(&rc.index, "index", getEnvWithDefaultString("DATA_DIR", build.DefaultDir), "set index directory to use")
 	fs.StringVar(&rc.listen, "listen", ":6072", "listen on this address.")
 	fs.StringVar(&rc.hostname, "hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
@@ -1093,6 +1106,10 @@ func newServer(conf rootConfig) (*Server, error) {
 		}
 	}
 
+	if conf.indexConcurrency < 1 {
+		conf.indexConcurrency = 1
+	}
+
 	cpuCount := int(math.Round(float64(runtime.GOMAXPROCS(0)) * (conf.cpuFraction)))
 	if cpuCount < 1 {
 		cpuCount = 1
@@ -1101,6 +1118,7 @@ func newServer(conf rootConfig) (*Server, error) {
 	return &Server{
 		Sourcegraph:                       sg,
 		IndexDir:                          conf.index,
+		IndexConcurrency:                  int(conf.indexConcurrency),
 		Interval:                          conf.interval,
 		VacuumInterval:                    conf.vacuumInterval,
 		MergeInterval:                     conf.mergeInterval,
