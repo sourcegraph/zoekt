@@ -341,6 +341,8 @@ func (d *indexData) memoryUse() (ram, mmapped int) {
 	ram += 12 * len(d.fileNameNgrams) // these slices reference mmap-ed memory
 	ram += d.fileNameRuneOffsets.sizeBytes()
 	ram += 8 * len(d.fileBranchMasks)
+	// Small enough so we don't bother. Listed here for completeness: all fields of indexData
+	// are supposed to be taken into account.
 	// branchNames
 	// branchIDs
 	// repoMetaData

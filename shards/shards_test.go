@@ -379,7 +379,6 @@ func TestShardedSearcher_List(t *testing.T) {
 	stats := zoekt.RepoStats{
 		Shards:                     2,
 		Documents:                  1,
-		IndexBytes:                 196,
 		IndexMmappedBytes:          22,
 		ContentBytes:               13,
 		NewLinesCount:              1,
