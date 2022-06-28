@@ -76,46 +76,43 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 		MaxBackups: 5,
 	}
 
-	createOneCompoundShard := func() bool {
-		s.muIndexDir.Lock()
-		defer s.muIndexDir.Unlock()
-
-		candidates, excluded := loadCandidates(s.IndexDir)
-		debug.Printf("loadCandidates: candidates=%d excluded=%d\n", len(candidates), excluded)
-
-		c := pickCandidates(candidates, s.TargetSizeBytes)
-		if len(c.shards) <= 1 {
-			debug.Printf("could not find enough shards to build a compound shard\n")
-			return false
-		}
-		debug.Printf("start merging: shards=%d total_size=%.2fMiB\n", len(c.shards), float64(c.size)/(1024*1024))
-
-		var paths []string
-		for _, p := range c.shards {
-			paths = append(paths, p.path)
-		}
-
-		start := time.Now()
-		out, err := mergeCmd(paths...).CombinedOutput()
-
-		metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
-		if err != nil {
-			debug.Printf("mergeCmd: out=%s, err=%s\n", out, err)
-			return false
-		}
-
-		newCompoundName := reCompound.Find(out)
-		now := time.Now()
-		for _, s := range c.shards {
-			_, _ = fmt.Fprintf(wc, "%s\t%s\t%s\t%s\n", now.UTC().Format(time.RFC3339), "merge", filepath.Base(s.path), string(newCompoundName))
-		}
-
-		return true
-	}
-
 	// We keep creating compound shards until we run out of shards to merge or until
 	// we encounter an error during merging.
-	for createOneCompoundShard() {
+	next := true
+	for next {
+		s.muIndexDir.Global(func() {
+			candidates, excluded := loadCandidates(s.IndexDir)
+			debug.Printf("loadCandidates: candidates=%d excluded=%d\n", len(candidates), excluded)
+
+			c := pickCandidates(candidates, s.TargetSizeBytes)
+			if len(c.shards) <= 1 {
+				debug.Printf("could not find enough shards to build a compound shard\n")
+				next = false
+				return
+			}
+			debug.Printf("start merging: shards=%d total_size=%.2fMiB\n", len(c.shards), float64(c.size)/(1024*1024))
+
+			var paths []string
+			for _, p := range c.shards {
+				paths = append(paths, p.path)
+			}
+
+			start := time.Now()
+			out, err := mergeCmd(paths...).CombinedOutput()
+
+			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
+			if err != nil {
+				debug.Printf("mergeCmd: out=%s, err=%s\n", out, err)
+				next = false
+				return
+			}
+
+			newCompoundName := reCompound.Find(out)
+			now := time.Now()
+			for _, s := range c.shards {
+				_, _ = fmt.Fprintf(wc, "%s\t%s\t%s\t%s\n", now.UTC().Format(time.RFC3339), "merge", filepath.Base(s.path), string(newCompoundName))
+			}
+		})
 	}
 }
 
