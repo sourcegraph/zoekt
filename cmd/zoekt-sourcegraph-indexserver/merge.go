@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,7 +63,7 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 	// Guard against the user triggering competing merge jobs with the debug
 	// command.
 	if !mergeRunning.CAS(false, true) {
-		debug.Printf("merge already running\n")
+		log.Printf("merge already running")
 		return
 	}
 	defer mergeRunning.Store(false)
@@ -80,17 +81,17 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 	// we encounter an error during merging.
 	next := true
 	for next {
+		next = false
 		s.muIndexDir.Global(func() {
 			candidates, excluded := loadCandidates(s.IndexDir)
-			debug.Printf("loadCandidates: candidates=%d excluded=%d\n", len(candidates), excluded)
+			log.Printf("loadCandidates: candidates=%d excluded=%d", len(candidates), excluded)
 
 			c := pickCandidates(candidates, s.TargetSizeBytes)
 			if len(c.shards) <= 1 {
-				debug.Printf("could not find enough shards to build a compound shard\n")
-				next = false
+				log.Printf("could not find enough shards to build a compound shard")
 				return
 			}
-			debug.Printf("start merging: shards=%d total_size=%.2fMiB\n", len(c.shards), float64(c.size)/(1024*1024))
+			log.Printf("start merging: shards=%d total_size=%.2fMiB", len(c.shards), float64(c.size)/(1024*1024))
 
 			var paths []string
 			for _, p := range c.shards {
@@ -102,8 +103,7 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 
 			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
 			if err != nil {
-				debug.Printf("mergeCmd: out=%s, err=%s\n", out, err)
-				next = false
+				log.Printf("mergeCmd: out=%s, err=%s", out, err)
 				return
 			}
 
@@ -112,6 +112,8 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 			for _, s := range c.shards {
 				_, _ = fmt.Fprintf(wc, "%s\t%s\t%s\t%s\n", now.UTC().Format(time.RFC3339), "merge", filepath.Base(s.path), string(newCompoundName))
 			}
+
+			next = true
 		})
 	}
 }
