@@ -7,12 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
-
-	"github.com/google/zoekt/build"
 )
 
 func debugIndex() *ffcli.Command {
@@ -75,27 +72,6 @@ func debugMeta() *ffcli.Command {
 	}
 }
 
-func debugMerge() *ffcli.Command {
-	fs := flag.NewFlagSet("debug merge", flag.ExitOnError)
-	simulate := fs.Bool("simulate", false, "if set, merging will be simulated")
-	targetSize := fs.Int64("merge_target_size", getEnvWithDefaultInt64("SRC_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
-	index := fs.String("index", getEnvWithDefaultString("DATA_DIR", build.DefaultDir), "set index directory to use")
-	dbg := fs.Bool("debug", srcLogLevelIsDebug(), "turn on more verbose logging.")
-
-	return &ffcli.Command{
-		Name:       "merge",
-		FlagSet:    fs,
-		ShortUsage: "merge [flags] <dir>",
-		ShortHelp:  "run a full merge operation inside dir",
-		Exec: func(ctx context.Context, args []string) error {
-			if *dbg {
-				debug = log.New(os.Stderr, "", log.LstdFlags)
-			}
-			return doMerge(*index, *targetSize*1024*1024, *simulate)
-		},
-	}
-}
-
 func debugCmd() *ffcli.Command {
 	fs := flag.NewFlagSet("debug", flag.ExitOnError)
 
@@ -113,6 +89,11 @@ func debugCmd() *ffcli.Command {
   curl http://localhost:6072/debug/list[?indexed=TRUE/false]
     list the repositories that are OWNED by this instance. If indexed=true (default), the list may contain repositories
     that this instance holds temporarily, for example during rebalancing.
+
+  curl http://localhost:6072/debug/merge
+    start a full merge operation in the index directory. You can check the status with
+    "curl http://localhost:6072/metrics -sS | grep index_shard_merging_running". It is only possible
+    to trigger one merge operation at a time.
 
   curl http://localhost:6072/debug/queue
     list the repositories in the indexing queue, sorted by descending priority.
@@ -133,7 +114,6 @@ func debugCmd() *ffcli.Command {
 		FlagSet: fs,
 		Subcommands: []*ffcli.Command{
 			debugIndex(),
-			debugMerge(),
 			debugMeta(),
 			debugTrigrams(),
 		},

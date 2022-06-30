@@ -358,10 +358,7 @@ func (s *Server) Run() {
 	go func() {
 		for range jitterTicker(s.MergeInterval, syscall.SIGUSR1) {
 			if s.shardMerging {
-				err := doMerge(s.IndexDir, s.TargetSizeBytes, false)
-				if err != nil {
-					log.Printf("error during merging: %s", err)
-				}
+				s.doMerge()
 			}
 		}
 	}()
@@ -598,6 +595,7 @@ func (s *Server) addDebugHandlers(mux *http.ServeMux) {
 
 	mux.Handle("/debug/indexed", http.HandlerFunc(s.handleDebugIndexed))
 	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
+	mux.Handle("/debug/merge", http.HandlerFunc(s.handleDebugMerge))
 	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
 }
 
@@ -704,6 +702,23 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
 		return
 	}
+}
+
+// handleDebugMerge triggers a merge even if shard merging is not enabled. Users
+// can run this command during periods of low usage (evenings, weekends) to
+// trigger an initial merge run. In the steady-state, merges happen rarely, even
+// on busy instances, and users can rely on automatic merging instead.
+func (s *Server) handleDebugMerge(w http.ResponseWriter, _ *http.Request) {
+
+	// A merge operation can take very long, depending on the number merges and the
+	// target size of the compound shards. We run the merge in the background and
+	// return immediately to the user.
+	//
+	// We track the status of the merge with metricShardMergingRunning.
+	go func() {
+		s.doMerge()
+	}()
+	w.Write([]byte("merging enqueued\n"))
 }
 
 func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
@@ -978,7 +993,7 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.StringVar(&rc.root, "sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	fs.DurationVar(&rc.interval, "interval", time.Minute, "sync with sourcegraph this often")
 	fs.DurationVar(&rc.vacuumInterval, "vacuum_interval", 24*time.Hour, "run vacuum this often")
-	fs.DurationVar(&rc.mergeInterval, "merge_interval", time.Hour, "run merge this often")
+	fs.DurationVar(&rc.mergeInterval, "merge_interval", 8*time.Hour, "run merge this often")
 	fs.Int64Var(&rc.targetSize, "merge_target_size", getEnvWithDefaultInt64("SRC_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
 	fs.Int64Var(&rc.minSize, "merge_min_size", getEnvWithDefaultInt64("SRC_MIN_SIZE", 1800), "the minimum size of a compound shard in MiB")
 	fs.Int64Var(&rc.indexConcurrency, "index_concurrency", getEnvWithDefaultInt64("SRC_INDEX_CONCURRENCY", 1), "the number of concurrent index jobs to run.")
