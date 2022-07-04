@@ -24,7 +24,7 @@ import (
 )
 
 func mustParseRE(s string) *syntax.Regexp {
-	r, err := syntax.Parse(s, RegexpFlags)
+	r, err := syntax.Parse(s, regexpFlags)
 	if err != nil {
 		log.Panicf("parsing %q: %v", s, err)
 	}

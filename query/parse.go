@@ -24,8 +24,6 @@ import (
 	"github.com/grafana/regexp"
 )
 
-const RegexpFlags syntax.Flags = syntax.ClassNL | syntax.PerlX | syntax.UnicodeGroups
-
 var _ = log.Printf
 
 // parseStringLiteral parses a string literal, consumes the starting
@@ -230,17 +228,19 @@ func parseExpr(in []byte) (Q, int, error) {
 	return expr, len(in) - len(b), nil
 }
 
+const regexpFlags syntax.Flags = syntax.ClassNL | syntax.PerlX | syntax.UnicodeGroups
+
 // RegexpQuery parses an atom into either a regular expression, or a
 // simple substring atom.
 func RegexpQuery(text string, content, file bool) (Q, error) {
 	var expr Q
 
-	r, err := syntax.Parse(text, RegexpFlags)
+	r, err := syntax.Parse(text, regexpFlags)
 	if err != nil {
 		return nil, err
 	}
 
-	r = OptimizeRegexp(r, RegexpFlags)
+	r = OptimizeRegexp(r, regexpFlags)
 
 	if r.Op == syntax.OpLiteral {
 		expr = &Substring{
