@@ -25,6 +25,10 @@ type indexMutex struct {
 	running map[string]struct{}
 }
 
+// With runs f if no other f with the same repoName is running. If f runs true
+// is returned, otherwise false is returned.
+//
+// With blocks if f runs or the Global lock is held.
 func (m *indexMutex) With(repoName string, f func()) bool {
 	m.indexMu.RLock()
 	defer m.indexMu.RUnlock()
@@ -58,6 +62,8 @@ func (m *indexMutex) With(repoName string, f func()) bool {
 	return true
 }
 
+// Global runs f once the global lock is held. IE no other Global or With f's
+// will be running.
 func (m *indexMutex) Global(f func()) {
 	metricIndexMutexGlobal.Inc()
 	defer metricIndexMutexGlobal.Dec()
