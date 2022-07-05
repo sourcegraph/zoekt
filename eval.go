@@ -15,7 +15,6 @@
 package zoekt
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -410,15 +409,16 @@ nextFileMatch:
 func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 	lms := make([]LineMatch, 0, len(cms))
 	for _, cm := range cms {
-		lines := bytes.Split(cm.Content, []byte("\n"))
+		newlines := getNewlines(cm.Content)
 		currentLineStart := cm.ContentStart.ByteOffset
-		for i, line := range lines {
+		for lineNumber := 1; lineNumber < len(newlines.locs)+2; lineNumber++ {
+			line := newlines.getLines(cm.Content, lineNumber, lineNumber)
+
 			// preallocate for the common case that where there is only one line
 			fragments := make([]LineFragmentMatch, 0, len(cm.Ranges))
-			lineNumber := cm.ContentStart.LineNumber + uint32(i)
 			for _, rr := range cm.Ranges {
 				for rangeLine := rr.Start.LineNumber; rangeLine <= rr.End.LineNumber; rangeLine++ {
-					if rangeLine == lineNumber {
+					if rangeLine == uint32(lineNumber) {
 						startOffset := currentLineStart
 						if rangeLine == rr.Start.LineNumber {
 							startOffset = rr.Start.ByteOffset
@@ -451,17 +451,8 @@ func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 					LineFragments: fragments,
 				}
 				if contextLines > 0 {
-					beforeStart := 0
-					if i-contextLines > beforeStart {
-						beforeStart = i - contextLines
-					}
-					lm.Before = bytes.Join(lines[beforeStart:i], []byte("\n"))
-
-					afterEnd := len(lines)
-					if i+contextLines < afterEnd {
-						afterEnd = i + 1 + contextLines
-					}
-					lm.After = bytes.Join(lines[i+1:afterEnd], []byte("\n"))
+					lm.Before = newlines.getLines(cm.Content, lineNumber-contextLines, lineNumber-1)
+					lm.After = newlines.getLines(cm.Content, lineNumber+1, lineNumber+contextLines)
 				}
 				if !cm.FileName {
 					// Line info is not set for filename matches

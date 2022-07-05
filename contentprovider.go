@@ -287,6 +287,19 @@ type newlines struct {
 	fileSize uint32
 }
 
+func getNewlines(data []byte) newlines {
+	var locs []uint32
+	for i, c := range data {
+		if c == '\n' {
+			locs = append(locs, uint32(i))
+		}
+	}
+	return newlines{
+		locs:     locs,
+		fileSize: uint32(len(data)),
+	}
+}
+
 // atOffset returns the line containing the offset. If the offset lands on
 // the newline ending line M, we return M.  The line is characterized
 // by its linenumber (base-1, byte index of line start, byte index of

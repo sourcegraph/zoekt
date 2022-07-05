@@ -8,19 +8,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func getNewlines(data []byte) newlines {
-	var locs []uint32
-	for i, c := range data {
-		if c == '\n' {
-			locs = append(locs, uint32(i))
-		}
-	}
-	return newlines{
-		locs:     locs,
-		fileSize: uint32(len(data)),
-	}
-}
-
 func TestGetLines(t *testing.T) {
 	contents := [][]byte{
 		[]byte("one\ntwo\nthree\nfour"),
