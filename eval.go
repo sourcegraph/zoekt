@@ -322,7 +322,8 @@ nextFileMatch:
 		visitMatches(mt, known, func(mt matchTree) {
 			atomMatchCount++
 		})
-		finalCands := gatherMatches(mt, known, !opts.ChunkMatches)
+		shouldMergeMatches := !opts.ChunkMatches
+		finalCands := gatherMatches(mt, known, shouldMergeMatches)
 
 		if len(finalCands) == 0 {
 			nm := d.fileName(nextDoc)
