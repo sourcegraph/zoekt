@@ -416,7 +416,7 @@ func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 
 			// preallocate for the common case that where there is only one line
 			fragments := make([]LineFragmentMatch, 0, len(cm.Ranges))
-			for _, rr := range cm.Ranges {
+			for i, rr := range cm.Ranges {
 				for rangeLine := rr.Start.LineNumber; rangeLine <= rr.End.LineNumber; rangeLine++ {
 					if rangeLine == uint32(lineNumber) {
 						startOffset := currentLineStart
@@ -430,12 +430,15 @@ func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 						}
 
 						if endOffset != startOffset {
-							fragments = append(fragments, LineFragmentMatch{
+							lfm := LineFragmentMatch{
 								LineOffset:  int(startOffset - currentLineStart),
 								Offset:      uint32(startOffset),
 								MatchLength: int(endOffset - startOffset),
-								SymbolInfo:  rr.SymbolInfo,
-							})
+							}
+							if cm.SymbolInfo != nil {
+								lfm.SymbolInfo = cm.SymbolInfo[i]
+							}
+							fragments = append(fragments, lfm)
 						}
 					}
 				}
