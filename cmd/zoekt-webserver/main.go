@@ -48,7 +48,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/uber/jaeger-client-go"
 	"go.uber.org/automaxprocs/maxprocs"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
@@ -478,9 +477,6 @@ func traceIDFromSpan(span opentracing.Span) string {
 	switch v := span.Context().(type) {
 	case jaeger.SpanContext:
 		return v.TraceID().String()
-
-	case ddtrace.SpanContext:
-		return strconv.FormatUint(v.TraceID(), 10)
 	}
 	return ""
 }
