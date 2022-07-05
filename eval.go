@@ -413,7 +413,8 @@ func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 		lines := bytes.Split(cm.Content, []byte("\n"))
 		currentLineStart := cm.ContentStart.ByteOffset
 		for i, line := range lines {
-			var fragments []LineFragmentMatch
+			// preallocate for the common case that where there is only one line
+			fragments := make([]LineFragmentMatch, 0, len(cm.Ranges))
 			lineNumber := cm.ContentStart.LineNumber + uint32(i)
 			for _, rr := range cm.Ranges {
 				for rangeLine := rr.Start.LineNumber; rangeLine <= rr.End.LineNumber; rangeLine++ {
@@ -441,7 +442,7 @@ func chunkMatchesToLineMatches(cms []ChunkMatch, contextLines int) []LineMatch {
 			}
 			// Only create a line match if there are fragments for this line.
 			// There can be no fragments for a line if context lines were requested.
-			if len(fragments) > 0 {
+			if len(fragments) == 0 {
 				lm := LineMatch{
 					Line:          line,
 					FileName:      cm.FileName,
