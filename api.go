@@ -99,12 +99,12 @@ type ChunkMatch struct {
 }
 
 type Range struct {
+	SymbolInfo *Symbol
+
 	// The inclusive beginning of the range.
 	Start Location
 	// The exclusive end of the range.
 	End Location
-
-	SymbolInfo *Symbol
 }
 
 type Location struct {
