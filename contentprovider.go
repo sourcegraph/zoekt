@@ -320,14 +320,14 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 			})
 		}
 
-		firstLineNumber := chunk.firstLine - numContextLines
+		firstLineNumber := int(chunk.firstLine) - numContextLines
 		if firstLineNumber < 1 {
 			firstLineNumber = 1
 		}
 		firstLineStart, _ := newlines.lineBounds(firstLineNumber)
 
 		chunkMatches = append(chunkMatches, ChunkMatch{
-			Content: newlines.getLines(data, firstLineNumber, chunk.lastLine+numContextLines+1),
+			Content: newlines.getLines(data, firstLineNumber, int(chunk.lastLine)+numContextLines+1),
 			ContentStart: Location{
 				ByteOffset: firstLineStart,
 				LineNumber: uint32(firstLineNumber),
@@ -341,8 +341,8 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 }
 
 type candidateChunk struct {
-	firstLine  int    // 1-based, inclusive
-	lastLine   int    // 1-based, inclusive
+	firstLine  uint32 // 1-based, inclusive
+	lastLine   uint32 // 1-based, inclusive
 	minOffset  uint32 // 0-based, inclusive
 	maxOffset  uint32 // 0-based, exclusive
 	candidates []*candidateMatch
@@ -359,21 +359,21 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 		firstLine, _, _ := newlines.atOffset(startOffset)
 		lastLine, _, _ := newlines.atOffset(endOffset)
 
-		if len(chunks) > 0 && chunks[len(chunks)-1].lastLine+numContextLines >= firstLine-numContextLines {
+		if len(chunks) > 0 && int(chunks[len(chunks)-1].lastLine)+numContextLines >= firstLine-numContextLines {
 			// If a new chunk created with the current candidateMatch would
 			// overlap with the previous chunk, instead add the candidateMatch
 			// to the last chunk and extend end of the last chunk.
 			last := &chunks[len(chunks)-1]
 			last.candidates = append(last.candidates, m)
 			if last.maxOffset < endOffset {
-				last.lastLine = lastLine
-				last.maxOffset = endOffset
+				last.lastLine = uint32(lastLine)
+				last.maxOffset = uint32(endOffset)
 			}
 		} else {
 			chunks = append(chunks, candidateChunk{
-				firstLine:  firstLine,
+				firstLine:  uint32(firstLine),
+				lastLine:   uint32(lastLine),
 				minOffset:  startOffset,
-				lastLine:   lastLine,
 				maxOffset:  endOffset,
 				candidates: []*candidateMatch{m},
 			})
