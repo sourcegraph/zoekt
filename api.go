@@ -86,13 +86,13 @@ type ChunkMatch struct {
 	// beginning of a line (Column will always be 1).
 	ContentStart Location
 
-	// Ranges is a set of matching ranges within this chunk. Each range is relative
-	// to the beginning of the file (not the beginning of Content).
-	Ranges []Range
-
 	// FileName indicates whether this match is a match on the file name, in
 	// which case Content will contain the file name.
 	FileName bool
+
+	// Ranges is a set of matching ranges within this chunk. Each range is relative
+	// to the beginning of the file (not the beginning of Content).
+	Ranges []Range
 
 	Score      float64
 	DebugScore string
