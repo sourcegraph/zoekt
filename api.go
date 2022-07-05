@@ -39,9 +39,13 @@ type FileMatch struct {
 
 	// Repository is the globally unique name of the repo of the
 	// match
-	Repository  string
-	Branches    []string
-	LineMatches []LineMatch
+	Repository string
+	Branches   []string
+
+	// One of LineMatches or ChunkMatches will be returned depending on whether
+	// the SearchOptions.ChunkMatches is set.
+	LineMatches  []LineMatch
+	ChunkMatches []ChunkMatch
 
 	// RepositoryID is a Sourcegraph extension. This is the ID of Repository in
 	// Sourcegraph.
@@ -70,6 +74,48 @@ type FileMatch struct {
 
 	// Commit SHA1 (hex) of the (sub)repo holding the file.
 	Version string
+}
+
+// ChunkMatch is a set of non-overlapping matches within a contiguous range of
+// lines in the file.
+type ChunkMatch struct {
+	// Content is a contiguous range of complete lines that fully contains Ranges.
+	Content []byte
+	// ContentStart is the location (inclusive) of the beginning of content
+	// relative to the beginning of the file. It will always be at the
+	// beginning of a line (Column will always be 1).
+	ContentStart Location
+
+	// FileName indicates whether this match is a match on the file name, in
+	// which case Content will contain the file name.
+	FileName bool
+
+	// Ranges is a set of matching ranges within this chunk. Each range is relative
+	// to the beginning of the file (not the beginning of Content).
+	Ranges []Range
+
+	// SymbolInfo is the symbol information associated with Ranges. If it is non-nil,
+	// its length will equal that of Ranges. Any of its elements may be nil.
+	SymbolInfo []*Symbol
+
+	Score      float64
+	DebugScore string
+}
+
+type Range struct {
+	// The inclusive beginning of the range.
+	Start Location
+	// The exclusive end of the range.
+	End Location
+}
+
+type Location struct {
+	// 0-based byte offset from the beginning of the file
+	ByteOffset uint32
+	// 1-based line number from the beginning of the file
+	LineNumber uint32
+	// 1-based column number (in runes) from the beginning of line
+	Column uint32
 }
 
 // LineMatch holds the matches within a single line in a file.
@@ -544,6 +590,10 @@ type SearchOptions struct {
 	// Note that the included context lines might contain matches and
 	// it's up to the consumer of the result to remove those lines.
 	NumContextLines int
+
+	// If true, ChunkMatches will be returned in each FileMatch rather than LineMatches
+	// EXPERIMENTAL: the behavior of this flag may be changed in future versions.
+	ChunkMatches bool
 
 	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
 	// a command-line flag

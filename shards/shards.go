@@ -734,6 +734,9 @@ func copyFiles(sr *zoekt.SearchResult) {
 			copySlice(&sr.Files[i].LineMatches[l].Before)
 			copySlice(&sr.Files[i].LineMatches[l].After)
 		}
+		for c := range sr.Files[i].ChunkMatches {
+			copySlice(&sr.Files[i].ChunkMatches[c].Content)
+		}
 	}
 }
 
