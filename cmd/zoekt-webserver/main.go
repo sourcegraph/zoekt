@@ -48,7 +48,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/uber/jaeger-client-go"
 	"go.uber.org/automaxprocs/maxprocs"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
@@ -115,6 +114,7 @@ func writeTemplates(dir string) error {
 }
 
 func main() {
+	logDir := flag.String("log_dir", "", "log to this directory rather than stderr.")
 	logRefresh := flag.Duration("log_refresh", 24*time.Hour, "if using --log_dir, start writing a new file this often.")
 
 	listen := flag.String("listen", ":6070", "listen on this address.")
@@ -134,20 +134,6 @@ func main() {
 	version := flag.Bool("version", false, "Print version number")
 
 	flag.Parse()
-	// avoid a panic due to log_dir flag already being defined in glog (a transient dependency)
-	logDirFlag := flag.Lookup("log_dir")
-	if logDirFlag != nil {
-		logDir := logDirFlag.Value.String()
-		if logDir != "" {
-			if fi, err := os.Lstat(logDir); err != nil || !fi.IsDir() {
-				log.Fatalf("%s is not a directory", logDir)
-			}
-			// We could do fdup acrobatics to also redirect
-			// stderr, but it is simpler and more portable for the
-			// caller to divert stderr output if necessary.
-			go divertLogs(logDir, *logRefresh)
-		}
-	}
 
 	if *version {
 		fmt.Printf("zoekt-webserver version %q\n", zoekt.Version)
@@ -163,6 +149,16 @@ func main() {
 
 	tracer.Init("zoekt-webserver", zoekt.Version)
 	profiler.Init("zoekt-webserver", zoekt.Version, -1)
+
+	if *logDir != "" {
+		if fi, err := os.Lstat(*logDir); err != nil || !fi.IsDir() {
+			log.Fatalf("%s is not a directory", *logDir)
+		}
+		// We could do fdup acrobatics to also redirect
+		// stderr, but it is simpler and more portable for the
+		// caller to divert stderr output if necessary.
+		go divertLogs(*logDir, *logRefresh)
+	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
@@ -478,9 +474,6 @@ func traceIDFromSpan(span opentracing.Span) string {
 	switch v := span.Context().(type) {
 	case jaeger.SpanContext:
 		return v.TraceID().String()
-
-	case ddtrace.SpanContext:
-		return strconv.FormatUint(v.TraceID(), 10)
 	}
 	return ""
 }
