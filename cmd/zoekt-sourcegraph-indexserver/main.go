@@ -386,7 +386,7 @@ func (s *Server) processQueue() {
 
 		args := s.indexArgs(opts)
 
-		alreadyRunning := s.muIndexDir.With(opts.Name, func() {
+		ran := s.muIndexDir.With(opts.Name, func() {
 			// only record time taken once we hold the lock. This avoids us
 			// recording time taken while merging/cleanup runs.
 			start := time.Now()
@@ -410,7 +410,7 @@ func (s *Server) processQueue() {
 			s.queue.SetIndexed(opts, state)
 		})
 
-		if alreadyRunning {
+		if !ran {
 			// Someone else is processing the repository. We can just skip this job
 			// since the repository will be added back to the queue and we will
 			// converge to the correct behaviour.
