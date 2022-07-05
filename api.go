@@ -94,13 +94,15 @@ type ChunkMatch struct {
 	// to the beginning of the file (not the beginning of Content).
 	Ranges []Range
 
+	// SymbolInfo is the symbol information associated with Ranges. If it is non-nil,
+	// its length will equal that of Ranges. Any of its elements may be nil.
+	SymbolInfo []*Symbol
+
 	Score      float64
 	DebugScore string
 }
 
 type Range struct {
-	SymbolInfo *Symbol
-
 	// The inclusive beginning of the range.
 	Start Location
 	// The exclusive end of the range.

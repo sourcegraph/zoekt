@@ -289,21 +289,12 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 	chunkMatches := make([]ChunkMatch, 0, len(chunks))
 	for _, chunk := range chunks {
 		ranges := make([]Range, 0, len(chunk.candidates))
-		for _, cm := range chunk.candidates {
+		var symbolInfo []*Symbol
+		for i, cm := range chunk.candidates {
 			startOffset := cm.byteOffset
 			endOffset := cm.byteOffset + cm.byteMatchSz
 			startLine, startLineOffset, _ := newlines.atOffset(startOffset)
 			endLine, endLineOffset, _ := newlines.atOffset(endOffset)
-
-			var si *Symbol
-			if cm.symbol {
-				start := p.id.fileEndSymbol[p.idx]
-				si = p.id.symbols.data(start + cm.symbolIdx)
-				if si != nil {
-					sec := p.docSections()[cm.symbolIdx]
-					si.Sym = string(data[sec.Start:sec.End])
-				}
-			}
 
 			ranges = append(ranges, Range{
 				Start: Location{
@@ -316,8 +307,20 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 					LineNumber: uint32(endLine),
 					Column:     uint32(utf8.RuneCount(data[endLineOffset:endOffset]) + 1),
 				},
-				SymbolInfo: si,
 			})
+
+			if cm.symbol {
+				if symbolInfo == nil {
+					symbolInfo = make([]*Symbol, len(chunk.candidates))
+				}
+				start := p.id.fileEndSymbol[p.idx]
+				si := p.id.symbols.data(start + cm.symbolIdx)
+				if si != nil {
+					sec := p.docSections()[cm.symbolIdx]
+					si.Sym = string(data[sec.Start:sec.End])
+				}
+				symbolInfo[i] = si
+			}
 		}
 
 		firstLineNumber := int(chunk.firstLine) - numContextLines
@@ -333,8 +336,9 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 				LineNumber: uint32(firstLineNumber),
 				Column:     1,
 			},
-			FileName: false,
-			Ranges:   ranges,
+			FileName:   false,
+			Ranges:     ranges,
+			SymbolInfo: symbolInfo,
 		})
 	}
 	return chunkMatches
@@ -496,7 +500,7 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 		score.score += s
 	}
 
-	for _, r := range m.Ranges {
+	for i, r := range m.Ranges {
 		// calculate the start and end offset relative to the start of the content
 		relStartOffset := int(r.Start.ByteOffset - m.ContentStart.ByteOffset)
 		relEndOffset := int(r.End.ByteOffset - m.ContentStart.ByteOffset)
@@ -536,7 +540,10 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 				addScore("InnerSymbol", scorePartialSymbol)
 			}
 
-			si := r.SymbolInfo
+			var si *Symbol
+			if m.SymbolInfo != nil {
+				si = m.SymbolInfo[i]
+			}
 			if si == nil {
 				// for non-symbol queries, we need to hydrate in SymbolInfo.
 				start := p.id.fileEndSymbol[p.idx]
