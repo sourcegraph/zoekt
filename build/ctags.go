@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/google/zoekt"
@@ -151,6 +152,9 @@ func ctagsAddSymbolsParser(todo []*zoekt.Document, parser ctags.Parser) error {
 			continue
 		}
 
+		sort.Slice(es, func(i, j int) bool {
+			return es[i].Line < es[j].Line
+		})
 		symOffsets, symMetaData, err := tagsToSections(doc.Content, es)
 		if err != nil {
 			return fmt.Errorf("%s: %v", doc.Name, err)
@@ -196,6 +200,9 @@ func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) er
 	}
 
 	for k, tags := range fileTags {
+		sort.Slice(tags, func(i, j int) bool {
+			return tags[i].Line < tags[j].Line
+		})
 		symOffsets, symMetaData, err := tagsToSections(contents[k], tags)
 		if err != nil {
 			return fmt.Errorf("%s: %v", k, err)
@@ -206,14 +213,38 @@ func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) er
 	return nil
 }
 
+// symbolRanges keeps track of file-based byte ranges of symbols appearing on
+// the same line.
+type symbolRanges [][2]uint32
+
+// overlaps checks whether sym overlaps with any of the symbol ranges already
+// contained in sr. If sym doesn't overlap, it returns the proper position for
+// insertion, otherwise it returns -1.
+func (sr symbolRanges) overlaps(sym [2]uint32) int {
+	for i := 0; i < len(sr); i++ {
+		if sym[0] >= sr[i][1] {
+			continue
+		}
+		if sym[1] <= sr[i][0] {
+			return i
+		}
+		return -1
+	}
+	return len(sr)
+}
+
+// tagsToSections converts ctags entries to byte ranges (zoekt.DocumentSection)
+// with corresponding metadata (zoekt.Symbol). The input tags must be sorted in
+// ascending order by line number.
 func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSection, []*zoekt.Symbol, error) {
 	nls := newLinesIndices(content)
 	nls = append(nls, uint32(len(content)))
 	var symOffsets []zoekt.DocumentSection
 	var symMetaData []*zoekt.Symbol
-	var lastEnd uint32
-	var lastLine int
-	var lastIntraEnd int
+	var lastLineIdx int
+
+	// srs keeps track of symbol ranges within a line
+	var srs symbolRanges
 	for _, t := range tags {
 		if t.Line <= 0 {
 			// Observed this with a .JS file.
@@ -224,6 +255,10 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 			return nil, nil, fmt.Errorf("linenum for entry out of range %v", t)
 		}
 
+		if lastLineIdx != lineIdx {
+			srs = srs[:0]
+		}
+
 		lineOff := uint32(0)
 		if lineIdx > 0 {
 			lineOff = nls[lineIdx-1] + 1
@@ -231,26 +266,25 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 
 		end := nls[lineIdx]
 		line := content[lineOff:end]
-		if lastLine == lineIdx {
-			line = line[lastIntraEnd:]
-		} else {
-			lastIntraEnd = 0
-		}
 
-		intraOff := lastIntraEnd + bytes.Index(line, []byte(t.Name))
+		// This is best-effort only. For short symbol names, we will often determine the
+		// wrong offset.
+		intraOff := bytes.Index(line, []byte(t.Name))
 		if intraOff < 0 {
 			// for Go code, this is very common, since
 			// ctags barfs on multi-line declarations
 			continue
 		}
-		start := lineOff + uint32(intraOff)
-		if start < lastEnd {
-			// This can happen if we have multiple tags on the same line.
-			// Give up.
-			continue
-		}
 
+		start := lineOff + uint32(intraOff)
 		endSym := start + uint32(len(t.Name))
+
+		if i := srs.overlaps([2]uint32{start, endSym}); i == -1 {
+			// We detected overlapping symbols. Give up.
+			continue
+		} else {
+			srs = append(srs[:i], append([][2]uint32{{start, endSym}}, srs[i:]...)...)
+		}
 
 		symOffsets = append(symOffsets, zoekt.DocumentSection{
 			Start: start,
@@ -262,9 +296,7 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 			Parent:     t.Parent,
 			ParentKind: t.ParentKind,
 		})
-		lastEnd = endSym
-		lastLine = lineIdx
-		lastIntraEnd = intraOff + len(t.Name)
+		lastLineIdx = lineIdx
 	}
 
 	return symOffsets, symMetaData, nil

@@ -44,8 +44,8 @@ func TestTagsToSections(t *testing.T) {
 }
 
 func TestTagsToSectionsMultiple(t *testing.T) {
-	c := []byte("class Foob { int x; int b; }")
-	// ----------012345678901234567890123456789
+	c := []byte("class Foo { int x; int b; }")
+	// ----------0123456789012345678901234567
 
 	tags := []*ctags.Entry{
 		{
@@ -64,8 +64,8 @@ func TestTagsToSectionsMultiple(t *testing.T) {
 	}
 
 	want := []zoekt.DocumentSection{
-		{Start: 17, End: 18},
-		{Start: 24, End: 25},
+		{Start: 16, End: 17},
+		{Start: 23, End: 24},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -90,5 +90,89 @@ func TestTagsToSectionsEOF(t *testing.T) {
 
 	if len(secs) != 1 || secs[0].Start != 17 || secs[0].End != 20 {
 		t.Fatalf("got %#v, want 1 section (17,20)", secs)
+	}
+}
+
+func TestOverlaps(t *testing.T) {
+	tests := []struct {
+		srs symbolRanges
+		sr  [2]uint32
+		pos int
+	}{
+		//
+		// overlap
+		//
+		{
+			srs: [][2]uint32{{0, 3}, {5, 10}},
+			sr:  [2]uint32{6, 9},
+			pos: -1,
+		},
+		{
+			srs: [][2]uint32{{0, 3}, {5, 10}},
+			sr:  [2]uint32{6, 12},
+			pos: -1,
+		},
+		{
+			srs: [][2]uint32{{0, 3}, {5, 10}},
+			sr:  [2]uint32{4, 6},
+			pos: -1,
+		},
+		{
+			srs: [][2]uint32{{0, 3}, {5, 10}},
+			sr:  [2]uint32{1, 6},
+			pos: -1,
+		},
+		{
+			srs: [][2]uint32{{0, 3}, {5, 10}},
+			sr:  [2]uint32{0, 1},
+			pos: -1,
+		},
+		//
+		// NO overlap
+		//
+		{
+			srs: [][2]uint32{{2, 3}, {5, 10}},
+			sr:  [2]uint32{0, 1},
+			pos: 0,
+		},
+		{
+			srs: [][2]uint32{{0, 3}, {5, 10}},
+			sr:  [2]uint32{3, 4},
+			pos: 1,
+		},
+		{
+			srs: [][2]uint32{{0, 3}, {5, 10}},
+			sr:  [2]uint32{3, 4},
+			pos: 1,
+		},
+		{
+			srs: [][2]uint32{{0, 3}, {5, 10}},
+			sr:  [2]uint32{11, 12},
+			pos: 2,
+		},
+		{
+			srs: [][2]uint32{{0, 3}, {5, 10}, {14, 15}},
+			sr:  [2]uint32{11, 12},
+			pos: 2,
+		},
+		{
+			srs: nil,
+			sr:  [2]uint32{11, 12},
+			pos: 0,
+		},
+		{
+			srs: [][2]uint32{{0, 3}},
+			sr:  [2]uint32{0, 3},
+			pos: -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			got := tt.srs.overlaps(tt.sr)
+			if got != tt.pos {
+				t.Fatalf("want %d, got %d", tt.pos, got)
+			}
+		})
 	}
 }
