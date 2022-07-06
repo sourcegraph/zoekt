@@ -45,7 +45,7 @@ func TestTagsToSections(t *testing.T) {
 
 func TestTagsToSectionsMultiple(t *testing.T) {
 	c := []byte("class Foo { int x; int b; }")
-	// ----------0123456789012345678901234567
+	// ----------012345678901234567890123456
 
 	tags := []*ctags.Entry{
 		{
@@ -95,81 +95,100 @@ func TestTagsToSectionsEOF(t *testing.T) {
 
 func TestOverlaps(t *testing.T) {
 	tests := []struct {
-		srs symbolRanges
-		sr  [2]uint32
-		pos int
+		documentSections []zoekt.DocumentSection
+		start            uint32
+		end              uint32
+		pos              int
 	}{
 		//
 		// overlap
 		//
 		{
-			srs: [][2]uint32{{0, 3}, {5, 10}},
-			sr:  [2]uint32{6, 9},
-			pos: -1,
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            6,
+			end:              9,
+			pos:              -1,
 		},
 		{
-			srs: [][2]uint32{{0, 3}, {5, 10}},
-			sr:  [2]uint32{6, 12},
-			pos: -1,
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            6,
+			end:              12,
+			pos:              -1,
 		},
 		{
-			srs: [][2]uint32{{0, 3}, {5, 10}},
-			sr:  [2]uint32{4, 6},
-			pos: -1,
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            4,
+			end:              9,
+			pos:              -1,
 		},
 		{
-			srs: [][2]uint32{{0, 3}, {5, 10}},
-			sr:  [2]uint32{1, 6},
-			pos: -1,
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            1,
+			end:              9,
+			pos:              -1,
 		},
 		{
-			srs: [][2]uint32{{0, 3}, {5, 10}},
-			sr:  [2]uint32{0, 1},
-			pos: -1,
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            0,
+			end:              25,
+			pos:              -1,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}},
+			start:            0,
+			end:              1,
+			pos:              -1,
 		},
 		//
 		// NO overlap
 		//
 		{
-			srs: [][2]uint32{{2, 3}, {5, 10}},
-			sr:  [2]uint32{0, 1},
-			pos: 0,
+			documentSections: []zoekt.DocumentSection{{2, 3}, {5, 10}},
+			start:            0,
+			end:              2,
+			pos:              0,
 		},
 		{
-			srs: [][2]uint32{{0, 3}, {5, 10}},
-			sr:  [2]uint32{3, 4},
-			pos: 1,
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            3,
+			end:              4,
+			pos:              1,
 		},
 		{
-			srs: [][2]uint32{{0, 3}, {5, 10}},
-			sr:  [2]uint32{3, 4},
-			pos: 1,
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            3,
+			end:              5,
+			pos:              1,
 		},
 		{
-			srs: [][2]uint32{{0, 3}, {5, 10}},
-			sr:  [2]uint32{11, 12},
-			pos: 2,
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            11,
+			end:              14,
+			pos:              2,
 		},
 		{
-			srs: [][2]uint32{{0, 3}, {5, 10}, {14, 15}},
-			sr:  [2]uint32{11, 12},
-			pos: 2,
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}, {14, 15}},
+			start:            11,
+			end:              13,
+			pos:              2,
 		},
 		{
-			srs: nil,
-			sr:  [2]uint32{11, 12},
-			pos: 0,
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}, {14, 15}},
+			start:            18,
+			end:              19,
+			pos:              3,
 		},
 		{
-			srs: [][2]uint32{{0, 3}},
-			sr:  [2]uint32{0, 3},
-			pos: -1,
+			documentSections: nil,
+			start:            1,
+			end:              3,
+			pos:              0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			got := tt.srs.overlaps(tt.sr)
+			got := overlaps(tt.documentSections, tt.start, tt.end)
 			if got != tt.pos {
 				t.Fatalf("want %d, got %d", tt.pos, got)
 			}

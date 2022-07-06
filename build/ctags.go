@@ -20,7 +20,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"time"
 
 	"github.com/google/zoekt"
@@ -152,9 +151,6 @@ func ctagsAddSymbolsParser(todo []*zoekt.Document, parser ctags.Parser) error {
 			continue
 		}
 
-		sort.Slice(es, func(i, j int) bool {
-			return es[i].Line < es[j].Line
-		})
 		symOffsets, symMetaData, err := tagsToSections(doc.Content, es)
 		if err != nil {
 			return fmt.Errorf("%s: %v", doc.Name, err)
@@ -200,9 +196,6 @@ func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) er
 	}
 
 	for k, tags := range fileTags {
-		sort.Slice(tags, func(i, j int) bool {
-			return tags[i].Line < tags[j].Line
-		})
 		symOffsets, symMetaData, err := tagsToSections(contents[k], tags)
 		if err != nil {
 			return fmt.Errorf("%s: %v", k, err)
@@ -213,38 +206,34 @@ func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) er
 	return nil
 }
 
-// symbolRanges keeps track of file-based byte ranges of symbols appearing on
-// the same line.
-type symbolRanges [][2]uint32
-
-// overlaps checks whether sym overlaps with any of the symbol ranges already
-// contained in sr. If sym doesn't overlap, it returns the proper position for
-// insertion, otherwise it returns -1.
-func (sr symbolRanges) overlaps(sym [2]uint32) int {
-	for i := 0; i < len(sr); i++ {
-		if sym[0] >= sr[i][1] {
+// overlaps finds the proper position to insert a zoekt.DocumentSection with
+// "start and "end" into "symOffsets". It returns -1 if the new section overlaps
+// with one of the existing ones.
+func overlaps(symOffsets []zoekt.DocumentSection, start, end uint32) int {
+	var i = 0
+	for i = len(symOffsets) - 1; i >= 0; i-- {
+		// The most common case is that we exit here, because symOffsets is sorted by
+		// construction and start is in many cases monotonically increasing.
+		if start >= symOffsets[i].End {
+			break
+		}
+		if end <= symOffsets[i].Start {
 			continue
 		}
-		if sym[1] <= sr[i][0] {
-			return i
-		}
+		// overlap
 		return -1
 	}
-	return len(sr)
+	return i + 1
 }
 
 // tagsToSections converts ctags entries to byte ranges (zoekt.DocumentSection)
-// with corresponding metadata (zoekt.Symbol). The input tags must be sorted in
-// ascending order by line number.
+// with corresponding metadata (zoekt.Symbol).
 func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSection, []*zoekt.Symbol, error) {
 	nls := newLinesIndices(content)
 	nls = append(nls, uint32(len(content)))
 	var symOffsets []zoekt.DocumentSection
 	var symMetaData []*zoekt.Symbol
-	var lastLineIdx int
 
-	// srs keeps track of symbol ranges within a line
-	var srs symbolRanges
 	for _, t := range tags {
 		if t.Line <= 0 {
 			// Observed this with a .JS file.
@@ -253,10 +242,6 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 		lineIdx := t.Line - 1
 		if lineIdx >= len(nls) {
 			return nil, nil, fmt.Errorf("linenum for entry out of range %v", t)
-		}
-
-		if lastLineIdx != lineIdx {
-			srs = srs[:0]
 		}
 
 		lineOff := uint32(0)
@@ -279,24 +264,23 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 		start := lineOff + uint32(intraOff)
 		endSym := start + uint32(len(t.Name))
 
-		if i := srs.overlaps([2]uint32{start, endSym}); i == -1 {
-			// We detected overlapping symbols. Give up.
+		i := overlaps(symOffsets, start, endSym)
+		if i == -1 {
+			// Detected an overlap. Give up.
 			continue
-		} else {
-			srs = append(srs[:i], append([][2]uint32{{start, endSym}}, srs[i:]...)...)
 		}
 
-		symOffsets = append(symOffsets, zoekt.DocumentSection{
-			Start: start,
-			End:   endSym,
-		})
-		symMetaData = append(symMetaData, &zoekt.Symbol{
-			Sym:        t.Name,
-			Kind:       t.Kind,
-			Parent:     t.Parent,
-			ParentKind: t.ParentKind,
-		})
-		lastLineIdx = lineIdx
+		symOffsets = append(
+			symOffsets[:i],
+			append([]zoekt.DocumentSection{{Start: start, End: endSym}}, symOffsets[i:]...)...,
+		)
+		symMetaData = append(
+			symMetaData[:i],
+			append(
+				[]*zoekt.Symbol{{Sym: t.Name, Kind: t.Kind, Parent: t.Parent, ParentKind: t.ParentKind}},
+				symMetaData[i:]...,
+			)...,
+		)
 	}
 
 	return symOffsets, symMetaData, nil
