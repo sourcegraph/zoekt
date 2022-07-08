@@ -72,6 +72,40 @@ func TestTagsToSectionsMultiple(t *testing.T) {
 	}
 }
 
+func TestTagsToSectionsReverse(t *testing.T) {
+	c := []byte("typedef enum { FOO, BAR } bas\n")
+	// ----------01234567890123456789012345678
+
+	tags := []*ctags.Entry{
+		{
+			Name: "bas",
+			Line: 1,
+		},
+		{
+			Name: "FOO",
+			Line: 1,
+		},
+		{
+			Name: "BAR",
+			Line: 1,
+		},
+	}
+
+	got, _, err := tagsToSections(c, tags)
+	if err != nil {
+		t.Fatal("tagsToSections", err)
+	}
+
+	want := []zoekt.DocumentSection{
+		{Start: 15, End: 18},
+		{Start: 20, End: 23},
+		{Start: 26, End: 29},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func TestTagsToSectionsEOF(t *testing.T) {
 	c := []byte("package foo\nfunc bar(j int) {}")
 	// ----------01234567890 1234567890123456789 012345
