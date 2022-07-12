@@ -5,26 +5,26 @@ on:
       - master
 
   workflow_dispatch:
-    branches: 
+    branches:
       - master
 
-jobs: 
+jobs:
   sync-zoekt:
     runs-on: ubuntu-latest
-    steps: 
+    steps:
       - uses: actions/checkout@v2
-        with: 
-          repository: 'sourcegraph/sourcegraph' 
+        with:
+          repository: 'sourcegraph/sourcegraph'
           ref: 'main'
       - uses: actions/setup-go@v2
-        with: { go-version: '1.18' } 
+        with: { go-version: '1.18' }
       - run: go mod download
       - run: ./dev/zoekt/update
       - uses: peter-evans/create-pull-request@v3
         if: github.event_name == 'push'
         name: 'Create PR'
         id: pr
-        with: 
+        with:
           token: ${{ secrets.GH_TOKEN }}
           title: 'zoekt: update to sourcegraph/zoekt@${{ github.sha }}'
           commit-message: 'zoekt: update to sourcegraph/zoekt@${{ github.sha }}'
@@ -39,11 +39,11 @@ jobs:
           delete-branch: 'true'
           team-reviewers: 'search-core'
           base: 'main'
-    
+
       - name: 'Check PR outputs'
         run: |
           echo "Pull Request Number - ${{ steps.pr.outputs.pull-request-number }}"
-          echo "Pull Request URL - ${{ steps.pr.outputs.pull-request-url }}"    
+          echo "Pull Request URL - ${{ steps.pr.outputs.pull-request-url }}"
       - uses: peter-evans/enable-pull-request-automerge@v1
         name: Enable Pull Request Automerge
         if: steps.pr.outputs.pull-request-operation == 'created'
