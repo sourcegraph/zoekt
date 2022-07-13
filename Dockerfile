@@ -25,6 +25,8 @@ COPY --from=builder /go/bin/* /usr/local/bin/
 
 # zoekt-webserver has a large stable heap size (10s of gigs), and as such the
 # default GOGC=100 could be better tuned. https://dave.cheney.net/tag/gogc
-ENV GOGC=50
+# In go1.18 the GC changed significantly and from experimentation we tuned it
+# down from 50 to 25.
+ENV GOGC=25
 
 ENTRYPOINT ["/sbin/tini", "--"]
