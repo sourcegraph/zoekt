@@ -231,12 +231,8 @@ nextFileMatch:
 			}
 
 			// Skip documents that are tombstoned
-			// TODO: This FileTombstones implementation (looking up by filenames) creates a lot of small allocations
-			// (string filenames) and can have poor cache performance. This should be addressed before we officially
-			// roll this out.
 			if len(repoMetadata.FileTombstones) > 0 {
-				fileName := string(d.fileName(nextDoc))
-				if _, tombstoned := repoMetadata.FileTombstones[fileName]; tombstoned {
+				if _, tombstoned := repoMetadata.FileTombstones[string(d.fileName(nextDoc))]; tombstoned {
 					continue
 				}
 			}
