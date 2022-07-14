@@ -206,14 +206,34 @@ func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) er
 	return nil
 }
 
+// overlaps finds the proper position to insert a zoekt.DocumentSection with
+// "start and "end" into "symOffsets". It returns -1 if the new section overlaps
+// with one of the existing ones.
+func overlaps(symOffsets []zoekt.DocumentSection, start, end uint32) int {
+	var i = 0
+	for i = len(symOffsets) - 1; i >= 0; i-- {
+		// The most common case is that we exit here, because symOffsets is sorted by
+		// construction and start is in many cases monotonically increasing.
+		if start >= symOffsets[i].End {
+			break
+		}
+		if end <= symOffsets[i].Start {
+			continue
+		}
+		// overlap
+		return -1
+	}
+	return i + 1
+}
+
+// tagsToSections converts ctags entries to byte ranges (zoekt.DocumentSection)
+// with corresponding metadata (zoekt.Symbol).
 func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSection, []*zoekt.Symbol, error) {
 	nls := newLinesIndices(content)
 	nls = append(nls, uint32(len(content)))
 	var symOffsets []zoekt.DocumentSection
 	var symMetaData []*zoekt.Symbol
-	var lastEnd uint32
-	var lastLine int
-	var lastIntraEnd int
+
 	for _, t := range tags {
 		if t.Line <= 0 {
 			// Observed this with a .JS file.
@@ -231,40 +251,36 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 
 		end := nls[lineIdx]
 		line := content[lineOff:end]
-		if lastLine == lineIdx {
-			line = line[lastIntraEnd:]
-		} else {
-			lastIntraEnd = 0
-		}
 
-		intraOff := lastIntraEnd + bytes.Index(line, []byte(t.Name))
+		// This is best-effort only. For short symbol names, we will often determine the
+		// wrong offset.
+		intraOff := bytes.Index(line, []byte(t.Name))
 		if intraOff < 0 {
 			// for Go code, this is very common, since
 			// ctags barfs on multi-line declarations
 			continue
 		}
+
 		start := lineOff + uint32(intraOff)
-		if start < lastEnd {
-			// This can happen if we have multiple tags on the same line.
-			// Give up.
+		endSym := start + uint32(len(t.Name))
+
+		i := overlaps(symOffsets, start, endSym)
+		if i == -1 {
+			// Detected an overlap. Give up.
 			continue
 		}
 
-		endSym := start + uint32(len(t.Name))
-
-		symOffsets = append(symOffsets, zoekt.DocumentSection{
-			Start: start,
-			End:   endSym,
-		})
-		symMetaData = append(symMetaData, &zoekt.Symbol{
-			Sym:        t.Name,
-			Kind:       t.Kind,
-			Parent:     t.Parent,
-			ParentKind: t.ParentKind,
-		})
-		lastEnd = endSym
-		lastLine = lineIdx
-		lastIntraEnd = intraOff + len(t.Name)
+		symOffsets = append(
+			symOffsets[:i],
+			append([]zoekt.DocumentSection{{Start: start, End: endSym}}, symOffsets[i:]...)...,
+		)
+		symMetaData = append(
+			symMetaData[:i],
+			append(
+				[]*zoekt.Symbol{{Sym: t.Name, Kind: t.Kind, Parent: t.Parent, ParentKind: t.ParentKind}},
+				symMetaData[i:]...,
+			)...,
+		)
 	}
 
 	return symOffsets, symMetaData, nil
