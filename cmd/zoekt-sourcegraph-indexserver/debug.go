@@ -79,23 +79,23 @@ func debugCmd() *ffcli.Command {
 		Name:       "debug",
 		ShortUsage: "debug <subcommand>",
 		ShortHelp:  "a set of commands for debugging and testing",
-		LongHelp: `CURL
+		LongHelp: `
   Zoekt-sourcegraph-indexserver exposes debug information on the /debug landing page.
-  You can use the following curl commands to access this information from the command line.
+  You can use the following wget commands to access this information from the command line.
 
-  curl http://localhost:6072/debug/indexed
+  wget -q -O - http://localhost:6072/debug/indexed
     list the repositories that are INDEXED by this instance.
 
-  curl http://localhost:6072/debug/list[?indexed=TRUE/false]
+  wget -q -O - http://localhost:6072/debug/list[?indexed=TRUE/false]
     list the repositories that are OWNED by this instance. If indexed=true (default), the list may contain repositories
     that this instance holds temporarily, for example during rebalancing.
 
-  curl http://localhost:6072/debug/merge
+  wget -q -O - http://localhost:6072/debug/merge
     start a full merge operation in the index directory. You can check the status with
-    "curl http://localhost:6072/metrics -sS | grep index_shard_merging_running". It is only possible
+    "wget -q -O - http://localhost:6072/metrics -sS | grep index_shard_merging_running". It is only possible
     to trigger one merge operation at a time.
 
-  curl http://localhost:6072/debug/queue
+  wget -q -O - http://localhost:6072/debug/queue
     list the repositories in the indexing queue, sorted by descending priority.
 
     COLUMN HEADERS
