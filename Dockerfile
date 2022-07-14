@@ -16,7 +16,7 @@ RUN go install -ldflags "-X github.com/google/zoekt.Version=$VERSION" ./cmd/...
 FROM alpine:3.15.0 AS zoekt
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
-    apk add --no-cache git ca-certificates bind-tools tini jansson curl
+    apk add --no-cache git ca-certificates bind-tools tini jansson
 
 COPY install-ctags-alpine.sh .
 RUN ./install-ctags-alpine.sh && rm install-ctags-alpine.sh
