@@ -627,6 +627,12 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		return nil, nil, nil, nil, fmt.Errorf("requested branch set in build options (%q) != branch set found on disk (%q) - branch set must be the same for delta shards", optionsBranchList, existingBranchList)
 	}
 
+	// Check if the build options hash does not match the repository metadata's hash
+	// If it does not match then one or more index options has changed and will require a normal build instead of a delta build
+	if options.BuildOptions.GetHash() != existingRepository.IndexOptions {
+		return nil, nil, nil, nil, fmt.Errorf("one or more index options previously stored for repository %s (ID: %d) does not match the index options for this requested build; These index option updates are incompatible with delta build. new index options: %+v", existingRepository.Name, existingRepository.ID, options.BuildOptions.HashOptions())
+	}
+
 	// branch => (path, sha1) => repo.
 	repos = map[fileKey]BlobLocation{}
 
