@@ -79,9 +79,10 @@ func main() {
 
 	opt := &gitlab.ListProjectsOptions{
 		ListOptions: gitlab.ListOptions{
-			PerPage: 10,
-			Page:    1,
+			PerPage: 100,
 		},
+		Sort:       gitlab.String("asc"),
+		OrderBy:    gitlab.String("id"),
 		Membership: isMember,
 	}
 	if *isPublic {
@@ -90,7 +91,7 @@ func main() {
 
 	var gitlabProjects []*gitlab.Project
 	for {
-		projects, resp, err := client.Projects.ListProjects(opt)
+		projects, _, err := client.Projects.ListProjects(opt)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -106,11 +107,11 @@ func main() {
 			gitlabProjects = append(gitlabProjects, project)
 		}
 
-		if resp.CurrentPage >= resp.TotalPages {
+		if len(projects) == 0 {
 			break
 		}
 
-		opt.Page = resp.NextPage
+		opt.IDAfter = &projects[len(projects)-1].ID
 	}
 
 	filter, err := gitindex.NewFilter(*namePattern, *excludePattern)
