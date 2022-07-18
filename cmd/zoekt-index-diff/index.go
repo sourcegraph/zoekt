@@ -100,6 +100,8 @@ func fileModified(branch string, f *diff.FileDiff, b *build.Builder, d *zoekt.Do
 		} else {
 			doc.Branches = br
 		}
+	} else {
+		log.Fatalf("Could not find document for old version of changed file %s", f.NewName)
 	}
 
 	// Add new version of file
