@@ -316,10 +316,27 @@ func (s *Server) Run() {
 			debug.Printf("updating index queue with %d repositories", len(repos.IDs))
 
 			// Stop indexing repos we don't need to track anymore
-			count := s.queue.MaybeRemoveMissing(repos.IDs)
-			metricNumStoppedTrackingTotal.Add(float64(count))
-			if count > 0 {
-				log.Printf("stopped tracking %d repositories", count)
+			removed := s.queue.MaybeRemoveMissing(repos.IDs)
+			metricNumStoppedTrackingTotal.Add(float64(len(removed)))
+
+			if n := len(removed); n > 0 {
+				max := 5
+				if n < max {
+					max = n
+				}
+
+				sb := strings.Builder{}
+				sb.WriteString(strconv.FormatUint(uint64(removed[0]), 10))
+				for i := 1; i < max; i++ {
+					sb.WriteString(", ")
+					sb.WriteString(strconv.FormatUint(uint64(removed[i]), 10))
+				}
+
+				if n > max {
+					sb.WriteString(" ...")
+				}
+
+				log.Printf("stopped tracking %d repositories: %v", n, sb.String())
 			}
 
 			cleanupDone := make(chan struct{})

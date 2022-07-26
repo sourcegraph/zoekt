@@ -263,7 +263,7 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 }
 
 // MaybeRemoveMissing will remove all queue items not in ids and return the
-// number of names removed from the queue. It will heuristically not run to
+// ids of items removed from the queue. It will heuristically not run to
 // conserve resources.
 //
 // In the server's steady state we expect that the list of names is equal to
@@ -271,7 +271,7 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 // removals. Removal requires memory allocation and coarse locking. To avoid
 // that we use a heuristic which can falsely decide it doesn't need to
 // remove. However, we will converge onto removing items.
-func (q *Queue) MaybeRemoveMissing(ids []uint32) uint {
+func (q *Queue) MaybeRemoveMissing(ids []uint32) []uint32 {
 	q.mu.Lock()
 	sameSize := len(q.items) == len(ids)
 	q.mu.Unlock()
@@ -279,7 +279,7 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) uint {
 	// heuristically skip expensive work
 	if sameSize {
 		debug.Printf("skipping MaybeRemoveMissing due to same size: %d", len(ids))
-		return 0
+		return nil
 	}
 
 	set := make(map[uint32]struct{}, len(ids))
@@ -290,7 +290,7 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) uint {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	var count uint
+	var removed []uint32
 	for _, item := range q.items {
 		if _, ok := set[item.opts.RepoID]; ok {
 			continue
@@ -303,13 +303,14 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) uint {
 		item.indexState = ""
 
 		delete(q.items, item.opts.RepoID)
-		count++
+
+		removed = append(removed, item.opts.RepoID)
 	}
 
 	metricQueueLen.Set(float64(len(q.pq)))
 	metricQueueCap.Set(float64(len(q.items)))
 
-	return count
+	return removed
 }
 
 // getOrAdd returns the item for repoID. If the repoID hasn't been seen before, it
