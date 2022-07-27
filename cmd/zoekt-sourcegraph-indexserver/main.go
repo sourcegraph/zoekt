@@ -319,23 +319,8 @@ func (s *Server) Run() {
 			removed := s.queue.MaybeRemoveMissing(repos.IDs)
 			metricNumStoppedTrackingTotal.Add(float64(len(removed)))
 
-			if n := len(removed); n > 0 {
-				max := 5
-				if n < max {
-					max = n
-				}
-
-				sb := strings.Builder{}
-				sb.WriteString(strconv.FormatUint(uint64(removed[0]), 10))
-				for i := 1; i < max; i++ {
-					fmt.Fprintf(&sb, ", %d", removed[i])
-				}
-
-				if n > max {
-					sb.WriteString(" ...")
-				}
-
-				log.Printf("stopped tracking %d repositories: %v", n, sb.String())
+			if len(removed) > 0 {
+				log.Printf("stopped tracking %d repositories: %v", len(removed), formatListUint32(removed, 5))
 			}
 
 			cleanupDone := make(chan struct{})
@@ -385,6 +370,24 @@ func (s *Server) Run() {
 
 	// block forever
 	select {}
+}
+
+// formatList returns a comma-separated list of the first min(len(v), m) items.
+func formatListUint32(v []uint32, m int) string {
+	if len(v) < m {
+		m = len(v)
+	}
+
+	sb := strings.Builder{}
+	for i := 0; i < m; i++ {
+		fmt.Fprintf(&sb, "%d, ", v[i])
+	}
+
+	if len(v) > m {
+		sb.WriteString("...")
+	}
+
+	return strings.TrimRight(sb.String(), ", ")
 }
 
 func (s *Server) processQueue() {
