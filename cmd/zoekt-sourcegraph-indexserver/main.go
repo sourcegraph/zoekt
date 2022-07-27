@@ -318,9 +318,8 @@ func (s *Server) Run() {
 			// Stop indexing repos we don't need to track anymore
 			removed := s.queue.MaybeRemoveMissing(repos.IDs)
 			metricNumStoppedTrackingTotal.Add(float64(len(removed)))
-
 			if len(removed) > 0 {
-				log.Printf("stopped tracking %d repositories: %v", len(removed), formatListUint32(removed, 5))
+				log.Printf("stopped tracking %d repositories: %s", len(removed), formatListUint32(removed, 5))
 			}
 
 			cleanupDone := make(chan struct{})
