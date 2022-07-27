@@ -328,8 +328,7 @@ func (s *Server) Run() {
 				sb := strings.Builder{}
 				sb.WriteString(strconv.FormatUint(uint64(removed[0]), 10))
 				for i := 1; i < max; i++ {
-					sb.WriteString(", ")
-					sb.WriteString(strconv.FormatUint(uint64(removed[i]), 10))
+					fmt.Fprintf(&sb, ", %d", removed[i])
 				}
 
 				if n > max {
