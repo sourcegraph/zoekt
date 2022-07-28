@@ -321,7 +321,7 @@ func getTombstonedRepos(dir string) map[uint32]shard {
 				RepoName:      repo.Name,
 				Path:          p,
 				ModTime:       repo.LatestCommitDate,
-				RepoTombstone: true,
+				RepoTombstone: repo.Tombstone,
 			}
 		}
 	}
