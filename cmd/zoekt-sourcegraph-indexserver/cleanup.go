@@ -275,7 +275,6 @@ func tombstoneDuplicates(indexDir string) {
 		}
 		if latest != 0 {
 			shards[0], shards[latest] = shards[latest], shards[0]
-			latest = 0
 		}
 
 		if err := zoekt.UnsetTombstone(shards[0].Path, repoID); err != nil {
