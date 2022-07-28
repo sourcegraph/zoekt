@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/google/zoekt"
 	"github.com/google/zoekt/build"
 )
@@ -446,18 +447,19 @@ func TestTombstoneDuplicateShards(t *testing.T) {
 	old := now.Add(-2 * time.Hour)
 
 	cs1 := createCompoundShard(t, dir, []uint32{1, 2, 3}, func(*zoekt.Repository) {})
-	// Hide it from being removed by Builder.Finish() called when creating cs2.
+
+	// Hack part 1: hide repos from being tombstoned by Builder.Finish() when creating cs2.
 	for i := 1; i <= 3; i++ {
 		if err := zoekt.SetTombstone(cs1, uint32(i)); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	cs2 := createCompoundShard(t, dir, []uint32{1, 2}, func(*zoekt.Repository) {})
+
+	// Hack part 2: remove tombstones to create duplicates.
 	for i := 1; i <= 3; i++ {
 		if err := zoekt.UnsetTombstone(cs1, uint32(i)); err != nil {
-			t.Fatal(err)
-		}
-		if err := zoekt.UnsetTombstone(cs2, uint32(i)); err != nil {
 			t.Fatal(err)
 		}
 	}
