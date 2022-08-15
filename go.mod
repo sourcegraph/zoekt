@@ -13,7 +13,7 @@ require (
 	github.com/google/go-cmp v0.5.8
 	github.com/google/go-github/v27 v27.0.6
 	github.com/google/slothfs v0.0.0-20190717100203-59c1163fd173
-	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2
+	github.com/grafana/regexp v0.0.0-20220304100321-149c8afcd6cb
 	github.com/hashicorp/go-retryablehttp v0.7.1
 	github.com/keegancsmith/rpc v1.3.0
 	github.com/keegancsmith/tmpfriend v0.0.0-20180423180255-86e88902a513
