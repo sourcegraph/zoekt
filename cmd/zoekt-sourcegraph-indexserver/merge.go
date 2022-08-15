@@ -15,7 +15,7 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/google/zoekt"
+	"github.com/sourcegraph/zoekt"
 )
 
 var reCompound = regexp.MustCompile(`compound-.*\.zoekt`)

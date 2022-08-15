@@ -2,11 +2,11 @@ name: sync zoekt
 on:
   push:
     branches:
-      - master
+      - main
 
   workflow_dispatch:
     branches:
-      - master
+      - main
 
 jobs:
   sync-zoekt:

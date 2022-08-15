@@ -30,10 +30,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/rpc"
-	"github.com/google/zoekt/stream"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/rpc"
+	"github.com/sourcegraph/zoekt/stream"
 	"github.com/grafana/regexp"
 )
 

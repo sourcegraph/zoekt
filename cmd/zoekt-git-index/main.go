@@ -21,8 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/google/zoekt/cmd"
-	"github.com/google/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/cmd"
+	"github.com/sourcegraph/zoekt/gitindex"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 

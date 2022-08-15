@@ -16,9 +16,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
-	"github.com/google/zoekt/cmd"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/cmd"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 

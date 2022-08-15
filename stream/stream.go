@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/rpc"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/rpc"
 )
 
 // DefaultSSEPath is the path used by zoekt-webserver.

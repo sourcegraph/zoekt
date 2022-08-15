@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package zoekt // import "github.com/google/zoekt"
+package zoekt // import "github.com/sourcegraph/zoekt"
 
 import (
 	"context"
@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/zoekt/query"
+	"github.com/sourcegraph/zoekt/query"
 )
 
 // FileMatch contains all the matches within a file.

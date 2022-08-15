@@ -368,7 +368,7 @@ document.onkeydown=function(e){
 
   <div class="container">
     <p>
-      This is <a href="http://github.com/google/zoekt"><em>zoekt</em> (IPA: /zukt/)</a>,
+      This is <a href="http://github.com/sourcegraph/zoekt"><em>zoekt</em> (IPA: /zukt/)</a>,
       an open-source full text search engine. It's pronounced roughly as you would
       pronounce "zooked" in English.
     </p>

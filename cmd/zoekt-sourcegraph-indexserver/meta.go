@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
 )
 
 // mergeMeta updates the .meta files for the shards on disk for o.

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/rpc/internal/srv"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/rpc/internal/srv"
 	"github.com/keegancsmith/rpc"
 )
 

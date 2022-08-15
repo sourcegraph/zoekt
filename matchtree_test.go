@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/RoaringBitmap/roaring"
-	"github.com/google/zoekt/query"
+	"github.com/sourcegraph/zoekt/query"
 	"github.com/grafana/regexp"
 )
 

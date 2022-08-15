@@ -26,7 +26,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/google/zoekt/query"
+	"github.com/sourcegraph/zoekt/query"
 	"github.com/grafana/regexp"
 	"github.com/kylelemons/godebug/pretty"
 )

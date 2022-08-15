@@ -33,7 +33,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/gitindex"
 	gitlab "github.com/xanzy/go-gitlab"
 )
 

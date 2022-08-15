@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/google/zoekt"
+	"github.com/sourcegraph/zoekt"
 )
 
 func TestServer_defaultArgs(t *testing.T) {

@@ -33,9 +33,9 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/shards"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/shards"
 )
 
 func TestBasic(t *testing.T) {

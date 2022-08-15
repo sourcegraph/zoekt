@@ -38,8 +38,8 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar"
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/ctags"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/ctags"
 	"github.com/grafana/regexp"
 	"github.com/rs/xid"
 	"gopkg.in/natefinch/lumberjack.v2"

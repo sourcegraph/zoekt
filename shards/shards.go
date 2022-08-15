@@ -30,10 +30,10 @@ import (
 
 	"golang.org/x/sync/semaphore"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/stream"
-	"github.com/google/zoekt/trace"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/stream"
+	"github.com/sourcegraph/zoekt/trace"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
