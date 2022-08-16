@@ -6,13 +6,15 @@ import (
 	"encoding/gob"
 	"fmt"
 	"net/http"
+	"reflect"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/keegancsmith/rpc"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/rpc/internal/srv"
-	"github.com/keegancsmith/rpc"
 )
 
 // DefaultRPCPath is the rpc path used by zoekt-webserver
@@ -128,22 +130,79 @@ var once sync.Once
 // once, because calls to gob.Register are protected by a sync.Once.
 func RegisterGob() {
 	once.Do(func() {
-		gob.Register(&query.And{})
-		gob.Register(&query.BranchRepos{})
-		gob.Register(&query.BranchesRepos{})
-		gob.Register(&query.Branch{})
-		gob.Register(&query.Const{})
-		gob.Register(&query.GobCache{})
-		gob.Register(&query.Language{})
-		gob.Register(&query.Not{})
-		gob.Register(&query.Or{})
-		gob.Register(&query.Regexp{})
-		gob.Register(&query.RepoRegexp{})
-		gob.Register(&query.RepoSet{})
-		gob.Register(&query.Repo{})
-		gob.Register(&query.Substring{})
-		gob.Register(&query.Symbol{})
-		gob.Register(&query.Type{})
-		gob.Register(query.RawConfig(41))
+		gobRegister(&query.And{})
+		gobRegister(&query.BranchRepos{})
+		gobRegister(&query.BranchesRepos{})
+		gobRegister(&query.Branch{})
+		gobRegister(&query.Const{})
+		gobRegister(&query.GobCache{})
+		gobRegister(&query.Language{})
+		gobRegister(&query.Not{})
+		gobRegister(&query.Or{})
+		gobRegister(&query.Regexp{})
+		gobRegister(&query.RepoRegexp{})
+		gobRegister(&query.RepoSet{})
+		gobRegister(&query.Repo{})
+		gobRegister(&query.Substring{})
+		gobRegister(&query.Symbol{})
+		gobRegister(&query.Type{})
+		gobRegister(query.RawConfig(41))
 	})
+}
+
+// gobRegister exists to keep backwards compatibility around renames of the go
+// module. This is to avoid breaking the wire protocol due to refactors. In
+// particular in August 2022 we renamed the go module from
+// github.com/google/zoekt to github.com/sourcegraph/zoekt which breaks the
+// wire protocol. So this function will replace those names so we keep using
+// google/zoekt.
+func gobRegister(value any) {
+	name := gobRegister_name(value)
+
+	name = strings.Replace(name, "github.com/sourcegraph/", "github.com/google/", 1)
+
+	gob.RegisterName(name, value)
+}
+
+// gobRegister_name is copy-pasta from the stdlib gob.Register, returning the
+// name it picks for gob.RegisterName.
+func gobRegister_name(value any) string {
+	// Default to printed representation for unnamed types
+	rt := reflect.TypeOf(value)
+	name := rt.String()
+
+	// But for named types (or pointers to them), qualify with import path (but see inner comment).
+	// Dereference one pointer looking for a named type.
+	star := ""
+	if rt.Name() == "" {
+		if pt := rt; pt.Kind() == reflect.Pointer {
+			star = "*"
+			// NOTE: The following line should be rt = pt.Elem() to implement
+			// what the comment above claims, but fixing it would break compatibility
+			// with existing gobs.
+			//
+			// Given package p imported as "full/p" with these definitions:
+			//     package p
+			//     type T1 struct { ... }
+			// this table shows the intended and actual strings used by gob to
+			// name the types:
+			//
+			// Type      Correct string     Actual string
+			//
+			// T1        full/p.T1          full/p.T1
+			// *T1       *full/p.T1         *p.T1
+			//
+			// The missing full path cannot be fixed without breaking existing gob decoders.
+			rt = pt
+		}
+	}
+	if rt.Name() != "" {
+		if rt.PkgPath() == "" {
+			name = star + rt.Name()
+		} else {
+			name = star + rt.PkgPath() + "." + rt.Name()
+		}
+	}
+
+	return name
 }
