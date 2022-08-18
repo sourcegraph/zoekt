@@ -145,8 +145,10 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 		repo.FileURLTemplate = u.String() + "/{{.Path}}?at={{.Version}}"
 		repo.LineFragmentTemplate = "#{{.LineNumber}}"
 	case "gitlab":
-		repo.CommitURLTemplate = u.String() + "/commit/{{.Version}}"
-		repo.FileURLTemplate = u.String() + "/blob/{{.Version}}/{{.Path}}"
+		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/commit/b152c864303dae0e55377a1e2c53c9592380ffed
+		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/blob/aad04155b3f6fc50ede88aedaee7fc624d481149/files/gitlab-config-template/gitlab.rb.template
+		repo.CommitURLTemplate = u.String() + "/-/commit/{{.Version}}"
+		repo.FileURLTemplate = u.String() + "/-/blob/{{.Version}}/{{.Path}}"
 		repo.LineFragmentTemplate = "#L{{.LineNumber}}"
 	default:
 		return fmt.Errorf("URL scheme type %q unknown", typ)
