@@ -130,6 +130,7 @@ var once sync.Once
 // once, because calls to gob.Register are protected by a sync.Once.
 func RegisterGob() {
 	once.Do(func() {
+		gobRegister(&zoekt.SearchResult{})
 		gobRegister(&query.And{})
 		gobRegister(&query.BranchRepos{})
 		gobRegister(&query.BranchesRepos{})

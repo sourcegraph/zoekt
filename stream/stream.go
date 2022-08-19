@@ -6,7 +6,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"net/http"
-	"sync"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
@@ -30,7 +29,7 @@ func (e eventType) string() string {
 
 // Server returns an http.Handler which is the server side of StreamSearch.
 func Server(searcher zoekt.Streamer) http.Handler {
-	registerGob()
+	rpc.RegisterGob()
 	return &handler{Searcher: searcher}
 }
 
@@ -153,13 +152,4 @@ func (e *eventStreamWriter) event(event eventType, data interface{}) error {
 	}
 	e.flush()
 	return nil
-}
-
-var once sync.Once
-
-func registerGob() {
-	once.Do(func() {
-		gob.Register(&zoekt.SearchResult{})
-	})
-	rpc.RegisterGob()
 }
