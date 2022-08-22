@@ -22,7 +22,7 @@ func configureJaeger(svcName string, version string) (opentracing.Tracer, error)
 		// JAEGER_SAMPLER_* env vars. In most cases, this is sufficient
 		// enough to connect to Jaeger without any env vars.
 		cfg.Sampler.Type = jaeger.SamplerTypeConst
-		cfg.Sampler.Param = 1
+		cfg.Sampler.Param = 1 // 1 => enabled
 	}
 	tracer, _, err := cfg.NewTracer(
 		jaegercfg.Logger(&jaegerLogger{}),
