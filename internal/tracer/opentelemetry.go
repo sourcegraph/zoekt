@@ -30,6 +30,9 @@ import (
 //
 // All configuration is sourced directly from the environment using the specification
 // laid out in https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/protocol/exporter.md
+//
+// This setup is based on the one done in sourcegraph/sourcegraph - when making changes,
+// be wary of divergences from the source: https://github.com/sourcegraph/sourcegraph/blob/main/internal/tracer/otel.go
 func configureOpenTelemetry(svcName string, version string) (opentracing.Tracer, error) {
 	// Ensure propagation between services continues to work. This is also done by another
 	// project that uses the OpenTracing bridge:
