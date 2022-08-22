@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// getWithDefault returns def if no env in keys is set, or the first env from keys that is
+// getWithDefault returns the default value if no env in keys is set, or the first env from keys that is
 // set.
 func getWithDefault(def string, keys ...string) string {
 	for _, k := range keys {
