@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
 	"github.com/uber/jaeger-client-go"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 
@@ -466,19 +467,17 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 
 // traceID returns a trace ID, if any, found in the given context.
 func traceID(ctx context.Context) string {
-	span := opentracing.SpanFromContext(ctx)
-	if span == nil {
-		return ""
+	otSpan := opentracing.SpanFromContext(ctx)
+	if otSpan != nil {
+		if jaegerSpan, ok := otSpan.Context().(jaeger.SpanContext); ok {
+			return jaegerSpan.TraceID().String()
+		}
 	}
-	return traceIDFromSpan(span)
-}
 
-// traceIDFromSpan returns a trace ID, if any, found in the given span.
-func traceIDFromSpan(span opentracing.Span) string {
-	switch v := span.Context().(type) {
-	case jaeger.SpanContext:
-		return v.TraceID().String()
+	if otelSpan := oteltrace.SpanFromContext(ctx).SpanContext(); otelSpan.IsValid() {
+		return otelSpan.TraceID().String()
 	}
+
 	return ""
 }
 
