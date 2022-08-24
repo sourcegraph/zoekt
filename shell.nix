@@ -18,8 +18,8 @@ let
  pkgs = import
     (fetchTarball {
       url =
-        "https://github.com/NixOS/nixpkgs/archive/cbe587c735b734405f56803e267820ee1559e6c1.tar.gz";
-      sha256 = "0jii8slqbwbvrngf9911z3al1s80v7kk8idma9p9k0d5fm3g4z7h";
+        "https://github.com/NixOS/nixpkgs/archive/6f38b43c8c84c800f93465b2241156419fd4fd52.tar.gz";
+      sha256 = "0xw3y3jx1bcnwsc0imacbp5m8f51b66s9h8kk8qnfbckwv67dhgd";
     })
     { overlays = [ ctags-overlay ]; };
   # pkgs.universal-ctags installs the binary as "ctags", not "universal-ctags"
@@ -33,7 +33,7 @@ in pkgs.mkShell {
   name = "zoekt";
 
   nativeBuildInputs = [
-    pkgs.go_1_18
+    pkgs.go_1_19
 
     # zoekt-git-index
     pkgs.git
