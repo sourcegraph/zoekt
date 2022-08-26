@@ -425,18 +425,19 @@ func (s *loggedSearcher) StreamSearch(
 }
 
 func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, st *zoekt.Stats, err error) {
-	logger := s.Logger.With(
-		sglog.String("query", q.String()),
-		sglog.String("traceID", traceID(ctx)),
-		sglog.Bool("opts.EstimateDocCount", opts.EstimateDocCount),
-		sglog.Bool("opts.Whole", opts.Whole),
-		sglog.Int("opts.ShardMaxMatchCount", opts.ShardMaxMatchCount),
-		sglog.Int("opts.TotalMaxMatchCount", opts.TotalMaxMatchCount),
-		sglog.Int("opts.ShardMaxImportantMatch", opts.ShardMaxImportantMatch),
-		sglog.Int("opts.TotalMaxImportantMatch", opts.TotalMaxImportantMatch),
-		sglog.Duration("opts.MaxWallTime", opts.MaxWallTime),
-		sglog.Int("opts.MaxDocDisplayCount", opts.MaxDocDisplayCount),
-	)
+	logger := s.Logger.
+		WithTrace(traceContext(ctx)).
+		With(
+			sglog.String("query", q.String()),
+			sglog.Bool("opts.EstimateDocCount", opts.EstimateDocCount),
+			sglog.Bool("opts.Whole", opts.Whole),
+			sglog.Int("opts.ShardMaxMatchCount", opts.ShardMaxMatchCount),
+			sglog.Int("opts.TotalMaxMatchCount", opts.TotalMaxMatchCount),
+			sglog.Int("opts.ShardMaxImportantMatch", opts.ShardMaxImportantMatch),
+			sglog.Int("opts.TotalMaxImportantMatch", opts.TotalMaxImportantMatch),
+			sglog.Duration("opts.MaxWallTime", opts.MaxWallTime),
+			sglog.Int("opts.MaxDocDisplayCount", opts.MaxDocDisplayCount),
+		)
 	if err != nil {
 		logger.Error("search failed", sglog.Error(err))
 		return
@@ -465,20 +466,25 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 	)
 }
 
-// traceID returns a trace ID, if any, found in the given context.
-func traceID(ctx context.Context) string {
+func traceContext(ctx context.Context) sglog.TraceContext {
 	otSpan := opentracing.SpanFromContext(ctx)
 	if otSpan != nil {
 		if jaegerSpan, ok := otSpan.Context().(jaeger.SpanContext); ok {
-			return jaegerSpan.TraceID().String()
+			return sglog.TraceContext{
+				TraceID: jaegerSpan.TraceID().String(),
+				SpanID:  jaegerSpan.SpanID().String(),
+			}
 		}
 	}
 
 	if otelSpan := oteltrace.SpanFromContext(ctx).SpanContext(); otelSpan.IsValid() {
-		return otelSpan.TraceID().String()
+		return sglog.TraceContext{
+			TraceID: otelSpan.TraceID().String(),
+			SpanID:  otelSpan.SpanID().String(),
+		}
 	}
 
-	return ""
+	return sglog.TraceContext{}
 }
 
 var (
