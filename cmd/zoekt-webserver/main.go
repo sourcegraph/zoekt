@@ -446,7 +446,7 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 		return
 	}
 
-	logger.Info("search",
+	logger.Debug("search",
 		sglog.Int64("stat.ContentBytesLoaded", st.ContentBytesLoaded),
 		sglog.Int64("stat.IndexBytesLoaded", st.IndexBytesLoaded),
 		sglog.Int("stat.Crashes", st.Crashes),
