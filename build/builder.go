@@ -38,11 +38,12 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar"
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/ctags"
 	"github.com/grafana/regexp"
 	"github.com/rs/xid"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/ctags"
 )
 
 var DefaultDir = filepath.Join(os.Getenv("HOME"), ".zoekt")
@@ -870,6 +871,10 @@ type rankedDoc struct {
 	rank []float64
 }
 
+// rank returns a vector of scores which is used at index-time to sort documents
+// before writing them to disk. The order of documents in the shard is important
+// at query time, because earlier documents receive a boost at query time and
+// have a higher chance of being searched before limits kick in.
 func rank(d *zoekt.Document, origIdx int) []float64 {
 	generated := 0.0
 	if strings.HasSuffix(d.Name, "min.js") || strings.HasSuffix(d.Name, "js.map") {
@@ -897,14 +902,14 @@ func rank(d *zoekt.Document, origIdx int) []float64 {
 		// Prefer docs that are not tests
 		test,
 
+		// With short names
+		squashRange(len(d.Name)),
+
 		// With many symbols
 		1.0 - squashRange(len(d.Symbols)),
 
 		// With short content
 		squashRange(len(d.Content)),
-
-		// With short names
-		squashRange(len(d.Name)),
 
 		// That is present is as many branches as possible
 		1.0 - squashRange(len(d.Branches)),
