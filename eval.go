@@ -343,9 +343,13 @@ nextFileMatch:
 		}
 
 		maxFileScore := 0.0
+		repetitions := 0
 		for i := range fileMatch.LineMatches {
 			if maxFileScore < fileMatch.LineMatches[i].Score {
 				maxFileScore = fileMatch.LineMatches[i].Score
+				repetitions = 0
+			} else if maxFileScore == fileMatch.LineMatches[i].Score {
+				repetitions += 1
 			}
 
 			// Order by ordering in file.
@@ -365,6 +369,10 @@ nextFileMatch:
 		// strictly dominates the in-file ordering of
 		// the matches.
 		fileMatch.addScore("fragment", maxFileScore, opts.DebugScore)
+
+		// Prefer docs with several top-scored matches.
+		fileMatch.addScore("repetition-boost", scoreRepetitionFactor*float64(repetitions), opts.DebugScore)
+
 		fileMatch.addScore("atom", float64(atomMatchCount)/float64(totalAtomCount)*scoreFactorAtomMatch, opts.DebugScore)
 
 		// Prefer earlier docs.
