@@ -844,6 +844,21 @@ public class HelloWorld
 			// 500 (word) + 400 (atom) + 10 (file order)
 			wantScore: 910,
 		},
+		{
+			fileName: "src/net/http/client.go",
+			content: []byte(`
+package http
+func Get() {
+	panic("")
+}
+`),
+			query: &query.And{Children: []query.Q{
+				&query.Symbol{Expr: &query.Substring{Pattern: "http", Content: true}},
+				&query.Symbol{Expr: &query.Substring{Pattern: "Get", Content: true}}}},
+			wantLanguage: "Go",
+			// 7000 (full base match) + 500 (word) + 400 (atom) + 10 (file order) + 1 (repetition-boost)
+			wantScore: 7911,
+		},
 	}
 
 	for _, c := range cases {
