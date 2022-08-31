@@ -568,35 +568,36 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 }
 
 func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl *RepoList, err error) {
-	var include func(rle *RepoListEntry) (bool, error)
+	var include func(rle *RepoListEntry) bool
 
 	q = d.simplify(q)
 	if c, ok := q.(*query.Const); ok {
 		if !c.Value {
 			return &RepoList{}, nil
 		}
-		include = func(rle *RepoListEntry) (bool, error) {
-			return true, nil
+		include = func(rle *RepoListEntry) bool {
+			return true
 		}
 	} else {
-		// We need to run a search per repo to decide if it is included.
-		include = func(rle *RepoListEntry) (bool, error) {
-			qOneRepo := query.NewAnd(
-				query.NewRepoSet(rle.Repository.Name),
-				q)
-			sr, err := d.Search(ctx, qOneRepo, &SearchOptions{
-				ShardMaxMatchCount: 1,
-				TotalMaxMatchCount: 1,
-			})
-			if err != nil {
-				return false, err
-			}
-			return len(sr.Files) > 0, nil
+		sr, err := d.Search(ctx, q, &SearchOptions{
+			ShardRepoMaxMatchCount: 1,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		foundRepos := make(map[uint32]struct{}, len(sr.Files))
+		for _, file := range sr.Files {
+			foundRepos[file.RepositoryID] = struct{}{}
+		}
+
+		include = func(rle *RepoListEntry) bool {
+			_, ok := foundRepos[rle.Repository.ID]
+			return ok
 		}
 	}
 
 	var l RepoList
-
 	minimal := opts != nil && opts.Minimal
 	if minimal {
 		l.Minimal = make(map[uint32]*MinimalRepoListEntry, len(d.repoListEntry))
@@ -609,12 +610,7 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 			continue
 		}
 		rle := &d.repoListEntry[i]
-		ok, err := include(rle)
-		if err != nil {
-			return nil, err
-		}
-
-		if !ok {
+		if !include(rle) {
 			continue
 		}
 
