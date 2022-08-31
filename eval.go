@@ -598,6 +598,7 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 	}
 
 	var l RepoList
+
 	minimal := opts != nil && opts.Minimal
 	if minimal {
 		l.Minimal = make(map[uint32]*MinimalRepoListEntry, len(d.repoListEntry))
