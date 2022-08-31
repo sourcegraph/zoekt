@@ -177,7 +177,10 @@ func main() {
 
 	mustRegisterDiskMonitor(*index)
 
-	searcher, err := shards.NewDirectorySearcher(*index)
+	// Do not block on loading shards so we can become partially available
+	// sooner. Otherwise on large instances zoekt can be unavailable on the
+	// order of minutes.
+	searcher, err := shards.NewDirectorySearcherFast(*index)
 	if err != nil {
 		log.Fatal(err)
 	}

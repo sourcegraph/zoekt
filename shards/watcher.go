@@ -40,6 +40,10 @@ type DirectoryWatcher struct {
 	timestamps map[string]time.Time
 	loader     shardLoader
 
+	// closed once ready
+	ready    chan struct{}
+	readyErr error
+
 	closeOnce sync.Once
 	// quit is closed by Close to signal the directory watcher to stop.
 	quit chan struct{}
@@ -59,18 +63,31 @@ func newDirectoryWatcher(dir string, loader shardLoader) (*DirectoryWatcher, err
 		dir:        dir,
 		timestamps: map[string]time.Time{},
 		loader:     loader,
+		ready:      make(chan struct{}),
 		quit:       make(chan struct{}),
 		stopped:    make(chan struct{}),
 	}
-	if err := sw.scan(); err != nil {
-		return nil, err
-	}
 
-	if err := sw.watch(); err != nil {
-		return nil, err
-	}
+	go func() {
+		defer close(sw.ready)
+
+		if err := sw.scan(); err != nil {
+			sw.readyErr = err
+			return
+		}
+
+		if err := sw.watch(); err != nil {
+			sw.readyErr = err
+			return
+		}
+	}()
 
 	return sw, nil
+}
+
+func (s *DirectoryWatcher) WaitUntilReady() error {
+	<-s.ready
+	return s.readyErr
 }
 
 func (s *DirectoryWatcher) String() string {
