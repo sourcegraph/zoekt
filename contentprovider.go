@@ -465,6 +465,7 @@ const (
 	scoreShardRankFactor    = 20.0
 	scoreFileOrderFactor    = 10.0
 	scoreLineOrderFactor    = 1.0
+	scoreRepetitionFactor   = 1.0
 )
 
 // findSection checks whether a section defined by offset and size lies within
