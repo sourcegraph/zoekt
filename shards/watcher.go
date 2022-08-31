@@ -54,7 +54,7 @@ func (sw *DirectoryWatcher) Stop() {
 	})
 }
 
-func NewDirectoryWatcher(dir string, loader shardLoader) (*DirectoryWatcher, error) {
+func newDirectoryWatcher(dir string, loader shardLoader) (*DirectoryWatcher, error) {
 	sw := &DirectoryWatcher{
 		dir:        dir,
 		timestamps: map[string]time.Time{},

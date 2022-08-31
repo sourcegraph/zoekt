@@ -30,12 +30,12 @@ import (
 
 	"golang.org/x/sync/semaphore"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/stream"
 	"github.com/sourcegraph/zoekt/trace"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var (
@@ -202,7 +202,7 @@ func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
 	tl := &loader{
 		ss: ss,
 	}
-	dw, err := NewDirectoryWatcher(dir, tl)
+	dw, err := newDirectoryWatcher(dir, tl) // blocks until all shards are loaded
 	if err != nil {
 		return nil, err
 	}
