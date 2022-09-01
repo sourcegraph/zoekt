@@ -586,13 +586,13 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 			return nil, err
 		}
 
-		foundRepos := make(map[uint32]struct{}, len(sr.Files))
+		foundRepos := make(map[string]struct{}, len(sr.Files))
 		for _, file := range sr.Files {
-			foundRepos[file.RepositoryID] = struct{}{}
+			foundRepos[file.Repository] = struct{}{}
 		}
 
 		include = func(rle *RepoListEntry) bool {
-			_, ok := foundRepos[rle.Repository.ID]
+			_, ok := foundRepos[rle.Repository.Name]
 			return ok
 		}
 	}
