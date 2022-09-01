@@ -403,7 +403,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 			},
 		},
 		{
-			name:     "should proceed with delta builds after disabling symbols",
+			name:     "should successfully perform multiple delta builds after disabling symbols",
 			branches: []string{"main"},
 			steps: []step{
 				{
@@ -428,7 +428,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					expectedDocuments:             []zoekt.Document{fruitV2},
 				},
 				{
-					name: "try another delta build after continuing to disable CTags",
+					name: "try another delta build while CTags is still disabled",
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{fruitV3},
 					},
