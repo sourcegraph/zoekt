@@ -403,6 +403,45 @@ func TestIndexDeltaBasic(t *testing.T) {
 			},
 		},
 		{
+			name:     "should proceed with delta builds after disabling symbols",
+			branches: []string{"main"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV1},
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV1},
+				},
+				{
+					name: "try delta build after updating Disable CTags index option",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV2},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+						o.BuildOptions.DisableCTags = true
+					},
+
+					expectedFallbackToNormalBuild: true,
+					expectedDocuments:             []zoekt.Document{fruitV2},
+				},
+				{
+					name: "try another delta build after continuing to disable CTags",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV3},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+						o.BuildOptions.DisableCTags = true
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV3},
+				},
+			},
+		},
+		{
 			name:     "should fallback to normal build if repository has unsupported Sourcegraph ignore file",
 			branches: []string{"main"},
 			steps: []step{
