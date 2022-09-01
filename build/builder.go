@@ -508,10 +508,6 @@ func NewBuilder(opts Options) (*Builder, error) {
 		finishedShards: map[string]string{},
 	}
 
-	if b.opts.DisableCTags {
-		b.opts.CTags = ""
-	}
-
 	if b.opts.CTags == "" && b.opts.CTagsMustSucceed {
 		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
 	}
@@ -945,7 +941,7 @@ func sortDocuments(todo []*zoekt.Document) {
 }
 
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
-	if b.opts.CTags != "" {
+	if !b.opts.DisableCTags && b.opts.CTags != "" {
 		err := ctagsAddSymbols(todo, b.parser, b.opts.CTags)
 		if b.opts.CTagsMustSucceed && err != nil {
 			return nil, err
