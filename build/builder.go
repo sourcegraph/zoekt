@@ -80,8 +80,9 @@ type Options struct {
 	// DisableCTags disables the generation of ctags metadata.
 	DisableCTags bool
 
-	// Path to exuberant ctags binary to run
-	CTags string
+	// CtagsPath is the path to the ctags binary to run, or empty
+	// if a valid binary couldn't be found.
+	CTagsPath string
 
 	// If set, ctags must succeed.
 	CTagsMustSucceed bool
@@ -109,7 +110,7 @@ type Options struct {
 type HashOptions struct {
 	sizeMax          int
 	disableCTags     bool
-	cTags            string
+	ctagsPath        string
 	cTagsMustSucceed bool
 	largeFiles       []string
 }
@@ -118,7 +119,7 @@ func (o *Options) HashOptions() HashOptions {
 	return HashOptions{
 		sizeMax:          o.SizeMax,
 		disableCTags:     o.DisableCTags,
-		cTags:            o.CTags,
+		ctagsPath:        o.CTagsPath,
 		cTagsMustSucceed: o.CTagsMustSucceed,
 		largeFiles:       o.LargeFiles,
 	}
@@ -128,7 +129,7 @@ func (o *Options) GetHash() string {
 	h := o.HashOptions()
 	hasher := sha1.New()
 
-	hasher.Write([]byte(h.cTags))
+	hasher.Write([]byte(h.ctagsPath))
 	hasher.Write([]byte(fmt.Sprintf("%t", h.cTagsMustSucceed)))
 	hasher.Write([]byte(fmt.Sprintf("%d", h.sizeMax)))
 	hasher.Write([]byte(fmt.Sprintf("%q", h.largeFiles)))
@@ -266,8 +267,8 @@ func checkCTags() string {
 
 // SetDefaults sets reasonable default options.
 func (o *Options) SetDefaults() {
-	if o.CTags == "" && !o.DisableCTags {
-		o.CTags = checkCTags()
+	if o.CTagsPath == "" && !o.DisableCTags {
+		o.CTagsPath = checkCTags()
 	}
 
 	if o.Parallelism == 0 {
@@ -508,12 +509,12 @@ func NewBuilder(opts Options) (*Builder, error) {
 		finishedShards: map[string]string{},
 	}
 
-	if b.opts.CTags == "" && b.opts.CTagsMustSucceed {
+	if b.opts.CTagsPath == "" && b.opts.CTagsMustSucceed {
 		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
 	}
 
-	if strings.Contains(opts.CTags, "universal-ctags") {
-		parser, err := ctags.NewParser(opts.CTags)
+	if strings.Contains(opts.CTagsPath, "universal-ctags") {
+		parser, err := ctags.NewParser(opts.CTagsPath)
 		if err != nil && opts.CTagsMustSucceed {
 			return nil, fmt.Errorf("ctags.NewParser: %v", err)
 		}
@@ -941,13 +942,13 @@ func sortDocuments(todo []*zoekt.Document) {
 }
 
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
-	if !b.opts.DisableCTags && b.opts.CTags != "" {
-		err := ctagsAddSymbols(todo, b.parser, b.opts.CTags)
+	if !b.opts.DisableCTags && b.opts.CTagsPath != "" {
+		err := ctagsAddSymbols(todo, b.parser, b.opts.CTagsPath)
 		if b.opts.CTagsMustSucceed && err != nil {
 			return nil, err
 		}
 		if err != nil {
-			log.Printf("ignoring %s error: %v", b.opts.CTags, err)
+			log.Printf("ignoring %s error: %v", b.opts.CTagsPath, err)
 		}
 	}
 
@@ -969,7 +970,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 
 func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	desc := b.opts.RepositoryDescription
-	desc.HasSymbols = !b.opts.DisableCTags && b.opts.CTags != ""
+	desc.HasSymbols = !b.opts.DisableCTags && b.opts.CTagsPath != ""
 	desc.SubRepoMap = b.opts.SubRepositories
 	desc.IndexOptions = b.opts.GetHash()
 

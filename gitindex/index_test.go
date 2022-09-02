@@ -375,7 +375,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					expectedDocuments: []zoekt.Document{fruitV1},
 				},
 				{
-					name: "try delta build after updating Disable CTags index option",
+					name: "try delta build after updating Disable CTagsPath index option",
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{fruitV2},
 					},
@@ -388,7 +388,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					expectedDocuments:             []zoekt.Document{fruitV2},
 				},
 				{
-					name: "try delta build after reverting Disable CTags index option",
+					name: "try delta build after reverting Disable CTagsPath index option",
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{fruitV3},
 					},
@@ -415,7 +415,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					expectedDocuments: []zoekt.Document{fruitV1},
 				},
 				{
-					name: "try delta build after updating Disable CTags index option",
+					name: "try delta build after updating Disable CTagsPath index option",
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{fruitV2},
 					},
@@ -428,7 +428,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					expectedDocuments:             []zoekt.Document{fruitV2},
 				},
 				{
-					name: "try another delta build while CTags is still disabled",
+					name: "try another delta build while CTagsPath is still disabled",
 					addedDocuments: branchToDocumentMap{
 						"main": []zoekt.Document{fruitV3},
 					},
