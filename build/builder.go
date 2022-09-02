@@ -266,7 +266,7 @@ func checkCTags() string {
 
 // SetDefaults sets reasonable default options.
 func (o *Options) SetDefaults() {
-	if o.CTags == "" {
+	if o.CTags == "" && !o.DisableCTags {
 		o.CTags = checkCTags()
 	}
 
@@ -969,7 +969,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 
 func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	desc := b.opts.RepositoryDescription
-	desc.HasSymbols = b.opts.CTags != ""
+	desc.HasSymbols = !b.opts.DisableCTags && b.opts.CTags != ""
 	desc.SubRepoMap = b.opts.SubRepositories
 	desc.IndexOptions = b.opts.GetHash()
 

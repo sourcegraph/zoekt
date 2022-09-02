@@ -49,6 +49,7 @@ require (
 require (
 	cloud.google.com/go v0.101.0 // indirect
 	cloud.google.com/go/compute v1.6.1 // indirect
+	github.com/AdaLogics/go-fuzz-headers v0.0.0-20220824214621-3c06a36a6952 // indirect
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20220407094043-a94812496cf5 // indirect
@@ -60,6 +61,7 @@ require (
 	github.com/cockroachdb/errors v1.9.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f // indirect
 	github.com/cockroachdb/redact v1.1.3 // indirect
+	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/getsentry/sentry-go v0.13.0 // indirect
