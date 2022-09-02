@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	fuzz "github.com/AdaLogics/go-fuzz-headers"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/sourcegraph/zoekt"
@@ -516,83 +515,6 @@ func TestBuilder_DeltaShardsBuildsShouldErrorOnIndexOptionsMismatch(t *testing.T
 			}
 		})
 	}
-}
-
-func FuzzBuilderDoesntMutateHashOptions(f *testing.F) {
-	//for _, seed := range []Options{
-	//	{
-	//		DisableCTags:     true,
-	//		CTagsMustSucceed: false,
-	//		IsDelta:          true,
-	//	},
-	//	{
-	//		DisableCTags:     false,
-	//		CTagsMustSucceed: true,
-	//		IsDelta:          true,
-	//	},
-	//} {
-	//	seed.SetDefaults()
-	//	f.Add(seed)
-	//}
-
-	absInt := func(i int) int {
-		if i < 0 {
-			return -i
-		}
-
-		return i
-	}
-	f.Fuzz(func(t *testing.T, data []byte) {
-
-		fuzzer := fuzz.NewConsumer(data)
-		options := Options{}
-		err := fuzzer.GenerateStruct(&options)
-		if err != nil {
-			t.Skip()
-		}
-
-		// first, massage invalid values
-		options.SizeMax = absInt(options.SizeMax)
-		options.Parallelism = absInt(options.Parallelism)
-		options.ShardMax = absInt(options.ShardMax)
-		options.TrigramMax = absInt(options.TrigramMax)
-
-		options.IndexDir = t.TempDir()
-
-		options.SetDefaults()
-
-		originalHash := options.GetHash()
-
-		b, err := NewBuilder(options)
-		if err != nil {
-			t.Skip()
-		}
-
-		err = b.AddFile("a", []byte("a"))
-		if err != nil {
-			t.Skip()
-		}
-
-		err = b.Finish()
-		if err != nil {
-			t.Skip()
-		}
-
-		shards := options.FindAllShards()
-
-		for _, s := range shards {
-			repos, _, err := zoekt.ReadMetadataPathAlive(s)
-			if err != nil {
-				t.Skip()
-			}
-
-			for _, r := range repos {
-				if originalHash != r.IndexOptions {
-					t.Errorf("whatever lol")
-				}
-			}
-		}
-	})
 }
 
 func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
