@@ -120,7 +120,7 @@ func TestFlags(t *testing.T) {
 
 	ignored := []cmp.Option{
 		// depends on $PATH setting.
-		cmpopts.IgnoreFields(Options{}, "CTags"),
+		cmpopts.IgnoreFields(Options{}, "CTagsPath"),
 		cmpopts.IgnoreFields(Options{}, "changedOrRemovedFiles"),
 		cmpopts.IgnoreFields(zoekt.Repository{}, "priority"),
 	}
@@ -128,7 +128,7 @@ func TestFlags(t *testing.T) {
 	for _, c := range cases {
 		c.want.SetDefaults()
 		// depends on $PATH setting.
-		c.want.CTags = ""
+		c.want.CTagsPath = ""
 
 		got := Options{}
 		fs := flag.NewFlagSet("", flag.ContinueOnError)
@@ -468,8 +468,8 @@ func TestBuilder_DeltaShardsBuildsShouldErrorOnIndexOptionsMismatch(t *testing.T
 		options func(options *Options)
 	}{
 		{
-			name:    "update option CTags to non default",
-			options: func(options *Options) { options.CTags = "ctags_updated_test" },
+			name:    "update option CTagsPath to non default",
+			options: func(options *Options) { options.CTagsPath = "ctags_updated_test" },
 		},
 		{
 			name:    "update option DisableCTags to non default",
