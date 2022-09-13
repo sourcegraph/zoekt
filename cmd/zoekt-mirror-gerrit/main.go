@@ -203,7 +203,7 @@ func deleteStaleRepos(destDir string, filter *gitindex.Filter, repos map[string]
 	}
 
 	names := map[string]struct{}{}
-	for name, _ := range repos {
+	for name := range repos {
 		u, err := url.Parse(strings.Replace(projectURL, "${project}", name, 1))
 		if err != nil {
 			return err

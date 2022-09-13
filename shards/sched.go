@@ -28,14 +28,14 @@ type scheduler interface {
 // scheduler. It is a comma-separated list of name=val pairs setting these
 // named variables:
 //
-//   disable: setting disable=1 will use the old zoekt scheduler.
+//	disable: setting disable=1 will use the old zoekt scheduler.
 //
-//   batchdiv: settings batchDiv=X will make the batch queue size 1/X of the
-//   interactive queue size. By default it is 4.
+//	batchdiv: settings batchDiv=X will make the batch queue size 1/X of the
+//	interactive queue size. By default it is 4.
 //
-//   interactiveseconds: settings interactiveseconds=X will allow search
-//   queries to run in the larger interactive queue for Xs before moving them
-//   to the batch queue.
+//	interactiveseconds: settings interactiveseconds=X will allow search
+//	queries to run in the larger interactive queue for Xs before moving them
+//	to the batch queue.
 //
 // Note: these tuneables should be regarded as temporary while we experiment
 // with our scheduler in production. They should not be relied upon in
@@ -58,15 +58,14 @@ func newScheduler(capacity int64) scheduler {
 
 // multiScheduler is for managing concurrent searches. Its goals are:
 //
-//   1. Limit the number of concurrent searches.
-//   2. Co-operatively limit long running searches.
-//   3. No tuneables.
+//  1. Limit the number of concurrent searches.
+//  2. Co-operatively limit long running searches.
+//  3. No tuneables.
 //
 // ### Limit the number of concurrent searches
 //
 // Searching is CPU bound, so we can't do better than #CPU queries
 // concurrently. If we do so, we just create more memory pressure.
-//
 //
 // ### Co-operatively limit long running searches
 //
@@ -311,11 +310,11 @@ func parseTuneables(v string) map[string]int {
 // We use a gauge and counter to track the number of processes in each
 // state. They can be one of the following states:
 //
-//   1. global queued
-//   2. interactive queued
-//   3. interactive running
-//   4. batch queued
-//   5. batch running
+//  1. global queued
+//  2. interactive queued
+//  3. interactive running
+//  4. batch queued
+//  5. batch running
 //
 // From each state you either transition to the next state or the process
 // ends.

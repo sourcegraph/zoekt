@@ -32,9 +32,9 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/sourcegraph/zoekt"
+	zjson "github.com/sourcegraph/zoekt/json"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/rpc"
-	zjson "github.com/sourcegraph/zoekt/json"
 	"github.com/sourcegraph/zoekt/stream"
 )
 

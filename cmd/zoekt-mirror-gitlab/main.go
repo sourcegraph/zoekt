@@ -18,9 +18,9 @@
 // In addition, the token should be present in the ~/.netrc of the user running
 // the mirror command. For example, the ~/.netrc may look like:
 //
-//   machine gitlab.com
-//   login oauth
-//   password <personal access token>
+//	machine gitlab.com
+//	login oauth
+//	password <personal access token>
 package main
 
 import (

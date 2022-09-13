@@ -63,7 +63,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 
 	// tombstones: Remove tombstones that conflict with index or trash. After this,
 	// tombstones only contain repos that are neither in the trash nor in the index.
-	for repo, _ := range tombtones {
+	for repo := range tombtones {
 		if _, conflicts := index[repo]; conflicts {
 			delete(tombtones, repo)
 		}

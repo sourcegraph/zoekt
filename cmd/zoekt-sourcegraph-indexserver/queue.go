@@ -41,7 +41,7 @@ type queueItem struct {
 // Queue is a priority queue which returns the next repo to index. It is safe
 // to use concurrently. It is a min queue on:
 //
-//    (!indexed, time added to the queue)
+//	(!indexed, time added to the queue)
 //
 // We use the above since:
 //

@@ -319,20 +319,29 @@ func TestGetTombstonedRepos(t *testing.T) {
 // ----
 // index/
 // CS 1
-// 		r1, tombstoned, old
-//		r2, tombstoned, old
-//		r3, tombstoned, old
+//
+//	r1, tombstoned, old
+//	r2, tombstoned, old
+//	r3, tombstoned, old
+//
 // CS 2
-// 		r1, tombstoned, recent
-//		r2, tombstoned, recent
-//		r4, tombstoned, recent
+//
+//	r1, tombstoned, recent
+//	r2, tombstoned, recent
+//	r4, tombstoned, recent
+//
 // SS 1
-//		r1, now
+//
+//	r1, now
+//
 // .trash/
 // SS 3
-//		r3, now
+//
+//	r3, now
+//
 // SS 5
-//		r5, now
+//
+//	r5, now
 //
 // TO BE INDEXED
 // -------------
@@ -342,21 +351,30 @@ func TestGetTombstonedRepos(t *testing.T) {
 // ----
 // index/
 // CS 1
-// 		r1, tombstoned, old
-//		r2, tombstoned, old
-//		r3, tombstoned, old
-// CS 2
-// 		r1, tombstoned, recent
-//		r2, recent
-//		r4, recent
-// SS 1
-//		r1, now
-// SS 3
-//		r3, now
-// SS 5
-//		r5, now
-// .trash/ --> empty
 //
+//	r1, tombstoned, old
+//	r2, tombstoned, old
+//	r3, tombstoned, old
+//
+// CS 2
+//
+//	r1, tombstoned, recent
+//	r2, recent
+//	r4, recent
+//
+// SS 1
+//
+//	r1, now
+//
+// SS 3
+//
+//	r3, now
+//
+// SS 5
+//
+//	r5, now
+//
+// .trash/ --> empty
 func TestCleanupCompoundShards(t *testing.T) {
 	dir := t.TempDir()
 
@@ -402,27 +420,27 @@ func TestCleanupCompoundShards(t *testing.T) {
 	}
 
 	wantIndex := map[uint32][]shard{
-		1: []shard{{
+		1: {{
 			RepoID:   1,
 			RepoName: "repo1",
 			Path:     filepath.Join(dir, "repo1.zoekt"),
 		}},
-		2: []shard{{
+		2: {{
 			RepoID:   2,
 			RepoName: "repo2",
 			Path:     cs2,
 		}},
-		3: []shard{{
+		3: {{
 			RepoID:   3,
 			RepoName: "repo3",
 			Path:     filepath.Join(dir, "repo3.zoekt"),
 		}},
-		4: []shard{{
+		4: {{
 			RepoID:   4,
 			RepoName: "repo4",
 			Path:     cs2,
 		}},
-		5: []shard{{
+		5: {{
 			RepoID:   5,
 			RepoName: "repo5",
 			Path:     filepath.Join(dir, "repo5.zoekt"),
@@ -484,17 +502,17 @@ func TestTombstoneDuplicateShards(t *testing.T) {
 	}
 
 	wantIndex := map[uint32][]shard{
-		1: []shard{{
+		1: {{
 			RepoID:   1,
 			RepoName: "repo1",
 			Path:     cs2,
 		}},
-		2: []shard{{
+		2: {{
 			RepoID:   2,
 			RepoName: "repo2",
 			Path:     cs2,
 		}},
-		3: []shard{{
+		3: {{
 			RepoID:   3,
 			RepoName: "repo3",
 			Path:     cs1,

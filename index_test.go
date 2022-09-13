@@ -26,9 +26,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/sourcegraph/zoekt/query"
 	"github.com/grafana/regexp"
 	"github.com/kylelemons/godebug/pretty"
+	"github.com/sourcegraph/zoekt/query"
 )
 
 func clearScores(r *SearchResult) {
@@ -2863,13 +2863,13 @@ func TestSymbolRegexpPartial(t *testing.T) {
 
 func TestSymbolRegexpAll(t *testing.T) {
 	docs := []Document{
-		Document{
+		{
 			Name:    "f1",
 			Content: []byte("Hello Zoekt"),
 			// --------------01234567890
 			Symbols: []DocumentSection{{0, 5}, {6, 11}},
 		},
-		Document{
+		{
 			Name:    "f2",
 			Content: []byte("Second Zoekt Third"),
 			// --------------012345678901234567
@@ -3434,7 +3434,7 @@ func TestStats(t *testing.T) {
 		b := testIndexBuilder(t, nil)
 		got := repoListEntries(b)
 		want := []RepoListEntry{
-			RepoListEntry{
+			{
 				Stats: RepoStats{
 					Repos:                      0,
 					Shards:                     1,
@@ -3461,7 +3461,7 @@ func TestStats(t *testing.T) {
 		)
 		got := repoListEntries(b)
 		want := []RepoListEntry{
-			RepoListEntry{
+			{
 				Stats: RepoStats{
 					Repos:                      0,
 					Shards:                     1,
@@ -3484,23 +3484,23 @@ func TestStats(t *testing.T) {
 	t.Run("one compound shard", func(t *testing.T) {
 		b := testIndexBuilderCompound(t,
 			[]*Repository{
-				&Repository{Name: "repo 0"},
-				&Repository{Name: "repo 1"},
+				{Name: "repo 0"},
+				{Name: "repo 1"},
 			},
 			[][]Document{
-				[]Document{
-					Document{Name: "doc 0", Content: []byte("content 0")},
-					Document{Name: "doc 1", Content: []byte("content 1")},
+				{
+					{Name: "doc 0", Content: []byte("content 0")},
+					{Name: "doc 1", Content: []byte("content 1")},
 				},
-				[]Document{
-					Document{Name: "doc 2", Content: []byte("content 2")},
-					Document{Name: "doc 3", Content: []byte("content 3")},
+				{
+					{Name: "doc 2", Content: []byte("content 2")},
+					{Name: "doc 3", Content: []byte("content 3")},
 				},
 			},
 		)
 		got := repoListEntries(b)
 		want := []RepoListEntry{
-			RepoListEntry{
+			{
 				Stats: RepoStats{
 					Repos:                      0,
 					Shards:                     1,
@@ -3512,7 +3512,7 @@ func TestStats(t *testing.T) {
 					OtherBranchesNewLinesCount: 0,
 				},
 			},
-			RepoListEntry{
+			{
 				Stats: RepoStats{
 					Repos:                      0,
 					Shards:                     1,
@@ -3534,16 +3534,16 @@ func TestStats(t *testing.T) {
 	t.Run("compound shard with empty repos", func(t *testing.T) {
 		b := testIndexBuilderCompound(t,
 			[]*Repository{
-				&Repository{Name: "repo 0"},
-				&Repository{Name: "repo 1"},
-				&Repository{Name: "repo 2"},
-				&Repository{Name: "repo 3"},
-				&Repository{Name: "repo 4"},
+				{Name: "repo 0"},
+				{Name: "repo 1"},
+				{Name: "repo 2"},
+				{Name: "repo 3"},
+				{Name: "repo 4"},
 			},
 			[][]Document{
-				[]Document{Document{Name: "doc 0", Content: []byte("content 0")}},
+				{{Name: "doc 0", Content: []byte("content 0")}},
 				nil,
-				[]Document{Document{Name: "doc 1", Content: []byte("content 1")}},
+				{{Name: "doc 1", Content: []byte("content 1")}},
 				nil,
 				nil,
 			},

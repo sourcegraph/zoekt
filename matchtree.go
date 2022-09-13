@@ -20,8 +20,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/sourcegraph/zoekt/query"
 	"github.com/grafana/regexp"
+	"github.com/sourcegraph/zoekt/query"
 )
 
 // A docIterator iterates over documents in order.
@@ -58,7 +58,7 @@ const (
 // matches). The matchtree iterates over the documents as they are
 // ordered in the shard.
 //
-// The general process for a given (shard, query) is
+// The general process for a given (shard, query) is:
 //
 // - construct matchTree for the query
 //
@@ -74,7 +74,6 @@ const (
 //
 //   - if the complete tree returns (matches() == true) for the document,
 //     collect all text matches by looking at leaf matchTrees
-//
 type matchTree interface {
 	docIterator
 
