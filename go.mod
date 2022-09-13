@@ -2,7 +2,7 @@ module github.com/sourcegraph/zoekt
 
 require (
 	cloud.google.com/go/profiler v0.2.0
-	github.com/RoaringBitmap/roaring v0.9.4
+	github.com/RoaringBitmap/roaring v1.2.1
 	github.com/andygrunwald/go-gerrit v0.0.0-20220427111355-d3e91fbf2db5
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/fsnotify/fsnotify v1.5.4
@@ -10,7 +10,7 @@ require (
 	github.com/go-enry/go-enry/v2 v2.8.2
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/gobwas/glob v0.2.3
-	github.com/google/go-cmp v0.5.8
+	github.com/google/go-cmp v0.5.9
 	github.com/google/go-github/v27 v27.0.6
 	github.com/google/slothfs v0.0.0-20190717100203-59c1163fd173
 	github.com/grafana/regexp v0.0.0-20220304100321-149c8afcd6cb
@@ -54,7 +54,7 @@ require (
 	github.com/ProtonMail/go-crypto v0.0.0-20220407094043-a94812496cf5 // indirect
 	github.com/acomagu/bufpipe v1.0.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.2.2 // indirect
+	github.com/bits-and-blooms/bitset v1.3.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/cockroachdb/errors v1.9.0 // indirect
