@@ -800,6 +800,11 @@ func TestScoring(t *testing.T) {
 		},
 	}
 
+	exampleJava, err := os.ReadFile("./test_data/example.java")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	cases := []struct {
 		fileName     string
 		content      []byte
@@ -808,20 +813,52 @@ func TestScoring(t *testing.T) {
 		wantScore    float64
 	}{
 		{
-			fileName: "hw.java",
-			content: []byte(`
-public class HelloWorld
-{
-       public static void main (String[] args)
-       {
-             System.out.println("Hello World!");
-       }
-}
-`),
-			query:        &query.Substring{Content: true, Pattern: "lloWorld"},
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "nnerClass"},
 			wantLanguage: "Java",
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 50 (partial word) + 400 (atom) + 10 (file order)
 			wantScore: 6960,
+		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "innerEnum"},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 900 (Java enum) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8810,
+		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "innerInterface"},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 800 (Java interface) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8710,
+		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "innerMethod"},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 700 (Java method) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8610,
+		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "field"},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 600 (Java field) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8510,
+		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "B"},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 500 (Java enum constant) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8410,
 		},
 		{
 			fileName:     "a/b/c/config.go",
