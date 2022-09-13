@@ -210,7 +210,7 @@ func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) er
 // "start and "end" into "symOffsets". It returns -1 if the new section overlaps
 // with one of the existing ones.
 func overlaps(symOffsets []zoekt.DocumentSection, start, end uint32) int {
-	var i = 0
+	i := 0
 	for i = len(symOffsets) - 1; i >= 0; i-- {
 		// The most common case is that we exit here, because symOffsets is sorted by
 		// construction and start is in many cases monotonically increasing.

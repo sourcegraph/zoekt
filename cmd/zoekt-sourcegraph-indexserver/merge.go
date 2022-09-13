@@ -62,7 +62,7 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 
 	// Guard against the user triggering competing merge jobs with the debug
 	// command.
-	if !mergeRunning.CAS(false, true) {
+	if !mergeRunning.CompareAndSwap(false, true) {
 		log.Printf("merge already running")
 		return
 	}

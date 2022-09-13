@@ -144,7 +144,7 @@ func main() {
 		}
 
 		for k, v := range *page {
-			if *active == false || "ACTIVE" == v.State {
+			if !*active || "ACTIVE" == v.State {
 				projects[k] = v
 			}
 			skip = skip + 1

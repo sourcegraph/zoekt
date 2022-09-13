@@ -1055,18 +1055,6 @@ func loadShard(fn string) (zoekt.Searcher, error) {
 	return s, nil
 }
 
-func strSliceEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // prioritySlice is a trivial implementation of an array that provides three
 // things: appending a value, removing a value, and getting the array's max.
 // Operations take O(n) time, which is acceptable because N is restricted to

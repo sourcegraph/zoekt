@@ -579,7 +579,6 @@ func TestDeltaShards(t *testing.T) {
 	type step struct {
 		name      string
 		documents []zoekt.Document
-		branches  []zoekt.RepositoryBranch
 		optFn     func(t *testing.T, o *Options)
 
 		query             string

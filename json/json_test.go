@@ -3,7 +3,7 @@ package json_test
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -50,7 +50,7 @@ func TestClientServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	if r.StatusCode != 200 {
-		body, _ := ioutil.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
 		t.Fatalf("Got status code %d, err %s", r.StatusCode, string(body))
 	}
 
@@ -72,12 +72,15 @@ func TestClientServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	if r.StatusCode != 200 {
-		body, _ := ioutil.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
 		t.Fatalf("Got status code %d, err %s", r.StatusCode, string(body))
 	}
 
 	var listResult struct{ List *zoekt.RepoList }
 	err = json.NewDecoder(r.Body).Decode(&listResult)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(listResult.List, mock.RepoList) {
 		t.Fatalf("got %+v, want %+v", listResult, mock.RepoList)
 	}
