@@ -460,7 +460,7 @@ const (
 	scoreImportantThreshold = 2000.0
 	scoreSymbol             = 7000.0
 	scorePartialSymbol      = 4000.0
-	scoreKindMatch          = 1000.0
+	scoreKindMatch          = 100.0
 	scoreFactorAtomMatch    = 400.0
 	scoreShardRankFactor    = 20.0
 	scoreFileOrderFactor    = 10.0
@@ -641,19 +641,33 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 // scoreKind boosts a match based on the combination of language and kind. The
 // language string comes from go-enry, the kind string from ctags.
 func scoreKind(language string, kind string) float64 {
-	// Refer to universal-ctags --list-kinds=<language> to learn about the mappings
-	// for a language.
+	// Refer to universal-ctags --list-kinds-full=<language> to learn about which
+	// kinds are detected for which language.
+	//
+	// Note that go-ctags uses universal-ctags's interactive mode and thus returns
+	// the full name for "kind" and not the one-letter abbreviation.
+	var factor float64
 	switch language {
 	case "Java":
 		switch kind {
 		// 2022-03-30: go-ctags contains a regex rule for Java classes that sets "kind"
 		// to "classes" instead of "c". We have to cover both cases to support existing
 		// indexes.
-		case "c", "classes":
-			return scoreKindMatch
+		case "class", "classes":
+			factor = 10
+		case "enum":
+			factor = 9
+		case "interface":
+			factor = 8
+		case "method":
+			factor = 7
+		case "field":
+			factor = 6
+		case "enumConstant":
+			factor = 5
 		}
 	}
-	return 0
+	return factor * scoreKindMatch
 }
 
 type matchScoreSlice []LineMatch
