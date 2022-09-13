@@ -641,8 +641,11 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 // scoreKind boosts a match based on the combination of language and kind. The
 // language string comes from go-enry, the kind string from ctags.
 func scoreKind(language string, kind string) float64 {
-	// Refer to universal-ctags --list-kinds=<language> to learn about the mappings
-	// for a language.
+	// Refer to universal-ctags --list-kinds-full=<language> to learn about which
+	// kinds are detected for which language.
+	//
+	// Note that go-ctags uses universal-ctags's interactive mode and thus returns
+	// the full name for "kind" and not the one-letter abbreviation.
 	var factor float64
 	switch language {
 	case "Java":
