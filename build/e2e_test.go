@@ -799,12 +799,12 @@ func TestScoring(t *testing.T) {
 		},
 	}
 
-	exampleJava, err := os.ReadFile("./test_data/example.java")
+	exampleJava, err := os.ReadFile("./testdata/example.java")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	exampleKotlin, err := os.ReadFile("./test_data/example.kt")
+	exampleKotlin, err := os.ReadFile("./testdata/example.kt")
 	if err != nil {
 		t.Fatal(err)
 	}
