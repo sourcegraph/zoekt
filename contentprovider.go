@@ -666,6 +666,21 @@ func scoreKind(language string, kind string) float64 {
 		case "enumConstant":
 			factor = 5
 		}
+	case "Kotlin":
+		switch kind {
+		case "class":
+			factor = 10
+		case "interface":
+			factor = 9
+		case "method":
+			factor = 8
+		case "typealias":
+			factor = 7
+		case "constant":
+			factor = 6
+		case "variable":
+			factor = 5
+		}
 	}
 	return factor * scoreKindMatch
 }
