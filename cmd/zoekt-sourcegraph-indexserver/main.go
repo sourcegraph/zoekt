@@ -32,6 +32,7 @@ import (
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	sglog "github.com/sourcegraph/log"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
@@ -131,6 +132,8 @@ const (
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
 // exists to conveniently use all the options passed in via func main.
 type Server struct {
+	logger sglog.Logger
+
 	Sourcegraph Sourcegraph
 	BatchSize   int
 
@@ -211,6 +214,8 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 		}
 	}()
 
+	s.logger.Debug("logged run", sglog.Strings("args", cmd.Args))
+
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -255,7 +260,6 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 			}
 
 			tr.LazyPrintf("success")
-			debug.Printf("ran successfully %s", cmd.Args)
 			return nil
 		}
 	}
@@ -1149,6 +1153,7 @@ func newServer(conf rootConfig) (*Server, error) {
 	}
 
 	return &Server{
+		logger:                            sglog.Scoped("server", ""),
 		Sourcegraph:                       sg,
 		IndexDir:                          conf.index,
 		IndexConcurrency:                  int(conf.indexConcurrency),
@@ -1166,6 +1171,13 @@ func newServer(conf rootConfig) (*Server, error) {
 }
 
 func main() {
+	liblog := sglog.Init(sglog.Resource{
+		Name:       "zoekt-indexserver",
+		Version:    zoekt.Version,
+		InstanceID: hostnameBestEffort(),
+	})
+	defer liblog.Sync()
+
 	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
