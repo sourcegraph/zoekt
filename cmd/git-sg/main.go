@@ -15,7 +15,7 @@ import (
 	"github.com/sourcegraph/zoekt/ignore"
 )
 
-func do() error {
+func do(w io.Writer) error {
 	gitdir, err := getGitDir()
 	if err != nil {
 		return err
@@ -45,7 +45,7 @@ func do() error {
 		return err
 	}
 
-	return archiveWrite(io.Discard, r, root, &archiveOpts{
+	return archiveWrite(w, r, root, &archiveOpts{
 		Ignore: getIgnoreFilter(r, root),
 		SkipContent: func(hdr *tar.Header) string {
 			if hdr.Size > 2<<20 {
@@ -80,10 +80,17 @@ func archiveWriteTree(w *tar.Writer, repo *git.Repository, tree *object.Tree, pa
 	buf := make([]byte, 32*1024)
 
 	for _, e := range tree.Entries {
-		p := path + "/" + e.Name
+		var p string
+		if e.Mode == filemode.Dir {
+			p = path + e.Name + "/"
+		} else {
+			p = path + e.Name
+		}
+
 		if opts.Ignore(p) {
 			continue
 		}
+
 		switch e.Mode {
 		case filemode.Dir:
 			child, err := repo.TreeObject(e.Hash)
@@ -91,7 +98,18 @@ func archiveWriteTree(w *tar.Writer, repo *git.Repository, tree *object.Tree, pa
 				log.Printf("failed to fetch tree object for %s %v: %v", p, e.Hash, err)
 				continue
 			}
-			archiveWriteTree(w, repo, child, p, opts)
+
+			if err := w.WriteHeader(&tar.Header{
+				Typeflag: tar.TypeDir,
+				Name:     p,
+				Format: tar.FormatPAX, // TODO ?
+			}); err != nil {
+				return err
+			}
+
+			if err := archiveWriteTree(w, repo, child, p, opts); err != nil {
+				return err
+			}
 
 		case filemode.Deprecated, filemode.Executable, filemode.Regular, filemode.Symlink:
 			blob, err := repo.BlobObject(e.Hash)
@@ -110,7 +128,7 @@ func archiveWriteTree(w *tar.Writer, repo *git.Repository, tree *object.Tree, pa
 			}
 
 			skip := func(reason string) error {
-				hdr.PAXRecords = map[string]string{"SOURCEGRAPH.skipped": reason}
+				hdr.PAXRecords = map[string]string{"SG.skip": reason}
 				hdr.Size = 0
 				return w.WriteHeader(hdr)
 			}
@@ -138,6 +156,9 @@ func archiveWriteTree(w *tar.Writer, repo *git.Repository, tree *object.Tree, pa
 				blobSample = blobSample[:n]
 			}
 
+			// TODO instead of just binary, should we only allow utf8? utf.Valid
+			// works except for the fact we may be invalid utf8 at the 256 boundary
+			// since we cut it off. So will need to copypasta that.
 			if bytes.IndexByte(blobSample, 0x00) >= 0 {
 				_ = r.Close()
 				if err := skip("binary"); err != nil {
@@ -241,7 +262,7 @@ func getGitDir() (string, error) {
 }
 
 func main() {
-	err := do()
+	err := do(os.Stdout)
 	if err != nil {
 		log.Fatal(err)
 	}
