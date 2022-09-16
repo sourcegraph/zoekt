@@ -116,6 +116,7 @@ func (a *archiveWriter) writeTree(tree *object.Tree, path string) error {
 			if err := a.w.WriteHeader(&tar.Header{
 				Typeflag: tar.TypeDir,
 				Name:     p,
+				Mode:     0777,
 				Format:   tar.FormatPAX, // TODO ?
 			}); err != nil {
 				return err
@@ -154,6 +155,7 @@ func (a *archiveWriter) writeRegularTreeEntry(entry object.TreeEntry, path strin
 		Typeflag: tar.TypeReg,
 		Name:     path,
 		Size:     blob.Size,
+		Mode:     0666,
 
 		Format: tar.FormatPAX, // TODO ?
 	}
