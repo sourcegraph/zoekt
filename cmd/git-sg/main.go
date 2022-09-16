@@ -66,19 +66,33 @@ type archiveOpts struct {
 }
 
 func archiveWrite(w io.Writer, repo *git.Repository, tree *object.Tree, opts *archiveOpts) error {
-	tw := tar.NewWriter(w)
-	err := archiveWriteTree(tw, repo, tree, "", opts)
+	a := &archiveWriter{
+		w:    tar.NewWriter(w),
+		repo: repo,
+		opts: opts,
+
+		// 32*1024 is the same size used by io.Copy
+		buf: make([]byte, 32*1024),
+	}
+
+	err := a.writeTree(tree, "")
 	if err != nil {
+		_ = a.w.Close()
 		return err
 	}
-	return tw.Close()
+
+	return a.w.Close()
 }
 
-func archiveWriteTree(w *tar.Writer, repo *git.Repository, tree *object.Tree, path string, opts *archiveOpts) error {
-	// TODO share
-	// 32*1024 is the same size used by io.Copy
-	buf := make([]byte, 32*1024)
+type archiveWriter struct {
+	w    *tar.Writer
+	repo *git.Repository
+	opts *archiveOpts
 
+	buf []byte
+}
+
+func (a *archiveWriter) writeTree(tree *object.Tree, path string) error {
 	for _, e := range tree.Entries {
 		var p string
 		if e.Mode == filemode.Dir {
@@ -87,104 +101,32 @@ func archiveWriteTree(w *tar.Writer, repo *git.Repository, tree *object.Tree, pa
 			p = path + e.Name
 		}
 
-		if opts.Ignore(p) {
+		if a.opts.Ignore(p) {
 			continue
 		}
 
 		switch e.Mode {
 		case filemode.Dir:
-			child, err := repo.TreeObject(e.Hash)
+			child, err := a.repo.TreeObject(e.Hash)
 			if err != nil {
 				log.Printf("failed to fetch tree object for %s %v: %v", p, e.Hash, err)
 				continue
 			}
 
-			if err := w.WriteHeader(&tar.Header{
+			if err := a.w.WriteHeader(&tar.Header{
 				Typeflag: tar.TypeDir,
 				Name:     p,
-				Format: tar.FormatPAX, // TODO ?
+				Format:   tar.FormatPAX, // TODO ?
 			}); err != nil {
 				return err
 			}
 
-			if err := archiveWriteTree(w, repo, child, p, opts); err != nil {
+			if err := a.writeTree(child, p); err != nil {
 				return err
 			}
 
 		case filemode.Deprecated, filemode.Executable, filemode.Regular, filemode.Symlink:
-			blob, err := repo.BlobObject(e.Hash)
-			if err != nil {
-				log.Printf("failed to get blob object for %s %v: %v", p, e.Hash, err)
-				continue
-			}
-
-			// TODO symlinks, mode, etc. Handle large Linkname
-			hdr := &tar.Header{
-				Typeflag: tar.TypeReg,
-				Name:     p,
-				Size:     blob.Size,
-
-				Format: tar.FormatPAX, // TODO ?
-			}
-
-			skip := func(reason string) error {
-				hdr.PAXRecords = map[string]string{"SG.skip": reason}
-				hdr.Size = 0
-				return w.WriteHeader(hdr)
-			}
-
-			if reason := opts.SkipContent(hdr); reason != "" {
-				if err := skip(reason); err != nil {
-					return err
-				}
-				continue
-			}
-
-			r, err := blob.Reader()
-			if err != nil {
-				log.Printf("failed to read blob object for %s %v: %v", p, e.Hash, err)
-				continue
-			}
-
-			// Heuristic: Assume file is binary if first 256 bytes contain a 0x00.
-			blobSample := buf[:256]
-			if n, err := io.ReadAtLeast(r, blobSample, 256); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-				_ = r.Close()
-				log.Printf("failed to read blob object for %s %v: %v", p, e.Hash, err)
-				continue
-			} else {
-				blobSample = blobSample[:n]
-			}
-
-			// TODO instead of just binary, should we only allow utf8? utf.Valid
-			// works except for the fact we may be invalid utf8 at the 256 boundary
-			// since we cut it off. So will need to copypasta that.
-			if bytes.IndexByte(blobSample, 0x00) >= 0 {
-				_ = r.Close()
-				if err := skip("binary"); err != nil {
-					return err
-				}
-				continue
-			}
-
-			if err := w.WriteHeader(hdr); err != nil {
-				_= r.Close()
-				return err
-			}
-
-			// We read some bytes from r already, first write those.
-			if _, err := w.Write(blobSample); err != nil {
-				_ = r.Close()
-				return err
-			}
-
-			// Write out the rest of r.
-			if _, err := io.CopyBuffer(w, r, buf); err != nil {
-				_ = r.Close()
-				return err
-			}
-
-			if err := r.Close(); err != nil {
+			if err := a.writeRegularTreeEntry(e, p); err != nil {
 				return err
 			}
 
@@ -198,6 +140,75 @@ func archiveWriteTree(w *tar.Writer, repo *git.Repository, tree *object.Tree, pa
 	}
 
 	return nil
+}
+
+func (a *archiveWriter) writeRegularTreeEntry(entry object.TreeEntry, path string) error {
+	blob, err := a.repo.BlobObject(entry.Hash)
+	if err != nil {
+		log.Printf("failed to get blob object for %s %v: %v", path, entry.Hash, err)
+		return nil
+	}
+
+	// TODO symlinks, mode, etc. Handle large Linkname
+	hdr := &tar.Header{
+		Typeflag: tar.TypeReg,
+		Name:     path,
+		Size:     blob.Size,
+
+		Format: tar.FormatPAX, // TODO ?
+	}
+
+	if reason := a.opts.SkipContent(hdr); reason != "" {
+		return a.writeSkipHeader(hdr, reason)
+	}
+
+	r, err := blob.Reader()
+	if err != nil {
+		log.Printf("failed to read blob object for %s %v: %v", path, entry.Hash, err)
+		return nil
+	}
+
+	// TODO confirm it is fine to call Close twice. From initial reading of
+	// go-git it relies on io.Pipe for readers, so this should be fine.
+	defer r.Close()
+
+	// Heuristic: Assume file is binary if first 256 bytes contain a 0x00.
+	blobSample := a.buf[:256]
+	if n, err := io.ReadAtLeast(r, blobSample, 256); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		log.Printf("failed to read blob object for %s %v: %v", path, entry.Hash, err)
+		return nil
+	} else {
+		blobSample = blobSample[:n]
+	}
+
+	// TODO instead of just binary, should we only allow utf8? utf.Valid
+	// works except for the fact we may be invalid utf8 at the 256 boundary
+	// since we cut it off. So will need to copypasta that.
+	if bytes.IndexByte(blobSample, 0x00) >= 0 {
+		return a.writeSkipHeader(hdr, "binary")
+	}
+
+	if err := a.w.WriteHeader(hdr); err != nil {
+		return err
+	}
+
+	// We read some bytes from r already, first write those.
+	if _, err := a.w.Write(blobSample); err != nil {
+		return err
+	}
+
+	// Write out the rest of r.
+	if _, err := io.CopyBuffer(a.w, r, a.buf); err != nil {
+		return err
+	}
+
+	return r.Close()
+}
+
+func (a *archiveWriter) writeSkipHeader(hdr *tar.Header, reason string) error {
+	hdr.PAXRecords = map[string]string{"SG.skip": reason}
+	hdr.Size = 0 // clear out size since we won't write the body
+	return a.w.WriteHeader(hdr)
 }
 
 func getIgnoreFilter(r *git.Repository, root *object.Tree) func(string) bool {
