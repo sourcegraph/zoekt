@@ -109,9 +109,14 @@ func archiveWriteTree(w *tar.Writer, repo *git.Repository, tree *object.Tree, pa
 				Format: tar.FormatPAX, // TODO ?
 			}
 
-			if reason := opts.SkipContent(hdr); reason != "" {
+			skip := func(reason string) error {
 				hdr.PAXRecords = map[string]string{"SOURCEGRAPH.skipped": reason}
-				if err := w.WriteHeader(hdr); err != nil {
+				hdr.Size = 0
+				return w.WriteHeader(hdr)
+			}
+
+			if reason := opts.SkipContent(hdr); reason != "" {
+				if err := skip(reason); err != nil {
 					return err
 				}
 				continue
@@ -132,28 +137,29 @@ func archiveWriteTree(w *tar.Writer, repo *git.Repository, tree *object.Tree, pa
 			} else {
 				blobSample = blobSample[:n]
 			}
-			isBinary := bytes.IndexByte(blobSample, 0x00) >= 0
 
-			if err := w.WriteHeader(hdr); err != nil {
-				r.Close()
-				return err
+			if bytes.IndexByte(blobSample, 0x00) >= 0 {
+				_ = r.Close()
+				if err := skip("binary"); err != nil {
+					return err
+				}
+				continue
 			}
 
-			// Only skip binary files at this point so we still write the header.
-			if isBinary {
-				r.Close()
-				continue
+			if err := w.WriteHeader(hdr); err != nil {
+				_= r.Close()
+				return err
 			}
 
 			// We read some bytes from r already, first write those.
 			if _, err := w.Write(blobSample); err != nil {
-				r.Close()
+				_ = r.Close()
 				return err
 			}
 
 			// Write out the rest of r.
 			if _, err := io.CopyBuffer(w, r, buf); err != nil {
-				r.Close()
+				_ = r.Close()
 				return err
 			}
 
