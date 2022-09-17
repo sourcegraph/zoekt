@@ -23,9 +23,7 @@ func do(w io.Writer) error {
 
 	// TODO PERF skip object caching since we don't need it for archive. See
 	// cache for filesystem.NewStorage
-	r, err := git.PlainOpenWithOptions(gitdir, &git.PlainOpenOptions{
-		DetectDotGit: true,
-	})
+	r, err := git.PlainOpen(gitdir)
 	if err != nil {
 		return err
 	}
