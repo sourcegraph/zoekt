@@ -3,10 +3,12 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"runtime/pprof"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -273,6 +275,19 @@ func getGitDir() (string, error) {
 }
 
 func main() {
+	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to `file`")
+	flag.Parse()
+
+	if *cpuProfile != "" {
+		f, err := os.Create(*cpuProfile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+
 	err := do(os.Stdout)
 	if err != nil {
 		log.Fatal(err)
