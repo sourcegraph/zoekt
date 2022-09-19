@@ -11,21 +11,17 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/sourcegraph/zoekt/ignore"
 )
 
 func do(w io.Writer) error {
-	gitdir, err := getGitDir()
-	if err != nil {
-		return err
-	}
-
-	// TODO PERF skip object caching since we don't need it for archive. See
-	// cache for filesystem.NewStorage
-	r, err := git.PlainOpen(gitdir)
+	r, err := openGitRepo()
 	if err != nil {
 		return err
 	}
@@ -278,12 +274,32 @@ func isNotExist(err error) bool {
 	return os.IsNotExist(err) || strings.Contains(err.Error(), "not found")
 }
 
-func getGitDir() (string, error) {
+func openGitRepo() (*git.Repository, error) {
 	dir := os.Getenv("GIT_DIR")
 	if dir == "" {
-		return os.Getwd()
+		var err error
+		dir, err = os.Getwd()
+		if err != nil {
+			return nil, err
+		}
 	}
-	return dir, nil
+
+	fs := osfs.New(dir)
+	if _, err := fs.Stat(git.GitDirName); err == nil {
+		fs, err = fs.Chroot(git.GitDirName)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// TODO PERF try skip object caching since we don't need it for archive.
+	s := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{
+		// PERF: important, otherwise we pay the cost of opening and closing
+		// packfiles per object access and read.
+		KeepDescriptors: true,
+	})
+
+	return git.Open(s, fs)
 }
 
 func main() {
