@@ -71,23 +71,37 @@ func archiveWrite(w io.Writer, repo *git.Repository, tree *object.Tree, opts *ar
 		repo: repo,
 		opts: opts,
 
+		stack: []item{{tree: tree, path: ""}},
+
 		// 32*1024 is the same size used by io.Copy
 		buf: make([]byte, 32*1024),
 	}
 
-	err := a.writeTree(tree, "")
-	if err != nil {
-		_ = a.w.Close()
-		return err
+	for len(a.stack) > 0 {
+		item := a.stack[len(a.stack)-1]
+		a.stack = a.stack[:len(a.stack)-1]
+
+		err := a.writeTree(item.tree, item.path)
+		if err != nil {
+			_ = a.w.Close()
+			return err
+		}
 	}
 
 	return a.w.Close()
+}
+
+type item struct {
+	tree *object.Tree
+	path string
 }
 
 type archiveWriter struct {
 	w    *tar.Writer
 	repo *git.Repository
 	opts *archiveOpts
+
+	stack []item
 
 	buf []byte
 }
@@ -122,9 +136,7 @@ func (a *archiveWriter) writeTree(tree *object.Tree, path string) error {
 				return err
 			}
 
-			if err := a.writeTree(child, p); err != nil {
-				return err
-			}
+			a.stack = append(a.stack, item{tree: child, path: p})
 
 		case filemode.Deprecated, filemode.Executable, filemode.Regular, filemode.Symlink:
 			if err := a.writeRegularTreeEntry(e, p); err != nil {
