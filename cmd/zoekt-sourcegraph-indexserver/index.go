@@ -151,7 +151,9 @@ type gitIndexConfig struct {
 	findRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
 }
 
-func gitIndex(c gitIndexConfig, o *indexArgs) error {
+func gitIndex(c gitIndexConfig, o *indexArgs, l sglog.Logger) error {
+	logger := l.Scoped("gitIndex", "fetch commits and then run zoekt-git-index against contents")
+
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/sourcegraph/log"
 	"github.com/sourcegraph/zoekt"
 )
 
@@ -246,6 +247,8 @@ func TestIndex(t *testing.T) {
 		},
 	}}
 
+	logger := log.NoOp()
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 
@@ -270,7 +273,7 @@ func TestIndex(t *testing.T) {
 				findRepositoryMetadata: findRepositoryMetadata,
 			}
 
-			if err := gitIndex(c, &tc.args); err != nil {
+			if err := gitIndex(c, &tc.args, logger); err != nil {
 				t.Fatal(err)
 			}
 			if !cmp.Equal(got, tc.want) {

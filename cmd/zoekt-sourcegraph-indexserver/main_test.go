@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/log/logtest"
 	"io"
 	"log"
 	"net/http"
@@ -15,8 +17,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	sglog "github.com/sourcegraph/log"
-	"github.com/sourcegraph/log/logtest"
 	"github.com/sourcegraph/zoekt"
 )
 
