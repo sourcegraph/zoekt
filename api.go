@@ -176,7 +176,7 @@ func (cm *ChunkMatch) sizeBytes() (sz uint64) {
 	sz += sliceHeaderBytes
 	for _, si := range cm.SymbolInfo {
 		sz += pointerSize
-		if cm.SymbolInfo != nil {
+		if si != nil {
 			sz += si.sizeBytes()
 		}
 	}
