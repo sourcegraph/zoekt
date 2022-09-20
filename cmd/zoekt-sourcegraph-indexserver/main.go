@@ -32,20 +32,17 @@ import (
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	sglog "github.com/sourcegraph/log"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
-	sglog "github.com/sourcegraph/log"
-
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
-	"github.com/google/zoekt/debugserver"
-	"github.com/google/zoekt/internal/profiler"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/debugserver"
+	"github.com/sourcegraph/zoekt/internal/profiler"
 )
 
 var (
-	logger sglog.Logger
-
 	metricResolveRevisionsDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "resolve_revisions_seconds",
 		Help:    "A histogram of latencies for resolving all repository revisions.",
@@ -135,11 +132,16 @@ const (
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
 // exists to conveniently use all the options passed in via func main.
 type Server struct {
+	logger sglog.Logger
+
 	Sourcegraph Sourcegraph
 	BatchSize   int
 
 	// IndexDir is the index directory to use.
 	IndexDir string
+
+	// IndexConcurrency is the number of repositories we index at once.
+	IndexConcurrency int
 
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
@@ -167,8 +169,8 @@ type Server struct {
 
 	queue Queue
 
-	// Protects the index directory from concurrent access.
-	muIndexDir sync.Mutex
+	// muIndexDir protects the index directory from concurrent access.
+	muIndexDir indexMutex
 
 	// If true, shard merging is enabled.
 	shardMerging bool
@@ -188,18 +190,12 @@ type Server struct {
 
 var debug = log.New(io.Discard, "", log.LstdFlags)
 
-const (
-	// our index commands should output something every 100mb they process.
-	//
-	// 2020-11-24 Keegan. "This should be rather quick so 5m is more than enough
-	// time."  famous last words. A client was indexing a monorepo with 42
-	// cores... 5m was not enough.
-	noOutputTimeout = 30 * time.Minute
-
-	loggerScope = "server"
-
-	loggerDescription = "periodically reindexes enabled repositories on sourcegraph"
-)
+// our index commands should output something every 100mb they process.
+//
+// 2020-11-24 Keegan. "This should be rather quick so 5m is more than enough
+// time."  famous last words. A client was indexing a monorepo with 42
+// cores... 5m was not enough.
+const noOutputTimeout = 30 * time.Minute
 
 func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 	out := &synchronizedBuffer{}
@@ -217,6 +213,8 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 			err = fmt.Errorf("command %s failed: %v\nOUT: %s", cmd.Args, err, outS)
 		}
 	}()
+
+	s.logger.Debug("logged run", sglog.Strings("args", cmd.Args))
 
 	if err := cmd.Start(); err != nil {
 		return err
@@ -262,7 +260,6 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 			}
 
 			tr.LazyPrintf("success")
-			debug.Printf("ran successfully %s", cmd.Args)
 			return nil
 		}
 	}
@@ -323,18 +320,18 @@ func (s *Server) Run() {
 			debug.Printf("updating index queue with %d repositories", len(repos.IDs))
 
 			// Stop indexing repos we don't need to track anymore
-			count := s.queue.MaybeRemoveMissing(repos.IDs)
-			metricNumStoppedTrackingTotal.Add(float64(count))
-			if count > 0 {
-				log.Printf("stopped tracking %d repositories", count)
+			removed := s.queue.MaybeRemoveMissing(repos.IDs)
+			metricNumStoppedTrackingTotal.Add(float64(len(removed)))
+			if len(removed) > 0 {
+				log.Printf("stopped tracking %d repositories: %s", len(removed), formatListUint32(removed, 5))
 			}
 
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
-				s.muIndexDir.Lock()
-				cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
-				s.muIndexDir.Unlock()
+				s.muIndexDir.Global(func() {
+					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
+				})
 			}()
 
 			repos.IterateIndexOptions(s.queue.AddOrUpdate)
@@ -365,15 +362,38 @@ func (s *Server) Run() {
 	go func() {
 		for range jitterTicker(s.MergeInterval, syscall.SIGUSR1) {
 			if s.shardMerging {
-				err := doMerge(s.IndexDir, s.TargetSizeBytes, false)
-				if err != nil {
-					log.Printf("error during merging: %s", err)
-				}
+				s.doMerge()
 			}
 		}
 	}()
 
-	// In the current goroutine process the queue forever.
+	for i := 0; i < s.IndexConcurrency; i++ {
+		go s.processQueue()
+	}
+
+	// block forever
+	select {}
+}
+
+// formatList returns a comma-separated list of the first min(len(v), m) items.
+func formatListUint32(v []uint32, m int) string {
+	if len(v) < m {
+		m = len(v)
+	}
+
+	sb := strings.Builder{}
+	for i := 0; i < m; i++ {
+		fmt.Fprintf(&sb, "%d, ", v[i])
+	}
+
+	if len(v) > m {
+		sb.WriteString("...")
+	}
+
+	return strings.TrimRight(sb.String(), ", ")
+}
+
+func (s *Server) processQueue() {
 	for {
 		if _, err := os.Stat(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
 			time.Sleep(time.Second)
@@ -385,38 +405,49 @@ func (s *Server) Run() {
 			time.Sleep(time.Second)
 			continue
 		}
-		start := time.Now()
+
 		args := s.indexArgs(opts)
 
-		s.muIndexDir.Lock()
-		state, err := s.Index(args)
-		s.muIndexDir.Unlock()
+		ran := s.muIndexDir.With(opts.Name, func() {
+			// only record time taken once we hold the lock. This avoids us
+			// recording time taken while merging/cleanup runs.
+			start := time.Now()
 
-		elapsed := time.Since(start)
+			state, err := s.Index(args)
 
-		metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
+			elapsed := time.Since(start)
 
-		if err != nil {
-			log.Printf("error indexing %s: %s", args.String(), err)
-		}
+			metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
 
-		switch state {
-		case indexStateSuccess:
-			var branches []string
-			for _, b := range args.Branches {
-				branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
+			if err != nil {
+				log.Printf("error indexing %s: %s", args.String(), err)
 			}
 
-			logger.Info("updated index",
-				sglog.String("repo", args.Name),
-				sglog.Uint32("id", args.RepoID),
-				sglog.Strings("branches", branches),
-				sglog.Duration("duration", elapsed),
-			)
-		case indexStateSuccessMeta:
-			log.Printf("updated meta %s in %v", args.String(), elapsed)
+			switch state {
+			case indexStateSuccess:
+				var branches []string
+				for _, b := range args.Branches {
+					branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
+				}
+				s.logger.Info("updated index",
+					sglog.String("repo", args.Name),
+					sglog.Uint32("id", args.RepoID),
+					sglog.Strings("branches", branches),
+					sglog.Duration("duration", elapsed),
+				)
+			case indexStateSuccessMeta:
+				log.Printf("updated meta %s in %v", args.String(), elapsed)
+			}
+			s.queue.SetIndexed(opts, state)
+		})
+
+		if !ran {
+			// Someone else is processing the repository. We can just skip this job
+			// since the repository will be added back to the queue and we will
+			// converge to the correct behaviour.
+			debug.Printf("index job for repository already running: %s", args)
+			continue
 		}
-		s.queue.SetIndexed(opts, state)
 	}
 }
 
@@ -595,6 +626,7 @@ func (s *Server) addDebugHandlers(mux *http.ServeMux) {
 
 	mux.Handle("/debug/indexed", http.HandlerFunc(s.handleDebugIndexed))
 	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
+	mux.Handle("/debug/merge", http.HandlerFunc(s.handleDebugMerge))
 	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
 }
 
@@ -701,6 +733,23 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("copying output to response writer: %s", err), http.StatusInternalServerError)
 		return
 	}
+}
+
+// handleDebugMerge triggers a merge even if shard merging is not enabled. Users
+// can run this command during periods of low usage (evenings, weekends) to
+// trigger an initial merge run. In the steady-state, merges happen rarely, even
+// on busy instances, and users can rely on automatic merging instead.
+func (s *Server) handleDebugMerge(w http.ResponseWriter, _ *http.Request) {
+
+	// A merge operation can take very long, depending on the number merges and the
+	// target size of the compound shards. We run the merge in the background and
+	// return immediately to the user.
+	//
+	// We track the status of the merge with metricShardMergingRunning.
+	go func() {
+		s.doMerge()
+	}()
+	w.Write([]byte("merging enqueued\n"))
 }
 
 func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
@@ -913,22 +962,6 @@ func getEnvWithDefaultEmptySet(k string) map[string]struct{} {
 	return set
 }
 
-// findName returns the name of the current process, that being the
-// part of argv[0] after the last slash if any, and also the lowercase
-// letters from that, suitable for use as a likely key for lookups
-// in things like shell environment variables which can't contain
-// hyphens.
-// Copied from https://sourcegraph.com/github.com/sourcegraph/sourcegraph/-/blob/internal/env/env.go?L55:6
-func findName() (string, string) {
-	// Environment variable names can't contain, for instance, hyphens.
-	origName := filepath.Base(os.Args[0])
-	name := strings.ReplaceAll(origName, "-", "_")
-	if name == "" {
-		name = "unknown"
-	}
-	return origName, name
-}
-
 func joinStringSet(set map[string]struct{}, sep string) string {
 	var xs []string
 	for x := range set {
@@ -973,6 +1006,7 @@ type rootConfig struct {
 	root             string
 	interval         time.Duration
 	index            string
+	indexConcurrency int64
 	listen           string
 	hostname         string
 	cpuFraction      float64
@@ -990,9 +1024,10 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.StringVar(&rc.root, "sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	fs.DurationVar(&rc.interval, "interval", time.Minute, "sync with sourcegraph this often")
 	fs.DurationVar(&rc.vacuumInterval, "vacuum_interval", 24*time.Hour, "run vacuum this often")
-	fs.DurationVar(&rc.mergeInterval, "merge_interval", time.Hour, "run merge this often")
+	fs.DurationVar(&rc.mergeInterval, "merge_interval", 8*time.Hour, "run merge this often")
 	fs.Int64Var(&rc.targetSize, "merge_target_size", getEnvWithDefaultInt64("SRC_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
 	fs.Int64Var(&rc.minSize, "merge_min_size", getEnvWithDefaultInt64("SRC_MIN_SIZE", 1800), "the minimum size of a compound shard in MiB")
+	fs.Int64Var(&rc.indexConcurrency, "index_concurrency", getEnvWithDefaultInt64("SRC_INDEX_CONCURRENCY", 1), "the number of concurrent index jobs to run.")
 	fs.StringVar(&rc.index, "index", getEnvWithDefaultString("DATA_DIR", build.DefaultDir), "set index directory to use")
 	fs.StringVar(&rc.listen, "listen", ":6072", "listen on this address.")
 	fs.StringVar(&rc.hostname, "hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
@@ -1117,14 +1152,22 @@ func newServer(conf rootConfig) (*Server, error) {
 		}
 	}
 
+	if conf.indexConcurrency < 1 {
+		conf.indexConcurrency = 1
+	}
+
 	cpuCount := int(math.Round(float64(runtime.GOMAXPROCS(0)) * (conf.cpuFraction)))
 	if cpuCount < 1 {
 		cpuCount = 1
 	}
 
+	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
+
 	return &Server{
+		logger:                            logger,
 		Sourcegraph:                       sg,
 		IndexDir:                          conf.index,
+		IndexConcurrency:                  int(conf.indexConcurrency),
 		Interval:                          conf.interval,
 		VacuumInterval:                    conf.vacuumInterval,
 		MergeInterval:                     conf.mergeInterval,
@@ -1152,7 +1195,6 @@ func main() {
 		debugFlagOverride = debugFlag && !srcLogLevelIsDebug()
 	}
 
-	name, _ := findName()
 	originalLogLevel := os.Getenv(sglog.EnvLogLevel)
 
 	// if debug flag overrides the logging level set by environment var EnvLogLevel
@@ -1161,8 +1203,8 @@ func main() {
 		os.Setenv(sglog.EnvLogLevel, "debug")
 	}
 
-	syncLogs := sglog.Init(sglog.Resource{
-		Name:       name,
+	liblog := sglog.Init(sglog.Resource{
+		Name:       "zoekt-sourcegraph-indexserver",
 		Version:    zoekt.Version,
 		InstanceID: hostnameBestEffort(),
 	})
@@ -1172,9 +1214,7 @@ func main() {
 		os.Setenv(sglog.EnvLogLevel, originalLogLevel)
 	}
 
-	defer syncLogs.Sync()
-
-	logger = sglog.Scoped(loggerScope, loggerDescription)
+	defer liblog.Sync()
 
 	if err := cmd.Run(context.Background()); err != nil {
 		log.Fatal(err)

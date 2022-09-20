@@ -28,11 +28,11 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
-	"github.com/google/zoekt/ignore"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/shards"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/ignore"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/shards"
 )
 
 func TestIndexEmptyRepo(t *testing.T) {
@@ -359,6 +359,85 @@ func TestIndexDeltaBasic(t *testing.T) {
 
 					expectedFallbackToNormalBuild: true,
 					expectedDocuments:             []zoekt.Document{fruitV3, fruitV4},
+				},
+			},
+		},
+		{
+			name:     "should fallback to normal build if one or more index options updates requires a full build",
+			branches: []string{"main"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV1},
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV1},
+				},
+				{
+					name: "try delta build after updating Disable CTags index option",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV2},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+						o.BuildOptions.DisableCTags = true
+					},
+
+					expectedFallbackToNormalBuild: true,
+					expectedDocuments:             []zoekt.Document{fruitV2},
+				},
+				{
+					name: "try delta build after reverting Disable CTags index option",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV3},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+						o.BuildOptions.DisableCTags = false
+					},
+
+					expectedFallbackToNormalBuild: true,
+					expectedDocuments:             []zoekt.Document{fruitV3},
+				},
+			},
+		},
+		{
+			name:     "should successfully perform multiple delta builds after disabling symbols",
+			branches: []string{"main"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV1},
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV1},
+				},
+				{
+					name: "try delta build after updating Disable CTags index option",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV2},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+						o.BuildOptions.DisableCTags = true
+					},
+
+					expectedFallbackToNormalBuild: true,
+					expectedDocuments:             []zoekt.Document{fruitV2},
+				},
+				{
+					name: "try another delta build while CTags is still disabled",
+					addedDocuments: branchToDocumentMap{
+						"main": []zoekt.Document{fruitV3},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+						o.BuildOptions.DisableCTags = true
+					},
+
+					expectedDocuments: []zoekt.Document{fruitV3},
 				},
 			},
 		},

@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/zoekt"
+	"github.com/sourcegraph/zoekt"
 )
 
 type loggingLoader struct {
@@ -63,7 +63,7 @@ func TestDirWatcherUnloadOnce(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	dw, err := NewDirectoryWatcher(dir, logger)
+	dw, err := newDirectoryWatcher(dir, logger)
 	if err != nil {
 		t.Fatalf("NewDirectoryWatcher: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestDirWatcherLoadEmpty(t *testing.T) {
 		loads: make(chan string, 10),
 		drops: make(chan string, 10),
 	}
-	dw, err := NewDirectoryWatcher(dir, logger)
+	dw, err := newDirectoryWatcher(dir, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 		}
 	}
 
-	dw, err := NewDirectoryWatcher(dir, logger)
+	dw, err := newDirectoryWatcher(dir, logger)
 	if err != nil {
 		t.Fatalf("NewDirectoryWatcher: %v", err)
 	}

@@ -24,8 +24,8 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/zoekt/query"
 	"github.com/grafana/regexp"
+	"github.com/sourcegraph/zoekt/query"
 )
 
 var opnames = map[syntax.Op]string{
@@ -179,8 +179,8 @@ func compoundReposShard(t *testing.T, names ...string) *indexData {
 	for _, name := range names {
 		repos = append(repos, &Repository{ID: hash(name), Name: name})
 		ds := []Document{
-			Document{Name: name + ".txt", Content: []byte(name + " content")},
-			Document{Name: name + ".2.txt", Content: []byte(name + " content 2")},
+			{Name: name + ".txt", Content: []byte(name + " content")},
+			{Name: name + ".2.txt", Content: []byte(name + " content 2")},
 		}
 		docs = append(docs, ds)
 	}

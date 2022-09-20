@@ -31,9 +31,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
-	"github.com/google/zoekt/ignore"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/ignore"
 
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -145,8 +145,10 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 		repo.FileURLTemplate = u.String() + "/{{.Path}}?at={{.Version}}"
 		repo.LineFragmentTemplate = "#{{.LineNumber}}"
 	case "gitlab":
-		repo.CommitURLTemplate = u.String() + "/commit/{{.Version}}"
-		repo.FileURLTemplate = u.String() + "/blob/{{.Version}}/{{.Path}}"
+		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/commit/b152c864303dae0e55377a1e2c53c9592380ffed
+		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/blob/aad04155b3f6fc50ede88aedaee7fc624d481149/files/gitlab-config-template/gitlab.rb.template
+		repo.CommitURLTemplate = u.String() + "/-/commit/{{.Version}}"
+		repo.FileURLTemplate = u.String() + "/-/blob/{{.Version}}/{{.Path}}"
 		repo.LineFragmentTemplate = "#L{{.LineNumber}}"
 	default:
 		return fmt.Errorf("URL scheme type %q unknown", typ)
@@ -625,6 +627,12 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		optionsBranchList := strings.Join(optionsBranchNames, ", ")
 
 		return nil, nil, nil, nil, fmt.Errorf("requested branch set in build options (%q) != branch set found on disk (%q) - branch set must be the same for delta shards", optionsBranchList, existingBranchList)
+	}
+
+	// Check if the build options hash does not match the repository metadata's hash
+	// If it does not match then one or more index options has changed and will require a normal build instead of a delta build
+	if options.BuildOptions.GetHash() != existingRepository.IndexOptions {
+		return nil, nil, nil, nil, fmt.Errorf("one or more index options previously stored for repository %s (ID: %d) does not match the index options for this requested build; These index option updates are incompatible with delta build. new index options: %+v", existingRepository.Name, existingRepository.ID, options.BuildOptions.HashOptions())
 	}
 
 	// branch => (path, sha1) => repo.

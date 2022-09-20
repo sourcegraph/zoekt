@@ -184,27 +184,42 @@ func marshalDocSections(secs []DocumentSection) []byte {
 	return toSizedDeltas(ints)
 }
 
-func unmarshalDocSections(in []byte, buf []DocumentSection) (secs []DocumentSection) {
+func unmarshalDocSections(data []byte, ds []DocumentSection) []DocumentSection {
 	// Defensive, this shouldn't happen. While we have the feature flag for lazy
-	// doc section decoding lets be extra defensive.
-	if len(in) == 0 {
+	// doc section decoding let's be extra defensive.
+	if len(data) == 0 {
 		log.Println("WARN unmarshalDocSections received an empty slice to unmarshal")
 		return nil
 	}
 
-	// TODO - ints is unnecessary garbage here.
-	ints := fromSizedDeltas(in, nil)
-	if cap(buf) >= len(ints)/2 {
-		buf = buf[:0]
+	sz, m := binary.Uvarint(data)
+	data = data[m:]
+
+	if cap(ds) < int(sz)/2 {
+		ds = make([]DocumentSection, 0, sz/2)
 	} else {
-		buf = make([]DocumentSection, 0, len(ints)/2)
+		ds = ds[:0]
 	}
 
-	for len(ints) > 0 {
-		buf = append(buf, DocumentSection{ints[0], ints[1]})
-		ints = ints[2:]
+	// Inlining the delta decoding to avoid unnecessary allocations that would come
+	// from the straightforward implementation, i.e. packing the result of fromSizedDeltas.
+	var last uint32
+	for len(data) > 0 {
+		var d DocumentSection
+
+		delta, m := binary.Uvarint(data)
+		last += uint32(delta)
+		data = data[m:]
+		d.Start = last
+
+		delta, m = binary.Uvarint(data)
+		last += uint32(delta)
+		data = data[m:]
+		d.End = last
+
+		ds = append(ds, d)
 	}
-	return buf
+	return ds
 }
 
 type ngramSlice []ngram

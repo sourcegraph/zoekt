@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -14,9 +15,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/google/zoekt"
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/log/logtest"
+	"github.com/sourcegraph/zoekt"
 )
 
 func TestServer_defaultArgs(t *testing.T) {
@@ -120,7 +121,6 @@ func TestMain(m *testing.M) {
 	}
 
 	logtest.InitWithLevel(m, level)
-	logger = sglog.Scoped("zoekt-sourcegraph-indexserver", "Zoekt-sourcegraph-indexserver logger for testing")
 	os.Exit(m.Run())
 }
 
@@ -148,5 +148,38 @@ func TestCreateEmptyShard(t *testing.T) {
 
 	if got := bo.IncrementalSkipIndexing(); !got {
 		t.Fatalf("wanted %t, got %t", true, got)
+	}
+}
+
+func TestFormatListUint32(t *testing.T) {
+	cases := []struct {
+		in   []uint32
+		want string
+	}{
+		{
+			in:   []uint32{42, 8, 3},
+			want: "42, 8, ...",
+		},
+		{
+			in:   []uint32{42, 8},
+			want: "42, 8",
+		},
+		{
+			in:   []uint32{42},
+			want: "42",
+		},
+		{
+			in:   []uint32{},
+			want: "",
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(fmt.Sprintf("%v", tt.in), func(t *testing.T) {
+			out := formatListUint32(tt.in, 2)
+			if out != tt.want {
+				t.Fatalf("want %s, got %s", tt.want, out)
+			}
+		})
 	}
 }

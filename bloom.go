@@ -30,7 +30,7 @@
 // * a 1% FPR is near the optimal bits-per-precision tradeoff, with 2.5% FPR
 //   only reducing bloom filter sizes by 25%.
 
-package zoekt // import "github.com/google/zoekt"
+package zoekt // import "github.com/sourcegraph/zoekt"
 
 import (
 	"bytes"

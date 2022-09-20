@@ -13,17 +13,19 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
+
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
 )
 
 func TestCleanup(t *testing.T) {
 	mk := func(name string, n int, mtime time.Time) shard {
 		return shard{
-			RepoID:   fakeID(name),
-			RepoName: name,
-			Path:     fmt.Sprintf("%s_v%d.%05d.zoekt", url.QueryEscape(name), 15, n),
-			ModTime:  mtime,
+			RepoID:        fakeID(name),
+			RepoName:      name,
+			Path:          fmt.Sprintf("%s_v%d.%05d.zoekt", url.QueryEscape(name), 15, n),
+			ModTime:       mtime,
+			RepoTombstone: false,
 		}
 	}
 	// We don't use getShards so that we have two implementations of the same
@@ -317,20 +319,29 @@ func TestGetTombstonedRepos(t *testing.T) {
 // ----
 // index/
 // CS 1
-// 		r1, tombstoned, old
-//		r2, tombstoned, old
-//		r3, tombstoned, old
+//
+//	r1, tombstoned, old
+//	r2, tombstoned, old
+//	r3, tombstoned, old
+//
 // CS 2
-// 		r1, tombstoned, recent
-//		r2, tombstoned, recent
-//		r4, tombstoned, recent
+//
+//	r1, tombstoned, recent
+//	r2, tombstoned, recent
+//	r4, tombstoned, recent
+//
 // SS 1
-//		r1, now
+//
+//	r1, now
+//
 // .trash/
 // SS 3
-//		r3, now
+//
+//	r3, now
+//
 // SS 5
-//		r5, now
+//
+//	r5, now
 //
 // TO BE INDEXED
 // -------------
@@ -340,21 +351,30 @@ func TestGetTombstonedRepos(t *testing.T) {
 // ----
 // index/
 // CS 1
-// 		r1, tombstoned, old
-//		r2, tombstoned, old
-//		r3, tombstoned, old
-// CS 2
-// 		r1, tombstoned, recent
-//		r2, recent
-//		r4, recent
-// SS 1
-//		r1, now
-// SS 3
-//		r3, now
-// SS 5
-//		r5, now
-// .trash/ --> empty
 //
+//	r1, tombstoned, old
+//	r2, tombstoned, old
+//	r3, tombstoned, old
+//
+// CS 2
+//
+//	r1, tombstoned, recent
+//	r2, recent
+//	r4, recent
+//
+// SS 1
+//
+//	r1, now
+//
+// SS 3
+//
+//	r3, now
+//
+// SS 5
+//
+//	r5, now
+//
+// .trash/ --> empty
 func TestCleanupCompoundShards(t *testing.T) {
 	dir := t.TempDir()
 
@@ -400,30 +420,102 @@ func TestCleanupCompoundShards(t *testing.T) {
 	}
 
 	wantIndex := map[uint32][]shard{
-		1: []shard{{
+		1: {{
 			RepoID:   1,
 			RepoName: "repo1",
 			Path:     filepath.Join(dir, "repo1.zoekt"),
 		}},
-		2: []shard{{
+		2: {{
 			RepoID:   2,
 			RepoName: "repo2",
 			Path:     cs2,
 		}},
-		3: []shard{{
+		3: {{
 			RepoID:   3,
 			RepoName: "repo3",
 			Path:     filepath.Join(dir, "repo3.zoekt"),
 		}},
-		4: []shard{{
+		4: {{
 			RepoID:   4,
 			RepoName: "repo4",
 			Path:     cs2,
 		}},
-		5: []shard{{
+		5: {{
 			RepoID:   5,
 			RepoName: "repo5",
 			Path:     filepath.Join(dir, "repo5.zoekt"),
+		}},
+	}
+
+	if d := cmp.Diff(wantIndex, index, cmpopts.IgnoreFields(shard{}, "ModTime")); d != "" {
+		t.Fatalf("-want, +got: %s", d)
+	}
+}
+
+func TestTombstoneDuplicateShards(t *testing.T) {
+	dir := t.TempDir()
+
+	// enable feature flag
+	if _, err := os.Create(filepath.Join(dir, "TOMBSTONE_DUPLICATES")); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	recent := now.Add(-1 * time.Hour)
+	old := now.Add(-2 * time.Hour)
+
+	cs1 := createCompoundShard(t, dir, []uint32{1, 2, 3}, func(*zoekt.Repository) {})
+
+	// Hack part 1: hide repos from being tombstoned by Builder.Finish() when creating cs2.
+	for i := 1; i <= 3; i++ {
+		if err := zoekt.SetTombstone(cs1, uint32(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cs2 := createCompoundShard(t, dir, []uint32{1, 2}, func(*zoekt.Repository) {})
+
+	// Hack part 2: remove tombstones to create duplicates.
+	for i := 1; i <= 3; i++ {
+		if err := zoekt.UnsetTombstone(cs1, uint32(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := os.Chtimes(cs1, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(cs2, recent, recent); err != nil {
+		t.Fatal(err)
+	}
+
+	// want indexed
+	repos := []uint32{1, 2, 3}
+
+	cleanup(dir, repos, now, true)
+
+	index := getShards(dir)
+	trash := getShards(filepath.Join(dir, ".trash"))
+
+	if len(trash) != 0 {
+		t.Fatalf("expected empty trash, got %+v", trash)
+	}
+
+	wantIndex := map[uint32][]shard{
+		1: {{
+			RepoID:   1,
+			RepoName: "repo1",
+			Path:     cs2,
+		}},
+		2: {{
+			RepoID:   2,
+			RepoName: "repo2",
+			Path:     cs2,
+		}},
+		3: {{
+			RepoID:   3,
+			RepoName: "repo3",
+			Path:     cs1,
 		}},
 	}
 
@@ -471,7 +563,7 @@ func createCompoundShard(t *testing.T, dir string, ids []uint32, optFns ...func(
 	}
 
 	// create a compound shard.
-	tmpFn, dstFn, err := merge(dir, repoFns)
+	tmpFn, dstFn, err := merge(t, dir, repoFns)
 	if err != nil {
 		t.Fatal(err)
 	}

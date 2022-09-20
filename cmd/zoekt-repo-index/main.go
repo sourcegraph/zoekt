@@ -12,20 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/* zoekt-repo-index indexes a repo-based repository.  The constituent
-git repositories should already have been downloaded to the
---repo_cache directory, eg.
-
-    go install github.com/google/zoekt/cmd/zoekt-repo-index &&
-
-    zoekt-repo-index -base_url https://gfiber.googlesource.com/ \
-      -manifest_repo_url https://gfiber.googlesource.com/manifests \
-      -manifest_rev_prefix=refs/heads/ \
-      -rev_prefix="refs/remotes/" \
-      -repo_cache ~/zoekt-serving/repos/ \
-      -shard_limit 50000000 \
-       master:default_unrestricted.xml
-*/
+// zoekt-repo-index indexes a repo-based repository. The constituent git
+// repositories should already have been downloaded to the --repo_cache
+// directory, eg.
+//
+// go install github.com/sourcegraph/zoekt/cmd/zoekt-repo-index &&
+//
+//	zoekt-repo-index -base_url https://gfiber.googlesource.com/ \
+//	  -manifest_repo_url https://gfiber.googlesource.com/manifests \
+//	  -manifest_rev_prefix=refs/heads/ \
+//	  -rev_prefix="refs/remotes/" \
+//	  -repo_cache ~/zoekt-serving/repos/ \
+//	  -shard_limit 50000000 \
+//	   master:default_unrestricted.xml
 package main
 
 import (
@@ -41,9 +40,9 @@ import (
 	"strings"
 
 	"github.com/google/slothfs/manifest"
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
-	"github.com/google/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/gitindex"
 	"go.uber.org/automaxprocs/maxprocs"
 
 	git "github.com/go-git/go-git/v5"

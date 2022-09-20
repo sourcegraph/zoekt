@@ -3,86 +3,63 @@ package tracer
 import (
 	"log"
 	"os"
-	"reflect"
 	"strconv"
 
 	"github.com/opentracing/opentracing-go"
-	"github.com/uber/jaeger-client-go"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
-	jaegermetrics "github.com/uber/jaeger-lib/metrics"
-	ddopentracing "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/opentracer"
-	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
+
+type tracerType string
+
+const (
+	tracerTypeNone          tracerType = "none"
+	tracerTypeJaeger        tracerType = "jaeger"
+	tracerTypeOpenTelemetry tracerType = "opentelemetry"
+)
+
+func inferTracerType() tracerType {
+	// default to disabled
+	isJaegerDisabled, err := strconv.ParseBool(os.Getenv("JAEGER_DISABLED"))
+	if err == nil && !isJaegerDisabled {
+		return tracerTypeJaeger
+	}
+
+	// defaults to disabled
+	isOpenTelemetryDisabled, err := strconv.ParseBool(os.Getenv("OPENTELEMETRY_DISABLED"))
+	if err == nil && !isOpenTelemetryDisabled {
+		return tracerTypeOpenTelemetry
+	}
+
+	return tracerTypeNone
+}
 
 // Init should only be called from main and only once
 // It will initialize the configured tracer, and register it as the global tracer
 // This MUST be the same tracer as the one used by Sourcegraph
 func Init(svcName, version string) {
-
-	if os.Getenv("DD_ENV") != "" {
-		tracer := configureDatadogTracer(svcName, version)
-		log.Printf("INFO: using Datadog tracer")
-		opentracing.SetGlobalTracer(tracer)
-		return
-	}
-
-	isJaegerDisabled, err := strconv.ParseBool(os.Getenv("JAEGER_DISABLED"))
-	if err != nil {
-		log.Printf("failed to parse JAEGER_DISABLED: %v", err)
-		return
-	}
-	if isJaegerDisabled {
-		return
-	}
-
-	tracer, err := configureJaeger(svcName, version)
-	if err != nil {
-		log.Printf("failed to configure Jaeger tracer: %v", err)
-		return
-	}
-	log.Printf("INFO: using Jaeger tracer")
-	opentracing.SetGlobalTracer(tracer)
-}
-
-// configureDatadogTracer only sets service name & version and relies on external configuration for other settings
-// See https://docs.datadoghq.com/tracing/setup_overview/setup/go/?tab=containers#configure-apm-environment-name
-func configureDatadogTracer(svcName, version string) opentracing.Tracer {
-	tracer := ddopentracing.New(ddtracer.WithService(svcName),
-		ddtracer.WithServiceVersion(version))
-	return tracer
-}
-
-func configureJaeger(svcName string, version string) (opentracing.Tracer, error) {
-	cfg, err := jaegercfg.FromEnv()
-	cfg.ServiceName = svcName
-	if err != nil {
-		return nil, err
-	}
-	cfg.Tags = append(cfg.Tags, opentracing.Tag{Key: "service.version", Value: version})
-	if reflect.DeepEqual(cfg.Sampler, &jaegercfg.SamplerConfig{}) {
-		// Default sampler configuration for when it is not specified via
-		// JAEGER_SAMPLER_* env vars. In most cases, this is sufficient
-		// enough to connect to Jaeger without any env vars.
-		cfg.Sampler.Type = jaeger.SamplerTypeConst
-		cfg.Sampler.Param = 1
-	}
-	tracer, _, err := cfg.NewTracer(
-		jaegercfg.Logger(&jaegerLogger{}),
-		jaegercfg.Metrics(jaegermetrics.NullFactory),
+	var (
+		tt     = inferTracerType()
+		tracer opentracing.Tracer
+		err    error
 	)
-	if err != nil {
-		return nil, err
+	switch tt {
+	case tracerTypeJaeger:
+		tracer, err = configureJaeger(svcName, version)
+		if err != nil {
+			log.Printf("failed to configure Jaeger tracer: %v", err)
+			return
+		}
+		log.Printf("INFO: using Jaeger tracer")
+
+	case tracerTypeOpenTelemetry:
+		tracer, err = configureOpenTelemetry(svcName, version)
+		if err != nil {
+			log.Printf("failed to configure OpenTelemetry tracer: %v", err)
+			return
+		}
+		log.Printf("INFO: using OpenTelemetry tracer")
 	}
-	return tracer, nil
-}
 
-type jaegerLogger struct{}
-
-func (l *jaegerLogger) Error(msg string) {
-	log.Printf("ERROR: %s", msg)
-}
-
-// Infof logs a message at info priority
-func (l *jaegerLogger) Infof(msg string, args ...interface{}) {
-	log.Printf(msg, args...)
+	if tracer != nil {
+		opentracing.SetGlobalTracer(tracer)
+	}
 }

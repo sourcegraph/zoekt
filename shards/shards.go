@@ -30,12 +30,12 @@ import (
 
 	"golang.org/x/sync/semaphore"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/stream"
-	"github.com/google/zoekt/trace"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/stream"
+	"github.com/sourcegraph/zoekt/trace"
 )
 
 var (
@@ -198,13 +198,33 @@ func newShardedSearcher(n int64) *shardedSearcher {
 // NewDirectorySearcher returns a searcher instance that loads all
 // shards corresponding to a glob into memory.
 func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
+	return newDirectorySearcher(dir, true)
+}
+
+// NewDirectorySearcherFast is like NewDirectorySearcher, but does not block
+// on the initial loading of shards.
+//
+// This exists since in the case of zoekt-webserver we are happy with having
+// partial availability since that is better than no availability on large
+// instances.
+func NewDirectorySearcherFast(dir string) (zoekt.Streamer, error) {
+	return newDirectorySearcher(dir, false)
+}
+
+func newDirectorySearcher(dir string, waitUntilReady bool) (zoekt.Streamer, error) {
 	ss := newShardedSearcher(int64(runtime.GOMAXPROCS(0)))
 	tl := &loader{
 		ss: ss,
 	}
-	dw, err := NewDirectoryWatcher(dir, tl)
+	dw, err := newDirectoryWatcher(dir, tl)
 	if err != nil {
 		return nil, err
+	}
+
+	if waitUntilReady {
+		if err := dw.WaitUntilReady(); err != nil {
+			return nil, err
+		}
 	}
 
 	ds := &directorySearcher{
@@ -234,20 +254,30 @@ type loader struct {
 
 func (tl *loader) load(keys ...string) {
 	var (
-		mu     sync.Mutex     // synchronizes writes to the shards map
-		wg     sync.WaitGroup // used to wait for all shards to load
-		sem    = semaphore.NewWeighted(int64(runtime.GOMAXPROCS(0)))
-		shards = make(map[string]zoekt.Searcher, len(keys))
+		mu           sync.Mutex     // synchronizes writes to the shards map
+		wg           sync.WaitGroup // used to wait for all shards to load
+		sem          = semaphore.NewWeighted(int64(runtime.GOMAXPROCS(0)))
+		loadedShards = make(map[string]zoekt.Searcher)
 	)
+
+	publishLoaded := func() {
+		mu.Lock()
+		chunk := loadedShards
+		loadedShards = make(map[string]zoekt.Searcher)
+		mu.Unlock()
+		tl.ss.replace(chunk)
+	}
 
 	log.Printf("loading %d shard(s): %s", len(keys), humanTruncateList(keys, 5))
 
 	lastProgress := time.Now()
 	for i, key := range keys {
 		// If taking a while to start-up occasionally give a progress message
-		if time.Since(lastProgress) > 10*time.Second {
+		if time.Since(lastProgress) > 5*time.Second {
 			log.Printf("still need to load %d shards...", len(keys)-i)
 			lastProgress = time.Now()
+
+			publishLoaded()
 		}
 
 		_ = sem.Acquire(context.Background(), 1)
@@ -266,14 +296,14 @@ func (tl *loader) load(keys ...string) {
 			metricShardsLoadedTotal.Inc()
 
 			mu.Lock()
-			shards[key] = shard
+			loadedShards[key] = shard
 			mu.Unlock()
 		}(key)
 	}
 
 	wg.Wait()
 
-	tl.ss.replace(shards)
+	publishLoaded()
 }
 
 func (tl *loader) drop(keys ...string) {
@@ -734,6 +764,9 @@ func copyFiles(sr *zoekt.SearchResult) {
 			copySlice(&sr.Files[i].LineMatches[l].Before)
 			copySlice(&sr.Files[i].LineMatches[l].After)
 		}
+		for c := range sr.Files[i].ChunkMatches {
+			copySlice(&sr.Files[i].ChunkMatches[c].Content)
+		}
 	}
 }
 
@@ -928,6 +961,10 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 }
 
 func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
+	if len(shards) == 0 {
+		return
+	}
+
 	defer func(began time.Time) {
 		metricShardsBatchReplaceDurationSeconds.Observe(time.Since(began).Seconds())
 	}(time.Now())
@@ -1016,18 +1053,6 @@ func loadShard(fn string) (zoekt.Searcher, error) {
 	}
 
 	return s, nil
-}
-
-func strSliceEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // prioritySlice is a trivial implementation of an array that provides three

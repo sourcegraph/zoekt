@@ -25,7 +25,7 @@ import (
 	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/grafana/regexp"
 
-	"github.com/google/zoekt/query"
+	"github.com/sourcegraph/zoekt/query"
 )
 
 const maxUInt16 = 0xffff
@@ -231,12 +231,8 @@ nextFileMatch:
 			}
 
 			// Skip documents that are tombstoned
-			// TODO: This FileTombstones implementation (looking up by filenames) creates a lot of small allocations
-			// (string filenames) and can have poor cache performance. This should be addressed before we officially
-			// roll this out.
 			if len(repoMetadata.FileTombstones) > 0 {
-				fileName := string(d.fileName(nextDoc))
-				if _, tombstoned := repoMetadata.FileTombstones[fileName]; tombstoned {
+				if _, tombstoned := repoMetadata.FileTombstones[string(d.fileName(nextDoc))]; tombstoned {
 					continue
 				}
 			}
@@ -322,7 +318,8 @@ nextFileMatch:
 		visitMatches(mt, known, func(mt matchTree) {
 			atomMatchCount++
 		})
-		finalCands := gatherMatches(mt, known)
+		shouldMergeMatches := !opts.ChunkMatches
+		finalCands := gatherMatches(mt, known, shouldMergeMatches)
 
 		if len(finalCands) == 0 {
 			nm := d.fileName(nextDoc)
@@ -338,22 +335,44 @@ nextFileMatch:
 					byteMatchSz:   uint32(len(nm)),
 				})
 		}
-		fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+
+		if opts.ChunkMatches {
+			fileMatch.ChunkMatches = cp.fillChunkMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+		} else {
+			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+		}
 
 		maxFileScore := 0.0
+		repetitions := 0
 		for i := range fileMatch.LineMatches {
 			if maxFileScore < fileMatch.LineMatches[i].Score {
 				maxFileScore = fileMatch.LineMatches[i].Score
+				repetitions = 0
+			} else if maxFileScore == fileMatch.LineMatches[i].Score {
+				repetitions += 1
 			}
 
 			// Order by ordering in file.
 			fileMatch.LineMatches[i].Score += scoreLineOrderFactor * (1.0 - (float64(i) / float64(len(fileMatch.LineMatches))))
 		}
 
+		for i := range fileMatch.ChunkMatches {
+			if maxFileScore < fileMatch.ChunkMatches[i].Score {
+				maxFileScore = fileMatch.ChunkMatches[i].Score
+			}
+
+			// Order by ordering in file.
+			fileMatch.ChunkMatches[i].Score += scoreLineOrderFactor * (1.0 - (float64(i) / float64(len(fileMatch.ChunkMatches))))
+		}
+
 		// Maintain ordering of input files. This
 		// strictly dominates the in-file ordering of
 		// the matches.
 		fileMatch.addScore("fragment", maxFileScore, opts.DebugScore)
+
+		// Prefer docs with several top-scored matches.
+		fileMatch.addScore("repetition-boost", scoreRepetitionFactor*float64(repetitions), opts.DebugScore)
+
 		fileMatch.addScore("atom", float64(atomMatchCount)/float64(totalAtomCount)*scoreFactorAtomMatch, opts.DebugScore)
 
 		// Prefer earlier docs.
@@ -365,14 +384,22 @@ nextFileMatch:
 		}
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
 		sortMatchesByScore(fileMatch.LineMatches)
+		sortChunkMatchesByScore(fileMatch.ChunkMatches)
 		if opts.Whole {
 			fileMatch.Content = cp.data(false)
 		}
 
+		matchedChunkRanges := 0
+		for _, cm := range fileMatch.ChunkMatches {
+			matchedChunkRanges += len(cm.Ranges)
+		}
+
 		repoMatchCount += len(fileMatch.LineMatches)
+		repoMatchCount += matchedChunkRanges
 
 		res.Files = append(res.Files, fileMatch)
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
+		res.Stats.MatchCount += matchedChunkRanges
 		res.Stats.FileCount++
 	}
 
@@ -420,7 +447,11 @@ func (m sortByOffsetSlice) Less(i, j int) bool {
 // filename/content matches: if there are content matches, all
 // filename matches are trimmed from the result. The matches are
 // returned in document order and are non-overlapping.
-func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
+//
+// If `merge` is set, overlapping and adjacent matches will be merged
+// into a single match. Otherwise, overlapping matches will be removed,
+// but adjacent matches will remain.
+func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candidateMatch {
 	var cands []*candidateMatch
 	visitMatches(mt, known, func(mt matchTree) {
 		if smt, ok := mt.(*substrMatchTree); ok {
@@ -450,26 +481,46 @@ func gatherMatches(mt matchTree, known map[matchTree]bool) []*candidateMatch {
 	}
 	cands = res
 
-	// Merge adjacent candidates. This guarantees that the matches
-	// are non-overlapping.
-	sort.Sort((sortByOffsetSlice)(cands))
-	res = cands[:0]
-	for i, c := range cands {
-		if i == 0 {
-			res = append(res, c)
-			continue
-		}
-		last := res[len(res)-1]
-		lastEnd := last.byteOffset + last.byteMatchSz
-		end := c.byteOffset + c.byteMatchSz
-		if lastEnd >= c.byteOffset {
-			if end > lastEnd {
-				last.byteMatchSz = end - last.byteOffset
+	if merge {
+		// Merge adjacent candidates. This guarantees that the matches
+		// are non-overlapping.
+		sort.Sort((sortByOffsetSlice)(cands))
+		res = cands[:0]
+		for i, c := range cands {
+			if i == 0 {
+				res = append(res, c)
+				continue
 			}
-			continue
-		}
+			last := res[len(res)-1]
+			lastEnd := last.byteOffset + last.byteMatchSz
+			end := c.byteOffset + c.byteMatchSz
+			if lastEnd >= c.byteOffset {
+				if end > lastEnd {
+					last.byteMatchSz = end - last.byteOffset
+				}
+				continue
+			}
 
-		res = append(res, c)
+			res = append(res, c)
+		}
+	} else {
+		// Remove overlapping candidates. This guarantees that the matches
+		// are non-overlapping, but also preserves expected match counts.
+		sort.Sort((sortByOffsetSlice)(cands))
+		res = cands[:0]
+		for i, c := range cands {
+			if i == 0 {
+				res = append(res, c)
+				continue
+			}
+			last := res[len(res)-1]
+			lastEnd := last.byteOffset + last.byteMatchSz
+			if lastEnd > c.byteOffset {
+				continue
+			}
+
+			res = append(res, c)
+		}
 	}
 
 	return res
@@ -517,30 +568,32 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 }
 
 func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl *RepoList, err error) {
-	var include func(rle *RepoListEntry) (bool, error)
+	var include func(rle *RepoListEntry) bool
 
 	q = d.simplify(q)
 	if c, ok := q.(*query.Const); ok {
 		if !c.Value {
 			return &RepoList{}, nil
 		}
-		include = func(rle *RepoListEntry) (bool, error) {
-			return true, nil
+		include = func(rle *RepoListEntry) bool {
+			return true
 		}
 	} else {
-		// We need to run a search per repo to decide if it is included.
-		include = func(rle *RepoListEntry) (bool, error) {
-			qOneRepo := query.NewAnd(
-				query.NewRepoSet(rle.Repository.Name),
-				q)
-			sr, err := d.Search(ctx, qOneRepo, &SearchOptions{
-				ShardMaxMatchCount: 1,
-				TotalMaxMatchCount: 1,
-			})
-			if err != nil {
-				return false, err
-			}
-			return len(sr.Files) > 0, nil
+		sr, err := d.Search(ctx, q, &SearchOptions{
+			ShardRepoMaxMatchCount: 1,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		foundRepos := make(map[string]struct{}, len(sr.Files))
+		for _, file := range sr.Files {
+			foundRepos[file.Repository] = struct{}{}
+		}
+
+		include = func(rle *RepoListEntry) bool {
+			_, ok := foundRepos[rle.Repository.Name]
+			return ok
 		}
 	}
 
@@ -558,12 +611,7 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 			continue
 		}
 		rle := &d.repoListEntry[i]
-		ok, err := include(rle)
-		if err != nil {
-			return nil, err
-		}
-
-		if !ok {
+		if !include(rle) {
 			continue
 		}
 

@@ -614,7 +614,7 @@ func evalConstants(q Q) Q {
 		}
 	case *RepoSet:
 		if len(s.Set) == 0 {
-			return &Const{true}
+			return &Const{false}
 		}
 	}
 	return q

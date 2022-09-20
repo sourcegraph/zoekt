@@ -27,7 +27,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/google/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/gitindex"
 )
 
 func main() {

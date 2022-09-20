@@ -19,8 +19,8 @@ import (
 	"testing"
 
 	"github.com/RoaringBitmap/roaring"
-	"github.com/google/zoekt/query"
 	"github.com/grafana/regexp"
+	"github.com/sourcegraph/zoekt/query"
 )
 
 func Test_breakOnNewlines(t *testing.T) {

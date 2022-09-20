@@ -30,7 +30,7 @@ import (
 	"strings"
 
 	gerrit "github.com/andygrunwald/go-gerrit"
-	"github.com/google/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/gitindex"
 )
 
 type loggingRT struct {
@@ -144,7 +144,7 @@ func main() {
 		}
 
 		for k, v := range *page {
-			if *active == false || "ACTIVE" == v.State {
+			if !*active || "ACTIVE" == v.State {
 				projects[k] = v
 			}
 			skip = skip + 1
@@ -203,7 +203,7 @@ func deleteStaleRepos(destDir string, filter *gitindex.Filter, repos map[string]
 	}
 
 	names := map[string]struct{}{}
-	for name, _ := range repos {
+	for name := range repos {
 		u, err := url.Parse(strings.Replace(projectURL, "${project}", name, 1))
 		if err != nil {
 			return err

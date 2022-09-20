@@ -14,7 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/google/zoekt"
+	"github.com/sourcegraph/zoekt"
 )
 
 var update = flag.Bool("update", false, "update golden file")
@@ -120,7 +120,7 @@ func TestFlags(t *testing.T) {
 
 	ignored := []cmp.Option{
 		// depends on $PATH setting.
-		cmpopts.IgnoreFields(Options{}, "CTags"),
+		cmpopts.IgnoreFields(Options{}, "CTagsPath"),
 		cmpopts.IgnoreFields(Options{}, "changedOrRemovedFiles"),
 		cmpopts.IgnoreFields(zoekt.Repository{}, "priority"),
 	}
@@ -128,7 +128,7 @@ func TestFlags(t *testing.T) {
 	for _, c := range cases {
 		c.want.SetDefaults()
 		// depends on $PATH setting.
-		c.want.CTags = ""
+		c.want.CTagsPath = ""
 
 		got := Options{}
 		fs := flag.NewFlagSet("", flag.ContinueOnError)
@@ -453,6 +453,67 @@ func TestBuilder_DeltaShardsBuildsShouldErrorOnBranchSet(t *testing.T) {
 	err = b.Finish()
 	if !errors.As(err, &deltaBranchSetError{}) {
 		t.Fatalf("expected error complaning about different branch names, got: %s", err)
+	}
+}
+
+func TestBuilder_DeltaShardsBuildsShouldErrorOnIndexOptionsMismatch(t *testing.T) {
+	repository := zoekt.Repository{
+		Name:     "repo",
+		ID:       1,
+		Branches: []zoekt.RepositoryBranch{{Name: "foo"}},
+	}
+
+	for _, test := range []struct {
+		name    string
+		options func(options *Options)
+	}{
+		{
+			name:    "update option CTagsPath to non default",
+			options: func(options *Options) { options.CTagsPath = "ctags_updated_test" },
+		},
+		{
+			name:    "update option DisableCTags to non default",
+			options: func(options *Options) { options.DisableCTags = true },
+		},
+		{
+			name:    "update option SizeMax to non default",
+			options: func(options *Options) { options.SizeMax -= 10 },
+		},
+		{
+			name:    "update option LargeFiles to non default",
+			options: func(options *Options) { options.LargeFiles = []string{"-large_file", "*.md", "-large_file", "*.yaml"} },
+		},
+	} {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			indexDir := t.TempDir()
+
+			// initially use default options
+			createTestShard(t, indexDir, repository, 2)
+
+			o := Options{
+				IndexDir:              indexDir,
+				RepositoryDescription: repository,
+				IsDelta:               true,
+			}
+			test.options(&o)
+
+			b, err := NewBuilder(o)
+			if err != nil {
+				t.Fatalf("NewBuilder: %v", err)
+			}
+
+			err = b.Finish()
+			if err == nil {
+				t.Fatalf("no error regarding index options mismatch")
+			}
+
+			var optionsMismatchError *deltaIndexOptionsMismatchError
+			if !errors.As(err, &optionsMismatchError) {
+				t.Fatalf("expected error complaining about index options mismatch, got: %s", err)
+			}
+		})
 	}
 }
 

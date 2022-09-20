@@ -22,7 +22,7 @@ import (
 	"math/bits"
 	"unicode/utf8"
 
-	"github.com/google/zoekt/query"
+	"github.com/sourcegraph/zoekt/query"
 )
 
 // indexData holds the pattern-independent data that we have to have

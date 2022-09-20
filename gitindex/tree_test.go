@@ -28,11 +28,11 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/shards"
 	"github.com/grafana/regexp"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/shards"
 )
 
 func createSubmoduleRepo(dir string) error {

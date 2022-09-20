@@ -43,20 +43,20 @@ func LowerRegexp(r *syntax.Regexp) *syntax.Regexp {
 	return &newRE
 }
 
-// optimizeRegexp converts capturing groups to non-capturing groups.
+// OptimizeRegexp converts capturing groups to non-capturing groups.
 // Returns original input if an error is encountered
-func optimizeRegexp(re *syntax.Regexp) *syntax.Regexp {
-	r := convertCapture(re)
+func OptimizeRegexp(re *syntax.Regexp, flags syntax.Flags) *syntax.Regexp {
+	r := convertCapture(re, flags)
 	return r.Simplify()
 }
 
-func convertCapture(re *syntax.Regexp) *syntax.Regexp {
+func convertCapture(re *syntax.Regexp, flags syntax.Flags) *syntax.Regexp {
 	if !hasCapture(re) {
 		return re
 	}
 
 	// Make a copy so in unlikely event of an error the original can be used as a fallback
-	r, err := syntax.Parse(re.String(), regexpFlags)
+	r, err := syntax.Parse(re.String(), flags)
 	if err != nil {
 		log.Printf("failed to copy regexp `%s`: %v", re, err)
 		return re
@@ -65,7 +65,7 @@ func convertCapture(re *syntax.Regexp) *syntax.Regexp {
 	r = uncapture(r)
 
 	// Parse again for new structure to take effect
-	r, err = syntax.Parse(r.String(), regexpFlags)
+	r, err = syntax.Parse(r.String(), flags)
 	if err != nil {
 		log.Printf("failed to parse regexp after uncapture `%s`: %v", r, err)
 		return re

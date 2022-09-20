@@ -33,22 +33,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
-	"github.com/google/zoekt/debugserver"
-	"github.com/google/zoekt/internal/profiler"
-	"github.com/google/zoekt/internal/tracer"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/shards"
-	"github.com/google/zoekt/stream"
-	"github.com/google/zoekt/web"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/debugserver"
+	"github.com/sourcegraph/zoekt/internal/profiler"
+	"github.com/sourcegraph/zoekt/internal/tracer"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/shards"
+	"github.com/sourcegraph/zoekt/stream"
+	"github.com/sourcegraph/zoekt/web"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	sglog "github.com/sourcegraph/log"
 	"github.com/uber/jaeger-client-go"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/automaxprocs/maxprocs"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
@@ -115,6 +116,7 @@ func writeTemplates(dir string) error {
 }
 
 func main() {
+	logDir := flag.String("log_dir", "", "log to this directory rather than stderr.")
 	logRefresh := flag.Duration("log_refresh", 24*time.Hour, "if using --log_dir, start writing a new file this often.")
 
 	listen := flag.String("listen", ":6070", "listen on this address.")
@@ -134,20 +136,6 @@ func main() {
 	version := flag.Bool("version", false, "Print version number")
 
 	flag.Parse()
-	// avoid a panic due to log_dir flag already being defined in glog (a transient dependency)
-	logDirFlag := flag.Lookup("log_dir")
-	if logDirFlag != nil {
-		logDir := logDirFlag.Value.String()
-		if logDir != "" {
-			if fi, err := os.Lstat(logDir); err != nil || !fi.IsDir() {
-				log.Fatalf("%s is not a directory", logDir)
-			}
-			// We could do fdup acrobatics to also redirect
-			// stderr, but it is simpler and more portable for the
-			// caller to divert stderr output if necessary.
-			go divertLogs(logDir, *logRefresh)
-		}
-	}
 
 	if *version {
 		fmt.Printf("zoekt-webserver version %q\n", zoekt.Version)
@@ -161,8 +149,24 @@ func main() {
 		os.Exit(0)
 	}
 
+	liblog := sglog.Init(sglog.Resource{
+		Name:       "zoekt-webserver",
+		Version:    zoekt.Version,
+		InstanceID: os.Getenv("HOSTNAME"),
+	})
+	defer liblog.Sync()
 	tracer.Init("zoekt-webserver", zoekt.Version)
 	profiler.Init("zoekt-webserver", zoekt.Version, -1)
+
+	if *logDir != "" {
+		if fi, err := os.Lstat(*logDir); err != nil || !fi.IsDir() {
+			log.Fatalf("%s is not a directory", *logDir)
+		}
+		// We could do fdup acrobatics to also redirect
+		// stderr, but it is simpler and more portable for the
+		// caller to divert stderr output if necessary.
+		go divertLogs(*logDir, *logRefresh)
+	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
@@ -173,16 +177,17 @@ func main() {
 
 	mustRegisterDiskMonitor(*index)
 
-	searcher, err := shards.NewDirectorySearcher(*index)
+	// Do not block on loading shards so we can become partially available
+	// sooner. Otherwise on large instances zoekt can be unavailable on the
+	// order of minutes.
+	searcher, err := shards.NewDirectorySearcherFast(*index)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Sourcegraph: Add logging if debug logging enabled
-	logLvl := os.Getenv("SRC_LOG_LEVEL")
-	debug := logLvl == "" || strings.EqualFold(logLvl, "dbug") || strings.EqualFold(logLvl, "debug")
-	if debug {
-		searcher = &loggedSearcher{Streamer: searcher}
+	searcher = &loggedSearcher{
+		Streamer: searcher,
+		Logger:   sglog.Scoped("searcher", ""),
 	}
 
 	s := &web.Server{
@@ -255,9 +260,7 @@ func main() {
 	}
 
 	go func() {
-		if debug {
-			log.Printf("listening on %v", *listen)
-		}
+		sglog.Scoped("server", "").Info("starting server", sglog.Stringp("address", listen))
 		var err error
 		if *sslCert != "" || *sslKey != "" {
 			err = srv.ListenAndServeTLS(*sslCert, *sslKey)
@@ -386,6 +389,7 @@ func mustRegisterDiskMonitor(path string) {
 
 type loggedSearcher struct {
 	zoekt.Streamer
+	Logger sglog.Logger
 }
 
 func (s *loggedSearcher) Search(
@@ -424,9 +428,21 @@ func (s *loggedSearcher) StreamSearch(
 }
 
 func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, st *zoekt.Stats, err error) {
-	id := traceID(ctx)
+	logger := s.Logger.
+		WithTrace(traceContext(ctx)).
+		With(
+			sglog.String("query", q.String()),
+			sglog.Bool("opts.EstimateDocCount", opts.EstimateDocCount),
+			sglog.Bool("opts.Whole", opts.Whole),
+			sglog.Int("opts.ShardMaxMatchCount", opts.ShardMaxMatchCount),
+			sglog.Int("opts.TotalMaxMatchCount", opts.TotalMaxMatchCount),
+			sglog.Int("opts.ShardMaxImportantMatch", opts.ShardMaxImportantMatch),
+			sglog.Int("opts.TotalMaxImportantMatch", opts.TotalMaxImportantMatch),
+			sglog.Duration("opts.MaxWallTime", opts.MaxWallTime),
+			sglog.Int("opts.MaxDocDisplayCount", opts.MaxDocDisplayCount),
+		)
 	if err != nil {
-		log.Printf("EROR: search failed traceID=%s q=%s: %s", id, q.String(), err.Error())
+		logger.Error("search failed", sglog.Error(err))
 		return
 	}
 
@@ -434,55 +450,44 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 		return
 	}
 
-	log.Printf(
-		"DBUG: search traceID=%s q=%s Options{EstimateDocCount=%v Whole=%v ShardMaxMatchCount=%v TotalMaxMatchCount=%v ShardMaxImportantMatch=%v TotalMaxImportantMatch=%v MaxWallTime=%v MaxDocDisplayCount=%v} Stats{ContentBytesLoaded=%v IndexBytesLoaded=%v Crashes=%v Duration=%v FileCount=%v ShardFilesConsidered=%v FilesConsidered=%v FilesLoaded=%v FilesSkipped=%v ShardsScanned=%v ShardsSkipped=%v ShardsSkippedFilter=%v MatchCount=%v NgramMatches=%v Wait=%v}",
-		id,
-		q.String(),
-		opts.EstimateDocCount,
-		opts.Whole,
-		opts.ShardMaxMatchCount,
-		opts.TotalMaxMatchCount,
-		opts.ShardMaxImportantMatch,
-		opts.TotalMaxImportantMatch,
-		opts.MaxWallTime,
-		opts.MaxDocDisplayCount,
-		st.ContentBytesLoaded,
-		st.IndexBytesLoaded,
-		st.Crashes,
-		st.Duration,
-		st.FileCount,
-		st.ShardFilesConsidered,
-		st.FilesConsidered,
-		st.FilesLoaded,
-		st.FilesSkipped,
-		st.ShardsScanned,
-		st.ShardsSkipped,
-		st.ShardsSkippedFilter,
-		st.MatchCount,
-		st.NgramMatches,
-		st.Wait,
+	logger.Debug("search",
+		sglog.Int64("stat.ContentBytesLoaded", st.ContentBytesLoaded),
+		sglog.Int64("stat.IndexBytesLoaded", st.IndexBytesLoaded),
+		sglog.Int("stat.Crashes", st.Crashes),
+		sglog.Duration("stat.Duration", st.Duration),
+		sglog.Int("stat.FileCount", st.FileCount),
+		sglog.Int("stat.ShardFilesConsidered", st.ShardFilesConsidered),
+		sglog.Int("stat.FilesConsidered", st.FilesConsidered),
+		sglog.Int("stat.FilesLoaded", st.FilesLoaded),
+		sglog.Int("stat.FilesSkipped", st.FilesSkipped),
+		sglog.Int("stat.ShardsScanned", st.ShardsScanned),
+		sglog.Int("stat.ShardsSkipped", st.ShardsSkipped),
+		sglog.Int("stat.ShardsSkippedFilter", st.ShardsSkippedFilter),
+		sglog.Int("stat.MatchCount", st.MatchCount),
+		sglog.Int("stat.NgramMatches", st.NgramMatches),
+		sglog.Duration("stat.Wait", st.Wait),
 	)
 }
 
-// traceID returns a trace ID, if any, found in the given context.
-func traceID(ctx context.Context) string {
-	span := opentracing.SpanFromContext(ctx)
-	if span == nil {
-		return ""
+func traceContext(ctx context.Context) sglog.TraceContext {
+	otSpan := opentracing.SpanFromContext(ctx)
+	if otSpan != nil {
+		if jaegerSpan, ok := otSpan.Context().(jaeger.SpanContext); ok {
+			return sglog.TraceContext{
+				TraceID: jaegerSpan.TraceID().String(),
+				SpanID:  jaegerSpan.SpanID().String(),
+			}
+		}
 	}
-	return traceIDFromSpan(span)
-}
 
-// traceIDFromSpan returns a trace ID, if any, found in the given span.
-func traceIDFromSpan(span opentracing.Span) string {
-	switch v := span.Context().(type) {
-	case jaeger.SpanContext:
-		return v.TraceID().String()
-
-	case ddtrace.SpanContext:
-		return strconv.FormatUint(v.TraceID(), 10)
+	if otelSpan := oteltrace.SpanFromContext(ctx).SpanContext(); otelSpan.IsValid() {
+		return sglog.TraceContext{
+			TraceID: otelSpan.TraceID().String(),
+			SpanID:  otelSpan.SpanID().String(),
+		}
 	}
-	return ""
+
+	return sglog.TraceContext{}
 }
 
 var (

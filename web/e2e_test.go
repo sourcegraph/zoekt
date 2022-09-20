@@ -29,8 +29,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
 )
 
 // TODO(hanwen): cut & paste from ../ . Should create internal test

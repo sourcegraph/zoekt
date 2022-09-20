@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
 )
 
 func TestMergeMeta(t *testing.T) {
@@ -62,7 +62,7 @@ func TestMergeMeta(t *testing.T) {
 	// create a compound shard. Use a new indexdir to avoid the need to cleanup
 	// old shards.
 	dir = t.TempDir()
-	tmpFn, dstFn, err := merge(dir, repoFns)
+	tmpFn, dstFn, err := merge(t, dir, repoFns)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,9 @@ func TestMergeMeta(t *testing.T) {
 	}
 }
 
-func merge(dstDir string, names []string) (string, string, error) {
+func merge(t *testing.T, dstDir string, names []string) (string, string, error) {
+	t.Helper()
+
 	var files []zoekt.IndexFile
 	for _, fn := range names {
 		f, err := os.Open(fn)

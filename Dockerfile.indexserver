@@ -1,7 +1,7 @@
-FROM alpine:3.15.0
+FROM alpine:3.15.4
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
-    apk add --no-cache ca-certificates bind-tools tini git jansson curl && \
+    apk add --no-cache ca-certificates bind-tools tini git jansson && \
     apk add --upgrade --no-cache 'libcrypto1.1>=1.1.1n-r0' 'libssl1.1>=1.1.1n-r0' 'pcre2>=10.40-r0'
 
 # Run as non-root user sourcegraph. External volumes should be mounted under /data (which will be owned by sourcegraph).
@@ -21,9 +21,5 @@ COPY --from=zoekt \
     /usr/local/bin/zoekt-git-index \
     /usr/local/bin/zoekt-merge-index \
     /usr/local/bin/
-
-# zoekt indexing has a large stable heap size (gigs), and as such the default
-# GOGC=100 could be better tuned. https://dave.cheney.net/tag/gogc
-ENV GOGC=50
 
 ENTRYPOINT ["/sbin/tini", "--", "zoekt-sourcegraph-indexserver"]

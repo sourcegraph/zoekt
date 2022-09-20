@@ -4,10 +4,10 @@ import (
 	"context"
 	"log"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/trace"
 	"github.com/opentracing/opentracing-go"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/trace"
 )
 
 // traceAwareSearcher wraps a zoekt.Searcher instance so that the tracing context item is set in the

@@ -690,9 +690,11 @@ func loadIndexData(r IndexFile) (*indexData, error) {
 }
 
 // PrintNgramStats outputs a list of the form
-//    n_1 trigram_1
-//    n_2 trigram_2
-//    ...
+//
+//	n_1 trigram_1
+//	n_2 trigram_2
+//	...
+//
 // where n_i is the length of the postings list of trigram_i stored in r.
 func PrintNgramStats(r IndexFile) error {
 	id, err := loadIndexData(r)

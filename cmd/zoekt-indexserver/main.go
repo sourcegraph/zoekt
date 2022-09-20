@@ -33,8 +33,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/gitindex"
 )
 
 const day = time.Hour * 24

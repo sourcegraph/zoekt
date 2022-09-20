@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/trace"
 
-	"github.com/google/zoekt"
+	"github.com/sourcegraph/zoekt"
 )
 
 var registerOnce sync.Once

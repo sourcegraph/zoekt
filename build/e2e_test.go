@@ -33,9 +33,9 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/shards"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/shards"
 )
 
 func TestBasic(t *testing.T) {
@@ -579,7 +579,6 @@ func TestDeltaShards(t *testing.T) {
 	type step struct {
 		name      string
 		documents []zoekt.Document
-		branches  []zoekt.RepositoryBranch
 		optFn     func(t *testing.T, o *Options)
 
 		query             string
@@ -800,6 +799,16 @@ func TestScoring(t *testing.T) {
 		},
 	}
 
+	exampleJava, err := os.ReadFile("./testdata/example.java")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exampleKotlin, err := os.ReadFile("./testdata/example.kt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	cases := []struct {
 		fileName     string
 		content      []byte
@@ -807,22 +816,111 @@ func TestScoring(t *testing.T) {
 		wantLanguage string
 		wantScore    float64
 	}{
+		//
+		// Kotlin
+		//
 		{
-			fileName: "hw.java",
-			content: []byte(`
-public class HelloWorld
-{
-       public static void main (String[] args)
-       {
-             System.out.println("Hello World!");
-       }
-}
-`),
-			query:        &query.Substring{Content: true, Pattern: "lloWorld"},
+			fileName:     "example.kt",
+			content:      exampleKotlin,
+			query:        &query.Substring{Content: true, Pattern: "oxyPreloader"},
+			wantLanguage: "Kotlin",
+			// 5500 (partial symbol at boundary) + 1000 (Kotlin class) + 50 (partial word) + 400 (atom) + 10 (file order)
+			wantScore: 6960,
+		},
+		{
+			fileName:     "example.kt",
+			content:      exampleKotlin,
+			query:        &query.Substring{Content: true, Pattern: "ViewMetadata"},
+			wantLanguage: "Kotlin",
+			// 7000 (symbol) + 900 (Kotlin interface) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8810,
+		},
+		{
+			fileName:     "example.kt",
+			content:      exampleKotlin,
+			query:        &query.Substring{Content: true, Pattern: "onScrolled"},
+			wantLanguage: "Kotlin",
+			// 7000 (symbol) + 800 (Kotlin method) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8710,
+		},
+		{
+			fileName:     "example.kt",
+			content:      exampleKotlin,
+			query:        &query.Substring{Content: true, Pattern: "PreloadErrorHandler"},
+			wantLanguage: "Kotlin",
+			// 7000 (symbol) + 700 (Kotlin typealias) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8610,
+		},
+		{
+			fileName:     "example.kt",
+			content:      exampleKotlin,
+			query:        &query.Substring{Content: true, Pattern: "FLING_THRESHOLD_PX"},
+			wantLanguage: "Kotlin",
+			// 7000 (symbol) + 600 (Kotlin constant) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8510,
+		},
+		{
+			fileName:     "example.kt",
+			content:      exampleKotlin,
+			query:        &query.Substring{Content: true, Pattern: "scrollState"},
+			wantLanguage: "Kotlin",
+			// 7000 (symbol) + 500 (Kotlin variable) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8410,
+		},
+		//
+		// Java
+		//
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "nnerClass"},
 			wantLanguage: "Java",
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 50 (partial word) + 400 (atom) + 10 (file order)
 			wantScore: 6960,
 		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "innerEnum"},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 900 (Java enum) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8810,
+		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "innerInterface"},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 800 (Java interface) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8710,
+		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "innerMethod"},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 700 (Java method) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8610,
+		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "field"},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 600 (Java field) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8510,
+		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "B"},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 500 (Java enum constant) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8410,
+		},
+		//
+		// Go
+		//
 		{
 			fileName:     "a/b/c/config.go",
 			query:        &query.Substring{FileName: true, Pattern: "config"},
@@ -843,6 +941,21 @@ public class HelloWorld
 			wantLanguage: "Go",
 			// 500 (word) + 400 (atom) + 10 (file order)
 			wantScore: 910,
+		},
+		{
+			fileName: "src/net/http/client.go",
+			content: []byte(`
+package http
+func Get() {
+	panic("")
+}
+`),
+			query: &query.And{Children: []query.Q{
+				&query.Symbol{Expr: &query.Substring{Pattern: "http", Content: true}},
+				&query.Symbol{Expr: &query.Substring{Pattern: "Get", Content: true}}}},
+			wantLanguage: "Go",
+			// 7000 (full base match) + 500 (word) + 400 (atom) + 10 (file order) + 1 (repetition-boost)
+			wantScore: 7911,
 		},
 	}
 

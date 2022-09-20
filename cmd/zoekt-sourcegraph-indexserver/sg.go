@@ -20,10 +20,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-git/v5"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"golang.org/x/net/trace"
 
-	"github.com/google/zoekt"
+	"github.com/sourcegraph/zoekt"
 )
 
 // SourcegraphListResult is the return value of Sourcegraph.List. It is its
@@ -374,7 +375,7 @@ func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*Sourcegr
 		}
 		for _, opt := range opts {
 			if opt.Error != "" {
-				sf.Log.Printf("WARN: ignoring GetIndexOptions error for %s: %v", opt.Name, err)
+				sf.Log.Printf("WARN: ignoring GetIndexOptions error for %s: %v", opt.Name, opt.Error)
 				continue
 			}
 			f(opt.IndexOptions)
@@ -463,19 +464,53 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 		Priority: float("SG_PRIORITY"),
 	}
 
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	cmd.Dir = dir
-	if b, err := cmd.Output(); err != nil {
+	branches, err := sf.getBranches(name)
+	if err != nil {
 		return opts, err
-	} else {
-		head := string(bytes.TrimSpace(b))
-		opts.Branches = []zoekt.RepositoryBranch{{
-			Name:    "HEAD",
-			Version: head,
-		}}
 	}
+	opts.Branches = branches
 
 	return opts, nil
+}
+
+func (sf sourcegraphFake) getBranches(name string) ([]zoekt.RepositoryBranch, error) {
+	dir := filepath.Join(sf.RootDir, filepath.FromSlash(name))
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := repo.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	sec := cfg.Raw.Section("zoekt")
+	branches := sec.Options.GetAll("branch")
+	if len(branches) == 0 {
+		branches = append(branches, "HEAD")
+	}
+
+	rBranches := make([]zoekt.RepositoryBranch, 0, len(branches))
+	for _, branch := range branches {
+		cmd := exec.Command("git", "rev-parse", branch)
+		cmd.Dir = dir
+		if b, err := cmd.Output(); err != nil {
+			sf.Log.Printf("WARN: Could not get branch %s/%s", name, branch)
+		} else {
+			version := string(bytes.TrimSpace(b))
+			rBranches = append(rBranches, zoekt.RepositoryBranch{
+				Name:    branch,
+				Version: version,
+			})
+		}
+	}
+
+	if len(rBranches) == 0 {
+		return nil, fmt.Errorf("WARN: Could not get any branch revisions for repo %s", name)
+	}
+
+	return rBranches, nil
 }
 
 func (sf sourcegraphFake) id(name string) uint32 {

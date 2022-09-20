@@ -18,8 +18,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/ctags"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/ctags"
 )
 
 func TestTagsToSections(t *testing.T) {
@@ -44,8 +44,8 @@ func TestTagsToSections(t *testing.T) {
 }
 
 func TestTagsToSectionsMultiple(t *testing.T) {
-	c := []byte("class Foob { int x; int b; }")
-	// ----------012345678901234567890123456789
+	c := []byte("class Foo { int x; int b; }")
+	// ----------012345678901234567890123456
 
 	tags := []*ctags.Entry{
 		{
@@ -64,8 +64,42 @@ func TestTagsToSectionsMultiple(t *testing.T) {
 	}
 
 	want := []zoekt.DocumentSection{
-		{Start: 17, End: 18},
-		{Start: 24, End: 25},
+		{Start: 16, End: 17},
+		{Start: 23, End: 24},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestTagsToSectionsReverse(t *testing.T) {
+	c := []byte("typedef enum { FOO, BAR } bas\n")
+	// ----------01234567890123456789012345678
+
+	tags := []*ctags.Entry{
+		{
+			Name: "bas",
+			Line: 1,
+		},
+		{
+			Name: "FOO",
+			Line: 1,
+		},
+		{
+			Name: "BAR",
+			Line: 1,
+		},
+	}
+
+	got, _, err := tagsToSections(c, tags)
+	if err != nil {
+		t.Fatal("tagsToSections", err)
+	}
+
+	want := []zoekt.DocumentSection{
+		{Start: 15, End: 18},
+		{Start: 20, End: 23},
+		{Start: 26, End: 29},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -90,5 +124,108 @@ func TestTagsToSectionsEOF(t *testing.T) {
 
 	if len(secs) != 1 || secs[0].Start != 17 || secs[0].End != 20 {
 		t.Fatalf("got %#v, want 1 section (17,20)", secs)
+	}
+}
+
+func TestOverlaps(t *testing.T) {
+	tests := []struct {
+		documentSections []zoekt.DocumentSection
+		start            uint32
+		end              uint32
+		pos              int
+	}{
+		//
+		// overlap
+		//
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            6,
+			end:              9,
+			pos:              -1,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            6,
+			end:              12,
+			pos:              -1,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            4,
+			end:              9,
+			pos:              -1,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            1,
+			end:              9,
+			pos:              -1,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            0,
+			end:              25,
+			pos:              -1,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}},
+			start:            0,
+			end:              1,
+			pos:              -1,
+		},
+		//
+		// NO overlap
+		//
+		{
+			documentSections: []zoekt.DocumentSection{{2, 3}, {5, 10}},
+			start:            0,
+			end:              2,
+			pos:              0,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            3,
+			end:              4,
+			pos:              1,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            3,
+			end:              5,
+			pos:              1,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}},
+			start:            11,
+			end:              14,
+			pos:              2,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}, {14, 15}},
+			start:            11,
+			end:              13,
+			pos:              2,
+		},
+		{
+			documentSections: []zoekt.DocumentSection{{0, 3}, {5, 10}, {14, 15}},
+			start:            18,
+			end:              19,
+			pos:              3,
+		},
+		{
+			documentSections: nil,
+			start:            1,
+			end:              3,
+			pos:              0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			got := overlaps(tt.documentSections, tt.start, tt.end)
+			if got != tt.pos {
+				t.Fatalf("want %d, got %d", tt.pos, got)
+			}
+		})
 	}
 }

@@ -30,11 +30,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/query"
-	"github.com/google/zoekt/rpc"
-	"github.com/google/zoekt/stream"
 	"github.com/grafana/regexp"
+	"github.com/sourcegraph/zoekt"
+	zjson "github.com/sourcegraph/zoekt/json"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/rpc"
+	"github.com/sourcegraph/zoekt/stream"
 )
 
 var Funcmap = template.FuncMap{
@@ -172,7 +173,8 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 		mux.HandleFunc("/print", s.servePrint)
 	}
 	if s.RPC {
-		mux.Handle(rpc.DefaultRPCPath, rpc.Server(traceAwareSearcher{s.Searcher}))       // /rpc
+		mux.Handle(rpc.DefaultRPCPath, rpc.Server(traceAwareSearcher{s.Searcher})) // /rpc
+		mux.Handle("/api/", http.StripPrefix("/api", zjson.JSONServer(traceAwareSearcher{s.Searcher})))
 		mux.Handle(stream.DefaultSSEPath, stream.Server(traceAwareSearcher{s.Searcher})) // /stream
 	}
 
@@ -286,34 +288,13 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 	sOpts.NumContextLines = numCtxLines
 
 	sOpts.SetDefaults()
-
-	ctx := r.Context()
-	if result, err := s.Searcher.Search(ctx, q, &zoekt.SearchOptions{EstimateDocCount: true}); err != nil {
-		return nil, err
-	} else if numdocs := result.ShardFilesConsidered; numdocs > 10000 {
-		// If the search touches many shards and many files, we
-		// have to limit the number of matches.  This setting
-		// is based on the number of documents eligible after
-		// considering reponames, so large repos (both
-		// android, chromium are about 500k files) aren't
-		// covered fairly.
-
-		// 10k docs, 50 num -> max match = (250 + 250 / 10)
-		sOpts.ShardMaxMatchCount = num*5 + (5*num)/(numdocs/1000)
-
-		// 10k docs, 50 num -> max important match = 4
-		sOpts.ShardMaxImportantMatch = num/20 + num/(numdocs/500)
-	} else {
-		// Virtually no limits for a small corpus; important
-		// matches are just as expensive as normal matches.
-		n := numdocs + num*100
-		sOpts.ShardMaxImportantMatch = n
-		sOpts.ShardMaxMatchCount = n
-		sOpts.TotalMaxMatchCount = n
-		sOpts.TotalMaxImportantMatch = n
-	}
 	sOpts.MaxDocDisplayCount = num
 	sOpts.DebugScore = debugScore
+
+	ctx := r.Context()
+	if err := zjson.CalculateDefaultSearchLimits(ctx, q, s.Searcher, &sOpts); err != nil {
+		return nil, err
+	}
 
 	result, err := s.Searcher.Search(ctx, q, &sOpts)
 	if err != nil {

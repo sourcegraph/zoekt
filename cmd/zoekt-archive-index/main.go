@@ -2,9 +2,9 @@
 //
 // Example via github.com:
 //
-//   zoekt-archive-index -incremental -commit b57cb1605fd11ba2ecfa7f68992b4b9cc791934d -name github.com/gorilla/mux -strip_components 1 https://codeload.github.com/gorilla/mux/legacy.tar.gz/b57cb1605fd11ba2ecfa7f68992b4b9cc791934d
+//	zoekt-archive-index -incremental -commit b57cb1605fd11ba2ecfa7f68992b4b9cc791934d -name github.com/gorilla/mux -strip_components 1 https://codeload.github.com/gorilla/mux/legacy.tar.gz/b57cb1605fd11ba2ecfa7f68992b4b9cc791934d
 //
-//   zoekt-archive-index -branch master https://github.com/gorilla/mux/commit/b57cb1605fd11ba2ecfa7f68992b4b9cc791934d
+//	zoekt-archive-index -branch master https://github.com/gorilla/mux/commit/b57cb1605fd11ba2ecfa7f68992b4b9cc791934d
 package main
 
 import (
@@ -16,9 +16,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/build"
-	"github.com/google/zoekt/cmd"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/cmd"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 

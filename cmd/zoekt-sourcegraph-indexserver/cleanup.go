@@ -10,11 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/zoekt"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/sourcegraph/zoekt"
 )
 
 var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -62,7 +63,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 
 	// tombstones: Remove tombstones that conflict with index or trash. After this,
 	// tombstones only contain repos that are neither in the trash nor in the index.
-	for repo, _ := range tombtones {
+	for repo := range tombtones {
 		if _, conflicts := index[repo]; conflicts {
 			delete(tombtones, repo)
 		}
@@ -169,14 +170,29 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			}
 		}
 	}
+
+	// feature flag: place file TOMBSTONE_DUPLICATES in IndexDir
+	if _, err := os.Stat(filepath.Join(indexDir, "TOMBSTONE_DUPLICATES")); err == nil && shardMerging {
+		// This breaks an invariant of cleanup() where we guarantee that right
+		// after a cleanup the index state is consistent with the repos parameter.
+		// If the duplicates are tombstoned, the same repoID may seem both
+		// alive and tombstoned, depending on which compound shard you look into.
+		// However, introducing duplicates in the first place breaks another invariant
+		// (of having no duplicates), so
+		// 1. This is bad, but we are fixing an even worse situation.
+		// 2. This code should be removed as soon as the situation is fixed.
+		tombstoneDuplicates(indexDir)
+	}
+
 	metricCleanupDuration.Observe(time.Since(start).Seconds())
 }
 
 type shard struct {
-	RepoID   uint32
-	RepoName string
-	Path     string
-	ModTime  time.Time
+	RepoID        uint32
+	RepoName      string
+	Path          string
+	ModTime       time.Time
+	RepoTombstone bool
 }
 
 func getShards(dir string) map[uint32][]shard {
@@ -209,14 +225,69 @@ func getShards(dir string) map[uint32][]shard {
 
 		for _, repo := range repos {
 			shards[repo.ID] = append(shards[repo.ID], shard{
-				RepoID:   repo.ID,
-				RepoName: repo.Name,
-				Path:     path,
-				ModTime:  fi.ModTime(),
+				RepoID:        repo.ID,
+				RepoName:      repo.Name,
+				Path:          path,
+				ModTime:       fi.ModTime(),
+				RepoTombstone: repo.Tombstone,
 			})
 		}
 	}
 	return shards
+}
+
+// tombstoneDuplicates finds duplicate shards in indexDir and makes it so
+// that all of them except one have a tombstone. It tries, on a best effort basis,
+// to select the non-tombstoned shard with the latest modification time as the one to
+// remain alive.
+// The assumption is that duplicate shards exist only as parts of compound shards:
+// we haven't seen simple duplicate shards in the wild.
+// Duplicate shards should not occur at all but we rarely see them due to a bug somewhere (probably fixed).
+// This function is intended to wait for a subsequent call to vacuum that will delete the
+// tombstoned repos.
+func tombstoneDuplicates(indexDir string) {
+	// We are only receiving alive shards in this call, so we may skip a
+	// newer shard if it already has a tombstone.
+	index := getShards(indexDir)
+
+	for repoID, shardsAll := range index {
+		shards := make([]shard, 0, len(shardsAll))
+		for _, s := range shardsAll {
+			// One repoID corresponds to multiple shards if either
+			// a) it is a large repo split across multiple shards, or
+			// b) it is a repo that is duplicated in several compound shards.
+			// We are only interested in case b).
+			if strings.HasPrefix(filepath.Base(s.Path), "compound-") {
+				shards = append(shards, s)
+			}
+		}
+		if len(shards) <= 1 {
+			continue
+		}
+
+		log.Printf("found %d duplicate shards for repoID=%d. Tombstoning all but one", len(shards), repoID)
+
+		latest := 0
+		for i, s := range shards {
+			if shards[latest].ModTime.Before(s.ModTime) {
+				latest = i
+			}
+		}
+		if latest != 0 {
+			shards[0], shards[latest] = shards[latest], shards[0]
+		}
+
+		if err := zoekt.UnsetTombstone(shards[0].Path, repoID); err != nil {
+			log.Printf("error removing tombstone for %v: %s", repoID, err)
+		} else {
+			shardsLog(indexDir, "untomb", shards[:1])
+		}
+		for _, s := range shards[1:] {
+			if !s.RepoTombstone && maybeSetTombstone([]shard{s}, repoID) {
+				shardsLog(indexDir, "tomb", []shard{s})
+			}
+		}
+	}
 }
 
 // getTombstonedRepos return a map of tombstoned repositories in dir. If a
@@ -246,10 +317,11 @@ func getTombstonedRepos(dir string) map[uint32]shard {
 				continue
 			}
 			m[repo.ID] = shard{
-				RepoID:   repo.ID,
-				RepoName: repo.Name,
-				Path:     p,
-				ModTime:  repo.LatestCommitDate,
+				RepoID:        repo.ID,
+				RepoName:      repo.Name,
+				Path:          p,
+				ModTime:       repo.LatestCommitDate,
+				RepoTombstone: repo.Tombstone,
 			}
 		}
 	}
@@ -433,39 +505,25 @@ func (s *Server) vacuum() {
 		}
 
 		if info.Size() < s.minSizeBytes {
-			// feature flag: place file EXPLODE in IndexDir
-			if _, err := os.Stat(filepath.Join(s.IndexDir, "EXPLODE")); err == nil {
-				cmd := exec.Command("zoekt-merge-index", "explode", path)
+			cmd := exec.Command("zoekt-merge-index", "explode", path)
 
-				s.muIndexDir.Lock()
-				b, err := cmd.CombinedOutput()
-				s.muIndexDir.Unlock()
+			var b []byte
+			s.muIndexDir.Global(func() {
+				b, err = cmd.CombinedOutput()
+			})
 
-				if err != nil {
-					debug.Printf("failed to explode compound shard %s: %s", path, string(b))
-				} else {
-					shardsLog(s.IndexDir, "explode", []shard{{Path: path}})
-				}
-				continue
+			if err != nil {
+				debug.Printf("failed to explode compound shard %s: %s", path, string(b))
 			} else {
-				paths, err := zoekt.IndexFilePaths(path)
-				if err != nil {
-					debug.Printf("failed getting all file paths for %s", path)
-					continue
-				}
-				s.muIndexDir.Lock()
-				for _, p := range paths {
-					os.Remove(p)
-				}
-				s.muIndexDir.Unlock()
-				shardsLog(s.IndexDir, "delete", []shard{{Path: path}})
-				continue
+				shardsLog(s.IndexDir, "explode", []shard{{Path: path}})
 			}
+			continue
 		}
 
-		s.muIndexDir.Lock()
-		removed, err := removeTombstones(path)
-		s.muIndexDir.Unlock()
+		var removed []*zoekt.Repository
+		s.muIndexDir.Global(func() {
+			removed, err = removeTombstones(path)
+		})
 
 		if err != nil {
 			debug.Printf("error while removing tombstones in %s: %s", fn, err)

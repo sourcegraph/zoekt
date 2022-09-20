@@ -38,11 +38,12 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar"
-	"github.com/google/zoekt"
-	"github.com/google/zoekt/ctags"
 	"github.com/grafana/regexp"
 	"github.com/rs/xid"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/ctags"
 )
 
 var DefaultDir = filepath.Join(os.Getenv("HOME"), ".zoekt")
@@ -79,8 +80,9 @@ type Options struct {
 	// DisableCTags disables the generation of ctags metadata.
 	DisableCTags bool
 
-	// Path to exuberant ctags binary to run
-	CTags string
+	// CtagsPath is the path to the ctags binary to run, or empty
+	// if a valid binary couldn't be found.
+	CTagsPath string
 
 	// If set, ctags must succeed.
 	CTagsMustSucceed bool
@@ -104,15 +106,34 @@ type Options struct {
 	changedOrRemovedFiles []string
 }
 
-// HashOptions creates a hash of the options that affect an index.
-func (o *Options) HashOptions() string {
+// HashOptions contains only the options in Options that upon modification leads to IndexState of IndexStateMismatch during the next index building.
+type HashOptions struct {
+	sizeMax          int
+	disableCTags     bool
+	ctagsPath        string
+	cTagsMustSucceed bool
+	largeFiles       []string
+}
+
+func (o *Options) HashOptions() HashOptions {
+	return HashOptions{
+		sizeMax:          o.SizeMax,
+		disableCTags:     o.DisableCTags,
+		ctagsPath:        o.CTagsPath,
+		cTagsMustSucceed: o.CTagsMustSucceed,
+		largeFiles:       o.LargeFiles,
+	}
+}
+
+func (o *Options) GetHash() string {
+	h := o.HashOptions()
 	hasher := sha1.New()
 
-	hasher.Write([]byte(o.CTags))
-	hasher.Write([]byte(fmt.Sprintf("%t", o.CTagsMustSucceed)))
-	hasher.Write([]byte(fmt.Sprintf("%d", o.SizeMax)))
-	hasher.Write([]byte(fmt.Sprintf("%q", o.LargeFiles)))
-	hasher.Write([]byte(fmt.Sprintf("%t", o.DisableCTags)))
+	hasher.Write([]byte(h.ctagsPath))
+	hasher.Write([]byte(fmt.Sprintf("%t", h.cTagsMustSucceed)))
+	hasher.Write([]byte(fmt.Sprintf("%d", h.sizeMax)))
+	hasher.Write([]byte(fmt.Sprintf("%q", h.largeFiles)))
+	hasher.Write([]byte(fmt.Sprintf("%t", h.disableCTags)))
 
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
@@ -246,8 +267,8 @@ func checkCTags() string {
 
 // SetDefaults sets reasonable default options.
 func (o *Options) SetDefaults() {
-	if o.CTags == "" {
-		o.CTags = checkCTags()
+	if o.CTagsPath == "" && !o.DisableCTags {
+		o.CTagsPath = checkCTags()
 	}
 
 	if o.Parallelism == 0 {
@@ -355,7 +376,7 @@ func (o *Options) IndexState() (IndexState, string) {
 		return IndexStateCorrupt, fn
 	}
 
-	if repo.IndexOptions != o.HashOptions() {
+	if repo.IndexOptions != o.GetHash() {
 		return IndexStateOption, fn
 	}
 
@@ -488,16 +509,12 @@ func NewBuilder(opts Options) (*Builder, error) {
 		finishedShards: map[string]string{},
 	}
 
-	if b.opts.DisableCTags {
-		b.opts.CTags = ""
-	}
-
-	if b.opts.CTags == "" && b.opts.CTagsMustSucceed {
+	if b.opts.CTagsPath == "" && b.opts.CTagsMustSucceed {
 		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
 	}
 
-	if strings.Contains(opts.CTags, "universal-ctags") {
-		parser, err := ctags.NewParser(opts.CTags)
+	if strings.Contains(opts.CTagsPath, "universal-ctags") {
+		parser, err := ctags.NewParser(opts.CTagsPath)
 		if err != nil && opts.CTagsMustSucceed {
 			return nil, fmt.Errorf("ctags.NewParser: %v", err)
 		}
@@ -652,6 +669,13 @@ func (b *Builder) Finish() error {
 					shardName: shard,
 					old:       repository.Branches,
 					new:       b.opts.RepositoryDescription.Branches,
+				}
+			}
+
+			if b.opts.GetHash() != repository.IndexOptions {
+				return &deltaIndexOptionsMismatchError{
+					shardName:  shard,
+					newOptions: b.opts.HashOptions(),
 				}
 			}
 
@@ -844,6 +868,10 @@ type rankedDoc struct {
 	rank []float64
 }
 
+// rank returns a vector of scores which is used at index-time to sort documents
+// before writing them to disk. The order of documents in the shard is important
+// at query time, because earlier documents receive a boost at query time and
+// have a higher chance of being searched before limits kick in.
 func rank(d *zoekt.Document, origIdx int) []float64 {
 	generated := 0.0
 	if strings.HasSuffix(d.Name, "min.js") || strings.HasSuffix(d.Name, "js.map") {
@@ -871,14 +899,14 @@ func rank(d *zoekt.Document, origIdx int) []float64 {
 		// Prefer docs that are not tests
 		test,
 
+		// With short names
+		squashRange(len(d.Name)),
+
 		// With many symbols
 		1.0 - squashRange(len(d.Symbols)),
 
 		// With short content
 		squashRange(len(d.Content)),
-
-		// With short names
-		squashRange(len(d.Name)),
 
 		// That is present is as many branches as possible
 		1.0 - squashRange(len(d.Branches)),
@@ -914,13 +942,13 @@ func sortDocuments(todo []*zoekt.Document) {
 }
 
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
-	if b.opts.CTags != "" {
-		err := ctagsAddSymbols(todo, b.parser, b.opts.CTags)
+	if !b.opts.DisableCTags && b.opts.CTagsPath != "" {
+		err := ctagsAddSymbols(todo, b.parser, b.opts.CTagsPath)
 		if b.opts.CTagsMustSucceed && err != nil {
 			return nil, err
 		}
 		if err != nil {
-			log.Printf("ignoring %s error: %v", b.opts.CTags, err)
+			log.Printf("ignoring %s error: %v", b.opts.CTagsPath, err)
 		}
 	}
 
@@ -942,9 +970,9 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 
 func (b *Builder) newShardBuilder() (*zoekt.IndexBuilder, error) {
 	desc := b.opts.RepositoryDescription
-	desc.HasSymbols = b.opts.CTags != ""
+	desc.HasSymbols = !b.opts.DisableCTags && b.opts.CTagsPath != ""
 	desc.SubRepoMap = b.opts.SubRepositories
-	desc.IndexOptions = b.opts.HashOptions()
+	desc.IndexOptions = b.opts.GetHash()
 
 	shardBuilder, err := zoekt.NewIndexBuilder(&desc)
 	if err != nil {
@@ -996,6 +1024,15 @@ type deltaBranchSetError struct {
 
 func (e deltaBranchSetError) Error() string {
 	return fmt.Sprintf("repository metadata in shard %q contains a different set of branch names than what was requested, which is unsupported in a delta shard build. old: %+v, new: %+v", e.shardName, e.old, e.new)
+}
+
+type deltaIndexOptionsMismatchError struct {
+	shardName  string
+	newOptions HashOptions
+}
+
+func (e *deltaIndexOptionsMismatchError) Error() string {
+	return fmt.Sprintf("one or more index options for shard %q do not match Builder's index options. These index option updates are incompatible with delta build. New index options: %+v", e.shardName, e.newOptions)
 }
 
 // umask holds the Umask of the current process
