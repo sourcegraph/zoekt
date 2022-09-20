@@ -75,3 +75,59 @@ func benchmarkEncoding(data interface{}) func(*testing.B) {
 		}
 	}
 }
+
+func TestSizeBytesSearchResult(t *testing.T) {
+	var sr = SearchResult{
+		Stats:    Stats{},    // 128 bytes
+		Progress: Progress{}, // 16 bytes
+		Files: []FileMatch{{ // 24 bytes + 460 bytes
+			Score:       0,   // 8 bytes
+			Debug:       "",  // 16 bytes
+			FileName:    "",  // 16 bytes
+			Repository:  "",  // 16 bytes
+			Branches:    nil, // 24 bytes
+			LineMatches: nil, // 24 bytes
+			ChunkMatches: []ChunkMatch{{ // 24 bytes + 208 bytes (see TestSizeByteChunkMatches)
+				Content:      []byte("foo"),
+				ContentStart: Location{},
+				FileName:     false,
+				Ranges:       []Range{{}},
+				SymbolInfo:   []*Symbol{{}},
+				Score:        0,
+				DebugScore:   "",
+			}},
+			RepositoryID:       0,   // 4 bytes
+			RepositoryPriority: 0,   // 8 bytes
+			Content:            nil, // 24 bytes
+			Checksum:           nil, // 24 bytes
+			Language:           "",  // 16 bytes
+			SubRepositoryName:  "",  // 16 bytes
+			SubRepositoryPath:  "",  // 16 bytes
+			Version:            "",  // 16 bytes
+		}},
+		RepoURLs:      nil, // 48 bytes
+		LineFragments: nil, // 48 bytes
+	}
+
+	var wantBytes uint64 = 724
+	if sr.SizeBytes() != wantBytes {
+		t.Fatalf("want %d, got %d", wantBytes, sr.SizeBytes())
+	}
+}
+
+func TestSizeBytesChunkMatches(t *testing.T) {
+	cm := ChunkMatch{
+		Content:      []byte("foo"), // 24 + 3 bytes
+		ContentStart: Location{},    // 12 bytes
+		FileName:     false,         // 1 byte
+		Ranges:       []Range{{}},   // 24 bytes (slice header) + 24 bytes (content)
+		SymbolInfo:   []*Symbol{{}}, // 24 bytes (slice header) + 4 * 16 bytes (string header) + 8 bytes (pointer)
+		Score:        0,             // 8 byte
+		DebugScore:   "",            // 16 bytes (string header)
+	}
+
+	var wantBytes uint64 = 208
+	if cm.sizeBytes() != wantBytes {
+		t.Fatalf("want %d, got %d", wantBytes, cm.sizeBytes())
+	}
+}
