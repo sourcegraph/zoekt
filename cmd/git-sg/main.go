@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"flag"
 	"fmt"
@@ -63,6 +64,15 @@ type archiveOpts struct {
 }
 
 func archiveWrite(w io.Writer, repo *git.Repository, tree *object.Tree, opts *archiveOpts) error {
+	// Gating this right now because I get inconsistent performance on my
+	// macbook. Want to test on linux and larger repos.
+	if os.Getenv("GIT_SG_BUFFER") != "" {
+		log.Println("buffering output")
+		bw := bufio.NewWriter(w)
+		defer bw.Flush()
+		w = bw
+	}
+
 	a := &archiveWriter{
 		w:    tar.NewWriter(w),
 		repo: repo,
