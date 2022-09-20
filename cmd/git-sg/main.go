@@ -43,7 +43,16 @@ func do(w io.Writer) error {
 		return err
 	}
 
-	return archiveWrite(w, r, root, &archiveOpts{
+	// Gating this right now because I get inconsistent performance on my
+	// macbook. Want to test on linux and larger repos.
+	if os.Getenv("GIT_SG_BUFFER") != "" {
+		log.Println("buffering output")
+		bw := bufio.NewWriter(w)
+		defer bw.Flush()
+		w = bw
+	}
+
+	opts := &archiveOpts{
 		Ignore: getIgnoreFilter(r, root),
 		SkipContent: func(hdr *tar.Header) string {
 			if hdr.Size > 2<<20 {
@@ -51,7 +60,14 @@ func do(w io.Writer) error {
 			}
 			return ""
 		},
-	})
+	}
+
+	if os.Getenv("GIT_SG_FILTER") != "" {
+		log.Println("filtering git archive output")
+		return archiveFilter(w, r, root, opts)
+	}
+
+	return archiveWrite(w, r, root, opts)
 }
 
 type archiveOpts struct {
@@ -64,15 +80,6 @@ type archiveOpts struct {
 }
 
 func archiveWrite(w io.Writer, repo *git.Repository, tree *object.Tree, opts *archiveOpts) error {
-	// Gating this right now because I get inconsistent performance on my
-	// macbook. Want to test on linux and larger repos.
-	if os.Getenv("GIT_SG_BUFFER") != "" {
-		log.Println("buffering output")
-		bw := bufio.NewWriter(w)
-		defer bw.Flush()
-		w = bw
-	}
-
 	a := &archiveWriter{
 		w:    tar.NewWriter(w),
 		repo: repo,
