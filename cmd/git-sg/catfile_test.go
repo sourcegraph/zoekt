@@ -22,6 +22,21 @@ func TestInfo(t *testing.T) {
 
 	t.Log(info.Hash, info.Type, info.Size)
 
+	// Test that we can recover from missing
+	if info, err := p.Contents("sdflkjsdfDoesNOTexist"); !isMissingError(err) {
+		t.Fatalf("expected missing error got info=%v err=%v", info, err)
+	}
+
+	// Now lets fetch the object again via hash and see if it stays the same.
+	info2, err := p.Info(info.Hash.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if d := cmp.Diff(info, info2); d != "" {
+		t.Fatalf("info changed (-first, +second):\n%s", d)
+	}
+
 	if err := p.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -52,6 +67,11 @@ func TestContents(t *testing.T) {
 	}
 	if info.Type != plumbing.CommitObject {
 		t.Fatalf("expected HEAD to be a commit, got %s", info.Type)
+	}
+
+	// Test that we can recover from missing
+	if info, err := p.Contents("sdflkjsdfDoesNOTexist"); !isMissingError(err) {
+		t.Fatalf("expected missing error got info=%v err=%v", info, err)
 	}
 
 	// Now lets fetch the object again via hash and see if it stays the same.

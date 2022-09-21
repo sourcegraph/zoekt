@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
+// gitCatFileBatch is a wrapper around a git-cat-file --batch-command process.
+// This provides an efficient means to interact with the git object store of a
+// repository.
 type gitCatFileBatch struct {
 	cmd       *exec.Cmd
 	in        *bufio.Writer
@@ -27,6 +31,23 @@ type gitCatFileBatch struct {
 	readerN int64
 }
 
+type missingError struct {
+	ref string
+}
+
+func (e *missingError) Error() string {
+	return e.ref + " missing"
+}
+
+func isMissingError(err error) bool {
+	var e *missingError
+	return errors.As(err, &e)
+}
+
+// startGitCatFileBatch returns a gitCatFileBatch for the repository at dir.
+//
+// Callers must ensure to call gitCatFileBatch.Close() to ensure the
+// associated subprocess and file descriptors are cleaned up.
 func startGitCatFileBatch(dir string) (_ *gitCatFileBatch, err error) {
 	cmd := exec.Command("git", "cat-file", "--batch-command")
 	cmd.Dir = dir
@@ -93,7 +114,9 @@ func (g *gitCatFileBatch) Info(ref string) (gitCatFileBatchInfo, error) {
 
 	info, err := parseGitCatFileBatchInfoLine(line)
 	if err != nil {
-		g.kill()
+		if !isMissingError(err) { // missingError is recoverable
+			g.kill()
+		}
 		return gitCatFileBatchInfo{}, err
 	}
 
@@ -124,7 +147,9 @@ func (g *gitCatFileBatch) Contents(ref string) (gitCatFileBatchInfo, error) {
 
 	info, err := parseGitCatFileBatchInfoLine(line)
 	if err != nil {
-		g.kill()
+		if !isMissingError(err) { // missingError is recoverable
+			g.kill()
+		}
 		return gitCatFileBatchInfo{}, err
 	}
 
@@ -161,10 +186,15 @@ func (g *gitCatFileBatch) discard() error {
 // parseGitCatFileBatchInfoLine parses the info line from git-cat-file. It
 // expects the default format of:
 //
-//  <oid> SP <type> SP <size> LF
+//	<oid> SP <type> SP <size> LF
 func parseGitCatFileBatchInfoLine(line []byte) (gitCatFileBatchInfo, error) {
 	line = bytes.TrimRight(line, "\n")
 	origLine := line
+
+	if bytes.HasSuffix(line, []byte(" missing")) {
+		ref := bytes.TrimSuffix(line, []byte(" missing"))
+		return gitCatFileBatchInfo{}, &missingError{ref: string(ref)}
+	}
 
 	// PERF this allocates much less than bytes.Split
 	next := func() []byte {
