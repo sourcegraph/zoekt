@@ -261,8 +261,8 @@ func (lm *LineMatch) sizeBytes() (sz uint64) {
 
 	// LineFragments
 	sz += sliceHeaderBytes
-	if len(lm.LineFragments) > 0 {
-		sz += lm.LineFragments[0].sizeBytes() * uint64(len(lm.LineFragments))
+	for _, lf := range lm.LineFragments {
+		sz += lf.sizeBytes()
 	}
 
 	return
