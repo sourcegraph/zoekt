@@ -85,7 +85,7 @@ func archiveWrite(w io.Writer, repo *git.Repository, tree *object.Tree, opts *ar
 		repo: repo,
 		opts: opts,
 
-		stack: []item{{tree: tree, path: ""}},
+		stack: []item{{entries: tree.Entries, path: ""}},
 
 		// 32*1024 is the same size used by io.Copy
 		buf: make([]byte, 32*1024),
@@ -95,7 +95,7 @@ func archiveWrite(w io.Writer, repo *git.Repository, tree *object.Tree, opts *ar
 		item := a.stack[len(a.stack)-1]
 		a.stack = a.stack[:len(a.stack)-1]
 
-		err := a.writeTree(item.tree, item.path)
+		err := a.writeTree(item.entries, item.path)
 		if err != nil {
 			_ = a.w.Close()
 			return err
@@ -106,22 +106,23 @@ func archiveWrite(w io.Writer, repo *git.Repository, tree *object.Tree, opts *ar
 }
 
 type item struct {
-	tree *object.Tree
-	path string
+	entries []object.TreeEntry
+	path    string
 }
 
 type archiveWriter struct {
 	w    *tar.Writer
-	repo *git.Repository
 	opts *archiveOpts
+
+	repo *git.Repository
 
 	stack []item
 
 	buf []byte
 }
 
-func (a *archiveWriter) writeTree(tree *object.Tree, path string) error {
-	for _, e := range tree.Entries {
+func (a *archiveWriter) writeTree(entries []object.TreeEntry, path string) error {
+	for _, e := range entries {
 		var p string
 		if e.Mode == filemode.Dir {
 			p = path + e.Name + "/"
@@ -150,7 +151,7 @@ func (a *archiveWriter) writeTree(tree *object.Tree, path string) error {
 				return err
 			}
 
-			a.stack = append(a.stack, item{tree: child, path: p})
+			a.stack = append(a.stack, item{entries: child.Entries, path: p})
 
 		case filemode.Deprecated, filemode.Executable, filemode.Regular, filemode.Symlink:
 			if err := a.writeRegularTreeEntry(e, p); err != nil {
