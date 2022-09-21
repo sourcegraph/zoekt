@@ -96,28 +96,10 @@ func (g *gitCatFileBatch) Info(ref string) (gitCatFileBatchInfo, error) {
 	g.in.WriteString("info ")
 	g.in.WriteString(ref)
 	g.in.WriteByte('\n')
-	if err := g.in.Flush(); err != nil {
-		g.kill()
-		return gitCatFileBatchInfo{}, err
-	}
 
-	if err := g.discard(); err != nil {
-		g.kill()
-		return gitCatFileBatchInfo{}, err
-	}
-
-	line, err := g.out.ReadSlice('\n')
+	info, err := g.sendCommand()
 	if err != nil {
-		g.kill()
-		return gitCatFileBatchInfo{}, err
-	}
-
-	info, err := parseGitCatFileBatchInfoLine(line)
-	if err != nil {
-		if !isMissingError(err) { // missingError is recoverable
-			g.kill()
-		}
-		return gitCatFileBatchInfo{}, err
+		return info, err
 	}
 
 	g.readerN = 0
@@ -129,6 +111,18 @@ func (g *gitCatFileBatch) Contents(ref string) (gitCatFileBatchInfo, error) {
 	g.in.WriteString("contents ")
 	g.in.WriteString(ref)
 	g.in.WriteByte('\n')
+
+	info, err := g.sendCommand()
+	if err != nil {
+		return info, err
+	}
+
+	g.readerN = info.Size + 1
+
+	return info, nil
+}
+
+func (g *gitCatFileBatch) sendCommand() (gitCatFileBatchInfo, error) {
 	if err := g.in.Flush(); err != nil {
 		g.kill()
 		return gitCatFileBatchInfo{}, err
@@ -152,8 +146,6 @@ func (g *gitCatFileBatch) Contents(ref string) (gitCatFileBatchInfo, error) {
 		}
 		return gitCatFileBatchInfo{}, err
 	}
-
-	g.readerN = info.Size + 1
 
 	return info, nil
 }
