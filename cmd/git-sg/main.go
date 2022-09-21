@@ -65,7 +65,7 @@ func do(w io.Writer) error {
 		return archiveFilter(w, r, root, opts)
 	}
 
-	return archiveWrite(w, r, root, opts)
+	return archiveWrite(w, (*archiveWriterRepoGoGit)(r), root, opts)
 }
 
 func getIgnoreFilter(r *git.Repository, root *object.Tree) func(string) bool {

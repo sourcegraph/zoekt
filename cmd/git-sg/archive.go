@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -20,7 +21,7 @@ type archiveOpts struct {
 	SkipContent func(hdr *tar.Header) string
 }
 
-func archiveWrite(w io.Writer, repo *git.Repository, tree *object.Tree, opts *archiveOpts) error {
+func archiveWrite(w io.Writer, repo archiveWriterRepo, tree *object.Tree, opts *archiveOpts) error {
 	a := &archiveWriter{
 		w:    tar.NewWriter(w),
 		repo: repo,
@@ -51,11 +52,21 @@ type item struct {
 	path    string
 }
 
+type archiveWriterBlob interface {
+	Size() int64
+	Reader() (io.ReadCloser, error)
+}
+
+type archiveWriterRepo interface {
+	TreeEntries(plumbing.Hash) ([]object.TreeEntry, error)
+	Blob(plumbing.Hash) (archiveWriterBlob, error)
+}
+
 type archiveWriter struct {
 	w    *tar.Writer
 	opts *archiveOpts
 
-	repo *git.Repository
+	repo archiveWriterRepo
 
 	stack []item
 
@@ -77,7 +88,7 @@ func (a *archiveWriter) writeTree(entries []object.TreeEntry, path string) error
 
 		switch e.Mode {
 		case filemode.Dir:
-			child, err := a.repo.TreeObject(e.Hash)
+			child, err := a.repo.TreeEntries(e.Hash)
 			if err != nil {
 				log.Printf("failed to fetch tree object for %s %v: %v", p, e.Hash, err)
 				continue
@@ -92,7 +103,7 @@ func (a *archiveWriter) writeTree(entries []object.TreeEntry, path string) error
 				return err
 			}
 
-			a.stack = append(a.stack, item{entries: child.Entries, path: p})
+			a.stack = append(a.stack, item{entries: child, path: p})
 
 		case filemode.Deprecated, filemode.Executable, filemode.Regular, filemode.Symlink:
 			if err := a.writeRegularTreeEntry(e, p); err != nil {
@@ -112,7 +123,7 @@ func (a *archiveWriter) writeTree(entries []object.TreeEntry, path string) error
 }
 
 func (a *archiveWriter) writeRegularTreeEntry(entry object.TreeEntry, path string) error {
-	blob, err := a.repo.BlobObject(entry.Hash)
+	blob, err := a.repo.Blob(entry.Hash)
 	if err != nil {
 		log.Printf("failed to get blob object for %s %v: %v", path, entry.Hash, err)
 		return nil
@@ -122,7 +133,7 @@ func (a *archiveWriter) writeRegularTreeEntry(entry object.TreeEntry, path strin
 	hdr := &tar.Header{
 		Typeflag: tar.TypeReg,
 		Name:     path,
-		Size:     blob.Size,
+		Size:     blob.Size(),
 		Mode:     0666,
 
 		Format: tar.FormatPAX, // TODO ?
@@ -179,4 +190,75 @@ func (a *archiveWriter) writeSkipHeader(hdr *tar.Header, reason string) error {
 	hdr.PAXRecords = map[string]string{"SG.skip": reason}
 	hdr.Size = 0 // clear out size since we won't write the body
 	return a.w.WriteHeader(hdr)
+}
+
+type archiveWriterBlobGoGit struct {
+	blob *object.Blob
+}
+
+func (b archiveWriterBlobGoGit) Size() int64 {
+	return b.blob.Size
+}
+
+func (b archiveWriterBlobGoGit) Reader() (io.ReadCloser, error) {
+	return b.blob.Reader()
+}
+
+type archiveWriterRepoGoGit git.Repository
+
+func (repo *archiveWriterRepoGoGit) TreeEntries(hash plumbing.Hash) ([]object.TreeEntry, error) {
+	tree, err := (*git.Repository)(repo).TreeObject(hash)
+	if err != nil {
+		return nil, err
+	}
+	return tree.Entries, nil
+}
+
+func (repo *archiveWriterRepoGoGit) Blob(hash plumbing.Hash) (archiveWriterBlob, error) {
+	blob, err := (*git.Repository)(repo).BlobObject(hash)
+	if err != nil {
+		return nil, err
+	}
+	return archiveWriterBlobGoGit{blob: blob}, nil
+}
+
+type archiveWriterBlobCatFile struct {
+	catFile *gitCatFileBatch
+	info    gitCatFileBatchInfo
+}
+
+func (b archiveWriterBlobCatFile) Size() int64 {
+	return b.info.Size
+}
+
+func (b archiveWriterBlobCatFile) Reader() (io.ReadCloser, error) {
+	_, err := b.catFile.Contents(b.info.Hash)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(b.catFile), nil
+}
+
+type archiveWriterRepoCatFile struct {
+	catFile *gitCatFileBatch
+}
+
+func (r archiveWriterRepoCatFile) TreeEntries(hash plumbing.Hash) ([]object.TreeEntry, error) {
+	_, err := r.catFile.Contents(hash)
+	if err != nil {
+		return nil, err
+	}
+	return nil, nil
+	//return tree.Entries, nil
+}
+
+func (r archiveWriterRepoCatFile) Blob(hash plumbing.Hash) (archiveWriterBlob, error) {
+	info, err := r.catFile.Info(hash)
+	if err != nil {
+		return nil, err
+	}
+	return archiveWriterBlobCatFile{
+		catFile: r.catFile,
+		info:    info,
+	}, nil
 }
