@@ -15,7 +15,7 @@ func TestInfo(t *testing.T) {
 	}
 	defer p.Close()
 
-	info, err := p.Info("HEAD")
+	info, err := p.InfoString("HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,12 +23,12 @@ func TestInfo(t *testing.T) {
 	t.Log(info.Hash, info.Type, info.Size)
 
 	// Test that we can recover from missing
-	if info, err := p.Contents("sdflkjsdfDoesNOTexist"); !isMissingError(err) {
+	if info, err := p.InfoString("sdflkjsdfDoesNOTexist"); !isMissingError(err) {
 		t.Fatalf("expected missing error got info=%v err=%v", info, err)
 	}
 
 	// Now lets fetch the object again via hash and see if it stays the same.
-	info2, err := p.Info(info.Hash.String())
+	info2, err := p.Info(info.Hash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestContents(t *testing.T) {
 	}
 	defer p.Close()
 
-	info, err := p.Contents("HEAD")
+	info, err := p.ContentsString("HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,12 +70,12 @@ func TestContents(t *testing.T) {
 	}
 
 	// Test that we can recover from missing
-	if info, err := p.Contents("sdflkjsdfDoesNOTexist"); !isMissingError(err) {
+	if info, err := p.ContentsString("sdflkjsdfDoesNOTexist"); !isMissingError(err) {
 		t.Fatalf("expected missing error got info=%v err=%v", info, err)
 	}
 
 	// Now lets fetch the object again via hash and see if it stays the same.
-	info2, err := p.Contents(info.Hash.String())
+	info2, err := p.Contents(info.Hash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,8 +104,13 @@ func BenchmarkInfo(b *testing.B) {
 	}
 	defer p.Close()
 
+	info, err := p.InfoString("HEAD")
+	if err != nil {
+		b.Fatal(err)
+	}
+
 	for i := 0; i < b.N; i++ {
-		_, err := p.Info("HEAD")
+		_, err := p.Info(info.Hash)
 		if err != nil {
 			b.Fatal(err)
 		}

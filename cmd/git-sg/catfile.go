@@ -25,6 +25,9 @@ type gitCatFileBatch struct {
 	out       *bufio.Reader
 	outCloser io.Closer
 
+	// hashBuf is encoded to for plumbing.Hash
+	hashBuf [20 * 2]byte
+
 	// readerN is the amount left to read for Read. Note: git-cat-file always
 	// has a trailing new line, so this will always be the size of an object +
 	// 1.
@@ -92,7 +95,7 @@ type gitCatFileBatchInfo struct {
 	Size int64
 }
 
-func (g *gitCatFileBatch) Info(ref string) (gitCatFileBatchInfo, error) {
+func (g *gitCatFileBatch) InfoString(ref string) (gitCatFileBatchInfo, error) {
 	g.in.WriteString("info ")
 	g.in.WriteString(ref)
 	g.in.WriteByte('\n')
@@ -107,7 +110,22 @@ func (g *gitCatFileBatch) Info(ref string) (gitCatFileBatchInfo, error) {
 	return info, nil
 }
 
-func (g *gitCatFileBatch) Contents(ref string) (gitCatFileBatchInfo, error) {
+func (g *gitCatFileBatch) Info(hash plumbing.Hash) (gitCatFileBatchInfo, error) {
+	g.in.WriteString("info ")
+	g.writeHash(hash)
+	g.in.WriteByte('\n')
+
+	info, err := g.sendCommand()
+	if err != nil {
+		return info, err
+	}
+
+	g.readerN = 0
+
+	return info, nil
+}
+
+func (g *gitCatFileBatch) ContentsString(ref string) (gitCatFileBatchInfo, error) {
 	g.in.WriteString("contents ")
 	g.in.WriteString(ref)
 	g.in.WriteByte('\n')
@@ -120,6 +138,26 @@ func (g *gitCatFileBatch) Contents(ref string) (gitCatFileBatchInfo, error) {
 	g.readerN = info.Size + 1
 
 	return info, nil
+}
+
+func (g *gitCatFileBatch) Contents(hash plumbing.Hash) (gitCatFileBatchInfo, error) {
+	g.in.WriteString("contents ")
+	g.writeHash(hash)
+	g.in.WriteByte('\n')
+
+	info, err := g.sendCommand()
+	if err != nil {
+		return info, err
+	}
+
+	g.readerN = info.Size + 1
+
+	return info, nil
+}
+
+func (g *gitCatFileBatch) writeHash(hash plumbing.Hash) {
+	hex.Encode(g.hashBuf[:], hash[:])
+	g.in.Write(g.hashBuf[:])
 }
 
 func (g *gitCatFileBatch) sendCommand() (gitCatFileBatchInfo, error) {
