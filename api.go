@@ -26,6 +26,11 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 )
 
+const mapHeaderBytes uint64 = 48
+const sliceHeaderBytes uint64 = 24
+const stringHeaderBytes uint64 = 16
+const pointerSize uint64 = 8
+
 // FileMatch contains all the matches within a file.
 type FileMatch struct {
 	// Ranking; the higher, the better.
@@ -76,6 +81,55 @@ type FileMatch struct {
 	Version string
 }
 
+func (m *FileMatch) sizeBytes() (sz uint64) {
+	// Score
+	sz += 8
+
+	for _, s := range []string{
+		m.Debug,
+		m.FileName,
+		m.Repository,
+		m.Language,
+		m.SubRepositoryName,
+		m.SubRepositoryPath,
+		m.Version,
+	} {
+		sz += stringHeaderBytes + uint64(len(s))
+	}
+
+	// Branches
+	sz += sliceHeaderBytes
+	for _, s := range m.Branches {
+		sz += stringHeaderBytes + uint64(len(s))
+	}
+
+	// LineMatches
+	sz += sliceHeaderBytes
+	for _, lm := range m.LineMatches {
+		sz += lm.sizeBytes()
+	}
+
+	// ChunkMatches
+	sz += sliceHeaderBytes
+	for _, cm := range m.ChunkMatches {
+		sz += cm.sizeBytes()
+	}
+
+	// RepositoryID
+	sz += 4
+
+	// RepositoryPriority
+	sz += 8
+
+	// Content
+	sz += sliceHeaderBytes + uint64(len(m.Content))
+
+	// Checksum
+	sz += sliceHeaderBytes + uint64(len(m.Checksum))
+
+	return
+}
+
 // ChunkMatch is a set of non-overlapping matches within a contiguous range of
 // lines in the file.
 type ChunkMatch struct {
@@ -102,11 +156,49 @@ type ChunkMatch struct {
 	DebugScore string
 }
 
+func (cm *ChunkMatch) sizeBytes() (sz uint64) {
+	// Content
+	sz += sliceHeaderBytes + uint64(len(cm.Content))
+
+	// ContentStart
+	sz += cm.ContentStart.sizeBytes()
+
+	// FileName
+	sz += 1
+
+	// Ranges
+	sz += sliceHeaderBytes
+	if len(cm.Ranges) > 0 {
+		sz += uint64(len(cm.Ranges)) * cm.Ranges[0].sizeBytes()
+	}
+
+	// SymbolInfo
+	sz += sliceHeaderBytes
+	for _, si := range cm.SymbolInfo {
+		sz += pointerSize
+		if si != nil {
+			sz += si.sizeBytes()
+		}
+	}
+
+	// Score
+	sz += 8
+
+	// DebugScore
+	sz += stringHeaderBytes + uint64(len(cm.DebugScore))
+
+	return
+}
+
 type Range struct {
 	// The inclusive beginning of the range.
 	Start Location
 	// The exclusive end of the range.
 	End Location
+}
+
+func (r *Range) sizeBytes() uint64 {
+	return r.Start.sizeBytes() + r.End.sizeBytes()
 }
 
 type Location struct {
@@ -116,6 +208,10 @@ type Location struct {
 	LineNumber uint32
 	// 1-based column number (in runes) from the beginning of line
 	Column uint32
+}
+
+func (l *Location) sizeBytes() uint64 {
+	return 3 * 4
 }
 
 // LineMatch holds the matches within a single line in a file.
@@ -141,11 +237,46 @@ type LineMatch struct {
 	LineFragments []LineFragmentMatch
 }
 
+func (lm *LineMatch) sizeBytes() (sz uint64) {
+	// Line
+	sz += sliceHeaderBytes + uint64(len(lm.Line))
+
+	// LineStart, LineEnd, LineNumber
+	sz += 3 * 8
+
+	// Before
+	sz += sliceHeaderBytes + uint64(len(lm.Before))
+
+	// After
+	sz += sliceHeaderBytes + uint64(len(lm.After))
+
+	// FileName
+	sz += 1
+
+	// Score
+	sz += 8
+
+	// DebugScore
+	sz += stringHeaderBytes + uint64(len(lm.DebugScore))
+
+	// LineFragments
+	sz += sliceHeaderBytes
+	for _, lf := range lm.LineFragments {
+		sz += lf.sizeBytes()
+	}
+
+	return
+}
+
 type Symbol struct {
 	Sym        string
 	Kind       string
 	Parent     string
 	ParentKind string
+}
+
+func (s *Symbol) sizeBytes() uint64 {
+	return 4*stringHeaderBytes + uint64(len(s.Sym)+len(s.Kind)+len(s.Parent)+len(s.ParentKind))
 }
 
 // LineFragmentMatch a segment of matching text within a line.
@@ -160,6 +291,25 @@ type LineFragmentMatch struct {
 	MatchLength int
 
 	SymbolInfo *Symbol
+}
+
+func (lfm *LineFragmentMatch) sizeBytes() (sz uint64) {
+	// LineOffset
+	sz += 8
+
+	// Offset
+	sz += 4
+
+	// MatchLength
+	sz += 8
+
+	// SymbolInfo
+	sz += pointerSize
+	if lfm.SymbolInfo != nil {
+		sz += lfm.SymbolInfo.sizeBytes()
+	}
+
+	return
 }
 
 // Stats contains interesting numbers on the search
@@ -214,6 +364,11 @@ type Stats struct {
 
 	// Number of times regexp was called on files that we evaluated.
 	RegexpsConsidered int
+}
+
+func (s *Stats) sizeBytes() uint64 {
+	// This assumes we are running on a 64-bit architecture.
+	return 16 * 8
 }
 
 func (s *Stats) Add(o Stats) {
@@ -272,6 +427,10 @@ type Progress struct {
 	MaxPendingPriority float64
 }
 
+func (p *Progress) sizeBytes() uint64 {
+	return 2 * 8
+}
+
 // SearchResult contains search matches and extra data
 type SearchResult struct {
 	Stats
@@ -284,6 +443,36 @@ type SearchResult struct {
 	// FragmentNames holds a repo => template string map, for
 	// the line number fragment.
 	LineFragments map[string]string
+}
+
+// SizeBytes is a best-effort estimate of the size of SearchResult in memory.
+// The estimate does not take alignment into account. The result is a lower
+// bound on the actual size in memory.
+func (sr *SearchResult) SizeBytes() (sz uint64) {
+	sz += sr.Stats.sizeBytes()
+	sz += sr.Progress.sizeBytes()
+
+	// Files
+	sz += sliceHeaderBytes
+	for _, f := range sr.Files {
+		sz += f.sizeBytes()
+	}
+
+	// RepoURLs
+	sz += mapHeaderBytes
+	for k, v := range sr.RepoURLs {
+		sz += stringHeaderBytes + uint64(len(k))
+		sz += stringHeaderBytes + uint64(len(v))
+	}
+
+	// LineFragments
+	sz += mapHeaderBytes
+	for k, v := range sr.LineFragments {
+		sz += stringHeaderBytes + uint64(len(k))
+		sz += stringHeaderBytes + uint64(len(v))
+	}
+
+	return
 }
 
 // RepositoryBranch describes an indexed branch, which is a name
