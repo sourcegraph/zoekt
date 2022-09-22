@@ -65,7 +65,22 @@ func do(w io.Writer) error {
 		return archiveFilter(w, r, root, opts)
 	}
 
-	return archiveWrite(w, (*archiveWriterRepoGoGit)(r), root, opts)
+	var repo archiveWriterRepo = (*archiveWriterRepoGoGit)(r)
+	if os.Getenv("GIT_SG_CATFILE") != "" {
+		log.Println("using git-cat-file")
+		dir, err := gitDir()
+		if err != nil {
+			return err
+		}
+		catFile, err := startGitCatFileBatch(dir)
+		if err != nil {
+			return err
+		}
+		defer catFile.Close()
+		repo = archiveWriterRepoCatFile{catFile: catFile}
+	}
+
+	return archiveWrite(w, repo, root, opts)
 }
 
 func getIgnoreFilter(r *git.Repository, root *object.Tree) func(string) bool {
@@ -121,14 +136,17 @@ func isNotExist(err error) bool {
 	return os.IsNotExist(err) || strings.Contains(err.Error(), "not found")
 }
 
+func gitDir() (string, error) {
+	if dir := os.Getenv("GIT_DIR"); dir != "" {
+		return dir, nil
+	}
+	return os.Getwd()
+}
+
 func openGitRepo() (*git.Repository, error) {
-	dir := os.Getenv("GIT_DIR")
-	if dir == "" {
-		var err error
-		dir, err = os.Getwd()
-		if err != nil {
-			return nil, err
-		}
+	dir, err := gitDir()
+	if err != nil {
+		return nil, err
 	}
 
 	fs := osfs.New(dir)

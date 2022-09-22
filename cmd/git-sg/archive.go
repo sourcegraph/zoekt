@@ -2,9 +2,11 @@ package main
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"io"
 	"log"
+	"sync"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -243,22 +245,68 @@ type archiveWriterRepoCatFile struct {
 	catFile *gitCatFileBatch
 }
 
-func (r archiveWriterRepoCatFile) TreeEntries(hash plumbing.Hash) ([]object.TreeEntry, error) {
-	_, err := r.catFile.Contents(hash)
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return bufio.NewReader(nil)
+	},
+}
+
+func (w archiveWriterRepoCatFile) TreeEntries(hash plumbing.Hash) ([]object.TreeEntry, error) {
+	_, err := w.catFile.Contents(hash)
 	if err != nil {
 		return nil, err
 	}
-	return nil, nil
-	//return tree.Entries, nil
+
+	var entries []object.TreeEntry
+
+	// Copy-pasta from go-git/plumbing/object/tree.go
+	r := bufPool.Get().(*bufio.Reader)
+	defer bufPool.Put(r)
+	r.Reset(w.catFile)
+	for {
+		str, err := r.ReadString(' ')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+
+			return nil, err
+		}
+		str = str[:len(str)-1] // strip last byte (' ')
+
+		mode, err := filemode.New(str)
+		if err != nil {
+			return nil, err
+		}
+
+		name, err := r.ReadString(0)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+
+		var hash plumbing.Hash
+		if _, err = io.ReadFull(r, hash[:]); err != nil {
+			return nil, err
+		}
+
+		baseName := name[:len(name)-1]
+		entries = append(entries, object.TreeEntry{
+			Hash: hash,
+			Mode: mode,
+			Name: baseName,
+		})
+	}
+
+	return entries, nil
 }
 
-func (r archiveWriterRepoCatFile) Blob(hash plumbing.Hash) (archiveWriterBlob, error) {
-	info, err := r.catFile.Info(hash)
+func (w archiveWriterRepoCatFile) Blob(hash plumbing.Hash) (archiveWriterBlob, error) {
+	info, err := w.catFile.Info(hash)
 	if err != nil {
 		return nil, err
 	}
 	return archiveWriterBlobCatFile{
-		catFile: r.catFile,
+		catFile: w.catFile,
 		info:    info,
 	}, nil
 }
