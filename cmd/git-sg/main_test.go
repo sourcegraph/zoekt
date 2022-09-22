@@ -12,7 +12,7 @@ func TestDo(t *testing.T) {
 	}
 	t.Setenv("GIT_DIR", dir)
 
-	for _, envvar := range []string{"", "GIT_SG_BUFFER", "GIT_SG_FILTER", "GIT_SG_CATFILE"} {
+	for _, envvar := range []string{"", "GIT_SG_BUFFER", "GIT_SG_FILTER", "GIT_SG_CATFILE", "GIT_SG_LSTREE"} {
 		name := envvar
 		if name == "" {
 			name = "default"

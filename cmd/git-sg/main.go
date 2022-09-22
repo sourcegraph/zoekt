@@ -65,6 +65,11 @@ func do(w io.Writer) error {
 		return archiveFilter(w, r, root, opts)
 	}
 
+	if os.Getenv("GIT_SG_LSTREE") != "" {
+		log.Println("using git-ls-tree")
+		return archiveLsTree(w, r, root, opts)
+	}
+
 	var repo archiveWriterRepo = (*archiveWriterRepoGoGit)(r)
 	if os.Getenv("GIT_SG_CATFILE") != "" {
 		log.Println("using git-cat-file")
