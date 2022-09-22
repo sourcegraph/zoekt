@@ -1181,7 +1181,7 @@ func newServer(conf rootConfig) (*Server, error) {
 
 func main() {
 	liblog := sglog.Init(sglog.Resource{
-		Name:       "zoekt-sourcegraph-indexserver",
+		Name:       "zoekt-indexserver",
 		Version:    zoekt.Version,
 		InstanceID: hostnameBestEffort(),
 	})
