@@ -177,6 +177,15 @@ func main() {
 
 	mustRegisterDiskMonitor(*index)
 
+	// https://docs.kernel.org/_sources/admin-guide/sysctl/vm.rst.txt
+	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "zoekt_webserver_max_memory_map_count",
+		Help: "Upper limit on amount of memory mapped regions a process may have.",
+	}, func() float64 {
+		count, _ := readMaxMapCount()
+		return count
+	}))
+
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the
 	// order of minutes.
@@ -504,3 +513,19 @@ var (
 		Help: "The total number of errors from zoekt watchdog.",
 	})
 )
+
+func readMaxMapCount() (float64, error) {
+	raw, err := os.ReadFile("/proc/vm/max_map_count")
+	if err != nil {
+		return 0, fmt.Errorf("opening %q: %w", "/proc/vm/max_map_count", err)
+	}
+
+	s := strings.TrimSpace(string(raw))
+
+	count, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parsing max memory map count: %w", err)
+	}
+
+	return count, err
+}
