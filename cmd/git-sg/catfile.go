@@ -19,19 +19,13 @@ import (
 // This provides an efficient means to interact with the git object store of a
 // repository.
 type gitCatFileBatch struct {
-	cmd       *exec.Cmd
-	in        *bufio.Writer
-	inCloser  io.Closer
-	out       *bufio.Reader
-	outCloser io.Closer
+	cmd      *exec.Cmd
+	in       *bufio.Writer
+	inCloser io.Closer
+	out      *gitCatFileBatchReader
 
 	// hashBuf is encoded to for plumbing.Hash
 	hashBuf [20 * 2]byte
-
-	// readerN is the amount left to read for Read. Note: git-cat-file always
-	// has a trailing new line, so this will always be the size of an object +
-	// 1.
-	readerN int64
 }
 
 type missingError struct {
@@ -81,11 +75,10 @@ func startGitCatFileBatch(dir string) (_ *gitCatFileBatch, err error) {
 	}
 
 	return &gitCatFileBatch{
-		cmd:       cmd,
-		in:        bufio.NewWriter(stdin),
-		inCloser:  stdin,
-		out:       bufio.NewReader(stdout),
-		outCloser: stdout,
+		cmd:      cmd,
+		in:       bufio.NewWriter(stdin),
+		inCloser: stdin,
+		out:      newGitCatFileBatchReader(stdout),
 	}, nil
 }
 
@@ -99,60 +92,68 @@ func (g *gitCatFileBatch) InfoString(ref string) (gitCatFileBatchInfo, error) {
 	g.in.WriteString("info ")
 	g.in.WriteString(ref)
 	g.in.WriteByte('\n')
-
-	info, err := g.sendCommand()
-	if err != nil {
-		return info, err
+	if err := g.in.Flush(); err != nil {
+		g.kill()
+		return gitCatFileBatchInfo{}, err
 	}
 
-	g.readerN = 0
-
-	return info, nil
+	info, err := g.out.Info()
+	if err != nil && !isMissingError(err) { // missingError is recoverable
+		g.kill()
+	}
+	return info, err
 }
 
 func (g *gitCatFileBatch) Info(hash plumbing.Hash) (gitCatFileBatchInfo, error) {
 	g.in.WriteString("info ")
 	g.writeHash(hash)
 	g.in.WriteByte('\n')
-
-	info, err := g.sendCommand()
-	if err != nil {
-		return info, err
+	if err := g.in.Flush(); err != nil {
+		g.kill()
+		return gitCatFileBatchInfo{}, err
 	}
 
-	g.readerN = 0
-
-	return info, nil
+	info, err := g.out.Info()
+	if err != nil && !isMissingError(err) { // missingError is recoverable
+		g.kill()
+	}
+	return info, err
 }
 
 func (g *gitCatFileBatch) ContentsString(ref string) (gitCatFileBatchInfo, error) {
 	g.in.WriteString("contents ")
 	g.in.WriteString(ref)
 	g.in.WriteByte('\n')
-
-	info, err := g.sendCommand()
-	if err != nil {
-		return info, err
+	if err := g.in.Flush(); err != nil {
+		g.kill()
+		return gitCatFileBatchInfo{}, err
 	}
 
-	g.readerN = info.Size + 1
-
-	return info, nil
+	info, err := g.out.Contents()
+	if err != nil && !isMissingError(err) { // missingError is recoverable
+		g.kill()
+	}
+	return info, err
 }
 
 func (g *gitCatFileBatch) Contents(hash plumbing.Hash) (gitCatFileBatchInfo, error) {
 	g.in.WriteString("contents ")
 	g.writeHash(hash)
 	g.in.WriteByte('\n')
-
-	info, err := g.sendCommand()
-	if err != nil {
-		return info, err
+	if err := g.in.Flush(); err != nil {
+		g.kill()
+		return gitCatFileBatchInfo{}, err
 	}
 
-	g.readerN = info.Size + 1
+	info, err := g.out.Contents()
+	if err != nil && !isMissingError(err) { // missingError is recoverable
+		g.kill()
+	}
+	return info, err
+}
 
-	return info, nil
+func (g *gitCatFileBatch) Read(b []byte) (int, error) {
+	return g.out.Read(b)
 }
 
 func (g *gitCatFileBatch) writeHash(hash plumbing.Hash) {
@@ -160,35 +161,62 @@ func (g *gitCatFileBatch) writeHash(hash plumbing.Hash) {
 	g.in.Write(g.hashBuf[:])
 }
 
-func (g *gitCatFileBatch) sendCommand() (gitCatFileBatchInfo, error) {
-	if err := g.in.Flush(); err != nil {
-		g.kill()
-		return gitCatFileBatchInfo{}, err
-	}
+type gitCatFileBatchReader struct {
+	out       *bufio.Reader
+	outCloser io.Closer
 
-	if err := g.discard(); err != nil {
-		g.kill()
+	// readerN is the amount left to read for Read. Note: git-cat-file always
+	// has a trailing new line, so this will always be the size of an object +
+	// 1.
+	readerN int64
+}
+
+func newGitCatFileBatchReader(r io.ReadCloser) *gitCatFileBatchReader {
+	return &gitCatFileBatchReader{
+		out:       bufio.NewReader(r),
+		outCloser: r,
+	}
+}
+
+func (g *gitCatFileBatchReader) Info() (gitCatFileBatchInfo, error) {
+	if err := g.Discard(); err != nil {
+		g.Close()
 		return gitCatFileBatchInfo{}, err
 	}
 
 	line, err := g.out.ReadSlice('\n')
 	if err != nil {
-		g.kill()
+		g.Close()
 		return gitCatFileBatchInfo{}, err
 	}
 
 	info, err := parseGitCatFileBatchInfoLine(line)
 	if err != nil {
 		if !isMissingError(err) { // missingError is recoverable
-			g.kill()
+			g.Close()
 		}
 		return gitCatFileBatchInfo{}, err
 	}
 
+	// Info has nothing following to read
+	g.readerN = 0
+
 	return info, nil
 }
 
-func (g *gitCatFileBatch) Read(p []byte) (n int, err error) {
+func (g *gitCatFileBatchReader) Contents() (gitCatFileBatchInfo, error) {
+	info, err := g.Info()
+	if err != nil {
+		return info, err
+	}
+
+	// Still have the contents to read and an extra newline
+	g.readerN = info.Size + 1
+
+	return info, nil
+}
+
+func (g *gitCatFileBatchReader) Read(p []byte) (n int, err error) {
 	// We avoid reading the final byte (a newline). That will be handled by
 	// discard.
 	if g.readerN <= 1 {
@@ -202,15 +230,19 @@ func (g *gitCatFileBatch) Read(p []byte) (n int, err error) {
 	return
 }
 
-// discard should be called before parsing a response to flush out any unread
+// Discard should be called before parsing a response to flush out any unread
 // data since the last command.
-func (g *gitCatFileBatch) discard() error {
+func (g *gitCatFileBatchReader) Discard() error {
 	if g.readerN > 0 {
 		n, err := g.out.Discard(int(g.readerN))
 		g.readerN -= int64(n)
 		return err
 	}
 	return nil
+}
+
+func (g *gitCatFileBatchReader) Close() error {
+	return g.outCloser.Close()
 }
 
 // parseGitCatFileBatchInfoLine parses the info line from git-cat-file. It
@@ -267,7 +299,7 @@ func (g *gitCatFileBatch) Close() (err error) {
 		}
 	}()
 
-	if err := g.discard(); err != nil {
+	if err := g.out.Discard(); err != nil {
 		return err
 	}
 
@@ -283,7 +315,7 @@ func (g *gitCatFileBatch) Close() (err error) {
 		log.Printf("unexpected %d bytes of remaining output when calling close", n)
 	}
 
-	if err := g.outCloser.Close(); err != nil {
+	if err := g.out.Close(); err != nil {
 		return err
 	}
 
@@ -293,5 +325,5 @@ func (g *gitCatFileBatch) Close() (err error) {
 func (g *gitCatFileBatch) kill() {
 	_ = g.cmd.Process.Kill()
 	_ = g.inCloser.Close()
-	_ = g.outCloser.Close()
+	_ = g.out.Close()
 }
