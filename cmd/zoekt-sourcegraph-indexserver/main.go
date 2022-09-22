@@ -425,7 +425,16 @@ func (s *Server) processQueue() {
 
 			switch state {
 			case indexStateSuccess:
-				log.Printf("updated index %s in %v", args.String(), elapsed)
+				var branches []string
+				for _, b := range args.Branches {
+					branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
+				}
+				s.logger.Info("updated index",
+					sglog.String("repo", args.Name),
+					sglog.Uint32("id", args.RepoID),
+					sglog.Strings("branches", branches),
+					sglog.Duration("duration", elapsed),
+				)
 			case indexStateSuccessMeta:
 				log.Printf("updated meta %s in %v", args.String(), elapsed)
 			}
@@ -576,7 +585,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		},
 	}
 
-	return indexStateSuccess, gitIndex(c, args)
+	return indexStateSuccess, gitIndex(c, args, s.logger)
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
@@ -894,7 +903,7 @@ func printShardStats(fn string) error {
 }
 
 func srcLogLevelIsDebug() bool {
-	lvl := os.Getenv("SRC_LOG_LEVEL")
+	lvl := os.Getenv(sglog.EnvLogLevel)
 	return strings.EqualFold(lvl, "dbug") || strings.EqualFold(lvl, "debug")
 }
 
@@ -1001,7 +1010,6 @@ type rootConfig struct {
 	listen           string
 	hostname         string
 	cpuFraction      float64
-	dbg              bool
 	blockProfileRate int
 
 	// config values related to shard merging
@@ -1023,7 +1031,6 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.StringVar(&rc.listen, "listen", ":6072", "listen on this address.")
 	fs.StringVar(&rc.hostname, "hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	fs.Float64Var(&rc.cpuFraction, "cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
-	fs.BoolVar(&rc.dbg, "debug", srcLogLevelIsDebug(), "turn on more verbose logging.")
 	fs.IntVar(&rc.blockProfileRate, "block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler Var(default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
 }
 
@@ -1099,7 +1106,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		return nil, fmt.Errorf("failed to setup TMPDIR under %s: %v", conf.index, err)
 	}
 
-	if conf.dbg {
+	if srcLogLevelIsDebug() {
 		debug = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
@@ -1152,8 +1159,10 @@ func newServer(conf rootConfig) (*Server, error) {
 		cpuCount = 1
 	}
 
+	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
+
 	return &Server{
-		logger:                            sglog.Scoped("server", ""),
+		logger:                            logger,
 		Sourcegraph:                       sg,
 		IndexDir:                          conf.index,
 		IndexConcurrency:                  int(conf.indexConcurrency),

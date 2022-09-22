@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/log/logtest"
 	"io"
 	"log"
 	"net/http"
@@ -112,9 +114,13 @@ func TestListRepoIDs_Error(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	flag.Parse()
+	level := sglog.LevelInfo
 	if !testing.Verbose() {
 		log.SetOutput(io.Discard)
+		level = sglog.LevelNone
 	}
+
+	logtest.InitWithLevel(m, level)
 	os.Exit(m.Run())
 }
 

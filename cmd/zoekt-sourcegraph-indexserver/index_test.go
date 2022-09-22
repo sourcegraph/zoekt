@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/sourcegraph/log/logtest"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -270,7 +271,7 @@ func TestIndex(t *testing.T) {
 				findRepositoryMetadata: findRepositoryMetadata,
 			}
 
-			if err := gitIndex(c, &tc.args); err != nil {
+			if err := gitIndex(c, &tc.args, logtest.Scoped(t)); err != nil {
 				t.Fatal(err)
 			}
 			if !cmp.Equal(got, tc.want) {

@@ -19,6 +19,8 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
+
+	sglog "github.com/sourcegraph/log"
 )
 
 // indexTimeout defines how long the indexserver waits before
@@ -149,7 +151,9 @@ type gitIndexConfig struct {
 	findRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
 }
 
-func gitIndex(c gitIndexConfig, o *indexArgs) error {
+func gitIndex(c gitIndexConfig, o *indexArgs, l sglog.Logger) error {
+	logger := l.Scoped("gitIndex", "fetch commits and then run zoekt-git-index against contents")
+
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
 	}
@@ -270,7 +274,12 @@ func gitIndex(c gitIndexConfig, o *indexArgs) error {
 		}
 	}
 
-	debug.Printf("successfully fetched git data for %q (%d commit(s)) in %s", o.Name, successfullyFetchedCommitsCount, fetchDuration)
+	logger.Debug("successfully fetched git data",
+		sglog.String("repo", o.Name),
+		sglog.Uint32("id", o.RepoID),
+		sglog.Int("commits_count", successfullyFetchedCommitsCount),
+		sglog.Duration("duration", fetchDuration),
+	)
 
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
