@@ -15,30 +15,30 @@ import (
 )
 
 func archiveLsTree(w io.Writer, repo *git.Repository, tree *object.Tree, opts *archiveOpts) (err error) {
-	cmd := exec.Command("git", "ls-tree", "-r", "-l", "-t", "-z", tree.Hash.String())
-	r, err := cmd.StdoutPipe()
+	// 32*1024 is the same size used by io.Copy
+	buf := make([]byte, 32*1024)
+
+	lsTree := exec.Command("git", "ls-tree", "-r", "-l", "-t", "-z", tree.Hash.String())
+	r, err := lsTree.StdoutPipe()
 	if err != nil {
 		return err
 	}
 	defer r.Close()
 
-	tw := tar.NewWriter(w)
-
-	err = cmd.Start()
+	// TODO we are not respecting dir
+	catFile, err := startGitCatFileBatch("")
 	if err != nil {
 		return err
 	}
+	defer catFile.Close()
 
-	done := false
-	defer func() {
-		if done {
-			return
-		}
-		err2 := cmd.Process.Kill()
-		if err == nil {
-			err = err2
-		}
-	}()
+	tw := tar.NewWriter(w)
+
+	err = lsTree.Start()
+	if err != nil {
+		return err
+	}
+	defer lsTree.Process.Kill()
 
 	entries := bufio.NewScanner(r)
 	entries.Split(scanNull)
@@ -94,13 +94,27 @@ func archiveLsTree(w io.Writer, repo *git.Repository, tree *object.Tree, opts *a
 
 			if reason := opts.SkipContent(&hdr); reason != "" {
 				hdr.PAXRecords = map[string]string{"SG.skip": reason}
+				hdr.Size = 0
+				if err := tw.WriteHeader(&hdr); err != nil {
+					return err
+				}
+				continue
 			}
 
-			hdr.Size = 0
+			if info, err := catFile.ContentsString(string(hash)); err != nil {
+				return err
+			} else if info.Size != size {
+				return fmt.Errorf("git-cat-file returned a different size (%d) to git-ls-tree (%d) for %s", info.Size, size, path)
+			}
+
 			if err := tw.WriteHeader(&hdr); err != nil {
 				return err
 			}
-
+			if n, err := io.CopyBuffer(tw, catFile, buf); err != nil {
+				return err
+			} else if n != size {
+				return fmt.Errorf("git-cat-file unmarshalled %d bytes instead of %d for %s", n, size, path)
+			}
 		} else if bytes.Equal(typ, []byte("tree")) {
 			hdr := tar.Header{
 				Typeflag: tar.TypeDir,
@@ -125,8 +139,7 @@ func archiveLsTree(w io.Writer, repo *git.Repository, tree *object.Tree, opts *a
 		return err
 	}
 
-	done = true
-	return cmd.Wait()
+	return lsTree.Wait()
 }
 
 // scanNull is a split function for bufio.Scanner that returns each item of
