@@ -7,15 +7,7 @@ import (
 )
 
 func TestDo(t *testing.T) {
-	dir, err := filepath.Abs("../../.git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_DIR", dir)
-
-	if _, err := os.Stat(dir); os.Getenv("CI") != "" && os.IsNotExist(err) {
-		t.Skipf("skipping since on CI and this is not a git checkout: %v", err)
-	}
+	setGitDir(t)
 
 	for _, envvar := range []string{"", "GIT_SG_BUFFER", "GIT_SG_FILTER", "GIT_SG_CATFILE", "GIT_SG_LSTREE"} {
 		name := envvar
@@ -27,7 +19,7 @@ func TestDo(t *testing.T) {
 				t.Setenv(envvar, "1")
 			}
 			var w countingWriter
-			err = do(&w)
+			err := do(&w)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -46,4 +38,18 @@ type countingWriter struct {
 func (w *countingWriter) Write(b []byte) (int, error) {
 	w.N += len(b)
 	return len(b), nil
+}
+
+func setGitDir(t *testing.T) {
+	t.Helper()
+
+	dir, err := filepath.Abs("../../.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", dir)
+
+	if _, err := os.Stat(dir); os.Getenv("CI") != "" && os.IsNotExist(err) {
+		t.Skipf("skipping since on CI and this is not a git checkout: %v", err)
+	}
 }

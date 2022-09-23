@@ -9,6 +9,8 @@ import (
 )
 
 func TestInfo(t *testing.T) {
+	setGitDir(t)
+
 	p, err := startGitCatFileBatch("")
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +45,8 @@ func TestInfo(t *testing.T) {
 }
 
 func TestContents(t *testing.T) {
+	setGitDir(t)
+
 	p, err := startGitCatFileBatch("")
 	if err != nil {
 		t.Fatal(err)
