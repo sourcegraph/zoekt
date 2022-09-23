@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -11,6 +12,10 @@ func TestDo(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GIT_DIR", dir)
+
+	if _, err := os.Stat(dir); os.Getenv("CI") != "" && os.IsNotExist(err) {
+		t.Skipf("skipping since on CI and this is not a git checkout: %v", err)
+	}
 
 	for _, envvar := range []string{"", "GIT_SG_BUFFER", "GIT_SG_FILTER", "GIT_SG_CATFILE", "GIT_SG_LSTREE"} {
 		name := envvar
