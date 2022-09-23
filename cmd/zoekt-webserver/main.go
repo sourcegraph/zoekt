@@ -27,7 +27,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -46,6 +48,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/procfs"
 	sglog "github.com/sourcegraph/log"
 	"github.com/uber/jaeger-client-go"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -177,14 +180,8 @@ func main() {
 
 	mustRegisterDiskMonitor(*index)
 
-	// https://docs.kernel.org/_sources/admin-guide/sysctl/vm.rst.txt
-	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "zoekt_webserver_max_memory_map_count",
-		Help: "Upper limit on amount of memory mapped regions a process may have.",
-	}, func() float64 {
-		count, _ := readMaxMapCount()
-		return count
-	}))
+	mmapLogger := sglog.Scoped("zoekt_webserver_prometheus_memory_map_metrics", "")
+	mustRegisterMemoryMapMetrics(mmapLogger)
 
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the
@@ -514,18 +511,69 @@ var (
 	})
 )
 
-func readMaxMapCount() (float64, error) {
-	raw, err := os.ReadFile("/proc/vm/max_map_count")
-	if err != nil {
-		return 0, fmt.Errorf("opening %q: %w", "/proc/vm/max_map_count", err)
+func mustRegisterMemoryMapMetrics(l sglog.Logger) {
+	if runtime.GOOS != "linux" {
+		l.Debug(
+			"skipping registration: must be running on a linux-based operating system",
+			sglog.String("current_operating_system", runtime.GOOS),
+			sglog.String("desired_operating_system", "linux"))
+
+		return
 	}
 
-	s := strings.TrimSpace(string(raw))
-
-	count, err := strconv.ParseFloat(s, 64)
+	fs, err := procfs.NewDefaultFS()
 	if err != nil {
-		return 0, fmt.Errorf("parsing max memory map count: %w", err)
+		panic(fmt.Sprintf("registering memory map metrics: failed to initialize proc FS: %s", err))
 	}
 
-	return count, err
+	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "zoekt_webserver_max_memory_map_count",
+		Help: "Upper limit on amount of memory mapped regions a process may have.",
+	}, func() float64 {
+		vm, err := fs.VM()
+		if err != nil {
+			l.Debug(
+				"failed to read VM statistics",
+				sglog.String("path", path.Join(procfs.DefaultMountPoint, "sys", "vm")),
+				sglog.String("error", err.Error()),
+			)
+
+			return 0
+		}
+
+		if vm.MaxMapCount == nil {
+			return 0
+		}
+
+		return float64(*vm.MaxMapCount)
+	}))
+
+	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "zoekt_webserver_current_memory_map_count",
+		Help: "Amount of memory mapped regions this process is currently using.",
+	}, func() float64 {
+		self, err := fs.Self()
+		if err != nil {
+			l.Debug(
+				"failed to read process statistics",
+				sglog.String("path", path.Join(procfs.DefaultMountPoint, "self")),
+				sglog.String("error", err.Error()),
+			)
+
+			return 0
+		}
+
+		procMaps, err := self.ProcMaps()
+		if err != nil {
+			l.Debug(
+				"failed to read memory mappings",
+				sglog.String("path", path.Join(procfs.DefaultMountPoint, "self", "maps")),
+				sglog.String("error", err.Error()),
+			)
+
+			return 0
+		}
+
+		return float64(len(procMaps))
+	}))
 }

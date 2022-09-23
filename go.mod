@@ -23,6 +23,7 @@ require (
 	github.com/peterbourgon/ff/v3 v3.1.2
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.1
+	github.com/prometheus/procfs v0.8.0
 	github.com/rs/xid v1.4.0
 	github.com/sourcegraph/go-ctags v0.0.0-20220611154803-db463692f037
 	github.com/sourcegraph/log v0.0.0-20220901143117-fc0516a694c9
@@ -42,7 +43,7 @@ require (
 	go.uber.org/automaxprocs v1.5.1
 	golang.org/x/net v0.0.0-20220425223048-2871e0cb64e4
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
@@ -91,7 +92,6 @@ require (
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.32.1 // indirect
-	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/sergi/go-diff v1.2.0 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
