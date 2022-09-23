@@ -60,11 +60,10 @@ func TestCleanup(t *testing.T) {
 		repos []string
 		index []shard
 		trash []shard
-		tmps  map[string]time.Time
+		tmps  []string
 
 		wantIndex []shard
 		wantTrash []shard
-		wantTmps  []string
 	}{{
 		name: "noop",
 	}, {
@@ -99,11 +98,7 @@ func TestCleanup(t *testing.T) {
 		wantTrash: []shard{mk("bar", 0, now)},
 	}, {
 		name: "clean old .tmp files",
-		tmps: map[string]time.Time{
-			"recent.tmp": recent,
-			"old.tmp":    old,
-		},
-		wantTmps: []string{"recent.tmp"},
+		tmps: []string{"recent.tmp", "old.tmp"},
 	}, {
 		name:      "all",
 		repos:     []string{"exists", "trashed"},
@@ -133,12 +128,9 @@ func TestCleanup(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			for name, mtime := range tt.tmps {
+			for _, name := range tt.tmps {
 				path := filepath.Join(dir, name)
 				if _, err := os.Create(path); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Chtimes(path, mtime, mtime); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -155,8 +147,8 @@ func TestCleanup(t *testing.T) {
 			if d := cmp.Diff(tt.wantTrash, glob(filepath.Join(dir, ".trash", "*.zoekt"))); d != "" {
 				t.Errorf("unexpected trash (-want, +got):\n%s", d)
 			}
-			if d := cmp.Diff(tt.wantTmps, globBase(filepath.Join(dir, "*.tmp"))); d != "" {
-				t.Errorf("unexpected tmps (-want, +got):\n%s", d)
+			if tmps := globBase(filepath.Join(dir, "*.tmp")); len(tmps) > 0 {
+				t.Errorf("unexpected tmps: %v", tmps)
 			}
 
 			if testing.Verbose() {

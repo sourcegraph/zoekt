@@ -152,9 +152,10 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		shardsLog(indexDir, "remove", shards)
 	}
 
-	// Remove old .tmp files from crashed indexer runs-- for example, if
-	// an indexer OOMs, it will leave around .tmp files, usually in a loop.
-	maxAge := now.Add(-4 * time.Hour)
+	// Remove .tmp files from crashed indexer runs-- for example, if an indexer
+	// OOMs, it will leave around .tmp files, usually in a loop. We can remove
+	// the files now since cleanup runs with a global lock (no indexing jobs
+	// running at the same time).
 	if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
 		log.Printf("Glob: %v", err)
 	} else {
@@ -164,8 +165,8 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 				log.Printf("Stat(%q): %v", f, err)
 				continue
 			}
-			if !st.IsDir() && st.ModTime().Before(maxAge) {
-				log.Printf("removing old tmp file: %s", f)
+			if !st.IsDir() {
+				log.Printf("removing tmp file: %s", f)
 				os.Remove(f)
 			}
 		}
