@@ -527,7 +527,7 @@ func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 	}
 
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "zoekt_webserver_max_memory_map_count",
+		Name: "proc_metrics_memory_map_max_limit",
 		Help: "Upper limit on amount of memory mapped regions a process may have.",
 	}, func() float64 {
 		vm, err := fs.VM()
@@ -549,7 +549,7 @@ func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 	}))
 
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "zoekt_webserver_current_memory_map_count",
+		Name: "proc_metrics_memory_map_current_count",
 		Help: "Amount of memory mapped regions this process is currently using.",
 	}, func() float64 {
 		self, err := fs.Self()
