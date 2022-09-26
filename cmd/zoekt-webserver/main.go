@@ -511,9 +511,9 @@ var (
 	})
 )
 
-func mustRegisterMemoryMapMetrics(l sglog.Logger) {
+func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 	if runtime.GOOS != "linux" {
-		l.Debug(
+		logger.Debug(
 			"skipping registration: must be running on a linux-based operating system",
 			sglog.String("current_operating_system", runtime.GOOS),
 			sglog.String("desired_operating_system", "linux"))
@@ -532,7 +532,7 @@ func mustRegisterMemoryMapMetrics(l sglog.Logger) {
 	}, func() float64 {
 		vm, err := fs.VM()
 		if err != nil {
-			l.Debug(
+			logger.Debug(
 				"failed to read VM statistics",
 				sglog.String("path", path.Join(procfs.DefaultMountPoint, "sys", "vm")),
 				sglog.String("error", err.Error()),
@@ -554,7 +554,7 @@ func mustRegisterMemoryMapMetrics(l sglog.Logger) {
 	}, func() float64 {
 		self, err := fs.Self()
 		if err != nil {
-			l.Debug(
+			logger.Debug(
 				"failed to read process statistics",
 				sglog.String("path", path.Join(procfs.DefaultMountPoint, "self")),
 				sglog.String("error", err.Error()),
@@ -565,7 +565,7 @@ func mustRegisterMemoryMapMetrics(l sglog.Logger) {
 
 		procMaps, err := self.ProcMaps()
 		if err != nil {
-			l.Debug(
+			logger.Debug(
 				"failed to read memory mappings",
 				sglog.String("path", path.Join(procfs.DefaultMountPoint, "self", "maps")),
 				sglog.String("error", err.Error()),
