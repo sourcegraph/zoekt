@@ -180,7 +180,7 @@ func main() {
 
 	mustRegisterDiskMonitor(*index)
 
-	mmapLogger := sglog.Scoped("zoekt_webserver_prometheus_memory_map_metrics", "")
+	mmapLogger := sglog.Scoped("zoekt_webserver_proc_metrics_memory_map", "")
 	mustRegisterMemoryMapMetrics(mmapLogger)
 
 	// Do not block on loading shards so we can become partially available
