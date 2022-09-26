@@ -49,7 +49,6 @@ jobs:
       - name: checkout
         uses: actions/checkout@v2
 
-      # This is the same tag we used for zoekt in the infrastructure repo.
       - name: version
         id: version
         run: .github/workflows/docker-version.sh
