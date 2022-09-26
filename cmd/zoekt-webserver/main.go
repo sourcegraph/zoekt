@@ -523,7 +523,25 @@ func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 
 	fs, err := procfs.NewDefaultFS()
 	if err != nil {
-		panic(fmt.Sprintf("registering memory map metrics: failed to initialize proc FS: %s", err))
+		logger.Debug(
+			"skipping registration",
+			sglog.String("reason", "failed to initialize proc FS"),
+			sglog.String("error", err.Error()),
+		)
+
+		return
+	}
+
+	info, err := fs.Self()
+	if err != nil {
+		logger.Debug(
+			"skipping registration",
+			sglog.String("path", path.Join(procfs.DefaultMountPoint, "self")),
+			sglog.String("reason", "failed to initialize process info object for current process"),
+			sglog.String("error", err.Error()),
+		)
+
+		return
 	}
 
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -533,7 +551,7 @@ func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 		vm, err := fs.VM()
 		if err != nil {
 			logger.Debug(
-				"failed to read VM statistics",
+				"failed to read virtual memory statistics for the current process",
 				sglog.String("path", path.Join(procfs.DefaultMountPoint, "sys", "vm")),
 				sglog.String("error", err.Error()),
 			)
@@ -552,21 +570,10 @@ func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 		Name: "proc_metrics_memory_map_current_count",
 		Help: "Amount of memory mapped regions this process is currently using.",
 	}, func() float64 {
-		self, err := fs.Self()
+		procMaps, err := info.ProcMaps()
 		if err != nil {
 			logger.Debug(
-				"failed to read process statistics",
-				sglog.String("path", path.Join(procfs.DefaultMountPoint, "self")),
-				sglog.String("error", err.Error()),
-			)
-
-			return 0
-		}
-
-		procMaps, err := self.ProcMaps()
-		if err != nil {
-			logger.Debug(
-				"failed to read memory mappings",
+				"failed to read memory mappings for current process",
 				sglog.String("path", path.Join(procfs.DefaultMountPoint, "self", "maps")),
 				sglog.String("error", err.Error()),
 			)
