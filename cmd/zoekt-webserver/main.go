@@ -512,14 +512,16 @@ var (
 )
 
 func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
-	if runtime.GOOS != "linux" {
-		logger.Debug(
-			"skipping registration: must be running on a linux-based operating system",
-			sglog.String("current_operating_system", runtime.GOOS),
-			sglog.String("desired_operating_system", "linux"))
+	// The memory map metrics are collected via /proc, which
+	// is only available on linux-based operating systems.
 
+	if runtime.GOOS != "linux" {
 		return
 	}
+
+	// Instantiate shared FS objects for accessing /proc and /proc/self,
+	// and skip metrics registration if we're aren't able to instantiate them
+	// for whatever reason.
 
 	fs, err := procfs.NewDefaultFS()
 	if err != nil {
@@ -543,6 +545,8 @@ func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 
 		return
 	}
+
+	// Register Prometheus memory map metrics
 
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "proc_metrics_memory_map_max_limit",
