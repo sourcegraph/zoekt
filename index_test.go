@@ -49,8 +49,6 @@ func testIndexBuilder(t *testing.T, repo *Repository, docs ...Document) *IndexBu
 	t.Helper()
 
 	b, err := NewIndexBuilder(repo)
-	b.contentBloom.bits = b.contentBloom.bits[:bloomSizeTest]
-	b.nameBloom.bits = b.nameBloom.bits[:bloomSizeTest]
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -69,8 +67,6 @@ func testIndexBuilderCompound(t *testing.T, repos []*Repository, docs [][]Docume
 
 	b := newIndexBuilder()
 	b.indexFormatVersion = NextIndexFormatVersion
-	b.contentBloom.bits = b.contentBloom.bits[:bloomSizeTest]
-	b.nameBloom.bits = b.nameBloom.bits[:bloomSizeTest]
 
 	if len(repos) != len(docs) {
 		t.Fatalf("testIndexBuilderCompound: repos must be the same length as docs, got: len(repos)=%d len(docs)=%d", len(repos), len(docs))
@@ -123,29 +119,6 @@ func TestDocSectionInvalid(t *testing.T) {
 
 	if err := b.Add(doc); err == nil {
 		t.Errorf("doc sections beyond EOF should fail")
-	}
-}
-
-func TestBloomSkip(t *testing.T) {
-	for _, tc := range []struct {
-		skip bool
-		want int
-	}{
-		{false, 1},
-		{true, 0},
-	} {
-		if !tc.skip {
-			os.Setenv("ZOEKT_ENABLE_BLOOM", "1")
-		}
-		b := testIndexBuilder(t, nil,
-			Document{Name: "f1", Content: []byte("reader derre errea")},
-		)
-		res := searchForTest(t, b, &query.Substring{Pattern: "derrea"})
-		if res.Stats.ShardsSkippedFilter != tc.want {
-			t.Errorf("bloom disabled=%v filtered out %v shards, want %v",
-				tc.skip, res.Stats.ShardsSkippedFilter, tc.want)
-		}
-		os.Unsetenv("ZOEKT_ENABLE_BLOOM")
 	}
 }
 

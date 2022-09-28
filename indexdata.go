@@ -97,12 +97,6 @@ type indexData struct {
 
 	// rawConfigMasks contains the encoded RawConfig for each repository
 	rawConfigMasks []uint8
-
-	// A bloom filter over file contents.
-	bloomContents bloom
-
-	// A bloom filter over filenames.
-	bloomNames bloom
 }
 
 type symbolData struct {
@@ -379,24 +373,6 @@ func (r *ngramIterationResults) candidates() []*candidateMatch {
 
 func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResults, error) {
 	str := query.Pattern
-
-	if len(query.Pattern) >= bloomHashMinWordLength {
-		// test against appropriate content or filename bloom filters
-		pat := []byte(query.Pattern)
-		var match bool
-		if query.FileName {
-			match = d.bloomNames.maybeHasBytes(pat)
-		} else {
-			match = d.bloomContents.maybeHasBytes(pat)
-		}
-		if !match {
-			return &ngramIterationResults{
-				matchIterator: &noMatchTree{
-					Why: "bloomfilter",
-				},
-			}, nil
-		}
-	}
 
 	// Find the 2 least common ngrams from the string.
 	ngramOffs := splitNGrams([]byte(query.Pattern))
