@@ -324,7 +324,12 @@ func CheckText(content []byte, maxTrigramCount int) error {
 		return fmt.Errorf("file size smaller than %d", ngramSize)
 	}
 
-	trigrams := map[ngram]struct{}{}
+	// PERF: we only need to do the trigram check if the upperbound on content
+	// is greater than our threshold.
+	var trigrams map[ngram]struct{}
+	if trigramsUpperBound := len(content) - ngramSize + 1; trigramsUpperBound > maxTrigramCount {
+		trigrams = make(map[ngram]struct{}, maxTrigramCount+1)
+	}
 
 	var cur [3]rune
 	byteCount := 0
@@ -343,10 +348,12 @@ func CheckText(content []byte, maxTrigramCount int) error {
 			continue
 		}
 
-		trigrams[runesToNGram(cur)] = struct{}{}
-		if len(trigrams) > maxTrigramCount {
-			// probably not text.
-			return fmt.Errorf("number of trigrams exceeds %d", maxTrigramCount)
+		if trigrams != nil {
+			trigrams[runesToNGram(cur)] = struct{}{}
+			if len(trigrams) > maxTrigramCount {
+				// probably not text.
+				return fmt.Errorf("number of trigrams exceeds %d", maxTrigramCount)
+			}
 		}
 	}
 	return nil
