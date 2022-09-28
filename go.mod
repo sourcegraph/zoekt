@@ -41,7 +41,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.9.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/automaxprocs v1.5.1
-	golang.org/x/net v0.0.0-20220425223048-2871e0cb64e4
+	golang.org/x/net v0.0.0-20220927171203-f486391704dc
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5
 	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
