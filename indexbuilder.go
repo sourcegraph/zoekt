@@ -179,9 +179,6 @@ type IndexBuilder struct {
 	contentPostings *postingsBuilder
 	namePostings    *postingsBuilder
 
-	contentBloom bloom
-	nameBloom    bloom
-
 	// root repositories
 	repoList []Repository
 
@@ -239,8 +236,6 @@ func newIndexBuilder() *IndexBuilder {
 
 		contentPostings: newPostingsBuilder(),
 		namePostings:    newPostingsBuilder(),
-		contentBloom:    makeBloomFilterEmpty(),
-		nameBloom:       makeBloomFilterEmpty(),
 		fileEndSymbol:   []uint32{0},
 		symIndex:        make(map[string]uint32),
 		symKindIndex:    make(map[string]uint32),
@@ -463,8 +458,6 @@ func (b *IndexBuilder) Add(doc Document) error {
 			return fmt.Errorf("path %q must start subrepo path %q", doc.Name, doc.SubRepositoryPath)
 		}
 	}
-	b.contentBloom.addBytes(doc.Content)
-	b.nameBloom.addBytes([]byte(doc.Name))
 	docStr, runeSecs, err := b.contentPostings.newSearchableString(doc.Content, doc.Symbols)
 	if err != nil {
 		return err

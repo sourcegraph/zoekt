@@ -349,8 +349,8 @@ type Stats struct {
 	// Shards that we did not process because a query was canceled.
 	ShardsSkipped int
 
-	// Shards that we did not process because the query was rejected
-	// by the bloom or ngram filter indicating it had no matches.
+	// Shards that we did not process because the query was rejected by the
+	// ngram filter indicating it had no matches.
 	ShardsSkippedFilter int
 
 	// Number of non-overlapping matches
