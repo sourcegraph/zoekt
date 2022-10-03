@@ -303,18 +303,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.ngrams = ngramMap{offsetMap: offsetMap}
 	}
 
-	if os.Getenv("ZOEKT_ENABLE_BLOOM") != "" {
-		d.bloomContents, err = d.readBloom(toc.contentBloom)
-		if err != nil {
-			return nil, err
-		}
-
-		d.bloomNames, err = d.readBloom(toc.nameBloom)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
 	if err != nil {
 		return nil, err
@@ -581,18 +569,6 @@ func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]Document
 	}
 
 	return unmarshalDocSections(blob, buf), sec.sz, nil
-}
-
-func (d *indexData) readBloom(sec simpleSection) (bloom, error) {
-	if sec.sz == 0 {
-		// an empty bloom filter is fine
-		return bloom{}, nil
-	}
-	data, err := d.readSectionBlob(sec)
-	if err != nil {
-		return bloom{}, err
-	}
-	return makeBloomFilterFromEncoded(data)
 }
 
 // NewSearcher creates a Searcher for a single index file.  Search

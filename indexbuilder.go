@@ -179,9 +179,6 @@ type IndexBuilder struct {
 	contentPostings *postingsBuilder
 	namePostings    *postingsBuilder
 
-	contentBloom bloom
-	nameBloom    bloom
-
 	// root repositories
 	repoList []Repository
 
@@ -239,8 +236,6 @@ func newIndexBuilder() *IndexBuilder {
 
 		contentPostings: newPostingsBuilder(),
 		namePostings:    newPostingsBuilder(),
-		contentBloom:    makeBloomFilterEmpty(),
-		nameBloom:       makeBloomFilterEmpty(),
 		fileEndSymbol:   []uint32{0},
 		symIndex:        make(map[string]uint32),
 		symKindIndex:    make(map[string]uint32),
@@ -324,7 +319,12 @@ func CheckText(content []byte, maxTrigramCount int) error {
 		return fmt.Errorf("file size smaller than %d", ngramSize)
 	}
 
-	trigrams := map[ngram]struct{}{}
+	// PERF: we only need to do the trigram check if the upperbound on content
+	// is greater than our threshold.
+	var trigrams map[ngram]struct{}
+	if trigramsUpperBound := len(content) - ngramSize + 1; trigramsUpperBound > maxTrigramCount {
+		trigrams = make(map[ngram]struct{}, maxTrigramCount+1)
+	}
 
 	var cur [3]rune
 	byteCount := 0
@@ -343,10 +343,12 @@ func CheckText(content []byte, maxTrigramCount int) error {
 			continue
 		}
 
-		trigrams[runesToNGram(cur)] = struct{}{}
-		if len(trigrams) > maxTrigramCount {
-			// probably not text.
-			return fmt.Errorf("number of trigrams exceeds %d", maxTrigramCount)
+		if trigrams != nil {
+			trigrams[runesToNGram(cur)] = struct{}{}
+			if len(trigrams) > maxTrigramCount {
+				// probably not text.
+				return fmt.Errorf("number of trigrams exceeds %d", maxTrigramCount)
+			}
 		}
 	}
 	return nil
@@ -456,8 +458,6 @@ func (b *IndexBuilder) Add(doc Document) error {
 			return fmt.Errorf("path %q must start subrepo path %q", doc.Name, doc.SubRepositoryPath)
 		}
 	}
-	b.contentBloom.addBytes(doc.Content)
-	b.nameBloom.addBytes([]byte(doc.Name))
 	docStr, runeSecs, err := b.contentPostings.newSearchableString(doc.Content, doc.Symbols)
 	if err != nil {
 		return err
