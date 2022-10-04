@@ -19,6 +19,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 
 	"github.com/sourcegraph/zoekt/cmd"
@@ -26,7 +27,9 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 )
 
-func main() {
+func run() int {
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
+
 	allowMissing := flag.Bool("allow_missing_branches", false, "allow missing branches.")
 	submodules := flag.Bool("submodules", true, "if set to false, do not recurse into submodules")
 	branchesStr := flag.String("branches", "HEAD", "git branches to index.")
@@ -42,6 +45,18 @@ func main() {
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	if *repoCacheDir != "" {
 		dir, err := filepath.Abs(*repoCacheDir)
@@ -96,5 +111,11 @@ func main() {
 			exitStatus = 1
 		}
 	}
+
+	return exitStatus
+}
+
+func main() {
+	exitStatus := run()
 	os.Exit(exitStatus)
 }
