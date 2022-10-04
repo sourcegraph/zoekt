@@ -185,7 +185,7 @@ func main() {
 	mustRegisterMemoryMapMetrics(mmapLogger)
 
 	sysinfoLogger := sglog.Scoped("zoekt_webserver_sys_info_metrics", "")
-	mustRegsiterSysInfoMetrics(sysinfoLogger)
+	mustRegsiterSysInfoMetrics(sysinfoLogger, *index)
 
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the
@@ -513,7 +513,7 @@ var (
 	})
 )
 
-func mustRegsiterSysInfoMetrics(logger sglog.Logger) {
+func mustRegsiterSysInfoMetrics(logger sglog.Logger, indexDir string) {
 	// Some of the metrics are collected via /proc, which
 	// is only available on linux-based operating systems.
 
@@ -536,7 +536,7 @@ func mustRegsiterSysInfoMetrics(logger sglog.Logger) {
 		return
 	}
 
-	mounts, err := sysinfo.NewMountInfoCollector(fs)
+	mounts, err := sysinfo.NewMountInfoCollector(fs, map[string]string{"indexDir": indexDir})
 	if err != nil {
 		logger.Debug(
 			"skipping registration",
