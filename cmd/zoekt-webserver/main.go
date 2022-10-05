@@ -522,33 +522,21 @@ func mustRegsiterSysInfoMetrics(logger sglog.Logger, indexDir string) {
 	}
 
 	// Instantiate shared FS objects for accessing /proc and /proc/self,
-	// and skip metrics registration if we're aren't able to instantiate them
+	// and skip metrics registration if we aren't able to instantiate them
 	// for whatever reason.
 
 	mounts, err := sysinfo.NewMountInfoCollector(map[string]string{"indexDir": indexDir})
 	if err != nil {
 		logger.Debug(
 			"skipping registration",
-			sglog.String("reason", "failed to initialize proc FS"),
+			sglog.String("reason", "failed to initialize mount_info collector"),
 			sglog.String("error", err.Error()),
 		)
 
 		return
 	}
+
 	prometheus.DefaultRegisterer.MustRegister(mounts)
-
-	nodeName, err := sysinfo.NewMachineNameCollector()
-	if err != nil {
-		logger.Debug(
-			"skipping registration",
-			sglog.String("reason", "failed to initialize proc FS"),
-			sglog.String("error", err.Error()),
-		)
-
-		return
-	}
-	prometheus.DefaultRegisterer.MustRegister(nodeName)
-
 }
 
 func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
