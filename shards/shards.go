@@ -472,7 +472,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	aggregate.Wait = time.Since(start)
 	start = time.Now()
 
-	done, err := ss.streamSearch(ctx, proc, q, opts, ss.getShards(), stream.SenderFunc(func(r *zoekt.SearchResult) {
+	done, err := streamSearch(ctx, proc, q, opts, ss.getShards(), stream.SenderFunc(func(r *zoekt.SearchResult) {
 		aggregate.Stats.Add(r.Stats)
 
 		if len(r.Files) > 0 {
@@ -525,8 +525,10 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	tr.LazyPrintf("acquired process")
 
 	shards := ss.getShards()
-	if len(shards) == 0 {
-		return nil
+
+	maxPendingPriority := math.Inf(-1)
+	if len(shards) > 0 {
+		maxPendingPriority = shards[0].priority
 	}
 
 	sender.Send(&zoekt.SearchResult{
@@ -534,15 +536,16 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 			Wait: time.Since(start),
 		},
 		Progress: zoekt.Progress{
-			MaxPendingPriority: shards[0].priority,
+			MaxPendingPriority: maxPendingPriority,
 		},
 	})
 
-	done, err := ss.streamSearch(ctx, proc, q, opts, shards, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	done, err := streamSearch(ctx, proc, q, opts, shards, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		copyFiles(event)
 		sender.Send(event)
 	}))
 	done()
+
 	return err
 }
 
@@ -554,7 +557,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 // collector can't see. Calling done informs the garbage collector it is free
 // to collect those shards. The caller must call copyFiles on any
 // SearchResults it returns/streams out before calling done.
-func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, shards []*rankedShard, sender zoekt.Sender) (done func(), err error) {
+func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, shards []*rankedShard, sender zoekt.Sender) (done func(), err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
