@@ -525,18 +525,7 @@ func mustRegsiterSysInfoMetrics(logger sglog.Logger, indexDir string) {
 	// and skip metrics registration if we're aren't able to instantiate them
 	// for whatever reason.
 
-	fs, err := procfs.NewDefaultFS()
-	if err != nil {
-		logger.Debug(
-			"skipping registration",
-			sglog.String("reason", "failed to initialize proc FS"),
-			sglog.String("error", err.Error()),
-		)
-
-		return
-	}
-
-	mounts, err := sysinfo.NewMountInfoCollector(fs, map[string]string{"indexDir": indexDir})
+	mounts, err := sysinfo.NewMountInfoCollector(map[string]string{"indexDir": indexDir})
 	if err != nil {
 		logger.Debug(
 			"skipping registration",
