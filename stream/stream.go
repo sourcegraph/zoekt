@@ -5,6 +5,7 @@ package stream
 import (
 	"encoding/gob"
 	"errors"
+	"math"
 	"net/http"
 	"sync"
 
@@ -75,8 +76,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	aggStats := zoekt.Stats{}
+	agg := zoekt.SearchResult{}
+	aggCount := 0
+
 	send := func(zsr *zoekt.SearchResult) {
+
 		err := eventWriter.event(eventMatches, zsr)
 		if err != nil {
 			_ = eventWriter.event(eventError, err)
@@ -85,25 +89,42 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = h.Searcher.StreamSearch(ctx, args.Q, args.Opts, SenderFunc(func(event *zoekt.SearchResult) {
-		// We don't want to send events over the wire if they just contain stats and no
-		// file matches. Hence, in case we didn't find any results, we will just
-		// aggregate the stats.
+		// We don't want to send events over the wire if they don't contain file
+		// matches. Hence, in case we didn't find any results, we aggregate the stats
+		// and send them out in regular intervals.
 		if len(event.Files) == 0 {
-			aggStats.Add(event.Stats)
+			aggCount++
+
+			agg.Stats.Add(event.Stats)
+			agg.Progress = event.Progress
+
+			if aggCount%100 == 0 && !agg.Stats.Zero() {
+				send(&agg)
+				agg = zoekt.SearchResult{}
+			}
+
 			return
 		}
 
 		// If we have aggregate stats, we merge them with the new event before sending
-		// it, and reset aggStats afterwards.
-		if !aggStats.Zero() {
-			defer func() { aggStats = zoekt.Stats{} }() // reset stats
-			event.Stats.Add(aggStats)
+		// it. We drop agg.Progress, because we assume that event.Progress reflects the
+		// latest status.
+		if !agg.Stats.Zero() {
+			event.Stats.Add(agg.Stats)
+			agg = zoekt.SearchResult{}
 		}
+
 		send(event)
 	}))
 
-	if err == nil && !aggStats.Zero() {
-		send(&zoekt.SearchResult{Stats: aggStats})
+	if err == nil && !agg.Stats.Zero() {
+		send(&zoekt.SearchResult{
+			Stats: agg.Stats,
+			Progress: zoekt.Progress{
+				Priority:           math.Inf(-1),
+				MaxPendingPriority: math.Inf(-1),
+			},
+		})
 	}
 
 	if err != nil {

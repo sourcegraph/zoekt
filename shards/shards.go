@@ -32,6 +32,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/stream"
@@ -471,7 +472,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	aggregate.Wait = time.Since(start)
 	start = time.Now()
 
-	done, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
+	done, err := streamSearch(ctx, proc, q, opts, ss.getShards(), stream.SenderFunc(func(r *zoekt.SearchResult) {
 		aggregate.Stats.Add(r.Stats)
 
 		if len(r.Files) > 0 {
@@ -522,28 +523,41 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	}
 	defer proc.Release()
 	tr.LazyPrintf("acquired process")
+
+	shards := ss.getShards()
+
+	maxPendingPriority := math.Inf(-1)
+	if len(shards) > 0 {
+		maxPendingPriority = shards[0].priority
+	}
+
 	sender.Send(&zoekt.SearchResult{
 		Stats: zoekt.Stats{
 			Wait: time.Since(start),
 		},
+		Progress: zoekt.Progress{
+			MaxPendingPriority: maxPendingPriority,
+		},
 	})
 
-	done, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	done, err := streamSearch(ctx, proc, q, opts, shards, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		copyFiles(event)
 		sender.Send(event)
 	}))
 	done()
+
 	return err
 }
 
-// streamSearch is an internal helper since both Search and StreamSearch are largely similiar.
+// streamSearch is an internal helper since both Search and StreamSearch are
+// largely similar.
 //
 // done must always be called, even if err is non-nil. The SearchResults sent
 // via sender contain references to the underlying mmap data that the garbage
 // collector can't see. Calling done informs the garbage collector it is free
 // to collect those shards. The caller must call copyFiles on any
 // SearchResults it returns/streams out before calling done.
-func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (done func(), err error) {
+func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, shards []*rankedShard, sender zoekt.Sender) (done func(), err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
@@ -561,7 +575,6 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 		tr.Finish()
 	}()
 
-	shards := ss.getShards()
 	tr.LazyPrintf("before selectRepoSet shards:%d", len(shards))
 	shards, q = selectRepoSet(shards, q)
 	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), q)
@@ -646,14 +659,6 @@ search:
 			pending.append(next.priority)
 
 			shard++
-			if shard%100 == 0 {
-				// We send the max pending priority as we search to keep frontend informed even
-				// if we don't find matches.
-				var r zoekt.SearchResult
-				r.MaxPendingPriority = pending.max()
-				sender.Send(&r)
-			}
-
 			if shard == len(shards) {
 				stop()
 			} else {
@@ -700,10 +705,10 @@ func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
 		return
 	}
 
-	send := func(repoName string, a, b int) {
+	send := func(repoName string, a, b int, stats zoekt.Stats) {
 		zoekt.SortFilesByScore(result.Files[a:b])
 		sender.Send(&zoekt.SearchResult{
-			// No stats. Stats must be aggregateable, hence we sent them separately.
+			Stats: stats,
 			Progress: zoekt.Progress{
 				Priority:           result.Files[a].RepositoryPriority,
 				MaxPendingPriority: result.MaxPendingPriority,
@@ -721,15 +726,17 @@ func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
 	fm := zoekt.FileMatch{}
 	for endIndex, fm = range result.Files {
 		if curRepoID != fm.RepositoryID {
-			send(curRepoName, startIndex, endIndex)
+			// Stats must stay aggregate-able, hence we sent the aggregate stats with the
+			// last event.
+			send(curRepoName, startIndex, endIndex, zoekt.Stats{})
 
 			startIndex = endIndex
 			curRepoID = fm.RepositoryID
 			curRepoName = fm.Repository
 		}
 	}
-	send(curRepoName, startIndex, endIndex+1)
-	sender.Send(&zoekt.SearchResult{Stats: result.Stats})
+
+	send(curRepoName, startIndex, endIndex+1, result.Stats)
 }
 
 func observeMetrics(sr *zoekt.SearchResult) {
