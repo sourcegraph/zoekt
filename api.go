@@ -760,11 +760,10 @@ type SearchOptions struct {
 	// be set to 1 to find all repositories containing a result.
 	ShardRepoMaxMatchCount int
 
-	// Maximum number of important matches: skip processing
-	// shard after we found this many important matches.
+	// Deprecated: this field is not read anymore.
 	ShardMaxImportantMatch int
 
-	// Maximum number of important matches across shards.
+	// Deprecated: this field is not read anymore.
 	TotalMaxImportantMatch int
 
 	// Abort the search after this much time has passed.
