@@ -127,8 +127,7 @@ func CalculateDefaultSearchLimits(ctx context.Context,
 		opts.ShardMaxMatchCount = maxResultDocs*5 + (5*maxResultDocs)/(numdocs/1000)
 
 	} else {
-		// Virtually no limits for a small corpus; important
-		// matches are just as expensive as normal matches.
+		// Virtually no limits for a small corpus.
 		n := numdocs + maxResultDocs*100
 		opts.ShardMaxMatchCount = n
 		opts.TotalMaxMatchCount = n
