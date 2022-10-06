@@ -15,13 +15,19 @@ import (
 
 const defaultSysMountPoint = "/sys"
 
-// RegisterNewMountInfoMetric returns a prometheus.Collector that collects a single metric "mount_points"
-// that contains
+// RegisterNewMountPointInfoMetric registers a Prometheus info metric named "mount_point_info" that
+// contains the name of the block device that backs the file path associated with each of the provided mounts.
+//
+// The metric has a constant value of 1 and two labels:
+//   - mount_name: caller-provided name for the given mount (example: "index_dir")
+//   - device: name of the block device that backs the given mount (example: "sdb")
+//
+// The 'mounts; argument is a list of {"index_dir": "/home/.zoekt"}
 //
 // with a constant value 1 and two labels:
 // - "mount_name"
-func RegisterNewMountInfoMetric(logger sglog.Logger, sysMountPoint string, mounts map[string]string) {
-	// This device discovery logic relies on the sysfs file system, which only exists
+func RegisterNewMountPointInfoMetric(logger sglog.Logger, sysMountPoint string, mounts map[string]string) {
+	// This device discovery logic relies on the sysfs mountFilePath system, which only exists
 	// on linux.
 	//
 	// See https://en.wikipedia.org/wiki/Sysfs for more information.
@@ -38,7 +44,7 @@ func RegisterNewMountInfoMetric(logger sglog.Logger, sysMountPoint string, mount
 		Help: "An info metric with a constant '1' value that contains mount_name, device mappings",
 	}, []string{"mount_name", "device"})
 
-	for mountName, file := range mounts {
+	for mountName, mountFilePath := range mounts {
 		// For each <mount_name>:<file_path> pairing, we need to find the name of the device
 		// that stores <file_path>.
 		//
@@ -50,10 +56,10 @@ func RegisterNewMountInfoMetric(logger sglog.Logger, sysMountPoint string, mount
 		//
 		// This logic will focus on handling
 
-		// 'stat' the mount's file path to determine what the device's ID numbers is
+		// 'stat' the mount's mountFilePath path to determine what the device's ID numbers is
 		discoveryLogger := logger.Scoped("deviceNameDiscovery", "").
 			With(sglog.String("mountName", mountName)).
-			With(sglog.String("mountFilePath", file))
+			With(sglog.String("mountFilePath", mountFilePath))
 
 		discoveryLogger.Debug(
 			"'stat'-ing mount filePath",
@@ -61,7 +67,7 @@ func RegisterNewMountInfoMetric(logger sglog.Logger, sysMountPoint string, mount
 		)
 
 		var stat unix.Stat_t
-		err := unix.Stat(file, &stat)
+		err := unix.Stat(mountFilePath, &stat)
 		if err != nil {
 			discoveryLogger.Debug("failed to stat",
 				sglog.String("operation", "discovering device number"),
@@ -127,6 +133,7 @@ func RegisterNewMountInfoMetric(logger sglog.Logger, sysMountPoint string, mount
 
 		// This devicePath should have an entry in the device tree
 		// if it represents a block device (and not a partition).
+
 		_, err = os.Stat(filepath.Join(devicePath, "device"))
 		if err != nil {
 			discoveryLogger.Debug("failed to ensure that the device has an entry in the device tree",
