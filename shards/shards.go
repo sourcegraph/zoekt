@@ -485,11 +485,6 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 				aggregate.LineFragments[k] = v
 			}
 		}
-
-		if cancel != nil && opts.TotalMaxMatchCount > 0 && aggregate.Stats.MatchCount > opts.TotalMaxMatchCount {
-			cancel()
-			cancel = nil
-		}
 	}))
 	defer done()
 	if err != nil {
@@ -650,6 +645,9 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 		}
 	}
 
+	// tracked so we can stop when we hit TotalMaxMatchCount
+	var totalMatchCount int
+
 search:
 	for {
 		_ = proc.Yield(ctx) // We let searchOneShard handle context errors.
@@ -678,6 +676,11 @@ search:
 				stop()
 				err = r.err
 				continue
+			}
+
+			totalMatchCount += r.SearchResult.Stats.MatchCount
+			if opts.TotalMaxMatchCount > 0 && totalMatchCount > opts.TotalMaxMatchCount {
+				stop()
 			}
 
 			observeMetrics(r.SearchResult)
