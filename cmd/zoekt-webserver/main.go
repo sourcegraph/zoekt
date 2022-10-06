@@ -184,8 +184,8 @@ func main() {
 	mmapLogger := sglog.Scoped("zoekt_webserver_proc_metrics_memory_map", "")
 	mustRegisterMemoryMapMetrics(mmapLogger)
 
-	sysinfoLogger := sglog.Scoped("zoekt_webserver_sys_info_metrics", "")
-	mustRegsiterSysInfoMetrics(sysinfoLogger, *index)
+	sysinfoLogger := sglog.Scoped("zoekt_webserver_mount_info_metrics", "")
+	sysinfo.RegisterNewMountInfoMetric(sysinfoLogger, "", map[string]string{"indexDir": *index})
 
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the
@@ -512,32 +512,6 @@ var (
 		Help: "The total number of errors from zoekt watchdog.",
 	})
 )
-
-func mustRegsiterSysInfoMetrics(logger sglog.Logger, indexDir string) {
-	// Some of the metrics are collected via /proc, which
-	// is only available on linux-based operating systems.
-
-	if runtime.GOOS != "linux" {
-		return
-	}
-
-	// Instantiate shared FS objects for accessing /proc and /proc/self,
-	// and skip metrics registration if we aren't able to instantiate them
-	// for whatever reason.
-
-	mounts, err := sysinfo.NewMountInfoCollector(map[string]string{"indexDir": indexDir})
-	if err != nil {
-		logger.Debug(
-			"skipping registration",
-			sglog.String("reason", "failed to initialize mount_info collector"),
-			sglog.String("error", err.Error()),
-		)
-
-		return
-	}
-
-	prometheus.DefaultRegisterer.MustRegister(mounts)
-}
 
 func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 	// The memory map metrics are collected via /proc, which
