@@ -442,8 +442,6 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 			sglog.Bool("opts.Whole", opts.Whole),
 			sglog.Int("opts.ShardMaxMatchCount", opts.ShardMaxMatchCount),
 			sglog.Int("opts.TotalMaxMatchCount", opts.TotalMaxMatchCount),
-			sglog.Int("opts.ShardMaxImportantMatch", opts.ShardMaxImportantMatch),
-			sglog.Int("opts.TotalMaxImportantMatch", opts.TotalMaxImportantMatch),
 			sglog.Duration("opts.MaxWallTime", opts.MaxWallTime),
 			sglog.Int("opts.MaxDocDisplayCount", opts.MaxDocDisplayCount),
 		)

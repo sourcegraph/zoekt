@@ -28,6 +28,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
 	"github.com/kylelemons/godebug/pretty"
+
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -1853,43 +1854,6 @@ func TestOr(t *testing.T) {
 
 		if len(sres.Files) != 2 {
 			t.Fatalf("got %v, want 2 files", sres.Files)
-		}
-	})
-}
-
-func TestImportantCutoff(t *testing.T) {
-	t.Skip()
-
-	content := []byte("func bla() blub")
-	// ----------------012345678901234
-	b := testIndexBuilder(t, nil,
-		Document{
-			Name:    "f1",
-			Content: content,
-			Symbols: []DocumentSection{{5, 8}},
-		}, Document{
-			Name:    "f2",
-			Content: content,
-		})
-
-	t.Run("LineMatches", func(t *testing.T) {
-		opts := SearchOptions{
-			ShardMaxImportantMatch: 1,
-		}
-		sres := searchForTest(t, b, &query.Substring{Pattern: "bla"}, opts)
-		if len(sres.Files) != 1 || sres.Files[0].FileName != "f1" {
-			t.Errorf("got %v, wanted 1 match 'f1'", sres.Files)
-		}
-	})
-
-	t.Run("ChunkMatches", func(t *testing.T) {
-		opts := SearchOptions{
-			ShardMaxImportantMatch: 1,
-			ChunkMatches:           true,
-		}
-		sres := searchForTest(t, b, &query.Substring{Pattern: "bla"}, opts)
-		if len(sres.Files) != 1 || sres.Files[0].FileName != "f1" {
-			t.Errorf("got %v, wanted 1 match 'f1'", sres.Files)
 		}
 	})
 }
