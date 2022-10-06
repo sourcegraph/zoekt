@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/zoekt/internal/mountinfo"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
@@ -1067,6 +1068,9 @@ func startServer(conf rootConfig) error {
 		Hostname: conf.hostname,
 	}
 	go oc.Run()
+
+	mountInfoLogger := sglog.Scoped("zoekt_indexserver_mount_info_metrics", "")
+	mountinfo.MustRegisterNewMountPointInfoMetric(mountInfoLogger, "", map[string]string{"indexDir": conf.index})
 
 	s.Run()
 	return nil

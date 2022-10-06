@@ -1,4 +1,4 @@
-package sysinfo
+package mountinfo
 
 import (
 	"errors"
@@ -13,30 +13,26 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const defaultSysMountPoint = "/sys"
+// DefaultSysMountPoint is the common mount point for the sysfs pseudo-filesystem.
+const DefaultSysMountPoint = "/sys"
 
-// RegisterNewMountPointInfoMetric registers a Prometheus info metric named "mount_point_info" that
-// contains the name of the block device that backs the file path associated with each of the provided mounts.
+// MustRegisterNewMountPointInfoMetric registers a Prometheus metric named "mount_point_info" that
+// contains the names of the block storage devices that back each of the requested mounts.
 //
-// The metric has a constant value of 1 and two labels:
-//   - mount_name: caller-provided name for the given mount (example: "index_dir")
-//   - device: name of the block device that backs the given mount (example: "sdb")
+// Mounts is a set of name -> file path mappings (example: {"indexDir": "/home/.zoekt"}).
 //
-// The 'mounts; argument is a list of {"index_dir": "/home/.zoekt"}
+// sysMountPoint is the custom mount point for the sysfs pseudo-filesystem to use. If empty,
+// DefaultSysMountPoint will be used instead.
 //
-// with a constant value 1 and two labels:
-// - "mount_name"
-func RegisterNewMountPointInfoMetric(logger sglog.Logger, sysMountPoint string, mounts map[string]string) {
-	// This device discovery logic relies on the sysfs mountFilePath system, which only exists
-	// on linux.
-	//
-	// See https://en.wikipedia.org/wiki/Sysfs for more information.
-	if runtime.GOOS != "linux" {
-		return
-	}
-
+// The metric "mount_point_info" has a constant value of 1 and two labels:
+//   - mount_name: caller-provided name for the given mount (example: "indexDir")
+//   - device: name of the block device that backs the given mount file path (example: "sdb")
+//
+// This metric only works on Linux-based operating systems that have access to the sysfs pseudo-filesystem.
+// On all other operating systems, this metric will not emit any values.
+func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, sysMountPoint string, mounts map[string]string) {
 	if sysMountPoint == "" {
-		sysMountPoint = defaultSysMountPoint
+		sysMountPoint = DefaultSysMountPoint
 	}
 
 	metric := promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -44,17 +40,39 @@ func RegisterNewMountPointInfoMetric(logger sglog.Logger, sysMountPoint string, 
 		Help: "An info metric with a constant '1' value that contains mount_name, device mappings",
 	}, []string{"mount_name", "device"})
 
+	// This device discovery logic relies on the sysfs pseudo-filesystem, which only exists
+	// on linux.
+	//
+	// See https://en.wikipedia.org/wiki/Sysfs for more information.
+	if runtime.GOOS != "linux" {
+		return
+	}
+
 	for mountName, mountFilePath := range mounts {
-		// For each <mount_name>:<file_path> pairing, we need to find the name of the device
-		// that stores <file_path>.
+		// For each <mountName>:<mountFilePath> pairing, we need to
+		// discover the name of the block device that stores <mountFilePath>.
 		//
-		// E.x. For a mount named "indexDir" that points to "~/.zoekt", this logic will
-		// discover that "sdb" is the disk that backs "~/.zoekt"
+		// Example: For a mount named "indexDir" with a filePath of "~/.zoekt", this logic will
+		// discover that "sdb" is the disk that backs "~/.zoekt".
 		//
-		// In general, it's quite involved to handle every possible case:
-		//https://unix.stackexchange.com/questions/11311/how-do-i-find-on-which-physical-device-a-folder-is-located
+		// Note: It's quite involved to implement the device discovery logic for
+		// every possible kind of storage device (e.x. logical volumes, NFS, etc.) See
+		// https://unix.stackexchange.com/a/11312 for more information.
 		//
-		// This logic will focus on handling
+		//  As a result, this logic will only work correctly for mountFilePaths that are either:
+		// 	- stored directly on a block device
+		//	- stored on a block device's partition
+		//
+		// For all other device types, this logic will either:
+		// - find an incorrect device name
+		// - emit an error in the logs
+		//
+		// This logic was implemented from information gathered from the following sources (amongst others):
+		// - "The Linux Programming Interface" by Michael Kerrisk: Chapter 14
+		// - "Linux Kernel Development" by Robert Love: Chapters 13, 17
+		// - https://man7.org/linux/man-pages/man5/sysfs.5.html
+		// - https://en.wikipedia.org/wiki/Sysfs
+		// - https://unix.stackexchange.com/a/11312
 
 		// 'stat' the mount's mountFilePath path to determine what the device's ID numbers is
 		discoveryLogger := logger.Scoped("deviceNameDiscovery", "").
@@ -62,7 +80,7 @@ func RegisterNewMountPointInfoMetric(logger sglog.Logger, sysMountPoint string, 
 			With(sglog.String("mountFilePath", mountFilePath))
 
 		discoveryLogger.Debug(
-			"'stat'-ing mount filePath",
+			"'stat'-ing mountFilePath",
 			sglog.String("operation", "discovering device number"),
 		)
 
@@ -113,7 +131,12 @@ func RegisterNewMountPointInfoMetric(logger sglog.Logger, sysMountPoint string, 
 		// Check to see if devicePath points to a disk partition. If so, we need to find the parent
 		// device.
 
-		for !(devicePath == "" || devicePath == "/" || devicePath == ".") { // stop walking up the folder hierarchy once we have an empty path (or a terminal as defined by filepath.Dir)
+		for {
+			if devicePath == "" || devicePath == "/" || devicePath == "." {
+				// stop walking up the folder hierarchy once we have an empty path (or a terminal as defined by filepath.Dir)
+				break
+			}
+
 			_, err := os.Stat(filepath.Join(devicePath, "partition"))
 			if errors.Is(err, os.ErrNotExist) {
 				break

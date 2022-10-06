@@ -38,8 +38,8 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/debugserver"
+	"github.com/sourcegraph/zoekt/internal/mountinfo"
 	"github.com/sourcegraph/zoekt/internal/profiler"
-	"github.com/sourcegraph/zoekt/internal/sysinfo"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/shards"
@@ -184,8 +184,8 @@ func main() {
 	mmapLogger := sglog.Scoped("zoekt_webserver_proc_metrics_memory_map", "")
 	mustRegisterMemoryMapMetrics(mmapLogger)
 
-	sysinfoLogger := sglog.Scoped("zoekt_webserver_mount_info_metrics", "")
-	sysinfo.RegisterNewMountPointInfoMetric(sysinfoLogger, "", map[string]string{"indexDir": *index})
+	mountInfoLogger := sglog.Scoped("zoekt_webserver_mount_info_metrics", "")
+	mountinfo.MustRegisterNewMountPointInfoMetric(mountInfoLogger, "", map[string]string{"indexDir": *index})
 
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the
