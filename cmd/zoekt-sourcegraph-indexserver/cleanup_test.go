@@ -287,11 +287,15 @@ func TestGetTombstonedRepos(t *testing.T) {
 	dir := t.TempDir()
 	var repoID uint32 = 2
 	csOld := createCompoundShard(t, dir, []uint32{1, 2, 3, 4}, setLastCommitDate(time.Now().Add(-1*time.Hour)))
-	zoekt.SetTombstone(csOld, repoID)
+	if err := zoekt.SetTombstone(csOld, repoID); err != nil {
+		t.Fatal(err)
+	}
 
 	now := time.Now()
 	csNew := createCompoundShard(t, dir, []uint32{5, 2, 6, 7}, setLastCommitDate(now))
-	zoekt.SetTombstone(csNew, repoID)
+	if err := zoekt.SetTombstone(csNew, repoID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Check that getTombstonedRepos returns the compound shard containing the
 	// tombstoned repo with id repoID with the latest commit.
@@ -375,19 +379,26 @@ func TestCleanupCompoundShards(t *testing.T) {
 	recent := now.Add(-1 * time.Hour)
 	old := now.Add(-2 * time.Hour)
 
+	setTombstone := func(shardPath string, repoID uint32) {
+		t.Helper()
+		if err := zoekt.SetTombstone(shardPath, repoID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	cs1 := createCompoundShard(t, dir, []uint32{1, 2, 3}, func(in *zoekt.Repository) {
 		in.LatestCommitDate = old
 	})
-	zoekt.SetTombstone(cs1, 1)
-	zoekt.SetTombstone(cs1, 2)
-	zoekt.SetTombstone(cs1, 3)
+	setTombstone(cs1, 1)
+	setTombstone(cs1, 2)
+	setTombstone(cs1, 3)
 
 	cs2 := createCompoundShard(t, dir, []uint32{1, 2, 4}, func(in *zoekt.Repository) {
 		in.LatestCommitDate = recent
 	})
-	zoekt.SetTombstone(cs2, 1)
-	zoekt.SetTombstone(cs2, 2)
-	zoekt.SetTombstone(cs2, 4)
+	setTombstone(cs2, 1)
+	setTombstone(cs2, 2)
+	setTombstone(cs2, 4)
 
 	createTestShard(t, "repo1", 1, filepath.Join(dir, "repo1.zoekt"), func(in *zoekt.Repository) {
 		in.LatestCommitDate = now

@@ -749,7 +749,7 @@ func (s *Server) handleDebugMerge(w http.ResponseWriter, _ *http.Request) {
 	go func() {
 		s.doMerge()
 	}()
-	w.Write([]byte("merging enqueued\n"))
+	_, _ = w.Write([]byte("merging enqueued\n"))
 }
 
 func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
