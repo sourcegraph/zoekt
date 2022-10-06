@@ -457,10 +457,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	aggregate := &zoekt.SearchResult{
-		RepoURLs:      map[string]string{},
-		LineFragments: map[string]string{},
-	}
+	collectSender := newCollectSender(opts)
 
 	start := time.Now()
 	proc, err := ss.sched.Acquire(ctx)
@@ -469,35 +466,29 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	}
 	defer proc.Release()
 	tr.LazyPrintf("acquired process")
-	aggregate.Wait = time.Since(start)
+
+	wait := time.Since(start)
 	start = time.Now()
 
-	done, err := streamSearch(ctx, proc, q, opts, ss.getShards(), stream.SenderFunc(func(r *zoekt.SearchResult) {
-		aggregate.Stats.Add(r.Stats)
-
-		if len(r.Files) > 0 {
-			aggregate.Files = append(aggregate.Files, r.Files...)
-
-			for k, v := range r.RepoURLs {
-				aggregate.RepoURLs[k] = v
-			}
-			for k, v := range r.LineFragments {
-				aggregate.LineFragments[k] = v
-			}
-		}
-	}))
+	done, err := streamSearch(ctx, proc, q, opts, ss.getShards(), collectSender)
 	defer done()
 	if err != nil {
 		return nil, err
 	}
 
-	zoekt.SortFilesByScore(aggregate.Files)
-	if max := opts.MaxDocDisplayCount; max > 0 && len(aggregate.Files) > max {
-		aggregate.Files = aggregate.Files[:max]
+	aggregate, ok := collectSender.Done()
+	if !ok {
+		aggregate = &zoekt.SearchResult{
+			RepoURLs:      map[string]string{},
+			LineFragments: map[string]string{},
+		}
 	}
+
 	copyFiles(aggregate)
 
-	aggregate.Duration = time.Since(start)
+	aggregate.Stats.Wait = wait
+	aggregate.Stats.Duration = time.Since(start)
+
 	return aggregate, nil
 }
 
