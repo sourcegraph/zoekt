@@ -823,10 +823,6 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 	return fmt.Sprintf("Indexed %s with state %s", args.String(), state), nil
 }
 
-func (s *Server) initializeInfoPrometheusMetric() {
-
-}
-
 func listIndexed(indexDir string) []uint32 {
 	index := getShards(indexDir)
 	metricNumIndexed.Set(float64(len(index)))
