@@ -1065,8 +1065,8 @@ func startServer(conf rootConfig) error {
 	}
 	go oc.Run()
 
-	mountInfoLogger := sglog.Scoped("zoekt_indexserver_mount_info_metrics", "")
-	mountinfo.MustRegisterNewMountPointInfoMetric(mountInfoLogger, map[string]string{"indexDir": conf.index})
+	logger := sglog.Scoped("metricsRegistration", "")
+	mountinfo.MustRegisterNewMountPointInfoMetric(logger, map[string]string{"indexDir": conf.index})
 
 	s.Run()
 	return nil

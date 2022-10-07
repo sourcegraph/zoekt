@@ -29,6 +29,8 @@ const defaultSysMountPoint = "/sys/"
 // This metric only works on Linux-based operating systems that have access to the sysfs pseudo-filesystem.
 // On all other operating systems, this metric will not emit any values.
 func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, mounts map[string]string) {
+	logger = logger.Scoped("mountPointInfo", "registration logic for mount_point_info Prometheus metric")
+
 	metric := promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "mount_point_info",
 		Help: "An info metric with a constant '1' value that contains mount_name, device mappings",
@@ -44,7 +46,7 @@ func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, mounts map[string]
 
 	for name, filePath := range mounts {
 		// for each <mountName>:<mountFilePath> pairing,
-		// discover the name of the block device that stores <mountFilePath>.Ø
+		// discover the name of the block device that stores <mountFilePath>.
 		discoveryLogger := logger.Scoped("deviceNameDiscovery", "").With(
 			sglog.String("mountName", name),
 			sglog.String("mountFilePath", filePath),
