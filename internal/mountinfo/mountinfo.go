@@ -13,16 +13,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// DefaultSysMountPoint is the common mount point for the sysfs pseudo-filesystem.
-const DefaultSysMountPoint = "/sys"
+// defaultSysMountPoint is the common mount point for the sysfs pseudo-filesystem.
+const defaultSysMountPoint = "/sys"
 
 // MustRegisterNewMountPointInfoMetric registers a Prometheus metric named "mount_point_info" that
 // contains the names of the block storage devices that back each of the requested mounts.
 //
 // Mounts is a set of name -> file path mappings (example: {"indexDir": "/home/.zoekt"}).
-//
-// sysMountPoint is the custom mount point for the sysfs pseudo-filesystem to use. If empty,
-// DefaultSysMountPoint will be used instead.
 //
 // The metric "mount_point_info" has a constant value of 1 and two labels:
 //   - mount_name: caller-provided name for the given mount (example: "indexDir")
@@ -30,11 +27,7 @@ const DefaultSysMountPoint = "/sys"
 //
 // This metric only works on Linux-based operating systems that have access to the sysfs pseudo-filesystem.
 // On all other operating systems, this metric will not emit any values.
-func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, sysMountPoint string, mounts map[string]string) {
-	if sysMountPoint == "" {
-		sysMountPoint = DefaultSysMountPoint
-	}
-
+func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, mounts map[string]string) {
 	metric := promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "mount_point_info",
 		Help: "An info metric with a constant '1' value that contains mount_name, device mappings",
@@ -106,7 +99,7 @@ func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, sysMountPoint stri
 		)
 
 		// /sys/dev/block/<device_number> symlinks to /sys/devices/.../block/.../<deviceName>
-		symlink := filepath.Join(sysMountPoint, "dev", "block", deviceNumber)
+		symlink := filepath.Join(defaultSysMountPoint, "dev", "block", deviceNumber)
 
 		discoveryLogger.Debug("evaluating sysfs symlink",
 			sglog.String("operation", "discovering device path"),
