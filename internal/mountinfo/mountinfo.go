@@ -68,9 +68,10 @@ func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, mounts map[string]
 		// - https://unix.stackexchange.com/a/11312
 
 		// 'stat' the mount's mountFilePath path to determine what the device's ID numbers is
-		discoveryLogger := logger.Scoped("deviceNameDiscovery", "").
-			With(sglog.String("mountName", mountName)).
-			With(sglog.String("mountFilePath", mountFilePath))
+		discoveryLogger := logger.Scoped("deviceNameDiscovery", "").With(
+			sglog.String("mountName", mountName),
+			sglog.String("mountFilePath", mountFilePath),
+		)
 
 		discoveryLogger.Debug(
 			"'stat'-ing mountFilePath",
