@@ -57,6 +57,7 @@ type item struct {
 type archiveWriterBlob interface {
 	Size() int64
 	Reader() (io.ReadCloser, error)
+	Close() error
 }
 
 type archiveWriterRepo interface {
@@ -130,6 +131,7 @@ func (a *archiveWriter) writeRegularTreeEntry(entry object.TreeEntry, path strin
 		log.Printf("failed to get blob object for %s %v: %v", path, entry.Hash, err)
 		return nil
 	}
+	defer blob.Close()
 
 	// TODO symlinks, mode, etc. Handle large Linkname
 	hdr := &tar.Header{
@@ -206,6 +208,10 @@ func (b archiveWriterBlobGoGit) Reader() (io.ReadCloser, error) {
 	return b.blob.Reader()
 }
 
+func (b archiveWriterBlobGoGit) Close() error {
+	return nil
+}
+
 type archiveWriterRepoGoGit git.Repository
 
 func (repo *archiveWriterRepoGoGit) TreeEntries(hash plumbing.Hash) ([]object.TreeEntry, error) {
@@ -239,6 +245,10 @@ func (b archiveWriterBlobCatFile) Reader() (io.ReadCloser, error) {
 		return nil, err
 	}
 	return io.NopCloser(b.catFile), nil
+}
+
+func (b archiveWriterBlobCatFile) Close() error {
+	return nil
 }
 
 type archiveWriterRepoCatFile struct {

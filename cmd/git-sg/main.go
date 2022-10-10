@@ -8,10 +8,12 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"strings"
 
+	"github.com/git-lfs/gitobj/v2"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -83,6 +85,21 @@ func do(w io.Writer) error {
 		}
 		defer catFile.Close()
 		repo = archiveWriterRepoCatFile{catFile: catFile}
+	} else if os.Getenv("GIT_SG_GITOBJ") != "" {
+		log.Println("using github.com/git-lfs/gitobj")
+		dir, err := gitDir()
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			dir = filepath.Join(dir, ".git")
+		}
+		db, err := gitobj.FromFilesystem(filepath.Join(dir, "objects"), "")
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		repo = archiveWriterRepoGitObj{db: db}
 	}
 
 	return archiveWrite(w, repo, root, opts)
