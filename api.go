@@ -31,6 +31,10 @@ const sliceHeaderBytes uint64 = 24
 const stringHeaderBytes uint64 = 16
 const pointerSize uint64 = 8
 
+// DocumentScoresFile is the name of the file that contains a mapping of paths
+// to score vectors.
+const DocumentScoresFile = "documents.score"
+
 // FileMatch contains all the matches within a file.
 type FileMatch struct {
 	// Ranking; the higher, the better.

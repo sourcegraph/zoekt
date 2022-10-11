@@ -186,6 +186,8 @@ type Server struct {
 	// repositoriesSkipSymbolsCalculationAllowList is an allowlist for repositories that
 	// we skip calculating symbols metadata for during builds
 	repositoriesSkipSymbolsCalculationAllowList map[string]struct{}
+
+	offlineRankingAllowList map[string]struct{}
 }
 
 var debug = log.New(io.Discard, "", log.LstdFlags)
@@ -537,6 +539,11 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		args.UseDelta = true
 	}
 
+	if _, ok := s.offlineRankingAllowList[repositoryName]; ok {
+		tr.LazyPrintf("marking this repository for offline ranking")
+		args.UseOfflineRanking = true
+	}
+
 	args.DeltaShardNumberFallbackThreshold = s.deltaShardNumberFallbackThreshold
 
 	if _, ok := s.repositoriesSkipSymbolsCalculationAllowList[repositoryName]; ok {
@@ -585,7 +592,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		},
 	}
 
-	return indexStateSuccess, gitIndex(c, args, s.logger)
+	return indexStateSuccess, gitIndex(c, args, s.Sourcegraph, s.logger)
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
@@ -1120,6 +1127,11 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug.Printf("using delta shard builds for: %s", joinStringSet(deltaBuildRepositoriesAllowList, ", "))
 	}
 
+	offlineRankingAllowList := getEnvWithDefaultEmptySet("OFFLINE_RANKING_REPOS_ALLOWLIST")
+	if len(offlineRankingAllowList) > 0 {
+		debug.Printf("using offline ranking for: %s", joinStringSet(offlineRankingAllowList, ", "))
+	}
+
 	deltaShardNumberFallbackThreshold := getEnvWithDefaultUint64("DELTA_SHARD_NUMBER_FALLBACK_THRESHOLD", 150)
 	if deltaShardNumberFallbackThreshold > 0 {
 		debug.Printf("setting delta shard fallback threshold to %d shard(s)", deltaShardNumberFallbackThreshold)
@@ -1176,6 +1188,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
 		deltaShardNumberFallbackThreshold: deltaShardNumberFallbackThreshold,
 		repositoriesSkipSymbolsCalculationAllowList: reposShouldSkipSymbolsCalculation,
+		offlineRankingAllowList:                     offlineRankingAllowList,
 	}, err
 }
 

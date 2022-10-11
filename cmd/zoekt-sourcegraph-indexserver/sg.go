@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -68,6 +69,16 @@ type Sourcegraph interface {
 	// is the forced version of IterateIndexOptions, so will always calculate
 	// options for each id in repos.
 	ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32)
+
+	// GetRepoRank returns a score vector for the given repository. Repositories are
+	// assumed to be ordered by each pairwise component of the resulting vector,
+	// lower scores coming earlier.
+	GetRepoRank(ctx context.Context, repoName string) ([]float64, error)
+
+	// GetDocumentRanks returns a map from paths within the given repo to their
+	// score vectors. Paths are assumed to be ordered by each pairwise component of
+	// the resulting vector, lower scores coming earlier
+	GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error)
 }
 
 func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sourcegraphClient {
@@ -127,6 +138,94 @@ type sourcegraphClient struct {
 	// configFingerprint logic is faulty. When it is cleared out, we fallback to
 	// calculating everything.
 	configFingerprintReset time.Time
+}
+
+// GetRepoRank asks Sourcegraph for the score vector of repoName.
+func (s *sourcegraphClient) GetRepoRank(ctx context.Context, repoName string) ([]float64, error) {
+	u := s.Root.ResolveReference(&url.URL{
+		Path: "/.internal/ranks/" + strings.Trim(repoName, "/"),
+	})
+
+	b, err := s.get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+
+	var ranks []float64
+	err = json.Unmarshal(b, &ranks)
+	if err != nil {
+		return nil, err
+	}
+
+	return ranks, nil
+}
+
+// GetDocumentRanks asks Sourcegraph for a mapping of file paths to score
+// vectors.
+func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error) {
+	u := s.Root.ResolveReference(&url.URL{
+		Path: "/.internal/ranks/" + strings.Trim(repoName, "/") + "/documents",
+	})
+
+	b, err := s.get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+
+	ranks := make(map[string][]float64)
+	err = json.Unmarshal(b, &ranks)
+	if err != nil {
+		return nil, err
+	}
+
+	// Invariant: All score vectors have the same length.
+	first := true
+	wantLen := -1
+	for _, v := range ranks {
+		if first {
+			first = false
+			wantLen = len(v)
+			continue
+		}
+		if len(v) != wantLen {
+			return nil, fmt.Errorf("found a document with a different length of scores %d<>%d\n", wantLen, len(v))
+		}
+	}
+
+	return ranks, nil
+}
+
+func (s *sourcegraphClient) get(ctx context.Context, u *url.URL) ([]byte, error) {
+	req, err := retryablehttp.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := s.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, &url.Error{
+			Op:  "Get",
+			URL: u.String(),
+			Err: fmt.Errorf("%s: %s", resp.Status, string(b)),
+		}
+	}
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
 }
 
 func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
@@ -360,6 +459,61 @@ func (s *sourcegraphClient) doRequest(req *retryablehttp.Request) (*http.Respons
 type sourcegraphFake struct {
 	RootDir string
 	Log     *log.Logger
+}
+
+// GetRepoRank expects a file with exactly 1 line containing a comma separated
+// list of float64 as ranks.
+func (sf sourcegraphFake) GetRepoRank(ctx context.Context, repoName string) ([]float64, error) {
+	dir := filepath.Join(sf.RootDir, filepath.FromSlash(repoName))
+
+	b, err := os.ReadFile(filepath.Join(dir, "SG_REPO_RANKS"))
+	if err != nil {
+		return nil, err
+	}
+
+	return floats64(string(b)), nil
+}
+
+// GetDocumentRanks expects a file where each line has the following format:
+// path<tab>f... . where f=1-rank is a float64 score in the interval [0,1].
+// Multiple f are separated by a comma. Each line has to have the same number of
+// ranks.
+func (sf sourcegraphFake) GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error) {
+	dir := filepath.Join(sf.RootDir, filepath.FromSlash(repoName))
+
+	fd, err := os.Open(filepath.Join(dir, "SG_DOCUMENT_RANKS"))
+	if err != nil {
+		return nil, err
+	}
+
+	ranks := make(map[string][]float64)
+
+	scanner := bufio.NewScanner(fd)
+	for scanner.Scan() {
+		s := scanner.Text()
+		pathRanks := strings.Split(s, "\t")
+		ranks[pathRanks[0]] = floats64(pathRanks[1])
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return ranks, nil
+}
+
+func floats64(s string) []float64 {
+	parts := strings.Split(s, ",")
+
+	var r []float64
+	for _, rank := range parts {
+		f, err := strconv.ParseFloat(rank, 64)
+		if err != nil {
+			return nil
+		}
+		r = append(r, f)
+	}
+
+	return r
 }
 
 func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {

@@ -286,6 +286,11 @@ type Document struct {
 	// Document sections for symbols. Offsets should use bytes.
 	Symbols         []DocumentSection
 	SymbolsMetaData []*Symbol
+
+	// Scores stores the score vector of a document as provided by a
+	// DocumentScoresFile file in the git repo. This field is experimental and may
+	// change at any time without warning.
+	Scores []float64
 }
 
 type symbolSlice struct {

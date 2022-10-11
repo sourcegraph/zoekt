@@ -100,6 +100,9 @@ type Options struct {
 	// last run.
 	IsDelta bool
 
+	// OfflineRanking is true if this run is to load ranking info from disk.
+	OfflineRanking bool
+
 	// changedOrRemovedFiles is a list of file paths that have been changed or removed
 	// since the last indexing job for this repository. These files will be tombstoned
 	// in the older shards for this repository.
@@ -942,6 +945,40 @@ func sortDocuments(todo []*zoekt.Document) {
 	}
 }
 
+// sortDocuments2 sorts zoekt.Document according to their Scores. In general,
+// documents can have a nil score vector if the document to be indexed was
+// introduced after the ranking took place. A nil score vector translates to the
+// lowest possible rank.
+func sortDocuments2(rs []*zoekt.Document) {
+	sort.Slice(rs, func(i, j int) bool {
+		r1 := rs[i].Scores
+		r2 := rs[j].Scores
+
+		if r1 == nil && r2 == nil {
+			return false
+		}
+
+		if r1 == nil {
+			return false
+		}
+
+		if r2 == nil {
+			return true
+		}
+
+		for i := range r1 {
+			if r1[i] < r2[i] {
+				return true
+			}
+			if r1[i] > r2[i] {
+				return false
+			}
+		}
+
+		return false
+	})
+}
+
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
 	if !b.opts.DisableCTags && b.opts.CTagsPath != "" {
 		err := ctagsAddSymbols(todo, b.parser, b.opts.CTagsPath)
@@ -959,7 +996,13 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 	if err != nil {
 		return nil, err
 	}
-	sortDocuments(todo)
+
+	if b.opts.OfflineRanking {
+		sortDocuments2(todo)
+	} else {
+		sortDocuments(todo)
+	}
+
 	for _, t := range todo {
 		if err := shardBuilder.Add(*t); err != nil {
 			return nil, err

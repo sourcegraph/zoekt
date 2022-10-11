@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -83,6 +84,8 @@ type indexArgs struct {
 	// only be true for repositories we explicitly enable.
 	UseDelta bool
 
+	UseOfflineRanking bool
+
 	// DeltaShardNumberFallbackThreshold is an upper limit on the number of preexisting shards that can exist
 	// before attempting a delta build.
 	DeltaShardNumberFallbackThreshold uint64
@@ -151,7 +154,7 @@ type gitIndexConfig struct {
 	findRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
 }
 
-func gitIndex(c gitIndexConfig, o *indexArgs, l sglog.Logger) error {
+func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
 	logger := l.Scoped("gitIndex", "fetch commits and then run zoekt-git-index against contents")
 
 	if len(o.Branches) == 0 {
@@ -319,6 +322,34 @@ func gitIndex(c gitIndexConfig, o *indexArgs, l sglog.Logger) error {
 
 	args := []string{
 		"-submodules=false",
+	}
+
+	// We store the document ranks as JSON in gitDir and add a flag to tell
+	// zoekt-git-index to rank based on the scores in the file, instead of ranking
+	// the files by itself.
+	if o.UseOfflineRanking {
+		args = append(args, "-offline_ranking")
+
+		r, err := sourcegraph.GetDocumentRanks(context.Background(), o.Name)
+		if err != nil {
+			return err
+		}
+
+		b, err := json.Marshal(r)
+		if err != nil {
+			return err
+		}
+
+		fd, err := os.Create(filepath.Join(gitDir, zoekt.DocumentScoresFile))
+		if err != nil {
+			return err
+		}
+		defer fd.Close()
+
+		_, err = fd.Write(b)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Even though we check for incremental in this process, we still pass it

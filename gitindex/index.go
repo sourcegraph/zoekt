@@ -18,6 +18,7 @@ package gitindex
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -483,6 +484,23 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 	if err != nil {
 		return fmt.Errorf("build.NewBuilder: %w", err)
 	}
+
+	var scores map[string][]float64
+	if opts.BuildOptions.OfflineRanking {
+		scores, err = loadDocumentScores(opts.RepoDir)
+		if err != nil {
+			return err
+		}
+	}
+
+	score := func(path string) []float64 {
+		s, ok := scores[path]
+		if !ok {
+			return nil
+		}
+		return s
+	}
+
 	// we don't need to check error, since we either already have an error, or
 	// we returning the first call to builder.Finish.
 	defer builder.Finish() // nolint:errcheck
@@ -533,6 +551,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				Name:              key.FullPath(),
 				Content:           contents,
 				Branches:          brs,
+				Scores:            score(key.FullPath()),
 			}); err != nil {
 				return fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
 			}
@@ -848,4 +867,19 @@ func uniq(ss []string) []string {
 		last = s
 	}
 	return result
+}
+
+func loadDocumentScores(repoDir string) (map[string][]float64, error) {
+	data, err := os.ReadFile(filepath.Join(repoDir, zoekt.DocumentScoresFile))
+	if err != nil {
+		return nil, fmt.Errorf("LoadDocumentScores: %w", err)
+	}
+
+	scores := make(map[string][]float64)
+	err = json.Unmarshal(data, &scores)
+	if err != nil {
+		return nil, err
+	}
+
+	return scores, nil
 }
