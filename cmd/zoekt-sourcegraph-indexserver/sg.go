@@ -725,3 +725,21 @@ func fakeID(name string) uint32 {
 	// magic at the end is to ensure we get a positive number when casting.
 	return uint32(crc32.ChecksumIEEE([]byte(name))%(1<<31-1) + 1)
 }
+
+type sourcegraphNop struct{}
+
+func (s sourcegraphNop) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
+	return nil, nil
+}
+
+func (s sourcegraphNop) ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32) {
+	return
+}
+
+func (s sourcegraphNop) GetRepoRank(ctx context.Context, repoName string) ([]float64, error) {
+	return nil, nil
+}
+
+func (s sourcegraphNop) GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error) {
+	return nil, nil
+}
