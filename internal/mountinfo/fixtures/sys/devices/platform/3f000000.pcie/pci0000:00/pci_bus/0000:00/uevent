@@ -1,6 +1,0 @@
-OF_NAME=pcie
-OF_FULLNAME=/pcie@10000000
-OF_TYPE=pci
-OF_COMPATIBLE_0=pci-host-ecam-generic
-OF_COMPATIBLE_N=1
-EOF

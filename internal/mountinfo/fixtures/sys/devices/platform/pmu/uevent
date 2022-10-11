@@ -1,6 +1,0 @@
-OF_NAME=pmu
-OF_FULLNAME=/pmu
-OF_COMPATIBLE_0=arm,armv8-pmuv3
-OF_COMPATIBLE_N=1
-MODALIAS=of:NpmuT(null)Carm,armv8-pmuv3
-EOF

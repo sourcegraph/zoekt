@@ -1,6 +1,0 @@
-OF_NAME=gpio-keys
-OF_FULLNAME=/gpio-keys
-OF_COMPATIBLE_0=gpio-keys
-OF_COMPATIBLE_N=1
-MODALIAS=of:Ngpio-keysT(null)Cgpio-keys
-EOF

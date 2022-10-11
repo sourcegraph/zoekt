@@ -1,6 +1,0 @@
-OF_NAME=flash
-OF_FULLNAME=/flash@0
-OF_COMPATIBLE_0=cfi-flash
-OF_COMPATIBLE_N=1
-MODALIAS=of:NflashT(null)Ccfi-flash
-EOF
