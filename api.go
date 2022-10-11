@@ -777,6 +777,11 @@ type SearchOptions struct {
 	// Abort the search after this much time has passed.
 	MaxWallTime time.Duration
 
+	// FlushWallTime if non-zero will stop streaming behaviour at first and
+	// instead will collate and sort results. At FlushWallTime the results will
+	// be sent and then the behaviour will revert to the normal streaming.
+	FlushWallTime time.Duration
+
 	// Trim the number of results after collating and sorting the
 	// results
 	MaxDocDisplayCount int

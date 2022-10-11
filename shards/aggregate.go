@@ -1,7 +1,11 @@
 package shards
 
 import (
+	"sync"
+	"time"
+
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/stream"
 )
 
 // collectSender is a sender that will aggregate results. Once sending is
@@ -69,4 +73,68 @@ func (c *collectSender) Done() (_ *zoekt.SearchResult, ok bool) {
 	}
 
 	return agg, true
+}
+
+// newFlushCollectSender creates a sender which will collect and rank results
+// until opts.FlushWallTime. After that it will stream each result as it is
+// sent.
+func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoekt.Sender, func()) {
+	// We don't need to do any collecting, so just pass back the sender to use
+	// directly.
+	if opts.FlushWallTime == 0 {
+		return sender, func() {}
+	}
+
+	// We transition through 3 states
+	// 1. collectSender != nil: collect results via collectSender
+	// 2. timerFired: send collected results and mark collectSender nil
+	// 3. collectSender == nil: directly use sender
+
+	var (
+		mu            sync.Mutex
+		collectSender = newCollectSender(opts)
+		timerCancel   = make(chan struct{})
+	)
+
+	// stopCollectingAndFlush will send what we have collected and all future
+	// sends will go via sender directly.
+	stopCollectingAndFlush := func() {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if collectSender == nil {
+			return
+		}
+
+		if agg, ok := collectSender.Done(); ok {
+			sender.Send(agg)
+		}
+
+		// From now on use sender directly
+		collectSender = nil
+
+		// Stop timer goroutine if it is still running.
+		close(timerCancel)
+	}
+
+	// Wait FlushWallTime to call stopCollecting.
+	go func() {
+		timer := time.NewTimer(opts.FlushWallTime)
+		select {
+		case <-timerCancel:
+			timer.Stop()
+		case <-timer.C:
+			stopCollectingAndFlush()
+		}
+	}()
+
+	return stream.SenderFunc(func(event *zoekt.SearchResult) {
+		mu.Lock()
+		if collectSender != nil {
+			collectSender.Send(event)
+		} else {
+			sender.Send(event)
+		}
+		mu.Unlock()
+	}), stopCollectingAndFlush
 }

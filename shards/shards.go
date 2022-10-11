@@ -526,10 +526,16 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		},
 	})
 
-	done, err := streamSearch(ctx, proc, q, opts, shards, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	flushCollectSender, flush := newFlushCollectSender(opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		copyFiles(event)
 		sender.Send(event)
 	}))
+
+	done, err := streamSearch(ctx, proc, q, opts, shards, flushCollectSender)
+
+	// Even though streaming is done, we may have results sitting in a buffer we
+	// need to flush. So we need to send those before calling done.
+	flush()
 	done()
 
 	return err
