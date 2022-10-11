@@ -1,0 +1,5 @@
+MAJOR=7
+MINOR=6
+DEVNAME=loop6
+DEVTYPE=disk
+EOF

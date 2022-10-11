@@ -1,0 +1,3 @@
+DRIVER=virtio_net
+MODALIAS=virtio:d00000001v554D4551
+EOF

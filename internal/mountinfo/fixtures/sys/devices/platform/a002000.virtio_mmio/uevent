@@ -1,0 +1,6 @@
+OF_NAME=virtio_mmio
+OF_FULLNAME=/virtio_mmio@a002000
+OF_COMPATIBLE_0=virtio,mmio
+OF_COMPATIBLE_N=1
+MODALIAS=of:Nvirtio_mmioT(null)Cvirtio,mmio
+EOF

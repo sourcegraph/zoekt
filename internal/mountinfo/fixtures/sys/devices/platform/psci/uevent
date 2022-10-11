@@ -1,0 +1,7 @@
+OF_NAME=psci
+OF_FULLNAME=/psci
+OF_COMPATIBLE_0=arm,psci-0.2
+OF_COMPATIBLE_1=arm,psci
+OF_COMPATIBLE_N=2
+MODALIAS=of:NpsciT(null)Carm,psci-0.2Carm,psci
+EOF

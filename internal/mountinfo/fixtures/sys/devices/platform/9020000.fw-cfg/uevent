@@ -1,0 +1,6 @@
+OF_NAME=fw-cfg
+OF_FULLNAME=/fw-cfg@9020000
+OF_COMPATIBLE_0=qemu,fw-cfg-mmio
+OF_COMPATIBLE_N=1
+MODALIAS=of:Nfw-cfgT(null)Cqemu,fw-cfg-mmio
+EOF

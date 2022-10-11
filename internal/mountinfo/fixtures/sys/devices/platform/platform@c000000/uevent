@@ -1,0 +1,7 @@
+OF_NAME=platform
+OF_FULLNAME=/platform@c000000
+OF_COMPATIBLE_0=qemu,platform
+OF_COMPATIBLE_1=simple-bus
+OF_COMPATIBLE_N=2
+MODALIAS=of:NplatformT(null)Cqemu,platformCsimple-bus
+EOF

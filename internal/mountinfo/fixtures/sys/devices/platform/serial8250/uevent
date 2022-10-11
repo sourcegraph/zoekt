@@ -1,0 +1,3 @@
+DRIVER=serial8250
+MODALIAS=platform:serial8250
+EOF

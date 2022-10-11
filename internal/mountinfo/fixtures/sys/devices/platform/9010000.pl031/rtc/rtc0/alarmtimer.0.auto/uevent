@@ -1,0 +1,3 @@
+DRIVER=alarmtimer
+MODALIAS=platform:alarmtimer
+EOF
