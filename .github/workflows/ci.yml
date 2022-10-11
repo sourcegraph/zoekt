@@ -12,7 +12,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v2
       - name: add dependencies
-        run: apk add go git
+        run: apk add go git bash sed
       - name: install ctags
         run: ./install-ctags-alpine.sh
       - name: initialize test fixtures
