@@ -52,7 +52,7 @@ func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, mounts map[string]
 			sglog.String("mountFilePath", filePath),
 		)
 
-		device, err := discoverDeviceName(discoveryLogger, filePath)
+		device, err := discoverDeviceName(discoveryLogger, discoverDeviceNameConfig{}, filePath)
 		if err != nil {
 			discoveryLogger.Warn("skipping metric registration",
 				sglog.String("reason", "failed to discover device name"),
@@ -70,9 +70,20 @@ func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, mounts map[string]
 	}
 }
 
+type discoverDeviceNameConfig struct {
+	// sysfsMountPoint is the location of the sysfs mount point.
+	// If empty, defaultSysMountPoint will be used instead.
+	sysfsMountPoint string
+
+	// getDeviceNumber, if non-nil, is the function that will be used to find
+	// the number of the block device that stores the specified file.
+	// If getDeviceNumber is nil, mountinfo.getDeviceNumber will be used instead.
+	getDeviceNumber func(filePath string) (major uint32, minor uint32, err error)
+}
+
 // discoverDeviceName returns the name of the block device that filePath is
 // stored on.
-func discoverDeviceName(logger sglog.Logger, filePath string) (string, error) {
+func discoverDeviceName(logger sglog.Logger, config discoverDeviceNameConfig, filePath string) (string, error) {
 	// Note: It's quite involved to implement the device discovery logic for
 	// every possible kind of storage device (e.x. logical volumes, NFS, etc.) See
 	// https://unix.stackexchange.com/a/11312 for more information.
@@ -92,15 +103,22 @@ func discoverDeviceName(logger sglog.Logger, filePath string) (string, error) {
 	// - https://en.wikipedia.org/wiki/Sysfs
 	// - https://unix.stackexchange.com/a/11312
 
-	var stat unix.Stat_t
-	err := unix.Stat(filePath, &stat)
-	if err != nil {
-		return "", fmt.Errorf("discovering device number: failed to stat %q: %w", filePath, err)
+	getDeviceNumber := getDeviceNumber
+	if config.getDeviceNumber != nil {
+		getDeviceNumber = config.getDeviceNumber
 	}
 
-	// extract the major and minor portions of the device ID, and
-	// represent it in <major>:<minor> format
-	major, minor := unix.Major(uint64(stat.Dev)), unix.Minor(uint64(stat.Dev))
+	sysfsMountPoint := defaultSysMountPoint
+	if config.sysfsMountPoint != "" {
+		sysfsMountPoint = config.sysfsMountPoint
+	}
+
+	major, minor, err := getDeviceNumber(filePath)
+	if err != nil {
+		return "", fmt.Errorf("discovering device number: %w", err)
+	}
+
+	// Represent the number in <major>:<minor> format.
 	deviceNumber := fmt.Sprintf("%d:%d", major, minor)
 
 	logger.Debug(
@@ -108,8 +126,8 @@ func discoverDeviceName(logger sglog.Logger, filePath string) (string, error) {
 		sglog.String("deviceNumber", deviceNumber),
 	)
 
-	// /sys/dev/block/<device_number> symlinks to /sys/devices/.../block/.../<discoverDeviceName>
-	symlink := filepath.Join(defaultSysMountPoint, "dev", "block", deviceNumber)
+	// /sys/dev/block/<device_number> symlinks to /sys/devices/.../block/.../<deviceName>
+	symlink := filepath.Join(sysfsMountPoint, "dev", "block", deviceNumber)
 
 	devicePath, err := filepath.EvalSymlinks(symlink)
 	if err != nil {
@@ -128,10 +146,16 @@ func discoverDeviceName(logger sglog.Logger, filePath string) (string, error) {
 	// Check to see if devicePath points to a disk partition. If so, we need to find the parent
 	// device.
 
+	// massage the sysfs folder name to ensure that it always ends in a '/'
+	// so that strings.HasPrefix does what we expect when checking to see if
+	// we're still under the /sys sub-folder
+	sysFolderPrefix := strings.TrimSuffix(sysfsMountPoint, string(os.PathSeparator))
+	sysFolderPrefix = sysFolderPrefix + string(os.PathSeparator)
+
 	for {
-		if !strings.HasPrefix(devicePath, defaultSysMountPoint) {
+		if !strings.HasPrefix(devicePath, sysFolderPrefix) {
 			// ensure that we're still under the /sys/ sub-folder
-			return "", fmt.Errorf("validating device path: device path %q isn't a subpath of %q", devicePath, defaultSysMountPoint)
+			return "", fmt.Errorf("validating device path: device path %q isn't a subpath of %q", devicePath, sysFolderPrefix)
 		}
 
 		_, err := os.Stat(filepath.Join(devicePath, "partition"))
@@ -173,4 +197,15 @@ func discoverDeviceName(logger sglog.Logger, filePath string) (string, error) {
 
 	device := filepath.Base(devicePath)
 	return filepath.Base(device), nil
+}
+
+func getDeviceNumber(filePath string) (major uint32, minor uint32, err error) {
+	var stat unix.Stat_t
+	err = unix.Stat(filePath, &stat)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to stat %q: %w", filePath, err)
+	}
+
+	major, minor = unix.Major(uint64(stat.Dev)), unix.Minor(uint64(stat.Dev))
+	return major, minor, nil
 }
