@@ -14,7 +14,7 @@ func Test_MountInfo_SmokeTest(t *testing.T) {
 	logger := logtest.Scoped(t)
 
 	// A simple smoke test to verify that we can find the storage device
-	// for the location of the zoekt checkout on the CI agent.
+	// for the current working directory
 	filePath, err := os.Getwd()
 	if err != nil {
 		log.Fatalf("getting currrent working directory: %s", err)
