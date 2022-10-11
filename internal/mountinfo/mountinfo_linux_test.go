@@ -5,6 +5,7 @@ package mountinfo
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
