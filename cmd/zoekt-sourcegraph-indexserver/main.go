@@ -420,7 +420,6 @@ func (s *Server) processQueue() {
 
 			if err != nil {
 				log.Printf("error indexing %s: %s", args.String(), err)
-				s.queue.SetIndexFail()
 			}
 
 			switch state {
