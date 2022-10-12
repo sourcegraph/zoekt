@@ -946,18 +946,15 @@ func sortDocuments(todo []*zoekt.Document) {
 	}
 }
 
-// sortDocuments2 sorts zoekt.Document according to their Scores. In general,
+// sortDocuments2 sorts []*zoekt.Document according to their Scores. In general,
 // documents can have a nil score vector if the document to be indexed was
 // introduced after the ranking took place. A nil score vector translates to the
-// lowest possible rank.
+// lowest possible rank. Longer vectors are more important than shorter vectors,
+// given all other scores are equal.
 func sortDocuments2(rs []*zoekt.Document) {
 	sort.Slice(rs, func(i, j int) bool {
 		r1 := rs[i].Scores
 		r2 := rs[j].Scores
-
-		if r1 == nil && r2 == nil {
-			return false
-		}
 
 		if r1 == nil {
 			return false

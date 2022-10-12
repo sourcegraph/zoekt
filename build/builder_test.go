@@ -940,6 +940,11 @@ func Test_sortDocuments2(t *testing.T) {
 		})
 	}
 
-	// Special case: test for panic if all documents have nil scores.
-	sortDocuments2([]*zoekt.Document{{}, {}, {}})
+	t.Run("test for panics", func(t *testing.T) {
+		// Special case: test for panics if all documents have nil scores.
+		sortDocuments2([]*zoekt.Document{{}, {}, {}})
+		sortDocuments2([]*zoekt.Document{{}})
+		sortDocuments2(nil)
+	})
+
 }
