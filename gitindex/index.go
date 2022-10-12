@@ -114,7 +114,7 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 	repo.URL = u.String()
 	switch typ {
 	case "gitiles":
-		/// eg. https://gerrit.googlesource.com/gitiles/+/master/tools/run_dev.sh#20
+		// / eg. https://gerrit.googlesource.com/gitiles/+/master/tools/run_dev.sh#20
 		repo.CommitURLTemplate = u.String() + "/+/{{.Version}}"
 		repo.FileURLTemplate = u.String() + "/+/{{.Version}}/{{.Path}}"
 		repo.LineFragmentTemplate = "#{{.LineNumber}}"
@@ -560,7 +560,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				Branches:          brs,
 				Scores:            score(keyFullPath),
 			}); err != nil {
-				return fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
+				return fmt.Errorf("error adding document with name %s: %w", keyFullPath, err)
 			}
 		}
 	}
