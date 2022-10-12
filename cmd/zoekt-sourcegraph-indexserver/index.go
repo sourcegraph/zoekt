@@ -342,12 +342,15 @@ func gitIndex(c gitIndexConfig, o *indexArgs, l sglog.Logger) error {
 	args = append(args, buildOptions.Args()...)
 	args = append(args, gitDir)
 
-	cmd = exec.CommandContext(ctx, "zoekt-git-index", args...)
+	//cmd = exec.CommandContext(ctx, "zoekt-git-index", args...)
+	cmd = exec.CommandContext(ctx, "/Users/gary/Documents/zoekt-Builds/go_build_run_zoekt_git_index", args...)
+
 	cmd.Stdin = &bytes.Buffer{}
 	if err := runCmd(cmd); err != nil {
 		return err
 	}
 
+	//time.Sleep(44 * time.Second)
 	return nil
 }
 
