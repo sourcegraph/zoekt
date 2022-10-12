@@ -24,6 +24,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+TMP=$(mktemp -d -t ttar_XXXXXXX)
+cleanup() {
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+
 set -o errexit -o nounset
 
 # Sanitize environment (for instance, standard sorting of glob matches)
@@ -331,11 +337,17 @@ function _create {
         continue
       fi
 
+      # make copy of file to ensure that we have consistent reads
+      # for parsing and calculating file's size
+      tmp_file="${TMP}/${file}"
+      mkdir -p "$(dirname "$tmp_file")"
+      cp "$file" "$tmp_file"
+
       echo "Path: $file"
-      lines=$(wc -l "$file" | awk '{print $1}')
+      lines=$(wc -l "$tmp_file" | awk '{print $1}')
       eof_without_newline=0
-      if [[ "$(wc -c "$file" | awk '{print $1}')" -gt 0 ]] \
-        && [[ "$(tail -c 1 "$file" | wc -l)" -eq 0 ]]; then
+      if [[ "$(wc -c "$tmp_file" | awk '{print $1}')" -gt 0 ]] \
+        && [[ "$(tail -c 1 "$tmp_file" | wc -l)" -eq 0 ]]; then
         eof_without_newline=1
         lines=$((lines + 1))
       fi
@@ -344,9 +356,9 @@ function _create {
       # Add backslash in front of NULLBYTE
       # Replace null byte with NULLBYTE
       if [ $USE_PYTHON -eq 1 ]; then
-        python <"$file" -c "$PYTHON_CREATE_FILTER"
+        python <"$tmp_file" -c "$PYTHON_CREATE_FILTER"
       else
-        sed <"$file" \
+        sed <"$tmp_file" \
           's/EOF/\\EOF/g;
                          s/NULLBYTE/\\NULLBYTE/g;
                          s/\x0/NULLBYTE/g;
