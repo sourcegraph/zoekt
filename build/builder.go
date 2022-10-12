@@ -956,14 +956,6 @@ func sortDocuments2(rs []*zoekt.Document) {
 		r1 := rs[i].Scores
 		r2 := rs[j].Scores
 
-		if r1 == nil {
-			return false
-		}
-
-		if r2 == nil {
-			return true
-		}
-
 		l := len(r1)
 		if len(r2) < l {
 			l = len(r2)
