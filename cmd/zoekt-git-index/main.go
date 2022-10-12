@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sourcegraph/zoekt/cmd"
 	"github.com/sourcegraph/zoekt/gitindex"
@@ -27,6 +28,9 @@ import (
 )
 
 func main() {
+	time.Sleep(45 * time.Second)
+	log.Printf("testing main() zoekt-git-index")
+
 	allowMissing := flag.Bool("allow_missing_branches", false, "allow missing branches.")
 	submodules := flag.Bool("submodules", true, "if set to false, do not recurse into submodules")
 	branchesStr := flag.String("branches", "HEAD", "git branches to index.")

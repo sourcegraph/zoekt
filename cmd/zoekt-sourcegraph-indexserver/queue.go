@@ -16,6 +16,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	sglog "github.com/sourcegraph/log"
 )
 
 type queueItem struct {
@@ -36,6 +38,17 @@ type queueItem struct {
 	// dateAddedToQueue is the time when this indexing job was added to the queue. If this item is no longer
 	// in the heap (i.e. it has been processed already), this value is nonsensical.
 	dateAddedToQueue time.Time
+	//
+	consecutiveFailures int
+	//
+	//
+	// GLEE: Note that a given Sync operation could attempt to enqueue more than once
+	// e.g. enqueue once for IterateIndexOptions() and then again for Bump()
+	//
+	// GLEE: chose to backoff enqueue operations, as opposed to enqueueing the item and then at Pop() time we skip any work
+	// This is so we don't spend time resolving heap order for failed queueItems (which if indexed=false they will get prioritized
+	// over successful repos, only to be skipped after popping and reviewing the queueItem members
+	backoffEnqueue int
 }
 
 // Queue is a priority queue which returns the next repo to index. It is safe
@@ -47,11 +60,15 @@ type queueItem struct {
 //
 // * We rather index a repo sooner if we know the commit is stale.
 // * The order of repos returned by Sourcegraph API are ordered by importance.
+// GLEE: Is the above statement true?
 type Queue struct {
-	mu    sync.Mutex
-	items map[uint32]*queueItem
-	pq    pqueue
-	seq   int64
+	mu                sync.Mutex
+	items             map[uint32]*queueItem
+	pq                pqueue
+	seq               int64
+	backoffOnFailures int
+	maxBackoff        int
+	logger            sglog.Logger
 }
 
 // Pop returns the opts of the next repo to index. If the queue is empty ok is
@@ -99,13 +116,23 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 		item.opts = opts
 	}
 	if item.heapIdx < 0 {
-		q.seq++
-		item.seq = q.seq
-		item.dateAddedToQueue = time.Now()
+		if item.backoffEnqueue > 0 {
+			item.backoffEnqueue--
+			//GLEE: consider add a prometheus metric?
+			q.logger.Debug("Backoff enqueue of repository",
+				sglog.String("repo", opts.Name),
+				sglog.Uint32("id", opts.RepoID),
+				sglog.Int("remaining_backoffs", item.backoffEnqueue),
+			)
+		} else {
+			q.seq++
+			item.seq = q.seq
+			item.dateAddedToQueue = time.Now()
 
-		heap.Push(&q.pq, item)
-		metricQueueLen.Set(float64(len(q.pq)))
-		metricQueueCap.Set(float64(len(q.items)))
+			heap.Push(&q.pq, item)
+			metricQueueLen.Set(float64(len(q.pq)))
+			metricQueueCap.Set(float64(len(q.items)))
+		}
 	} else {
 		heap.Fix(&q.pq, item.heapIdx)
 	}
@@ -129,13 +156,23 @@ func (q *Queue) Bump(ids []uint32) []uint32 {
 		if !ok {
 			missing = append(missing, id)
 		} else if item.heapIdx < 0 {
-			q.seq++
-			item.seq = q.seq
-			item.dateAddedToQueue = time.Now()
+			if item.backoffEnqueue > 0 {
+				item.backoffEnqueue--
+				//GLEE: consider add a prometheus metric?
+				q.logger.Debug("Backoff enqueue of repository",
+					sglog.String("repo", item.opts.Name),
+					sglog.Uint32("id", id),
+					sglog.Int("remaining_backoffs", item.backoffEnqueue),
+				)
+			} else {
+				q.seq++
+				item.seq = q.seq
+				item.dateAddedToQueue = time.Now()
 
-			heap.Push(&q.pq, item)
-			metricQueueLen.Set(float64(len(q.pq)))
-			metricQueueCap.Set(float64(len(q.items)))
+				heap.Push(&q.pq, item)
+				metricQueueLen.Set(float64(len(q.pq)))
+				metricQueueCap.Set(float64(len(q.items)))
+			}
 		}
 	}
 
@@ -252,6 +289,28 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	item.indexState = state
 	if state != indexStateFail {
 		item.indexed = reflect.DeepEqual(opts, item.opts)
+		item.consecutiveFailures = 0
+		item.backoffEnqueue = 0
+	} else {
+		// GLEE: rely strictly on indexStateFail to decide whether to backoff subsequent enqueue operations (up to backoff max).
+		// A potential enhancement is to add more logic to identify if the reason for failure is worth backing off subsequent enqueue operations
+		// or storing preceding reasons for indexing and/or preceding reasons for failure, and comparing to current indexing reason and failure result,
+		// because if indexing reason has changed or failure has changed then we can consider removing the backoff since external factors have changed
+		// as opposed to no external factors change since last failures, and we could more likely fail for same reason as the preceding failures)
+		backoffCount := (item.consecutiveFailures + 1) * q.backoffOnFailures
+		if backoffCount > q.maxBackoff {
+			backoffCount = q.maxBackoff
+		} else {
+			item.consecutiveFailures++
+		}
+
+		item.backoffEnqueue = backoffCount
+
+		// GLEE: we only call SetIndexed() in processQueue(), after we've called Pop(), so this may not be necessary but the new backoff operations
+		// assume any item currently paused / skipped will not be present in the heap
+		if item.heapIdx >= 0 {
+			heap.Remove(&q.pq, item.heapIdx)
+		}
 	}
 
 	if item.heapIdx >= 0 {
@@ -341,6 +400,17 @@ func (q *Queue) get(repoID uint32) *queueItem {
 	return q.items[repoID]
 }
 
+// GLEE If we don't want to rely / assume Init() is always called then we can pass logger to methods instead of scoped logger
+// being a member of Queue
+func (q *Queue) Init(backoffOnFailures int, maxBackoff int, l sglog.Logger) {
+	if q.items == nil {
+		q.init()
+	}
+	q.backoffOnFailures = backoffOnFailures
+	q.maxBackoff = maxBackoff
+	q.logger = l.Scoped("queue", "zoekt-indexserver queue operations")
+}
+
 func (q *Queue) init() {
 	q.items = map[uint32]*queueItem{}
 	q.pq = make(pqueue, 0)
@@ -379,7 +449,7 @@ func (pq *pqueue) Pop() interface{} {
 	return item
 }
 
-// lessQueueItemPriority returns true if the indexing priority x is less than that of y.
+// lessQueueItemPriority returns true if indexing x should be prioritized over indexing y
 func lessQueueItemPriority(x, y *queueItem) bool {
 	// If we know x needs an update and y doesn't, then return true. Otherwise
 	// they are either equal priority or y is more urgent.

@@ -298,7 +298,6 @@ const pauseFileName = "PAUSE"
 // Run the sync loop. This blocks forever.
 func (s *Server) Run() {
 	removeIncompleteShards(s.IndexDir)
-
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
 		// We update the list of indexed repos every Interval. To speed up manual
@@ -402,7 +401,7 @@ func (s *Server) processQueue() {
 
 		opts, ok := s.queue.Pop()
 		if !ok {
-			time.Sleep(time.Second)
+			time.Sleep(15 * time.Second)
 			continue
 		}
 
@@ -421,6 +420,7 @@ func (s *Server) processQueue() {
 
 			if err != nil {
 				log.Printf("error indexing %s: %s", args.String(), err)
+				s.queue.SetIndexFail()
 			}
 
 			switch state {
@@ -1017,6 +1017,10 @@ type rootConfig struct {
 	mergeInterval  time.Duration
 	targetSize     int64
 	minSize        int64
+
+	// config values related to backoff indexing repos with one or more consecutive failures
+	backoffOnFailures int
+	maxBackoff        int
 }
 
 func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
@@ -1032,6 +1036,8 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.StringVar(&rc.hostname, "hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	fs.Float64Var(&rc.cpuFraction, "cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
 	fs.IntVar(&rc.blockProfileRate, "block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler Var(default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
+	fs.IntVar(&rc.backoffOnFailures, "backoff_on_failures", 10, "backoff / skip this # of enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase this delay linearly up to a max delay.")
+	fs.IntVar(&rc.maxBackoff, "max_backoff", 100, "the maximum enqueue operations to backoff from")
 }
 
 func startServer(conf rootConfig) error {
@@ -1161,6 +1167,9 @@ func newServer(conf rootConfig) (*Server, error) {
 
 	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
 
+	q := Queue{}
+	q.Init(conf.backoffOnFailures, conf.maxBackoff, logger)
+
 	return &Server{
 		logger:                            logger,
 		Sourcegraph:                       sg,
@@ -1171,6 +1180,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		MergeInterval:                     conf.mergeInterval,
 		CPUCount:                          cpuCount,
 		TargetSizeBytes:                   conf.targetSize * 1024 * 1024,
+		queue:                             q,
 		minSizeBytes:                      conf.minSize * 1024 * 1024,
 		shardMerging:                      zoekt.ShardMergingEnabled(),
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
