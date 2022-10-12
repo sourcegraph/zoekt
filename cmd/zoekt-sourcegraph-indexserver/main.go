@@ -1018,8 +1018,8 @@ type rootConfig struct {
 	minSize        int64
 
 	// config values related to backoff indexing repos with one or more consecutive failures
-	backoffOnFailures int
-	maxBackoff        int
+	backoffDuration    time.Duration
+	maxBackoffDuration time.Duration
 }
 
 func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
@@ -1035,8 +1035,8 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.StringVar(&rc.hostname, "hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	fs.Float64Var(&rc.cpuFraction, "cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
 	fs.IntVar(&rc.blockProfileRate, "block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler Var(default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
-	fs.IntVar(&rc.backoffOnFailures, "backoff_on_failures", 10, "backoff / skip this # of enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase this delay linearly up to a max delay.")
-	fs.IntVar(&rc.maxBackoff, "max_backoff", 100, "the maximum enqueue operations to backoff from")
+	fs.DurationVar(&rc.backoffDuration, "backoff_duration", 10*time.Minute, "for the given duration we backoff from enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase the duration of the delay linearly up to a max duration.")
+	fs.DurationVar(&rc.maxBackoffDuration, "max_backoff_duration", 120*time.Minute, "the maximum duration to backoff from enqueueing a repo for indexing")
 }
 
 func startServer(conf rootConfig) error {
@@ -1167,7 +1167,7 @@ func newServer(conf rootConfig) (*Server, error) {
 	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
 
 	q := Queue{}
-	q.Init(conf.backoffOnFailures, conf.maxBackoff, logger)
+	q.Init(conf.backoffDuration, conf.maxBackoffDuration, logger)
 
 	return &Server{
 		logger:                            logger,
