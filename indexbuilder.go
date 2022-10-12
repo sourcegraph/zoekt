@@ -287,9 +287,13 @@ type Document struct {
 	Symbols         []DocumentSection
 	SymbolsMetaData []*Symbol
 
-	// Scores stores the score vector of a document as provided by a
-	// DocumentScoresFile file in the git repo. This field is experimental and may
-	// change at any time without warning.
+	// Scores is the score vector of a document as provided by a DocumentScoresFile
+	// file in the git repo.
+	//
+	// Two documents can be ordered by comparing the components of their score
+	// vector. Smaller entries are better, as are longer vectors.
+	//
+	// This field is experimental and may change at any time without warning.
 	Scores []float64
 }
 
