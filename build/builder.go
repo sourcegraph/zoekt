@@ -100,8 +100,9 @@ type Options struct {
 	// last run.
 	IsDelta bool
 
-	// OfflineRanking is true if this run is to load ranking info from disk.
-	OfflineRanking bool
+	// DocumentScoresPath is the path to the file with document scores. If empty,
+	// scores will be computed on-the-fly.
+	DocumentScoresPath string
 
 	// changedOrRemovedFiles is a list of file paths that have been changed or removed
 	// since the last indexing job for this repository. These files will be tombstoned
@@ -977,12 +978,12 @@ func sortDocuments2(rs []*zoekt.Document) {
 
 		l := len(r1)
 		if len(r2) < l {
-		  l = len(r2)
+			l = len(r2)
 		}
 		for i := 0; i < l; i++ {
-		  if r1[i] != r2[i] {
-		    return r1[i] < r2[i]
-		  }
+			if r1[i] != r2[i] {
+				return r1[i] < r2[i]
+			}
 		}
 		// if r2 has more scores it is more important. ie imagine right padding arrays with zeros so they are the same length.
 		return len(r1) < len(r2)
@@ -1007,7 +1008,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 		return nil, err
 	}
 
-	if b.opts.OfflineRanking {
+	if b.opts.DocumentScoresPath != "" {
 		sortDocuments2(todo)
 	} else {
 		sortDocuments(todo)

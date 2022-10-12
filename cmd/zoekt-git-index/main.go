@@ -42,7 +42,7 @@ func run() int {
 		"It also affects name if the indexed repository is under this directory.")
 	isDelta := flag.Bool("delta", false, "whether we should use delta build")
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
-	offlineRanking := flag.Bool("offline_ranking", false, "whether we should load ranking info at index time from disk")
+	offlineRanking := flag.String("offline_ranking", "", "the name of the file that contains the ranking info.")
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
@@ -69,7 +69,7 @@ func run() int {
 	}
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
-	opts.OfflineRanking = *offlineRanking
+	opts.DocumentScoresPath = *offlineRanking
 
 	var branches []string
 	if *branchesStr != "" {

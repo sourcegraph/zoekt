@@ -486,8 +486,13 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 	}
 
 	var scores map[string][]float64
-	if opts.BuildOptions.OfflineRanking {
-		scores, err = loadDocumentScores(opts.RepoDir)
+	if opts.BuildOptions.DocumentScoresPath != "" {
+		data, err := os.ReadFile(opts.BuildOptions.DocumentScoresPath)
+		if err != nil {
+			return err
+		}
+
+		err = json.Unmarshal(data, &scores)
 		if err != nil {
 			return err
 		}
@@ -869,19 +874,4 @@ func uniq(ss []string) []string {
 		last = s
 	}
 	return result
-}
-
-func loadDocumentScores(repoDir string) (map[string][]float64, error) {
-	data, err := os.ReadFile(filepath.Join(repoDir, zoekt.DocumentScoresFile))
-	if err != nil {
-		return nil, fmt.Errorf("LoadDocumentScores: %w", err)
-	}
-
-	scores := make(map[string][]float64)
-	err = json.Unmarshal(data, &scores)
-	if err != nil {
-		return nil, err
-	}
-
-	return scores, nil
 }
