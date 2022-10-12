@@ -975,7 +975,17 @@ func sortDocuments2(rs []*zoekt.Document) {
 			}
 		}
 
-		return false
+		l := len(r1)
+		if len(r2) < l {
+		  l = len(r2)
+		}
+		for i := 0; i < l; i++ {
+		  if r1[i] != r2[i] {
+		    return r1[i] < r2[i]
+		  }
+		}
+		// if r2 has more scores it is more important. ie imagine right padding arrays with zeros so they are the same length.
+		return len(r1) < len(r2)
 	})
 }
 
