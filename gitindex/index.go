@@ -530,10 +530,12 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				return err
 			}
 
-			if blob.Size > int64(opts.BuildOptions.SizeMax) && !opts.BuildOptions.IgnoreSizeMax(key.FullPath()) {
+			keyFullPath := key.FullPath()
+
+			if blob.Size > int64(opts.BuildOptions.SizeMax) && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
 				if err := builder.Add(zoekt.Document{
 					SkipReason:        fmt.Sprintf("file size %d exceeds maximum size %d", blob.Size, opts.BuildOptions.SizeMax),
-					Name:              key.FullPath(),
+					Name:              keyFullPath,
 					Branches:          brs,
 					SubRepositoryPath: key.SubRepoPath,
 				}); err != nil {
@@ -548,10 +550,10 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 			}
 			if err := builder.Add(zoekt.Document{
 				SubRepositoryPath: key.SubRepoPath,
-				Name:              key.FullPath(),
+				Name:              keyFullPath,
 				Content:           contents,
 				Branches:          brs,
-				Scores:            score(key.FullPath()),
+				Scores:            score(keyFullPath),
 			}); err != nil {
 				return fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
 			}
