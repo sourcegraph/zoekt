@@ -41,13 +41,6 @@ type queueItem struct {
 	// consecutiveFailures is the count of preceding consecutive failures. Backoff duration upon indexing failure increases linearly
 	// with this count,
 	consecutiveFailures int
-	// GLEE: Note that a given Sync operation could attempt to enqueue more than once
-	// e.g. enqueue once for IterateIndexOptions() and then again for Bump()
-	//
-	// GLEE: chose to backoff enqueue operations, as opposed to enqueueing the item and then at Pop() time we skip any work
-	// This is so we don't spend time resolving heap order for failed queueItems (which if indexed=false they will get prioritized
-	// over successful repos, only to be skipped after popping and reviewing the queueItem members
-	//
 	// backOffUntil is the earliest time when we allow the item to be pushed to the heap. Until then the item will not be enqueued
 	// and indexing will not be attempted.
 	backoffUntil time.Time
@@ -115,7 +108,6 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	item := q.getOrAdd(opts.RepoID)
 	if !reflect.DeepEqual(item.opts, opts) {
 		item.indexed = false
-		// GLEE should options diff clear backoff state and allow indexing?
 		item.opts = opts
 	}
 	if item.heapIdx < 0 {
@@ -291,11 +283,6 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 		item.consecutiveFailures = 0
 		item.backoffUntil = time.Unix(0, 0)
 	} else {
-		// GLEE: rely strictly on indexStateFail to decide whether to backoff subsequent enqueue operations (up to backoff max).
-		// A potential enhancement is to add more logic to identify if the reason for failure is worth backing off subsequent enqueue operations
-		// or storing preceding reasons for indexing and/or preceding reasons for failure, and comparing to current indexing reason and failure result,
-		// because if indexing reason has changed or failure has changed then we can consider removing the backoff since external factors have changed
-		// as opposed to no external factors change since last failures, and we could more likely fail for same reason as the preceding failures)
 		backoffDuration := time.Duration(item.consecutiveFailures+1) * q.backoffDuration
 
 		if backoffDuration > q.maxBackoff {
@@ -305,8 +292,14 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 		}
 		item.backoffUntil = time.Now().Add(backoffDuration)
 
-		// GLEE: we only call SetIndexed() in processQueue(), after we've called Pop(), so this may not be necessary but the new backoff operations
-		// assume any item currently paused / skipped will not be present in the heap
+		q.logger.Debug("Backoff subsequent attempts to index repository",
+			sglog.String("repo", item.opts.Name),
+			sglog.Uint32("id", item.repoID),
+			sglog.Duration("backoff_duration", backoffDuration),
+			sglog.Time("backoff_until", item.backoffUntil),
+		)
+
+		// if we backoff indexing for a repo then it should never pop for processQueue
 		if item.heapIdx >= 0 {
 			heap.Remove(&q.pq, item.heapIdx)
 			item.heapIdx = -1
@@ -400,8 +393,6 @@ func (q *Queue) get(repoID uint32) *queueItem {
 	return q.items[repoID]
 }
 
-// GLEE If we don't want to rely / assume Init() is always called then we can pass logger to methods instead of scoped logger
-// being a member of Queue
 func (q *Queue) Init(backoffDuration time.Duration, maxBackoff time.Duration, l sglog.Logger) {
 	if q.items == nil {
 		q.init()

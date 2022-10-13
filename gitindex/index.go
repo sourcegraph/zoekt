@@ -380,7 +380,6 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 
 	// Set max thresholds, since we use them in this function.
 	opts.BuildOptions.SetDefaults()
-	opts.RepoDir = ""
 	if opts.RepoDir == "" {
 		return fmt.Errorf("gitindex: must set RepoDir")
 	}

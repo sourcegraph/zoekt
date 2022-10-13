@@ -298,6 +298,7 @@ const pauseFileName = "PAUSE"
 // Run the sync loop. This blocks forever.
 func (s *Server) Run() {
 	removeIncompleteShards(s.IndexDir)
+
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
 		// We update the list of indexed repos every Interval. To speed up manual
@@ -401,7 +402,7 @@ func (s *Server) processQueue() {
 
 		opts, ok := s.queue.Pop()
 		if !ok {
-			time.Sleep(15 * time.Second)
+			time.Sleep(time.Second)
 			continue
 		}
 
