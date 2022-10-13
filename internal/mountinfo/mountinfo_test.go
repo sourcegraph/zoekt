@@ -61,6 +61,35 @@ func Test_DeviceName_Snapshots(t *testing.T) {
 
 			expectedDeviceName: "vda",
 		},
+		{
+			name: "should find the device name for an lvm volume backed by a single disk",
+
+			// ( lsblk output from the snapshotted machine)
+			// ~ # lsblk
+			// NAME           MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+			// sda              8:0    0  7.3T  0 disk
+			// └─sda1           8:1    0 1024G  0 part /var/lib/plex
+			// nvme0n1        259:0    0  1.8T  0 disk
+			// ├─nvme0n1p1    259:1    0  529M  0 part
+			// ├─nvme0n1p2    259:2    0   99M  0 part
+			// ├─nvme0n1p3    259:3    0   16M  0 part
+			// ├─nvme0n1p4    259:4    0  293G  0 part
+			// ├─nvme0n1p5    259:5    0  512M  0 part /boot
+			// └─nvme0n1p6    259:6    0  1.5T  0 part
+			//   └─pool-nixos 254:0    0  600G  0 lvm  /nix/store
+			//                                         / # test targets this device
+
+			sysfsTarballFile: "sysfs.lvm.dm-0.tar.gz",
+
+			deviceMajor: 254, // points to dm-0 device
+			deviceMinor: 0,
+
+			// TODO@ggilmore: technically, dm-0 is a lvm volume backed by a partition stored on the nvmedevice.
+			// For consistency with the other test case, we should be returning nvme0n1 (the parent disk device) as the
+			// device name. I'll revisit this later, as I need to figure out how to programmatically determine
+			// the nvme01n1 <-> dm-0 translation.
+			expectedDeviceName: "dm-0",
+		},
 	} {
 		test := test
 
