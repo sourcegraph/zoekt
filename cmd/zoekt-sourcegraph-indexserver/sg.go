@@ -188,7 +188,7 @@ func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName strin
 			continue
 		}
 		if len(v) != wantLen {
-			return nil, fmt.Errorf("found a document with a different length of scores %d<>%d\n", wantLen, len(v))
+			return nil, fmt.Errorf("found rank vectors of different length %d<>%d\n", wantLen, len(v))
 		}
 	}
 
