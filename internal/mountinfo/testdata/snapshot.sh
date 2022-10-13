@@ -4,30 +4,34 @@
 #
 # (This special logic is necessary since /sys is a pseudo-filesystem that exposes kernel variables.
 #  The files in /sys and their sizes will frequently change in between read()'s, which can break naive tar invocations.)
+#
+# Usage: ./snapshot.sh sysfs.tar.gz
 
-TMP=$(mktemp -d -t ttar_XXXXXXX)
+dst="$PWD/$1"
+tmp=$(mktemp -d -t ttar_XXXXXXX)
+
 cleanup() {
-  rm -rf "$TMP"
+  rm -rf "$tmp"
 }
 trap cleanup EXIT
-s
+
 set -euxo pipefail
 
-find /sys | while IFS= read -r file; do
+find /sys/devices/*/block /sys/dev/block | while IFS= read -r file; do
   # create the new file name by stripping the leading
   # /sys and mashing it against the temp folder
   #
-  tempFile="${TMP}/${file#*/sys/}"
+  temp_file="${tmp}/${file#*/sys/}"
 
   # create equivalent symlink
   if [ -L "$file" ]; then
-    cp -d "$file" "$tempFile"
+    cp -d "$file" "$temp_file"
     continue
   fi
 
   # create necessary directories
   if [ -d "$file" ]; then
-    mkdir -p "$tempFile"
+    mkdir -p "$temp_file"
     continue
   fi
 
@@ -38,8 +42,8 @@ find /sys | while IFS= read -r file; do
     continue
   fi
 
-  cp "$file" "$tempFile"
+  cp "$file" "$temp_file"
 done
 
-cd "$TMP"
-tar vczf ~/sysfs.tar.gz .
+cd "$tmp"
+tar vczf "$dst" .
