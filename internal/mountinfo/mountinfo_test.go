@@ -62,7 +62,7 @@ func Test_DeviceName_Snapshots(t *testing.T) {
 			expectedDeviceName: "vda",
 		},
 		{
-			name: "should find the device name for an lvm volume backed by a single disk",
+			name: "should find the device name for a lvm volume backed by a single disk",
 
 			// ( lsblk output from the snapshotted machine)
 			// ~ # lsblk
@@ -84,7 +84,7 @@ func Test_DeviceName_Snapshots(t *testing.T) {
 			deviceMajor: 254, // points to dm-0 device
 			deviceMinor: 0,
 
-			// TODO@ggilmore: technically, dm-0 is a lvm volume backed by a partition stored on the nvmedevice.
+			// TODO@ggilmore: technically, dm-0 is a lvm volume backed by a partition stored on the nvme device.
 			// For consistency with the other test case, we should be returning nvme0n1 (the parent disk device) as the
 			// device name. I'll revisit this later, as I need to figure out how to programmatically determine
 			// the nvme01n1 <-> dm-0 translation.
