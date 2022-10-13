@@ -947,10 +947,10 @@ func sortDocuments(todo []*zoekt.Document) {
 }
 
 // sortDocuments2 sorts []*zoekt.Document according to their Ranks. In general,
-// documents can have a nil rank vector if the document to be indexed was
-// introduced after the ranking took place. A nil rank vector translates to the
-// lowest possible rank. Longer vectors are more important than shorter vectors,
-// given all other scores are equal.
+// documents can have a nil rank vector if the document to be indexed was added
+// after the ranking took place. A nil rank vector translates to the lowest
+// possible rank. Longer vectors are more important than shorter vectors, given
+// all other scores are equal.
 //
 // Note: the logic here is inverted to sortDocuments, where smaller values are
 // better.
