@@ -114,6 +114,8 @@ func discoverDeviceName(logger sglog.Logger, config discoverDeviceNameConfig, fi
 		sysfsMountPoint = config.sysfsMountPoint
 	}
 
+	sysfsMountPoint = filepath.Clean(sysfsMountPoint)
+
 	// the provided sysfs mountpoint could itself be a symlink, so we
 	// resolve it immediately so that future file path
 	// evaluations / massaging doesn't break
@@ -182,14 +184,6 @@ func discoverDeviceName(logger sglog.Logger, config discoverDeviceNameConfig, fi
 		)
 
 		devicePath = parent
-	}
-
-	// This devicePath should have an entry in the device tree
-	// if it represents a block device (and not a partition).
-
-	_, err = os.Stat(filepath.Join(devicePath, "device"))
-	if err != nil {
-		return "", fmt.Errorf("validating device path: ensuring that device (path %q) has an entry in the device tree: %q", devicePath, err)
 	}
 
 	// If this device is a block device, its device path should have a symlink

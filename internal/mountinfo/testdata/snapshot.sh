@@ -8,7 +8,7 @@
 # Usage: ./snapshot.sh sysfs.tar.gz
 
 dst="$PWD/$1"
-tmp=$(mktemp -d -t ttar_XXXXXXX)
+tmp=$(mktemp -d -t sysfs_snapshot_XXXXXXX)
 
 cleanup() {
   rm -rf "$tmp"
@@ -17,10 +17,9 @@ trap cleanup EXIT
 
 set -euxo pipefail
 
-find /sys/devices/*/block /sys/dev/block | while IFS= read -r file; do
+find /sys/devices/*/block /sys/dev/block /sys/class/block -print0 | sort -z | while IFS= read -d $'\0' -r file; do
   # create the new file name by stripping the leading
   # /sys and mashing it against the temp folder
-  #
   temp_file="${tmp}/${file#*/sys/}"
 
   # create equivalent symlink
