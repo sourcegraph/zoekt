@@ -486,8 +486,8 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 	}
 
 	var scores map[string][]float64
-	if opts.BuildOptions.DocumentScoresPath != "" {
-		data, err := os.ReadFile(opts.BuildOptions.DocumentScoresPath)
+	if opts.BuildOptions.DocumentRanksPath != "" {
+		data, err := os.ReadFile(opts.BuildOptions.DocumentRanksPath)
 		if err != nil {
 			return err
 		}
@@ -558,7 +558,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				Name:              keyFullPath,
 				Content:           contents,
 				Branches:          brs,
-				Scores:            score(keyFullPath),
+				Ranks:             score(keyFullPath),
 			}); err != nil {
 				return fmt.Errorf("error adding document with name %s: %w", keyFullPath, err)
 			}

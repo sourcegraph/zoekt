@@ -287,14 +287,14 @@ type Document struct {
 	Symbols         []DocumentSection
 	SymbolsMetaData []*Symbol
 
-	// Scores is the score vector of a document as provided by a DocumentScoresFile
+	// Ranks is a vector of ranks for a document as provided by a DocumentRanksFile
 	// file in the git repo.
 	//
-	// Two documents can be ordered by comparing the components of their score
-	// vector. Smaller entries are better, as are longer vectors.
+	// Two documents can be ordered by comparing the components of their rank
+	// vectors. Bigger entries are better, as are longer vectors.
 	//
 	// This field is experimental and may change at any time without warning.
-	Scores []float64
+	Ranks []float64
 }
 
 type symbolSlice struct {

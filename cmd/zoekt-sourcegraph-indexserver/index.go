@@ -327,9 +327,9 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 	// We store the document ranks as JSON in gitDir and tell zoekt-git-index where
 	// to find the file.
 	if o.UseOfflineRanking {
-		p := filepath.Join(gitDir, "documents.score")
+		documentsRankFile := filepath.Join(gitDir, "documents.rank")
 
-		args = append(args, "-offline_ranking", p)
+		args = append(args, "-offline_ranking", documentsRankFile)
 
 		r, err := sourcegraph.GetDocumentRanks(context.Background(), o.Name)
 		if err != nil {
@@ -341,7 +341,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 			return err
 		}
 
-		fd, err := os.Create(p)
+		fd, err := os.Create(documentsRankFile)
 		if err != nil {
 			return err
 		}

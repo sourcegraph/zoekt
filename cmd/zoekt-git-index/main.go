@@ -69,7 +69,7 @@ func run() int {
 	}
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
-	opts.DocumentScoresPath = *offlineRanking
+	opts.DocumentRanksPath = *offlineRanking
 
 	var branches []string
 	if *branchesStr != "" {

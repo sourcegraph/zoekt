@@ -70,14 +70,14 @@ type Sourcegraph interface {
 	// options for each id in repos.
 	ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32)
 
-	// GetRepoRank returns a score vector for the given repository. Repositories are
+	// GetRepoRank returns a rank vector for the given repository. Repositories are
 	// assumed to be ordered by each pairwise component of the resulting vector,
-	// lower scores coming earlier.
+	// higher scores coming earlier.
 	GetRepoRank(ctx context.Context, repoName string) ([]float64, error)
 
 	// GetDocumentRanks returns a map from paths within the given repo to their
-	// score vectors. Paths are assumed to be ordered by each pairwise component of
-	// the resulting vector, lower scores coming earlier
+	// rank vectors. Paths are assumed to be ordered by each pairwise component of
+	// the resulting vector, higher ranks coming earlier
 	GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error)
 }
 
@@ -140,7 +140,7 @@ type sourcegraphClient struct {
 	configFingerprintReset time.Time
 }
 
-// GetRepoRank asks Sourcegraph for the score vector of repoName.
+// GetRepoRank asks Sourcegraph for the rank vector of repoName.
 func (s *sourcegraphClient) GetRepoRank(ctx context.Context, repoName string) ([]float64, error) {
 	u := s.Root.ResolveReference(&url.URL{
 		Path: "/.internal/ranks/" + strings.Trim(repoName, "/"),
@@ -160,7 +160,7 @@ func (s *sourcegraphClient) GetRepoRank(ctx context.Context, repoName string) ([
 	return ranks, nil
 }
 
-// GetDocumentRanks asks Sourcegraph for a mapping of file paths to score
+// GetDocumentRanks asks Sourcegraph for a mapping of file paths to rank
 // vectors.
 func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error) {
 	u := s.Root.ResolveReference(&url.URL{
@@ -178,7 +178,7 @@ func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName strin
 		return nil, err
 	}
 
-	// Invariant: All score vectors have the same length.
+	// Invariant: All rank vectors have the same length.
 	first := true
 	wantLen := -1
 	for _, v := range ranks {
@@ -475,9 +475,8 @@ func (sf sourcegraphFake) GetRepoRank(ctx context.Context, repoName string) ([]f
 }
 
 // GetDocumentRanks expects a file where each line has the following format:
-// path<tab>f... . where f=1-rank is a float64 score in the interval [0,1].
-// Multiple f are separated by a comma. Each line has to have the same number of
-// ranks.
+// path<tab>rank... where rank is a float64 in [0,1]. Multiple ranks are
+// separated by a comma. Each line must have the same number of ranks.
 func (sf sourcegraphFake) GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error) {
 	dir := filepath.Join(sf.RootDir, filepath.FromSlash(repoName))
 

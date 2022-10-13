@@ -856,16 +856,16 @@ func Test_sortDocuments2(t *testing.T) {
 			name: "same length",
 			in: []*zoekt.Document{
 				{
-					Name:   "a",
-					Scores: []float64{1, 1, 1},
+					Name:  "a",
+					Ranks: []float64{0, 0, 0},
 				},
 				{
-					Name:   "b",
-					Scores: []float64{0, 0, 0},
+					Name:  "b",
+					Ranks: []float64{1, 1, 1},
 				},
 				{
-					Name:   "c",
-					Scores: []float64{0, 1, 0},
+					Name:  "c",
+					Ranks: []float64{1, 0, 1},
 				},
 			},
 			want: []string{"b", "c", "a"},
@@ -874,15 +874,15 @@ func Test_sortDocuments2(t *testing.T) {
 			name: "1 nil",
 			in: []*zoekt.Document{
 				{
-					Name:   "a",
-					Scores: []float64{1, 1, 1},
+					Name:  "a",
+					Ranks: []float64{1, 1, 0},
 				},
 				{
 					Name: "b",
 				},
 				{
-					Name:   "c",
-					Scores: []float64{0, 1, 0},
+					Name:  "c",
+					Ranks: []float64{1, 1, 1},
 				},
 			},
 			want: []string{"c", "a", "b"},
@@ -891,16 +891,16 @@ func Test_sortDocuments2(t *testing.T) {
 			name: "different lengths",
 			in: []*zoekt.Document{
 				{
-					Name:   "a",
-					Scores: []float64{0},
+					Name:  "a",
+					Ranks: []float64{0},
 				},
 				{
-					Name:   "b",
-					Scores: []float64{0, 0},
+					Name:  "b",
+					Ranks: []float64{0, 0},
 				},
 				{
-					Name:   "c",
-					Scores: []float64{0, 0, 0},
+					Name:  "c",
+					Ranks: []float64{0, 0, 0},
 				},
 			},
 			want: []string{"c", "b", "a"},
@@ -909,12 +909,12 @@ func Test_sortDocuments2(t *testing.T) {
 			name: "different lengths and nil",
 			in: []*zoekt.Document{
 				{
-					Name:   "a",
-					Scores: []float64{0},
+					Name:  "a",
+					Ranks: []float64{0},
 				},
 				{
-					Name:   "b",
-					Scores: []float64{0, 0},
+					Name:  "b",
+					Ranks: []float64{0, 0},
 				},
 				{
 					Name: "c",
@@ -942,7 +942,7 @@ func Test_sortDocuments2(t *testing.T) {
 
 	t.Run("test for panics", func(t *testing.T) {
 		// Special case: test for panics if all documents have nil scores.
-		sortDocuments2([]*zoekt.Document{{}, {}, {}})
+		sortDocuments2([]*zoekt.Document{{}, {}})
 		sortDocuments2([]*zoekt.Document{{}})
 		sortDocuments2(nil)
 	})

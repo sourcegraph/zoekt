@@ -100,9 +100,9 @@ type Options struct {
 	// last run.
 	IsDelta bool
 
-	// DocumentScoresPath is the path to the file with document scores. If empty,
-	// scores will be computed on-the-fly.
-	DocumentScoresPath string
+	// DocumentRanksPath is the path to the file with document ranks. If empty,
+	// ranks will be computed on-the-fly.
+	DocumentRanksPath string
 
 	// changedOrRemovedFiles is a list of file paths that have been changed or removed
 	// since the last indexing job for this repository. These files will be tombstoned
@@ -946,15 +946,18 @@ func sortDocuments(todo []*zoekt.Document) {
 	}
 }
 
-// sortDocuments2 sorts []*zoekt.Document according to their Scores. In general,
-// documents can have a nil score vector if the document to be indexed was
-// introduced after the ranking took place. A nil score vector translates to the
+// sortDocuments2 sorts []*zoekt.Document according to their Ranks. In general,
+// documents can have a nil rank vector if the document to be indexed was
+// introduced after the ranking took place. A nil rank vector translates to the
 // lowest possible rank. Longer vectors are more important than shorter vectors,
 // given all other scores are equal.
+//
+// Note: the logic here is inverted to sortDocuments, where smaller values are
+// better.
 func sortDocuments2(rs []*zoekt.Document) {
 	sort.Slice(rs, func(i, j int) bool {
-		r1 := rs[i].Scores
-		r2 := rs[j].Scores
+		r1 := rs[i].Ranks
+		r2 := rs[j].Ranks
 
 		l := len(r1)
 		if len(r2) < l {
@@ -962,11 +965,11 @@ func sortDocuments2(rs []*zoekt.Document) {
 		}
 		for i := 0; i < l; i++ {
 			if r1[i] != r2[i] {
-				return r1[i] < r2[i]
+				return r1[i] > r2[i]
 			}
 		}
 		// if r1 has more scores it is more important. ie imagine right padding shorter
-		// arrays with ones, so they are the same length.
+		// arrays with zeros, so they are the same length.
 		return len(r1) > len(r2)
 	})
 }
@@ -989,7 +992,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 		return nil, err
 	}
 
-	if b.opts.DocumentScoresPath != "" {
+	if b.opts.DocumentRanksPath != "" {
 		sortDocuments2(todo)
 	} else {
 		sortDocuments(todo)
