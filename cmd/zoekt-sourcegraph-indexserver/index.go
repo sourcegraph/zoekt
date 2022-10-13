@@ -333,7 +333,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 
 		r, err := sourcegraph.GetDocumentRanks(context.Background(), o.Name)
 		if err != nil {
-			return err
+			return fmt.Errorf("GetDocumentRanks: %w", err)
 		}
 
 		b, err := json.Marshal(r)
@@ -341,15 +341,8 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 			return err
 		}
 
-		fd, err := os.Create(documentsRankFile)
-		if err != nil {
-			return err
-		}
-		defer fd.Close()
-
-		_, err = fd.Write(b)
-		if err != nil {
-			return err
+		if err := os.WriteFile(documentsRankFile, b, 0600); err != nil {
+			return fmt.Errorf("failed to write %s to disk: %w", documentsRankFile, err)
 		}
 	}
 
