@@ -72,7 +72,7 @@ type Sourcegraph interface {
 
 	// GetRepoRank returns a rank vector for the given repository. Repositories are
 	// assumed to be ordered by each pairwise component of the resulting vector,
-	// higher scores coming earlier.
+	// higher ranks coming earlier.
 	GetRepoRank(ctx context.Context, repoName string) ([]float64, error)
 
 	// GetDocumentRanks returns a map from paths within the given repo to their
