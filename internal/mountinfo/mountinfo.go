@@ -15,7 +15,7 @@ import (
 )
 
 // defaultSysMountPoint is the common mount point for the sysfs pseudo-filesystem.
-const defaultSysMountPoint = "/sys/"
+const defaultSysMountPoint = "/sys"
 
 // MustRegisterNewMountPointInfoMetric registers a Prometheus metric named "mount_point_info" that
 // contains the names of the block storage devices that back each of the requested mounts.
@@ -102,6 +102,7 @@ func discoverDeviceName(logger sglog.Logger, config discoverDeviceNameConfig, fi
 	// - https://man7.org/linux/man-pages/man5/sysfs.5.html
 	// - https://en.wikipedia.org/wiki/Sysfs
 	// - https://unix.stackexchange.com/a/11312
+	// - https://www.kernel.org/doc/ols/2005/ols2005v1-pages-321-334.pdf
 
 	getDeviceNumber := getDeviceNumber
 	if config.getDeviceNumber != nil {
@@ -111,6 +112,14 @@ func discoverDeviceName(logger sglog.Logger, config discoverDeviceNameConfig, fi
 	sysfsMountPoint := defaultSysMountPoint
 	if config.sysfsMountPoint != "" {
 		sysfsMountPoint = config.sysfsMountPoint
+	}
+
+	// the provided sysfs mountpoint could itself be a symlink, so we
+	// resolve it immediately so that future file path
+	// evaluations / massaging doesn't break
+	sysfsMountPoint, err := filepath.EvalSymlinks(sysfsMountPoint)
+	if err != nil {
+		return "", fmt.Errorf("verifying sysfs mountpoint %q: failed to resolve symlink %w", sysfsMountPoint, err)
 	}
 
 	major, minor, err := getDeviceNumber(filePath)

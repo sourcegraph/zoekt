@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Create a tarball of this system's sysfs filesystem + place it in the home directory.
+#
+# (This special logic is necessary since /sys is a pseudo-filesystem that exposes kernel variables.
+#  The files in /sys and their sizes will frequently change in between read()'s, which can break naive tar invocations.)
+
+TMP=$(mktemp -d -t ttar_XXXXXXX)
+cleanup() {
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+s
+set -euxo pipefail
+
+find /sys | while IFS= read -r file; do
+  # create the new file name by stripping the leading
+  # /sys and mashing it against the temp folder
+  #
+  tempFile="${TMP}/${file#*/sys/}"
+
+  # create equivalent symlink
+  if [ -L "$file" ]; then
+    cp -d "$file" "$tempFile"
+    continue
+  fi
+
+  # create necessary directories
+  if [ -d "$file" ]; then
+    mkdir -p "$tempFile"
+    continue
+  fi
+
+  # skip over any files that we lack permissions to read,
+  # we encounter I/O errors when trying to read, or
+  # have some other weirdness
+  if ! wc -l "$file" >/dev/null 2>&1; then
+    continue
+  fi
+
+  cp "$file" "$tempFile"
+done
+
+cd "$TMP"
+tar vczf ~/sysfs.tar.gz .

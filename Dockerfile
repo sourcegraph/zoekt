@@ -11,8 +11,7 @@ RUN go mod download
 
 COPY . ./
 ARG VERSION
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    go install -ldflags "-X github.com/sourcegraph/zoekt.Version=$VERSION" ./cmd/...
+RUN go install -ldflags "-X github.com/sourcegraph/zoekt.Version=$VERSION" ./cmd/...
 
 FROM alpine:3.16.2 AS zoekt
 
