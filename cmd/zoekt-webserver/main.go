@@ -38,6 +38,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/debugserver"
+	"github.com/sourcegraph/zoekt/internal/mountinfo"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
@@ -180,8 +181,10 @@ func main() {
 
 	mustRegisterDiskMonitor(*index)
 
-	mmapLogger := sglog.Scoped("zoekt_webserver_proc_metrics_memory_map", "")
-	mustRegisterMemoryMapMetrics(mmapLogger)
+	metricsLogger := sglog.Scoped("metricsRegistration", "")
+
+	mustRegisterMemoryMapMetrics(metricsLogger)
+	mountinfo.MustRegisterNewMountPointInfoMetric(metricsLogger, map[string]string{"indexDir": *index})
 
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the
@@ -510,6 +513,8 @@ var (
 )
 
 func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
+	logger = logger.Scoped("memoryMapMetrics", "")
+
 	// The memory map metrics are collected via /proc, which
 	// is only available on linux-based operating systems.
 

@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/zoekt/internal/mountinfo"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
@@ -1063,6 +1064,9 @@ func startServer(conf rootConfig) error {
 		Hostname: conf.hostname,
 	}
 	go oc.Run()
+
+	logger := sglog.Scoped("metricsRegistration", "")
+	mountinfo.MustRegisterNewMountPointInfoMetric(logger, map[string]string{"indexDir": conf.index})
 
 	s.Run()
 	return nil
