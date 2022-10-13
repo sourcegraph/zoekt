@@ -485,21 +485,21 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		return fmt.Errorf("build.NewBuilder: %w", err)
 	}
 
-	var scores map[string][]float64
+	var ranks map[string][]float64
 	if opts.BuildOptions.DocumentRanksPath != "" {
 		data, err := os.ReadFile(opts.BuildOptions.DocumentRanksPath)
 		if err != nil {
 			return err
 		}
 
-		err = json.Unmarshal(data, &scores)
+		err = json.Unmarshal(data, &ranks)
 		if err != nil {
 			return err
 		}
 	}
 
-	score := func(path string) []float64 {
-		s, ok := scores[path]
+	rankVecForPath := func(path string) []float64 {
+		s, ok := ranks[path]
 		if !ok {
 			return nil
 		}
@@ -558,7 +558,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				Name:              keyFullPath,
 				Content:           contents,
 				Branches:          brs,
-				Ranks:             score(keyFullPath),
+				Ranks:             rankVecForPath(keyFullPath),
 			}); err != nil {
 				return fmt.Errorf("error adding document with name %s: %w", keyFullPath, err)
 			}
