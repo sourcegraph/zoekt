@@ -100,6 +100,10 @@ type Options struct {
 	// last run.
 	IsDelta bool
 
+	// DocumentRanksPath is the path to the file with document ranks. If empty,
+	// ranks will be computed on-the-fly.
+	DocumentRanksPath string
+
 	// changedOrRemovedFiles is a list of file paths that have been changed or removed
 	// since the last indexing job for this repository. These files will be tombstoned
 	// in the older shards for this repository.
@@ -942,6 +946,36 @@ func sortDocuments(todo []*zoekt.Document) {
 	}
 }
 
+const epsilon = 0.00000001
+
+// sortDocuments2 sorts []*zoekt.Document according to their Ranks. In general,
+// documents can have a nil rank vector if the document to be indexed was added
+// after the ranking took place. A nil rank vector translates to the lowest
+// possible rank. Longer vectors are more important than shorter vectors, given
+// all other ranks are equal.
+//
+// Note: the logic here is inverted to sortDocuments because rank in
+// sortDocuments returns a vector of the form [1-rank, ...].
+func sortDocuments2(rs []*zoekt.Document) {
+	sort.Slice(rs, func(i, j int) bool {
+		r1 := rs[i].Ranks
+		r2 := rs[j].Ranks
+
+		l := len(r1)
+		if len(r2) < l {
+			l = len(r2)
+		}
+		for i := 0; i < l; i++ {
+			if math.Abs(r1[i]-r2[i]) > epsilon {
+				return r1[i] > r2[i]
+			}
+		}
+		// if r1 has more entries it is more important. ie imagine right padding shorter
+		// arrays with zeros, so they are the same length.
+		return len(r1) > len(r2)
+	})
+}
+
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
 	if !b.opts.DisableCTags && b.opts.CTagsPath != "" {
 		err := ctagsAddSymbols(todo, b.parser, b.opts.CTagsPath)
@@ -959,7 +993,13 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 	if err != nil {
 		return nil, err
 	}
-	sortDocuments(todo)
+
+	if b.opts.DocumentRanksPath != "" {
+		sortDocuments2(todo)
+	} else {
+		sortDocuments(todo)
+	}
+
 	for _, t := range todo {
 		if err := shardBuilder.Add(*t); err != nil {
 			return nil, err

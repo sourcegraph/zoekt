@@ -18,6 +18,7 @@ package gitindex
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -113,7 +114,7 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 	repo.URL = u.String()
 	switch typ {
 	case "gitiles":
-		/// eg. https://gerrit.googlesource.com/gitiles/+/master/tools/run_dev.sh#20
+		// eg. https://gerrit.googlesource.com/gitiles/+/master/tools/run_dev.sh#20
 		repo.CommitURLTemplate = u.String() + "/+/{{.Version}}"
 		repo.FileURLTemplate = u.String() + "/+/{{.Version}}/{{.Path}}"
 		repo.LineFragmentTemplate = "#{{.LineNumber}}"
@@ -483,6 +484,28 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 	if err != nil {
 		return fmt.Errorf("build.NewBuilder: %w", err)
 	}
+
+	var ranks map[string][]float64
+	if opts.BuildOptions.DocumentRanksPath != "" {
+		data, err := os.ReadFile(opts.BuildOptions.DocumentRanksPath)
+		if err != nil {
+			return err
+		}
+
+		err = json.Unmarshal(data, &ranks)
+		if err != nil {
+			return err
+		}
+	}
+
+	rankVecForPath := func(path string) []float64 {
+		s, ok := ranks[path]
+		if !ok {
+			return nil
+		}
+		return s
+	}
+
 	// we don't need to check error, since we either already have an error, or
 	// we returning the first call to builder.Finish.
 	defer builder.Finish() // nolint:errcheck
@@ -512,10 +535,12 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				return err
 			}
 
-			if blob.Size > int64(opts.BuildOptions.SizeMax) && !opts.BuildOptions.IgnoreSizeMax(key.FullPath()) {
+			keyFullPath := key.FullPath()
+
+			if blob.Size > int64(opts.BuildOptions.SizeMax) && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
 				if err := builder.Add(zoekt.Document{
 					SkipReason:        fmt.Sprintf("file size %d exceeds maximum size %d", blob.Size, opts.BuildOptions.SizeMax),
-					Name:              key.FullPath(),
+					Name:              keyFullPath,
 					Branches:          brs,
 					SubRepositoryPath: key.SubRepoPath,
 				}); err != nil {
@@ -530,11 +555,12 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 			}
 			if err := builder.Add(zoekt.Document{
 				SubRepositoryPath: key.SubRepoPath,
-				Name:              key.FullPath(),
+				Name:              keyFullPath,
 				Content:           contents,
 				Branches:          brs,
+				Ranks:             rankVecForPath(keyFullPath),
 			}); err != nil {
-				return fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
+				return fmt.Errorf("error adding document with name %s: %w", keyFullPath, err)
 			}
 		}
 	}

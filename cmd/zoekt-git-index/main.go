@@ -22,9 +22,10 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"go.uber.org/automaxprocs/maxprocs"
+
 	"github.com/sourcegraph/zoekt/cmd"
 	"github.com/sourcegraph/zoekt/gitindex"
-	"go.uber.org/automaxprocs/maxprocs"
 )
 
 func run() int {
@@ -41,6 +42,7 @@ func run() int {
 		"It also affects name if the indexed repository is under this directory.")
 	isDelta := flag.Bool("delta", false, "whether we should use delta build")
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
+	offlineRanking := flag.String("offline_ranking", "", "the name of the file that contains the ranking info.")
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
@@ -67,6 +69,7 @@ func run() int {
 	}
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
+	opts.DocumentRanksPath = *offlineRanking
 
 	var branches []string
 	if *branchesStr != "" {

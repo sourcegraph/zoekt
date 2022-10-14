@@ -286,6 +286,15 @@ type Document struct {
 	// Document sections for symbols. Offsets should use bytes.
 	Symbols         []DocumentSection
 	SymbolsMetaData []*Symbol
+
+	// Ranks is a vector of ranks for a document as provided by a DocumentRanksFile
+	// file in the git repo.
+	//
+	// Two documents can be ordered by comparing the components of their rank
+	// vectors. Bigger entries are better, as are longer vectors.
+	//
+	// This field is experimental and may change at any time without warning.
+	Ranks []float64
 }
 
 type symbolSlice struct {
