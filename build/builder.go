@@ -946,14 +946,16 @@ func sortDocuments(todo []*zoekt.Document) {
 	}
 }
 
+const epsilon = 0.00000001
+
 // sortDocuments2 sorts []*zoekt.Document according to their Ranks. In general,
 // documents can have a nil rank vector if the document to be indexed was added
 // after the ranking took place. A nil rank vector translates to the lowest
 // possible rank. Longer vectors are more important than shorter vectors, given
 // all other ranks are equal.
 //
-// Note: the logic here is inverted to sortDocuments, where smaller values are
-// better.
+// Note: the logic here is inverted to sortDocuments because rank in
+// sortDocuments returns a vector of the form [1-rank, ...].
 func sortDocuments2(rs []*zoekt.Document) {
 	sort.Slice(rs, func(i, j int) bool {
 		r1 := rs[i].Ranks
@@ -964,7 +966,7 @@ func sortDocuments2(rs []*zoekt.Document) {
 			l = len(r2)
 		}
 		for i := 0; i < l; i++ {
-			if r1[i] != r2[i] {
+			if math.Abs(r1[i]-r2[i]) > epsilon {
 				return r1[i] > r2[i]
 			}
 		}
