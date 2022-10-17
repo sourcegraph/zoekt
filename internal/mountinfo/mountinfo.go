@@ -17,6 +17,14 @@ import (
 // defaultSysMountPoint is the common mount point for the sysfs pseudo-filesystem.
 const defaultSysMountPoint = "/sys"
 
+// MountPointInfoOpts modifies the behavior of the metric created
+// by MustRegisterNewMountPointInfoMetric.
+type MountPointInfoOpts struct {
+	// If non-empty, Namespace prefixes the "mount_point_info" metric by the provided string and
+	// an underscore ("_").
+	Namespace string
+}
+
 // MustRegisterNewMountPointInfoMetric registers a Prometheus metric named "mount_point_info" that
 // contains the names of the block storage devices that back each of the requested mounts.
 //
@@ -28,12 +36,13 @@ const defaultSysMountPoint = "/sys"
 //
 // This metric only works on Linux-based operating systems that have access to the sysfs pseudo-filesystem.
 // On all other operating systems, this metric will not emit any values.
-func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, mounts map[string]string) {
+func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, opts MountPointInfoOpts, mounts map[string]string) {
 	logger = logger.Scoped("mountPointInfo", "registration logic for mount_point_info Prometheus metric")
 
 	metric := promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "mount_point_info",
-		Help: "An info metric with a constant '1' value that contains mount_name, device mappings",
+		Namespace: opts.Namespace,
+		Name:      "mount_point_info",
+		Help:      "An info metric with a constant '1' value that contains mount_name, device mappings",
 	}, []string{"mount_name", "device"})
 
 	// This device discovery logic relies on the sysfs pseudo-filesystem, which only exists
@@ -52,7 +61,7 @@ func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, mounts map[string]
 			sglog.String("mountFilePath", filePath),
 		)
 
-		device, err := discoverDeviceName(discoveryLogger, discoverDeviceNameConfig{}, filePath)
+		device, err := discoverDeviceName(discoveryLogger, discoverDeviceNameOpts{}, filePath)
 		if err != nil {
 			discoveryLogger.Warn("skipping metric registration",
 				sglog.String("reason", "failed to discover device name"),
@@ -70,7 +79,7 @@ func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, mounts map[string]
 	}
 }
 
-type discoverDeviceNameConfig struct {
+type discoverDeviceNameOpts struct {
 	// sysfsMountPoint is the location of the sysfs mount point.
 	// If empty, defaultSysMountPoint will be used instead.
 	sysfsMountPoint string
@@ -83,7 +92,7 @@ type discoverDeviceNameConfig struct {
 
 // discoverDeviceName returns the name of the block device that filePath is
 // stored on.
-func discoverDeviceName(logger sglog.Logger, config discoverDeviceNameConfig, filePath string) (string, error) {
+func discoverDeviceName(logger sglog.Logger, opts discoverDeviceNameOpts, filePath string) (string, error) {
 	// Note: It's quite involved to implement the device discovery logic for
 	// every possible kind of storage device (e.x. logical volumes, NFS, etc.) See
 	// https://unix.stackexchange.com/a/11312 for more information.
@@ -105,13 +114,13 @@ func discoverDeviceName(logger sglog.Logger, config discoverDeviceNameConfig, fi
 	// - https://www.kernel.org/doc/ols/2005/ols2005v1-pages-321-334.pdf
 
 	getDeviceNumber := getDeviceNumber
-	if config.getDeviceNumber != nil {
-		getDeviceNumber = config.getDeviceNumber
+	if opts.getDeviceNumber != nil {
+		getDeviceNumber = opts.getDeviceNumber
 	}
 
 	sysfsMountPoint := defaultSysMountPoint
-	if config.sysfsMountPoint != "" {
-		sysfsMountPoint = config.sysfsMountPoint
+	if opts.sysfsMountPoint != "" {
+		sysfsMountPoint = opts.sysfsMountPoint
 	}
 
 	sysfsMountPoint = filepath.Clean(sysfsMountPoint)

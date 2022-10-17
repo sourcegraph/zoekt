@@ -114,7 +114,7 @@ func Test_DeviceName_Snapshots(t *testing.T) {
 			// execute the test with our injected mocks
 			actualDeviceName, err := discoverDeviceName(
 				logger,
-				discoverDeviceNameConfig{
+				discoverDeviceNameOpts{
 					sysfsMountPoint: mockSysFSDir,
 					getDeviceNumber: mockGetDeviceNumber,
 				},
