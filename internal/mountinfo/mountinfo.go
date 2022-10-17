@@ -61,7 +61,7 @@ func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, opts MountPointInf
 			sglog.String("mountFilePath", filePath),
 		)
 
-		device, err := discoverDeviceName(discoveryLogger, discoverDeviceNameConfig{}, filePath)
+		device, err := discoverDeviceName(discoveryLogger, discoverDeviceNameOpts{}, filePath)
 		if err != nil {
 			discoveryLogger.Warn("skipping metric registration",
 				sglog.String("reason", "failed to discover device name"),
@@ -79,7 +79,7 @@ func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, opts MountPointInf
 	}
 }
 
-type discoverDeviceNameConfig struct {
+type discoverDeviceNameOpts struct {
 	// sysfsMountPoint is the location of the sysfs mount point.
 	// If empty, defaultSysMountPoint will be used instead.
 	sysfsMountPoint string
@@ -92,7 +92,7 @@ type discoverDeviceNameConfig struct {
 
 // discoverDeviceName returns the name of the block device that filePath is
 // stored on.
-func discoverDeviceName(logger sglog.Logger, config discoverDeviceNameConfig, filePath string) (string, error) {
+func discoverDeviceName(logger sglog.Logger, opts discoverDeviceNameOpts, filePath string) (string, error) {
 	// Note: It's quite involved to implement the device discovery logic for
 	// every possible kind of storage device (e.x. logical volumes, NFS, etc.) See
 	// https://unix.stackexchange.com/a/11312 for more information.
@@ -114,13 +114,13 @@ func discoverDeviceName(logger sglog.Logger, config discoverDeviceNameConfig, fi
 	// - https://www.kernel.org/doc/ols/2005/ols2005v1-pages-321-334.pdf
 
 	getDeviceNumber := getDeviceNumber
-	if config.getDeviceNumber != nil {
-		getDeviceNumber = config.getDeviceNumber
+	if opts.getDeviceNumber != nil {
+		getDeviceNumber = opts.getDeviceNumber
 	}
 
 	sysfsMountPoint := defaultSysMountPoint
-	if config.sysfsMountPoint != "" {
-		sysfsMountPoint = config.sysfsMountPoint
+	if opts.sysfsMountPoint != "" {
+		sysfsMountPoint = opts.sysfsMountPoint
 	}
 
 	sysfsMountPoint = filepath.Clean(sysfsMountPoint)
