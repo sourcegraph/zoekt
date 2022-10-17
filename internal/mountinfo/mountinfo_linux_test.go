@@ -20,7 +20,7 @@ func Test_DeviceName_SmokeTest(t *testing.T) {
 		log.Fatalf("getting current working directory: %s", err)
 	}
 
-	device, err := discoverDeviceName(logger, discoverDeviceNameConfig{}, filePath)
+	device, err := discoverDeviceName(logger, discoverDeviceNameOpts{}, filePath)
 	if err != nil {
 		t.Fatalf("discovering device name for file path %q: %s", filePath, err)
 	}
