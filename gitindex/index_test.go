@@ -28,6 +28,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ignore"
@@ -707,4 +708,74 @@ func runScript(t *testing.T, cwd string, script string) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("execution error: %v, output %s", err, out)
 	}
+}
+
+func Test_sortDocuments2(t *testing.T) {
+	tests := []struct {
+		name  string
+		in    []string
+		ranks map[string][]float64
+		want  []string
+	}{
+		{
+			name: "same length",
+			in:   []string{"a", "b", "c"},
+			ranks: map[string][]float64{
+				"a": {0, 0, 0},
+				"b": {1, 1, 1},
+				"c": {1, 0, 1},
+			},
+			want: []string{"b", "c", "a"},
+		},
+		{
+			name: "1 nil",
+			in:   []string{"a", "b", "c"},
+			ranks: map[string][]float64{
+				"a": {1, 1, 0},
+				"c": {1, 1, 1},
+			},
+			want: []string{"c", "a", "b"},
+		},
+		{
+			name: "different lengths",
+			in:   []string{"a", "b", "c"},
+			ranks: map[string][]float64{
+				"a": {0},
+				"b": {0, 0},
+				"c": {0, 0, 0},
+			},
+			want: []string{"c", "b", "a"},
+		},
+		{
+			name: "different lengths and nil",
+			in:   []string{"a", "b", "c"},
+			ranks: map[string][]float64{
+				"a": {0},
+				"b": {0, 0},
+			},
+			want: []string{"b", "a", "c"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sortDocuments2(tt.in, tt.ranks)
+
+			for i, name := range tt.want {
+				if tt.in[i] != name {
+					var got []string
+					for _, d := range tt.in {
+						got = append(got, d)
+					}
+					t.Fatalf("want %+v, got %+v\n", tt.want, got)
+				}
+			}
+		})
+	}
+
+	t.Run("test for panics", func(t *testing.T) {
+		sortDocuments2([]string{"", ""}, nil)
+		sortDocuments2([]string{""}, nil)
+		sortDocuments2(nil, nil)
+	})
 }

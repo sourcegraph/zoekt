@@ -485,27 +485,6 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		return fmt.Errorf("build.NewBuilder: %w", err)
 	}
 
-	var ranks map[string][]float64
-	if opts.BuildOptions.DocumentRanksPath != "" {
-		data, err := os.ReadFile(opts.BuildOptions.DocumentRanksPath)
-		if err != nil {
-			return err
-		}
-
-		err = json.Unmarshal(data, &ranks)
-		if err != nil {
-			return err
-		}
-	}
-
-	rankVecForPath := func(path string) []float64 {
-		s, ok := ranks[path]
-		if !ok {
-			return nil
-		}
-		return s
-	}
-
 	// we don't need to check error, since we either already have an error, or
 	// we returning the first call to builder.Finish.
 	defer builder.Finish() // nolint:errcheck
@@ -522,7 +501,27 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		names = append(names, n)
 	}
 
-	sort.Strings(names)
+	if opts.BuildOptions.OfflineRankingEnabled() {
+		data, err := os.ReadFile(opts.BuildOptions.DocumentRanksPath)
+		if err != nil {
+			return err
+		}
+
+		var ranks map[string][]float64
+		err = json.Unmarshal(data, &ranks)
+		if err != nil {
+			return err
+		}
+
+		// We sort documents according to their rank before we start adding them to the
+		// builder. This means that the first shard will contain the documents with the
+		// highest rank.
+		sortDocuments2(names, ranks)
+
+	} else {
+		sort.Strings(names)
+	}
+
 	names = uniq(names)
 
 	for _, name := range names {
@@ -558,13 +557,35 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				Name:              keyFullPath,
 				Content:           contents,
 				Branches:          brs,
-				Ranks:             rankVecForPath(keyFullPath),
 			}); err != nil {
 				return fmt.Errorf("error adding document with name %s: %w", keyFullPath, err)
 			}
 		}
 	}
 	return builder.Finish()
+}
+
+const epsilon = 0.00000001
+
+// sortDocuments2 sorts names based on rankFunc.
+func sortDocuments2(names []string, ranks map[string][]float64) {
+	sort.Slice(names, func(i, j int) bool {
+		r1 := ranks[names[i]]
+		r2 := ranks[names[j]]
+
+		l := len(r1)
+		if len(r2) < l {
+			l = len(r2)
+		}
+		for i := 0; i < l; i++ {
+			if math.Abs(r1[i]-r2[i]) > epsilon {
+				return r1[i] > r2[i]
+			}
+		}
+		// if r1 has more entries it is more important. ie imagine right padding shorter
+		// arrays with zeros, so they are the same length.
+		return len(r1) > len(r2)
+	})
 }
 
 func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
