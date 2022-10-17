@@ -17,6 +17,14 @@ import (
 // defaultSysMountPoint is the common mount point for the sysfs pseudo-filesystem.
 const defaultSysMountPoint = "/sys"
 
+// MountPointInfoOpts modifies the behavior of the metric created
+// by MustRegisterNewMountPointInfoMetric.
+type MountPointInfoOpts struct {
+	// If non-empty, Namespace prefixes the "mount_point_info" metric by the provided string and
+	// an underscore ("_").
+	Namespace string
+}
+
 // MustRegisterNewMountPointInfoMetric registers a Prometheus metric named "mount_point_info" that
 // contains the names of the block storage devices that back each of the requested mounts.
 //
@@ -28,12 +36,13 @@ const defaultSysMountPoint = "/sys"
 //
 // This metric only works on Linux-based operating systems that have access to the sysfs pseudo-filesystem.
 // On all other operating systems, this metric will not emit any values.
-func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, mounts map[string]string) {
+func MustRegisterNewMountPointInfoMetric(logger sglog.Logger, opts MountPointInfoOpts, mounts map[string]string) {
 	logger = logger.Scoped("mountPointInfo", "registration logic for mount_point_info Prometheus metric")
 
 	metric := promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "mount_point_info",
-		Help: "An info metric with a constant '1' value that contains mount_name, device mappings",
+		Namespace: opts.Namespace,
+		Name:      "mount_point_info",
+		Help:      "An info metric with a constant '1' value that contains mount_name, device mappings",
 	}, []string{"mount_name", "device"})
 
 	// This device discovery logic relies on the sysfs pseudo-filesystem, which only exists

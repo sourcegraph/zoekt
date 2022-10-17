@@ -184,7 +184,7 @@ func main() {
 	metricsLogger := sglog.Scoped("metricsRegistration", "")
 
 	mustRegisterMemoryMapMetrics(metricsLogger)
-	mountinfo.MustRegisterNewMountPointInfoMetric(metricsLogger, map[string]string{"indexDir": *index})
+	mountinfo.MustRegisterNewMountPointInfoMetric(metricsLogger, mountinfo.MountPointInfoOpts{Namespace: "zoekt_webserver"}, map[string]string{"indexDir": *index})
 
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the
