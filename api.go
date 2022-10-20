@@ -88,6 +88,9 @@ func (m *FileMatch) sizeBytes() (sz uint64) {
 	// Score
 	sz += 8
 
+	// ranks
+	sz += 8 * uint64(len(m.ranks))
+
 	for _, s := range []string{
 		m.Debug,
 		m.FileName,

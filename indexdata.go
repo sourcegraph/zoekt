@@ -309,6 +309,9 @@ func (d *indexData) memoryUse() int {
 	sz += len(d.languages)
 	sz += len(d.checksums)
 	sz += 2 * len(d.repos)
+	if len(d.ranks) > 0 {
+		sz += 8 * len(d.ranks) * len(d.ranks[0])
+	}
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
 	sz += d.ngrams.SizeBytes()
