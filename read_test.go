@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -226,7 +227,11 @@ func TestReadSearch(t *testing.T) {
 				continue
 			}
 
-			if d := cmp.Diff(res.Files, want.FileMatches[j]); d != "" {
+			ignored := cmp.Options{
+				cmpopts.IgnoreFields(FileMatch{}, "ranks"),
+			}
+
+			if d := cmp.Diff(res.Files, want.FileMatches[j], ignored); d != "" {
 				t.Errorf("matches for %s on %s\n%s", q, name, d)
 			}
 		}

@@ -15,8 +15,11 @@
             "LineStart": 69,
             "LineEnd": 82,
             "LineNumber": 10,
+            "Before": null,
+            "After": null,
             "FileName": false,
             "Score": 501,
+            "DebugScore": "",
             "LineFragments": [
               {
                 "LineOffset": 0,
@@ -27,6 +30,7 @@
             ]
           }
         ],
+        "ChunkMatches": null,
         "RepositoryID": 0,
         "RepositoryPriority": 0,
         "Content": null,
@@ -50,8 +54,11 @@
             "LineStart": 0,
             "LineEnd": 12,
             "LineNumber": 1,
+            "Before": null,
+            "After": null,
             "FileName": false,
             "Score": 501,
+            "DebugScore": "",
             "LineFragments": [
               {
                 "LineOffset": 0,
@@ -62,6 +69,7 @@
             ]
           }
         ],
+        "ChunkMatches": null,
         "RepositoryID": 0,
         "RepositoryPriority": 0,
         "Content": null,
@@ -85,8 +93,11 @@
             "LineStart": 34,
             "LineEnd": 46,
             "LineNumber": 6,
+            "Before": null,
+            "After": null,
             "FileName": false,
             "Score": 7501,
+            "DebugScore": "",
             "LineFragments": [
               {
                 "LineOffset": 1,
@@ -102,6 +113,7 @@
             ]
           }
         ],
+        "ChunkMatches": null,
         "RepositoryID": 0,
         "RepositoryPriority": 0,
         "Content": null,
@@ -125,8 +137,11 @@
             "LineStart": 47,
             "LineEnd": 65,
             "LineNumber": 7,
+            "Before": null,
+            "After": null,
             "FileName": false,
             "Score": 5551,
+            "DebugScore": "",
             "LineFragments": [
               {
                 "LineOffset": 4,
@@ -142,6 +157,7 @@
             ]
           }
         ],
+        "ChunkMatches": null,
         "RepositoryID": 0,
         "RepositoryPriority": 0,
         "Content": null,

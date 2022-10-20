@@ -19,6 +19,7 @@
             "After": null,
             "FileName": false,
             "Score": 501,
+            "DebugScore": "",
             "LineFragments": [
               {
                 "LineOffset": 0,
@@ -29,6 +30,7 @@
             ]
           }
         ],
+        "ChunkMatches": null,
         "RepositoryID": 0,
         "RepositoryPriority": 0,
         "Content": null,
@@ -56,6 +58,7 @@
             "After": null,
             "FileName": false,
             "Score": 501,
+            "DebugScore": "",
             "LineFragments": [
               {
                 "LineOffset": 0,
@@ -66,6 +69,7 @@
             ]
           }
         ],
+        "ChunkMatches": null,
         "RepositoryID": 0,
         "RepositoryPriority": 0,
         "Content": null,
