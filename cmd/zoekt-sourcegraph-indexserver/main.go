@@ -33,9 +33,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
-	"github.com/sourcegraph/zoekt/internal/mountinfo"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
+
+	"github.com/sourcegraph/zoekt/internal/mountinfo"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
@@ -187,8 +188,6 @@ type Server struct {
 	// repositoriesSkipSymbolsCalculationAllowList is an allowlist for repositories that
 	// we skip calculating symbols metadata for during builds
 	repositoriesSkipSymbolsCalculationAllowList map[string]struct{}
-
-	offlineRankingAllowList map[string]struct{}
 }
 
 var debug = log.New(io.Discard, "", log.LstdFlags)
@@ -513,6 +512,8 @@ func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 	return ticker
 }
 
+var rankingEnabled, _ = strconv.ParseBool(os.Getenv("ENABLE_EXPERIMENTAL_RANKING"))
+
 // Index starts an index job for repo name at commit.
 func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
@@ -538,11 +539,6 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	if _, ok := s.deltaBuildRepositoriesAllowList[repositoryName]; ok {
 		tr.LazyPrintf("marking this repository for delta build")
 		args.UseDelta = true
-	}
-
-	if _, ok := s.offlineRankingAllowList[repositoryName]; ok {
-		tr.LazyPrintf("marking this repository for offline ranking")
-		args.UseOfflineRanking = true
 	}
 
 	args.DeltaShardNumberFallbackThreshold = s.deltaShardNumberFallbackThreshold
@@ -1131,11 +1127,6 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug.Printf("using delta shard builds for: %s", joinStringSet(deltaBuildRepositoriesAllowList, ", "))
 	}
 
-	offlineRankingAllowList := getEnvWithDefaultEmptySet("OFFLINE_RANKING_REPOS_ALLOWLIST")
-	if len(offlineRankingAllowList) > 0 {
-		debug.Printf("using offline ranking for: %s", joinStringSet(offlineRankingAllowList, ", "))
-	}
-
 	deltaShardNumberFallbackThreshold := getEnvWithDefaultUint64("DELTA_SHARD_NUMBER_FALLBACK_THRESHOLD", 150)
 	if deltaShardNumberFallbackThreshold > 0 {
 		debug.Printf("setting delta shard fallback threshold to %d shard(s)", deltaShardNumberFallbackThreshold)
@@ -1192,7 +1183,6 @@ func newServer(conf rootConfig) (*Server, error) {
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
 		deltaShardNumberFallbackThreshold: deltaShardNumberFallbackThreshold,
 		repositoriesSkipSymbolsCalculationAllowList: reposShouldSkipSymbolsCalculation,
-		offlineRankingAllowList:                     offlineRankingAllowList,
 	}, err
 }
 
