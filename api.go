@@ -36,7 +36,9 @@ type FileMatch struct {
 	// Ranking; the higher, the better.
 	Score float64 // TODO - hide this field?
 
-	// Experimental. A score vector. Components should be compared pairwise.
+	// Experimental. ranks is a vector containing floats in the interval [0, 1]. The
+	// length of the vector depends on the output from the ranking function at index
+	// time.
 	ranks []float64
 
 	// For debugging. Needs DebugScore set, but public so tests in
