@@ -388,12 +388,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	// roc.ranks.sz = 0 indicates that we are reading a shard without ranks, in
 	// which case we skip reading the section and leave d.ranks = nil
 	if toc.ranks.sz > 0 {
-		blob, err := d.readSectionBlob(toc.ranks)
-		if err != nil {
-			return nil, err
-		}
-
-		err = decodeRanks(blob, &d.ranks)
+		err = d.readRanks(toc)
 		if err != nil {
 			return nil, err
 		}
@@ -583,6 +578,15 @@ func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]Document
 	}
 
 	return unmarshalDocSections(blob, buf), sec.sz, nil
+}
+
+func (d *indexData) readRanks(toc *indexTOC) error {
+	blob, err := d.readSectionBlob(toc.ranks)
+	if err != nil {
+		return err
+	}
+
+	return decodeRanks(blob, &d.ranks)
 }
 
 // NewSearcher creates a Searcher for a single index file.  Search
