@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/mockSearcher"
@@ -129,10 +128,6 @@ func TestEventStreamWriter(t *testing.T) {
 		},
 	}
 
-	ignored := cmp.Options{
-		cmpopts.IgnoreFields(zoekt.FileMatch{}, "ranks"),
-	}
-
 	for _, tt := range tests {
 		t.Run(tt.event.string(), func(t *testing.T) {
 			err := esw.event(tt.event, tt.data)
@@ -147,7 +142,7 @@ func TestEventStreamWriter(t *testing.T) {
 			if reply.Event != tt.event {
 				t.Fatalf("got %s, want %s", reply.Event.string(), tt.event.string())
 			}
-			if d := cmp.Diff(tt.data, reply.Data, ignored); d != "" {
+			if d := cmp.Diff(tt.data, reply.Data, cmp.AllowUnexported(zoekt.FileMatch{})); d != "" {
 				t.Fatalf("mismatch for event type %s (-want +got):\n%s", tt.event.string(), d)
 			}
 		})

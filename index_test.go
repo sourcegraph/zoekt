@@ -250,11 +250,7 @@ func TestNewlines(t *testing.T) {
 			}},
 		}}
 
-		ignored := cmp.Options{
-			cmpopts.IgnoreFields(FileMatch{}, "ranks"),
-		}
-
-		if diff := cmp.Diff(want, matches, ignored); diff != "" {
+		if diff := cmp.Diff(want, matches, cmp.AllowUnexported(FileMatch{})); diff != "" {
 			t.Fatal(diff)
 		}
 	})
