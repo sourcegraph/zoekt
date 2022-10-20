@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
@@ -28,8 +29,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -354,4 +357,38 @@ func TestBackfillIDIsDeterministic(t *testing.T) {
 	if have1 != have2 {
 		t.Fatalf("%s != %s ", have1, have2)
 	}
+}
+
+func Test_encodeRanks(t *testing.T) {
+	n := 10 // num files
+	m := 5  // len of ranking vec
+
+	ranks := make([][]float64, n)
+
+	rand.Seed(time.Now().Unix())
+
+	for i, _ := range ranks {
+		s := make([]float64, m)
+		for j := 0; j < m; j++ {
+			s[j] = rand.Float64()
+		}
+		ranks[i] = s
+	}
+
+	buf := bytes.Buffer{}
+	w := writer{w: &buf}
+
+	if err := w.encodeRanks(ranks); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &indexData{}
+	if err := decodeRanks(buf.Bytes(), &d.ranks); err != nil {
+		t.Fatal(err)
+	}
+
+	if d := cmp.Diff(ranks, d.ranks); d != "" {
+		t.Fatalf("-want, +got:\n%+v\n", d)
+	}
+
 }

@@ -95,6 +95,9 @@ type indexData struct {
 	// repository indexes for all the files
 	repos []uint16
 
+	// Experimental: docID => rank vec
+	ranks [][]float64
+
 	// rawConfigMasks contains the encoded RawConfig for each repository
 	rawConfigMasks []uint8
 }

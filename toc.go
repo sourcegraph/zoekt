@@ -97,6 +97,8 @@ type indexTOC struct {
 	runeDocSections  simpleSection
 
 	repos simpleSection
+
+	ranks simpleSection
 }
 
 func (t *indexTOC) sections() []section {
@@ -184,6 +186,8 @@ func (t *indexTOC) sectionsTaggedList() []taggedSection {
 		// avoid warnings about unknown sections.
 		{"nameBloom", &unusedSimple},
 		{"contentBloom", &unusedSimple},
+
+		{"ranks", &t.ranks},
 	}
 }
 

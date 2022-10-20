@@ -385,6 +385,20 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
+	// roc.ranks.sz = 0 indicates that we are reading a shard without ranks, in
+	// which case we skip reading the section and leave d.ranks = nil
+	if toc.ranks.sz > 0 {
+		blob, err := d.readSectionBlob(toc.ranks)
+		if err != nil {
+			return nil, err
+		}
+
+		err = decodeRanks(blob, &d.ranks)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if d.metaData.IndexFormatVersion >= 17 {
 		blob, err := d.readSectionBlob(toc.repos)
 		if err != nil {
