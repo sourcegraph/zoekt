@@ -498,14 +498,6 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		}
 	}
 
-	rankVecForPath := func(path string) []float64 {
-		s, ok := ranks[path]
-		if !ok {
-			return nil
-		}
-		return s
-	}
-
 	// we don't need to check error, since we either already have an error, or
 	// we returning the first call to builder.Finish.
 	defer builder.Finish() // nolint:errcheck
@@ -558,7 +550,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				Name:              keyFullPath,
 				Content:           contents,
 				Branches:          brs,
-				Ranks:             rankVecForPath(keyFullPath),
+				Ranks:             ranks[keyFullPath],
 			}); err != nil {
 				return fmt.Errorf("error adding document with name %s: %w", keyFullPath, err)
 			}
