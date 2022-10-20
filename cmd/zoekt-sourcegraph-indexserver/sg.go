@@ -79,6 +79,9 @@ type Sourcegraph interface {
 	// rank vectors. Paths are assumed to be ordered by each pairwise component of
 	// the resulting vector, higher ranks coming earlier
 	GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error)
+
+	// UpdateIndexStatus sends a request to Sourcegraph to confirm that the given repository has been indexed.
+	UpdateIndexStatus(repoID uint32, branches []zoekt.RepositoryBranch) error
 }
 
 func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sourcegraphClient {
@@ -445,6 +448,38 @@ func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) (
 	return data.RepoIDs, nil
 }
 
+// UpdateIndexStatus sends a request to Sourcegraph to confirm that the given repository has been indexed.
+func (s *sourcegraphClient) UpdateIndexStatus(repoID uint32, branches []zoekt.RepositoryBranch) error {
+	type updateIndexStatusRequest struct {
+		RepoID   uint32
+		Branches []zoekt.RepositoryBranch
+	}
+	body := &updateIndexStatusRequest{RepoID: repoID, Branches: branches}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	u := s.Root.ResolveReference(&url.URL{Path: "/.internal/search/index-status"})
+	req, err := retryablehttp.NewRequest(http.MethodPost, u.String(), bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf8")
+
+	resp, err := s.doRequest(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to update index status: status %s", resp.Status)
+	}
+
+	return nil
+}
+
 // doRequest executes the provided request after adding the appropriate headers
 // for interacting with a Sourcegraph instance.
 func (s *sourcegraphClient) doRequest(req *retryablehttp.Request) (*http.Response, error) {
@@ -719,6 +754,11 @@ func (sf sourcegraphFake) visitRepos(visit func(name string)) error {
 	})
 }
 
+func (s sourcegraphFake) UpdateIndexStatus(repoID uint32, branches []zoekt.RepositoryBranch) error {
+	// noop
+	return nil
+}
+
 // fakeID returns a deterministic ID based on name. Used for fakes and tests.
 func fakeID(name string) uint32 {
 	// magic at the end is to ensure we get a positive number when casting.
@@ -741,4 +781,8 @@ func (s sourcegraphNop) GetRepoRank(ctx context.Context, repoName string) ([]flo
 
 func (s sourcegraphNop) GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error) {
 	return nil, nil
+}
+
+func (s sourcegraphNop) UpdateIndexStatus(repoID uint32, branches []zoekt.RepositoryBranch) error {
+	return nil
 }
