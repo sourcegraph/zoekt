@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -714,4 +715,32 @@ func sortChunkMatchesByScore(ms []ChunkMatch) {
 // Sort a slice of results.
 func SortFilesByScore(ms []FileMatch) {
 	sort.Sort(fileMatchSlice(ms))
+}
+
+type rankedFileMatchSlice []FileMatch
+
+const epsilon = 0.00000001
+
+func (m rankedFileMatchSlice) Len() int      { return len(m) }
+func (m rankedFileMatchSlice) Swap(i, j int) { m[i], m[j] = m[j], m[i] }
+func (m rankedFileMatchSlice) Less(i, j int) bool {
+	r1 := m[i].ranks
+	r2 := m[j].ranks
+
+	l := len(r1)
+	if len(r2) < l {
+		l = len(r2)
+	}
+	for i := 0; i < l; i++ {
+		if math.Abs(r1[i]-r2[i]) > epsilon {
+			return r1[i] > r2[i]
+		}
+	}
+	// if r1 has more entries it is more important. ie imagine right padding shorter
+	// arrays with zeros, so they are the same length.
+	return len(r1) > len(r2)
+}
+
+func SortFilesByRank(ms []FileMatch) {
+	sort.Sort(rankedFileMatchSlice(ms))
 }

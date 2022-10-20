@@ -36,6 +36,9 @@ type FileMatch struct {
 	// Ranking; the higher, the better.
 	Score float64 // TODO - hide this field?
 
+	// Experimental. A score vector. Components should be compared pairwise.
+	ranks []float64
+
 	// For debugging. Needs DebugScore set, but public so tests in
 	// other packages can print some diagnostics.
 	Debug string
@@ -443,6 +446,16 @@ type SearchResult struct {
 	// FragmentNames holds a repo => template string map, for
 	// the line number fragment.
 	LineFragments map[string]string
+}
+
+// HasRanks returns true if any sr.Files has a non-zero rank vector
+func (sr *SearchResult) HasRanks() bool {
+	for _, f := range sr.Files {
+		if len(f.ranks) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // SizeBytes is a best-effort estimate of the size of SearchResult in memory.
