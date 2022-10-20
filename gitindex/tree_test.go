@@ -61,7 +61,6 @@ git config user.name "Your Name"
 git commit -am bmsg
 
 cd ../adir
-git config protocol.file.allow always
 git submodule add --name bname -- ../bdir bname
 git commit -am bmodmsg
 cat .gitmodules
