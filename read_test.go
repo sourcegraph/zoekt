@@ -376,9 +376,9 @@ func Test_encodeRanks(t *testing.T) {
 	}
 
 	buf := bytes.Buffer{}
-	w := writer{w: &buf}
+	w := &writer{w: &buf}
 
-	if err := w.encodeRanks(ranks); err != nil {
+	if err := encodeRanks(w, ranks); err != nil {
 		t.Fatal(err)
 	}
 

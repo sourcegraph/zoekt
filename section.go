@@ -74,7 +74,7 @@ func (w *writer) String(s string) {
 	w.Write(b)
 }
 
-func (w *writer) encodeRanks(ranks [][]float64) error {
+func encodeRanks(w io.Writer, ranks [][]float64) error {
 	hasRank := false
 	for _, r := range ranks {
 		if len(r) > 0 {

@@ -200,7 +200,7 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}
 
 	toc.ranks.start(w)
-	if err := w.encodeRanks(b.ranks); err != nil {
+	if err := encodeRanks(w, b.ranks); err != nil {
 		return err
 	}
 	toc.ranks.end(w)
