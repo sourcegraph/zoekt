@@ -453,16 +453,6 @@ type SearchResult struct {
 	LineFragments map[string]string
 }
 
-// HasRanks returns true if any sr.Files has a non-zero rank vector
-func (sr *SearchResult) HasRanks() bool {
-	for _, f := range sr.Files {
-		if len(f.ranks) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // SizeBytes is a best-effort estimate of the size of SearchResult in memory.
 // The estimate does not take alignment into account. The result is a lower
 // bound on the actual size in memory.

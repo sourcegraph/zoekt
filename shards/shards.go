@@ -694,19 +694,14 @@ search:
 // RepoURLs and LineFragments in zoekt.SearchResult.
 func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
 
-	sortFiles := zoekt.SortFilesByScore
-	if result.HasRanks() {
-		sortFiles = zoekt.SortFilesByRank
-	}
-
 	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
-		sortFiles(result.Files)
+		zoekt.SortFiles(result.Files)
 		sender.Send(result)
 		return
 	}
 
 	send := func(repoName string, a, b int, stats zoekt.Stats) {
-		sortFiles(result.Files[a:b])
+		zoekt.SortFiles(result.Files[a:b])
 		sender.Send(&zoekt.SearchResult{
 			Stats: stats,
 			Progress: zoekt.Progress{

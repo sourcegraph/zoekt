@@ -712,9 +712,24 @@ func sortChunkMatchesByScore(ms []ChunkMatch) {
 	sort.Sort(chunkMatchScoreSlice(ms))
 }
 
-// Sort a slice of results.
-func SortFilesByScore(ms []FileMatch) {
+// SortFiles sorts a slice of results by rank. If ranks aren't available, it
+// sorts by score
+func SortFiles(ms []FileMatch) {
+	if hasRanks(ms) {
+		sort.Sort(rankedFileMatchSlice(ms))
+		return
+	}
 	sort.Sort(fileMatchSlice(ms))
+}
+
+// hasRanks returns true if any sr.Files has a non-zero rank vector
+func hasRanks(fm []FileMatch) bool {
+	for _, f := range fm {
+		if len(f.ranks) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 type rankedFileMatchSlice []FileMatch
@@ -739,8 +754,4 @@ func (m rankedFileMatchSlice) Less(i, j int) bool {
 	// if r1 has more entries it is more important. ie imagine right padding shorter
 	// arrays with zeros, so they are the same length.
 	return len(r1) > len(r2)
-}
-
-func SortFilesByRank(ms []FileMatch) {
-	sort.Sort(rankedFileMatchSlice(ms))
 }
