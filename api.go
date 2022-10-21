@@ -36,10 +36,10 @@ type FileMatch struct {
 	// Ranking; the higher, the better.
 	Score float64 // TODO - hide this field?
 
-	// Experimental. ranks is a vector containing floats in the interval [0, 1]. The
+	// Experimental. Ranks is a vector containing floats in the interval [0, 1]. The
 	// length of the vector depends on the output from the ranking function at index
 	// time.
-	ranks []float64
+	Ranks []float64
 
 	// For debugging. Needs DebugScore set, but public so tests in
 	// other packages can print some diagnostics.
@@ -91,7 +91,7 @@ func (m *FileMatch) sizeBytes() (sz uint64) {
 	sz += 8
 
 	// ranks
-	sz += 8 * uint64(len(m.ranks))
+	sz += 8 * uint64(len(m.Ranks))
 
 	for _, s := range []string{
 		m.Debug,

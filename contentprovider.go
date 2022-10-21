@@ -698,11 +698,11 @@ func (m chunkMatchScoreSlice) Len() int           { return len(m) }
 func (m chunkMatchScoreSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 func (m chunkMatchScoreSlice) Less(i, j int) bool { return m[i].Score > m[j].Score }
 
-type fileMatchSlice []FileMatch
+type fileMatchesByScore []FileMatch
 
-func (m fileMatchSlice) Len() int           { return len(m) }
-func (m fileMatchSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
-func (m fileMatchSlice) Less(i, j int) bool { return m[i].Score > m[j].Score }
+func (m fileMatchesByScore) Len() int           { return len(m) }
+func (m fileMatchesByScore) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
+func (m fileMatchesByScore) Less(i, j int) bool { return m[i].Score > m[j].Score }
 
 func sortMatchesByScore(ms []LineMatch) {
 	sort.Sort(matchScoreSlice(ms))
@@ -712,35 +712,62 @@ func sortChunkMatchesByScore(ms []ChunkMatch) {
 	sort.Sort(chunkMatchScoreSlice(ms))
 }
 
-// SortFiles sorts a slice of results by rank. If ranks aren't available, it
-// sorts by score
+// k = 60 is arbitrary but reportedly works well (RFF; Cormack et al., 2009)
+const k = 60
+
+// SortFiles sorts files matches. The order depends on the match score and, if
+// ranks are available, on the pre-computed offline ranks.
+//
+// Rankings derived from match scores and rank vectors are combined based on
+// "Reciprocal Rank Fusion" (RFF).
 func SortFiles(ms []FileMatch) {
+	sort.Sort(fileMatchesByScore(ms))
+
 	if hasRanks(ms) {
-		sort.Sort(rankedFileMatchSlice(ms))
-		return
+		rffScore := make([]float64, len(ms))
+
+		for i := 0; i < len(ms); i++ {
+			rffScore[i] = 1 / (k + float64(i))
+		}
+
+		sort.Sort(fileMatchesByRank{fileMatches: ms, rffScore: rffScore})
+
+		for i := 0; i < len(ms); i++ {
+			rffScore[i] += 1 / (k + float64(i))
+		}
+
+		sort.Sort(fileMatchesByRFFScore{fileMatches: ms, rffScore: rffScore})
 	}
-	sort.Sort(fileMatchSlice(ms))
 }
 
 // hasRanks returns true if any sr.Files has a non-zero rank vector
 func hasRanks(fm []FileMatch) bool {
 	for _, f := range fm {
-		if len(f.ranks) > 0 {
+		if len(f.Ranks) > 0 {
 			return true
 		}
 	}
+
 	return false
 }
 
-type rankedFileMatchSlice []FileMatch
+type fileMatchesByRank struct {
+	fileMatches []FileMatch
+	rffScore    []float64
+}
+
+func (m fileMatchesByRank) Len() int { return len(m.fileMatches) }
+
+func (m fileMatchesByRank) Swap(i, j int) {
+	m.fileMatches[i], m.fileMatches[j] = m.fileMatches[j], m.fileMatches[i]
+	m.rffScore[i], m.rffScore[j] = m.rffScore[j], m.rffScore[i]
+}
 
 const epsilon = 0.00000001
 
-func (m rankedFileMatchSlice) Len() int      { return len(m) }
-func (m rankedFileMatchSlice) Swap(i, j int) { m[i], m[j] = m[j], m[i] }
-func (m rankedFileMatchSlice) Less(i, j int) bool {
-	r1 := m[i].ranks
-	r2 := m[j].ranks
+func (m fileMatchesByRank) Less(i, j int) bool {
+	r1 := m.fileMatches[i].Ranks
+	r2 := m.fileMatches[j].Ranks
 
 	l := len(r1)
 	if len(r2) < l {
@@ -754,4 +781,20 @@ func (m rankedFileMatchSlice) Less(i, j int) bool {
 	// if r1 has more entries it is more important. ie imagine right padding shorter
 	// arrays with zeros, so they are the same length.
 	return len(r1) > len(r2)
+}
+
+type fileMatchesByRFFScore struct {
+	fileMatches []FileMatch
+	rffScore    []float64
+}
+
+func (m fileMatchesByRFFScore) Len() int { return len(m.fileMatches) }
+
+func (m fileMatchesByRFFScore) Swap(i, j int) {
+	m.fileMatches[i], m.fileMatches[j] = m.fileMatches[j], m.fileMatches[i]
+	m.rffScore[i], m.rffScore[j] = m.rffScore[j], m.rffScore[i]
+}
+
+func (m fileMatchesByRFFScore) Less(i, j int) bool {
+	return m.rffScore[i] > m.rffScore[j]
 }

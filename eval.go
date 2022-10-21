@@ -372,7 +372,7 @@ nextFileMatch:
 		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))), opts.DebugScore)
 
 		if len(d.ranks) > int(nextDoc) {
-			fileMatch.ranks = d.ranks[nextDoc]
+			fileMatch.Ranks = d.ranks[nextDoc]
 		}
 
 		fileMatch.addScore("shard-order", scoreShardRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)

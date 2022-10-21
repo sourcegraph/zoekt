@@ -142,7 +142,7 @@ func TestEventStreamWriter(t *testing.T) {
 			if reply.Event != tt.event {
 				t.Fatalf("got %s, want %s", reply.Event.string(), tt.event.string())
 			}
-			if d := cmp.Diff(tt.data, reply.Data, cmp.AllowUnexported(zoekt.FileMatch{})); d != "" {
+			if d := cmp.Diff(tt.data, reply.Data); d != "" {
 				t.Fatalf("mismatch for event type %s (-want +got):\n%s", tt.event.string(), d)
 			}
 		})

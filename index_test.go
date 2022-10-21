@@ -250,7 +250,7 @@ func TestNewlines(t *testing.T) {
 			}},
 		}}
 
-		if diff := cmp.Diff(want, matches, cmp.AllowUnexported(FileMatch{})); diff != "" {
+		if diff := cmp.Diff(want, matches); diff != "" {
 			t.Fatal(diff)
 		}
 	})
