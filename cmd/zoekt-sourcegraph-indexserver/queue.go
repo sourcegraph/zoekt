@@ -38,12 +38,8 @@ type queueItem struct {
 	// dateAddedToQueue is the time when this indexing job was added to the queue. If this item is no longer
 	// in the heap (i.e. it has been processed already), this value is nonsensical.
 	dateAddedToQueue time.Time
-	// consecutiveFailures is the count of preceding consecutive failures. Backoff duration upon indexing failure increases linearly
-	// with this count,
-	consecutiveFailures int
-	// backOffUntil is the earliest time when we allow the item to be pushed to the heap. Until then the item will not be enqueued
-	// and indexing will not be attempted.
-	backoffUntil time.Time
+	// backoff will handle backing off of future indexing requests for a duration of time based on previous failures
+	backoff backoff
 }
 
 // Queue is a priority queue which returns the next repo to index. It is safe
@@ -54,16 +50,34 @@ type queueItem struct {
 // We use the above since:
 //
 // * We rather index a repo sooner if we know the commit is stale.
-// * The order of repos returned by Sourcegraph API are ordered by importance.
-// GLEE: Is the above statement true?
 type Queue struct {
-	mu              sync.Mutex
-	items           map[uint32]*queueItem
-	pq              pqueue
-	seq             int64
-	backoffDuration time.Duration
-	maxBackoff      time.Duration
-	logger          sglog.Logger
+	mu           sync.Mutex
+	items        map[uint32]*queueItem
+	pq           pqueue
+	seq          int64
+	logger       sglog.Logger
+	newQueueItem func(uint32) *queueItem
+}
+
+func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l sglog.Logger) *Queue {
+	newQueueItem := func(repoID uint32) *queueItem {
+		return &queueItem{
+			repoID:  repoID,
+			heapIdx: -1,
+			backoff: backoff{
+				backoffDuration: backoffDuration,
+				maxBackoff:      maxBackoffDuration,
+			},
+		}
+	}
+
+	q := &Queue{
+		newQueueItem: newQueueItem,
+		logger:       l.Scoped("queue", "zoekt-indexserver queue operations"),
+	}
+
+	q.init()
+	return q
 }
 
 // Pop returns the opts of the next repo to index. If the queue is empty ok is
@@ -111,13 +125,7 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 		item.opts = opts
 	}
 	if item.heapIdx < 0 {
-		if item.backoffUntil.After(time.Now()) {
-			q.logger.Debug("Backoff enqueue of repository",
-				sglog.String("repo", opts.Name),
-				sglog.Uint32("id", opts.RepoID),
-				sglog.Time("backoff_until", item.backoffUntil),
-			)
-		} else {
+		if item.backoff.Allow(time.Now()) {
 			q.seq++
 			item.seq = q.seq
 			item.dateAddedToQueue = time.Now()
@@ -149,13 +157,7 @@ func (q *Queue) Bump(ids []uint32) []uint32 {
 		if !ok {
 			missing = append(missing, id)
 		} else if item.heapIdx < 0 {
-			if item.backoffUntil.After(time.Now()) {
-				q.logger.Debug("Backoff enqueue of repository",
-					sglog.String("repo", item.opts.Name),
-					sglog.Uint32("id", id),
-					sglog.Time("backoff_until", item.backoffUntil),
-				)
-			} else {
+			if item.backoff.Allow(time.Now()) {
 				q.seq++
 				item.seq = q.seq
 				item.dateAddedToQueue = time.Now()
@@ -280,35 +282,20 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	item.indexState = state
 	if state != indexStateFail {
 		item.indexed = reflect.DeepEqual(opts, item.opts)
-		item.consecutiveFailures = 0
-		item.backoffUntil = time.Unix(0, 0)
-	} else {
-		backoffDuration := time.Duration(item.consecutiveFailures+1) * q.backoffDuration
+		item.backoff.Reset()
 
-		if backoffDuration > q.maxBackoff {
-			backoffDuration = q.maxBackoff
-		} else {
-			item.consecutiveFailures++
-		}
-		item.backoffUntil = time.Now().Add(backoffDuration)
-
-		q.logger.Debug("Backoff subsequent attempts to index repository",
-			sglog.String("repo", item.opts.Name),
-			sglog.Uint32("id", item.repoID),
-			sglog.Duration("backoff_duration", backoffDuration),
-			sglog.Time("backoff_until", item.backoffUntil),
-		)
-
-		// if we backoff indexing for a repo then it should never pop for processQueue
 		if item.heapIdx >= 0 {
+			// We only update the position in the queue, never add it.
+			heap.Fix(&q.pq, item.heapIdx)
+		}
+	} else {
+		item.backoff.Fail(time.Now(), q.logger, item.opts)
+
+		if item.heapIdx >= 0 {
+			// Remove from queue
 			heap.Remove(&q.pq, item.heapIdx)
 			item.heapIdx = -1
 		}
-	}
-
-	if item.heapIdx >= 0 {
-		// We only update the position in the queue, never add it.
-		heap.Fix(&q.pq, item.heapIdx)
 	}
 
 	q.mu.Unlock()
@@ -376,11 +363,7 @@ func (q *Queue) getOrAdd(repoID uint32) *queueItem {
 
 	item, ok := q.items[repoID]
 	if !ok {
-		item = &queueItem{
-			repoID:  repoID,
-			heapIdx: -1,
-		}
-		q.items[repoID] = item
+		q.items[repoID] = q.newQueueItem(repoID)
 	}
 
 	return item
@@ -391,15 +374,6 @@ func (q *Queue) getOrAdd(repoID uint32) *queueItem {
 // Note: get requires that q.mu is held.
 func (q *Queue) get(repoID uint32) *queueItem {
 	return q.items[repoID]
-}
-
-func (q *Queue) Init(backoffDuration time.Duration, maxBackoff time.Duration, l sglog.Logger) {
-	if q.items == nil {
-		q.init()
-	}
-	q.backoffDuration = backoffDuration
-	q.maxBackoff = maxBackoff
-	q.logger = l.Scoped("queue", "zoekt-indexserver queue operations")
 }
 
 func (q *Queue) init() {

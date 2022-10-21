@@ -1167,8 +1167,7 @@ func newServer(conf rootConfig) (*Server, error) {
 
 	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
 
-	q := Queue{}
-	q.Init(conf.backoffDuration, conf.maxBackoffDuration, logger)
+	q := NewQueue(conf.backoffDuration, conf.maxBackoffDuration, logger)
 
 	return &Server{
 		logger:                            logger,
@@ -1180,7 +1179,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		MergeInterval:                     conf.mergeInterval,
 		CPUCount:                          cpuCount,
 		TargetSizeBytes:                   conf.targetSize * 1024 * 1024,
-		queue:                             q,
+		queue:                             *q,
 		minSizeBytes:                      conf.minSize * 1024 * 1024,
 		shardMerging:                      zoekt.ShardMergingEnabled(),
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
