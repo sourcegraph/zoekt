@@ -139,7 +139,6 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 	copyOpts := *opts
 	opts = &copyOpts
 	opts.SetDefaults()
-	importantMatchCount := 0
 
 	var res SearchResult
 	if len(d.fileNameIndex) == 0 {
@@ -372,9 +371,6 @@ nextFileMatch:
 		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))), opts.DebugScore)
 		fileMatch.addScore("shard-order", scoreShardRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)
 
-		if fileMatch.Score > scoreImportantThreshold {
-			importantMatchCount++
-		}
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
 		sortMatchesByScore(fileMatch.LineMatches)
 		sortChunkMatchesByScore(fileMatch.ChunkMatches)
