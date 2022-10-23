@@ -363,7 +363,8 @@ func (q *Queue) getOrAdd(repoID uint32) *queueItem {
 
 	item, ok := q.items[repoID]
 	if !ok {
-		q.items[repoID] = q.newQueueItem(repoID)
+		item = q.newQueueItem(repoID)
+		q.items[repoID] = item
 	}
 
 	return item
