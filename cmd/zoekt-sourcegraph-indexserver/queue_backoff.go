@@ -19,7 +19,7 @@ type backoff struct {
 }
 
 func (b *backoff) Allow(now time.Time) bool {
-	return b.backoffUntil.After(now)
+	return b.backoffUntil.Before(now)
 }
 
 func (b *backoff) Reset() {
