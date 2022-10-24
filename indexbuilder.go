@@ -176,7 +176,7 @@ type IndexBuilder struct {
 	// docID => repoID
 	repos []uint16
 
-	// Experimental docID => rank vec
+	// Experimental: docID => rank vec
 	ranks [][]float64
 
 	contentPostings *postingsBuilder

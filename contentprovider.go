@@ -712,11 +712,11 @@ func sortChunkMatchesByScore(ms []ChunkMatch) {
 	sort.Sort(chunkMatchScoreSlice(ms))
 }
 
-// k = 60 is arbitrary but reportedly works well (RFF; Cormack et al., 2009)
+// k = 60 is arbitrary but reportedly works well (RFF; Cormack et al., 2009).
 const k = 60
 
 // SortFiles sorts files matches. The order depends on the match score and, if
-// ranks are available, on the pre-computed offline ranks.
+// available, on the pre-computed document ranks.
 //
 // Rankings derived from match scores and rank vectors are combined based on
 // "Reciprocal Rank Fusion" (RFF).
@@ -796,5 +796,6 @@ func (m fileMatchesByRFFScore) Swap(i, j int) {
 }
 
 func (m fileMatchesByRFFScore) Less(i, j int) bool {
+	// Higher scores are better.
 	return m.rffScore[i] > m.rffScore[j]
 }

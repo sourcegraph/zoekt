@@ -361,7 +361,7 @@ func TestBackfillIDIsDeterministic(t *testing.T) {
 
 func Test_encodeRanks(t *testing.T) {
 	n := 10 // num files
-	m := 5  // len of ranking vec
+	m := 5  // len of rank vector
 
 	ranks := make([][]float64, n)
 
