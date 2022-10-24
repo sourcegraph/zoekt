@@ -5,6 +5,7 @@
     [
       {
         "Score": 910,
+        "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
         "Repository": "repo",
@@ -44,6 +45,7 @@
     [
       {
         "Score": 710,
+        "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
         "Repository": "repo",
@@ -83,6 +85,7 @@
     [
       {
         "Score": 7910,
+        "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
         "Repository": "repo",
@@ -127,6 +130,7 @@
     [
       {
         "Score": 5760,
+        "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
         "Repository": "repo",
