@@ -84,8 +84,6 @@ type indexArgs struct {
 	// only be true for repositories we explicitly enable.
 	UseDelta bool
 
-	UseOfflineRanking bool
-
 	// DeltaShardNumberFallbackThreshold is an upper limit on the number of preexisting shards that can exist
 	// before attempting a delta build.
 	DeltaShardNumberFallbackThreshold uint64
@@ -324,25 +322,39 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		"-submodules=false",
 	}
 
-	// We store the document ranks as JSON in gitDir and tell zoekt-git-index where
-	// to find the file.
-	if o.UseOfflineRanking {
+	if rankingEnabled {
+		// We store the document ranks as JSON in gitDir and tell zoekt-git-index where
+		// to find the file.
 		documentsRankFile := filepath.Join(gitDir, "documents.rank")
 
-		args = append(args, "-offline_ranking", documentsRankFile)
+		saveDocumentRanks := func() error {
+			r, err := sourcegraph.GetDocumentRanks(context.Background(), o.Name)
+			if err != nil {
+				return fmt.Errorf("GetDocumentRanks: %w", err)
+			}
 
-		r, err := sourcegraph.GetDocumentRanks(context.Background(), o.Name)
-		if err != nil {
-			return fmt.Errorf("GetDocumentRanks: %w", err)
+			b, err := json.Marshal(r)
+			if err != nil {
+				return err
+			}
+
+			if err := os.WriteFile(documentsRankFile, b, 0600); err != nil {
+				return fmt.Errorf("failed to write %s to disk: %w", documentsRankFile, err)
+			}
+
+			return nil
 		}
 
-		b, err := json.Marshal(r)
-		if err != nil {
-			return err
-		}
-
-		if err := os.WriteFile(documentsRankFile, b, 0600); err != nil {
-			return fmt.Errorf("failed to write %s to disk: %w", documentsRankFile, err)
+		if err := saveDocumentRanks(); err != nil {
+			// log and fall back to online ranking
+			logger.Warn(
+				"error saving document ranks. Falling back to online ranking",
+				sglog.Error(err),
+				sglog.String("repo", o.Name),
+				sglog.Uint32("id", o.RepoID),
+			)
+		} else {
+			args = append(args, "-offline_ranking", documentsRankFile)
 		}
 	}
 

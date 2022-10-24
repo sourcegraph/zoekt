@@ -176,6 +176,9 @@ type IndexBuilder struct {
 	// docID => repoID
 	repos []uint16
 
+	// Experimental: docID => rank vec
+	ranks [][]float64
+
 	contentPostings *postingsBuilder
 	namePostings    *postingsBuilder
 
@@ -498,6 +501,10 @@ func (b *IndexBuilder) Add(doc Document) error {
 
 	b.subRepos = append(b.subRepos, subRepoIdx)
 	b.repos = append(b.repos, uint16(repoIdx))
+
+	// doc.Ranks might be nil. In case we don't use offline ranking, doc.Ranks is
+	// always nil.
+	b.ranks = append(b.ranks, doc.Ranks)
 
 	hasher.Write(doc.Content)
 

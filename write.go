@@ -199,6 +199,12 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 		}
 	}
 
+	toc.ranks.start(w)
+	if err := encodeRanks(w, b.ranks); err != nil {
+		return err
+	}
+	toc.ranks.end(w)
+
 	var tocSection simpleSection
 
 	tocSection.start(w)

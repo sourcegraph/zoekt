@@ -62,7 +62,8 @@ func (c *collectSender) Done() (_ *zoekt.SearchResult, ok bool) {
 	agg := c.aggregate
 	c.aggregate = nil
 
-	zoekt.SortFilesByScore(agg.Files)
+	zoekt.SortFiles(agg.Files)
+
 	if max := c.maxDocDisplayCount; max > 0 && len(agg.Files) > max {
 		agg.Files = agg.Files[:max]
 	}

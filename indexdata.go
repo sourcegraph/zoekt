@@ -95,6 +95,9 @@ type indexData struct {
 	// repository indexes for all the files
 	repos []uint16
 
+	// Experimental: docID => rank vec
+	ranks [][]float64
+
 	// rawConfigMasks contains the encoded RawConfig for each repository
 	rawConfigMasks []uint8
 }
@@ -306,6 +309,9 @@ func (d *indexData) memoryUse() int {
 	sz += len(d.languages)
 	sz += len(d.checksums)
 	sz += 2 * len(d.repos)
+	if len(d.ranks) > 0 {
+		sz += 8 * len(d.ranks) * len(d.ranks[0])
+	}
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
 	sz += d.ngrams.SizeBytes()
