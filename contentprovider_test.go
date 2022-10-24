@@ -327,7 +327,7 @@ func TestChunkMatches(t *testing.T) {
 	}
 }
 
-func Test_SortFiles(t *testing.T) {
+func TestSortFiles(t *testing.T) {
 	in := []FileMatch{
 		{FileName: "d1", Score: 2, Ranks: []float64{0.75}},
 		{FileName: "d2", Score: 4, Ranks: []float64{0.25}},
