@@ -359,7 +359,7 @@ func TestBackfillIDIsDeterministic(t *testing.T) {
 	}
 }
 
-func Test_encodeRanks(t *testing.T) {
+func TestEncodeRanks(t *testing.T) {
 	f := func(ranks [][]float64) bool {
 		buf := bytes.Buffer{}
 		w := &writer{w: &buf}
@@ -368,8 +368,9 @@ func Test_encodeRanks(t *testing.T) {
 			return false
 		}
 
-		// In case all rank vectors are empty, IE {{}, {}, ...}, gob decode will decode
-		// this as nil, which will fail the comparison.
+		// In case all rank vectors are empty, IE {{}, {}, ...}, we won't write anything
+		// to w and gob decode will decode this as "nil", which will fail the
+		// comparison even with cmpopts.EquateEmpty().
 		if w.off == 0 {
 			return true
 		}
