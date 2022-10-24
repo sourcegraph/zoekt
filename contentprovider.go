@@ -732,7 +732,7 @@ func SortFiles(ms []FileMatch) {
 
 		sort.Sort(fileMatchesByRank{fileMatches: ms, rffScore: rffScore})
 
-		for i := 0; i < len(ms); i++ {
+		for i := range rffScore {
 			rffScore[i] += 1 / (k + float64(i))
 		}
 
