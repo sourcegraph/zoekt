@@ -60,6 +60,10 @@ type Queue struct {
 }
 
 func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l sglog.Logger) *Queue {
+	if backoffDuration < 0 || maxBackoffDuration < 0 {
+		backoffDuration = 0
+		maxBackoffDuration = 0
+	}
 	newQueueItem := func(repoID uint32) *queueItem {
 		return &queueItem{
 			repoID:  repoID,
