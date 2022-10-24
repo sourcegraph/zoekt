@@ -98,6 +98,10 @@ func encodeRanks(w io.Writer, ranks [][]float64) error {
 }
 
 func decodeRanks(blob []byte, ranks *[][]float64) error {
+	if len(blob) == 0 {
+		return nil
+	}
+
 	switch encoding := blob[0]; encoding {
 	case 0: // gob-encoding
 		dec := gob.NewDecoder(bytes.NewReader(blob[1:]))

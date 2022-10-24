@@ -21,7 +21,6 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
-	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
@@ -29,9 +28,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
+	"testing/quick"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -360,35 +360,35 @@ func TestBackfillIDIsDeterministic(t *testing.T) {
 }
 
 func Test_encodeRanks(t *testing.T) {
-	n := 10 // num files
-	m := 5  // len of rank vector
+	f := func(ranks [][]float64) bool {
+		buf := bytes.Buffer{}
+		w := &writer{w: &buf}
 
-	ranks := make([][]float64, n)
-
-	rand.Seed(time.Now().Unix())
-
-	for i, _ := range ranks {
-		s := make([]float64, m)
-		for j := 0; j < m; j++ {
-			s[j] = rand.Float64()
+		if err := encodeRanks(w, ranks); err != nil {
+			return false
 		}
-		ranks[i] = s
+
+		// In case all rank vectors are empty, IE {{}, {}, ...}, gob decode will decode
+		// this as nil, which will fail the comparison.
+		if w.off == 0 {
+			return true
+		}
+
+		d := &indexData{}
+		if err := decodeRanks(buf.Bytes(), &d.ranks); err != nil {
+			return false
+		}
+
+		if d := cmp.Diff(ranks, d.ranks, cmpopts.EquateEmpty()); d != "" {
+			t.Logf("-want, +got:\n%s\n", d)
+			return false
+		}
+
+		return true
 	}
 
-	buf := bytes.Buffer{}
-	w := &writer{w: &buf}
-
-	if err := encodeRanks(w, ranks); err != nil {
+	if err := quick.Check(f, nil); err != nil {
 		t.Fatal(err)
-	}
-
-	d := &indexData{}
-	if err := decodeRanks(buf.Bytes(), &d.ranks); err != nil {
-		t.Fatal(err)
-	}
-
-	if d := cmp.Diff(ranks, d.ranks); d != "" {
-		t.Fatalf("-want, +got:\n%+v\n", d)
 	}
 
 }
