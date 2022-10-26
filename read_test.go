@@ -360,7 +360,7 @@ func TestBackfillIDIsDeterministic(t *testing.T) {
 }
 
 func TestEncodeRanks(t *testing.T) {
-	f := func(ranks [][]float64) bool {
+	quick.Check(func(ranks [][]float64) bool {
 		buf := bytes.Buffer{}
 		w := &writer{w: &buf}
 
@@ -377,19 +377,13 @@ func TestEncodeRanks(t *testing.T) {
 
 		d := &indexData{}
 		if err := decodeRanks(buf.Bytes(), &d.ranks); err != nil {
-			return false
+			t.Fatal(err)
 		}
 
 		if d := cmp.Diff(ranks, d.ranks, cmpopts.EquateEmpty()); d != "" {
-			t.Logf("-want, +got:\n%s\n", d)
-			return false
+			t.Fatalf("-want, +got:\n%s\n", d)
 		}
 
 		return true
-	}
-
-	if err := quick.Check(f, nil); err != nil {
-		t.Fatal(err)
-	}
-
+	}, nil)
 }
