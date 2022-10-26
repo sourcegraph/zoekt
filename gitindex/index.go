@@ -151,6 +151,15 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 		repo.CommitURLTemplate = u.String() + "/-/commit/{{.Version}}"
 		repo.FileURLTemplate = u.String() + "/-/blob/{{.Version}}/{{.Path}}"
 		repo.LineFragmentTemplate = "#L{{.LineNumber}}"
+	case "gitea":
+		repo.CommitURLTemplate = u.String() + "/commit/{{.Version}}"
+		// NOTE The `display=source` query parameter is required to disable file rendering.
+		// Since line numbers are disabled in rendered files, you wouldn't be able to jump to
+		// a line without `display=source`. This is supported since gitea 1.17.0.
+		// When /src/{{.Version}} is used it will redirect to /src/commit/{{.Version}},
+		// but the query  parameters are obmitted.
+		repo.FileURLTemplate = u.String() + "/src/commit/{{.Version}}/{{.Path}}?display=source"
+		repo.LineFragmentTemplate = "#L{{.LineNumber}}"
 	default:
 		return fmt.Errorf("URL scheme type %q unknown", typ)
 	}
