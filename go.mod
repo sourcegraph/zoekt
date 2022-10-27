@@ -27,6 +27,7 @@ require (
 	github.com/rs/xid v1.4.0
 	github.com/sourcegraph/go-ctags v0.0.0-20220611154803-db463692f037
 	github.com/sourcegraph/log v0.0.0-20221006140640-7c567caa79cb
+	github.com/sourcegraph/mountinfo v0.0.0-20221027185101-272dd8baaf4a
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	github.com/xanzy/go-gitlab v0.73.1
@@ -44,7 +45,6 @@ require (
 	golang.org/x/net v0.1.0
 	golang.org/x/oauth2 v0.1.0
 	golang.org/x/sync v0.1.0
-	golang.org/x/sys v0.1.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
@@ -107,6 +107,7 @@ require (
 	go.uber.org/zap v1.23.0 // indirect
 	golang.org/x/crypto v0.1.0 // indirect
 	golang.org/x/mod v0.6.0 // indirect
+	golang.org/x/sys v0.1.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/time v0.1.0 // indirect
 	golang.org/x/tools v0.2.0 // indirect
