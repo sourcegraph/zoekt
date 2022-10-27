@@ -14,10 +14,7 @@ func TestQueue_BackoffOnFail(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-
-	// Empty queue
-	for ok := true; ok; _, ok = queue.Pop() {
-	}
+	EmptyQueue(queue)
 
 	queue.SetIndexed(opts, indexStateFail)
 
@@ -44,10 +41,7 @@ func TestQueue_BackoffAllowAfterDuration(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-
-	// Empty queue
-	for ok := true; ok; _, ok = queue.Pop() {
-	}
+	EmptyQueue(queue)
 
 	queue.SetIndexed(opts, indexStateFail)
 
@@ -72,10 +66,7 @@ func TestQueue_ResetBackoffUntil(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-
-	// Empty queue
-	for ok := true; ok; _, ok = queue.Pop() {
-	}
+	EmptyQueue(queue)
 
 	queue.SetIndexed(opts, indexStateFail)
 
@@ -100,10 +91,7 @@ func TestQueue_ResetFailuresCount(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-
-	// Empty queue
-	for ok := true; ok; _, ok = queue.Pop() {
-	}
+	EmptyQueue(queue)
 
 	// consecutive failures will push backoff until to a further out time
 	for i := 0; i < 1000; i++ {
@@ -142,10 +130,7 @@ func TestQueue_IncreaseDurationWithFailuresCount(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-
-	// Empty queue
-	for ok := true; ok; _, ok = queue.Pop() {
-	}
+	EmptyQueue(queue)
 
 	sleep := 1 * time.Millisecond
 	for i := 0; i < 10; i++ {
@@ -184,10 +169,7 @@ func TestQueue_MaxBackoffDuration(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-
-	// Empty queue
-	for ok := true; ok; _, ok = queue.Pop() {
-	}
+	EmptyQueue(queue)
 
 	// consecutive failures increase duration up to a maximum
 	for i := 0; i < 100; i++ {
@@ -232,11 +214,7 @@ func TestQueue_BackoffDisabled(t *testing.T) {
 			opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 			queue.AddOrUpdate(opts)
-
-			// Empty queue
-			for ok := true; ok; _, ok = queue.Pop() {
-			}
-
+			EmptyQueue(queue)
 			queue.SetIndexed(opts, indexStateFail)
 
 			queue.Bump([]uint32{opts.RepoID})
@@ -447,5 +425,10 @@ func AssertFailuresCount(t *testing.T, expected int, b backoff) {
 	if failuresCount := b.consecutiveFailures; failuresCount != expected {
 		t.Errorf("Item currently tracks %d consecutive failures when expected consecutive failures count is %d",
 			failuresCount, expected)
+	}
+}
+
+func EmptyQueue(q *Queue) {
+	for ok := true; ok; _, ok = q.Pop() {
 	}
 }
