@@ -47,9 +47,7 @@ type queueItem struct {
 //
 //	(!indexed, time added to the queue)
 //
-// We use the above since:
-//
-// * We rather index a repo sooner if we know the commit is stale.
+// We use the above since we'd rather index a repo sooner if we know the commit is stale.
 type Queue struct {
 	mu           sync.Mutex
 	items        map[uint32]*queueItem
