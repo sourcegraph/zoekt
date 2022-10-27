@@ -35,10 +35,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sourcegraph/mountinfo"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/debugserver"
-	"github.com/sourcegraph/zoekt/internal/mountinfo"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
@@ -184,7 +185,11 @@ func main() {
 	metricsLogger := sglog.Scoped("metricsRegistration", "")
 
 	mustRegisterMemoryMapMetrics(metricsLogger)
-	mountinfo.MustRegisterNewMountPointInfoMetric(metricsLogger, mountinfo.MountPointInfoOpts{Namespace: "zoekt_webserver"}, map[string]string{"indexDir": *index})
+
+	opts := mountinfo.CollectorOpts{Namespace: "zoekt_webserver"}
+	c := mountinfo.NewCollector(metricsLogger, opts, map[string]string{"indexDir": *index})
+
+	prometheus.DefaultRegisterer.MustRegister(c)
 
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the

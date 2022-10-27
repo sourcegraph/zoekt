@@ -36,7 +36,7 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
-	"github.com/sourcegraph/zoekt/internal/mountinfo"
+	"github.com/sourcegraph/mountinfo"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
@@ -1069,7 +1069,10 @@ func startServer(conf rootConfig) error {
 	go oc.Run()
 
 	logger := sglog.Scoped("metricsRegistration", "")
-	mountinfo.MustRegisterNewMountPointInfoMetric(logger, mountinfo.MountPointInfoOpts{Namespace: "zoekt_indexserver"}, map[string]string{"indexDir": conf.index})
+	opts := mountinfo.CollectorOpts{Namespace: "zoekt_indexserver"}
+
+	c := mountinfo.NewCollector(logger, opts, map[string]string{"indexDir": conf.index})
+	prometheus.DefaultRegisterer.MustRegister(c)
 
 	s.Run()
 	return nil

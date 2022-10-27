@@ -575,6 +575,8 @@ github.com/sourcegraph/go-ctags v0.0.0-20220611154803-db463692f037 h1:gk2cs5tfGF
 github.com/sourcegraph/go-ctags v0.0.0-20220611154803-db463692f037/go.mod h1:ZYjpRXoJrRlxjU9ZfpaUKJkk62AjhJPffN3rlw2aqxM=
 github.com/sourcegraph/log v0.0.0-20221006140640-7c567caa79cb h1:cgfkhaHK7OMlkwROcC4oSFRPZT/KRGFwx7M2i8T0A1c=
 github.com/sourcegraph/log v0.0.0-20221006140640-7c567caa79cb/go.mod h1:UxiwB6C3xk3xOySJpW1R0MDUyfGuJRFS5Z8C+SA5p2I=
+github.com/sourcegraph/mountinfo v0.0.0-20221027185101-272dd8baaf4a h1:fD9C4qHZWr7girCD8EwBHdmdViIWtdVTBO6k9SInVQo=
+github.com/sourcegraph/mountinfo v0.0.0-20221027185101-272dd8baaf4a/go.mod h1:SrU3BANBcV8XmM6ul5PBvBXDwTliGyjwiklR8OW61hI=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=
 github.com/spf13/afero v1.1.2/go.mod h1:j4pytiNVoe2o6bmDsKpLACNPDBIoEAkihy7loJ1B0CQ=
 github.com/spf13/cast v1.3.0/go.mod h1:Qx5cxh0v+4UWYiBimWS+eyWzqEqokIECu5etghLkUJE=
