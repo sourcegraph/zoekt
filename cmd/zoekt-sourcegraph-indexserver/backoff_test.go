@@ -247,3 +247,205 @@ func TestQueue_BackoffDisabled(t *testing.T) {
 		})
 	}
 }
+
+func TestBackoff_AllowByDefault(t *testing.T) {
+	backoffDuration := 1 * time.Minute
+	maxBackoffDuration := 2 * backoffDuration
+
+	backoff := backoff{
+		backoffDuration: backoffDuration,
+		maxBackoff:      maxBackoffDuration,
+	}
+
+	now := time.Now()
+	AssertAllow(t, now, backoff)
+}
+
+func TestBackoff_Disallow(t *testing.T) {
+	backoffDuration := 10 * time.Minute
+	maxBackoffDuration := 2 * backoffDuration
+	opts := IndexOptions{RepoID: 1, Name: "foo"}
+
+	backoff := backoff{
+		backoffDuration: backoffDuration,
+		maxBackoff:      maxBackoffDuration,
+	}
+
+	now := time.Now()
+	backoff.Fail(now, logtest.Scoped(t), opts)
+	AssertDisallow(t, now, backoff)
+}
+
+func TestBackoff_BackoffExpiration(t *testing.T) {
+	backoffDuration := 10 * time.Minute
+	maxBackoffDuration := 2 * backoffDuration
+	opts := IndexOptions{RepoID: 1, Name: "foo"}
+
+	backoff := backoff{
+		backoffDuration: backoffDuration,
+		maxBackoff:      maxBackoffDuration,
+	}
+
+	now := time.Now()
+	backoff.Fail(now, logtest.Scoped(t), opts)
+	AssertDisallow(t, now, backoff)
+
+	backoffUntil := now.Add(backoffDuration)
+	AssertDisallow(t, backoffUntil, backoff)
+
+	// backoff not applied for any timestamp after backoff until
+	expiredBackoff := now.Add(backoffDuration + (1 * time.Nanosecond))
+	AssertAllow(t, expiredBackoff, backoff)
+}
+
+func TestBackoff_ResetBackoffUntil(t *testing.T) {
+	backoffDuration := 10 * time.Minute
+	maxBackoffDuration := 2 * backoffDuration
+	opts := IndexOptions{RepoID: 1, Name: "foo"}
+
+	backoff := backoff{
+		backoffDuration: backoffDuration,
+		maxBackoff:      maxBackoffDuration,
+	}
+
+	now := time.Now()
+	backoff.Fail(now, logtest.Scoped(t), opts)
+	AssertDisallow(t, now, backoff)
+
+	backoff.Reset()
+	AssertAllow(t, now, backoff)
+}
+
+func TestBackoff_MaximumBackoffUntil(t *testing.T) {
+	backoffDuration := 10 * time.Minute
+	maxBackoffDuration := 25 * time.Minute
+	opts := IndexOptions{RepoID: 1, Name: "foo"}
+
+	backoff := backoff{
+		backoffDuration: backoffDuration,
+		maxBackoff:      maxBackoffDuration,
+	}
+
+	firstIndex := time.Now()
+	backoff.Fail(firstIndex, logtest.Scoped(t), opts)
+	currentBackoffUntil := backoffDuration
+
+	// disallowed before we pass backoff until timestamp
+	AssertDisallow(t, firstIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
+
+	secondIndex := firstIndex.Add(currentBackoffUntil + 1*time.Minute)
+	backoff.Fail(secondIndex, logtest.Scoped(t), opts)
+
+	// failures applies increased backoff duration due to consecutive failures
+	currentBackoffUntil += backoffDuration
+
+	// disallowed before we pass backoff until timestamp
+	AssertDisallow(t, secondIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
+
+	thirdIndex := secondIndex.Add(currentBackoffUntil + 1*time.Minute)
+	backoff.Fail(thirdIndex, logtest.Scoped(t), opts)
+
+	// This would be the new backoff until timestamp if we were not bounded by maxBackoffDuration
+	currentBackoffUntil += backoffDuration
+	// currentBackoffUntil is not applied since it exceeds maximum
+	AssertAllow(t, thirdIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
+
+	// Maximum backoff duration was applied
+	AssertDisallow(t, thirdIndex.Add(maxBackoffDuration-1*time.Minute), backoff)
+}
+
+func TestBackoff_IncrementConsecutiveFailures(t *testing.T) {
+	failedCount := 5
+	backoffDuration := 1 * time.Minute
+	maxBackoffDuration := time.Duration(failedCount) * backoffDuration
+	opts := IndexOptions{RepoID: 1, Name: "foo"}
+
+	backoff := backoff{
+		backoffDuration: backoffDuration,
+		maxBackoff:      maxBackoffDuration,
+	}
+
+	now := time.Now()
+	expectedFailuresCount := 0
+
+	for i := 0; i < failedCount; i++ {
+		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
+		expectedFailuresCount++
+		AssertFailuresCount(t, expectedFailuresCount, backoff)
+	}
+}
+
+func TestBackoff_MaximumConsecutiveFailures(t *testing.T) {
+	maximumCount := 3
+	failedCount := 2 * maximumCount
+	backoffDuration := 1 * time.Minute
+	maxBackoffDuration := time.Duration(maximumCount) * backoffDuration
+	opts := IndexOptions{RepoID: 1, Name: "foo"}
+
+	backoff := backoff{
+		backoffDuration: backoffDuration,
+		maxBackoff:      maxBackoffDuration,
+	}
+
+	now := time.Now()
+	expectedFailuresCount := 0
+
+	// consecutive failures count increments per failure
+	for i := 0; i < maximumCount; i++ {
+		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
+		expectedFailuresCount++
+		AssertFailuresCount(t, expectedFailuresCount, backoff)
+	}
+
+	// consecutive failures count does not change
+	for i := maximumCount - 1; i < failedCount; i++ {
+		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
+		AssertFailuresCount(t, expectedFailuresCount, backoff)
+	}
+}
+
+func TestBackoff_ResetConsecutiveFailures(t *testing.T) {
+	failedCount := 3
+	backoffDuration := 10 * time.Minute
+	maxBackoffDuration := time.Duration(failedCount) * backoffDuration
+	opts := IndexOptions{RepoID: 1, Name: "foo"}
+
+	backoff := backoff{
+		backoffDuration: backoffDuration,
+		maxBackoff:      maxBackoffDuration,
+	}
+
+	for i := 0; i < failedCount; i++ {
+		now := time.Now()
+
+		// fail j consecutive times
+		for j := i; j <= i; j++ {
+			backoff.Fail(now.Add(time.Duration(j)*backoffDuration), logtest.Scoped(t), opts)
+		}
+
+		// reset behavior is independent of current consecutiveFailures count
+		backoff.Reset()
+		AssertFailuresCount(t, 0, backoff)
+	}
+}
+
+func AssertAllow(t *testing.T, now time.Time, b backoff) {
+	if indexingAllowed := b.Allow(now); !indexingAllowed {
+		t.Errorf("Indexing is not allowed to proceed by default at %s due to backing off until %s",
+			now, b.backoffUntil)
+	}
+}
+
+func AssertDisallow(t *testing.T, now time.Time, b backoff) {
+	if indexingAllowed := b.Allow(now); indexingAllowed {
+		t.Errorf("Indexing is allowed to proceed at %s after failure despite being set to backoff until %s",
+			now, b.backoffUntil)
+	}
+}
+
+func AssertFailuresCount(t *testing.T, expected int, b backoff) {
+	if failuresCount := b.consecutiveFailures; failuresCount != expected {
+		t.Errorf("Item currently tracks %d consecutive failures when expected consecutive failures count is %d",
+			failuresCount, expected)
+	}
+}
