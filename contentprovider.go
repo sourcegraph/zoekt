@@ -720,10 +720,10 @@ const k = 60
 //
 // Rankings derived from match scores and rank vectors are combined based on
 // "Reciprocal Rank Fusion" (RFF).
-func SortFiles(ms []FileMatch) {
+func SortFiles(ms []FileMatch, useDocumentRanks bool) {
 	sort.Sort(fileMatchesByScore(ms))
 
-	if hasRanks(ms) {
+	if useDocumentRanks && hasRanks(ms) {
 		rffScore := make([]float64, len(ms))
 
 		for i := 0; i < len(ms); i++ {

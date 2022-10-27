@@ -782,6 +782,10 @@ type SearchOptions struct {
 	// be sent and then the behaviour will revert to the normal streaming.
 	FlushWallTime time.Duration
 
+	// MaxSizesBytes if non-zero limits the number of bytes Zoekt is allowed to hold
+	// in memory for file matches before flushing.
+	MaxSizeBytes int
+
 	// Trim the number of results after collating and sorting the
 	// results
 	MaxDocDisplayCount int
@@ -795,6 +799,10 @@ type SearchOptions struct {
 	// If true, ChunkMatches will be returned in each FileMatch rather than LineMatches
 	// EXPERIMENTAL: the behavior of this flag may be changed in future versions.
 	ChunkMatches bool
+
+	// EXPERIMENTAL. If true, document ranks are used as additional input for
+	// sorting matches.
+	UseDocumentRanks bool
 
 	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
 	// a command-line flag

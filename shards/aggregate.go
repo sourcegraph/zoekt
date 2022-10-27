@@ -4,23 +4,37 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/stream"
 )
 
+var (
+	metricFinalAggregateSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "zoekt_final_aggregate_size",
+		Help:    "The number of file matches we aggregated before flushing",
+		Buckets: prometheus.ExponentialBuckets(1, 2, 20),
+	}, []string{"reason"})
+)
+
 // collectSender is a sender that will aggregate results. Once sending is
-// done, you call Done to returned the aggregated result which are ranked.
+// done, you call Done to return the aggregated result which are ranked.
 //
 // Note: It aggregates Progress as well, and expects that the
 // MaxPendingPriority it receives are monotonically decreasing.
 type collectSender struct {
 	aggregate          *zoekt.SearchResult
 	maxDocDisplayCount int
+	sizeBytes          uint64
+	useDocumentRanks   bool
 }
 
 func newCollectSender(opts *zoekt.SearchOptions) *collectSender {
 	return &collectSender{
 		maxDocDisplayCount: opts.MaxDocDisplayCount,
+		useDocumentRanks:   opts.UseDocumentRanks,
 	}
 }
 
@@ -52,6 +66,8 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 
 	// We receive monotonically decreasing values, so we update on every call.
 	c.aggregate.MaxPendingPriority = r.MaxPendingPriority
+
+	c.sizeBytes += r.SizeBytes()
 }
 
 // Done returns the aggregated result. Before returning them the files are
@@ -65,8 +81,9 @@ func (c *collectSender) Done() (_ *zoekt.SearchResult, ok bool) {
 
 	agg := c.aggregate
 	c.aggregate = nil
+	c.sizeBytes = 0
 
-	zoekt.SortFiles(agg.Files)
+	zoekt.SortFiles(agg.Files, c.useDocumentRanks)
 
 	if max := c.maxDocDisplayCount; max > 0 && len(agg.Files) > max {
 		agg.Files = agg.Files[:max]
@@ -98,15 +115,13 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 
 	// stopCollectingAndFlush will send what we have collected and all future
 	// sends will go via sender directly.
-	stopCollectingAndFlush := func() {
-		mu.Lock()
-		defer mu.Unlock()
-
+	stopCollectingAndFlush := func(reason string) {
 		if collectSender == nil {
 			return
 		}
 
 		if agg, ok := collectSender.Done(); ok {
+			metricFinalAggregateSize.WithLabelValues(reason).Observe(float64(len(agg.Files)))
 			sender.Send(agg)
 		}
 
@@ -124,17 +139,30 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 		case <-timerCancel:
 			timer.Stop()
 		case <-timer.C:
-			stopCollectingAndFlush()
+			mu.Lock()
+			stopCollectingAndFlush("timer_expired")
+			mu.Unlock()
 		}
 	}()
 
 	return stream.SenderFunc(func(event *zoekt.SearchResult) {
-		mu.Lock()
-		if collectSender != nil {
-			collectSender.Send(event)
-		} else {
-			sender.Send(event)
+			mu.Lock()
+			if collectSender != nil {
+				collectSender.Send(event)
+
+				// Protect against too large aggregates. This should be the exception and only
+				// happen for queries yielding an extreme number of results.
+				if opts.MaxSizeBytes > 0 && collectSender.sizeBytes > uint64(opts.MaxSizeBytes) {
+					stopCollectingAndFlush("max_size_reached")
+
+				}
+			} else {
+				sender.Send(event)
+			}
+			mu.Unlock()
+		}), func() {
+			mu.Lock()
+			stopCollectingAndFlush("final_flush")
+			mu.Unlock()
 		}
-		mu.Unlock()
-	}), stopCollectingAndFlush
 }

@@ -685,7 +685,7 @@ search:
 			r.Priority = r.priority
 			r.MaxPendingPriority = pending.max()
 
-			sendByRepository(r.SearchResult, sender)
+			sendByRepository(r.SearchResult, opts, sender)
 		}
 	}
 
@@ -698,16 +698,16 @@ search:
 //
 // We split by repository instead of by priority because it is easier to set
 // RepoURLs and LineFragments in zoekt.SearchResult.
-func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
+func sendByRepository(result *zoekt.SearchResult, opts *zoekt.SearchOptions, sender zoekt.Sender) {
 
 	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
-		zoekt.SortFiles(result.Files)
+		zoekt.SortFiles(result.Files, opts.UseDocumentRanks)
 		sender.Send(result)
 		return
 	}
 
 	send := func(repoName string, a, b int, stats zoekt.Stats) {
-		zoekt.SortFiles(result.Files[a:b])
+		zoekt.SortFiles(result.Files[a:b], opts.UseDocumentRanks)
 		sender.Send(&zoekt.SearchResult{
 			Stats: stats,
 			Progress: zoekt.Progress{
