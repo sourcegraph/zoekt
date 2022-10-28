@@ -723,14 +723,17 @@ const k = 60
 func SortFiles(ms []FileMatch, useDocumentRanks bool) {
 	sort.Sort(fileMatchesByScore(ms))
 
-	if useDocumentRanks && hasRanks(ms) {
+	if useDocumentRanks {
 		rffScore := make([]float64, len(ms))
 
 		for i := 0; i < len(ms); i++ {
 			rffScore[i] = 1 / (k + float64(i))
 		}
 
-		sort.Sort(fileMatchesByRank{fileMatches: ms, rffScore: rffScore})
+		// We use stable sort in case we don't have ranks. Without stable sort the order
+		// of file matches would be random which would sully the ranking induces by the
+		// scores.
+		sort.Stable(fileMatchesByRank{fileMatches: ms, rffScore: rffScore})
 
 		for i := range rffScore {
 			rffScore[i] += 1 / (k + float64(i))
@@ -738,17 +741,6 @@ func SortFiles(ms []FileMatch, useDocumentRanks bool) {
 
 		sort.Sort(fileMatchesByRFFScore{fileMatches: ms, rffScore: rffScore})
 	}
-}
-
-// hasRanks returns true if any sr.Files has a non-zero rank vector
-func hasRanks(fm []FileMatch) bool {
-	for _, f := range fm {
-		if len(f.Ranks) > 0 {
-			return true
-		}
-	}
-
-	return false
 }
 
 type fileMatchesByRank struct {
