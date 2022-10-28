@@ -341,7 +341,7 @@ func TestSortFiles(t *testing.T) {
 	// d1        1/(60+2)   1/(60+1)   0,0325224748810153   2
 	// d4        1/(60+3)   1/(60+2)   0,0320020481310804   3
 
-	SortFiles(in)
+	SortFiles(in, true)
 
 	wantOrder := []string{"d3", "d2", "d1", "d4"}
 

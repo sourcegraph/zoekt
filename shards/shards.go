@@ -35,7 +35,6 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/stream"
 	"github.com/sourcegraph/zoekt/trace"
 )
 
@@ -526,10 +525,30 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		},
 	})
 
-	done, err := streamSearch(ctx, proc, q, opts, shards, stream.SenderFunc(func(event *zoekt.SearchResult) {
-		copyFiles(event)
-		sender.Send(event)
-	}))
+	// Matches flow from the shards up the stack in the following order:
+	//
+	// 1. Search shards
+	// 2. flushCollectSender (aggregate)
+	// 3. limitSender (limit)
+	// 4. copyFileSender (copy)
+	//
+	// For streaming, the wrapping has to happen in the inverted order.
+	sender = copyFileSender(sender)
+
+	if opts.MaxDocDisplayCount > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		sender = limitSender(cancel, sender, opts.MaxDocDisplayCount)
+	}
+
+	sender, flush := newFlushCollectSender(opts, sender)
+
+	done, err := streamSearch(ctx, proc, q, opts, shards, sender)
+
+	// Even though streaming is done, we may have results sitting in a buffer we
+	// need to flush. So we need to send those before calling done.
+	flush()
 	done()
 
 	return err
@@ -679,7 +698,7 @@ search:
 			r.Priority = r.priority
 			r.MaxPendingPriority = pending.max()
 
-			sendByRepository(r.SearchResult, sender)
+			sendByRepository(r.SearchResult, opts, sender)
 		}
 	}
 
@@ -692,16 +711,16 @@ search:
 //
 // We split by repository instead of by priority because it is easier to set
 // RepoURLs and LineFragments in zoekt.SearchResult.
-func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
+func sendByRepository(result *zoekt.SearchResult, opts *zoekt.SearchOptions, sender zoekt.Sender) {
 
 	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
-		zoekt.SortFiles(result.Files)
+		zoekt.SortFiles(result.Files, opts.UseDocumentRanks)
 		sender.Send(result)
 		return
 	}
 
 	send := func(repoName string, a, b int, stats zoekt.Stats) {
-		zoekt.SortFiles(result.Files[a:b])
+		zoekt.SortFiles(result.Files[a:b], opts.UseDocumentRanks)
 		sender.Send(&zoekt.SearchResult{
 			Stats: stats,
 			Progress: zoekt.Progress{
