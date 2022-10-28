@@ -145,24 +145,26 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 		}
 	}()
 
+	finalFlush := func() {
+		mu.Lock()
+		stopCollectingAndFlush("final_flush")
+		mu.Unlock()
+	}
+
 	return stream.SenderFunc(func(event *zoekt.SearchResult) {
-			mu.Lock()
-			if collectSender != nil {
-				collectSender.Send(event)
+		mu.Lock()
+		if collectSender != nil {
+			collectSender.Send(event)
 
-				// Protect against too large aggregates. This should be the exception and only
-				// happen for queries yielding an extreme number of results.
-				if opts.MaxSizeBytes > 0 && collectSender.sizeBytes > uint64(opts.MaxSizeBytes) {
-					stopCollectingAndFlush("max_size_reached")
+			// Protect against too large aggregates. This should be the exception and only
+			// happen for queries yielding an extreme number of results.
+			if opts.MaxSizeBytes > 0 && collectSender.sizeBytes > uint64(opts.MaxSizeBytes) {
+				stopCollectingAndFlush("max_size_reached")
 
-				}
-			} else {
-				sender.Send(event)
 			}
-			mu.Unlock()
-		}), func() {
-			mu.Lock()
-			stopCollectingAndFlush("final_flush")
-			mu.Unlock()
+		} else {
+			sender.Send(event)
 		}
+		mu.Unlock()
+	}), finalFlush
 }
