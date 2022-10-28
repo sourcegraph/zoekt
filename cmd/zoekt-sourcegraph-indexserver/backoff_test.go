@@ -49,7 +49,7 @@ func TestQueue_BackoffAllowAfterDuration(t *testing.T) {
 		t.Fatal("queue should be empty after SetIndexed")
 	}
 
-	time.Sleep(backoffDuration * 2)
+	time.Sleep(backoffDuration * 20)
 
 	queue.Bump([]uint32{opts.RepoID})
 
@@ -122,45 +122,6 @@ func TestQueue_ResetFailuresCount(t *testing.T) {
 	}
 }
 
-func TestQueue_IncreaseDurationWithFailuresCount(t *testing.T) {
-	backoffDuration := 5 * time.Millisecond
-	maxBackoffDuration := 1000 * time.Millisecond
-
-	queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
-	opts := IndexOptions{RepoID: 1, Name: "foo"}
-
-	queue.AddOrUpdate(opts)
-	EmptyQueue(queue)
-
-	sleep := 1 * time.Millisecond
-	for i := 0; i < 10; i++ {
-		queue.SetIndexed(opts, indexStateFail)
-
-		if _, ok := queue.Pop(); ok {
-			t.Fatal("queue should be empty after SetIndexed")
-		}
-
-		// bump should have no impact on queue during backoff duration which increases with consecutive failures count
-		time.Sleep(sleep)
-		queue.Bump([]uint32{opts.RepoID})
-		if _, ok := queue.Pop(); ok {
-			t.Fatalf("queue should be empty after %d consecutive failures and waiting %s since last failure. backoff duration for %d consecutive failures: %s maxBackoffDuration: %s",
-				i+1, sleep, i+1, time.Duration(i+1)*backoffDuration, maxBackoffDuration)
-		}
-
-		time.Sleep(backoffDuration)
-		queue.Bump([]uint32{opts.RepoID})
-		if _, ok := queue.Pop(); !ok {
-			t.Fatalf("queue should not be empty after %d consecutive failures and waiting %s since last failure. backoff duration for %d consecutive failures: %s maxBackoffDuration: %s",
-				i+1, sleep+backoffDuration, i+1, time.Duration(i+1)*backoffDuration, maxBackoffDuration)
-		}
-
-		// the first bump in each iteration occurs after an increasing sleep
-		// while still before we pass the backoff until time
-		sleep += backoffDuration
-	}
-}
-
 func TestQueue_MaxBackoffDuration(t *testing.T) {
 	backoffDuration := 1 * time.Hour
 	maxBackoffDuration := 1 * time.Millisecond
@@ -180,7 +141,8 @@ func TestQueue_MaxBackoffDuration(t *testing.T) {
 		t.Fatal("queue should be empty after SetIndexed")
 	}
 
-	time.Sleep(maxBackoffDuration)
+	// sleep past maxBackoffDuration but long before backoffDuration would pass
+	time.Sleep(maxBackoffDuration * 200)
 
 	queue.Bump([]uint32{opts.RepoID})
 
