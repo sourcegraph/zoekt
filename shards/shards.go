@@ -35,7 +35,6 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/stream"
 	"github.com/sourcegraph/zoekt/trace"
 )
 
@@ -526,12 +525,26 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		},
 	})
 
-	flushCollectSender, flush := newFlushCollectSender(opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
-		copyFiles(event)
-		sender.Send(event)
-	}))
+	// Matches flow from the shards up the stack in the following order:
+	//
+	// 1. Search shards
+	// 2. flushCollectSender (aggregate)
+	// 3. limitSender (limit)
+	// 4. copyFileSender (copy)
+	//
+	// For streaming, the wrapping has to happen in the inverted order.
+	sender = copyFileSender(sender)
 
-	done, err := streamSearch(ctx, proc, q, opts, shards, flushCollectSender)
+	if opts.MaxDocDisplayCount > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		sender = limitSender(cancel, sender, opts.MaxDocDisplayCount)
+	}
+
+	sender, flush := newFlushCollectSender(opts, sender)
+
+	done, err := streamSearch(ctx, proc, q, opts, shards, sender)
 
 	// Even though streaming is done, we may have results sitting in a buffer we
 	// need to flush. So we need to send those before calling done.

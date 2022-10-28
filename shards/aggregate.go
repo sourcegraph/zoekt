@@ -1,6 +1,7 @@
 package shards
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -27,7 +28,7 @@ var (
 type collectSender struct {
 	aggregate          *zoekt.SearchResult
 	maxDocDisplayCount int
-	sizeBytes          uint64
+	maxSizeBytes       int
 	useDocumentRanks   bool
 }
 
@@ -66,8 +67,6 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 
 	// We receive monotonically decreasing values, so we update on every call.
 	c.aggregate.MaxPendingPriority = r.MaxPendingPriority
-
-	c.sizeBytes += r.SizeBytes()
 }
 
 // Done returns the aggregated result. Before returning them the files are
@@ -81,7 +80,6 @@ func (c *collectSender) Done() (_ *zoekt.SearchResult, ok bool) {
 
 	agg := c.aggregate
 	c.aggregate = nil
-	c.sizeBytes = 0
 
 	zoekt.SortFiles(agg.Files, c.useDocumentRanks)
 
@@ -116,6 +114,9 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 	// stopCollectingAndFlush will send what we have collected and all future
 	// sends will go via sender directly.
 	stopCollectingAndFlush := func(reason string) {
+		mu.Lock()
+		defer mu.Unlock()
+
 		if collectSender == nil {
 			return
 		}
@@ -139,31 +140,41 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 		case <-timerCancel:
 			timer.Stop()
 		case <-timer.C:
-			mu.Lock()
 			stopCollectingAndFlush("timer_expired")
-			mu.Unlock()
 		}
 	}()
 
 	finalFlush := func() {
-		mu.Lock()
 		stopCollectingAndFlush("final_flush")
-		mu.Unlock()
 	}
 
 	return stream.SenderFunc(func(event *zoekt.SearchResult) {
 		mu.Lock()
 		if collectSender != nil {
 			collectSender.Send(event)
-
-			// Protect against too large aggregates. This should be the exception and only
-			// happen for queries yielding an extreme number of results.
-			if opts.MaxSizeBytes > 0 && collectSender.sizeBytes > uint64(opts.MaxSizeBytes) {
-				stopCollectingAndFlush("max_size_reached")
-			}
 		} else {
 			sender.Send(event)
 		}
 		mu.Unlock()
 	}), finalFlush
+}
+
+// limitSender wraps a sender and calls cancel once it has seen limit file
+// matches.
+func limitSender(cancel context.CancelFunc, sender zoekt.Sender, limit int) zoekt.Sender {
+	return stream.SenderFunc(func(result *zoekt.SearchResult) {
+		if len(result.Files) >= limit {
+			result.Files = result.Files[:limit]
+			cancel()
+		}
+		limit -= len(result.Files)
+		sender.Send(result)
+	})
+}
+
+func copyFileSender(sender zoekt.Sender) zoekt.Sender {
+	return stream.SenderFunc(func(result *zoekt.SearchResult) {
+		copyFiles(result)
+		sender.Send(result)
+	})
 }
