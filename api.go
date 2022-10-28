@@ -86,7 +86,7 @@ type FileMatch struct {
 	Version string
 }
 
-func (m *FileMatch) SizeBytes() (sz uint64) {
+func (m *FileMatch) sizeBytes() (sz uint64) {
 	// Score
 	sz += 8
 
@@ -463,7 +463,7 @@ func (sr *SearchResult) SizeBytes() (sz uint64) {
 	// Files
 	sz += sliceHeaderBytes
 	for _, f := range sr.Files {
-		sz += f.SizeBytes()
+		sz += f.sizeBytes()
 	}
 
 	// RepoURLs
