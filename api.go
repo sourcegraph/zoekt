@@ -782,10 +782,6 @@ type SearchOptions struct {
 	// be sent and then the behaviour will revert to the normal streaming.
 	FlushWallTime time.Duration
 
-	// MaxSizesBytes if non-zero limits the number of bytes Zoekt is allowed to hold
-	// in memory for file matches before flushing.
-	MaxSizeBytes int
-
 	// Trim the number of results after collating and sorting the
 	// results
 	MaxDocDisplayCount int

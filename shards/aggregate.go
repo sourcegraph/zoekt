@@ -28,7 +28,6 @@ var (
 type collectSender struct {
 	aggregate          *zoekt.SearchResult
 	maxDocDisplayCount int
-	maxSizeBytes       int
 	useDocumentRanks   bool
 }
 
