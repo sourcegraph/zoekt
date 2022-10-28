@@ -160,7 +160,6 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 			// happen for queries yielding an extreme number of results.
 			if opts.MaxSizeBytes > 0 && collectSender.sizeBytes > uint64(opts.MaxSizeBytes) {
 				stopCollectingAndFlush("max_size_reached")
-
 			}
 		} else {
 			sender.Send(event)
