@@ -972,7 +972,7 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 				maxPriority = priority
 			}
 
-			// No one is reading s yet, so we can mutate it.
+			// No one is reading our searcher yet, so we can mutate it.
 			// zoekt-sourcegraph-indexserver does not set Rank so at this point we
 			// treat Priority like star count and set it.
 			if repo.Rank == 0 && priority > 0 {
