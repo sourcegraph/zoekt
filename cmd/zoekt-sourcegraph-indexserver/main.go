@@ -594,11 +594,13 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		return indexStateFail, err
 	}
 
-	var branches []string
-	for _, b := range args.Branches {
-		branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
-	}
-	if err := s.Sourcegraph.UpdateIndexStatus(args.RepoID, args.Branches); err != nil {
+	status := []indexStatus{{RepoID: args.RepoID, Branches: args.Branches}}
+	if err := s.Sourcegraph.UpdateIndexStatus(status); err != nil {
+		branches := make([]string, len(args.Branches))
+		for i, b := range args.Branches {
+			branches[i] = fmt.Sprintf("%s=%s", b.Name, b.Version)
+		}
+
 		s.logger.Error("failed to update index status",
 			sglog.String("repo", args.Name),
 			sglog.Uint32("id", args.RepoID),

@@ -80,8 +80,9 @@ type Sourcegraph interface {
 	// the resulting vector, higher ranks coming earlier
 	GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error)
 
-	// UpdateIndexStatus sends a request to Sourcegraph to confirm that the given repository has been indexed.
-	UpdateIndexStatus(repoID uint32, branches []zoekt.RepositoryBranch) error
+	// UpdateIndexStatus sends a request to Sourcegraph to confirm that the
+	// given repositories have been indexed.
+	UpdateIndexStatus(repositories []indexStatus) error
 }
 
 func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sourcegraphClient {
@@ -448,13 +449,19 @@ func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) (
 	return data.RepoIDs, nil
 }
 
-// UpdateIndexStatus sends a request to Sourcegraph to confirm that the given repository has been indexed.
-func (s *sourcegraphClient) UpdateIndexStatus(repoID uint32, branches []zoekt.RepositoryBranch) error {
+type indexStatus struct {
+	RepoID   uint32
+	Branches []zoekt.RepositoryBranch
+}
+
+// UpdateIndexStatus sends a request to Sourcegraph to confirm that the given
+// repositories have been indexed.
+func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error {
 	type updateIndexStatusRequest struct {
-		RepoID   uint32
-		Branches []zoekt.RepositoryBranch
+		Repositories []indexStatus
 	}
-	body := &updateIndexStatusRequest{RepoID: repoID, Branches: branches}
+
+	body := &updateIndexStatusRequest{Repositories: repositories}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -754,7 +761,7 @@ func (sf sourcegraphFake) visitRepos(visit func(name string)) error {
 	})
 }
 
-func (s sourcegraphFake) UpdateIndexStatus(repoID uint32, branches []zoekt.RepositoryBranch) error {
+func (s sourcegraphFake) UpdateIndexStatus(repositories []indexStatus) error {
 	// noop
 	return nil
 }
@@ -783,6 +790,6 @@ func (s sourcegraphNop) GetDocumentRanks(ctx context.Context, repoName string) (
 	return nil, nil
 }
 
-func (s sourcegraphNop) UpdateIndexStatus(repoID uint32, branches []zoekt.RepositoryBranch) error {
+func (s sourcegraphNop) UpdateIndexStatus(repositories []indexStatus) error {
 	return nil
 }
