@@ -682,6 +682,33 @@ func scoreKind(language string, kind string) float64 {
 		case "variable":
 			factor = 5
 		}
+	case "Go":
+		switch kind {
+		case "struct": // structs
+			factor = 10
+		case "talias": // type aliases
+			factor = 9.5
+		case "interface": // interfaces
+			factor = 9
+		case "methodSpec": // interface method specification
+			factor = 8.5
+		case "func": // functions
+			factor = 8
+		case "member": // struct members
+			factor = 7
+		case "const": // constants
+			factor = 6
+		case "var": // variables
+			factor = 5
+		}
+		// Could also rank on:
+		//
+		//   - anonMember  struct anonymous members
+		//   - packageName name for specifying imported package
+		//   - receiver    receivers
+		//   - package     packages
+		//   - type        types
+		//   - unknown     unknown
 	}
 	return factor * scoreKindMatch
 }
