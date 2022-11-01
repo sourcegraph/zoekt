@@ -512,8 +512,6 @@ func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 	return ticker
 }
 
-var rankingEnabled, _ = strconv.ParseBool(os.Getenv("ENABLE_EXPERIMENTAL_RANKING"))
-
 // Index starts an index job for repo name at commit.
 func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)

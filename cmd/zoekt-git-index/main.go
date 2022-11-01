@@ -43,6 +43,7 @@ func run() int {
 	isDelta := flag.Bool("delta", false, "whether we should use delta build")
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
 	offlineRanking := flag.String("offline_ranking", "", "the name of the file that contains the ranking info.")
+	offlineRankingVersion := flag.String("offline_ranking_version", "", "a version string identifying the contents in offline_ranking.")
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
@@ -70,6 +71,7 @@ func run() int {
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
 	opts.DocumentRanksPath = *offlineRanking
+	opts.DocumentRanksVersion = *offlineRankingVersion
 
 	var branches []string
 	if *branchesStr != "" {
