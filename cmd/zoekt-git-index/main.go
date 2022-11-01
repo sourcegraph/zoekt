@@ -19,14 +19,18 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
+
+	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/sourcegraph/zoekt/cmd"
 	"github.com/sourcegraph/zoekt/gitindex"
-	"go.uber.org/automaxprocs/maxprocs"
 )
 
-func main() {
+func run() int {
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
+
 	allowMissing := flag.Bool("allow_missing_branches", false, "allow missing branches.")
 	submodules := flag.Bool("submodules", true, "if set to false, do not recurse into submodules")
 	branchesStr := flag.String("branches", "HEAD", "git branches to index.")
@@ -38,10 +42,24 @@ func main() {
 		"It also affects name if the indexed repository is under this directory.")
 	isDelta := flag.Bool("delta", false, "whether we should use delta build")
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
+	offlineRanking := flag.String("offline_ranking", "", "the name of the file that contains the ranking info.")
+	offlineRankingVersion := flag.String("offline_ranking_version", "", "a version string identifying the contents in offline_ranking.")
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	if *repoCacheDir != "" {
 		dir, err := filepath.Abs(*repoCacheDir)
@@ -52,6 +70,8 @@ func main() {
 	}
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
+	opts.DocumentRanksPath = *offlineRanking
+	opts.DocumentRanksVersion = *offlineRankingVersion
 
 	var branches []string
 	if *branchesStr != "" {
@@ -96,5 +116,11 @@ func main() {
 			exitStatus = 1
 		}
 	}
+
+	return exitStatus
+}
+
+func main() {
+	exitStatus := run()
 	os.Exit(exitStatus)
 }

@@ -133,19 +133,12 @@ func (o *SearchOptions) SetDefaults() {
 	if o.TotalMaxMatchCount == 0 {
 		o.TotalMaxMatchCount = 10 * o.ShardMaxMatchCount
 	}
-	if o.ShardMaxImportantMatch == 0 {
-		o.ShardMaxImportantMatch = 10
-	}
-	if o.TotalMaxImportantMatch == 0 {
-		o.TotalMaxImportantMatch = 10 * o.ShardMaxImportantMatch
-	}
 }
 
 func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) (sr *SearchResult, err error) {
 	copyOpts := *opts
 	opts = &copyOpts
 	opts.SetDefaults()
-	importantMatchCount := 0
 
 	var res SearchResult
 	if len(d.fileNameIndex) == 0 {
@@ -260,8 +253,7 @@ nextFileMatch:
 			repoMatchCount = 0
 		}
 
-		if canceled || (res.Stats.MatchCount >= opts.ShardMaxMatchCount && opts.ShardMaxMatchCount > 0) ||
-			(opts.ShardMaxImportantMatch > 0 && importantMatchCount >= opts.ShardMaxImportantMatch) {
+		if canceled || (res.Stats.MatchCount >= opts.ShardMaxMatchCount && opts.ShardMaxMatchCount > 0) {
 			res.Stats.FilesSkipped += int(docCount - nextDoc)
 			break
 		}
@@ -377,11 +369,13 @@ nextFileMatch:
 
 		// Prefer earlier docs.
 		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))), opts.DebugScore)
+
+		if len(d.ranks) > int(nextDoc) {
+			fileMatch.Ranks = d.ranks[nextDoc]
+		}
+
 		fileMatch.addScore("shard-order", scoreShardRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)
 
-		if fileMatch.Score > scoreImportantThreshold {
-			importantMatchCount++
-		}
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
 		sortMatchesByScore(fileMatch.LineMatches)
 		sortChunkMatchesByScore(fileMatch.ChunkMatches)

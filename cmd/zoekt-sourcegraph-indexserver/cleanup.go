@@ -152,9 +152,10 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		shardsLog(indexDir, "remove", shards)
 	}
 
-	// Remove old .tmp files from crashed indexer runs-- for example, if
-	// an indexer OOMs, it will leave around .tmp files, usually in a loop.
-	maxAge := now.Add(-4 * time.Hour)
+	// Remove .tmp files from crashed indexer runs-- for example, if an indexer
+	// OOMs, it will leave around .tmp files, usually in a loop. We can remove
+	// the files now since cleanup runs with a global lock (no indexing jobs
+	// running at the same time).
 	if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
 		log.Printf("Glob: %v", err)
 	} else {
@@ -164,24 +165,11 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 				log.Printf("Stat(%q): %v", f, err)
 				continue
 			}
-			if !st.IsDir() && st.ModTime().Before(maxAge) {
-				log.Printf("removing old tmp file: %s", f)
+			if !st.IsDir() {
+				log.Printf("removing tmp file: %s", f)
 				os.Remove(f)
 			}
 		}
-	}
-
-	// feature flag: place file TOMBSTONE_DUPLICATES in IndexDir
-	if _, err := os.Stat(filepath.Join(indexDir, "TOMBSTONE_DUPLICATES")); err == nil && shardMerging {
-		// This breaks an invariant of cleanup() where we guarantee that right
-		// after a cleanup the index state is consistent with the repos parameter.
-		// If the duplicates are tombstoned, the same repoID may seem both
-		// alive and tombstoned, depending on which compound shard you look into.
-		// However, introducing duplicates in the first place breaks another invariant
-		// (of having no duplicates), so
-		// 1. This is bad, but we are fixing an even worse situation.
-		// 2. This code should be removed as soon as the situation is fixed.
-		tombstoneDuplicates(indexDir)
 	}
 
 	metricCleanupDuration.Observe(time.Since(start).Seconds())
@@ -234,60 +222,6 @@ func getShards(dir string) map[uint32][]shard {
 		}
 	}
 	return shards
-}
-
-// tombstoneDuplicates finds duplicate shards in indexDir and makes it so
-// that all of them except one have a tombstone. It tries, on a best effort basis,
-// to select the non-tombstoned shard with the latest modification time as the one to
-// remain alive.
-// The assumption is that duplicate shards exist only as parts of compound shards:
-// we haven't seen simple duplicate shards in the wild.
-// Duplicate shards should not occur at all but we rarely see them due to a bug somewhere (probably fixed).
-// This function is intended to wait for a subsequent call to vacuum that will delete the
-// tombstoned repos.
-func tombstoneDuplicates(indexDir string) {
-	// We are only receiving alive shards in this call, so we may skip a
-	// newer shard if it already has a tombstone.
-	index := getShards(indexDir)
-
-	for repoID, shardsAll := range index {
-		shards := make([]shard, 0, len(shardsAll))
-		for _, s := range shardsAll {
-			// One repoID corresponds to multiple shards if either
-			// a) it is a large repo split across multiple shards, or
-			// b) it is a repo that is duplicated in several compound shards.
-			// We are only interested in case b).
-			if strings.HasPrefix(filepath.Base(s.Path), "compound-") {
-				shards = append(shards, s)
-			}
-		}
-		if len(shards) <= 1 {
-			continue
-		}
-
-		log.Printf("found %d duplicate shards for repoID=%d. Tombstoning all but one", len(shards), repoID)
-
-		latest := 0
-		for i, s := range shards {
-			if shards[latest].ModTime.Before(s.ModTime) {
-				latest = i
-			}
-		}
-		if latest != 0 {
-			shards[0], shards[latest] = shards[latest], shards[0]
-		}
-
-		if err := zoekt.UnsetTombstone(shards[0].Path, repoID); err != nil {
-			log.Printf("error removing tombstone for %v: %s", repoID, err)
-		} else {
-			shardsLog(indexDir, "untomb", shards[:1])
-		}
-		for _, s := range shards[1:] {
-			if !s.RepoTombstone && maybeSetTombstone([]shard{s}, repoID) {
-				shardsLog(indexDir, "tomb", []shard{s})
-			}
-		}
-	}
 }
 
 // getTombstonedRepos return a map of tombstoned repositories in dir. If a

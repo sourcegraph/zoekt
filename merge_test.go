@@ -108,7 +108,19 @@ func checkSameShards(t *testing.T, shard1, shard2 string) {
 
 	// We could also use bytes.Equal, but the output of cmd.Diff is very helpful for
 	// differences in metadata.
-	if d := cmp.Diff(b1, b2); d != "" {
-		t.Fatalf("-%s\n+%s:\n%s", shard1, shard2, d)
+	d := cmp.Diff(b1, b2)
+	if d == "" {
+		return
 	}
+
+	if *update {
+		t.Logf("updating %s", shard1)
+		err := os.WriteFile(shard1, b2, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	t.Fatalf("-%s\n+%s:\n%s", shard1, shard2, d)
 }

@@ -107,7 +107,7 @@ func CalculateDefaultSearchLimits(ctx context.Context,
 	q query.Q,
 	searcher zoekt.Searcher,
 	opts *zoekt.SearchOptions) error {
-	if opts.MaxDocDisplayCount == 0 || opts.ShardMaxMatchCount != 0 || opts.ShardMaxImportantMatch != 0 {
+	if opts.MaxDocDisplayCount == 0 || opts.ShardMaxMatchCount != 0 {
 		return nil
 	}
 
@@ -126,16 +126,11 @@ func CalculateDefaultSearchLimits(ctx context.Context,
 		// 10k docs, 50 maxResultDocs -> max match = (250 + 250 / 10)
 		opts.ShardMaxMatchCount = maxResultDocs*5 + (5*maxResultDocs)/(numdocs/1000)
 
-		// 10k docs, 50 maxResultDocs -> max important match = 4
-		opts.ShardMaxImportantMatch = maxResultDocs/20 + maxResultDocs/(numdocs/500)
 	} else {
-		// Virtually no limits for a small corpus; important
-		// matches are just as expensive as normal matches.
+		// Virtually no limits for a small corpus.
 		n := numdocs + maxResultDocs*100
-		opts.ShardMaxImportantMatch = n
 		opts.ShardMaxMatchCount = n
 		opts.TotalMaxMatchCount = n
-		opts.TotalMaxImportantMatch = n
 	}
 
 	return nil

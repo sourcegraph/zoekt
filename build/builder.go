@@ -100,6 +100,15 @@ type Options struct {
 	// last run.
 	IsDelta bool
 
+	// DocumentRanksPath is the path to the file with document ranks. If empty,
+	// ranks will be computed on-the-fly.
+	DocumentRanksPath string
+
+	// DocumentRanksVersion is a string which when changed will cause us to
+	// reindex a shard. This field is used so that when the contents of
+	// DocumentRanksPath changes, we can reindex.
+	DocumentRanksVersion string
+
 	// changedOrRemovedFiles is a list of file paths that have been changed or removed
 	// since the last indexing job for this repository. These files will be tombstoned
 	// in the older shards for this repository.
@@ -113,15 +122,20 @@ type HashOptions struct {
 	ctagsPath        string
 	cTagsMustSucceed bool
 	largeFiles       []string
+
+	// documentRankVersion is an experimental field which will change when the
+	// DocumentRanksPath content changes. If empty we ignore it.
+	documentRankVersion string
 }
 
 func (o *Options) HashOptions() HashOptions {
 	return HashOptions{
-		sizeMax:          o.SizeMax,
-		disableCTags:     o.DisableCTags,
-		ctagsPath:        o.CTagsPath,
-		cTagsMustSucceed: o.CTagsMustSucceed,
-		largeFiles:       o.LargeFiles,
+		sizeMax:             o.SizeMax,
+		disableCTags:        o.DisableCTags,
+		ctagsPath:           o.CTagsPath,
+		cTagsMustSucceed:    o.CTagsMustSucceed,
+		largeFiles:          o.LargeFiles,
+		documentRankVersion: o.DocumentRanksVersion,
 	}
 }
 
@@ -134,6 +148,11 @@ func (o *Options) GetHash() string {
 	hasher.Write([]byte(fmt.Sprintf("%d", h.sizeMax)))
 	hasher.Write([]byte(fmt.Sprintf("%q", h.largeFiles)))
 	hasher.Write([]byte(fmt.Sprintf("%t", h.disableCTags)))
+
+	if h.documentRankVersion != "" {
+		hasher.Write([]byte{0})
+		io.WriteString(hasher, h.documentRankVersion)
+	}
 
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
@@ -168,6 +187,7 @@ func (o *Options) Flags(fs *flag.FlagSet) {
 	fs.StringVar(&o.IndexDir, "index", x.IndexDir, "directory for search indices")
 	fs.BoolVar(&o.CTagsMustSucceed, "require_ctags", x.CTagsMustSucceed, "If set, ctags calls must succeed.")
 	fs.Var(largeFilesFlag{o}, "large_file", "A glob pattern where matching files are to be index regardless of their size. You can add multiple patterns by setting this more than once.")
+	fs.StringVar(&o.MemProfile, "memprofile", "", "write memory profile(s) to `file.shardnum`. Note: sets parallelism to 1.")
 
 	// Sourcegraph specific
 	fs.BoolVar(&o.DisableCTags, "disable_ctags", x.DisableCTags, "If set, ctags will not be called.")
@@ -792,7 +812,7 @@ func (b *Builder) flush() error {
 	shard := b.nextShardNum
 	b.nextShardNum++
 
-	if b.opts.Parallelism > 1 {
+	if b.opts.Parallelism > 1 && b.opts.MemProfile == "" {
 		b.building.Add(1)
 		go func() {
 			b.throttle <- 1
@@ -941,6 +961,36 @@ func sortDocuments(todo []*zoekt.Document) {
 	}
 }
 
+const epsilon = 0.00000001
+
+// sortDocuments2 sorts []*zoekt.Document according to their Ranks. In general,
+// documents can have a nil rank vector if the document to be indexed was added
+// after the ranking took place. A nil rank vector translates to the lowest
+// possible rank. Longer vectors are more important than shorter vectors, given
+// all other ranks are equal.
+//
+// Note: the logic here is inverted to sortDocuments because rank in
+// sortDocuments returns a vector of the form [1-rank, ...].
+func sortDocuments2(rs []*zoekt.Document) {
+	sort.Slice(rs, func(i, j int) bool {
+		r1 := rs[i].Ranks
+		r2 := rs[j].Ranks
+
+		l := len(r1)
+		if len(r2) < l {
+			l = len(r2)
+		}
+		for i := 0; i < l; i++ {
+			if math.Abs(r1[i]-r2[i]) > epsilon {
+				return r1[i] > r2[i]
+			}
+		}
+		// if r1 has more entries it is more important. ie imagine right padding shorter
+		// arrays with zeros, so they are the same length.
+		return len(r1) > len(r2)
+	})
+}
+
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
 	if !b.opts.DisableCTags && b.opts.CTagsPath != "" {
 		err := ctagsAddSymbols(todo, b.parser, b.opts.CTagsPath)
@@ -958,7 +1008,13 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 	if err != nil {
 		return nil, err
 	}
-	sortDocuments(todo)
+
+	if b.opts.DocumentRanksPath != "" {
+		sortDocuments2(todo)
+	} else {
+		sortDocuments(todo)
+	}
+
 	for _, t := range todo {
 		if err := shardBuilder.Add(*t); err != nil {
 			return nil, err

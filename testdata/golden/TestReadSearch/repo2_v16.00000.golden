@@ -5,6 +5,7 @@
     [
       {
         "Score": 910,
+        "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
         "Repository": "repo2",
@@ -19,6 +20,7 @@
             "After": null,
             "FileName": false,
             "Score": 501,
+            "DebugScore": "",
             "LineFragments": [
               {
                 "LineOffset": 0,
@@ -29,6 +31,7 @@
             ]
           }
         ],
+        "ChunkMatches": null,
         "RepositoryID": 0,
         "RepositoryPriority": 0,
         "Content": null,
@@ -42,6 +45,7 @@
     [
       {
         "Score": 710,
+        "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
         "Repository": "repo2",
@@ -56,6 +60,7 @@
             "After": null,
             "FileName": false,
             "Score": 501,
+            "DebugScore": "",
             "LineFragments": [
               {
                 "LineOffset": 0,
@@ -66,6 +71,7 @@
             ]
           }
         ],
+        "ChunkMatches": null,
         "RepositoryID": 0,
         "RepositoryPriority": 0,
         "Content": null,

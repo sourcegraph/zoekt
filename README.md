@@ -92,7 +92,7 @@ Zoekt comes with a small service management program:
     ]
     EOF
 
-    $GOPATH/bin/zoekt-server -mirror_config config.json
+    $GOPATH/bin/zoekt-indexserver -mirror_config config.json
 
 This will mirror all repos under 'github.com/username', 'github.com/org', as
 well as the 'zoekt' repository. It will index the repositories.

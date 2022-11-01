@@ -60,11 +60,10 @@ func TestCleanup(t *testing.T) {
 		repos []string
 		index []shard
 		trash []shard
-		tmps  map[string]time.Time
+		tmps  []string
 
 		wantIndex []shard
 		wantTrash []shard
-		wantTmps  []string
 	}{{
 		name: "noop",
 	}, {
@@ -99,11 +98,7 @@ func TestCleanup(t *testing.T) {
 		wantTrash: []shard{mk("bar", 0, now)},
 	}, {
 		name: "clean old .tmp files",
-		tmps: map[string]time.Time{
-			"recent.tmp": recent,
-			"old.tmp":    old,
-		},
-		wantTmps: []string{"recent.tmp"},
+		tmps: []string{"recent.tmp", "old.tmp"},
 	}, {
 		name:      "all",
 		repos:     []string{"exists", "trashed"},
@@ -133,12 +128,9 @@ func TestCleanup(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			for name, mtime := range tt.tmps {
+			for _, name := range tt.tmps {
 				path := filepath.Join(dir, name)
 				if _, err := os.Create(path); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Chtimes(path, mtime, mtime); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -155,8 +147,8 @@ func TestCleanup(t *testing.T) {
 			if d := cmp.Diff(tt.wantTrash, glob(filepath.Join(dir, ".trash", "*.zoekt"))); d != "" {
 				t.Errorf("unexpected trash (-want, +got):\n%s", d)
 			}
-			if d := cmp.Diff(tt.wantTmps, globBase(filepath.Join(dir, "*.tmp"))); d != "" {
-				t.Errorf("unexpected tmps (-want, +got):\n%s", d)
+			if tmps := globBase(filepath.Join(dir, "*.tmp")); len(tmps) > 0 {
+				t.Errorf("unexpected tmps: %v", tmps)
 			}
 
 			if testing.Verbose() {
@@ -295,11 +287,15 @@ func TestGetTombstonedRepos(t *testing.T) {
 	dir := t.TempDir()
 	var repoID uint32 = 2
 	csOld := createCompoundShard(t, dir, []uint32{1, 2, 3, 4}, setLastCommitDate(time.Now().Add(-1*time.Hour)))
-	zoekt.SetTombstone(csOld, repoID)
+	if err := zoekt.SetTombstone(csOld, repoID); err != nil {
+		t.Fatal(err)
+	}
 
 	now := time.Now()
 	csNew := createCompoundShard(t, dir, []uint32{5, 2, 6, 7}, setLastCommitDate(now))
-	zoekt.SetTombstone(csNew, repoID)
+	if err := zoekt.SetTombstone(csNew, repoID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Check that getTombstonedRepos returns the compound shard containing the
 	// tombstoned repo with id repoID with the latest commit.
@@ -383,19 +379,26 @@ func TestCleanupCompoundShards(t *testing.T) {
 	recent := now.Add(-1 * time.Hour)
 	old := now.Add(-2 * time.Hour)
 
+	setTombstone := func(shardPath string, repoID uint32) {
+		t.Helper()
+		if err := zoekt.SetTombstone(shardPath, repoID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	cs1 := createCompoundShard(t, dir, []uint32{1, 2, 3}, func(in *zoekt.Repository) {
 		in.LatestCommitDate = old
 	})
-	zoekt.SetTombstone(cs1, 1)
-	zoekt.SetTombstone(cs1, 2)
-	zoekt.SetTombstone(cs1, 3)
+	setTombstone(cs1, 1)
+	setTombstone(cs1, 2)
+	setTombstone(cs1, 3)
 
 	cs2 := createCompoundShard(t, dir, []uint32{1, 2, 4}, func(in *zoekt.Repository) {
 		in.LatestCommitDate = recent
 	})
-	zoekt.SetTombstone(cs2, 1)
-	zoekt.SetTombstone(cs2, 2)
-	zoekt.SetTombstone(cs2, 4)
+	setTombstone(cs2, 1)
+	setTombstone(cs2, 2)
+	setTombstone(cs2, 4)
 
 	createTestShard(t, "repo1", 1, filepath.Join(dir, "repo1.zoekt"), func(in *zoekt.Repository) {
 		in.LatestCommitDate = now
@@ -444,78 +447,6 @@ func TestCleanupCompoundShards(t *testing.T) {
 			RepoID:   5,
 			RepoName: "repo5",
 			Path:     filepath.Join(dir, "repo5.zoekt"),
-		}},
-	}
-
-	if d := cmp.Diff(wantIndex, index, cmpopts.IgnoreFields(shard{}, "ModTime")); d != "" {
-		t.Fatalf("-want, +got: %s", d)
-	}
-}
-
-func TestTombstoneDuplicateShards(t *testing.T) {
-	dir := t.TempDir()
-
-	// enable feature flag
-	if _, err := os.Create(filepath.Join(dir, "TOMBSTONE_DUPLICATES")); err != nil {
-		t.Fatal(err)
-	}
-
-	now := time.Now()
-	recent := now.Add(-1 * time.Hour)
-	old := now.Add(-2 * time.Hour)
-
-	cs1 := createCompoundShard(t, dir, []uint32{1, 2, 3}, func(*zoekt.Repository) {})
-
-	// Hack part 1: hide repos from being tombstoned by Builder.Finish() when creating cs2.
-	for i := 1; i <= 3; i++ {
-		if err := zoekt.SetTombstone(cs1, uint32(i)); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	cs2 := createCompoundShard(t, dir, []uint32{1, 2}, func(*zoekt.Repository) {})
-
-	// Hack part 2: remove tombstones to create duplicates.
-	for i := 1; i <= 3; i++ {
-		if err := zoekt.UnsetTombstone(cs1, uint32(i)); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	if err := os.Chtimes(cs1, old, old); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(cs2, recent, recent); err != nil {
-		t.Fatal(err)
-	}
-
-	// want indexed
-	repos := []uint32{1, 2, 3}
-
-	cleanup(dir, repos, now, true)
-
-	index := getShards(dir)
-	trash := getShards(filepath.Join(dir, ".trash"))
-
-	if len(trash) != 0 {
-		t.Fatalf("expected empty trash, got %+v", trash)
-	}
-
-	wantIndex := map[uint32][]shard{
-		1: {{
-			RepoID:   1,
-			RepoName: "repo1",
-			Path:     cs2,
-		}},
-		2: {{
-			RepoID:   2,
-			RepoName: "repo2",
-			Path:     cs2,
-		}},
-		3: {{
-			RepoID:   3,
-			RepoName: "repo3",
-			Path:     cs1,
 		}},
 	}
 

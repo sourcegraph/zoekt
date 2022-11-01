@@ -96,10 +96,9 @@ type indexTOC struct {
 	contentChecksums simpleSection
 	runeDocSections  simpleSection
 
-	contentBloom simpleSection
-	nameBloom    simpleSection
-
 	repos simpleSection
+
+	ranks simpleSection
 }
 
 func (t *indexTOC) sections() []section {
@@ -155,6 +154,8 @@ func (t *indexTOC) sectionsTagged() map[string]section {
 }
 
 func (t *indexTOC) sectionsTaggedList() []taggedSection {
+	var unusedSimple simpleSection
+
 	return []taggedSection{
 		{"metaData", &t.metaData},
 		{"repoMetaData", &t.repoMetaData},
@@ -180,8 +181,13 @@ func (t *indexTOC) sectionsTaggedList() []taggedSection {
 		{"languages", &t.languages},
 		{"runeDocSections", &t.runeDocSections},
 		{"repos", &t.repos},
-		{"nameBloom", &t.nameBloom},
-		{"contentBloom", &t.contentBloom},
+
+		// We no longer write bloom sections, but we still return them here to
+		// avoid warnings about unknown sections.
+		{"nameBloom", &unusedSimple},
+		{"contentBloom", &unusedSimple},
+
+		{"ranks", &t.ranks},
 	}
 }
 

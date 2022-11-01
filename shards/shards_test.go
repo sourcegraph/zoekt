@@ -34,6 +34,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/stream"
@@ -764,7 +765,7 @@ func TestSendByRepository(t *testing.T) {
 		sr := createMockSearchResult(n1, n2, n3, wantStats)
 
 		mock := &mockSender{}
-		sendByRepository(sr, mock)
+		sendByRepository(sr, &zoekt.SearchOptions{}, mock)
 
 		if diff := cmp.Diff(wantStats, mock.stats); diff != "" {
 			t.Logf("-want,+got\n%s", diff)

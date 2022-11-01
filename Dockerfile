@@ -1,4 +1,4 @@
-FROM golang:1.18.1-alpine3.15 AS builder
+FROM golang:1.19.2-alpine3.16 AS builder
 
 RUN apk add --no-cache ca-certificates
 
@@ -13,7 +13,7 @@ COPY . ./
 ARG VERSION
 RUN go install -ldflags "-X github.com/sourcegraph/zoekt.Version=$VERSION" ./cmd/...
 
-FROM alpine:3.15.4 AS zoekt
+FROM alpine:3.16.2 AS zoekt
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
     apk add --no-cache git ca-certificates bind-tools tini jansson

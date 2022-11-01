@@ -32,9 +32,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/stream"
 	"github.com/sourcegraph/zoekt/trace"
 )
 
@@ -456,10 +456,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	aggregate := &zoekt.SearchResult{
-		RepoURLs:      map[string]string{},
-		LineFragments: map[string]string{},
-	}
+	collectSender := newCollectSender(opts)
 
 	start := time.Now()
 	proc, err := ss.sched.Acquire(ctx)
@@ -468,40 +465,29 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	}
 	defer proc.Release()
 	tr.LazyPrintf("acquired process")
-	aggregate.Wait = time.Since(start)
+
+	wait := time.Since(start)
 	start = time.Now()
 
-	done, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(r *zoekt.SearchResult) {
-		aggregate.Stats.Add(r.Stats)
-
-		if len(r.Files) > 0 {
-			aggregate.Files = append(aggregate.Files, r.Files...)
-
-			for k, v := range r.RepoURLs {
-				aggregate.RepoURLs[k] = v
-			}
-			for k, v := range r.LineFragments {
-				aggregate.LineFragments[k] = v
-			}
-		}
-
-		if cancel != nil && opts.TotalMaxMatchCount > 0 && aggregate.Stats.MatchCount > opts.TotalMaxMatchCount {
-			cancel()
-			cancel = nil
-		}
-	}))
+	done, err := streamSearch(ctx, proc, q, opts, ss.getShards(), collectSender)
 	defer done()
 	if err != nil {
 		return nil, err
 	}
 
-	zoekt.SortFilesByScore(aggregate.Files)
-	if max := opts.MaxDocDisplayCount; max > 0 && len(aggregate.Files) > max {
-		aggregate.Files = aggregate.Files[:max]
+	aggregate, ok := collectSender.Done()
+	if !ok {
+		aggregate = &zoekt.SearchResult{
+			RepoURLs:      map[string]string{},
+			LineFragments: map[string]string{},
+		}
 	}
+
 	copyFiles(aggregate)
 
-	aggregate.Duration = time.Since(start)
+	aggregate.Stats.Wait = wait
+	aggregate.Stats.Duration = time.Since(start)
+
 	return aggregate, nil
 }
 
@@ -522,28 +508,61 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	}
 	defer proc.Release()
 	tr.LazyPrintf("acquired process")
+
+	shards := ss.getShards()
+
+	maxPendingPriority := math.Inf(-1)
+	if len(shards) > 0 {
+		maxPendingPriority = shards[0].priority
+	}
+
 	sender.Send(&zoekt.SearchResult{
 		Stats: zoekt.Stats{
 			Wait: time.Since(start),
 		},
+		Progress: zoekt.Progress{
+			MaxPendingPriority: maxPendingPriority,
+		},
 	})
 
-	done, err := ss.streamSearch(ctx, proc, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
-		copyFiles(event)
-		sender.Send(event)
-	}))
+	// Matches flow from the shards up the stack in the following order:
+	//
+	// 1. Search shards
+	// 2. flushCollectSender (aggregate)
+	// 3. limitSender (limit)
+	// 4. copyFileSender (copy)
+	//
+	// For streaming, the wrapping has to happen in the inverted order.
+	sender = copyFileSender(sender)
+
+	if opts.MaxDocDisplayCount > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		sender = limitSender(cancel, sender, opts.MaxDocDisplayCount)
+	}
+
+	sender, flush := newFlushCollectSender(opts, sender)
+
+	done, err := streamSearch(ctx, proc, q, opts, shards, sender)
+
+	// Even though streaming is done, we may have results sitting in a buffer we
+	// need to flush. So we need to send those before calling done.
+	flush()
 	done()
+
 	return err
 }
 
-// streamSearch is an internal helper since both Search and StreamSearch are largely similiar.
+// streamSearch is an internal helper since both Search and StreamSearch are
+// largely similar.
 //
 // done must always be called, even if err is non-nil. The SearchResults sent
 // via sender contain references to the underlying mmap data that the garbage
 // collector can't see. Calling done informs the garbage collector it is free
 // to collect those shards. The caller must call copyFiles on any
 // SearchResults it returns/streams out before calling done.
-func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (done func(), err error) {
+func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, shards []*rankedShard, sender zoekt.Sender) (done func(), err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
@@ -561,7 +580,6 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 		tr.Finish()
 	}()
 
-	shards := ss.getShards()
 	tr.LazyPrintf("before selectRepoSet shards:%d", len(shards))
 	shards, q = selectRepoSet(shards, q)
 	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), q)
@@ -637,6 +655,9 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 		}
 	}
 
+	// tracked so we can stop when we hit TotalMaxMatchCount
+	var totalMatchCount int
+
 search:
 	for {
 		_ = proc.Yield(ctx) // We let searchOneShard handle context errors.
@@ -646,14 +667,6 @@ search:
 			pending.append(next.priority)
 
 			shard++
-			if shard%100 == 0 {
-				// We send the max pending priority as we search to keep frontend informed even
-				// if we don't find matches.
-				var r zoekt.SearchResult
-				r.MaxPendingPriority = pending.max()
-				sender.Send(&r)
-			}
-
 			if shard == len(shards) {
 				stop()
 			} else {
@@ -675,12 +688,17 @@ search:
 				continue
 			}
 
+			totalMatchCount += r.SearchResult.Stats.MatchCount
+			if opts.TotalMaxMatchCount > 0 && totalMatchCount > opts.TotalMaxMatchCount {
+				stop()
+			}
+
 			observeMetrics(r.SearchResult)
 
 			r.Priority = r.priority
 			r.MaxPendingPriority = pending.max()
 
-			sendByRepository(r.SearchResult, sender)
+			sendByRepository(r.SearchResult, opts, sender)
 		}
 	}
 
@@ -693,17 +711,18 @@ search:
 //
 // We split by repository instead of by priority because it is easier to set
 // RepoURLs and LineFragments in zoekt.SearchResult.
-func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
+func sendByRepository(result *zoekt.SearchResult, opts *zoekt.SearchOptions, sender zoekt.Sender) {
+
 	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
-		zoekt.SortFilesByScore(result.Files)
+		zoekt.SortFiles(result.Files, opts.UseDocumentRanks)
 		sender.Send(result)
 		return
 	}
 
-	send := func(repoName string, a, b int) {
-		zoekt.SortFilesByScore(result.Files[a:b])
+	send := func(repoName string, a, b int, stats zoekt.Stats) {
+		zoekt.SortFiles(result.Files[a:b], opts.UseDocumentRanks)
 		sender.Send(&zoekt.SearchResult{
-			// No stats. Stats must be aggregateable, hence we sent them separately.
+			Stats: stats,
 			Progress: zoekt.Progress{
 				Priority:           result.Files[a].RepositoryPriority,
 				MaxPendingPriority: result.MaxPendingPriority,
@@ -721,15 +740,17 @@ func sendByRepository(result *zoekt.SearchResult, sender zoekt.Sender) {
 	fm := zoekt.FileMatch{}
 	for endIndex, fm = range result.Files {
 		if curRepoID != fm.RepositoryID {
-			send(curRepoName, startIndex, endIndex)
+			// Stats must stay aggregate-able, hence we sent the aggregate stats with the
+			// last event.
+			send(curRepoName, startIndex, endIndex, zoekt.Stats{})
 
 			startIndex = endIndex
 			curRepoID = fm.RepositoryID
 			curRepoName = fm.Repository
 		}
 	}
-	send(curRepoName, startIndex, endIndex+1)
-	sender.Send(&zoekt.SearchResult{Stats: result.Stats})
+
+	send(curRepoName, startIndex, endIndex+1, result.Stats)
 }
 
 func observeMetrics(sr *zoekt.SearchResult) {
@@ -949,6 +970,14 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 			priority, _ := strconv.ParseFloat(repo.RawConfig["priority"], 64)
 			if priority > maxPriority {
 				maxPriority = priority
+			}
+
+			// No one is reading our searcher yet, so we can mutate it.
+			// zoekt-sourcegraph-indexserver does not set Rank so at this point we
+			// treat Priority like star count and set it.
+			if repo.Rank == 0 && priority > 0 {
+				l := math.Log(float64(priority))
+				repo.Rank = uint16((1.0 - 1.0/math.Pow(1+l, 0.6)) * 10000)
 			}
 		}
 	}

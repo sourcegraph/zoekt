@@ -15,6 +15,9 @@ jobs:
         run: apk add go git
       - name: install ctags
         run: ./install-ctags-alpine.sh
+      # Needed for submodule tests in gitindex
+      - name: git protocol.file.allow
+        run: git config --global --replace-all protocol.file.allow always
       - name: test
         run: go test ./...
 
@@ -49,7 +52,6 @@ jobs:
       - name: checkout
         uses: actions/checkout@v2
 
-      # This is the same tag we used for zoekt in the infrastructure repo.
       - name: version
         id: version
         run: .github/workflows/docker-version.sh

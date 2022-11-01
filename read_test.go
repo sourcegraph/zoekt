@@ -28,8 +28,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/quick"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -354,4 +357,33 @@ func TestBackfillIDIsDeterministic(t *testing.T) {
 	if have1 != have2 {
 		t.Fatalf("%s != %s ", have1, have2)
 	}
+}
+
+func TestEncodeRanks(t *testing.T) {
+	quick.Check(func(ranks [][]float64) bool {
+		buf := bytes.Buffer{}
+		w := &writer{w: &buf}
+
+		if err := encodeRanks(w, ranks); err != nil {
+			return false
+		}
+
+		// In case all rank vectors are empty, IE {{}, {}, ...}, we won't write anything
+		// to w and gob decode will decode this as "nil", which will fail the
+		// comparison even with cmpopts.EquateEmpty().
+		if w.off == 0 {
+			return true
+		}
+
+		d := &indexData{}
+		if err := decodeRanks(buf.Bytes(), &d.ranks); err != nil {
+			t.Fatal(err)
+		}
+
+		if d := cmp.Diff(ranks, d.ranks, cmpopts.EquateEmpty()); d != "" {
+			t.Fatalf("-want, +got:\n%s\n", d)
+		}
+
+		return true
+	}, nil)
 }

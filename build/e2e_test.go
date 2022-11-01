@@ -954,8 +954,8 @@ func Get() {
 				&query.Symbol{Expr: &query.Substring{Pattern: "http", Content: true}},
 				&query.Symbol{Expr: &query.Substring{Pattern: "Get", Content: true}}}},
 			wantLanguage: "Go",
-			// 7000 (full base match) + 500 (word) + 400 (atom) + 10 (file order) + 1 (repetition-boost)
-			wantScore: 7911,
+			// 7000 (full base match) + 800 (Go func) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8710,
 		},
 	}
 
@@ -978,7 +978,7 @@ func Get() {
 			}
 			defer ss.Close()
 
-			srs, err := ss.Search(context.Background(), c.query, new(zoekt.SearchOptions))
+			srs, err := ss.Search(context.Background(), c.query, &zoekt.SearchOptions{DebugScore: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -988,7 +988,7 @@ func Get() {
 			}
 
 			if got := srs.Files[0].Score; got != c.wantScore {
-				t.Fatalf("score: want %f, got %f", c.wantScore, got)
+				t.Fatalf("score: want %f, got %f\ndebug: %s\ndebugscore: %s", c.wantScore, got, srs.Files[0].Debug, srs.Files[0].LineMatches[0].DebugScore)
 			}
 
 			if got := srs.Files[0].Language; got != c.wantLanguage {

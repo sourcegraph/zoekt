@@ -36,6 +36,8 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 
+	"github.com/sourcegraph/mountinfo"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/debugserver"
@@ -585,7 +587,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		},
 	}
 
-	return indexStateSuccess, gitIndex(c, args, s.logger)
+	return indexStateSuccess, gitIndex(c, args, s.Sourcegraph, s.logger)
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
@@ -749,7 +751,7 @@ func (s *Server) handleDebugMerge(w http.ResponseWriter, _ *http.Request) {
 	go func() {
 		s.doMerge()
 	}()
-	w.Write([]byte("merging enqueued\n"))
+	_, _ = w.Write([]byte("merging enqueued\n"))
 }
 
 func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
@@ -1069,6 +1071,12 @@ func startServer(conf rootConfig) error {
 		Hostname: conf.hostname,
 	}
 	go oc.Run()
+
+	logger := sglog.Scoped("metricsRegistration", "")
+	opts := mountinfo.CollectorOpts{Namespace: "zoekt_indexserver"}
+
+	c := mountinfo.NewCollector(logger, opts, map[string]string{"indexDir": conf.index})
+	prometheus.DefaultRegisterer.MustRegister(c)
 
 	s.Run()
 	return nil

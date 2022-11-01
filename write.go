@@ -139,14 +139,6 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}
 	toc.fileSections.end(w)
 
-	toc.nameBloom.start(w)
-	b.nameBloom.shrinkToSize(bloomDefaultLoad).write(w)
-	toc.nameBloom.end(w)
-
-	toc.contentBloom.start(w)
-	b.contentBloom.shrinkToSize(bloomDefaultLoad).write(w)
-	toc.contentBloom.end(w)
-
 	writePostings(w, b.contentPostings, &toc.ngramText, &toc.runeOffsets, &toc.postings, &toc.fileEndRunes)
 
 	// names.
@@ -206,6 +198,12 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 			return err
 		}
 	}
+
+	toc.ranks.start(w)
+	if err := encodeRanks(w, b.ranks); err != nil {
+		return err
+	}
+	toc.ranks.end(w)
 
 	var tocSection simpleSection
 

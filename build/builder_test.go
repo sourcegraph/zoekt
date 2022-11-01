@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/sourcegraph/zoekt"
 )
 
@@ -843,4 +844,107 @@ func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt
 	if err := os.Rename(tmpName, dstName); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func Test_sortDocuments2(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []*zoekt.Document
+		want []string
+	}{
+		{
+			name: "same length",
+			in: []*zoekt.Document{
+				{
+					Name:  "a",
+					Ranks: []float64{0, 0, 0},
+				},
+				{
+					Name:  "b",
+					Ranks: []float64{1, 1, 1},
+				},
+				{
+					Name:  "c",
+					Ranks: []float64{1, 0, 1},
+				},
+			},
+			want: []string{"b", "c", "a"},
+		},
+		{
+			name: "1 nil",
+			in: []*zoekt.Document{
+				{
+					Name:  "a",
+					Ranks: []float64{1, 1, 0},
+				},
+				{
+					Name: "b",
+				},
+				{
+					Name:  "c",
+					Ranks: []float64{1, 1, 1},
+				},
+			},
+			want: []string{"c", "a", "b"},
+		},
+		{
+			name: "different lengths",
+			in: []*zoekt.Document{
+				{
+					Name:  "a",
+					Ranks: []float64{0},
+				},
+				{
+					Name:  "b",
+					Ranks: []float64{0, 0},
+				},
+				{
+					Name:  "c",
+					Ranks: []float64{0, 0, 0},
+				},
+			},
+			want: []string{"c", "b", "a"},
+		},
+		{
+			name: "different lengths and nil",
+			in: []*zoekt.Document{
+				{
+					Name:  "a",
+					Ranks: []float64{0},
+				},
+				{
+					Name:  "b",
+					Ranks: []float64{0, 0},
+				},
+				{
+					Name: "c",
+				},
+			},
+			want: []string{"b", "a", "c"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sortDocuments2(tt.in)
+
+			for i, name := range tt.want {
+				if tt.in[i].Name != name {
+					var got []string
+					for _, d := range tt.in {
+						got = append(got, d.Name)
+					}
+					t.Fatalf("want %+v, got %+v\n", tt.want, got)
+				}
+			}
+		})
+	}
+
+	t.Run("test for panics", func(t *testing.T) {
+		// Special case: test for panics if all documents have nil rank vectors.
+		sortDocuments2([]*zoekt.Document{{}, {}})
+		sortDocuments2([]*zoekt.Document{{}})
+		sortDocuments2(nil)
+	})
+
 }
