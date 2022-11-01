@@ -8,13 +8,16 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/sourcegraph/log/logtest"
 	"github.com/sourcegraph/zoekt"
 )
 
 func TestQueue(t *testing.T) {
-	queue := &Queue{}
+	backoffDuration := 1 * time.Millisecond
+	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
 
 	for i := 0; i < 100; i++ {
 		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
@@ -52,7 +55,8 @@ func TestQueue(t *testing.T) {
 func TestQueueFIFO(t *testing.T) {
 	// Tests that the queue fallbacks to FIFO if everything has the same
 	// priority
-	queue := &Queue{}
+	backoffDuration := 1 * time.Millisecond
+	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
 
 	for i := 0; i < 100; i++ {
 		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
@@ -77,7 +81,8 @@ func TestQueueFIFO(t *testing.T) {
 }
 
 func TestQueue_MaybeRemoveMissing(t *testing.T) {
-	queue := &Queue{}
+	backoffDuration := 1 * time.Millisecond
+	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
 
 	queue.AddOrUpdate(IndexOptions{RepoID: 1, Name: "foo"})
 	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
@@ -94,14 +99,13 @@ func TestQueue_MaybeRemoveMissing(t *testing.T) {
 }
 
 func TestQueue_Bump(t *testing.T) {
-	queue := &Queue{}
+	backoffDuration := 1 * time.Millisecond
+	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
 
 	queue.AddOrUpdate(IndexOptions{RepoID: 1, Name: "foo"})
 	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
 
-	// Empty queue
-	for ok := true; ok; _, ok = queue.Pop() {
-	}
+	emptyQueue(queue)
 
 	// Bump 2 and 3. 3 doesn't exist, so only 2 should exist.
 	missing := queue.Bump([]uint32{2, 3})
@@ -160,7 +164,8 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 		return strings.Join(outputLines, "\n")
 	}
 
-	queue := &Queue{}
+	backoffDuration := 1 * time.Millisecond
+	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
 
 	// setup: add two repositories to the queue and pop one of them
 	poppedRepository := mkHEADIndexOptions(0, "popped")

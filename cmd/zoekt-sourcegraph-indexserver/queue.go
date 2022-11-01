@@ -16,6 +16,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	sglog "github.com/sourcegraph/log"
 )
 
 type queueItem struct {
@@ -36,6 +38,8 @@ type queueItem struct {
 	// dateAddedToQueue is the time when this indexing job was added to the queue. If this item is no longer
 	// in the heap (i.e. it has been processed already), this value is nonsensical.
 	dateAddedToQueue time.Time
+	// backoff will handle backing off of future indexing requests for a duration of time based on previous failures
+	backoff backoff
 }
 
 // Queue is a priority queue which returns the next repo to index. It is safe
@@ -43,15 +47,39 @@ type queueItem struct {
 //
 //	(!indexed, time added to the queue)
 //
-// We use the above since:
-//
-// * We rather index a repo sooner if we know the commit is stale.
-// * The order of repos returned by Sourcegraph API are ordered by importance.
+// We use the above since we'd rather index a repo sooner if we know the commit is stale.
 type Queue struct {
-	mu    sync.Mutex
-	items map[uint32]*queueItem
-	pq    pqueue
-	seq   int64
+	mu           sync.Mutex
+	items        map[uint32]*queueItem
+	pq           pqueue
+	seq          int64
+	logger       sglog.Logger
+	newQueueItem func(uint32) *queueItem
+}
+
+func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l sglog.Logger) *Queue {
+	if backoffDuration < 0 || maxBackoffDuration < 0 {
+		backoffDuration = 0
+		maxBackoffDuration = 0
+	}
+	newQueueItem := func(repoID uint32) *queueItem {
+		return &queueItem{
+			repoID:  repoID,
+			heapIdx: -1,
+			backoff: backoff{
+				backoffDuration: backoffDuration,
+				maxBackoff:      maxBackoffDuration,
+			},
+		}
+	}
+
+	q := &Queue{
+		newQueueItem: newQueueItem,
+		logger:       l.Scoped("queue", "zoekt-indexserver queue operations"),
+	}
+
+	q.init()
+	return q
 }
 
 // Pop returns the opts of the next repo to index. If the queue is empty ok is
@@ -99,13 +127,15 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 		item.opts = opts
 	}
 	if item.heapIdx < 0 {
-		q.seq++
-		item.seq = q.seq
-		item.dateAddedToQueue = time.Now()
+		if item.backoff.Allow(time.Now()) {
+			q.seq++
+			item.seq = q.seq
+			item.dateAddedToQueue = time.Now()
 
-		heap.Push(&q.pq, item)
-		metricQueueLen.Set(float64(len(q.pq)))
-		metricQueueCap.Set(float64(len(q.items)))
+			heap.Push(&q.pq, item)
+			metricQueueLen.Set(float64(len(q.pq)))
+			metricQueueCap.Set(float64(len(q.items)))
+		}
 	} else {
 		heap.Fix(&q.pq, item.heapIdx)
 	}
@@ -129,13 +159,15 @@ func (q *Queue) Bump(ids []uint32) []uint32 {
 		if !ok {
 			missing = append(missing, id)
 		} else if item.heapIdx < 0 {
-			q.seq++
-			item.seq = q.seq
-			item.dateAddedToQueue = time.Now()
+			if item.backoff.Allow(time.Now()) {
+				q.seq++
+				item.seq = q.seq
+				item.dateAddedToQueue = time.Now()
 
-			heap.Push(&q.pq, item)
-			metricQueueLen.Set(float64(len(q.pq)))
-			metricQueueCap.Set(float64(len(q.items)))
+				heap.Push(&q.pq, item)
+				metricQueueLen.Set(float64(len(q.pq)))
+				metricQueueCap.Set(float64(len(q.items)))
+			}
 		}
 	}
 
@@ -252,11 +284,20 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	item.indexState = state
 	if state != indexStateFail {
 		item.indexed = reflect.DeepEqual(opts, item.opts)
-	}
+		item.backoff.Reset()
 
-	if item.heapIdx >= 0 {
-		// We only update the position in the queue, never add it.
-		heap.Fix(&q.pq, item.heapIdx)
+		if item.heapIdx >= 0 {
+			// We only update the position in the queue, never add it.
+			heap.Fix(&q.pq, item.heapIdx)
+		}
+	} else {
+		item.backoff.Fail(time.Now(), q.logger, item.opts)
+
+		if item.heapIdx >= 0 {
+			// Remove from queue
+			heap.Remove(&q.pq, item.heapIdx)
+			item.heapIdx = -1
+		}
 	}
 
 	q.mu.Unlock()
@@ -324,10 +365,7 @@ func (q *Queue) getOrAdd(repoID uint32) *queueItem {
 
 	item, ok := q.items[repoID]
 	if !ok {
-		item = &queueItem{
-			repoID:  repoID,
-			heapIdx: -1,
-		}
+		item = q.newQueueItem(repoID)
 		q.items[repoID] = item
 	}
 
@@ -379,7 +417,7 @@ func (pq *pqueue) Pop() interface{} {
 	return item
 }
 
-// lessQueueItemPriority returns true if the indexing priority x is less than that of y.
+// lessQueueItemPriority returns true if indexing x should be prioritized over indexing y
 func lessQueueItemPriority(x, y *queueItem) bool {
 	// If we know x needs an update and y doesn't, then return true. Otherwise
 	// they are either equal priority or y is more urgent.

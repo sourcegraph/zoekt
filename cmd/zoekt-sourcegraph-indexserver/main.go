@@ -1019,6 +1019,10 @@ type rootConfig struct {
 	mergeInterval  time.Duration
 	targetSize     int64
 	minSize        int64
+
+	// config values related to backoff indexing repos with one or more consecutive failures
+	backoffDuration    time.Duration
+	maxBackoffDuration time.Duration
 }
 
 func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
@@ -1034,6 +1038,8 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.StringVar(&rc.hostname, "hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	fs.Float64Var(&rc.cpuFraction, "cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
 	fs.IntVar(&rc.blockProfileRate, "block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler Var(default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
+	fs.DurationVar(&rc.backoffDuration, "backoff_duration", 10*time.Minute, "for the given duration we backoff from enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase the duration of the delay linearly up to the maxBackoffDuration. A negative value disables indexing backoff.")
+	fs.DurationVar(&rc.maxBackoffDuration, "max_backoff_duration", 120*time.Minute, "the maximum duration to backoff from enqueueing a repo for indexing.  A negative value disables indexing backoff.")
 }
 
 func startServer(conf rootConfig) error {
@@ -1169,6 +1175,8 @@ func newServer(conf rootConfig) (*Server, error) {
 
 	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
 
+	q := NewQueue(conf.backoffDuration, conf.maxBackoffDuration, logger)
+
 	return &Server{
 		logger:                            logger,
 		Sourcegraph:                       sg,
@@ -1179,6 +1187,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		MergeInterval:                     conf.mergeInterval,
 		CPUCount:                          cpuCount,
 		TargetSizeBytes:                   conf.targetSize * 1024 * 1024,
+		queue:                             *q,
 		minSizeBytes:                      conf.minSize * 1024 * 1024,
 		shardMerging:                      zoekt.ShardMergingEnabled(),
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
