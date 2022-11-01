@@ -14,7 +14,7 @@ func TestQueue_BackoffOnFail(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-	EmptyQueue(queue)
+	emptyQueue(queue)
 
 	queue.SetIndexed(opts, indexStateFail)
 
@@ -41,7 +41,7 @@ func TestQueue_BackoffAllowAfterDuration(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-	EmptyQueue(queue)
+	emptyQueue(queue)
 
 	queue.SetIndexed(opts, indexStateFail)
 
@@ -66,7 +66,7 @@ func TestQueue_ResetBackoffUntil(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-	EmptyQueue(queue)
+	emptyQueue(queue)
 
 	queue.SetIndexed(opts, indexStateFail)
 
@@ -91,7 +91,7 @@ func TestQueue_ResetFailuresCount(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-	EmptyQueue(queue)
+	emptyQueue(queue)
 
 	// consecutive failures will push backoff until to a further out time
 	for i := 0; i < 1000; i++ {
@@ -130,7 +130,7 @@ func TestQueue_MaxBackoffDuration(t *testing.T) {
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
-	EmptyQueue(queue)
+	emptyQueue(queue)
 
 	// consecutive failures increase duration up to a maximum
 	for i := 0; i < 100; i++ {
@@ -176,7 +176,7 @@ func TestQueue_BackoffDisabled(t *testing.T) {
 			opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 			queue.AddOrUpdate(opts)
-			EmptyQueue(queue)
+			emptyQueue(queue)
 			queue.SetIndexed(opts, indexStateFail)
 
 			queue.Bump([]uint32{opts.RepoID})
@@ -198,7 +198,7 @@ func TestBackoff_AllowByDefault(t *testing.T) {
 	}
 
 	now := time.Now()
-	AssertAllow(t, now, backoff)
+	assertAllow(t, now, backoff)
 }
 
 func TestBackoff_Disallow(t *testing.T) {
@@ -213,7 +213,7 @@ func TestBackoff_Disallow(t *testing.T) {
 
 	now := time.Now()
 	backoff.Fail(now, logtest.Scoped(t), opts)
-	AssertDisallow(t, now, backoff)
+	assertDisallow(t, now, backoff)
 }
 
 func TestBackoff_BackoffExpiration(t *testing.T) {
@@ -228,14 +228,14 @@ func TestBackoff_BackoffExpiration(t *testing.T) {
 
 	now := time.Now()
 	backoff.Fail(now, logtest.Scoped(t), opts)
-	AssertDisallow(t, now, backoff)
+	assertDisallow(t, now, backoff)
 
 	backoffUntil := now.Add(backoffDuration)
-	AssertDisallow(t, backoffUntil, backoff)
+	assertDisallow(t, backoffUntil, backoff)
 
 	// backoff not applied for any timestamp after backoff until
 	expiredBackoff := now.Add(backoffDuration + (1 * time.Nanosecond))
-	AssertAllow(t, expiredBackoff, backoff)
+	assertAllow(t, expiredBackoff, backoff)
 }
 
 func TestBackoff_ResetBackoffUntil(t *testing.T) {
@@ -250,10 +250,10 @@ func TestBackoff_ResetBackoffUntil(t *testing.T) {
 
 	now := time.Now()
 	backoff.Fail(now, logtest.Scoped(t), opts)
-	AssertDisallow(t, now, backoff)
+	assertDisallow(t, now, backoff)
 
 	backoff.Reset()
-	AssertAllow(t, now, backoff)
+	assertAllow(t, now, backoff)
 }
 
 func TestBackoff_MaximumBackoffUntil(t *testing.T) {
@@ -271,7 +271,7 @@ func TestBackoff_MaximumBackoffUntil(t *testing.T) {
 	currentBackoffUntil := backoffDuration
 
 	// disallowed before we pass backoff until timestamp
-	AssertDisallow(t, firstIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
+	assertDisallow(t, firstIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
 
 	secondIndex := firstIndex.Add(currentBackoffUntil + 1*time.Minute)
 	backoff.Fail(secondIndex, logtest.Scoped(t), opts)
@@ -280,7 +280,7 @@ func TestBackoff_MaximumBackoffUntil(t *testing.T) {
 	currentBackoffUntil += backoffDuration
 
 	// disallowed before we pass backoff until timestamp
-	AssertDisallow(t, secondIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
+	assertDisallow(t, secondIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
 
 	thirdIndex := secondIndex.Add(currentBackoffUntil + 1*time.Minute)
 	backoff.Fail(thirdIndex, logtest.Scoped(t), opts)
@@ -288,10 +288,10 @@ func TestBackoff_MaximumBackoffUntil(t *testing.T) {
 	// This would be the new backoff until timestamp if we were not bounded by maxBackoffDuration
 	currentBackoffUntil += backoffDuration
 	// currentBackoffUntil is not applied since it exceeds maximum
-	AssertAllow(t, thirdIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
+	assertAllow(t, thirdIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
 
 	// Maximum backoff duration was applied
-	AssertDisallow(t, thirdIndex.Add(maxBackoffDuration-1*time.Minute), backoff)
+	assertDisallow(t, thirdIndex.Add(maxBackoffDuration-1*time.Minute), backoff)
 }
 
 func TestBackoff_IncrementConsecutiveFailures(t *testing.T) {
@@ -311,7 +311,7 @@ func TestBackoff_IncrementConsecutiveFailures(t *testing.T) {
 	for i := 0; i < failedCount; i++ {
 		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
 		expectedFailuresCount++
-		AssertFailuresCount(t, expectedFailuresCount, backoff)
+		assertFailuresCount(t, expectedFailuresCount, backoff)
 	}
 }
 
@@ -334,13 +334,13 @@ func TestBackoff_MaximumConsecutiveFailures(t *testing.T) {
 	for i := 0; i < maximumCount; i++ {
 		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
 		expectedFailuresCount++
-		AssertFailuresCount(t, expectedFailuresCount, backoff)
+		assertFailuresCount(t, expectedFailuresCount, backoff)
 	}
 
 	// consecutive failures count does not change
 	for i := maximumCount - 1; i < failedCount; i++ {
 		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
-		AssertFailuresCount(t, expectedFailuresCount, backoff)
+		assertFailuresCount(t, expectedFailuresCount, backoff)
 	}
 }
 
@@ -365,32 +365,32 @@ func TestBackoff_ResetConsecutiveFailures(t *testing.T) {
 
 		// reset behavior is independent of current consecutiveFailures count
 		backoff.Reset()
-		AssertFailuresCount(t, 0, backoff)
+		assertFailuresCount(t, 0, backoff)
 	}
 }
 
-func AssertAllow(t *testing.T, now time.Time, b backoff) {
+func assertAllow(t *testing.T, now time.Time, b backoff) {
 	if indexingAllowed := b.Allow(now); !indexingAllowed {
 		t.Errorf("Indexing is not allowed to proceed by default at %s due to backing off until %s",
 			now, b.backoffUntil)
 	}
 }
 
-func AssertDisallow(t *testing.T, now time.Time, b backoff) {
+func assertDisallow(t *testing.T, now time.Time, b backoff) {
 	if indexingAllowed := b.Allow(now); indexingAllowed {
 		t.Errorf("Indexing is allowed to proceed at %s after failure despite being set to backoff until %s",
 			now, b.backoffUntil)
 	}
 }
 
-func AssertFailuresCount(t *testing.T, expected int, b backoff) {
+func assertFailuresCount(t *testing.T, expected int, b backoff) {
 	if failuresCount := b.consecutiveFailures; failuresCount != expected {
 		t.Errorf("Item currently tracks %d consecutive failures when expected consecutive failures count is %d",
 			failuresCount, expected)
 	}
 }
 
-func EmptyQueue(q *Queue) {
+func emptyQueue(q *Queue) {
 	for ok := true; ok; _, ok = q.Pop() {
 	}
 }

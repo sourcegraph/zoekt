@@ -105,9 +105,7 @@ func TestQueue_Bump(t *testing.T) {
 	queue.AddOrUpdate(IndexOptions{RepoID: 1, Name: "foo"})
 	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
 
-	// Empty queue
-	for ok := true; ok; _, ok = queue.Pop() {
-	}
+	emptyQueue(queue)
 
 	// Bump 2 and 3. 3 doesn't exist, so only 2 should exist.
 	missing := queue.Bump([]uint32{2, 3})
