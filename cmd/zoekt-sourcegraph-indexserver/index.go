@@ -54,6 +54,11 @@ type IndexOptions struct {
 	// Priority indicates ranking in results, higher first.
 	Priority float64
 
+	// DocumentRanksVersion when non-empty will lead to indexing using offline
+	// ranking. When the string changes this will also cause us to re-index with
+	// new ranks.
+	DocumentRanksVersion string
+
 	// Public is true if the repository is public.
 	Public bool
 
@@ -116,6 +121,8 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		CTagsMustSucceed: o.Symbols,
 		DisableCTags:     !o.Symbols,
 		IsDelta:          o.UseDelta,
+
+		DocumentRanksVersion: o.DocumentRanksVersion,
 	}
 }
 
@@ -322,7 +329,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		"-submodules=false",
 	}
 
-	if rankingEnabled {
+	if o.DocumentRanksVersion != "" {
 		// We store the document ranks as JSON in gitDir and tell zoekt-git-index where
 		// to find the file.
 		documentsRankFile := filepath.Join(gitDir, "documents.rank")
@@ -354,7 +361,9 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 				sglog.Uint32("id", o.RepoID),
 			)
 		} else {
-			args = append(args, "-offline_ranking", documentsRankFile)
+			args = append(args,
+				"-offline_ranking", documentsRankFile,
+				"-offline_ranking_version", o.DocumentRanksVersion)
 		}
 	}
 

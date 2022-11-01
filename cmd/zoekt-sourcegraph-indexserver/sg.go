@@ -617,6 +617,10 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 		Priority: float("SG_PRIORITY"),
 	}
 
+	if stat, err := os.Stat(filepath.Join(dir, "SG_DOCUMENT_RANKS")); err == nil {
+		opts.DocumentRanksVersion = stat.ModTime().String()
+	}
+
 	branches, err := sf.getBranches(name)
 	if err != nil {
 		return opts, err
