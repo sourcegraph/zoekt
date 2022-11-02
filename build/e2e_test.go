@@ -809,6 +809,11 @@ func TestScoring(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	exampleCpp, err := os.ReadFile("./testdata/example.cc")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	cases := []struct {
 		fileName     string
 		content      []byte
@@ -956,6 +961,49 @@ func Get() {
 			wantLanguage: "Go",
 			// 7000 (full base match) + 800 (Go func) + 500 (word) + 400 (atom) + 10 (file order)
 			wantScore: 8710,
+		},
+		//
+		// C++
+		//
+		{
+			fileName:     "example.cc",
+			content:      exampleCpp,
+			query:        &query.Substring{Content: true, Pattern: "FooClass"},
+			wantLanguage: "C++",
+			// 7000 (Symbol) + 1000 (C++ class) + 500 (full word) + 400 (atom) + 10 (file order)
+			wantScore: 8910,
+		},
+		{
+			fileName:     "example.cc",
+			content:      exampleCpp,
+			query:        &query.Substring{Content: true, Pattern: "NestedEnum"},
+			wantLanguage: "C++",
+			// 7000 (Symbol) + 900 (C++ enum) + 500 (full word) + 400 (atom) + 10 (file order)
+			wantScore: 8810,
+		},
+		{
+			fileName:     "example.cc",
+			content:      exampleCpp,
+			query:        &query.Substring{Content: true, Pattern: "main"},
+			wantLanguage: "C++",
+			// 7000 (Symbol) + 800 (C++ function) + 500 (full word) + 400 (atom) + 10 (file order)
+			wantScore: 8710,
+		},
+		{
+			fileName:     "example.cc",
+			content:      exampleCpp,
+			query:        &query.Substring{Content: true, Pattern: "FooStruct"},
+			wantLanguage: "C++",
+			// 7000 (Symbol) + 700 (C++ struct) + 500 (full word) + 400 (atom) + 10 (file order)
+			wantScore: 8610,
+		},
+		{
+			fileName:     "example.cc",
+			content:      exampleCpp,
+			query:        &query.Substring{Content: true, Pattern: "TheUnion"},
+			wantLanguage: "C++",
+			// 7000 (Symbol) + 600 (C++ union) + 500 (full word) + 400 (atom) + 10 (file order)
+			wantScore: 8510,
 		},
 	}
 
