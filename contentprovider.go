@@ -709,6 +709,32 @@ func scoreKind(language string, kind string) float64 {
 		//   - package     packages
 		//   - type        types
 		//   - unknown     unknown
+	case "C++":
+		switch kind {
+		case "class": // classes
+			factor = 10
+		case "enum": // enumeration names
+			factor = 9
+		case "function": // function definitions
+			factor = 8
+		case "struct": // structure names
+			factor = 7
+		case "union": // union names
+			factor = 6
+		case "typdef": // typedefs
+			factor = 5
+		case "member": // class, struct, and union members
+			factor = 4
+		case "variable": // varialbe definitions
+			factor = 3
+		}
+		// Could also rank on:
+		// NAME        DESCRIPTION
+		// macro       macro definitions
+		// enumerator  enumerators (values inside an enumeration)
+		// header      included header files
+		// namespace   namespaces
+		// variable    variable definitions
 	}
 	return factor * scoreKindMatch
 }
