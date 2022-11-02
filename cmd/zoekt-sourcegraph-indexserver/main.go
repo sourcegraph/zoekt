@@ -587,7 +587,27 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		},
 	}
 
-	return indexStateSuccess, gitIndex(c, args, s.Sourcegraph, s.logger)
+	err = gitIndex(c, args, s.Sourcegraph, s.logger)
+	if err != nil {
+		return indexStateFail, err
+	}
+
+	status := []indexStatus{{RepoID: args.RepoID, Branches: args.Branches}}
+	if err := s.Sourcegraph.UpdateIndexStatus(status); err != nil {
+		branches := make([]string, len(args.Branches))
+		for i, b := range args.Branches {
+			branches[i] = fmt.Sprintf("%s=%s", b.Name, b.Version)
+		}
+
+		s.logger.Error("failed to update index status",
+			sglog.String("repo", args.Name),
+			sglog.Uint32("id", args.RepoID),
+			sglog.Strings("branches", branches),
+			sglog.Error(err),
+		)
+	}
+
+	return indexStateSuccess, nil
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
