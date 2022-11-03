@@ -370,7 +370,7 @@ nextFileMatch:
 		// Prefer earlier docs.
 		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))), opts.DebugScore)
 
-		if len(d.ranks) > int(nextDoc) {
+		if opts.UseDocumentRanks && (d.ranks) > int(nextDoc) {
 			fileMatch.Ranks = d.ranks[nextDoc]
 		}
 

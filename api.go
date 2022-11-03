@@ -39,6 +39,9 @@ type FileMatch struct {
 	// Experimental. Ranks is a vector containing floats in the interval [0, 1]. The
 	// length of the vector depends on the output from the ranking function at index
 	// time.
+	//
+	// This field is only set if the shard contains ranking information and
+	// SearchOptions.UseDocumentRanks is true.
 	Ranks []float64
 
 	// For debugging. Needs DebugScore set, but public so tests in
