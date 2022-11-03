@@ -214,9 +214,10 @@ func TestNewlines(t *testing.T) {
 			FileName: "filename",
 			LineMatches: []LineMatch{{
 				LineFragments: []LineFragmentMatch{{
-					Offset:      8,
-					LineOffset:  2,
-					MatchLength: 3,
+					Offset:             8,
+					LineOffset:         2,
+					MatchLength:        3,
+					CaseSensitiveMatch: true,
 				}},
 				Line:       []byte("line2"),
 				LineStart:  6,
@@ -247,6 +248,7 @@ func TestNewlines(t *testing.T) {
 					Start: Location{ByteOffset: 8, LineNumber: 2, Column: 3},
 					End:   Location{ByteOffset: 11, LineNumber: 2, Column: 6},
 				}},
+				CaseSensitiveMatch: []bool{true},
 			}},
 		}}
 
@@ -560,9 +562,10 @@ func TestFileSearch(t *testing.T) {
 		want := LineMatch{
 			Line: []byte("banana"),
 			LineFragments: []LineFragmentMatch{{
-				Offset:      1,
-				LineOffset:  1,
-				MatchLength: 4,
+				Offset:             1,
+				LineOffset:         1,
+				MatchLength:        4,
+				CaseSensitiveMatch: true,
 			}},
 			FileName: true,
 		}
@@ -591,7 +594,8 @@ func TestFileSearch(t *testing.T) {
 				Start: Location{ByteOffset: 1, LineNumber: 1, Column: 2},
 				End:   Location{ByteOffset: 5, LineNumber: 1, Column: 6},
 			}},
-			FileName: true,
+			FileName:           true,
+			CaseSensitiveMatch: []bool{true},
 		}
 
 		if diff := cmp.Diff(want, got); diff != "" {
@@ -1157,6 +1161,7 @@ func TestRegexp(t *testing.T) {
 				Start: Location{ByteOffset: 3, LineNumber: 1, Column: 4},
 				End:   Location{ByteOffset: 14, LineNumber: 1, Column: 15},
 			}},
+			CaseSensitiveMatch: []bool{false},
 		}
 
 		if diff := cmp.Diff(want, got); diff != "" {

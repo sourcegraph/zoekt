@@ -4,7 +4,7 @@
   "FileMatches": [
     [
       {
-        "Score": 910,
+        "Score": 1010,
         "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
@@ -19,14 +19,15 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 501,
+            "Score": 601,
             "DebugScore": "",
             "LineFragments": [
               {
                 "LineOffset": 0,
                 "Offset": 69,
                 "MatchLength": 9,
-                "SymbolInfo": null
+                "SymbolInfo": null,
+                "CaseSensitiveMatch": true
               }
             ]
           }
@@ -66,7 +67,8 @@
                 "LineOffset": 0,
                 "Offset": 0,
                 "MatchLength": 7,
-                "SymbolInfo": null
+                "SymbolInfo": null,
+                "CaseSensitiveMatch": false
               }
             ]
           }
@@ -84,7 +86,7 @@
     ],
     [
       {
-        "Score": 8410,
+        "Score": 8010,
         "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
@@ -99,7 +101,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 8001,
+            "Score": 7601,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -111,7 +113,8 @@
                   "Kind": "var",
                   "Parent": "main",
                   "ParentKind": "package"
-                }
+                },
+                "CaseSensitiveMatch": true
               }
             ]
           }
@@ -129,7 +132,7 @@
     ],
     [
       {
-        "Score": 6260,
+        "Score": 5760,
         "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
@@ -144,7 +147,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 6051,
+            "Score": 5551,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -156,7 +159,8 @@
                   "Kind": "var",
                   "Parent": "main",
                   "ParentKind": "package"
-                }
+                },
+                "CaseSensitiveMatch": false
               }
             ]
           }

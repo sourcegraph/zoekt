@@ -144,9 +144,10 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 
 		for _, m := range ms {
 			res.LineFragments = append(res.LineFragments, LineFragmentMatch{
-				LineOffset:  int(m.byteOffset),
-				MatchLength: int(m.byteMatchSz),
-				Offset:      m.byteOffset,
+				LineOffset:         int(m.byteOffset),
+				MatchLength:        int(m.byteMatchSz),
+				Offset:             m.byteOffset,
+				CaseSensitiveMatch: m.caseSensitiveMatch,
 			})
 
 			result = []LineMatch{res}
@@ -172,6 +173,7 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 
 		fileName := p.id.fileName(p.idx)
 		ranges := make([]Range, 0, len(ms))
+		caseSensitiveMatch := make([]bool, 0, len(ms))
 		for _, m := range ms {
 			ranges = append(ranges, Range{
 				Start: Location{
@@ -185,13 +187,16 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 					Column:     uint32(utf8.RuneCount(fileName[:m.byteOffset+m.byteMatchSz]) + 1),
 				},
 			})
+
+			caseSensitiveMatch = append(caseSensitiveMatch, m.caseSensitiveMatch)
 		}
 
 		result = []ChunkMatch{{
-			Content:      fileName,
-			ContentStart: Location{ByteOffset: 0, LineNumber: 1, Column: 1},
-			Ranges:       ranges,
-			FileName:     true,
+			Content:            fileName,
+			ContentStart:       Location{ByteOffset: 0, LineNumber: 1, Column: 1},
+			Ranges:             ranges,
+			FileName:           true,
+			CaseSensitiveMatch: caseSensitiveMatch,
 		}}
 	} else {
 		result = p.fillContentChunkMatches(ms, numContextLines)
@@ -263,9 +268,10 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 
 		for _, m := range lineCands {
 			fragment := LineFragmentMatch{
-				Offset:      m.byteOffset,
-				LineOffset:  int(m.byteOffset) - lineStart,
-				MatchLength: int(m.byteMatchSz),
+				Offset:             m.byteOffset,
+				LineOffset:         int(m.byteOffset) - lineStart,
+				MatchLength:        int(m.byteMatchSz),
+				CaseSensitiveMatch: m.caseSensitiveMatch,
 			}
 			if m.symbol {
 				start := p.id.fileEndSymbol[p.idx]
@@ -290,6 +296,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 	chunkMatches := make([]ChunkMatch, 0, len(chunks))
 	for _, chunk := range chunks {
 		ranges := make([]Range, 0, len(chunk.candidates))
+		caseSensitiveMatch := make([]bool, 0, len(chunk.candidates))
 		var symbolInfo []*Symbol
 		for i, cm := range chunk.candidates {
 			startOffset := cm.byteOffset
@@ -309,6 +316,8 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 					Column:     uint32(utf8.RuneCount(data[endLineOffset:endOffset]) + 1),
 				},
 			})
+
+			caseSensitiveMatch = append(caseSensitiveMatch, cm.caseSensitiveMatch)
 
 			if cm.symbol {
 				if symbolInfo == nil {
@@ -337,9 +346,10 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 				LineNumber: uint32(firstLineNumber),
 				Column:     1,
 			},
-			FileName:   false,
-			Ranges:     ranges,
-			SymbolInfo: symbolInfo,
+			FileName:           false,
+			Ranges:             ranges,
+			SymbolInfo:         symbolInfo,
+			CaseSensitiveMatch: caseSensitiveMatch,
 		})
 	}
 	return chunkMatches
@@ -461,6 +471,7 @@ const (
 	scoreSymbol           = 7000.0
 	scorePartialSymbol    = 4000.0
 	scoreKindMatch        = 100.0
+	scoreCaseSensitive    = 100.0
 	scoreFactorAtomMatch  = 400.0
 	scoreShardRankFactor  = 20.0
 	scoreFileOrderFactor  = 10.0
@@ -555,6 +566,10 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 			}
 		}
 
+		if len(m.CaseSensitiveMatch) > i && m.CaseSensitiveMatch[i] {
+			addScore("caseSensitive", scoreCaseSensitive)
+		}
+
 		if score.score > maxScore.score {
 			maxScore.score = score.score
 			maxScore.what = score.what
@@ -632,6 +647,11 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 				// the LineFragment may not be on a symbol, then si will be nil.
 				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreKind(language, si.Kind))
 			}
+
+		}
+
+		if f.CaseSensitiveMatch {
+			addScore("caseSensitive", scoreCaseSensitive)
 		}
 
 		if score.score > maxScore.score {

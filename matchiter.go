@@ -35,27 +35,35 @@ type candidateMatch struct {
 	runeOffset  uint32
 	byteOffset  uint32
 	byteMatchSz uint32
+
+	// caseSensitiveMatch tracks whether the pattern and the candidateMatch
+	// have the same case.
+	caseSensitiveMatch bool
 }
 
-// Matches content against the substring, and populates byteMatchSz on success
+// Matches content against the substring, and populates byteMatchSz and
+// caseSensitiveMatch.
 func (m *candidateMatch) matchContent(content []byte) bool {
-	if m.caseSensitive {
-		comp := bytes.Equal(m.substrBytes, content[m.byteOffset:m.byteOffset+uint32(len(m.substrBytes))])
+	// Later, during match scoring, we want to know whether the match is
+	// case-sensitive, even if the user didn't ask for it. Hence we always
+	// compare the pattern and content bytewise.
+	m.caseSensitiveMatch = bytes.Equal(m.substrBytes, content[m.byteOffset:m.byteOffset+uint32(len(m.substrBytes))])
 
+	if m.caseSensitive || m.caseSensitiveMatch {
 		m.byteMatchSz = uint32(len(m.substrBytes))
-		return comp
-	} else {
-		// It is tempting to try a simple ASCII based
-		// comparison if possible, but we need more
-		// information. Simple ASCII chars have unicode upper
-		// case variants (the ASCII 'k' has the Kelvin symbol
-		// as upper case variant). We can only degrade to
-		// ASCII if we are sure that both the corpus and the
-		// query is ASCII only
-		sz, ok := caseFoldingEqualsRunes(m.substrLowered, content[m.byteOffset:])
-		m.byteMatchSz = uint32(sz)
-		return ok
+		return m.caseSensitiveMatch
 	}
+
+	// It is tempting to try a simple ASCII based
+	// comparison if possible, but we need more
+	// information. Simple ASCII chars have unicode upper
+	// case variants (the ASCII 'k' has the Kelvin symbol
+	// as upper case variant). We can only degrade to
+	// ASCII if we are sure that both the corpus and the
+	// query is ASCII only
+	sz, ok := caseFoldingEqualsRunes(m.substrLowered, content[m.byteOffset:])
+	m.byteMatchSz = uint32(sz)
+	return ok
 }
 
 // matchIterator is a docIterator that produces candidateMatches for a given document

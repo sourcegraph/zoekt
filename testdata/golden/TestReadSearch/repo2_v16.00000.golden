@@ -4,7 +4,7 @@
   "FileMatches": [
     [
       {
-        "Score": 910,
+        "Score": 1010,
         "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
@@ -19,14 +19,15 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 501,
+            "Score": 601,
             "DebugScore": "",
             "LineFragments": [
               {
                 "LineOffset": 0,
                 "Offset": 33,
                 "MatchLength": 9,
-                "SymbolInfo": null
+                "SymbolInfo": null,
+                "CaseSensitiveMatch": true
               }
             ]
           }
@@ -66,7 +67,8 @@
                 "LineOffset": 0,
                 "Offset": 0,
                 "MatchLength": 7,
-                "SymbolInfo": null
+                "SymbolInfo": null,
+                "CaseSensitiveMatch": false
               }
             ]
           }
