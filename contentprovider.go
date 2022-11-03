@@ -684,11 +684,11 @@ func scoreKind(language string, kind string) float64 {
 		}
 	case "Go":
 		switch kind {
-		case "struct": // structs
-			factor = 10
-		case "talias": // type aliases
-			factor = 9.5
 		case "interface": // interfaces
+			factor = 10
+		case "struct": // structs
+			factor = 9.5
+		case "talias": // type aliases
 			factor = 9
 		case "methodSpec": // interface method specification
 			factor = 8.5
