@@ -29,12 +29,14 @@ type collectSender struct {
 	aggregate          *zoekt.SearchResult
 	maxDocDisplayCount int
 	useDocumentRanks   bool
+	debugScore         bool
 }
 
 func newCollectSender(opts *zoekt.SearchOptions) *collectSender {
 	return &collectSender{
 		maxDocDisplayCount: opts.MaxDocDisplayCount,
 		useDocumentRanks:   opts.UseDocumentRanks,
+		debugScore:         opts.DebugScore,
 	}
 }
 
@@ -80,7 +82,7 @@ func (c *collectSender) Done() (_ *zoekt.SearchResult, ok bool) {
 	agg := c.aggregate
 	c.aggregate = nil
 
-	zoekt.SortFiles(agg.Files, c.useDocumentRanks)
+	zoekt.SortFiles(agg.Files, c.useDocumentRanks, c.debugScore)
 
 	if max := c.maxDocDisplayCount; max > 0 && len(agg.Files) > max {
 		agg.Files = agg.Files[:max]
