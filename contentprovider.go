@@ -765,47 +765,47 @@ func sortChunkMatchesByScore(ms []ChunkMatch) {
 	sort.Sort(chunkMatchScoreSlice(ms))
 }
 
-// k = 60 is arbitrary but reportedly works well (RFF; Cormack et al., 2009).
+// k = 60 is arbitrary but reportedly works well (RRF; Cormack et al., 2009).
 const k = 60
 
 // SortFiles sorts files matches. The order depends on the match score and, if
 // available, on the pre-computed document ranks.
 //
 // Rankings derived from match scores and rank vectors are combined based on
-// "Reciprocal Rank Fusion" (RFF).
+// "Reciprocal Rank Fusion" (RRF).
 func SortFiles(ms []FileMatch, useDocumentRanks bool) {
 	sort.Sort(fileMatchesByScore(ms))
 
 	if useDocumentRanks {
-		rffScore := make([]float64, len(ms))
+		rrfScore := make([]float64, len(ms))
 
 		for i := 0; i < len(ms); i++ {
-			rffScore[i] = 1 / (k + float64(i))
+			rrfScore[i] = 1 / (k + float64(i))
 		}
 
 		// We use stable sort in case we don't have ranks. Without stable sort the order
 		// of file matches would be random which would sully the ranking induces by the
 		// scores.
-		sort.Stable(fileMatchesByRank{fileMatches: ms, rffScore: rffScore})
+		sort.Stable(fileMatchesByRank{fileMatches: ms, rrfScore: rrfScore})
 
-		for i := range rffScore {
-			rffScore[i] += 1 / (k + float64(i))
+		for i := range rrfScore {
+			rrfScore[i] += 1 / (k + float64(i))
 		}
 
-		sort.Sort(fileMatchesByRFFScore{fileMatches: ms, rffScore: rffScore})
+		sort.Sort(fileMatchesByRRFScore{fileMatches: ms, rrfScore: rrfScore})
 	}
 }
 
 type fileMatchesByRank struct {
 	fileMatches []FileMatch
-	rffScore    []float64
+	rrfScore    []float64
 }
 
 func (m fileMatchesByRank) Len() int { return len(m.fileMatches) }
 
 func (m fileMatchesByRank) Swap(i, j int) {
 	m.fileMatches[i], m.fileMatches[j] = m.fileMatches[j], m.fileMatches[i]
-	m.rffScore[i], m.rffScore[j] = m.rffScore[j], m.rffScore[i]
+	m.rrfScore[i], m.rrfScore[j] = m.rrfScore[j], m.rrfScore[i]
 }
 
 const epsilon = 0.00000001
@@ -828,19 +828,19 @@ func (m fileMatchesByRank) Less(i, j int) bool {
 	return len(r1) > len(r2)
 }
 
-type fileMatchesByRFFScore struct {
+type fileMatchesByRRFScore struct {
 	fileMatches []FileMatch
-	rffScore    []float64
+	rrfScore    []float64
 }
 
-func (m fileMatchesByRFFScore) Len() int { return len(m.fileMatches) }
+func (m fileMatchesByRRFScore) Len() int { return len(m.fileMatches) }
 
-func (m fileMatchesByRFFScore) Swap(i, j int) {
+func (m fileMatchesByRRFScore) Swap(i, j int) {
 	m.fileMatches[i], m.fileMatches[j] = m.fileMatches[j], m.fileMatches[i]
-	m.rffScore[i], m.rffScore[j] = m.rffScore[j], m.rffScore[i]
+	m.rrfScore[i], m.rrfScore[j] = m.rrfScore[j], m.rrfScore[i]
 }
 
-func (m fileMatchesByRFFScore) Less(i, j int) bool {
+func (m fileMatchesByRRFScore) Less(i, j int) bool {
 	// Higher scores are better.
-	return m.rffScore[i] > m.rffScore[j]
+	return m.rrfScore[i] > m.rrfScore[j]
 }

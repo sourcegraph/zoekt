@@ -335,7 +335,7 @@ func TestSortFiles(t *testing.T) {
 		{FileName: "d4", Score: 1, Ranks: []float64{0.5}},
 	}
 
-	// Document  RRF(Score) RFF(Ranks) SUM                  Rank
+	// Document  RRF(Score) RRF(Ranks) SUM                  Rank
 	// d3        1/(60+1)   1/(60+0)   0,0330601092896175   0
 	// d2        1/(60+0)   1/(60+3)   0,0325396825396826   1
 	// d1        1/(60+2)   1/(60+1)   0,0325224748810153   2
