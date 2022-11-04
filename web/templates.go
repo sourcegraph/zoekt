@@ -24,7 +24,6 @@ var Top = template.New("top").Funcs(Funcmap)
 
 // TemplateText contains the text of the standard templates.
 var TemplateText = map[string]string{
-
 	"head": `
 <head>
 <meta charset="utf-8">
@@ -230,7 +229,7 @@ document.onkeydown=function(e){
               <span style="font-weight: normal">[ {{if .Branches}}{{range .Branches}}<span class="label label-default">{{.}}</span>,{{end}}{{end}} ]</span>
               {{if .Language}}<button
                    title="restrict search to files written in {{.Language}}"
-                   onclick="zoektAddQ('lang:{{.Language}}')" class="label label-primary">language {{.Language}}</button></span>{{end}}
+                   onclick="zoektAddQ('lang:&quot;{{.Language}}&quot;')" class="label label-primary">language {{.Language}}</button></span>{{end}}
               {{if .DuplicateID}}<a class="label label-dup" href="#{{.DuplicateID}}">Duplicate result</a>{{end}}
             </small>
           </th>
