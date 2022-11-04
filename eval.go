@@ -422,7 +422,7 @@ nextFileMatch:
 	// I am slightly worried about negative interactions with TotalMaxMatchCount
 	// so feature flagging this behaviour behind UseDocumentRanks.
 	if limit := opts.MaxDocDisplayCount; opts.UseDocumentRanks && limit > 0 && limit < len(res.Files) {
-		SortFiles(res.Files, opts.UseDocumentRanks, opts.DebugScore)
+		SortFiles(res.Files, opts)
 		res.Files = res.Files[:limit]
 	}
 

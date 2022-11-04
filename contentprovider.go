@@ -773,16 +773,16 @@ const k = 60
 //
 // Rankings derived from match scores and rank vectors are combined based on
 // "Reciprocal Rank Fusion" (RFF).
-func SortFiles(ms []FileMatch, useDocumentRanks bool, debug bool) {
+func SortFiles(ms []FileMatch, opts *SearchOptions) {
 	sort.Sort(fileMatchesByScore(ms))
 
-	if useDocumentRanks {
+	if opts.UseDocumentRanks {
 		rffScore := make([]float64, len(ms))
 
 		for i := 0; i < len(ms); i++ {
 			rffScore[i] = 1 / (k + float64(i))
-			if debug {
-				ms[i].Debug += fmt.Sprintf("rff_score: %f, ", rffScore[i])
+			if opts.DebugScore {
+				ms[i].Debug += fmt.Sprintf("(%d,", i)
 			}
 		}
 
@@ -793,8 +793,8 @@ func SortFiles(ms []FileMatch, useDocumentRanks bool, debug bool) {
 
 		for i := range rffScore {
 			rffScore[i] += 1 / (k + float64(i))
-			if debug {
-				ms[i].Debug += fmt.Sprintf("rff_rank: %f, rff_sum: %f, ", 1/(k+float64(i)), rffScore[i])
+			if opts.DebugScore {
+				ms[i].Debug += fmt.Sprintf("%d), ", i)
 			}
 		}
 
