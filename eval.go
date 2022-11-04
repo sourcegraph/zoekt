@@ -376,6 +376,10 @@ nextFileMatch:
 
 		fileMatch.addScore("shard-order", scoreShardRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)
 
+		if opts.DebugScore && opts.UseDocumentRanks {
+			fileMatch.Debug += fmt.Sprintf("ranks: %v, ", fileMatch.Ranks)
+		}
+
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
 		sortMatchesByScore(fileMatch.LineMatches)
 		sortChunkMatchesByScore(fileMatch.ChunkMatches)
@@ -418,7 +422,7 @@ nextFileMatch:
 	// I am slightly worried about negative interactions with TotalMaxMatchCount
 	// so feature flagging this behaviour behind UseDocumentRanks.
 	if limit := opts.MaxDocDisplayCount; opts.UseDocumentRanks && limit > 0 && limit < len(res.Files) {
-		SortFiles(res.Files, opts.UseDocumentRanks)
+		SortFiles(res.Files, opts)
 		res.Files = res.Files[:limit]
 	}
 
