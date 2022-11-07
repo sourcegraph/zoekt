@@ -454,19 +454,18 @@ func (nls newlines) getLines(data []byte, low, high int) []byte {
 
 const (
 	// TODO - how to scale this relative to rank?
-	scorePartialWordMatch   = 50.0
-	scoreWordMatch          = 500.0
-	scoreBase               = 7000.0
-	scorePartialBase        = 4000.0
-	scoreImportantThreshold = 2000.0
-	scoreSymbol             = 7000.0
-	scorePartialSymbol      = 4000.0
-	scoreKindMatch          = 100.0
-	scoreFactorAtomMatch    = 400.0
-	scoreShardRankFactor    = 20.0
-	scoreFileOrderFactor    = 10.0
-	scoreLineOrderFactor    = 1.0
-	scoreRepetitionFactor   = 1.0
+	scorePartialWordMatch = 50.0
+	scoreWordMatch        = 500.0
+	scoreBase             = 7000.0
+	scorePartialBase      = 4000.0
+	scoreSymbol           = 7000.0
+	scorePartialSymbol    = 4000.0
+	scoreKindMatch        = 100.0
+	scoreFactorAtomMatch  = 400.0
+	scoreShardRankFactor  = 20.0
+	scoreFileOrderFactor  = 10.0
+	scoreLineOrderFactor  = 1.0
+	scoreRepetitionFactor = 1.0
 )
 
 // findSection checks whether a section defined by offset and size lies within
