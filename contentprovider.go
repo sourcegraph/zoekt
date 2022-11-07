@@ -497,7 +497,7 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 
 	addScore := func(what string, s float64) {
 		if debug {
-			score.what += fmt.Sprintf("%s:%f, ", what, s)
+			score.what += fmt.Sprintf("%s:%.2f, ", what, s)
 		}
 		score.score += s
 	}
@@ -562,7 +562,11 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 		}
 	}
 
-	return maxScore.score, strings.TrimRight(maxScore.what, ", ")
+	if debug {
+		maxScore.what = fmt.Sprintf("score:%f <- %s", maxScore.score, strings.TrimRight(maxScore.what, ", "))
+	}
+
+	return maxScore.score, maxScore.what
 }
 
 func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, language string, debug bool) (float64, string) {
@@ -576,7 +580,7 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 
 	addScore := func(what string, s float64) {
 		if debug {
-			score.what += fmt.Sprintf("%s:%f, ", what, s)
+			score.what += fmt.Sprintf("%s:%.2f, ", what, s)
 		}
 		score.score += s
 	}
@@ -636,7 +640,12 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 			maxScore.what = score.what
 		}
 	}
-	return maxScore.score, strings.TrimRight(maxScore.what, ", ")
+
+	if debug {
+		maxScore.what = fmt.Sprintf("score:%.2f <- %s", maxScore.score, strings.TrimSuffix(maxScore.what, ", "))
+	}
+
+	return maxScore.score, maxScore.what
 }
 
 // scoreKind boosts a match based on the combination of language and kind. The

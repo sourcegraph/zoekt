@@ -32,7 +32,7 @@ const maxUInt16 = 0xffff
 
 func (m *FileMatch) addScore(what string, s float64, debugScore bool) {
 	if debugScore {
-		m.Debug += fmt.Sprintf("%s:%f, ", what, s)
+		m.Debug += fmt.Sprintf("%s:%.2f, ", what, s)
 	}
 	m.Score += s
 }
@@ -394,6 +394,10 @@ nextFileMatch:
 
 		repoMatchCount += len(fileMatch.LineMatches)
 		repoMatchCount += matchedChunkRanges
+
+		if opts.DebugScore {
+			fileMatch.Debug = fmt.Sprintf("score:%.2f <- %s", fileMatch.Score, fileMatch.Debug)
+		}
 
 		res.Files = append(res.Files, fileMatch)
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
