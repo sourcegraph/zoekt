@@ -396,7 +396,7 @@ nextFileMatch:
 		repoMatchCount += matchedChunkRanges
 
 		if opts.DebugScore {
-			fileMatch.Debug = fmt.Sprintf("score:%.2f <- %s", fileMatch.Score, strings.TrimSuffix(fileMatch.Debug, ", "))
+			fileMatch.Debug = fmt.Sprintf("score:%.2f <- %s", fileMatch.Score, fileMatch.Debug)
 		}
 
 		res.Files = append(res.Files, fileMatch)
