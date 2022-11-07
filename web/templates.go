@@ -220,14 +220,13 @@ document.onkeydown=function(e){
       {{else}}.{{end}}
     </h5>
     {{range .FileMatches}}
-    {{$showScoreDebug := .ScoreDebug}}
     <table class="table table-hover table-condensed">
       <thead>
         <tr>
           <th>
             {{if .URL}}<a name="{{.ResultID}}" class="result"></a><a href="{{.URL}}" >{{else}}<a name="{{.ResultID}}">{{end}}
             <small>
-              {{.Repo}}:{{.FileName}} {{if $showScoreDebug}}<i>(score:{{.Score}} <-- {{.ScoreDebug}})</i>{{end}}</a>:
+              {{.Repo}}:{{.FileName}} {{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</a>:
               <span style="font-weight: normal">[ {{if .Branches}}{{range .Branches}}<span class="label label-default">{{.}}</span>,{{end}}{{end}} ]</span>
               {{if .Language}}<button
                    title="restrict search to files written in {{.Language}}"
@@ -242,7 +241,7 @@ document.onkeydown=function(e){
         {{range .Matches}}
         <tr>
           <td style="background-color: rgba(238, 238, 255, 0.6);">
-            <pre class="inline-pre"><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 .Post}}{{end}} {{if $showScoreDebug}}<i>(score:{{.Score}} <-- {{.ScoreDebug}})</i>{{end}}</pre>
+            <pre class="inline-pre"><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 .Post}}{{end}} {{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</pre>
           </td>
         </tr>
         {{end}}
