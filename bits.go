@@ -150,16 +150,20 @@ func splitNGrams(str []byte) []runeNgramOff {
 }
 
 const (
-	_classChar  = 0
-	_classDigit = iota
-	_classPunct = iota
-	_classOther = iota
-	_classSpace = iota
+	_classLowerChar int = iota
+	_classUpperChar
+	_classDigit
+	_classPunct
+	_classOther
+	_classSpace
 )
 
 func byteClass(c byte) int {
-	if (c >= 'a' && c <= 'z') || c >= 'A' && c <= 'Z' {
-		return _classChar
+	if c >= 'a' && c <= 'z' {
+		return _classLowerChar
+	}
+	if c >= 'A' && c <= 'Z' {
+		return _classUpperChar
 	}
 	if c >= '0' && c <= '9' {
 		return _classDigit

@@ -878,10 +878,18 @@ func TestScoring(t *testing.T) {
 		{
 			fileName:     "example.java",
 			content:      exampleJava,
-			query:        &query.Substring{Content: true, Pattern: "nnerClass"},
+			query:        &query.Substring{Content: true, Pattern: "nerClass"},
 			wantLanguage: "Java",
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 50 (partial word) + 400 (atom) + 10 (file order)
 			wantScore: 6960,
+		},
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Content: true, Pattern: "StaticClass"},
+			wantLanguage: "Java",
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 7410,
 		},
 		{
 			fileName:     "example.java",
