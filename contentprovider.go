@@ -781,7 +781,7 @@ func SortFiles(ms []FileMatch, opts *SearchOptions) {
 
 		for i := 0; i < len(ms); i++ {
 			rrfScore[i] = 1 / (k + float64(i))
- 			if opts.DebugScore {
+			if opts.DebugScore {
 				ms[i].Debug += fmt.Sprintf("(%d,", i)
 			}
 		}
@@ -793,7 +793,7 @@ func SortFiles(ms []FileMatch, opts *SearchOptions) {
 
 		for i := range rrfScore {
 			rrfScore[i] += 1 / (k + float64(i))
-      if opts.DebugScore {
+			if opts.DebugScore {
 				ms[i].Debug += fmt.Sprintf("%d), ", i)
 			}
 		}
