@@ -215,7 +215,11 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		// We shallow fetch each commit specified in zoekt.Branches. This requires
 		// the server to have configured both uploadpack.allowAnySHA1InWant and
 		// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
-		fetchArgs := []string{"-C", gitDir, "-c", "protocol.version=2", "fetch", "--depth=1", o.CloneURL}
+		fetchArgs := []string{
+			"-C", gitDir,
+			"-c", "protocol.version=2",
+			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
+			"fetch", "--depth=1", o.CloneURL}
 
 		var commits []string
 		for _, b := range branches {
