@@ -109,7 +109,7 @@ func TestSizeBytesSearchResult(t *testing.T) {
 		LineFragments: nil, // 48 bytes
 	}
 
-	var wantBytes uint64 = 724
+	var wantBytes uint64 = 740
 	if sr.SizeBytes() != wantBytes {
 		t.Fatalf("want %d, got %d", wantBytes, sr.SizeBytes())
 	}

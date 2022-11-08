@@ -381,9 +381,11 @@ type Stats struct {
 	FlushReason string
 }
 
-func (s *Stats) sizeBytes() uint64 {
-	// This assumes we are running on a 64-bit architecture.
-	return 16 * 8
+func (s *Stats) sizeBytes() (sz uint64) {
+	sz = 16 * 8 // This assumes we are running on a 64-bit architecture
+	sz += stringHeaderBytes + uint64(len(s.FlushReason))
+
+	return
 }
 
 func (s *Stats) Add(o Stats) {
