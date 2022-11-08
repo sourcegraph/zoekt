@@ -118,6 +118,7 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 
 		if agg, ok := collectSender.Done(); ok {
 			metricFinalAggregateSize.WithLabelValues(reason).Observe(float64(len(agg.Files)))
+			agg.FlushReason = reason
 			sender.Send(agg)
 		}
 

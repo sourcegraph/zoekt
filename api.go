@@ -376,6 +376,9 @@ type Stats struct {
 
 	// Number of times regexp was called on files that we evaluated.
 	RegexpsConsidered int
+
+	// FlushReason explains why results were flushed.
+	FlushReason string
 }
 
 func (s *Stats) sizeBytes() uint64 {
@@ -399,6 +402,10 @@ func (s *Stats) Add(o Stats) {
 	s.ShardsSkippedFilter += o.ShardsSkippedFilter
 	s.Wait += o.Wait
 	s.RegexpsConsidered += o.RegexpsConsidered
+
+	if o.FlushReason != "" {
+		s.FlushReason = o.FlushReason
+	}
 }
 
 // Zero returns true if stats is empty.
