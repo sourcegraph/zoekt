@@ -84,7 +84,7 @@
     ],
     [
       {
-        "Score": 7910,
+        "Score": 8410,
         "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
@@ -99,7 +99,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 7501,
+            "Score": 8001,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -129,7 +129,7 @@
     ],
     [
       {
-        "Score": 5760,
+        "Score": 6260,
         "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
@@ -144,7 +144,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 5551,
+            "Score": 6051,
             "DebugScore": "",
             "LineFragments": [
               {

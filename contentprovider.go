@@ -650,14 +650,37 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 // scoreKind boosts a match based on the combination of language and kind. The
 // language string comes from go-enry, the kind string from ctags.
 func scoreKind(language string, kind string) float64 {
+	var factor float64
+
+	// Generic ranking which will be overriden by language specific ranking
+	switch kind {
+	case "class":
+		factor = 10
+	case "struct":
+		factor = 9.5
+	case "enum":
+		factor = 9
+	case "interface":
+		factor = 8
+	case "function", "func":
+		factor = 7
+	case "method":
+		factor = 6
+	case "member", "field":
+		factor = 5.5
+	case "constant", "const":
+		factor = 5
+	case "var", "variable":
+		factor = 4
+	}
+
 	// Refer to universal-ctags --list-kinds-full=<language> to learn about which
 	// kinds are detected for which language.
 	//
 	// Note that go-ctags uses universal-ctags's interactive mode and thus returns
 	// the full name for "kind" and not the one-letter abbreviation.
-	var factor float64
 	switch language {
-	case "Java":
+	case "Java", "java":
 		switch kind {
 		// 2022-03-30: go-ctags contains a regex rule for Java classes that sets "kind"
 		// to "classes" instead of "c". We have to cover both cases to support existing
@@ -675,7 +698,7 @@ func scoreKind(language string, kind string) float64 {
 		case "enumConstant":
 			factor = 5
 		}
-	case "Kotlin":
+	case "Kotlin", "kotlin":
 		switch kind {
 		case "class":
 			factor = 10
@@ -690,7 +713,7 @@ func scoreKind(language string, kind string) float64 {
 		case "variable":
 			factor = 5
 		}
-	case "Go":
+	case "Go", "go":
 		switch kind {
 		case "interface": // interfaces
 			factor = 10
@@ -717,7 +740,7 @@ func scoreKind(language string, kind string) float64 {
 		//   - package     packages
 		//   - type        types
 		//   - unknown     unknown
-	case "C++":
+	case "C++", "c++":
 		switch kind {
 		case "class": // classes
 			factor = 10
@@ -743,7 +766,7 @@ func scoreKind(language string, kind string) float64 {
 	// header      included header files
 	// namespace   namespaces
 	// variable    variable definitions
-	case "Scala":
+	case "Scala", "scala":
 		switch kind {
 		case "class":
 			factor = 10
@@ -760,7 +783,67 @@ func scoreKind(language string, kind string) float64 {
 		case "package":
 			factor = 4
 		}
+	case "Python", "python":
+		switch kind {
+		case "class": // classes
+			factor = 10
+		case "function": // function definitions
+			factor = 8
+		case "member": // class, struct, and union members
+			factor = 4
+		case "variable": // variable definitions
+			factor = 3
+		case "local": // local variables
+			factor = 2
+		}
+		// Could also rank on:
+		//
+		//   - namespace name referring a module defined in other file
+		//   - module    modules
+		//   - unknown   name referring a class/variable/function/module defined in other module
+		//   - parameter function parameters
+	case "Ruby", "ruby":
+		switch kind {
+		case "class":
+			factor = 10
+		case "method":
+			factor = 9
+		case "alias":
+			factor = 8
+		case "module":
+			factor = 7
+		case "singletonMethod":
+			factor = 6
+		case "constant":
+			factor = 5
+		case "accessor":
+			factor = 4
+		case "library":
+			factor = 3
+		}
+	case "PHP", "php":
+		switch kind {
+		case "class":
+			factor = 10
+		case "interface":
+			factor = 9
+		case "function":
+			factor = 8
+		case "trait":
+			factor = 7
+		case "define":
+			factor = 6
+		case "namespace":
+			factor = 5
+		case "alias":
+			factor = 4
+		case "variable":
+			factor = 3
+		case "local":
+			factor = 3
+		}
 	}
+
 	return factor * scoreKindMatch
 }
 
