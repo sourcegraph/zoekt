@@ -814,6 +814,11 @@ func TestScoring(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	exampleScala, err := os.ReadFile("./testdata/example.scala")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	cases := []struct {
 		fileName     string
 		content      []byte
@@ -1034,6 +1039,41 @@ func Get() {
 			wantLanguage: "C++",
 			// 7000 (Symbol) + 600 (C++ union) + 500 (full word) + 400 (atom) + 10 (file order)
 			wantScore: 8510,
+		},
+		//
+		// Scala
+		//
+		{
+			fileName:     "example.scala",
+			content:      exampleScala,
+			query:        &query.Substring{Content: true, Pattern: "SymbolIndexBucket"},
+			wantLanguage: "Scala",
+			// 7000 (symbol) + 1000 (Scala class) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8910,
+		},
+		{
+			fileName:     "example.scala",
+			content:      exampleScala,
+			query:        &query.Substring{Content: true, Pattern: "stdLibPatches"},
+			wantLanguage: "Scala",
+			// 7000 (symbol) + 800 (Scala object) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8710,
+		},
+		{
+			fileName:     "example.scala",
+			content:      exampleScala,
+			query:        &query.Substring{Content: true, Pattern: "close"},
+			wantLanguage: "Scala",
+			// 7000 (symbol) + 700 (Scala method) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8610,
+		},
+		{
+			fileName:     "example.scala",
+			content:      exampleScala,
+			query:        &query.Substring{Content: true, Pattern: "javaSymbol"},
+			wantLanguage: "Scala",
+			// 7000 (symbol) + 500 (Scala method) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8410,
 		},
 	}
 

@@ -736,13 +736,30 @@ func scoreKind(language string, kind string) float64 {
 		case "variable": // varialbe definitions
 			factor = 3
 		}
-		// Could also rank on:
-		// NAME        DESCRIPTION
-		// macro       macro definitions
-		// enumerator  enumerators (values inside an enumeration)
-		// header      included header files
-		// namespace   namespaces
-		// variable    variable definitions
+	// Could also rank on:
+	// NAME        DESCRIPTION
+	// macro       macro definitions
+	// enumerator  enumerators (values inside an enumeration)
+	// header      included header files
+	// namespace   namespaces
+	// variable    variable definitions
+	case "Scala":
+		switch kind {
+		case "class":
+			factor = 10
+		case "interface":
+			factor = 9
+		case "object":
+			factor = 8
+		case "method":
+			factor = 7
+		case "type":
+			factor = 6
+		case "variable":
+			factor = 5
+		case "package":
+			factor = 4
+		}
 	}
 	return factor * scoreKindMatch
 }
