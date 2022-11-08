@@ -238,6 +238,7 @@ document.onkeydown=function(e){
       {{if not .DuplicateID}}
       <tbody>
         {{range .Matches}}
+        {{if gt .LineNum 0}}
         <tr>
           <td style="background-color: rgba(238, 238, 255, 0.6);">
             <pre class="inline-pre"><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 .Post}}{{end}} {{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</pre>
@@ -245,6 +246,7 @@ document.onkeydown=function(e){
         </tr>
         {{end}}
       </tbody>
+      {{end}}
       {{end}}
     </table>
     {{end}}
