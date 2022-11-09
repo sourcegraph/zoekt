@@ -900,7 +900,7 @@ func SortFiles(ms []FileMatch, opts *SearchOptions) {
 		sort.Stable(fileMatchesByRank{fileMatches: ms, rrfScore: rrfScore})
 
 		for i := range rrfScore {
-			rrfScore[i] += 1 / (k + float64(i))
+			rrfScore[i] += (1 - opts.RanksDampingFactor) / (k + float64(i))
 			if opts.DebugScore {
 				ms[i].Debug += fmt.Sprintf("%d), ", i)
 			}
