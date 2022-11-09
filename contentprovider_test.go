@@ -3,6 +3,7 @@ package zoekt
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -335,22 +336,46 @@ func TestSortFiles(t *testing.T) {
 		{FileName: "d4", Score: 1, Ranks: []float64{0.5}},
 	}
 
-	// Document  RRF(Score) RRF(Ranks) SUM                  Rank
-	// d3        1/(60+1)   1/(60+0)   0,0330601092896175   0
-	// d2        1/(60+0)   1/(60+3)   0,0325396825396826   1
-	// d1        1/(60+2)   1/(60+1)   0,0325224748810153   2
-	// d4        1/(60+3)   1/(60+2)   0,0320020481310804   3
-
-	SortFiles(in, &SearchOptions{UseDocumentRanks: true, DebugScore: true})
-
-	wantOrder := []string{"d3", "d2", "d1", "d4"}
-
-	var haveOrder = []string{}
-	for _, f := range in {
-		haveOrder = append(haveOrder, f.FileName)
+	cases := []struct {
+		name          string
+		dampingFactor float64
+		wantOrder     []string
+	}{
+		// Document  RRF(Score) RRF(Ranks) SUM                  Rank
+		// d3        1/(60+1)   1/(60+0)   0,0330601092896175   0
+		// d2        1/(60+0)   1/(60+3)   0,0325396825396826   1
+		// d1        1/(60+2)   1/(60+1)   0,0325224748810153   2
+		// d4        1/(60+3)   1/(60+2)   0,0320020481310804   3
+		{
+			"equal",
+			0,
+			[]string{"d3", "d2", "d1", "d4"},
+		},
+		{
+			"scores only",
+			1,
+			[]string{"d2", "d3", "d1", "d4"},
+		},
+		{
+			"ranks only",
+			math.Inf(-1),
+			[]string{"d3", "d1", "d4", "d2"},
+		},
 	}
 
-	if d := cmp.Diff(wantOrder, haveOrder); d != "" {
-		t.Fatalf("-want, +got\n%s\n", d)
+	for _, tt := range cases {
+		t.Run("", func(t *testing.T) {
+
+			SortFiles(in, &SearchOptions{UseDocumentRanks: true, DebugScore: true, RanksDampingFactor: tt.dampingFactor})
+
+			var haveOrder = []string{}
+			for _, f := range in {
+				haveOrder = append(haveOrder, f.FileName)
+			}
+
+			if d := cmp.Diff(tt.wantOrder, haveOrder); d != "" {
+				t.Fatalf("-want, +got\n%s\n", d)
+			}
+		})
 	}
 }
