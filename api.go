@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"time"
@@ -585,6 +586,14 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		r.priority, err = strconv.ParseFloat(v, 64)
 		if err != nil {
 			r.priority = 0
+		}
+
+		// Sourcegraph indexserver doesn't set repo.Rank, so we set it here
+		// based on priority. Setting it on read instead of during indexing
+		// allows us to avoid a complete reindex.
+		if r.Rank == 0 && r.priority > 0 {
+			l := math.Log(float64(r.priority))
+			repo.Rank = uint16((1.0 - 1.0/math.Pow(1+l, 0.6)) * 10000)
 		}
 	}
 	return nil
