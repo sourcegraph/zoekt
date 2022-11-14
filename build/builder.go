@@ -20,7 +20,6 @@ import (
 	"crypto/sha1"
 	"flag"
 	"fmt"
-	"github.com/bmatcuk/doublestar"
 	"io"
 	"log"
 	"math"
@@ -38,6 +37,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bmatcuk/doublestar"
 	"github.com/grafana/regexp"
 	"github.com/rs/xid"
 	"gopkg.in/natefinch/lumberjack.v2"
