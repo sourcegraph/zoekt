@@ -109,6 +109,7 @@ func testIndexIncrementally(t *testing.T, format string) {
 	for i := 0; i < 4; i++ {
 		s := fmt.Sprintf("%d", i)
 		files["F"+s] = strings.Repeat("a", fileSize)
+		files["!F"+s] = strings.Repeat("a", fileSize)
 	}
 
 	err = writeArchive(archive, format, files)
@@ -134,6 +135,10 @@ func testIndexIncrementally(t *testing.T, format string) {
 		{
 			largeFiles:   []string{"F?", "!F2"},
 			wantNumFiles: 3,
+		},
+		{
+			largeFiles:   []string{"F?", "!F2", "\\!F0"},
+			wantNumFiles: 4,
 		},
 	}
 
