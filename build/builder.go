@@ -20,6 +20,7 @@ import (
 	"crypto/sha1"
 	"flag"
 	"fmt"
+	"github.com/bmatcuk/doublestar"
 	"io"
 	"log"
 	"math"
@@ -37,7 +38,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bmatcuk/doublestar"
 	"github.com/grafana/regexp"
 	"github.com/rs/xid"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -505,15 +505,44 @@ func (o *Options) FindAllShards() []string {
 
 // IgnoreSizeMax determines whether the max size should be ignored.
 func (o *Options) IgnoreSizeMax(name string) bool {
+	matched := false
 	for _, pattern := range o.LargeFiles {
 		pattern = strings.TrimSpace(pattern)
-		m, _ := doublestar.PathMatch(pattern, name)
+		negated, validatedPattern := checkIsNegatePattern(pattern)
+
+		m, _ := doublestar.PathMatch(validatedPattern, name)
 		if m {
-			return true
+			// match against a negated LargeFiles pattern overrides all non-exclude matches
+			if negated {
+				return false
+			}
+			matched = true
 		}
 	}
 
-	return false
+	return matched
+}
+
+func checkIsNegatePattern(pattern string) (bool, string) {
+	negate := "!"
+
+	if len(pattern) < len(negate) {
+		return false, pattern
+	}
+
+	// if negated then strip prefix meta characters representing negated filter pattern
+	if strings.Index(pattern, negate) == 0 {
+		return true, pattern[len(negate):]
+	}
+
+	escape := "\\"
+	escapedNegate := escape + negate
+
+	if strings.Index(pattern, escapedNegate) == 0 {
+		pattern = pattern[len(escape):]
+	}
+
+	return false, pattern
 }
 
 // NewBuilder creates a new Builder instance.

@@ -247,6 +247,58 @@ func TestLargeFileOption(t *testing.T) {
 	defer ss.Close()
 }
 
+func TestNegateLargeFileOption(t *testing.T) {
+	dir := t.TempDir()
+
+	sizeMax := 1000
+	opts := Options{
+		IndexDir:   dir,
+		LargeFiles: []string{"F?", "!F0", "!F2"},
+		RepositoryDescription: zoekt.Repository{
+			Name: "repo",
+		},
+		SizeMax: sizeMax,
+	}
+
+	b, err := NewBuilder(opts)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+
+	for i := 0; i < 4; i++ {
+		s := fmt.Sprintf("%d", i)
+		if err := b.AddFile("F"+s, []byte(strings.Repeat("a", sizeMax+1))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := b.Finish(); err != nil {
+		t.Errorf("Finish: %v", err)
+	}
+
+	ss, err := shards.NewDirectorySearcher(dir)
+	if err != nil {
+		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
+	}
+
+	q, err := query.Parse("aaa")
+	if err != nil {
+		t.Fatalf("Parse(aaa): %v", err)
+	}
+
+	var sOpts zoekt.SearchOptions
+	ctx := context.Background()
+	result, err := ss.Search(ctx, q, &sOpts)
+	if err != nil {
+		t.Fatalf("Search(%v): %v", q, err)
+	}
+
+	if len(result.Files) != 1 {
+		t.Errorf("got %v files, want 2 files.", len(result.Files))
+	}
+	defer ss.Close()
+}
+
 func TestUpdate(t *testing.T) {
 	dir := t.TempDir()
 

@@ -117,6 +117,18 @@ func TestFlags(t *testing.T) {
 		want: Options{
 			LargeFiles: []string{"*.md", "*.yaml"},
 		},
+	}, {
+		// multiple large file pattern with negated pattern
+		args: []string{"-large_file", "*.md", "-large_file", "!*.yaml"},
+		want: Options{
+			LargeFiles: []string{"*.md", "!*.yaml"},
+		},
+	}, {
+		// multiple large file pattern with escaped character
+		args: []string{"-large_file", "*.md", "-large_file", "\\!*.yaml"},
+		want: Options{
+			LargeFiles: []string{"*.md", "\\!*.yaml"},
+		},
 	}}
 
 	ignored := []cmp.Option{
