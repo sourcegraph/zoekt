@@ -99,16 +99,80 @@ func TestBranchesRepos_Marshal(t *testing.T) {
 	}
 }
 
+func BenchmarkFileNameSet_Encode(b *testing.B) {
+	set := genFileNameSet(1000)
+
+	// do one write to amortize away the cost of gob registration
+	w := &countWriter{}
+	enc := gob.NewEncoder(w)
+	if err := enc.Encode(set); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.ReportMetric(float64(w.n), "bytes")
+
+	for n := 0; n < b.N; n++ {
+		if err := enc.Encode(set); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkFileNameSet_Decode(b *testing.B) {
+	set := genFileNameSet(1000)
+
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(set); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		// We need to include gob.NewDecoder cost to avoid measuring encoding.
+		var repoBranches FileNameSet
+		if err := gob.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&repoBranches); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func TestFileNameSet_Marshal(t *testing.T) {
+	for i := range []int{0, 1, 10, 100} {
+		want := genFileNameSet(i)
+
+		var buf bytes.Buffer
+		if err := gob.NewEncoder(&buf).Encode(want); err != nil {
+			t.Fatal(err)
+		}
+
+		var got FileNameSet
+		if err := gob.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+
+		if diff := cmp.Diff(want, &got); diff != "" {
+			t.Fatalf("mismatch for set size %d (-want +got):\n%s", i, diff)
+		}
+	}
+}
+
+func genFileNameSet(size int) *FileNameSet {
+	set := make(map[string]struct{}, size)
+	for i := 0; i < size; i++ {
+		set[genName(i)] = struct{}{}
+	}
+	return &FileNameSet{Set: set}
+}
+
 // Generating 5.5M repos slows down the benchmark setup time, so we cache things.
 var genCache = map[string]interface{}{}
 
 func genRepoBranches(n int) map[string][]string {
-	genName := func(n int) string {
-		bs := make([]byte, 8)
-		binary.LittleEndian.PutUint64(bs, uint64(n))
-		return fmt.Sprintf("%x", sha256.Sum256(bs))[:10]
-	}
-
 	repoBranches := map[string][]string{}
 	orgIndex := 0
 	repoIndex := 0
@@ -130,6 +194,12 @@ func genRepoBranches(n int) map[string][]string {
 	}
 
 	return repoBranches
+}
+
+func genName(n int) string {
+	bs := make([]byte, 8)
+	binary.LittleEndian.PutUint64(bs, uint64(n))
+	return fmt.Sprintf("%x", sha256.Sum256(bs))[:10]
 }
 
 func genBranchesRepos(n int) *BranchesRepos {
