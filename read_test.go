@@ -226,7 +226,14 @@ func TestReadSearch(t *testing.T) {
 				continue
 			}
 
-			if d := cmp.Diff(res.Files, want.FileMatches[j]); d != "" {
+			// The golden files don't have the unexported fields, hence we
+			// ignore them in this test.
+			diffOpts := []cmp.Option{
+				cmpopts.IgnoreUnexported(LineFragmentMatch{}),
+				cmpopts.IgnoreUnexported(ChunkMatch{}),
+			}
+
+			if d := cmp.Diff(res.Files, want.FileMatches[j], diffOpts...); d != "" {
 				t.Errorf("matches for %s on %s\n%s", q, name, d)
 			}
 		}

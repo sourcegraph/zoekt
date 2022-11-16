@@ -147,7 +147,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 				LineOffset:         int(m.byteOffset),
 				MatchLength:        int(m.byteMatchSz),
 				Offset:             m.byteOffset,
-				CaseSensitiveMatch: m.caseSensitiveMatch,
+				caseSensitiveMatch: m.caseSensitiveMatch,
 			})
 
 			result = []LineMatch{res}
@@ -187,7 +187,6 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 					Column:     uint32(utf8.RuneCount(fileName[:m.byteOffset+m.byteMatchSz]) + 1),
 				},
 			})
-
 			caseSensitiveMatch = append(caseSensitiveMatch, m.caseSensitiveMatch)
 		}
 
@@ -196,7 +195,7 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 			ContentStart:       Location{ByteOffset: 0, LineNumber: 1, Column: 1},
 			Ranges:             ranges,
 			FileName:           true,
-			CaseSensitiveMatch: caseSensitiveMatch,
+			caseSensitiveMatch: caseSensitiveMatch,
 		}}
 	} else {
 		result = p.fillContentChunkMatches(ms, numContextLines)
@@ -271,7 +270,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 				Offset:             m.byteOffset,
 				LineOffset:         int(m.byteOffset) - lineStart,
 				MatchLength:        int(m.byteMatchSz),
-				CaseSensitiveMatch: m.caseSensitiveMatch,
+				caseSensitiveMatch: m.caseSensitiveMatch,
 			}
 			if m.symbol {
 				start := p.id.fileEndSymbol[p.idx]
@@ -349,7 +348,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 			FileName:           false,
 			Ranges:             ranges,
 			SymbolInfo:         symbolInfo,
-			CaseSensitiveMatch: caseSensitiveMatch,
+			caseSensitiveMatch: caseSensitiveMatch,
 		})
 	}
 	return chunkMatches
@@ -566,7 +565,7 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 			}
 		}
 
-		if len(m.CaseSensitiveMatch) > i && m.CaseSensitiveMatch[i] {
+		if len(m.caseSensitiveMatch) > i && m.caseSensitiveMatch[i] {
 			addScore("caseSensitive", scoreCaseSensitive)
 		}
 
@@ -650,7 +649,7 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 
 		}
 
-		if f.CaseSensitiveMatch {
+		if f.caseSensitiveMatch {
 			addScore("caseSensitive", scoreCaseSensitive)
 		}
 

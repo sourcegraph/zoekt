@@ -26,8 +26,7 @@
                 "LineOffset": 0,
                 "Offset": 69,
                 "MatchLength": 9,
-                "SymbolInfo": null,
-                "CaseSensitiveMatch": true
+                "SymbolInfo": null
               }
             ]
           }
@@ -67,8 +66,7 @@
                 "LineOffset": 0,
                 "Offset": 0,
                 "MatchLength": 7,
-                "SymbolInfo": null,
-                "CaseSensitiveMatch": false
+                "SymbolInfo": null
               }
             ]
           }
@@ -86,7 +84,7 @@
     ],
     [
       {
-        "Score": 8010,
+        "Score": 8510,
         "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
@@ -101,7 +99,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 7601,
+            "Score": 8101,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -113,8 +111,7 @@
                   "Kind": "var",
                   "Parent": "main",
                   "ParentKind": "package"
-                },
-                "CaseSensitiveMatch": true
+                }
               }
             ]
           }
@@ -132,7 +129,7 @@
     ],
     [
       {
-        "Score": 5760,
+        "Score": 6260,
         "Ranks": null,
         "Debug": "",
         "FileName": "main.go",
@@ -147,7 +144,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 5551,
+            "Score": 6051,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -159,8 +156,7 @@
                   "Kind": "var",
                   "Parent": "main",
                   "ParentKind": "package"
-                },
-                "CaseSensitiveMatch": false
+                }
               }
             ]
           }

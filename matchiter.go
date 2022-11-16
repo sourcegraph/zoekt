@@ -44,26 +44,25 @@ type candidateMatch struct {
 // Matches content against the substring, and populates byteMatchSz and
 // caseSensitiveMatch.
 func (m *candidateMatch) matchContent(content []byte) bool {
-	// Later, during match scoring, we want to know whether the match is
-	// case-sensitive, even if the user didn't ask for it. Hence we always
-	// compare the pattern and content bytewise.
-	m.caseSensitiveMatch = bytes.Equal(m.substrBytes, content[m.byteOffset:m.byteOffset+uint32(len(m.substrBytes))])
-
-	if m.caseSensitive || m.caseSensitiveMatch {
+	if m.caseSensitive {
+		m.caseSensitiveMatch = bytes.Equal(m.substrBytes, content[m.byteOffset:m.byteOffset+uint32(len(m.substrBytes))])
 		m.byteMatchSz = uint32(len(m.substrBytes))
 		return m.caseSensitiveMatch
+	} else {
+		// It is tempting to try a simple ASCII based
+		// comparison if possible, but we need more
+		// information. Simple ASCII chars have unicode upper
+		// case variants (the ASCII 'k' has the Kelvin symbol
+		// as upper case variant). We can only degrade to
+		// ASCII if we are sure that both the corpus and the
+		// query is ASCII only
+		sz, ok := caseFoldingEqualsRunes(m.substrLowered, content[m.byteOffset:])
+		if ok {
+			m.caseSensitiveMatch = bytes.Equal(m.substrBytes, content[m.byteOffset:m.byteOffset+uint32(len(m.substrBytes))])
+		}
+		m.byteMatchSz = uint32(sz)
+		return ok
 	}
-
-	// It is tempting to try a simple ASCII based
-	// comparison if possible, but we need more
-	// information. Simple ASCII chars have unicode upper
-	// case variants (the ASCII 'k' has the Kelvin symbol
-	// as upper case variant). We can only degrade to
-	// ASCII if we are sure that both the corpus and the
-	// query is ASCII only
-	sz, ok := caseFoldingEqualsRunes(m.substrLowered, content[m.byteOffset:])
-	m.byteMatchSz = uint32(sz)
-	return ok
 }
 
 // matchIterator is a docIterator that produces candidateMatches for a given document

@@ -883,7 +883,7 @@ func TestScoring(t *testing.T) {
 		{
 			fileName:     "example.java",
 			content:      exampleJava,
-			query:        &query.Substring{Content: true, Pattern: "nnerclass"},
+			query:        &query.Substring{Content: true, Pattern: "nerclass"},
 			wantLanguage: "Java",
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 50 (partial word) + 400 (atom) + 10 (file order)
 			wantScore: 6960,
@@ -893,8 +893,8 @@ func TestScoring(t *testing.T) {
 			content:      exampleJava,
 			query:        &query.Substring{Content: true, Pattern: "StaticClass"},
 			wantLanguage: "Java",
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word) + 400 (atom) + 10 (file order)
-			wantScore: 7410,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word) + 400 (atom) + 100 (case-sensitive) +  10 (file order)
+			wantScore: 7510,
 		},
 		{
 			fileName:     "example.java",
@@ -1048,32 +1048,32 @@ func Get() {
 			content:      exampleScala,
 			query:        &query.Substring{Content: true, Pattern: "SymbolIndexBucket"},
 			wantLanguage: "Scala",
-			// 7000 (symbol) + 1000 (Scala class) + 500 (word) + 400 (atom) + 10 (file order)
-			wantScore: 8910,
+			// 7000 (symbol) + 1000 (Scala class) + 500 (word) + 400 (atom) + 100 (case-sensitive) + 10 (file order)
+			wantScore: 9010,
 		},
 		{
 			fileName:     "example.scala",
 			content:      exampleScala,
 			query:        &query.Substring{Content: true, Pattern: "stdLibPatches"},
 			wantLanguage: "Scala",
-			// 7000 (symbol) + 800 (Scala object) + 500 (word) + 400 (atom) + 10 (file order)
-			wantScore: 8710,
+			// 7000 (symbol) + 800 (Scala object) + 500 (word) + 400 (atom) + 100 (case-sensitive) + 10 (file order)
+			wantScore: 8810,
 		},
 		{
 			fileName:     "example.scala",
 			content:      exampleScala,
 			query:        &query.Substring{Content: true, Pattern: "close"},
 			wantLanguage: "Scala",
-			// 7000 (symbol) + 700 (Scala method) + 500 (word) + 400 (atom) + 10 (file order)
-			wantScore: 8610,
+			// 7000 (symbol) + 700 (Scala method) + 500 (word) + 400 (atom) + 100 (case-sensitive) + 10 (file order)
+			wantScore: 8710,
 		},
 		{
 			fileName:     "example.scala",
 			content:      exampleScala,
 			query:        &query.Substring{Content: true, Pattern: "javaSymbol"},
 			wantLanguage: "Scala",
-			// 7000 (symbol) + 500 (Scala method) + 500 (word) + 400 (atom) + 10 (file order)
-			wantScore: 8410,
+			// 7000 (symbol) + 500 (Scala method) + 500 (word) + 400 (atom) + 100 (case-sensitive) + 10 (file order)
+			wantScore: 8510,
 		},
 	}
 

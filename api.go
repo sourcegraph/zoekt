@@ -164,9 +164,9 @@ type ChunkMatch struct {
 	// its length will equal that of Ranges. Any of its elements may be nil.
 	SymbolInfo []*Symbol
 
-	// CaseSensitiveMatch tracks whether the pattern and match have
+	// caseSensitiveMatch tracks whether the pattern and match have
 	// the same case. Its length equals that of Ranges.
-	CaseSensitiveMatch []bool
+	caseSensitiveMatch []bool
 
 	Score      float64
 	DebugScore string
@@ -308,9 +308,9 @@ type LineFragmentMatch struct {
 
 	SymbolInfo *Symbol
 
-	// CaseSensitiveMatch tracks whether the pattern and match have
+	// caseSensitiveMatch tracks whether the pattern and match have
 	// the same case.
-	CaseSensitiveMatch bool
+	caseSensitiveMatch bool
 }
 
 func (lfm *LineFragmentMatch) sizeBytes() (sz uint64) {

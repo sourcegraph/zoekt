@@ -26,8 +26,7 @@
                 "LineOffset": 0,
                 "Offset": 33,
                 "MatchLength": 9,
-                "SymbolInfo": null,
-                "CaseSensitiveMatch": true
+                "SymbolInfo": null
               }
             ]
           }
@@ -67,8 +66,7 @@
                 "LineOffset": 0,
                 "Offset": 0,
                 "MatchLength": 7,
-                "SymbolInfo": null,
-                "CaseSensitiveMatch": false
+                "SymbolInfo": null
               }
             ]
           }
