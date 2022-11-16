@@ -118,6 +118,8 @@ var TemplateText = map[string]string{
             <input class="form-control" type="number" id="maxhits" name="num" value="{{.Num}}">
           </div>
           <button class="btn btn-primary">Search</button>
+          <!--Hack: we use a hidden form field to keep track of the debug flag across searches-->
+          {{if .Debug}}<input id="debug" name="debug" type="hidden" value="{{.Debug}}">{{end}}
         </div>
       </form>
     </div>
