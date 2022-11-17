@@ -324,6 +324,25 @@ func (lfm *LineFragmentMatch) sizeBytes() (sz uint64) {
 	return
 }
 
+type FlushReason uint8
+
+const (
+	FlushReasonTimerExpired FlushReason = 1 << iota
+	FlushReasonFinalFlush
+)
+
+var FlushReasonStrings = map[FlushReason]string{
+	FlushReasonTimerExpired: "timer_expired",
+	FlushReasonFinalFlush:   "final_flush"}
+
+func (fr FlushReason) String() string {
+	if v, ok := FlushReasonStrings[fr]; ok {
+		return v
+	}
+
+	return "none"
+}
+
 // Stats contains interesting numbers on the search
 type Stats struct {
 	// Amount of I/O for reading contents.
@@ -378,12 +397,12 @@ type Stats struct {
 	RegexpsConsidered int
 
 	// FlushReason explains why results were flushed.
-	FlushReason string
+	FlushReason FlushReason
 }
 
 func (s *Stats) sizeBytes() (sz uint64) {
 	sz = 16 * 8 // This assumes we are running on a 64-bit architecture
-	sz += stringHeaderBytes + uint64(len(s.FlushReason))
+	sz += 1     // FlushReason
 
 	return
 }
@@ -405,7 +424,7 @@ func (s *Stats) Add(o Stats) {
 	s.Wait += o.Wait
 	s.RegexpsConsidered += o.RegexpsConsidered
 
-	if o.FlushReason != "" {
+	if o.FlushReason != 0 {
 		s.FlushReason = o.FlushReason
 	}
 }
