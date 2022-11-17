@@ -329,11 +329,13 @@ type FlushReason uint8
 const (
 	FlushReasonTimerExpired FlushReason = 1 << iota
 	FlushReasonFinalFlush
+	FlushReasonMaxSize
 )
 
 var FlushReasonStrings = map[FlushReason]string{
 	FlushReasonTimerExpired: "timer_expired",
 	FlushReasonFinalFlush:   "final_flush",
+	FlushReasonMaxSize:      "max_size_reached",
 }
 
 func (fr FlushReason) String() string {
