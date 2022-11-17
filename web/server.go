@@ -229,10 +229,7 @@ func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 	qvals := r.URL.Query()
 
-	debugScore := false
-	if qvals.Get("debug") == "1" {
-		debugScore = true
-	}
+	debugScore, _ := strconv.ParseBool(qvals.Get("debug"))
 
 	queryStr := qvals.Get("q")
 	if queryStr == "" {
@@ -321,6 +318,8 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 		// Suppress queueing stats if they are neglible.
 		res.Stats.Wait = 0
 	}
+
+	res.Last.Debug = debugScore
 	return &ApiSearchResult{Result: &res}, nil
 }
 
