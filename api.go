@@ -324,6 +324,28 @@ func (lfm *LineFragmentMatch) sizeBytes() (sz uint64) {
 	return
 }
 
+type FlushReason uint8
+
+const (
+	FlushReasonTimerExpired FlushReason = 1 << iota
+	FlushReasonFinalFlush
+	FlushReasonMaxSize
+)
+
+var FlushReasonStrings = map[FlushReason]string{
+	FlushReasonTimerExpired: "timer_expired",
+	FlushReasonFinalFlush:   "final_flush",
+	FlushReasonMaxSize:      "max_size_reached",
+}
+
+func (fr FlushReason) String() string {
+	if v, ok := FlushReasonStrings[fr]; ok {
+		return v
+	}
+
+	return "none"
+}
+
 // Stats contains interesting numbers on the search
 type Stats struct {
 	// Amount of I/O for reading contents.
@@ -376,11 +398,16 @@ type Stats struct {
 
 	// Number of times regexp was called on files that we evaluated.
 	RegexpsConsidered int
+
+	// FlushReason explains why results were flushed.
+	FlushReason FlushReason
 }
 
-func (s *Stats) sizeBytes() uint64 {
-	// This assumes we are running on a 64-bit architecture.
-	return 16 * 8
+func (s *Stats) sizeBytes() (sz uint64) {
+	sz = 16 * 8 // This assumes we are running on a 64-bit architecture
+	sz += 1     // FlushReason
+
+	return
 }
 
 func (s *Stats) Add(o Stats) {
@@ -399,6 +426,12 @@ func (s *Stats) Add(o Stats) {
 	s.ShardsSkippedFilter += o.ShardsSkippedFilter
 	s.Wait += o.Wait
 	s.RegexpsConsidered += o.RegexpsConsidered
+
+    // We want the first non-zero FlushReason to be sticky. This is a useful
+    // property when aggregating stats from several Zoekts.
+    if s.FlushReason == 0 {
+		s.FlushReason = o.FlushReason
+	}
 }
 
 // Zero returns true if stats is empty.
