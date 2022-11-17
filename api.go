@@ -333,7 +333,8 @@ const (
 
 var FlushReasonStrings = map[FlushReason]string{
 	FlushReasonTimerExpired: "timer_expired",
-	FlushReasonFinalFlush:   "final_flush"}
+	FlushReasonFinalFlush:   "final_flush",
+}
 
 func (fr FlushReason) String() string {
 	if v, ok := FlushReasonStrings[fr]; ok {
