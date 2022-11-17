@@ -17,6 +17,7 @@ package query
 import (
 	"log"
 	"reflect"
+	"regexp/syntax"
 	"testing"
 
 	"github.com/grafana/regexp"
@@ -109,5 +110,57 @@ func TestVisitAtoms(t *testing.T) {
 	})
 	if count != 3 {
 		t.Errorf("got %d, want 3", count)
+	}
+}
+
+func TestExpandFileContent(t *testing.T) {
+	re, _ := syntax.Parse("foo", syntax.Perl)
+
+	cases := []struct {
+		q    Q
+		want string
+	}{
+		{
+			q:    &Substring{FileName: true, Content: true},
+			want: "(or file_substr:\"\" content_substr:\"\")",
+		},
+		{
+			q:    &Substring{FileName: false, Content: false},
+			want: "(or file_substr:\"\" content_substr:\"\")",
+		},
+
+		{
+			q:    &Substring{FileName: true, Content: false},
+			want: "file_substr:\"\"",
+		},
+		{
+			q:    &Substring{FileName: false, Content: true},
+			want: "content_substr:\"\"",
+		},
+		{
+			q:    &Regexp{Regexp: re, FileName: true, Content: true},
+			want: "(or file_regex:\"foo\" regex:\"foo\")",
+		},
+		{
+			q:    &Regexp{Regexp: re, FileName: false, Content: false},
+			want: "(or file_regex:\"foo\" regex:\"foo\")",
+		},
+
+		{
+			q:    &Regexp{Regexp: re, FileName: true, Content: false},
+			want: "file_regex:\"foo\"",
+		},
+		{
+			q:    &Regexp{Regexp: re, FileName: false, Content: true},
+			want: "regex:\"foo\"",
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run("", func(t *testing.T) {
+			if got := ExpandFileContent(tt.q); got.String() != tt.want {
+				t.Fatalf("got %s, want %s\n", got.String(), tt.want)
+			}
+		})
 	}
 }

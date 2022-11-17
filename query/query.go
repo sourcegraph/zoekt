@@ -653,18 +653,22 @@ func Map(q Q, f func(q Q) Q) Q {
 func ExpandFileContent(q Q) Q {
 	switch s := q.(type) {
 	case *Substring:
-		if !s.FileName && !s.Content {
+		if s.FileName == s.Content {
 			f := *s
 			f.FileName = true
+			f.Content = false
 			c := *s
+			c.FileName = false
 			c.Content = true
 			return NewOr(&f, &c)
 		}
 	case *Regexp:
-		if !s.FileName && !s.Content {
+		if s.FileName == s.Content {
 			f := *s
 			f.FileName = true
+			f.Content = false
 			c := *s
+			c.FileName = false
 			c.Content = true
 			return NewOr(&f, &c)
 		}
