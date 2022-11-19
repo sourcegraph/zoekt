@@ -96,8 +96,13 @@ func debugCmd() *ffcli.Command {
     to trigger one merge operation at a time.
 
   wget -q -O - http://localhost:6072/debug/delete?id=[REPOSITORY_ID]
-	delete all of the shards associated with the given repository id. You can find the id associated with a 
-	repository via the "/debug/indexed" route.
+	delete all of the shards associated with the given repository id. 
+	
+	You can find the id associated with a repository via the "/debug/indexed" route. 
+	If you need to delete multiple repositories at once, you can create a small shell pipeline. See the following example
+	(that removes the first listed repository from the ""/debug/indexed" route for inspiration):
+	
+	> wget -q -O - http://localhost:6072/debug/indexed | awk '{print $1}' | tail -n +2 | head -n 1 | xargs -I {} -- wget -q -O -  "http://localhost:6072/debug/delete?id={}"
   
   wget -q -O - http://localhost:6072/debug/queue
     list the repositories in the indexing queue, sorted by descending priority.
