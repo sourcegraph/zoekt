@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"log"
 	"math"
 	"math/rand"
@@ -814,10 +816,10 @@ func deleteShards(options *build.Options) error {
 	// is present (repoA_v16.00000.zoekt). If it's present, then it gathers all rest of the shards names in ascending order
 	// (...00001.zoekt, ...00002.zoekt). If it's missing, then zoekt assumes that it never indexed "repoA".
 	//
-	// If this function were to crash while deleting repoA and we only deleted the 0th shard, then shard's 1 & 2 would never
+	// If this function were to crash while deleting repoA, and we only deleted the 0th shard, then shard's 1 & 2 would never
 	// be cleaned up by Zoekt indexserver (since the 0th shard is the only shard that's tested).
 	//
-	// Ensuring that we delete shards in reverse sorted order (2 -> 1 -> 0) always ensures that we don't leave an inconsistent
+	// Deleting shards in reverse sorted order (2 -> 1 -> 0) always ensures that we don't leave an inconsistent
 	// state behind even if we crash.
 
 	sort.Slice(shardPaths, func(i, j int) bool {
@@ -840,17 +842,24 @@ func deleteShards(options *build.Options) error {
 			continue
 		}
 
-		metaFile := shard + ".meta"
-		if _, err := os.Stat(metaFile); err == nil {
-			err := os.Remove(metaFile)
-			if err != nil {
-				return fmt.Errorf("deleting metadata file %q: %w", metaFile, err)
-			}
-		}
-
 		err := os.Remove(shard)
 		if err != nil {
 			return fmt.Errorf("deleting shard %q: %w", shard, err)
+		}
+
+		// remove the metadata file associated with the shard (if any)
+		metaFile := shard + ".meta"
+		if _, err := os.Stat(metaFile); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+
+			return fmt.Errorf("'stat'ing metadata file %q: %w", metaFile, err)
+		}
+
+		err = os.Remove(metaFile)
+		if err != nil {
+			return fmt.Errorf("deleting metadata file %q: %w", metaFile, err)
 		}
 	}
 
