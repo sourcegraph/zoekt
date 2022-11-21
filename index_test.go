@@ -598,6 +598,30 @@ func TestFileSearch(t *testing.T) {
 			t.Fatal(diff)
 		}
 	})
+
+	t.Run("FileNameSet", func(t *testing.T) {
+		sres := searchForTest(t, b, query.NewFileNameSet("banana"), chunkOpts)
+
+		matches := sres.Files
+		if len(matches) != 1 || len(matches[0].ChunkMatches) != 1 {
+			t.Fatalf("got %v, want 1 match", matches)
+		}
+
+		got := matches[0].ChunkMatches[0]
+		want := ChunkMatch{
+			Content:      []byte("banana"),
+			ContentStart: Location{ByteOffset: 0, LineNumber: 1, Column: 1},
+			Ranges: []Range{{
+				Start: Location{ByteOffset: 0, LineNumber: 1, Column: 1},
+				End:   Location{ByteOffset: 6, LineNumber: 1, Column: 7},
+			}},
+			FileName: true,
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Fatal(diff)
+		}
+	})
 }
 
 func TestFileCase(t *testing.T) {

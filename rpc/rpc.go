@@ -135,6 +135,7 @@ func RegisterGob() {
 		gobRegister(&query.BranchesRepos{})
 		gobRegister(&query.Branch{})
 		gobRegister(&query.Const{})
+		gobRegister(&query.FileNameSet{})
 		gobRegister(&query.GobCache{})
 		gobRegister(&query.Language{})
 		gobRegister(&query.Not{})
