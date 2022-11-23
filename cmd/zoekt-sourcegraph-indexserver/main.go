@@ -14,6 +14,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -1189,7 +1190,11 @@ func newServer(conf rootConfig) (*Server, error) {
 			}
 		}
 
-		sg = newSourcegraphClient(rootURL, conf.hostname, batchSize)
+		var port uint16
+		if ipp, err := netip.ParseAddrPort(conf.listen); err == nil {
+			port = ipp.Port()
+		}
+		sg = newSourcegraphClient(rootURL, conf.hostname, port, batchSize)
 	} else {
 		sg = sourcegraphFake{
 			RootDir: rootURL.String(),

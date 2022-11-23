@@ -85,7 +85,7 @@ type Sourcegraph interface {
 	UpdateIndexStatus(repositories []indexStatus) error
 }
 
-func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sourcegraphClient {
+func newSourcegraphClient(rootURL *url.URL, hostname string, port uint16, batchSize int) *sourcegraphClient {
 
 	client := retryablehttp.NewClient()
 	client.Logger = debug
@@ -110,6 +110,7 @@ func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sou
 		Root:      rootURL,
 		Client:    client,
 		Hostname:  hostname,
+		Port:      port,
 		BatchSize: batchSize,
 	}
 }
@@ -123,6 +124,10 @@ type sourcegraphClient struct {
 	// Hostname is the name we advertise to Sourcegraph when asking for the
 	// list of repositories to index.
 	Hostname string
+
+	// Port is the port on which this indexserver listens. If the indexserver
+	// is not listening on any port, Port=0.
+	Port uint16
 
 	// BatchSize is how many repository configurations we request at once. If
 	// zero a value of 10000 is used.
@@ -459,9 +464,12 @@ type indexStatus struct {
 func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error {
 	type updateIndexStatusRequest struct {
 		Repositories []indexStatus
+		// We send the port so that Sourcegraph can map the repositories to the
+		// indexserver they reside on.
+		Port uint16
 	}
 
-	body := &updateIndexStatusRequest{Repositories: repositories}
+	body := &updateIndexStatusRequest{Repositories: repositories, Port: s.Port}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return err

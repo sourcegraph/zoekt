@@ -44,7 +44,7 @@ func TestGetIndexOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sg := newSourcegraphClient(u, "", 0)
+	sg := newSourcegraphClient(u, "", 0, 0)
 
 	cases := map[string]*IndexOptions{
 		`{"Symbols": true, "LargeFiles": ["foo","bar"]}`: {
