@@ -183,3 +183,65 @@ func TestFormatListUint32(t *testing.T) {
 		})
 	}
 }
+
+func TestToPort(t *testing.T) {
+	cases := []struct {
+		name      string
+		in        string
+		want      uint16
+		wantError bool
+	}{
+		{
+			name: "no ip",
+			in:   ":1234",
+			want: 1234,
+		},
+		{
+			name: "ip6",
+			in:   "1b02:8071:b85:10:b13b:612a:86b0:8776:1234",
+			want: 1234,
+		},
+		{
+			name: "ip4",
+			in:   "127.0.0.1:1234",
+			want: 1234,
+		},
+		{
+			name: "any string",
+			in:   "localhost:1234",
+			want: 1234,
+		},
+		{
+			name:      "no port",
+			in:        "asdf:",
+			wantError: true,
+		},
+		{
+			name:      "no ip",
+			in:        "asdf",
+			wantError: true,
+		},
+		{
+			name:      "invalid port",
+			in:        "foo:bar",
+			wantError: true,
+		},
+		{
+			name:      "empty",
+			wantError: true,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := toPort(tt.in)
+			if err != nil && !tt.wantError {
+				t.Fatal(err)
+			}
+
+			if got != tt.want {
+				t.Fatalf("want %d, got %d", tt.want, got)
+			}
+		})
+	}
+}

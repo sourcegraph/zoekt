@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -14,7 +15,6 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -1180,6 +1180,8 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug.Printf("skipping generating symbols metadata for: %s", joinStringSet(reposShouldSkipSymbolsCalculation, ", "))
 	}
 
+	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
+
 	var sg Sourcegraph
 	if rootURL.IsAbs() {
 		var batchSize int
@@ -1190,9 +1192,10 @@ func newServer(conf rootConfig) (*Server, error) {
 			}
 		}
 
-		var port uint16
-		if ipp, err := netip.ParseAddrPort(conf.listen); err == nil {
-			port = ipp.Port()
+		port, err := toPort(conf.listen)
+		if err != nil {
+			logger.Error("could not determine port based on conf.listen", sglog.String("conf.listen", conf.listen), sglog.Error(err))
+			port = 0
 		}
 		sg = newSourcegraphClient(rootURL, conf.hostname, port, batchSize)
 	} else {
@@ -1210,8 +1213,6 @@ func newServer(conf rootConfig) (*Server, error) {
 	if cpuCount < 1 {
 		cpuCount = 1
 	}
-
-	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
 
 	q := NewQueue(conf.backoffDuration, conf.maxBackoffDuration, logger)
 
@@ -1232,6 +1233,37 @@ func newServer(conf rootConfig) (*Server, error) {
 		deltaShardNumberFallbackThreshold: deltaShardNumberFallbackThreshold,
 		repositoriesSkipSymbolsCalculationAllowList: reposShouldSkipSymbolsCalculation,
 	}, err
+}
+
+// toPort takes a string "[ip]:port" and returns the port as unit16. Normally
+// we should use Go's netip.ParseAddrPort, however the parser expects a
+// correctly formatted ip as part of ip:port which we cannot guarantee for
+// backward compatability. Hence, with this function, we extract the bits and
+// pieces from ParseAddrPort that relate to ports.
+func toPort(s string) (uint16, error) {
+	var i int
+	for i = len(s) - 1; i >= 0; i-- {
+		if s[i] == ':' {
+			break
+		}
+	}
+
+	if i == -1 {
+		return 0, errors.New("no ip:port")
+
+	}
+
+	port := s[i+1:]
+	if len(port) == 0 {
+		return 0, errors.New("no port")
+	}
+
+	port16, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return 0, errors.New("invalid port " + strconv.Quote(port) + " parsing " + strconv.Quote(s))
+	}
+
+	return uint16(port16), nil
 }
 
 func main() {
