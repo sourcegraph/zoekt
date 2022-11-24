@@ -1250,7 +1250,6 @@ func toPort(s string) (uint16, error) {
 
 	if i == -1 {
 		return 0, errors.New("no ip:port")
-
 	}
 
 	port := s[i+1:]
