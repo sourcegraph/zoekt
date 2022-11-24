@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/google/go-github/v27/github"
 	"golang.org/x/oauth2"
@@ -51,6 +52,11 @@ type reposFilters struct {
 	excludeTopics []string
 	noArchived    *bool
 }
+
+// globally scoped flags
+var (
+	flagMaxConcurrentGHRequests = flag.Int("max-concurrent-gh-requests", 1, "Number of pages of user/org repos that can be fetched concurrently. 1, the default, is syncronous.")
+)
 
 func main() {
 	dest := flag.String("dest", "", "destination directory")
@@ -238,48 +244,109 @@ func filterRepositories(repos []*github.Repository, include []string, exclude []
 	return
 }
 
-func getOrgRepos(client *github.Client, org string, reposFilters reposFilters) ([]*github.Repository, error) {
-	var allRepos []*github.Repository
-	opt := &github.RepositoryListByOrgOptions{}
-	for {
-		repos, resp, err := client.Repositories.ListByOrg(context.Background(), org, opt)
-		if err != nil {
-			return nil, err
-		}
-		if len(repos) == 0 {
-			break
-		}
+type IndexedResponse struct {
+	Page  int
+	Org   string
+	Repos []*github.Repository
+	err   error
+}
 
-		opt.Page = resp.NextPage
-		repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived)
-		allRepos = append(allRepos, repos...)
-		if resp.NextPage == 0 {
-			break
-		}
+func callGithubConcurrently(initialResp *github.Response, concurrencyLimit int, firstResult []*github.Repository, gClient *github.Client, reposFilters reposFilters, method, org, user string) ([]*github.Repository, error) {
+	pagesToCall := initialResp.LastPage - 1
+
+	// create the matrix of results and add the first one, this is so we can maintain order
+	// which unfortunately takes an extra O(n) pass
+	// technically we could exactly size an array, but that requires more accurate bookkeeping,
+	// and this is fine for now
+	resultsMatrix := make([][]*github.Repository, pagesToCall+1)
+	resultsMatrix[0] = firstResult
+
+	semaphores := make(chan bool, concurrencyLimit)
+	resStream := make(chan *IndexedResponse, pagesToCall)
+
+	var wg sync.WaitGroup
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	for i := 1; i <= pagesToCall; i++ {
+		wg.Add(1)
+
+		go func(ctx context.Context, page int, c chan *IndexedResponse, s chan bool, w *sync.WaitGroup) {
+			s <- true
+			defer w.Done()
+
+			var repos []*github.Repository
+			var err error
+			if method == "org" {
+				repos, _, err = gClient.Repositories.ListByOrg(ctx, org, &github.RepositoryListByOrgOptions{
+					ListOptions: github.ListOptions{PerPage: 100, Page: page},
+				})
+			} else if method == "user" {
+				repos, _, err = gClient.Repositories.List(ctx, user, &github.RepositoryListOptions{
+					ListOptions: github.ListOptions{PerPage: 100, Page: page},
+				})
+			}
+			repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived)
+			c <- &IndexedResponse{
+				Page:  page,
+				Repos: repos,
+				Org:   org,
+				err:   err,
+			}
+			<-s // release semaphore
+		}(ctx, i+1, resStream, semaphores, &wg) // +1 becase pages are 1 based
 	}
-	return allRepos, nil
+
+	// close the channel in the background
+	go func() {
+		wg.Wait()
+		close(resStream)
+		close(semaphores)
+	}()
+	for res := range resStream {
+		if res.err != nil {
+			return nil, res.err // cancel will be called after this early return
+		}
+		resultsMatrix[res.Page-1] = res.Repos // Page index is 1 based
+	}
+
+	// Now flatten the matrix and return it
+	var buf []*github.Repository
+	for _, res := range resultsMatrix {
+		buf = append(buf, res...)
+	}
+
+	return buf, nil
+
+}
+
+func getOrgRepos(client *github.Client, org string, reposFilters reposFilters) ([]*github.Repository, error) {
+	log.Printf("Fetching repositories for org: %s", org)
+	opt := &github.RepositoryListByOrgOptions{ListOptions: github.ListOptions{PerPage: 100}}
+	repos, resp, err := client.Repositories.ListByOrg(context.Background(), org, opt)
+
+	if err != nil {
+		return nil, err
+	}
+	if resp.FirstPage == resp.LastPage { // if no more pages, return early
+		return repos, nil
+	}
+	return callGithubConcurrently(resp, *flagMaxConcurrentGHRequests, repos, client, reposFilters, "org", org, "")
 }
 
 func getUserRepos(client *github.Client, user string, reposFilters reposFilters) ([]*github.Repository, error) {
-	var allRepos []*github.Repository
-	opt := &github.RepositoryListOptions{}
-	for {
-		repos, resp, err := client.Repositories.List(context.Background(), user, opt)
-		if err != nil {
-			return nil, err
-		}
-		if len(repos) == 0 {
-			break
-		}
+	log.Printf("Fetching repositories for user: %s", user)
+	opt := &github.RepositoryListOptions{ListOptions: github.ListOptions{PerPage: 100}}
+	repos, resp, err := client.Repositories.List(context.Background(), user, opt)
 
-		opt.Page = resp.NextPage
-		repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived)
-		allRepos = append(allRepos, repos...)
-		if resp.NextPage == 0 {
-			break
-		}
+	if err != nil {
+		return nil, err
 	}
-	return allRepos, nil
+	if resp.FirstPage == resp.LastPage { // if no more pages, return early
+		return repos, nil
+	}
+	return callGithubConcurrently(resp, *flagMaxConcurrentGHRequests, repos, client, reposFilters, "user", "", user)
 }
 
 func itoa(p *int) string {
