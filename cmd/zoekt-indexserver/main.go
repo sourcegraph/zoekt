@@ -55,15 +55,17 @@ func loggedRun(cmd *exec.Cmd) (out, err []byte) {
 }
 
 type Options struct {
-	cpuFraction      float64
-	cpuCount         int
-	fetchInterval    time.Duration
-	mirrorInterval   time.Duration
-	indexFlagsStr    string
-	indexFlags       []string
-	mirrorConfigFile string
-	maxLogAge        time.Duration
-	indexTimeout     time.Duration
+	cpuFraction         float64
+	cpuCount            int
+	fetchInterval       time.Duration
+	mirrorInterval      time.Duration
+	indexFlagsStr       string
+	indexFlags          []string
+	mirrorConfigFile    string
+	maxLogAge           time.Duration
+	indexTimeout        time.Duration
+	parallelListApiReqs int
+	parallelClones      int
 }
 
 func (o *Options) validate() {
@@ -91,6 +93,8 @@ func (o *Options) defineFlags() {
 	flag.Float64Var(&o.cpuFraction, "cpu_fraction", 0.25,
 		"use this fraction of the cores for indexing.")
 	flag.StringVar(&o.indexFlagsStr, "git_index_flags", "", "space separated list of flags passed through to zoekt-git-index (e.g. -git_index_flags='-symbols=false -submodules=false'")
+	flag.IntVar(&o.parallelListApiReqs, "parallel_list_api_reqs", 1, "number of concurrent list apis reqs to fetch org/user repos. Not all mirrors support this flag")
+	flag.IntVar(&o.parallelClones, "parallel_clones", 1, "number of concurrent gitindex/clone operations. Not all mirrors support this flag")
 }
 
 // periodicFetch runs git-fetch every once in a while. Results are
