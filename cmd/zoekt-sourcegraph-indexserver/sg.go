@@ -125,8 +125,8 @@ type sourcegraphClient struct {
 	// list of repositories to index.
 	Hostname string
 
-	// Port is the port on which this indexserver listens. If the indexserver
-	// is not listening on any port, Port=0.
+	// Port is the port on which this indexserver is listening. Port=0 if the
+	// indexserver is not listening on any port.
 	Port uint16
 
 	// BatchSize is how many repository configurations we request at once. If
