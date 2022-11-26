@@ -31,10 +31,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/gitindex"
+	"golang.org/x/sync/errgroup"
 )
 
 const day = time.Hour * 24
@@ -66,6 +68,7 @@ type Options struct {
 	indexTimeout        time.Duration
 	parallelListApiReqs int
 	parallelClones      int
+	parallelFetches     int
 }
 
 func (o *Options) validate() {
@@ -95,6 +98,7 @@ func (o *Options) defineFlags() {
 	flag.StringVar(&o.indexFlagsStr, "git_index_flags", "", "space separated list of flags passed through to zoekt-git-index (e.g. -git_index_flags='-symbols=false -submodules=false'")
 	flag.IntVar(&o.parallelListApiReqs, "parallel_list_api_reqs", 1, "number of concurrent list apis reqs to fetch org/user repos. Not all mirrors support this flag")
 	flag.IntVar(&o.parallelClones, "parallel_clones", 1, "number of concurrent gitindex/clone operations. Not all mirrors support this flag")
+	flag.IntVar(&o.parallelFetches, "parallel_fetches", 1, "number of concurrent git fetch ops")
 }
 
 // periodicFetch runs git-fetch every once in a while. Results are
@@ -111,15 +115,24 @@ func periodicFetch(repoDir, indexDir string, opts *Options, pendingRepos chan<- 
 			log.Printf("no repos found under %s", repoDir)
 		}
 
-		// TODO: Randomize to make sure quota throttling hits everyone.
+		g, _ := errgroup.WithContext(context.Background())
+		g.SetLimit(opts.parallelFetches)
 
+		// TODO: Randomize to make sure quota throttling hits everyone.
+		var mu sync.Mutex
 		later := map[string]struct{}{}
 		for _, dir := range repos {
-			if ok := fetchGitRepo(dir); !ok {
-				later[dir] = struct{}{}
-			} else {
-				pendingRepos <- dir
-			}
+			dir := dir
+			g.Go(func() error {
+				if hasUpdate := fetchGitRepo(dir); !hasUpdate {
+					mu.Lock()
+					later[dir] = struct{}{}
+					mu.Unlock()
+				} else {
+					pendingRepos <- dir
+				}
+				return nil
+			})
 		}
 
 		for r := range later {

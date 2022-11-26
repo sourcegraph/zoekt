@@ -362,6 +362,7 @@ func cloneRepos(destDir string, repos []*github.Repository) error {
 	g.SetLimit(*flagParallelClone)
 
 	for _, r := range repos {
+		r := r
 		g.Go(func() error {
 			host, err := url.Parse(*r.HTMLURL)
 			if err != nil {
