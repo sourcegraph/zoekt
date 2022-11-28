@@ -24,7 +24,10 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -120,6 +123,19 @@ func writeTemplates(dir string) error {
 	return nil
 }
 
+func getEnvWithDefaultBool(k string, defaultVal bool) bool {
+	v := os.Getenv(k)
+	if v == "" {
+		return defaultVal
+	}
+
+	d, err := strconv.ParseBool(v)
+	if err != nil {
+		log.Fatalf("error parsing ENV %s to bool: %s", k, err)
+	}
+	return d
+}
+
 func main() {
 	logDir := flag.String("log_dir", "", "log to this directory rather than stderr.")
 	logRefresh := flag.Duration("log_refresh", 24*time.Hour, "if using --log_dir, start writing a new file this often.")
@@ -128,6 +144,7 @@ func main() {
 	index := flag.String("index", build.DefaultDir, "set index directory to use")
 	html := flag.Bool("html", true, "enable HTML interface")
 	enableRPC := flag.Bool("rpc", false, "enable go/net RPC")
+	enableSocketProxy := flag.Bool("socket", getEnvWithDefaultBool("SRC_ENABLE_SOCKET_PROXY", false), "proxy requests to /indexserver/ to <index dir>/indexserver.sock")
 	print := flag.Bool("print", false, "enable local result URLs")
 	enablePprof := flag.Bool("pprof", false, "set to enable remote profiling.")
 	sslCert := flag.String("ssl_cert", "", "set path to SSL .pem holding certificate.")
@@ -242,6 +259,12 @@ func main() {
 
 	debugserver.AddHandlers(handler, *enablePprof)
 
+	if *enableSocketProxy {
+		socket := filepath.Join(*index, "indexserver.sock")
+		sglog.Scoped("server", "").Info("adding reverse proxy", sglog.String("socket", socket))
+		addProxyHandler(handler, socket)
+	}
+
 	// Sourcegraph: We use environment variables to configure watchdog since
 	// they are more convenient than flags in containerized environments.
 	watchdogTick := 30 * time.Second
@@ -291,6 +314,26 @@ func main() {
 	if err := shutdownOnSignal(srv); err != nil {
 		log.Fatalf("http.Server.Shutdown: %v", err)
 	}
+}
+
+// addProxyHandler adds a handler to "mux" that proxies all requests with base
+// /indexserver to "socket".
+func addProxyHandler(mux *http.ServeMux, socket string) {
+	proxy := httputil.NewSingleHostReverseProxy(&url.URL{
+		Scheme: "http",
+		// The value of "Host" is arbitrary, because it is ignored by the
+		// DialContext we use for the socket connection.
+		Host: "socket",
+	})
+	proxy.Transport = &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", socket)
+		},
+	}
+	mux.HandleFunc("/indexserver/", func(w http.ResponseWriter, r *http.Request) {
+		proxy.ServeHTTP(w, r)
+	})
 }
 
 // shutdownOnSignal will listen for SIGINT or SIGTERM and call

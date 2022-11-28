@@ -13,6 +13,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -1085,17 +1086,36 @@ func startServer(conf rootConfig) error {
 	setCompoundShardCounter(s.IndexDir)
 
 	if conf.listen != "" {
+
+		mux := http.NewServeMux()
+		debugserver.AddHandlers(mux, true, []debugserver.DebugPage{
+			{Href: "debug/indexed", Text: "Indexed", Description: "list of all indexed repositories"},
+			{Href: "debug/list?indexed=false", Text: "Assigned (this instance)", Description: "list of all repositories that are assigned to this instance"},
+			{Href: "debug/list?indexed=true", Text: "Assigned (all)", Description: "same as above, but includes repositories which this instance temporarily holds during re-balancing"},
+			{Href: "debug/queue", Text: "Indexing Queue State", Description: "list of all repositories in the indexing queue, sorted by descending priority"},
+		}...)
+		s.addDebugHandlers(mux)
+
 		go func() {
-			mux := http.NewServeMux()
-			debugserver.AddHandlers(mux, true, []debugserver.DebugPage{
-				{Href: "debug/indexed", Text: "Indexed", Description: "list of all indexed repositories"},
-				{Href: "debug/list?indexed=false", Text: "Assigned (this instance)", Description: "list of all repositories that are assigned to this instance"},
-				{Href: "debug/list?indexed=true", Text: "Assigned (all)", Description: "same as above, but includes repositories which this instance temporarily holds during re-balancing"},
-				{Href: "debug/queue", Text: "Indexing Queue State", Description: "list of all repositories in the indexing queue, sorted by descending priority"},
-			}...)
-			s.addDebugHandlers(mux)
 			debug.Printf("serving HTTP on %s", conf.listen)
 			log.Fatal(http.ListenAndServe(conf.listen, mux))
+
+		}()
+
+		// Serve mux on a unix domain socket so that webserver can call the
+		// endpoints via the shared filesystem.
+		go func() {
+			socket := filepath.Join(s.IndexDir, "indexserver.sock")
+			// We cannot bind a socket to an existing pathname.
+			if err := os.Remove(socket); err != nil && !os.IsNotExist(err) {
+				log.Fatalf("error removing socket file: %s", socket)
+			}
+			l, err := net.Listen("unix", socket)
+			if err != nil {
+				log.Fatalf("failed to listen on socket: %s", err)
+			}
+			debug.Printf("serving HTTP on %s", socket)
+			log.Fatal(http.Serve(l, http.StripPrefix("/indexserver", mux)))
 		}()
 	}
 
