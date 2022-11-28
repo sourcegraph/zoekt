@@ -455,6 +455,127 @@ func TestCleanupCompoundShards(t *testing.T) {
 	}
 }
 
+func TestDeleteShards(t *testing.T) {
+	remainingRepoA := zoekt.Repository{ID: 1, Name: "A"}
+	remainingRepoB := zoekt.Repository{ID: 2, Name: "B"}
+	repositoryToDelete := zoekt.Repository{ID: 99, Name: "DELETE_ME"}
+
+	t.Run("delete repository from set of normal shards", func(t *testing.T) {
+		indexDir := t.TempDir()
+
+		// map of repoID -> list of associated shard paths + metadata paths
+		shardMap := make(map[uint32][]string)
+
+		// setup: create shards for each repository, and populate the shard map
+		for _, r := range []zoekt.Repository{
+			remainingRepoA,
+			remainingRepoB,
+			repositoryToDelete,
+		} {
+			shards := createTestNormalShard(t, indexDir, r, 3)
+
+			for _, shard := range shards {
+				// create stub meta file
+				metaFile := shard + ".meta"
+				f, err := os.Create(metaFile)
+				if err != nil {
+					t.Fatalf("creating metadata file %q: %s", metaFile, err)
+				}
+
+				f.Close()
+
+				shardMap[r.ID] = append(shardMap[r.ID], shard, metaFile)
+			}
+		}
+
+		// run test: delete repository
+		options := &build.Options{
+			IndexDir:              indexDir,
+			RepositoryDescription: repositoryToDelete,
+		}
+		options.SetDefaults()
+
+		err := deleteShards(options)
+		if err != nil {
+			t.Errorf("unexpected error when deleting shards: %s", err)
+		}
+
+		// run assertions: gather all the shards + meta files that remain and
+		// check to see that only the files associated with the "remaining" repositories
+		// are present
+		var actualShardFiles []string
+
+		for _, pattern := range []string{"*.zoekt", "*.meta"} {
+			files, err := filepath.Glob(filepath.Join(indexDir, pattern))
+			if err != nil {
+				t.Fatalf("globbing indexDir: %s", err)
+			}
+
+			actualShardFiles = append(actualShardFiles, files...)
+		}
+
+		var expectedShardFiles []string
+		expectedShardFiles = append(expectedShardFiles, shardMap[remainingRepoA.ID]...)
+		expectedShardFiles = append(expectedShardFiles, shardMap[remainingRepoB.ID]...)
+
+		sort.Strings(actualShardFiles)
+		sort.Strings(expectedShardFiles)
+
+		if diff := cmp.Diff(expectedShardFiles, actualShardFiles); diff != "" {
+			t.Errorf("unexpected diff in list of shard files (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("delete repository from compound shard", func(t *testing.T) {
+		indexDir := t.TempDir()
+
+		// setup: enable shard merging for compound shards
+		t.Setenv("SRC_ENABLE_SHARD_MERGING", "1")
+
+		// setup: create compound shard with all repositories
+		repositories := []zoekt.Repository{remainingRepoA, remainingRepoB, repositoryToDelete}
+		shard := createTestCompoundShard(t, indexDir, repositories)
+
+		// run test: delete repository
+		options := &build.Options{
+			IndexDir:              indexDir,
+			RepositoryDescription: repositoryToDelete,
+		}
+		options.SetDefaults()
+
+		err := deleteShards(options)
+		if err != nil {
+			t.Errorf("unexpected error when deleting shards: %s", err)
+		}
+
+		// verify: read the compound shard, and ensure that only
+		// the repositories that we expect are in the shard (and the deleted one has been tombstoned)
+		actualRepositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+		if err != nil {
+			t.Fatalf("reading repository metadata from shard: %s", err)
+		}
+
+		expectedRepositories := []*zoekt.Repository{&remainingRepoA, &remainingRepoB}
+
+		sort.Slice(actualRepositories, func(i, j int) bool {
+			return actualRepositories[i].ID < actualRepositories[j].ID
+		})
+
+		sort.Slice(expectedRepositories, func(i, j int) bool {
+			return expectedRepositories[i].ID < expectedRepositories[j].ID
+		})
+
+		opts := []cmp.Option{
+			cmpopts.IgnoreUnexported(zoekt.Repository{}),
+			cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions", "HasSymbols"),
+			cmpopts.EquateEmpty(),
+		}
+		if diff := cmp.Diff(expectedRepositories, actualRepositories, opts...); diff != "" {
+			t.Errorf("unexpected diff in list of repositories (-want +got):\n%s", diff)
+		}
+	})
+}
+
 // createCompoundShard returns a path to a compound shard containing repos with
 // ids. Use optsFns to overwrite fields of zoekt.Repository for all repos.
 func createCompoundShard(t *testing.T, dir string, ids []uint32, optFns ...func(in *zoekt.Repository)) string {

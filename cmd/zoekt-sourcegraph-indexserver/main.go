@@ -6,12 +6,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"html/template"
 	"io"
-	"io/fs"
 	"log"
 	"math"
 	"math/rand"
@@ -760,6 +758,23 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleDebugMerge triggers a merge even if shard merging is not enabled. Users
+// can run this command during periods of low usage (evenings, weekends) to
+// trigger an initial merge run. In the steady-state, merges happen rarely, even
+// on busy instances, and users can rely on automatic merging instead.
+func (s *Server) handleDebugMerge(w http.ResponseWriter, _ *http.Request) {
+
+	// A merge operation can take very long, depending on the number merges and the
+	// target size of the compound shards. We run the merge in the background and
+	// return immediately to the user.
+	//
+	// We track the status of the merge with metricShardMergingRunning.
+	go func() {
+		s.doMerge()
+	}()
+	_, _ = w.Write([]byte("merging enqueued\n"))
+}
+
 func (s *Server) handleDebugDelete(w http.ResponseWriter, r *http.Request) {
 	rawID := r.URL.Query().Get("id")
 	if rawID == "" {
@@ -796,91 +811,6 @@ func (s *Server) handleDebugDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("while deleting shards for repository id %q: %s", rawID, deletionError), http.StatusInternalServerError)
 		return
 	}
-}
-
-// deleteShards deletes all the shards that are associated with the repository specified
-// in the build options.
-//
-// Users must hold the indexDir lock for this repository before calling deleteShards.
-func deleteShards(options *build.Options) error {
-	shardPaths := options.FindAllShards()
-
-	// Ensure that the paths are in reverse sorted order to ensure that Zoekt's repository <-> shard matching logic
-	// works correctly.
-	//
-	// Example: - repoA_v16.00002.zoekt
-	//          - repoA_v16.00001.zoekt
-	//          - repoA_v16.00000.zoekt
-	//
-	// zoekt-indexserver checks whether it has indexed "repoA" by first checking to see if the 0th shard
-	// is present (repoA_v16.00000.zoekt). If it's present, then it gathers all rest of the shards names in ascending order
-	// (...00001.zoekt, ...00002.zoekt). If it's missing, then zoekt assumes that it never indexed "repoA".
-	//
-	// If this function were to crash while deleting repoA, and we only deleted the 0th shard, then shard's 1 & 2 would never
-	// be cleaned up by Zoekt indexserver (since the 0th shard is the only shard that's tested).
-	//
-	// Deleting shards in reverse sorted order (2 -> 1 -> 0) always ensures that we don't leave an inconsistent
-	// state behind even if we crash.
-
-	sort.Slice(shardPaths, func(i, j int) bool {
-		return shardPaths[i] > shardPaths[j]
-	})
-
-	for _, shard := range shardPaths {
-		// Is this repository inside a compound shard? If so, set a tombstone
-		// instead of deleting the shard outright.
-		if zoekt.ShardMergingEnabled() && strings.HasPrefix(filepath.Base(shard), "compound-") {
-			if !strings.HasSuffix(shard, ".zoekt") {
-				continue
-			}
-
-			err := zoekt.SetTombstone(shard, options.RepositoryDescription.ID)
-			if err != nil {
-				return fmt.Errorf("setting tombstone in shard %q: %w", shard, err)
-			}
-
-			continue
-		}
-
-		err := os.Remove(shard)
-		if err != nil {
-			return fmt.Errorf("deleting shard %q: %w", shard, err)
-		}
-
-		// remove the metadata file associated with the shard (if any)
-		metaFile := shard + ".meta"
-		if _, err := os.Stat(metaFile); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
-			}
-
-			return fmt.Errorf("'stat'ing metadata file %q: %w", metaFile, err)
-		}
-
-		err = os.Remove(metaFile)
-		if err != nil {
-			return fmt.Errorf("deleting metadata file %q: %w", metaFile, err)
-		}
-	}
-
-	return nil
-}
-
-// handleDebugMerge triggers a merge even if shard merging is not enabled. Users
-// can run this command during periods of low usage (evenings, weekends) to
-// trigger an initial merge run. In the steady-state, merges happen rarely, even
-// on busy instances, and users can rely on automatic merging instead.
-func (s *Server) handleDebugMerge(w http.ResponseWriter, _ *http.Request) {
-
-	// A merge operation can take very long, depending on the number merges and the
-	// target size of the compound shards. We run the merge in the background and
-	// return immediately to the user.
-	//
-	// We track the status of the merge with metricShardMergingRunning.
-	go func() {
-		s.doMerge()
-	}()
-	_, _ = w.Write([]byte("merging enqueued\n"))
 }
 
 func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
