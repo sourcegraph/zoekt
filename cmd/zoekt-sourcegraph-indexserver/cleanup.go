@@ -175,6 +175,38 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		}
 	}
 
+	// remove any Zoekt metadata files in the given dir that don't have an
+	// associated shard file
+	metaFiles, err := filepath.Glob(filepath.Join(indexDir, "*.meta"))
+	if err != nil {
+		log.Printf("failed to glob %q for stranded metadata files: %s", indexDir, err)
+	} else {
+		for _, metaFile := range metaFiles {
+			shard := strings.TrimSuffix(metaFile, ".meta")
+			_, err := os.Stat(shard)
+			if err == nil {
+				// metadata file has associated shard
+				continue
+			}
+
+			if !errors.Is(err, fs.ErrNotExist) {
+				log.Printf("failed to stat metadata file %q: %s", metaFile, err)
+				continue
+			}
+
+			// metadata doesn't have an associated shard file, remove the metadata file
+
+			err = os.Remove(metaFile)
+			if err != nil {
+				log.Printf("failed to remove stranded metadata file %q: %s", metaFile, err)
+				continue
+			} else {
+				log.Printf("removed stranded metadata file: %s", metaFile)
+			}
+
+		}
+	}
+
 	metricCleanupDuration.Observe(time.Since(start).Seconds())
 }
 
@@ -563,24 +595,16 @@ func deleteShards(options *build.Options) error {
 			continue
 		}
 
-		err := os.Remove(shard)
+		paths, err := zoekt.IndexFilePaths(shard)
 		if err != nil {
-			return fmt.Errorf("deleting shard %q: %w", shard, err)
+			return fmt.Errorf("listing files for shard %q: %w", shard, err)
 		}
 
-		// remove the metadata file associated with the shard (if any)
-		metaFile := shard + ".meta"
-		if _, err := os.Stat(metaFile); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
+		for _, p := range paths {
+			err := os.Remove(p)
+			if err != nil {
+				return fmt.Errorf("deleting %q: %w", p, err)
 			}
-
-			return fmt.Errorf("'stat'ing metadata file %q: %w", metaFile, err)
-		}
-
-		err = os.Remove(metaFile)
-		if err != nil {
-			return fmt.Errorf("deleting metadata file %q: %w", metaFile, err)
 		}
 	}
 

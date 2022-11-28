@@ -19,6 +19,7 @@ import (
 )
 
 func TestCleanup(t *testing.T) {
+
 	mk := func(name string, n int, mtime time.Time) shard {
 		return shard{
 			RepoID:        fakeID(name),
@@ -28,6 +29,11 @@ func TestCleanup(t *testing.T) {
 			RepoTombstone: false,
 		}
 	}
+
+	mkMeta := func(name string, n int) string {
+		return fmt.Sprintf("%s_v%d.%05d.zoekt.meta", url.QueryEscape(name), 15, n)
+	}
+
 	// We don't use getShards so that we have two implementations of the same
 	// thing (ie pick up bugs in one)
 	glob := func(pattern string) []shard {
@@ -56,14 +62,16 @@ func TestCleanup(t *testing.T) {
 	recent := now.Add(-time.Hour)
 	old := now.Add(-25 * time.Hour)
 	cases := []struct {
-		name  string
-		repos []string
-		index []shard
-		trash []shard
-		tmps  []string
+		name           string
+		repos          []string
+		indexMetaFiles []string
+		index          []shard
+		trash          []shard
+		tmps           []string
 
-		wantIndex []shard
-		wantTrash []shard
+		wantIndex          []shard
+		wantIndexMetaFiles []string
+		wantTrash          []shard
 	}{{
 		name: "noop",
 	}, {
@@ -96,6 +104,13 @@ func TestCleanup(t *testing.T) {
 		index:     []shard{mk("foo", 0, recent), mk("bar", 0, recent)},
 		wantIndex: []shard{mk("foo", 0, recent)},
 		wantTrash: []shard{mk("bar", 0, now)},
+	}, {
+		name:               "remove metafiles with no associated shards",
+		repos:              []string{"foo", "bar"},
+		index:              []shard{mk("foo", 0, recent), mk("bar", 0, recent)},
+		indexMetaFiles:     []string{mkMeta("foo", 0), mkMeta("foo", 1), mkMeta("bar", 0)},
+		wantIndex:          []shard{mk("foo", 0, recent), mk("bar", 0, recent)},
+		wantIndexMetaFiles: []string{mkMeta("foo", 0), mkMeta("bar", 0)},
 	}, {
 		name: "clean old .tmp files",
 		tmps: []string{"recent.tmp", "old.tmp"},
@@ -134,6 +149,12 @@ func TestCleanup(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			for _, f := range tt.indexMetaFiles {
+				path := filepath.Join(dir, f)
+				if _, err := os.Create(path); err != nil {
+					t.Fatal(err)
+				}
+			}
 
 			var repoIDs []uint32
 			for _, name := range tt.repos {
@@ -141,12 +162,41 @@ func TestCleanup(t *testing.T) {
 			}
 			cleanup(dir, repoIDs, now, false)
 
-			if d := cmp.Diff(tt.wantIndex, glob(filepath.Join(dir, "*.zoekt"))); d != "" {
+			actualIndexShards := glob(filepath.Join(dir, "*.zoekt"))
+
+			sort.Slice(actualIndexShards, func(i, j int) bool {
+				return actualIndexShards[i].Path < actualIndexShards[j].Path
+			})
+			sort.Slice(tt.wantIndex, func(i, j int) bool {
+				return tt.wantIndex[i].Path < tt.wantIndex[j].Path
+			})
+
+			if d := cmp.Diff(tt.wantIndex, actualIndexShards); d != "" {
 				t.Errorf("unexpected index (-want, +got):\n%s", d)
 			}
-			if d := cmp.Diff(tt.wantTrash, glob(filepath.Join(dir, ".trash", "*.zoekt"))); d != "" {
+
+			actualTrashShards := glob(filepath.Join(dir, ".trash", "*.zoekt"))
+
+			sort.Slice(actualTrashShards, func(i, j int) bool {
+				return actualTrashShards[i].Path < actualTrashShards[j].Path
+			})
+
+			sort.Slice(tt.wantTrash, func(i, j int) bool {
+				return tt.wantTrash[i].Path < tt.wantTrash[j].Path
+			})
+			if d := cmp.Diff(tt.wantTrash, actualTrashShards); d != "" {
 				t.Errorf("unexpected trash (-want, +got):\n%s", d)
 			}
+
+			actualIndexMetaFiles := globBase(filepath.Join(dir, "*.meta"))
+
+			sort.Strings(actualIndexMetaFiles)
+			sort.Strings(tt.wantIndexMetaFiles)
+
+			if d := cmp.Diff(tt.wantIndexMetaFiles, actualIndexMetaFiles, cmpopts.EquateEmpty()); d != "" {
+				t.Errorf("unexpected metadata files (-want, +got):\n%s", d)
+			}
+
 			if tmps := globBase(filepath.Join(dir, "*.tmp")); len(tmps) > 0 {
 				t.Errorf("unexpected tmps: %v", tmps)
 			}
