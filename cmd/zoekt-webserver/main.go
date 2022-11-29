@@ -144,7 +144,7 @@ func main() {
 	index := flag.String("index", build.DefaultDir, "set index directory to use")
 	html := flag.Bool("html", true, "enable HTML interface")
 	enableRPC := flag.Bool("rpc", false, "enable go/net RPC")
-	enableSocketProxy := flag.Bool("socket", getEnvWithDefaultBool("SRC_ENABLE_SOCKET_PROXY", false), "proxy requests to /indexserver/ to <index dir>/indexserver.sock")
+	enableIndexserverProxy := flag.Bool("indexserver_proxy", getEnvWithDefaultBool("SRC_ENABLE_INDEXSERVER_PROXY", false), "proxy requests with URLs matching the path /indexserver/ to <index>/indexserver.sock")
 	print := flag.Bool("print", false, "enable local result URLs")
 	enablePprof := flag.Bool("pprof", false, "set to enable remote profiling.")
 	sslCert := flag.String("ssl_cert", "", "set path to SSL .pem holding certificate.")
@@ -259,7 +259,7 @@ func main() {
 
 	debugserver.AddHandlers(handler, *enablePprof)
 
-	if *enableSocketProxy {
+	if *enableIndexserverProxy {
 		socket := filepath.Join(*index, "indexserver.sock")
 		sglog.Scoped("server", "").Info("adding reverse proxy", sglog.String("socket", socket))
 		addProxyHandler(handler, socket)
