@@ -588,26 +588,16 @@ func deleteShards(indexDir string, repoID uint32) error {
 	})
 
 	for _, s := range shards {
-		shardPath := s.Path
-
 		// Is this repository inside a compound shard? If so, set a tombstone
 		// instead of deleting the shard outright.
-		if zoekt.ShardMergingEnabled() && strings.HasPrefix(filepath.Base(shardPath), "compound-") {
-			if !strings.HasSuffix(shardPath, ".zoekt") {
-				continue
-			}
-
-			err := zoekt.SetTombstone(shardPath, repoID)
-			if err != nil {
-				return fmt.Errorf("setting tombstone in shard %q: %w", shardPath, err)
-			}
-
+		if zoekt.ShardMergingEnabled() && maybeSetTombstone([]shard{s}, repoID) {
+			shardsLog(indexDir, "tomb", []shard{s})
 			continue
 		}
 
-		paths, err := zoekt.IndexFilePaths(shardPath)
+		paths, err := zoekt.IndexFilePaths(s.Path)
 		if err != nil {
-			return fmt.Errorf("listing files for shard %q: %w", shardPath, err)
+			return fmt.Errorf("listing files for shard %q: %w", s.Path, err)
 		}
 
 		for _, p := range paths {
@@ -616,6 +606,8 @@ func deleteShards(indexDir string, repoID uint32) error {
 				return fmt.Errorf("deleting %q: %w", p, err)
 			}
 		}
+
+		shardsLog(indexDir, "delete", []shard{s})
 	}
 
 	return nil
