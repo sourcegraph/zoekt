@@ -24,7 +24,10 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -128,6 +131,7 @@ func main() {
 	index := flag.String("index", build.DefaultDir, "set index directory to use")
 	html := flag.Bool("html", true, "enable HTML interface")
 	enableRPC := flag.Bool("rpc", false, "enable go/net RPC")
+	enableIndexserverProxy := flag.Bool("indexserver_proxy", false, "proxy requests with URLs matching the path /indexserver/ to <index>/indexserver.sock")
 	print := flag.Bool("print", false, "enable local result URLs")
 	enablePprof := flag.Bool("pprof", false, "set to enable remote profiling.")
 	sslCert := flag.String("ssl_cert", "", "set path to SSL .pem holding certificate.")
@@ -242,6 +246,12 @@ func main() {
 
 	debugserver.AddHandlers(handler, *enablePprof)
 
+	if *enableIndexserverProxy {
+		socket := filepath.Join(*index, "indexserver.sock")
+		sglog.Scoped("server", "").Info("adding reverse proxy", sglog.String("socket", socket))
+		addProxyHandler(handler, socket)
+	}
+
 	// Sourcegraph: We use environment variables to configure watchdog since
 	// they are more convenient than flags in containerized environments.
 	watchdogTick := 30 * time.Second
@@ -291,6 +301,24 @@ func main() {
 	if err := shutdownOnSignal(srv); err != nil {
 		log.Fatalf("http.Server.Shutdown: %v", err)
 	}
+}
+
+// addProxyHandler adds a handler to "mux" that proxies all requests with base
+// /indexserver to "socket".
+func addProxyHandler(mux *http.ServeMux, socket string) {
+	proxy := httputil.NewSingleHostReverseProxy(&url.URL{
+		Scheme: "http",
+		// The value of "Host" is arbitrary, because it is ignored by the
+		// DialContext we use for the socket connection.
+		Host: "socket",
+	})
+	proxy.Transport = &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", socket)
+		},
+	}
+	mux.Handle("/indexserver/", http.StripPrefix("/indexserver/", http.HandlerFunc(proxy.ServeHTTP)))
 }
 
 // shutdownOnSignal will listen for SIGINT or SIGTERM and call
