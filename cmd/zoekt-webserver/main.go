@@ -123,19 +123,6 @@ func writeTemplates(dir string) error {
 	return nil
 }
 
-func getEnvWithDefaultBool(k string, defaultVal bool) bool {
-	v := os.Getenv(k)
-	if v == "" {
-		return defaultVal
-	}
-
-	d, err := strconv.ParseBool(v)
-	if err != nil {
-		log.Fatalf("error parsing ENV %s to bool: %s", k, err)
-	}
-	return d
-}
-
 func main() {
 	logDir := flag.String("log_dir", "", "log to this directory rather than stderr.")
 	logRefresh := flag.Duration("log_refresh", 24*time.Hour, "if using --log_dir, start writing a new file this often.")
@@ -144,7 +131,7 @@ func main() {
 	index := flag.String("index", build.DefaultDir, "set index directory to use")
 	html := flag.Bool("html", true, "enable HTML interface")
 	enableRPC := flag.Bool("rpc", false, "enable go/net RPC")
-	enableIndexserverProxy := flag.Bool("indexserver_proxy", getEnvWithDefaultBool("SRC_ENABLE_INDEXSERVER_PROXY", false), "proxy requests with URLs matching the path /indexserver/ to <index>/indexserver.sock")
+	enableIndexserverProxy := flag.Bool("indexserver_proxy", false, "proxy requests with URLs matching the path /indexserver/ to <index>/indexserver.sock")
 	print := flag.Bool("print", false, "enable local result URLs")
 	enablePprof := flag.Bool("pprof", false, "set to enable remote profiling.")
 	sslCert := flag.String("ssl_cert", "", "set path to SSL .pem holding certificate.")
