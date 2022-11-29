@@ -318,9 +318,7 @@ func addProxyHandler(mux *http.ServeMux, socket string) {
 			return d.DialContext(ctx, "unix", socket)
 		},
 	}
-	mux.HandleFunc("/indexserver/", func(w http.ResponseWriter, r *http.Request) {
-		proxy.ServeHTTP(w, r)
-	})
+	mux.Handle("/indexserver/", http.StripPrefix("/indexserver/", http.HandlerFunc(proxy.ServeHTTP)))
 }
 
 // shutdownOnSignal will listen for SIGINT or SIGTERM and call

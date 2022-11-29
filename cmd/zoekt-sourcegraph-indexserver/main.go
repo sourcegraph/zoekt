@@ -1119,7 +1119,7 @@ func startServer(conf rootConfig) error {
 				log.Fatalf("failed to listen on socket: %s", err)
 			}
 			debug.Printf("serving HTTP on %s", socket)
-			log.Fatal(http.Serve(l, http.StripPrefix("/indexserver", mux)))
+			log.Fatal(http.Serve(l, mux))
 		}()
 	}
 
