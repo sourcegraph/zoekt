@@ -15,7 +15,6 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/sourcegraph/zoekt/build"
 	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/sourcegraph/zoekt"
@@ -551,12 +550,21 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 	return tombstones, nil
 }
 
-// deleteShards deletes all the shards that are associated with the repository specified
-// in the build options.
+// deleteShards deletes all the shards in indexDir that are associated with
+// the given repoID. If the repository specified by repoID happens to be in a
+// compound shard, the repository is tombstoned instead.
 //
-// Users must hold the indexDir lock for this repository before calling deleteShards.
-func deleteShards(options *build.Options) error {
-	shardPaths := options.FindAllShards()
+// deleteShards returns errRepositoryNotFound if the repository specified by repoID
+// isn't present in indexDir.
+//
+// Users must hold the global indexDir lock before calling deleteShards.
+func deleteShards(indexDir string, repoID uint32) error {
+	shardMap := getShards(indexDir)
+
+	shards, ok := shardMap[repoID]
+	if !ok {
+		return errRepositoryNotFound
+	}
 
 	// Ensure that the paths are in reverse sorted order to ensure that Zoekt's repository <-> shard matching logic
 	// works correctly.
@@ -575,29 +583,31 @@ func deleteShards(options *build.Options) error {
 	// Deleting shards in reverse sorted order (2 -> 1 -> 0) always ensures that we don't leave an inconsistent
 	// state behind even if we crash.
 
-	sort.Slice(shardPaths, func(i, j int) bool {
-		return shardPaths[i] > shardPaths[j]
+	sort.Slice(shards, func(i, j int) bool {
+		return shards[i].Path > shards[j].Path
 	})
 
-	for _, shard := range shardPaths {
+	for _, s := range shards {
+		shardPath := s.Path
+
 		// Is this repository inside a compound shard? If so, set a tombstone
 		// instead of deleting the shard outright.
-		if zoekt.ShardMergingEnabled() && strings.HasPrefix(filepath.Base(shard), "compound-") {
-			if !strings.HasSuffix(shard, ".zoekt") {
+		if zoekt.ShardMergingEnabled() && strings.HasPrefix(filepath.Base(shardPath), "compound-") {
+			if !strings.HasSuffix(shardPath, ".zoekt") {
 				continue
 			}
 
-			err := zoekt.SetTombstone(shard, options.RepositoryDescription.ID)
+			err := zoekt.SetTombstone(shardPath, repoID)
 			if err != nil {
-				return fmt.Errorf("setting tombstone in shard %q: %w", shard, err)
+				return fmt.Errorf("setting tombstone in shard %q: %w", shardPath, err)
 			}
 
 			continue
 		}
 
-		paths, err := zoekt.IndexFilePaths(shard)
+		paths, err := zoekt.IndexFilePaths(shardPath)
 		if err != nil {
-			return fmt.Errorf("listing files for shard %q: %w", shard, err)
+			return fmt.Errorf("listing files for shard %q: %w", shardPath, err)
 		}
 
 		for _, p := range paths {
@@ -610,3 +620,5 @@ func deleteShards(options *build.Options) error {
 
 	return nil
 }
+
+var errRepositoryNotFound = errors.New("repository not found")

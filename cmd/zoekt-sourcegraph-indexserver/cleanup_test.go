@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -539,13 +540,7 @@ func TestDeleteShards(t *testing.T) {
 		}
 
 		// run test: delete repository
-		options := &build.Options{
-			IndexDir:              indexDir,
-			RepositoryDescription: repositoryToDelete,
-		}
-		options.SetDefaults()
-
-		err := deleteShards(options)
+		err := deleteShards(indexDir, repositoryToDelete.ID)
 		if err != nil {
 			t.Errorf("unexpected error when deleting shards: %s", err)
 		}
@@ -586,14 +581,7 @@ func TestDeleteShards(t *testing.T) {
 		repositories := []zoekt.Repository{remainingRepoA, remainingRepoB, repositoryToDelete}
 		shard := createTestCompoundShard(t, indexDir, repositories)
 
-		// run test: delete repository
-		options := &build.Options{
-			IndexDir:              indexDir,
-			RepositoryDescription: repositoryToDelete,
-		}
-		options.SetDefaults()
-
-		err := deleteShards(options)
+		err := deleteShards(indexDir, repositoryToDelete.ID)
 		if err != nil {
 			t.Errorf("unexpected error when deleting shards: %s", err)
 		}
@@ -622,6 +610,22 @@ func TestDeleteShards(t *testing.T) {
 		}
 		if diff := cmp.Diff(expectedRepositories, actualRepositories, opts...); diff != "" {
 			t.Errorf("unexpected diff in list of repositories (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("returns errRepositoryNotFound if the repoID isn't in indexDir", func(t *testing.T) {
+		indexDir := t.TempDir()
+
+		// setup: create compound shard with all repositories
+		repositories := []zoekt.Repository{remainingRepoA, remainingRepoB, repositoryToDelete}
+		for _, r := range repositories {
+			createTestNormalShard(t, indexDir, r, 3)
+		}
+
+		// test: delete some random repository and check to see if we get the expected error
+		err := deleteShards(indexDir, 7777777)
+		if !errors.Is(err, errRepositoryNotFound) {
+			t.Errorf("expected errRepositoryNotFound when deleting shards, got: %s", err)
 		}
 	})
 }

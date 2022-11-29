@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -790,24 +791,18 @@ func (s *Server) handleDebugDelete(w http.ResponseWriter, r *http.Request) {
 
 	repoID := uint32(id64)
 
-	s.queue.mu.Lock()
-	defer s.queue.mu.Unlock()
-
-	item := s.queue.get(repoID)
-	if item == nil {
-		http.Error(w, fmt.Sprintf("no repository found for id %q", rawID), http.StatusBadRequest)
-		return
-	}
-
 	var deletionError error
 
-	repoName := item.opts.Name
-	s.muIndexDir.With(repoName, func() {
-		o := s.indexArgs(item.opts).BuildOptions()
-		deletionError = deleteShards(o)
+	s.muIndexDir.Global(func() {
+		deletionError = deleteShards(s.IndexDir, repoID)
 	})
 
 	if deletionError != nil {
+		if errors.Is(deletionError, errRepositoryNotFound) {
+			http.Error(w, fmt.Sprintf("repository id %q not found", rawID), http.StatusBadRequest)
+			return
+		}
+
 		http.Error(w, fmt.Sprintf("while deleting shards for repository id %q: %s", rawID, deletionError), http.StatusInternalServerError)
 		return
 	}
