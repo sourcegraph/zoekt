@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"log"
 	"math"
 	"math/rand"
@@ -1107,9 +1109,11 @@ func startServer(conf rootConfig) error {
 		go func() {
 			socket := filepath.Join(s.IndexDir, "indexserver.sock")
 			// We cannot bind a socket to an existing pathname.
-			if err := os.Remove(socket); err != nil && !os.IsNotExist(err) {
+			if err := os.Remove(socket); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				log.Fatalf("error removing socket file: %s", socket)
 			}
+			// The "unix" network corresponds to stream sockets. (cf. unixgram,
+			// unixpacket).
 			l, err := net.Listen("unix", socket)
 			if err != nil {
 				log.Fatalf("failed to listen on socket: %s", err)
