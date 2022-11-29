@@ -1118,6 +1118,15 @@ func startServer(conf rootConfig) error {
 			if err != nil {
 				log.Fatalf("failed to listen on socket: %s", err)
 			}
+			// Indexserver (root) and webserver (Sourcegraph) run with
+			// different users. Per default, the socket is created with
+			// permission 755 (root root), which doesn't let webserver write to
+			// it.
+			//
+			// See https://github.com/golang/go/issues/11822 for more context.
+			if err := os.Chmod(socket, 0777); err != nil {
+				log.Fatalf("failed to change permission of socket %s: %s", socket, err)
+			}
 			debug.Printf("serving HTTP on %s", socket)
 			log.Fatal(http.Serve(l, mux))
 		}()
