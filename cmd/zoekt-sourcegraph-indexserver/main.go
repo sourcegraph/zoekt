@@ -840,7 +840,14 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 
 	args := s.indexArgs(opts)
 	args.Incremental = false // force re-index
-	state, err := s.Index(args)
+
+	var state indexState
+	ran := s.muIndexDir.With(opts.Name, func() {
+		state, err = s.Index(args)
+	})
+	if !ran {
+		return fmt.Sprintf("index job for repository already running: %s", args), nil
+	}
 	if err != nil {
 		return fmt.Sprintf("Indexing %s failed: %s", args.String(), err), err
 	}
