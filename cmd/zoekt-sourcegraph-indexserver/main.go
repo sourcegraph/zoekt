@@ -671,32 +671,61 @@ var repoTmpl = template.Must(template.New("name").Parse(`
 `))
 
 func (s *Server) handleReIndex(w http.ResponseWriter, r *http.Request) {
-	type Repo struct {
-		ID   uint32
-		Name string
-	}
-	var data struct {
-		Repos    []Repo
-		IndexMsg string
-	}
-
-	if r.Method == "POST" {
-		_ = r.ParseForm()
-		if id, err := strconv.Atoi(r.Form.Get("repo")); err != nil {
-			data.IndexMsg = err.Error()
-		} else {
-			data.IndexMsg, _ = s.forceIndex(uint32(id))
+	renderRoot := func(indexMsg string) {
+		type Repo struct {
+			ID   uint32
+			Name string
 		}
+		var data struct {
+			Repos    []Repo
+			IndexMsg string
+		}
+
+		data.IndexMsg = indexMsg
+
+		s.queue.Iterate(func(opts *IndexOptions) {
+			data.Repos = append(data.Repos, Repo{
+				ID:   opts.RepoID,
+				Name: opts.Name,
+			})
+		})
+
+		_ = repoTmpl.Execute(w, data)
 	}
 
-	s.queue.Iterate(func(opts *IndexOptions) {
-		data.Repos = append(data.Repos, Repo{
-			ID:   opts.RepoID,
-			Name: opts.Name,
-		})
-	})
+	switch r.Method {
+	case "GET":
+		renderRoot("")
+	case "POST":
+		err := r.ParseForm()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	_ = repoTmpl.Execute(w, data)
+		id, err := strconv.Atoi(r.Form.Get("repo"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		indexMsg, err := s.forceIndex(uint32(id))
+
+		// ?headless
+		if _, ok := r.URL.Query()["headless"]; ok {
+			if err != nil {
+				http.Error(w, indexMsg, http.StatusInternalServerError)
+				return
+			}
+			w.Write([]byte(indexMsg))
+			return
+		}
+
+		renderRoot(indexMsg)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
