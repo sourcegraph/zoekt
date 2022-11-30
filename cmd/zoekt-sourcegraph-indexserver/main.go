@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -791,19 +790,20 @@ func (s *Server) handleDebugDelete(w http.ResponseWriter, r *http.Request) {
 
 	repoID := uint32(id64)
 
-	var deletionError error
-
+	repositoryNotFound := false
 	s.muIndexDir.Global(func() {
-		deletionError = deleteShards(s.IndexDir, repoID)
-	})
-
-	if deletionError != nil {
-		if errors.Is(deletionError, errRepositoryNotFound) {
-			http.Error(w, fmt.Sprintf("repository id %q not found", rawID), http.StatusBadRequest)
+		shardMap := getShards(s.IndexDir)
+		shards, ok := shardMap[repoID]
+		if !ok {
+			repositoryNotFound = true
 			return
 		}
 
-		http.Error(w, fmt.Sprintf("while deleting shards for repository id %q: %s", rawID, deletionError), http.StatusInternalServerError)
+		deleteOrTombstone(s.IndexDir, repoID, s.shardMerging, shards...)
+	})
+
+	if repositoryNotFound {
+		http.Error(w, fmt.Sprintf("repository id %q not found", rawID), http.StatusBadRequest)
 		return
 	}
 }

@@ -94,23 +94,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		}
 		log.Printf("removing shards for %v due to multiple repository names: %s", repo, strings.Join(paths, " "))
 
-		// We may be in both normal and compound shards in this case. First
-		// tombstone the compound shards so we don't just rm them.
-		simple := shards[:0]
-		for _, s := range shards {
-			if shardMerging && maybeSetTombstone([]shard{s}, repo) {
-				shardsLog(indexDir, "tombname", []shard{s})
-			} else {
-				simple = append(simple, s)
-			}
-		}
-
-		if len(simple) == 0 {
-			continue
-		}
-
-		removeAll(simple...)
-		shardsLog(indexDir, "removename", simple)
+		deleteOrTombstone(indexDir, repo, shardMerging, shards...)
 	}
 
 	// index: Move missing repos from trash into index
@@ -326,11 +310,47 @@ func removeAll(shards ...shard) {
 	// potential for a partial index for a repo. However, this should be
 	// exceedingly rare due to it being a mix of partial failure on something in
 	// trash + an admin re-adding a repository.
-	for _, shard := range shards {
+
+	if len(shards) == 0 {
+		return
+	}
+
+	// Ensure that the paths are in reverse sorted order to ensure that Zoekt's repository <-> shard matching logic
+	// works correctly + ensure that we don't leave behind partial state.
+	//
+	// Example: - repoA_v16.00002.zoekt
+	//          - repoA_v16.00001.zoekt
+	//          - repoA_v16.00000.zoekt
+	//
+	// zoekt-indexserver checks whether it has indexed "repoA" by first checking to see if the 0th shard
+	// is present (repoA_v16.00000.zoekt).
+	//    - If it's present, then it gathers all rest of the shards names in ascending order (...00001.zoekt, ...00002.zoekt).
+	//    - If it's missing, then zoekt assumes that it never indexed "repoA" (the remaining data from shards 1 & 2 is effectively invisible)
+	//
+	// If this function were to crash while deleting repoA, and we only deleted the 0th shard, then :
+	// - zoekt would think that there is no data for that repository (despite the partial data from
+	// - it's possible for zoekt to show inconsistent state when re-indexing the repository (zoekt incorrectly
+	//	 associates the data from shards 1 and 2 with the "new" shard 0 data (from a newer commit))
+	//
+	// Deleting shards in reverse sorted order (2 -> 1 -> 0) always ensures that we don't leave an inconsistent
+	// state behind even if we crash.
+
+	var sortedShards []shard
+	for _, s := range shards {
+		sortedShards = append(sortedShards, s)
+	}
+
+	sort.Slice(sortedShards, func(i, j int) bool {
+		return sortedShards[i].Path > sortedShards[j].Path
+	})
+
+	for _, shard := range sortedShards {
 		paths, err := zoekt.IndexFilePaths(shard.Path)
 		if err != nil {
 			debug.Printf("failed to remove shard %s: %v", shard.Path, err)
+
 		}
+
 		for _, p := range paths {
 			if err := os.Remove(p); err != nil {
 				debug.Printf("failed to remove shard file %s: %v", p, err)
@@ -550,67 +570,25 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 	return tombstones, nil
 }
 
-// deleteShards deletes all the shards in indexDir that are associated with
-// the given repoID. If the repository specified by repoID happens to be in a
-// compound shard, the repository is tombstoned instead.
+// deleteOrTombstone deletes the provided shards in indexDir that are associated with
+// the given repoID.
 //
-// deleteShards returns errRepositoryNotFound if the repository specified by repoID
-// isn't present in indexDir.
-//
-// Users must hold the global indexDir lock before calling deleteShards.
-func deleteShards(indexDir string, repoID uint32) error {
-	shardMap := getShards(indexDir)
-
-	shards, ok := shardMap[repoID]
-	if !ok {
-		return errRepositoryNotFound
-	}
-
-	// Ensure that the paths are in reverse sorted order to ensure that Zoekt's repository <-> shard matching logic
-	// works correctly.
-	//
-	// Example: - repoA_v16.00002.zoekt
-	//          - repoA_v16.00001.zoekt
-	//          - repoA_v16.00000.zoekt
-	//
-	// zoekt-indexserver checks whether it has indexed "repoA" by first checking to see if the 0th shard
-	// is present (repoA_v16.00000.zoekt). If it's present, then it gathers all rest of the shards names in ascending order
-	// (...00001.zoekt, ...00002.zoekt). If it's missing, then zoekt assumes that it never indexed "repoA".
-	//
-	// If this function were to crash while deleting repoA, and we only deleted the 0th shard, then shard's 1 & 2 would never
-	// be cleaned up by Zoekt indexserver (since the 0th shard is the only shard that's tested).
-	//
-	// Deleting shards in reverse sorted order (2 -> 1 -> 0) always ensures that we don't leave an inconsistent
-	// state behind even if we crash.
-
-	sort.Slice(shards, func(i, j int) bool {
-		return shards[i].Path > shards[j].Path
-	})
-
+// If one of the provided shards is a compound shard and the repository is contained within it,
+// the repository is tombstoned instead.
+func deleteOrTombstone(indexDir string, repoID uint32, shardMerging bool, shards ...shard) {
+	var simple []shard
 	for _, s := range shards {
-		// Is this repository inside a compound shard? If so, set a tombstone
-		// instead of deleting the shard outright.
-		if zoekt.ShardMergingEnabled() && maybeSetTombstone([]shard{s}, repoID) {
-			shardsLog(indexDir, "tomb", []shard{s})
-			continue
+		if shardMerging && maybeSetTombstone([]shard{s}, repoID) {
+			shardsLog(indexDir, "tombname", []shard{s})
+		} else {
+			simple = append(simple, s)
 		}
-
-		paths, err := zoekt.IndexFilePaths(s.Path)
-		if err != nil {
-			return fmt.Errorf("listing files for shard %q: %w", s.Path, err)
-		}
-
-		for _, p := range paths {
-			err := os.Remove(p)
-			if err != nil {
-				return fmt.Errorf("deleting %q: %w", p, err)
-			}
-		}
-
-		shardsLog(indexDir, "delete", []shard{s})
 	}
 
-	return nil
-}
+	if len(simple) == 0 {
+		return
+	}
 
-var errRepositoryNotFound = errors.New("repository not found")
+	removeAll(simple...)
+	shardsLog(indexDir, "removename", simple)
+}

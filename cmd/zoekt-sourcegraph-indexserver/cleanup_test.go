@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -514,8 +513,11 @@ func TestDeleteShards(t *testing.T) {
 	t.Run("delete repository from set of normal shards", func(t *testing.T) {
 		indexDir := t.TempDir()
 
-		// map of repoID -> list of associated shard paths + metadata paths
-		shardMap := make(map[uint32][]string)
+		// map of repoID -> list of paths for associated shard files + metadata files
+		shardFilesMap := make(map[uint32][]string)
+
+		// map of repoID -> list of associated shard structs
+		shardStructMap := make(map[uint32][]shard)
 
 		// setup: create shards for each repository, and populate the shard map
 		for _, r := range []zoekt.Repository{
@@ -523,11 +525,11 @@ func TestDeleteShards(t *testing.T) {
 			remainingRepoB,
 			repositoryToDelete,
 		} {
-			shards := createTestNormalShard(t, indexDir, r, 3)
+			shardPaths := createTestNormalShard(t, indexDir, r, 3)
 
-			for _, shard := range shards {
+			for _, p := range shardPaths {
 				// create stub meta file
-				metaFile := shard + ".meta"
+				metaFile := p + ".meta"
 				f, err := os.Create(metaFile)
 				if err != nil {
 					t.Fatalf("creating metadata file %q: %s", metaFile, err)
@@ -535,15 +537,17 @@ func TestDeleteShards(t *testing.T) {
 
 				f.Close()
 
-				shardMap[r.ID] = append(shardMap[r.ID], shard, metaFile)
+				shardFilesMap[r.ID] = append(shardFilesMap[r.ID], p, metaFile)
+				shardStructMap[r.ID] = append(shardStructMap[r.ID], shard{
+					RepoID:   repositoryToDelete.ID,
+					RepoName: repositoryToDelete.Name,
+					Path:     p,
+				})
 			}
 		}
 
 		// run test: delete repository
-		err := deleteShards(indexDir, repositoryToDelete.ID)
-		if err != nil {
-			t.Errorf("unexpected error when deleting shards: %s", err)
-		}
+		deleteOrTombstone(indexDir, repositoryToDelete.ID, false, shardStructMap[repositoryToDelete.ID]...)
 
 		// run assertions: gather all the shards + meta files that remain and
 		// check to see that only the files associated with the "remaining" repositories
@@ -560,8 +564,8 @@ func TestDeleteShards(t *testing.T) {
 		}
 
 		var expectedShardFiles []string
-		expectedShardFiles = append(expectedShardFiles, shardMap[remainingRepoA.ID]...)
-		expectedShardFiles = append(expectedShardFiles, shardMap[remainingRepoB.ID]...)
+		expectedShardFiles = append(expectedShardFiles, shardFilesMap[remainingRepoA.ID]...)
+		expectedShardFiles = append(expectedShardFiles, shardFilesMap[remainingRepoB.ID]...)
 
 		sort.Strings(actualShardFiles)
 		sort.Strings(expectedShardFiles)
@@ -579,16 +583,18 @@ func TestDeleteShards(t *testing.T) {
 
 		// setup: create compound shard with all repositories
 		repositories := []zoekt.Repository{remainingRepoA, remainingRepoB, repositoryToDelete}
-		shard := createTestCompoundShard(t, indexDir, repositories)
+		compoundShard := createTestCompoundShard(t, indexDir, repositories)
 
-		err := deleteShards(indexDir, repositoryToDelete.ID)
-		if err != nil {
-			t.Errorf("unexpected error when deleting shards: %s", err)
+		s := shard{
+			RepoID:   repositoryToDelete.ID,
+			RepoName: repositoryToDelete.Name,
+			Path:     compoundShard,
 		}
+		deleteOrTombstone(indexDir, repositoryToDelete.ID, true, s)
 
 		// verify: read the compound shard, and ensure that only
 		// the repositories that we expect are in the shard (and the deleted one has been tombstoned)
-		actualRepositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+		actualRepositories, _, err := zoekt.ReadMetadataPathAlive(compoundShard)
 		if err != nil {
 			t.Fatalf("reading repository metadata from shard: %s", err)
 		}
@@ -613,21 +619,6 @@ func TestDeleteShards(t *testing.T) {
 		}
 	})
 
-	t.Run("returns errRepositoryNotFound if the repoID isn't in indexDir", func(t *testing.T) {
-		indexDir := t.TempDir()
-
-		// setup: create compound shard with all repositories
-		repositories := []zoekt.Repository{remainingRepoA, remainingRepoB, repositoryToDelete}
-		for _, r := range repositories {
-			createTestNormalShard(t, indexDir, r, 3)
-		}
-
-		// test: delete some random repository and check to see if we get the expected error
-		err := deleteShards(indexDir, 7777777)
-		if !errors.Is(err, errRepositoryNotFound) {
-			t.Errorf("expected errRepositoryNotFound when deleting shards, got: %s", err)
-		}
-	})
 }
 
 // createCompoundShard returns a path to a compound shard containing repos with
