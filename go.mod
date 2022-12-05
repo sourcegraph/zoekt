@@ -26,7 +26,7 @@ require (
 	github.com/prometheus/procfs v0.8.0
 	github.com/rs/xid v1.4.0
 	github.com/sourcegraph/go-ctags v0.0.0-20220611154803-db463692f037
-	github.com/sourcegraph/log v0.0.0-20221116144936-8b7619bccc8a
+	github.com/sourcegraph/log v0.0.0-20221205074644-b7a37dee2e74
 	github.com/sourcegraph/mountinfo v0.0.0-20221027185101-272dd8baaf4a
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
@@ -103,11 +103,11 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.11.1 // indirect
 	go.opentelemetry.io/proto/otlp v0.19.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
-	go.uber.org/zap v1.23.0 // indirect
+	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.3.0 // indirect
 	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/sys v0.2.0 // indirect
-	golang.org/x/text v0.4.0 // indirect
+	golang.org/x/sys v0.3.0 // indirect
+	golang.org/x/text v0.5.0 // indirect
 	golang.org/x/time v0.2.0 // indirect
 	golang.org/x/tools v0.3.0 // indirect
 	google.golang.org/api v0.103.0 // indirect
