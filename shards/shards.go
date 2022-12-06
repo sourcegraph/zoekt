@@ -181,7 +181,7 @@ type loaded struct {
 	// should not be mutated.
 	shards []*rankedShard
 
-	// ready is true if sharded searcher has finisihed loading all initial
+	// ready is true if sharded searcher has finished loading all initial
 	// shards on startup.
 	ready bool
 }
