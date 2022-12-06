@@ -427,9 +427,9 @@ func (s *Stats) Add(o Stats) {
 	s.Wait += o.Wait
 	s.RegexpsConsidered += o.RegexpsConsidered
 
-    // We want the first non-zero FlushReason to be sticky. This is a useful
-    // property when aggregating stats from several Zoekts.
-    if s.FlushReason == 0 {
+	// We want the first non-zero FlushReason to be sticky. This is a useful
+	// property when aggregating stats from several Zoekts.
+	if s.FlushReason == 0 {
 		s.FlushReason = o.FlushReason
 	}
 }
