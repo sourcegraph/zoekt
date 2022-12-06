@@ -25,13 +25,13 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
@@ -196,6 +196,7 @@ type shardedSearcher struct {
 	mu     sync.Mutex // protects writes to shards
 	shards map[string]*rankedShard
 
+	ready  atomic.Bool
 	ranked atomic.Value
 }
 
@@ -265,6 +266,10 @@ type loader struct {
 }
 
 func (tl *loader) load(keys ...string) {
+	// This is called with all keys on startup, so once this function has
+	// finished running shardedSearcher will be ready.
+	defer tl.ss.markReady()
+
 	var (
 		mu           sync.Mutex     // synchronizes writes to the shards map
 		wg           sync.WaitGroup // used to wait for all shards to load
@@ -980,7 +985,7 @@ func reportListAllMetrics(repos []*zoekt.RepoListEntry) {
 func (s *shardedSearcher) getLoaded() loaded {
 	// next commit will store the true value of this, for now we keep the
 	// backwards compatible behaviour.
-	ready := true
+	ready := s.ready.Load()
 	// ranked is loaded after ready to avoid a race were ready is true but
 	// ranked is still not the final set of shards.
 	ranked, _ := s.ranked.Load().([]*rankedShard)
@@ -1020,6 +1025,13 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 		repos:    repos,
 		priority: maxPriority,
 	}
+}
+
+// markReady should be called once all shards have been passed into replace on
+// startup. Once s is marked as ready it stops reporting a Crash in the
+// response Stats.
+func (s *shardedSearcher) markReady() {
+	s.ready.CompareAndSwap(false, true)
 }
 
 func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
