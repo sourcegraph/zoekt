@@ -26,7 +26,7 @@ require (
 	github.com/prometheus/procfs v0.8.0
 	github.com/rs/xid v1.4.0
 	github.com/sourcegraph/go-ctags v0.0.0-20220611154803-db463692f037
-	github.com/sourcegraph/log v0.0.0-20221205074644-b7a37dee2e74
+	github.com/sourcegraph/log v0.0.0-20221206163500-7d93c6ad7037
 	github.com/sourcegraph/mountinfo v0.0.0-20221027185101-272dd8baaf4a
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
