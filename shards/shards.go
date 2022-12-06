@@ -180,6 +180,10 @@ type loaded struct {
 	// shards is the currently loaded shards sorted by decreasing rank and
 	// should not be mutated.
 	shards []*rankedShard
+
+	// ready is true if sharded searcher has finished loading all initial
+	// shards on startup.
+	ready bool
 }
 
 type shardedSearcher struct {
@@ -494,6 +498,11 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 	copyFiles(aggregate)
 
+	if !loaded.ready {
+		// We may have missed results due to not being fully loaded.
+		aggregate.Stats.Crashes++
+	}
+
 	aggregate.Stats.Wait = wait
 	aggregate.Stats.Duration = time.Since(start)
 
@@ -526,9 +535,16 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		maxPendingPriority = shards[0].priority
 	}
 
+	stillLoadingCrashes := 0
+	if !loaded.ready {
+		// We may have missed results due to not being fully loaded.
+		stillLoadingCrashes++
+	}
+
 	sender.Send(&zoekt.SearchResult{
 		Stats: zoekt.Stats{
-			Wait: time.Since(start),
+			Crashes: stillLoadingCrashes,
+			Wait:    time.Since(start),
 		},
 		Progress: zoekt.Progress{
 			MaxPendingPriority: maxPendingPriority,
@@ -891,7 +907,14 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		}()
 	}
 
+	stillLoadingCrashes := 0
+	if !loaded.ready {
+		// We may have missed results due to not being fully loaded.
+		stillLoadingCrashes++
+	}
+
 	agg := zoekt.RepoList{
+		Crashes: stillLoadingCrashes,
 		Minimal: map[uint32]*zoekt.MinimalRepoListEntry{},
 	}
 
@@ -955,9 +978,15 @@ func reportListAllMetrics(repos []*zoekt.RepoListEntry) {
 
 // getLoaded returns the currently loaded shards. Shared so do not mutate.
 func (s *shardedSearcher) getLoaded() loaded {
+	// next commit will store the true value of this, for now we keep the
+	// backwards compatible behaviour.
+	ready := true
+	// ranked is loaded after ready to avoid a race were ready is true but
+	// ranked is still not the final set of shards.
 	ranked, _ := s.ranked.Load().([]*rankedShard)
 	return loaded{
 		shards: ranked,
+		ready:  ready,
 	}
 }
 
