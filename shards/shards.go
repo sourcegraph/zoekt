@@ -174,6 +174,14 @@ type rankedShard struct {
 	repos []*zoekt.Repository
 }
 
+// loaded stores the state we compute when updating the state of shards from
+// disk.
+type loaded struct {
+	// shards is the currently loaded shards sorted by decreasing rank and
+	// should not be mutated.
+	shards []*rankedShard
+}
+
 type shardedSearcher struct {
 	// Limit the number of parallel queries. Since searching is
 	// CPU bound, we can't do better than #CPU queries in
@@ -469,7 +477,8 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	wait := time.Since(start)
 	start = time.Now()
 
-	done, err := streamSearch(ctx, proc, q, opts, ss.getShards(), collectSender)
+	loaded := ss.getLoaded()
+	done, err := streamSearch(ctx, proc, q, opts, loaded.shards, collectSender)
 	defer done()
 	if err != nil {
 		return nil, err
@@ -509,7 +518,8 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	defer proc.Release()
 	tr.LazyPrintf("acquired process")
 
-	shards := ss.getShards()
+	loaded := ss.getLoaded()
+	shards := loaded.shards
 
 	maxPendingPriority := math.Inf(-1)
 	if len(shards) > 0 {
@@ -861,7 +871,8 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	defer proc.Release()
 	tr.LazyPrintf("acquired process")
 
-	shards := ss.getShards()
+	loaded := ss.getLoaded()
+	shards := loaded.shards
 	shardCount := len(shards)
 	all := make(chan shardListResult, shardCount)
 	tr.LazyPrintf("shardCount: %d", len(shards))
@@ -942,11 +953,12 @@ func reportListAllMetrics(repos []*zoekt.RepoListEntry) {
 	metricListAllOtherBranchesNewLinesCount.Set(float64(stats.OtherBranchesNewLinesCount))
 }
 
-// getShards returns the currently loaded shards. The shards are sorted by decreasing
-// rank and should not be mutated.
-func (s *shardedSearcher) getShards() []*rankedShard {
+// getLoaded returns the currently loaded shards. Shared so do not mutate.
+func (s *shardedSearcher) getLoaded() loaded {
 	ranked, _ := s.ranked.Load().([]*rankedShard)
-	return ranked
+	return loaded{
+		shards: ranked,
+	}
 }
 
 func mkRankedShard(s zoekt.Searcher) *rankedShard {
