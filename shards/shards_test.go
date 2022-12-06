@@ -202,7 +202,7 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 	}
 
 	var have []string
-	for _, s := range ss.getShards() {
+	for _, s := range ss.getLoaded().shards {
 		for _, r := range s.repos {
 			have = append(have, r.Name)
 		}
