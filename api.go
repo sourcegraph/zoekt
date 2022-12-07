@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"time"
@@ -323,6 +324,28 @@ func (lfm *LineFragmentMatch) sizeBytes() (sz uint64) {
 	return
 }
 
+type FlushReason uint8
+
+const (
+	FlushReasonTimerExpired FlushReason = 1 << iota
+	FlushReasonFinalFlush
+	FlushReasonMaxSize
+)
+
+var FlushReasonStrings = map[FlushReason]string{
+	FlushReasonTimerExpired: "timer_expired",
+	FlushReasonFinalFlush:   "final_flush",
+	FlushReasonMaxSize:      "max_size_reached",
+}
+
+func (fr FlushReason) String() string {
+	if v, ok := FlushReasonStrings[fr]; ok {
+		return v
+	}
+
+	return "none"
+}
+
 // Stats contains interesting numbers on the search
 type Stats struct {
 	// Amount of I/O for reading contents.
@@ -375,11 +398,16 @@ type Stats struct {
 
 	// Number of times regexp was called on files that we evaluated.
 	RegexpsConsidered int
+
+	// FlushReason explains why results were flushed.
+	FlushReason FlushReason
 }
 
-func (s *Stats) sizeBytes() uint64 {
-	// This assumes we are running on a 64-bit architecture.
-	return 16 * 8
+func (s *Stats) sizeBytes() (sz uint64) {
+	sz = 16 * 8 // This assumes we are running on a 64-bit architecture
+	sz += 1     // FlushReason
+
+	return
 }
 
 func (s *Stats) Add(o Stats) {
@@ -398,6 +426,12 @@ func (s *Stats) Add(o Stats) {
 	s.ShardsSkippedFilter += o.ShardsSkippedFilter
 	s.Wait += o.Wait
 	s.RegexpsConsidered += o.RegexpsConsidered
+
+	// We want the first non-zero FlushReason to be sticky. This is a useful
+	// property when aggregating stats from several Zoekts.
+	if s.FlushReason == 0 {
+		s.FlushReason = o.FlushReason
+	}
 }
 
 // Zero returns true if stats is empty.
@@ -585,6 +619,14 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		r.priority, err = strconv.ParseFloat(v, 64)
 		if err != nil {
 			r.priority = 0
+		}
+
+		// Sourcegraph indexserver doesn't set repo.Rank, so we set it here
+		// based on priority. Setting it on read instead of during indexing
+		// allows us to avoid a complete reindex.
+		if r.Rank == 0 && r.priority > 0 {
+			l := math.Log(float64(r.priority))
+			repo.Rank = uint16((1.0 - 1.0/math.Pow(1+l, 0.6)) * 10000)
 		}
 	}
 	return nil
@@ -802,6 +844,11 @@ type SearchOptions struct {
 	// EXPERIMENTAL. If true, document ranks are used as additional input for
 	// sorting matches.
 	UseDocumentRanks bool
+
+	// RanksDampingFactor determines the contribution of documents ranks to the
+	// final ranking based on RRF. A value in (0,1] reduces the contribution,
+	// while a value in (-inf,0) increases it.
+	RanksDampingFactor float64
 
 	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
 	// a command-line flag

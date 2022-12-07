@@ -108,7 +108,7 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 
 	// stopCollectingAndFlush will send what we have collected and all future
 	// sends will go via sender directly.
-	stopCollectingAndFlush := func(reason string) {
+	stopCollectingAndFlush := func(reason zoekt.FlushReason) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -117,7 +117,8 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 		}
 
 		if agg, ok := collectSender.Done(); ok {
-			metricFinalAggregateSize.WithLabelValues(reason).Observe(float64(len(agg.Files)))
+			metricFinalAggregateSize.WithLabelValues(reason.String()).Observe(float64(len(agg.Files)))
+			agg.FlushReason = reason
 			sender.Send(agg)
 		}
 
@@ -135,12 +136,12 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 		case <-timerCancel:
 			timer.Stop()
 		case <-timer.C:
-			stopCollectingAndFlush("timer_expired")
+			stopCollectingAndFlush(zoekt.FlushReasonTimerExpired)
 		}
 	}()
 
 	finalFlush := func() {
-		stopCollectingAndFlush("final_flush")
+		stopCollectingAndFlush(zoekt.FlushReasonFinalFlush)
 	}
 
 	return stream.SenderFunc(func(event *zoekt.SearchResult) {

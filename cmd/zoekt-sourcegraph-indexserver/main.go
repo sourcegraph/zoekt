@@ -6,13 +6,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"log"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -668,32 +671,61 @@ var repoTmpl = template.Must(template.New("name").Parse(`
 `))
 
 func (s *Server) handleReIndex(w http.ResponseWriter, r *http.Request) {
-	type Repo struct {
-		ID   uint32
-		Name string
-	}
-	var data struct {
-		Repos    []Repo
-		IndexMsg string
-	}
-
-	if r.Method == "POST" {
-		_ = r.ParseForm()
-		if id, err := strconv.Atoi(r.Form.Get("repo")); err != nil {
-			data.IndexMsg = err.Error()
-		} else {
-			data.IndexMsg, _ = s.forceIndex(uint32(id))
+	renderRoot := func(indexMsg string) {
+		type Repo struct {
+			ID   uint32
+			Name string
 		}
+		var data struct {
+			Repos    []Repo
+			IndexMsg string
+		}
+
+		data.IndexMsg = indexMsg
+
+		s.queue.Iterate(func(opts *IndexOptions) {
+			data.Repos = append(data.Repos, Repo{
+				ID:   opts.RepoID,
+				Name: opts.Name,
+			})
+		})
+
+		_ = repoTmpl.Execute(w, data)
 	}
 
-	s.queue.Iterate(func(opts *IndexOptions) {
-		data.Repos = append(data.Repos, Repo{
-			ID:   opts.RepoID,
-			Name: opts.Name,
-		})
-	})
+	switch r.Method {
+	case "GET":
+		renderRoot("")
+	case "POST":
+		err := r.ParseForm()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	_ = repoTmpl.Execute(w, data)
+		id, err := strconv.Atoi(r.Form.Get("repo"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		indexMsg, err := s.forceIndex(uint32(id))
+
+		// ?headless
+		if _, ok := r.URL.Query()["headless"]; ok {
+			if err != nil {
+				http.Error(w, indexMsg, http.StatusInternalServerError)
+				return
+			}
+			w.Write([]byte(indexMsg))
+			return
+		}
+
+		renderRoot(indexMsg)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
@@ -837,7 +869,14 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 
 	args := s.indexArgs(opts)
 	args.Incremental = false // force re-index
-	state, err := s.Index(args)
+
+	var state indexState
+	ran := s.muIndexDir.With(opts.Name, func() {
+		state, err = s.Index(args)
+	})
+	if !ran {
+		return fmt.Sprintf("index job for repository already running: %s", args), nil
+	}
 	if err != nil {
 		return fmt.Sprintf("Indexing %s failed: %s", args.String(), err), err
 	}
@@ -1085,17 +1124,47 @@ func startServer(conf rootConfig) error {
 	setCompoundShardCounter(s.IndexDir)
 
 	if conf.listen != "" {
+
+		mux := http.NewServeMux()
+		debugserver.AddHandlers(mux, true, []debugserver.DebugPage{
+			{Href: "debug/indexed", Text: "Indexed", Description: "list of all indexed repositories"},
+			{Href: "debug/list?indexed=false", Text: "Assigned (this instance)", Description: "list of all repositories that are assigned to this instance"},
+			{Href: "debug/list?indexed=true", Text: "Assigned (all)", Description: "same as above, but includes repositories which this instance temporarily holds during re-balancing"},
+			{Href: "debug/queue", Text: "Indexing Queue State", Description: "list of all repositories in the indexing queue, sorted by descending priority"},
+		}...)
+		s.addDebugHandlers(mux)
+
 		go func() {
-			mux := http.NewServeMux()
-			debugserver.AddHandlers(mux, true, []debugserver.DebugPage{
-				{Href: "debug/indexed", Text: "Indexed", Description: "list of all indexed repositories"},
-				{Href: "debug/list?indexed=false", Text: "Assigned (this instance)", Description: "list of all repositories that are assigned to this instance"},
-				{Href: "debug/list?indexed=true", Text: "Assigned (all)", Description: "same as above, but includes repositories which this instance temporarily holds during re-balancing"},
-				{Href: "debug/queue", Text: "Indexing Queue State", Description: "list of all repositories in the indexing queue, sorted by descending priority"},
-			}...)
-			s.addDebugHandlers(mux)
 			debug.Printf("serving HTTP on %s", conf.listen)
 			log.Fatal(http.ListenAndServe(conf.listen, mux))
+
+		}()
+
+		// Serve mux on a unix domain socket so that webserver can call the
+		// endpoints via the shared filesystem.
+		go func() {
+			socket := filepath.Join(s.IndexDir, "indexserver.sock")
+			// We cannot bind a socket to an existing pathname.
+			if err := os.Remove(socket); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				log.Fatalf("error removing socket file: %s", socket)
+			}
+			// The "unix" network corresponds to stream sockets. (cf. unixgram,
+			// unixpacket).
+			l, err := net.Listen("unix", socket)
+			if err != nil {
+				log.Fatalf("failed to listen on socket: %s", err)
+			}
+			// Indexserver (root) and webserver (Sourcegraph) run with
+			// different users. Per default, the socket is created with
+			// permission 755 (root root), which doesn't let webserver write to
+			// it.
+			//
+			// See https://github.com/golang/go/issues/11822 for more context.
+			if err := os.Chmod(socket, 0777); err != nil {
+				log.Fatalf("failed to change permission of socket %s: %s", socket, err)
+			}
+			debug.Printf("serving HTTP on %s", socket)
+			log.Fatal(http.Serve(l, mux))
 		}()
 	}
 

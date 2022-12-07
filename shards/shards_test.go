@@ -65,19 +65,32 @@ func TestCrashResilience(t *testing.T) {
 	ss := newShardedSearcher(2)
 	ss.ranked.Store([]*rankedShard{{Searcher: &crashSearcher{}}})
 
-	q := &query.Substring{Pattern: "hoi"}
-	opts := &zoekt.SearchOptions{}
-	if res, err := ss.Search(context.Background(), q, opts); err != nil {
-		t.Fatalf("Search: %v", err)
-	} else if res.Stats.Crashes != 1 {
-		t.Errorf("got stats %#v, want crashes = 1", res.Stats)
+	var wantCrashes int
+	test := func(t *testing.T) {
+		q := &query.Substring{Pattern: "hoi"}
+		opts := &zoekt.SearchOptions{}
+		if res, err := ss.Search(context.Background(), q, opts); err != nil {
+			t.Fatalf("Search: %v", err)
+		} else if res.Stats.Crashes != wantCrashes {
+			t.Errorf("got stats %#v, want crashes = %d", res.Stats, wantCrashes)
+		}
+
+		if res, err := ss.List(context.Background(), q, nil); err != nil {
+			t.Fatalf("List: %v", err)
+		} else if res.Crashes != wantCrashes {
+			t.Errorf("got result %#v, want crashes = %d", res, wantCrashes)
+		}
 	}
 
-	if res, err := ss.List(context.Background(), q, nil); err != nil {
-		t.Fatalf("List: %v", err)
-	} else if res.Crashes != 1 {
-		t.Errorf("got result %#v, want crashes = 1", res)
-	}
+	// Before we are marked as ready we have one extra crash
+	wantCrashes = 2
+	t.Run("loading", test)
+
+	// After marking as ready we should only have the crashSearcher
+	// contributing.
+	ss.markReady()
+	wantCrashes = 1
+	t.Run("ready", test)
 }
 
 type rankSearcher struct {
@@ -202,7 +215,7 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 	}
 
 	var have []string
-	for _, s := range ss.getShards() {
+	for _, s := range ss.getLoaded().shards {
 		for _, r := range s.repos {
 			have = append(have, r.Name)
 		}
@@ -376,6 +389,7 @@ func TestShardedSearcher_List(t *testing.T) {
 		"3": searcherForTest(t, testIndexBuilder(t, repos[1], doc)),
 		"4": searcherForTest(t, testIndexBuilder(t, repos[1])),
 	})
+	ss.markReady()
 
 	stats := zoekt.RepoStats{
 		Shards:                     2,

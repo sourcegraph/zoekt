@@ -281,6 +281,49 @@ func NewRepoSet(repo ...string) *RepoSet {
 	return s
 }
 
+// FileNameSet is a list of file names to match. It is a Sourcegraph addition
+// and only used in the RPC interface for efficient checking of large file
+// lists.
+type FileNameSet struct {
+	Set map[string]struct{}
+}
+
+// MarshalBinary implements a specialized encoder for FileNameSet.
+func (q *FileNameSet) MarshalBinary() ([]byte, error) {
+	return stringSetEncode(q.Set)
+}
+
+// UnmarshalBinary implements a specialized decoder for FileNameSet.
+func (q *FileNameSet) UnmarshalBinary(b []byte) error {
+	var err error
+	q.Set, err = stringSetDecode(b)
+	return err
+}
+
+func (q *FileNameSet) String() string {
+	var detail string
+	if len(q.Set) > 5 {
+		// Large sets being output are not useful
+		detail = fmt.Sprintf("size=%d", len(q.Set))
+	} else {
+		values := make([]string, 0, len(q.Set))
+		for v := range q.Set {
+			values = append(values, v)
+		}
+		sort.Strings(values)
+		detail = strings.Join(values, " ")
+	}
+	return fmt.Sprintf("(filenameset %s)", detail)
+}
+
+func NewFileNameSet(fileNames ...string) *FileNameSet {
+	s := &FileNameSet{Set: make(map[string]struct{})}
+	for _, r := range fileNames {
+		s.Set[r] = struct{}{}
+	}
+	return s
+}
+
 const (
 	TypeFileMatch uint8 = iota
 	TypeFileName
@@ -616,6 +659,10 @@ func evalConstants(q Q) Q {
 		if len(s.Set) == 0 {
 			return &Const{false}
 		}
+	case *FileNameSet:
+		if len(s.Set) == 0 {
+			return &Const{false}
+		}
 	}
 	return q
 }
@@ -653,18 +700,22 @@ func Map(q Q, f func(q Q) Q) Q {
 func ExpandFileContent(q Q) Q {
 	switch s := q.(type) {
 	case *Substring:
-		if !s.FileName && !s.Content {
+		if s.FileName == s.Content {
 			f := *s
 			f.FileName = true
+			f.Content = false
 			c := *s
+			c.FileName = false
 			c.Content = true
 			return NewOr(&f, &c)
 		}
 	case *Regexp:
-		if !s.FileName && !s.Content {
+		if s.FileName == s.Content {
 			f := *s
 			f.FileName = true
+			f.Content = false
 			c := *s
+			c.FileName = false
 			c.Content = true
 			return NewOr(&f, &c)
 		}

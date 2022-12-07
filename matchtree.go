@@ -920,6 +920,17 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			matchTree: subMT,
 		}, nil
 
+	case *query.FileNameSet:
+		return &docMatchTree{
+			reason:  "FileNameSet",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				fileName := d.fileName(docID)
+				_, ok := s.Set[string(fileName)]
+				return ok
+			},
+		}, nil
+
 	case *query.BranchesRepos:
 		reposBranchesWant := make([]uint64, len(d.repoMetaData))
 		for repoIdx := range d.repoMetaData {

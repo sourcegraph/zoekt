@@ -718,7 +718,7 @@ func scoreKind(language string, kind string) float64 {
 		case "interface": // interfaces
 			factor = 10
 		case "struct": // structs
-			factor = 9.5
+			factor = 9
 		case "talias": // type aliases
 			factor = 9
 		case "methodSpec": // interface method specification
@@ -900,7 +900,7 @@ func SortFiles(ms []FileMatch, opts *SearchOptions) {
 		sort.Stable(fileMatchesByRank{fileMatches: ms, rrfScore: rrfScore})
 
 		for i := range rrfScore {
-			rrfScore[i] += 1 / (k + float64(i))
+			rrfScore[i] += (1 - opts.RanksDampingFactor) / (k + float64(i))
 			if opts.DebugScore {
 				ms[i].Debug += fmt.Sprintf("%d), ", i)
 			}

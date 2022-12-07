@@ -31,6 +31,9 @@ type LastInput struct {
 
 	// If set, focus on the search box.
 	AutoFocus bool
+
+	// If true, the next search will run in debug mode.
+	Debug bool
 }
 
 // Result holds the data provided to the search results template.

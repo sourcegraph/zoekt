@@ -25,13 +25,13 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
@@ -174,6 +174,18 @@ type rankedShard struct {
 	repos []*zoekt.Repository
 }
 
+// loaded stores the state we compute when updating the state of shards from
+// disk.
+type loaded struct {
+	// shards is the currently loaded shards sorted by decreasing rank and
+	// should not be mutated.
+	shards []*rankedShard
+
+	// ready is true if sharded searcher has finished loading all initial
+	// shards on startup.
+	ready bool
+}
+
 type shardedSearcher struct {
 	// Limit the number of parallel queries. Since searching is
 	// CPU bound, we can't do better than #CPU queries in
@@ -184,6 +196,7 @@ type shardedSearcher struct {
 	mu     sync.Mutex // protects writes to shards
 	shards map[string]*rankedShard
 
+	ready  atomic.Bool
 	ranked atomic.Value
 }
 
@@ -253,6 +266,10 @@ type loader struct {
 }
 
 func (tl *loader) load(keys ...string) {
+	// This is called with all keys on startup, so once this function has
+	// finished running shardedSearcher will be ready.
+	defer tl.ss.markReady()
+
 	var (
 		mu           sync.Mutex     // synchronizes writes to the shards map
 		wg           sync.WaitGroup // used to wait for all shards to load
@@ -469,7 +486,8 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	wait := time.Since(start)
 	start = time.Now()
 
-	done, err := streamSearch(ctx, proc, q, opts, ss.getShards(), collectSender)
+	loaded := ss.getLoaded()
+	done, err := streamSearch(ctx, proc, q, opts, loaded.shards, collectSender)
 	defer done()
 	if err != nil {
 		return nil, err
@@ -484,6 +502,11 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	}
 
 	copyFiles(aggregate)
+
+	if !loaded.ready {
+		// We may have missed results due to not being fully loaded.
+		aggregate.Stats.Crashes++
+	}
 
 	aggregate.Stats.Wait = wait
 	aggregate.Stats.Duration = time.Since(start)
@@ -509,16 +532,24 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	defer proc.Release()
 	tr.LazyPrintf("acquired process")
 
-	shards := ss.getShards()
+	loaded := ss.getLoaded()
+	shards := loaded.shards
 
 	maxPendingPriority := math.Inf(-1)
 	if len(shards) > 0 {
 		maxPendingPriority = shards[0].priority
 	}
 
+	stillLoadingCrashes := 0
+	if !loaded.ready {
+		// We may have missed results due to not being fully loaded.
+		stillLoadingCrashes++
+	}
+
 	sender.Send(&zoekt.SearchResult{
 		Stats: zoekt.Stats{
-			Wait: time.Since(start),
+			Crashes: stillLoadingCrashes,
+			Wait:    time.Since(start),
 		},
 		Progress: zoekt.Progress{
 			MaxPendingPriority: maxPendingPriority,
@@ -861,7 +892,8 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	defer proc.Release()
 	tr.LazyPrintf("acquired process")
 
-	shards := ss.getShards()
+	loaded := ss.getLoaded()
+	shards := loaded.shards
 	shardCount := len(shards)
 	all := make(chan shardListResult, shardCount)
 	tr.LazyPrintf("shardCount: %d", len(shards))
@@ -880,7 +912,14 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		}()
 	}
 
+	stillLoadingCrashes := 0
+	if !loaded.ready {
+		// We may have missed results due to not being fully loaded.
+		stillLoadingCrashes++
+	}
+
 	agg := zoekt.RepoList{
+		Crashes: stillLoadingCrashes,
 		Minimal: map[uint32]*zoekt.MinimalRepoListEntry{},
 	}
 
@@ -942,11 +981,18 @@ func reportListAllMetrics(repos []*zoekt.RepoListEntry) {
 	metricListAllOtherBranchesNewLinesCount.Set(float64(stats.OtherBranchesNewLinesCount))
 }
 
-// getShards returns the currently loaded shards. The shards are sorted by decreasing
-// rank and should not be mutated.
-func (s *shardedSearcher) getShards() []*rankedShard {
+// getLoaded returns the currently loaded shards. Shared so do not mutate.
+func (s *shardedSearcher) getLoaded() loaded {
+	// next commit will store the true value of this, for now we keep the
+	// backwards compatible behaviour.
+	ready := s.ready.Load()
+	// ranked is loaded after ready to avoid a race were ready is true but
+	// ranked is still not the final set of shards.
 	ranked, _ := s.ranked.Load().([]*rankedShard)
-	return ranked
+	return loaded{
+		shards: ranked,
+		ready:  ready,
+	}
 }
 
 func mkRankedShard(s zoekt.Searcher) *rankedShard {
@@ -971,14 +1017,6 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 			if priority > maxPriority {
 				maxPriority = priority
 			}
-
-			// No one is reading our searcher yet, so we can mutate it.
-			// zoekt-sourcegraph-indexserver does not set Rank so at this point we
-			// treat Priority like star count and set it.
-			if repo.Rank == 0 && priority > 0 {
-				l := math.Log(float64(priority))
-				repo.Rank = uint16((1.0 - 1.0/math.Pow(1+l, 0.6)) * 10000)
-			}
 		}
 	}
 
@@ -987,6 +1025,13 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 		repos:    repos,
 		priority: maxPriority,
 	}
+}
+
+// markReady should be called once all shards have been passed into replace on
+// startup. Once s is marked as ready it stops reporting a Crash in the
+// response Stats.
+func (s *shardedSearcher) markReady() {
+	s.ready.CompareAndSwap(false, true)
 }
 
 func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {

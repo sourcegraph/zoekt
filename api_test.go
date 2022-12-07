@@ -78,7 +78,7 @@ func benchmarkEncoding(data interface{}) func(*testing.B) {
 
 func TestSizeBytesSearchResult(t *testing.T) {
 	var sr = SearchResult{
-		Stats:    Stats{},    // 128 bytes
+		Stats:    Stats{},    // 129 bytes
 		Progress: Progress{}, // 16 bytes
 		Files: []FileMatch{{ // 24 bytes + 460 bytes
 			Score:       0,   // 8 bytes
@@ -109,7 +109,7 @@ func TestSizeBytesSearchResult(t *testing.T) {
 		LineFragments: nil, // 48 bytes
 	}
 
-	var wantBytes uint64 = 724
+	var wantBytes uint64 = 725
 	if sr.SizeBytes() != wantBytes {
 		t.Fatalf("want %d, got %d", wantBytes, sr.SizeBytes())
 	}

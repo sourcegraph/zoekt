@@ -1020,8 +1020,8 @@ type aStruct struct {}
 `),
 			query:        &query.Substring{Content: true, Pattern: "aStruct"},
 			wantLanguage: "Go",
-			// 7000 (full base match) + 950 (Go interface) + 500 (word) + 400 (atom) + 10 (file order)
-			wantScore: 8860,
+			// 7000 (full base match) + 900 (Go interface) + 500 (word) + 400 (atom) + 10 (file order)
+			wantScore: 8810,
 		},
 		{
 			fileName: "src/net/http/client.go",
