@@ -20,6 +20,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -483,10 +484,10 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 		)
 
 	if err != nil {
-		switch err {
-		case context.Canceled:
+		switch {
+		case errors.Is(err, context.Canceled):
 			logger.Error("search canceled", sglog.Error(err))
-		case context.DeadlineExceeded:
+		case errors.Is(err, context.DeadlineExceeded):
 			logger.Error("search timeout", sglog.Error(err))
 		default:
 			logger.Error("search failed", sglog.Error(err))
