@@ -486,9 +486,9 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 	if err != nil {
 		switch {
 		case errors.Is(err, context.Canceled):
-			logger.Error("search canceled", sglog.Error(err))
+			logger.Warn("search canceled", sglog.Error(err))
 		case errors.Is(err, context.DeadlineExceeded):
-			logger.Error("search timeout", sglog.Error(err))
+			logger.Warn("search timeout", sglog.Error(err))
 		default:
 			logger.Error("search failed", sglog.Error(err))
 		}
