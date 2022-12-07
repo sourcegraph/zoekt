@@ -481,8 +481,16 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 			sglog.Duration("opts.MaxWallTime", opts.MaxWallTime),
 			sglog.Int("opts.MaxDocDisplayCount", opts.MaxDocDisplayCount),
 		)
+
 	if err != nil {
-		logger.Error("search failed", sglog.Error(err))
+		switch err {
+		case context.Canceled:
+			logger.Error("search canceled", sglog.Error(err))
+		case context.DeadlineExceeded:
+			logger.Error("search timeout", sglog.Error(err))
+		default:
+			logger.Error("search failed", sglog.Error(err))
+		}
 		return
 	}
 
