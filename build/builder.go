@@ -534,14 +534,6 @@ func checkIsNegatePattern(pattern string) (bool, string) {
 		return true, pattern[len(negate):]
 	}
 
-	escape := "\\"
-	escapedNegate := escape + negate
-
-	// if prefix is combined escape and meta characters then strip only escape character
-	if strings.HasPrefix(pattern, escapedNegate) {
-		pattern = pattern[len(escape):]
-	}
-
 	return false, pattern
 }
 
