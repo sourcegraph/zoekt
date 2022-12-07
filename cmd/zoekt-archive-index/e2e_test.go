@@ -140,6 +140,10 @@ func testIndexIncrementally(t *testing.T, format string) {
 			largeFiles:   []string{"F?", "!F2", "\\!F0"},
 			wantNumFiles: 4,
 		},
+		{
+			largeFiles:   []string{"F?", "!F2", "\\!F0", "F2"},
+			wantNumFiles: 5,
+		},
 	}
 
 	for _, test := range tests {

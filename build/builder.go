@@ -505,22 +505,21 @@ func (o *Options) FindAllShards() []string {
 
 // IgnoreSizeMax determines whether the max size should be ignored.
 func (o *Options) IgnoreSizeMax(name string) bool {
-	matched := false
-	for _, pattern := range o.LargeFiles {
-		pattern = strings.TrimSpace(pattern)
+	// A pattern match will override preceding pattern matches.
+	for i := len(o.LargeFiles) - 1; i >= 0; i-- {
+		pattern := strings.TrimSpace(o.LargeFiles[i])
 		negated, validatedPattern := checkIsNegatePattern(pattern)
 
-		m, _ := doublestar.PathMatch(validatedPattern, name)
-		if m {
-			// match against a negated LargeFiles pattern overrides all non-exclude matches
+		if m, _ := doublestar.PathMatch(validatedPattern, name); m {
 			if negated {
 				return false
+			} else {
+				return true
 			}
-			matched = true
 		}
 	}
 
-	return matched
+	return false
 }
 
 func checkIsNegatePattern(pattern string) (bool, string) {
@@ -530,15 +529,16 @@ func checkIsNegatePattern(pattern string) (bool, string) {
 		return false, pattern
 	}
 
-	// if negated then strip prefix meta characters representing negated filter pattern
-	if strings.Index(pattern, negate) == 0 {
+	// if negated then strip prefix meta character which identifies negated filter pattern
+	if strings.HasPrefix(pattern, negate) {
 		return true, pattern[len(negate):]
 	}
 
 	escape := "\\"
 	escapedNegate := escape + negate
 
-	if strings.Index(pattern, escapedNegate) == 0 {
+	// if prefix is combined escape and meta characters then strip only escape character
+	if strings.HasPrefix(pattern, escapedNegate) {
 		pattern = pattern[len(escape):]
 	}
 

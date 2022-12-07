@@ -204,32 +204,60 @@ func TestLargeFileOption(t *testing.T) {
 		resultsCount  int
 	}{
 		{
-			name:          "largeFile option positive matches",
+			name:          "positive matches",
 			largeFiles:    []string{"F0", "F2"},
 			filePrefixes:  []string{"F"},
 			filesPrefixed: 4,
 			resultsCount:  2,
 		},
 		{
-			name:          "largeFile option positive and negative matches",
+			name:          "positive and negative matches",
 			largeFiles:    []string{"F?", "!F0"},
 			filePrefixes:  []string{"F"},
 			filesPrefixed: 4,
 			resultsCount:  3,
 		},
 		{
-			name:          "largeFile option positive escaped matches",
+			name:          "positive escaped matches",
 			largeFiles:    []string{"\\!F0"},
 			filePrefixes:  []string{"!F"},
 			filesPrefixed: 4,
 			resultsCount:  1,
 		},
 		{
-			name:          "largeFile option positive escaped matches and negated match",
+			name:          "positive escaped matches and negated match",
 			largeFiles:    []string{"F?", "\\!F0", "\\!F1", "!F2"},
 			filePrefixes:  []string{"F", "!F"},
 			filesPrefixed: 4,
 			resultsCount:  5,
+		},
+		{
+			name:          "combined meta and literal interpretation correctly negates all",
+			largeFiles:    []string{"*F*", "!!F*"},
+			filePrefixes:  []string{"!F"},
+			filesPrefixed: 4,
+			resultsCount:  0,
+		},
+		{
+			name:          "combined meta and literal interpretation correctly negates none",
+			largeFiles:    []string{"*F*", "!!F*"},
+			filePrefixes:  []string{"F"},
+			filesPrefixed: 4,
+			resultsCount:  4,
+		},
+		{
+			name:          "largeFiles order: positive match overrides previous negative match",
+			largeFiles:    []string{"F?", "!F0", "F0"},
+			filePrefixes:  []string{"F"},
+			filesPrefixed: 4,
+			resultsCount:  4,
+		},
+		{
+			name:          "largeFiles order: negative match overrides previous positive match",
+			largeFiles:    []string{"F?", "!?0", "F0", "!F0"},
+			filePrefixes:  []string{"F"},
+			filesPrefixed: 4,
+			resultsCount:  3,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
