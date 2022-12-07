@@ -204,6 +204,13 @@ func TestLargeFileOption(t *testing.T) {
 		resultsCount  int
 	}{
 		{
+			name:          "empty pattern",
+			largeFiles:    []string{""},
+			filePrefixes:  []string{"F"},
+			filesPrefixed: 4,
+			resultsCount:  0,
+		},
+		{
 			name:          "positive matches",
 			largeFiles:    []string{"F0", "F2"},
 			filePrefixes:  []string{"F"},

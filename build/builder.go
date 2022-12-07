@@ -525,10 +525,6 @@ func (o *Options) IgnoreSizeMax(name string) bool {
 func checkIsNegatePattern(pattern string) (bool, string) {
 	negate := "!"
 
-	if len(pattern) < len(negate) {
-		return false, pattern
-	}
-
 	// if negated then strip prefix meta character which identifies negated filter pattern
 	if strings.HasPrefix(pattern, negate) {
 		return true, pattern[len(negate):]
