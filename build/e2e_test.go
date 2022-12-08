@@ -194,133 +194,56 @@ func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface
 	// final run for the test, using the real t.Fatalf
 	f(t.Fatalf)
 }
-
 func TestLargeFileOption(t *testing.T) {
-	for _, test := range []struct {
-		name          string
-		largeFiles    []string
-		filePrefixes  []string
-		filesPrefixed int
-		resultsCount  int
-	}{
-		{
-			name:          "empty pattern",
-			largeFiles:    []string{""},
-			filePrefixes:  []string{"F"},
-			filesPrefixed: 4,
-			resultsCount:  0,
-		},
-		{
-			name:          "positive matches",
-			largeFiles:    []string{"F0", "F2"},
-			filePrefixes:  []string{"F"},
-			filesPrefixed: 4,
-			resultsCount:  2,
-		},
-		{
-			name:          "positive and negative matches",
-			largeFiles:    []string{"F?", "!F0"},
-			filePrefixes:  []string{"F"},
-			filesPrefixed: 4,
-			resultsCount:  3,
-		},
-		{
-			name:          "positive escaped matches",
-			largeFiles:    []string{"\\!F0"},
-			filePrefixes:  []string{"!F"},
-			filesPrefixed: 4,
-			resultsCount:  1,
-		},
-		{
-			name:          "positive escaped matches and negated match",
-			largeFiles:    []string{"F?", "\\!F0", "\\!F1", "!F2"},
-			filePrefixes:  []string{"F", "!F"},
-			filesPrefixed: 4,
-			resultsCount:  5,
-		},
-		{
-			name:          "combined meta and literal interpretation correctly negates all",
-			largeFiles:    []string{"*F*", "!!F*"},
-			filePrefixes:  []string{"!F"},
-			filesPrefixed: 4,
-			resultsCount:  0,
-		},
-		{
-			name:          "combined meta and literal interpretation correctly negates none",
-			largeFiles:    []string{"*F*", "!!F*"},
-			filePrefixes:  []string{"F"},
-			filesPrefixed: 4,
-			resultsCount:  4,
-		},
-		{
-			name:          "largeFiles order: positive match overrides previous negative match",
-			largeFiles:    []string{"F?", "!F0", "F0"},
-			filePrefixes:  []string{"F"},
-			filesPrefixed: 4,
-			resultsCount:  4,
-		},
-		{
-			name:          "largeFiles order: negative match overrides previous positive match",
-			largeFiles:    []string{"F?", "!?0", "F0", "!F0"},
-			filePrefixes:  []string{"F"},
-			filesPrefixed: 4,
-			resultsCount:  3,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			dir := t.TempDir()
+	dir := t.TempDir()
 
-			sizeMax := 1000
-			opts := Options{
-				IndexDir:   dir,
-				LargeFiles: test.largeFiles,
-				RepositoryDescription: zoekt.Repository{
-					Name: "repo",
-				},
-				SizeMax: sizeMax,
-			}
-
-			b, err := NewBuilder(opts)
-			if err != nil {
-				t.Fatalf("NewBuilder: %v", err)
-			}
-
-			for _, prefix := range test.filePrefixes {
-				for i := 0; i < test.filesPrefixed; i++ {
-					s := fmt.Sprintf("%d", i)
-					if err := b.AddFile(prefix+s, []byte(strings.Repeat("a", sizeMax+1))); err != nil {
-						t.Fatal(err)
-					}
-				}
-			}
-
-			if err := b.Finish(); err != nil {
-				t.Errorf("Finish: %v", err)
-			}
-
-			ss, err := shards.NewDirectorySearcher(dir)
-			if err != nil {
-				t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
-			}
-
-			q, err := query.Parse("aaa")
-			if err != nil {
-				t.Fatalf("Parse(aaa): %v", err)
-			}
-
-			var sOpts zoekt.SearchOptions
-			ctx := context.Background()
-			result, err := ss.Search(ctx, q, &sOpts)
-			if err != nil {
-				t.Fatalf("Search(%v): %v", q, err)
-			}
-
-			if len(result.Files) != test.resultsCount {
-				t.Errorf("got %v files, want %v files.", len(result.Files), test.resultsCount)
-			}
-			defer ss.Close()
-		})
+	sizeMax := 1000
+	opts := Options{
+		IndexDir:   dir,
+		LargeFiles: []string{"F0", "F1", "F2", "!F1"},
+		RepositoryDescription: zoekt.Repository{
+			Name: "repo",
+		},
+		SizeMax: sizeMax,
 	}
+
+	b, err := NewBuilder(opts)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+
+	for i := 0; i < 4; i++ {
+		s := fmt.Sprintf("%d", i)
+		if err := b.AddFile("F"+s, []byte(strings.Repeat("a", sizeMax+1))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := b.Finish(); err != nil {
+		t.Errorf("Finish: %v", err)
+	}
+
+	ss, err := shards.NewDirectorySearcher(dir)
+	if err != nil {
+		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
+	}
+
+	q, err := query.Parse("aaa")
+	if err != nil {
+		t.Fatalf("Parse(aaa): %v", err)
+	}
+
+	var sOpts zoekt.SearchOptions
+	ctx := context.Background()
+	result, err := ss.Search(ctx, q, &sOpts)
+	if err != nil {
+		t.Fatalf("Search(%v): %v", q, err)
+	}
+
+	if len(result.Files) != 2 {
+		t.Errorf("got %v files, want 2 files.", len(result.Files))
+	}
+	defer ss.Close()
 }
 
 func TestUpdate(t *testing.T) {
