@@ -194,6 +194,7 @@ func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface
 	// final run for the test, using the real t.Fatalf
 	f(t.Fatalf)
 }
+
 func TestLargeFileOption(t *testing.T) {
 	dir := t.TempDir()
 
