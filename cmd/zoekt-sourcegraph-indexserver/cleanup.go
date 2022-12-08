@@ -345,7 +345,6 @@ func removeAll(shards ...shard) {
 		paths, err := zoekt.IndexFilePaths(shard.Path)
 		if err != nil {
 			debug.Printf("failed to remove shard %s: %v", shard.Path, err)
-
 		}
 
 		for _, p := range paths {
