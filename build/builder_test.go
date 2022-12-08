@@ -117,6 +117,18 @@ func TestFlags(t *testing.T) {
 		want: Options{
 			LargeFiles: []string{"*.md", "*.yaml"},
 		},
+	}, {
+		// multiple large file pattern with negated pattern
+		args: []string{"-large_file", "*.md", "-large_file", "!*.yaml"},
+		want: Options{
+			LargeFiles: []string{"*.md", "!*.yaml"},
+		},
+	}, {
+		// multiple large file pattern with escaped character
+		args: []string{"-large_file", "*.md", "-large_file", "\\!*.yaml"},
+		want: Options{
+			LargeFiles: []string{"*.md", "\\!*.yaml"},
+		},
 	}}
 
 	ignored := []cmp.Option{
@@ -947,4 +959,100 @@ func Test_sortDocuments2(t *testing.T) {
 		sortDocuments2(nil)
 	})
 
+}
+
+func TestIgnoreSizeMax(t *testing.T) {
+
+	for _, test := range []struct {
+		name       string
+		largeFiles []string
+		filePaths  []string
+		expected   bool
+	}{
+		{
+			name:       "empty pattern does nothing",
+			largeFiles: []string{""},
+			filePaths:  []string{"F0"},
+			expected:   false,
+		},
+		{
+			name:       "positive match allows",
+			largeFiles: []string{"F0"},
+			filePaths:  []string{"F0"},
+			expected:   true,
+		},
+		{
+			name:       "positive and negative patterns allows",
+			largeFiles: []string{"F?", "!F0"},
+			filePaths:  []string{"F1"},
+			expected:   true,
+		},
+		{
+			name:       "positive and negative patterns disallows",
+			largeFiles: []string{"F?", "!F0"},
+			filePaths:  []string{"F0"},
+			expected:   false,
+		},
+		{
+			name:       "positive escaped pattern allows",
+			largeFiles: []string{"\\!F?"},
+			filePaths:  []string{"!F0", "!F1"},
+			expected:   true,
+		},
+		{
+			name:       "postive escaped pattern does not disallow",
+			largeFiles: []string{"F0", "\\!F?"},
+			filePaths:  []string{"F0", "!F0"},
+			expected:   true,
+		},
+		{
+			name:       "combined meta and literal interpretation disallows",
+			largeFiles: []string{"*F*", "!!F*"},
+			filePaths:  []string{"!F0"},
+			expected:   false,
+		},
+		{
+			name:       "combined meta and literal interpretation allows",
+			largeFiles: []string{"*F*", "!!F*"},
+			filePaths:  []string{"F0"},
+			expected:   true,
+		},
+		{
+			name:       "largeFiles order: positive match overrides previous negative match and allows",
+			largeFiles: []string{"F?", "!F0", "!F1", "F0"},
+			filePaths:  []string{"F0"},
+			expected:   true,
+		},
+		{
+			name:       "largeFiles order: positive match overrides previous negative match and disallows",
+			largeFiles: []string{"F?", "!F0", "!F1", "F0"},
+			filePaths:  []string{"F1"},
+			expected:   false,
+		},
+		{
+			name:       "largeFiles order: negative match overrides previous positive match and allows",
+			largeFiles: []string{"F?", "!?0", "F0", "!F0"},
+			filePaths:  []string{"F1"},
+			expected:   true,
+		},
+		{
+			name:       "largeFiles order: negative match overrides previous positive match and disallows",
+			largeFiles: []string{"F?", "!?0", "F0", "!F0"},
+			filePaths:  []string{"F0"},
+			expected:   false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			o := Options{
+				LargeFiles: test.largeFiles,
+			}
+
+			for _, filePath := range test.filePaths {
+				ignore := o.IgnoreSizeMax(filePath)
+				if ignore != test.expected {
+					t.Errorf("IgnoreSizeMax() for filepath %v returned unexpected result %v", filePath, ignore)
+				}
+			}
+		})
+	}
 }

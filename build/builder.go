@@ -505,15 +505,32 @@ func (o *Options) FindAllShards() []string {
 
 // IgnoreSizeMax determines whether the max size should be ignored.
 func (o *Options) IgnoreSizeMax(name string) bool {
-	for _, pattern := range o.LargeFiles {
-		pattern = strings.TrimSpace(pattern)
-		m, _ := doublestar.PathMatch(pattern, name)
-		if m {
-			return true
+	// A pattern match will override preceding pattern matches.
+	for i := len(o.LargeFiles) - 1; i >= 0; i-- {
+		pattern := strings.TrimSpace(o.LargeFiles[i])
+		negated, validatedPattern := checkIsNegatePattern(pattern)
+
+		if m, _ := doublestar.PathMatch(validatedPattern, name); m {
+			if negated {
+				return false
+			} else {
+				return true
+			}
 		}
 	}
 
 	return false
+}
+
+func checkIsNegatePattern(pattern string) (bool, string) {
+	negate := "!"
+
+	// if negated then strip prefix meta character which identifies negated filter pattern
+	if strings.HasPrefix(pattern, negate) {
+		return true, pattern[len(negate):]
+	}
+
+	return false, pattern
 }
 
 // NewBuilder creates a new Builder instance.

@@ -201,7 +201,7 @@ func TestLargeFileOption(t *testing.T) {
 	sizeMax := 1000
 	opts := Options{
 		IndexDir:   dir,
-		LargeFiles: []string{"F0", "F2"},
+		LargeFiles: []string{"F0", "F1", "F2", "!F1"},
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo",
 		},
