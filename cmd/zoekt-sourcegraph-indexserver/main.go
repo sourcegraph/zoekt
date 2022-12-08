@@ -806,6 +806,9 @@ func (s *Server) handleDebugDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("repository id %q not found", rawID), http.StatusBadRequest)
 		return
 	}
+
+	_, _ = w.Write([]byte(fmt.Sprintf("deleted repository %q\n", rawID)))
+
 }
 
 func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
