@@ -335,10 +335,7 @@ func removeAll(shards ...shard) {
 	// Deleting shards in reverse sorted order (2 -> 1 -> 0) always ensures that we don't leave an inconsistent
 	// state behind even if we crash.
 
-	var sortedShards []shard
-	for _, s := range shards {
-		sortedShards = append(sortedShards, s)
-	}
+	sortedShards := append([]shard{}, shards...)
 
 	sort.Slice(sortedShards, func(i, j int) bool {
 		return sortedShards[i].Path > sortedShards[j].Path
