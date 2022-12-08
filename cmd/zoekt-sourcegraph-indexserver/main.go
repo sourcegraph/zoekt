@@ -1140,31 +1140,38 @@ func startServer(conf rootConfig) error {
 
 		}()
 
-		// Serve mux on a unix domain socket so that webserver can call the
-		// endpoints via the shared filesystem.
+		// Serve mux on a unix domain socket on a best-effort-basis so that
+		// webserver can call the endpoints via the shared filesystem.
+		//
+		// 2022-12-08: Docker for Mac with VirtioFS enabled will fail to listen
+		// on the socket due to permission errors. See
+		// https://github.com/docker/for-mac/issues/6239
 		go func() {
-			socket := filepath.Join(s.IndexDir, "indexserver.sock")
-			// We cannot bind a socket to an existing pathname.
-			if err := os.Remove(socket); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				log.Fatalf("error removing socket file: %s", socket)
+			serveHTTPOverSocket := func() error {
+				socket := filepath.Join(s.IndexDir, "indexserver.sock")
+				// We cannot bind a socket to an existing pathname.
+				if err := os.Remove(socket); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					return fmt.Errorf("error removing socket file: %s", socket)
+				}
+				// The "unix" network corresponds to stream sockets. (cf. unixgram,
+				// unixpacket).
+				l, err := net.Listen("unix", socket)
+				if err != nil {
+					return fmt.Errorf("failed to listen on socket %s: %w", socket, err)
+				}
+				// Indexserver (root) and webserver (Sourcegraph) run with
+				// different users. Per default, the socket is created with
+				// permission 755 (root root), which doesn't let webserver write to
+				// it.
+				//
+				// See https://github.com/golang/go/issues/11822 for more context.
+				if err := os.Chmod(socket, 0777); err != nil {
+					return fmt.Errorf("failed to change permission of socket %s: %w", socket, err)
+				}
+				debug.Printf("serving HTTP on %s", socket)
+				return http.Serve(l, mux)
 			}
-			// The "unix" network corresponds to stream sockets. (cf. unixgram,
-			// unixpacket).
-			l, err := net.Listen("unix", socket)
-			if err != nil {
-				log.Fatalf("failed to listen on socket: %s", err)
-			}
-			// Indexserver (root) and webserver (Sourcegraph) run with
-			// different users. Per default, the socket is created with
-			// permission 755 (root root), which doesn't let webserver write to
-			// it.
-			//
-			// See https://github.com/golang/go/issues/11822 for more context.
-			if err := os.Chmod(socket, 0777); err != nil {
-				log.Fatalf("failed to change permission of socket %s: %s", socket, err)
-			}
-			debug.Printf("serving HTTP on %s", socket)
-			log.Fatal(http.Serve(l, mux))
+			debug.Print(serveHTTPOverSocket())
 		}()
 	}
 
