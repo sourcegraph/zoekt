@@ -4,18 +4,21 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	sglog "github.com/sourcegraph/log"
-	"github.com/sourcegraph/log/logtest"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/log/logtest"
+	"github.com/sourcegraph/zoekt/build"
 
 	"github.com/sourcegraph/zoekt"
 )
@@ -122,6 +125,109 @@ func TestMain(m *testing.M) {
 
 	logtest.InitWithLevel(m, level)
 	os.Exit(m.Run())
+}
+
+func createTestNormalShard(t *testing.T, indexDir string, r zoekt.Repository, numShards int, optFns ...func(options *build.Options)) []string {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(indexDir), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	o := build.Options{
+		IndexDir:              indexDir,
+		RepositoryDescription: r,
+		ShardMax:              75, // create a new shard every 75 bytes
+	}
+	o.SetDefaults()
+
+	for _, fn := range optFns {
+		fn(&o)
+	}
+
+	b, err := build.NewBuilder(o)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+
+	if numShards == 0 {
+		// We have to make at least 1 shard.
+		numShards = 1
+	}
+
+	for i := 0; i < numShards; i++ {
+		// Create entries (file + contents) that are ~100 bytes each.
+		// This (along with our shardMax setting of 75 bytes) means that each shard
+		// will contain at most one of these.
+		fileName := strconv.Itoa(i)
+		document := zoekt.Document{Name: fileName, Content: []byte(strings.Repeat("A", 100))}
+		for _, branch := range o.RepositoryDescription.Branches {
+			document.Branches = append(document.Branches, branch.Name)
+		}
+
+		err := b.Add(document)
+		if err != nil {
+			t.Fatalf("failed to add file %q to builder: %s", fileName, err)
+		}
+	}
+
+	if err := b.Finish(); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+
+	return o.FindAllShards()
+}
+
+func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt.Repository, optFns ...func(options *build.Options)) string {
+	t.Helper()
+
+	var shardNames []string
+
+	for _, r := range repositories {
+		// create an isolated scratch space to store normal shards for this repository
+		scratchDir := t.TempDir()
+
+		// create shards that'll be merged later
+		createTestNormalShard(t, scratchDir, r, 1, optFns...)
+
+		// discover file names for all the normal shards we created
+		// note: this only looks in the immediate 'scratchDir' folder and doesn't recurse
+		shards, err := filepath.Glob(filepath.Join(scratchDir, "*.zoekt"))
+		if err != nil {
+			t.Fatalf("while globbing %q to find normal shards: %s", scratchDir, err)
+		}
+
+		shardNames = append(shardNames, shards...)
+	}
+
+	// load the normal shards that we created
+	var files []zoekt.IndexFile
+	for _, shard := range shardNames {
+		f, err := os.Open(shard)
+		if err != nil {
+			t.Fatalf("opening shard file: %s", err)
+		}
+		defer f.Close()
+
+		indexFile, err := zoekt.NewIndexFile(f)
+		if err != nil {
+			t.Fatalf("creating index file: %s", err)
+		}
+		defer indexFile.Close()
+
+		files = append(files, indexFile)
+	}
+
+	// merge all the simple shards into a compound shard
+	tmpName, dstName, err := zoekt.Merge(indexDir, files...)
+	if err != nil {
+		t.Fatalf("merging index files into compound shard: %s", err)
+	}
+	if err := os.Rename(tmpName, dstName); err != nil {
+		t.Fatal(err)
+	}
+
+	return dstName
 }
 
 func TestCreateEmptyShard(t *testing.T) {

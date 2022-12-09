@@ -649,6 +649,7 @@ func (s *Server) addDebugHandlers(mux *http.ServeMux) {
 	// on "/".
 	mux.Handle("/", http.HandlerFunc(s.handleReIndex))
 
+	mux.Handle("/debug/delete", http.HandlerFunc(s.handleDebugDelete))
 	mux.Handle("/debug/indexed", http.HandlerFunc(s.handleDebugIndexed))
 	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
 	mux.Handle("/debug/merge", http.HandlerFunc(s.handleDebugMerge))
@@ -804,6 +805,42 @@ func (s *Server) handleDebugMerge(w http.ResponseWriter, _ *http.Request) {
 		s.doMerge()
 	}()
 	_, _ = w.Write([]byte("merging enqueued\n"))
+}
+
+func (s *Server) handleDebugDelete(w http.ResponseWriter, r *http.Request) {
+	rawID := r.URL.Query().Get("id")
+	if rawID == "" {
+		http.Error(w, "URL parameter 'id' must be specified", http.StatusBadRequest)
+		return
+	}
+
+	id64, err := strconv.ParseUint(rawID, 10, 32)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to parse repository id %q as uint32: %s", rawID, err), http.StatusBadRequest)
+		return
+	}
+
+	repoID := uint32(id64)
+
+	repositoryNotFound := false
+	s.muIndexDir.Global(func() {
+		shardMap := getShards(s.IndexDir)
+		shards, ok := shardMap[repoID]
+		if !ok {
+			repositoryNotFound = true
+			return
+		}
+
+		deleteOrTombstone(s.IndexDir, repoID, s.shardMerging, shards...)
+	})
+
+	if repositoryNotFound {
+		http.Error(w, fmt.Sprintf("repository id %q not found", rawID), http.StatusBadRequest)
+		return
+	}
+
+	_, _ = w.Write([]byte(fmt.Sprintf("deleted repository %q\n", rawID)))
+
 }
 
 func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {

@@ -19,6 +19,7 @@ import (
 )
 
 func TestCleanup(t *testing.T) {
+
 	mk := func(name string, n int, mtime time.Time) shard {
 		return shard{
 			RepoID:        fakeID(name),
@@ -28,6 +29,11 @@ func TestCleanup(t *testing.T) {
 			RepoTombstone: false,
 		}
 	}
+
+	mkMeta := func(name string, n int) string {
+		return fmt.Sprintf("%s_v%d.%05d.zoekt.meta", url.QueryEscape(name), 15, n)
+	}
+
 	// We don't use getShards so that we have two implementations of the same
 	// thing (ie pick up bugs in one)
 	glob := func(pattern string) []shard {
@@ -56,14 +62,16 @@ func TestCleanup(t *testing.T) {
 	recent := now.Add(-time.Hour)
 	old := now.Add(-25 * time.Hour)
 	cases := []struct {
-		name  string
-		repos []string
-		index []shard
-		trash []shard
-		tmps  []string
+		name           string
+		repos          []string
+		indexMetaFiles []string
+		index          []shard
+		trash          []shard
+		tmps           []string
 
-		wantIndex []shard
-		wantTrash []shard
+		wantIndex          []shard
+		wantIndexMetaFiles []string
+		wantTrash          []shard
 	}{{
 		name: "noop",
 	}, {
@@ -96,6 +104,13 @@ func TestCleanup(t *testing.T) {
 		index:     []shard{mk("foo", 0, recent), mk("bar", 0, recent)},
 		wantIndex: []shard{mk("foo", 0, recent)},
 		wantTrash: []shard{mk("bar", 0, now)},
+	}, {
+		name:               "remove metafiles with no associated shards",
+		repos:              []string{"foo", "bar"},
+		index:              []shard{mk("foo", 0, recent), mk("bar", 0, recent)},
+		indexMetaFiles:     []string{mkMeta("foo", 0), mkMeta("foo", 1), mkMeta("bar", 0)},
+		wantIndex:          []shard{mk("foo", 0, recent), mk("bar", 0, recent)},
+		wantIndexMetaFiles: []string{mkMeta("foo", 0), mkMeta("bar", 0)},
 	}, {
 		name: "clean old .tmp files",
 		tmps: []string{"recent.tmp", "old.tmp"},
@@ -134,6 +149,12 @@ func TestCleanup(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			for _, f := range tt.indexMetaFiles {
+				path := filepath.Join(dir, f)
+				if _, err := os.Create(path); err != nil {
+					t.Fatal(err)
+				}
+			}
 
 			var repoIDs []uint32
 			for _, name := range tt.repos {
@@ -141,12 +162,41 @@ func TestCleanup(t *testing.T) {
 			}
 			cleanup(dir, repoIDs, now, false)
 
-			if d := cmp.Diff(tt.wantIndex, glob(filepath.Join(dir, "*.zoekt"))); d != "" {
+			actualIndexShards := glob(filepath.Join(dir, "*.zoekt"))
+
+			sort.Slice(actualIndexShards, func(i, j int) bool {
+				return actualIndexShards[i].Path < actualIndexShards[j].Path
+			})
+			sort.Slice(tt.wantIndex, func(i, j int) bool {
+				return tt.wantIndex[i].Path < tt.wantIndex[j].Path
+			})
+
+			if d := cmp.Diff(tt.wantIndex, actualIndexShards); d != "" {
 				t.Errorf("unexpected index (-want, +got):\n%s", d)
 			}
-			if d := cmp.Diff(tt.wantTrash, glob(filepath.Join(dir, ".trash", "*.zoekt"))); d != "" {
+
+			actualTrashShards := glob(filepath.Join(dir, ".trash", "*.zoekt"))
+
+			sort.Slice(actualTrashShards, func(i, j int) bool {
+				return actualTrashShards[i].Path < actualTrashShards[j].Path
+			})
+
+			sort.Slice(tt.wantTrash, func(i, j int) bool {
+				return tt.wantTrash[i].Path < tt.wantTrash[j].Path
+			})
+			if d := cmp.Diff(tt.wantTrash, actualTrashShards); d != "" {
 				t.Errorf("unexpected trash (-want, +got):\n%s", d)
 			}
+
+			actualIndexMetaFiles := globBase(filepath.Join(dir, "*.meta"))
+
+			sort.Strings(actualIndexMetaFiles)
+			sort.Strings(tt.wantIndexMetaFiles)
+
+			if d := cmp.Diff(tt.wantIndexMetaFiles, actualIndexMetaFiles, cmpopts.EquateEmpty()); d != "" {
+				t.Errorf("unexpected metadata files (-want, +got):\n%s", d)
+			}
+
 			if tmps := globBase(filepath.Join(dir, "*.tmp")); len(tmps) > 0 {
 				t.Errorf("unexpected tmps: %v", tmps)
 			}
@@ -453,6 +503,122 @@ func TestCleanupCompoundShards(t *testing.T) {
 	if d := cmp.Diff(wantIndex, index, cmpopts.IgnoreFields(shard{}, "ModTime")); d != "" {
 		t.Fatalf("-want, +got: %s", d)
 	}
+}
+
+func TestDeleteShards(t *testing.T) {
+	remainingRepoA := zoekt.Repository{ID: 1, Name: "A"}
+	remainingRepoB := zoekt.Repository{ID: 2, Name: "B"}
+	repositoryToDelete := zoekt.Repository{ID: 99, Name: "DELETE_ME"}
+
+	t.Run("delete repository from set of normal shards", func(t *testing.T) {
+		indexDir := t.TempDir()
+
+		// map of repoID -> list of paths for associated shard files + metadata files
+		shardFilesMap := make(map[uint32][]string)
+
+		// map of repoID -> list of associated shard structs
+		shardStructMap := make(map[uint32][]shard)
+
+		// setup: create shards for each repository, and populate the shard map
+		for _, r := range []zoekt.Repository{
+			remainingRepoA,
+			remainingRepoB,
+			repositoryToDelete,
+		} {
+			shardPaths := createTestNormalShard(t, indexDir, r, 3)
+
+			for _, p := range shardPaths {
+				// create stub meta file
+				metaFile := p + ".meta"
+				f, err := os.Create(metaFile)
+				if err != nil {
+					t.Fatalf("creating metadata file %q: %s", metaFile, err)
+				}
+
+				f.Close()
+
+				shardFilesMap[r.ID] = append(shardFilesMap[r.ID], p, metaFile)
+				shardStructMap[r.ID] = append(shardStructMap[r.ID], shard{
+					RepoID:   repositoryToDelete.ID,
+					RepoName: repositoryToDelete.Name,
+					Path:     p,
+				})
+			}
+		}
+
+		// run test: delete repository
+		deleteOrTombstone(indexDir, repositoryToDelete.ID, false, shardStructMap[repositoryToDelete.ID]...)
+
+		// run assertions: gather all the shards + meta files that remain and
+		// check to see that only the files associated with the "remaining" repositories
+		// are present
+		var actualShardFiles []string
+
+		for _, pattern := range []string{"*.zoekt", "*.meta"} {
+			files, err := filepath.Glob(filepath.Join(indexDir, pattern))
+			if err != nil {
+				t.Fatalf("globbing indexDir: %s", err)
+			}
+
+			actualShardFiles = append(actualShardFiles, files...)
+		}
+
+		var expectedShardFiles []string
+		expectedShardFiles = append(expectedShardFiles, shardFilesMap[remainingRepoA.ID]...)
+		expectedShardFiles = append(expectedShardFiles, shardFilesMap[remainingRepoB.ID]...)
+
+		sort.Strings(actualShardFiles)
+		sort.Strings(expectedShardFiles)
+
+		if diff := cmp.Diff(expectedShardFiles, actualShardFiles); diff != "" {
+			t.Errorf("unexpected diff in list of shard files (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("delete repository from compound shard", func(t *testing.T) {
+		indexDir := t.TempDir()
+
+		// setup: enable shard merging for compound shards
+		t.Setenv("SRC_ENABLE_SHARD_MERGING", "1")
+
+		// setup: create compound shard with all repositories
+		repositories := []zoekt.Repository{remainingRepoA, remainingRepoB, repositoryToDelete}
+		compoundShard := createTestCompoundShard(t, indexDir, repositories)
+
+		s := shard{
+			RepoID:   repositoryToDelete.ID,
+			RepoName: repositoryToDelete.Name,
+			Path:     compoundShard,
+		}
+		deleteOrTombstone(indexDir, repositoryToDelete.ID, true, s)
+
+		// verify: read the compound shard, and ensure that only
+		// the repositories that we expect are in the shard (and the deleted one has been tombstoned)
+		actualRepositories, _, err := zoekt.ReadMetadataPathAlive(compoundShard)
+		if err != nil {
+			t.Fatalf("reading repository metadata from shard: %s", err)
+		}
+
+		expectedRepositories := []*zoekt.Repository{&remainingRepoA, &remainingRepoB}
+
+		sort.Slice(actualRepositories, func(i, j int) bool {
+			return actualRepositories[i].ID < actualRepositories[j].ID
+		})
+
+		sort.Slice(expectedRepositories, func(i, j int) bool {
+			return expectedRepositories[i].ID < expectedRepositories[j].ID
+		})
+
+		opts := []cmp.Option{
+			cmpopts.IgnoreUnexported(zoekt.Repository{}),
+			cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions", "HasSymbols"),
+			cmpopts.EquateEmpty(),
+		}
+		if diff := cmp.Diff(expectedRepositories, actualRepositories, opts...); diff != "" {
+			t.Errorf("unexpected diff in list of repositories (-want +got):\n%s", diff)
+		}
+	})
+
 }
 
 // createCompoundShard returns a path to a compound shard containing repos with
