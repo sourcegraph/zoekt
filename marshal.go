@@ -91,16 +91,19 @@ func stringSetDecode(b []byte) (map[uint32]*MinimalRepoListEntry, error) {
 	// Length
 	l := r.uvarint()
 	m := make(map[uint32]*MinimalRepoListEntry, l)
+	allBranches := make([]RepositoryBranch, 0, l)
 
 	for i := 0; i < l; i++ {
 		repoID := r.uvarint()
 		hasSymbols := r.byt() == 1
 		lb := r.uvarint()
-		branches := make([]RepositoryBranch, lb)
-		for i := range branches {
-			branches[i].Name = r.str()
-			branches[i].Version = r.str()
+		for i := 0; i < lb; i++ {
+			allBranches = append(allBranches, RepositoryBranch{
+				Name:    r.str(),
+				Version: r.str(),
+			})
 		}
+		branches := allBranches[len(allBranches)-lb:]
 		m[uint32(repoID)] = &MinimalRepoListEntry{
 			HasSymbols: hasSymbols,
 			Branches:   branches,
