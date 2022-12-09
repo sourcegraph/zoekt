@@ -769,6 +769,18 @@ type RepoList struct {
 	Stats RepoStats
 }
 
+// MarshalBinary implements a specialized encoder for FileNameSet.
+func (q *RepoList) MarshalBinary() ([]byte, error) {
+	return stringSetEncode(q.Minimal)
+}
+
+// UnmarshalBinary implements a specialized decoder for RepoList.
+func (q *RepoList) UnmarshalBinary(b []byte) error {
+	var err error
+	q.Minimal, err = stringSetDecode(b)
+	return err
+}
+
 type Searcher interface {
 	Search(ctx context.Context, q query.Q, opts *SearchOptions) (*SearchResult, error)
 
