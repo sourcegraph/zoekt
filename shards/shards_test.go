@@ -453,7 +453,7 @@ func TestShardedSearcher_List(t *testing.T) {
 						Stats:      stats,
 					},
 				},
-				Minimal: map[uint32]*zoekt.MinimalRepoListEntry{
+				Minimal: map[uint32]zoekt.MinimalRepoListEntry{
 					repos[0].ID: {
 						HasSymbols: repos[0].HasSymbols,
 						Branches:   repos[0].Branches,

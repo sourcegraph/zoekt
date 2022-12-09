@@ -920,7 +920,7 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 
 	agg := zoekt.RepoList{
 		Crashes: stillLoadingCrashes,
-		Minimal: map[uint32]*zoekt.MinimalRepoListEntry{},
+		Minimal: map[uint32]zoekt.MinimalRepoListEntry{},
 	}
 
 	uniq := map[string]*zoekt.RepoListEntry{}

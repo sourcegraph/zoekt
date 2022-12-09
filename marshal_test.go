@@ -71,9 +71,9 @@ func TestRepoList_Marshal(t *testing.T) {
 }
 
 func genRepoList(size int) *RepoList {
-	set := make(map[uint32]*MinimalRepoListEntry, size)
+	set := make(map[uint32]MinimalRepoListEntry, size)
 	for i := 0; i < size; i++ {
-		set[uint32(i)] = &MinimalRepoListEntry{
+		set[uint32(i)] = MinimalRepoListEntry{
 			HasSymbols: true,
 			Branches: []RepositoryBranch{{
 				Name:    "HEAD",

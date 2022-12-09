@@ -611,7 +611,7 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 
 	minimal := opts != nil && opts.Minimal
 	if minimal {
-		l.Minimal = make(map[uint32]*MinimalRepoListEntry, len(d.repoListEntry))
+		l.Minimal = make(map[uint32]MinimalRepoListEntry, len(d.repoListEntry))
 	} else {
 		l.Repos = make([]*RepoListEntry, 0, len(d.repoListEntry))
 	}
@@ -627,7 +627,7 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 
 		l.Stats.Add(&rle.Stats)
 		if id := rle.Repository.ID; id != 0 && minimal {
-			l.Minimal[id] = &MinimalRepoListEntry{
+			l.Minimal[id] = MinimalRepoListEntry{
 				HasSymbols: rle.Repository.HasSymbols,
 				Branches:   rle.Repository.Branches,
 			}
