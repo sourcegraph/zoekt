@@ -647,8 +647,9 @@ func createEmptyShard(args *indexArgs) error {
 func (s *Server) addDebugHandlers(mux *http.ServeMux) {
 	// Sourcegraph's site admin view requires indexserver to serve it's admin view
 	// on "/".
-	mux.Handle("/", http.HandlerFunc(s.handleReIndex))
+	mux.Handle("/", http.HandlerFunc(s.handleRoot))
 
+	mux.Handle("/debug/reindex", http.HandlerFunc(s.handleReindex))
 	mux.Handle("/debug/indexed", http.HandlerFunc(s.handleDebugIndexed))
 	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
 	mux.Handle("/debug/merge", http.HandlerFunc(s.handleDebugMerge))
@@ -670,7 +671,7 @@ var repoTmpl = template.Must(template.New("name").Parse(`
 </body></html>
 `))
 
-func (s *Server) handleReIndex(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	renderRoot := func(indexMsg string) {
 		type Repo struct {
 			ID   uint32
@@ -711,6 +712,9 @@ func (s *Server) handleReIndex(w http.ResponseWriter, r *http.Request) {
 
 		indexMsg, err := s.forceIndex(uint32(id))
 
+		// TODO: we won't need "headless" once Sourcegraph calls
+		// "/debug/handleReindex".
+
 		// ?headless
 		if _, ok := r.URL.Query()["headless"]; ok {
 			if err != nil {
@@ -726,6 +730,34 @@ func (s *Server) handleReIndex(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET, POST")
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+// handleReindex triggers a reindex asynocronously. If a reindex was triggered
+// the request returns with status 202. The caller can infer the new state of
+// the index by calling List.
+func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.Atoi(r.Form.Get("repo"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	go func() { s.forceIndex(uint32(id)) }()
+
+	// 202 Accepted
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
