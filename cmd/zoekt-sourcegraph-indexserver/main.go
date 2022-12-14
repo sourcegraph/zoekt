@@ -191,6 +191,8 @@ type Server struct {
 	// repositoriesSkipSymbolsCalculationAllowList is an allowlist for repositories that
 	// we skip calculating symbols metadata for during builds
 	repositoriesSkipSymbolsCalculationAllowList map[string]struct{}
+
+	hostname string
 }
 
 var debug = log.New(io.Discard, "", log.LstdFlags)
@@ -654,6 +656,7 @@ func (s *Server) addDebugHandlers(mux *http.ServeMux) {
 	mux.Handle("/debug/list", http.HandlerFunc(s.handleDebugList))
 	mux.Handle("/debug/merge", http.HandlerFunc(s.handleDebugMerge))
 	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
+	mux.Handle("/debug/host", http.HandlerFunc(s.handleHost))
 }
 
 var repoTmpl = template.Must(template.New("name").Parse(`
@@ -670,6 +673,29 @@ var repoTmpl = template.Must(template.New("name").Parse(`
 </form>
 </body></html>
 `))
+
+func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		w.Header().Set("Allow", "GET")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	response := struct {
+		Hostname string
+	}{
+		Hostname: s.hostname,
+	}
+
+	b, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Write(b)
+}
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	renderRoot := func(indexMsg string) {
@@ -1334,6 +1360,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
 		deltaShardNumberFallbackThreshold: deltaShardNumberFallbackThreshold,
 		repositoriesSkipSymbolsCalculationAllowList: reposShouldSkipSymbolsCalculation,
+		hostname: conf.hostname,
 	}, err
 }
 
