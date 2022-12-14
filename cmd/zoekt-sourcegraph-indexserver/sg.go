@@ -424,7 +424,7 @@ func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) (
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json; charset=utf8")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := s.doRequest(req)
 	if err != nil {
@@ -472,7 +472,7 @@ func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json; charset=utf8")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := s.doRequest(req)
 	if err != nil {
