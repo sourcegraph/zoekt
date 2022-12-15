@@ -3,11 +3,8 @@ package zoekt
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"unsafe"
-
-	"github.com/RoaringBitmap/roaring"
 )
 
 // Wire-format of map[uint32]MinimalRepoListEntry is pretty straightforward:
@@ -101,7 +98,10 @@ func reposMapDecode(b []byte) (ReposMap, error) {
 
 	// binaryReader returns strings pointing into b to avoid allocations. We
 	// don't own b, so we create a copy of it.
-	r := binaryReader{b: append([]byte{}, b...)}
+	r := binaryReader{
+		typ: "ReposMap",
+		b:   append([]byte{}, b...),
+	}
 
 	// Version
 	if v := r.byt(); v != 1 {
@@ -137,6 +137,7 @@ func reposMapDecode(b []byte) (ReposMap, error) {
 }
 
 type binaryReader struct {
+	typ string
 	b   []byte
 	err error
 }
@@ -145,7 +146,7 @@ func (b *binaryReader) uvarint() int {
 	x, n := binary.Uvarint(b.b)
 	if n < 0 {
 		b.b = nil
-		b.err = errors.New("malformed RepoBranches")
+		b.err = fmt.Errorf("malformed %s", b.typ)
 		return 0
 	}
 	b.b = b.b[n:]
@@ -156,7 +157,7 @@ func (b *binaryReader) str() string {
 	l := b.uvarint()
 	if l > len(b.b) {
 		b.b = nil
-		b.err = errors.New("malformed RepoBranches")
+		b.err = fmt.Errorf("malformed %s", b.typ)
 		return ""
 	}
 	s := b2s(b.b[:l])
@@ -164,23 +165,10 @@ func (b *binaryReader) str() string {
 	return s
 }
 
-func (b *binaryReader) bitmap() *roaring.Bitmap {
-	l := b.uvarint()
-	if l > len(b.b) {
-		b.b = nil
-		b.err = errors.New("malformed BranchRepos")
-		return nil
-	}
-	r := roaring.New()
-	_, b.err = r.FromBuffer(b.b[:l])
-	b.b = b.b[l:]
-	return r
-}
-
 func (b *binaryReader) byt() byte {
 	if len(b.b) < 1 {
 		b.b = nil
-		b.err = errors.New("malformed RepoBranches")
+		b.err = fmt.Errorf("malformed %s", b.typ)
 		return 0
 	}
 	x := b.b[0]
