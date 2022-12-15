@@ -656,80 +656,124 @@ func (s *Server) addDebugHandlers(mux *http.ServeMux) {
 	mux.Handle("/debug/queue", http.HandlerFunc(s.queue.handleDebugQueue))
 }
 
-var repoTmpl = template.Must(template.New("name").Parse(`
-<html><body>
+var rootTmpl = template.Must(template.New("name").Parse(`
+<html>
+<style>
+.letter {
+  color: blue;
+  text-decoration: underline;
+  background: none;
+  border:none;
+}
+.letter:hover {
+  cursor: pointer;
+}
+</style>
+<body>
 <a href="debug">Debug</a><br>
 <a href="debug/requests">Traces</a><br>
 {{.IndexMsg}}<br />
-<br />
+
 <h3>Re-index repository</h3>
-<form action="." method="post">
+<div style="display:flex">
+{{range .Letters}}
+<form action="/?group={{.}}" method="post">
+<button class="letter" type="submit"/>{{.}}</button>
+</form>
+{{end}}
+</div>
+
+<form action="./?group={{(index .Repos 0).Group}}" method="post">
 {{range .Repos}}
 <button type="submit" name="repo" value="{{ .ID }}" />{{ .Name }}</button><br />
 {{end}}
 </form>
-</body></html>
+
+</body>
+</html>
 `))
 
+// Query parameters:
+// group=<letter>: only list repos whose org starts with the specified letter
+// repo=<repo id>: reindex the repo with ID id
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
-	renderRoot := func(indexMsg string) {
-		type Repo struct {
-			ID   uint32
-			Name string
-		}
-		var data struct {
-			Repos    []Repo
-			IndexMsg string
-		}
-
-		data.IndexMsg = indexMsg
-
-		s.queue.Iterate(func(opts *IndexOptions) {
-			data.Repos = append(data.Repos, Repo{
-				ID:   opts.RepoID,
-				Name: opts.Name,
-			})
-		})
-
-		_ = repoTmpl.Execute(w, data)
+	values := r.URL.Query()
+	filter := ""
+	if len(values["group"]) > 0 {
+		filter = values["group"][0]
 	}
 
-	switch r.Method {
-	case "GET":
-		renderRoot("")
-	case "POST":
+	type Repo struct {
+		ID    uint32
+		Name  string
+		Group string
+	}
+
+	// Determine the first letter of the org on a best-effort basis.
+	// Examples:
+	// github.com/this/that
+	//            ^
+	// this/that
+	// ^
+	//
+	// this-that
+	// ^
+	group := func(name string) string {
+		count := 0
+		ix := -1
+		for count < 2 {
+			ix = strings.Index(name[ix+1:], "/")
+			if ix < 0 {
+				break
+			}
+			count++
+		}
+		return string(name[ix+1])
+	}
+
+	// Find all repos which match "filter"
+	repos := []Repo{}
+	letterSet := make(map[string]struct{})
+	s.queue.Iterate(func(opts *IndexOptions) {
+		g := group(opts.Name)
+		letterSet[g] = struct{}{}
+		if g == filter {
+			repos = append(repos, Repo{ID: opts.RepoID, Name: opts.Name, Group: g})
+		}
+	})
+
+	letters := make([]string, 0, len(letterSet))
+	for k := range letterSet {
+		letters = append(letters, k)
+	}
+	sort.Strings(letters)
+
+	// show "/" as the first element in the list of links
+	letters = append([]string{"/"}, letters...)
+
+	indexMsg := ""
+	if r.Method == "POST" {
 		err := r.ParseForm()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
-		id, err := strconv.Atoi(r.Form.Get("repo"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		indexMsg, err := s.forceIndex(uint32(id))
-
-		// TODO: we won't need "headless" once Sourcegraph calls
-		// "/debug/handleReindex".
-
-		// ?headless
-		if _, ok := r.URL.Query()["headless"]; ok {
+		if repo := r.Form.Get("repo"); repo != "" {
+			id, err := strconv.Atoi(r.Form.Get("repo"))
 			if err != nil {
-				http.Error(w, indexMsg, http.StatusInternalServerError)
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			w.Write([]byte(indexMsg))
-			return
-		}
 
-		renderRoot(indexMsg)
-	default:
-		w.Header().Set("Allow", "GET, POST")
-		w.WriteHeader(http.StatusMethodNotAllowed)
+			indexMsg, err = s.forceIndex(uint32(id))
+		}
 	}
+
+	_ = rootTmpl.Execute(w, struct {
+		IndexMsg string
+		Letters  []string
+		Repos    []Repo
+	}{indexMsg, letters, repos})
 }
 
 // handleReindex triggers a reindex asynocronously. If a reindex was triggered
