@@ -10,10 +10,11 @@ import (
 	"github.com/RoaringBitmap/roaring"
 )
 
-// Wire-format of map[uint32]*MinimalRepoListEntry is pretty straightforward:
+// Wire-format of map[uint32]MinimalRepoListEntry is pretty straightforward:
 //
 // byte(1) version
 // uvarint(len(minimal))
+// uvarint(sum(len(entry.Branches) for entry in minimal))
 // for repoID, entry in minimal:
 //   uvarint(repoID)
 //   byte(entry.HasSymbols)
@@ -22,8 +23,8 @@ import (
 //     str(b.Name)
 //     str(b.Version)
 
-// stringSetEncode implements an efficient encoder for map[string]struct{}.
-func stringSetEncode(minimal map[uint32]MinimalRepoListEntry) ([]byte, error) {
+// reposMapEncode implements an efficient encoder for ReposMap.
+func reposMapEncode(minimal ReposMap) ([]byte, error) {
 	var b bytes.Buffer
 	var enc [binary.MaxVarintLen64]byte
 	varint := func(n int) {
@@ -38,9 +39,17 @@ func stringSetEncode(minimal map[uint32]MinimalRepoListEntry) ([]byte, error) {
 		return binary.PutUvarint(enc[:], uint64(len(s))) + len(s)
 	}
 
+	// We calculate this up front so when decoding we only need to allocate the
+	// underlying array once.
+	allBranchesLen := 0
+	for _, entry := range minimal {
+		allBranchesLen += len(entry.Branches)
+	}
+
 	// Calculate size
 	size := 1 // version
 	size += binary.PutUvarint(enc[:], uint64(len(minimal)))
+	size += binary.PutUvarint(enc[:], uint64(allBranchesLen))
 	for repoID, entry := range minimal {
 		size += binary.PutUvarint(enc[:], uint64(repoID))
 		size += 1 // HasSymbols
@@ -57,6 +66,8 @@ func stringSetEncode(minimal map[uint32]MinimalRepoListEntry) ([]byte, error) {
 
 	// Length
 	varint(len(minimal))
+
+	varint(allBranchesLen)
 
 	for repoID, entry := range minimal {
 		varint(int(repoID))
@@ -77,8 +88,8 @@ func stringSetEncode(minimal map[uint32]MinimalRepoListEntry) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// stringSetDecode implements an efficient decoder for map[string]struct{}.
-func stringSetDecode(b []byte) (map[uint32]MinimalRepoListEntry, error) {
+// reposMapDecode implements an efficient decoder for map[string]struct{}.
+func reposMapDecode(b []byte) (ReposMap, error) {
 	// binaryReader returns strings pointing into b to avoid allocations. We
 	// don't own b, so we create a copy of it.
 	r := binaryReader{b: append([]byte{}, b...)}
@@ -91,7 +102,10 @@ func stringSetDecode(b []byte) (map[uint32]MinimalRepoListEntry, error) {
 	// Length
 	l := r.uvarint()
 	m := make(map[uint32]MinimalRepoListEntry, l)
-	allBranches := make([]RepositoryBranch, 0, l)
+
+	// Pre-allocate slice for all branches
+	allBranchesLen := r.uvarint()
+	allBranches := make([]RepositoryBranch, 0, allBranchesLen)
 
 	for i := 0; i < l; i++ {
 		repoID := r.uvarint()

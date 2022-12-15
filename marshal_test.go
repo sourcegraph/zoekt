@@ -65,7 +65,7 @@ func TestRepoList_Marshal(t *testing.T) {
 		}
 
 		if diff := cmp.Diff(want, &got); diff != "" {
-			t.Fatalf("mismatch for set size %d (-want +got):\n%s", i, diff)
+			t.Fatalf("mismatch for reposmap size %d (-want +got):\n%s", i, diff)
 		}
 	}
 }

@@ -757,14 +757,14 @@ type MinimalRepoListEntry struct {
 type ReposMap map[uint32]MinimalRepoListEntry
 
 // MarshalBinary implements a specialized encoder for ReposMap.
-func (q ReposMap) MarshalBinary() ([]byte, error) {
-	return stringSetEncode(q)
+func (q *ReposMap) MarshalBinary() ([]byte, error) {
+	return reposMapEncode(*q)
 }
 
 // UnmarshalBinary implements a specialized decoder for ReposMap.
 func (q *ReposMap) UnmarshalBinary(b []byte) error {
 	var err error
-	(*q), err = stringSetDecode(b)
+	(*q), err = reposMapDecode(b)
 	return err
 }
 
@@ -779,7 +779,7 @@ type RepoList struct {
 	Minimal map[uint32]*MinimalRepoListEntry
 
 	// ReposMap is set when ListOptions.Field is RepoListFieldReposMap.
-	ReposMap map[uint32]MinimalRepoListEntry
+	ReposMap ReposMap
 
 	Crashes int
 
