@@ -25,6 +25,10 @@ import (
 
 // reposMapEncode implements an efficient encoder for ReposMap.
 func reposMapEncode(minimal ReposMap) ([]byte, error) {
+	if minimal == nil {
+		return nil, nil
+	}
+
 	var b bytes.Buffer
 	var enc [binary.MaxVarintLen64]byte
 	varint := func(n int) {
@@ -90,6 +94,11 @@ func reposMapEncode(minimal ReposMap) ([]byte, error) {
 
 // reposMapDecode implements an efficient decoder for map[string]struct{}.
 func reposMapDecode(b []byte) (ReposMap, error) {
+	// nil input
+	if len(b) == 0 {
+		return nil, nil
+	}
+
 	// binaryReader returns strings pointing into b to avoid allocations. We
 	// don't own b, so we create a copy of it.
 	r := binaryReader{b: append([]byte{}, b...)}

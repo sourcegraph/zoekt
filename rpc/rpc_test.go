@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/mockSearcher"
 	"github.com/sourcegraph/zoekt/query"
@@ -61,8 +63,8 @@ func TestClientServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(l, mock.RepoList) {
-		t.Fatalf("got %+v, want %+v", l, mock.RepoList)
+	if d := cmp.Diff(mock.RepoList, l, cmpopts.IgnoreUnexported(zoekt.Repository{})); d != "" {
+		t.Fatalf("unexpected RepoList (-want, +got):\n%s", d)
 	}
 
 	// Test closing a client we never dial.
