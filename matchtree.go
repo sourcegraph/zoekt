@@ -888,10 +888,10 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}
 
 		if substr, ok := subMT.(*substrMatchTree); ok {
-			// Temporary: We have a feature flag for lazy decoding. If
-			// runeDocSections is nil it means we need to lazily decode on request.
+			// We have a feature flag for lazy decoding. If runeDocSectionsRaw is
+			// non-nil it means we need to lazily decode on request.
 			sections := d.runeDocSections
-			if sections == nil {
+			if sections == nil && d.runeDocSectionsRaw != nil {
 				sections = unmarshalDocSections(d.runeDocSectionsRaw, nil)
 			}
 
