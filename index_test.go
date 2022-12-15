@@ -1766,7 +1766,7 @@ func TestListRepos(t *testing.T) {
 		}
 
 		want := &RepoList{
-			Minimal: map[uint32]MinimalRepoListEntry{
+			Minimal: map[uint32]*MinimalRepoListEntry{
 				repo.ID: {
 					HasSymbols: repo.HasSymbols,
 					Branches:   repo.Branches,

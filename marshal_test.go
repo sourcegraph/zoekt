@@ -71,9 +71,9 @@ func TestRepoList_Marshal(t *testing.T) {
 }
 
 func genRepoList(size int) *RepoList {
-	set := make(map[uint32]MinimalRepoListEntry, size)
+	m := make(ReposMap, size)
 	for i := 0; i < size; i++ {
-		set[uint32(i)] = MinimalRepoListEntry{
+		m[uint32(i)] = MinimalRepoListEntry{
 			HasSymbols: true,
 			Branches: []RepositoryBranch{{
 				Name:    "HEAD",
@@ -81,7 +81,7 @@ func genRepoList(size int) *RepoList {
 			}},
 		}
 	}
-	return &RepoList{Minimal: set}
+	return &RepoList{ReposMap: m}
 }
 
 type countWriter struct {

@@ -754,31 +754,38 @@ type MinimalRepoListEntry struct {
 	Branches   []RepositoryBranch
 }
 
+type ReposMap map[uint32]MinimalRepoListEntry
+
+// MarshalBinary implements a specialized encoder for ReposMap.
+func (q ReposMap) MarshalBinary() ([]byte, error) {
+	return stringSetEncode(q)
+}
+
+// UnmarshalBinary implements a specialized decoder for ReposMap.
+func (q *ReposMap) UnmarshalBinary(b []byte) error {
+	var err error
+	(*q), err = stringSetDecode(b)
+	return err
+}
+
 // RepoList holds a set of Repository metadata.
 type RepoList struct {
-	// Full response to a List request. Returned when ListOptions.Minimal is false.
+	// Returned when ListOptions.Field is RepoListFieldRepos.
 	Repos []*RepoListEntry
 
-	Crashes int
+	// Returned when ListOptions.Field is RepoListFieldMinimal.
+	//
+	// Deprecated: use ReposMap.
+	Minimal map[uint32]*MinimalRepoListEntry
 
-	// Minimal response to a List request. Returned when ListOptions.Minimal is true.
-	Minimal map[uint32]MinimalRepoListEntry
+	// ReposMap is set when ListOptions.Field is RepoListFieldReposMap.
+	ReposMap map[uint32]MinimalRepoListEntry
+
+	Crashes int
 
 	// Stats response to a List request.
 	// This is the aggregate RepoStats of all repos matching the input query.
 	Stats RepoStats
-}
-
-// MarshalBinary implements a specialized encoder for FileNameSet.
-func (q *RepoList) MarshalBinary() ([]byte, error) {
-	return stringSetEncode(q.Minimal)
-}
-
-// UnmarshalBinary implements a specialized decoder for RepoList.
-func (q *RepoList) UnmarshalBinary(b []byte) error {
-	var err error
-	q.Minimal, err = stringSetDecode(b)
-	return err
 }
 
 type Searcher interface {
@@ -793,9 +800,35 @@ type Searcher interface {
 	String() string
 }
 
+type RepoListField int
+
+const (
+	RepoListFieldRepos    RepoListField = 0
+	RepoListFieldMinimal                = 1
+	RepoListFieldReposMap               = 2
+)
+
 type ListOptions struct {
 	// Return only Minimal data per repo that Sourcegraph frontend needs.
+	//
+	// Deprecated: use Field
 	Minimal bool
+
+	// Field decides which field to populate in RepoList response.
+	Field RepoListField
+}
+
+func (o *ListOptions) GetField() (RepoListField, error) {
+	if o == nil {
+		return RepoListFieldRepos, nil
+	}
+	if o.Field < 0 || o.Field > RepoListFieldReposMap {
+		return 0, fmt.Errorf("unknown RepoListField %d", o.Field)
+	}
+	if o.Minimal == true {
+		return RepoListFieldMinimal, nil
+	}
+	return o.Field, nil
 }
 
 func (o *ListOptions) String() string {

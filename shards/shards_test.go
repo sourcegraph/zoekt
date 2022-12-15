@@ -453,7 +453,62 @@ func TestShardedSearcher_List(t *testing.T) {
 						Stats:      stats,
 					},
 				},
-				Minimal: map[uint32]zoekt.MinimalRepoListEntry{
+				Minimal: map[uint32]*zoekt.MinimalRepoListEntry{
+					repos[0].ID: {
+						HasSymbols: repos[0].HasSymbols,
+						Branches:   repos[0].Branches,
+					},
+				},
+				Stats: aggStats,
+			},
+		},
+		{
+			name: "field=repos",
+			opts: &zoekt.ListOptions{Field: zoekt.RepoListFieldRepos},
+			want: &zoekt.RepoList{
+				Repos: []*zoekt.RepoListEntry{
+					{
+						Repository: *repos[0],
+						Stats:      stats,
+					},
+					{
+						Repository: *repos[1],
+						Stats:      stats,
+					},
+				},
+				Stats: aggStats,
+			},
+		},
+		{
+			name: "field=minimal",
+			opts: &zoekt.ListOptions{Field: zoekt.RepoListFieldMinimal},
+			want: &zoekt.RepoList{
+				Repos: []*zoekt.RepoListEntry{
+					{
+						Repository: *repos[1],
+						Stats:      stats,
+					},
+				},
+				Minimal: map[uint32]*zoekt.MinimalRepoListEntry{
+					repos[0].ID: {
+						HasSymbols: repos[0].HasSymbols,
+						Branches:   repos[0].Branches,
+					},
+				},
+				Stats: aggStats,
+			},
+		},
+		{
+			name: "field=reposmap",
+			opts: &zoekt.ListOptions{Field: zoekt.RepoListFieldReposMap},
+			want: &zoekt.RepoList{
+				Repos: []*zoekt.RepoListEntry{
+					{
+						Repository: *repos[1],
+						Stats:      stats,
+					},
+				},
+				ReposMap: zoekt.ReposMap{
 					repos[0].ID: {
 						HasSymbols: repos[0].HasSymbols,
 						Branches:   repos[0].Branches,

@@ -609,11 +609,17 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 
 	var l RepoList
 
-	minimal := opts != nil && opts.Minimal
-	if minimal {
-		l.Minimal = make(map[uint32]MinimalRepoListEntry, len(d.repoListEntry))
-	} else {
+	field, err := opts.GetField()
+	if err != nil {
+		return nil, err
+	}
+	switch field {
+	case RepoListFieldRepos:
 		l.Repos = make([]*RepoListEntry, 0, len(d.repoListEntry))
+	case RepoListFieldMinimal:
+		l.Minimal = make(map[uint32]*MinimalRepoListEntry, len(d.repoListEntry))
+	case RepoListFieldReposMap:
+		l.ReposMap = make(ReposMap, len(d.repoListEntry))
 	}
 
 	for i := range d.repoListEntry {
@@ -626,14 +632,28 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 		}
 
 		l.Stats.Add(&rle.Stats)
-		if id := rle.Repository.ID; id != 0 && minimal {
-			l.Minimal[id] = MinimalRepoListEntry{
+
+		// Backwards compat for when ID is missing
+		if rle.Repository.ID == 0 {
+			l.Repos = append(l.Repos, rle)
+			continue
+		}
+
+		switch field {
+		case RepoListFieldRepos:
+			l.Repos = append(l.Repos, rle)
+		case RepoListFieldMinimal:
+			l.Minimal[rle.Repository.ID] = &MinimalRepoListEntry{
 				HasSymbols: rle.Repository.HasSymbols,
 				Branches:   rle.Repository.Branches,
 			}
-		} else {
-			l.Repos = append(l.Repos, rle)
+		case RepoListFieldReposMap:
+			l.ReposMap[rle.Repository.ID] = MinimalRepoListEntry{
+				HasSymbols: rle.Repository.HasSymbols,
+				Branches:   rle.Repository.Branches,
+			}
 		}
+
 	}
 
 	return &l, nil
