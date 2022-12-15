@@ -23,7 +23,7 @@ import (
 //     str(b.Version)
 
 // stringSetEncode implements an efficient encoder for map[string]struct{}.
-func stringSetEncode(minimal map[uint32]*MinimalRepoListEntry) ([]byte, error) {
+func stringSetEncode(minimal map[uint32]MinimalRepoListEntry) ([]byte, error) {
 	var b bytes.Buffer
 	var enc [binary.MaxVarintLen64]byte
 	varint := func(n int) {
@@ -78,7 +78,7 @@ func stringSetEncode(minimal map[uint32]*MinimalRepoListEntry) ([]byte, error) {
 }
 
 // stringSetDecode implements an efficient decoder for map[string]struct{}.
-func stringSetDecode(b []byte) (map[uint32]*MinimalRepoListEntry, error) {
+func stringSetDecode(b []byte) (map[uint32]MinimalRepoListEntry, error) {
 	// binaryReader returns strings pointing into b to avoid allocations. We
 	// don't own b, so we create a copy of it.
 	r := binaryReader{b: append([]byte{}, b...)}
@@ -90,7 +90,7 @@ func stringSetDecode(b []byte) (map[uint32]*MinimalRepoListEntry, error) {
 
 	// Length
 	l := r.uvarint()
-	m := make(map[uint32]*MinimalRepoListEntry, l)
+	m := make(map[uint32]MinimalRepoListEntry, l)
 	allBranches := make([]RepositoryBranch, 0, l)
 
 	for i := 0; i < l; i++ {
@@ -104,7 +104,7 @@ func stringSetDecode(b []byte) (map[uint32]*MinimalRepoListEntry, error) {
 			})
 		}
 		branches := allBranches[len(allBranches)-lb:]
-		m[uint32(repoID)] = &MinimalRepoListEntry{
+		m[uint32(repoID)] = MinimalRepoListEntry{
 			HasSymbols: hasSymbols,
 			Branches:   branches,
 		}
