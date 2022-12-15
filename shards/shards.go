@@ -919,8 +919,9 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	}
 
 	agg := zoekt.RepoList{
-		Crashes: stillLoadingCrashes,
-		Minimal: map[uint32]*zoekt.MinimalRepoListEntry{},
+		Crashes:  stillLoadingCrashes,
+		Minimal:  map[uint32]*zoekt.MinimalRepoListEntry{},
+		ReposMap: zoekt.ReposMap{},
 	}
 
 	uniq := map[string]*zoekt.RepoListEntry{}
@@ -950,6 +951,10 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 				agg.Minimal[id] = r
 			}
 		}
+
+		for id, r := range r.rl.ReposMap {
+			agg.ReposMap[id] = r
+		}
 	}
 
 	agg.Repos = make([]*zoekt.RepoListEntry, 0, len(uniq))
@@ -957,8 +962,7 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		agg.Repos = append(agg.Repos, r)
 	}
 
-	isMinimal := opts != nil && opts.Minimal
-	if isAll && !isMinimal {
+	if isAll && len(agg.Repos) > 0 {
 		reportListAllMetrics(agg.Repos)
 	}
 
