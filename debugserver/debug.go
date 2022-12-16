@@ -28,7 +28,7 @@ var debugTmpl = template.Must(template.New("name").Parse(`
 		</style>
 	</head>
 	<body>
-		/debug<br>
+    <a href="/">/<a/><span style="margin:2px">debug</span><br>
 		<br>
 		<a class="debug-page" href="vars">Vars</a><br>
 		{{if .EnablePprof}}<a class="debug-page" href="debug/pprof/">PProf</a>{{else}}PProf disabled{{end}}<br>
