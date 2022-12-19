@@ -659,21 +659,6 @@ func (s *Server) addDebugHandlers(mux *http.ServeMux) {
 	mux.Handle("/debug/host", http.HandlerFunc(s.handleHost))
 }
 
-var repoTmpl = template.Must(template.New("name").Parse(`
-<html><body>
-<a href="debug">Debug</a><br>
-<a href="debug/requests">Traces</a><br>
-{{.IndexMsg}}<br />
-<br />
-<h3>Re-index repository</h3>
-<form action="." method="post">
-{{range .Repos}}
-<button type="submit" name="repo" value="{{ .ID }}" />{{ .Name }}</button><br />
-{{end}}
-</form>
-</body></html>
-`))
-
 func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		w.Header().Set("Allow", "GET")
@@ -697,65 +682,81 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+var rootTmpl = template.Must(template.New("name").Parse(`
+<html>
+    <body>
+        <a href="debug">Debug</a><br />
+        <a href="debug/requests">Traces</a><br />
+        {{.IndexMsg}}<br />
+        <br />
+        <h3>Reindex</h3>
+        {{if .Repos}}
+            <a href="/?show_repos=false">hide repos</a><br />
+            <table style="margin-top: 20px">
+                <th style="text-align:left">Name</th>
+                <th style="text-align:left">ID</th>
+                {{range .Repos}}
+                    <tr>
+                        <td>{{.Name}}</td>
+                        <td><a href="/?id={{.ID}}&show_repos=true">{{.ID}}</a></id>
+                    </tr>
+                {{end}}
+            </table>
+        {{else}}
+            <a href="/?show_repos=true">show repos</a><br />
+        {{end}}
+    </body>
+</html>
+`))
+
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
-	renderRoot := func(indexMsg string) {
-		type Repo struct {
-			ID   uint32
-			Name string
-		}
-		var data struct {
-			Repos    []Repo
-			IndexMsg string
-		}
+	if r.Method != "GET" {
+		w.Header().Set("Allow", "GET")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
-		data.IndexMsg = indexMsg
+	values := r.URL.Query()
 
+	// ?id=
+	indexMsg := ""
+	if v := values.Get("id"); v != "" {
+		id, err := strconv.Atoi(v)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		indexMsg, _ = s.forceIndex(uint32(id))
+	}
+
+	// ?show_repos=
+	showRepos := false
+	if v := values.Get("show_repos"); v != "" {
+		showRepos, _ = strconv.ParseBool(v)
+	}
+
+	type Repo struct {
+		ID   uint32
+		Name string
+	}
+	var data struct {
+		Repos    []Repo
+		IndexMsg string
+	}
+
+	data.IndexMsg = indexMsg
+
+	if showRepos {
 		s.queue.Iterate(func(opts *IndexOptions) {
 			data.Repos = append(data.Repos, Repo{
 				ID:   opts.RepoID,
 				Name: opts.Name,
 			})
 		})
-
-		_ = repoTmpl.Execute(w, data)
+		sort.Slice(data.Repos, func(i, j int) bool { return data.Repos[i].Name < data.Repos[j].Name })
 	}
 
-	switch r.Method {
-	case "GET":
-		renderRoot("")
-	case "POST":
-		err := r.ParseForm()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		id, err := strconv.Atoi(r.Form.Get("repo"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		indexMsg, err := s.forceIndex(uint32(id))
-
-		// TODO: we won't need "headless" once Sourcegraph calls
-		// "/debug/handleReindex".
-
-		// ?headless
-		if _, ok := r.URL.Query()["headless"]; ok {
-			if err != nil {
-				http.Error(w, indexMsg, http.StatusInternalServerError)
-				return
-			}
-			w.Write([]byte(indexMsg))
-			return
-		}
-
-		renderRoot(indexMsg)
-	default:
-		w.Header().Set("Allow", "GET, POST")
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
+	_ = rootTmpl.Execute(w, data)
 }
 
 // handleReindex triggers a reindex asynocronously. If a reindex was triggered
