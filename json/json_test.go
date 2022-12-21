@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -83,6 +84,50 @@ func TestClientServer(t *testing.T) {
 	}
 	if !reflect.DeepEqual(listResult.List, mock.RepoList) {
 		t.Fatalf("got %+v, want %+v", listResult, mock.RepoList)
+	}
+}
+
+func TestProgressNotEncodedInSearch(t *testing.T) {
+	searchQuery := "hello"
+	mock := &mockSearcher.MockSearcher{
+		WantSearch: mustParse(searchQuery),
+		SearchResult: &zoekt.SearchResult{
+			// Validate that Progress is ignored as we cannot encode -Inf
+			Progress: zoekt.Progress{
+				Priority:           math.Inf(-1),
+				MaxPendingPriority: math.Inf(-1),
+			},
+			Files: []zoekt.FileMatch{},
+		},
+
+		WantList: &query.Const{Value: true},
+		RepoList: &zoekt.RepoList{
+			Repos: []*zoekt.RepoListEntry{
+				{
+					Repository: zoekt.Repository{
+						ID:   2,
+						Name: "foo/bar",
+					},
+				},
+			},
+		},
+	}
+
+	ts := httptest.NewServer(zjson.JSONServer(mock))
+	defer ts.Close()
+
+	searchBody, err := json.Marshal(struct{ Q string }{Q: searchQuery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := http.Post(ts.URL+"/search", "application/json", bytes.NewBuffer(searchBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r.StatusCode != 200 {
+		body, _ := io.ReadAll(r.Body)
+		t.Fatalf("Got status code %d, err %s", r.StatusCode, string(body))
 	}
 }
 
