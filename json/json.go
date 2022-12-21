@@ -91,7 +91,12 @@ func (s *jsonSearcher) jsonSearch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(jsonSearchReply{searchResult})
+	err = json.NewEncoder(w).Encode(jsonSearchReply{searchResult})
+
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 }
 
 func jsonError(w http.ResponseWriter, statusCode int, err string) {
