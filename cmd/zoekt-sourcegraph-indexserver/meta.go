@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
@@ -113,6 +114,6 @@ func jsonMarshalTmpFile(v interface{}, p string) (_ string, err error) {
 var umask os.FileMode
 
 func init() {
-	umask = os.FileMode(syscall.Umask(0))
-	syscall.Umask(int(umask))
+	umask = os.FileMode(unix.Umask(0))
+	unix.Umask(int(umask))
 }

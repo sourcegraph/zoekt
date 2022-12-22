@@ -36,8 +36,9 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/sourcegraph/mountinfo"
 
@@ -328,8 +329,8 @@ func addProxyHandler(mux *http.ServeMux, socket string) {
 // Shutdown is called all inflight RPC requests will be closed.
 func shutdownOnSignal(srv *http.Server) error {
 	c := make(chan os.Signal, 3)
-	signal.Notify(c, os.Interrupt)    // terminal C-c and goreman
-	signal.Notify(c, syscall.SIGTERM) // Kubernetes
+	signal.Notify(c, os.Interrupt) // terminal C-c and goreman
+	signal.Notify(c, unix.SIGTERM) // Kubernetes
 
 	<-c
 
@@ -414,8 +415,8 @@ func mustRegisterDiskMonitor(path string) {
 		Help:        "Amount of free space disk space.",
 		ConstLabels: prometheus.Labels{"path": path},
 	}, func() float64 {
-		var stat syscall.Statfs_t
-		_ = syscall.Statfs(path, &stat)
+		var stat unix.Statfs_t
+		_ = unix.Statfs(path, &stat)
 		return float64(stat.Bavail * uint64(stat.Bsize))
 	}))
 
@@ -424,8 +425,8 @@ func mustRegisterDiskMonitor(path string) {
 		Help:        "Amount of total disk space.",
 		ConstLabels: prometheus.Labels{"path": path},
 	}, func() float64 {
-		var stat syscall.Statfs_t
-		_ = syscall.Statfs(path, &stat)
+		var stat unix.Statfs_t
+		_ = unix.Statfs(path, &stat)
 		return float64(stat.Blocks * uint64(stat.Bsize))
 	}))
 }
