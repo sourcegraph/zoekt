@@ -56,6 +56,10 @@ var (
 		Name: "zoekt_search_running",
 		Help: "The number of concurrent search requests running",
 	})
+	metricSearchRequestsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "zoekt_search_requests_total",
+		Help: "The total number of search requests",
+	})
 	metricSearchShardRunning = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "zoekt_search_shard_running",
 		Help: "The number of concurrent search requests in a shard running",
@@ -598,6 +602,7 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
 	overallStart := time.Now()
+	metricSearchRequestsTotal.Inc()
 	metricSearchRunning.Inc()
 	defer func() {
 		metricSearchRunning.Dec()
