@@ -231,8 +231,8 @@ func (p *process) Release() {
 // The only error it will return is a context error if ctx expires. In that
 // case the process should stop running and call Release.
 func (p *process) Yield(ctx context.Context) error {
-	// Return immediately if we have already yielded or if we haven't used up timeslice
-	// (represented via yieldTimer) our full timeslice.
+	// Return immediately if we have already yielded or if we haven't used up our full timeslice
+	// (represented via yieldTimer).
 	if p.yieldTimer == nil || !p.yieldTimer.Exceeded() {
 		return nil
 	}
