@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 	"net/http"
@@ -181,6 +182,7 @@ func startIndexingApi(repoDir string, indexDir string, indexTimeout time.Duratio
 		if err != nil {
 			log.Printf("Error decoding index request: %v", err)
 			http.Error(w, "JSON parser error", http.StatusBadRequest)
+			return
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), indexTimeout)
@@ -201,6 +203,7 @@ func startIndexingApi(repoDir string, indexDir string, indexTimeout time.Duratio
 		if err != nil {
 			log.Printf("Error loading git repo path: %v", err)
 			http.Error(w, "JSON parser error", http.StatusBadRequest)
+			return
 		}
 		args = append(args, "-C", gitRepoPath, "fetch")
 		cmd = exec.CommandContext(ctx, "git", args...)
@@ -216,9 +219,45 @@ func startIndexingApi(repoDir string, indexDir string, indexTimeout time.Duratio
 		loggedRun(cmd)
 	})
 
+	http.HandleFunc("/truncate", func(w http.ResponseWriter, r *http.Request) {
+		err := emptyDirectory(repoDir)
+
+		if err != nil {
+			log.Printf("Failed to empty repoDir repoDir: %v with error: %v", repoDir, err)
+			http.Error(w, "Failed to delete repoDir", http.StatusInternalServerError)
+			return
+		}
+
+		err = emptyDirectory(indexDir)
+
+		if err != nil {
+			log.Printf("Failed to empty repoDir indexDir: %v with error: %v", repoDir, err)
+			http.Error(w, "Failed to delete indexDir", http.StatusInternalServerError)
+			return
+		}
+	})
+
 	if err := http.ListenAndServe(":6060", nil); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func emptyDirectory(dir string) error {
+	files, err := ioutil.ReadDir(dir)
+
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		filePath := filepath.Join(dir, file.Name())
+		err := os.RemoveAll(filePath)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func indexPendingRepo(dir, indexDir, repoDir string, opts *Options) {
