@@ -64,11 +64,14 @@ var (
 		Name: "zoekt_search_failed_total",
 		Help: "The total number of search requests that failed",
 	})
-	metricSearchDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "zoekt_search_duration_seconds",
-		Help:    "The duration a search request took in seconds",
-		Buckets: prometheus.DefBuckets, // DefBuckets good for service timings
-	})
+	metricSearchDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "zoekt_search_duration_seconds",
+			Help:    "The duration a search request took in seconds",
+			Buckets: prometheus.DefBuckets, // DefBuckets good for service timings
+		},
+		[]string{"success"}, // "true" or "false" depending on whether the search succeeded
+	)
 
 	// A Counter per Stat. Name should match field in zoekt.Stats.
 	metricSearchContentBytesLoadedTotal = promauto.NewCounter(prometheus.CounterOpts{
@@ -600,14 +603,22 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 	overallStart := time.Now()
 	metricSearchRunning.Inc()
 	defer func() {
+		duration := time.Since(overallStart).Seconds()
+
 		metricSearchRunning.Dec()
-		metricSearchDuration.Observe(time.Since(overallStart).Seconds())
+
+		successful := true
 		if err != nil {
+			successful = false
+
 			metricSearchFailedTotal.Inc()
 
 			tr.LazyPrintf("error: %v", err)
 			tr.SetError(err)
 		}
+
+		metricSearchDuration.WithLabelValues(strconv.FormatBool(successful)).Observe(duration)
+
 		tr.Finish()
 	}()
 
