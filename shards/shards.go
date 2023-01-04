@@ -270,6 +270,12 @@ func (tl *loader) load(keys ...string) {
 	// finished running shardedSearcher will be ready.
 	defer tl.ss.markReady()
 
+	if len(keys) == 0 {
+		// If there's nothing to load, we exit early here, but we want to mark
+		// ourselves as ready.
+		return
+	}
+
 	var (
 		mu           sync.Mutex     // synchronizes writes to the shards map
 		wg           sync.WaitGroup // used to wait for all shards to load
