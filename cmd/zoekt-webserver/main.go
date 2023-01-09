@@ -299,8 +299,17 @@ func main() {
 		}
 	}()
 
-	if err := shutdownOnSignal(srv); err != nil {
-		log.Fatalf("http.Server.Shutdown: %v", err)
+	if s.RPC {
+		// Our RPC system does not support shutdown and hijacks the underlying
+		// http connection. This means shutdown is ineffective and just waits 10s
+		// before calling close. Lets just quit faster in that case.
+		if err := closeOnSignal(srv); err != nil {
+			log.Fatalf("http.Server.Close: %v", err)
+		}
+	} else {
+		if err := shutdownOnSignal(srv); err != nil {
+			log.Fatalf("http.Server.Shutdown: %v", err)
+		}
 	}
 }
 
@@ -322,15 +331,30 @@ func addProxyHandler(mux *http.ServeMux, socket string) {
 	mux.Handle("/indexserver/", http.StripPrefix("/indexserver/", http.HandlerFunc(proxy.ServeHTTP)))
 }
 
-// shutdownOnSignal will listen for SIGINT or SIGTERM and call
-// srv.Shutdown. Note it doesn't call anything else for shutting down. Notably
-// our RPC framework doesn't allow us to drain connections, so it when
-// Shutdown is called all inflight RPC requests will be closed.
-func shutdownOnSignal(srv *http.Server) error {
+// shutdownSignalChan returns a channel which is listening for shutdown
+// signals from the operating system.
+func shutdownSignalChan() <-chan os.Signal {
 	c := make(chan os.Signal, 3)
 	signal.Notify(c, os.Interrupt)    // terminal C-c and goreman
 	signal.Notify(c, syscall.SIGTERM) // Kubernetes
+	return c
+}
 
+// closeOnSignal will listen for SIGINT or SIGTERM and call srv.Close. This is
+// not a graceful shutdown, see shutdownOnSignal.
+func closeOnSignal(srv *http.Server) error {
+	c := shutdownSignalChan()
+	<-c
+
+	return srv.Close()
+}
+
+// shutdownOnSignal will listen for SIGINT or SIGTERM and call srv.Shutdown.
+// Note it doesn't call anything else for shutting down. Notably our RPC
+// framework doesn't allow us to drain connections, so when Shutdown we will
+// wait 10s before closing.
+func shutdownOnSignal(srv *http.Server) error {
+	c := shutdownSignalChan()
 	<-c
 
 	// If we receive another signal, immediate shutdown
