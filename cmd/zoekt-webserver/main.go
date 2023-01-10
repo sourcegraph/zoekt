@@ -354,6 +354,9 @@ func closeOnSignal(srv *http.Server) error {
 // Note it doesn't call anything else for shutting down. Notably our RPC
 // framework doesn't allow us to drain connections, so when Shutdown we will
 // wait 10s before closing.
+//
+// Note: the call site for shutdownOnSignal should use closeOnSignal instead
+// if rpc mode is enabled due to the above limitation.
 func shutdownOnSignal(srv *http.Server) error {
 	c := shutdownSignalChan(2)
 	<-c
