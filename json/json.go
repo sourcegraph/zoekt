@@ -27,8 +27,9 @@ type jsonSearcher struct {
 }
 
 type jsonSearchArgs struct {
-	Q    string
-	Opts *zoekt.SearchOptions
+	Q       string
+	RepoIds []uint32
+	Opts    *zoekt.SearchOptions
 }
 
 type jsonSearchReply struct {
@@ -67,10 +68,17 @@ func (s *jsonSearcher) jsonSearch(w http.ResponseWriter, req *http.Request) {
 		searchArgs.Opts = &zoekt.SearchOptions{}
 	}
 
-	query, err := query.Parse(searchArgs.Q)
+	q, err := query.Parse(searchArgs.Q)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+
+	// TODO: We need to distinguish empty array from unset. An empty array
+	// should return no results for security reasons, whereas unset is the
+	// default behaviour without filtering.
+	if len(searchArgs.RepoIds) != 0 {
+		q = query.NewAnd(q, query.NewRepoIds(searchArgs.RepoIds...))
 	}
 
 	// Set a timeout if the user hasn't specified one.
@@ -80,12 +88,12 @@ func (s *jsonSearcher) jsonSearch(w http.ResponseWriter, req *http.Request) {
 		defer cancel()
 	}
 
-	if err := CalculateDefaultSearchLimits(ctx, query, s.Searcher, searchArgs.Opts); err != nil {
+	if err := CalculateDefaultSearchLimits(ctx, q, s.Searcher, searchArgs.Opts); err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	searchResult, err := s.Searcher.Search(ctx, query, searchArgs.Opts)
+	searchResult, err := s.Searcher.Search(ctx, q, searchArgs.Opts)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return

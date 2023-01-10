@@ -231,6 +231,23 @@ func (q *BranchesRepos) String() string {
 	return sb.String()
 }
 
+// NewSingleRepoIds is a helper for creating a RepoIds which
+// searches only the matched repos.
+func NewRepoIds(ids ...uint32) *RepoIds {
+	return &RepoIds{Repos: roaring.BitmapOf(ids...)}
+}
+
+func (q *RepoIds) String() string {
+	var sb strings.Builder
+
+	sb.WriteString("(repoids ")
+
+	sb.WriteString(q.Repos.String())
+
+	sb.WriteString(")")
+	return sb.String()
+}
+
 // MarshalBinary implements a specialized encoder for BranchesRepos.
 func (q BranchesRepos) MarshalBinary() ([]byte, error) {
 	return branchesReposEncode(q.List)
@@ -247,6 +264,12 @@ func (q *BranchesRepos) UnmarshalBinary(b []byte) (err error) {
 type BranchRepos struct {
 	Branch string
 	Repos  *roaring.Bitmap
+}
+
+// Similar to BranchRepos but will be used to match only by repoid and
+// therefore matches all branches
+type RepoIds struct {
+	Repos *roaring.Bitmap
 }
 
 // RepoSet is a list of repos to match. It is a Sourcegraph addition and only
