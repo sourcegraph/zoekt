@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 )
 
 // ShardMergingEnabled returns true if SRC_ENABLE_SHARD_MERGING is set to true.
@@ -102,8 +101,3 @@ func JsonMarshalRepoMetaTemp(shardPath string, repositoryMetadata interface{}) (
 
 // umask holds the Umask of the current process
 var umask os.FileMode
-
-func init() {
-	umask = os.FileMode(syscall.Umask(0))
-	syscall.Umask(int(umask))
-}
