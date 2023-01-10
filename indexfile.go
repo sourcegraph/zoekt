@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux || darwin
-
 package zoekt
 
 import (
@@ -21,13 +19,16 @@ import (
 	"log"
 	"os"
 
-	"golang.org/x/sys/unix"
+	// cross-platform memory-mapped file package.
+	// Benchmarks the same speed as syscall/unix Mmap
+	// see https://github.com/peterguy/benchmark-mmap
+	mmap "github.com/edsrzf/mmap-go"
 )
 
 type mmapedIndexFile struct {
 	name string
 	size uint32
-	data []byte
+	data mmap.MMap
 }
 
 func (f *mmapedIndexFile) Read(off, sz uint32) ([]byte, error) {
@@ -46,12 +47,12 @@ func (f *mmapedIndexFile) Size() (uint32, error) {
 }
 
 func (f *mmapedIndexFile) Close() {
-	if err := unix.Munmap(f.data); err != nil {
-		log.Printf("WARN failed to Munmap %s: %v", f.name, err)
+	if err := f.data.Unmap(); err != nil {
+		log.Printf("WARN failed to memory unmap %s: %v", f.name, err)
 	}
 }
 
-// NewIndexFile returns a new index file. The index file takes
+// NewIndexFileMmapGo returns a new index file. The index file takes
 // ownership of the passed in file, and may close it.
 func NewIndexFile(f *os.File) (IndexFile, error) {
 	defer f.Close()
@@ -70,11 +71,15 @@ func NewIndexFile(f *os.File) (IndexFile, error) {
 		size: uint32(sz),
 	}
 
-	rounded := (r.size + 4095) &^ 4095
-	r.data, err = unix.Mmap(int(f.Fd()), 0, int(rounded), unix.PROT_READ, unix.MAP_SHARED)
+	// round up to the OS page size because mmap likes to align on pages
+	// mmap will zero-fill the extra bytes
+	pagesize := uint32(os.Getpagesize() - 1)
+	rounded := (r.size + pagesize) &^ pagesize
+
+	r.data, err = mmap.MapRegion(f, int(rounded), mmap.RDONLY, 0, 0)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("NewIndexFile: unable to memory map %s: %w", f.Name(), err)
 	}
 
-	return r, err
+	return r, nil
 }

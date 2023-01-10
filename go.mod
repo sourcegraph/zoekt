@@ -5,6 +5,7 @@ require (
 	github.com/RoaringBitmap/roaring v1.2.3
 	github.com/andygrunwald/go-gerrit v0.0.0-20230211083816-04e01d7217b2
 	github.com/bmatcuk/doublestar v1.3.4
+	github.com/edsrzf/mmap-go v1.1.0
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/gfleury/go-bitbucket-v1 v0.0.0-20220418082332-711d7d5e805f
 	github.com/go-enry/go-enry/v2 v2.8.3
