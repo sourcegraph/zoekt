@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 )
@@ -112,8 +110,3 @@ func jsonMarshalTmpFile(v interface{}, p string) (_ string, err error) {
 
 // respect process umask. build does this.
 var umask os.FileMode
-
-func init() {
-	umask = os.FileMode(unix.Umask(0))
-	unix.Umask(int(umask))
-}
