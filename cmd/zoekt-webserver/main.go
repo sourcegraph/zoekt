@@ -332,9 +332,10 @@ func addProxyHandler(mux *http.ServeMux, socket string) {
 }
 
 // shutdownSignalChan returns a channel which is listening for shutdown
-// signals from the operating system.
-func shutdownSignalChan() <-chan os.Signal {
-	c := make(chan os.Signal, 3)
+// signals from the operating system. maxReads is an upper bound on how many
+// times you will read the channel (used as buffer for signal.Notify).
+func shutdownSignalChan(maxReads int) <-chan os.Signal {
+	c := make(chan os.Signal, maxReads)
 	signal.Notify(c, os.Interrupt)    // terminal C-c and goreman
 	signal.Notify(c, syscall.SIGTERM) // Kubernetes
 	return c
@@ -343,7 +344,7 @@ func shutdownSignalChan() <-chan os.Signal {
 // closeOnSignal will listen for SIGINT or SIGTERM and call srv.Close. This is
 // not a graceful shutdown, see shutdownOnSignal.
 func closeOnSignal(srv *http.Server) error {
-	c := shutdownSignalChan()
+	c := shutdownSignalChan(1)
 	<-c
 
 	return srv.Close()
@@ -354,7 +355,7 @@ func closeOnSignal(srv *http.Server) error {
 // framework doesn't allow us to drain connections, so when Shutdown we will
 // wait 10s before closing.
 func shutdownOnSignal(srv *http.Server) error {
-	c := shutdownSignalChan()
+	c := shutdownSignalChan(2)
 	<-c
 
 	// If we receive another signal, immediate shutdown
