@@ -33,6 +33,7 @@ import (
 func main() {
 	dest := flag.String("dest", "", "destination directory")
 	nameFlag := flag.String("name", "", "name of repository")
+	repoIdFlag := flag.String("repoid", "", "id of repository")
 	flag.Parse()
 
 	if *dest == "" {
@@ -52,13 +53,16 @@ func main() {
 		name = strings.TrimSuffix(name, ".git")
 	}
 
+	repoId := *repoIdFlag
+
 	destDir := filepath.Dir(filepath.Join(*dest, name))
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
 
 	config := map[string]string{
-		"zoekt.name": name,
+		"zoekt.name":   name,
+		"zoekt.repoid": repoId,
 	}
 
 	destRepo, err := gitindex.CloneRepo(destDir, filepath.Base(name), u.String(), config)

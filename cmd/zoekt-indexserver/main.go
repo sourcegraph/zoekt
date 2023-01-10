@@ -168,8 +168,8 @@ func indexPendingRepos(indexDir, repoDir string, opts *Options, repos <-chan str
 }
 
 type indexRequest struct {
-	RepositoryUrl  string // TODO: Decide if tokens can be in the URL or if we should pass separately
-	RepositoryName string
+	RepositoryUrl string // TODO: Decide if tokens can be in the URL or if we should pass separately
+	RepositoryId  string
 }
 
 func startIndexingApi(repoDir string, indexDir string, indexTimeout time.Duration) {
@@ -191,7 +191,8 @@ func startIndexingApi(repoDir string, indexDir string, indexTimeout time.Duratio
 
 		args := []string{}
 		args = append(args, "-dest", repoDir)
-		args = append(args, "-name", req.RepositoryName)
+		args = append(args, "-name", req.RepositoryId)
+		args = append(args, "-repoid", req.RepositoryId)
 		args = append(args, req.RepositoryUrl)
 		cmd := exec.CommandContext(ctx, "zoekt-git-clone", args...)
 		cmd.Stdin = &bytes.Buffer{}
@@ -199,9 +200,9 @@ func startIndexingApi(repoDir string, indexDir string, indexTimeout time.Duratio
 
 		args = []string{}
 
-		gitRepoPath, err := filepath.Abs(filepath.Join(repoDir, req.RepositoryName+".git"))
+		gitRepoPath, err := filepath.Abs(filepath.Join(repoDir, req.RepositoryId+".git"))
 		if err != nil {
-			log.Printf("Error loading git repo path: %v", err)
+			log.Printf("error loading git repo path: %v", err)
 			http.Error(w, "JSON parser error", http.StatusBadRequest)
 			return
 		}
