@@ -5,6 +5,7 @@ require (
 	github.com/RoaringBitmap/roaring v1.2.1
 	github.com/andygrunwald/go-gerrit v0.0.0-20221019181918-f7262270e361
 	github.com/bmatcuk/doublestar v1.3.4
+	github.com/edsrzf/mmap-go v1.1.0
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/gfleury/go-bitbucket-v1 v0.0.0-20220418082332-711d7d5e805f
 	github.com/go-enry/go-enry/v2 v2.8.3
@@ -45,6 +46,7 @@ require (
 	golang.org/x/net v0.2.0
 	golang.org/x/oauth2 v0.2.0
 	golang.org/x/sync v0.1.0
+	golang.org/x/sys v0.3.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
@@ -106,7 +108,6 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.3.0 // indirect
 	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/text v0.5.0 // indirect
 	golang.org/x/time v0.2.0 // indirect
 	golang.org/x/tools v0.3.0 // indirect
