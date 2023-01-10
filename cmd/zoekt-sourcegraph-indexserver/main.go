@@ -691,19 +691,19 @@ var rootTmpl = template.Must(template.New("name").Parse(`
         <br />
         <h3>Reindex</h3>
         {{if .Repos}}
-            <a href="/?show_repos=false">hide repos</a><br />
+            <a href="?show_repos=false">hide repos</a><br />
             <table style="margin-top: 20px">
                 <th style="text-align:left">Name</th>
                 <th style="text-align:left">ID</th>
                 {{range .Repos}}
                     <tr>
                         <td>{{.Name}}</td>
-                        <td><a href="/?id={{.ID}}&show_repos=true">{{.ID}}</a></id>
+                        <td><a href="?id={{.ID}}&show_repos=true">{{.ID}}</a></id>
                     </tr>
                 {{end}}
             </table>
         {{else}}
-            <a href="/?show_repos=true">show repos</a><br />
+            <a href="?show_repos=true">show repos</a><br />
         {{end}}
     </body>
 </html>
