@@ -1057,3 +1057,85 @@ func testShardedSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.
 	sres, _ := ss.Search(context.Background(), q, &zoekt.SearchOptions{})
 	return sres.Files
 }
+
+// Ensure we work on empty shard directories.
+func TestNewDirectorySearcher_empty(t *testing.T) {
+	ctx := context.Background()
+
+	test := func(t *testing.T, ss zoekt.Streamer) {
+		res, err := ss.Search(ctx, &query.Const{Value: true}, nil)
+		if err != nil {
+			t.Fatal("Search non-nil error", err)
+		}
+
+		if diff := cmp.Diff(&zoekt.SearchResult{}, res, cmpopts.IgnoreFields(zoekt.Stats{}, "Duration", "Wait"), cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("Search had non empty results (-want, +got):\n%s", diff)
+		}
+
+		rl, err := ss.List(ctx, &query.Const{Value: true}, nil)
+		if err != nil {
+			t.Fatal("List non-nil error", err)
+		}
+		if diff := cmp.Diff(&zoekt.RepoList{}, rl, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("List had non empty results (-want, +got):\n%s", diff)
+		}
+	}
+
+	dir := t.TempDir()
+	t.Run("blocking", func(t *testing.T) {
+		ss, err := NewDirectorySearcher(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ss.Close)
+
+		// We expect crashes to be empty as soon as NewDirectorySearcher returns
+		// so we can validate straight away.
+		test(t, ss)
+	})
+
+	t.Run("fast", func(t *testing.T) {
+		ss, err := NewDirectorySearcherFast(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ss.Close)
+
+		deadline := testDeadline(t, 10*time.Second)
+
+		// Wait for scanning of directory to be done. We should be returning
+		// non-zero crashes until then.
+		waitForPredicate(deadline, 10*time.Millisecond, func() bool {
+			res, err := ss.Search(ctx, &query.Const{Value: true}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return res.Stats.Crashes == 0
+		})
+
+		test(t, ss)
+	})
+}
+
+// testDeadline returns the deadline for t, but ensures it is no longer than
+// maxTimeout away.
+func testDeadline(t *testing.T, maxTimeout time.Duration) time.Time {
+	deadline := time.Now().Add(maxTimeout)
+	if d, ok := t.Deadline(); ok && d.Before(deadline) {
+		// give 1s for us to do a final test run
+		deadline = d.Add(-time.Second)
+	}
+	return deadline
+}
+
+func waitForPredicate(deadline time.Time, tick time.Duration, pred func() bool) bool {
+	for time.Now().Before(deadline) {
+		if pred() {
+			return true
+		}
+
+		time.Sleep(tick)
+	}
+
+	return pred()
+}
