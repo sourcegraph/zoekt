@@ -10,7 +10,7 @@ jobs:
     container: alpine:edge # go1.18 needs > alpine 3.15
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: add dependencies
         run: apk add go git
       - name: install ctags
@@ -25,7 +25,7 @@ jobs:
     name: shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@1.1.0
 
@@ -33,7 +33,7 @@ jobs:
     name: shfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: reviewdog/action-shfmt@v1.0.2
         with:
           filter_mode: "nofilter"
@@ -50,7 +50,7 @@ jobs:
       - "shellcheck"
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: version
         id: version

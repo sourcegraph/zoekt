@@ -16,7 +16,6 @@ package zoekt
 
 import (
 	"encoding/binary"
-	"log"
 	"sort"
 	"unicode"
 	"unicode/utf8"
@@ -189,13 +188,6 @@ func marshalDocSections(secs []DocumentSection) []byte {
 }
 
 func unmarshalDocSections(data []byte, ds []DocumentSection) []DocumentSection {
-	// Defensive, this shouldn't happen. While we have the feature flag for lazy
-	// doc section decoding let's be extra defensive.
-	if len(data) == 0 {
-		log.Println("WARN unmarshalDocSections received an empty slice to unmarshal")
-		return nil
-	}
-
 	sz, m := binary.Uvarint(data)
 	data = data[m:]
 

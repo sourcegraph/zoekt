@@ -181,11 +181,6 @@ func (s *DirectoryWatcher) scan() error {
 	}
 
 	s.loader.drop(toDrop...)
-
-	if len(toLoad) == 0 {
-		return nil
-	}
-
 	s.loader.load(toLoad...)
 
 	return nil
