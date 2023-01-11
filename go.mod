@@ -25,7 +25,7 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/procfs v0.8.0
 	github.com/rs/xid v1.4.0
-	github.com/sourcegraph/go-ctags v0.0.0-20220611154803-db463692f037
+	github.com/sourcegraph/go-ctags v0.0.0-20230111110657-c27675da7f71
 	github.com/sourcegraph/log v0.0.0-20221206163500-7d93c6ad7037
 	github.com/sourcegraph/mountinfo v0.0.0-20221027185101-272dd8baaf4a
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
