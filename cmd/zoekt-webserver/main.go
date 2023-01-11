@@ -337,8 +337,8 @@ func addProxyHandler(mux *http.ServeMux, socket string) {
 // times you will read the channel (used as buffer for signal.Notify).
 func shutdownSignalChan(maxReads int) <-chan os.Signal {
 	c := make(chan os.Signal, maxReads)
-	signal.Notify(c, os.Interrupt)    // terminal C-c and goreman
-	signal.Notify(c, unix.SIGTERM) // Kubernetes
+	signal.Notify(c, os.Interrupt)     // terminal C-c and goreman
+	signal.Notify(c, PLATFORM_SIGTERM) // Kubernetes
 	return c
 }
 
