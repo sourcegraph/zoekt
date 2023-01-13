@@ -16,7 +16,7 @@ func f(n *node) {
 }
 
 func TestBTree(t *testing.T) {
-	bt := newBtree(2, 3)
+	bt := newBtree(2, 4)
 	bt.insert(record{ngram(9), 0})
 	bt.root.visit(f)
 	bt.insert(record{ngram(3), 0})
