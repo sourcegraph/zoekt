@@ -20,7 +20,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 type mmapedIndexFile struct {
@@ -45,7 +46,7 @@ func (f *mmapedIndexFile) Size() (uint32, error) {
 }
 
 func (f *mmapedIndexFile) Close() {
-	if err := syscall.Munmap(f.data); err != nil {
+	if err := unix.Munmap(f.data); err != nil {
 		log.Printf("WARN failed to Munmap %s: %v", f.name, err)
 	}
 }
@@ -70,7 +71,7 @@ func NewIndexFile(f *os.File) (IndexFile, error) {
 	}
 
 	rounded := (r.size + 4095) &^ 4095
-	r.data, err = syscall.Mmap(int(f.Fd()), 0, int(rounded), syscall.PROT_READ, syscall.MAP_SHARED)
+	r.data, err = unix.Mmap(int(f.Fd()), 0, int(rounded), unix.PROT_READ, unix.MAP_SHARED)
 	if err != nil {
 		return nil, err
 	}

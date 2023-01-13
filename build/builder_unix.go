@@ -19,10 +19,11 @@ package build
 
 import (
 	"os"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func init() {
-	umask = os.FileMode(syscall.Umask(0))
-	syscall.Umask(int(umask))
+	umask = os.FileMode(unix.Umask(0))
+	unix.Umask(int(umask))
 }

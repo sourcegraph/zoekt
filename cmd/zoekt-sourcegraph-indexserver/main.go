@@ -27,9 +27,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"text/tabwriter"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/peterbourgon/ff/v3/ffcli"
@@ -247,7 +248,7 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 			} else {
 				// Send quit (C-\) first so we get a stack dump.
 				log.Printf("no output for %s, quitting %s", noOutputTimeout, cmd.Args)
-				if err := cmd.Process.Signal(syscall.SIGQUIT); err != nil {
+				if err := cmd.Process.Signal(unix.SIGQUIT); err != nil {
 					log.Println("quit failed:", err)
 				}
 
@@ -312,7 +313,7 @@ func (s *Server) Run() {
 		// testing we also listen for SIGUSR1 to trigger updates.
 		//
 		// "pkill -SIGUSR1 zoekt-sourcegra"
-		for range jitterTicker(s.Interval, syscall.SIGUSR1) {
+		for range jitterTicker(s.Interval, unix.SIGUSR1) {
 			if b, err := os.ReadFile(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
 				log.Printf("indexserver manually paused via PAUSE file: %s", string(bytes.TrimSpace(b)))
 				continue
@@ -359,7 +360,7 @@ func (s *Server) Run() {
 	}()
 
 	go func() {
-		for range jitterTicker(s.VacuumInterval, syscall.SIGUSR1) {
+		for range jitterTicker(s.VacuumInterval, unix.SIGUSR1) {
 			if s.shardMerging {
 				s.vacuum()
 			}
@@ -367,7 +368,7 @@ func (s *Server) Run() {
 	}()
 
 	go func() {
-		for range jitterTicker(s.MergeInterval, syscall.SIGUSR1) {
+		for range jitterTicker(s.MergeInterval, unix.SIGUSR1) {
 			if s.shardMerging {
 				s.doMerge()
 			}
