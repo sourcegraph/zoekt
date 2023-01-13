@@ -1,110 +1,11 @@
 package zoekt
 
-import (
-	"fmt"
-)
+import "fmt"
 
-type node interface {
-	insert(r record, bucketSize int, v int)
-	String() string
-}
-
-type inner struct {
-	// offset uint32
-	parent   *inner
-	keys     []ngram
-	children []node
-}
-
-func (l *inner) String() string {
-	s := ""
-	s += fmt.Sprintln("INNER")
-	if l.parent == nil {
-		s += fmt.Sprintf("This is the ROOT node\n")
-	} else {
-		s += fmt.Sprintf("parent: %p\n", l.parent)
-	}
-	s += fmt.Sprintf("KEYS: ")
-	for _, k := range l.keys {
-		s += fmt.Sprintf("%d, ", k)
-	}
-	s += fmt.Sprintf("\n")
-
-	for _, c := range l.children {
-		s += c.String()
-	}
-
-	return s
-}
-
-func (in *inner) insert(r record, bucketSize int, v int) {
-	fmt.Printf("inner.insert: %+v, %d, %d\n", r, bucketSize, v)
-	if len(in.keys) == 0 {
-		fmt.Printf("empty root node\n")
-		in.keys = []ngram{r.key}
-		in.children = []node{&leaf{in, []record{r}}}
-		return
-	}
-
-	inserted := false
-	var i = 0
-	for i, k := range in.keys {
-		if r.key < k {
-			inserted = true
-			if in.maybeSplit(i, v, bucketSize) {
-				switch {
-				case r.key < in.keys[i]:
-				default:
-					i++
-				}
-			}
-			in.children[i].insert(r, bucketSize, v)
-		}
-	}
-
-	if !inserted {
-		if in.maybeSplit(len(in.children)-1, v, bucketSize) {
-			switch {
-			case r.key < in.keys[len(in.keys)-1]:
-			default:
-				i++
-			}
-		}
-		in.children[i].insert(r, bucketSize, v)
-	}
-}
-
-func (in *inner) maybeSplit(i int, v int, bucketSize int) bool {
-	fmt.Printf("inner.maybeSplit: %d %d, %d\n", i, v, bucketSize)
-	var leftNode, rightNode node
-	var newKey ngram
-	switch c := in.children[i].(type) {
-	case *inner:
-		fmt.Printf("splitting inner\n")
-		if len(c.children) == 2*v {
-			leftNode = &inner{in, c.keys[0:v], c.children[0 : v+1]}
-			rightNode = &inner{in, c.keys[v+1:], c.children[v+1:]}
-			newKey = c.keys[v+1]
-		}
-	case *leaf:
-		fmt.Printf("splitting leaf\n")
-		if len(c.bucket) == bucketSize {
-			leftNode = &leaf{in, c.bucket[0 : bucketSize/2]}
-			rightNode = &leaf{in, c.bucket[bucketSize/2:]}
-			newKey = c.bucket[bucketSize/2].key
-		}
-	default:
-		panic("this should never happen")
-	}
-
-	if leftNode == nil {
-		return false
-	}
-
-	fmt.Printf("New key: %d\n", newKey)
-	in.children = append(in.children[0:i], append([]node{leftNode, rightNode}, in.children[i+1:]...)...)
-	in.keys = append(in.keys[0:i], append([]ngram{newKey}, in.keys[i:]...)...)
-	return true
+type btree struct {
+	root       *node
+	v          int
+	bucketSize int
 }
 
 type record struct {
@@ -112,51 +13,118 @@ type record struct {
 	offset uint32
 }
 
-type leaf struct {
-	// offset uint32
-	parent *inner
+type node struct {
+	keys     []ngram
+	children []node
+
+	leaf   bool
 	bucket []record
 }
 
-func (l *leaf) node() {}
+func (n *node) insert(r record, bucketSize int, v int) {
+	if n.leaf {
+		fmt.Println("leaf")
+		// TODO could be a somple append
+		n.bucket = append(append([]record{}, n.bucket...), r)
+		i := len(n.bucket) - 1
+		for i > 0 && n.bucket[i].key < n.bucket[i-1].key {
+			n.bucket[i], n.bucket[i-1] = n.bucket[i-1], n.bucket[i]
+			i--
+		}
+		// if len(n.bucket) > bucketSize {
+		// 	n.leaf = false
+		// 	n.children = []node{
+		// 		{bucket: append([]record{}, n.bucket[:bucketSize/2]...), leaf: true},
+		// 		{bucket: append([]record{}, n.bucket[bucketSize/2:]...), leaf: true},
+		// 	}
+		//
+		// 	n.keys = []ngram{n.bucket[bucketSize/2].key}
+		// 	n.bucket = nil
+		// }
+	} else {
+		fmt.Println("inner")
+		inserted := false
+		var i = 0
+		for i, k := range n.keys {
+			if r.key < k {
+				if n.maybeSplit(i, v, bucketSize) {
+					switch {
+					case r.key < n.keys[i]:
+					default:
+						i++
+					}
+				}
+				n.children[i].insert(r, bucketSize, v)
+				inserted = true
+				break
+			}
+		}
 
-func (l *leaf) insert(r record, bucketSize int, v int) {
-	fmt.Printf("leaf.insert %+v, %d, %d\n", r, bucketSize, v)
-	if len(l.bucket) == bucketSize {
-		parent := &inner{}
-		parent.children = []node{&leaf{parent, l.bucket[0 : bucketSize/2]}, &leaf{parent, l.bucket[bucketSize/2:]}}
-		parent.keys = []ngram{l.bucket[bucketSize/2].key}
+		if !inserted {
+			fmt.Println("not inserted")
+			i = len(n.children) - 1
+			if n.maybeSplit(len(n.children)-1, v, bucketSize) {
+				switch {
+				case r.key < n.keys[len(n.keys)-1]:
+				default:
+					i++
+				}
+			}
+			n.children[i].insert(r, bucketSize, v)
+		}
 	}
-	l.bucket = append(l.bucket, r)
 }
 
-func (l *leaf) String() string {
-	s := ""
-	s += fmt.Sprintf("LEAF\n")
-	s += fmt.Sprintf("parent: %p\n", l.parent)
-	s += fmt.Sprintf("BUCKET: ")
-	for _, r := range l.bucket {
-		s += fmt.Sprintf("%d, ", r.key)
+func split(n *node, v, bucketSize int) (leftNode node, rightNode node, newKey ngram, ok bool) {
+	if n.leaf && len(n.bucket) == bucketSize {
+		ok = true
+		fmt.Println("split leaf")
+		leftNode = node{leaf: true, bucket: append([]record{}, n.bucket[:bucketSize/2]...)}
+		rightNode = node{leaf: true, bucket: append([]record{}, n.bucket[bucketSize/2:]...)}
+		newKey = rightNode.bucket[0].key
+	} else if len(n.keys) == 2*v {
+		ok = true
+		fmt.Println("split inner node")
+		leftNode = node{keys: append([]ngram{}, n.keys[0:v]...), children: append([]node{}, n.children[:v+1]...)}
+		rightNode = node{keys: append([]ngram{}, n.keys[v+1:]...), children: append([]node{}, n.children[v+1:]...)}
+		newKey = n.keys[v]
 	}
-	s += fmt.Sprintf("\n")
-	return s
+	return
 }
 
-type btree struct {
-	root       node
-	v          int
-	bucketSize int
+func (n *node) maybeSplit(i int, v int, bucketSize int) bool {
+	fmt.Println("maybe split")
+	leftNode, rightNode, newKey, ok := split(&n.children[i], v, bucketSize)
+
+	if !ok {
+		return false
+	}
+
+	n.children = append(append([]node{}, n.children[0:i]...), append([]node{leftNode, rightNode}, n.children[i+1:]...)...)
+	n.keys = append(append([]ngram{}, n.keys[0:i]...), append([]ngram{newKey}, n.keys[i:]...)...)
+	return true
 }
 
 func (bt *btree) insert(r record) {
-	fmt.Printf("btree.insert: %+v\n", r)
+	fmt.Printf("INSERT %d\n", r.key)
+	leftNode, rightNode, newKey, ok := split(bt.root, bt.v, bt.bucketSize)
+	if ok {
+		bt.root = &node{keys: []ngram{newKey}, children: []node{leftNode, rightNode}}
+	}
+
 	bt.root.insert(r, bt.bucketSize, bt.v)
 }
 
 func newBtree(v, bucketSize int) *btree {
-	return &btree{&leaf{}, v, bucketSize}
+	return &btree{&node{leaf: true}, v, bucketSize}
 }
 
-func (bt *btree) String() string {
-	return bt.root.String()
+func (n *node) visit(f func(n *node)) {
+	f(n)
+	if n.leaf {
+		return
+	}
+	for _, child := range n.children {
+		child.visit(f)
+	}
 }
