@@ -1,8 +1,10 @@
 package zoekt
 
 type btree struct {
-	root       *node
-	v          int
+	root *node
+	// all inner nodes, except root, have [v, 2v] keys.
+	v int
+	// the max number of values attached to a leaf node
 	bucketSize int
 }
 
@@ -11,7 +13,7 @@ func newBtree(v, bucketSize int) *btree {
 }
 
 func (bt *btree) insert(r record) {
-	if leftNode, rightNode, newKey, ok := split(bt.root, bt.v, bt.bucketSize); ok {
+	if leftNode, rightNode, newKey, ok := maybeSplit(bt.root, bt.v, bt.bucketSize); ok {
 		bt.root = &node{keys: []ngram{newKey}, children: []node{leftNode, rightNode}}
 	}
 
@@ -26,24 +28,34 @@ type node struct {
 	bucket []record
 }
 
+// record is a tuple of ngram and the offset of the associated posting list.
 type record struct {
 	key    ngram
 	offset uint32
 }
 
 func (n *node) insert(r record, bucketSize int, v int) {
-	maybeSplitAndInsert := func(i int) {
-		if n.maybeSplit(i, v, bucketSize) && r.key >= n.keys[i] {
-			i++
+	insertAt := func(i int) {
+		// Calling maybeSplit before insert maintains the invariant that the final leaf
+		// has always enough space.
+		if leftNode, rightNode, newKey, ok := maybeSplit(&n.children[i], v, bucketSize); ok {
+			n.children = append(append([]node{}, n.children[0:i]...), append([]node{leftNode, rightNode}, n.children[i+1:]...)...)
+			n.keys = append(append([]ngram{}, n.keys[0:i]...), append([]ngram{newKey}, n.keys[i:]...)...)
+
+			// A split might change the target index.
+			if r.key >= n.keys[i] {
+				i++
+			}
 		}
 		n.children[i].insert(r, bucketSize, v)
 	}
 
 	if n.leaf {
-		// We rely on the invariant that buckets always have a space free to insert.
+		// See invariant maintained by insertAt.
 		n.bucket = append(n.bucket, r)
 
-		// Insert in ascending order.
+		// Insert in ascending order. This is efficient in case we already deal with
+		// sorted inputs.
 		for i := len(n.bucket) - 1; i > 0; i-- {
 			if n.bucket[i-1].key < n.bucket[i].key {
 				break
@@ -53,44 +65,42 @@ func (n *node) insert(r record, bucketSize int, v int) {
 	} else {
 		for i, k := range n.keys {
 			if r.key < k {
-				maybeSplitAndInsert(i)
+				insertAt(i)
 				return
 			}
 		}
-		maybeSplitAndInsert(len(n.children) - 1)
+		insertAt(len(n.children) - 1)
 	}
 }
 
-func split(n *node, v, bucketSize int) (left node, right node, newKey ngram, ok bool) {
+func maybeSplit(n *node, v, bucketSize int) (left node, right node, newKey ngram, ok bool) {
 	if n.leaf {
-		if len(n.bucket) == bucketSize {
-			ok = true
-			left = node{leaf: true, bucket: append([]record{}, n.bucket[:bucketSize/2]...)}
-			right = node{leaf: true, bucket: append([]record{}, n.bucket[bucketSize/2:]...)}
-			newKey = right.bucket[0].key
-		}
+		return maybeSplitLeaf(n, bucketSize)
 	} else {
-		if len(n.keys) == 2*v {
-			ok = true
-			left = node{keys: append([]ngram{}, n.keys[0:v]...), children: append([]node{}, n.children[:v+1]...)}
-			right = node{keys: append([]ngram{}, n.keys[v+1:]...), children: append([]node{}, n.children[v+1:]...)}
-			newKey = n.keys[v]
-		}
+		return maybeSplitInner(n, v)
 	}
+}
 
+func maybeSplitLeaf(n *node, bucketSize int) (left node, right node, newKey ngram, ok bool) {
+	if len(n.bucket) < bucketSize {
+		return
+	}
+	ok = true
+	left = node{leaf: true, bucket: append([]record{}, n.bucket[:bucketSize/2]...)}
+	right = node{leaf: true, bucket: append([]record{}, n.bucket[bucketSize/2:]...)}
+	newKey = right.bucket[0].key
 	return
 }
 
-func (n *node) maybeSplit(i int, v int, bucketSize int) bool {
-	leftNode, rightNode, newKey, ok := split(&n.children[i], v, bucketSize)
-
-	if !ok {
-		return false
+func maybeSplitInner(n *node, v int) (left node, right node, newKey ngram, ok bool) {
+	if len(n.keys) < 2*v {
+		return
 	}
-
-	n.children = append(append([]node{}, n.children[0:i]...), append([]node{leftNode, rightNode}, n.children[i+1:]...)...)
-	n.keys = append(append([]ngram{}, n.keys[0:i]...), append([]ngram{newKey}, n.keys[i:]...)...)
-	return true
+	ok = true
+	left = node{keys: append([]ngram{}, n.keys[0:v]...), children: append([]node{}, n.children[:v+1]...)}
+	right = node{keys: append([]ngram{}, n.keys[v+1:]...), children: append([]node{}, n.children[v+1:]...)}
+	newKey = n.keys[v]
+	return
 }
 
 func (n *node) visit(f func(n *node)) {
