@@ -172,7 +172,7 @@ type indexRequest struct {
 	RepositoryId  string
 }
 
-func startIndexingApi(repoDir string, indexDir string, indexTimeout time.Duration) {
+func startIndexingApi(repoDir string, indexDir string, listen string, indexTimeout time.Duration) {
 	http.HandleFunc("/index", func(w http.ResponseWriter, r *http.Request) {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
@@ -238,7 +238,7 @@ func startIndexingApi(repoDir string, indexDir string, indexTimeout time.Duratio
 		}
 	})
 
-	if err := http.ListenAndServe(":6060", nil); err != nil {
+	if err := http.ListenAndServe(listen, nil); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -360,6 +360,7 @@ func main() {
 		filepath.Join(os.Getenv("HOME"), "zoekt-serving"), "directory holding all data.")
 	indexDir := flag.String("index_dir", "", "directory holding index shards. Defaults to $data_dir/index/")
 	dynamicIndexServer := flag.Bool("dynamic_server", false, "whether or not to start dynamic web server to allow client to specify repos to index dynamically")
+	listen := flag.String("listen", ":6060", "listen on this address.")
 	flag.Parse()
 	opts.validate()
 
@@ -389,7 +390,7 @@ func main() {
 	}
 
 	if *dynamicIndexServer {
-		startIndexingApi(repoDir, *indexDir, opts.indexTimeout)
+		startIndexingApi(repoDir, *indexDir, *listen, opts.indexTimeout)
 	} else {
 		_, err := readConfigURL(opts.mirrorConfigFile)
 		if err != nil {
