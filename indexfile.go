@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 
 	// cross-platform memory-mapped file package.
 	// Benchmarks the same speed as syscall/unix Mmap
@@ -52,7 +53,21 @@ func (f *mmapedIndexFile) Close() {
 	}
 }
 
-// NewIndexFileMmapGo returns a new index file. The index file takes
+func bufferSize(f *mmapedIndexFile) int {
+	// On Unix/Linux, mmap likes to allocate memory in
+	// page-sized chunks, so round up to the OS page size.
+	// mmap will zero-fill the extra bytes.
+	// On Windows, the Windows API CreateFileMapping method
+	// requires a buffer the same size as the file.
+	bsize := int(f.size)
+	if runtime.GOOS != "windows" {
+		pagesize := os.Getpagesize() - 1
+		bsize = (bsize + pagesize) &^ pagesize
+	}
+	return bsize
+}
+
+// NewIndexFile returns a new index file. The index file takes
 // ownership of the passed in file, and may close it.
 func NewIndexFile(f *os.File) (IndexFile, error) {
 	defer f.Close()
@@ -71,12 +86,7 @@ func NewIndexFile(f *os.File) (IndexFile, error) {
 		size: uint32(sz),
 	}
 
-	// round up to the OS page size because mmap likes to align on pages
-	// mmap will zero-fill the extra bytes
-	pagesize := uint32(os.Getpagesize() - 1)
-	rounded := (r.size + pagesize) &^ pagesize
-
-	r.data, err = mmap.MapRegion(f, int(rounded), mmap.RDONLY, 0, 0)
+	r.data, err = mmap.MapRegion(f, bufferSize(r), mmap.RDONLY, 0, 0)
 	if err != nil {
 		return nil, fmt.Errorf("NewIndexFile: unable to memory map %s: %w", f.Name(), err)
 	}
