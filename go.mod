@@ -26,6 +26,7 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/procfs v0.9.0
 	github.com/rs/xid v1.4.0
+	github.com/shirou/gopsutil/v3 v3.22.12
 	github.com/sourcegraph/go-ctags v0.0.0-20230111110657-c27675da7f71
 	github.com/sourcegraph/log v0.0.0-20230203201409-49ac5ad3f2ce
 	github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67
@@ -74,6 +75,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.4.1 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -103,6 +105,7 @@ require (
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/skeema/knownhosts v1.1.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.13.0 // indirect
 	go.opentelemetry.io/proto/otlp v0.19.0 // indirect

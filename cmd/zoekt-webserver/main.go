@@ -56,6 +56,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/procfs"
+	"github.com/shirou/gopsutil/v3/disk"
 	sglog "github.com/sourcegraph/log"
 	"github.com/uber/jaeger-client-go"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -437,15 +438,29 @@ func watchdog(dt time.Duration, maxErrCount int, addr string) {
 	}
 }
 
+func diskUsage(path string) (*disk.UsageStat, error) {
+	duPath := path
+	if runtime.GOOS == "windows" {
+		duPath = filepath.VolumeName(duPath)
+	}
+	usage, err := disk.Usage(duPath)
+	if err != nil {
+		err = fmt.Errorf("diskUsage: %w", err)
+	}
+	return usage, err
+}
+
 func mustRegisterDiskMonitor(path string) {
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "src_disk_space_available_bytes",
 		Help:        "Amount of free space disk space.",
 		ConstLabels: prometheus.Labels{"path": path},
 	}, func() float64 {
-		var stat unix.Statfs_t
-		_ = unix.Statfs(path, &stat)
-		return float64(stat.Bavail * uint64(stat.Bsize))
+		// I know there is no error handling here, and I don't like it
+		// but there was no error handling in the previous version
+		// that used Statfs, either, so I'm assuming there's no need for it
+		usage, _ := diskUsage(path)
+		return float64(usage.Free)
 	}))
 
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -453,9 +468,11 @@ func mustRegisterDiskMonitor(path string) {
 		Help:        "Amount of total disk space.",
 		ConstLabels: prometheus.Labels{"path": path},
 	}, func() float64 {
-		var stat unix.Statfs_t
-		_ = unix.Statfs(path, &stat)
-		return float64(stat.Blocks * uint64(stat.Bsize))
+		// I know there is no error handling here, and I don't like it
+		// but there was no error handling in the previous version
+		// that used Statfs, either, so I'm assuming there's no need for it
+		usage, _ := diskUsage(path)
+		return float64(usage.Total)
 	}))
 }
 
