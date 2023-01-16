@@ -28,7 +28,8 @@ type node struct {
 	bucket []record
 }
 
-// record is a tuple of ngram and the offset of the associated posting list.
+// record is a tuple of an ngram and the byte offset of the associated posting
+// list.
 type record struct {
 	key    ngram
 	offset uint32
@@ -36,13 +37,16 @@ type record struct {
 
 func (n *node) insert(r record, bucketSize int, v int) {
 	insertAt := func(i int) {
-		// Calling maybeSplit before insert maintains the invariant that the final leaf
-		// has always enough space.
+		// Invariant: Leaf nodes always have a free slot.
+		//
+		// We split full nodes on the the way down to the leaf. This has the
+		// advantage that inserts are handled in a single pass and that leaf
+		// nodes always have enough space to insert a new item.
 		if leftNode, rightNode, newKey, ok := maybeSplit(&n.children[i], v, bucketSize); ok {
 			n.children = append(append([]node{}, n.children[0:i]...), append([]node{leftNode, rightNode}, n.children[i+1:]...)...)
 			n.keys = append(append([]ngram{}, n.keys[0:i]...), append([]ngram{newKey}, n.keys[i:]...)...)
 
-			// A split might change the target index.
+			// A split might shift the target index by 1.
 			if r.key >= n.keys[i] {
 				i++
 			}
@@ -85,30 +89,18 @@ func maybeSplitLeaf(n *node, bucketSize int) (left node, right node, newKey ngra
 	if len(n.bucket) < bucketSize {
 		return
 	}
-	ok = true
-	left = node{leaf: true, bucket: append([]record{}, n.bucket[:bucketSize/2]...)}
-	right = node{leaf: true, bucket: append([]record{}, n.bucket[bucketSize/2:]...)}
-	newKey = right.bucket[0].key
-	return
+	return node{leaf: true, bucket: append([]record{}, n.bucket[:bucketSize/2]...)},
+		node{leaf: true, bucket: append([]record{}, n.bucket[bucketSize/2:]...)},
+		n.bucket[bucketSize/2].key,
+		true
 }
 
 func maybeSplitInner(n *node, v int) (left node, right node, newKey ngram, ok bool) {
 	if len(n.keys) < 2*v {
 		return
 	}
-	ok = true
-	left = node{keys: append([]ngram{}, n.keys[0:v]...), children: append([]node{}, n.children[:v+1]...)}
-	right = node{keys: append([]ngram{}, n.keys[v+1:]...), children: append([]node{}, n.children[v+1:]...)}
-	newKey = n.keys[v]
-	return
-}
-
-func (n *node) visit(f func(n *node)) {
-	f(n)
-	if n.leaf {
-		return
-	}
-	for _, child := range n.children {
-		child.visit(f)
-	}
+	return node{keys: append([]ngram{}, n.keys[0:v]...), children: append([]node{}, n.children[:v+1]...)},
+		node{keys: append([]ngram{}, n.keys[v+1:]...), children: append([]node{}, n.children[v+1:]...)},
+		n.keys[v],
+		true
 }

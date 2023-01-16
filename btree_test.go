@@ -35,23 +35,33 @@ func TestBTree(t *testing.T) {
 	bt.root.visit(f)
 	bt.insert(record{ngram(1), 0})
 	bt.root.visit(f)
-	bt.insert(record{ngram(11), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(13), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(0), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(14), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(15), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(10), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(22), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(23), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(24), 0})
-	bt.root.visit(f)
+	// bt.insert(record{ngram(11), 0})
+	// bt.root.visit(f)
+	// bt.insert(record{ngram(13), 0})
+	// bt.root.visit(f)
+	// bt.insert(record{ngram(0), 0})
+	// bt.root.visit(f)
+	// bt.insert(record{ngram(14), 0})
+	// bt.root.visit(f)
+	// bt.insert(record{ngram(15), 0})
+	// bt.root.visit(f)
+	// bt.insert(record{ngram(10), 0})
+	// bt.root.visit(f)
+	// bt.insert(record{ngram(22), 0})
+	// bt.root.visit(f)
+	// bt.insert(record{ngram(23), 0})
+	// bt.root.visit(f)
+	// bt.insert(record{ngram(24), 0})
+	// bt.root.visit(f)
 	fmt.Println("---------------------------")
+}
+
+func (n *node) visit(f func(n *node)) {
+	f(n)
+	if n.leaf {
+		return
+	}
+	for _, child := range n.children {
+		child.visit(f)
+	}
 }
