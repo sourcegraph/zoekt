@@ -1,67 +1,77 @@
 package zoekt
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 )
 
-func f(n *node) {
-	if n.leaf {
-		fmt.Println("bucket >>>>")
-		for _, r := range n.bucket {
-			fmt.Printf("%d, ", r.key)
-		}
-		fmt.Println("\n<<<< bucket")
+func insertMany(t *testing.T, bt *btree, ngrams []ngram) {
+	t.Helper()
+	for _, ng := range ngrams {
+		bt.insert(record{ng, 0})
 	}
+}
+
+func (bt *btree) Print() string {
+	s := ""
+	bt.root.visit(func(n *node) {
+
+		if n.leaf {
+			return
+		}
+		s += fmt.Sprintf("[")
+		for _, key := range n.keys {
+			s += fmt.Sprintf("%d,", key)
+		}
+		s = s[:len(s)-1] // remove coma
+		s += fmt.Sprintf("]")
+	})
+	return s
 }
 
 func TestBTree(t *testing.T) {
+	f := func(n *node) {
+		if n.leaf {
+			t.Log("bucket >>>>")
+			for _, r := range n.bucket {
+				t.Logf("%d, ", r.key)
+			}
+			t.Logf("\n<<<< bucket")
+		}
+	}
+
 	bt := newBtree(2, 4)
-	bt.insert(record{ngram(9), 0})
+	insertMany(t, bt, []ngram{9, 3, 4, 2, 6, 8, 7, 5, 1})
 	bt.root.visit(f)
-	bt.insert(record{ngram(3), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(4), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(2), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(6), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(8), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(7), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(5), 0})
-	bt.root.visit(f)
-	bt.insert(record{ngram(1), 0})
-	bt.root.visit(f)
-	// bt.insert(record{ngram(11), 0})
-	// bt.root.visit(f)
-	// bt.insert(record{ngram(13), 0})
-	// bt.root.visit(f)
-	// bt.insert(record{ngram(0), 0})
-	// bt.root.visit(f)
-	// bt.insert(record{ngram(14), 0})
-	// bt.root.visit(f)
-	// bt.insert(record{ngram(15), 0})
-	// bt.root.visit(f)
-	// bt.insert(record{ngram(10), 0})
-	// bt.root.visit(f)
-	// bt.insert(record{ngram(22), 0})
-	// bt.root.visit(f)
-	// bt.insert(record{ngram(23), 0})
-	// bt.root.visit(f)
-	// bt.insert(record{ngram(24), 0})
-	// bt.root.visit(f)
-	fmt.Println("---------------------------")
 }
 
-func (n *node) visit(f func(n *node)) {
-	f(n)
-	if n.leaf {
-		return
+func TestSerialization(t *testing.T) {
+	bt := newBtree(2, 2)
+	insertMany(t, bt, []ngram{6, 2, 4, 3, 9, 8, 7, 5, 1})
+
+	var buf bytes.Buffer
+
+	if err := bt.write(&buf); err != nil {
+		t.Fatal(err)
 	}
-	for _, child := range n.children {
-		child.visit(f)
+
+	bt2, err := readBtree(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//
+	//       8
+	//     /   \
+	//  3,4,6   9
+	//
+	want := "[8][3,4,6][9]"
+	if s := bt2.Print(); s != want {
+		t.Fatalf("want %s, got %s", want, s)
+	}
+
+	if bt.Print() != bt2.Print() {
+		t.Fatalf("(in) %s != (out) %s", bt.Print(), bt2.Print())
 	}
 }

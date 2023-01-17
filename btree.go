@@ -1,5 +1,11 @@
 package zoekt
 
+import (
+	"encoding/binary"
+	"fmt"
+	"io"
+)
+
 type btree struct {
 	root *node
 	// all inner nodes, except root, have [v, 2v] keys.
@@ -20,19 +26,113 @@ func (bt *btree) insert(r record) {
 	bt.root.insert(r, bt.bucketSize, bt.v)
 }
 
+func (bt *btree) write(w io.Writer) (err error) {
+	bt.root.visit(func(n *node) {
+		if err != nil {
+			return
+		}
+		err = n.write(w)
+	})
+	return
+}
+
+func readBtree(r io.ByteReader) (*btree, error) {
+
+	root, err := readNode(r)
+	if err != nil {
+		return nil, err
+	}
+	return &btree{root: root}, nil
+}
+
 type node struct {
 	keys     []ngram
 	children []node
 
-	leaf   bool
-	bucket []record
+	leaf bool
+	// bucketOffset is set when we read the shard from disk.
+	bucketOffset uint32
+	bucket       []record
+}
+
+func (n *node) write(w io.Writer) error {
+	var enc [binary.MaxVarintLen64]byte
+
+	// #keys
+	m := binary.PutUvarint(enc[:], uint64(len(n.keys)))
+	_, err := w.Write(enc[:m])
+	if err != nil {
+		return err
+	}
+
+	for _, key := range n.keys {
+		m := binary.PutUvarint(enc[:], uint64(key))
+		_, err := w.Write(enc[:m])
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(n.keys) == 0 {
+		m := binary.PutUvarint(enc[:], uint64(n.bucketOffset))
+		_, err := w.Write(enc[:m])
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func readNode(r io.ByteReader) (*node, error) {
+	var n node
+	nKeys, err := binary.ReadUvarint(r)
+	if err != nil {
+		return nil, err
+	}
+
+	// Leaf
+	if nKeys == 0 {
+		fmt.Println("reading leaf")
+		bucketOffset64, err := binary.ReadUvarint(r)
+		if err != nil {
+			return nil, err
+		}
+		n.bucketOffset = uint32(bucketOffset64)
+		n.leaf = true
+		return &n, nil
+
+	}
+	fmt.Println("reading inner node")
+
+	// Inner node: first read the keys then traverse the children depth-frist.
+	n.keys = make([]ngram, 0, nKeys)
+	for i := 0; uint64(i) < nKeys; i++ {
+		key, err := binary.ReadUvarint(r)
+		if err != nil {
+			return nil, err
+		}
+		n.keys = append(n.keys, ngram(key))
+	}
+
+	n.children = make([]node, 0, nKeys+1)
+	fmt.Printf("expecting %d children\n", nKeys+1)
+	for i := 0; uint64(i) < nKeys+1; i++ {
+		child, err := readNode(r)
+		if err != nil {
+			return nil, err
+		}
+
+		n.children = append(n.children, *child)
+	}
+	return &n, nil
 }
 
 // record is a tuple of an ngram and the byte offset of the associated posting
 // list.
 type record struct {
-	key    ngram
-	offset uint32
+	key           ngram
+	postingOffset uint32
 }
 
 func (n *node) insert(r record, bucketSize int, v int) {
@@ -95,6 +195,7 @@ func maybeSplitLeaf(n *node, bucketSize int) (left node, right node, newKey ngra
 		true
 }
 
+// TODO: handle v=1
 func maybeSplitInner(n *node, v int) (left node, right node, newKey ngram, ok bool) {
 	if len(n.keys) < 2*v {
 		return
@@ -103,4 +204,14 @@ func maybeSplitInner(n *node, v int) (left node, right node, newKey ngram, ok bo
 		node{keys: append([]ngram{}, n.keys[v+1:]...), children: append([]node{}, n.children[v+1:]...)},
 		n.keys[v],
 		true
+}
+
+func (n *node) visit(f func(n *node)) {
+	f(n)
+	if n.leaf {
+		return
+	}
+	for _, child := range n.children {
+		child.visit(f)
+	}
 }
