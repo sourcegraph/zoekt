@@ -2,20 +2,35 @@ package zoekt
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 )
 
+// NOTE: getconf PAGESSIZE returns the number of bytes in a memory page, where "page"
+// is a fixed-length block, the unit for memory allocation and file mapping
+// performed by mmap(2).
+
+// TODO: When writing the buckets to disk, we have to make sure we perfix the
+// compound section with enough bytes to match the page boundaries of 4096
+// bytes.
+
+// TODO: Refactor with interface and two nodes types.
+
+// TODO: Use bucketOpts instead of v and blockSize
+
+// b-tree properties
+// - all leaves are at the same level
+// - all inner nodes, except root, have [v, 2v] keys
 type btree struct {
 	root *node
 	// all inner nodes, except root, have [v, 2v] keys.
 	v int
-	// the max number of values attached to a leaf node
+	// the max number of values attached to a leaf node. The bucketSize should
+	// be chosen based on the page size.
 	bucketSize int
 }
 
 func newBtree(v, bucketSize int) *btree {
-	return &btree{&node{leaf: true}, v, bucketSize}
+	return &btree{&node{leaf: true, bucket: make([]record, 0, bucketSize)}, v, bucketSize}
 }
 
 func (bt *btree) insert(r record) {
@@ -27,6 +42,20 @@ func (bt *btree) insert(r record) {
 }
 
 func (bt *btree) write(w io.Writer) (err error) {
+	var enc [binary.MaxVarintLen64]byte
+
+	m := binary.PutVarint(enc[:], int64(bt.v))
+	_, err = w.Write(enc[:m])
+	if err != nil {
+		return err
+	}
+
+	m = binary.PutVarint(enc[:], int64(bt.bucketSize))
+	_, err = w.Write(enc[:m])
+	if err != nil {
+		return err
+	}
+
 	bt.root.visit(func(n *node) {
 		if err != nil {
 			return
@@ -37,12 +66,26 @@ func (bt *btree) write(w io.Writer) (err error) {
 }
 
 func readBtree(r io.ByteReader) (*btree, error) {
+	var bt btree
 
-	root, err := readNode(r)
+	v64, err := binary.ReadVarint(r)
 	if err != nil {
 		return nil, err
 	}
-	return &btree{root: root}, nil
+	bt.v = int(v64)
+
+	bucketSize64, err := binary.ReadVarint(r)
+	if err != nil {
+		return nil, err
+	}
+	bt.bucketSize = int(bucketSize64)
+
+	bt.root, err = readNode(r)
+	if err != nil {
+		return nil, err
+	}
+
+	return &bt, nil
 }
 
 type node struct {
@@ -93,7 +136,6 @@ func readNode(r io.ByteReader) (*node, error) {
 
 	// Leaf
 	if nKeys == 0 {
-		fmt.Println("reading leaf")
 		bucketOffset64, err := binary.ReadUvarint(r)
 		if err != nil {
 			return nil, err
@@ -103,7 +145,6 @@ func readNode(r io.ByteReader) (*node, error) {
 		return &n, nil
 
 	}
-	fmt.Println("reading inner node")
 
 	// Inner node: first read the keys then traverse the children depth-frist.
 	n.keys = make([]ngram, 0, nKeys)
@@ -116,7 +157,6 @@ func readNode(r io.ByteReader) (*node, error) {
 	}
 
 	n.children = make([]node, 0, nKeys+1)
-	fmt.Printf("expecting %d children\n", nKeys+1)
 	for i := 0; uint64(i) < nKeys+1; i++ {
 		child, err := readNode(r)
 		if err != nil {
@@ -189,8 +229,8 @@ func maybeSplitLeaf(n *node, bucketSize int) (left node, right node, newKey ngra
 	if len(n.bucket) < bucketSize {
 		return
 	}
-	return node{leaf: true, bucket: append([]record{}, n.bucket[:bucketSize/2]...)},
-		node{leaf: true, bucket: append([]record{}, n.bucket[bucketSize/2:]...)},
+	return node{leaf: true, bucket: append(make([]record, 0, bucketSize), n.bucket[:bucketSize/2]...)},
+		node{leaf: true, bucket: append(make([]record, 0, bucketSize), n.bucket[bucketSize/2:]...)},
 		n.bucket[bucketSize/2].key,
 		true
 }
