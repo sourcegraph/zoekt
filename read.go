@@ -15,6 +15,7 @@
 package zoekt
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -231,6 +232,22 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		branchIDs:      []map[string]uint{},
 		branchNames:    []map[uint]string{},
 	}
+
+	btreeBlob, err := d.readSectionBlob(toc.btree)
+	if err != nil {
+		return nil, err
+	}
+	bt, err := readBtree(bytes.NewBuffer(btreeBlob))
+	if err != nil {
+		return nil, err
+	}
+
+	fd, err := os.Create("/Users/Stefan/scratch/btree/btree.txt")
+	if err != nil {
+		panic(err)
+	}
+	fd.WriteString(bt.String())
+	fd.Close()
 
 	repos, md, err := r.readMetadata(toc)
 	if md != nil && !canReadVersion(md) {

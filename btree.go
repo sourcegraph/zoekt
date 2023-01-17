@@ -1,7 +1,9 @@
 package zoekt
 
 import (
+	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 )
 
@@ -88,6 +90,62 @@ func readBtree(r io.ByteReader) (*btree, error) {
 	return &bt, nil
 }
 
+func (bt *btree) visit(f func(n *node)) {
+	bt.root.visit(f)
+}
+
+type records []record
+
+func (r records) encode() ([]byte, error) {
+	var w bytes.Buffer
+	var enc [binary.MaxVarintLen64]byte
+	for _, rr := range r {
+		m := binary.PutUvarint(enc[:], uint64(rr.key))
+		_, err := w.Write(enc[:m])
+		if err != nil {
+			return nil, err
+		}
+		// TODO: can we do better?
+		m = binary.PutUvarint(enc[:], uint64(rr.postingOffset))
+		_, err = w.Write(enc[:m])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return w.Bytes(), nil
+}
+
+func recordsDecode(buf []byte) (records, error) {
+	var bucket records
+	bytesRead := 0
+
+	next := func() (uint64, error) {
+		val, i := binary.Uvarint(buf)
+		if i <= 0 {
+			return 0, fmt.Errorf("error decoding value: %d", i)
+		}
+		buf = buf[i:]
+		bytesRead += i
+		return val, nil
+	}
+
+	for len(buf) > 0 {
+		key, err := next()
+		if err != nil {
+			return nil, err
+		}
+
+		postingOffset, err := next()
+		if err != nil {
+			return nil, err
+		}
+
+		bucket = append(bucket, record{key: ngram(key), postingOffset: uint32(postingOffset)})
+	}
+
+	return bucket, nil
+}
+
 type node struct {
 	keys     []ngram
 	children []node
@@ -95,7 +153,7 @@ type node struct {
 	leaf bool
 	// bucketOffset is set when we read the shard from disk.
 	bucketOffset uint32
-	bucket       []record
+	bucket       records
 }
 
 func (n *node) write(w io.Writer) error {
@@ -254,4 +312,22 @@ func (n *node) visit(f func(n *node)) {
 	for _, child := range n.children {
 		child.visit(f)
 	}
+}
+
+func (bt *btree) String() string {
+	s := ""
+	s += fmt.Sprintf("{v=%d,bucketSize=%d}", bt.v, bt.bucketSize)
+	bt.root.visit(func(n *node) {
+
+		if n.leaf {
+			return
+		}
+		s += fmt.Sprintf("[")
+		for _, key := range n.keys {
+			s += fmt.Sprintf("%d,", key)
+		}
+		s = s[:len(s)-1] // remove coma
+		s += fmt.Sprintf("]")
+	})
+	return s
 }

@@ -2,7 +2,8 @@ package zoekt
 
 import (
 	"bytes"
-	"fmt"
+	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -16,10 +17,27 @@ func TestBTree(t *testing.T) {
 	//  3,4,6   9   (lvl 1)
 	//
 	want := "{v=2,bucketSize=2}[8][3,4,6][9]"
-	if s := bt.Print(); s != want {
+	if s := bt.String(); s != want {
 		t.Fatalf("want %s, got %s", want, s)
 	}
+}
 
+func TestBTree_hw(t *testing.T) {
+	bt := newBtree(2, 2)
+	text := []byte("hello world\n")
+	var ngrams ngramSlice
+
+	for i := 0; i < len(text)-2; i++ {
+		ngrams = append(ngrams, bytesToNGram(text[i:i+3]))
+	}
+
+	sort.Sort(ngrams)
+	insertMany(t, bt, ngrams)
+
+	want := "{v=2,bucketSize=2}[474989232914442,488183229841527][444202924114028,457397048967276][474989249691759,474989255983136][488183401807980,501377528758372]"
+	if s := bt.String(); s != want {
+		t.Fatalf("want %s, got %s", want, s)
+	}
 }
 
 func TestSerialization(t *testing.T) {
@@ -37,8 +55,28 @@ func TestSerialization(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if bt.Print() != bt2.Print() {
-		t.Fatalf("(in) %s != (out) %s", bt.Print(), bt2.Print())
+	if bt.String() != bt2.String() {
+		t.Fatalf("(in) %s != (out) %s", bt.String(), bt2.String())
+	}
+}
+
+func TestRecordsEncodeDecode(t *testing.T) {
+	var r records
+	r = append(r, record{key: 1, postingOffset: 2})
+	r = append(r, record{key: 3, postingOffset: 4})
+
+	b, err := r.encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r2, err := recordsDecode(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(r, r2) {
+		t.Fatalf("%+v!=%+v\n", r, r2)
 	}
 }
 
@@ -47,22 +85,4 @@ func insertMany(t *testing.T, bt *btree, ngrams []ngram) {
 	for _, ng := range ngrams {
 		bt.insert(record{ng, 0})
 	}
-}
-
-func (bt *btree) Print() string {
-	s := ""
-	s += fmt.Sprintf("{v=%d,bucketSize=%d}", bt.v, bt.bucketSize)
-	bt.root.visit(func(n *node) {
-
-		if n.leaf {
-			return
-		}
-		s += fmt.Sprintf("[")
-		for _, key := range n.keys {
-			s += fmt.Sprintf("%d,", key)
-		}
-		s = s[:len(s)-1] // remove coma
-		s += fmt.Sprintf("]")
-	})
-	return s
 }

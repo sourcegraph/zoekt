@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"time"
 )
@@ -205,6 +206,8 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}
 	toc.ranks.end(w)
 
+	writeBtree(w, b.contentPostings, &toc.btreeBuckets, &toc.btree, toc.postings.offsets)
+
 	var tocSection simpleSection
 
 	tocSection.start(w)
@@ -212,6 +215,44 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	tocSection.end(w)
 	tocSection.write(w)
 	return w.err
+}
+
+func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, btree *simpleSection, postingsOffsets []uint32) {
+	keys := make(ngramSlice, 0, len(s.postings))
+	for k := range s.postings {
+		keys = append(keys, k)
+	}
+	sort.Sort(keys)
+
+	bt := newBtree(2, 2)
+	fd, _ := os.Create("/Users/Stefan/scratch/btree/ngrams.log")
+	fd.WriteString("BEGIN\n")
+	defer fd.Close()
+	for i, key := range keys {
+		fd.WriteString(fmt.Sprintf("%q", key.String()))
+		fd.WriteString("#\n")
+		bt.insert(record{key: key, postingOffset: postingsOffsets[i]})
+	}
+	fd.WriteString("END\n")
+	fd.WriteString(bt.String())
+
+	// We write the buckets to a compound section and update the tree with the
+	// bucketOffsets as we go.
+	btreeBuckets.start(w)
+	bt.visit(func(n *node) {
+		if !n.leaf {
+			return
+		}
+		// TODO: ignore err?
+		b, _ := n.bucket.encode()
+		btreeBuckets.addItem(w, b)
+		n.bucketOffset = btreeBuckets.offsets[len(btreeBuckets.offsets)-1]
+	})
+	btreeBuckets.end(w)
+
+	btree.start(w)
+	bt.write(w)
+	btree.end(w)
 }
 
 func (b *IndexBuilder) writeJSON(data interface{}, sec *simpleSection, w *writer) error {
