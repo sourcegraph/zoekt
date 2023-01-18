@@ -2,6 +2,7 @@ package zoekt
 
 import (
 	"bytes"
+	"fmt"
 	"sort"
 	"testing"
 )
@@ -59,25 +60,57 @@ func TestSerialization(t *testing.T) {
 	}
 }
 
-// func TestRecordsEncodeDecode(t *testing.T) {
-// var r records
-// r = append(r, recordngram{key: 1, postingOffset: 2})
-// r = append(r, recordngram{key: 3, postingOffset: 4})
-//
-// b, err := r.encode()
-// if err != nil {
-// t.Fatal(err)
-// }
-//
-// r2, err := recordsDecode(b)
-// if err != nil {
-// t.Fatal(err)
-// }
-//
-// if !reflect.DeepEqual(r, r2) {
-// t.Fatalf("%+v!=%+v\n", r, r2)
-// }
-// }
+func TestFindBucket(t *testing.T) {
+	bt := newBtree(2, 2)
+	insertMany(t, bt, []ngram{6, 2, 4, 3, 9, 8, 7, 5, 1})
+
+	var buf bytes.Buffer
+
+	buckets := 0
+	offset := 0
+	bt.visit(func(n *node) {
+		if n.leaf {
+			n.bucketIndex = uint64(buckets)
+			buckets++
+			n.postingIndexOffset = uint64(offset)
+			offset += len(n.bucket)
+		}
+	})
+
+	if err := bt.write(&buf); err != nil {
+		t.Fatal(err)
+	}
+
+	bt2, err := readBtree(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		ng                     ngram
+		wantBucketIndex        int
+		wantPostingIndexOffset int
+	}{
+		{
+			ng:                     7,
+			wantBucketIndex:        3,
+			wantPostingIndexOffset: 5,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(fmt.Sprintf("ngram: %d", tt.ng), func(t *testing.T) {
+			haveBucketIndex, havePostingIndexOffset := bt2.findBucket(tt.ng)
+			if tt.wantBucketIndex != haveBucketIndex {
+				t.Fatalf("bucketIndex: want %d, got %d", tt.wantBucketIndex, haveBucketIndex)
+			}
+
+			if tt.wantPostingIndexOffset != havePostingIndexOffset {
+				t.Fatalf("postingIndexOffset: want %d, got %d", tt.wantPostingIndexOffset, havePostingIndexOffset)
+			}
+		})
+	}
+}
 
 func insertMany(t *testing.T, bt *btree, ngrams []ngram) {
 	t.Helper()

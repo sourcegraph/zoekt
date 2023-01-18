@@ -206,7 +206,7 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}
 	toc.ranks.end(w)
 
-	writeBtree(w, b.contentPostings, &toc.btreeBuckets, &toc.btree, toc.postings.offsets)
+	writeBtree(w, b.contentPostings, &toc.btreeBuckets, &toc.btree)
 
 	var tocSection simpleSection
 
@@ -217,7 +217,7 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	return w.err
 }
 
-func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, btree *simpleSection, postingsOffsets []uint32) {
+func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, btree *simpleSection) {
 	keys := make(ngramSlice, 0, len(s.postings))
 	for k := range s.postings {
 		keys = append(keys, k)
@@ -225,9 +225,10 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 	sort.Sort(keys)
 
 	bt := newBtree(2, 2)
+
+	// TODO: remove Logging
 	fd, _ := os.Create("/Users/Stefan/scratch/btree/ngrams.log")
 	fd.WriteString("BEGIN\n")
-	defer fd.Close()
 	for _, key := range keys {
 		fd.WriteString(fmt.Sprintf("%q", key.String()))
 		fd.WriteString("#\n")
@@ -253,9 +254,9 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 		}
 
 		btreeBuckets.addItem(w, sec.Bytes())
-		n.bucketOffset = btreeBuckets.offsets[len(btreeBuckets.offsets)-1]
+		n.bucketIndex = uint64(len(btreeBuckets.offsets) - 1)
 
-		n.postingIndexStart = uint64(offset)
+		n.postingIndexOffset = uint64(offset)
 		offset += len(keys)
 	})
 	btreeBuckets.end(w)
