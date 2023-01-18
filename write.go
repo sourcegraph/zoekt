@@ -228,10 +228,10 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 	fd, _ := os.Create("/Users/Stefan/scratch/btree/ngrams.log")
 	fd.WriteString("BEGIN\n")
 	defer fd.Close()
-	for i, key := range keys {
+	for _, key := range keys {
 		fd.WriteString(fmt.Sprintf("%q", key.String()))
 		fd.WriteString("#\n")
-		bt.insert(record{key: key, postingOffset: postingsOffsets[i]})
+		bt.insert(key)
 	}
 	fd.WriteString("END\n")
 	fd.WriteString(bt.String())
@@ -239,14 +239,24 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 	// We write the buckets to a compound section and update the tree with the
 	// bucketOffsets as we go.
 	btreeBuckets.start(w)
+	offset := 0
 	bt.visit(func(n *node) {
 		if !n.leaf {
 			return
 		}
-		// TODO: ignore err?
-		b, _ := n.bucket.encode()
-		btreeBuckets.addItem(w, b)
+
+		var sec bytes.Buffer
+		for _, k := range keys {
+			var buf [8]byte
+			binary.BigEndian.PutUint64(buf[:], uint64(k))
+			sec.Write(buf[:])
+		}
+
+		btreeBuckets.addItem(w, sec.Bytes())
 		n.bucketOffset = btreeBuckets.offsets[len(btreeBuckets.offsets)-1]
+
+		n.postingIndexStart = uint64(offset)
+		offset += len(keys)
 	})
 	btreeBuckets.end(w)
 

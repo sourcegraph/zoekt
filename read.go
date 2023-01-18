@@ -15,7 +15,6 @@
 package zoekt
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -237,7 +236,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	if err != nil {
 		return nil, err
 	}
-	bt, err := readBtree(bytes.NewBuffer(btreeBlob))
+	bt, err := readBtree(btreeBlob)
 	if err != nil {
 		return nil, err
 	}
