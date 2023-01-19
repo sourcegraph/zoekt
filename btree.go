@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"os"
+	"sort"
 )
 
 // NOTE: getconf PAGESSIZE returns the number of bytes in a memory page, where "page"
@@ -262,12 +264,11 @@ func (n *node) findBucket(ng ngram) (int, int) {
 	}
 
 	for i, k := range n.keys {
-		if ng < k {
+		if ng < k { // TODO: Bug <?
 			return n.children[i].findBucket(ng)
 		}
-		return n.children[len(n.children)-1].findBucket(ng)
 	}
-	return -1, -1
+	return n.children[len(n.children)-1].findBucket(ng)
 }
 
 func maybeSplit(n *node, v, bucketSize int) (left *node, right *node, newKey ngram, ok bool) {
@@ -324,4 +325,131 @@ func (bt *btree) String() string {
 		s += fmt.Sprintf("]")
 	})
 	return s
+}
+
+type btreeIndex struct {
+	bt *btree
+
+	// We need access to the index to read the bucket into Memory.
+	file                 IndexFile
+	bucketOffsets        []uint32
+	bucketSentinelOffset uint32
+
+	postingOffsets            []uint32
+	postingDataSentinelOffset uint32
+
+	debug bool
+}
+
+func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
+
+	var fd *os.File
+	if b.debug {
+		var err error
+		fd, err = os.OpenFile("/Users/Stefan/scratch/btree/read.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err != nil {
+			panic(err)
+		}
+		fd.WriteString(fmt.Sprintf("=========================%s\n", ng.String()))
+		defer fd.Close()
+	}
+
+	// find bucket
+	bucketIndex, postingIndexOffset := b.bt.findBucket(ng)
+	if b.debug {
+		fd.WriteString(fmt.Sprintf("bucketIndex:%d, postingIndexOffset:%d\n", bucketIndex, postingIndexOffset))
+	}
+
+	// read bucket into memory
+	var sz, off uint32
+	off, sz = b.bucketOffsets[bucketIndex], 0
+	if bucketIndex+1 < len(b.bucketOffsets) {
+		sz = b.bucketOffsets[bucketIndex+1] - off
+	} else {
+		sz = b.bucketSentinelOffset - off
+	}
+
+	if b.debug {
+		fd.WriteString(fmt.Sprintf("len(bucketOffsets)=%d,off=%d,sz=%d\n", len(b.bucketOffsets), off, sz))
+	}
+
+	bucket, err := b.file.Read(off, sz)
+	if err != nil {
+		if b.debug {
+			fd.WriteString(fmt.Sprintf("error reading bucket %s\n", err))
+		}
+		return simpleSection{}
+	}
+
+	// find ngram in bucket
+	getNGram := func(i int) ngram {
+		i *= ngramEncoding
+		return ngram(binary.BigEndian.Uint64(bucket[i : i+ngramEncoding]))
+	}
+
+	bucketSize := len(bucket) / ngramEncoding
+	if b.debug {
+		fd.WriteString(fmt.Sprintf("bucketSize=%d\n", bucketSize))
+	}
+
+	x := sort.Search(bucketSize, func(i int) bool {
+		return ng <= getNGram(i)
+	})
+	if x >= bucketSize || getNGram(x) != ng {
+		if b.debug {
+			fd.WriteString(fmt.Sprintf("could not find ngram %q\n", ng.String()))
+		}
+		return simpleSection{}
+	}
+
+	if b.debug {
+		fd.WriteString(fmt.Sprintf("found ngram %q at position %d, Adding postingIndexOffset\n", ng.String(), x))
+	}
+
+	return b.getPostingList(postingIndexOffset + x)
+}
+
+func (b btreeIndex) DumpMap() map[ngram]simpleSection {
+	m := make(map[ngram]simpleSection, len(b.bucketOffsets)*b.bt.bucketSize)
+	b.bt.visit(func(n *node) {
+		if !n.leaf {
+			return
+		}
+
+		// read bucket into memory
+		var sz, off uint32
+		off, sz = b.bucketOffsets[n.bucketIndex], 0
+		if int(n.bucketIndex)+1 < len(b.bucketOffsets) {
+			sz = b.bucketOffsets[n.bucketIndex+1] - off
+		} else {
+			sz = b.bucketSentinelOffset - off
+		}
+		bucket, _ := b.file.Read(off, sz)
+
+		// decode all ngrams in the bucket and fill map
+		for off := 0; off < len(bucket); off = off + 8 {
+			gram := ngram(binary.BigEndian.Uint64(bucket[off:]))
+			m[gram] = b.getPostingList(int(n.postingIndexOffset) + off)
+		}
+	})
+	return m
+}
+
+func (b btreeIndex) getPostingList(postingIndex int) simpleSection {
+	fmt.Printf("getPostingList for postingIndex=%d,len(offsets)=%d ", postingIndex, len(b.postingOffsets))
+	if postingIndex+1 < len(b.postingOffsets) {
+		return simpleSection{
+			off: b.postingOffsets[postingIndex],
+			sz:  b.postingOffsets[postingIndex+1] - b.postingOffsets[postingIndex],
+		}
+	} else {
+		return simpleSection{
+			off: b.postingOffsets[postingIndex],
+			sz:  b.postingDataSentinelOffset - b.postingOffsets[postingIndex],
+		}
+	}
+}
+
+func (b btreeIndex) SizeBytes() int {
+	return 0
 }

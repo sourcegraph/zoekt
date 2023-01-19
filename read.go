@@ -232,22 +232,6 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		branchNames:    []map[uint]string{},
 	}
 
-	btreeBlob, err := d.readSectionBlob(toc.btree)
-	if err != nil {
-		return nil, err
-	}
-	bt, err := readBtree(btreeBlob)
-	if err != nil {
-		return nil, err
-	}
-
-	fd, err := os.Create("/Users/Stefan/scratch/btree/btree.txt")
-	if err != nil {
-		panic(err)
-	}
-	fd.WriteString(bt.String())
-	fd.Close()
-
 	repos, md, err := r.readMetadata(toc)
 	if md != nil && !canReadVersion(md) {
 		return nil, fmt.Errorf("file is v%d, want v%d", md.IndexFormatVersion, IndexFormatVersion)
@@ -305,19 +289,25 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	if os.Getenv("ZOEKT_ENABLE_NGRAM_BS") != "" {
-		bsMap, err := d.readBinarySearchNgrams(toc)
-		if err != nil {
-			return nil, err
-		}
-		d.ngrams = bsMap
-	} else {
-		offsetMap, err := d.readNgrams(toc)
-		if err != nil {
-			return nil, err
-		}
-		d.ngrams = offsetMap
+	// if os.Getenv("ZOEKT_ENABLE_NGRAM_BS") != "" {
+	// bsMap, err := d.readBinarySearchNgrams(toc)
+	// if err != nil {
+	// return nil, err
+	// }
+	// d.ngrams = bsMap
+	// } else {
+	// offsetMap, err := d.readNgrams(toc)
+	// if err != nil {
+	// return nil, err
+	// }
+	// d.ngrams = offsetMap
+	// }
+
+	bt, err := d.readBtreeIndex(toc)
+	if err != nil {
+		return nil, err
 	}
+	d.ngrams = bt
 
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
 	if err != nil {
@@ -504,6 +494,29 @@ func (d *indexData) readBinarySearchNgrams(toc *indexTOC) (binarySearchNgram, er
 		postingOffsets:            toc.postings.offsets,
 		postingDataSentinelOffset: toc.postings.data.off + toc.postings.data.sz,
 	}, nil
+}
+
+func (d *indexData) readBtreeIndex(toc *indexTOC) (btreeIndex, error) {
+	bi := btreeIndex{file: d.file}
+
+	bi.debug = true
+
+	btreeBlob, err := d.readSectionBlob(toc.btree)
+	if err != nil {
+		return btreeIndex{}, err
+	}
+	bi.bt, err = readBtree(btreeBlob)
+	if err != nil {
+		return btreeIndex{}, err
+	}
+
+	bi.bucketOffsets = toc.btreeBuckets.offsets
+	bi.bucketSentinelOffset = toc.btreeBuckets.data.off + toc.btreeBuckets.data.sz
+
+	bi.postingOffsets = toc.postings.offsets
+	bi.postingDataSentinelOffset = toc.postings.data.off + toc.postings.data.sz
+
+	return bi, nil
 }
 
 func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]byte, error) {

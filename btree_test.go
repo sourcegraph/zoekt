@@ -64,8 +64,6 @@ func TestFindBucket(t *testing.T) {
 	bt := newBtree(2, 2)
 	insertMany(t, bt, []ngram{6, 2, 4, 3, 9, 8, 7, 5, 1})
 
-	var buf bytes.Buffer
-
 	buckets := 0
 	offset := 0
 	bt.visit(func(n *node) {
@@ -76,15 +74,6 @@ func TestFindBucket(t *testing.T) {
 			offset += len(n.bucket)
 		}
 	})
-
-	if err := bt.write(&buf); err != nil {
-		t.Fatal(err)
-	}
-
-	bt2, err := readBtree(buf.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	cases := []struct {
 		ng                     ngram
@@ -100,7 +89,7 @@ func TestFindBucket(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(fmt.Sprintf("ngram: %d", tt.ng), func(t *testing.T) {
-			haveBucketIndex, havePostingIndexOffset := bt2.findBucket(tt.ng)
+			haveBucketIndex, havePostingIndexOffset := bt.findBucket(tt.ng)
 			if tt.wantBucketIndex != haveBucketIndex {
 				t.Fatalf("bucketIndex: want %d, got %d", tt.wantBucketIndex, haveBucketIndex)
 			}

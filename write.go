@@ -227,7 +227,10 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 	bt := newBtree(2, 2)
 
 	// TODO: remove Logging
-	fd, _ := os.Create("/Users/Stefan/scratch/btree/ngrams.log")
+
+	fd, _ := os.OpenFile("/Users/Stefan/scratch/btree/write.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+
+	fd.WriteString("###################################################\n")
 	fd.WriteString("BEGIN\n")
 	for _, key := range keys {
 		fd.WriteString(fmt.Sprintf("%q", key.String()))
@@ -235,7 +238,6 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 		bt.insert(key)
 	}
 	fd.WriteString("END\n")
-	fd.WriteString(bt.String())
 
 	// We write the buckets to a compound section and update the tree with the
 	// bucketOffsets as we go.
@@ -246,18 +248,23 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 			return
 		}
 
+		fd.WriteString(fmt.Sprintf("++++++++++ adding new bucket\n"))
+
 		var sec bytes.Buffer
-		for _, k := range keys {
+		for _, k := range n.bucket {
 			var buf [8]byte
+			fd.WriteString(fmt.Sprintf("%s\n", k.String()))
 			binary.BigEndian.PutUint64(buf[:], uint64(k))
 			sec.Write(buf[:])
 		}
 
-		btreeBuckets.addItem(w, sec.Bytes())
+		fd.WriteString(fmt.Sprintf("this bucket has size(bytes)=%d\n", len(n.bucket)*8))
+		btreeBuckets.addItem(w, sec.Bytes()[:len(n.bucket)*8])
 		n.bucketIndex = uint64(len(btreeBuckets.offsets) - 1)
 
+		fd.WriteString(fmt.Sprintf("setting node's postingIndexOffset=%d\n", offset))
 		n.postingIndexOffset = uint64(offset)
-		offset += len(keys)
+		offset += len(n.bucket)
 	})
 	btreeBuckets.end(w)
 
