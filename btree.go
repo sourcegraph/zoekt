@@ -38,7 +38,6 @@ func (bt *btree) insert(ng ngram) {
 	if leftNode, rightNode, newKey, ok := maybeSplit(bt.root, bt.v, bt.bucketSize); ok {
 		bt.root = &node{keys: []ngram{newKey}, children: []*node{leftNode, rightNode}}
 	}
-
 	bt.root.insert(ng, bt.bucketSize, bt.v)
 }
 
@@ -64,7 +63,11 @@ func (bt *btree) write(w io.Writer) (err error) {
 	return
 }
 
-// findBucket returns the tuple (bucket index, posting index offset)
+// findBucket returns the tuple (bucketIndex, postingIndexOffset), both of
+// which are stored at the leaf level. They are effectively pointers to the
+// bucket and the posting lists for the bucket. Since ngrams and their posting
+// lists are stored in order, knowing the index of the posting list of the
+// first item in the bucket is sufficient.
 func (bt *btree) findBucket(ng ngram) (int, int) {
 	if bt.root == nil {
 		return -1, -1
@@ -72,20 +75,8 @@ func (bt *btree) findBucket(ng ngram) (int, int) {
 	return bt.root.findBucket(ng)
 }
 
-func (n *node) findBucket(ng ngram) (int, int) {
-	if n.leaf {
-		return int(n.bucketIndex), int(n.postingIndexOffset)
-	}
-
-	for i, k := range n.keys {
-		if ng < k {
-			return n.children[i].findBucket(ng)
-		}
-		return n.children[len(n.children)-1].findBucket(ng)
-	}
-	return -1, -1
-}
-
+// A stateful blob reader. This is just for convenience and to declutter the
+// code in readBtree and readNode.
 type btreeReader struct {
 	blob []byte
 	off  int
@@ -133,11 +124,11 @@ type node struct {
 
 	leaf bool
 	// bucketIndex is the index of bucket in the btreeBucket compoundSection.
-	// It is set when we read the shard from disk.
+	// It is set when we write the index to disk.
 	bucketIndex uint64
 
 	// postingIndexOffset is the index of the posting list of the first ngram
-	// stored in the bucket. It is set when we read the shard from disk.
+	// stored in the bucket. It is set when we write an index to disk.
 	postingIndexOffset uint64
 	bucket             []ngram
 }
@@ -262,6 +253,21 @@ func (n *node) insert(ng ngram, bucketSize int, v int) {
 		}
 		insertAt(len(n.children) - 1)
 	}
+}
+
+// See btree.findBucket
+func (n *node) findBucket(ng ngram) (int, int) {
+	if n.leaf {
+		return int(n.bucketIndex), int(n.postingIndexOffset)
+	}
+
+	for i, k := range n.keys {
+		if ng < k {
+			return n.children[i].findBucket(ng)
+		}
+		return n.children[len(n.children)-1].findBucket(ng)
+	}
+	return -1, -1
 }
 
 func maybeSplit(n *node, v, bucketSize int) (left *node, right *node, newKey ngram, ok bool) {
