@@ -12,51 +12,52 @@ import (
 // is a fixed-length block, the unit for memory allocation and file mapping
 // performed by mmap(2).
 
-// TODO: When writing the buckets to disk, we have to make sure we perfix the
-// compound section with enough bytes to match the page boundaries of 4096
-// bytes.
-
-// TODO: Refactor with interface and two nodes types.
-
-// TODO: Use bucketOpts instead of v and blockSize
-
-// b-tree properties
-// - all leaves are at the same level
-// - all inner nodes, except root, have [v, 2v] keys
 type btree struct {
-	root *node
-	// all inner nodes, except root, have [v, 2v] keys.
-	v int
-	// the max number of values attached to a leaf node. The bucketSize should
-	// be chosen based on the page size.
+	root node
+	opts btreeOpts
+}
+
+type btreeOpts struct {
+	// Choose: bucketSize=2*page size
+	//
+	// Why? bucketSize should be chosen such that in the final tree the buckets
+	// are as close to the page size as possible, but not above. We insert
+	// ngrams in order(!), which means after a split of a leaf, the left leaf
+	// is not affected by any future inserts and its size is fixed to
+	// bucketSize/2. The right-most leaf might have any size, but the expected
+	// size is page size, too.
 	bucketSize int
+	// all inner nodes, except root, have [v, 2v] children. Note: In the
+	// literature, b-trees are inconsistenlty categorized either by the number
+	// of children or by the number of keys. We choose the former.
+	v int
 }
 
 func newBtree(v, bucketSize int) *btree {
-	return &btree{&node{leaf: true, bucket: make([]ngram, 0, bucketSize)}, v, bucketSize}
+	return &btree{&leaf{bucket: make([]ngram, 0, bucketSize)}, btreeOpts{v: v, bucketSize: bucketSize}}
 }
 
 func (bt *btree) insert(ng ngram) {
-	if leftNode, rightNode, newKey, ok := maybeSplit(bt.root, bt.v, bt.bucketSize); ok {
-		bt.root = &node{keys: []ngram{newKey}, children: []*node{leftNode, rightNode}}
+	if leftNode, rightNode, newKey, ok := bt.root.maybeSplit(bt.opts); ok {
+		bt.root = &innerNode{keys: []ngram{newKey}, children: []node{leftNode, rightNode}}
 	}
-	bt.root.insert(ng, bt.bucketSize, bt.v)
+	bt.root.insert(ng, bt.opts)
 }
 
 func (bt *btree) write(w io.Writer) (err error) {
 	var enc [8]byte
 
-	binary.BigEndian.PutUint64(enc[:], uint64(bt.v))
+	binary.BigEndian.PutUint64(enc[:], uint64(bt.opts.v))
 	if _, err := w.Write(enc[:]); err != nil {
 		return err
 	}
 
-	binary.BigEndian.PutUint64(enc[:], uint64(bt.bucketSize))
+	binary.BigEndian.PutUint64(enc[:], uint64(bt.opts.bucketSize))
 	if _, err := w.Write(enc[:]); err != nil {
 		return err
 	}
 
-	bt.root.visit(func(n *node) {
+	bt.root.visit(func(n node) {
 		if err != nil {
 			return
 		}
@@ -65,16 +66,20 @@ func (bt *btree) write(w io.Writer) (err error) {
 	return
 }
 
-// findBucket returns the tuple (bucketIndex, postingIndexOffset), both of
-// which are stored at the leaf level. They are effectively pointers to the
-// bucket and the posting lists for the bucket. Since ngrams and their posting
-// lists are stored in order, knowing the index of the posting list of the
-// first item in the bucket is sufficient.
-func (bt *btree) findBucket(ng ngram) (int, int) {
+// find returns the tuple (bucketIndex, postingIndexOffset), both of which are
+// stored at the leaf level. They are effectively pointers to the bucket and
+// the posting lists for ngrams stored in the bucket. Since ngrams and their
+// posting lists are stored in order, knowing the index of the posting list of
+// the first item in the bucket is sufficient.
+func (bt *btree) find(ng ngram) (int, int) {
 	if bt.root == nil {
 		return -1, -1
 	}
-	return bt.root.findBucket(ng)
+	return bt.root.find(ng)
+}
+
+func (bt *btree) visit(f func(n node)) {
+	bt.root.visit(f)
 }
 
 // A stateful blob reader. This is just for convenience and to declutter the
@@ -101,13 +106,13 @@ func readBtree(blob []byte) (*btree, error) {
 	if err != nil {
 		return nil, err
 	}
-	bt.v = int(v64)
+	bt.opts.v = int(v64)
 
 	bucketSize64, err := reader.u64()
 	if err != nil {
 		return nil, err
 	}
-	bt.bucketSize = int(bucketSize64)
+	bt.opts.bucketSize = int(bucketSize64)
 
 	bt.root, err = readNode(reader)
 	if err != nil {
@@ -116,27 +121,28 @@ func readBtree(blob []byte) (*btree, error) {
 	return &bt, nil
 }
 
-func (bt *btree) visit(f func(n *node)) {
-	bt.root.visit(f)
+type node interface {
+	insert(ng ngram, opts btreeOpts)
+	maybeSplit(opts btreeOpts) (left node, right node, newKey ngram, ok bool)
+	find(ng ngram) (int, int)
+	visit(func(n node))
+
+	// serialize
+	write(w io.Writer) error
 }
 
-type node struct {
+type innerNode struct {
 	keys     []ngram
-	children []*node
+	children []node
+}
 
-	leaf bool
-	// bucketIndex is the index of bucket in the btreeBucket compoundSection.
-	// It is set when we write the index to disk.
-	bucketIndex uint64
-
-	// postingIndexOffset is the index of the posting list of the first ngram
-	// stored in the bucket. It is set when we write an index to disk.
+type leaf struct {
+	bucketIndex        uint64
 	postingIndexOffset uint64
 	bucket             []ngram
 }
 
-// TODO: this should be split into 2 methods, 1 for leaf and 1 more inner nodes.
-func (n *node) write(w io.Writer) error {
+func (n *innerNode) write(w io.Writer) error {
 	var buf [8]byte
 
 	binary.BigEndian.PutUint64(buf[:], uint64(len(n.keys)))
@@ -153,25 +159,34 @@ func (n *node) write(w io.Writer) error {
 		}
 	}
 
-	if len(n.keys) == 0 {
-		binary.BigEndian.PutUint64(buf[:], n.bucketIndex)
-		_, err := w.Write(buf[:])
-		if err != nil {
-			return err
-		}
+	return nil
+}
 
-		binary.BigEndian.PutUint64(buf[:], n.postingIndexOffset)
-		_, err = w.Write(buf[:])
-		if err != nil {
-			return err
-		}
+func (n *leaf) write(w io.Writer) error {
+	var buf [8]byte
+
+	// 0 keys signals that this is a leaf.
+	binary.BigEndian.PutUint64(buf[:], uint64(0))
+	_, err := w.Write(buf[:])
+	if err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint64(buf[:], n.bucketIndex)
+	_, err = w.Write(buf[:])
+	if err != nil {
+		return err
+	}
+
+	binary.BigEndian.PutUint64(buf[:], n.postingIndexOffset)
+	_, err = w.Write(buf[:])
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func readNode(reader *btreeReader) (*node, error) {
-	var n node
+func readNode(reader *btreeReader) (node, error) {
 	nKeys, err := reader.u64()
 	if err != nil {
 		return nil, err
@@ -179,6 +194,7 @@ func readNode(reader *btreeReader) (*node, error) {
 
 	// Leaf
 	if nKeys == 0 {
+		var n leaf
 		n.bucketIndex, err = reader.u64()
 		if err != nil {
 			return nil, err
@@ -189,10 +205,10 @@ func readNode(reader *btreeReader) (*node, error) {
 			return nil, err
 		}
 
-		n.leaf = true
 		return &n, nil
 	}
 
+	var n innerNode
 	// Inner node: first read the keys then traverse the children depth-frist.
 	n.keys = make([]ngram, 0, nKeys)
 	for i := 0; uint64(i) < nKeys; i++ {
@@ -203,7 +219,7 @@ func readNode(reader *btreeReader) (*node, error) {
 		n.keys = append(n.keys, ngram(key))
 	}
 
-	n.children = make([]*node, 0, nKeys+1)
+	n.children = make([]node, 0, nKeys+1)
 	for i := 0; uint64(i) < nKeys+1; i++ {
 		child, err := readNode(reader)
 		if err != nil {
@@ -215,15 +231,27 @@ func readNode(reader *btreeReader) (*node, error) {
 	return &n, nil
 }
 
-func (n *node) insert(ng ngram, bucketSize int, v int) {
+func (n *leaf) insert(ng ngram, opts btreeOpts) {
+	// Insert in ascending order. This is efficient in case we already deal with
+	// sorted inputs.
+	n.bucket = append(n.bucket, ng)
+
+	for i := len(n.bucket) - 1; i > 0; i-- {
+		if n.bucket[i-1] < n.bucket[i] {
+			break
+		}
+		n.bucket[i], n.bucket[i-1] = n.bucket[i-1], n.bucket[i]
+	}
+}
+
+func (n *innerNode) insert(ng ngram, opts btreeOpts) {
 	insertAt := func(i int) {
-		// Invariant: Leaf nodes always have a free slot.
+		// Invariant: Nodes always have a free slot.
 		//
 		// We split full nodes on the the way down to the leaf. This has the
-		// advantage that inserts are handled in a single pass and that leaf
-		// nodes always have enough space to insert a new item.
-		if leftNode, rightNode, newKey, ok := maybeSplit(n.children[i], v, bucketSize); ok {
-			n.children = append(append([]*node{}, n.children[0:i]...), append([]*node{leftNode, rightNode}, n.children[i+1:]...)...)
+		// advantage that inserts are handled in a single pass.
+		if leftNode, rightNode, newKey, ok := n.children[i].maybeSplit(opts); ok {
+			n.children = append(append([]node{}, n.children[0:i]...), append([]node{leftNode, rightNode}, n.children[i+1:]...)...)
 			n.keys = append(append([]ngram{}, n.keys[0:i]...), append([]ngram{newKey}, n.keys[i:]...)...)
 
 			// A split might shift the target index by 1.
@@ -231,80 +259,60 @@ func (n *node) insert(ng ngram, bucketSize int, v int) {
 				i++
 			}
 		}
-		n.children[i].insert(ng, bucketSize, v)
-	}
-
-	if n.leaf {
-		// See invariant maintained by insertAt.
-		n.bucket = append(n.bucket, ng)
-
-		// Insert in ascending order. This is efficient in case we already deal with
-		// sorted inputs.
-		for i := len(n.bucket) - 1; i > 0; i-- {
-			if n.bucket[i-1] < n.bucket[i] {
-				break
-			}
-			n.bucket[i], n.bucket[i-1] = n.bucket[i-1], n.bucket[i]
-		}
-	} else {
-		for i, k := range n.keys {
-			if ng < k {
-				insertAt(i)
-				return
-			}
-		}
-		insertAt(len(n.children) - 1)
-	}
-}
-
-// See btree.findBucket
-func (n *node) findBucket(ng ngram) (int, int) {
-	if n.leaf {
-		return int(n.bucketIndex), int(n.postingIndexOffset)
+		n.children[i].insert(ng, opts)
 	}
 
 	for i, k := range n.keys {
-		if ng < k { // TODO: Bug <?
-			return n.children[i].findBucket(ng)
+		if ng < k {
+			insertAt(i)
+			return
 		}
 	}
-	return n.children[len(n.children)-1].findBucket(ng)
+	insertAt(len(n.children) - 1)
 }
 
-func maybeSplit(n *node, v, bucketSize int) (left *node, right *node, newKey ngram, ok bool) {
-	if n.leaf {
-		return maybeSplitLeaf(n, bucketSize)
-	} else {
-		return maybeSplitInner(n, v)
+// See btree.find
+func (n *innerNode) find(ng ngram) (int, int) {
+	for i, k := range n.keys {
+		if ng < k {
+			return n.children[i].find(ng)
+		}
 	}
+	return n.children[len(n.children)-1].find(ng)
 }
 
-func maybeSplitLeaf(n *node, bucketSize int) (left *node, right *node, newKey ngram, ok bool) {
-	if len(n.bucket) < bucketSize {
+// See btree.find
+func (n *leaf) find(ng ngram) (int, int) {
+	return int(n.bucketIndex), int(n.postingIndexOffset)
+}
+
+func (n *leaf) maybeSplit(opts btreeOpts) (left node, right node, newKey ngram, ok bool) {
+	if len(n.bucket) < opts.bucketSize {
 		return
 	}
-	return &node{leaf: true, bucket: append(make([]ngram, 0, bucketSize), n.bucket[:bucketSize/2]...)},
-		&node{leaf: true, bucket: append(make([]ngram, 0, bucketSize), n.bucket[bucketSize/2:]...)},
-		n.bucket[bucketSize/2],
+	return &leaf{bucket: append(make([]ngram, 0, opts.bucketSize), n.bucket[:opts.bucketSize/2]...)},
+		&leaf{bucket: append(make([]ngram, 0, opts.bucketSize), n.bucket[opts.bucketSize/2:]...)},
+		n.bucket[opts.bucketSize/2],
 		true
 }
 
-// TODO: handle v=1
-func maybeSplitInner(n *node, v int) (left *node, right *node, newKey ngram, ok bool) {
-	if len(n.keys) < 2*v {
+func (n *innerNode) maybeSplit(opts btreeOpts) (left node, right node, newKey ngram, ok bool) {
+	if len(n.children) < 2*opts.v {
 		return
 	}
-	return &node{keys: append([]ngram{}, n.keys[0:v]...), children: append([]*node{}, n.children[:v+1]...)},
-		&node{keys: append([]ngram{}, n.keys[v+1:]...), children: append([]*node{}, n.children[v+1:]...)},
-		n.keys[v],
+	return &innerNode{keys: append([]ngram{}, n.keys[0:opts.v-1]...), children: append([]node{}, n.children[:opts.v]...)},
+		&innerNode{keys: append([]ngram{}, n.keys[opts.v:]...), children: append([]node{}, n.children[opts.v:]...)},
+		n.keys[opts.v-1],
 		true
 }
 
-func (n *node) visit(f func(n *node)) {
+func (n *leaf) visit(f func(n node)) {
 	f(n)
-	if n.leaf {
-		return
-	}
+	return
+}
+
+func (n *innerNode) visit(f func(n node)) {
+	f(n)
 	for _, child := range n.children {
 		child.visit(f)
 	}
@@ -312,17 +320,20 @@ func (n *node) visit(f func(n *node)) {
 
 func (bt *btree) String() string {
 	s := ""
-	s += fmt.Sprintf("{v=%d,bucketSize=%d}", bt.v, bt.bucketSize)
-	bt.root.visit(func(n *node) {
-		if n.leaf {
+	s += fmt.Sprintf("%+v", bt.opts)
+	bt.root.visit(func(n node) {
+		switch nd := n.(type) {
+		case *leaf:
 			return
+		case *innerNode:
+			s += fmt.Sprintf("[")
+			for _, key := range nd.keys {
+				s += fmt.Sprintf("%d,", key)
+			}
+			s = s[:len(s)-1] // remove coma
+			s += fmt.Sprintf("]")
+
 		}
-		s += fmt.Sprintf("[")
-		for _, key := range n.keys {
-			s += fmt.Sprintf("%d,", key)
-		}
-		s = s[:len(s)-1] // remove coma
-		s += fmt.Sprintf("]")
 	})
 	return s
 }
@@ -355,7 +366,7 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	}
 
 	// find bucket
-	bucketIndex, postingIndexOffset := b.bt.findBucket(ng)
+	bucketIndex, postingIndexOffset := b.bt.find(ng)
 	if b.debug {
 		fd.WriteString(fmt.Sprintf("bucketIndex:%d, postingIndexOffset:%d\n", bucketIndex, postingIndexOffset))
 	}
@@ -410,28 +421,31 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 }
 
 func (b btreeIndex) DumpMap() map[ngram]simpleSection {
-	m := make(map[ngram]simpleSection, len(b.bucketOffsets)*b.bt.bucketSize)
-	b.bt.visit(func(n *node) {
-		if !n.leaf {
+	m := make(map[ngram]simpleSection, len(b.bucketOffsets)*b.bt.opts.bucketSize)
+
+	b.bt.visit(func(no node) {
+		switch n := no.(type) {
+		case *leaf:
+			// read bucket into memory
+			var sz, off uint32
+			off, sz = b.bucketOffsets[n.bucketIndex], 0
+			if int(n.bucketIndex)+1 < len(b.bucketOffsets) {
+				sz = b.bucketOffsets[n.bucketIndex+1] - off
+			} else {
+				sz = b.bucketSentinelOffset - off
+			}
+			bucket, _ := b.file.Read(off, sz)
+
+			// decode all ngrams in the bucket and fill map
+			for off := 0; off < len(bucket); off = off + 8 {
+				gram := ngram(binary.BigEndian.Uint64(bucket[off:]))
+				m[gram] = b.getPostingList(int(n.postingIndexOffset) + off)
+			}
+		case *innerNode:
 			return
 		}
-
-		// read bucket into memory
-		var sz, off uint32
-		off, sz = b.bucketOffsets[n.bucketIndex], 0
-		if int(n.bucketIndex)+1 < len(b.bucketOffsets) {
-			sz = b.bucketOffsets[n.bucketIndex+1] - off
-		} else {
-			sz = b.bucketSentinelOffset - off
-		}
-		bucket, _ := b.file.Read(off, sz)
-
-		// decode all ngrams in the bucket and fill map
-		for off := 0; off < len(bucket); off = off + 8 {
-			gram := ngram(binary.BigEndian.Uint64(bucket[off:]))
-			m[gram] = b.getPostingList(int(n.postingIndexOffset) + off)
-		}
 	})
+
 	return m
 }
 

@@ -3,38 +3,34 @@ package zoekt
 import (
 	"bytes"
 	"fmt"
-	"sort"
 	"testing"
 )
 
-func TestBTree(t *testing.T) {
+func TestBTree_unsorted(t *testing.T) {
 	bt := newBtree(2, 2)
 	insertMany(t, bt, []ngram{6, 2, 4, 3, 9, 8, 7, 5, 1})
 	// inner nodes only
 	//
-	//       8      (root)
-	//     /   \
-	//  3,4,6   9   (lvl 1)
+	//         [6]
+	//        /   \
+	//    [3,4]  [8,9]
 	//
-	want := "{v=2,bucketSize=2}[8][3,4,6][9]"
+	want := "{bucketSize:2 v:2}[6][3,4][8,9]"
 	if s := bt.String(); s != want {
 		t.Fatalf("want %s, got %s", want, s)
 	}
 }
 
-func TestBTree_hw(t *testing.T) {
+func TestBTree_sorted(t *testing.T) {
 	bt := newBtree(2, 2)
-	text := []byte("hello world\n")
-	var ngrams ngramSlice
-
-	for i := 0; i < len(text)-2; i++ {
-		ngrams = append(ngrams, bytesToNGram(text[i:i+3]))
-	}
-
-	sort.Sort(ngrams)
-	insertMany(t, bt, ngrams)
-
-	want := "{v=2,bucketSize=2}[474989232914442,488183229841527][444202924114028,457397048967276][474989249691759,474989255983136][488183401807980,501377528758372]"
+	insertMany(t, bt, []ngram{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
+	// inner nodes only
+	//
+	//        [3,5,7]
+	//    /   /   \   \
+	//  [2] [4]  [6] [8,9]
+	//
+	want := "{bucketSize:2 v:2}[3,5,7][2][4][6][8,9]"
 	if s := bt.String(); s != want {
 		t.Fatalf("want %s, got %s", want, s)
 	}
@@ -66,12 +62,15 @@ func TestFindBucket(t *testing.T) {
 
 	buckets := 0
 	offset := 0
-	bt.visit(func(n *node) {
-		if n.leaf {
+	bt.visit(func(no node) {
+		switch n := no.(type) {
+		case *leaf:
 			n.bucketIndex = uint64(buckets)
 			buckets++
 			n.postingIndexOffset = uint64(offset)
 			offset += len(n.bucket)
+		case *innerNode:
+			return
 		}
 	})
 
@@ -89,7 +88,7 @@ func TestFindBucket(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(fmt.Sprintf("ngram: %d", tt.ng), func(t *testing.T) {
-			haveBucketIndex, havePostingIndexOffset := bt.findBucket(tt.ng)
+			haveBucketIndex, havePostingIndexOffset := bt.find(tt.ng)
 			if tt.wantBucketIndex != haveBucketIndex {
 				t.Fatalf("bucketIndex: want %d, got %d", tt.wantBucketIndex, haveBucketIndex)
 			}

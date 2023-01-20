@@ -243,28 +243,29 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 	// bucketOffsets as we go.
 	btreeBuckets.start(w)
 	offset := 0
-	bt.visit(func(n *node) {
-		if !n.leaf {
+	bt.visit(func(no node) {
+		switch n := no.(type) {
+		case *leaf:
+			fd.WriteString(fmt.Sprintf("++++++++++ adding new bucket\n"))
+
+			var sec bytes.Buffer
+			for _, k := range n.bucket {
+				var buf [8]byte
+				fd.WriteString(fmt.Sprintf("%s\n", k.String()))
+				binary.BigEndian.PutUint64(buf[:], uint64(k))
+				sec.Write(buf[:])
+			}
+
+			fd.WriteString(fmt.Sprintf("this bucket has size(bytes)=%d\n", len(n.bucket)*8))
+			btreeBuckets.addItem(w, sec.Bytes()[:len(n.bucket)*8])
+			n.bucketIndex = uint64(len(btreeBuckets.offsets) - 1)
+
+			fd.WriteString(fmt.Sprintf("setting node's postingIndexOffset=%d\n", offset))
+			n.postingIndexOffset = uint64(offset)
+			offset += len(n.bucket)
+		case *innerNode:
 			return
 		}
-
-		fd.WriteString(fmt.Sprintf("++++++++++ adding new bucket\n"))
-
-		var sec bytes.Buffer
-		for _, k := range n.bucket {
-			var buf [8]byte
-			fd.WriteString(fmt.Sprintf("%s\n", k.String()))
-			binary.BigEndian.PutUint64(buf[:], uint64(k))
-			sec.Write(buf[:])
-		}
-
-		fd.WriteString(fmt.Sprintf("this bucket has size(bytes)=%d\n", len(n.bucket)*8))
-		btreeBuckets.addItem(w, sec.Bytes()[:len(n.bucket)*8])
-		n.bucketIndex = uint64(len(btreeBuckets.offsets) - 1)
-
-		fd.WriteString(fmt.Sprintf("setting node's postingIndexOffset=%d\n", offset))
-		n.postingIndexOffset = uint64(offset)
-		offset += len(n.bucket)
 	})
 	btreeBuckets.end(w)
 
