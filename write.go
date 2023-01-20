@@ -239,6 +239,10 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 	}
 	fd.WriteString("END\n")
 
+	// TODO: do we have align the start of btreeBuckets compound section with
+	// the page boundary assuming that the first page starts at the beginning
+	// of the shard?
+
 	// We write the buckets to a compound section and update the tree with the
 	// bucketOffsets as we go.
 	btreeBuckets.start(w)
