@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 )
 
@@ -18,14 +17,15 @@ type btree struct {
 }
 
 type btreeOpts struct {
-	// Choose: bucketSize=2*page size
+	// bucketSize = (pageSize * 2)/ngramEncoding
 	//
 	// Why? bucketSize should be chosen such that in the final tree the buckets
 	// are as close to the page size as possible, but not above. We insert
 	// ngrams in order(!), which means after a split of a leaf, the left leaf
-	// is not affected by any future inserts and its size is fixed to
-	// bucketSize/2. The right-most leaf might have any size, but the expected
-	// size is page size, too.
+	// is not affected by further inserts and its size is fixed to
+	// bucketSize/2. The right-most leaf might have any size in bytes, but the
+	// expected size is the size of a page, too.
+	//
 	bucketSize int
 	// all inner nodes, except root, have [v, 2v] children. Note: In the
 	// literature, b-trees are inconsistenlty categorized either by the number
@@ -33,8 +33,8 @@ type btreeOpts struct {
 	v int
 }
 
-func newBtree(v, bucketSize int) *btree {
-	return &btree{&leaf{bucket: make([]ngram, 0, bucketSize)}, btreeOpts{v: v, bucketSize: bucketSize}}
+func newBtree(opts btreeOpts) *btree {
+	return &btree{&leaf{bucket: make([]ngram, 0, opts.bucketSize)}, opts}
 }
 
 func (bt *btree) insert(ng ngram) {
@@ -290,7 +290,10 @@ func (n *leaf) maybeSplit(opts btreeOpts) (left node, right node, newKey ngram, 
 	if len(n.bucket) < opts.bucketSize {
 		return
 	}
-	return &leaf{bucket: append(make([]ngram, 0, opts.bucketSize), n.bucket[:opts.bucketSize/2]...)},
+	// Optimization: The left leaf is not mutated after this split because we
+	// insert ngrams in order. Hence, we can already allocate the final size
+	// which equals bucketSize/2.
+	return &leaf{bucket: append(make([]ngram, 0, opts.bucketSize/2), n.bucket[:opts.bucketSize/2]...)},
 		&leaf{bucket: append(make([]ngram, 0, opts.bucketSize), n.bucket[opts.bucketSize/2:]...)},
 		n.bucket[opts.bucketSize/2],
 		true
@@ -352,24 +355,15 @@ type btreeIndex struct {
 	debug bool
 }
 
+// Get returns the simple section of the posting list associated with the
+// ngram. The logic is as follows:
+// 1. Search the inner nodes to find the bucket that may contain ng (in MEM)
+// 2. Read the bucket from disk (1 disk access)
+// 3. Binary search the bucket (in MEM)
+// 4. Use the offsets stored in the leaf to return the simple section (in MEM)
 func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
-
-	var fd *os.File
-	if b.debug {
-		var err error
-		fd, err = os.OpenFile("/Users/Stefan/scratch/btree/read.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-		if err != nil {
-			panic(err)
-		}
-		fd.WriteString(fmt.Sprintf("=========================%s\n", ng.String()))
-		defer fd.Close()
-	}
-
 	// find bucket
 	bucketIndex, postingIndexOffset := b.bt.find(ng)
-	if b.debug {
-		fd.WriteString(fmt.Sprintf("bucketIndex:%d, postingIndexOffset:%d\n", bucketIndex, postingIndexOffset))
-	}
 
 	// read bucket into memory
 	var sz, off uint32
@@ -380,15 +374,8 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 		sz = b.bucketSentinelOffset - off
 	}
 
-	if b.debug {
-		fd.WriteString(fmt.Sprintf("len(bucketOffsets)=%d,off=%d,sz=%d\n", len(b.bucketOffsets), off, sz))
-	}
-
 	bucket, err := b.file.Read(off, sz)
 	if err != nil {
-		if b.debug {
-			fd.WriteString(fmt.Sprintf("error reading bucket %s\n", err))
-		}
 		return simpleSection{}
 	}
 
@@ -399,22 +386,13 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	}
 
 	bucketSize := len(bucket) / ngramEncoding
-	if b.debug {
-		fd.WriteString(fmt.Sprintf("bucketSize=%d\n", bucketSize))
-	}
-
 	x := sort.Search(bucketSize, func(i int) bool {
 		return ng <= getNGram(i)
 	})
-	if x >= bucketSize || getNGram(x) != ng {
-		if b.debug {
-			fd.WriteString(fmt.Sprintf("could not find ngram %q\n", ng.String()))
-		}
-		return simpleSection{}
-	}
 
-	if b.debug {
-		fd.WriteString(fmt.Sprintf("found ngram %q at position %d, Adding postingIndexOffset\n", ng.String(), x))
+	// return associated posting list
+	if x >= bucketSize || getNGram(x) != ng {
+		return simpleSection{}
 	}
 
 	return b.getPostingList(postingIndexOffset + x)
@@ -450,7 +428,6 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 }
 
 func (b btreeIndex) getPostingList(postingIndex int) simpleSection {
-	fmt.Printf("getPostingList for postingIndex=%d,len(offsets)=%d ", postingIndex, len(b.postingOffsets))
 	if postingIndex+1 < len(b.postingOffsets) {
 		return simpleSection{
 			off: b.postingOffsets[postingIndex],

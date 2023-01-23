@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"time"
 )
@@ -224,24 +223,14 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 	}
 	sort.Sort(keys)
 
-	bt := newBtree(2, 2)
-
-	// TODO: remove Logging
-
-	fd, _ := os.OpenFile("/Users/Stefan/scratch/btree/write.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-
-	fd.WriteString("###################################################\n")
-	fd.WriteString("BEGIN\n")
+	bt := newBtree(btreeOpts{bucketSize: 1024, v: 100})
 	for _, key := range keys {
-		fd.WriteString(fmt.Sprintf("%q", key.String()))
-		fd.WriteString("#\n")
 		bt.insert(key)
 	}
-	fd.WriteString("END\n")
 
 	// TODO: do we have align the start of btreeBuckets compound section with
-	// the page boundary assuming that the first page starts at the beginning
-	// of the shard?
+	// the page boundary assuming that the  start of the first page aligns with
+	// the beginning of the shard?
 
 	// We write the buckets to a compound section and update the tree with the
 	// bucketOffsets as we go.
@@ -250,21 +239,17 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 	bt.visit(func(no node) {
 		switch n := no.(type) {
 		case *leaf:
-			fd.WriteString(fmt.Sprintf("++++++++++ adding new bucket\n"))
 
 			var sec bytes.Buffer
 			for _, k := range n.bucket {
 				var buf [8]byte
-				fd.WriteString(fmt.Sprintf("%s\n", k.String()))
 				binary.BigEndian.PutUint64(buf[:], uint64(k))
 				sec.Write(buf[:])
 			}
 
-			fd.WriteString(fmt.Sprintf("this bucket has size(bytes)=%d\n", len(n.bucket)*8))
 			btreeBuckets.addItem(w, sec.Bytes()[:len(n.bucket)*8])
 			n.bucketIndex = uint64(len(btreeBuckets.offsets) - 1)
 
-			fd.WriteString(fmt.Sprintf("setting node's postingIndexOffset=%d\n", offset))
 			n.postingIndexOffset = uint64(offset)
 			offset += len(n.bucket)
 		case *innerNode:
