@@ -33,7 +33,7 @@ type indexData struct {
 
 	file IndexFile
 
-	ngrams ngramMap
+	ngrams ngramIndex
 
 	newlinesStart uint32
 	newlinesIndex []uint32
@@ -314,7 +314,9 @@ func (d *indexData) memoryUse() int {
 	}
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
-	sz += d.ngrams.SizeBytes()
+	if d.ngrams != nil {
+		sz += d.ngrams.SizeBytes()
+	}
 	sz += 12 * len(d.fileNameNgrams) // these slices reference mmap-ed memory
 	return sz
 }
@@ -348,6 +350,10 @@ func lastMinarg(xs []uint32) uint32 {
 func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
 	if filename {
 		return uint32(len(data.fileNameNgrams[ng]))
+	}
+
+	if data.ngrams == nil {
+		return 0
 	}
 
 	return data.ngrams.Get(ng).sz

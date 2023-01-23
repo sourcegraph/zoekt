@@ -294,13 +294,13 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		if err != nil {
 			return nil, err
 		}
-		d.ngrams = ngramMap{bsMap: bsMap}
+		d.ngrams = bsMap
 	} else {
 		offsetMap, err := d.readNgrams(toc)
 		if err != nil {
 			return nil, err
 		}
-		d.ngrams = ngramMap{offsetMap: offsetMap}
+		d.ngrams = offsetMap
 	}
 
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
@@ -694,6 +694,10 @@ func PrintNgramStats(r IndexFile) error {
 	id, err := loadIndexData(r)
 	if err != nil {
 		return err
+	}
+
+	if id.ngrams == nil {
+		return fmt.Errorf("PrintNgramStats: ngrams=nil")
 	}
 	var rNgram [3]rune
 	for ngram, ss := range id.ngrams.DumpMap() {

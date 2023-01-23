@@ -358,35 +358,10 @@ func (a *asciiNgramOffset) SizeBytes() int {
 	return 4*len(a.entries) + 4*len(a.chunkOffsets)
 }
 
-// ngramMap is an transient type while we investigate the performance of
-// combinedNgramOffset (established) vs binarySearch (new).
-//
-// It is like an interface, but we do the drudgery so we still get a useful
-// zero value (instead of nil panics in tests).
-type ngramMap struct {
-	offsetMap combinedNgramOffset
-	bsMap     binarySearchNgram
-}
-
-func (m ngramMap) Get(gram ngram) simpleSection {
-	if m.offsetMap.asc != nil {
-		return m.offsetMap.Get(gram)
-	}
-	return m.bsMap.Get(gram)
-}
-
-func (m ngramMap) DumpMap() map[ngram]simpleSection {
-	if m.offsetMap.asc != nil {
-		return m.offsetMap.DumpMap()
-	}
-	return m.bsMap.DumpMap()
-}
-
-func (m ngramMap) SizeBytes() int {
-	if m.offsetMap.asc != nil {
-		return m.offsetMap.SizeBytes()
-	}
-	return 0 // binarySearch only uses mmaped data.
+type ngramIndex interface {
+	Get(gram ngram) simpleSection
+	DumpMap() map[ngram]simpleSection
+	SizeBytes() int
 }
 
 type binarySearchNgram struct {
@@ -442,4 +417,8 @@ func (b binarySearchNgram) DumpMap() map[ngram]simpleSection {
 		m[gram] = b.Get(gram)
 	}
 	return m
+}
+
+func (b binarySearchNgram) SizeBytes() int {
+	return 0 // binarySearch only uses mmaped data.
 }
