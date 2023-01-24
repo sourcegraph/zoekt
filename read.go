@@ -150,6 +150,16 @@ func (r *reader) readTOC(toc *indexTOC) error {
 				}
 			}
 		}
+
+		if os.Getenv("ZOEKT_ENABLE_BTREE") != "" && toc.btree.sz > 0 {
+			// hack: we leverage the fact that we inserted ngrams into the btree in
+			// order. Hence we can easily reconstruct the buckets from the
+			// ngramText simpleSection just by knowing the bucketSize. This is
+			// great because is keeps the index fully backward compatible with
+			// minimal overhead. The only overhead we have is storing the inner
+			// nodes of the btree in a separate simple section.
+			createBucketsFromNgramText(toc, btreeBucketSize)
+		}
 	} else {
 		// TODO: Remove this branch when ReaderMinFeatureVersion >= 10
 
@@ -170,6 +180,17 @@ func (r *reader) readTOC(toc *indexTOC) error {
 		}
 	}
 	return nil
+}
+
+func createBucketsFromNgramText(toc *indexTOC, bucketSize int) {
+	toc.btreeBuckets.data = toc.ngramText
+	toc.btreeBuckets.offsets = []uint32{0}
+
+	sentinel := toc.ngramText.off + toc.ngramText.sz
+	step := uint32((bucketSize / 2) * ngramEncoding)
+	for off := toc.ngramText.off + step; off+step < sentinel; off = off + step {
+		toc.btreeBuckets.offsets = append(toc.btreeBuckets.offsets, off)
+	}
 }
 
 func (r *indexData) readSectionBlob(sec simpleSection) ([]byte, error) {
@@ -289,25 +310,25 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	// if os.Getenv("ZOEKT_ENABLE_NGRAM_BS") != "" {
-	// bsMap, err := d.readBinarySearchNgrams(toc)
-	// if err != nil {
-	// return nil, err
-	// }
-	// d.ngrams = bsMap
-	// } else {
-	// offsetMap, err := d.readNgrams(toc)
-	// if err != nil {
-	// return nil, err
-	// }
-	// d.ngrams = offsetMap
-	// }
-
-	bt, err := d.readBtreeIndex(toc)
-	if err != nil {
-		return nil, err
+	if os.Getenv("ZOEKT_ENABLE_BTREE") != "" && toc.btree.sz > 0 {
+		bt, err := d.readBtreeIndex(toc)
+		if err != nil {
+			return nil, err
+		}
+		d.ngrams = bt
+	} else if os.Getenv("ZOEKT_ENABLE_NGRAM_BS") != "" {
+		bsMap, err := d.readBinarySearchNgrams(toc)
+		if err != nil {
+			return nil, err
+		}
+		d.ngrams = bsMap
+	} else {
+		offsetMap, err := d.readNgrams(toc)
+		if err != nil {
+			return nil, err
+		}
+		d.ngrams = offsetMap
 	}
-	d.ngrams = bt
 
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
 	if err != nil {
@@ -498,8 +519,6 @@ func (d *indexData) readBinarySearchNgrams(toc *indexTOC) (binarySearchNgram, er
 
 func (d *indexData) readBtreeIndex(toc *indexTOC) (btreeIndex, error) {
 	bi := btreeIndex{file: d.file}
-
-	bi.debug = true
 
 	btreeBlob, err := d.readSectionBlob(toc.btree)
 	if err != nil {

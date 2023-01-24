@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestBTree_unsorted(t *testing.T) {
@@ -95,6 +97,83 @@ func TestFindBucket(t *testing.T) {
 
 			if tt.wantPostingIndexOffset != havePostingIndexOffset {
 				t.Fatalf("postingIndexOffset: want %d, got %d", tt.wantPostingIndexOffset, havePostingIndexOffset)
+			}
+		})
+	}
+}
+
+func TestCreateBucketsFromNgramText(t *testing.T) {
+	offset := func(i int) uint32 {
+		return uint32(i * ngramEncoding)
+	}
+
+	cases := []struct {
+		opts        btreeOpts
+		ngrams      []ngram
+		wantOffsets []uint32
+	}{
+		{
+			opts:        btreeOpts{v: 2, bucketSize: 4},
+			ngrams:      []ngram{},
+			wantOffsets: []uint32{0},
+		},
+		{
+			opts:        btreeOpts{v: 2, bucketSize: 4},
+			ngrams:      []ngram{1},
+			wantOffsets: []uint32{0},
+		},
+		{
+			opts:        btreeOpts{v: 2, bucketSize: 4},
+			ngrams:      []ngram{1, 2},
+			wantOffsets: []uint32{0},
+		},
+		{
+			opts:        btreeOpts{v: 2, bucketSize: 4},
+			ngrams:      []ngram{1, 2, 3},
+			wantOffsets: []uint32{0},
+		},
+		{
+			opts:        btreeOpts{v: 2, bucketSize: 4},
+			ngrams:      []ngram{1, 2, 3, 4},
+			wantOffsets: []uint32{0},
+		},
+		{
+			opts:        btreeOpts{v: 2, bucketSize: 4},
+			ngrams:      []ngram{1, 2, 3, 4, 5},
+			wantOffsets: []uint32{0, offset(2)},
+		},
+		{
+			opts:        btreeOpts{v: 2, bucketSize: 4},
+			ngrams:      []ngram{1, 2, 3, 4, 5, 6},
+			wantOffsets: []uint32{0, offset(2)},
+		},
+		{
+			opts:        btreeOpts{v: 2, bucketSize: 4},
+			ngrams:      []ngram{1, 2, 3, 4, 5, 6, 7},
+			wantOffsets: []uint32{0, offset(2), offset(4)},
+		},
+		{
+			opts:   btreeOpts{v: 2, bucketSize: 4},
+			ngrams: []ngram{1, 2, 3, 4, 5, 6, 7, 8},
+			//             ^     ^     ^
+			wantOffsets: []uint32{0, offset(2), offset(4)},
+		},
+		{
+			opts:   btreeOpts{v: 2, bucketSize: 4},
+			ngrams: []ngram{1, 2, 3, 4, 5, 6, 7, 8, 9},
+			//             ^     ^     ^     ^
+			wantOffsets: []uint32{0, offset(2), offset(4), offset(6)},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run("", func(t *testing.T) {
+			toc := &indexTOC{}
+			toc.ngramText.sz = uint32(len(tt.ngrams) * ngramEncoding)
+			createBucketsFromNgramText(toc, tt.opts.bucketSize)
+
+			if d := cmp.Diff(tt.wantOffsets, toc.btreeBuckets.offsets); d != "" {
+				t.Fatalf("-want,+got\n%s", d)
 			}
 		})
 	}

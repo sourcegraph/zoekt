@@ -7,6 +7,14 @@ import (
 	"sort"
 )
 
+// bucketSize should be chosen such that in the final tree the buckets are as
+// close to the page size as possible, but not above. We insert ngrams in
+// order(!), which means after a split of a leaf, the left leaf is not affected
+// by further inserts and its size is fixed to bucketSize/2. The right-most
+// leaf might store up to btreeBucketSize ngrams, but the expected size is the
+// size of a page, too.
+const btreeBucketSize = (4096 * 2) / ngramEncoding
+
 // NOTE: getconf PAGESSIZE returns the number of bytes in a memory page, where "page"
 // is a fixed-length block, the unit for memory allocation and file mapping
 // performed by mmap(2).
@@ -17,15 +25,7 @@ type btree struct {
 }
 
 type btreeOpts struct {
-	// bucketSize = (pageSize * 2)/ngramEncoding
-	//
-	// Why? bucketSize should be chosen such that in the final tree the buckets
-	// are as close to the page size as possible, but not above. We insert
-	// ngrams in order(!), which means after a split of a leaf, the left leaf
-	// is not affected by further inserts and its size is fixed to
-	// bucketSize/2. The right-most leaf might have any size in bytes, but the
-	// expected size is the size of a page, too.
-	//
+	// How many ngrams can be stored at a leaf node.
 	bucketSize int
 	// all inner nodes, except root, have [v, 2v] children. Note: In the
 	// literature, b-trees are inconsistenlty categorized either by the number
@@ -82,6 +82,16 @@ func (bt *btree) visit(f func(n node)) {
 	bt.root.visit(f)
 }
 
+func (bt *btree) sizeBytes() int {
+	var sz int
+
+	bt.visit(func(n node) {
+		sz += n.sizeBytes()
+	})
+
+	return sz
+}
+
 // A stateful blob reader. This is just for convenience and to declutter the
 // code in readBtree and readNode.
 type btreeReader struct {
@@ -126,6 +136,7 @@ type node interface {
 	maybeSplit(opts btreeOpts) (left node, right node, newKey ngram, ok bool)
 	find(ng ngram) (int, int)
 	visit(func(n node))
+	sizeBytes() int
 
 	// serialize
 	write(w io.Writer) error
@@ -140,6 +151,14 @@ type leaf struct {
 	bucketIndex        uint64
 	postingIndexOffset uint64
 	bucket             []ngram
+}
+
+func (n *innerNode) sizeBytes() int {
+	return len(n.keys)*ngramEncoding + len(n.children)*int(interfaceBytes)
+}
+
+func (n *leaf) sizeBytes() int {
+	return 8 + 8 + len(n.bucket)*ngramEncoding
 }
 
 func (n *innerNode) write(w io.Writer) error {
@@ -345,14 +364,19 @@ type btreeIndex struct {
 	bt *btree
 
 	// We need access to the index to read the bucket into Memory.
-	file                 IndexFile
+	file IndexFile
+
 	bucketOffsets        []uint32
 	bucketSentinelOffset uint32
 
 	postingOffsets            []uint32
 	postingDataSentinelOffset uint32
+}
 
-	debug bool
+func (b btreeIndex) SizeBytes() int {
+	// We only count the slice headers and not the content to avoid double
+	// counting the content.
+	return b.bt.sizeBytes() + 2*(4+int(sliceHeaderBytes))
 }
 
 // Get returns the simple section of the posting list associated with the
@@ -415,9 +439,9 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 			bucket, _ := b.file.Read(off, sz)
 
 			// decode all ngrams in the bucket and fill map
-			for off := 0; off < len(bucket); off = off + 8 {
-				gram := ngram(binary.BigEndian.Uint64(bucket[off:]))
-				m[gram] = b.getPostingList(int(n.postingIndexOffset) + off)
+			for i := 0; i < len(bucket)/ngramEncoding; i++ {
+				gram := ngram(binary.BigEndian.Uint64(bucket[i*8:]))
+				m[gram] = b.getPostingList(int(n.postingIndexOffset) + i)
 			}
 		case *innerNode:
 			return
@@ -439,8 +463,4 @@ func (b btreeIndex) getPostingList(postingIndex int) simpleSection {
 			sz:  b.postingDataSentinelOffset - b.postingOffsets[postingIndex],
 		}
 	}
-}
-
-func (b btreeIndex) SizeBytes() int {
-	return 0
 }

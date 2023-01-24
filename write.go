@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"time"
 )
@@ -205,7 +206,9 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}
 	toc.ranks.end(w)
 
-	writeBtree(w, b.contentPostings, &toc.btreeBuckets, &toc.btree)
+	if os.Getenv("ZOEKT_ENABLE_BTREE") != "" {
+		writeBtree(w, b.contentPostings, &toc.btreeBuckets, &toc.btree)
+	}
 
 	var tocSection simpleSection
 
@@ -223,32 +226,21 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 	}
 	sort.Sort(keys)
 
-	bt := newBtree(btreeOpts{bucketSize: 1024, v: 100})
+	bt := newBtree(btreeOpts{bucketSize: btreeBucketSize, v: 100})
 	for _, key := range keys {
 		bt.insert(key)
 	}
 
-	// TODO: do we have align the start of btreeBuckets compound section with
-	// the page boundary assuming that the  start of the first page aligns with
-	// the beginning of the shard?
-
-	// We write the buckets to a compound section and update the tree with the
-	// bucketOffsets as we go.
-	btreeBuckets.start(w)
+	// backfill "pointers" to the buckets and posting lists.
+	// TODO: we could do this during insert if we rely on the assumption that we keys are sorted.
 	offset := 0
+	var curBucketIndex uint64 = 0
 	bt.visit(func(no node) {
 		switch n := no.(type) {
 		case *leaf:
 
-			var sec bytes.Buffer
-			for _, k := range n.bucket {
-				var buf [8]byte
-				binary.BigEndian.PutUint64(buf[:], uint64(k))
-				sec.Write(buf[:])
-			}
-
-			btreeBuckets.addItem(w, sec.Bytes()[:len(n.bucket)*8])
-			n.bucketIndex = uint64(len(btreeBuckets.offsets) - 1)
+			n.bucketIndex = curBucketIndex
+			curBucketIndex++
 
 			n.postingIndexOffset = uint64(offset)
 			offset += len(n.bucket)
@@ -256,7 +248,6 @@ func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, bt
 			return
 		}
 	})
-	btreeBuckets.end(w)
 
 	btree.start(w)
 	bt.write(w)
