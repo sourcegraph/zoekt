@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"time"
 )
@@ -206,10 +205,6 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	}
 	toc.ranks.end(w)
 
-	if os.Getenv("ZOEKT_ENABLE_BTREE") != "" {
-		writeBtree(w, b.contentPostings, &toc.btreeBuckets, &toc.btree)
-	}
-
 	var tocSection simpleSection
 
 	tocSection.start(w)
@@ -217,41 +212,6 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	tocSection.end(w)
 	tocSection.write(w)
 	return w.err
-}
-
-func writeBtree(w *writer, s *postingsBuilder, btreeBuckets *compoundSection, btree *simpleSection) {
-	keys := make(ngramSlice, 0, len(s.postings))
-	for k := range s.postings {
-		keys = append(keys, k)
-	}
-	sort.Sort(keys)
-
-	bt := newBtree(btreeOpts{bucketSize: btreeBucketSize, v: 100})
-	for _, key := range keys {
-		bt.insert(key)
-	}
-
-	// backfill "pointers" to the buckets and posting lists.
-	// TODO: we could do this during insert if we rely on the assumption that we keys are sorted.
-	offset := 0
-	var curBucketIndex uint64 = 0
-	bt.visit(func(no node) {
-		switch n := no.(type) {
-		case *leaf:
-
-			n.bucketIndex = curBucketIndex
-			curBucketIndex++
-
-			n.postingIndexOffset = uint64(offset)
-			offset += len(n.bucket)
-		case *innerNode:
-			return
-		}
-	})
-
-	btree.start(w)
-	bt.write(w)
-	btree.end(w)
 }
 
 func (b *IndexBuilder) writeJSON(data interface{}, sec *simpleSection, w *writer) error {

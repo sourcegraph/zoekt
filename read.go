@@ -150,16 +150,6 @@ func (r *reader) readTOC(toc *indexTOC) error {
 				}
 			}
 		}
-
-		if os.Getenv("ZOEKT_ENABLE_BTREE") != "" && toc.btree.sz > 0 {
-			// hack: we leverage the fact that we inserted ngrams into the btree in
-			// order. Hence we can easily reconstruct the buckets from the
-			// ngramText simpleSection just by knowing the bucketSize. This is
-			// great because is keeps the index fully backward compatible with
-			// minimal overhead. The only overhead we have is storing the inner
-			// nodes of the btree in a separate simple section.
-			createBucketsFromNgramText(toc, btreeBucketSize)
-		}
 	} else {
 		// TODO: Remove this branch when ReaderMinFeatureVersion >= 10
 
@@ -180,17 +170,6 @@ func (r *reader) readTOC(toc *indexTOC) error {
 		}
 	}
 	return nil
-}
-
-func createBucketsFromNgramText(toc *indexTOC, bucketSize int) {
-	toc.btreeBuckets.data = toc.ngramText
-	toc.btreeBuckets.offsets = []uint32{0}
-
-	sentinel := toc.ngramText.off + toc.ngramText.sz
-	step := uint32((bucketSize / 2) * ngramEncoding)
-	for off := toc.ngramText.off + step; off+step < sentinel; off = off + step {
-		toc.btreeBuckets.offsets = append(toc.btreeBuckets.offsets, off)
-	}
 }
 
 func (r *indexData) readSectionBlob(sec simpleSection) ([]byte, error) {
@@ -310,8 +289,8 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	if os.Getenv("ZOEKT_ENABLE_BTREE") != "" && toc.btree.sz > 0 {
-		bt, err := d.readBtreeIndex(toc)
+	if os.Getenv("ZOEKT_ENABLE_BTREE") != "" {
+		bt, err := d.newBtreeIndex(toc)
 		if err != nil {
 			return nil, err
 		}
@@ -517,25 +496,59 @@ func (d *indexData) readBinarySearchNgrams(toc *indexTOC) (binarySearchNgram, er
 	}, nil
 }
 
-func (d *indexData) readBtreeIndex(toc *indexTOC) (btreeIndex, error) {
+func (d *indexData) newBtreeIndex(toc *indexTOC) (btreeIndex, error) {
 	bi := btreeIndex{file: d.file}
 
-	btreeBlob, err := d.readSectionBlob(toc.btree)
-	if err != nil {
-		return btreeIndex{}, err
-	}
-	bi.bt, err = readBtree(btreeBlob)
+	textContent, err := d.readSectionBlob(toc.ngramText)
 	if err != nil {
 		return btreeIndex{}, err
 	}
 
-	bi.bucketOffsets = toc.btreeBuckets.offsets
-	bi.bucketSentinelOffset = toc.btreeBuckets.data.off + toc.btreeBuckets.data.sz
+	bt := newBtree(btreeOpts{bucketSize: btreeBucketSize, v: 100})
+	for i := 0; i < len(textContent); i += ngramEncoding {
+		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
+		bt.insert(ng)
+	}
+
+	// backfill "pointers" to the buckets and posting lists, remove buckets
+	offset := 0
+	var bucketIndex uint64 = 0
+	bt.visit(func(no node) {
+		switch n := no.(type) {
+		case *leaf:
+			n.bucketIndex = bucketIndex
+			bucketIndex++
+
+			n.postingIndexOffset = uint64(offset)
+			offset += n.bucketSize
+		case *innerNode:
+			return
+		}
+	})
+
+	bi.bt = bt
+
+	// hack: Because we inserted ngrams into the btree in order, we can easily
+	// reconstruct the buckets from the ngramText simpleSection just by knowing
+	// the bucketSize.
+	bi.bucketOffsets = createBucketOffsetsFromNgramText(toc, btreeBucketSize)
+	bi.bucketSentinelOffset = toc.ngramText.off + toc.ngramText.sz
 
 	bi.postingOffsets = toc.postings.offsets
 	bi.postingDataSentinelOffset = toc.postings.data.off + toc.postings.data.sz
 
 	return bi, nil
+}
+
+func createBucketOffsetsFromNgramText(toc *indexTOC, bucketSize int) []uint32 {
+	offsets := []uint32{0}
+
+	sentinel := toc.ngramText.off + toc.ngramText.sz
+	step := uint32((bucketSize / 2) * ngramEncoding)
+	for off := toc.ngramText.off + step; off+step < sentinel; off = off + step {
+		offsets = append(offsets, off)
+	}
+	return offsets
 }
 
 func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]byte, error) {

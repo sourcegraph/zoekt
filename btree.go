@@ -34,7 +34,7 @@ type btreeOpts struct {
 }
 
 func newBtree(opts btreeOpts) *btree {
-	return &btree{&leaf{bucket: make([]ngram, 0, opts.bucketSize)}, opts}
+	return &btree{&leaf{}, opts}
 }
 
 func (bt *btree) insert(ng ngram) {
@@ -148,9 +148,20 @@ type innerNode struct {
 }
 
 type leaf struct {
-	bucketIndex        uint64
+	bucketIndex uint64
+	// postingIndexOffset is the index of the posting list of the first ngram
+	// in the bucket. This is enough to determine the index of the posting list
+	// for every other key in the bucket.
 	postingIndexOffset uint64
-	bucket             []ngram
+	// Because we insert ngrams in order, we don't actually have to fill the
+	// buckets. We just have to keep track of the size of the bucket, so we
+	// know when to split, and the key we have to propagate up to the parent
+	// node when we split.
+	//
+	// If in the future we decide to mutate buckets, we have to replace
+	// bucketSize and splitKey by []ngram.
+	bucketSize int
+	splitKey   ngram
 }
 
 func (n *innerNode) sizeBytes() int {
@@ -158,7 +169,7 @@ func (n *innerNode) sizeBytes() int {
 }
 
 func (n *leaf) sizeBytes() int {
-	return 8 + 8 + len(n.bucket)*ngramEncoding
+	return 4 * 8
 }
 
 func (n *innerNode) write(w io.Writer) error {
@@ -253,14 +264,12 @@ func readNode(reader *btreeReader) (node, error) {
 func (n *leaf) insert(ng ngram, opts btreeOpts) {
 	// Insert in ascending order. This is efficient in case we already deal with
 	// sorted inputs.
-	n.bucket = append(n.bucket, ng)
+	n.bucketSize++
 
-	for i := len(n.bucket) - 1; i > 0; i-- {
-		if n.bucket[i-1] < n.bucket[i] {
-			break
-		}
-		n.bucket[i], n.bucket[i-1] = n.bucket[i-1], n.bucket[i]
+	if n.bucketSize == (opts.bucketSize/2)+1 {
+		n.splitKey = ng
 	}
+
 }
 
 func (n *innerNode) insert(ng ngram, opts btreeOpts) {
@@ -306,15 +315,13 @@ func (n *leaf) find(ng ngram) (int, int) {
 }
 
 func (n *leaf) maybeSplit(opts btreeOpts) (left node, right node, newKey ngram, ok bool) {
-	if len(n.bucket) < opts.bucketSize {
+	if n.bucketSize < opts.bucketSize {
 		return
 	}
-	// Optimization: The left leaf is not mutated after this split because we
-	// insert ngrams in order. Hence, we can already allocate the final size
-	// which equals bucketSize/2.
-	return &leaf{bucket: append(make([]ngram, 0, opts.bucketSize/2), n.bucket[:opts.bucketSize/2]...)},
-		&leaf{bucket: append(make([]ngram, 0, opts.bucketSize), n.bucket[opts.bucketSize/2:]...)},
-		n.bucket[opts.bucketSize/2],
+
+	return &leaf{bucketSize: opts.bucketSize / 2},
+		&leaf{bucketSize: opts.bucketSize / 2},
+		n.splitKey,
 		true
 }
 
@@ -363,7 +370,7 @@ func (bt *btree) String() string {
 type btreeIndex struct {
 	bt *btree
 
-	// We need access to the index to read the bucket into Memory.
+	// We need the index to read buckets into Memory.
 	file IndexFile
 
 	bucketOffsets        []uint32
@@ -384,7 +391,7 @@ func (b btreeIndex) SizeBytes() int {
 // 1. Search the inner nodes to find the bucket that may contain ng (in MEM)
 // 2. Read the bucket from disk (1 disk access)
 // 3. Binary search the bucket (in MEM)
-// 4. Use the offsets stored in the leaf to return the simple section (in MEM)
+// 4. Return the simple section pointing to the posting list (in MEM)
 func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	// find bucket
 	bucketIndex, postingIndexOffset := b.bt.find(ng)

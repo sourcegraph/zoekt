@@ -99,9 +99,6 @@ type indexTOC struct {
 	repos simpleSection
 
 	ranks simpleSection
-
-	btreeBuckets compoundSection
-	btree        simpleSection
 }
 
 func (t *indexTOC) sections() []section {
@@ -191,9 +188,6 @@ func (t *indexTOC) sectionsTaggedList() []taggedSection {
 		{"contentBloom", &unusedSimple},
 
 		{"ranks", &t.ranks},
-
-		{"btreeBuckets", &t.btreeBuckets},
-		{"btree", &t.btree},
 	}
 }
 

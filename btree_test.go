@@ -8,21 +8,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestBTree_unsorted(t *testing.T) {
-	bt := newBtree(btreeOpts{bucketSize: 2, v: 2})
-	insertMany(t, bt, []ngram{6, 2, 4, 3, 9, 8, 7, 5, 1})
-	// inner nodes only
-	//
-	//         [6]
-	//        /   \
-	//    [3,4]  [8,9]
-	//
-	want := "{bucketSize:2 v:2}[6][3,4][8,9]"
-	if s := bt.String(); s != want {
-		t.Fatalf("want %s, got %s", want, s)
-	}
-}
-
 func TestBTree_sorted(t *testing.T) {
 	bt := newBtree(btreeOpts{bucketSize: 2, v: 2})
 	insertMany(t, bt, []ngram{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
@@ -38,9 +23,9 @@ func TestBTree_sorted(t *testing.T) {
 	}
 }
 
-func TestSerialization(t *testing.T) {
+func TestSerialization_sorted(t *testing.T) {
 	bt := newBtree(btreeOpts{bucketSize: 2, v: 2})
-	insertMany(t, bt, []ngram{6, 2, 4, 3, 9, 8, 7, 5, 1})
+	insertMany(t, bt, []ngram{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
 
 	var buf bytes.Buffer
 
@@ -59,8 +44,8 @@ func TestSerialization(t *testing.T) {
 }
 
 func TestFindBucket(t *testing.T) {
-	bt := newBtree(btreeOpts{bucketSize: 2, v: 2})
-	insertMany(t, bt, []ngram{6, 2, 4, 3, 9, 8, 7, 5, 1})
+	bt := newBtree(btreeOpts{bucketSize: 4, v: 2})
+	insertMany(t, bt, []ngram{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
 
 	buckets := 0
 	offset := 0
@@ -70,7 +55,7 @@ func TestFindBucket(t *testing.T) {
 			n.bucketIndex = uint64(buckets)
 			buckets++
 			n.postingIndexOffset = uint64(offset)
-			offset += len(n.bucket)
+			offset += n.bucketSize
 		case *innerNode:
 			return
 		}
@@ -84,7 +69,7 @@ func TestFindBucket(t *testing.T) {
 		{
 			ng:                     7,
 			wantBucketIndex:        3,
-			wantPostingIndexOffset: 5,
+			wantPostingIndexOffset: 6,
 		},
 	}
 
@@ -170,9 +155,9 @@ func TestCreateBucketsFromNgramText(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			toc := &indexTOC{}
 			toc.ngramText.sz = uint32(len(tt.ngrams) * ngramEncoding)
-			createBucketsFromNgramText(toc, tt.opts.bucketSize)
+			haveOffsets := createBucketOffsetsFromNgramText(toc, tt.opts.bucketSize)
 
-			if d := cmp.Diff(tt.wantOffsets, toc.btreeBuckets.offsets); d != "" {
+			if d := cmp.Diff(tt.wantOffsets, haveOffsets); d != "" {
 				t.Fatalf("-want,+got\n%s", d)
 			}
 		})
