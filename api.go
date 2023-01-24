@@ -479,7 +479,10 @@ func (p *Progress) sizeBytes() uint64 {
 // SearchResult contains search matches and extra data
 type SearchResult struct {
 	Stats
-	Progress
+
+	// Do not encode this as we cannot encode -Inf in JSON
+	Progress `json:"-"`
+
 	Files []FileMatch
 
 	// RepoURLs holds a repo => template string map.
