@@ -893,10 +893,10 @@ type SearchOptions struct {
 	// sorting matches.
 	UseDocumentRanks bool
 
-	// RanksDampingFactor determines the contribution of documents ranks to the
-	// final ranking based on RRF. A value in (0,1] reduces the contribution,
-	// while a value in (-inf,0) increases it.
-	RanksDampingFactor float64
+	// EXPERIMENTAL. When UseDocumentRanks is enabled, this can be optionally set to adjust
+	// their weight in the file match score. If the value is <= 0.0, the default weight value
+	// will be used. This option is temporary and is only exposed for testing/ tuning purposes.
+	DocumentRanksWeight float64
 
 	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
 	// a command-line flag

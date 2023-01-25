@@ -751,13 +751,13 @@ search:
 func sendByRepository(result *zoekt.SearchResult, opts *zoekt.SearchOptions, sender zoekt.Sender) {
 
 	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
-		zoekt.SortFiles(result.Files, opts)
+		zoekt.SortFiles(result.Files)
 		sender.Send(result)
 		return
 	}
 
 	send := func(repoName string, a, b int, stats zoekt.Stats) {
-		zoekt.SortFiles(result.Files[a:b], opts)
+		zoekt.SortFiles(result.Files[a:b])
 		sender.Send(&zoekt.SearchResult{
 			Stats: stats,
 			Progress: zoekt.Progress{

@@ -1115,3 +1115,92 @@ func Get() {
 		})
 	}
 }
+
+func TestScoringWithDocumentRanks(t *testing.T) {
+	if os.Getenv("CI") == "" && checkCTags() == "" {
+		t.Skip("ctags not available")
+	}
+	dir := t.TempDir()
+
+	opts := Options{
+		IndexDir: dir,
+		RepositoryDescription: zoekt.Repository{
+			Name: "repo",
+		},
+		DocumentRanksVersion: "ranking",
+	}
+
+	searchQuery := &query.Substring{Content: true, Pattern: "Inner"}
+	exampleJava, err := os.ReadFile("./testdata/example.java")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name                string
+		documentRanks       []float64
+		documentRanksWeight float64
+		wantScore           float64
+	}{
+		{
+			name: "score with no document ranks",
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 400 (atom) + 10 (file order)
+			wantScore: 7412.00,
+		},
+		{
+			name:          "score with document ranks",
+			documentRanks: []float64{0, 0, 0, 0, 0.8, 0, 0},
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 400 (atom) + 7200 (file rank) + 10 (file order)
+			wantScore: 14612.00,
+		},
+		{
+			name:                "score with custom document ranks weight",
+			documentRanks:       []float64{0, 0, 0, 0, 0.8, 0, 0},
+			documentRanksWeight: 1000.0,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 400 (atom) + 800 (file rank) + 10 (file order)
+			wantScore: 8212.00,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			b, err := NewBuilder(opts)
+			if err != nil {
+				t.Fatalf("NewBuilder: %v", err)
+			}
+
+			err = b.Add(zoekt.Document{Name: "example.java", Content: exampleJava, Ranks: c.documentRanks})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := b.Finish(); err != nil {
+				t.Fatalf("Finish: %v", err)
+			}
+
+			ss, err := shards.NewDirectorySearcher(dir)
+			if err != nil {
+				t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
+			}
+			defer ss.Close()
+
+			srs, err := ss.Search(context.Background(), searchQuery, &zoekt.SearchOptions{
+				UseDocumentRanks:    true,
+				DocumentRanksWeight: c.documentRanksWeight,
+				DebugScore:          true,
+			})
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got, want := len(srs.Files), 1; got != want {
+				t.Fatalf("file matches: want %d, got %d", want, got)
+			}
+
+			if got := srs.Files[0].Score; got != c.wantScore {
+				t.Fatalf("score: want %f, got %f\ndebug: %s\ndebugscore: %s", c.wantScore, got, srs.Files[0].Debug, srs.Files[0].LineMatches[0].DebugScore)
+			}
+		})
+	}
+}
