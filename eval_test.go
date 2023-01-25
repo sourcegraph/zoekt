@@ -212,6 +212,30 @@ func TestSimplifyRepoSet(t *testing.T) {
 	}
 }
 
+func TestSimplifyRepoIds(t *testing.T) {
+	d := compoundReposShard(t, "foo", "bar")
+	all := &query.RepoIds{Repos: roaring.BitmapOf(hash("foo"), hash("bar"))}
+	some := &query.RepoIds{Repos: roaring.BitmapOf(hash("foo"), hash("banana"))}
+	none := &query.RepoIds{Repos: roaring.BitmapOf(hash("banana"))}
+
+	tr := cmp.Transformer("", func(b *roaring.Bitmap) []uint32 { return b.ToArray() })
+
+	got := d.simplify(all)
+	if d := cmp.Diff(&query.Const{Value: true}, got, tr); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+
+	got = d.simplify(some)
+	if d := cmp.Diff(some, got, tr); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+
+	got = d.simplify(none)
+	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+}
+
 func TestSimplifyRepo(t *testing.T) {
 	re := func(pat string) *query.Repo {
 		t.Helper()

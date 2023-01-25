@@ -83,6 +83,10 @@ func (d *indexData) simplify(in query.Q) query.Q {
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
 				return r.Set[repo.Name]
 			})
+		case *query.RepoIds:
+			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
+				return r.Repos.Contains(repo.ID)
+			})
 		case *query.Language:
 			_, has := d.metaData.LanguageMap[r.Language]
 			if !has && d.metaData.IndexFeatureVersion < 12 {

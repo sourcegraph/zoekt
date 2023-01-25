@@ -306,3 +306,26 @@ func TestBranchesRepos(t *testing.T) {
 		t.Fatalf("expect %d documents, but got at least 1 more", len(want))
 	}
 }
+
+func TestRepoIds(t *testing.T) {
+	d := &indexData{
+		repoMetaData:    []Repository{{Name: "r0", ID: 0}, {Name: "r1", ID: 1}, {Name: "r2", ID: 2}, {Name: "r3", ID: 3}},
+		fileBranchMasks: []uint64{1, 1, 1, 1, 1, 1},
+		repos:           []uint16{0, 0, 1, 2, 3, 3},
+	}
+	mt, err := d.newMatchTree(&query.RepoIds{Repos: roaring.BitmapOf(1, 3, 99)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []uint32{2, 4, 5}
+	for i := 0; i < len(want); i++ {
+		nextDoc := mt.nextDoc()
+		if nextDoc != want[i] {
+			t.Fatalf("want %d, got %d", want[i], nextDoc)
+		}
+		mt.prepare(nextDoc)
+	}
+	if mt.nextDoc() != maxUInt32 {
+		t.Fatalf("expected %d document, but got at least 1 more", len(want))
+	}
+}
