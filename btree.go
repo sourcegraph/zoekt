@@ -3,7 +3,6 @@ package zoekt
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"sort"
 )
 
@@ -44,28 +43,6 @@ func (bt *btree) insert(ng ngram) {
 	bt.root.insert(ng, bt.opts)
 }
 
-func (bt *btree) write(w io.Writer) (err error) {
-	var enc [8]byte
-
-	binary.BigEndian.PutUint64(enc[:], uint64(bt.opts.v))
-	if _, err := w.Write(enc[:]); err != nil {
-		return err
-	}
-
-	binary.BigEndian.PutUint64(enc[:], uint64(bt.opts.bucketSize))
-	if _, err := w.Write(enc[:]); err != nil {
-		return err
-	}
-
-	bt.root.visit(func(n node) {
-		if err != nil {
-			return
-		}
-		err = n.write(w)
-	})
-	return
-}
-
 // find returns the tuple (bucketIndex, postingIndexOffset), both of which are
 // stored at the leaf level. They are effectively pointers to the bucket and
 // the posting lists for ngrams stored in the bucket. Since ngrams and their
@@ -92,54 +69,12 @@ func (bt *btree) sizeBytes() int {
 	return sz
 }
 
-// A stateful blob reader. This is just for convenience and to declutter the
-// code in readBtree and readNode.
-type btreeReader struct {
-	blob []byte
-	off  int
-}
-
-func (r *btreeReader) u64() (uint64, error) {
-	if r.off+8 > len(r.blob) {
-		return 0, fmt.Errorf("out of bounds")
-	}
-	v := binary.BigEndian.Uint64(r.blob[r.off : r.off+8])
-	r.off += 8
-	return v, nil
-}
-
-func readBtree(blob []byte) (*btree, error) {
-	var bt btree
-	reader := &btreeReader{blob: blob}
-
-	v64, err := reader.u64()
-	if err != nil {
-		return nil, err
-	}
-	bt.opts.v = int(v64)
-
-	bucketSize64, err := reader.u64()
-	if err != nil {
-		return nil, err
-	}
-	bt.opts.bucketSize = int(bucketSize64)
-
-	bt.root, err = readNode(reader)
-	if err != nil {
-		return nil, err
-	}
-	return &bt, nil
-}
-
 type node interface {
 	insert(ng ngram, opts btreeOpts)
 	maybeSplit(opts btreeOpts) (left node, right node, newKey ngram, ok bool)
 	find(ng ngram) (int, int)
 	visit(func(n node))
 	sizeBytes() int
-
-	// serialize
-	write(w io.Writer) error
 }
 
 type innerNode struct {
@@ -170,95 +105,6 @@ func (n *innerNode) sizeBytes() int {
 
 func (n *leaf) sizeBytes() int {
 	return 4 * 8
-}
-
-func (n *innerNode) write(w io.Writer) error {
-	var buf [8]byte
-
-	binary.BigEndian.PutUint64(buf[:], uint64(len(n.keys)))
-	_, err := w.Write(buf[:])
-	if err != nil {
-		return err
-	}
-
-	for _, key := range n.keys {
-		binary.BigEndian.PutUint64(buf[:], uint64(key))
-		_, err := w.Write(buf[:])
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (n *leaf) write(w io.Writer) error {
-	var buf [8]byte
-
-	// 0 keys signals that this is a leaf.
-	binary.BigEndian.PutUint64(buf[:], uint64(0))
-	_, err := w.Write(buf[:])
-	if err != nil {
-		return err
-	}
-	binary.BigEndian.PutUint64(buf[:], n.bucketIndex)
-	_, err = w.Write(buf[:])
-	if err != nil {
-		return err
-	}
-
-	binary.BigEndian.PutUint64(buf[:], n.postingIndexOffset)
-	_, err = w.Write(buf[:])
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func readNode(reader *btreeReader) (node, error) {
-	nKeys, err := reader.u64()
-	if err != nil {
-		return nil, err
-	}
-
-	// Leaf
-	if nKeys == 0 {
-		var n leaf
-		n.bucketIndex, err = reader.u64()
-		if err != nil {
-			return nil, err
-		}
-
-		n.postingIndexOffset, err = reader.u64()
-		if err != nil {
-			return nil, err
-		}
-
-		return &n, nil
-	}
-
-	var n innerNode
-	// Inner node: first read the keys then traverse the children depth-frist.
-	n.keys = make([]ngram, 0, nKeys)
-	for i := 0; uint64(i) < nKeys; i++ {
-		key, err := reader.u64()
-		if err != nil {
-			return nil, err
-		}
-		n.keys = append(n.keys, ngram(key))
-	}
-
-	n.children = make([]node, 0, nKeys+1)
-	for i := 0; uint64(i) < nKeys+1; i++ {
-		child, err := readNode(reader)
-		if err != nil {
-			return nil, err
-		}
-		n.children = append(n.children, child)
-	}
-
-	return &n, nil
 }
 
 func (n *leaf) insert(ng ngram, opts btreeOpts) {

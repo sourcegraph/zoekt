@@ -1,7 +1,6 @@
 package zoekt
 
 import (
-	"bytes"
 	"fmt"
 	"testing"
 
@@ -20,26 +19,6 @@ func TestBTree_sorted(t *testing.T) {
 	want := "{bucketSize:2 v:2}[3,5,7][2][4][6][8,9]"
 	if s := bt.String(); s != want {
 		t.Fatalf("want %s, got %s", want, s)
-	}
-}
-
-func TestSerialization_sorted(t *testing.T) {
-	bt := newBtree(btreeOpts{bucketSize: 2, v: 2})
-	insertMany(t, bt, []ngram{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
-
-	var buf bytes.Buffer
-
-	if err := bt.write(&buf); err != nil {
-		t.Fatal(err)
-	}
-
-	bt2, err := readBtree(buf.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if bt.String() != bt2.String() {
-		t.Fatalf("\nin:%s\nout:%s", bt.String(), bt2.String())
 	}
 }
 
