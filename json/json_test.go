@@ -90,7 +90,7 @@ func TestClientServer(t *testing.T) {
 func TestClientServerWithRepoIdsProvided(t *testing.T) {
 	searchQuery := "hello"
 	expectedSearch := mustParse(searchQuery)
-	expectedSearch = query.NewAnd(expectedSearch, query.NewSingleBranchesRepos("HEAD", 1, 3, 5, 7))
+	expectedSearch = query.NewAnd(expectedSearch, query.NewRepoIds(1, 3, 5, 7))
 	mock := &mockSearcher.MockSearcher{
 		WantSearch: expectedSearch,
 		SearchResult: &zoekt.SearchResult{
