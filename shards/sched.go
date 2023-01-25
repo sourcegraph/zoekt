@@ -129,9 +129,13 @@ func newMultiScheduler(capacity int64) *multiScheduler {
 
 // Acquire implements scheduler.Acquire.
 func (s *multiScheduler) Acquire(ctx context.Context) (*process, error) {
-	// Start in interactive. yieldFunc will switch us to batch. sem can be nil
-	// if we fail while switching to batch. nil value prevents us releasing
-	// twice.
+	// There are two stages, interactive and batch. We first start by acquiring the interactive mode semaphore.
+	// At some point in the future (if this search request is expensive enough),
+	// yieldFunc will switch us to the batch mode semaphore.
+	//
+	// It's possible for "sem" to be nil if we fail while switching to batch. In this scenario,
+	// the nil value will prevent us from releasing twice.
+
 	sem := s.semInteractive
 
 	if err := sem.Acquire(ctx); err != nil {
@@ -227,17 +231,21 @@ func (p *process) Release() {
 // The only error it will return is a context error if ctx expires. In that
 // case the process should stop running and call Release.
 func (p *process) Yield(ctx context.Context) error {
+	// Return immediately if we have already yielded or if we haven't used up our full timeslice
+	// (represented via yieldTimer).
 	if p.yieldTimer == nil || !p.yieldTimer.Exceeded() {
 		return nil
 	}
 
-	// Try to yield. This can return an error if our context expired.
+	// We've just exceeded our timeslice.
+
+	// First, try to yield. This can return an error if our context expired.
 	err := p.yieldFunc(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Successfully yielded. Stop our timer and mark it nil so we don't call
+	// We've successfully yielded. Second, stop our timer and mark it nil so we don't call
 	// yieldFunc again.
 	p.yieldTimer.Stop()
 	p.yieldTimer = nil
