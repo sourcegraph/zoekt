@@ -504,22 +504,28 @@ func (d *indexData) newBtreeIndex(toc *indexTOC) (btreeIndex, error) {
 		return btreeIndex{}, err
 	}
 
-	bt := newBtree(btreeOpts{bucketSize: btreeBucketSize, v: 100})
+	// For 500k trigams we can expect approx 1000 leaf nodes (500k divided by
+	// half the bucketSize) and 20 nodes on level 2 (all but the rightmost
+	// inner nodes will have exactly v=50 children) plus a root node.
+	bt := newBtree(btreeOpts{bucketSize: btreeBucketSize, v: 50})
 	for i := 0; i < len(textContent); i += ngramEncoding {
 		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
 		bt.insert(ng)
 	}
 
-	// backfill "pointers" to the buckets and posting lists, remove buckets
-	offset := 0
-	var bucketIndex uint64 = 0
+	// backfill "pointers" to the buckets and posting lists. Instead of
+	// backfilling we could maintain state during insertion, however the
+	// visitor pattern seems more natural and shouldn't be a performance issue,
+	// because, based on the typical number of trigrams (500k) per shard, the
+	// b-trees we construct here only have around 1000 leaf nodes.
+	offset, bucketIndex := 0, 0
 	bt.visit(func(no node) {
 		switch n := no.(type) {
 		case *leaf:
 			n.bucketIndex = bucketIndex
 			bucketIndex++
 
-			n.postingIndexOffset = uint64(offset)
+			n.postingIndexOffset = offset
 			offset += n.bucketSize
 		case *innerNode:
 			return
@@ -528,10 +534,7 @@ func (d *indexData) newBtreeIndex(toc *indexTOC) (btreeIndex, error) {
 
 	bi.bt = bt
 
-	// hack: Because we inserted ngrams into the btree in order, we can easily
-	// reconstruct the buckets from the ngramText simpleSection just by knowing
-	// the bucketSize.
-	bi.bucketOffsets = createBucketOffsetsFromNgramText(toc, btreeBucketSize)
+	bi.bucketOffsets = createBucketOffsets(toc.ngramText, btreeBucketSize)
 	bi.bucketSentinelOffset = toc.ngramText.off + toc.ngramText.sz
 
 	bi.postingOffsets = toc.postings.offsets
@@ -540,12 +543,14 @@ func (d *indexData) newBtreeIndex(toc *indexTOC) (btreeIndex, error) {
 	return bi, nil
 }
 
-func createBucketOffsetsFromNgramText(toc *indexTOC, bucketSize int) []uint32 {
+// Because we insert ngrams into the btree in order, we can easily reconstruct
+// the buckets from the ngramText simpleSection just by knowing the bucketSize.
+func createBucketOffsets(sec simpleSection, bucketSize int) []uint32 {
 	offsets := []uint32{0}
 
-	sentinel := toc.ngramText.off + toc.ngramText.sz
+	sentinel := sec.off + sec.sz
 	step := uint32((bucketSize / 2) * ngramEncoding)
-	for off := toc.ngramText.off + step; off+step < sentinel; off = off + step {
+	for off := sec.off + step; off+step < sentinel; off = off + step {
 		offsets = append(offsets, off)
 	}
 	return offsets

@@ -18,7 +18,7 @@ func TestBTree_sorted(t *testing.T) {
 	//
 	want := "{bucketSize:2 v:2}[3,5,7][2][4][6][8,9]"
 	if s := bt.String(); s != want {
-		t.Fatalf("want %s, got %s", want, s)
+		t.Fatalf("\nwant:%s\ngot: %s", want, s)
 	}
 }
 
@@ -31,9 +31,9 @@ func TestFindBucket(t *testing.T) {
 	bt.visit(func(no node) {
 		switch n := no.(type) {
 		case *leaf:
-			n.bucketIndex = uint64(buckets)
+			n.bucketIndex = buckets
 			buckets++
-			n.postingIndexOffset = uint64(offset)
+			n.postingIndexOffset = offset
 			offset += n.bucketSize
 		case *innerNode:
 			return
@@ -134,7 +134,7 @@ func TestCreateBucketsFromNgramText(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			toc := &indexTOC{}
 			toc.ngramText.sz = uint32(len(tt.ngrams) * ngramEncoding)
-			haveOffsets := createBucketOffsetsFromNgramText(toc, tt.opts.bucketSize)
+			haveOffsets := createBucketOffsets(toc.ngramText, tt.opts.bucketSize)
 
 			if d := cmp.Diff(tt.wantOffsets, haveOffsets); d != "" {
 				t.Fatalf("-want,+got\n%s", d)
