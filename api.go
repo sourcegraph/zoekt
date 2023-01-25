@@ -37,14 +37,6 @@ type FileMatch struct {
 	// Ranking; the higher, the better.
 	Score float64 // TODO - hide this field?
 
-	// Experimental. Ranks is a vector containing floats in the interval [0, 1]. The
-	// length of the vector depends on the output from the ranking function at index
-	// time.
-	//
-	// This field is only set if the shard contains ranking information and
-	// SearchOptions.UseDocumentRanks is true.
-	Ranks []float64
-
 	// For debugging. Needs DebugScore set, but public so tests in
 	// other packages can print some diagnostics.
 	Debug string
@@ -93,9 +85,6 @@ type FileMatch struct {
 func (m *FileMatch) sizeBytes() (sz uint64) {
 	// Score
 	sz += 8
-
-	// ranks
-	sz += 8 * uint64(len(m.Ranks))
 
 	for _, s := range []string{
 		m.Debug,
