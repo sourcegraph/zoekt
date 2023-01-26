@@ -90,6 +90,8 @@ func (bt *btree) visit(f func(n node)) {
 func (bt *btree) sizeBytes() int {
 	sz := 2 * 8 // opts
 
+	sz += int(interfaceBytes)
+
 	bt.visit(func(n node) {
 		sz += n.sizeBytes()
 	})
