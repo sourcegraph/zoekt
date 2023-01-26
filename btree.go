@@ -250,11 +250,8 @@ type btreeIndex struct {
 	// We need the index to read buckets into memory.
 	file IndexFile
 
-	bucketOffsets        []uint32
-	bucketSentinelOffset uint32
-
-	postingOffsets            []uint32
-	postingDataSentinelOffset uint32
+	bucketOffsets  []uint32
+	postingOffsets []uint32
 }
 
 func (b btreeIndex) SizeBytes() int {
@@ -272,13 +269,7 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	bucketIndex, postingIndexOffset := b.bt.find(ng)
 
 	// read bucket into memory
-	var sz, off uint32
-	off, sz = b.bucketOffsets[bucketIndex], 0
-	if bucketIndex+1 < len(b.bucketOffsets) {
-		sz = b.bucketOffsets[bucketIndex+1] - off
-	} else {
-		sz = b.bucketSentinelOffset - off
-	}
+	off, sz := b.bucketOffsets[bucketIndex], b.bucketOffsets[bucketIndex+1]-b.bucketOffsets[bucketIndex]
 
 	bucket, err := b.file.Read(off, sz)
 	if err != nil {
@@ -311,13 +302,7 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 		switch n := no.(type) {
 		case *leaf:
 			// read bucket into memory
-			var sz, off uint32
-			off, sz = b.bucketOffsets[n.bucketIndex], 0
-			if int(n.bucketIndex)+1 < len(b.bucketOffsets) {
-				sz = b.bucketOffsets[n.bucketIndex+1] - off
-			} else {
-				sz = b.bucketSentinelOffset - off
-			}
+			off, sz := b.bucketOffsets[n.bucketIndex], b.bucketOffsets[n.bucketIndex+1]-b.bucketOffsets[n.bucketIndex]
 			bucket, _ := b.file.Read(off, sz)
 
 			// decode all ngrams in the bucket and fill map
@@ -334,15 +319,8 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 }
 
 func (b btreeIndex) getPostingList(postingIndex int) simpleSection {
-	if postingIndex+1 < len(b.postingOffsets) {
-		return simpleSection{
-			off: b.postingOffsets[postingIndex],
-			sz:  b.postingOffsets[postingIndex+1] - b.postingOffsets[postingIndex],
-		}
-	} else {
-		return simpleSection{
-			off: b.postingOffsets[postingIndex],
-			sz:  b.postingDataSentinelOffset - b.postingOffsets[postingIndex],
-		}
+	return simpleSection{
+		off: b.postingOffsets[postingIndex],
+		sz:  b.postingOffsets[postingIndex+1] - b.postingOffsets[postingIndex],
 	}
 }
