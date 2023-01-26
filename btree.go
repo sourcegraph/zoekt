@@ -255,7 +255,7 @@ type btreeIndex struct {
 }
 
 func (b btreeIndex) SizeBytes() int {
-	return b.bt.sizeBytes() + 2*int(sliceHeaderBytes) + 4*len(b.bucketOffsets) + 4*len(b.postingOffsets) + 2*4
+	return b.bt.sizeBytes() + 2*int(sliceHeaderBytes) + 4*len(b.bucketOffsets) + 4*len(b.postingOffsets)
 }
 
 // Get returns the simple section of the posting list associated with the
