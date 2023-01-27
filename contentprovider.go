@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"math"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -453,7 +452,8 @@ func (nls newlines) getLines(data []byte, low, high int) []byte {
 }
 
 const (
-	// TODO - how to scale this relative to rank?
+	// Query-dependent scoring signals. All of these together are bounded at ~9000
+	// (scoreWordMatch + scoreSymbol + scoreKindMatch * 10 + scoreFactorAtomMatch).
 	scorePartialWordMatch = 50.0
 	scoreWordMatch        = 500.0
 	scoreBase             = 7000.0
@@ -461,11 +461,17 @@ const (
 	scoreSymbol           = 7000.0
 	scorePartialSymbol    = 4000.0
 	scoreKindMatch        = 100.0
-	scoreFactorAtomMatch  = 400.0
-	scoreShardRankFactor  = 20.0
-	scoreFileOrderFactor  = 10.0
-	scoreLineOrderFactor  = 1.0
 	scoreRepetitionFactor = 1.0
+	scoreFactorAtomMatch  = 400.0
+
+	// File-only scoring signals. For now these are also bounded ~9000 to give them
+	// equal weight with the query-dependent signals.
+	scoreFileRankFactor  = 9000.0
+	scoreFileOrderFactor = 10.0
+	scoreShardRankFactor = 20.0
+
+	// Used for ordering line and chunk matches within a file.
+	scoreLineOrderFactor = 1.0
 )
 
 // findSection checks whether a section defined by offset and size lies within
@@ -873,88 +879,9 @@ func sortChunkMatchesByScore(ms []ChunkMatch) {
 	sort.Sort(chunkMatchScoreSlice(ms))
 }
 
-// k = 60 is arbitrary but reportedly works well (RRF; Cormack et al., 2009).
-const k = 60
-
-// SortFiles sorts files matches. The order depends on the match score and, if
-// available, on the pre-computed document ranks.
-//
-// Rankings derived from match scores and rank vectors are combined based on
-// "Reciprocal Rank Fusion" (RRF).
-func SortFiles(ms []FileMatch, opts *SearchOptions) {
+// SortFiles sorts files matches. The order depends on the match score, which includes both
+// query-dependent signals like word overlap, and file-only signals like the file ranks (if
+// file ranks are enabled).
+func SortFiles(ms []FileMatch) {
 	sort.Sort(fileMatchesByScore(ms))
-
-	if opts.UseDocumentRanks {
-		rrfScore := make([]float64, len(ms))
-
-		for i := 0; i < len(ms); i++ {
-			rrfScore[i] = 1 / (k + float64(i))
-			if opts.DebugScore {
-				ms[i].Debug += fmt.Sprintf("(%d,", i)
-			}
-		}
-
-		// We use stable sort in case we don't have ranks. Without stable sort the order
-		// of file matches would be random which would sully the ranking induces by the
-		// scores.
-		sort.Stable(fileMatchesByRank{fileMatches: ms, rrfScore: rrfScore})
-
-		for i := range rrfScore {
-			rrfScore[i] += (1 - opts.RanksDampingFactor) / (k + float64(i))
-			if opts.DebugScore {
-				ms[i].Debug += fmt.Sprintf("%d), ", i)
-			}
-		}
-
-		sort.Sort(fileMatchesByRRFScore{fileMatches: ms, rrfScore: rrfScore})
-	}
-}
-
-type fileMatchesByRank struct {
-	fileMatches []FileMatch
-	rrfScore    []float64
-}
-
-func (m fileMatchesByRank) Len() int { return len(m.fileMatches) }
-
-func (m fileMatchesByRank) Swap(i, j int) {
-	m.fileMatches[i], m.fileMatches[j] = m.fileMatches[j], m.fileMatches[i]
-	m.rrfScore[i], m.rrfScore[j] = m.rrfScore[j], m.rrfScore[i]
-}
-
-const epsilon = 0.00000001
-
-func (m fileMatchesByRank) Less(i, j int) bool {
-	r1 := m.fileMatches[i].Ranks
-	r2 := m.fileMatches[j].Ranks
-
-	l := len(r1)
-	if len(r2) < l {
-		l = len(r2)
-	}
-	for i := 0; i < l; i++ {
-		if math.Abs(r1[i]-r2[i]) > epsilon {
-			return r1[i] > r2[i]
-		}
-	}
-	// if r1 has more entries it is more important. ie imagine right padding shorter
-	// arrays with zeros, so they are the same length.
-	return len(r1) > len(r2)
-}
-
-type fileMatchesByRRFScore struct {
-	fileMatches []FileMatch
-	rrfScore    []float64
-}
-
-func (m fileMatchesByRRFScore) Len() int { return len(m.fileMatches) }
-
-func (m fileMatchesByRRFScore) Swap(i, j int) {
-	m.fileMatches[i], m.fileMatches[j] = m.fileMatches[j], m.fileMatches[i]
-	m.rrfScore[i], m.rrfScore[j] = m.rrfScore[j], m.rrfScore[i]
-}
-
-func (m fileMatchesByRRFScore) Less(i, j int) bool {
-	// Higher scores are better.
-	return m.rrfScore[i] > m.rrfScore[j]
 }

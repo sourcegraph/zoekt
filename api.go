@@ -38,14 +38,6 @@ type FileMatch struct {
 	// Ranking; the higher, the better.
 	Score float64 // TODO - hide this field?
 
-	// Experimental. Ranks is a vector containing floats in the interval [0, 1]. The
-	// length of the vector depends on the output from the ranking function at index
-	// time.
-	//
-	// This field is only set if the shard contains ranking information and
-	// SearchOptions.UseDocumentRanks is true.
-	Ranks []float64
-
 	// For debugging. Needs DebugScore set, but public so tests in
 	// other packages can print some diagnostics.
 	Debug string
@@ -94,9 +86,6 @@ type FileMatch struct {
 func (m *FileMatch) sizeBytes() (sz uint64) {
 	// Score
 	sz += 8
-
-	// ranks
-	sz += 8 * uint64(len(m.Ranks))
 
 	for _, s := range []string{
 		m.Debug,
@@ -894,10 +883,10 @@ type SearchOptions struct {
 	// sorting matches.
 	UseDocumentRanks bool
 
-	// RanksDampingFactor determines the contribution of documents ranks to the
-	// final ranking based on RRF. A value in (0,1] reduces the contribution,
-	// while a value in (-inf,0) increases it.
-	RanksDampingFactor float64
+	// EXPERIMENTAL. When UseDocumentRanks is enabled, this can be optionally set to adjust
+	// their weight in the file match score. If the value is <= 0.0, the default weight value
+	// will be used. This option is temporary and is only exposed for testing/ tuning purposes.
+	DocumentRanksWeight float64
 
 	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
 	// a command-line flag

@@ -367,18 +367,22 @@ nextFileMatch:
 
 		fileMatch.addScore("atom", float64(atomMatchCount)/float64(totalAtomCount)*scoreFactorAtomMatch, opts.DebugScore)
 
-		// Prefer earlier docs.
-		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))), opts.DebugScore)
-
 		if opts.UseDocumentRanks && len(d.ranks) > int(nextDoc) {
-			fileMatch.Ranks = d.ranks[nextDoc]
+			weight := scoreFileRankFactor
+			if opts.DocumentRanksWeight > 0.0 {
+				weight = opts.DocumentRanksWeight
+			}
+
+			ranks := d.ranks[nextDoc]
+			// This is a temporary workaround -- we only really want the PageRank score, and ignore
+			// everything else. In a follow-up we'll simplify the rank format and remove this hack.
+			if len(ranks) > 4 {
+				fileMatch.addScore("file-rank", weight*d.ranks[nextDoc][4], opts.DebugScore)
+			}
 		}
 
+		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))), opts.DebugScore)
 		fileMatch.addScore("shard-order", scoreShardRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)
-
-		if opts.DebugScore && opts.UseDocumentRanks {
-			fileMatch.Debug += fmt.Sprintf("ranks: %v, ", fileMatch.Ranks)
-		}
 
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
 		sortMatchesByScore(fileMatch.LineMatches)
@@ -426,7 +430,7 @@ nextFileMatch:
 	// I am slightly worried about negative interactions with TotalMaxMatchCount
 	// so feature flagging this behaviour behind UseDocumentRanks.
 	if limit := opts.MaxDocDisplayCount; opts.UseDocumentRanks && limit > 0 && limit < len(res.Files) {
-		SortFiles(res.Files, opts)
+		SortFiles(res.Files)
 		res.Files = res.Files[:limit]
 	}
 
