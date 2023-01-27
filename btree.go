@@ -250,8 +250,7 @@ type btreeIndex struct {
 	// We need the index to read buckets into memory.
 	file IndexFile
 
-	bucketOffsets        []uint32
-	bucketSentinelOffset uint32
+	bucketOffsets []uint32
 
 	postingOffsets            []uint32
 	postingDataSentinelOffset uint32
@@ -272,13 +271,8 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	bucketIndex, postingIndexOffset := b.bt.find(ng)
 
 	// read bucket into memory
-	var sz, off uint32
-	off, sz = b.bucketOffsets[bucketIndex], 0
-	if bucketIndex+1 < len(b.bucketOffsets) {
-		sz = b.bucketOffsets[bucketIndex+1] - off
-	} else {
-		sz = b.bucketSentinelOffset - off
-	}
+	off := b.bucketOffsets[bucketIndex]
+	sz := b.bucketOffsets[bucketIndex+1] - off
 
 	bucket, err := b.file.Read(off, sz)
 	if err != nil {
@@ -311,13 +305,8 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 		switch n := no.(type) {
 		case *leaf:
 			// read bucket into memory
-			var sz, off uint32
-			off, sz = b.bucketOffsets[n.bucketIndex], 0
-			if int(n.bucketIndex)+1 < len(b.bucketOffsets) {
-				sz = b.bucketOffsets[n.bucketIndex+1] - off
-			} else {
-				sz = b.bucketSentinelOffset - off
-			}
+			off := b.bucketOffsets[n.bucketIndex]
+			sz := b.bucketOffsets[n.bucketIndex+1] - off
 			bucket, _ := b.file.Read(off, sz)
 
 			// decode all ngrams in the bucket and fill map

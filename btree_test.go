@@ -67,8 +67,10 @@ func TestFindBucket(t *testing.T) {
 }
 
 func TestCreateBucketsFromNgramText(t *testing.T) {
+	var ngramTextOff uint32 = 7
+
 	offset := func(i int) uint32 {
-		return uint32(i * ngramEncoding)
+		return ngramTextOff + uint32((i * ngramEncoding))
 	}
 
 	cases := []struct {
@@ -79,54 +81,52 @@ func TestCreateBucketsFromNgramText(t *testing.T) {
 		{
 			opts:        btreeOpts{v: 2, bucketSize: 4},
 			ngrams:      []ngram{},
-			wantOffsets: []uint32{0},
+			wantOffsets: []uint32{offset(0), offset(0)},
 		},
 		{
 			opts:        btreeOpts{v: 2, bucketSize: 4},
 			ngrams:      []ngram{1},
-			wantOffsets: []uint32{0},
+			wantOffsets: []uint32{offset(0), offset(1)},
 		},
 		{
 			opts:        btreeOpts{v: 2, bucketSize: 4},
 			ngrams:      []ngram{1, 2},
-			wantOffsets: []uint32{0},
+			wantOffsets: []uint32{offset(0), offset(2)},
 		},
 		{
 			opts:        btreeOpts{v: 2, bucketSize: 4},
 			ngrams:      []ngram{1, 2, 3},
-			wantOffsets: []uint32{0},
+			wantOffsets: []uint32{offset(0), offset(3)},
 		},
 		{
 			opts:        btreeOpts{v: 2, bucketSize: 4},
 			ngrams:      []ngram{1, 2, 3, 4},
-			wantOffsets: []uint32{0},
+			wantOffsets: []uint32{offset(0), offset(4)},
 		},
 		{
 			opts:        btreeOpts{v: 2, bucketSize: 4},
 			ngrams:      []ngram{1, 2, 3, 4, 5},
-			wantOffsets: []uint32{0, offset(2)},
+			wantOffsets: []uint32{offset(0), offset(2), offset(5)},
 		},
 		{
 			opts:        btreeOpts{v: 2, bucketSize: 4},
 			ngrams:      []ngram{1, 2, 3, 4, 5, 6},
-			wantOffsets: []uint32{0, offset(2)},
+			wantOffsets: []uint32{offset(0), offset(2), offset(6)},
 		},
 		{
 			opts:        btreeOpts{v: 2, bucketSize: 4},
 			ngrams:      []ngram{1, 2, 3, 4, 5, 6, 7},
-			wantOffsets: []uint32{0, offset(2), offset(4)},
+			wantOffsets: []uint32{offset(0), offset(2), offset(4), offset(7)},
 		},
 		{
-			opts:   btreeOpts{v: 2, bucketSize: 4},
-			ngrams: []ngram{1, 2, 3, 4, 5, 6, 7, 8},
-			//             ^     ^     ^
-			wantOffsets: []uint32{0, offset(2), offset(4)},
+			opts:        btreeOpts{v: 2, bucketSize: 4},
+			ngrams:      []ngram{1, 2, 3, 4, 5, 6, 7, 8},
+			wantOffsets: []uint32{offset(0), offset(2), offset(4), offset(8)},
 		},
 		{
-			opts:   btreeOpts{v: 2, bucketSize: 4},
-			ngrams: []ngram{1, 2, 3, 4, 5, 6, 7, 8, 9},
-			//             ^     ^     ^     ^
-			wantOffsets: []uint32{0, offset(2), offset(4), offset(6)},
+			opts:        btreeOpts{v: 2, bucketSize: 4},
+			ngrams:      []ngram{1, 2, 3, 4, 5, 6, 7, 8, 9},
+			wantOffsets: []uint32{offset(0), offset(2), offset(4), offset(6), offset(9)},
 		},
 	}
 
@@ -134,6 +134,7 @@ func TestCreateBucketsFromNgramText(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			toc := &indexTOC{}
 			toc.ngramText.sz = uint32(len(tt.ngrams) * ngramEncoding)
+			toc.ngramText.off = ngramTextOff
 			haveOffsets := createBucketOffsets(toc.ngramText, tt.opts.bucketSize)
 
 			if d := cmp.Diff(tt.wantOffsets, haveOffsets); d != "" {
