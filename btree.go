@@ -43,7 +43,7 @@ import (
 // might store up to btreeBucketSize ngrams, but the expected size is
 // btreeBucketSize/2, too.
 //
-// On linux "getconf PAGESSIZE" returns the number of bytes in a memory page.
+// On linux "getconf PAGESIZE" returns the number of bytes in a memory page.
 const btreeBucketSize = (4096 * 2) / ngramEncoding
 
 type btree struct {
@@ -236,7 +236,7 @@ func (bt *btree) String() string {
 			for _, key := range nd.keys {
 				s += fmt.Sprintf("%d,", key)
 			}
-			s = s[:len(s)-1] // remove coma
+			s = s[:len(s)-1] // remove trailing comma
 			s += fmt.Sprintf("]")
 
 		}
