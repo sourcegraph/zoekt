@@ -477,6 +477,7 @@ func (s *loggedSearcher) Search(
 		s.log(ctx, q, opts, stats, err)
 	}()
 
+	metricSearchRequestsTotal.Inc()
 	return s.Streamer.Search(ctx, q, opts)
 }
 
@@ -489,6 +490,8 @@ func (s *loggedSearcher) StreamSearch(
 	var (
 		stats zoekt.Stats
 	)
+
+	metricSearchRequestsTotal.Inc()
 	err := s.Streamer.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
 		stats.Add(event.Stats)
 		sender.Send(event)
@@ -580,6 +583,10 @@ var (
 	metricWatchdogErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "zoekt_webserver_watchdog_errors_total",
 		Help: "The total number of errors from zoekt watchdog.",
+	})
+	metricSearchRequestsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "zoekt_search_requests_total",
+		Help: "The total number of search requests that zoekt received",
 	})
 )
 

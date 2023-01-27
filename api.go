@@ -31,6 +31,7 @@ const mapHeaderBytes uint64 = 48
 const sliceHeaderBytes uint64 = 24
 const stringHeaderBytes uint64 = 16
 const pointerSize uint64 = 8
+const interfaceBytes uint64 = 16
 
 // FileMatch contains all the matches within a file.
 type FileMatch struct {

@@ -618,6 +618,7 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 	}()
 
 	tr.LazyPrintf("before selectRepoSet shards:%d", len(shards))
+	// Select the subset of shards that we will search over for the given query.
 	shards, q = selectRepoSet(shards, q)
 	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), q)
 
@@ -634,6 +635,8 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 
 	defer cancel()
 
+	// We set the number of workers to GOMAXPROCS, or the number of shards,
+	// whichever is smaller.
 	workers := runtime.GOMAXPROCS(0)
 	if workers > len(shards) {
 		workers = len(shards)
@@ -653,9 +656,12 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 		wg      sync.WaitGroup
 	)
 
-	// Since searching is mostly CPU bound, we limit the number
-	// of parallel shard searches which also reduces the peak working set
-
+	// Start workers that receive shards from the search channel, search them,
+	// and send the results to the results channel. This process is repeated
+	// until the search channel is closed.
+	//
+	// Note: Making "search" a buffered channel has the effect of limiting the number of parallel shard searches.
+	// Since searching is mostly CPU bound, limiting parallel shard searches also reduces the peak working set.
 	wg.Add(workers)
 	for i := 0; i < workers; i++ {
 		go func() {
@@ -697,10 +703,12 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 
 search:
 	for {
-		_ = proc.Yield(ctx) // We let searchOneShard handle context errors.
+		// At the top of each iteration, have the proc associated with this search yield its won "timeslice"
+		// to possibly allow other searches to make progress
+		_ = proc.Yield(ctx) // Note: we let searchOneShard handle context errors
 
 		select {
-		case work <- next:
+		case work <- next: // is there a worker available to search the next shard?
 			pending.append(next.priority)
 
 			shard++
@@ -709,7 +717,7 @@ search:
 			} else {
 				next = shards[shard]
 			}
-		case r, ok := <-results:
+		case r, ok := <-results: // is there a result to send back?
 			if !ok {
 				break search
 			}
@@ -725,6 +733,8 @@ search:
 				continue
 			}
 
+			// Update the match count statistics and stop searching new shards if we've
+			// reached the limit set in the options.
 			totalMatchCount += r.SearchResult.Stats.MatchCount
 			if opts.TotalMaxMatchCount > 0 && totalMatchCount > opts.TotalMaxMatchCount {
 				stop()
@@ -735,7 +745,7 @@ search:
 			r.Priority = r.priority
 			r.MaxPendingPriority = pending.max()
 
-			sendByRepository(r.SearchResult, opts, sender)
+			sendByRepository(r.SearchResult, opts, sender) // send the result back to the client
 		}
 	}
 
