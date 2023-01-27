@@ -452,7 +452,8 @@ func (nls newlines) getLines(data []byte, low, high int) []byte {
 }
 
 const (
-	// Query-dependent scoring signals
+	// Query-dependent scoring signals. All of these together are bounded at ~9000
+	// (scoreWordMatch + scoreSymbol + scoreKindMatch * 10 + scoreFactorAtomMatch).
 	scorePartialWordMatch = 50.0
 	scoreWordMatch        = 500.0
 	scoreBase             = 7000.0
@@ -463,12 +464,13 @@ const (
 	scoreRepetitionFactor = 1.0
 	scoreFactorAtomMatch  = 400.0
 
-	// File-only scoring signals
+	// File-only scoring signals. For now these are also bounded ~9000 to give them
+	// equal weight with the query-dependent signals.
 	scoreFileRankFactor  = 9000.0
 	scoreFileOrderFactor = 10.0
 	scoreShardRankFactor = 20.0
 
-	// Used for ordering line and chunk matches within a file
+	// Used for ordering line and chunk matches within a file.
 	scoreLineOrderFactor = 1.0
 )
 
