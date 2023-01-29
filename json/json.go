@@ -92,7 +92,6 @@ func (s *jsonSearcher) jsonSearch(w http.ResponseWriter, req *http.Request) {
 	}
 
 	err = json.NewEncoder(w).Encode(jsonSearchReply{searchResult})
-
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -168,5 +167,9 @@ func (s *jsonSearcher) jsonList(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(jsonListReply{listResult})
+	err = json.NewEncoder(w).Encode(jsonListReply{listResult})
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 }
