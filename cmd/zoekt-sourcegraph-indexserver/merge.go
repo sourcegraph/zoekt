@@ -182,15 +182,15 @@ type mergeOpts struct {
 	// degraded search performance.
 	targetSizeBytes int64
 
-	// Compound shards smaller than minSizeBytes will be deleted by vacuum.
+	// compound shards smaller than minSizeBytes will be deleted by vacuum.
 	minSizeBytes int64
 
-	// VacuumInterval is how often indexserver scans compound shards to remove
+	// vacuumInterval is how often indexserver scans compound shards to remove
 	// tombstones.
 	vacuumInterval time.Duration
 
-	// MergeInterval defines how often indexserver runs the merge operation in the index
-	// directory.
+	// mergeInterval defines how often indexserver runs the merge operation in
+	// the index directory.
 	mergeInterval time.Duration
 
 	// number of days since the last commit until we consider the shard for
@@ -198,7 +198,7 @@ type mergeOpts struct {
 	// inactive for 7 days will be considered for merging.
 	ageDays int
 
-	// the MAX maxPriority a sahrd can have to be considered for merging.
+	// the MAX priority a shard can have to be considered for merging.
 	maxPriority float64
 }
 
