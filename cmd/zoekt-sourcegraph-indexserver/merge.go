@@ -196,7 +196,7 @@ type mergeOpts struct {
 	// number of days since the last commit until we consider the shard for
 	// merging. For example, a value of 7 means that only repos that have been
 	// inactive for 7 days will be considered for merging.
-	ageDays int
+	minAgeDays int
 
 	// the MAX priority a shard can have to be considered for merging.
 	maxPriority float64
@@ -226,7 +226,7 @@ func isExcluded(path string, fi os.FileInfo, opts mergeOpts) bool {
 		return true
 	}
 
-	if repos[0].LatestCommitDate.After(time.Now().AddDate(0, 0, -opts.ageDays)) {
+	if repos[0].LatestCommitDate.After(time.Now().AddDate(0, 0, -opts.minAgeDays)) {
 		return true
 	}
 
