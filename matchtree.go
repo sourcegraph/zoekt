@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"regexp/syntax"
 	"strings"
 	"unicode/utf8"
 
@@ -145,12 +146,13 @@ type regexpMatchTree struct {
 
 // \bLITERAL\b
 type wordMatchTree struct {
-	literal string
-	// TODO support case insensitive?
+	word string
+
+	fileName bool
 
 	// mutable
-	reEvaluated bool
-	found       []*candidateMatch
+	evaluated bool
+	found     []*candidateMatch
 
 	// nextDoc, prepare.
 	bruteForceMatchTree
@@ -322,7 +324,7 @@ func (t *regexpMatchTree) prepare(doc uint32) {
 
 func (t *wordMatchTree) prepare(doc uint32) {
 	t.found = t.found[:0]
-	t.reEvaluated = false
+	t.evaluated = false
 	t.bruteForceMatchTree.prepare(doc)
 }
 
@@ -440,7 +442,11 @@ func (t *regexpMatchTree) String() string {
 }
 
 func (t *wordMatchTree) String() string {
-	return fmt.Sprintf("word(%s)", t.literal)
+	f := ""
+	if t.fileName {
+		f = "f"
+	}
+	return fmt.Sprintf("%sword(%s)", f, t.word)
 }
 
 func (t *orMatchTree) String() string {
@@ -696,7 +702,7 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 }
 
 func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
-	if t.reEvaluated {
+	if t.evaluated {
 		return len(t.found) > 0, true
 	}
 
@@ -705,31 +711,31 @@ func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTr
 	}
 
 	cp.stats.RegexpsConsidered++
-	data := cp.data(false)
+	data := cp.data(t.fileName)
 	offset := 0
 	found := t.found[:0]
 	for {
-		idx := bytes.Index(data[offset:], []byte(t.literal))
+		idx := bytes.Index(data[offset:], []byte(t.word))
 		if idx < 0 {
 			break
 		}
 
 		relStartOffset := offset + idx
-		relEndOffset := relStartOffset + len(t.literal)
+		relEndOffset := relStartOffset + len(t.word)
 		startBoundary := relStartOffset < len(data) && (relStartOffset == 0 || byteClass(data[relStartOffset-1]) != byteClass(data[relStartOffset]))
 		endBoundary := relEndOffset > 0 && (relEndOffset == len(data) || byteClass(data[relEndOffset-1]) != byteClass(data[relEndOffset]))
 		if startBoundary && endBoundary {
 			found = append(found, &candidateMatch{
 				byteOffset:  uint32(offset + idx),
-				byteMatchSz: uint32(len(t.literal)),
+				byteMatchSz: uint32(len(t.word)),
 				fileName:    false,
 			})
 		}
-		offset += idx + len(t.literal)
+		offset += idx + len(t.word)
 	}
 
 	t.found = found
-	t.reEvaluated = true
+	t.evaluated = true
 
 	return len(t.found) > 0, true
 }
@@ -845,11 +851,10 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}
 
 		var tr matchTree
-		// TODO some logic which detect word search
-		if !s.FileName {
-			tr = &wordMatchTree{
-				literal: string(s.Regexp.Sub[1].Rune),
-			}
+		if wmt, ok := regexpToWordMatchTree(s); ok {
+			// A common search we get is "\bLITERAL\b". Avoid the regex engine and
+			// provide something faster.
+			tr = wmt
 		} else {
 			prefix := ""
 			if !s.CaseSensitive {
@@ -1104,6 +1109,26 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 	}
 	st.matchIterator = result
 	return st, nil
+}
+
+func regexpToWordMatchTree(q *query.Regexp) (_ *wordMatchTree, ok bool) {
+	// Needs to be case sensitive
+	if !q.CaseSensitive || q.Regexp.Flags&syntax.FoldCase != 0 {
+		return nil, false
+	}
+	// We want 3 a regex that looks like Op.Concat[OpWordBoundary OpLiteral OpWordBoundary]
+	if q.Regexp.Op != syntax.OpConcat || len(q.Regexp.Sub) != 3 {
+		return nil, false
+	}
+	sub := q.Regexp.Sub
+	if sub[0].Op != syntax.OpWordBoundary || sub[1].Op != syntax.OpLiteral || sub[2].Op != syntax.OpWordBoundary {
+		return nil, false
+	}
+
+	return &wordMatchTree{
+		word:     string(sub[1].Rune),
+		fileName: q.FileName,
+	}, true
 }
 
 // pruneMatchTree removes impossible branches from the matchTree, as indicated
