@@ -474,6 +474,9 @@ func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candid
 		if rmt, ok := mt.(*regexpMatchTree); ok {
 			cands = append(cands, rmt.found...)
 		}
+		if rmt, ok := mt.(*wordMatchTree); ok {
+			cands = append(cands, rmt.found...)
+		}
 		if smt, ok := mt.(*symbolRegexpMatchTree); ok {
 			cands = append(cands, smt.found...)
 		}

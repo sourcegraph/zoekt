@@ -15,6 +15,7 @@
 package zoekt
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"strings"
@@ -133,6 +134,19 @@ type regexpMatchTree struct {
 	regexp *regexp.Regexp
 
 	fileName bool
+
+	// mutable
+	reEvaluated bool
+	found       []*candidateMatch
+
+	// nextDoc, prepare.
+	bruteForceMatchTree
+}
+
+// \bLITERAL\b
+type wordMatchTree struct {
+	literal string
+	// TODO support case insensitive?
 
 	// mutable
 	reEvaluated bool
@@ -306,6 +320,12 @@ func (t *regexpMatchTree) prepare(doc uint32) {
 	t.bruteForceMatchTree.prepare(doc)
 }
 
+func (t *wordMatchTree) prepare(doc uint32) {
+	t.found = t.found[:0]
+	t.reEvaluated = false
+	t.bruteForceMatchTree.prepare(doc)
+}
+
 func (t *orMatchTree) prepare(doc uint32) {
 	for _, c := range t.children {
 		c.prepare(doc)
@@ -417,6 +437,10 @@ func (t *regexpMatchTree) String() string {
 		f = "f"
 	}
 	return fmt.Sprintf("%sre(%s)", f, t.regexp)
+}
+
+func (t *wordMatchTree) String() string {
+	return fmt.Sprintf("word(%s)", t.literal)
 }
 
 func (t *orMatchTree) String() string {
@@ -671,6 +695,45 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	return len(t.found) > 0, true
 }
 
+func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
+	if t.reEvaluated {
+		return len(t.found) > 0, true
+	}
+
+	if cost < costRegexp {
+		return false, false
+	}
+
+	cp.stats.RegexpsConsidered++
+	data := cp.data(false)
+	offset := 0
+	found := t.found[:0]
+	for {
+		idx := bytes.Index(data[offset:], []byte(t.literal))
+		if idx < 0 {
+			break
+		}
+
+		relStartOffset := offset + idx
+		relEndOffset := relStartOffset + len(t.literal)
+		startBoundary := relStartOffset < len(data) && (relStartOffset == 0 || byteClass(data[relStartOffset-1]) != byteClass(data[relStartOffset]))
+		endBoundary := relEndOffset > 0 && (relEndOffset == len(data) || byteClass(data[relEndOffset-1]) != byteClass(data[relEndOffset]))
+		if startBoundary && endBoundary {
+			found = append(found, &candidateMatch{
+				byteOffset:  uint32(offset + idx),
+				byteMatchSz: uint32(len(t.literal)),
+				fileName:    false,
+			})
+		}
+		offset += idx + len(t.literal)
+	}
+
+	t.found = found
+	t.reEvaluated = true
+
+	return len(t.found) > 0, true
+}
+
 // breakMatchesOnNewlines returns matches resulting from breaking each element
 // of cms on newlines within text.
 func breakMatchesOnNewlines(cms []*candidateMatch, text []byte) []*candidateMatch {
@@ -781,14 +844,22 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			return subMT, nil
 		}
 
-		prefix := ""
-		if !s.CaseSensitive {
-			prefix = "(?i)"
-		}
+		var tr matchTree
+		// TODO some logic which detect word search
+		if !s.FileName {
+			tr = &wordMatchTree{
+				literal: string(s.Regexp.Sub[1].Rune),
+			}
+		} else {
+			prefix := ""
+			if !s.CaseSensitive {
+				prefix = "(?i)"
+			}
 
-		tr := &regexpMatchTree{
-			regexp:   regexp.MustCompile(prefix + s.Regexp.String()),
-			fileName: s.FileName,
+			tr = &regexpMatchTree{
+				regexp:   regexp.MustCompile(prefix + s.Regexp.String()),
+				fileName: s.FileName,
+			}
 		}
 
 		return &andMatchTree{
@@ -1120,6 +1191,7 @@ func pruneMatchTree(mt matchTree) (matchTree, error) {
 	case *docMatchTree:
 	case *bruteForceMatchTree:
 	case *regexpMatchTree:
+	case *wordMatchTree:
 	}
 	return mt, err
 }
