@@ -64,7 +64,7 @@ func TestDoNotDeleteSingleShards(t *testing.T) {
 		t.Errorf("Finish: %v", err)
 	}
 
-	s := &Server{IndexDir: dir, TargetSizeBytes: 2000 * 1024 * 1024}
+	s := &Server{IndexDir: dir, mergeOpts: mergeOpts{targetSizeBytes: 2000 * 1024 * 1024}}
 	s.merge(helperCallMerge)
 
 	_, err = os.Stat(filepath.Join(dir, "test-repo_v16.00000.zoekt"))
@@ -187,8 +187,8 @@ func TestMerge(t *testing.T) {
 			}
 
 			s := &Server{
-				IndexDir:        dir,
-				TargetSizeBytes: tc.targetSizeBytes,
+				IndexDir:  dir,
+				mergeOpts: mergeOpts{targetSizeBytes: tc.targetSizeBytes},
 			}
 
 			s.merge(helperCallMerge)

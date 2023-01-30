@@ -83,10 +83,10 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 	for next {
 		next = false
 		s.muIndexDir.Global(func() {
-			candidates, excluded := loadCandidates(s.IndexDir)
+			candidates, excluded := loadCandidates(s.IndexDir, s.mergeOpts)
 			log.Printf("loadCandidates: candidates=%d excluded=%d", len(candidates), excluded)
 
-			c := pickCandidates(candidates, s.TargetSizeBytes)
+			c := pickCandidates(candidates, s.mergeOpts.targetSizeBytes)
 			if len(c.shards) <= 1 {
 				log.Printf("could not find enough shards to build a compound shard")
 				return
@@ -126,7 +126,7 @@ type candidate struct {
 }
 
 // loadCandidates returns all shards eligible for merging.
-func loadCandidates(dir string) ([]candidate, int) {
+func loadCandidates(dir string, opts mergeOpts) ([]candidate, int) {
 	excluded := 0
 
 	d, err := os.Open(dir)
@@ -151,7 +151,7 @@ func loadCandidates(dir string) ([]candidate, int) {
 			continue
 		}
 
-		if isExcluded(path, fi) {
+		if isExcluded(path, fi, opts) {
 			excluded++
 			continue
 		}
@@ -175,11 +175,38 @@ func hasMultipleShards(path string) bool {
 	return !os.IsNotExist(err)
 }
 
+type mergeOpts struct {
+	// targetSizeBytes is the target size in bytes for compound shards. The higher
+	// the value the more repositories a compound shard will contain and the bigger
+	// the potential for saving MEM. The savings in MEM come at the cost of a
+	// degraded search performance.
+	targetSizeBytes int64
+
+	// Compound shards smaller than minSizeBytes will be deleted by vacuum.
+	minSizeBytes int64
+
+	// VacuumInterval is how often indexserver scans compound shards to remove
+	// tombstones.
+	vacuumInterval time.Duration
+
+	// MergeInterval defines how often indexserver runs the merge operation in the index
+	// directory.
+	mergeInterval time.Duration
+
+	// number of days since the last commit until we consider the shard for
+	// merging. For example, a value of 7 means that only repos that have been
+	// inactive for 7 days will be considered for merging.
+	ageDays int
+
+	// the MAX maxPriority a sahrd can have to be considered for merging.
+	maxPriority float64
+}
+
 // isExcluded returns true if a shard should not be merged, false otherwise.
 //
 // We need path and FileInfo because FileInfo does not contain the full path, see
 // discussion here https://github.com/golang/go/issues/32300.
-func isExcluded(path string, fi os.FileInfo) bool {
+func isExcluded(path string, fi os.FileInfo, opts mergeOpts) bool {
 	if hasMultipleShards(path) {
 		return true
 	}
@@ -199,11 +226,11 @@ func isExcluded(path string, fi os.FileInfo) bool {
 		return true
 	}
 
-	if repos[0].LatestCommitDate.After(time.Now().AddDate(0, 0, -7)) {
+	if repos[0].LatestCommitDate.After(time.Now().AddDate(0, 0, -opts.ageDays)) {
 		return true
 	}
 
-	if priority, err := strconv.ParseFloat(repos[0].RawConfig["priority"], 64); err == nil && priority > 100 {
+	if priority, err := strconv.ParseFloat(repos[0].RawConfig["priority"], 64); err == nil && priority > opts.maxPriority {
 		return true
 	}
 

@@ -151,24 +151,6 @@ type Server struct {
 
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
-
-	// VacuumInterval is how often indexserver scans compound shards to remove
-	// tombstones.
-	VacuumInterval time.Duration
-
-	// MergeInterval defines how often indexserver runs the merge operation in the index
-	// directory.
-	MergeInterval time.Duration
-
-	// TargetSizeBytes is the target size in bytes for compound shards. The higher
-	// the value the more repositories a compound shard will contain and the bigger
-	// the potential for saving MEM. The savings in MEM come at the cost of a
-	// degraded search performance.
-	TargetSizeBytes int64
-
-	// Compound shards smaller than minSizeBytes will be deleted by vacuum.
-	minSizeBytes int64
-
 	// CPUCount is the amount of parallelism to use when indexing a
 	// repository.
 	CPUCount int
@@ -194,6 +176,8 @@ type Server struct {
 	repositoriesSkipSymbolsCalculationAllowList map[string]struct{}
 
 	hostname string
+
+	mergeOpts mergeOpts
 }
 
 var debug = log.New(io.Discard, "", log.LstdFlags)
@@ -360,7 +344,7 @@ func (s *Server) Run() {
 	}()
 
 	go func() {
-		for range jitterTicker(s.VacuumInterval, unix.SIGUSR1) {
+		for range jitterTicker(s.mergeOpts.vacuumInterval, unix.SIGUSR1) {
 			if s.shardMerging {
 				s.vacuum()
 			}
@@ -368,7 +352,7 @@ func (s *Server) Run() {
 	}()
 
 	go func() {
-		for range jitterTicker(s.MergeInterval, unix.SIGUSR1) {
+		for range jitterTicker(s.mergeOpts.mergeInterval, unix.SIGUSR1) {
 			if s.shardMerging {
 				s.doMerge()
 			}
@@ -1064,6 +1048,18 @@ func getEnvWithDefaultUint64(k string, defaultVal uint64) uint64 {
 	return i
 }
 
+func getEnvWithDefaultFloat64(k string, defaultVal float64) float64 {
+	v := os.Getenv(k)
+	if v == "" {
+		return defaultVal
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		log.Fatalf("error parsing ENV %s to float64: %s", k, err)
+	}
+	return f
+}
+
 func getEnvWithDefaultString(k string, defaultVal string) string {
 	v := os.Getenv(k)
 	if v == "" {
@@ -1151,6 +1147,8 @@ type rootConfig struct {
 	mergeInterval  time.Duration
 	targetSize     int64
 	minSize        int64
+	ageDays        int
+	maxPriority    float64
 
 	// config values related to backoff indexing repos with one or more consecutive failures
 	backoffDuration    time.Duration
@@ -1160,10 +1158,6 @@ type rootConfig struct {
 func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.StringVar(&rc.root, "sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	fs.DurationVar(&rc.interval, "interval", time.Minute, "sync with sourcegraph this often")
-	fs.DurationVar(&rc.vacuumInterval, "vacuum_interval", 24*time.Hour, "run vacuum this often")
-	fs.DurationVar(&rc.mergeInterval, "merge_interval", 8*time.Hour, "run merge this often")
-	fs.Int64Var(&rc.targetSize, "merge_target_size", getEnvWithDefaultInt64("SRC_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
-	fs.Int64Var(&rc.minSize, "merge_min_size", getEnvWithDefaultInt64("SRC_MIN_SIZE", 1800), "the minimum size of a compound shard in MiB")
 	fs.Int64Var(&rc.indexConcurrency, "index_concurrency", getEnvWithDefaultInt64("SRC_INDEX_CONCURRENCY", 1), "the number of concurrent index jobs to run.")
 	fs.StringVar(&rc.index, "index", getEnvWithDefaultString("DATA_DIR", build.DefaultDir), "set index directory to use")
 	fs.StringVar(&rc.listen, "listen", ":6072", "listen on this address.")
@@ -1172,6 +1166,15 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.IntVar(&rc.blockProfileRate, "block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler Var(default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
 	fs.DurationVar(&rc.backoffDuration, "backoff_duration", getEnvWithDefaultDuration("BACKOFF_DURATION", 10*time.Minute), "for the given duration we backoff from enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase the duration of the delay linearly up to the maxBackoffDuration. A negative value disables indexing backoff.")
 	fs.DurationVar(&rc.maxBackoffDuration, "max_backoff_duration", getEnvWithDefaultDuration("MAX_BACKOFF_DURATION", 120*time.Minute), "the maximum duration to backoff from enqueueing a repo for indexing.  A negative value disables indexing backoff.")
+
+	// flags related to shard merging
+	fs.DurationVar(&rc.vacuumInterval, "vacuum_interval", getEnvWithDefaultDuration("SRC_VACUUM_INTERVAL", 24*time.Hour), "run vacuum this often")
+	fs.DurationVar(&rc.mergeInterval, "merge_interval", getEnvWithDefaultDuration("SRC_MERGE_INTERVAL", 8*time.Hour), "run merge this often")
+	fs.Int64Var(&rc.targetSize, "merge_target_size", getEnvWithDefaultInt64("SRC_MERGE_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
+	fs.Int64Var(&rc.minSize, "merge_min_size", getEnvWithDefaultInt64("SRC_MERGE_MIN_SIZE", 1800), "the minimum size of a compound shard in MiB")
+	fs.IntVar(&rc.ageDays, "merge_age", getEnvWithDefaultInt("SRC_MERGE_AGE", 7), "the time since the last commit in days. Shards with newer commits are excluded from merging.")
+	fs.Float64Var(&rc.maxPriority, "merge_max_priority", getEnvWithDefaultFloat64("SRC_MERGE_MAX_PRIORITY", 100), "the maximum priority a shard can have to be considered for merging.")
+
 }
 
 func startServer(conf rootConfig) error {
@@ -1352,17 +1355,21 @@ func newServer(conf rootConfig) (*Server, error) {
 		IndexDir:                          conf.index,
 		IndexConcurrency:                  int(conf.indexConcurrency),
 		Interval:                          conf.interval,
-		VacuumInterval:                    conf.vacuumInterval,
-		MergeInterval:                     conf.mergeInterval,
 		CPUCount:                          cpuCount,
-		TargetSizeBytes:                   conf.targetSize * 1024 * 1024,
 		queue:                             *q,
-		minSizeBytes:                      conf.minSize * 1024 * 1024,
 		shardMerging:                      zoekt.ShardMergingEnabled(),
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
 		deltaShardNumberFallbackThreshold: deltaShardNumberFallbackThreshold,
 		repositoriesSkipSymbolsCalculationAllowList: reposShouldSkipSymbolsCalculation,
 		hostname: conf.hostname,
+		mergeOpts: mergeOpts{
+			vacuumInterval:  conf.vacuumInterval,
+			mergeInterval:   conf.mergeInterval,
+			targetSizeBytes: conf.targetSize * 1024 * 1024,
+			minSizeBytes:    conf.minSize * 1024 * 1024,
+			ageDays:         conf.ageDays,
+			maxPriority:     conf.maxPriority,
+		},
 	}, err
 }
 
