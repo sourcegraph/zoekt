@@ -226,7 +226,7 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 	}
 }
 
-func TestFilteringShardsByRepoSetOrBranchesReposRepoIDs(t *testing.T) {
+func TestFilteringShardsByRepoSetOrBranchesReposOrRepoIDs(t *testing.T) {
 	ss := newShardedSearcher(1)
 
 	repoSetNames := []string{}
