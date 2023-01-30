@@ -143,6 +143,7 @@ func RegisterGob() {
 		gobRegister(&query.Regexp{})
 		gobRegister(&query.RepoRegexp{})
 		gobRegister(&query.RepoSet{})
+		gobRegister(&query.RepoIDs{})
 		gobRegister(&query.Repo{})
 		gobRegister(&query.Substring{})
 		gobRegister(&query.Symbol{})
