@@ -226,25 +226,25 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 	}
 }
 
-func TestFilteringShardsByRepoSetOrBranchesReposRepoIds(t *testing.T) {
+func TestFilteringShardsByRepoSetOrBranchesReposRepoIDs(t *testing.T) {
 	ss := newShardedSearcher(1)
 
 	repoSetNames := []string{}
-	repoIds := []uint32{}
+	repoIDs := []uint32{}
 	n := 10 * runtime.GOMAXPROCS(0)
 	for i := 0; i < n; i++ {
 		shardName := fmt.Sprintf("shard%d", i)
 		repoName := fmt.Sprintf("repository%.3d", i)
-		repoId := hash(repoName)
+		repoID := hash(repoName)
 
 		if i%3 == 0 {
 			repoSetNames = append(repoSetNames, repoName)
-			repoIds = append(repoIds, repoId)
+			repoIDs = append(repoIDs, repoID)
 		}
 
 		ss.replace(map[string]zoekt.Searcher{
 			shardName: &rankSearcher{
-				repo: &zoekt.Repository{ID: repoId, Name: repoName},
+				repo: &zoekt.Repository{ID: repoID, Name: repoName},
 				rank: uint16(n - i),
 			},
 		})
@@ -269,7 +269,7 @@ func TestFilteringShardsByRepoSetOrBranchesReposRepoIds(t *testing.T) {
 	set := query.NewRepoSet(repoSetNames...)
 	sub := &query.Substring{Pattern: "bla"}
 
-	repoIdsQuery := query.NewRepoIds(repoIds...)
+	repoIDsQuery := query.NewRepoIDs(repoIDs...)
 
 	queries := []query.Q{
 		query.NewAnd(set, sub),
@@ -280,9 +280,9 @@ func TestFilteringShardsByRepoSetOrBranchesReposRepoIds(t *testing.T) {
 		// Test with the same repoBranches with IDs again
 		query.NewAnd(branchesRepos, sub),
 
-		query.NewAnd(repoIdsQuery, sub),
-		// Test with the same repoIds again
-		query.NewAnd(repoIdsQuery, sub),
+		query.NewAnd(repoIDsQuery, sub),
+		// Test with the same repoIDs again
+		query.NewAnd(repoIDsQuery, sub),
 	}
 
 	for _, q := range queries {

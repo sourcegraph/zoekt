@@ -212,11 +212,11 @@ func TestSimplifyRepoSet(t *testing.T) {
 	}
 }
 
-func TestSimplifyRepoIds(t *testing.T) {
+func TestSimplifyRepoIDs(t *testing.T) {
 	d := compoundReposShard(t, "foo", "bar")
-	all := &query.RepoIds{Repos: roaring.BitmapOf(hash("foo"), hash("bar"))}
-	some := &query.RepoIds{Repos: roaring.BitmapOf(hash("foo"), hash("banana"))}
-	none := &query.RepoIds{Repos: roaring.BitmapOf(hash("banana"))}
+	all := &query.RepoIDs{Repos: roaring.BitmapOf(hash("foo"), hash("bar"))}
+	some := &query.RepoIDs{Repos: roaring.BitmapOf(hash("foo"), hash("banana"))}
+	none := &query.RepoIDs{Repos: roaring.BitmapOf(hash("banana"))}
 
 	tr := cmp.Transformer("", func(b *roaring.Bitmap) []uint32 { return b.ToArray() })
 

@@ -87,10 +87,10 @@ func TestClientServer(t *testing.T) {
 	}
 }
 
-func TestClientServerWithRepoIdsProvided(t *testing.T) {
+func TestClientServerWithRepoIDsProvided(t *testing.T) {
 	searchQuery := "hello"
 	expectedSearch := mustParse(searchQuery)
-	expectedSearch = query.NewAnd(expectedSearch, query.NewRepoIds(1, 3, 5, 7))
+	expectedSearch = query.NewAnd(expectedSearch, query.NewRepoIDs(1, 3, 5, 7))
 	mock := &mockSearcher.MockSearcher{
 		WantSearch: expectedSearch,
 		SearchResult: &zoekt.SearchResult{
@@ -103,7 +103,7 @@ func TestClientServerWithRepoIdsProvided(t *testing.T) {
 	ts := httptest.NewServer(zjson.JSONServer(mock))
 	defer ts.Close()
 
-	searchBody := "{\"Q\":\"hello\",\"RepoIds\":[1,3,5,7]}"
+	searchBody := "{\"Q\":\"hello\",\"RepoIDs\":[1,3,5,7]}"
 
 	r, err := http.Post(ts.URL+"/search", "application/json", bytes.NewBufferString(searchBody))
 	if err != nil {

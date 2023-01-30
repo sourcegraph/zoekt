@@ -307,13 +307,13 @@ func TestBranchesRepos(t *testing.T) {
 	}
 }
 
-func TestRepoIds(t *testing.T) {
+func TestRepoIDs(t *testing.T) {
 	d := &indexData{
 		repoMetaData:    []Repository{{Name: "r0", ID: 0}, {Name: "r1", ID: 1}, {Name: "r2", ID: 2}, {Name: "r3", ID: 3}},
 		fileBranchMasks: []uint64{1, 1, 1, 1, 1, 1},
 		repos:           []uint16{0, 0, 1, 2, 3, 3},
 	}
-	mt, err := d.newMatchTree(&query.RepoIds{Repos: roaring.BitmapOf(1, 3, 99)})
+	mt, err := d.newMatchTree(&query.RepoIDs{Repos: roaring.BitmapOf(1, 3, 99)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -28,7 +28,7 @@ type jsonSearcher struct {
 
 type jsonSearchArgs struct {
 	Q       string
-	RepoIds []uint32
+	RepoIDs []uint32
 	Opts    *zoekt.SearchOptions
 }
 
@@ -77,8 +77,8 @@ func (s *jsonSearcher) jsonSearch(w http.ResponseWriter, req *http.Request) {
 	// TODO: We need to distinguish empty array from unset. An empty array
 	// should return no results for security reasons, whereas unset is the
 	// default behaviour without filtering.
-	if len(searchArgs.RepoIds) != 0 {
-		q = query.NewAnd(q, query.NewRepoIds(searchArgs.RepoIds...))
+	if len(searchArgs.RepoIDs) != 0 {
+		q = query.NewAnd(q, query.NewRepoIDs(searchArgs.RepoIDs...))
 	}
 
 	// Set a timeout if the user hasn't specified one.

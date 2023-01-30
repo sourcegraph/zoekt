@@ -83,7 +83,7 @@ func (d *indexData) simplify(in query.Q) query.Q {
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
 				return r.Set[repo.Name]
 			})
-		case *query.RepoIds:
+		case *query.RepoIDs:
 			return d.simplifyMultiRepo(q, func(repo *Repository) bool {
 				return r.Repos.Contains(repo.ID)
 			})

@@ -231,13 +231,13 @@ func (q *BranchesRepos) String() string {
 	return sb.String()
 }
 
-// NewRepoIds is a helper for creating a RepoIds which
+// NewRepoIDs is a helper for creating a RepoIDs which
 // searches only the matched repos.
-func NewRepoIds(ids ...uint32) *RepoIds {
-	return &RepoIds{Repos: roaring.BitmapOf(ids...)}
+func NewRepoIDs(ids ...uint32) *RepoIDs {
+	return &RepoIDs{Repos: roaring.BitmapOf(ids...)}
 }
 
-func (q *RepoIds) String() string {
+func (q *RepoIDs) String() string {
 	var sb strings.Builder
 
 	sb.WriteString("(repoids ")
@@ -272,7 +272,7 @@ type BranchRepos struct {
 
 // Similar to BranchRepos but will be used to match only by repoid and
 // therefore matches all branches
-type RepoIds struct {
+type RepoIDs struct {
 	Repos *roaring.Bitmap
 }
 
