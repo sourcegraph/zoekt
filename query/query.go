@@ -231,7 +231,7 @@ func (q *BranchesRepos) String() string {
 	return sb.String()
 }
 
-// NewSingleRepoIds is a helper for creating a RepoIds which
+// NewRepoIds is a helper for creating a RepoIds which
 // searches only the matched repos.
 func NewRepoIds(ids ...uint32) *RepoIds {
 	return &RepoIds{Repos: roaring.BitmapOf(ids...)}
@@ -242,7 +242,11 @@ func (q *RepoIds) String() string {
 
 	sb.WriteString("(repoids ")
 
-	sb.WriteString(q.Repos.String())
+	if size := q.Repos.GetCardinality(); size > 1 {
+		sb.WriteString("count:" + strconv.FormatUint(size, 10))
+	} else {
+		sb.WriteString("repoid=" + q.Repos.String())
+	}
 
 	sb.WriteString(")")
 	return sb.String()
