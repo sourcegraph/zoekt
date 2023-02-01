@@ -512,51 +512,16 @@ func (d *indexData) newBtreeIndex(toc *indexTOC) (btreeIndex, error) {
 		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
 		bt.insert(ng)
 	}
-
-	// backfill "pointers" to the buckets and posting lists. Instead of
-	// backfilling we could maintain state during insertion, however the
-	// visitor pattern seems more natural and shouldn't be a performance issue,
-	// because, based on the typical number of trigrams (500k) per shard, the
-	// b-trees we construct here only have around 1000 leaf nodes.
-	offset, bucketIndex := 0, 0
-	bt.visit(func(no node) {
-		switch n := no.(type) {
-		case *leaf:
-			n.bucketIndex = bucketIndex
-			bucketIndex++
-
-			n.postingIndexOffset = offset
-			offset += n.bucketSize
-		case *innerNode:
-			return
-		}
-	})
+	bt.freeze()
 
 	bi.bt = bt
 
-	bi.bucketOffsets = createBucketOffsets(toc.ngramText, btreeBucketSize)
+	bi.ngramSec = toc.ngramText
 
 	bi.postingOffsets = toc.postings.offsets
 	bi.postingDataSentinelOffset = toc.postings.data.off + toc.postings.data.sz
 
 	return bi, nil
-}
-
-// Because we insert ngrams into the btree in order, we can easily reconstruct
-// the buckets from the ngramText simpleSection just by knowing the bucketSize.
-// The last item of the returned slice is the sentinel value sec.off + sec.sz.
-func createBucketOffsets(sec simpleSection, bucketSize int) []uint32 {
-	step := uint32((bucketSize / 2) * ngramEncoding)
-
-	offsets := make([]uint32, 0, ((sec.sz-1)/step)+1)
-	offsets = append(offsets, sec.off)
-
-	sentinel := sec.off + sec.sz
-	for off := sec.off + step; off+step < sentinel; off = off + step {
-		offsets = append(offsets, off)
-	}
-	offsets = append(offsets, sentinel)
-	return offsets
 }
 
 func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]byte, error) {

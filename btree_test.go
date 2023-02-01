@@ -3,8 +3,6 @@ package zoekt
 import (
 	"fmt"
 	"testing"
-
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestBTree_sorted(t *testing.T) {
@@ -66,79 +64,91 @@ func TestFindBucket(t *testing.T) {
 	}
 }
 
-func TestCreateBucketsFromNgramText(t *testing.T) {
-	var ngramTextOff uint32 = 7
-
-	offset := func(i int) uint32 {
-		return ngramTextOff + uint32((i * ngramEncoding))
-	}
+func TestGetBucket(t *testing.T) {
+	var off uint32 = 13
+	bucketSize := 4
 
 	cases := []struct {
-		opts        btreeOpts
-		ngrams      []ngram
-		wantOffsets []uint32
+		nNgrams     int
+		bucketIndex int
+		wantOff     uint32
+		wantSz      uint32
 	}{
+		// tiny B-tree with just 1 bucket.
 		{
-			opts:        btreeOpts{v: 2, bucketSize: 4},
-			ngrams:      []ngram{},
-			wantOffsets: []uint32{offset(0), offset(0)},
+			nNgrams:     1,
+			bucketIndex: 0,
+			wantOff:     off,
+			wantSz:      8,
 		},
 		{
-			opts:        btreeOpts{v: 2, bucketSize: 4},
-			ngrams:      []ngram{1},
-			wantOffsets: []uint32{offset(0), offset(1)},
+			nNgrams:     2,
+			bucketIndex: 0,
+			wantOff:     off,
+			wantSz:      16,
 		},
 		{
-			opts:        btreeOpts{v: 2, bucketSize: 4},
-			ngrams:      []ngram{1, 2},
-			wantOffsets: []uint32{offset(0), offset(2)},
+			nNgrams:     3,
+			bucketIndex: 0,
+			wantOff:     off,
+			wantSz:      24,
+		},
+		// B-tree with 10 ngrams, think 1,2,3,4,5,6,7,8,9,10
+		{
+			nNgrams:     10,
+			bucketIndex: 0,
+			wantOff:     off,
+			wantSz:      16,
 		},
 		{
-			opts:        btreeOpts{v: 2, bucketSize: 4},
-			ngrams:      []ngram{1, 2, 3},
-			wantOffsets: []uint32{offset(0), offset(3)},
+			nNgrams:     10,
+			bucketIndex: 1,
+			wantOff:     off + 16,
+			wantSz:      16,
 		},
 		{
-			opts:        btreeOpts{v: 2, bucketSize: 4},
-			ngrams:      []ngram{1, 2, 3, 4},
-			wantOffsets: []uint32{offset(0), offset(4)},
+			nNgrams:     10,
+			bucketIndex: 2,
+			wantOff:     off + 32,
+			wantSz:      16,
 		},
 		{
-			opts:        btreeOpts{v: 2, bucketSize: 4},
-			ngrams:      []ngram{1, 2, 3, 4, 5},
-			wantOffsets: []uint32{offset(0), offset(2), offset(5)},
+			nNgrams:     10,
+			bucketIndex: 3,
+			wantOff:     off + 48,
+			wantSz:      32,
 		},
 		{
-			opts:        btreeOpts{v: 2, bucketSize: 4},
-			ngrams:      []ngram{1, 2, 3, 4, 5, 6},
-			wantOffsets: []uint32{offset(0), offset(2), offset(6)},
-		},
-		{
-			opts:        btreeOpts{v: 2, bucketSize: 4},
-			ngrams:      []ngram{1, 2, 3, 4, 5, 6, 7},
-			wantOffsets: []uint32{offset(0), offset(2), offset(4), offset(7)},
-		},
-		{
-			opts:        btreeOpts{v: 2, bucketSize: 4},
-			ngrams:      []ngram{1, 2, 3, 4, 5, 6, 7, 8},
-			wantOffsets: []uint32{offset(0), offset(2), offset(4), offset(8)},
-		},
-		{
-			opts:        btreeOpts{v: 2, bucketSize: 4},
-			ngrams:      []ngram{1, 2, 3, 4, 5, 6, 7, 8, 9},
-			wantOffsets: []uint32{offset(0), offset(2), offset(4), offset(6), offset(9)},
+			nNgrams:     9,
+			bucketIndex: 3,
+			wantOff:     off + 48,
+			wantSz:      24,
 		},
 	}
 
 	for _, tt := range cases {
 		t.Run("", func(t *testing.T) {
-			toc := &indexTOC{}
-			toc.ngramText.sz = uint32(len(tt.ngrams) * ngramEncoding)
-			toc.ngramText.off = ngramTextOff
-			haveOffsets := createBucketOffsets(toc.ngramText, tt.opts.bucketSize)
+			bi := btreeIndex{
+				ngramSec: simpleSection{off: off, sz: uint32(tt.nNgrams * ngramEncoding)},
+			}
 
-			if d := cmp.Diff(tt.wantOffsets, haveOffsets); d != "" {
-				t.Fatalf("-want,+got\n%s", d)
+			bt := newBtree(btreeOpts{
+				bucketSize: bucketSize,
+				v:          2,
+			})
+			for i := 0; i < tt.nNgrams; i++ {
+				bt.insert(ngram(i + 1))
+			}
+			bt.freeze()
+
+			bi.bt = bt
+
+			off, sz := bi.getBucket(tt.bucketIndex)
+			if off != tt.wantOff {
+				t.Fatalf("off: want %d, got %d", tt.wantOff, off)
+			}
+			if sz != tt.wantSz {
+				t.Fatalf("sz: want %d, got %d", tt.wantSz, sz)
 			}
 		})
 	}

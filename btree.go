@@ -49,6 +49,8 @@ const btreeBucketSize = (4096 * 2) / ngramEncoding
 type btree struct {
 	root node
 	opts btreeOpts
+
+	lastBucketIndex int
 }
 
 type btreeOpts struct {
@@ -61,9 +63,15 @@ type btreeOpts struct {
 }
 
 func newBtree(opts btreeOpts) *btree {
-	return &btree{&leaf{}, opts}
+	return &btree{
+		root: &leaf{},
+		opts: opts,
+	}
 }
 
+// insert inserts ng into bt.
+//
+// Note: when all inserts are done, freeze must be called.
 func (bt *btree) insert(ng ngram) {
 	if leftNode, rightNode, newKey, ok := bt.root.maybeSplit(bt.opts); ok {
 		bt.root = &innerNode{keys: []ngram{newKey}, children: []node{leftNode, rightNode}}
@@ -85,6 +93,31 @@ func (bt *btree) find(ng ngram) (int, int) {
 
 func (bt *btree) visit(f func(n node)) {
 	bt.root.visit(f)
+}
+
+// freeze must be called once we are done inserting. It backfills "pointers" to
+// the buckets and posting lists.
+func (bt *btree) freeze() {
+	// Note: Instead of backfilling we could maintain state during insertion,
+	// however the visitor pattern seems more natural and shouldn't be a
+	// performance issue, because, based on the typical number of trigrams
+	// (500k) per shard, the b-trees we construct here only have around 1000
+	// leaf nodes.
+	offset, bucketIndex := 0, 0
+	bt.visit(func(no node) {
+		switch n := no.(type) {
+		case *leaf:
+			n.bucketIndex = bucketIndex
+			bucketIndex++
+
+			n.postingIndexOffset = offset
+			offset += n.bucketSize
+		case *innerNode:
+			return
+		}
+	})
+
+	bt.lastBucketIndex = bucketIndex - 1
 }
 
 func (bt *btree) sizeBytes() int {
@@ -250,14 +283,23 @@ type btreeIndex struct {
 	// We need the index to read buckets into memory.
 	file IndexFile
 
-	bucketOffsets []uint32
+	// buckets
+	ngramSec simpleSection
 
 	postingOffsets            []uint32
 	postingDataSentinelOffset uint32
 }
 
-func (b btreeIndex) SizeBytes() int {
-	return b.bt.sizeBytes() + 2*int(sliceHeaderBytes) + 4*len(b.bucketOffsets) + 4*len(b.postingOffsets)
+func (b btreeIndex) SizeBytes() (sz int) {
+	// btree
+	sz += int(pointerSize) + b.bt.sizeBytes()
+	// ngramSec
+	sz += 8
+	// postingOffsets
+	sz += int(sliceHeaderBytes) + 4*len(b.postingOffsets)
+	// postingDataSentinelOffset
+	sz += 4
+	return
 }
 
 // Get returns the simple section of the posting list associated with the
@@ -271,9 +313,7 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	bucketIndex, postingIndexOffset := b.bt.find(ng)
 
 	// read bucket into memory
-	off := b.bucketOffsets[bucketIndex]
-	sz := b.bucketOffsets[bucketIndex+1] - off
-
+	off, sz := b.getBucket(bucketIndex)
 	bucket, err := b.file.Read(off, sz)
 	if err != nil {
 		return simpleSection{}
@@ -298,15 +338,27 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	return b.getPostingList(postingIndexOffset + x)
 }
 
+func (b btreeIndex) getBucket(bucketIndex int) (off uint32, sz uint32) {
+	// All but the rightmost bucket have exactly bucketSize/2 ngrams
+	sz = uint32(b.bt.opts.bucketSize / 2 * ngramEncoding)
+	off = b.ngramSec.off + uint32(bucketIndex)*sz
+
+	// Rightmost bucket has size upto the end of the ngramSec.
+	if bucketIndex == b.bt.lastBucketIndex {
+		sz = b.ngramSec.off + b.ngramSec.sz - off
+	}
+
+	return
+}
+
 func (b btreeIndex) DumpMap() map[ngram]simpleSection {
-	m := make(map[ngram]simpleSection, len(b.bucketOffsets)*b.bt.opts.bucketSize)
+	m := make(map[ngram]simpleSection, b.ngramSec.sz/ngramEncoding)
 
 	b.bt.visit(func(no node) {
 		switch n := no.(type) {
 		case *leaf:
 			// read bucket into memory
-			off := b.bucketOffsets[n.bucketIndex]
-			sz := b.bucketOffsets[n.bucketIndex+1] - off
+			off, sz := b.getBucket(n.bucketIndex)
 			bucket, _ := b.file.Read(off, sz)
 
 			// decode all ngrams in the bucket and fill map
