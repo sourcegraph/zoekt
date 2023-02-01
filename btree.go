@@ -49,6 +49,8 @@ const btreeBucketSize = (4096 * 2) / ngramEncoding
 type btree struct {
 	root node
 	opts btreeOpts
+
+	lastBucketIndex int
 }
 
 type btreeOpts struct {
@@ -61,9 +63,15 @@ type btreeOpts struct {
 }
 
 func newBtree(opts btreeOpts) *btree {
-	return &btree{&leaf{}, opts}
+	return &btree{
+		root: &leaf{},
+		opts: opts,
+	}
 }
 
+// insert inserts ng into bt.
+//
+// Note: when all inserts are done, freeze must be called.
 func (bt *btree) insert(ng ngram) {
 	if leftNode, rightNode, newKey, ok := bt.root.maybeSplit(bt.opts); ok {
 		bt.root = &innerNode{keys: []ngram{newKey}, children: []node{leftNode, rightNode}}
@@ -85,6 +93,31 @@ func (bt *btree) find(ng ngram) (int, int) {
 
 func (bt *btree) visit(f func(n node)) {
 	bt.root.visit(f)
+}
+
+// freeze must be called once we are done inserting. It backfills "pointers" to
+// the buckets and posting lists.
+func (bt *btree) freeze() {
+	// Note: Instead of backfilling we could maintain state during insertion,
+	// however the visitor pattern seems more natural and shouldn't be a
+	// performance issue, because, based on the typical number of trigrams
+	// (500k) per shard, the b-trees we construct here only have around 1000
+	// leaf nodes.
+	offset, bucketIndex := 0, 0
+	bt.visit(func(no node) {
+		switch n := no.(type) {
+		case *leaf:
+			n.bucketIndex = bucketIndex
+			bucketIndex++
+
+			n.postingIndexOffset = offset
+			offset += n.bucketSize
+		case *innerNode:
+			return
+		}
+	})
+
+	bt.lastBucketIndex = bucketIndex - 1
 }
 
 func (bt *btree) sizeBytes() int {
@@ -307,12 +340,11 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 
 func (b btreeIndex) getBucket(bucketIndex int, bucketSize uint32) (off uint32, sz uint32) {
 	// All but the rightmost bucket have exactly bucketSize/2 ngrams
-	off = b.ngramSec.off + uint32(bucketIndex)*(bucketSize/2)*ngramEncoding
 	sz = bucketSize / 2 * ngramEncoding
+	off = b.ngramSec.off + uint32(bucketIndex)*sz
 
-	// Check if this is the last bucket, in which case the bucket just contains
-	// up to bucketSize ngrams.
-	if off+2*sz >= b.ngramSec.off+b.ngramSec.sz {
+	// Rightmost bucket has size upto the end of the ngramSec.
+	if bucketIndex == b.bt.lastBucketIndex {
 		sz = b.ngramSec.off + b.ngramSec.sz - off
 	}
 

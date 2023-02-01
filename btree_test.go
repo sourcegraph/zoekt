@@ -118,12 +118,32 @@ func TestGetBucket(t *testing.T) {
 			wantOff:     off + 48,
 			wantSz:      32,
 		},
+		{
+			nNgrams:     9,
+			bucketIndex: 3,
+			wantOff:     off + 48,
+			wantSz:      24,
+		},
 	}
 
 	for _, tt := range cases {
 		t.Run("", func(t *testing.T) {
-			bt := btreeIndex{ngramSec: simpleSection{off: off, sz: uint32(tt.nNgrams * ngramEncoding)}}
-			off, sz := bt.getBucket(tt.bucketIndex, bucketSize)
+			bi := btreeIndex{
+				ngramSec: simpleSection{off: off, sz: uint32(tt.nNgrams * ngramEncoding)},
+			}
+
+			bt := newBtree(btreeOpts{
+				bucketSize: int(bucketSize),
+				v:          2,
+			})
+			for i := 0; i < tt.nNgrams; i++ {
+				bt.insert(ngram(i + 1))
+			}
+			bt.freeze()
+
+			bi.bt = bt
+
+			off, sz := bi.getBucket(tt.bucketIndex, bucketSize)
 			if off != tt.wantOff {
 				t.Fatalf("off: want %d, got %d", tt.wantOff, off)
 			}
