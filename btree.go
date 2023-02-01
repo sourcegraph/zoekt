@@ -250,7 +250,7 @@ type btreeIndex struct {
 	// We need the index to read buckets into memory.
 	file IndexFile
 
-	// buckets.
+	// buckets
 	ngramSec simpleSection
 
 	postingOffsets            []uint32
