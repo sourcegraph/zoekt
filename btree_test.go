@@ -66,7 +66,7 @@ func TestFindBucket(t *testing.T) {
 
 func TestGetBucket(t *testing.T) {
 	var off uint32 = 13
-	var bucketSize uint32 = 4
+	bucketSize := 4
 
 	cases := []struct {
 		nNgrams     int
@@ -133,7 +133,7 @@ func TestGetBucket(t *testing.T) {
 			}
 
 			bt := newBtree(btreeOpts{
-				bucketSize: int(bucketSize),
+				bucketSize: bucketSize,
 				v:          2,
 			})
 			for i := 0; i < tt.nNgrams; i++ {
@@ -143,7 +143,7 @@ func TestGetBucket(t *testing.T) {
 
 			bi.bt = bt
 
-			off, sz := bi.getBucket(tt.bucketIndex, bucketSize)
+			off, sz := bi.getBucket(tt.bucketIndex)
 			if off != tt.wantOff {
 				t.Fatalf("off: want %d, got %d", tt.wantOff, off)
 			}

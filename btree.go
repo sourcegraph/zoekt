@@ -313,7 +313,7 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	bucketIndex, postingIndexOffset := b.bt.find(ng)
 
 	// read bucket into memory
-	off, sz := b.getBucket(bucketIndex, btreeBucketSize)
+	off, sz := b.getBucket(bucketIndex)
 	bucket, err := b.file.Read(off, sz)
 	if err != nil {
 		return simpleSection{}
@@ -338,9 +338,9 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	return b.getPostingList(postingIndexOffset + x)
 }
 
-func (b btreeIndex) getBucket(bucketIndex int, bucketSize uint32) (off uint32, sz uint32) {
+func (b btreeIndex) getBucket(bucketIndex int) (off uint32, sz uint32) {
 	// All but the rightmost bucket have exactly bucketSize/2 ngrams
-	sz = bucketSize / 2 * ngramEncoding
+	sz = uint32(b.bt.opts.bucketSize / 2 * ngramEncoding)
 	off = b.ngramSec.off + uint32(bucketIndex)*sz
 
 	// Rightmost bucket has size upto the end of the ngramSec.
@@ -358,7 +358,7 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 		switch n := no.(type) {
 		case *leaf:
 			// read bucket into memory
-			off, sz := b.getBucket(n.bucketIndex, btreeBucketSize)
+			off, sz := b.getBucket(n.bucketIndex)
 			bucket, _ := b.file.Read(off, sz)
 
 			// decode all ngrams in the bucket and fill map
