@@ -22,13 +22,10 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -167,100 +164,6 @@ func indexPendingRepos(indexDir, repoDir string, opts *Options, repos <-chan str
 	}
 }
 
-type indexRequest struct {
-	RepositoryUrl string // TODO: Decide if tokens can be in the URL or if we should pass separately
-	RepositoryId  string
-}
-
-func startIndexingApi(repoDir string, indexDir string, listen string, indexTimeout time.Duration) {
-	http.HandleFunc("/index", func(w http.ResponseWriter, r *http.Request) {
-		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
-		var req indexRequest
-		err := dec.Decode(&req)
-
-		if err != nil {
-			log.Printf("Error decoding index request: %v", err)
-			http.Error(w, "JSON parser error", http.StatusBadRequest)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), indexTimeout)
-
-		defer cancel()
-
-		args := []string{}
-		args = append(args, "-dest", repoDir)
-		args = append(args, "-name", req.RepositoryId)
-		args = append(args, "-repoid", req.RepositoryId)
-		args = append(args, req.RepositoryUrl)
-		cmd := exec.CommandContext(ctx, "zoekt-git-clone", args...)
-		cmd.Stdin = &bytes.Buffer{}
-		loggedRun(cmd)
-
-		args = []string{}
-
-		gitRepoPath, err := filepath.Abs(filepath.Join(repoDir, req.RepositoryId+".git"))
-		if err != nil {
-			log.Printf("error loading git repo path: %v", err)
-			http.Error(w, "JSON parser error", http.StatusBadRequest)
-			return
-		}
-		args = append(args, "-C", gitRepoPath, "fetch")
-		cmd = exec.CommandContext(ctx, "git", args...)
-		cmd.Stdin = &bytes.Buffer{}
-		loggedRun(cmd)
-
-		args = []string{}
-
-		args = append(args, gitRepoPath)
-		cmd = exec.CommandContext(ctx, "zoekt-git-index", args...)
-		cmd.Dir = indexDir
-		cmd.Stdin = &bytes.Buffer{}
-		loggedRun(cmd)
-	})
-
-	http.HandleFunc("/truncate", func(w http.ResponseWriter, r *http.Request) {
-		err := emptyDirectory(repoDir)
-
-		if err != nil {
-			log.Printf("Failed to empty repoDir repoDir: %v with error: %v", repoDir, err)
-			http.Error(w, "Failed to delete repoDir", http.StatusInternalServerError)
-			return
-		}
-
-		err = emptyDirectory(indexDir)
-
-		if err != nil {
-			log.Printf("Failed to empty repoDir indexDir: %v with error: %v", repoDir, err)
-			http.Error(w, "Failed to delete indexDir", http.StatusInternalServerError)
-			return
-		}
-	})
-
-	if err := http.ListenAndServe(listen, nil); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func emptyDirectory(dir string) error {
-	files, err := ioutil.ReadDir(dir)
-
-	if err != nil {
-		return err
-	}
-
-	for _, file := range files {
-		filePath := filepath.Join(dir, file.Name())
-		err := os.RemoveAll(filePath)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func indexPendingRepo(dir, indexDir, repoDir string, opts *Options) {
 	ctx, cancel := context.WithTimeout(context.Background(), opts.indexTimeout)
 	defer cancel()
@@ -359,8 +262,6 @@ func main() {
 	dataDir := flag.String("data_dir",
 		filepath.Join(os.Getenv("HOME"), "zoekt-serving"), "directory holding all data.")
 	indexDir := flag.String("index_dir", "", "directory holding index shards. Defaults to $data_dir/index/")
-	dynamicIndexServer := flag.Bool("dynamic_server", false, "whether or not to start dynamic web server to allow client to specify repos to index dynamically")
-	listen := flag.String("listen", ":6060", "listen on this address.")
 	flag.Parse()
 	opts.validate()
 
@@ -389,19 +290,15 @@ func main() {
 		}
 	}
 
-	if *dynamicIndexServer {
-		startIndexingApi(repoDir, *indexDir, *listen, opts.indexTimeout)
-	} else {
-		_, err := readConfigURL(opts.mirrorConfigFile)
-		if err != nil {
-			log.Fatalf("readConfigURL(%s): %v", opts.mirrorConfigFile, err)
-		}
-
-		pendingRepos := make(chan string, 10)
-		go periodicMirrorFile(repoDir, &opts, pendingRepos)
-		go deleteLogsLoop(logDir, opts.maxLogAge)
-		go deleteOrphanIndexes(*indexDir, repoDir, opts.fetchInterval)
-		go indexPendingRepos(*indexDir, repoDir, &opts, pendingRepos)
-		periodicFetch(repoDir, *indexDir, &opts, pendingRepos)
+	_, err := readConfigURL(opts.mirrorConfigFile)
+	if err != nil {
+		log.Fatalf("readConfigURL(%s): %v", opts.mirrorConfigFile, err)
 	}
+
+	pendingRepos := make(chan string, 10)
+	go periodicMirrorFile(repoDir, &opts, pendingRepos)
+	go deleteLogsLoop(logDir, opts.maxLogAge)
+	go deleteOrphanIndexes(*indexDir, repoDir, opts.fetchInterval)
+	go indexPendingRepos(*indexDir, repoDir, &opts, pendingRepos)
+	periodicFetch(repoDir, *indexDir, &opts, pendingRepos)
 }
