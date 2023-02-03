@@ -516,10 +516,9 @@ func (d *indexData) newBtreeIndex(toc *indexTOC) (btreeIndex, error) {
 
 	bi.bt = bt
 
+	// hold on to simple sections (8 bytes each)
 	bi.ngramSec = toc.ngramText
-
-	bi.postingOffsets = toc.postings.offsets
-	bi.postingDataSentinelOffset = toc.postings.data.off + toc.postings.data.sz
+	bi.postingIndex = toc.postings.index
 
 	return bi, nil
 }

@@ -286,8 +286,7 @@ type btreeIndex struct {
 	// buckets
 	ngramSec simpleSection
 
-	postingOffsets            []uint32
-	postingDataSentinelOffset uint32
+	postingIndex simpleSection
 }
 
 func (b btreeIndex) SizeBytes() (sz int) {
@@ -295,8 +294,8 @@ func (b btreeIndex) SizeBytes() (sz int) {
 	sz += int(pointerSize) + b.bt.sizeBytes()
 	// ngramSec
 	sz += 8
-	// postingOffsets
-	sz += int(sliceHeaderBytes) + 4*len(b.postingOffsets)
+	// postingIndex
+	sz += 8
 	// postingDataSentinelOffset
 	sz += 4
 	return
@@ -338,6 +337,51 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	return b.getPostingList(postingIndexOffset + x)
 }
 
+// getPostingList returns the simple section pointing to the posting list of
+// the ngram at ngramIndex.
+//
+// Assumming we don't hit a page boundary, which should be rare given that we
+// only read 8 bytes, we need 1 disk access to read the posting offset.
+func (b btreeIndex) getPostingList(ngramIndex int) simpleSection {
+	relativeOffsetBytes := uint32(ngramIndex) * 4
+
+	if relativeOffsetBytes+8 <= b.postingIndex.sz {
+		// read 2 offsets
+		o, err := b.file.Read(b.postingIndex.off+relativeOffsetBytes, 8)
+		if err != nil {
+			return simpleSection{}
+		}
+
+		start := binary.BigEndian.Uint32(o[0:4])
+		end := binary.BigEndian.Uint32(o[4:8])
+		return simpleSection{
+			off: start,
+			sz:  end - start,
+		}
+	} else {
+		// last ngram => read 1 offset and calculate the size of the posting
+		// list from the offset of index section.
+		o, err := b.file.Read(b.postingIndex.off+relativeOffsetBytes, 4)
+		if err != nil {
+			return simpleSection{}
+		}
+
+		start := binary.BigEndian.Uint32(o[0:4])
+		return simpleSection{
+			off: start,
+			// The layout of the posting list compound section on disk is
+			//
+			//                      start       b.postingIndex.off
+			//                      v           v
+			// [[posting lists (simple section)][index (simple section)]]
+			//                      <---------->
+			//                    last posting list
+			//
+			sz: b.postingIndex.off - start,
+		}
+	}
+}
+
 func (b btreeIndex) getBucket(bucketIndex int) (off uint32, sz uint32) {
 	// All but the rightmost bucket have exactly bucketSize/2 ngrams
 	sz = uint32(b.bt.opts.bucketSize / 2 * ngramEncoding)
@@ -372,18 +416,4 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 	})
 
 	return m
-}
-
-func (b btreeIndex) getPostingList(postingIndex int) simpleSection {
-	if postingIndex+1 < len(b.postingOffsets) {
-		return simpleSection{
-			off: b.postingOffsets[postingIndex],
-			sz:  b.postingOffsets[postingIndex+1] - b.postingOffsets[postingIndex],
-		}
-	} else {
-		return simpleSection{
-			off: b.postingOffsets[postingIndex],
-			sz:  b.postingDataSentinelOffset - b.postingOffsets[postingIndex],
-		}
-	}
 }
