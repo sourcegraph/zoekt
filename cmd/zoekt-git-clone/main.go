@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/sourcegraph/zoekt/gitindex"
@@ -32,6 +33,8 @@ import (
 
 func main() {
 	dest := flag.String("dest", "", "destination directory")
+	nameFlag := flag.String("name", "", "name of repository")
+	repoIDFlag := flag.Uint("repoid", 0, "id of repository")
 	flag.Parse()
 
 	if *dest == "" {
@@ -45,8 +48,11 @@ func main() {
 		log.Fatalf("url.Parse: %v", err)
 	}
 
-	name := filepath.Join(u.Host, u.Path)
-	name = strings.TrimSuffix(name, ".git")
+	name := *nameFlag
+	if name == "" {
+		name = filepath.Join(u.Host, u.Path)
+		name = strings.TrimSuffix(name, ".git")
+	}
 
 	destDir := filepath.Dir(filepath.Join(*dest, name))
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
@@ -55,6 +61,11 @@ func main() {
 
 	config := map[string]string{
 		"zoekt.name": name,
+	}
+
+	repoID := *repoIDFlag
+	if repoID != 0 {
+		config["zoekt.repoid"] = strconv.FormatUint(uint64(repoID), 10)
 	}
 
 	destRepo, err := gitindex.CloneRepo(destDir, filepath.Base(name), u.String(), config)
