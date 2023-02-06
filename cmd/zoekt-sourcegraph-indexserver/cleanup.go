@@ -438,7 +438,7 @@ func (s *Server) vacuum() {
 			continue
 		}
 
-		if info.Size() < s.minSizeBytes {
+		if info.Size() < s.mergeOpts.minSizeBytes {
 			cmd := exec.Command("zoekt-merge-index", "explode", path)
 
 			var b []byte
