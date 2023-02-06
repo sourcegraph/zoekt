@@ -178,6 +178,10 @@ func byteClass(c byte) int {
 	}
 }
 
+func characterClass(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+}
+
 func marshalDocSections(secs []DocumentSection) []byte {
 	ints := make([]uint32, 0, len(secs)*2)
 	for _, s := range secs {

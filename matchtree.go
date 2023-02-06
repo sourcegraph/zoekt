@@ -722,8 +722,9 @@ func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTr
 
 		relStartOffset := offset + idx
 		relEndOffset := relStartOffset + len(t.word)
-		startBoundary := relStartOffset < len(data) && (relStartOffset == 0 || byteClass(data[relStartOffset-1]) != byteClass(data[relStartOffset]))
-		endBoundary := relEndOffset > 0 && (relEndOffset == len(data) || byteClass(data[relEndOffset-1]) != byteClass(data[relEndOffset]))
+
+		startBoundary := relStartOffset < len(data) && (relStartOffset == 0 || !characterClass(data[relStartOffset-1]))
+		endBoundary := relEndOffset > 0 && (relEndOffset == len(data) || !characterClass(data[relEndOffset]))
 		if startBoundary && endBoundary {
 			found = append(found, &candidateMatch{
 				byteOffset:  uint32(offset + idx),
