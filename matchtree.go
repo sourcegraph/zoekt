@@ -23,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/grafana/regexp"
+
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -729,7 +730,7 @@ func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTr
 			found = append(found, &candidateMatch{
 				byteOffset:  uint32(offset + idx),
 				byteMatchSz: uint32(len(t.word)),
-				fileName:    false,
+				fileName:    t.fileName,
 			})
 		}
 		offset += idx + len(t.word)
