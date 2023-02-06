@@ -121,6 +121,80 @@ func TestReadWriteNames(t *testing.T) {
 	}
 }
 
+func TestGet(t *testing.T) {
+	b, err := NewIndexBuilder(nil)
+	if err != nil {
+		t.Fatalf("NewIndexBuilder: %v", err)
+	}
+
+	if err := b.AddFile("file_name", []byte("aaa bbbaaa")); err != nil {
+		t.Fatalf("AddFile: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
+	f := &memSeeker{buf.Bytes()}
+
+	r := reader{r: f}
+
+	var toc indexTOC
+	if err := r.readTOC(&toc); err != nil {
+		t.Errorf("got read error %v", err)
+	}
+
+	id, err := r.readIndexData(&toc)
+	if err != nil {
+		t.Fatalf("readIndexData: %v", err)
+	}
+
+	var off uint32 = 96
+
+	cases := []struct {
+		ng              string
+		wantPostingList simpleSection
+	}{
+		{
+			ng:              " bb",
+			wantPostingList: simpleSection{off: off, sz: 1},
+		},
+		{
+			ng:              "a b",
+			wantPostingList: simpleSection{off: off + 1, sz: 1},
+		},
+		{
+			ng:              "aa ",
+			wantPostingList: simpleSection{off: off + 2, sz: 1},
+		},
+		{
+			ng:              "aaa",
+			wantPostingList: simpleSection{off: off + 3, sz: 2},
+		},
+		{
+			ng:              "baa",
+			wantPostingList: simpleSection{off: off + 5, sz: 1},
+		},
+		{
+			ng:              "bba",
+			wantPostingList: simpleSection{off: off + 6, sz: 1},
+		},
+		{
+			ng:              "bbb",
+			wantPostingList: simpleSection{off: off + 7, sz: 1},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.ng, func(t *testing.T) {
+			havePostingList := id.ngrams.Get(stringToNGram(tt.ng))
+			if !reflect.DeepEqual(tt.wantPostingList, havePostingList) {
+				t.Fatalf("\nwant:%+v\ngot: %+v", tt.wantPostingList, havePostingList)
+			}
+		})
+	}
+}
+
 func loadShard(fn string) (Searcher, error) {
 	f, err := os.Open(fn)
 	if err != nil {
