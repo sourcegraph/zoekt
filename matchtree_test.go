@@ -20,6 +20,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/grafana/regexp"
+
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -189,6 +190,40 @@ func TestEquivalentQuerySkipRegexpTree(t *testing.T) {
 				t.Errorf("Expected regexpMatchTree to be skipped for query: %s", q)
 			}
 		})
+	}
+}
+
+// Test whether we skip the regexp engine for queries like "\bLITERAL\b
+// case:yes"
+func TestWordSearchSkipRegexpTree(t *testing.T) {
+	qStr := "\\bfoo\\b case:yes"
+	q, err := query.Parse(qStr)
+	if err != nil {
+		t.Fatalf("Error parsing query: %s", "sym:"+qStr)
+	}
+
+	d := &indexData{}
+	mt, err := d.newMatchTree(q)
+	if err != nil {
+		t.Fatalf("Error creating match tree from query: %s", q)
+	}
+
+	countRegexMatchTree, countWordMatchTree := 0, 0
+	visitMatchTree(mt, func(m matchTree) {
+		switch m.(type) {
+		case *regexpMatchTree:
+			countRegexMatchTree++
+		case *wordMatchTree:
+			countWordMatchTree++
+		}
+	})
+
+	if countRegexMatchTree != 0 {
+		t.Fatalf("expected to find 0 regexMatchTree, found %d", countRegexMatchTree)
+	}
+
+	if countWordMatchTree != 1 {
+		t.Fatalf("expected to find 1 wordMatchTree, found %d", countWordMatchTree)
 	}
 }
 
