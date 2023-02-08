@@ -3594,6 +3594,10 @@ func TestWordSearch(t *testing.T) {
 			t.Fatalf("got %v, want 1 match in 1 file", sres.Files)
 		}
 
+		if sres.Stats.RegexpsConsidered != 0 {
+			t.Fatal("expected regexp to be skipped")
+		}
+
 		got := sres.Files[0].ChunkMatches[0]
 		want := ChunkMatch{
 			Content:      content,
