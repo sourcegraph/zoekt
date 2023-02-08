@@ -116,7 +116,13 @@ func TestReadWriteNames(t *testing.T) {
 	if !reflect.DeepEqual([]uint32{0, 4}, data.fileNameIndex) {
 		t.Errorf("got index %v, want {0,4}", data.fileNameIndex)
 	}
-	if got := data.fileNameNgrams[stringToNGram("bCd")]; !reflect.DeepEqual(got, []byte{1}) {
+
+	gotBlob, err := data.fileNameNgrams.GetBlob(stringToNGram("bCd"))
+	if err != nil {
+		t.Fatalf("fileNameNgrams.GetBlob: %v", err)
+	}
+
+	if !reflect.DeepEqual(gotBlob, []byte{1}) {
 		t.Errorf("got trigram bcd at bits %v, want sz 2", data.fileNameNgrams)
 	}
 }

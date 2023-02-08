@@ -226,10 +226,9 @@ func canReadVersion(md *IndexMetadata) bool {
 
 func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d := indexData{
-		file:           r.r,
-		fileNameNgrams: map[ngram][]byte{},
-		branchIDs:      []map[string]uint{},
-		branchNames:    []map[uint]string{},
+		file:        r.r,
+		branchIDs:   []map[string]uint{},
+		branchNames: []map[uint]string{},
 	}
 
 	repos, md, err := r.readMetadata(toc)
@@ -290,7 +289,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	}
 
 	if os.Getenv("ZOEKT_ENABLE_BTREE") != "" {
-		bt, err := d.newBtreeIndex(toc)
+		bt, err := d.newBtreeIndex(toc.ngramText, toc.postings)
 		if err != nil {
 			return nil, err
 		}
@@ -321,7 +320,11 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 
 	d.fileNameIndex = toc.fileNames.relativeIndex()
 
-	d.fileNameNgrams, err = d.readFileNameNgrams(toc)
+	if os.Getenv("ZOEKT_ENABLE_BTREE_NAME") != "" {
+		d.fileNameNgrams.bt, err = d.newBtreeIndex(toc.nameNgramText, toc.namePostings)
+	} else {
+		d.fileNameNgrams.m, err = d.readFileNameNgrams(toc)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -496,10 +499,10 @@ func (d *indexData) readBinarySearchNgrams(toc *indexTOC) (binarySearchNgram, er
 	}, nil
 }
 
-func (d *indexData) newBtreeIndex(toc *indexTOC) (btreeIndex, error) {
+func (d *indexData) newBtreeIndex(ngramSec simpleSection, postings compoundSection) (btreeIndex, error) {
 	bi := btreeIndex{file: d.file}
 
-	textContent, err := d.readSectionBlob(toc.ngramText)
+	textContent, err := d.readSectionBlob(ngramSec)
 	if err != nil {
 		return btreeIndex{}, err
 	}
@@ -517,8 +520,8 @@ func (d *indexData) newBtreeIndex(toc *indexTOC) (btreeIndex, error) {
 	bi.bt = bt
 
 	// hold on to simple sections (8 bytes each)
-	bi.ngramSec = toc.ngramText
-	bi.postingIndex = toc.postings.index
+	bi.ngramSec = ngramSec
+	bi.postingIndex = postings.index
 
 	return bi, nil
 }

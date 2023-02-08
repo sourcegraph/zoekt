@@ -364,6 +364,43 @@ type ngramIndex interface {
 	SizeBytes() int
 }
 
+// This is a temporary type to wrap two very different implementations of the
+// inverted index for the purpose of feature-flagging. We will remove this after
+// we enable the b-tree permanently.
+//
+// Alternatively we could have adapted/extended the interface "ngramIndex".
+// However, adapting the existing implementations and their tests to match the
+// access pattern of map[ngram][]byte seems more cumbersome than this makeshift
+// wrapper. In the end, both ngramIndex and this wrapper will be replaced by a
+// concrete type.
+type fileNameNgrams struct {
+	m  map[ngram][]byte
+	bt btreeIndex
+}
+
+func (n fileNameNgrams) GetBlob(ng ngram) ([]byte, error) {
+	if n.m != nil {
+		return n.m[ng], nil
+	}
+	sec := n.bt.Get(ng)
+	return n.bt.file.Read(sec.off, sec.sz)
+}
+
+func (n fileNameNgrams) Frequency(ng ngram) uint32 {
+	if n.m != nil {
+		return uint32(len(n.m[ng]))
+	}
+	return n.bt.Get(ng).sz
+}
+
+func (n fileNameNgrams) SizeBytes() int {
+	if n.m != nil {
+		// these slices reference mmap-ed memory
+		return 12 * len(n.m)
+	}
+	return n.bt.SizeBytes()
+}
+
 type binarySearchNgram struct {
 	// ngramText is the bytes at indexTOC.ngramText
 	//

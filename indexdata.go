@@ -56,7 +56,7 @@ type indexData struct {
 
 	fileNameContent []byte
 	fileNameIndex   []uint32
-	fileNameNgrams  map[ngram][]byte
+	fileNameNgrams  fileNameNgrams
 
 	// fileEndSymbol[i] is the index of the first symbol for document i.
 	fileEndSymbol []uint32
@@ -317,7 +317,7 @@ func (d *indexData) memoryUse() int {
 	if d.ngrams != nil {
 		sz += d.ngrams.SizeBytes()
 	}
-	sz += 12 * len(d.fileNameNgrams) // these slices reference mmap-ed memory
+	sz += d.fileNameNgrams.SizeBytes()
 	return sz
 }
 
@@ -349,7 +349,7 @@ func lastMinarg(xs []uint32) uint32 {
 
 func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
 	if filename {
-		return uint32(len(data.fileNameNgrams[ng]))
+		return uint32(data.fileNameNgrams.Frequency(ng))
 	}
 
 	if data.ngrams == nil {
