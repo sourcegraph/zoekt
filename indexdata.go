@@ -349,7 +349,7 @@ func lastMinarg(xs []uint32) uint32 {
 
 func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
 	if filename {
-		return uint32(data.fileNameNgrams.Frequency(ng))
+		return data.fileNameNgrams.Frequency(ng)
 	}
 
 	if data.ngrams == nil {
