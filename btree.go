@@ -291,7 +291,9 @@ type btreeIndex struct {
 
 func (b btreeIndex) SizeBytes() (sz int) {
 	// btree
-	sz += int(pointerSize) + b.bt.sizeBytes()
+	if b.bt != nil {
+		sz += int(pointerSize) + b.bt.sizeBytes()
+	}
 	// ngramSec
 	sz += 8
 	// postingIndex
@@ -308,6 +310,10 @@ func (b btreeIndex) SizeBytes() (sz int) {
 // 3. Binary search the bucket (in MEM)
 // 4. Return the simple section pointing to the posting list (in MEM)
 func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
+	if b.bt == nil {
+		return simpleSection{}
+	}
+
 	// find bucket
 	bucketIndex, postingIndexOffset := b.bt.find(ng)
 
@@ -396,6 +402,10 @@ func (b btreeIndex) getBucket(bucketIndex int) (off uint32, sz uint32) {
 }
 
 func (b btreeIndex) DumpMap() map[ngram]simpleSection {
+	if b.bt == nil {
+		return nil
+	}
+
 	m := make(map[ngram]simpleSection, b.ngramSec.sz/ngramEncoding)
 
 	b.bt.visit(func(no node) {
