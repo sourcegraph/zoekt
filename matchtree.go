@@ -711,7 +711,6 @@ func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTr
 		return false, false
 	}
 
-	cp.stats.RegexpsConsidered++
 	data := cp.data(t.fileName)
 	offset := 0
 	found := t.found[:0]
