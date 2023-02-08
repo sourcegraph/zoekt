@@ -86,8 +86,8 @@ Zoekt comes with a small service management program:
     go install github.com/sourcegraph/zoekt/cmd/zoekt-indexserver
 
     cat << EOF > config.json
-    [{"GithubUser": "username"},
-     {"GithubOrg": "org"},
+    [{"GitHubUser": "username"},
+     {"GitHubOrg": "org"},
      {"GitilesURL": "https://gerrit.googlesource.com", "Name": "zoekt" }
     ]
     EOF
