@@ -15,12 +15,15 @@
 package zoekt
 
 import (
+	"bytes"
 	"fmt"
 	"log"
+	"regexp/syntax"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/grafana/regexp"
+
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -137,6 +140,20 @@ type regexpMatchTree struct {
 	// mutable
 	reEvaluated bool
 	found       []*candidateMatch
+
+	// nextDoc, prepare.
+	bruteForceMatchTree
+}
+
+// \bLITERAL\b
+type wordMatchTree struct {
+	word string
+
+	fileName bool
+
+	// mutable
+	evaluated bool
+	found     []*candidateMatch
 
 	// nextDoc, prepare.
 	bruteForceMatchTree
@@ -306,6 +323,12 @@ func (t *regexpMatchTree) prepare(doc uint32) {
 	t.bruteForceMatchTree.prepare(doc)
 }
 
+func (t *wordMatchTree) prepare(doc uint32) {
+	t.found = t.found[:0]
+	t.evaluated = false
+	t.bruteForceMatchTree.prepare(doc)
+}
+
 func (t *orMatchTree) prepare(doc uint32) {
 	for _, c := range t.children {
 		c.prepare(doc)
@@ -417,6 +440,14 @@ func (t *regexpMatchTree) String() string {
 		f = "f"
 	}
 	return fmt.Sprintf("%sre(%s)", f, t.regexp)
+}
+
+func (t *wordMatchTree) String() string {
+	f := ""
+	if t.fileName {
+		f = "f"
+	}
+	return fmt.Sprintf("%sword(%s)", f, t.word)
 }
 
 func (t *orMatchTree) String() string {
@@ -671,6 +702,45 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	return len(t.found) > 0, true
 }
 
+func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
+	if t.evaluated {
+		return len(t.found) > 0, true
+	}
+
+	if cost < costRegexp {
+		return false, false
+	}
+
+	data := cp.data(t.fileName)
+	offset := 0
+	found := t.found[:0]
+	for {
+		idx := bytes.Index(data[offset:], []byte(t.word))
+		if idx < 0 {
+			break
+		}
+
+		relStartOffset := offset + idx
+		relEndOffset := relStartOffset + len(t.word)
+
+		startBoundary := relStartOffset < len(data) && (relStartOffset == 0 || !characterClass(data[relStartOffset-1]))
+		endBoundary := relEndOffset > 0 && (relEndOffset == len(data) || !characterClass(data[relEndOffset]))
+		if startBoundary && endBoundary {
+			found = append(found, &candidateMatch{
+				byteOffset:  uint32(offset + idx),
+				byteMatchSz: uint32(len(t.word)),
+				fileName:    t.fileName,
+			})
+		}
+		offset += idx + len(t.word)
+	}
+
+	t.found = found
+	t.evaluated = true
+
+	return len(t.found) > 0, true
+}
+
 // breakMatchesOnNewlines returns matches resulting from breaking each element
 // of cms on newlines within text.
 func breakMatchesOnNewlines(cms []*candidateMatch, text []byte) []*candidateMatch {
@@ -781,14 +851,21 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			return subMT, nil
 		}
 
-		prefix := ""
-		if !s.CaseSensitive {
-			prefix = "(?i)"
-		}
+		var tr matchTree
+		if wmt, ok := regexpToWordMatchTree(s); ok {
+			// A common search we get is "\bLITERAL\b". Avoid the regex engine and
+			// provide something faster.
+			tr = wmt
+		} else {
+			prefix := ""
+			if !s.CaseSensitive {
+				prefix = "(?i)"
+			}
 
-		tr := &regexpMatchTree{
-			regexp:   regexp.MustCompile(prefix + s.Regexp.String()),
-			fileName: s.FileName,
+			tr = &regexpMatchTree{
+				regexp:   regexp.MustCompile(prefix + s.Regexp.String()),
+				fileName: s.FileName,
+			}
 		}
 
 		return &andMatchTree{
@@ -1050,6 +1127,26 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 	return st, nil
 }
 
+func regexpToWordMatchTree(q *query.Regexp) (_ *wordMatchTree, ok bool) {
+	// Needs to be case sensitive
+	if !q.CaseSensitive || q.Regexp.Flags&syntax.FoldCase != 0 {
+		return nil, false
+	}
+	// We want a regex that looks like Op.Concat[OpWordBoundary OpLiteral OpWordBoundary]
+	if q.Regexp.Op != syntax.OpConcat || len(q.Regexp.Sub) != 3 {
+		return nil, false
+	}
+	sub := q.Regexp.Sub
+	if sub[0].Op != syntax.OpWordBoundary || sub[1].Op != syntax.OpLiteral || sub[2].Op != syntax.OpWordBoundary {
+		return nil, false
+	}
+
+	return &wordMatchTree{
+		word:     string(sub[1].Rune),
+		fileName: q.FileName,
+	}, true
+}
+
 // pruneMatchTree removes impossible branches from the matchTree, as indicated
 // by substrMatchTree having a noMatchTree and the resulting impossible and clauses and so forth.
 func pruneMatchTree(mt matchTree) (matchTree, error) {
@@ -1135,6 +1232,7 @@ func pruneMatchTree(mt matchTree) (matchTree, error) {
 	case *docMatchTree:
 	case *bruteForceMatchTree:
 	case *regexpMatchTree:
+	case *wordMatchTree:
 	}
 	return mt, err
 }

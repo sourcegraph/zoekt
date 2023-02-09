@@ -1116,7 +1116,7 @@ func TestBranchVersions(t *testing.T) {
 }
 
 func mustParseRE(s string) *syntax.Regexp {
-	r, err := syntax.Parse(s, 0)
+	r, err := syntax.Parse(s, syntax.Perl)
 	if err != nil {
 		panic(err)
 	}
@@ -3534,5 +3534,82 @@ func TestStats(t *testing.T) {
 			t.Fatalf("mismatch (-want +got):\n%s", diff)
 		}
 
+	})
+}
+
+// This tests the frequent pattern "\bLITERAL\b".
+func TestWordSearch(t *testing.T) {
+	content := []byte("needle the bla")
+	// ----------------01234567890123
+
+	b := testIndexBuilder(t, nil,
+		Document{
+			Name:    "f1",
+			Content: content,
+		})
+
+	t.Run("LineMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			&query.Regexp{
+				Regexp:        mustParseRE("\\bthe\\b"),
+				CaseSensitive: true,
+				Content:       true,
+			})
+
+		if len(sres.Files) != 1 || len(sres.Files[0].LineMatches) != 1 {
+			t.Fatalf("got %v, want 1 match in 1 file", sres.Files)
+		}
+
+		if sres.Stats.RegexpsConsidered != 0 {
+			t.Fatal("expected regexp to be skipped")
+		}
+
+		got := sres.Files[0].LineMatches[0]
+		want := LineMatch{
+			LineFragments: []LineFragmentMatch{{
+				LineOffset:  7,
+				Offset:      7,
+				MatchLength: 3,
+			}},
+			Line:       content,
+			FileName:   false,
+			LineNumber: 1,
+			LineStart:  0,
+			LineEnd:    14,
+		}
+
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		sres := searchForTest(t, b,
+			&query.Regexp{
+				Regexp:        mustParseRE("\\bthe\\b"),
+				CaseSensitive: true,
+			}, chunkOpts)
+
+		if len(sres.Files) != 1 || len(sres.Files[0].ChunkMatches) != 1 {
+			t.Fatalf("got %v, want 1 match in 1 file", sres.Files)
+		}
+
+		if sres.Stats.RegexpsConsidered != 0 {
+			t.Fatal("expected regexp to be skipped")
+		}
+
+		got := sres.Files[0].ChunkMatches[0]
+		want := ChunkMatch{
+			Content:      content,
+			ContentStart: Location{ByteOffset: 0, LineNumber: 1, Column: 1},
+			Ranges: []Range{{
+				Start: Location{ByteOffset: 7, LineNumber: 1, Column: 8},
+				End:   Location{ByteOffset: 10, LineNumber: 1, Column: 11},
+			}},
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Fatal(diff)
+		}
 	})
 }
