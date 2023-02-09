@@ -1117,7 +1117,7 @@ func regexpToWordMatchTree(q *query.Regexp) (_ *wordMatchTree, ok bool) {
 	if !q.CaseSensitive || q.Regexp.Flags&syntax.FoldCase != 0 {
 		return nil, false
 	}
-	// We want 3 a regex that looks like Op.Concat[OpWordBoundary OpLiteral OpWordBoundary]
+	// We want a regex that looks like Op.Concat[OpWordBoundary OpLiteral OpWordBoundary]
 	if q.Regexp.Op != syntax.OpConcat || len(q.Regexp.Sub) != 3 {
 		return nil, false
 	}
