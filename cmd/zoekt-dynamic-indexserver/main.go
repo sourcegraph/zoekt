@@ -128,6 +128,10 @@ type indexServer struct {
 	opts Options
 }
 
+func (s *indexServer) serveHealthCheck(w http.ResponseWriter, r *http.Request) {
+	// Nothing to do. Just return 200
+}
+
 func (s *indexServer) serveIndex(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -190,6 +194,7 @@ func respondWithError(w http.ResponseWriter, err error) {
 }
 
 func (s *indexServer) startIndexingApi() {
+	http.HandleFunc("/", s.serveHealthCheck)
 	http.HandleFunc("/index", s.serveIndex)
 	http.HandleFunc("/truncate", s.serveTruncate)
 
