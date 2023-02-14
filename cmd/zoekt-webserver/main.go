@@ -37,8 +37,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/sourcegraph/mountinfo"
 
 	"github.com/sourcegraph/zoekt"
