@@ -12,22 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux || darwin
-
 package zoekt
 
 import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 
-	"golang.org/x/sys/unix"
+	// cross-platform memory-mapped file package.
+	// Benchmarks the same speed as syscall/unix Mmap
+	// see https://github.com/peterguy/benchmark-mmap
+	mmap "github.com/edsrzf/mmap-go"
 )
 
 type mmapedIndexFile struct {
 	name string
 	size uint32
-	data []byte
+	data mmap.MMap
 }
 
 func (f *mmapedIndexFile) Read(off, sz uint32) ([]byte, error) {
@@ -46,9 +48,23 @@ func (f *mmapedIndexFile) Size() (uint32, error) {
 }
 
 func (f *mmapedIndexFile) Close() {
-	if err := unix.Munmap(f.data); err != nil {
-		log.Printf("WARN failed to Munmap %s: %v", f.name, err)
+	if err := f.data.Unmap(); err != nil {
+		log.Printf("WARN failed to memory unmap %s: %v", f.name, err)
 	}
+}
+
+func bufferSize(f *mmapedIndexFile) int {
+	// On Unix/Linux, mmap likes to allocate memory in
+	// page-sized chunks, so round up to the OS page size.
+	// mmap will zero-fill the extra bytes.
+	// On Windows, the Windows API CreateFileMapping method
+	// requires a buffer the same size as the file.
+	bsize := int(f.size)
+	if runtime.GOOS != "windows" {
+		pagesize := os.Getpagesize() - 1
+		bsize = (bsize + pagesize) &^ pagesize
+	}
+	return bsize
 }
 
 // NewIndexFile returns a new index file. The index file takes
@@ -70,11 +86,10 @@ func NewIndexFile(f *os.File) (IndexFile, error) {
 		size: uint32(sz),
 	}
 
-	rounded := (r.size + 4095) &^ 4095
-	r.data, err = unix.Mmap(int(f.Fd()), 0, int(rounded), unix.PROT_READ, unix.MAP_SHARED)
+	r.data, err = mmap.MapRegion(f, bufferSize(r), mmap.RDONLY, 0, 0)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("NewIndexFile: unable to memory map %s: %w", f.Name(), err)
 	}
 
-	return r, err
+	return r, nil
 }

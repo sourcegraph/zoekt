@@ -31,14 +31,11 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/sys/unix"
 
 	"github.com/sourcegraph/mountinfo"
 
@@ -55,7 +52,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/procfs"
+	"github.com/shirou/gopsutil/v3/disk"
 	sglog "github.com/sourcegraph/log"
 	"github.com/uber/jaeger-client-go"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -337,8 +334,8 @@ func addProxyHandler(mux *http.ServeMux, socket string) {
 // times you will read the channel (used as buffer for signal.Notify).
 func shutdownSignalChan(maxReads int) <-chan os.Signal {
 	c := make(chan os.Signal, maxReads)
-	signal.Notify(c, os.Interrupt)    // terminal C-c and goreman
-	signal.Notify(c, unix.SIGTERM) // Kubernetes
+	signal.Notify(c, os.Interrupt)     // terminal C-c and goreman
+	signal.Notify(c, PLATFORM_SIGTERM) // Kubernetes
 	return c
 }
 
@@ -437,15 +434,29 @@ func watchdog(dt time.Duration, maxErrCount int, addr string) {
 	}
 }
 
+func diskUsage(path string) (*disk.UsageStat, error) {
+	duPath := path
+	if runtime.GOOS == "windows" {
+		duPath = filepath.VolumeName(duPath)
+	}
+	usage, err := disk.Usage(duPath)
+	if err != nil {
+		return nil, fmt.Errorf("diskUsage: %w", err)
+	}
+	return usage, err
+}
+
 func mustRegisterDiskMonitor(path string) {
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "src_disk_space_available_bytes",
 		Help:        "Amount of free space disk space.",
 		ConstLabels: prometheus.Labels{"path": path},
 	}, func() float64 {
-		var stat unix.Statfs_t
-		_ = unix.Statfs(path, &stat)
-		return float64(stat.Bavail * uint64(stat.Bsize))
+		// I know there is no error handling here, and I don't like it
+		// but there was no error handling in the previous version
+		// that used Statfs, either, so I'm assuming there's no need for it
+		usage, _ := diskUsage(path)
+		return float64(usage.Free)
 	}))
 
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -453,9 +464,11 @@ func mustRegisterDiskMonitor(path string) {
 		Help:        "Amount of total disk space.",
 		ConstLabels: prometheus.Labels{"path": path},
 	}, func() float64 {
-		var stat unix.Statfs_t
-		_ = unix.Statfs(path, &stat)
-		return float64(stat.Blocks * uint64(stat.Bsize))
+		// I know there is no error handling here, and I don't like it
+		// but there was no error handling in the previous version
+		// that used Statfs, either, so I'm assuming there's no need for it
+		usage, _ := diskUsage(path)
+		return float64(usage.Total)
 	}))
 }
 
@@ -589,83 +602,3 @@ var (
 		Help: "The total number of search requests that zoekt received",
 	})
 )
-
-func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
-	logger = logger.Scoped("memoryMapMetrics", "")
-
-	// The memory map metrics are collected via /proc, which
-	// is only available on linux-based operating systems.
-
-	if runtime.GOOS != "linux" {
-		return
-	}
-
-	// Instantiate shared FS objects for accessing /proc and /proc/self,
-	// and skip metrics registration if we're aren't able to instantiate them
-	// for whatever reason.
-
-	fs, err := procfs.NewDefaultFS()
-	if err != nil {
-		logger.Debug(
-			"skipping registration",
-			sglog.String("reason", "failed to initialize proc FS"),
-			sglog.String("error", err.Error()),
-		)
-
-		return
-	}
-
-	info, err := fs.Self()
-	if err != nil {
-		logger.Debug(
-			"skipping registration",
-			sglog.String("path", path.Join(procfs.DefaultMountPoint, "self")),
-			sglog.String("reason", "failed to initialize process info object for current process"),
-			sglog.String("error", err.Error()),
-		)
-
-		return
-	}
-
-	// Register Prometheus memory map metrics
-
-	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "proc_metrics_memory_map_max_limit",
-		Help: "Upper limit on amount of memory mapped regions a process may have.",
-	}, func() float64 {
-		vm, err := fs.VM()
-		if err != nil {
-			logger.Debug(
-				"failed to read virtual memory statistics for the current process",
-				sglog.String("path", path.Join(procfs.DefaultMountPoint, "sys", "vm")),
-				sglog.String("error", err.Error()),
-			)
-
-			return 0
-		}
-
-		if vm.MaxMapCount == nil {
-			return 0
-		}
-
-		return float64(*vm.MaxMapCount)
-	}))
-
-	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "proc_metrics_memory_map_current_count",
-		Help: "Amount of memory mapped regions this process is currently using.",
-	}, func() float64 {
-		procMaps, err := info.ProcMaps()
-		if err != nil {
-			logger.Debug(
-				"failed to read memory mappings for current process",
-				sglog.String("path", path.Join(procfs.DefaultMountPoint, "self", "maps")),
-				sglog.String("error", err.Error()),
-			)
-
-			return 0
-		}
-
-		return float64(len(procMaps))
-	}))
-}
