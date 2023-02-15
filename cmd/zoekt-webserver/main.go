@@ -441,7 +441,7 @@ func diskUsage(path string) (*disk.UsageStat, error) {
 	}
 	usage, err := disk.Usage(duPath)
 	if err != nil {
-		err = fmt.Errorf("diskUsage: %w", err)
+		return nil, fmt.Errorf("diskUsage: %w", err)
 	}
 	return usage, err
 }
