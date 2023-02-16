@@ -1,0 +1,26 @@
+FROM alpine:3.16.2
+
+RUN apk update --no-cache && apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates bind-tools tini git jansson && \
+    apk add --upgrade --no-cache 'libcrypto1.1>=1.1.1n-r0' 'libssl1.1>=1.1.1n-r0' 'pcre2>=10.40-r0'
+
+# Run as non-root user sourcegraph. External volumes should be mounted under /data (which will be owned by sourcegraph).
+RUN mkdir -p /home/sourcegraph
+RUN addgroup -S sourcegraph && adduser -S -G sourcegraph -h /home/sourcegraph sourcegraph && mkdir -p /data && chown -R sourcegraph:sourcegraph /data
+USER sourcegraph
+WORKDIR /home/sourcegraph
+
+ENV REPO_DIR /data/repo
+ENV DATA_DIR /data/index
+RUN mkdir -p ${DATA_DIR}
+RUN mkdir -p ${REPO_DIR}
+
+COPY --from=zoekt \
+    /usr/local/bin/universal-* \
+    /usr/local/bin/zoekt-dynamic-indexserver \
+    /usr/local/bin/zoekt-git-clone \
+    /usr/local/bin/zoekt-git-index \
+    /usr/local/bin/
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD zoekt-dynamic-indexserver -repo_dir $REPO_DIR -index_dir $DATA_DIR

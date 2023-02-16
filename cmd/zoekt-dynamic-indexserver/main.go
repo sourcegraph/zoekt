@@ -53,12 +53,11 @@ type Options struct {
 	indexTimeout time.Duration
 	repoDir      string
 	indexDir     string
-	repoDir      string
 	listen       string
 }
 
 func (o *Options) createMissingDirectories() {
-	for _, s := range []string{o.repoDir, o.indexDir, o.repoDir} {
+	for _, s := range []string{o.repoDir, o.indexDir} {
 		if err := os.MkdirAll(s, 0o755); err != nil {
 			log.Fatalf("MkdirAll %s: %v", s, err)
 		}
@@ -239,7 +238,6 @@ func parseOptions() Options {
 
 	return Options{
 		repoDir:      *repoDir,
-		repoDir:      filepath.Join(*repoDir, "repos"),
 		indexDir:     *indexDir,
 		indexTimeout: *timeout,
 		listen:       *listen,
