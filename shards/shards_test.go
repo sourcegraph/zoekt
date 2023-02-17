@@ -929,7 +929,7 @@ func mkSearchResult(n int, repoID uint32) *zoekt.SearchResult {
 func TestFileBasedSearch(t *testing.T) {
 	cases := []struct {
 		name              string
-		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch
+		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch
 	}{
 		{"Search", testShardedSearch},
 		{"StreamSearch", testShardedStreamSearch},
@@ -945,29 +945,31 @@ func TestFileBasedSearch(t *testing.T) {
 	)
 
 	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			matches := tt.testShardedSearch(t, &query.Substring{
-				CaseSensitive: false,
-				Pattern:       "ananas",
-			}, b)
+		for _, useDocumentRanks := range []bool{false, true} {
+			t.Run(tt.name, func(t *testing.T) {
+				matches := tt.testShardedSearch(t, &query.Substring{
+					CaseSensitive: false,
+					Pattern:       "ananas",
+				}, b, useDocumentRanks)
 
-			if len(matches) != 2 {
-				t.Fatalf("got %v, want 2 matches", matches)
-			}
-			if matches[0].FileName != "f2" || matches[1].FileName != "f1" {
-				t.Fatalf("got %v, want matches {f1,f2}", matches)
-			}
-			if matches[0].LineMatches[0].LineFragments[0].Offset != 10 || matches[1].LineMatches[0].LineFragments[0].Offset != 8 {
-				t.Fatalf("got %#v, want offsets 10,8", matches)
-			}
-		})
+				if len(matches) != 2 {
+					t.Fatalf("got %v, want 2 matches", matches)
+				}
+				if matches[0].FileName != "f2" || matches[1].FileName != "f1" {
+					t.Fatalf("got %v, want matches {f1,f2}", matches)
+				}
+				if matches[0].LineMatches[0].LineFragments[0].Offset != 10 || matches[1].LineMatches[0].LineFragments[0].Offset != 8 {
+					t.Fatalf("got %#v, want offsets 10,8", matches)
+				}
+			})
+		}
 	}
 }
 
 func TestWordBoundaryRanking(t *testing.T) {
 	cases := []struct {
 		name              string
-		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch
+		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch
 	}{
 		{"Search", testShardedSearch},
 		{"StreamSearch", testShardedStreamSearch},
@@ -980,32 +982,34 @@ func TestWordBoundaryRanking(t *testing.T) {
 		zoekt.Document{Name: "f3", Content: []byte("xbytex ybytex")})
 
 	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			files := tt.testShardedSearch(t, &query.Substring{Pattern: "byte"}, b)
+		for _, useDocumentRanks := range []bool{false, true} {
+			t.Run(tt.name, func(t *testing.T) {
+				files := tt.testShardedSearch(t, &query.Substring{Pattern: "byte"}, b, useDocumentRanks)
 
-			if len(files) != 3 {
-				t.Fatalf("got %#v, want 3 files", files)
-			}
+				if len(files) != 3 {
+					t.Fatalf("got %#v, want 3 files", files)
+				}
 
-			file0 := files[0]
-			if file0.FileName != "f2" || len(file0.LineMatches) != 3 {
-				t.Fatalf("got file %s, num matches %d (%#v), want 3 matches in file f2", file0.FileName, len(file0.LineMatches), file0)
-			}
+				file0 := files[0]
+				if file0.FileName != "f2" || len(file0.LineMatches) != 3 {
+					t.Fatalf("got file %s, num matches %d (%#v), want 3 matches in file f2", file0.FileName, len(file0.LineMatches), file0)
+				}
 
-			if file0.LineMatches[0].LineFragments[0].Offset != 13 {
-				t.Fatalf("got first match %#v, want full word match", files[0].LineMatches[0])
-			}
-			if file0.LineMatches[1].LineFragments[0].Offset != 7 {
-				t.Fatalf("got second match %#v, want partial word match", files[0].LineMatches[1])
-			}
-		})
+				if file0.LineMatches[0].LineFragments[0].Offset != 13 {
+					t.Fatalf("got first match %#v, want full word match", files[0].LineMatches[0])
+				}
+				if file0.LineMatches[1].LineFragments[0].Offset != 7 {
+					t.Fatalf("got second match %#v, want partial word match", files[0].LineMatches[1])
+				}
+			})
+		}
 	}
 }
 
 func TestAtomCountScore(t *testing.T) {
 	cases := []struct {
 		name              string
-		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch
+		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch
 	}{
 		{"Search", testShardedSearch},
 		{"StreamSearch", testShardedStreamSearch},
@@ -1023,26 +1027,28 @@ func TestAtomCountScore(t *testing.T) {
 		zoekt.Document{Name: "needle-file", Content: []byte("needle content"), Branches: []string{"branches"}})
 
 	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			files := tt.testShardedSearch(t,
-				query.NewOr(
-					&query.Substring{Pattern: "needle"},
-					&query.Substring{Pattern: "needle", FileName: true},
-					&query.Branch{Pattern: "needle"},
-				), b)
-			var got []string
-			for _, f := range files {
-				got = append(got, f.FileName)
-			}
-			want := []string{"needle-file-branch", "needle-file", "f1"}
-			if !reflect.DeepEqual(got, want) {
-				t.Errorf("got %v, want %v", got, want)
-			}
-		})
+		for _, useDocumentRanks := range []bool{false, true} {
+			t.Run(tt.name, func(t *testing.T) {
+				files := tt.testShardedSearch(t,
+					query.NewOr(
+						&query.Substring{Pattern: "needle"},
+						&query.Substring{Pattern: "needle", FileName: true},
+						&query.Branch{Pattern: "needle"},
+					), b, useDocumentRanks)
+				var got []string
+				for _, f := range files {
+					got = append(got, f.FileName)
+				}
+				want := []string{"needle-file-branch", "needle-file", "f1"}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("got %v, want %v", got, want)
+				}
+			})
+		}
 	}
 }
 
-func testShardedStreamSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch {
+func testShardedStreamSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch {
 	ss := newShardedSearcher(1)
 	searcher := searcherForTest(t, ib)
 	ss.replace(map[string]zoekt.Searcher{"r1": searcher})
@@ -1052,18 +1058,28 @@ func testShardedStreamSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []
 		files = append(files, result.Files...)
 	})
 
-	if err := ss.StreamSearch(context.Background(), q, &zoekt.SearchOptions{}, sender); err != nil {
+	opts := zoekt.SearchOptions{}
+	if useDocumentRanks {
+		opts.UseDocumentRanks = true
+		opts.FlushWallTime = 10 * time.Millisecond
+	}
+	if err := ss.StreamSearch(context.Background(), q, &opts, sender); err != nil {
 		t.Fatal(err)
 	}
 	return files
 }
 
-func testShardedSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder) []zoekt.FileMatch {
+func testShardedSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch {
 	ss := newShardedSearcher(1)
 	searcher := searcherForTest(t, ib)
 	ss.replace(map[string]zoekt.Searcher{"r1": searcher})
 
-	sres, _ := ss.Search(context.Background(), q, &zoekt.SearchOptions{})
+	opts := zoekt.SearchOptions{}
+	if useDocumentRanks {
+		opts.UseDocumentRanks = true
+		opts.FlushWallTime = 50 * time.Millisecond
+	}
+	sres, _ := ss.Search(context.Background(), q, &opts)
 	return sres.Files
 }
 
