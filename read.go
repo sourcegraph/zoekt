@@ -480,19 +480,6 @@ func (d *indexData) readNgrams(toc *indexTOC) (combinedNgramOffset, error) {
 	return makeCombinedNgramOffset(ngrams, postingsIndex), nil
 }
 
-func (d *indexData) readBinarySearchNgrams(toc *indexTOC) (binarySearchNgram, error) {
-	ngramText, err := d.readSectionBlob(toc.ngramText)
-	if err != nil {
-		return binarySearchNgram{}, err
-	}
-
-	return binarySearchNgram{
-		ngramText:                 ngramText,
-		postingOffsets:            toc.postings.offsets,
-		postingDataSentinelOffset: toc.postings.data.off + toc.postings.data.sz,
-	}, nil
-}
-
 func (d *indexData) newBtreeIndex(ngramSec simpleSection, postings compoundSection) (btreeIndex, error) {
 	bi := btreeIndex{file: d.file}
 
