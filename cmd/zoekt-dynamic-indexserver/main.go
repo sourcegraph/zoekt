@@ -31,6 +31,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func loggedRun(cmd *exec.Cmd) error {
@@ -132,6 +137,21 @@ func (s *indexServer) serveHealthCheck(w http.ResponseWriter, r *http.Request) {
 	// Nothing to do. Just return 200
 }
 
+var (
+	promRegistry        = prometheus.NewRegistry()
+	metricRequestsTotal = promauto.With(promRegistry).NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "zoekt_dynamic_indexserver_requests_total",
+			Help: "Total number of HTTP requests by status code, method, and path.",
+		},
+		[]string{"method", "path", "code"},
+	)
+)
+
+func (s *indexServer) serveMetrics(w http.ResponseWriter, r *http.Request) {
+	promhttp.HandlerFor(promRegistry, promhttp.HandlerOpts{Registry: promRegistry}).ServeHTTP(w, r)
+}
+
 func (s *indexServer) serveIndex(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -146,12 +166,14 @@ func (s *indexServer) serveIndex(w http.ResponseWriter, r *http.Request) {
 
 	response, err := indexRepository(s.opts, req)
 	if err != nil {
-		respondWithError(w, err)
+		respondWithError(w, r, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
+
+	incrementRequestsTotal(r, http.StatusOK)
 }
 
 func (s *indexServer) serveTruncate(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +182,7 @@ func (s *indexServer) serveTruncate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err = fmt.Errorf("Failed to empty repoDir repoDir: %v with error: %v", s.opts.repoDir, err)
 
-		respondWithError(w, err)
+		respondWithError(w, r, err)
 		return
 	}
 
@@ -169,7 +191,7 @@ func (s *indexServer) serveTruncate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err = fmt.Errorf("Failed to empty repoDir indexDir: %v with error: %v", s.opts.repoDir, err)
 
-		respondWithError(w, err)
+		respondWithError(w, r, err)
 		return
 	}
 
@@ -178,13 +200,22 @@ func (s *indexServer) serveTruncate(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
+
+	incrementRequestsTotal(r, http.StatusOK)
 }
 
-func respondWithError(w http.ResponseWriter, err error) {
+func incrementRequestsTotal(r *http.Request, responseCode int) {
+	metricRequestsTotal.With(prometheus.Labels{"code": strconv.Itoa(responseCode), "method": r.Method, "path": r.URL.Path}).Inc()
+}
+
+func respondWithError(w http.ResponseWriter, r *http.Request, err error) {
+	responseCode := http.StatusInternalServerError
+
 	log.Print(err)
+	incrementRequestsTotal(r, responseCode)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusInternalServerError)
+	w.WriteHeader(responseCode)
 	response := map[string]any{
 		"Success": false,
 		"Error":   err.Error(),
@@ -194,7 +225,14 @@ func respondWithError(w http.ResponseWriter, err error) {
 }
 
 func (s *indexServer) startIndexingApi() {
+	// Add go runtime metrics and process collectors.
+	promRegistry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+
 	http.HandleFunc("/", s.serveHealthCheck)
+	http.HandleFunc("/metrics", s.serveMetrics)
 	http.HandleFunc("/index", s.serveIndex)
 	http.HandleFunc("/truncate", s.serveTruncate)
 
