@@ -288,24 +288,18 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	if os.Getenv("ZOEKT_ENABLE_BTREE") != "" {
-		bt, err := d.newBtreeIndex(toc.ngramText, toc.postings)
-		if err != nil {
-			return nil, err
-		}
-		d.ngrams = bt
-	} else if os.Getenv("ZOEKT_ENABLE_NGRAM_BS") != "" {
-		bsMap, err := d.readBinarySearchNgrams(toc)
-		if err != nil {
-			return nil, err
-		}
-		d.ngrams = bsMap
-	} else {
+	if os.Getenv("ZOEKT_DISABLE_BTREE") != "" {
 		offsetMap, err := d.readNgrams(toc)
 		if err != nil {
 			return nil, err
 		}
 		d.ngrams = offsetMap
+	} else {
+		bt, err := d.newBtreeIndex(toc.ngramText, toc.postings)
+		if err != nil {
+			return nil, err
+		}
+		d.ngrams = bt
 	}
 
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
@@ -320,10 +314,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 
 	d.fileNameIndex = toc.fileNames.relativeIndex()
 
-	if os.Getenv("ZOEKT_ENABLE_BTREE_NAME") != "" {
-		d.fileNameNgrams.bt, err = d.newBtreeIndex(toc.nameNgramText, toc.namePostings)
-	} else {
+	if os.Getenv("ZOEKT_DISABLE_BTREE") != "" {
 		d.fileNameNgrams.m, err = d.readFileNameNgrams(toc)
+	} else {
+		d.fileNameNgrams.bt, err = d.newBtreeIndex(toc.nameNgramText, toc.namePostings)
 	}
 	if err != nil {
 		return nil, err
