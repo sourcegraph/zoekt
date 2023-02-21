@@ -15,7 +15,6 @@
 package zoekt
 
 import (
-	"encoding/binary"
 	"sort"
 )
 
@@ -399,63 +398,4 @@ func (n fileNameNgrams) SizeBytes() int {
 		return 12 * len(n.m)
 	}
 	return n.bt.SizeBytes()
-}
-
-type binarySearchNgram struct {
-	// ngramText is the bytes at indexTOC.ngramText
-	//
-	// It is a sorted ngramSlice marshalled as list of bigendian uint64s.
-	ngramText []byte
-	// postingIndex is the index section of the compoundSection for the posting
-	// lists.
-	//
-	// It is a list of offsets in the a order corresponding with ngramText. It
-	// is marshalled as a list of bigendian uint32s.
-	postingOffsets []uint32
-	// postingDataSentinelOffset is where postingData ends in the index file.
-	// This is used to calculate the size of the last posting.
-	postingDataSentinelOffset uint32
-}
-
-func (b binarySearchNgram) Get(gram ngram) (ss simpleSection) {
-	getNGram := func(i int) ngram {
-		i *= ngramEncoding
-		return ngram(binary.BigEndian.Uint64(b.ngramText[i : i+ngramEncoding]))
-	}
-
-	size := len(b.ngramText) / ngramEncoding
-	if size == 0 {
-		return simpleSection{}
-	}
-	x := sort.Search(size, func(i int) bool { return gram <= getNGram(i) })
-	if x >= size || getNGram(x) != gram {
-		return simpleSection{}
-	}
-
-	if x+1 < size {
-		return simpleSection{
-			off: b.postingOffsets[x],
-			sz:  b.postingOffsets[x+1] - b.postingOffsets[x],
-		}
-	} else {
-		return simpleSection{
-			off: b.postingOffsets[x],
-			sz:  b.postingDataSentinelOffset - b.postingOffsets[x],
-		}
-	}
-}
-
-func (b binarySearchNgram) DumpMap() map[ngram]simpleSection {
-	ngramText := b.ngramText
-	m := make(map[ngram]simpleSection, len(ngramText)/ngramEncoding)
-	for len(ngramText) > 0 {
-		gram := ngram(binary.BigEndian.Uint64(ngramText))
-		ngramText = ngramText[ngramEncoding:]
-		m[gram] = b.Get(gram)
-	}
-	return m
-}
-
-func (b binarySearchNgram) SizeBytes() int {
-	return 0 // binarySearch only uses mmaped data.
 }
