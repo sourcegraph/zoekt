@@ -4,8 +4,7 @@
   "FileMatches": [
     [
       {
-        "Score": 910,
-        "Ranks": null,
+        "Score": 510,
         "Debug": "",
         "FileName": "main.go",
         "Repository": "repo17",
@@ -44,8 +43,7 @@
     ],
     [
       {
-        "Score": 710,
-        "Ranks": null,
+        "Score": 510,
         "Debug": "",
         "FileName": "main.go",
         "Repository": "repo17",
