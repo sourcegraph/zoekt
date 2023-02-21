@@ -55,6 +55,20 @@ func TestLoggedRunFailure(t *testing.T) {
 	}
 }
 
+func TestInitMetrics(t *testing.T) {
+	server := indexServer{}
+
+	server.initMetrics()
+
+	if server.promRegistry == nil {
+		t.Errorf("promRegistry shouldn't be nil")
+	}
+
+	if server.metricsRequestsTotal == nil {
+		t.Errorf("metricsRequestsTotal shouldn't be nil")
+	}
+}
+
 func TestIndexRepository(t *testing.T) {
 	var cmdHistory [][]string
 

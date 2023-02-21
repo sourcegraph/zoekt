@@ -31,6 +31,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func loggedRun(cmd *exec.Cmd) error {
@@ -125,14 +130,21 @@ func indexRepository(opts Options, req indexRequest) (map[string]any, error) {
 }
 
 type indexServer struct {
-	opts Options
+	opts                 Options
+	promRegistry         *prometheus.Registry
+	metricsRequestsTotal *prometheus.CounterVec
 }
 
 func (s *indexServer) serveHealthCheck(w http.ResponseWriter, r *http.Request) {
 	// Nothing to do. Just return 200
 }
 
+func (s *indexServer) serveMetrics(w http.ResponseWriter, r *http.Request) {
+	promhttp.HandlerFor(s.promRegistry, promhttp.HandlerOpts{Registry: s.promRegistry}).ServeHTTP(w, r)
+}
+
 func (s *indexServer) serveIndex(w http.ResponseWriter, r *http.Request) {
+	route := "index"
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	var req indexRequest
@@ -146,21 +158,24 @@ func (s *indexServer) serveIndex(w http.ResponseWriter, r *http.Request) {
 
 	response, err := indexRepository(s.opts, req)
 	if err != nil {
-		respondWithError(w, err)
+		s.respondWithError(w, r.Method, route, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
+
+	s.incrementRequestsTotal(r.Method, route, http.StatusOK)
 }
 
 func (s *indexServer) serveTruncate(w http.ResponseWriter, r *http.Request) {
+	route := "truncate"
 	err := emptyDirectory(s.opts.repoDir)
 
 	if err != nil {
 		err = fmt.Errorf("Failed to empty repoDir repoDir: %v with error: %v", s.opts.repoDir, err)
 
-		respondWithError(w, err)
+		s.respondWithError(w, r.Method, route, err)
 		return
 	}
 
@@ -169,7 +184,7 @@ func (s *indexServer) serveTruncate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err = fmt.Errorf("Failed to empty repoDir indexDir: %v with error: %v", s.opts.repoDir, err)
 
-		respondWithError(w, err)
+		s.respondWithError(w, r.Method, route, err)
 		return
 	}
 
@@ -178,13 +193,18 @@ func (s *indexServer) serveTruncate(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
+
+	s.incrementRequestsTotal(r.Method, route, http.StatusOK)
 }
 
-func respondWithError(w http.ResponseWriter, err error) {
+func (s *indexServer) respondWithError(w http.ResponseWriter, method, route string, err error) {
+	responseCode := http.StatusInternalServerError
+
 	log.Print(err)
+	s.incrementRequestsTotal(method, route, responseCode)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusInternalServerError)
+	w.WriteHeader(responseCode)
 	response := map[string]any{
 		"Success": false,
 		"Error":   err.Error(),
@@ -193,8 +213,31 @@ func respondWithError(w http.ResponseWriter, err error) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+func (s *indexServer) incrementRequestsTotal(method, route string, responseCode int) {
+	s.metricsRequestsTotal.With(prometheus.Labels{"code": strconv.Itoa(responseCode), "method": method, "route": route}).Inc()
+}
+
+func (s *indexServer) initMetrics() {
+	s.promRegistry = prometheus.NewRegistry()
+
+	// Add go runtime metrics and process collectors.
+	s.promRegistry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+
+	s.metricsRequestsTotal = promauto.With(s.promRegistry).NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "zoekt_dynamic_indexserver_requests_total",
+			Help: "Total number of HTTP requests by status code, method, and route.",
+		},
+		[]string{"method", "route", "code"},
+	)
+}
+
 func (s *indexServer) startIndexingApi() {
 	http.HandleFunc("/", s.serveHealthCheck)
+	http.HandleFunc("/metrics", s.serveMetrics)
 	http.HandleFunc("/index", s.serveIndex)
 	http.HandleFunc("/truncate", s.serveTruncate)
 
@@ -253,5 +296,6 @@ func main() {
 		opts: opts,
 	}
 
+	server.initMetrics()
 	server.startIndexingApi()
 }
