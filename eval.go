@@ -182,11 +182,6 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 		return &res, nil
 	}
 
-	totalAtomCount := 0
-	visitMatchTree(mt, func(t matchTree) {
-		totalAtomCount++
-	})
-
 	res.Stats.ShardsScanned++
 
 	cp := &contentProvider{
@@ -369,7 +364,11 @@ nextFileMatch:
 		// Prefer docs with several top-scored matches.
 		fileMatch.addScore("repetition-boost", scoreRepetitionFactor*float64(repetitions), opts.DebugScore)
 
-		fileMatch.addScore("atom", float64(atomMatchCount)/float64(totalAtomCount)*scoreFactorAtomMatch, opts.DebugScore)
+		// atom-count boosts files with matches from more than 1 atom. The
+		// maximum boost is scoreFactorAtomMatch.
+		if atomMatchCount > 0 {
+			fileMatch.addScore("atom", (1.0-1.0/float64(atomMatchCount))*scoreFactorAtomMatch, opts.DebugScore)
+		}
 
 		if opts.UseDocumentRanks && len(d.ranks) > int(nextDoc) {
 			weight := scoreFileRankFactor
