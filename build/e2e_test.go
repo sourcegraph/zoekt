@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -936,6 +937,41 @@ func TestScoring(t *testing.T) {
 			// 7000 (symbol) + 500 (Java enum constant) + 500 (word) + 10 (file order)
 			wantScore: 8010,
 		},
+		// 2 Atoms (1x content and 1x filename)
+		{
+			fileName:     "example.java",
+			content:      exampleJava,
+			query:        &query.Substring{Pattern: "example"}, // matches filename and a Java field
+			wantLanguage: "Java",
+			// 5500 (edge symbol) + 600 (Java field) + 500 (word) + 200 (atom) + 10 (file order)
+			wantScore: 6810,
+		},
+		// 3 Atoms (2x content, 1x filename)
+		{
+			fileName: "example.java",
+			content:  exampleJava,
+			query: &query.Or{Children: []query.Q{
+				&query.Substring{Pattern: "example"},                          // matches filename and Java field
+				&query.Substring{Content: true, Pattern: "runInnerInterface"}, // matches a Java method
+			}},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 700 (Java method) + 500 (word) + 266.67 (atom) + 10 (file order)
+			wantScore: 8476.667,
+		},
+		// 4 Atoms (4x content)
+		{
+			fileName: "example.java",
+			content:  exampleJava,
+			query: &query.Or{Children: []query.Q{
+				&query.Substring{Content: true, Pattern: "testAnon"},
+				&query.Substring{Content: true, Pattern: "Override"},
+				&query.Substring{Content: true, Pattern: "InnerEnum"},
+				&query.Substring{Content: true, Pattern: "app"},
+			}},
+			wantLanguage: "Java",
+			// 7000 (symbol) + 900 (Java enum) + 500 (word) + 300 (atom) + 10 (file order)
+			wantScore: 8710,
+		},
 		//
 		// Go
 		//
@@ -1077,6 +1113,7 @@ func Get() {
 		},
 	}
 
+	epsilon := 0.01
 	for _, c := range cases {
 		t.Run(c.wantLanguage, func(t *testing.T) {
 			b, err := NewBuilder(opts)
@@ -1105,7 +1142,7 @@ func Get() {
 				t.Fatalf("file matches: want %d, got %d", want, got)
 			}
 
-			if got := srs.Files[0].Score; got != c.wantScore {
+			if got := srs.Files[0].Score; math.Abs(got-c.wantScore) > epsilon {
 				t.Fatalf("score: want %f, got %f\ndebug: %s\ndebugscore: %s", c.wantScore, got, srs.Files[0].Debug, srs.Files[0].LineMatches[0].DebugScore)
 			}
 
