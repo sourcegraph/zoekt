@@ -430,8 +430,7 @@ nextFileMatch:
 		}
 	})
 
-	// I am slightly worried about negative interactions with TotalMaxMatchCount
-	// so feature flagging this behaviour behind UseDocumentRanks.
+	// If document ranking is enabled, then we can rank and truncate the files to save memory.
 	if limit := opts.MaxDocDisplayCount; opts.UseDocumentRanks && limit > 0 && limit < len(res.Files) {
 		SortFiles(res.Files)
 		res.Files = res.Files[:limit]
