@@ -34,6 +34,8 @@ func newCollectSender(opts *zoekt.SearchOptions) *collectSender {
 	return &collectSender{opts: opts}
 }
 
+// Send aggregates the new search result by adding it stats and ranking
+// and truncating its files according to the input SearchOptions.
 func (c *collectSender) Send(r *zoekt.SearchResult) {
 	if c.aggregate == nil {
 		c.aggregate = &zoekt.SearchResult{
@@ -46,6 +48,11 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 
 	if len(r.Files) > 0 {
 		c.aggregate.Files = append(c.aggregate.Files, r.Files...)
+
+		zoekt.SortFiles(c.aggregate.Files)
+		if max := c.opts.MaxDocDisplayCount; max > 0 && max < len(c.aggregate.Files) {
+			c.aggregate.Files = c.aggregate.Files[:max]
+		}
 
 		for k, v := range r.RepoURLs {
 			c.aggregate.RepoURLs[k] = v
@@ -64,8 +71,7 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 	c.aggregate.MaxPendingPriority = r.MaxPendingPriority
 }
 
-// Done returns the aggregated result. Before returning them the files are
-// ranked and truncated according to the input SearchOptions.
+// Done returns the aggregated result.
 //
 // If no results are aggregated, ok is false and the result is nil.
 func (c *collectSender) Done() (_ *zoekt.SearchResult, ok bool) {
@@ -75,13 +81,6 @@ func (c *collectSender) Done() (_ *zoekt.SearchResult, ok bool) {
 
 	agg := c.aggregate
 	c.aggregate = nil
-
-	zoekt.SortFiles(agg.Files)
-
-	if max := c.opts.MaxDocDisplayCount; max > 0 && len(agg.Files) > max {
-		agg.Files = agg.Files[:max]
-	}
-
 	return agg, true
 }
 
