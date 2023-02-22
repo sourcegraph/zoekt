@@ -56,14 +56,13 @@ func loggedRun(cmd *exec.Cmd) error {
 
 type Options struct {
 	indexTimeout time.Duration
-	dataDir      string
-	indexDir     string
 	repoDir      string
+	indexDir     string
 	listen       string
 }
 
 func (o *Options) createMissingDirectories() {
-	for _, s := range []string{o.dataDir, o.indexDir, o.repoDir} {
+	for _, s := range []string{o.repoDir, o.indexDir} {
 		if err := os.MkdirAll(s, 0o755); err != nil {
 			log.Fatalf("MkdirAll %s: %v", s, err)
 		}
@@ -265,23 +264,23 @@ func emptyDirectory(dir string) error {
 }
 
 func parseOptions() Options {
-	dataDir := flag.String("data_dir", "", "directory holding all data.")
-	indexDir := flag.String("index_dir", "", "directory holding index shards. Defaults to $data_dir/index/")
-	timeout := flag.Duration("index_timeout", time.Hour, "kill index job after this much time")
+	repoDir := flag.String("repo_dir", "", "directory holding cloned repos.")
+	indexDir := flag.String("index_dir", "", "directory holding index shards.")
+	timeout := flag.Duration("index_timeout", time.Hour, "kill index job after this much time.")
 	listen := flag.String("listen", ":6060", "listen on this address.")
 	flag.Parse()
 
-	if *dataDir == "" {
-		log.Fatal("must set -data_dir")
+	if *repoDir == "" {
+		log.Fatal("must set -repo_dir")
 	}
 
 	if *indexDir == "" {
-		*indexDir = filepath.Join(*dataDir, "index")
+		log.Fatal("must set -index_dir")
+		*indexDir = filepath.Join(*repoDir, "index")
 	}
 
 	return Options{
-		dataDir:      *dataDir,
-		repoDir:      filepath.Join(*dataDir, "repos"),
+		repoDir:      *repoDir,
 		indexDir:     *indexDir,
 		indexTimeout: *timeout,
 		listen:       *listen,
