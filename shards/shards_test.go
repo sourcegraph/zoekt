@@ -226,6 +226,66 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 	}
 }
 
+func TestShardedSearcher_DocumentRanking(t *testing.T) {
+	ss := newShardedSearcher(1)
+
+	var nextShardNum int
+	addShard := func(repo string, priority float64, docs ...zoekt.Document) {
+		r := &zoekt.Repository{ID: hash(repo), Name: repo}
+		r.RawConfig = map[string]string{
+			"public":   "1",
+			"priority": strconv.FormatFloat(priority, 'f', 2, 64),
+		}
+		b := testIndexBuilder(t, r, docs...)
+		shard := searcherForTest(t, b)
+		ss.replace(map[string]zoekt.Searcher{
+			fmt.Sprintf("key-%d", nextShardNum): shard,
+		})
+		nextShardNum++
+	}
+
+	addShard("weekend-project", 0.25, zoekt.Document{Name: "f1", Content: []byte("foobar")})
+	addShard("moderately-popular", 0.4, zoekt.Document{Name: "f2", Content: []byte("foobaz")})
+	addShard("weekend-project-2", 0.25, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
+	addShard("super-star", 0.9, zoekt.Document{Name: "f4", Content: []byte("foo baz")},
+		zoekt.Document{Name: "f5", Content: []byte("fooooo")})
+
+	// Run a stream search and gather the results
+	var results []*zoekt.SearchResult
+	opts := &zoekt.SearchOptions{
+		UseDocumentRanks: true,
+		FlushWallTime:    100 * time.Millisecond,
+	}
+
+	err := ss.StreamSearch(context.Background(), &query.Substring{Pattern: "foo"}, opts,
+		stream.SenderFunc(func(event *zoekt.SearchResult) {
+			results = append(results, event)
+		}))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// There should always be two stream results, first progress-only, then the file results
+	if len(results) != 2 {
+		t.Fatalf("expected 2 streamed results, but got %d", len(results))
+	}
+
+	// The ranking should be determined by whether it's an exact word match,
+	// followed by repository priority
+	want := []string{"f4", "f3", "f5", "f2", "f1"}
+
+	files := results[1].Files
+	got := make([]string, len(files))
+	for i := 0; i < len(files); i++ {
+		got[i] = files[i].FileName
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func TestFilteringShardsByRepoSetOrBranchesReposOrRepoIDs(t *testing.T) {
 	ss := newShardedSearcher(1)
 
