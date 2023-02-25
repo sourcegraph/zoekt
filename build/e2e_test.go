@@ -1241,3 +1241,94 @@ func TestScoringWithDocumentRanks(t *testing.T) {
 		})
 	}
 }
+
+func TestRepoRanks(t *testing.T) {
+	if os.Getenv("CI") == "" && checkCTags() == "" {
+		t.Skip("ctags not available")
+	}
+	dir := t.TempDir()
+
+	opts := Options{
+		IndexDir: dir,
+		RepositoryDescription: zoekt.Repository{
+			Name: "repo",
+		},
+		DocumentRanksVersion: "ranking",
+	}
+
+	searchQuery := &query.Substring{Content: true, Pattern: "Inner"}
+	exampleJava, err := os.ReadFile("./testdata/example.java")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name      string
+		repoRank  uint16
+		wantScore float64
+	}{
+		{
+			name: "no shard rank",
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order)
+			wantScore: 7012.00,
+		},
+		{
+			name:     "medium shard rank",
+			repoRank: 30000,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order) + 9.16 (repo rank)
+			wantScore: 7021.16,
+		},
+		{
+			name:     "high shard rank",
+			repoRank: 60000,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order) + 18.31 (repo rank)
+			wantScore: 7030.31,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			opts.RepositoryDescription = zoekt.Repository{
+				Name: "repo",
+				Rank: c.repoRank,
+			}
+
+			b, err := NewBuilder(opts)
+			if err != nil {
+				t.Fatalf("NewBuilder: %v", err)
+			}
+
+			err = b.Add(zoekt.Document{Name: "example.java", Content: exampleJava})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := b.Finish(); err != nil {
+				t.Fatalf("Finish: %v", err)
+			}
+
+			ss, err := shards.NewDirectorySearcher(dir)
+			if err != nil {
+				t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
+			}
+			defer ss.Close()
+
+			srs, err := ss.Search(context.Background(), searchQuery, &zoekt.SearchOptions{
+				UseDocumentRanks: true,
+				DebugScore:       true,
+			})
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got, want := len(srs.Files), 1; got != want {
+				t.Fatalf("file matches: want %d, got %d", want, got)
+			}
+
+			if got := srs.Files[0].Score; math.Abs(got-c.wantScore) >= 0.01 {
+				t.Fatalf("score: want %f, got %f\ndebug: %s\ndebugscore: %s", c.wantScore, got, srs.Files[0].Debug, srs.Files[0].LineMatches[0].DebugScore)
+			}
+		})
+	}
+}

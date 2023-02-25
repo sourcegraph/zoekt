@@ -468,7 +468,7 @@ const (
 	// equal weight with the query-dependent signals.
 	scoreFileRankFactor  = 9000.0
 	scoreFileOrderFactor = 10.0
-	scoreShardRankFactor = 20.0
+	scoreRepoRankFactor  = 20.0
 
 	// Used for ordering line and chunk matches within a file.
 	scoreLineOrderFactor = 1.0
