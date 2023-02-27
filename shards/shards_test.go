@@ -202,10 +202,10 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 		nextShardNum++
 	}
 
-	addShard("weekend-project", 0.25, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
-	addShard("moderately-popular", 0.5, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
-	addShard("weekend-project-2", 0.25, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
-	addShard("super-star", 0.9, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})
+	addShard("weekend-project", 20, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
+	addShard("moderately-popular", 500, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
+	addShard("weekend-project-2", 20, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
+	addShard("super-star", 5000, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})
 
 	want := []string{
 		"super-star",
@@ -244,10 +244,10 @@ func TestShardedSearcher_DocumentRanking(t *testing.T) {
 		nextShardNum++
 	}
 
-	addShard("weekend-project", 0.25, zoekt.Document{Name: "f1", Content: []byte("foobar")})
-	addShard("moderately-popular", 0.4, zoekt.Document{Name: "f2", Content: []byte("foobaz")})
-	addShard("weekend-project-2", 0.25, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
-	addShard("super-star", 0.9, zoekt.Document{Name: "f4", Content: []byte("foo baz")},
+	addShard("weekend-project", 20, zoekt.Document{Name: "f1", Content: []byte("foobar")})
+	addShard("moderately-popular", 500, zoekt.Document{Name: "f2", Content: []byte("foobaz")})
+	addShard("weekend-project-2", 20, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
+	addShard("super-star", 5000, zoekt.Document{Name: "f4", Content: []byte("foo baz")},
 		zoekt.Document{Name: "f5", Content: []byte("fooooo")})
 
 	// Run a stream search and gather the results

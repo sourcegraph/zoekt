@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"reflect"
 	"strconv"
 	"time"
@@ -618,8 +617,9 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		// based on priority. Setting it on read instead of during indexing
 		// allows us to avoid a complete reindex.
 		if r.Rank == 0 && r.priority > 0 {
-			l := math.Log(float64(r.priority))
-			repo.Rank = uint16((1.0 - 1.0/math.Pow(1+l, 0.6)) * 10000)
+			// Normalize the repo score within [0, 1), with the midpoint at 5,000. This means popular
+			// repos (roughly ones with over 5,000 stars) see diminishing returns from more stars.
+			r.Rank = uint16(r.priority / (5000.0 + r.priority) * maxUInt16)
 		}
 	}
 	return nil
