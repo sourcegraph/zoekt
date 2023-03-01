@@ -177,6 +177,8 @@ func fetchProjects(destDir, token string, projects []*gitlab.Project) {
 			"zoekt.gitlab-forks": strconv.Itoa(p.ForksCount),
 
 			"zoekt.archived": marshalBool(p.Archived),
+			"zoekt.fork":     marshalBool(p.ForkedFromProject != nil),
+			"zoekt.public":   marshalBool(p.Public),
 		}
 
 		cloneURL := p.HTTPURLToRepo
