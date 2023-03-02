@@ -30,7 +30,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 )
 
-func TestIterateIndexOptions(t *testing.T) {
+func TestIterateIndexOptions_Fingerprint(t *testing.T) {
 	t.Run("gRPC", func(t *testing.T) {
 		fingerprintV0 := &proto.Fingerprint{
 			Identifier:  100,
@@ -94,7 +94,7 @@ func TestIterateIndexOptions(t *testing.T) {
 				returnFingerprint: fingerprintV0,
 			},
 			{
-				name:              "second call",
+				name:              "second call (should provide fingerprint from last time)",
 				wantFingerprint:   fingerprintV0,
 				returnFingerprint: fingerprintV1,
 			},
@@ -107,7 +107,7 @@ func TestIterateIndexOptions(t *testing.T) {
 				skipCheckingRepoIDs: true, // don't bother checking repoIDs if we expect an error
 			},
 			{
-				name:              "call after error",
+				name:              "call after error (should ignore fingerprint from last time, and provide the older one)",
 				wantFingerprint:   fingerprintV1,
 				returnFingerprint: fingerprintV2,
 			},
@@ -219,7 +219,7 @@ func TestIterateIndexOptions(t *testing.T) {
 				returnFingerprint: fingerprintV0,
 			},
 			{
-				name:              "second call",
+				name:              "second call (should provide fingerprint from last time)",
 				wantFingerprint:   fingerprintV0,
 				returnFingerprint: fingerprintV1,
 			},
@@ -232,7 +232,7 @@ func TestIterateIndexOptions(t *testing.T) {
 				skipCheckingRepoIDs: true, // don't bother checking repoIDs if we expect an error
 			},
 			{
-				name:              "call after error",
+				name:              "call after error (should ignore fingerprint from last time, and provide the older one)",
 				wantFingerprint:   fingerprintV1,
 				returnFingerprint: fingerprintV2,
 			},

@@ -10,11 +10,14 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/log/logtest"
+	proto "github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch/v1"
+	"google.golang.org/grpc"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -48,48 +51,118 @@ func TestServer_defaultArgs(t *testing.T) {
 }
 
 func TestListRepoIDs(t *testing.T) {
-	var gotBody string
-	var gotURL *url.URL
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotURL = r.URL
+	t.Run("gRPC", func(t *testing.T) {
 
-		b, err := io.ReadAll(r.Body)
+		grpcClient := &mockGRPCClient{}
+
+		clientOptions := []SourcegraphClientOption{
+			WithShouldUseGRPCFunc(func() bool { return true }),
+			WithGRPCClient(grpcClient),
+			WithBatchSize(0),
+		}
+
+		testURL := url.URL{Scheme: "http", Host: "does.not.matter"}
+		testHostname := "test-hostname"
+		s := newSourcegraphClient(&testURL, testHostname, clientOptions...)
+
+		listCalled := false
+		grpcClient.mockList = func(ctx context.Context, in *proto.ListRequest, opts ...grpc.CallOption) (*proto.ListResponse, error) {
+			listCalled = true
+
+			gotRepoIDs := in.GetIndexedIds()
+			sort.Slice(gotRepoIDs, func(i, j int) bool {
+				return gotRepoIDs[i] < gotRepoIDs[j]
+			})
+
+			wantRepoIDs := []int32{1, 3}
+			sort.Slice(wantRepoIDs, func(i, j int) bool {
+				return wantRepoIDs[i] < wantRepoIDs[j]
+			})
+
+			if diff := cmp.Diff(wantRepoIDs, gotRepoIDs); diff != "" {
+				t.Errorf("indexed repoIDs mismatch (-want +got):\n%s", diff)
+			}
+
+			hostname := in.GetHostname()
+			if diff := cmp.Diff(testHostname, hostname); diff != "" {
+				t.Errorf("hostname mismatch (-want +got):\n%s", diff)
+			}
+
+			return &proto.ListResponse{RepoIds: []int32{1, 2, 3}}, nil
+		}
+
+		ctx := context.Background()
+		got, err := s.List(ctx, []uint32{1, 3})
 		if err != nil {
 			t.Fatal(err)
 		}
-		gotBody = string(b)
 
-		_, err = w.Write([]byte(`{"RepoIDs": [1, 2, 3]}`))
+		if !listCalled {
+			t.Fatalf("List was not called")
+		}
+
+		receivedRepoIDs := got.IDs
+		sort.Slice(receivedRepoIDs, func(i, j int) bool {
+			return receivedRepoIDs[i] < receivedRepoIDs[j]
+		})
+
+		expectedRepoIDs := []uint32{1, 2, 3}
+		sort.Slice(expectedRepoIDs, func(i, j int) bool {
+			return expectedRepoIDs[i] < expectedRepoIDs[j]
+		})
+
+		if diff := cmp.Diff(expectedRepoIDs, receivedRepoIDs); diff != "" {
+			t.Errorf("mismatch in list of all repoIDs (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("REST", func(t *testing.T) {
+		var gotBody string
+		var gotURL *url.URL
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotURL = r.URL
+
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotBody = string(b)
+
+			_, err = w.Write([]byte(`{"RepoIDs": [1, 2, 3]}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+		}))
+		defer ts.Close()
+
+		u, err := url.Parse(ts.URL)
 		if err != nil {
 			t.Fatal(err)
 		}
-	}))
-	defer ts.Close()
 
-	u, err := url.Parse(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+		s := newSourcegraphClient(u, "test-indexed-search-1", WithBatchSize(0))
 
-	s := newSourcegraphClient(u, "test-indexed-search-1", WithBatchSize(0))
+		gotRepos, err := s.List(context.Background(), []uint32{1, 3})
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	gotRepos, err := s.List(context.Background(), []uint32{1, 3})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if want := []uint32{1, 2, 3}; !cmp.Equal(gotRepos.IDs, want) {
-		t.Errorf("repos mismatch (-want +got):\n%s", cmp.Diff(want, gotRepos.IDs))
-	}
-	if want := `{"Hostname":"test-indexed-search-1","IndexedIDs":[1,3]}`; gotBody != want {
-		t.Errorf("body mismatch (-want +got):\n%s", cmp.Diff(want, gotBody))
-	}
-	if want := "/.internal/repos/index"; gotURL.Path != want {
-		t.Errorf("request path mismatch (-want +got):\n%s", cmp.Diff(want, gotURL.Path))
-	}
+		if want := []uint32{1, 2, 3}; !cmp.Equal(gotRepos.IDs, want) {
+			t.Errorf("repos mismatch (-want +got):\n%s", cmp.Diff(want, gotRepos.IDs))
+		}
+		if want := `{"Hostname":"test-indexed-search-1","IndexedIDs":[1,3]}`; gotBody != want {
+			t.Errorf("body mismatch (-want +got):\n%s", cmp.Diff(want, gotBody))
+		}
+		if want := "/.internal/repos/index"; gotURL.Path != want {
+			t.Errorf("request path mismatch (-want +got):\n%s", cmp.Diff(want, gotURL.Path))
+		}
+	})
 }
 
-func TestListRepoIDs_Error(t *testing.T) {
+func TestListRepoIDs_Error_REST(t *testing.T) {
+	// Note: There is no gRPC equivalent to this test because gRPC errors are
+	// always returned as an error to the caller.
+
 	msg := "deadbeaf deadbeaf"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
