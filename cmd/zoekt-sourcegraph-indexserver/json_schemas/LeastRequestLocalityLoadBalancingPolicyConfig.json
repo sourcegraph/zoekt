@@ -1,0 +1,17 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "$ref": "#/definitions/LeastRequestLocalityLoadBalancingPolicyConfig",
+    "definitions": {
+        "LeastRequestLocalityLoadBalancingPolicyConfig": {
+            "properties": {
+                "choice_count": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Least Request Locality Load Balancing Policy Config",
+            "description": "Configuration for the least_request LB policy."
+        }
+    }
+}

@@ -1,0 +1,18 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "$ref": "#/definitions/CdsConfig",
+    "definitions": {
+        "CdsConfig": {
+            "properties": {
+                "cluster": {
+                    "type": "string",
+                    "description": "Required."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cds Config",
+            "description": "Configuration for the cds LB policy."
+        }
+    }
+}

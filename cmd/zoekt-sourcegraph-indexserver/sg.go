@@ -154,7 +154,6 @@ func newSourcegraphClient(rootURL *url.URL, hostname string, opts ...Sourcegraph
 }
 
 // sourcegraphClient contains methods which interact with the sourcegraph API.
-// TODO@ggilmore: implement gRPC retry logic to mirror retryablehttp logic.
 type sourcegraphClient struct {
 	// Root is the base URL for the Sourcegraph instance to index. Normally
 	// http://sourcegraph-frontend-internal or http://localhost:3090.

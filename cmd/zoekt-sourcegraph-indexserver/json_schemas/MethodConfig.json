@@ -1,0 +1,196 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "$ref": "#/definitions/MethodConfig",
+    "definitions": {
+        "MethodConfig": {
+            "properties": {
+                "name": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.MethodConfig.Name"
+                    },
+                    "type": "array"
+                },
+                "wait_for_ready": {
+                    "additionalProperties": true,
+                    "type": "boolean",
+                    "description": "Whether RPCs sent to this method should wait until the connection is ready by default. If false, the RPC will abort immediately if there is a transient failure connecting to the server. Otherwise, gRPC will attempt to connect until the deadline is exceeded. The value specified via the gRPC client API will override the value set here. However, note that setting the value in the client API will also affect transient errors encountered during name resolution, which cannot be caught by the value here, since the service config is obtained by the gRPC client via name resolution."
+                },
+                "timeout": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "The default timeout in seconds for RPCs sent to this method. This can be overridden in code. If no reply is received in the specified amount of time, the request is aborted and a DEADLINE_EXCEEDED error status is returned to the caller. The actual deadline used will be the minimum of the value specified here and the value set by the application via the gRPC client API.  If either one is not set, then the other will be used.  If neither is set, then the request has no deadline.",
+                    "format": "regex"
+                },
+                "max_request_message_bytes": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The maximum allowed payload size for an individual request or object in a stream (client-\u003eserver) in bytes. The size which is measured is the serialized payload after per-message compression (but before stream compression) in bytes. This applies both to streaming and non-streaming requests. The actual value used is the minimum of the value specified here and the value set by the application via the gRPC client API.  If either one is not set, then the other will be used.  If neither is set, then the built-in default is used. If a client attempts to send an object larger than this value, it will not be sent and the client will see a ClientError. Note that 0 is a valid value, meaning that the request message must be empty."
+                },
+                "max_response_message_bytes": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The maximum allowed payload size for an individual response or object in a stream (server-\u003eclient) in bytes. The size which is measured is the serialized payload after per-message compression (but before stream compression) in bytes. This applies both to streaming and non-streaming requests. The actual value used is the minimum of the value specified here and the value set by the application via the gRPC client API.  If either one is not set, then the other will be used.  If neither is set, then the built-in default is used. If a server attempts to send an object larger than this value, it will not be sent, and a ServerError will be sent to the client instead. Note that 0 is a valid value, meaning that the response message must be empty."
+                },
+                "retry_policy": {
+                    "$ref": "#/definitions/grpc.service_config.MethodConfig.RetryPolicy",
+                    "additionalProperties": true
+                },
+                "hedging_policy": {
+                    "$ref": "#/definitions/grpc.service_config.MethodConfig.HedgingPolicy",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Method Config",
+            "description": "Configuration for a method."
+        },
+        "grpc.service_config.MethodConfig.HedgingPolicy": {
+            "properties": {
+                "max_attempts": {
+                    "type": "integer",
+                    "description": "The hedging policy will send up to max_requests RPCs. This number represents the total number of all attempts, including the original attempt. This field is required and must be greater than 1. Any value greater than 5 will be treated as if it were 5."
+                },
+                "hedging_delay": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "The first RPC will be sent immediately, but the max_requests-1 subsequent hedged RPCs will be sent at intervals of every hedging_delay. Set this to 0 to immediately send all max_requests RPCs.",
+                    "format": "regex"
+                },
+                "non_fatal_status_codes": {
+                    "items": {
+                        "enum": [
+                            "OK",
+                            0,
+                            "CANCELLED",
+                            1,
+                            "UNKNOWN",
+                            2,
+                            "INVALID_ARGUMENT",
+                            3,
+                            "DEADLINE_EXCEEDED",
+                            4,
+                            "NOT_FOUND",
+                            5,
+                            "ALREADY_EXISTS",
+                            6,
+                            "PERMISSION_DENIED",
+                            7,
+                            "UNAUTHENTICATED",
+                            16,
+                            "RESOURCE_EXHAUSTED",
+                            8,
+                            "FAILED_PRECONDITION",
+                            9,
+                            "ABORTED",
+                            10,
+                            "OUT_OF_RANGE",
+                            11,
+                            "UNIMPLEMENTED",
+                            12,
+                            "INTERNAL",
+                            13,
+                            "UNAVAILABLE",
+                            14,
+                            "DATA_LOSS",
+                            15
+                        ]
+                    },
+                    "type": "array",
+                    "title": "Code",
+                    "description": "The canonical error codes for gRPC APIs. Sometimes multiple error codes may apply.  Services should return the most specific error code that applies.  For example, prefer `OUT_OF_RANGE` over `FAILED_PRECONDITION` if both codes apply. Similarly prefer `NOT_FOUND` or `ALREADY_EXISTS` over `FAILED_PRECONDITION`."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Hedging Policy",
+            "description": "The hedging policy for outgoing RPCs. Hedged RPCs may execute more than once on the server, so only idempotent methods should specify a hedging policy."
+        },
+        "grpc.service_config.MethodConfig.Name": {
+            "properties": {
+                "service": {
+                    "type": "string",
+                    "description": "Required. Includes proto package name."
+                },
+                "method": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Name",
+            "description": "The names of the methods to which this configuration applies. - MethodConfig without names (empty list) will be skipped. - Each name entry must be unique across the entire ServiceConfig. - If the 'method' field is empty, this MethodConfig specifies the defaults   for all methods for the specified service. - If the 'service' field is empty, the 'method' field must be empty, and   this MethodConfig specifies the default for all methods (it's the default   config). When determining which MethodConfig to use for a given RPC, the most specific match wins. For example, let's say that the service config contains the following MethodConfig entries: method_config { name { } ... } method_config { name { service: \"MyService\" } ... } method_config { name { service: \"MyService\" method: \"Foo\" } ... } MyService/Foo will use the third entry, because it exactly matches the service and method name. MyService/Bar will use the second entry, because it provides the default for all methods of MyService. AnotherService/Baz will use the first entry, because it doesn't match the other two. In JSON representation, value \"\", value `null`, and not present are the same. The following are the same Name: - { \"service\": \"s\" } - { \"service\": \"s\", \"method\": null } - { \"service\": \"s\", \"method\": \"\" }"
+        },
+        "grpc.service_config.MethodConfig.RetryPolicy": {
+            "properties": {
+                "max_attempts": {
+                    "type": "integer",
+                    "description": "The maximum number of RPC attempts, including the original attempt. This field is required and must be greater than 1. Any value greater than 5 will be treated as if it were 5."
+                },
+                "initial_backoff": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "Exponential backoff parameters. The initial retry attempt will occur at random(0, initial_backoff). In general, the nth attempt will occur at random(0,   min(initial_backoff*backoff_multiplier**(n-1), max_backoff)). Required. Must be greater than zero.",
+                    "format": "regex"
+                },
+                "max_backoff": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "Required. Must be greater than zero.",
+                    "format": "regex"
+                },
+                "backoff_multiplier": {
+                    "type": "number",
+                    "description": "Required. Must be greater than zero."
+                },
+                "retryable_status_codes": {
+                    "items": {
+                        "enum": [
+                            "OK",
+                            0,
+                            "CANCELLED",
+                            1,
+                            "UNKNOWN",
+                            2,
+                            "INVALID_ARGUMENT",
+                            3,
+                            "DEADLINE_EXCEEDED",
+                            4,
+                            "NOT_FOUND",
+                            5,
+                            "ALREADY_EXISTS",
+                            6,
+                            "PERMISSION_DENIED",
+                            7,
+                            "UNAUTHENTICATED",
+                            16,
+                            "RESOURCE_EXHAUSTED",
+                            8,
+                            "FAILED_PRECONDITION",
+                            9,
+                            "ABORTED",
+                            10,
+                            "OUT_OF_RANGE",
+                            11,
+                            "UNIMPLEMENTED",
+                            12,
+                            "INTERNAL",
+                            13,
+                            "UNAVAILABLE",
+                            14,
+                            "DATA_LOSS",
+                            15
+                        ]
+                    },
+                    "type": "array",
+                    "title": "Code",
+                    "description": "The canonical error codes for gRPC APIs. Sometimes multiple error codes may apply.  Services should return the most specific error code that applies.  For example, prefer `OUT_OF_RANGE` over `FAILED_PRECONDITION` if both codes apply. Similarly prefer `NOT_FOUND` or `ALREADY_EXISTS` over `FAILED_PRECONDITION`."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Retry Policy",
+            "description": "The retry policy for outgoing RPCs."
+        }
+    }
+}

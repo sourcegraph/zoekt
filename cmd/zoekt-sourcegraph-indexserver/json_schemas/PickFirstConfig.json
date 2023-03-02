@@ -1,0 +1,12 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "$ref": "#/definitions/PickFirstConfig",
+    "definitions": {
+        "PickFirstConfig": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Pick First Config",
+            "description": "Configuration for pick_first LB policy."
+        }
+    }
+}

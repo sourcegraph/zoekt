@@ -1,0 +1,12 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "$ref": "#/definitions/RoundRobinConfig",
+    "definitions": {
+        "RoundRobinConfig": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Round Robin Config",
+            "description": "Configuration for round_robin LB policy."
+        }
+    }
+}

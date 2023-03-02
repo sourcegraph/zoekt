@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -1359,6 +1360,7 @@ func newServer(conf rootConfig) (*Server, error) {
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithChainStreamInterceptor(internalActorStreamInterceptor()),
 			grpc.WithChainUnaryInterceptor(internalActorUnaryInterceptor()),
+			grpc.WithDefaultServiceConfig(defaultGRPCServiceConfigurationJSON),
 		}
 
 		// This dialer is used to connect via gRPC to the Sourcegraph instance.
@@ -1419,6 +1421,21 @@ func newServer(conf rootConfig) (*Server, error) {
 		},
 	}, err
 }
+
+// defaultGRPCServiceConfigurationJSON is the default gRPC service configuration
+// for the indexed-search-configuration gRPC service.
+//
+// The default backoff strategy is modeled after the default settings used by
+// retryablehttp.DefaultClient.
+//
+// It retries on the following errors (see https://grpc.github.io/grpc/core/md_doc_statuscodes.html):
+//   - Unavailable
+//   - DeadlineExceeded
+//   - Internal
+//   - Aborted
+//
+//go:embed default_grpc_service_configuration.json
+var defaultGRPCServiceConfigurationJSON string
 
 func internalActorUnaryInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {

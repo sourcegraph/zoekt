@@ -1,0 +1,22 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "$ref": "#/definitions/RingHashLoadBalancingConfig",
+    "definitions": {
+        "RingHashLoadBalancingConfig": {
+            "properties": {
+                "min_ring_size": {
+                    "type": "string",
+                    "description": "A client-side option will cap these values to 4096.  If either of these values are greater than the client-side cap, they will be treated as the client-side cap value.  Optional, defaults to 1024, max 8M."
+                },
+                "max_ring_size": {
+                    "type": "string",
+                    "description": "Optional, defaults to 4096, max 8M."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Ring Hash Load Balancing Config",
+            "description": "Configuration for ring_hash LB policy."
+        }
+    }
+}
