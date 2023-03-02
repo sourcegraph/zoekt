@@ -451,10 +451,6 @@ github.com/sourcegraph/log v0.0.0-20230203201409-49ac5ad3f2ce h1:WH7VzDVGCu2psjD
 github.com/sourcegraph/log v0.0.0-20230203201409-49ac5ad3f2ce/go.mod h1:HJ+smPIMX1nfpoI+rp8lDeJqFBfzpQf6N1Fbg6kMVY0=
 github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67 h1:NSYSPQOE7yyyytLbKQHjxSkPnBagaGQblgVMQrQ1je0=
 github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67/go.mod h1:4DAabK408OEbyK2NUEQ5YRApyB/p0XNGJyC1YPBAKq4=
-github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch v0.0.0-20230221230401-9a42fddfcbfe h1:j52GVzvv/PEq7E21+xQTmeTniOd2ihhu4F8JRZigx6U=
-github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch v0.0.0-20230221230401-9a42fddfcbfe/go.mod h1:XvC2wrKduF/ZhfCVFzuHVasdoqZbpW/5YL4Sd0dc05c=
-github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch v0.0.0-20230223172637-bd66d5fe435b h1:VxBBtlz/bR+s+nysgHytxCJLzCwby2waFr1LcBqHBp0=
-github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch v0.0.0-20230223172637-bd66d5fe435b/go.mod h1:XvC2wrKduF/ZhfCVFzuHVasdoqZbpW/5YL4Sd0dc05c=
 github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch v0.0.0-20230227225858-8dfb96f33e55 h1:x9ubvDowB6CJvxiVLUXlg9ewsvi5pWqCNvglCM8wGvY=
 github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch v0.0.0-20230227225858-8dfb96f33e55/go.mod h1:XvC2wrKduF/ZhfCVFzuHVasdoqZbpW/5YL4Sd0dc05c=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=
