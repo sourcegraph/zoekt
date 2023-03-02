@@ -1357,8 +1357,8 @@ func newServer(conf rootConfig) (*Server, error) {
 
 		gRPCConnectionOptions := []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithChainStreamInterceptor(InternalActorStreamInterceptor()),
-			grpc.WithChainUnaryInterceptor(InternalActorUnaryInterceptor()),
+			grpc.WithChainStreamInterceptor(internalActorStreamInterceptor()),
+			grpc.WithChainUnaryInterceptor(internalActorUnaryInterceptor()),
 		}
 
 		// This dialer is used to connect via gRPC to the Sourcegraph instance.
@@ -1420,14 +1420,14 @@ func newServer(conf rootConfig) (*Server, error) {
 	}, err
 }
 
-func InternalActorUnaryInterceptor() grpc.UnaryClientInterceptor {
+func internalActorUnaryInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		ctx = metadata.AppendToOutgoingContext(ctx, "X-Sourcegraph-Actor-UID", "internal")
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 }
 
-func InternalActorStreamInterceptor() grpc.StreamClientInterceptor {
+func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 		ctx = metadata.AppendToOutgoingContext(ctx, "X-Sourcegraph-Actor-UID", "internal")
 		return streamer(ctx, desc, cc, method, opts...)
