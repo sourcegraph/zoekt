@@ -29,3 +29,24 @@ func TestIndexOptions_RoundTrip(t *testing.T) {
 		t.Errorf("indexOptionsItem diff (-want +got):\n%s", diff)
 	}
 }
+
+func TestUpdateIndexStatusRequest_RoundTrip(t *testing.T) {
+	var diff string
+	f := func(original updateIndexStatusRequest) bool {
+		var converted updateIndexStatusRequest
+		converted.FromProto(original.ToProto())
+
+		options := []cmp.Option{
+			cmpopts.EquateEmpty(),
+		}
+
+		if diff = cmp.Diff(original, converted, options...); diff != "" {
+			return false
+		}
+		return true
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Errorf("updateIndexStatusRequest diff (-want +got):\n%s", diff)
+	}
+}

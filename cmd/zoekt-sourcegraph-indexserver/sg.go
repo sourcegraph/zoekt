@@ -730,29 +730,16 @@ type indexStatus struct {
 	Branches []zoekt.RepositoryBranch
 }
 
-// UpdateIndexStatus sends a request to Sourcegraph to confirm that the given
-// repositories have been indexed.
-func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error {
-	if s.shouldUseGRPCFunc() {
-		return s.updateIndexStatusGRPC(repositories)
-	}
-
-	return s.updateIndexStatusREST(repositories)
+type updateIndexStatusRequest struct {
+	Repositories []indexStatus
 }
 
-func (s *sourcegraphClient) updateIndexStatusGRPC(repositories []indexStatus) error {
-	conn, err := grpc.Dial(s.Root.Host, grpc.WithInsecure())
-	if err != nil {
-		return fmt.Errorf("failed to dial Sourcegraph: %w", err)
-	}
+func (u *updateIndexStatusRequest) ToProto() *proto.UpdateIndexStatusRequest {
+	repositories := make([]*proto.UpdateIndexStatusRequest_Repository, 0, len(u.Repositories))
 
-	defer conn.Close()
-
-	client := proto.NewIndexedSearchConfigurationServiceClient(conn)
-
-	grpcRepos := make([]*proto.UpdateIndexStatusRequest_Repository, 0, len(repositories))
-	for _, repo := range repositories {
+	for _, repo := range u.Repositories {
 		branches := make([]*proto.ZoektRepositoryBranch, 0, len(repo.Branches))
+
 		for _, branch := range repo.Branches {
 			branches = append(branches, &proto.ZoektRepositoryBranch{
 				Name:    branch.Name,
@@ -760,15 +747,58 @@ func (s *sourcegraphClient) updateIndexStatusGRPC(repositories []indexStatus) er
 			})
 		}
 
-		grpcRepos = append(grpcRepos, &proto.UpdateIndexStatusRequest_Repository{
+		repositories = append(repositories, &proto.UpdateIndexStatusRequest_Repository{
 			RepoId:   repo.RepoID,
 			Branches: branches,
 		})
 	}
 
-	_, err = client.UpdateIndexStatus(context.Background(), &proto.UpdateIndexStatusRequest{
-		Repositories: grpcRepos,
-	})
+	return &proto.UpdateIndexStatusRequest{
+		Repositories: repositories,
+	}
+}
+
+func (u *updateIndexStatusRequest) FromProto(x *proto.UpdateIndexStatusRequest) {
+	protoRepositories := x.GetRepositories()
+	repositories := make([]indexStatus, 0, len(protoRepositories))
+
+	for _, repo := range x.GetRepositories() {
+		protoBranches := repo.GetBranches()
+		branches := make([]zoekt.RepositoryBranch, 0, len(protoBranches))
+
+		for _, branch := range repo.GetBranches() {
+			branches = append(branches, zoekt.RepositoryBranch{
+				Name:    branch.GetName(),
+				Version: branch.GetVersion(),
+			})
+		}
+
+		repositories = append(repositories, indexStatus{
+			RepoID:   repo.GetRepoId(),
+			Branches: branches,
+		})
+	}
+
+	*u = updateIndexStatusRequest{
+		Repositories: repositories,
+	}
+}
+
+// UpdateIndexStatus sends a request to Sourcegraph to confirm that the given
+// repositories have been indexed.
+func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error {
+	r := updateIndexStatusRequest{Repositories: repositories}
+
+	if s.shouldUseGRPCFunc() {
+		return s.updateIndexStatusGRPC(r)
+	}
+
+	return s.updateIndexStatusREST(r)
+}
+
+func (s *sourcegraphClient) updateIndexStatusGRPC(r updateIndexStatusRequest) error {
+	request := r.ToProto()
+	_, err := s.grpcClient.UpdateIndexStatus(context.Background(), request)
 
 	if err != nil {
 		return fmt.Errorf("failed to update index status: %w", err)
@@ -777,13 +807,8 @@ func (s *sourcegraphClient) updateIndexStatusGRPC(repositories []indexStatus) er
 	return nil
 }
 
-func (s *sourcegraphClient) updateIndexStatusREST(repositories []indexStatus) error {
-	type updateIndexStatusRequest struct {
-		Repositories []indexStatus
-	}
-
-	body := &updateIndexStatusRequest{Repositories: repositories}
-	payload, err := json.Marshal(body)
+func (s *sourcegraphClient) updateIndexStatusREST(r updateIndexStatusRequest) error {
+	payload, err := json.Marshal(r)
 	if err != nil {
 		return err
 	}
