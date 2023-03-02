@@ -23,7 +23,9 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
+	proto "github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch/v1"
 	"golang.org/x/net/trace"
+	"google.golang.org/grpc"
 
 	"github.com/sourcegraph/zoekt"
 )
@@ -85,16 +87,40 @@ type Sourcegraph interface {
 	UpdateIndexStatus(repositories []indexStatus) error
 }
 
-func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sourcegraphClient {
+type SourcegraphClientOption func(*sourcegraphClient)
 
-	client := retryablehttp.NewClient()
-	client.Logger = debug
+// WithBatchSize controls how many repository configurations we request a time.
+// If BatchSize is 0, we default to requesting 10,000 repositories at once.
+func WithBatchSize(batchSize int) SourcegraphClientOption {
+	return func(c *sourcegraphClient) {
+		c.BatchSize = batchSize
+	}
+}
+
+// WithShouldUseGRPCFunc sets the function that is used to determine whether to use gRPC
+// to communicate with Sourcegraph. This function must be thread-safe.
+func WithShouldUseGRPCFunc(shouldUseGRPCFunc func() bool) SourcegraphClientOption {
+	return func(c *sourcegraphClient) {
+		c.shouldUseGRPCFunc = shouldUseGRPCFunc
+	}
+}
+
+// WithGRPCClient sets the gRPC client to use for communicating with Sourcegraph.
+func WithGRPCClient(client proto.IndexedSearchConfigurationServiceClient) SourcegraphClientOption {
+	return func(c *sourcegraphClient) {
+		c.grpcClient = client
+	}
+}
+
+func newSourcegraphClient(rootURL *url.URL, hostname string, opts ...SourcegraphClientOption) *sourcegraphClient {
+	httpClient := retryablehttp.NewClient()
+	httpClient.Logger = debug
 
 	// Sourcegraph might return an error message in the body if StatusCode==500. The
-	// default behavior of the go-retryablehttp client is to drain the body and not
+	// default behavior of the go-retryablehttp restClient is to drain the body and not
 	// to propagate the error. Hence, we call ErrorPropagatedRetryPolicy instead of
 	// DefaultRetryPolicy and augment the error with the response body if possible.
-	client.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+	httpClient.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
 		shouldRetry, checkErr := retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
 
 		if resp != nil && resp.StatusCode == http.StatusInternalServerError {
@@ -106,15 +132,29 @@ func newSourcegraphClient(rootURL *url.URL, hostname string, batchSize int) *sou
 		return shouldRetry, checkErr
 	}
 
-	return &sourcegraphClient{
-		Root:      rootURL,
-		Client:    client,
-		Hostname:  hostname,
-		BatchSize: batchSize,
+	disableGRPC := func() bool {
+		return false
 	}
+
+	client := &sourcegraphClient{
+		Root:              rootURL,
+		restClient:        httpClient,
+		Hostname:          hostname,
+		BatchSize:         0,
+		grpcClient:        noopGRPCClient{},
+		shouldUseGRPCFunc: disableGRPC,
+	}
+
+	for _, opt := range opts {
+		opt(client)
+	}
+
+	return client
+
 }
 
 // sourcegraphClient contains methods which interact with the sourcegraph API.
+// TODO@ggilmore: implement gRPC retry logic to mirror retryablehttp logic.
 type sourcegraphClient struct {
 	// Root is the base URL for the Sourcegraph instance to index. Normally
 	// http://sourcegraph-frontend-internal or http://localhost:3090.
@@ -128,24 +168,53 @@ type sourcegraphClient struct {
 	// zero a value of 10000 is used.
 	BatchSize int
 
-	// Client is used to make requests to the Sourcegraph instance. Prefer to
+	// restClient is used to make requests to the Sourcegraph instance. Prefer to
 	// use .doRequest() to ensure the appropriate headers are set.
-	Client *retryablehttp.Client
+	restClient *retryablehttp.Client
+
+	// grpcClient is used to make requests to the Sourcegraph instance if gRPC is enabled.
+	grpcClient proto.IndexedSearchConfigurationServiceClient
 
 	// configFingerprint is the last config fingerprint returned from
 	// Sourcegraph. It can be used for future calls to the configuration
 	// endpoint.
 	configFingerprint string
 
+	// configFingerprintProto is the last config fingerprint (as GRPC) returned from
+	// Sourcegraph. It can be used for future calls to the configuration
+	// endpoint.
+	configFingerprintProto *proto.Fingerprint
+
 	// configFingerprintReset tracks when we should zero out the
 	// configFingerprint. We want to periodically do this just in case our
 	// configFingerprint logic is faulty. When it is cleared out, we fallback to
 	// calculating everything.
 	configFingerprintReset time.Time
+
+	// shouldUseGRPCFunc is a function which returns true if we should communicate with
+	// Sourcegraph via gRPC.
+	shouldUseGRPCFunc func() bool
 }
 
 // GetRepoRank asks Sourcegraph for the rank vector of repoName.
 func (s *sourcegraphClient) GetRepoRank(ctx context.Context, repoName string) ([]float64, error) {
+	if s.shouldUseGRPCFunc() {
+		return s.getRepoRankGRPC(ctx, repoName)
+	}
+
+	return s.getRepoRankREST(ctx, repoName)
+}
+
+func (s *sourcegraphClient) getRepoRankGRPC(ctx context.Context, repoName string) ([]float64, error) {
+	resp, err := s.grpcClient.RepositoryRank(ctx, &proto.RepositoryRankRequest{Repository: repoName})
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.GetRank(), nil
+}
+
+func (s *sourcegraphClient) getRepoRankREST(ctx context.Context, repoName string) ([]float64, error) {
 	u := s.Root.ResolveReference(&url.URL{
 		Path: "/.internal/ranks/" + strings.Trim(repoName, "/"),
 	})
@@ -167,6 +236,30 @@ func (s *sourcegraphClient) GetRepoRank(ctx context.Context, repoName string) ([
 // GetDocumentRanks asks Sourcegraph for a mapping of file paths to rank
 // vectors.
 func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error) {
+	if s.shouldUseGRPCFunc() {
+		return s.getDocumentRanksGRPC(ctx, repoName)
+	}
+
+	return s.getDocumentRanksREST(ctx, repoName)
+}
+
+func (s *sourcegraphClient) getDocumentRanksGRPC(ctx context.Context, repoName string) (map[string][]float64, error) {
+	resp, err := s.grpcClient.DocumentRanks(ctx, &proto.DocumentRanksRequest{Repository: repoName})
+	if err != nil {
+		return nil, err
+	}
+
+	protoRanks := resp.GetRanks()
+	out := make(map[string][]float64, len(protoRanks))
+
+	for name, protoRank := range protoRanks {
+		out[name] = protoRank.GetRanks()
+	}
+
+	return out, nil
+}
+
+func (s *sourcegraphClient) getDocumentRanksREST(ctx context.Context, repoName string) (map[string][]float64, error) {
 	u := s.Root.ResolveReference(&url.URL{
 		Path: "/.internal/ranks/" + strings.Trim(repoName, "/") + "/documents",
 	})
@@ -253,58 +346,112 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 		}
 		next += time.Duration(rand.Int63n(int64(next) / 4)) // jitter
 		s.configFingerprintReset = time.Now().Add(next)
+
+		s.configFingerprintProto = nil
 		s.configFingerprint = ""
 	}
 
-	// We want to use a consistent fingerprint for each call. Next time list is
-	// called we want to use the first fingerprint returned from the
-	// configuration endpoint. However, if any of our configuration calls fail,
-	// we need to fallback to our last value.
-	lastFingerprint := s.configFingerprint
-	first := true
+	// getIndexOptionsFunc is a function that can be used to get the index
+	// options for a set of repos (while properly handling any configuration fingerprint
+	// changes).
+	//
+	// In general, this function provides a consistent fingerprint for each batch call,
+	// and updates the server state with the new fingerprint. If any of the batch calls
+	// fail, the old fingerprint is restored.
+	type getIndexOptionsFunc func(repos ...uint32) ([]indexOptionsItem, error)
+
+	// default to REST
+	mkGetIndexOptionsFunc := func(tr trace.Trace) getIndexOptionsFunc {
+		startingFingerPrint := s.configFingerprint
+		tr.LazyPrintf("fingerprint: %s", startingFingerPrint)
+
+		first := true
+		return func(repos ...uint32) ([]indexOptionsItem, error) {
+			options, nextFingerPrint, err := s.getIndexOptionsREST(startingFingerPrint, repos...)
+			if err != nil {
+				first = false
+				s.configFingerprint = startingFingerPrint
+
+				return nil, err
+			}
+
+			if first {
+				first = false
+				s.configFingerprint = nextFingerPrint
+
+				tr.LazyPrintf("new fingerprint: %s", nextFingerPrint)
+			}
+
+			return options, nil
+		}
+	}
+
+	// If we enabled GRPC, use our gRPC client instead.
+	if s.shouldUseGRPCFunc() {
+		mkGetIndexOptionsFunc = func(tr trace.Trace) getIndexOptionsFunc {
+			startingFingerPrint := s.configFingerprintProto
+			tr.LazyPrintf("fingerprint: %s", startingFingerPrint.String())
+
+			first := true
+			return func(repos ...uint32) ([]indexOptionsItem, error) {
+				options, nextFingerPrint, err := s.getIndexOptionsGRPC(startingFingerPrint, repos)
+				if err != nil {
+					first = false
+					s.configFingerprintProto = startingFingerPrint
+
+					return nil, err
+				}
+
+				if first {
+					first = false
+					s.configFingerprintProto = nextFingerPrint
+					tr.LazyPrintf("new fingerprint: %s", nextFingerPrint.String())
+				}
+
+				return options, nil
+			}
+		}
+	}
 
 	iterate := func(f func(IndexOptions)) {
 		start := time.Now()
 		tr := trace.New("getIndexOptions", "")
 		tr.LazyPrintf("getting index options for %d repos", len(repos))
-		tr.LazyPrintf("fingerprint: %s", lastFingerprint)
 
 		defer func() {
 			metricResolveRevisionsDuration.Observe(time.Since(start).Seconds())
 			tr.Finish()
 		}()
 
+		getIndexOptions := mkGetIndexOptionsFunc(tr)
+
 		// We ask the frontend to get index options in batches.
 		for repos := range batched(repos, batchSize) {
 			start := time.Now()
-			opts, fingerprint, err := s.getIndexOptions(lastFingerprint, repos...)
-			if err != nil {
-				// Call failed, restore old fingerprint for next call to List.
-				first = false
-				s.configFingerprint = lastFingerprint
+			options, err := getIndexOptions(repos...)
+			duration := time.Since(start)
 
-				metricResolveRevisionDuration.WithLabelValues("false").Observe(time.Since(start).Seconds())
+			if err != nil {
+				metricResolveRevisionDuration.WithLabelValues("false").Observe(duration.Seconds())
 				tr.LazyPrintf("failed fetching options batch: %v", err)
 				tr.SetError()
+
 				continue
 			}
 
-			if first {
-				first = false
-				tr.LazyPrintf("new fingerprint: %s", fingerprint)
-				s.configFingerprint = fingerprint
-			}
+			metricResolveRevisionDuration.WithLabelValues("true").Observe(duration.Seconds())
 
-			metricResolveRevisionDuration.WithLabelValues("true").Observe(time.Since(start).Seconds())
-			for _, opt := range opts {
+			for _, o := range options {
 				metricGetIndexOptions.Inc()
-				if opt.Error != "" {
+
+				if o.Error != "" {
 					metricGetIndexOptionsError.Inc()
-					tr.LazyPrintf("failed fetching options for %v: %v", opt.Name, opt.Error)
+					tr.LazyPrintf("failed fetching options for %v: %v", o.Name, o.Error)
 					tr.SetError()
+
 					continue
 				}
-				f(opt.IndexOptions)
+				f(o.IndexOptions)
 			}
 		}
 	}
@@ -321,8 +468,20 @@ func (s *sourcegraphClient) ForceIterateIndexOptions(onSuccess func(IndexOptions
 		batchSize = 10_000
 	}
 
+	getIndexOptions := func(repos ...uint32) ([]indexOptionsItem, error) {
+		opts, _, err := s.getIndexOptionsREST("", repos...)
+		return opts, err
+	}
+
+	if s.shouldUseGRPCFunc() {
+		getIndexOptions = func(repos ...uint32) ([]indexOptionsItem, error) {
+			opts, _, err := s.getIndexOptionsGRPC(nil, repos)
+			return opts, err
+		}
+	}
+
 	for repos := range batched(repos, batchSize) {
-		opts, _, err := s.getIndexOptions("", repos...)
+		opts, err := getIndexOptions(repos...)
 		if err != nil {
 			for _, id := range repos {
 				onError(id, err)
@@ -347,7 +506,97 @@ type indexOptionsItem struct {
 	Error string
 }
 
-func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32) ([]indexOptionsItem, string, error) {
+func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
+	branches := make([]zoekt.RepositoryBranch, 0, len(x.Branches))
+	for _, b := range x.GetBranches() {
+		branches = append(branches, zoekt.RepositoryBranch{
+			Name:    b.GetName(),
+			Version: b.GetVersion(),
+		})
+	}
+
+	item := indexOptionsItem{}
+
+	item.IndexOptions = IndexOptions{
+		RepoID:     uint32(x.GetRepoId()),
+		LargeFiles: x.GetLargeFiles(),
+		Symbols:    x.GetSymbols(),
+		Branches:   branches,
+		Name:       x.GetName(),
+
+		Priority: x.GetPriority(),
+
+		DocumentRanksVersion: x.GetDocumentRanksVersion(),
+
+		Public:   x.GetPublic(),
+		Fork:     x.GetFork(),
+		Archived: x.GetArchived(),
+	}
+
+	item.Error = x.GetError()
+
+	*o = item
+}
+
+func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
+	branches := make([]*proto.ZoektRepositoryBranch, 0, len(o.Branches))
+	for _, b := range o.Branches {
+		branches = append(branches, &proto.ZoektRepositoryBranch{
+			Name:    b.Name,
+			Version: b.Version,
+		})
+	}
+
+	return &proto.ZoektIndexOptions{
+		RepoId:     int32(o.RepoID),
+		LargeFiles: o.LargeFiles,
+		Symbols:    o.Symbols,
+		Branches:   branches,
+		Name:       o.Name,
+
+		Priority: o.Priority,
+
+		DocumentRanksVersion: o.DocumentRanksVersion,
+
+		Public:   o.Public,
+		Fork:     o.Fork,
+		Archived: o.Archived,
+
+		Error: o.Error,
+	}
+}
+
+func (s *sourcegraphClient) getIndexOptionsGRPC(fingerprint *proto.Fingerprint, repos []uint32) ([]indexOptionsItem, *proto.Fingerprint, error) {
+	repoIDs := make([]int32, 0, len(repos))
+	for _, id := range repos {
+		repoIDs = append(repoIDs, int32(id))
+	}
+
+	var req proto.SearchConfigurationRequest
+	req.RepoIds = repoIDs
+	req.Fingerprint = fingerprint
+
+	response, err := s.grpcClient.SearchConfiguration(context.Background(), &req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	protoItems := response.GetUpdatedOptions()
+	items := make([]indexOptionsItem, 0, len(protoItems))
+	for _, x := range protoItems {
+		var item indexOptionsItem
+		item.FromProto(x)
+		item.IndexOptions.CloneURL = s.getCloneURL(item.Name)
+
+		items = append(items, item)
+	}
+
+	return items, response.GetFingerprint(), nil
+}
+
+const fingerprintHeader = "X-Sourcegraph-Config-Fingerprint"
+
+func (s *sourcegraphClient) getIndexOptionsREST(fingerprint string, repos ...uint32) ([]indexOptionsItem, string, error) {
 	u := s.Root.ResolveReference(&url.URL{
 		Path: "/.internal/search/configuration",
 	})
@@ -363,7 +612,7 @@ func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if fingerprint != "" {
-		req.Header.Set("X-Sourcegraph-Config-Fingerprint", fingerprint)
+		req.Header.Set(fingerprintHeader, fingerprint)
 	}
 
 	resp, err := s.doRequest(req)
@@ -400,7 +649,7 @@ func (s *sourcegraphClient) getIndexOptions(fingerprint string, repos ...uint32)
 		opts = append(opts, opt)
 	}
 
-	return opts, resp.Header.Get("X-Sourcegraph-Config-Fingerprint"), nil
+	return opts, resp.Header.Get(fingerprintHeader), nil
 }
 
 func (s *sourcegraphClient) getCloneURL(name string) string {
@@ -408,6 +657,35 @@ func (s *sourcegraphClient) getCloneURL(name string) string {
 }
 
 func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
+	if s.shouldUseGRPCFunc() {
+		return s.listRepoIDsGRPC(ctx, indexed)
+	}
+
+	return s.listRepoIDsREST(ctx, indexed)
+}
+
+func (s *sourcegraphClient) listRepoIDsGRPC(ctx context.Context, indexed []uint32) ([]uint32, error) {
+	var request proto.ListRequest
+	request.Hostname = s.Hostname
+	request.IndexedIds = make([]int32, 0, len(indexed))
+	for _, id := range indexed {
+		request.IndexedIds = append(request.IndexedIds, int32(id))
+	}
+
+	response, err := s.grpcClient.List(ctx, &request)
+	if err != nil {
+		return nil, err
+	}
+
+	var repoIDs []uint32
+	for _, id := range response.RepoIds {
+		repoIDs = append(repoIDs, uint32(id))
+	}
+
+	return repoIDs, nil
+}
+
+func (s *sourcegraphClient) listRepoIDsREST(_ context.Context, indexed []uint32) ([]uint32, error) {
 	body, err := json.Marshal(&struct {
 		Hostname   string
 		IndexedIDs []uint32
@@ -444,8 +722,6 @@ func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) (
 		return nil, err
 	}
 
-	metricNumAssigned.Set(float64(len(data.RepoIDs)))
-
 	return data.RepoIDs, nil
 }
 
@@ -457,6 +733,51 @@ type indexStatus struct {
 // UpdateIndexStatus sends a request to Sourcegraph to confirm that the given
 // repositories have been indexed.
 func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error {
+	if s.shouldUseGRPCFunc() {
+		return s.updateIndexStatusGRPC(repositories)
+	}
+
+	return s.updateIndexStatusREST(repositories)
+}
+
+func (s *sourcegraphClient) updateIndexStatusGRPC(repositories []indexStatus) error {
+	conn, err := grpc.Dial(s.Root.Host, grpc.WithInsecure())
+	if err != nil {
+		return fmt.Errorf("failed to dial Sourcegraph: %w", err)
+	}
+
+	defer conn.Close()
+
+	client := proto.NewIndexedSearchConfigurationServiceClient(conn)
+
+	grpcRepos := make([]*proto.UpdateIndexStatusRequest_Repository, 0, len(repositories))
+	for _, repo := range repositories {
+		branches := make([]*proto.ZoektRepositoryBranch, 0, len(repo.Branches))
+		for _, branch := range repo.Branches {
+			branches = append(branches, &proto.ZoektRepositoryBranch{
+				Name:    branch.Name,
+				Version: branch.Version,
+			})
+		}
+
+		grpcRepos = append(grpcRepos, &proto.UpdateIndexStatusRequest_Repository{
+			RepoId:   repo.RepoID,
+			Branches: branches,
+		})
+	}
+
+	_, err = client.UpdateIndexStatus(context.Background(), &proto.UpdateIndexStatusRequest{
+		Repositories: grpcRepos,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to update index status: %w", err)
+	}
+
+	return nil
+}
+
+func (s *sourcegraphClient) updateIndexStatusREST(repositories []indexStatus) error {
 	type updateIndexStatusRequest struct {
 		Repositories []indexStatus
 	}
@@ -495,7 +816,7 @@ func (s *sourcegraphClient) doRequest(req *retryablehttp.Request) (*http.Respons
 	// Should match github.com/sourcegraph/sourcegraph/internal/actor.headerKeyActorUID
 	// and github.com/sourcegraph/sourcegraph/internal/actor.headerValueInternalActor
 	req.Header.Set("X-Sourcegraph-Actor-UID", "internal")
-	return s.Client.Do(req)
+	return s.restClient.Do(req)
 }
 
 type sourcegraphFake struct {
@@ -797,3 +1118,31 @@ func (s sourcegraphNop) GetDocumentRanks(ctx context.Context, repoName string) (
 func (s sourcegraphNop) UpdateIndexStatus(repositories []indexStatus) error {
 	return nil
 }
+
+type indexOptionsBatchRunner interface {
+	GetIndexOptions(ctx context.Context) (IndexOptions, error)
+}
+
+type noopGRPCClient struct{}
+
+func (n noopGRPCClient) SearchConfiguration(ctx context.Context, in *proto.SearchConfigurationRequest, opts ...grpc.CallOption) (*proto.SearchConfigurationResponse, error) {
+	return nil, fmt.Errorf("grpc client not enabled")
+}
+
+func (n noopGRPCClient) List(ctx context.Context, in *proto.ListRequest, opts ...grpc.CallOption) (*proto.ListResponse, error) {
+	return nil, fmt.Errorf("grpc client not enabled")
+}
+
+func (n noopGRPCClient) RepositoryRank(ctx context.Context, in *proto.RepositoryRankRequest, opts ...grpc.CallOption) (*proto.RepositoryRankResponse, error) {
+	return nil, fmt.Errorf("grpc client not enabled")
+}
+
+func (n noopGRPCClient) DocumentRanks(ctx context.Context, in *proto.DocumentRanksRequest, opts ...grpc.CallOption) (*proto.DocumentRanksResponse, error) {
+	return nil, fmt.Errorf("grpc client not enabled")
+}
+
+func (n noopGRPCClient) UpdateIndexStatus(ctx context.Context, in *proto.UpdateIndexStatusRequest, opts ...grpc.CallOption) (*proto.UpdateIndexStatusResponse, error) {
+	return nil, fmt.Errorf("grpc client not enabled")
+}
+
+var _ proto.IndexedSearchConfigurationServiceClient = noopGRPCClient{}
