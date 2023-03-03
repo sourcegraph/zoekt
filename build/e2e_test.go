@@ -1175,7 +1175,7 @@ func TestScoringWithDocumentRanks(t *testing.T) {
 
 	cases := []struct {
 		name                string
-		documentRanks       []float64
+		documentRank        float64
 		documentRanksWeight float64
 		wantScore           float64
 	}{
@@ -1185,17 +1185,17 @@ func TestScoringWithDocumentRanks(t *testing.T) {
 			wantScore: 7012.00,
 		},
 		{
-			name:          "score with document ranks",
-			documentRanks: []float64{0, 0, 0, 0, 0.8, 0, 0},
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 7200 (file rank) + 10 (file order)
-			wantScore: 14212.00,
+			name:         "score with document ranks",
+			documentRank: 0.8,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 225 (file rank) + 10 (file order)
+			wantScore: 7237.00,
 		},
 		{
 			name:                "score with custom document ranks weight",
-			documentRanks:       []float64{0, 0, 0, 0, 0.8, 0, 0},
+			documentRank:        0.8,
 			documentRanksWeight: 1000.0,
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 800 (file rank) + 10 (file order)
-			wantScore: 7812.00,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 25.00 (file rank) + 10 (file order)
+			wantScore: 7037.00,
 		},
 	}
 
@@ -1206,7 +1206,7 @@ func TestScoringWithDocumentRanks(t *testing.T) {
 				t.Fatalf("NewBuilder: %v", err)
 			}
 
-			err = b.Add(zoekt.Document{Name: "example.java", Content: exampleJava, Ranks: c.documentRanks})
+			err = b.Add(zoekt.Document{Name: "example.java", Content: exampleJava, Ranks: []float64{c.documentRank}})
 			if err != nil {
 				t.Fatal(err)
 			}
