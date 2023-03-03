@@ -559,7 +559,6 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 			if rank, ok := ranks.Paths[keyFullPath]; ok {
 				pathRank = []float64{rank}
 			}
-			fmt.Printf("path: %s, ranks length: %d", keyFullPath, len(pathRank))
 
 			if err := builder.Add(zoekt.Document{
 				SubRepositoryPath: key.SubRepoPath,
