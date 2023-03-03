@@ -2,11 +2,7 @@
   "$schema": "./json_schemas/ServiceConfig.json",
   "method_config": [
     {
-      "name": [
-        {
-          "service": "frontend.indexedsearch.v1.IndexedSearchConfigurationService"
-        }
-      ],
+      "name": [{"service": "frontend.indexedsearch.v1.IndexedSearchConfigurationService"}],
 
       "retry_policy": {
         "max_attempts": 4,

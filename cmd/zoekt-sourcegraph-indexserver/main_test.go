@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/log/logtest"
 	proto "github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch/v1"
+	"github.com/xeipuuv/gojsonschema"
 	"google.golang.org/grpc"
 
 	"github.com/google/go-cmp/cmp"
@@ -255,5 +257,31 @@ func TestFormatListUint32(t *testing.T) {
 				t.Fatalf("want %s, got %s", tt.want, out)
 			}
 		})
+	}
+}
+
+func TestDefaultGRPCServiceConfigurationSyntax(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+
+	schemaFile := filepath.Join(wd, "json_schemas", "ServiceConfig.json")
+	schemaLoader := gojsonschema.NewReferenceLoader(fmt.Sprintf("file://%s", schemaFile))
+
+	documentLoader := gojsonschema.NewStringLoader(defaultGRPCServiceConfigurationJSON)
+
+	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
+	if err != nil {
+		t.Fatalf("failed to validate default service config: %v", err)
+	}
+
+	if !result.Valid() {
+		var errs strings.Builder
+		for _, err := range result.Errors() {
+			errs.WriteString(fmt.Sprintf("- %s\n", err))
+		}
+
+		t.Fatalf("default service config is invalid:\n%s", errs.String())
 	}
 }
