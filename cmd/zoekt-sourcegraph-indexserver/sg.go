@@ -677,7 +677,7 @@ func (s *sourcegraphClient) listRepoIDsGRPC(ctx context.Context, indexed []uint3
 		return nil, err
 	}
 
-	var repoIDs []uint32
+	repoIDs := make([]uint32, 0, len(response.RepoIds))
 	for _, id := range response.RepoIds {
 		repoIDs = append(repoIDs, uint32(id))
 	}
