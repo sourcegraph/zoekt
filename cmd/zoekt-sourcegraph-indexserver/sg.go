@@ -393,7 +393,7 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 
 			first := true
 			return func(repos ...uint32) ([]indexOptionsItem, error) {
-				options, nextFingerPrint, err := s.getIndexOptionsGRPC(startingFingerPrint, repos)
+				options, nextFingerPrint, err := s.getIndexOptionsGRPC(context.Background(), startingFingerPrint, repos)
 				if err != nil {
 					first = false
 					s.configFingerprintProto = startingFingerPrint
@@ -474,7 +474,7 @@ func (s *sourcegraphClient) ForceIterateIndexOptions(onSuccess func(IndexOptions
 
 	if s.shouldUseGRPCFunc() {
 		getIndexOptions = func(repos ...uint32) ([]indexOptionsItem, error) {
-			opts, _, err := s.getIndexOptionsGRPC(nil, repos)
+			opts, _, err := s.getIndexOptionsGRPC(context.Background(), nil, repos)
 			return opts, err
 		}
 	}
@@ -565,18 +565,18 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 	}
 }
 
-func (s *sourcegraphClient) getIndexOptionsGRPC(fingerprint *proto.Fingerprint, repos []uint32) ([]indexOptionsItem, *proto.Fingerprint, error) {
+func (s *sourcegraphClient) getIndexOptionsGRPC(ctx context.Context, fingerprint *proto.Fingerprint, repos []uint32) ([]indexOptionsItem, *proto.Fingerprint, error) {
 	repoIDs := make([]int32, 0, len(repos))
 	for _, id := range repos {
 		repoIDs = append(repoIDs, int32(id))
 	}
 
 	req := proto.SearchConfigurationRequest{
-		RepoIds: repoIDs,
+		RepoIds:     repoIDs,
 		Fingerprint: fingerprint,
 	}
 
-	response, err := s.grpcClient.SearchConfiguration(context.Background(), &req)
+	response, err := s.grpcClient.SearchConfiguration(ctx, &req)
 	if err != nil {
 		return nil, nil, err
 	}
