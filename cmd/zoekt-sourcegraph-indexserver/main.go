@@ -1348,13 +1348,12 @@ func newServer(conf rootConfig) (*Server, error) {
 			}
 		}
 
-		var opts []SourcegraphClientOption
-		opts = append(opts,
+		opts := []SourcegraphClientOption{
 			WithBatchSize(batchSize),
 			WithShouldUseGRPCFunc(func() bool {
 				return conf.useGRPC
 			}),
-		)
+		}
 
 		gRPCConnectionOptions := []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -1374,9 +1373,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		client := proto.NewIndexedSearchConfigurationServiceClient(cc)
 		opts = append(opts, WithGRPCClient(client))
 
-		sg = newSourcegraphClient(rootURL, conf.hostname,
-			opts...,
-		)
+		sg = newSourcegraphClient(rootURL, conf.hostname, opts...)
 
 	} else {
 		sg = sourcegraphFake{
