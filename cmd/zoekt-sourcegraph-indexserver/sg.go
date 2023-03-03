@@ -571,9 +571,10 @@ func (s *sourcegraphClient) getIndexOptionsGRPC(fingerprint *proto.Fingerprint, 
 		repoIDs = append(repoIDs, int32(id))
 	}
 
-	var req proto.SearchConfigurationRequest
-	req.RepoIds = repoIDs
-	req.Fingerprint = fingerprint
+	req := proto.SearchConfigurationRequest{
+		RepoIds: repoIDs,
+		Fingerprint: fingerprint,
+	}
 
 	response, err := s.grpcClient.SearchConfiguration(context.Background(), &req)
 	if err != nil {
