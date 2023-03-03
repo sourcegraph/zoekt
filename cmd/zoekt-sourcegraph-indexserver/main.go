@@ -1348,13 +1348,12 @@ func newServer(conf rootConfig) (*Server, error) {
 			}
 		}
 
-		var opts []SourcegraphClientOption
-		opts = append(opts,
+		opts := []SourcegraphClientOption{
 			WithBatchSize(batchSize),
 			WithShouldUseGRPCFunc(func() bool {
 				return conf.useGRPC
 			}),
-		)
+		}
 
 		gRPCConnectionOptions := []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
