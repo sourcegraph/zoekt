@@ -4,30 +4,30 @@
     "definitions": {
         "WeightedRoundRobinLbConfig": {
             "properties": {
-                "enable_oob_load_report": {
+                "enableOobLoadReport": {
                     "additionalProperties": true,
                     "type": "boolean",
                     "description": "Whether to enable out-of-band utilization reporting collection from the endpoints.  By default, per-request utilization reporting is used."
                 },
-                "oob_reporting_period": {
+                "oobReportingPeriod": {
                     "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
                     "type": "string",
                     "description": "Load reporting interval to request from the server.  Note that the server may not provide reports as frequently as the client requests. Used only when enable_oob_load_report is true.  Default is 10 seconds.",
                     "format": "regex"
                 },
-                "blackout_period": {
+                "blackoutPeriod": {
                     "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
                     "type": "string",
                     "description": "A given endpoint must report load metrics continuously for at least this long before the endpoint weight will be used.  This avoids churn when the set of endpoint addresses changes.  Takes effect both immediately after we establish a connection to an endpoint and after weight_expiration_period has caused us to stop using the most recent load metrics.  Default is 10 seconds.",
                     "format": "regex"
                 },
-                "weight_expiration_period": {
+                "weightExpirationPeriod": {
                     "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
                     "type": "string",
                     "description": "If a given endpoint has not reported load metrics in this long, then we stop using the reported weight.  This ensures that we do not continue to use very stale weights.  Once we stop using a stale value, if we later start seeing fresh reports again, the blackout_period applies.  Defaults to 3 minutes.",
                     "format": "regex"
                 },
-                "weight_update_period": {
+                "weightUpdatePeriod": {
                     "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
                     "type": "string",
                     "description": "How often endpoint weights are recalculated.  Default is 1 second.",

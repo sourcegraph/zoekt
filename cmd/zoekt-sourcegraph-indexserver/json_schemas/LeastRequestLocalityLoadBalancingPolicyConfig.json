@@ -4,7 +4,7 @@
     "definitions": {
         "LeastRequestLocalityLoadBalancingPolicyConfig": {
             "properties": {
-                "choice_count": {
+                "choiceCount": {
                     "type": "string"
                 }
             },

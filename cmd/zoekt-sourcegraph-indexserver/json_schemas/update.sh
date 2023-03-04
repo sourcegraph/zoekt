@@ -49,7 +49,7 @@ function clone_at_commit() {
 clone_at_commit "git@github.com:googleapis/googleapis.git" "c959f4214cb3947aa42ded4a14610d0607fcd57a" "${git_clones_dir}/googleapis"
 clone_at_commit "git@github.com:grpc/grpc-proto.git" "6956c0ef3b8c21efb44992edc858fbae9414aa05" "${git_clones_dir}/grpc-proto"
 
-pushd "$tmpdir"
+cd "$tmpdir"
 
 # prepare protos in a single directory
 cp -r "${git_clones_dir}/googleapis/google" .
@@ -58,4 +58,8 @@ cp "${git_clones_dir}/grpc-proto/grpc/service_config/service_config.proto" .
 
 # Generate JSON schemas from protos.
 
-protoc --jsonschema_out="$output_dir" -I. service_config.proto
+protoc \
+  --jsonschema_opt=json_fieldnames \
+  --jsonschema_out="$output_dir" \
+  -I. \
+  service_config.proto
