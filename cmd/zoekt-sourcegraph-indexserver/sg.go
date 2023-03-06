@@ -80,7 +80,7 @@ type Sourcegraph interface {
 	// GetDocumentRanks returns a map from paths within the given repo to their
 	// rank vectors. Paths are assumed to be ordered by each pairwise component of
 	// the resulting vector, higher ranks coming earlier
-	GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error)
+	GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error)
 
 	// UpdateIndexStatus sends a request to Sourcegraph to confirm that the
 	// given repositories have been indexed.
@@ -234,7 +234,7 @@ func (s *sourcegraphClient) getRepoRankREST(ctx context.Context, repoName string
 
 // GetDocumentRanks asks Sourcegraph for a mapping of file paths to rank
 // vectors.
-func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error) {
+func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
 	if s.shouldUseGRPCFunc() {
 		return s.getDocumentRanksGRPC(ctx, repoName)
 	}
@@ -242,50 +242,32 @@ func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName strin
 	return s.getDocumentRanksREST(ctx, repoName)
 }
 
-func (s *sourcegraphClient) getDocumentRanksGRPC(ctx context.Context, repoName string) (map[string][]float64, error) {
+func (s *sourcegraphClient) getDocumentRanksGRPC(ctx context.Context, repoName string) (RepoPathRanks, error) {
 	resp, err := s.grpcClient.DocumentRanks(ctx, &proto.DocumentRanksRequest{Repository: repoName})
 	if err != nil {
-		return nil, err
+		return RepoPathRanks{}, err
 	}
 
-	protoRanks := resp.GetRanks()
-	out := make(map[string][]float64, len(protoRanks))
-
-	for name, protoRank := range protoRanks {
-		out[name] = protoRank.GetRanks()
-	}
+	var out RepoPathRanks
+	out.FromProto(resp)
 
 	return out, nil
 }
 
-func (s *sourcegraphClient) getDocumentRanksREST(ctx context.Context, repoName string) (map[string][]float64, error) {
+func (s *sourcegraphClient) getDocumentRanksREST(ctx context.Context, repoName string) (RepoPathRanks, error) {
 	u := s.Root.ResolveReference(&url.URL{
 		Path: "/.internal/ranks/" + strings.Trim(repoName, "/") + "/documents",
 	})
 
 	b, err := s.get(ctx, u)
 	if err != nil {
-		return nil, err
+		return RepoPathRanks{}, err
 	}
 
-	ranks := make(map[string][]float64)
+	ranks := RepoPathRanks{}
 	err = json.Unmarshal(b, &ranks)
 	if err != nil {
-		return nil, err
-	}
-
-	// Invariant: All rank vectors have the same length.
-	first := true
-	wantLen := -1
-	for _, v := range ranks {
-		if first {
-			first = false
-			wantLen = len(v)
-			continue
-		}
-		if len(v) != wantLen {
-			return nil, fmt.Errorf("found rank vectors of different length %d<>%d\n", wantLen, len(v))
-		}
+		return RepoPathRanks{}, err
 	}
 
 	return ranks, nil
@@ -863,28 +845,35 @@ func (sf sourcegraphFake) GetRepoRank(ctx context.Context, repoName string) ([]f
 }
 
 // GetDocumentRanks expects a file where each line has the following format:
-// path<tab>rank... where rank is a float64 in [0,1]. Multiple ranks are
-// separated by a comma. Each line must have the same number of ranks.
-func (sf sourcegraphFake) GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error) {
+// path<tab>rank... where rank is a float64.
+func (sf sourcegraphFake) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
 	dir := filepath.Join(sf.RootDir, filepath.FromSlash(repoName))
 
 	fd, err := os.Open(filepath.Join(dir, "SG_DOCUMENT_RANKS"))
 	if err != nil {
-		return nil, err
+		return RepoPathRanks{}, err
 	}
 
-	ranks := make(map[string][]float64)
+	ranks := RepoPathRanks{}
 
+	sum := 0.0
+	count := 0
 	scanner := bufio.NewScanner(fd)
 	for scanner.Scan() {
 		s := scanner.Text()
 		pathRanks := strings.Split(s, "\t")
-		ranks[pathRanks[0]] = floats64(pathRanks[1])
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
+		if rank, err := strconv.ParseFloat(pathRanks[1], 64); err == nil {
+			ranks.Paths[pathRanks[0]] = rank
+			sum += rank
+			count++
+		}
 	}
 
+	if err := scanner.Err(); err != nil {
+		return RepoPathRanks{}, err
+	}
+
+	ranks.MeanRank = sum / float64(count)
 	return ranks, nil
 }
 
@@ -1136,16 +1125,42 @@ func (s sourcegraphNop) GetRepoRank(ctx context.Context, repoName string) ([]flo
 	return nil, nil
 }
 
-func (s sourcegraphNop) GetDocumentRanks(ctx context.Context, repoName string) (map[string][]float64, error) {
-	return nil, nil
+func (s sourcegraphNop) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
+	return RepoPathRanks{}, nil
 }
 
 func (s sourcegraphNop) UpdateIndexStatus(repositories []indexStatus) error {
 	return nil
 }
 
-type indexOptionsBatchRunner interface {
-	GetIndexOptions(ctx context.Context) (IndexOptions, error)
+type RepoPathRanks struct {
+	MeanRank float64            `json:"mean_reference_count"`
+	Paths    map[string]float64 `json:"paths"`
+}
+
+func (r *RepoPathRanks) FromProto(x *proto.DocumentRanksResponse) {
+	protoPaths := x.GetPaths()
+	ranks := make(map[string]float64, len(protoPaths))
+	for filePath, rank := range protoPaths {
+		ranks[filePath] = rank
+	}
+
+	*r = RepoPathRanks{
+		MeanRank: x.GetMeanRank(),
+		Paths:    ranks,
+	}
+}
+
+func (r *RepoPathRanks) ToProto() *proto.DocumentRanksResponse {
+	paths := make(map[string]float64, len(r.Paths))
+	for filePath, rank := range r.Paths {
+		paths[filePath] = rank
+	}
+
+	return &proto.DocumentRanksResponse{
+		MeanRank: r.MeanRank,
+		Paths:    paths,
+	}
 }
 
 type noopGRPCClient struct{}

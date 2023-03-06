@@ -494,7 +494,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		return fmt.Errorf("build.NewBuilder: %w", err)
 	}
 
-	var ranks map[string][]float64
+	var ranks repoPathRanks
 	if opts.BuildOptions.DocumentRanksPath != "" {
 		data, err := os.ReadFile(opts.BuildOptions.DocumentRanksPath)
 		if err != nil {
@@ -554,18 +554,30 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 			if err != nil {
 				return err
 			}
+
+			var pathRank []float64
+			if rank, ok := ranks.Paths[keyFullPath]; ok {
+				pathRank = []float64{rank}
+			}
+
 			if err := builder.Add(zoekt.Document{
 				SubRepositoryPath: key.SubRepoPath,
 				Name:              keyFullPath,
 				Content:           contents,
 				Branches:          brs,
-				Ranks:             ranks[keyFullPath],
+				Ranks:             pathRank,
 			}); err != nil {
 				return fmt.Errorf("error adding document with name %s: %w", keyFullPath, err)
 			}
 		}
 	}
+
 	return builder.Finish()
+}
+
+type repoPathRanks struct {
+	MeanRank float64            `json:"mean_reference_count"`
+	Paths    map[string]float64 `json:"paths"`
 }
 
 func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {

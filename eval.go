@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"regexp/syntax"
 	"sort"
 	"strings"
@@ -377,10 +378,14 @@ nextFileMatch:
 			}
 
 			ranks := d.ranks[nextDoc]
-			// This is a temporary workaround -- we only really want the PageRank score, and ignore
-			// everything else. In a follow-up we'll simplify the rank format and remove this hack.
-			if len(ranks) > 4 {
-				fileMatch.addScore("file-rank", weight*d.ranks[nextDoc][4], opts.DebugScore)
+			// The ranks slice always contains one entry representing the file rank (unless it's empty since the
+			// file doesn't have a rank). This is left over from when documents could have multiple rank signals,
+			// and we plan to clean this up.
+			if len(ranks) > 0 {
+				// The file rank represents a log (base 2) count. The log ranks should be bounded at 32, but we
+				// cap it just in case to ensure it falls in the range [0, 1].
+				normalized := math.Min(1.0, ranks[0]/32.0)
+				fileMatch.addScore("file-rank", weight*normalized, opts.DebugScore)
 			}
 		}
 

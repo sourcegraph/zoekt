@@ -30,7 +30,7 @@ require (
 	github.com/sourcegraph/go-ctags v0.0.0-20230111110657-c27675da7f71
 	github.com/sourcegraph/log v0.0.0-20230203201409-49ac5ad3f2ce
 	github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67
-	github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch v0.0.0-20230304034006-972ca93398d3
+	github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch v0.0.0-20230304041038-7df663cf89c4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	github.com/xanzy/go-gitlab v0.80.0
