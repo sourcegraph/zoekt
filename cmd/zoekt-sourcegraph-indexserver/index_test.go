@@ -71,7 +71,7 @@ func TestIterateIndexOptions_Fingerprint(t *testing.T) {
 
 		clientOpts := []SourcegraphClientOption{
 			WithBatchSize(1),
-			WithShouldUseGRPCFunc(func() bool { return true }),
+			WithShouldUseGRPC(true),
 			WithGRPCClient(grpcClient),
 		}
 
@@ -193,7 +193,7 @@ func TestIterateIndexOptions_Fingerprint(t *testing.T) {
 
 		clientOpts := []SourcegraphClientOption{
 			WithBatchSize(1),
-			WithShouldUseGRPCFunc(func() bool { return false }),
+			WithShouldUseGRPC(false),
 		}
 
 		testURL, err := url.Parse(server.URL)
@@ -429,7 +429,7 @@ func TestGetIndexOptions(t *testing.T) {
 			sg := newSourcegraphClient(
 				testURL,
 				"",
-				WithShouldUseGRPCFunc(func() bool { return true }),
+				WithShouldUseGRPC(true),
 				WithGRPCClient(mockClient),
 			)
 
@@ -483,7 +483,7 @@ func TestGetIndexOptions(t *testing.T) {
 			sg := newSourcegraphClient(
 				testURL,
 				"",
-				WithShouldUseGRPCFunc(func() bool { return true }),
+				WithShouldUseGRPC(true),
 				WithGRPCClient(mockClient))
 
 			gotAtLeastOneOption := false

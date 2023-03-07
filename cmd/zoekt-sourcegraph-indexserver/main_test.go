@@ -58,7 +58,7 @@ func TestListRepoIDs(t *testing.T) {
 		grpcClient := &mockGRPCClient{}
 
 		clientOptions := []SourcegraphClientOption{
-			WithShouldUseGRPCFunc(func() bool { return true }),
+			WithShouldUseGRPC(true),
 			WithGRPCClient(grpcClient),
 			WithBatchSize(0),
 		}

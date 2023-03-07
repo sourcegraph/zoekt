@@ -97,11 +97,10 @@ func WithBatchSize(batchSize int) SourcegraphClientOption {
 	}
 }
 
-// WithShouldUseGRPCFunc sets the function that is used to determine whether to use gRPC
-// to communicate with Sourcegraph. This function must be thread-safe.
-func WithShouldUseGRPCFunc(shouldUseGRPCFunc func() bool) SourcegraphClientOption {
+// WithShouldUseGRPC enables or disables the use of gRPC for communicating with Sourcegraph.
+func WithShouldUseGRPC(useGRPC bool) SourcegraphClientOption {
 	return func(c *sourcegraphClient) {
-		c.shouldUseGRPCFunc = shouldUseGRPCFunc
+		c.useGRPC = useGRPC
 	}
 }
 
@@ -132,17 +131,13 @@ func newSourcegraphClient(rootURL *url.URL, hostname string, opts ...Sourcegraph
 		return shouldRetry, checkErr
 	}
 
-	defaultAlwaysDisableGRPC := func() bool {
-		return false
-	}
-
 	client := &sourcegraphClient{
-		Root:              rootURL,
-		restClient:        httpClient,
-		Hostname:          hostname,
-		BatchSize:         0,
-		grpcClient:        noopGRPCClient{},
-		shouldUseGRPCFunc: defaultAlwaysDisableGRPC,
+		Root:       rootURL,
+		restClient: httpClient,
+		Hostname:   hostname,
+		BatchSize:  0,
+		grpcClient: noopGRPCClient{},
+		useGRPC:    false, // disable gRPC by default
 	}
 
 	for _, opt := range opts {
@@ -196,14 +191,13 @@ type sourcegraphClient struct {
 	// calculating everything.
 	configFingerprintReset time.Time
 
-	// shouldUseGRPCFunc is a function which returns true if we should communicate with
-	// Sourcegraph via gRPC.
-	shouldUseGRPCFunc func() bool
+	// useGRPC indicates whether we should use a gRPC client to communicate with Sourcegraph.
+	useGRPC bool
 }
 
 // GetRepoRank asks Sourcegraph for the rank vector of repoName.
 func (s *sourcegraphClient) GetRepoRank(ctx context.Context, repoName string) ([]float64, error) {
-	if s.shouldUseGRPCFunc() {
+	if s.useGRPC {
 		return s.getRepoRankGRPC(ctx, repoName)
 	}
 
@@ -241,7 +235,7 @@ func (s *sourcegraphClient) getRepoRankREST(ctx context.Context, repoName string
 // GetDocumentRanks asks Sourcegraph for a mapping of file paths to rank
 // vectors.
 func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
-	if s.shouldUseGRPCFunc() {
+	if s.useGRPC {
 		return s.getDocumentRanksGRPC(ctx, repoName)
 	}
 
@@ -374,7 +368,7 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 	}
 
 	// If we enabled GRPC, use our gRPC client instead.
-	if s.shouldUseGRPCFunc() {
+	if s.useGRPC {
 		mkGetIndexOptionsFunc = func(tr trace.Trace) getIndexOptionsFunc {
 			startingFingerPrint := s.configFingerprintProto
 			tr.LazyPrintf("fingerprint: %s", startingFingerPrint.String())
@@ -460,7 +454,7 @@ func (s *sourcegraphClient) ForceIterateIndexOptions(onSuccess func(IndexOptions
 		return opts, err
 	}
 
-	if s.shouldUseGRPCFunc() {
+	if s.useGRPC {
 		getIndexOptions = func(repos ...uint32) ([]indexOptionsItem, error) {
 			opts, _, err := s.getIndexOptionsGRPC(context.Background(), nil, repos)
 			return opts, err
@@ -645,7 +639,7 @@ func (s *sourcegraphClient) getCloneURL(name string) string {
 }
 
 func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
-	if s.shouldUseGRPCFunc() {
+	if s.useGRPC {
 		return s.listRepoIDsGRPC(ctx, indexed)
 	}
 
@@ -777,7 +771,7 @@ func (u *updateIndexStatusRequest) FromProto(x *proto.UpdateIndexStatusRequest) 
 func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error {
 	r := updateIndexStatusRequest{Repositories: repositories}
 
-	if s.shouldUseGRPCFunc() {
+	if s.useGRPC {
 		return s.updateIndexStatusGRPC(r)
 	}
 

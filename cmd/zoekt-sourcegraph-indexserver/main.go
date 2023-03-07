@@ -1350,9 +1350,7 @@ func newServer(conf rootConfig) (*Server, error) {
 
 		opts := []SourcegraphClientOption{
 			WithBatchSize(batchSize),
-			WithShouldUseGRPCFunc(func() bool {
-				return conf.useGRPC
-			}),
+			WithShouldUseGRPC(conf.useGRPC),
 		}
 
 		gRPCConnectionOptions := []grpc.DialOption{
