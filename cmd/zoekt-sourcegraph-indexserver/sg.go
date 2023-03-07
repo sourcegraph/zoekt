@@ -375,7 +375,7 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 
 			first := true
 			return func(repos ...uint32) ([]indexOptionsItem, error) {
-				options, nextFingerPrint, err := s.getIndexOptionsGRPC(context.Background(), startingFingerPrint, repos)
+				options, nextFingerPrint, err := s.getIndexOptionsGRPC(ctx, startingFingerPrint, repos)
 				if err != nil {
 					first = false
 					s.configFingerprintProto = startingFingerPrint
