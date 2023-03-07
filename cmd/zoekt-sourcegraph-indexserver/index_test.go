@@ -19,7 +19,9 @@ import (
 	"time"
 
 	"github.com/sourcegraph/log/logtest"
-	proto "github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch/v1"
+
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/configuration_service/v1"
+
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"

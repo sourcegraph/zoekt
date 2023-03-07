@@ -36,13 +36,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
-	proto "github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch/v1"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/configuration_service/v1"
 
 	"github.com/sourcegraph/mountinfo"
 
