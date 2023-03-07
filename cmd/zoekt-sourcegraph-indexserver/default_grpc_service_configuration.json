@@ -15,8 +15,6 @@
         "backoffMultiplier": 2,
         "retryableStatusCodes": [
           "UNAVAILABLE",
-          "DEADLINE_EXCEEDED",
-          "INTERNAL",
           "ABORTED"
         ]
       }
