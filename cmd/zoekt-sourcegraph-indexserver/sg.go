@@ -177,11 +177,17 @@ type sourcegraphClient struct {
 	// configFingerprint is the last config fingerprint returned from
 	// Sourcegraph. It can be used for future calls to the configuration
 	// endpoint.
+	//
+	// configFingerprint is mutually exclusive with configFingerprintProto - this field
+	// will only be used if gRPC is disabled.
 	configFingerprint string
 
 	// configFingerprintProto is the last config fingerprint (as GRPC) returned from
 	// Sourcegraph. It can be used for future calls to the configuration
 	// endpoint.
+	//
+	// configFingerprintProto is mutually exclusive with configFingerprint - this field
+	// will only be used if gRPC is enabled.
 	configFingerprintProto *proto.Fingerprint
 
 	// configFingerprintReset tracks when we should zero out the
