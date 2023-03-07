@@ -132,7 +132,7 @@ func newSourcegraphClient(rootURL *url.URL, hostname string, opts ...Sourcegraph
 		return shouldRetry, checkErr
 	}
 
-	disableGRPC := func() bool {
+	defaultAlwaysDisableGRPC := func() bool {
 		return false
 	}
 
@@ -142,7 +142,7 @@ func newSourcegraphClient(rootURL *url.URL, hostname string, opts ...Sourcegraph
 		Hostname:          hostname,
 		BatchSize:         0,
 		grpcClient:        noopGRPCClient{},
-		shouldUseGRPCFunc: disableGRPC,
+		shouldUseGRPCFunc: defaultAlwaysDisableGRPC,
 	}
 
 	for _, opt := range opts {
