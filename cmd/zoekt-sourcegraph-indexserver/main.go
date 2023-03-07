@@ -1426,8 +1426,6 @@ func newServer(conf rootConfig) (*Server, error) {
 //
 // It retries on the following errors (see https://grpc.github.io/grpc/core/md_doc_statuscodes.html):
 //   - Unavailable
-//   - DeadlineExceeded
-//   - Internal
 //   - Aborted
 //
 //go:embed default_grpc_service_configuration.json

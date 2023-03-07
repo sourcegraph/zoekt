@@ -4,7 +4,7 @@
     {
       "name": [
         {
-          "service": "frontend.indexedsearch.v1.IndexedSearchConfigurationService"
+          "service": "configuration_service.v1.IndexedSearchConfigurationService"
         }
       ],
 
