@@ -23,9 +23,10 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
-	proto "github.com/sourcegraph/sourcegraph/protos/frontend/indexedsearch/v1"
 	"golang.org/x/net/trace"
 	"google.golang.org/grpc"
+
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/configuration_service/v1"
 
 	"github.com/sourcegraph/zoekt"
 )

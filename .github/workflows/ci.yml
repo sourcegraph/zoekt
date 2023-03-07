@@ -40,6 +40,39 @@ jobs:
           fail_on_error: "true"
           shfmt_flags: "-i 2 -ci -bn"
 
+  lint-protos:
+    name: "buf lint"
+    runs-on: ubuntu-latest
+    steps:
+      # Run `git checkout`
+      - uses: actions/checkout@v2
+      # Install the `buf` CLI
+      - uses: bufbuild/buf-setup-action@v1
+      # Lint your Protobuf sources
+      - run: .github/workflows/buf-lint-check.sh
+
+  format-protos:
+    name: "buf format"
+    runs-on: ubuntu-latest
+    steps:
+      # Run `git checkout`
+      - uses: actions/checkout@v2
+      # Install the `buf` CLI
+      - uses: bufbuild/buf-setup-action@v1
+      # Check to see if the Protobuf sources are formatted
+      - run: .github/workflows/buf-format-check.sh
+
+  generate-protos:
+    name: "buf generate"
+    runs-on: ubuntu-latest
+    steps:
+      # Run `git checkout`
+      - uses: actions/checkout@v2
+      # Install the `buf` CLI
+      - uses: bufbuild/buf-setup-action@v1
+      # Check if the generated code is up-to-date
+      - run: .github/workflows/buf-generate-check.sh
+
   # We build a shared docker image called "zoekt". This is not pushed, but is
   # used for creating the indexserver and webserver images.
   docker:
