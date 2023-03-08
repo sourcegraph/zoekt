@@ -43,12 +43,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/configuration_service/v1"
-
 	"github.com/sourcegraph/mountinfo"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/debugserver"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 )
@@ -1369,7 +1368,7 @@ func newServer(conf rootConfig) (*Server, error) {
 			return nil, fmt.Errorf("initializing gRPC connection to %q: %w", rootURL.Host, err)
 		}
 
-		client := proto.NewIndexedSearchConfigurationServiceClient(cc)
+		client := proto.NewZoektConfigurationServiceClient(cc)
 		opts = append(opts, WithGRPCClient(client))
 
 		sg = newSourcegraphClient(rootURL, conf.hostname, opts...)

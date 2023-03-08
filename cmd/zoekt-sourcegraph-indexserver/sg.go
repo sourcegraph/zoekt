@@ -26,9 +26,8 @@ import (
 	"golang.org/x/net/trace"
 	"google.golang.org/grpc"
 
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/configuration_service/v1"
-
 	"github.com/sourcegraph/zoekt"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 )
 
 // SourcegraphListResult is the return value of Sourcegraph.List. It is its
@@ -106,7 +105,7 @@ func WithShouldUseGRPC(useGRPC bool) SourcegraphClientOption {
 }
 
 // WithGRPCClient sets the gRPC client to use for communicating with Sourcegraph.
-func WithGRPCClient(client proto.IndexedSearchConfigurationServiceClient) SourcegraphClientOption {
+func WithGRPCClient(client proto.ZoektConfigurationServiceClient) SourcegraphClientOption {
 	return func(c *sourcegraphClient) {
 		c.grpcClient = client
 	}
@@ -168,7 +167,7 @@ type sourcegraphClient struct {
 	restClient *retryablehttp.Client
 
 	// grpcClient is used to make requests to the Sourcegraph instance if gRPC is enabled.
-	grpcClient proto.IndexedSearchConfigurationServiceClient
+	grpcClient proto.ZoektConfigurationServiceClient
 
 	// configFingerprint is the last config fingerprint returned from
 	// Sourcegraph. It can be used for future calls to the configuration
@@ -1186,4 +1185,4 @@ func (n noopGRPCClient) UpdateIndexStatus(ctx context.Context, in *proto.UpdateI
 	return nil, fmt.Errorf("grpc client not enabled")
 }
 
-var _ proto.IndexedSearchConfigurationServiceClient = noopGRPCClient{}
+var _ proto.ZoektConfigurationServiceClient = noopGRPCClient{}
