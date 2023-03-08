@@ -1,0 +1,1268 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "$ref": "#/definitions/XdsClusterImplLoadBalancingPolicyConfig",
+    "definitions": {
+        "XdsClusterImplLoadBalancingPolicyConfig": {
+            "properties": {
+                "cluster": {
+                    "type": "string",
+                    "description": "Cluster name.  Required."
+                },
+                "edsServiceName": {
+                    "type": "string",
+                    "description": "EDS service name. Not set if cluster is not an EDS cluster or if it does not specify an EDS service name."
+                },
+                "lrsLoadReportingServerName": {
+                    "additionalProperties": true,
+                    "type": "string",
+                    "description": "Server to send load reports to. If unset, no load reporting is done. If set to empty string, load reporting will be sent to the same server as we are getting xds data from. DEPRECATED: Use new lrs_load_reporting_server field instead."
+                },
+                "lrsLoadReportingServer": {
+                    "$ref": "#/definitions/grpc.service_config.XdsServer",
+                    "additionalProperties": true,
+                    "description": "LRS server to send load reports to. If not present, load reporting will be disabled. Supercedes lrs_load_reporting_server_name field."
+                },
+                "maxConcurrentRequests": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "Maximum number of outstanding requests can be made to the upstream cluster. Default is 1024."
+                },
+                "dropCategories": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.XdsClusterImplLoadBalancingPolicyConfig.DropCategory"
+                    },
+                    "type": "array"
+                },
+                "childPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array",
+                    "description": "Child policy."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Xds Cluster Impl Load Balancing Policy Config",
+            "description": "Configuration for xds_cluster_impl LB policy."
+        },
+        "grpc.lookup.v1.GrpcKeyBuilder": {
+            "properties": {
+                "names": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.lookup.v1.GrpcKeyBuilder.Name"
+                    },
+                    "type": "array"
+                },
+                "extraKeys": {
+                    "$ref": "#/definitions/grpc.lookup.v1.GrpcKeyBuilder.ExtraKeys",
+                    "additionalProperties": true
+                },
+                "headers": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.lookup.v1.NameMatcher"
+                    },
+                    "type": "array",
+                    "description": "Extract keys from all listed headers. For gRPC, it is an error to specify \"required_match\" on the NameMatcher protos."
+                },
+                "constantKeys": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "type": "object",
+                    "description": "You can optionally set one or more specific key/value pairs to be added to the key_map.  This can be useful to identify which builder built the key, for example if you are suppressing the actual method, but need to separately cache and request all the matched methods."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Grpc Key Builder",
+            "description": "A GrpcKeyBuilder applies to a given gRPC service, name, and headers."
+        },
+        "grpc.lookup.v1.GrpcKeyBuilder.ExtraKeys": {
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "service": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra Keys",
+            "description": "If you wish to include the host, service, or method names as keys in the generated RouteLookupRequest, specify key names to use in the extra_keys submessage. If a key name is empty, no key will be set for that value. If this submessage is specified, the normal host/path fields will be left unset in the RouteLookupRequest. We are deprecating host/path in the RouteLookupRequest, so services should migrate to the ExtraKeys approach."
+        },
+        "grpc.lookup.v1.GrpcKeyBuilder.Name": {
+            "properties": {
+                "service": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Name",
+            "description": "To match, one of the given Name fields must match; the service and method fields are specified as fixed strings.  The service name is required and includes the proto package name.  The method name may be omitted, in which case any method on the given service is matched."
+        },
+        "grpc.lookup.v1.HttpKeyBuilder": {
+            "properties": {
+                "hostPatterns": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array",
+                    "description": "host_pattern is an ordered list of host template patterns for the desired value.  If any host_pattern values are specified, then at least one must match, and the last one wins and sets any specified variables.  A host consists of labels separated by dots. Each label is matched against the label in the pattern as follows:   - \"*\": Matches any single label.   - \"**\": Matches zero or more labels (first or last part of host only).   - \"{\u003cname\u003e=...}\": One or more label capture, where \"...\" can be any      template that does not include a capture.   - \"{\u003cname\u003e}\": A single label capture. Identical to {\u003cname\u003e=*}. Examples:   - \"example.com\": Only applies to the exact host example.com.   - \"*.example.com\": Matches subdomains of example.com.   - \"**.example.com\": matches example.com, and all levels of subdomains.   - \"{project}.example.com\": Extracts the third level subdomain.   - \"{project=**}.example.com\": Extracts the third level+ subdomains.   - \"{project=**}\": Extracts the entire host."
+                },
+                "pathPatterns": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array",
+                    "description": "path_pattern is an ordered list of path template patterns for the desired value.  If any path_pattern values are specified, then at least one must match, and the last one wins and sets any specified variables.  A path consists of segments separated by slashes. Each segment is matched against the segment in the pattern as follows:   - \"*\": Matches any single segment.   - \"**\": Matches zero or more segments (first or last part of path only).   - \"{\u003cname\u003e=...}\": One or more segment capture, where \"...\" can be any      template that does not include a capture.   - \"{\u003cname\u003e}\": A single segment capture. Identical to {\u003cname\u003e=*}. A custom method may also be specified by appending \":\" and the custom method name or \"*\" to indicate any custom method (including no custom method).  For example, \"/*/projects/{project_id}/**:*\" extracts `{project_id}` for any version, resource and custom method that includes it.  By default, any custom method will be matched. Examples:   - \"/v1/{name=messages/*}\": extracts a name like \"messages/12345\".   - \"/v1/messages/{message_id}\": extracts a message_id like \"12345\".   - \"/v1/users/{user_id}/messages/{message_id}\": extracts two key values."
+                },
+                "queryParameters": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.lookup.v1.NameMatcher"
+                    },
+                    "type": "array",
+                    "description": "List of query parameter names to try to match. For example: [\"parent\", \"name\", \"resource.name\"] We extract all the specified query_parameters (case-sensitively).  If any are marked as \"required_match\" and are not present, this keybuilder fails to match.  If a given parameter appears multiple times (?foo=a\u0026foo=b) we will report it as a comma-separated string (foo=a,b)."
+                },
+                "headers": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.lookup.v1.NameMatcher"
+                    },
+                    "type": "array",
+                    "description": "List of headers to try to match. We extract all the specified header values (case-insensitively).  If any are marked as \"required_match\" and are not present, this keybuilder fails to match.  If a given header appears multiple times in the request we will report it as a comma-separated string, in standard HTTP fashion."
+                },
+                "constantKeys": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "type": "object",
+                    "description": "You can optionally set one or more specific key/value pairs to be added to the key_map.  This can be useful to identify which builder built the key, for example if you are suppressing a lot of information from the URL, but need to separately cache and request URLs with that content."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Http Key Builder",
+            "description": "An HttpKeyBuilder applies to a given HTTP URL and headers. Path and host patterns use the matching syntax from gRPC transcoding to extract named key/value pairs from the path and host components of the URL: https://github.com/googleapis/googleapis/blob/master/google/api/http.proto It is invalid to specify the same key name in multiple places in a pattern. For a service where the project id can be expressed either as a subdomain or in the path, separate HttpKeyBuilders must be used:     host_pattern: 'example.com' path_pattern: '/{id}/{object}/**'     host_pattern: '{id}.example.com' path_pattern: '/{object}/**' If the host is exactly 'example.com', the first path segment will be used as the id and the second segment as the object. If the host has a subdomain, the subdomain will be used as the id and the first segment as the object. If neither pattern matches, no keys will be extracted."
+        },
+        "grpc.lookup.v1.NameMatcher": {
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": "The name that will be used in the RLS key_map to refer to this value. If required_match is true, you may omit this field or set it to an empty string, in which case the matcher will require a match, but won't update the key_map."
+                },
+                "names": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array",
+                    "description": "Ordered list of names (headers or query parameter names) that can supply this value; the first one with a non-empty value is used."
+                },
+                "requiredMatch": {
+                    "type": "boolean",
+                    "description": "If true, make this extraction required; the key builder will not match if no value is found."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Name Matcher",
+            "description": "Extract a key based on a given name (e.g. header name or query parameter name).  The name must match one of the names listed in the \"name\" field.  If the \"required_match\" field is true, one of the specified names must be present for the keybuilder to match."
+        },
+        "grpc.lookup.v1.RouteLookupConfig": {
+            "properties": {
+                "httpKeybuilders": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.lookup.v1.HttpKeyBuilder"
+                    },
+                    "type": "array",
+                    "description": "Ordered specifications for constructing keys for HTTP requests.  Last match wins.  If no HttpKeyBuilder matches, an empty key_map will be sent to the lookup service; it should likely reply with a global default route and raise an alert."
+                },
+                "grpcKeybuilders": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.lookup.v1.GrpcKeyBuilder"
+                    },
+                    "type": "array",
+                    "description": "Unordered specifications for constructing keys for gRPC requests.  All GrpcKeyBuilders on this list must have unique \"name\" fields so that the client is free to prebuild a hash map keyed by name.  If no GrpcKeyBuilder matches, an empty key_map will be sent to the lookup service; it should likely reply with a global default route and raise an alert."
+                },
+                "lookupService": {
+                    "type": "string",
+                    "description": "The name of the lookup service as a gRPC URI.  Typically, this will be a subdomain of the target, such as \"lookup.datastore.googleapis.com\"."
+                },
+                "lookupServiceTimeout": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "Configure a timeout value for lookup service requests. Defaults to 10 seconds if not specified.",
+                    "format": "regex"
+                },
+                "maxAge": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "How long are responses valid for (like HTTP Cache-Control). If omitted or zero, the longest valid cache time is used. This value is clamped to 5 minutes to avoid unflushable bad responses.",
+                    "format": "regex"
+                },
+                "staleAge": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "After a response has been in the client cache for this amount of time and is re-requested, start an asynchronous RPC to re-validate it. This value should be less than max_age by at least the length of a typical RTT to the Route Lookup Service to fully mask the RTT latency. If omitted, keys are only re-requested after they have expired.",
+                    "format": "regex"
+                },
+                "cacheSizeBytes": {
+                    "type": "string",
+                    "description": "Rough indicator of amount of memory to use for the client cache.  Some of the data structure overhead is not accounted for, so actual memory consumed will be somewhat greater than this value.  If this field is omitted or set to zero, a client default will be used.  The value may be capped to a lower amount based on client configuration."
+                },
+                "validTargets": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array",
+                    "description": "This is a list of all the possible targets that can be returned by the lookup service.  If a target not on this list is returned, it will be treated the same as an unhealthy target."
+                },
+                "defaultTarget": {
+                    "type": "string",
+                    "description": "This value provides a default target to use if needed.  If set, it will be used if RLS returns an error, times out, or returns an invalid response. Note that requests can be routed only to a subdomain of the original target, e.g. \"us_east_1.cloudbigtable.googleapis.com\"."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Route Lookup Config"
+        },
+        "grpc.service_config.CdsConfig": {
+            "properties": {
+                "cluster": {
+                    "type": "string",
+                    "description": "Required."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cds Config",
+            "description": "Configuration for the cds LB policy."
+        },
+        "grpc.service_config.EdsLoadBalancingPolicyConfig": {
+            "properties": {
+                "cluster": {
+                    "type": "string",
+                    "description": "Cluster name.  Required."
+                },
+                "edsServiceName": {
+                    "type": "string",
+                    "description": "EDS service name, as returned in CDS. May be unset if not specified in CDS."
+                },
+                "lrsLoadReportingServerName": {
+                    "additionalProperties": true,
+                    "type": "string",
+                    "description": "Server to send load reports to. If unset, no load reporting is done. If set to empty string, load reporting will be sent to the same server as we are getting xds data from."
+                },
+                "localityPickingPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array",
+                    "description": "Locality-picking policy. This policy's config is expected to be in the format used by the weighted_target policy.  Note that the config should include an empty value for the \"targets\" field; that empty value will be replaced by one that is dynamically generated based on the EDS data. Optional; defaults to \"weighted_target\"."
+                },
+                "endpointPickingPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array",
+                    "description": "Endpoint-picking policy. This will be configured as the policy for each child in the locality-policy's config. Optional; defaults to \"round_robin\"."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Eds Load Balancing Policy Config",
+            "description": "Configuration for eds LB policy."
+        },
+        "grpc.service_config.GrpcLbConfig": {
+            "properties": {
+                "childPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array",
+                    "description": "Optional.  What LB policy to use for routing between the backend addresses.  If unset, defaults to round_robin. Currently, the only supported values are round_robin and pick_first. Note that this will be used both in balancer mode and in fallback mode. Multiple LB policies can be specified; clients will iterate through the list in order and stop at the first policy that they support."
+                },
+                "serviceName": {
+                    "type": "string",
+                    "description": "Optional.  If specified, overrides the name of the service to be sent to the balancer."
+                },
+                "initialFallbackTimeout": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "Optional. The timeout in seconds for receiving the server list from the LB server. Defaults to 10s.",
+                    "format": "regex"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Grpc Lb Config",
+            "description": "Configuration for grpclb LB policy."
+        },
+        "grpc.service_config.LeastRequestLocalityLoadBalancingPolicyConfig": {
+            "properties": {
+                "choiceCount": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Least Request Locality Load Balancing Policy Config",
+            "description": "Configuration for the least_request LB policy."
+        },
+        "grpc.service_config.LoadBalancingConfig": {
+            "properties": {
+                "pick_first": {
+                    "$ref": "#/definitions/grpc.service_config.PickFirstConfig",
+                    "additionalProperties": true
+                },
+                "round_robin": {
+                    "$ref": "#/definitions/grpc.service_config.RoundRobinConfig",
+                    "additionalProperties": true
+                },
+                "weighted_round_robin": {
+                    "$ref": "#/definitions/grpc.service_config.WeightedRoundRobinLbConfig",
+                    "additionalProperties": true
+                },
+                "grpclb": {
+                    "$ref": "#/definitions/grpc.service_config.GrpcLbConfig",
+                    "additionalProperties": true,
+                    "description": "gRPC lookaside load balancing. This will eventually be deprecated by the new xDS-based local balancing policy."
+                },
+                "priority_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.PriorityLoadBalancingPolicyConfig",
+                    "additionalProperties": true,
+                    "title": "REMAINING POLICIES ARE EXPERIMENTAL -- DO NOT USE",
+                    "description": "REMAINING POLICIES ARE EXPERIMENTAL -- DO NOT USE"
+                },
+                "weighted_target_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.WeightedTargetLoadBalancingPolicyConfig",
+                    "additionalProperties": true
+                },
+                "outlier_detection_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.OutlierDetectionLoadBalancingConfig",
+                    "additionalProperties": true
+                },
+                "rls_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.RlsLoadBalancingPolicyConfig",
+                    "additionalProperties": true
+                },
+                "xds_cluster_manager_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.XdsClusterManagerLoadBalancingPolicyConfig",
+                    "additionalProperties": true,
+                    "description": "xDS-based load balancing."
+                },
+                "cds_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.CdsConfig",
+                    "additionalProperties": true
+                },
+                "xds_cluster_resolver_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.XdsClusterResolverLoadBalancingPolicyConfig",
+                    "additionalProperties": true
+                },
+                "xds_cluster_impl_experimental": {
+                    "$ref": "#/definitions/XdsClusterImplLoadBalancingPolicyConfig",
+                    "additionalProperties": true
+                },
+                "override_host_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.OverrideHostLoadBalancingPolicyConfig",
+                    "additionalProperties": true
+                },
+                "xds_wrr_locality_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.XdsWrrLocalityLoadBalancingPolicyConfig",
+                    "additionalProperties": true
+                },
+                "ring_hash_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.RingHashLoadBalancingConfig",
+                    "additionalProperties": true
+                },
+                "least_request_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.LeastRequestLocalityLoadBalancingPolicyConfig",
+                    "additionalProperties": true
+                },
+                "lrs_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.LrsLoadBalancingPolicyConfig",
+                    "additionalProperties": true,
+                    "description": "Deprecated xDS-related policies."
+                },
+                "eds_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.EdsLoadBalancingPolicyConfig",
+                    "additionalProperties": true
+                },
+                "xds": {
+                    "$ref": "#/definitions/grpc.service_config.XdsConfig",
+                    "additionalProperties": true
+                },
+                "xds_experimental": {
+                    "$ref": "#/definitions/grpc.service_config.XdsConfig",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Load Balancing Config",
+            "description": "Selects LB policy and provides corresponding configuration. In general, all instances of this field should be repeated. Clients will iterate through the list in order and stop at the first policy that they support.  This allows the service config to specify custom policies that may not be known to all clients. - If the config for the first supported policy is invalid, the whole service   config is invalid. - If the list doesn't contain any supported policy, the whole service config   is invalid."
+        },
+        "grpc.service_config.LrsLoadBalancingPolicyConfig": {
+            "properties": {
+                "clusterName": {
+                    "type": "string",
+                    "description": "Cluster name.  Required."
+                },
+                "edsServiceName": {
+                    "type": "string",
+                    "description": "EDS service name, as returned in CDS. May be unset if not specified in CDS."
+                },
+                "lrsLoadReportingServerName": {
+                    "type": "string",
+                    "description": "Server to send load reports to.  Required. If set to empty string, load reporting will be sent to the same server as we are getting xds data from."
+                },
+                "locality": {
+                    "$ref": "#/definitions/grpc.service_config.LrsLoadBalancingPolicyConfig.Locality",
+                    "additionalProperties": true
+                },
+                "childPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array",
+                    "description": "Endpoint-picking policy."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Lrs Load Balancing Policy Config",
+            "description": "Configuration for lrs LB policy."
+        },
+        "grpc.service_config.LrsLoadBalancingPolicyConfig.Locality": {
+            "properties": {
+                "region": {
+                    "type": "string"
+                },
+                "zone": {
+                    "type": "string"
+                },
+                "subzone": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Locality",
+            "description": "The locality for which this policy will report load.  Required."
+        },
+        "grpc.service_config.MethodConfig": {
+            "properties": {
+                "name": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.MethodConfig.Name"
+                    },
+                    "type": "array"
+                },
+                "waitForReady": {
+                    "additionalProperties": true,
+                    "type": "boolean",
+                    "description": "Whether RPCs sent to this method should wait until the connection is ready by default. If false, the RPC will abort immediately if there is a transient failure connecting to the server. Otherwise, gRPC will attempt to connect until the deadline is exceeded. The value specified via the gRPC client API will override the value set here. However, note that setting the value in the client API will also affect transient errors encountered during name resolution, which cannot be caught by the value here, since the service config is obtained by the gRPC client via name resolution."
+                },
+                "timeout": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "The default timeout in seconds for RPCs sent to this method. This can be overridden in code. If no reply is received in the specified amount of time, the request is aborted and a DEADLINE_EXCEEDED error status is returned to the caller. The actual deadline used will be the minimum of the value specified here and the value set by the application via the gRPC client API.  If either one is not set, then the other will be used.  If neither is set, then the request has no deadline.",
+                    "format": "regex"
+                },
+                "maxRequestMessageBytes": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The maximum allowed payload size for an individual request or object in a stream (client-\u003eserver) in bytes. The size which is measured is the serialized payload after per-message compression (but before stream compression) in bytes. This applies both to streaming and non-streaming requests. The actual value used is the minimum of the value specified here and the value set by the application via the gRPC client API.  If either one is not set, then the other will be used.  If neither is set, then the built-in default is used. If a client attempts to send an object larger than this value, it will not be sent and the client will see a ClientError. Note that 0 is a valid value, meaning that the request message must be empty."
+                },
+                "maxResponseMessageBytes": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The maximum allowed payload size for an individual response or object in a stream (server-\u003eclient) in bytes. The size which is measured is the serialized payload after per-message compression (but before stream compression) in bytes. This applies both to streaming and non-streaming requests. The actual value used is the minimum of the value specified here and the value set by the application via the gRPC client API.  If either one is not set, then the other will be used.  If neither is set, then the built-in default is used. If a server attempts to send an object larger than this value, it will not be sent, and a ServerError will be sent to the client instead. Note that 0 is a valid value, meaning that the response message must be empty."
+                },
+                "retryPolicy": {
+                    "$ref": "#/definitions/grpc.service_config.MethodConfig.RetryPolicy",
+                    "additionalProperties": true
+                },
+                "hedgingPolicy": {
+                    "$ref": "#/definitions/grpc.service_config.MethodConfig.HedgingPolicy",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Method Config",
+            "description": "Configuration for a method."
+        },
+        "grpc.service_config.MethodConfig.HedgingPolicy": {
+            "properties": {
+                "maxAttempts": {
+                    "type": "integer",
+                    "description": "The hedging policy will send up to max_requests RPCs. This number represents the total number of all attempts, including the original attempt. This field is required and must be greater than 1. Any value greater than 5 will be treated as if it were 5."
+                },
+                "hedgingDelay": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "The first RPC will be sent immediately, but the max_requests-1 subsequent hedged RPCs will be sent at intervals of every hedging_delay. Set this to 0 to immediately send all max_requests RPCs.",
+                    "format": "regex"
+                },
+                "nonFatalStatusCodes": {
+                    "items": {
+                        "enum": [
+                            "OK",
+                            0,
+                            "CANCELLED",
+                            1,
+                            "UNKNOWN",
+                            2,
+                            "INVALID_ARGUMENT",
+                            3,
+                            "DEADLINE_EXCEEDED",
+                            4,
+                            "NOT_FOUND",
+                            5,
+                            "ALREADY_EXISTS",
+                            6,
+                            "PERMISSION_DENIED",
+                            7,
+                            "UNAUTHENTICATED",
+                            16,
+                            "RESOURCE_EXHAUSTED",
+                            8,
+                            "FAILED_PRECONDITION",
+                            9,
+                            "ABORTED",
+                            10,
+                            "OUT_OF_RANGE",
+                            11,
+                            "UNIMPLEMENTED",
+                            12,
+                            "INTERNAL",
+                            13,
+                            "UNAVAILABLE",
+                            14,
+                            "DATA_LOSS",
+                            15
+                        ]
+                    },
+                    "type": "array",
+                    "title": "Code",
+                    "description": "The canonical error codes for gRPC APIs. Sometimes multiple error codes may apply.  Services should return the most specific error code that applies.  For example, prefer `OUT_OF_RANGE` over `FAILED_PRECONDITION` if both codes apply. Similarly prefer `NOT_FOUND` or `ALREADY_EXISTS` over `FAILED_PRECONDITION`."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Hedging Policy",
+            "description": "The hedging policy for outgoing RPCs. Hedged RPCs may execute more than once on the server, so only idempotent methods should specify a hedging policy."
+        },
+        "grpc.service_config.MethodConfig.Name": {
+            "properties": {
+                "service": {
+                    "type": "string",
+                    "description": "Required. Includes proto package name."
+                },
+                "method": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Name",
+            "description": "The names of the methods to which this configuration applies. - MethodConfig without names (empty list) will be skipped. - Each name entry must be unique across the entire ServiceConfig. - If the 'method' field is empty, this MethodConfig specifies the defaults   for all methods for the specified service. - If the 'service' field is empty, the 'method' field must be empty, and   this MethodConfig specifies the default for all methods (it's the default   config). When determining which MethodConfig to use for a given RPC, the most specific match wins. For example, let's say that the service config contains the following MethodConfig entries: method_config { name { } ... } method_config { name { service: \"MyService\" } ... } method_config { name { service: \"MyService\" method: \"Foo\" } ... } MyService/Foo will use the third entry, because it exactly matches the service and method name. MyService/Bar will use the second entry, because it provides the default for all methods of MyService. AnotherService/Baz will use the first entry, because it doesn't match the other two. In JSON representation, value \"\", value `null`, and not present are the same. The following are the same Name: - { \"service\": \"s\" } - { \"service\": \"s\", \"method\": null } - { \"service\": \"s\", \"method\": \"\" }"
+        },
+        "grpc.service_config.MethodConfig.RetryPolicy": {
+            "properties": {
+                "maxAttempts": {
+                    "type": "integer",
+                    "description": "The maximum number of RPC attempts, including the original attempt. This field is required and must be greater than 1. Any value greater than 5 will be treated as if it were 5."
+                },
+                "initialBackoff": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "Exponential backoff parameters. The initial retry attempt will occur at random(0, initial_backoff). In general, the nth attempt will occur at random(0,   min(initial_backoff*backoff_multiplier**(n-1), max_backoff)). Required. Must be greater than zero.",
+                    "format": "regex"
+                },
+                "maxBackoff": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "Required. Must be greater than zero.",
+                    "format": "regex"
+                },
+                "backoffMultiplier": {
+                    "type": "number",
+                    "description": "Required. Must be greater than zero."
+                },
+                "retryableStatusCodes": {
+                    "items": {
+                        "enum": [
+                            "OK",
+                            0,
+                            "CANCELLED",
+                            1,
+                            "UNKNOWN",
+                            2,
+                            "INVALID_ARGUMENT",
+                            3,
+                            "DEADLINE_EXCEEDED",
+                            4,
+                            "NOT_FOUND",
+                            5,
+                            "ALREADY_EXISTS",
+                            6,
+                            "PERMISSION_DENIED",
+                            7,
+                            "UNAUTHENTICATED",
+                            16,
+                            "RESOURCE_EXHAUSTED",
+                            8,
+                            "FAILED_PRECONDITION",
+                            9,
+                            "ABORTED",
+                            10,
+                            "OUT_OF_RANGE",
+                            11,
+                            "UNIMPLEMENTED",
+                            12,
+                            "INTERNAL",
+                            13,
+                            "UNAVAILABLE",
+                            14,
+                            "DATA_LOSS",
+                            15
+                        ]
+                    },
+                    "type": "array",
+                    "title": "Code",
+                    "description": "The canonical error codes for gRPC APIs. Sometimes multiple error codes may apply.  Services should return the most specific error code that applies.  For example, prefer `OUT_OF_RANGE` over `FAILED_PRECONDITION` if both codes apply. Similarly prefer `NOT_FOUND` or `ALREADY_EXISTS` over `FAILED_PRECONDITION`."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Retry Policy",
+            "description": "The retry policy for outgoing RPCs."
+        },
+        "grpc.service_config.OutlierDetectionLoadBalancingConfig": {
+            "properties": {
+                "interval": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "The time interval between ejection analysis sweeps. This can result in both new ejections as well as addresses being returned to service. Defaults to 10000ms or 10s.",
+                    "format": "regex"
+                },
+                "baseEjectionTime": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "The base time that as address is ejected for. The real time is equal to the base time multiplied by the number of times the address has been ejected. Defaults to 30000ms or 30s.",
+                    "format": "regex"
+                },
+                "maxEjectionTime": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "The maximum time that an address is ejected for. If not specified, the default value (300000ms or 300s) or the base_ejection_time value is applied, whatever is larger.",
+                    "format": "regex"
+                },
+                "maxEjectionPercent": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The maximum % of an address list that can be ejected due to outlier detection. Defaults to 10% but will eject at least one address regardless of the value."
+                },
+                "successRateEjection": {
+                    "$ref": "#/definitions/grpc.service_config.OutlierDetectionLoadBalancingConfig.SuccessRateEjection",
+                    "additionalProperties": true,
+                    "description": "If set, success rate ejections will be performed"
+                },
+                "failurePercentageEjection": {
+                    "$ref": "#/definitions/grpc.service_config.OutlierDetectionLoadBalancingConfig.FailurePercentageEjection",
+                    "additionalProperties": true,
+                    "description": "If set, failure rate ejections will be performed"
+                },
+                "childPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array",
+                    "description": "The config for the child policy"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Outlier Detection Load Balancing Config",
+            "description": "Configuration for outlier_detection LB policy"
+        },
+        "grpc.service_config.OutlierDetectionLoadBalancingConfig.FailurePercentageEjection": {
+            "properties": {
+                "threshold": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The failure percentage to use when determining failure percentage-based outlier detection. If the failure percentage of a given address is greater than or equal to this value, it will be ejected. Defaults to 85."
+                },
+                "enforcementPercentage": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The % chance that an address will be actually ejected when an outlier status is detected through failure percentage statistics. This setting can be used to disable ejection or to ramp it up slowly. Defaults to 100."
+                },
+                "minimumHosts": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The minimum number of addresses in order to perform failure percentage-based ejection. If the total number of addresses is less than this value, failure percentage-based ejection will not be performed. Defaults to 5."
+                },
+                "requestVolume": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The minimum number of total requests that must be collected in one interval (as defined by the interval duration above) to perform failure percentage-based ejection for this address. If the volume is lower than this setting, failure percentage-based ejection will not be performed for this host. Defaults to 50."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Failure Percentage Ejection",
+            "description": "Parameters for the failure percentage algorithm. This algorithm ejects individual endpoints whose failure rate is greater than some threshold, independently of any other endpoint."
+        },
+        "grpc.service_config.OutlierDetectionLoadBalancingConfig.SuccessRateEjection": {
+            "properties": {
+                "stdevFactor": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "This factor is used to determine the ejection threshold for success rate outlier ejection. The ejection threshold is the difference between the mean success rate, and the product of this factor and the standard deviation of the mean success rate: mean - (stdev * success_rate_stdev_factor). This factor is divided by a thousand to get a double. That is, if the desired factor is 1.9, the runtime value should be 1900. Defaults to 1900."
+                },
+                "enforcementPercentage": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The % chance that an address will be actually ejected when an outlier status is detected through success rate statistics. This setting can be used to disable ejection or to ramp it up slowly. Defaults to 100."
+                },
+                "minimumHosts": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The number of addresses that must have enough request volume to detect success rate outliers. If the number of addresses is less than this setting, outlier detection via success rate statistics is not performed for any addresses. Defaults to 5."
+                },
+                "requestVolume": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "The minimum number of total requests that must be collected in one interval (as defined by the interval duration above) to include this address in success rate based outlier detection. If the volume is lower than this setting, outlier detection via success rate statistics is not performed for that address. Defaults to 100."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Success Rate Ejection",
+            "description": "Parameters for the success rate ejection algorithm. This algorithm monitors the request success rate for all endpoints and ejects individual endpoints whose success rates are statistical outliers."
+        },
+        "grpc.service_config.OverrideHostLoadBalancingPolicyConfig": {
+            "properties": {
+                "overrideHostStatus": {
+                    "items": {
+                        "enum": [
+                            "UNKNOWN",
+                            0,
+                            "HEALTHY",
+                            1,
+                            "DRAINING",
+                            3
+                        ]
+                    },
+                    "type": "array",
+                    "title": "Health Status"
+                },
+                "childPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Override Host Load Balancing Policy Config",
+            "description": "Configuration for the override_host LB policy."
+        },
+        "grpc.service_config.PickFirstConfig": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Pick First Config",
+            "description": "Configuration for pick_first LB policy."
+        },
+        "grpc.service_config.PriorityLoadBalancingPolicyConfig": {
+            "properties": {
+                "children": {
+                    "additionalProperties": {
+                        "$ref": "#/definitions/grpc.service_config.PriorityLoadBalancingPolicyConfig.Child",
+                        "additionalProperties": true
+                    },
+                    "type": "object"
+                },
+                "priorities": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array",
+                    "description": "A list of child names in decreasing priority order (i.e., first element is the highest priority)."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Priority Load Balancing Policy Config",
+            "description": "Configuration for priority LB policy."
+        },
+        "grpc.service_config.PriorityLoadBalancingPolicyConfig.Child": {
+            "properties": {
+                "config": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array"
+                },
+                "ignoreReresolutionRequests": {
+                    "type": "boolean",
+                    "description": "If true, will ignore reresolution requests from this child."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Child",
+            "description": "A map of name to child policy configuration. The names are used to allow the priority policy to update existing child policies instead of creating new ones every time it receives a config update."
+        },
+        "grpc.service_config.RingHashLoadBalancingConfig": {
+            "properties": {
+                "minRingSize": {
+                    "type": "string",
+                    "description": "A client-side option will cap these values to 4096.  If either of these values are greater than the client-side cap, they will be treated as the client-side cap value.  Optional, defaults to 1024, max 8M."
+                },
+                "maxRingSize": {
+                    "type": "string",
+                    "description": "Optional, defaults to 4096, max 8M."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Ring Hash Load Balancing Config",
+            "description": "Configuration for ring_hash LB policy."
+        },
+        "grpc.service_config.RlsLoadBalancingPolicyConfig": {
+            "properties": {
+                "routeLookupConfig": {
+                    "$ref": "#/definitions/grpc.lookup.v1.RouteLookupConfig",
+                    "additionalProperties": true
+                },
+                "routeLookupChannelServiceConfig": {
+                    "$ref": "#/definitions/grpc.service_config.ServiceConfig",
+                    "additionalProperties": true,
+                    "description": "Service config to use for the RLS channel."
+                },
+                "childPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array"
+                },
+                "childPolicyConfigTargetFieldName": {
+                    "type": "string",
+                    "description": "Field name to add to child policy config to contain the target name."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Rls Load Balancing Policy Config",
+            "description": "Config for RLS LB policy."
+        },
+        "grpc.service_config.RoundRobinConfig": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Round Robin Config",
+            "description": "Configuration for round_robin LB policy."
+        },
+        "grpc.service_config.ServiceConfig": {
+            "properties": {
+                "loadBalancingPolicy": {
+                    "enum": [
+                        "UNSPECIFIED",
+                        0,
+                        "ROUND_ROBIN",
+                        1
+                    ],
+                    "oneOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "integer"
+                        }
+                    ],
+                    "title": "Load Balancing Policy",
+                    "description": "Load balancing policy. Note that load_balancing_policy is deprecated in favor of load_balancing_config; the former will be used only if the latter is unset. If no LB policy is configured here, then the default is pick_first. If the policy name is set via the client API, that value overrides the value specified here. If the deprecated load_balancing_policy field is used, note that if the resolver returns at least one balancer address (as opposed to backend addresses), gRPC will use grpclb (see https://github.com/grpc/grpc/blob/master/doc/load-balancing.md), regardless of what policy is configured here.  However, if the resolver returns at least one backend address in addition to the balancer address(es), the client may fall back to the requested policy if it is unable to reach any of the grpclb load balancers."
+                },
+                "loadBalancingConfig": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array",
+                    "description": "Multiple LB policies can be specified; clients will iterate through the list in order and stop at the first policy that they support. If none are supported, the service config is considered invalid."
+                },
+                "methodConfig": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.MethodConfig"
+                    },
+                    "type": "array",
+                    "description": "Per-method configuration."
+                },
+                "retryThrottling": {
+                    "$ref": "#/definitions/grpc.service_config.ServiceConfig.RetryThrottlingPolicy",
+                    "additionalProperties": true
+                },
+                "healthCheckConfig": {
+                    "$ref": "#/definitions/grpc.service_config.ServiceConfig.HealthCheckConfig",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Service Config",
+            "description": "A ServiceConfig represents information about a service but is not specific to any name resolver."
+        },
+        "grpc.service_config.ServiceConfig.HealthCheckConfig": {
+            "properties": {
+                "serviceName": {
+                    "additionalProperties": true,
+                    "type": "string",
+                    "description": "Service name to use in the health-checking request."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Health Check Config"
+        },
+        "grpc.service_config.ServiceConfig.RetryThrottlingPolicy": {
+            "properties": {
+                "maxTokens": {
+                    "type": "integer",
+                    "description": "The number of tokens starts at max_tokens. The token_count will always be between 0 and max_tokens. This field is required and must be greater than zero."
+                },
+                "tokenRatio": {
+                    "type": "number",
+                    "description": "The amount of tokens to add on each successful RPC. Typically this will be some number between 0 and 1, e.g., 0.1. This field is required and must be greater than zero. Up to 3 decimal places are supported."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Retry Throttling Policy",
+            "description": "If a RetryThrottlingPolicy is provided, gRPC will automatically throttle retry attempts and hedged RPCs when the client's ratio of failures to successes exceeds a threshold. For each server name, the gRPC client will maintain a token_count which is initially set to max_tokens. Every outgoing RPC (regardless of service or method invoked) will change token_count as follows:   - Every failed RPC will decrement the token_count by 1.   - Every successful RPC will increment the token_count by token_ratio. If token_count is less than or equal to max_tokens / 2, then RPCs will not be retried and hedged RPCs will not be sent."
+        },
+        "grpc.service_config.WeightedRoundRobinLbConfig": {
+            "properties": {
+                "enableOobLoadReport": {
+                    "additionalProperties": true,
+                    "type": "boolean",
+                    "description": "Whether to enable out-of-band utilization reporting collection from the endpoints.  By default, per-request utilization reporting is used."
+                },
+                "oobReportingPeriod": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "Load reporting interval to request from the server.  Note that the server may not provide reports as frequently as the client requests. Used only when enable_oob_load_report is true.  Default is 10 seconds.",
+                    "format": "regex"
+                },
+                "blackoutPeriod": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "A given endpoint must report load metrics continuously for at least this long before the endpoint weight will be used.  This avoids churn when the set of endpoint addresses changes.  Takes effect both immediately after we establish a connection to an endpoint and after weight_expiration_period has caused us to stop using the most recent load metrics.  Default is 10 seconds.",
+                    "format": "regex"
+                },
+                "weightExpirationPeriod": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "If a given endpoint has not reported load metrics in this long, then we stop using the reported weight.  This ensures that we do not continue to use very stale weights.  Once we stop using a stale value, if we later start seeing fresh reports again, the blackout_period applies.  Defaults to 3 minutes.",
+                    "format": "regex"
+                },
+                "weightUpdatePeriod": {
+                    "pattern": "^([0-9]+\\.?[0-9]*|\\.[0-9]+)s$",
+                    "type": "string",
+                    "description": "How often endpoint weights are recalculated.  Default is 1 second.",
+                    "format": "regex"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Weighted Round Robin Lb Config",
+            "description": "Configuration for weighted_round_robin LB policy."
+        },
+        "grpc.service_config.WeightedTargetLoadBalancingPolicyConfig": {
+            "properties": {
+                "targets": {
+                    "additionalProperties": {
+                        "$ref": "#/definitions/grpc.service_config.WeightedTargetLoadBalancingPolicyConfig.Target",
+                        "additionalProperties": true
+                    },
+                    "type": "object"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Weighted Target Load Balancing Policy Config",
+            "description": "Configuration for weighted_target LB policy."
+        },
+        "grpc.service_config.WeightedTargetLoadBalancingPolicyConfig.Target": {
+            "properties": {
+                "weight": {
+                    "type": "integer"
+                },
+                "childPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Target"
+        },
+        "grpc.service_config.XdsClusterImplLoadBalancingPolicyConfig.DropCategory": {
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "requestsPerMillion": {
+                    "type": "integer"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Drop Category",
+            "description": "Drop configuration."
+        },
+        "grpc.service_config.XdsClusterManagerLoadBalancingPolicyConfig": {
+            "properties": {
+                "children": {
+                    "additionalProperties": {
+                        "$ref": "#/definitions/grpc.service_config.XdsClusterManagerLoadBalancingPolicyConfig.Child",
+                        "additionalProperties": true
+                    },
+                    "type": "object"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Xds Cluster Manager Load Balancing Policy Config",
+            "description": "Configuration for xds_cluster_manager_experimental LB policy."
+        },
+        "grpc.service_config.XdsClusterManagerLoadBalancingPolicyConfig.Child": {
+            "properties": {
+                "childPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Child"
+        },
+        "grpc.service_config.XdsClusterResolverLoadBalancingPolicyConfig": {
+            "properties": {
+                "discoveryMechanisms": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.XdsClusterResolverLoadBalancingPolicyConfig.DiscoveryMechanism"
+                    },
+                    "type": "array",
+                    "description": "Ordered list of discovery mechanisms. Must have at least one element. Results from each discovery mechanism are concatenated together in successive priorities."
+                },
+                "xdsLbPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array",
+                    "description": "xDS LB policy. Will be used as the child config of the xds_cluster_impl LB policy."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Xds Cluster Resolver Load Balancing Policy Config",
+            "description": "Configuration for xds_cluster_resolver LB policy."
+        },
+        "grpc.service_config.XdsClusterResolverLoadBalancingPolicyConfig.DiscoveryMechanism": {
+            "properties": {
+                "cluster": {
+                    "type": "string",
+                    "description": "Cluster name."
+                },
+                "lrsLoadReportingServerName": {
+                    "additionalProperties": true,
+                    "type": "string",
+                    "description": "LRS server to send load reports to. If not present, load reporting will be disabled. If set to the empty string, load reporting will be sent to the same server that we obtained CDS data from. DEPRECATED: Use new lrs_load_reporting_server field instead."
+                },
+                "lrsLoadReportingServer": {
+                    "$ref": "#/definitions/grpc.service_config.XdsServer",
+                    "additionalProperties": true,
+                    "description": "LRS server to send load reports to. If not present, load reporting will be disabled. Supercedes lrs_load_reporting_server_name field."
+                },
+                "maxConcurrentRequests": {
+                    "additionalProperties": true,
+                    "type": "integer",
+                    "description": "Maximum number of outstanding requests can be made to the upstream cluster.  Default is 1024."
+                },
+                "type": {
+                    "enum": [
+                        "UNKNOWN",
+                        0,
+                        "EDS",
+                        1,
+                        "LOGICAL_DNS",
+                        2
+                    ],
+                    "oneOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "integer"
+                        }
+                    ],
+                    "title": "Type"
+                },
+                "edsServiceName": {
+                    "type": "string",
+                    "description": "For type EDS only. EDS service name, as returned in CDS. May be unset if not specified in CDS."
+                },
+                "dnsHostname": {
+                    "type": "string",
+                    "description": "For type LOGICAL_DNS only. DNS name to resolve in \"host:port\" form."
+                },
+                "outlierDetection": {
+                    "$ref": "#/definitions/grpc.service_config.OutlierDetectionLoadBalancingConfig",
+                    "additionalProperties": true,
+                    "description": "The configuration for outlier_detection child policies Within this message, the child_policy field will be ignored"
+                },
+                "overrideHostStatus": {
+                    "items": {
+                        "enum": [
+                            "UNKNOWN",
+                            0,
+                            "HEALTHY",
+                            1,
+                            "DRAINING",
+                            3
+                        ]
+                    },
+                    "type": "array",
+                    "title": "Health Status"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Discovery Mechanism",
+            "description": "Describes a discovery mechanism instance. For EDS or LOGICAL_DNS clusters, there will be exactly one DiscoveryMechanism, which will describe the cluster of the parent CDS policy. For aggregate clusters, there will be one DiscoveryMechanism for each underlying cluster."
+        },
+        "grpc.service_config.XdsConfig": {
+            "properties": {
+                "balancerName": {
+                    "type": "string",
+                    "description": "Name of balancer to connect to."
+                },
+                "childPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array",
+                    "description": "Optional.  What LB policy to use for intra-locality routing. If unset, will use whatever algorithm is specified by the balancer. Multiple LB policies can be specified; clients will iterate through the list in order and stop at the first policy that they support."
+                },
+                "fallbackPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array",
+                    "description": "Optional.  What LB policy to use in fallback mode.  If not specified, defaults to round_robin. Multiple LB policies can be specified; clients will iterate through the list in order and stop at the first policy that they support."
+                },
+                "edsServiceName": {
+                    "type": "string",
+                    "description": "Optional.  Name to use in EDS query.  If not present, defaults to the server name from the target URI."
+                },
+                "lrsLoadReportingServerName": {
+                    "additionalProperties": true,
+                    "type": "string",
+                    "description": "LRS server to send load reports to. If not present, load reporting will be disabled. If set to the empty string, load reporting will be sent to the same server that we obtained CDS data from."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Xds Config",
+            "description": "Configuration for xds LB policy."
+        },
+        "grpc.service_config.XdsServer": {
+            "properties": {
+                "server_uri": {
+                    "type": "string",
+                    "description": "Required."
+                },
+                "channel_creds": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.XdsServer.ChannelCredentials"
+                    },
+                    "type": "array",
+                    "description": "A list of channel creds to use.  The first supported type will be used."
+                },
+                "server_features": {
+                    "items": {
+                        "oneOf": [
+                            {
+                                "type": "array"
+                            },
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "object"
+                            },
+                            {
+                                "type": "string"
+                            }
+                        ],
+                        "title": "Value",
+                        "description": "`Value` represents a dynamically typed value which can be either null, a number, a string, a boolean, a recursive struct value, or a list of values. A producer of value is expected to set one of these variants. Absence of any variant indicates an error. The JSON representation for `Value` is JSON value."
+                    },
+                    "type": "array",
+                    "description": "A repeated list of server features."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Xds Server",
+            "description": "Represents an xDS server."
+        },
+        "grpc.service_config.XdsServer.ChannelCredentials": {
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "Required."
+                },
+                "config": {
+                    "additionalProperties": true,
+                    "type": "object",
+                    "description": "Optional JSON config."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Channel Credentials"
+        },
+        "grpc.service_config.XdsWrrLocalityLoadBalancingPolicyConfig": {
+            "properties": {
+                "childPolicy": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.LoadBalancingConfig"
+                    },
+                    "type": "array"
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Xds Wrr Locality Load Balancing Policy Config",
+            "description": "Configuration for the xds_wrr_locality load balancing policy."
+        }
+    }
+}

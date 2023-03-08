@@ -1,0 +1,66 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "$ref": "#/definitions/XdsServer",
+    "definitions": {
+        "XdsServer": {
+            "properties": {
+                "server_uri": {
+                    "type": "string",
+                    "description": "Required."
+                },
+                "channel_creds": {
+                    "items": {
+                        "$ref": "#/definitions/grpc.service_config.XdsServer.ChannelCredentials"
+                    },
+                    "type": "array",
+                    "description": "A list of channel creds to use.  The first supported type will be used."
+                },
+                "server_features": {
+                    "items": {
+                        "oneOf": [
+                            {
+                                "type": "array"
+                            },
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "object"
+                            },
+                            {
+                                "type": "string"
+                            }
+                        ],
+                        "title": "Value",
+                        "description": "`Value` represents a dynamically typed value which can be either null, a number, a string, a boolean, a recursive struct value, or a list of values. A producer of value is expected to set one of these variants. Absence of any variant indicates an error. The JSON representation for `Value` is JSON value."
+                    },
+                    "type": "array",
+                    "description": "A repeated list of server features."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Xds Server",
+            "description": "Represents an xDS server."
+        },
+        "grpc.service_config.XdsServer.ChannelCredentials": {
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "Required."
+                },
+                "config": {
+                    "additionalProperties": true,
+                    "type": "object",
+                    "description": "Optional JSON config."
+                }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Channel Credentials"
+        }
+    }
+}

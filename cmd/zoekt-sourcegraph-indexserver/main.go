@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -30,8 +31,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,11 +38,16 @@ import (
 	sglog "github.com/sourcegraph/log"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
+	"golang.org/x/sys/unix"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/sourcegraph/mountinfo"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/debugserver"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 )
@@ -1081,6 +1085,19 @@ func getEnvWithDefaultDuration(k string, defaultVal time.Duration) time.Duration
 	return d
 }
 
+func getEnvWithDefaultBool(k string, defaultVal bool) bool {
+	v := os.Getenv(k)
+	if v == "" {
+		return defaultVal
+	}
+
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		log.Fatalf("error parsing ENV %s to bool: %s", k, err)
+	}
+	return b
+}
+
 func getEnvWithDefaultEmptySet(k string) map[string]struct{} {
 	set := map[string]struct{}{}
 	for _, v := range strings.Split(os.Getenv(k), ",") {
@@ -1153,6 +1170,9 @@ type rootConfig struct {
 	// config values related to backoff indexing repos with one or more consecutive failures
 	backoffDuration    time.Duration
 	maxBackoffDuration time.Duration
+
+	// useGRPC is true if we should use the gRPC API to talk to Sourcegraph.
+	useGRPC bool
 }
 
 func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
@@ -1166,6 +1186,7 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.IntVar(&rc.blockProfileRate, "block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler Var(default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
 	fs.DurationVar(&rc.backoffDuration, "backoff_duration", getEnvWithDefaultDuration("BACKOFF_DURATION", 10*time.Minute), "for the given duration we backoff from enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase the duration of the delay linearly up to the maxBackoffDuration. A negative value disables indexing backoff.")
 	fs.DurationVar(&rc.maxBackoffDuration, "max_backoff_duration", getEnvWithDefaultDuration("MAX_BACKOFF_DURATION", 120*time.Minute), "the maximum duration to backoff from enqueueing a repo for indexing.  A negative value disables indexing backoff.")
+	fs.BoolVar(&rc.useGRPC, "use_grpc", getEnvWithDefaultBool("GRPC_ENABLED", false), "use the gRPC API to talk to Sourcegraph")
 
 	// flags related to shard merging
 	fs.DurationVar(&rc.vacuumInterval, "vacuum_interval", getEnvWithDefaultDuration("SRC_VACUUM_INTERVAL", 24*time.Hour), "run vacuum this often")
@@ -1174,7 +1195,6 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.Int64Var(&rc.minSize, "merge_min_size", getEnvWithDefaultInt64("SRC_MERGE_MIN_SIZE", 1800), "the minimum size of a compound shard in MiB")
 	fs.IntVar(&rc.minAgeDays, "merge_min_age", getEnvWithDefaultInt("SRC_MERGE_MIN_AGE", 7), "the time since the last commit in days. Shards with newer commits are excluded from merging.")
 	fs.Float64Var(&rc.maxPriority, "merge_max_priority", getEnvWithDefaultFloat64("SRC_MERGE_MAX_PRIORITY", 100), "the maximum priority a shard can have to be considered for merging.")
-
 }
 
 func startServer(conf rootConfig) error {
@@ -1328,7 +1348,31 @@ func newServer(conf rootConfig) (*Server, error) {
 			}
 		}
 
-		sg = newSourcegraphClient(rootURL, conf.hostname, batchSize)
+		opts := []SourcegraphClientOption{
+			WithBatchSize(batchSize),
+			WithShouldUseGRPC(conf.useGRPC),
+		}
+
+		gRPCConnectionOptions := []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithChainStreamInterceptor(internalActorStreamInterceptor()),
+			grpc.WithChainUnaryInterceptor(internalActorUnaryInterceptor()),
+			grpc.WithDefaultServiceConfig(defaultGRPCServiceConfigurationJSON),
+		}
+
+		// This dialer is used to connect via gRPC to the Sourcegraph instance.
+		// This is done lazily, so we can provide the client to use regardless of
+		// whether we enabled gRPC or not initially.
+		cc, err := grpc.Dial(rootURL.Host, gRPCConnectionOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("initializing gRPC connection to %q: %w", rootURL.Host, err)
+		}
+
+		client := proto.NewZoektConfigurationServiceClient(cc)
+		opts = append(opts, WithGRPCClient(client))
+
+		sg = newSourcegraphClient(rootURL, conf.hostname, opts...)
+
 	} else {
 		sg = sourcegraphFake{
 			RootDir: rootURL.String(),
@@ -1371,6 +1415,33 @@ func newServer(conf rootConfig) (*Server, error) {
 			maxPriority:     conf.maxPriority,
 		},
 	}, err
+}
+
+// defaultGRPCServiceConfigurationJSON is the default gRPC service configuration
+// for the indexed-search-configuration gRPC service.
+//
+// The default backoff strategy is modeled after the default settings used by
+// retryablehttp.DefaultClient.
+//
+// It retries on the following errors (see https://grpc.github.io/grpc/core/md_doc_statuscodes.html):
+//   - Unavailable
+//   - Aborted
+//
+//go:embed default_grpc_service_configuration.json
+var defaultGRPCServiceConfigurationJSON string
+
+func internalActorUnaryInterceptor() grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		ctx = metadata.AppendToOutgoingContext(ctx, "X-Sourcegraph-Actor-UID", "internal")
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		ctx = metadata.AppendToOutgoingContext(ctx, "X-Sourcegraph-Actor-UID", "internal")
+		return streamer(ctx, desc, cc, method, opts...)
+	}
 }
 
 func main() {
