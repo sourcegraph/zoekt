@@ -495,6 +495,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 	}
 
 	var ranks repoPathRanks
+	var meanRank float64
 	if opts.BuildOptions.DocumentRanksPath != "" {
 		data, err := os.ReadFile(opts.BuildOptions.DocumentRanksPath)
 		if err != nil {
@@ -504,6 +505,17 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		err = json.Unmarshal(data, &ranks)
 		if err != nil {
 			return err
+		}
+
+		// Compute the mean rank for this repository. Note: we overwrite the rank
+		// mean that's stored in the document ranks file, since that currently
+		// represents a global mean rank across repos, which is not what we want.
+		numRanks := len(ranks.Paths)
+		if numRanks > 0 {
+			for _, rank := range ranks.Paths {
+				meanRank += rank
+			}
+			ranks.MeanRank = meanRank / float64(numRanks)
 		}
 	}
 
@@ -555,9 +567,11 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				return err
 			}
 
-			var pathRank []float64
-			if rank, ok := ranks.Paths[keyFullPath]; ok {
-				pathRank = []float64{rank}
+			var pathRanks []float64
+			if len(ranks.Paths) > 0 {
+				// If the repository has ranking data, then store the file's rank.
+				pathRank := ranks.rank(keyFullPath)
+				pathRanks = []float64{pathRank}
 			}
 
 			if err := builder.Add(zoekt.Document{
@@ -565,7 +579,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				Name:              keyFullPath,
 				Content:           contents,
 				Branches:          brs,
-				Ranks:             pathRank,
+				Ranks:             pathRanks,
 			}); err != nil {
 				return fmt.Errorf("error adding document with name %s: %w", keyFullPath, err)
 			}
@@ -578,6 +592,20 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 type repoPathRanks struct {
 	MeanRank float64            `json:"mean_reference_count"`
 	Paths    map[string]float64 `json:"paths"`
+}
+
+// rank returns the rank for a given path. It uses these rules:
+//   - If we have a concrete rank for this file, always use it
+//   - If there's no rank, and it's a low priority file like a test, then use rank 0
+//   - Otherwise use the mean rank of this repository, to avoid giving it a big disadvantage
+func (r repoPathRanks) rank(path string) float64 {
+	if rank, ok := r.Paths[path]; ok {
+		return rank
+	} else if build.IsLowPriority(path) {
+		return 0.0
+	} else {
+		return r.MeanRank
+	}
 }
 
 func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
