@@ -49,6 +49,7 @@ jobs:
       # Install the `buf` CLI
       - uses: bufbuild/buf-setup-action@v1
         with:
+          version: 1.15.0
           github_token: ${{ secrets.GH_TOKEN }}
       # Lint your Protobuf sources
       - run: .github/workflows/buf-lint-check.sh
@@ -62,6 +63,7 @@ jobs:
       # Install the `buf` CLI
       - uses: bufbuild/buf-setup-action@v1
         with:
+          version: 1.15.0
           github_token: ${{ secrets.GH_TOKEN }}
       # Check to see if the Protobuf sources are formatted
       - run: .github/workflows/buf-format-check.sh
@@ -75,6 +77,7 @@ jobs:
       # Install the `buf` CLI
       - uses: bufbuild/buf-setup-action@v1
         with:
+          version: 1.15.0
           github_token: ${{ secrets.GH_TOKEN }}
       # Check if the generated code is up-to-date
       - run: .github/workflows/buf-generate-check.sh
