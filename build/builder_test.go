@@ -757,6 +757,40 @@ func TestFindRepositoryMetadata(t *testing.T) {
 	}
 }
 
+func TestIsLowPriority(t *testing.T) {
+	cases := []string{
+		"builder_test.go",
+		"TestQuery.java",
+		"test/mocks.go",
+		"search/vendor/thirdparty.cc",
+		"search/node_modules/search/index.js",
+		"search.min.js",
+		"internal/search.js.map",
+	}
+
+	for _, tt := range cases {
+		t.Run(tt, func(t *testing.T) {
+			if !IsLowPriority(tt) {
+				t.Errorf("expected file '%s' to be low priority", tt)
+			}
+		})
+	}
+
+	negativeCases := []string{
+		"builder.go",
+		"RoutesTrigger.java",
+		"search.js",
+	}
+
+	for _, tt := range negativeCases {
+		t.Run(tt, func(t *testing.T) {
+			if IsLowPriority(tt) {
+				t.Errorf("did not expect file '%s' to be low priority", tt)
+			}
+		})
+	}
+}
+
 func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShards int, optFns ...func(options *Options)) []string {
 	t.Helper()
 

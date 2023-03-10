@@ -898,7 +898,25 @@ func squashRange(j int) float64 {
 	return x / (1 + x)
 }
 
-var testRe = regexp.MustCompile("test")
+// IsLowPriority takes a file name and makes an educated guess about its priority
+// in search results. A file is considered low priority if it looks like a test,
+// vendored, or generated file.
+//
+// These 'priority' criteria affects how documents are ordered within a shard. It's
+// also used to help guess a file's rank when we're missing ranking information.
+func IsLowPriority(file string) bool {
+	return testRe.MatchString(file) || isGenerated(file) || isVendored(file)
+}
+
+var testRe = regexp.MustCompile("[Tt]est")
+
+func isGenerated(file string) bool {
+	return strings.HasSuffix(file, "min.js") || strings.HasSuffix(file, "js.map")
+}
+
+func isVendored(file string) bool {
+	return strings.Contains(file, "vendor/") || strings.Contains(file, "node_modules/")
+}
 
 type rankedDoc struct {
 	*zoekt.Document
@@ -911,12 +929,12 @@ type rankedDoc struct {
 // have a higher chance of being searched before limits kick in.
 func rank(d *zoekt.Document, origIdx int) []float64 {
 	generated := 0.0
-	if strings.HasSuffix(d.Name, "min.js") || strings.HasSuffix(d.Name, "js.map") {
+	if isGenerated(d.Name) {
 		generated = 1.0
 	}
 
 	vendor := 0.0
-	if strings.Contains(d.Name, "vendor/") || strings.Contains(d.Name, "node_modules/") {
+	if isVendored(d.Name) {
 		vendor = 1.0
 	}
 
