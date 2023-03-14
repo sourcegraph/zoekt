@@ -1289,6 +1289,8 @@ func newServer(conf rootConfig) (*Server, error) {
 		return nil, fmt.Errorf("url.Parse(%v): %v", conf.root, err)
 	}
 
+	rootURL = addDefaultPort(rootURL)
+
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
 
@@ -1442,6 +1444,51 @@ func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
 		ctx = metadata.AppendToOutgoingContext(ctx, "X-Sourcegraph-Actor-UID", "internal")
 		return streamer(ctx, desc, cc, method, opts...)
 	}
+}
+
+// addDefaultPort adds a default port to a URL if one is not specified.
+//
+// If the URL scheme is "http" and no port is specified, "80" is used.
+// If the scheme is "https", "443" is used.
+//
+// The original URL is not mutated. A copy is modified and returned.
+func addDefaultPort(original *url.URL) *url.URL {
+	if original == nil {
+		return nil // don't panic
+	}
+
+	if !original.IsAbs() {
+		return original // don't do anything if the URL doesn't look like a remote URL
+	}
+
+	if original.Scheme == "http" && original.Port() == "" {
+		u := cloneURL(original)
+		u.Host = net.JoinHostPort(u.Host, "80")
+		return u
+	}
+
+	if original.Scheme == "https" && original.Port() == "" {
+		u := cloneURL(original)
+		u.Host = net.JoinHostPort(u.Host, "443")
+		return u
+	}
+
+	return original
+}
+
+// cloneURL returns a copy of the URL. It is safe to mutate the returned URL.
+// This is copied from net/http/clone.go
+func cloneURL(u *url.URL) *url.URL {
+	if u == nil {
+		return nil
+	}
+	u2 := new(url.URL)
+	*u2 = *u
+	if u.User != nil {
+		u2.User = new(url.Userinfo)
+		*u2.User = *u.User
+	}
+	return u2
 }
 
 func main() {

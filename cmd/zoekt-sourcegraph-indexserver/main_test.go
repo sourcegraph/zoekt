@@ -286,3 +286,61 @@ func TestDefaultGRPCServiceConfigurationSyntax(t *testing.T) {
 		t.Fatalf("default service config is invalid:\n%s", errs.String())
 	}
 }
+
+func TestAddDefaultPort(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "http no port",
+			input: "http://example.com",
+			want:  "http://example.com:80",
+		},
+		{
+			name:  "http custom port",
+			input: "http://example.com:90",
+			want:  "http://example.com:90",
+		},
+		{
+			name:  "https no port",
+			input: "https://example.com",
+			want:  "https://example.com:443",
+		},
+		{
+			name:  "https custom port",
+			input: "https://example.com:444",
+			want:  "https://example.com:444",
+		},
+		{
+			name:  "non-http scheme",
+			input: "ftp://example.com",
+			want:  "ftp://example.com",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "local file path",
+			input: "/etc/hosts",
+			want:  "/etc/hosts",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input, err := url.Parse(test.input)
+			if err != nil {
+				t.Fatalf("failed to parse test URL %q: %v", test.input, err)
+			}
+
+			got := addDefaultPort(input)
+			if diff := cmp.Diff(test.want, got.String()); diff != "" {
+				t.Errorf("addDefaultPort(%q) mismatch (-want +got):\n%s", test.input, diff)
+			}
+		})
+	}
+}
