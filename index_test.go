@@ -1783,10 +1783,6 @@ func TestListRepos(t *testing.T) {
 			},
 		}
 
-		if os.Getenv("ZOEKT_ENABLE_NGRAM_BS") != "" {
-			want.Stats.IndexBytes = 228
-		}
-
 		if diff := cmp.Diff(want, res); diff != "" {
 			t.Fatalf("mismatch (-want +got):\n%s", diff)
 		}
