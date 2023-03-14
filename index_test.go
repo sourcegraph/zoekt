@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 	"regexp/syntax"
 	"strings"
@@ -1781,10 +1780,6 @@ func TestListRepos(t *testing.T) {
 				DefaultBranchNewLinesCount: 2,
 				OtherBranchesNewLinesCount: 3,
 			},
-		}
-
-		if os.Getenv("ZOEKT_ENABLE_NGRAM_BS") != "" {
-			want.Stats.IndexBytes = 228
 		}
 
 		if diff := cmp.Diff(want, res); diff != "" {
