@@ -167,6 +167,7 @@ func main() {
 			"zoekt.gerrit-project": k,
 			"zoekt.gerrit-host":    rootURL.String(),
 			"zoekt.archived":       marshalBool(v.State == "READ_ONLY"),
+			"zoekt.public":         marshalBool(v.State != "HIDDEN"),
 		}
 
 		for _, wl := range v.WebLinks {

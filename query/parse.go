@@ -134,6 +134,24 @@ func parseExpr(in []byte) (Q, int, error) {
 		default:
 			return nil, 0, fmt.Errorf("query: unknown archived argument %q, want {yes,no}", text)
 		}
+	case tokFork:
+		switch text {
+		case "yes":
+			expr = RawConfig(RcOnlyForks)
+		case "no":
+			expr = RawConfig(RcNoForks)
+		default:
+			return nil, 0, fmt.Errorf("query: unknown fork argument %q, want {yes,no}", text)
+		}
+	case tokPublic:
+		switch text {
+		case "yes":
+			expr = RawConfig(RcOnlyPublic)
+		case "no":
+			expr = RawConfig(RcOnlyPrivate)
+		default:
+			return nil, 0, fmt.Errorf("query: unknown public argument %q, want {yes,no}", text)
+		}
 	case tokBranch:
 		expr = &Branch{Pattern: text}
 	case tokText, tokRegex:
@@ -148,7 +166,6 @@ func parseExpr(in []byte) (Q, int, error) {
 			return nil, 0, err
 		}
 		expr = q
-
 	case tokContent:
 		q, err := RegexpQuery(text, true, false)
 		if err != nil {
@@ -374,6 +391,8 @@ const (
 	tokSym        = 13
 	tokType       = 14
 	tokArchived   = 15
+	tokPublic     = 16
+	tokFork       = 17
 )
 
 var tokNames = map[int]string{
@@ -382,10 +401,12 @@ var tokNames = map[int]string{
 	tokCase:       "Case",
 	tokError:      "Error",
 	tokFile:       "File",
+	tokFork:       "Fork",
 	tokNegate:     "Negate",
 	tokOr:         "Or",
 	tokParenClose: "ParenClose",
 	tokParenOpen:  "ParenOpen",
+	tokPublic:     "Public",
 	tokRegex:      "Regex",
 	tokRepo:       "Repo",
 	tokText:       "Text",
@@ -403,6 +424,8 @@ var prefixes = map[string]int{
 	"content:":  tokContent,
 	"f:":        tokFile,
 	"file:":     tokFile,
+	"fork:":     tokFork,
+	"public:":   tokPublic,
 	"r:":        tokRepo,
 	"regex:":    tokRegex,
 	"repo:":     tokRepo,

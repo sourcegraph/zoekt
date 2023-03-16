@@ -67,6 +67,10 @@ func TestParseQuery(t *testing.T) {
 		{"((x|y) )", &Regexp{Regexp: mustParseRE("[xy]")}},
 		{"archived:yes", RawConfig(RcOnlyArchived)},
 		{"archived:no", RawConfig(RcNoArchived)},
+		{"fork:yes", RawConfig(RcOnlyForks)},
+		{"fork:no", RawConfig(RcNoForks)},
+		{"public:yes", RawConfig(RcOnlyPublic)},
+		{"public:no", RawConfig(RcOnlyPrivate)},
 		{"file:helpers\\.go byte", NewAnd(
 			&Substring{Pattern: "helpers.go", FileName: true},
 			&Substring{Pattern: "byte"})},

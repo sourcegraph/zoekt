@@ -296,11 +296,6 @@ func cloneRepos(destDir string, repos []*github.Repository) error {
 			return err
 		}
 
-		archived := false
-		if r.Archived != nil {
-			archived = *r.Archived
-		}
-
 		config := map[string]string{
 			"zoekt.web-url-type": "github",
 			"zoekt.web-url":      *r.HTMLURL,
@@ -311,7 +306,9 @@ func cloneRepos(destDir string, repos []*github.Repository) error {
 			"zoekt.github-subscribers": itoa(r.SubscribersCount),
 			"zoekt.github-forks":       itoa(r.ForksCount),
 
-			"zoekt.archived": marshalBool(archived),
+			"zoekt.archived": marshalBool(r.Archived != nil && *r.Archived),
+			"zoekt.fork":     marshalBool(r.Fork != nil && *r.Fork),
+			"zoekt.public":   marshalBool(r.Private == nil || !*r.Private),
 		}
 		dest, err := gitindex.CloneRepo(destDir, *r.FullName, *r.CloneURL, config)
 		if err != nil {
