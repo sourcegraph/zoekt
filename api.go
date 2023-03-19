@@ -897,6 +897,10 @@ type SearchOptions struct {
 
 	// SpanContext is the opentracing span context, if it exists, from the zoekt client
 	SpanContext map[string]string
+
+	// If true, SearchResult.RepoURLs and SearchResults.LineFragments are included in results
+	// if false, we avoid computing and including them
+	IncludeRepoURLsAndLineFragments bool
 }
 
 func (s *SearchOptions) String() string {
