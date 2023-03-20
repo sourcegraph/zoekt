@@ -25,6 +25,7 @@ import (
 	"github.com/RoaringBitmap/roaring"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
+
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -338,4 +339,55 @@ func hash(name string) uint32 {
 	h := fnv.New32()
 	h.Write([]byte(name))
 	return h.Sum32()
+}
+
+func TestGatherBranches(t *testing.T) {
+	qStr := "b:foo"
+	q, err := query.Parse(qStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := []byte("dummy")
+	b := testIndexBuilder(t, &Repository{
+		Branches: []RepositoryBranch{
+			{"foo", "v1"},
+			{"foo-2", "v1"},
+			{"main", "v1"},
+			{"bar", "v1"},
+		}},
+		Document{Name: "f1", Content: content, Branches: []string{"foo", "bar"}},
+		Document{Name: "f2", Content: content, Branches: []string{"foo", "foo-2"}},
+		Document{Name: "f3", Content: content, Branches: []string{"main"}})
+
+	d := searcherForTest(t, b).(*indexData)
+
+	mt, err := d.newMatchTree(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	known := make(map[matchTree]bool)
+
+	cases := []struct {
+		docID      uint32
+		wantBranch []string
+	}{
+		{
+			docID:      0,
+			wantBranch: []string{"foo"},
+		},
+		{
+			docID:      1,
+			wantBranch: []string{"foo", "foo-2"},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run("", func(t *testing.T) {
+			if d := cmp.Diff(tt.wantBranch, d.gatherBranches(tt.docID, mt, known)); d != "" {
+				t.Fatalf("-want, +got:\n%s", d)
+			}
+		})
+	}
 }

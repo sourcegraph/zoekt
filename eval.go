@@ -565,20 +565,10 @@ func (d *indexData) branchIndex(docID uint32) int {
 
 // gatherBranches returns a list of branch names.
 func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTree]bool) []string {
-	foundBranchQuery := false
-	var branches []string
 	repoIdx := d.repos[docID]
-	visitMatches(mt, known, func(mt matchTree) {
-		bq, ok := mt.(*branchQueryMatchTree)
-		if ok {
-			foundBranchQuery = true
-			branches = append(branches,
-				d.branchNames[repoIdx][uint(bq.masks[repoIdx])])
-		}
-	})
 
-	if !foundBranchQuery {
-		mask := d.fileBranchMasks[docID]
+	gather := func(mask uint64) []string {
+		var branches []string
 		id := uint32(1)
 		for mask != 0 {
 			if mask&0x1 != 0 {
@@ -587,7 +577,29 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 			id <<= 1
 			mask >>= 1
 		}
+
+		return branches
 	}
+
+	foundBranchQuery := false
+	var branches []string
+	visitMatches(mt, known, func(mt matchTree) {
+		bq, ok := mt.(*branchQueryMatchTree)
+		if !ok {
+			return
+		}
+		foundBranchQuery = true
+		mask := bq.masks[repoIdx] & bq.fileMasks[docID]
+		branches = append(branches, gather(mask)...)
+	})
+
+	// If the query doesn't contain a "branch:" filter, we return all branches for
+	// docID.
+	if !foundBranchQuery {
+		mask := d.fileBranchMasks[docID]
+		branches = gather(mask)
+	}
+
 	return branches
 }
 
