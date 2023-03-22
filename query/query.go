@@ -176,6 +176,16 @@ func (q *Repo) String() string {
 	return fmt.Sprintf("repo:%s", q.Regexp.String())
 }
 
+func (q Repo) GobEncode() ([]byte, error) {
+	return []byte(q.Regexp.String()), nil
+}
+
+func (q *Repo) GobDecode(data []byte) error {
+	var err error
+	q.Regexp, err = regexp.Compile(string(data))
+	return err
+}
+
 // RepoRegexp is a Sourcegraph addition which searches documents where the
 // repository name matches Regexp.
 type RepoRegexp struct {
