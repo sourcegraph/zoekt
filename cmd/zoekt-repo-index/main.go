@@ -16,7 +16,7 @@
 // repositories should already have been downloaded to the --repo_cache
 // directory, eg.
 //
-// go install github.com/sourcegraph/zoekt/cmd/zoekt-repo-index &&
+// go install github.com/xvandish/zoekt/cmd/zoekt-repo-index &&
 //
 //	zoekt-repo-index -base_url https://gfiber.googlesource.com/ \
 //	  -manifest_repo_url https://gfiber.googlesource.com/manifests \
@@ -40,9 +40,9 @@ import (
 	"strings"
 
 	"github.com/google/slothfs/manifest"
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
-	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/build"
+	"github.com/xvandish/zoekt/gitindex"
 	"go.uber.org/automaxprocs/maxprocs"
 
 	git "github.com/go-git/go-git/v5"

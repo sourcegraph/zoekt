@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/mockSearcher"
-	"github.com/sourcegraph/zoekt/query"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/internal/mockSearcher"
+	"github.com/xvandish/zoekt/query"
 )
 
 func TestStreamSearch(t *testing.T) {

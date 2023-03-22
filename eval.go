@@ -26,7 +26,7 @@ import (
 	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/grafana/regexp"
 
-	"github.com/sourcegraph/zoekt/query"
+	"github.com/xvandish/zoekt/query"
 )
 
 const maxUInt16 = 0xffff

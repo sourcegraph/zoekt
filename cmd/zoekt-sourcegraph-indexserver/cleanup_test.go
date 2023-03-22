@@ -14,8 +14,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/build"
 )
 
 func TestCleanup(t *testing.T) {

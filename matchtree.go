@@ -24,7 +24,7 @@ import (
 
 	"github.com/grafana/regexp"
 
-	"github.com/sourcegraph/zoekt/query"
+	"github.com/xvandish/zoekt/query"
 )
 
 // A docIterator iterates over documents in order.

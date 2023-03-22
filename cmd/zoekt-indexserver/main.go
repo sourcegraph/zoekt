@@ -34,8 +34,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/gitindex"
 	"golang.org/x/sync/errgroup"
 )
 

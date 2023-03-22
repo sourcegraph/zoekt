@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/build"
 
 	sglog "github.com/sourcegraph/log"
 )

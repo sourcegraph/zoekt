@@ -30,7 +30,7 @@ import (
 	"strings"
 
 	gerrit "github.com/andygrunwald/go-gerrit"
-	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/xvandish/zoekt/gitindex"
 )
 
 type loggingRT struct {

@@ -25,7 +25,7 @@ import (
 	"github.com/RoaringBitmap/roaring"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
-	"github.com/sourcegraph/zoekt/query"
+	"github.com/xvandish/zoekt/query"
 )
 
 var opnames = map[syntax.Op]string{

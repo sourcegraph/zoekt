@@ -28,7 +28,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/xvandish/zoekt/gitindex"
 )
 
 func main() {

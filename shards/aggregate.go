@@ -8,8 +8,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/stream"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/stream"
 )
 
 var (

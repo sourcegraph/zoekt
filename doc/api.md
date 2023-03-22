@@ -20,7 +20,7 @@ curl -XPOST -d '{"Q":"needle","RepoIDs":[1234,4567]}' 'http://34.120.239.98/api/
 
 There are multiple options that can be passed under `Opts` which can also be
 found at
-[SearchOptions](https://github.com/sourcegraph/zoekt/blob/58cf4748830ac0eded1517cc8c2454694c531fbd/api.go#L470).
+[SearchOptions](https://github.com/xvandish/zoekt/blob/58cf4748830ac0eded1517cc8c2454694c531fbd/api.go#L470).
 
 ```
 curl -XPOST -d '{"Q":"needle","Opts":{"EstimateDocCount":true,"NumContextLines":10}}' 'http://34.120.239.98/api/search'

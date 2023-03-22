@@ -22,8 +22,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/ctags"
 )
 
 func runCTags(bin string, inputs map[string][]byte) ([]*ctags.Entry, error) {

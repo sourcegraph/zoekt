@@ -9,10 +9,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/mockSearcher"
-	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/rpc"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/internal/mockSearcher"
+	"github.com/xvandish/zoekt/query"
+	"github.com/xvandish/zoekt/rpc"
 )
 
 func TestClientServer(t *testing.T) {

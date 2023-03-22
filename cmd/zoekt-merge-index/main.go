@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sourcegraph/zoekt"
+	"github.com/xvandish/zoekt"
 )
 
 func merge(dstDir string, names []string) error {

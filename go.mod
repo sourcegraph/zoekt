@@ -1,4 +1,4 @@
-module github.com/sourcegraph/zoekt
+module github.com/xvandish/zoekt
 
 require (
 	cloud.google.com/go/profiler v0.3.1

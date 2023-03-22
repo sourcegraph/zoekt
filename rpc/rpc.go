@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/keegancsmith/rpc"
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/rpc/internal/srv"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/query"
+	"github.com/xvandish/zoekt/rpc/internal/srv"
 )
 
 // DefaultRPCPath is the rpc path used by zoekt-webserver
@@ -155,7 +155,7 @@ func RegisterGob() {
 // gobRegister exists to keep backwards compatibility around renames of the go
 // module. This is to avoid breaking the wire protocol due to refactors. In
 // particular in August 2022 we renamed the go module from
-// github.com/google/zoekt to github.com/sourcegraph/zoekt which breaks the
+// github.com/google/zoekt to github.com/xvandish/zoekt which breaks the
 // wire protocol. So this function will replace those names so we keep using
 // google/zoekt.
 func gobRegister(value any) {

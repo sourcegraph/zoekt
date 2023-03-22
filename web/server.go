@@ -31,11 +31,11 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
-	"github.com/sourcegraph/zoekt"
-	zjson "github.com/sourcegraph/zoekt/json"
-	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/rpc"
-	"github.com/sourcegraph/zoekt/stream"
+	"github.com/xvandish/zoekt"
+	zjson "github.com/xvandish/zoekt/json"
+	"github.com/xvandish/zoekt/query"
+	"github.com/xvandish/zoekt/rpc"
+	"github.com/xvandish/zoekt/stream"
 )
 
 var Funcmap = template.FuncMap{

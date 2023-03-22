@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/sourcegraph/zoekt"
+	"github.com/xvandish/zoekt"
 )
 
 var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{

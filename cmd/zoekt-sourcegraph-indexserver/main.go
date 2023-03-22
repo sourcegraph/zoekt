@@ -45,11 +45,11 @@ import (
 
 	"github.com/sourcegraph/mountinfo"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
-	"github.com/sourcegraph/zoekt/debugserver"
-	"github.com/sourcegraph/zoekt/internal/profiler"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/build"
+	proto "github.com/xvandish/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/xvandish/zoekt/debugserver"
+	"github.com/xvandish/zoekt/internal/profiler"
 )
 
 var (

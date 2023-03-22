@@ -33,7 +33,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"github.com/sourcegraph/zoekt/query"
+	"github.com/xvandish/zoekt/query"
 )
 
 var update = flag.Bool("update", false, "update golden files")

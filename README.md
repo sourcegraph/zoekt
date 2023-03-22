@@ -6,7 +6,7 @@
 This is a fast text search engine, intended for use with source
 code. (Pronunciation: roughly as you would pronounce "zooked" in English)
 
-**Note:** This is a [Sourcegraph](https://github.com/sourcegraph/zoekt) fork
+**Note:** This is a [Sourcegraph](https://github.com/xvandish/zoekt) fork
 of [github.com/google/zoekt](https://github.com/google/zoekt). It is now the
 main maintained source of Zoekt.
 
@@ -14,23 +14,23 @@ main maintained source of Zoekt.
 
 ## Downloading
 
-    go get github.com/sourcegraph/zoekt/
+    go get github.com/xvandish/zoekt/
 
 ## Indexing
 
 ### Directory
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-index
+    go install github.com/xvandish/zoekt/cmd/zoekt-index
     $GOPATH/bin/zoekt-index .
 
 ### Git repository
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index
+    go install github.com/xvandish/zoekt/cmd/zoekt-git-index
     $GOPATH/bin/zoekt-git-index -branches master,stable-1.4 -prefix origin/ .
 
 ### Repo repositories
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-{repo-index,mirror-gitiles}
+    go install github.com/xvandish/zoekt/cmd/zoekt-{repo-index,mirror-gitiles}
     zoekt-mirror-gitiles -dest ~/repos/ https://gfiber.googlesource.com
     zoekt-repo-index \
         -name gfiber \
@@ -44,7 +44,7 @@ main maintained source of Zoekt.
 
 ### Web interface
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver
+    go install github.com/xvandish/zoekt/cmd/zoekt-webserver
     $GOPATH/bin/zoekt-webserver -listen :6070
 
 ### JSON API
@@ -57,11 +57,11 @@ You can retrieve search results as JSON by sending a GET request to zoekt-webser
         --data-urlencode "num=50" \
         --data-urlencode "format=json"
 
-The response data is a JSON object. You can refer to [web.ApiSearchResult](https://sourcegraph.com/github.com/sourcegraph/zoekt@6b1df4f8a3d7b34f13ba0cafd8e1a9b3fc728cf0/-/blob/web/api.go?L23:6&subtree=true) to learn about the structure of the object.
+The response data is a JSON object. You can refer to [web.ApiSearchResult](https://sourcegraph.com/github.com/xvandish/zoekt@6b1df4f8a3d7b34f13ba0cafd8e1a9b3fc728cf0/-/blob/web/api.go?L23:6&subtree=true) to learn about the structure of the object.
 
 ### CLI
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt
+    go install github.com/xvandish/zoekt/cmd/zoekt
     $GOPATH/bin/zoekt 'ngram f:READ'
 
 ## Installation
@@ -83,7 +83,7 @@ eg.
 
 Zoekt comes with a small service management program:
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-indexserver
+    go install github.com/xvandish/zoekt/cmd/zoekt-indexserver
 
     cat << EOF > config.json
     [{"GithubUser": "username"},

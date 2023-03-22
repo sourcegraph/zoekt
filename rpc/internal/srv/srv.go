@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/query"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/query"
 )
 
 // defaultTimeout is the maximum amount of time a search request should

@@ -28,11 +28,11 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
-	"github.com/sourcegraph/zoekt/ignore"
-	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
+	"github.com/xvandish/zoekt"
+	"github.com/xvandish/zoekt/build"
+	"github.com/xvandish/zoekt/ignore"
+	"github.com/xvandish/zoekt/query"
+	"github.com/xvandish/zoekt/shards"
 )
 
 func TestIndexEmptyRepo(t *testing.T) {

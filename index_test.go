@@ -28,7 +28,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/kylelemons/godebug/pretty"
 
-	"github.com/sourcegraph/zoekt/query"
+	"github.com/xvandish/zoekt/query"
 )
 
 func clearScores(r *SearchResult) {

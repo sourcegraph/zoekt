@@ -4,7 +4,7 @@ package sourcegraph.zoekt.configuration.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1";
+option go_package = "github.com/xvandish/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1";
 
 service ZoektConfigurationService {
   // SearchConfiguration returns the current indexing configuration for the specified repositories.
