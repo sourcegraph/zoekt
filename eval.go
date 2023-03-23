@@ -584,10 +584,10 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 
 	var branches []string
 	id := uint32(1)
-	repoIdx := d.repos[docID]
+	branchNames := d.branchNames[d.repos[docID]]
 	for mask != 0 {
 		if mask&0x1 != 0 {
-			branches = append(branches, d.branchNames[repoIdx][uint(id)])
+			branches = append(branches, branchNames[uint(id)])
 		}
 		id <<= 1
 		mask >>= 1
