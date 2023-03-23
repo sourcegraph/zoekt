@@ -181,6 +181,10 @@ type branchQueryMatchTree struct {
 	docID     uint32
 }
 
+func (t *branchQueryMatchTree) branchMask() uint64 {
+	return t.fileMasks[t.docID]
+}
+
 type symbolRegexpMatchTree struct {
 	matchTree
 	regexp *regexp.Regexp
@@ -672,7 +676,7 @@ func (t *orMatchTree) matches(cp *contentProvider, cost int, known map[matchTree
 }
 
 func (t *branchQueryMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
-	return t.fileMasks[t.docID]&t.masks[t.repos[t.docID]] != 0, true
+	return t.branchMask()&t.masks[t.repos[t.docID]] != 0, true
 }
 
 func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {

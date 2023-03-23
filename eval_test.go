@@ -342,12 +342,6 @@ func hash(name string) uint32 {
 }
 
 func TestGatherBranches(t *testing.T) {
-	qStr := "b:foo"
-	q, err := query.Parse(qStr)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	content := []byte("dummy")
 	b := testIndexBuilder(t, &Repository{
 		Branches: []RepositoryBranch{
@@ -355,39 +349,38 @@ func TestGatherBranches(t *testing.T) {
 			{"foo-2", "v1"},
 			{"main", "v1"},
 			{"bar", "v1"},
+			{"quz", "v1"},
 		}},
-		Document{Name: "f1", Content: content, Branches: []string{"foo", "bar"}},
+		Document{Name: "f1", Content: content, Branches: []string{"foo", "bar", "quz"}},
 		Document{Name: "f2", Content: content, Branches: []string{"foo", "foo-2"}},
 		Document{Name: "f3", Content: content, Branches: []string{"main"}})
 
 	d := searcherForTest(t, b).(*indexData)
 
-	mt, err := d.newMatchTree(q)
+	sr, err := d.Search(
+		context.Background(),
+		&query.Or{Children: []query.Q{
+			&query.Branch{Pattern: "foo"},
+			&query.Branch{Pattern: "quz"},
+		}},
+		&SearchOptions{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	known := make(map[matchTree]bool)
-
-	cases := []struct {
-		docID      uint32
-		wantBranch []string
-	}{
-		{
-			docID:      0,
-			wantBranch: []string{"foo"},
-		},
-		{
-			docID:      1,
-			wantBranch: []string{"foo", "foo-2"},
-		},
+	want := map[string][]string{
+		"f1": []string{"foo", "quz"},
+		"f2": []string{"foo", "foo-2"},
 	}
 
-	for _, tt := range cases {
-		t.Run("", func(t *testing.T) {
-			if d := cmp.Diff(tt.wantBranch, d.gatherBranches(tt.docID, mt, known)); d != "" {
-				t.Fatalf("-want, +got:\n%s", d)
-			}
-		})
+	if len(sr.Files) != 2 {
+		t.Fatalf("len(sr.Files): want %d, got %d", 2, len(sr.Files))
+	}
+
+	for _, f := range sr.Files {
+		if d := cmp.Diff(want[f.FileName], f.Branches); d != "" {
+			t.Fatalf("-want,+got:\n%s", d)
+		}
 	}
 }
