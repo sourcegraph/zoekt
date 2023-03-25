@@ -25,6 +25,7 @@ import (
 	"github.com/RoaringBitmap/roaring"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
+	"github.com/sourcegraph/zoekt/query"
 	"github.com/xvandish/zoekt/query"
 )
 
@@ -338,4 +339,48 @@ func hash(name string) uint32 {
 	h := fnv.New32()
 	h.Write([]byte(name))
 	return h.Sum32()
+}
+
+func TestGatherBranches(t *testing.T) {
+	content := []byte("dummy")
+	b := testIndexBuilder(t, &Repository{
+		Branches: []RepositoryBranch{
+			{"foo", "v1"},
+			{"foo-2", "v1"},
+			{"main", "v1"},
+			{"bar", "v1"},
+			{"quz", "v1"},
+		}},
+		Document{Name: "f1", Content: content, Branches: []string{"foo", "bar", "quz"}},
+		Document{Name: "f2", Content: content, Branches: []string{"foo", "foo-2"}},
+		Document{Name: "f3", Content: content, Branches: []string{"main"}})
+
+	d := searcherForTest(t, b).(*indexData)
+
+	sr, err := d.Search(
+		context.Background(),
+		&query.Or{Children: []query.Q{
+			&query.Branch{Pattern: "foo"},
+			&query.Branch{Pattern: "quz"},
+		}},
+		&SearchOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string][]string{
+		"f1": []string{"foo", "quz"},
+		"f2": []string{"foo", "foo-2"},
+	}
+
+	if len(sr.Files) != 2 {
+		t.Fatalf("len(sr.Files): want %d, got %d", 2, len(sr.Files))
+	}
+
+	for _, f := range sr.Files {
+		if d := cmp.Diff(want[f.FileName], f.Branches); d != "" {
+			t.Fatalf("-want,+got:\n%s", d)
+		}
+	}
 }
