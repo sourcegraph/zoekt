@@ -35,6 +35,7 @@ func run() int {
 	submodules := flag.Bool("submodules", true, "if set to false, do not recurse into submodules")
 	branchesStr := flag.String("branches", "HEAD", "git branches to index.")
 	branchPrefix := flag.String("prefix", "refs/heads/", "prefix for branch names")
+	revParseHead := flag.Bool("rev-parse-head", false, "Whether or not to name HEAD and avoid double indexing it")
 
 	incremental := flag.Bool("incremental", true, "only index changed repositories")
 	repoCacheDir := flag.String("repo_cache", "", "directory holding bare git repos, named by URL. "+
@@ -107,6 +108,7 @@ func run() int {
 			AllowMissingBranch:                *allowMissing,
 			BuildOptions:                      *opts,
 			Branches:                          branches,
+			DoRevParseHead:                    *revParseHead,
 			RepoDir:                           dir,
 			DeltaShardNumberFallbackThreshold: *deltaShardNumberFallbackThreshold,
 		}

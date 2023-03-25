@@ -313,6 +313,13 @@ type Options struct {
 	// List of branch names to index, e.g. []string{"HEAD", "stable"}
 	Branches []string
 
+	// whether or not to "name" the HEAD ref and store the result
+	// in Repository.HEADRevParsedName
+	// If enabled, we also take care not to index HEAD twice, so
+	// if, branches=["HEAD","main"], and HEAD==main, main will be
+	// removed from the branches to be indexed, and HEAD will remain.
+	DoRevParseHead bool
+
 	// DeltaShardNumberFallbackThreshold defines an upper limit (inclusive) on the number of preexisting shards
 	// that can exist before attempting another delta build. If the number of preexisting shards exceeds this threshold,
 	// then a normal build will be performed instead.
@@ -322,25 +329,32 @@ type Options struct {
 	DeltaShardNumberFallbackThreshold uint64
 }
 
-func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string, error) {
+func expandBranches(repo *git.Repository, bs []string, prefix string, doRevParseHead bool) ([]string, string, error) {
 	var result []string
+	var headRevParsedName string
 	for _, b := range bs {
 		// Sourcegraph: We disable resolving refs. We want to return the exact ref
 		// requested so we can match it up.
-		if b == "HEAD" && false {
+		if b == "HEAD" && doRevParseHead {
 			ref, err := repo.Head()
 			if err != nil {
-				return nil, err
+				return nil, "", err
 			}
 
-			result = append(result, strings.TrimPrefix(ref.Name().String(), prefix))
+			headRevParsedName = strings.TrimPrefix(ref.Name().String(), prefix)
+
+			// append HEAD, not the revParsed name, so when searches for the
+			// HEAD branch are performed, we don't have to do an expensive lookup
+			// we keep the revParsed name in Repository.HEADRevParsedName if it's
+			// needed for display purposes
+			result = append(result, "HEAD")
 			continue
 		}
 
 		if strings.Contains(b, "*") {
 			iter, err := repo.Branches()
 			if err != nil {
-				return nil, err
+				return nil, "", err
 			}
 
 			defer iter.Close()
@@ -350,12 +364,12 @@ func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string,
 					break
 				}
 				if err != nil {
-					return nil, err
+					return nil, "", err
 				}
 
 				name := ref.Name().Short()
 				if matched, err := filepath.Match(b, name); err != nil {
-					return nil, err
+					return nil, "", err
 				} else if !matched {
 					continue
 				}
@@ -368,7 +382,23 @@ func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string,
 		result = append(result, b)
 	}
 
-	return result, nil
+	if !doRevParseHead {
+		return result, "", nil
+	}
+
+	// if someone wants to index HEAD,main,develop but HEAD->main,
+	// we don't want to index main twice, or to include it twice when
+	// getting the repository metadata. So, we remove all instances
+	// of the revParsedName ("main" in this case) from the list of branches
+	// to index.
+	filtered := result[:0]
+	for _, b := range result {
+		if b != headRevParsedName {
+			filtered = append(filtered, b)
+		}
+	}
+
+	return filtered, headRevParsedName, nil
 }
 
 // IndexGitRepo indexes the git repository as specified by the options.
@@ -404,10 +434,13 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		log.Printf("setTemplatesFromConfig(%s): %s", opts.RepoDir, err)
 	}
 
-	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
+	branches, revParsedHEAD, err := expandBranches(repo, opts.Branches, opts.BranchPrefix, opts.DoRevParseHead)
 	if err != nil {
 		return fmt.Errorf("expandBranches: %w", err)
 	}
+	// harmless to set this even if !opts.DoRevParseHead, since it will just be an empty string
+	opts.BuildOptions.RepositoryDescription.HEADRevParsedName = revParsedHEAD
+
 	for _, b := range branches {
 		commit, err := getCommit(repo, opts.BranchPrefix, b)
 		if err != nil {
@@ -456,7 +489,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 	}
 
 	if !opts.BuildOptions.IsDelta {
-		repos, branchMap, branchVersions, err = prepareNormalBuild(opts, repo)
+		repos, branchMap, branchVersions, err = prepareNormalBuild(opts, repo, branches)
 		if err != nil {
 			return fmt.Errorf("preparing normal build: %w", err)
 		}
@@ -629,7 +662,7 @@ type prepareDeltaBuildFunc func(options Options, repository *git.Repository) (re
 
 // prepareNormalBuildFunc is a function that calculates the necessary metadata for preparing
 // a build.Builder instance for generating a normal build.
-type prepareNormalBuildFunc func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error)
+type prepareNormalBuildFunc func(options Options, repository *git.Repository, brancges []string) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error)
 
 type gitIndexConfig struct {
 	// prepareDeltaBuild, if not nil, is the function that is used to calculate the metadata that will be used to
@@ -831,7 +864,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	return repos, branchMap, nil, changedOrDeletedPaths, nil
 }
 
-func prepareNormalBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error) {
+func prepareNormalBuild(options Options, repository *git.Repository, branches []string) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error) {
 	var repoCache *RepoCache
 	if options.Submodules {
 		repoCache = NewRepoCache(options.RepoCacheDir)
@@ -845,11 +878,6 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 
 	// Branch => Repo => SHA1
 	branchVersions = map[string]map[string]plumbing.Hash{}
-
-	branches, err := expandBranches(repository, options.Branches, options.BranchPrefix)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("expandBranches: %w", err)
-	}
 
 	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)

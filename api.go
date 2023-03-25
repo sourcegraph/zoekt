@@ -543,6 +543,15 @@ type Repository struct {
 	// The branches indexed in this repo.
 	Branches []RepositoryBranch
 
+	// If HEAD was indexed, this is the rev-parsed name
+	// e.g, "main". Stored to avoid another rev-parse call
+	// when
+	// contains both:
+	//  1. the name of HEAD (via rev-parse)
+	//  2. the index of "HEAD" in Branches
+	// why do we care about the index...? I don't think we do...
+	HEADRevParsedName string
+
 	// Nil if this is not the super project.
 	SubRepoMap map[string]*Repository
 
