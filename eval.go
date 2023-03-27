@@ -392,7 +392,7 @@ nextFileMatch:
 		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))), opts.DebugScore)
 		fileMatch.addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)
 
-		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
+		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known, opts.SawpHEADInBranchesWithRevParsedName)
 		sortMatchesByScore(fileMatch.LineMatches)
 		sortChunkMatchesByScore(fileMatch.ChunkMatches)
 		if opts.Whole {
@@ -569,7 +569,7 @@ func (d *indexData) branchIndex(docID uint32) int {
 // filters in the query. If the query contains a branch filter, it returns all
 // branches containing the docID and matching the branch filter. Otherwise, it
 // returns all branches containing docID.
-func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTree]bool) []string {
+func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTree]bool, swapHEAD bool) []string {
 	var mask uint64
 	visitMatches(mt, known, func(mt matchTree) {
 		bq, ok := mt.(*branchQueryMatchTree)
@@ -584,12 +584,24 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 		mask = d.fileBranchMasks[docID]
 	}
 
+	repoIdx := d.repos[docID]
+	headBranchID := d.branchIDs[repoIdx]["HEAD"]
+
 	var branches []string
 	id := uint32(1)
-	branchNames := d.branchNames[d.repos[docID]]
+	branchNames := d.branchNames[repoIdx]
 	for mask != 0 {
 		if mask&0x1 != 0 {
-			branches = append(branches, branchNames[uint(id)])
+			uid := uint(id)
+			branchName := branchNames[uid]
+
+			// TODO: find a nice way to only make this check once.
+			// Can we depend on the default branch always being first
+			if swapHEAD && uid == headBranchID {
+				branchName = d.repoMetaData[repoIdx].HEADRevParsedName
+			}
+
+			branches = append(branches, branchName)
 		}
 		id <<= 1
 		mask >>= 1

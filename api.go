@@ -910,6 +910,10 @@ type SearchOptions struct {
 	// If true, SearchResult.RepoURLs and SearchResults.LineFragments are included in results
 	// if false, we avoid computing and including them
 	IncludeRepoURLsAndLineFragments bool
+
+	// Replace HEAD with in fileMatch.Branches with Repository.HEADRevParsedName,
+	// if it is not empty
+	SawpHEADInBranchesWithRevParsedName bool
 }
 
 func (s *SearchOptions) String() string {
