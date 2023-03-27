@@ -169,7 +169,7 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 
 	q = query.Map(q, query.ExpandFileContent)
 
-	mt, err := d.newMatchTree(q)
+	mt, err := d.newMatchTree(q, matchTreeOpt{})
 	if err != nil {
 		return nil, err
 	}

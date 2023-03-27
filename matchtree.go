@@ -834,7 +834,13 @@ func (t *substrMatchTree) matches(cp *contentProvider, cost int, known map[match
 	return len(t.current) > 0, true
 }
 
-func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
+type matchTreeOpt struct {
+	// DisableWordMatchOptimization is used to disable the use of wordMatchTree.
+	// This was added since we do not support wordMatchTree with symbol search.
+	DisableWordMatchOptimization bool
+}
+
+func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error) {
 	if q == nil {
 		return nil, fmt.Errorf("got nil (sub)query")
 	}
@@ -856,7 +862,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}
 
 		var tr matchTree
-		if wmt, ok := regexpToWordMatchTree(s); ok {
+		if wmt, ok := regexpToWordMatchTree(s, opt); ok {
 			// A common search we get is "\bLITERAL\b". Avoid the regex engine and
 			// provide something faster.
 			tr = wmt
@@ -880,7 +886,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 	case *query.And:
 		var r []matchTree
 		for _, ch := range s.Children {
-			ct, err := d.newMatchTree(ch)
+			ct, err := d.newMatchTree(ch, opt)
 			if err != nil {
 				return nil, err
 			}
@@ -890,7 +896,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 	case *query.Or:
 		var r []matchTree
 		for _, ch := range s.Children {
-			ct, err := d.newMatchTree(ch)
+			ct, err := d.newMatchTree(ch, opt)
 			if err != nil {
 				return nil, err
 			}
@@ -898,7 +904,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}
 		return &orMatchTree{r}, nil
 	case *query.Not:
-		ct, err := d.newMatchTree(s.Child)
+		ct, err := d.newMatchTree(s.Child, opt)
 		return &notMatchTree{
 			child: ct,
 		}, err
@@ -908,7 +914,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			break
 		}
 
-		ct, err := d.newMatchTree(s.Child)
+		ct, err := d.newMatchTree(s.Child, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -963,7 +969,11 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}, nil
 
 	case *query.Symbol:
-		subMT, err := d.newMatchTree(s.Expr)
+		// Disable WordMatchTree since we don't support it in symbols yet.
+		optCopy := opt
+		optCopy.DisableWordMatchOptimization = true
+
+		subMT, err := d.newMatchTree(s.Expr, optCopy)
 		if err != nil {
 			return nil, err
 		}
@@ -1131,7 +1141,10 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 	return st, nil
 }
 
-func regexpToWordMatchTree(q *query.Regexp) (_ *wordMatchTree, ok bool) {
+func regexpToWordMatchTree(q *query.Regexp, opt matchTreeOpt) (_ *wordMatchTree, ok bool) {
+	if opt.DisableWordMatchOptimization {
+		return nil, false
+	}
 	// Needs to be case sensitive
 	if !q.CaseSensitive || q.Regexp.Flags&syntax.FoldCase != 0 {
 		return nil, false
