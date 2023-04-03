@@ -1,56 +1,21 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-# gazelle:prefix github.com/sourcegraph/zoekt
-# gazelle:build_file_name BUILD.bazel
-load("@bazel_gazelle//:def.bzl", "gazelle")
-
-gazelle(name = "gazelle")
-
-gazelle(
-    name = "gazelle-update-repos",
-    args = [
-        "-from_file=go.mod",
-        "-to_macro=deps.bzl%go_dependencies",
-        "-prune",
-        "-build_file_proto_mode=disable_global",
-    ],
-    command = "update-repos",
-)
-
 go_library(
-    name = "zoekt",
+    name = "build",
     srcs = [
-        "api.go",
-        "bits.go",
-        "btree.go",
-        "contentprovider.go",
-        "eval.go",
-        "hititer.go",
-        "indexbuilder.go",
-        "indexdata.go",
-        "indexfile.go",
-        "marshal.go",
-        "matchiter.go",
-        "matchtree.go",
-        "merge.go",
-        "ngramoffset.go",
-        "read.go",
-        "section.go",
-        "toc.go",
-        "tombstones.go",
-        "tombstones_unix.go",
-        "tombstones_windows.go",
-        "write.go",
+        "builder.go",
+        "builder_unix.go",
+        "ctags.go",
     ],
-    importpath = "github.com/sourcegraph/zoekt",
+    importpath = "github.com/sourcegraph/zoekt/build",
     visibility = ["//visibility:public"],
     deps = [
-        "//query",
-        "@com_github_edsrzf_mmap_go//:mmap-go",
-        "@com_github_go_enry_go_enry_v2//:go-enry",
-        "@com_github_go_enry_go_enry_v2//data",
+        "//:zoekt",
+        "//ctags",
+        "@com_github_bmatcuk_doublestar//:doublestar",
         "@com_github_grafana_regexp//:regexp",
         "@com_github_rs_xid//:xid",
+        "@in_gopkg_natefinch_lumberjack_v2//:lumberjack_v2",
     ] + select({
         "@io_bazel_rules_go//go/platform:aix": [
             "@org_golang_x_sys//unix",
@@ -96,30 +61,21 @@ go_library(
 )
 
 go_test(
-    name = "zoekt_test",
+    name = "build_test",
     srcs = [
-        "api_test.go",
-        "bits_test.go",
-        "btree_test.go",
-        "contentprovider_test.go",
-        "eval_test.go",
-        "hititer_test.go",
-        "index_test.go",
-        "marshal_test.go",
-        "matchtree_test.go",
-        "merge_test.go",
-        "ngramoffset_test.go",
-        "read_test.go",
-        "tombstones_test.go",
+        "builder_test.go",
+        "ctags_test.go",
+        "e2e_test.go",
     ],
-    data = [":testdata"],
-    embed = [":zoekt"],
+    data = glob(["testdata/**"]) + ["//testdata:testdata"],
+    embed = [":build"],
     deps = [
+        "//:zoekt",
+        "//ctags",
         "//query",
+        "//shards",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",
         "@com_github_grafana_regexp//:regexp",
-        "@com_github_kylelemons_godebug//pretty",
-        "@com_github_roaringbitmap_roaring//:roaring",
     ],
 )
