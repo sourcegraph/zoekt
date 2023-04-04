@@ -195,7 +195,7 @@ message RepoSet {
 
 // FileNameSet is a list of file names to match.
 message FileNameSet {
-  map<string, google.protobuf.Empty> set = 1;
+  repeated string set = 1;
 }
 
 // Type changes the result type returned.
@@ -228,7 +228,7 @@ message Or {
 
 // Not inverts the meaning of its child.
 message Not {
-  Q children = 1;
+  Q child = 1;
 }
 
 // Branch limits search to a specific branch.
@@ -239,14 +239,18 @@ message Branch {
 }
 
 message ListRequest {
+  Q query = 1;
+  ListOptions opts = 2;
+}
+
+message ListOptions {
   enum RepoListField {
     REPOS = 0;
     MINIMAL = 1;
     REPOS_MAP = 2;
   }
 
-  Q query = 1;
-  RepoListField field = 2;
+  RepoListField field = 1;
 }
 
 message ListResponse {
