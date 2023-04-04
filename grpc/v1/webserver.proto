@@ -104,6 +104,22 @@ message SearchOptions {
 message Q {
   oneof query {
     RawConfig raw_config = 1;
+    Regexp regexp = 2;
+    Symbol symbol = 3;
+    Language language = 4;
+    Const const = 5;
+    Repo repo = 6;
+    RepoRegexp repo_regexp = 7;
+    BranchesRepos branches_repos = 8;
+    RepoIds repo_ids = 9;
+    RepoSet repo_set = 10;
+    FileNameSet file_name_set = 11;
+    Type type = 12;
+    Substring substring = 13;
+    And and = 14;
+    Or or = 15;
+    Not not = 16;
+    Branch branch = 17;
   }
 }
 
@@ -140,6 +156,11 @@ message Language {
 
 message Const {
   bool value = 1;
+}
+
+// TODO: what's the difference between Repo and RepoRegexp?
+message Repo {
+  string regexp = 1;
 }
 
 // TODO: what's the difference between Repo and RepoRegexp?

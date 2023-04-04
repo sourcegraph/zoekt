@@ -29,6 +29,8 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/grafana/regexp"
+
+	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 )
 
 var _ = log.Println
@@ -36,6 +38,12 @@ var _ = log.Println
 // Q is a representation for a possibly hierarchical search query.
 type Q interface {
 	String() string
+}
+
+func QFromProto(p *v1.Q) Q {
+	switch p.Query.(type) {
+
+	}
 }
 
 // RPCUnwrap processes q to remove RPC specific elements from q. This is

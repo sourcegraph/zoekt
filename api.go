@@ -23,7 +23,9 @@ import (
 	"strconv"
 	"time"
 
+	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"github.com/sourcegraph/zoekt/query"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 const mapHeaderBytes uint64 = 48
@@ -80,6 +82,36 @@ type FileMatch struct {
 
 	// Commit SHA1 (hex) of the (sub)repo holding the file.
 	Version string
+}
+
+func (m *FileMatch) ToProto() *v1.FileMatch {
+	lineMatches := make([]*v1.LineMatch, len(m.LineMatches))
+	for i, lm := range m.LineMatches {
+		lineMatches[i] = lm.ToProto()
+	}
+
+	chunkMatches := make([]*v1.ChunkMatch, len(m.ChunkMatches))
+	for i, cm := range m.ChunkMatches {
+		chunkMatches[i] = cm.ToProto()
+	}
+
+	return &v1.FileMatch{
+		Score:              m.Score,
+		Debug:              m.Debug,
+		FileName:           m.FileName,
+		Repository:         m.Repository,
+		Branches:           m.Branches,
+		LineMatches:        lineMatches,
+		ChunkMatches:       chunkMatches,
+		RepositoryId:       m.RepositoryID,
+		RepositoryPriority: m.RepositoryPriority,
+		Content:            m.Content,
+		Checksum:           m.Checksum,
+		Language:           m.Language,
+		SubRepositoryName:  m.SubRepositoryName,
+		SubRepositoryPath:  m.SubRepositoryPath,
+		Version:            m.Version,
+	}
 }
 
 func (m *FileMatch) sizeBytes() (sz uint64) {
@@ -157,6 +189,28 @@ type ChunkMatch struct {
 	DebugScore string
 }
 
+func (cm *ChunkMatch) ToProto() *v1.ChunkMatch {
+	ranges := make([]*v1.Range, len(cm.Ranges))
+	for i, r := range cm.Ranges {
+		ranges[i] = r.ToProto()
+	}
+
+	symbolInfo := make([]*v1.SymbolInfo, len(cm.SymbolInfo))
+	for i, si := range cm.SymbolInfo {
+		symbolInfo[i] = si.ToProto()
+	}
+
+	return &v1.ChunkMatch{
+		Content:      cm.Content,
+		ContentStart: cm.ContentStart.ToProto(),
+		FileName:     cm.FileName,
+		Ranges:       ranges,
+		SymbolInfo:   symbolInfo,
+		Score:        cm.Score,
+		DebugScore:   cm.DebugScore,
+	}
+}
+
 func (cm *ChunkMatch) sizeBytes() (sz uint64) {
 	// Content
 	sz += sliceHeaderBytes + uint64(len(cm.Content))
@@ -198,6 +252,13 @@ type Range struct {
 	End Location
 }
 
+func (r *Range) ToProto() *v1.Range {
+	return &v1.Range{
+		Start: r.Start.ToProto(),
+		End:   r.End.ToProto(),
+	}
+}
+
 func (r *Range) sizeBytes() uint64 {
 	return r.Start.sizeBytes() + r.End.sizeBytes()
 }
@@ -209,6 +270,14 @@ type Location struct {
 	LineNumber uint32
 	// 1-based column number (in runes) from the beginning of line
 	Column uint32
+}
+
+func (l *Location) ToProto() *v1.Location {
+	return &v1.Location{
+		ByteOffset: l.ByteOffset,
+		LineNumber: l.LineNumber,
+		Column:     l.Column,
+	}
 }
 
 func (l *Location) sizeBytes() uint64 {
@@ -236,6 +305,26 @@ type LineMatch struct {
 	DebugScore string
 
 	LineFragments []LineFragmentMatch
+}
+
+func (lm *LineMatch) ToProto() *v1.LineMatch {
+	fragments := make([]*v1.LineFragmentMatch, len(lm.LineFragments))
+	for i, fragment := range lm.LineFragments {
+		fragments[i] = fragment.ToProto()
+	}
+
+	return &v1.LineMatch{
+		Line:          lm.Line,
+		LineStart:     int64(lm.LineStart),
+		LineEnd:       int64(lm.LineEnd),
+		LineNumber:    int64(lm.LineNumber),
+		Before:        lm.Before,
+		After:         lm.After,
+		FileName:      lm.FileName,
+		Score:         lm.Score,
+		DebugScore:    lm.DebugScore,
+		LineFragments: fragments,
+	}
 }
 
 func (lm *LineMatch) sizeBytes() (sz uint64) {
@@ -276,6 +365,15 @@ type Symbol struct {
 	ParentKind string
 }
 
+func (s *Symbol) ToProto() *v1.SymbolInfo {
+	return &v1.SymbolInfo{
+		Sym:        s.Sym,
+		Kind:       s.Kind,
+		Parent:     s.Parent,
+		ParentKind: s.ParentKind,
+	}
+}
+
 func (s *Symbol) sizeBytes() uint64 {
 	return 4*stringHeaderBytes + uint64(len(s.Sym)+len(s.Kind)+len(s.Parent)+len(s.ParentKind))
 }
@@ -292,6 +390,15 @@ type LineFragmentMatch struct {
 	MatchLength int
 
 	SymbolInfo *Symbol
+}
+
+func (lfm *LineFragmentMatch) ToProto() *v1.LineFragmentMatch {
+	return &v1.LineFragmentMatch{
+		LineOffset:  int64(lfm.LineOffset),
+		Offset:      lfm.Offset,
+		MatchLength: int64(lfm.MatchLength),
+		SymbolInfo:  lfm.SymbolInfo.ToProto(),
+	}
 }
 
 func (lfm *LineFragmentMatch) sizeBytes() (sz uint64) {
@@ -325,6 +432,19 @@ var FlushReasonStrings = map[FlushReason]string{
 	FlushReasonTimerExpired: "timer_expired",
 	FlushReasonFinalFlush:   "final_flush",
 	FlushReasonMaxSize:      "max_size_reached",
+}
+
+func (fr FlushReason) ToProto() v1.FlushReason {
+	switch fr {
+	case FlushReasonTimerExpired:
+		return v1.FlushReason_TIMER_EXPIRED
+	case FlushReasonFinalFlush:
+		return v1.FlushReason_FINAL_FLUSH
+	case FlushReasonMaxSize:
+		return v1.FlushReason_MAX_SIZE
+	default:
+		panic("unknown flush reason")
+	}
 }
 
 func (fr FlushReason) String() string {
@@ -390,6 +510,28 @@ type Stats struct {
 
 	// FlushReason explains why results were flushed.
 	FlushReason FlushReason
+}
+
+func (s *Stats) ToProto() *v1.Stats {
+	return &v1.Stats{
+		ContentBytesLoaded:   s.ContentBytesLoaded,
+		IndexBytesLoaded:     s.IndexBytesLoaded,
+		Crashes:              int64(s.Crashes),
+		Duration:             durationpb.New(s.Duration),
+		FileCount:            int64(s.FileCount),
+		ShardFilesConsidered: int64(s.ShardFilesConsidered),
+		FilesConsidered:      int64(s.FilesConsidered),
+		FilesLoaded:          int64(s.FilesLoaded),
+		FilesSkipped:         int64(s.FilesSkipped),
+		ShardsScanned:        int64(s.ShardsScanned),
+		ShardsSkipped:        int64(s.ShardsSkipped),
+		ShardsSkippedFilter:  int64(s.ShardsSkippedFilter),
+		MatchCount:           int64(s.MatchCount),
+		NgramMatches:         int64(s.NgramMatches),
+		Wait:                 durationpb.New(s.Wait),
+		RegexpsConsidered:    int64(s.RegexpsConsidered),
+		FlushReason:          s.FlushReason.ToProto(),
+	}
 }
 
 func (s *Stats) sizeBytes() (sz uint64) {
@@ -461,6 +603,13 @@ type Progress struct {
 	MaxPendingPriority float64
 }
 
+func (p *Progress) ToProto() *v1.Progress {
+	return &v1.Progress{
+		Priority:           p.Priority,
+		MaxPendingPriority: p.MaxPendingPriority,
+	}
+}
+
 func (p *Progress) sizeBytes() uint64 {
 	return 2 * 8
 }
@@ -480,6 +629,21 @@ type SearchResult struct {
 	// FragmentNames holds a repo => template string map, for
 	// the line number fragment.
 	LineFragments map[string]string
+}
+
+func (sr *SearchResult) ToProto() *v1.SearchResponse {
+	files := make([]*v1.FileMatch, len(sr.Files))
+	for i, file := range sr.Files {
+		files[i] = file.ToProto()
+	}
+
+	return &v1.SearchResponse{
+		Stats:         sr.Stats.ToProto(),
+		Progress:      sr.Progress.ToProto(),
+		Files:         files,
+		RepoUrls:      sr.RepoURLs,
+		LineFragments: sr.LineFragments,
+	}
 }
 
 // SizeBytes is a best-effort estimate of the size of SearchResult in memory.
@@ -897,6 +1061,31 @@ type SearchOptions struct {
 
 	// SpanContext is the opentracing span context, if it exists, from the zoekt client
 	SpanContext map[string]string
+}
+
+func SearchOptionsFromProto(p *v1.SearchOptions) *SearchOptions {
+	if p == nil {
+		return nil
+	}
+
+	return &SearchOptions{
+		EstimateDocCount:       p.GetEstimateDocCount(),
+		Whole:                  p.GetWhole(),
+		ShardMaxMatchCount:     int(p.GetShardMaxMatchCount()),
+		TotalMaxMatchCount:     int(p.GetTotalMaxMatchCount()),
+		ShardRepoMaxMatchCount: int(p.GetShardRepoMaxMatchCount()),
+		TotalMaxImportantMatch: int(p.GetTotalMaxMatchCount()),
+		MaxWallTime:            p.GetMaxWallTime().AsDuration(),
+		FlushWallTime:          p.GetFlushWallTime().AsDuration(),
+		MaxDocDisplayCount:     int(p.GetMaxDocDisplayCount()),
+		NumContextLines:        int(p.GetNumContextLines()),
+		ChunkMatches:           p.GetChunkMatches(),
+		UseDocumentRanks:       p.GetUseDocumentRanks(),
+		DocumentRanksWeight:    p.GetDocumentRanksWeight(),
+		Trace:                  p.GetTrace(),
+		DebugScore:             p.GetDebugScore(),
+		SpanContext:            nil, // TODO?
+	}
 }
 
 func (s *SearchOptions) String() string {
