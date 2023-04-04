@@ -11,6 +11,8 @@ option go_package = "github.com/sourcegraph/zoekt/grpc/v1";
 service WebserverService {
   rpc Search(SearchRequest) returns (SearchResponse) {}
 
+  rpc StreamSearch(SearchRequest) returns (stream SearchResponse) {}
+
   // List lists repositories. The query `q` can only contain
   // query.Repo atoms.
   rpc List(ListRequest) returns (ListResponse) {}

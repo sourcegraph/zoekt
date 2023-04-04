@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	WebserverService_Search_FullMethodName = "/grpc.v1.WebserverService/Search"
-	WebserverService_List_FullMethodName   = "/grpc.v1.WebserverService/List"
+	WebserverService_Search_FullMethodName       = "/grpc.v1.WebserverService/Search"
+	WebserverService_StreamSearch_FullMethodName = "/grpc.v1.WebserverService/StreamSearch"
+	WebserverService_List_FullMethodName         = "/grpc.v1.WebserverService/List"
 )
 
 // WebserverServiceClient is the client API for WebserverService service.
@@ -28,6 +29,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WebserverServiceClient interface {
 	Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponse, error)
+	StreamSearch(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (WebserverService_StreamSearchClient, error)
 	// List lists repositories. The query `q` can only contain
 	// query.Repo atoms.
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
@@ -50,6 +52,38 @@ func (c *webserverServiceClient) Search(ctx context.Context, in *SearchRequest, 
 	return out, nil
 }
 
+func (c *webserverServiceClient) StreamSearch(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (WebserverService_StreamSearchClient, error) {
+	stream, err := c.cc.NewStream(ctx, &WebserverService_ServiceDesc.Streams[0], WebserverService_StreamSearch_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &webserverServiceStreamSearchClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type WebserverService_StreamSearchClient interface {
+	Recv() (*SearchResponse, error)
+	grpc.ClientStream
+}
+
+type webserverServiceStreamSearchClient struct {
+	grpc.ClientStream
+}
+
+func (x *webserverServiceStreamSearchClient) Recv() (*SearchResponse, error) {
+	m := new(SearchResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func (c *webserverServiceClient) List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error) {
 	out := new(ListResponse)
 	err := c.cc.Invoke(ctx, WebserverService_List_FullMethodName, in, out, opts...)
@@ -64,6 +98,7 @@ func (c *webserverServiceClient) List(ctx context.Context, in *ListRequest, opts
 // for forward compatibility
 type WebserverServiceServer interface {
 	Search(context.Context, *SearchRequest) (*SearchResponse, error)
+	StreamSearch(*SearchRequest, WebserverService_StreamSearchServer) error
 	// List lists repositories. The query `q` can only contain
 	// query.Repo atoms.
 	List(context.Context, *ListRequest) (*ListResponse, error)
@@ -76,6 +111,9 @@ type UnimplementedWebserverServiceServer struct {
 
 func (UnimplementedWebserverServiceServer) Search(context.Context, *SearchRequest) (*SearchResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Search not implemented")
+}
+func (UnimplementedWebserverServiceServer) StreamSearch(*SearchRequest, WebserverService_StreamSearchServer) error {
+	return status.Errorf(codes.Unimplemented, "method StreamSearch not implemented")
 }
 func (UnimplementedWebserverServiceServer) List(context.Context, *ListRequest) (*ListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
@@ -109,6 +147,27 @@ func _WebserverService_Search_Handler(srv interface{}, ctx context.Context, dec 
 		return srv.(WebserverServiceServer).Search(ctx, req.(*SearchRequest))
 	}
 	return interceptor(ctx, in, info, handler)
+}
+
+func _WebserverService_StreamSearch_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SearchRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(WebserverServiceServer).StreamSearch(m, &webserverServiceStreamSearchServer{stream})
+}
+
+type WebserverService_StreamSearchServer interface {
+	Send(*SearchResponse) error
+	grpc.ServerStream
+}
+
+type webserverServiceStreamSearchServer struct {
+	grpc.ServerStream
+}
+
+func (x *webserverServiceStreamSearchServer) Send(m *SearchResponse) error {
+	return x.ServerStream.SendMsg(m)
 }
 
 func _WebserverService_List_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -145,6 +204,12 @@ var WebserverService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _WebserverService_List_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamSearch",
+			Handler:       _WebserverService_StreamSearch_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "webserver.proto",
 }
