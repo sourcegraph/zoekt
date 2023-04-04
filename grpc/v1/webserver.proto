@@ -1,0 +1,200 @@
+syntax = "proto3";
+
+package grpc.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/sourcegraph/zoekt/grpc/v1";
+
+service WebserverService {
+  rpc Search(SearchRequest) returns (SearchResponse) {}
+
+  // List lists repositories. The query `q` can only contain
+  // query.Repo atoms.
+  rpc List(ListRequest) returns (ListResponse) {}
+}
+
+message SearchRequest {
+  Q query = 1;
+  SearchOptions opts = 2;
+}
+
+message SearchOptions {
+  // Return an upper-bound estimate of eligible documents in
+  // stats.ShardFilesConsidered.
+  bool estimate_doc_count = 1;
+
+  // Return the whole file.
+  bool whole = 2;
+
+  // Maximum number of matches: skip all processing an index
+  // shard after we found this many non-overlapping matches.
+  int64 shard_max_match_count = 3;
+
+  // Maximum number of matches: stop looking for more matches
+  // once we have this many matches across shards.
+  int64 total_max_match_count = 4;
+
+  // Maximum number of matches: skip processing documents for a repository in
+  // a shard once we have found ShardRepoMaxMatchCount.
+  //
+  // A compound shard may contain multiple repositories. This will most often
+  // be set to 1 to find all repositories containing a result.
+  int64 shard_repo_max_match_count = 5;
+
+  // Abort the search after this much time has passed.
+  google.protobuf.Duration max_wall_time = 6;
+
+  // FlushWallTime if non-zero will stop streaming behaviour at first and
+  // instead will collate and sort results. At FlushWallTime the results will
+  // be sent and then the behaviour will revert to the normal streaming.
+  google.protobuf.Duration flush_wall_time = 7;
+
+  // Trim the number of results after collating and sorting the
+  // results
+  int64 max_doc_display_count = 8;
+
+  // If set to a number greater than zero then up to this many number
+  // of context lines will be added before and after each matched line.
+  // Note that the included context lines might contain matches and
+  // it's up to the consumer of the result to remove those lines.
+  int64 num_context_lines = 9;
+
+  // If true, ChunkMatches will be returned in each FileMatch rather than LineMatches
+  // EXPERIMENTAL: the behavior of this flag may be changed in future versions.
+  bool chunk_matches = 10;
+
+  // EXPERIMENTAL. If true, document ranks are used as additional input for
+  // sorting matches.
+  bool use_document_ranks = 11;
+
+  // EXPERIMENTAL. When UseDocumentRanks is enabled, this can be optionally set to adjust
+  // their weight in the file match score. If the value is <= 0.0, the default weight value
+  // will be used. This option is temporary and is only exposed for testing/ tuning purposes.
+  double document_ranks_weight = 12;
+
+  // Trace turns on opentracing for this request if true and if the Jaeger address was provided as
+  // a command-line flag
+  bool trace = 13;
+
+  // If set, the search results will contain debug information for scoring.
+  bool debug_score = 14;
+
+  // TODO do we actually need to pass tracing in here?
+}
+
+message Q {
+  oneof query {
+    RawConfig raw_config = 1;
+  }
+}
+
+// RawConfig filters repositories based on their encoded RawConfig map.
+message RawConfig {
+  enum Flags {
+    ONLY_PUBLIC = 0x01;
+    ONLY_PRIVATE = 0x02;
+    ONLY_FORKS = 0x04;
+    NO_FORKS = 0x08;
+    ONLY_ARCHIVED = 0x10;
+    NO_ARCHIVED = 0x20;
+  }
+
+  uint64 flags = 1;
+}
+
+// Regexp is a query looking for regular expressions matches.
+message Regexp {
+  string regexp = 1;
+  bool file_name = 2;
+  bool content = 3;
+  bool case_sensitive = 4;
+}
+
+message Symbol {
+  Q expr = 1;
+}
+
+message Language {
+  string language = 1;
+}
+
+message Const {
+  bool value = 1;
+}
+
+// TODO: what's the difference between Repo and RepoRegexp?
+message RepoRegexp {
+  string regexp = 1;
+}
+
+// BranchesRepos is a slice of BranchRepos to match.
+message BranchesRepos {
+  repeated BranchRepos list = 1;
+}
+
+// BranchRepos is a (branch, sourcegraph repo ids bitmap) tuple. It is a
+// Sourcegraph addition.
+message BranchRepos {
+  string branch = 1;
+  // a serialized roaring bitmap of the target repo ids
+  bytes repos = 2;
+}
+
+// Similar to BranchRepos but will be used to match only by repoid and
+// therefore matches all branches
+message RepoIds {
+  // a serialized roaring bitmap of the target repo ids
+  bytes repos = 1;
+}
+
+// RepoSet is a list of repos to match.
+message RepoSet {
+  map<string, bool> set = 1;
+}
+
+// FileNameSet is a list of file names to match.
+message FileNameSet {
+  map<string, google.protobuf.Empty> set = 1;
+}
+
+// Type changes the result type returned.
+message Type {
+  Q child = 1;
+  // TODO: type constants
+  uint8 type = 2;
+}
+
+message Substring {
+  string pattern = 1;
+  bool case_sensitive = 2;
+
+  // Match only filename
+  bool file_name = 3;
+
+  // Match only content
+  bool content = 4;
+}
+
+// And is matched when all its children are.
+message And {
+  repeated Q children = 1;
+}
+
+// Or is matched when any of its children is matched.
+message Or {
+  repeated Q children = 1;
+}
+
+// Not inverts the meaning of its child.
+message Not {
+  Q children = 1;
+}
+
+// Branch limits search to a specific branch.
+message Branch {
+  string pattern = 1;
+  // exact is true if we want to Pattern to equal branch.
+  bool exact = 2;
+}
