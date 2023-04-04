@@ -26,6 +26,7 @@ import (
 	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"github.com/sourcegraph/zoekt/query"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const mapHeaderBytes uint64 = 48
@@ -683,6 +684,13 @@ type RepositoryBranch struct {
 	Version string
 }
 
+func (r *RepositoryBranch) ToProto() *v1.RepositoryBranch {
+	return &v1.RepositoryBranch{
+		Name:    r.Name,
+		Version: r.Version,
+	}
+}
+
 func (r RepositoryBranch) String() string {
 	return fmt.Sprintf("%s@%s", r.Name, r.Version)
 }
@@ -753,6 +761,43 @@ type Repository struct {
 	// FileTombstones is a set of file paths that should be ignored across all branches
 	// in this shard.
 	FileTombstones map[string]struct{} `json:",omitempty"`
+}
+
+func (r *Repository) ToProto() *v1.Repository {
+	branches := make([]*v1.RepositoryBranch, len(r.Branches))
+	for i, branch := range r.Branches {
+		branches[i] = branch.ToProto()
+	}
+
+	subRepoMap := make(map[string]*v1.Repository, len(r.SubRepoMap))
+	for name, repo := range r.SubRepoMap {
+		subRepoMap[name] = repo.ToProto()
+	}
+
+	fileTombstones := make([]string, 0, len(r.FileTombstones))
+	for file := range r.FileTombstones {
+		fileTombstones = append(fileTombstones, file)
+	}
+
+	return &v1.Repository{
+		Id:                   r.ID,
+		Name:                 r.Name,
+		Url:                  r.URL,
+		Source:               r.Source,
+		Branches:             branches,
+		SubRepoMap:           subRepoMap,
+		CommitUrlTemplate:    r.CommitURLTemplate,
+		FileUrlTemplate:      r.FileURLTemplate,
+		LineFragmentTemplate: r.LineFragmentTemplate,
+		Priority:             r.priority,
+		RawConfig:            r.RawConfig,
+		Rank:                 uint32(r.Rank),
+		IndexOptions:         r.IndexOptions,
+		HasSymbols:           r.HasSymbols,
+		Tombstone:            r.Tombstone,
+		LatestCommitDate:     timestamppb.New(r.LatestCommitDate),
+		FileTombstones:       fileTombstones,
+	}
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {
@@ -845,6 +890,24 @@ type IndexMetadata struct {
 	ID                    string
 }
 
+func (m *IndexMetadata) ToProto() *v1.IndexMetadata {
+	languageMap := make(map[string]uint32, len(m.LanguageMap))
+	for language, id := range m.LanguageMap {
+		languageMap[language] = uint32(id)
+	}
+
+	return &v1.IndexMetadata{
+		IndexFormatVersion:    int64(m.IndexFormatVersion),
+		IndexFeatureVersion:   int64(m.IndexFeatureVersion),
+		IndexMinReaderVersion: int64(m.IndexMinReaderVersion),
+		IndexTime:             timestamppb.New(m.IndexTime),
+		PlainAscii:            m.PlainASCII,
+		LanguageMap:           languageMap,
+		ZoektVersion:          m.ZoektVersion,
+		Id:                    m.ID,
+	}
+}
+
 // Statistics of a (collection of) repositories.
 type RepoStats struct {
 	// Repos is used for aggregrating the number of repositories.
@@ -886,6 +949,19 @@ type RepoStats struct {
 	OtherBranchesNewLinesCount uint64
 }
 
+func (s *RepoStats) ToProto() *v1.RepoStats {
+	return &v1.RepoStats{
+		Repos:                      int64(s.Repos),
+		Shards:                     int64(s.Shards),
+		Documents:                  int64(s.Documents),
+		IndexBytes:                 s.IndexBytes,
+		ContentBytes:               s.ContentBytes,
+		NewLinesCount:              s.NewLinesCount,
+		DefaultBranchNewLinesCount: s.DefaultBranchNewLinesCount,
+		OtherBranchesNewLinesCount: s.OtherBranchesNewLinesCount,
+	}
+}
+
 func (s *RepoStats) Add(o *RepoStats) {
 	// can't update Repos, since one repo may have multiple
 	// shards.
@@ -906,9 +982,28 @@ type RepoListEntry struct {
 	Stats         RepoStats
 }
 
+func (r *RepoListEntry) ToProto() *v1.RepoListEntry {
+	return &v1.RepoListEntry{
+		Repository:    r.Repository.ToProto(),
+		IndexMetadata: r.IndexMetadata.ToProto(),
+		Stats:         r.Stats.ToProto(),
+	}
+}
+
 type MinimalRepoListEntry struct {
 	HasSymbols bool
 	Branches   []RepositoryBranch
+}
+
+func (m *MinimalRepoListEntry) ToProto() *v1.MinimalRepoListEntry {
+	branches := make([]*v1.RepositoryBranch, len(m.Branches))
+	for i, branch := range m.Branches {
+		branches[i] = branch.ToProto()
+	}
+	return &v1.MinimalRepoListEntry{
+		HasSymbols: m.HasSymbols,
+		Branches:   branches,
+	}
 }
 
 type ReposMap map[uint32]MinimalRepoListEntry
@@ -945,6 +1040,25 @@ type RepoList struct {
 	Stats RepoStats
 }
 
+func (r *RepoList) ToProto() *v1.ListResponse {
+	repos := make([]*v1.RepoListEntry, len(r.Repos))
+	for i, repo := range r.Repos {
+		repos[i] = repo.ToProto()
+	}
+
+	minimal := make(map[uint32]*v1.MinimalRepoListEntry, len(r.Minimal))
+	for id, repo := range r.Minimal {
+		minimal[id] = repo.ToProto()
+	}
+
+	return &v1.ListResponse{
+		Repos:    []*v1.RepoListEntry{},
+		ReposMap: map[uint32]*v1.MinimalRepoListEntry{},
+		Crashes:  int64(r.Crashes),
+		Stats:    r.Stats.ToProto(),
+	}
+}
+
 type Searcher interface {
 	Search(ctx context.Context, q query.Q, opts *SearchOptions) (*SearchResult, error)
 
@@ -973,6 +1087,21 @@ type ListOptions struct {
 
 	// Field decides which field to populate in RepoList response.
 	Field RepoListField
+}
+
+func ListOptionsFromProto(p *v1.ListOptions) *ListOptions {
+	var field RepoListField
+	switch p.GetField() {
+	case v1.ListOptions_REPO_LIST_FIELD_REPOS:
+		field = RepoListFieldRepos
+	case v1.ListOptions_REPO_LIST_FIELD_MINIMAL:
+		field = RepoListFieldMinimal
+	case v1.ListOptions_REPO_LIST_FIELD_REPOS_MAP:
+		field = RepoListFieldReposMap
+	}
+	return &ListOptions{
+		Field: field,
+	}
 }
 
 func (o *ListOptions) GetField() (RepoListField, error) {

@@ -50,6 +50,10 @@ func (s *Server) List(ctx context.Context, req *v1.ListRequest) (*v1.ListRespons
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	return s.streamer.List(ctx, q, &zoekt.ListOptions{})
-	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
+	repoList, err := s.streamer.List(ctx, q, zoekt.ListOptionsFromProto(req.GetOpts()))
+	if err != nil {
+		return nil, err
+	}
+
+	return repoList.ToProto(), nil
 }

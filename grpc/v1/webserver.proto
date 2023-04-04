@@ -245,9 +245,10 @@ message ListRequest {
 
 message ListOptions {
   enum RepoListField {
-    REPOS = 0;
-    MINIMAL = 1;
-    REPOS_MAP = 2;
+    REPO_LIST_FIELD_UNKNOWN = 0;
+    REPO_LIST_FIELD_REPOS = 1;
+    REPO_LIST_FIELD_MINIMAL = 2;
+    REPO_LIST_FIELD_REPOS_MAP = 3;
   }
 
   RepoListField field = 1;
