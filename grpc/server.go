@@ -12,6 +12,12 @@ import (
 	"github.com/sourcegraph/zoekt/stream"
 )
 
+func NewServer(s zoekt.Streamer) *Server {
+	return &Server{
+		streamer: s,
+	}
+}
+
 type Server struct {
 	v1.UnimplementedWebserverServiceServer
 	streamer zoekt.Streamer

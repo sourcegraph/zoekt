@@ -85,6 +85,36 @@ type FileMatch struct {
 	Version string
 }
 
+func FileMatchFromProto(p *v1.FileMatch) FileMatch {
+	lineMatches := make([]LineMatch, len(p.GetLineMatches()))
+	for i, lineMatch := range p.GetLineMatches() {
+		lineMatches[i] = LineMatchFromProto(lineMatch)
+	}
+
+	chunkMatches := make([]ChunkMatch, len(p.GetChunkMatches()))
+	for i, chunkMatch := range p.GetChunkMatches() {
+		chunkMatches[i] = ChunkMatchFromProto(chunkMatch)
+	}
+
+	return FileMatch{
+		Score:              p.GetScore(),
+		Debug:              p.GetDebug(),
+		FileName:           p.GetFileName(),
+		Repository:         p.GetRepository(),
+		Branches:           p.GetBranches(),
+		LineMatches:        lineMatches,
+		ChunkMatches:       chunkMatches,
+		RepositoryID:       p.GetRepositoryId(),
+		RepositoryPriority: p.GetRepositoryPriority(),
+		Content:            p.GetContent(),
+		Checksum:           p.GetChecksum(),
+		Language:           p.GetLanguage(),
+		SubRepositoryName:  p.GetSubRepositoryName(),
+		SubRepositoryPath:  p.GetSubRepositoryPath(),
+		Version:            p.GetVersion(),
+	}
+}
+
 func (m *FileMatch) ToProto() *v1.FileMatch {
 	lineMatches := make([]*v1.LineMatch, len(m.LineMatches))
 	for i, lm := range m.LineMatches {
@@ -190,6 +220,28 @@ type ChunkMatch struct {
 	DebugScore string
 }
 
+func ChunkMatchFromProto(p *v1.ChunkMatch) ChunkMatch {
+	ranges := make([]Range, len(p.GetRanges()))
+	for i, r := range p.GetRanges() {
+		ranges[i] = RangeFromProto(r)
+	}
+
+	symbols := make([]*Symbol, len(p.GetSymbolInfo()))
+	for i, r := range p.GetSymbolInfo() {
+		symbols[i] = SymbolFromProto(r)
+	}
+
+	return ChunkMatch{
+		Content:      p.GetContent(),
+		ContentStart: LocationFromProto(p.GetContentStart()),
+		FileName:     p.GetFileName(),
+		Ranges:       ranges,
+		SymbolInfo:   symbols,
+		Score:        p.GetScore(),
+		DebugScore:   p.GetDebugScore(),
+	}
+}
+
 func (cm *ChunkMatch) ToProto() *v1.ChunkMatch {
 	ranges := make([]*v1.Range, len(cm.Ranges))
 	for i, r := range cm.Ranges {
@@ -253,6 +305,13 @@ type Range struct {
 	End Location
 }
 
+func RangeFromProto(p *v1.Range) Range {
+	return Range{
+		Start: LocationFromProto(p.GetStart()),
+		End:   LocationFromProto(p.GetEnd()),
+	}
+}
+
 func (r *Range) ToProto() *v1.Range {
 	return &v1.Range{
 		Start: r.Start.ToProto(),
@@ -271,6 +330,14 @@ type Location struct {
 	LineNumber uint32
 	// 1-based column number (in runes) from the beginning of line
 	Column uint32
+}
+
+func LocationFromProto(p *v1.Location) Location {
+	return Location{
+		ByteOffset: p.GetByteOffset(),
+		LineNumber: p.GetLineNumber(),
+		Column:     p.GetColumn(),
+	}
 }
 
 func (l *Location) ToProto() *v1.Location {
@@ -306,6 +373,26 @@ type LineMatch struct {
 	DebugScore string
 
 	LineFragments []LineFragmentMatch
+}
+
+func LineMatchFromProto(p *v1.LineMatch) LineMatch {
+	lineFragments := make([]LineFragmentMatch, len(p.GetLineFragments()))
+	for i, lineFragment := range p.GetLineFragments() {
+		lineFragments[i] = LineFragmentMatchFromProto(lineFragment)
+	}
+
+	return LineMatch{
+		Line:          p.GetLine(),
+		LineStart:     int(p.GetLineStart()),
+		LineEnd:       int(p.GetLineEnd()),
+		LineNumber:    int(p.GetLineNumber()),
+		Before:        p.GetBefore(),
+		After:         p.GetAfter(),
+		FileName:      p.GetFileName(),
+		Score:         p.GetScore(),
+		DebugScore:    p.GetDebugScore(),
+		LineFragments: lineFragments,
+	}
 }
 
 func (lm *LineMatch) ToProto() *v1.LineMatch {
@@ -366,6 +453,15 @@ type Symbol struct {
 	ParentKind string
 }
 
+func SymbolFromProto(p *v1.SymbolInfo) *Symbol {
+	return &Symbol{
+		Sym:        p.GetSym(),
+		Kind:       p.GetKind(),
+		Parent:     p.GetParent(),
+		ParentKind: p.GetParentKind(),
+	}
+}
+
 func (s *Symbol) ToProto() *v1.SymbolInfo {
 	return &v1.SymbolInfo{
 		Sym:        s.Sym,
@@ -391,6 +487,15 @@ type LineFragmentMatch struct {
 	MatchLength int
 
 	SymbolInfo *Symbol
+}
+
+func LineFragmentMatchFromProto(p *v1.LineFragmentMatch) LineFragmentMatch {
+	return LineFragmentMatch{
+		LineOffset:  int(p.GetLineOffset()),
+		Offset:      p.GetOffset(),
+		MatchLength: int(p.GetMatchLength()),
+		SymbolInfo:  SymbolFromProto(p.GetSymbolInfo()),
+	}
 }
 
 func (lfm *LineFragmentMatch) ToProto() *v1.LineFragmentMatch {
@@ -513,6 +618,28 @@ type Stats struct {
 	FlushReason FlushReason
 }
 
+func StatsFromProto(p *v1.Stats) Stats {
+	return Stats{
+		ContentBytesLoaded:   p.GetContentBytesLoaded(),
+		IndexBytesLoaded:     p.GetIndexBytesLoaded(),
+		Crashes:              int(p.GetCrashes()),
+		Duration:             p.GetDuration().AsDuration(),
+		FileCount:            int(p.GetFileCount()),
+		ShardFilesConsidered: int(p.GetShardFilesConsidered()),
+		FilesConsidered:      int(p.GetFilesConsidered()),
+		FilesLoaded:          int(p.GetFilesLoaded()),
+		FilesSkipped:         int(p.GetFilesSkipped()),
+		ShardsScanned:        int(p.GetShardsScanned()),
+		ShardsSkipped:        int(p.GetShardsSkipped()),
+		ShardsSkippedFilter:  int(p.GetShardsSkippedFilter()),
+		MatchCount:           int(p.GetMatchCount()),
+		NgramMatches:         int(p.GetNgramMatches()),
+		Wait:                 p.GetWait().AsDuration(),
+		RegexpsConsidered:    int(p.GetRegexpsConsidered()),
+		FlushReason:          FlushReason(p.GetFlushReason()),
+	}
+}
+
 func (s *Stats) ToProto() *v1.Stats {
 	return &v1.Stats{
 		ContentBytesLoaded:   s.ContentBytesLoaded,
@@ -604,6 +731,13 @@ type Progress struct {
 	MaxPendingPriority float64
 }
 
+func ProgressFromProto(p *v1.Progress) Progress {
+	return Progress{
+		Priority:           p.GetPriority(),
+		MaxPendingPriority: p.GetMaxPendingPriority(),
+	}
+}
+
 func (p *Progress) ToProto() *v1.Progress {
 	return &v1.Progress{
 		Priority:           p.Priority,
@@ -630,6 +764,21 @@ type SearchResult struct {
 	// FragmentNames holds a repo => template string map, for
 	// the line number fragment.
 	LineFragments map[string]string
+}
+
+func SearchResultFromProto(p *v1.SearchResponse) *SearchResult {
+	files := make([]FileMatch, len(p.GetFiles()))
+	for i, file := range p.GetFiles() {
+		files[i] = FileMatchFromProto(file)
+	}
+
+	return &SearchResult{
+		Stats:         StatsFromProto(p.GetStats()),
+		Progress:      ProgressFromProto(p.GetProgress()),
+		Files:         files,
+		RepoURLs:      p.RepoUrls,
+		LineFragments: p.LineFragments,
+	}
 }
 
 func (sr *SearchResult) ToProto() *v1.SearchResponse {
@@ -682,6 +831,14 @@ func (sr *SearchResult) SizeBytes() (sz uint64) {
 type RepositoryBranch struct {
 	Name    string
 	Version string
+}
+
+func RepositoryBranchFromProto(p *v1.RepositoryBranch) RepositoryBranch {
+	return RepositoryBranch{
+		Name:    p.GetName(),
+		Version: p.GetVersion(),
+	}
+
 }
 
 func (r *RepositoryBranch) ToProto() *v1.RepositoryBranch {
@@ -761,6 +918,44 @@ type Repository struct {
 	// FileTombstones is a set of file paths that should be ignored across all branches
 	// in this shard.
 	FileTombstones map[string]struct{} `json:",omitempty"`
+}
+
+func RepositoryFromProto(p *v1.Repository) Repository {
+	branches := make([]RepositoryBranch, len(p.GetBranches()))
+	for i, branch := range p.GetBranches() {
+		branches[i] = RepositoryBranchFromProto(branch)
+	}
+
+	subRepoMap := make(map[string]*Repository, len(p.GetSubRepoMap()))
+	for name, repo := range p.GetSubRepoMap() {
+		r := RepositoryFromProto(repo)
+		subRepoMap[name] = &r
+	}
+
+	fileTombstones := make(map[string]struct{}, len(p.GetFileTombstones()))
+	for _, file := range p.GetFileTombstones() {
+		fileTombstones[file] = struct{}{}
+	}
+
+	return Repository{
+		ID:                   p.GetId(),
+		Name:                 p.GetName(),
+		URL:                  p.GetUrl(),
+		Source:               p.GetSource(),
+		Branches:             branches,
+		SubRepoMap:           subRepoMap,
+		CommitURLTemplate:    p.GetCommitUrlTemplate(),
+		FileURLTemplate:      p.GetFileUrlTemplate(),
+		LineFragmentTemplate: p.GetLineFragmentTemplate(),
+		priority:             p.GetPriority(),
+		RawConfig:            p.GetRawConfig(),
+		Rank:                 uint16(p.GetRank()),
+		IndexOptions:         p.GetIndexOptions(),
+		HasSymbols:           p.GetHasSymbols(),
+		Tombstone:            p.GetTombstone(),
+		LatestCommitDate:     p.GetLatestCommitDate().AsTime(),
+		FileTombstones:       fileTombstones,
+	}
 }
 
 func (r *Repository) ToProto() *v1.Repository {
@@ -890,6 +1085,24 @@ type IndexMetadata struct {
 	ID                    string
 }
 
+func IndexMetadataFromProto(p *v1.IndexMetadata) IndexMetadata {
+	languageMap := make(map[string]uint16, len(p.GetLanguageMap()))
+	for language, id := range p.GetLanguageMap() {
+		languageMap[language] = uint16(id)
+	}
+
+	return IndexMetadata{
+		IndexFormatVersion:    int(p.GetIndexFormatVersion()),
+		IndexFeatureVersion:   int(p.GetIndexFeatureVersion()),
+		IndexMinReaderVersion: int(p.GetIndexMinReaderVersion()),
+		IndexTime:             p.GetIndexTime().AsTime(),
+		PlainASCII:            p.GetPlainAscii(),
+		LanguageMap:           languageMap,
+		ZoektVersion:          p.GetZoektVersion(),
+		ID:                    p.GetId(),
+	}
+}
+
 func (m *IndexMetadata) ToProto() *v1.IndexMetadata {
 	languageMap := make(map[string]uint32, len(m.LanguageMap))
 	for language, id := range m.LanguageMap {
@@ -949,6 +1162,19 @@ type RepoStats struct {
 	OtherBranchesNewLinesCount uint64
 }
 
+func RepoStatsFromProto(p *v1.RepoStats) RepoStats {
+	return RepoStats{
+		Repos:                      int(p.GetRepos()),
+		Shards:                     int(p.GetShards()),
+		Documents:                  int(p.GetDocuments()),
+		IndexBytes:                 p.GetIndexBytes(),
+		ContentBytes:               p.GetContentBytes(),
+		NewLinesCount:              p.GetNewLinesCount(),
+		DefaultBranchNewLinesCount: p.GetDefaultBranchNewLinesCount(),
+		OtherBranchesNewLinesCount: p.GetOtherBranchesNewLinesCount(),
+	}
+}
+
 func (s *RepoStats) ToProto() *v1.RepoStats {
 	return &v1.RepoStats{
 		Repos:                      int64(s.Repos),
@@ -982,6 +1208,14 @@ type RepoListEntry struct {
 	Stats         RepoStats
 }
 
+func RepoListEntryFromProto(p *v1.RepoListEntry) *RepoListEntry {
+	return &RepoListEntry{
+		Repository:    RepositoryFromProto(p.GetRepository()),
+		IndexMetadata: IndexMetadataFromProto(p.GetIndexMetadata()),
+		Stats:         RepoStatsFromProto(p.GetStats()),
+	}
+}
+
 func (r *RepoListEntry) ToProto() *v1.RepoListEntry {
 	return &v1.RepoListEntry{
 		Repository:    r.Repository.ToProto(),
@@ -993,6 +1227,18 @@ func (r *RepoListEntry) ToProto() *v1.RepoListEntry {
 type MinimalRepoListEntry struct {
 	HasSymbols bool
 	Branches   []RepositoryBranch
+}
+
+func MinimalRepoListEntryFromProto(p *v1.MinimalRepoListEntry) MinimalRepoListEntry {
+	branches := make([]RepositoryBranch, len(p.GetBranches()))
+	for i, branch := range p.GetBranches() {
+		branches[i] = RepositoryBranchFromProto(branch)
+	}
+
+	return MinimalRepoListEntry{
+		HasSymbols: p.GetHasSymbols(),
+		Branches:   branches,
+	}
 }
 
 func (m *MinimalRepoListEntry) ToProto() *v1.MinimalRepoListEntry {
@@ -1038,6 +1284,25 @@ type RepoList struct {
 	// Stats response to a List request.
 	// This is the aggregate RepoStats of all repos matching the input query.
 	Stats RepoStats
+}
+
+func RepoListFromProto(p *v1.ListResponse) *RepoList {
+	repos := make([]*RepoListEntry, len(p.GetRepos()))
+	for i, repo := range p.GetRepos() {
+		repos[i] = RepoListEntryFromProto(repo)
+	}
+
+	reposMap := make(map[uint32]MinimalRepoListEntry, len(p.GetReposMap()))
+	for id, mle := range p.GetReposMap() {
+		reposMap[id] = MinimalRepoListEntryFromProto(mle)
+	}
+
+	return &RepoList{
+		Repos:    repos,
+		ReposMap: reposMap,
+		Crashes:  int(p.GetCrashes()),
+		Stats:    RepoStatsFromProto(p.GetStats()),
+	}
 }
 
 func (r *RepoList) ToProto() *v1.ListResponse {
@@ -1087,6 +1352,20 @@ type ListOptions struct {
 
 	// Field decides which field to populate in RepoList response.
 	Field RepoListField
+}
+
+func (l *ListOptions) ToProto() *v1.ListOptions {
+	var field v1.ListOptions_RepoListField
+	switch l.Field {
+	case RepoListFieldRepos:
+		field = v1.ListOptions_REPO_LIST_FIELD_REPOS
+	case RepoListFieldMinimal:
+		field = v1.ListOptions_REPO_LIST_FIELD_MINIMAL
+	case RepoListFieldReposMap:
+		field = v1.ListOptions_REPO_LIST_FIELD_REPOS_MAP
+	}
+
+	return &v1.ListOptions{Field: field}
 }
 
 func ListOptionsFromProto(p *v1.ListOptions) *ListOptions {
@@ -1214,6 +1493,25 @@ func SearchOptionsFromProto(p *v1.SearchOptions) *SearchOptions {
 		Trace:                  p.GetTrace(),
 		DebugScore:             p.GetDebugScore(),
 		SpanContext:            nil, // TODO?
+	}
+}
+
+func (s *SearchOptions) ToProto() *v1.SearchOptions {
+	return &v1.SearchOptions{
+		EstimateDocCount:       s.EstimateDocCount,
+		Whole:                  s.Whole,
+		ShardMaxMatchCount:     int64(s.ShardMaxMatchCount),
+		TotalMaxMatchCount:     int64(s.TotalMaxMatchCount),
+		ShardRepoMaxMatchCount: int64(s.ShardRepoMaxMatchCount),
+		MaxWallTime:            durationpb.New(s.MaxWallTime),
+		FlushWallTime:          durationpb.New(s.FlushWallTime),
+		MaxDocDisplayCount:     int64(s.MaxDocDisplayCount),
+		NumContextLines:        int64(s.NumContextLines),
+		ChunkMatches:           s.ChunkMatches,
+		UseDocumentRanks:       s.UseDocumentRanks,
+		DocumentRanksWeight:    s.DocumentRanksWeight,
+		Trace:                  s.Trace,
+		DebugScore:             s.DebugScore,
 	}
 }
 

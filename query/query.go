@@ -40,6 +40,47 @@ type Q interface {
 	String() string
 }
 
+func QToProto(q Q) *v1.Q {
+	switch v := q.(type) {
+	case *RawConfig:
+		return &v1.Q{Query: &v1.Q_RawConfig{RawConfig: v.ToProto()}}
+	case *Regexp:
+		return &v1.Q{Query: &v1.Q_Regexp{Regexp: v.ToProto()}}
+	case *Symbol:
+		return &v1.Q{Query: &v1.Q_Symbol{Symbol: v.ToProto()}}
+	case *Language:
+		return &v1.Q{Query: &v1.Q_Language{Language: v.ToProto()}}
+	case *Const:
+		return &v1.Q{Query: &v1.Q_Const{Const: v.ToProto()}}
+	case *Repo:
+		return &v1.Q{Query: &v1.Q_Repo{Repo: v.ToProto()}}
+	case *RepoRegexp:
+		return &v1.Q{Query: &v1.Q_RepoRegexp{RepoRegexp: v.ToProto()}}
+	case *BranchesRepos:
+		return &v1.Q{Query: &v1.Q_BranchesRepos{BranchesRepos: v.ToProto()}}
+	case *RepoIDs:
+		return &v1.Q{Query: &v1.Q_RepoIds{RepoIds: v.ToProto()}}
+	case *RepoSet:
+		return &v1.Q{Query: &v1.Q_RepoSet{RepoSet: v.ToProto()}}
+	case *FileNameSet:
+		return &v1.Q{Query: &v1.Q_FileNameSet{FileNameSet: v.ToProto()}}
+	case *Type:
+		return &v1.Q{Query: &v1.Q_Type{Type: v.ToProto()}}
+	case *Substring:
+		return &v1.Q{Query: &v1.Q_Substring{Substring: v.ToProto()}}
+	case *And:
+		return &v1.Q{Query: &v1.Q_And{And: v.ToProto()}}
+	case *Or:
+		return &v1.Q{Query: &v1.Q_Or{Or: v.ToProto()}}
+	case *Not:
+		return &v1.Q{Query: &v1.Q_Not{Not: v.ToProto()}}
+	case *Branch:
+		return &v1.Q{Query: &v1.Q_Branch{Branch: v.ToProto()}}
+	default:
+		panic(fmt.Sprintf("unknown query node %T", v))
+	}
+}
+
 func QFromProto(p *v1.Q) (Q, error) {
 	switch v := p.Query.(type) {
 	case *v1.Q_RawConfig:
@@ -120,6 +161,10 @@ func RawConfigFromProto(p *v1.RawConfig) RawConfig {
 	return RawConfig(p.Flags)
 }
 
+func (r RawConfig) ToProto() *v1.RawConfig {
+	return &v1.RawConfig{Flags: uint64(r)}
+}
+
 func (r RawConfig) String() string {
 	var s []string
 	for _, fn := range flagNames {
@@ -149,6 +194,15 @@ func RegexpFromProto(p *v1.Regexp) (*Regexp, error) {
 		Content:       p.GetContent(),
 		CaseSensitive: p.GetCaseSensitive(),
 	}, nil
+}
+
+func (r *Regexp) ToProto() *v1.Regexp {
+	return &v1.Regexp{
+		Regexp:        r.Regexp.String(),
+		FileName:      r.FileName,
+		Content:       r.Content,
+		CaseSensitive: r.CaseSensitive,
+	}
 }
 
 func (q *Regexp) String() string {
@@ -208,6 +262,12 @@ func SymbolFromProto(p *v1.Symbol) (*Symbol, error) {
 	}, nil
 }
 
+func (s *Symbol) ToProto() *v1.Symbol {
+	return &v1.Symbol{
+		Expr: QToProto(s.Expr),
+	}
+}
+
 func (s *Symbol) String() string {
 	return fmt.Sprintf("sym:%s", s.Expr)
 }
@@ -230,6 +290,10 @@ func LanguageFromProto(p *v1.Language) *Language {
 	}
 }
 
+func (l *Language) ToProto() *v1.Language {
+	return &v1.Language{Language: l.Language}
+}
+
 func (l *Language) String() string {
 	return "lang:" + l.Language
 }
@@ -242,6 +306,10 @@ func ConstFromProto(p *v1.Const) *Const {
 	return &Const{
 		Value: p.GetValue(),
 	}
+}
+
+func (q *Const) ToProto() *v1.Const {
+	return &v1.Const{Value: q.Value}
 }
 
 func (q *Const) String() string {
@@ -263,6 +331,12 @@ func RepoFromProto(p *v1.Repo) (*Repo, error) {
 	return &Repo{
 		Regexp: r,
 	}, nil
+}
+
+func (q *Repo) ToProto() *v1.Repo {
+	return &v1.Repo{
+		Regexp: q.Regexp.String(),
+	}
 }
 
 func (q *Repo) String() string {
@@ -293,6 +367,12 @@ func RepoRegexpFromProto(p *v1.RepoRegexp) (*RepoRegexp, error) {
 	return &RepoRegexp{
 		Regexp: r,
 	}, nil
+}
+
+func (q *RepoRegexp) ToProto() *v1.RepoRegexp {
+	return &v1.RepoRegexp{
+		Regexp: q.Regexp.String(),
+	}
 }
 
 func (q *RepoRegexp) String() string {
@@ -331,6 +411,17 @@ func BranchesReposFromProto(p *v1.BranchesRepos) (*BranchesRepos, error) {
 	return &BranchesRepos{
 		List: brs,
 	}, nil
+}
+
+func (br *BranchesRepos) ToProto() *v1.BranchesRepos {
+	list := make([]*v1.BranchRepos, len(br.List))
+	for i, branchRepo := range br.List {
+		list[i] = branchRepo.ToProto()
+	}
+
+	return &v1.BranchesRepos{
+		List: list,
+	}
 }
 
 // NewSingleBranchesRepos is a helper for creating a BranchesRepos which
@@ -374,6 +465,16 @@ func RepoIDsFromProto(p *v1.RepoIds) (*RepoIDs, error) {
 	return &RepoIDs{
 		Repos: bm,
 	}, nil
+}
+
+func (q *RepoIDs) ToProto() *v1.RepoIds {
+	b, err := q.Repos.ToBytes()
+	if err != nil {
+		panic("unexpected error marshalling bitmap: " + err.Error())
+	}
+	return &v1.RepoIds{
+		Repos: b,
+	}
 }
 
 func (q *RepoIDs) String() string {
@@ -421,6 +522,18 @@ func BranchReposFromProto(p *v1.BranchRepos) (BranchRepos, error) {
 	}, nil
 }
 
+func (br *BranchRepos) ToProto() *v1.BranchRepos {
+	b, err := br.Repos.ToBytes()
+	if err != nil {
+		panic("unexpected error marshalling bitmap: " + err.Error())
+	}
+
+	return &v1.BranchRepos{
+		Branch: br.Branch,
+		Repos:  b,
+	}
+}
+
 // Similar to BranchRepos but will be used to match only by repoid and
 // therefore matches all branches
 type RepoIDs struct {
@@ -436,6 +549,12 @@ type RepoSet struct {
 func RepoSetFromProto(p *v1.RepoSet) *RepoSet {
 	return &RepoSet{
 		Set: p.GetSet(),
+	}
+}
+
+func (q *RepoSet) ToProto() *v1.RepoSet {
+	return &v1.RepoSet{
+		Set: q.Set,
 	}
 }
 
@@ -479,6 +598,16 @@ func FileNameSetFromProto(p *v1.FileNameSet) *FileNameSet {
 	}
 	return &FileNameSet{
 		Set: m,
+	}
+}
+
+func (q *FileNameSet) ToProto() *v1.FileNameSet {
+	s := make([]string, 0, len(q.Set))
+	for name := range q.Set {
+		s = append(s, name)
+	}
+	return &v1.FileNameSet{
+		Set: s,
 	}
 }
 
@@ -530,6 +659,26 @@ type Type struct {
 	Type  uint8
 }
 
+func TypeFromProto(p *v1.Type) (*Type, error) {
+	child, err := QFromProto(p.GetChild())
+	if err != nil {
+		return nil, err
+	}
+
+	return &Type{
+		Child: child,
+		// TODO: make proper enum types
+		Type: uint8(p.GetType()),
+	}, nil
+}
+
+func (q *Type) ToProto() *v1.Type {
+	return &v1.Type{
+		Child: QToProto(q.Child),
+		Type:  uint32(q.Type),
+	}
+}
+
 func (q *Type) String() string {
 	switch q.Type {
 	case TypeFileMatch:
@@ -574,6 +723,15 @@ func SubstringFromProto(p *v1.Substring) *Substring {
 		CaseSensitive: p.GetCaseSensitive(),
 		FileName:      p.GetFileName(),
 		Content:       p.GetContent(),
+	}
+}
+
+func (q *Substring) ToProto() *v1.Substring {
+	return &v1.Substring{
+		Pattern:       q.Pattern,
+		CaseSensitive: q.CaseSensitive,
+		FileName:      q.FileName,
+		Content:       q.Content,
 	}
 }
 
@@ -696,6 +854,16 @@ func OrFromProto(p *v1.Or) (*Or, error) {
 	}, nil
 }
 
+func (q *Or) ToProto() *v1.Or {
+	children := make([]*v1.Q, len(q.Children))
+	for i, child := range q.Children {
+		children[i] = QToProto(child)
+	}
+	return &v1.Or{
+		Children: children,
+	}
+}
+
 func (q *Or) String() string {
 	var sub []string
 	for _, ch := range q.Children {
@@ -719,6 +887,12 @@ func NotFromProto(p *v1.Not) (*Not, error) {
 	}, nil
 }
 
+func (q *Not) ToProto() *v1.Not {
+	return &v1.Not{
+		Child: QToProto(q.Child),
+	}
+}
+
 func (q *Not) String() string {
 	return fmt.Sprintf("(not %s)", q.Child)
 }
@@ -740,6 +914,16 @@ func AndFromProto(p *v1.And) (*And, error) {
 	return &And{
 		Children: children,
 	}, nil
+}
+
+func (q *And) ToProto() *v1.And {
+	children := make([]*v1.Q, len(q.Children))
+	for i, child := range q.Children {
+		children[i] = QToProto(child)
+	}
+	return &v1.And{
+		Children: children,
+	}
 }
 
 func (q *And) String() string {
@@ -772,6 +956,13 @@ func BranchFromProto(p *v1.Branch) *Branch {
 	return &Branch{
 		Pattern: p.GetPattern(),
 		Exact:   p.GetExact(),
+	}
+}
+
+func (q *Branch) ToProto() *v1.Branch {
+	return &v1.Branch{
+		Pattern: q.Pattern,
+		Exact:   q.Exact,
 	}
 }
 
