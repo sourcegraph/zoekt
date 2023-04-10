@@ -45,6 +45,8 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/debugserver"
+	zoektgrpc "github.com/sourcegraph/zoekt/grpc"
+	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
@@ -280,7 +282,8 @@ func main() {
 		log.Println("watchdog disabled")
 	}
 
-	grpcServer := grpc.NewServer(web.NewTraceAwareSearcher(searcher))
+	grpcServer := grpc.NewServer() // TODO server opts
+	v1.RegisterWebserverServiceServer(grpcServer, zoektgrpc.NewServer(web.NewTraceAwareSearcher(s.Searcher)))
 
 	srv := &http.Server{
 		Addr:    *listen,

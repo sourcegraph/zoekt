@@ -692,19 +692,6 @@ func (q *Type) String() string {
 	}
 }
 
-func TypeFromProto(p *v1.Type) (*Type, error) {
-	child, err := QFromProto(p.GetChild())
-	if err != nil {
-		return nil, err
-	}
-
-	return &Type{
-		Child: child,
-		// TODO: make proper enum types
-		Type: uint8(p.GetType()),
-	}, nil
-}
-
 // Substring is the most basic query: a query for a substring.
 type Substring struct {
 	Pattern       string
