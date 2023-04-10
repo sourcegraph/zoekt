@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "grpc",
+    srcs = ["server.go"],
+    importpath = "github.com/sourcegraph/zoekt/grpc",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:zoekt",
+        "//grpc/v1:grpc",
+        "//query",
+        "//stream",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
