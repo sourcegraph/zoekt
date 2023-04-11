@@ -15,7 +15,10 @@
 package zoekt // import "github.com/sourcegraph/zoekt"
 
 import (
-	"github.com/sourcegraph/zoekt/grpc/v1"
+	"math/rand"
+	"reflect"
+
+	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -195,6 +198,10 @@ func (lm *LineMatch) ToProto() *v1.LineMatch {
 }
 
 func SymbolFromProto(p *v1.SymbolInfo) *Symbol {
+	if p == nil {
+		return nil
+	}
+
 	return &Symbol{
 		Sym:        p.GetSym(),
 		Kind:       p.GetKind(),
@@ -204,6 +211,10 @@ func SymbolFromProto(p *v1.SymbolInfo) *Symbol {
 }
 
 func (s *Symbol) ToProto() *v1.SymbolInfo {
+	if s == nil {
+		return nil
+	}
+
 	return &v1.SymbolInfo{
 		Sym:        s.Sym,
 		Kind:       s.Kind,
@@ -230,7 +241,18 @@ func (lfm *LineFragmentMatch) ToProto() *v1.LineFragmentMatch {
 	}
 }
 
-// TODO why is there no FlushReasonFromProto?
+func FlushReasonFromProto(p v1.FlushReason) FlushReason {
+	switch p {
+	case v1.FlushReason_TIMER_EXPIRED:
+		return FlushReasonTimerExpired
+	case v1.FlushReason_FINAL_FLUSH:
+		return FlushReasonFinalFlush
+	case v1.FlushReason_MAX_SIZE:
+		return FlushReasonMaxSize
+	default:
+		return FlushReason(0)
+	}
+}
 
 func (fr FlushReason) ToProto() v1.FlushReason {
 	switch fr {
@@ -242,6 +264,20 @@ func (fr FlushReason) ToProto() v1.FlushReason {
 		return v1.FlushReason_MAX_SIZE
 	default:
 		return v1.FlushReason_UNKNOWN
+	}
+}
+
+// Generate valid reasons for quickchecks
+func (fr FlushReason) Generate(rand *rand.Rand, size int) reflect.Value {
+	switch rand.Int() % 4 {
+	case 1:
+		return reflect.ValueOf(FlushReasonMaxSize)
+	case 2:
+		return reflect.ValueOf(FlushReasonFinalFlush)
+	case 3:
+		return reflect.ValueOf(FlushReasonTimerExpired)
+	default:
+		return reflect.ValueOf(FlushReason(0))
 	}
 }
 
@@ -263,7 +299,7 @@ func StatsFromProto(p *v1.Stats) Stats {
 		NgramMatches:         int(p.GetNgramMatches()),
 		Wait:                 p.GetWait().AsDuration(),
 		RegexpsConsidered:    int(p.GetRegexpsConsidered()),
-		FlushReason:          FlushReason(p.GetFlushReason()),
+		FlushReason:          FlushReasonFromProto(p.GetFlushReason()),
 	}
 }
 
@@ -304,6 +340,10 @@ func (p *Progress) ToProto() *v1.Progress {
 }
 
 func SearchResultFromProto(p *v1.SearchResponse) *SearchResult {
+	if p == nil {
+		return nil
+	}
+
 	files := make([]FileMatch, len(p.GetFiles()))
 	for i, file := range p.GetFiles() {
 		files[i] = FileMatchFromProto(file)
@@ -319,6 +359,10 @@ func SearchResultFromProto(p *v1.SearchResponse) *SearchResult {
 }
 
 func (sr *SearchResult) ToProto() *v1.SearchResponse {
+	if sr == nil {
+		return nil
+	}
+
 	files := make([]*v1.FileMatch, len(sr.Files))
 	for i, file := range sr.Files {
 		files[i] = file.ToProto()
@@ -387,6 +431,10 @@ func RepositoryFromProto(p *v1.Repository) Repository {
 }
 
 func (r *Repository) ToProto() *v1.Repository {
+	if r == nil {
+		return nil
+	}
+
 	branches := make([]*v1.RepositoryBranch, len(r.Branches))
 	for i, branch := range r.Branches {
 		branches[i] = branch.ToProto()
@@ -442,6 +490,10 @@ func IndexMetadataFromProto(p *v1.IndexMetadata) IndexMetadata {
 }
 
 func (m *IndexMetadata) ToProto() *v1.IndexMetadata {
+	if m == nil {
+		return nil
+	}
+
 	languageMap := make(map[string]uint32, len(m.LanguageMap))
 	for language, id := range m.LanguageMap {
 		languageMap[language] = uint32(id)
@@ -486,6 +538,10 @@ func (s *RepoStats) ToProto() *v1.RepoStats {
 }
 
 func RepoListEntryFromProto(p *v1.RepoListEntry) *RepoListEntry {
+	if p == nil {
+		return nil
+	}
+
 	return &RepoListEntry{
 		Repository:    RepositoryFromProto(p.GetRepository()),
 		IndexMetadata: IndexMetadataFromProto(p.GetIndexMetadata()),
@@ -494,6 +550,10 @@ func RepoListEntryFromProto(p *v1.RepoListEntry) *RepoListEntry {
 }
 
 func (r *RepoListEntry) ToProto() *v1.RepoListEntry {
+	if r == nil {
+		return nil
+	}
+
 	return &v1.RepoListEntry{
 		Repository:    r.Repository.ToProto(),
 		IndexMetadata: r.IndexMetadata.ToProto(),
@@ -563,6 +623,9 @@ func (r *RepoList) ToProto() *v1.ListResponse {
 }
 
 func (l *ListOptions) ToProto() *v1.ListOptions {
+	if l == nil {
+		return nil
+	}
 	var field v1.ListOptions_RepoListField
 	switch l.Field {
 	case RepoListFieldRepos:
@@ -577,6 +640,9 @@ func (l *ListOptions) ToProto() *v1.ListOptions {
 }
 
 func ListOptionsFromProto(p *v1.ListOptions) *ListOptions {
+	if p == nil {
+		return nil
+	}
 	var field RepoListField
 	switch p.GetField() {
 	case v1.ListOptions_REPO_LIST_FIELD_REPOS:
@@ -602,7 +668,6 @@ func SearchOptionsFromProto(p *v1.SearchOptions) *SearchOptions {
 		ShardMaxMatchCount:     int(p.GetShardMaxMatchCount()),
 		TotalMaxMatchCount:     int(p.GetTotalMaxMatchCount()),
 		ShardRepoMaxMatchCount: int(p.GetShardRepoMaxMatchCount()),
-		TotalMaxImportantMatch: int(p.GetTotalMaxMatchCount()),
 		MaxWallTime:            p.GetMaxWallTime().AsDuration(),
 		FlushWallTime:          p.GetFlushWallTime().AsDuration(),
 		MaxDocDisplayCount:     int(p.GetMaxDocDisplayCount()),
@@ -617,6 +682,10 @@ func SearchOptionsFromProto(p *v1.SearchOptions) *SearchOptions {
 }
 
 func (s *SearchOptions) ToProto() *v1.SearchOptions {
+	if s == nil {
+		return nil
+	}
+
 	return &v1.SearchOptions{
 		EstimateDocCount:       s.EstimateDocCount,
 		Whole:                  s.Whole,
