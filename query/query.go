@@ -42,7 +42,7 @@ type Q interface {
 
 func QToProto(q Q) *v1.Q {
 	switch v := q.(type) {
-	case *RawConfig:
+	case RawConfig:
 		return &v1.Q{Query: &v1.Q_RawConfig{RawConfig: v.ToProto()}}
 	case *Regexp:
 		return &v1.Q{Query: &v1.Q_Regexp{Regexp: v.ToProto()}}

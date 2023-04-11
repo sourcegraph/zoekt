@@ -549,7 +549,7 @@ func (fr FlushReason) ToProto() v1.FlushReason {
 	case FlushReasonMaxSize:
 		return v1.FlushReason_MAX_SIZE
 	default:
-		panic("unknown flush reason")
+		return v1.FlushReason_UNKNOWN
 	}
 }
 
