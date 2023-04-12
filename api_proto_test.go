@@ -15,6 +15,8 @@
 package zoekt // import "github.com/sourcegraph/zoekt"
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -24,6 +26,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	v1 "github.com/sourcegraph/zoekt/grpc/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestProtoRoundtrip(t *testing.T) {
@@ -321,4 +325,52 @@ func gen[T any](sample T, r *rand.Rand) T {
 	var t T
 	v, _ := quick.Value(reflect.TypeOf(t), r)
 	return v.Interface().(T)
+}
+
+var exampleSearchResult = func() SearchResult {
+	sr, _ := quick.Value(reflect.TypeOf(SearchResult{}), rand.New(rand.NewSource(300)))
+	return sr.Interface().(SearchResult)
+}()
+
+var exampleProtoSearchResult = exampleSearchResult.ToProto()
+
+func BenchmarkGobRoundtrip(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+
+		for i := 0; i < 10; i++ {
+			err := enc.Encode(exampleSearchResult)
+			if err != nil {
+				panic(err)
+			}
+
+		}
+
+		dec := gob.NewDecoder(&buf)
+		for i := 0; i < 10; i++ {
+			var res SearchResult
+			err := dec.Decode(&res)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+}
+
+func BenchmarkProtoRoundtrip(b *testing.B) {
+	res := new(v1.SearchResponse)
+	for i := 0; i < b.N; i++ {
+		var buf []byte
+		for i := 0; i < 10; i++ {
+			b, err := proto.MarshalOptions{}.MarshalAppend(buf, exampleProtoSearchResult)
+			if err != nil {
+				panic(err)
+			}
+			err = proto.Unmarshal(b, res)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
 }
