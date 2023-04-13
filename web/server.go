@@ -173,10 +173,9 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 		mux.HandleFunc("/print", s.servePrint)
 	}
 	if s.RPC {
-		traceAware := NewTraceAwareSearcher(s.Searcher)
-		mux.Handle(rpc.DefaultRPCPath, rpc.Server(traceAware)) // /rpc
-		mux.Handle("/api/", http.StripPrefix("/api", zjson.JSONServer(traceAware)))
-		mux.Handle(stream.DefaultSSEPath, stream.Server(traceAware)) // /stream
+		mux.Handle(rpc.DefaultRPCPath, rpc.Server(traceAwareSearcher{s.Searcher})) // /rpc
+		mux.Handle("/api/", http.StripPrefix("/api", zjson.JSONServer(traceAwareSearcher{s.Searcher})))
+		mux.Handle(stream.DefaultSSEPath, stream.Server(traceAwareSearcher{s.Searcher})) // /stream
 	}
 
 	mux.HandleFunc("/healthz", s.serveHealthz)
