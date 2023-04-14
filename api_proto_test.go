@@ -27,10 +27,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	v1 "github.com/sourcegraph/zoekt/grpc/v1"
-
-	// v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"google.golang.org/protobuf/proto"
+
+	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 )
 
 func TestProtoRoundtrip(t *testing.T) {
