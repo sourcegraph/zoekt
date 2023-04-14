@@ -321,7 +321,7 @@ func main() {
 		log.Fatalf("readConfigURL(%s): %v", opts.mirrorConfigFile, err)
 	}
 
-	pendingRepos := make(chan string, 10)
+	pendingRepos := make(chan string, 6000)
 	go periodicMirrorFile(repoDir, &opts, pendingRepos)
 	go deleteLogsLoop(logDir, opts.maxLogAge)
 	go deleteOrphanIndexes(*indexDir, repoDir, opts.fetchInterval)
