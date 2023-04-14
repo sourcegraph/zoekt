@@ -907,9 +907,11 @@ type SearchOptions struct {
 	// SpanContext is the opentracing span context, if it exists, from the zoekt client
 	SpanContext map[string]string
 
-	// If true, SearchResult.RepoURLs and SearchResults.LineFragments are included in results
-	// if false, we avoid computing and including them
-	IncludeRepoURLsAndLineFragments bool
+	// If true, SearchResult.RepoURLs and SearchResults.LineFragments are not computed and are
+	// excluded from results.
+	// This is useful for deployments of zoekt for a single host, where you can create the
+	// repoURL elsewhere is just from the repository name
+	ExcludeRepoURLsAndLineFragments bool
 
 	// Replace HEAD with in fileMatch.Branches with Repository.HEADRevParsedName,
 	// if it is not empty

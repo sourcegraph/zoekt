@@ -421,7 +421,7 @@ nextFileMatch:
 	// ranking. If we sorted now, we would break the assumption that results
 	// from the same repo in a shard appear next to each other.
 
-	if opts.IncludeRepoURLsAndLineFragments {
+	if !opts.ExcludeRepoURLsAndLineFragments {
 		for _, md := range d.repoMetaData {
 			r := md
 			addRepo(&res, &r)
