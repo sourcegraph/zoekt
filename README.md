@@ -6,9 +6,11 @@
 This is a fast text search engine, intended for use with source
 code. (Pronunciation: roughly as you would pronounce "zooked" in English)
 
-**Note:** This is a [Sourcegraph](https://github.com/xvandish/zoekt) fork
-of [github.com/google/zoekt](https://github.com/google/zoekt). It is now the
-main maintained source of Zoekt.
+This is a fork of sourcegraph/zoekt, which itself is a fork of google/zoekt.
+I'll attempt to upstream changes that are generic enough that they might be
+helpful to other people, and the repo will be kept in close-to lockstep with
+sourcegraph/zoekt.
+
 
 # INSTRUCTIONS
 
