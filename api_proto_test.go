@@ -332,7 +332,7 @@ func gen[T any](sample T, r *rand.Rand) T {
 // This is a real search result that is intended to be a reasonable representative
 // for serialization benchmarks.
 var (
-	//go:embed testdata/api/search_result_1.proto
+	//go:embed testdata/search_result_1.pb
 	exampleSearchResultBytes []byte
 
 	// The proto struct representation of the search result

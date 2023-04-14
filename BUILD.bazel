@@ -119,6 +119,7 @@ go_test(
     ],
     data = [":testdata"],
     embed = [":zoekt"],
+    embedsrcs = [":testdata"],
     deps = [
         "//grpc/v1:grpc",
         "//query",
