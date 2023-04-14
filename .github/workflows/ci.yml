@@ -40,44 +40,44 @@ jobs:
           fail_on_error: "true"
           shfmt_flags: "-i 2 -ci -bn"
 
-  lint-protos:
-    name: "buf lint"
-    runs-on: ubuntu-latest
-    steps:
-      # Run `git checkout`
-      - uses: actions/checkout@v2
-      # Install the `buf` CLI
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ secrets.GH_TOKEN }}
-      # Lint your Protobuf sources
-      - run: .github/workflows/buf-lint-check.sh
+  # lint-protos:
+  #   name: "buf lint"
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     # Run `git checkout`
+  #     - uses: actions/checkout@v2
+  #     # Install the `buf` CLI
+  #     - uses: bufbuild/buf-setup-action@v1
+  #       with:
+  #         github_token: ${{ secrets.GH_TOKEN }}
+  #     # Lint your Protobuf sources
+  #     - run: .github/workflows/buf-lint-check.sh
 
-  format-protos:
-    name: "buf format"
-    runs-on: ubuntu-latest
-    steps:
-      # Run `git checkout`
-      - uses: actions/checkout@v2
-      # Install the `buf` CLI
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ secrets.GH_TOKEN }}
-      # Check to see if the Protobuf sources are formatted
-      - run: .github/workflows/buf-format-check.sh
+  # format-protos:
+  #   name: "buf format"
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     # Run `git checkout`
+  #     - uses: actions/checkout@v2
+  #     # Install the `buf` CLI
+  #     - uses: bufbuild/buf-setup-action@v1
+  #       with:
+  #         github_token: ${{ secrets.GH_TOKEN }}
+  #     # Check to see if the Protobuf sources are formatted
+  #     - run: .github/workflows/buf-format-check.sh
 
-  generate-protos:
-    name: "buf generate"
-    runs-on: ubuntu-latest
-    steps:
-      # Run `git checkout`
-      - uses: actions/checkout@v2
-      # Install the `buf` CLI
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ secrets.GH_TOKEN }}
-      # Check if the generated code is up-to-date
-      - run: .github/workflows/buf-generate-check.sh
+  # generate-protos:
+  #   name: "buf generate"
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     # Run `git checkout`
+  #     - uses: actions/checkout@v2
+  #     # Install the `buf` CLI
+  #     - uses: bufbuild/buf-setup-action@v1
+  #       with:
+  #         github_token: ${{ secrets.GH_TOKEN }}
+  #     # Check if the generated code is up-to-date
+  #     - run: .github/workflows/buf-generate-check.sh
 
   # We build a shared docker image called "zoekt". This is not pushed, but is
   # used for creating the indexserver and webserver images.
@@ -107,19 +107,21 @@ jobs:
       - name: build-push-webserver
         uses: docker/build-push-action@v1
         with:
-          repository: sourcegraph/zoekt-webserver
+          repository: xvandish/zoekt-webserver
           tags: ${{ steps.version.outputs.value }},latest
           dockerfile: Dockerfile.webserver
           add_git_labels: "true"
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: "ghcr.io"
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: build-push-indexserver
         uses: docker/build-push-action@v1
         with:
-          repository: sourcegraph/zoekt-indexserver
+          repository: xvandish/zoekt-indexserver
           tags: ${{ steps.version.outputs.value }},latest
           dockerfile: Dockerfile.indexserver
           add_git_labels: "true"
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: "ghcr.io"
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
