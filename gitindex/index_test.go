@@ -613,9 +613,9 @@ func TestIndexDeltaBasic(t *testing.T) {
 					}
 
 					normalBuildCalled := false
-					prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error) {
+					prepareNormalSpy := func(options Options, repository *git.Repository, branches []string) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error) {
 						normalBuildCalled = true
-						return prepareNormalBuild(options, repository)
+						return prepareNormalBuild(options, repository, branches)
 					}
 
 					// run test
