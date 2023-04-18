@@ -693,6 +693,7 @@ func SearchOptionsFromProto(p *v1.SearchOptions) *SearchOptions {
 		UseDocumentRanks:       p.GetUseDocumentRanks(),
 		DocumentRanksWeight:    p.GetDocumentRanksWeight(),
 		Trace:                  p.GetTrace(),
+		DebugScore:             p.GetDebugScore(),
 		SpanContext:            p.GetSpanContext(),
 	}
 }

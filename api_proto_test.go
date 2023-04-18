@@ -235,9 +235,6 @@ func TestProtoRoundtrip(t *testing.T) {
 
 	t.Run("ListOptions", func(t *testing.T) {
 		f := func(f1 *ListOptions) bool {
-			if f1 != nil {
-				f1.Minimal = false
-			}
 			p1 := f1.ToProto()
 			f2 := ListOptionsFromProto(p1)
 			if diff := cmp.Diff(f1, f2); diff != "" {
@@ -257,7 +254,6 @@ func TestProtoRoundtrip(t *testing.T) {
 				// Ignore deprecated and unimplemented fields
 				f1.ShardMaxImportantMatch = 0
 				f1.TotalMaxImportantMatch = 0
-				f1.SpanContext = nil
 			}
 			p1 := f1.ToProto()
 			f2 := SearchOptionsFromProto(p1)
