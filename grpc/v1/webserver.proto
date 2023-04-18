@@ -251,7 +251,13 @@ message ListOptions {
     REPO_LIST_FIELD_REPOS_MAP = 3;
   }
 
+  // Field decides which field to populate in RepoList response.
   RepoListField field = 1;
+
+  // Return only Minimal data per repo that Sourcegraph frontend needs.
+  //
+  // Deprecated: use Field
+  bool minimal = 16;
 }
 
 message ListResponse {

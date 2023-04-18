@@ -596,8 +596,9 @@ func RepoListFromProto(p *v1.ListResponse) *RepoList {
 	}
 
 	minimal := make(map[uint32]*MinimalRepoListEntry, len(p.GetMinimal()))
-	for id, mle := range p.GetReposMap() {
-		reposMap[id] = MinimalRepoListEntryFromProto(mle)
+	for id, mle := range p.GetMinimal() {
+		m := MinimalRepoListEntryFromProto(mle)
+		minimal[id] = &m
 	}
 
 	return &RepoList{
@@ -615,7 +616,7 @@ func (r *RepoList) ToProto() *v1.ListResponse {
 		repos[i] = repo.ToProto()
 	}
 
-	reposMap := make(map[uint32]*v1.MinimalRepoListEntry, len(r.Minimal))
+	reposMap := make(map[uint32]*v1.MinimalRepoListEntry, len(r.ReposMap))
 	for id, repo := range r.ReposMap {
 		reposMap[id] = repo.ToProto()
 	}
@@ -648,7 +649,10 @@ func (l *ListOptions) ToProto() *v1.ListOptions {
 		field = v1.ListOptions_REPO_LIST_FIELD_REPOS_MAP
 	}
 
-	return &v1.ListOptions{Field: field}
+	return &v1.ListOptions{
+		Field:   field,
+		Minimal: l.Minimal,
+	}
 }
 
 func ListOptionsFromProto(p *v1.ListOptions) *ListOptions {
@@ -665,7 +669,8 @@ func ListOptionsFromProto(p *v1.ListOptions) *ListOptions {
 		field = RepoListFieldReposMap
 	}
 	return &ListOptions{
-		Field: field,
+		Field:   field,
+		Minimal: p.GetMinimal(),
 	}
 }
 
