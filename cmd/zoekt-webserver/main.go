@@ -282,7 +282,7 @@ func main() {
 		log.Println("watchdog disabled")
 	}
 
-	grpcServer := grpc.NewServer() // TODO server opts
+	grpcServer := grpc.NewServer()
 	v1.RegisterWebserverServiceServer(grpcServer, zoektgrpc.NewServer(web.NewTraceAwareSearcher(s.Searcher)))
 
 	srv := &http.Server{
