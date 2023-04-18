@@ -266,6 +266,11 @@ message ListResponse {
   // Stats response to a List request.
   // This is the aggregate RepoStats of all repos matching the input query.
   RepoStats stats = 4;
+
+  // Returned when ListOptions.Field is RepoListFieldMinimal.
+  //
+  // Deprecated: use ReposMap.
+  map<uint32, MinimalRepoListEntry> minimal = 5;
 }
 
 message RepoListEntry {

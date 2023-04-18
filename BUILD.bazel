@@ -119,7 +119,7 @@ go_test(
     ],
     data = [":testdata"],
     embed = [":zoekt"],
-    embedsrcs = [":testdata"],
+    embedsrcs = ["//testdata:search_result_1.pb"],  #keep
     deps = [
         "//grpc/v1:grpc",
         "//query",

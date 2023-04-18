@@ -595,11 +595,17 @@ func RepoListFromProto(p *v1.ListResponse) *RepoList {
 		reposMap[id] = MinimalRepoListEntryFromProto(mle)
 	}
 
+	minimal := make(map[uint32]*MinimalRepoListEntry, len(p.GetMinimal()))
+	for id, mle := range p.GetReposMap() {
+		reposMap[id] = MinimalRepoListEntryFromProto(mle)
+	}
+
 	return &RepoList{
 		Repos:    repos,
 		ReposMap: reposMap,
 		Crashes:  int(p.GetCrashes()),
 		Stats:    RepoStatsFromProto(p.GetStats()),
+		Minimal:  minimal,
 	}
 }
 
@@ -609,6 +615,11 @@ func (r *RepoList) ToProto() *v1.ListResponse {
 		repos[i] = repo.ToProto()
 	}
 
+	reposMap := make(map[uint32]*v1.MinimalRepoListEntry, len(r.Minimal))
+	for id, repo := range r.ReposMap {
+		reposMap[id] = repo.ToProto()
+	}
+
 	minimal := make(map[uint32]*v1.MinimalRepoListEntry, len(r.Minimal))
 	for id, repo := range r.Minimal {
 		minimal[id] = repo.ToProto()
@@ -616,9 +627,10 @@ func (r *RepoList) ToProto() *v1.ListResponse {
 
 	return &v1.ListResponse{
 		Repos:    []*v1.RepoListEntry{},
-		ReposMap: map[uint32]*v1.MinimalRepoListEntry{},
+		ReposMap: reposMap,
 		Crashes:  int64(r.Crashes),
 		Stats:    r.Stats.ToProto(),
+		Minimal:  minimal,
 	}
 }
 
