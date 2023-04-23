@@ -19,8 +19,10 @@ COPY --from=zoekt \
     /usr/local/bin/universal-* \
     /usr/local/bin/zoekt-indexserver \
     /usr/local/bin/zoekt-archive-index \
-    /usr/local/bin/zoekt-git-index \
+    /usr/local/bin/zoekt-git-clone \
+    /usr/local/bin/zoekt-git-index \ 
     /usr/local/bin/zoekt-merge-index \
+    /usr/local/bin/zoekt-mirror-github \
     /usr/local/bin/
 
 ENTRYPOINT ["/sbin/tini", "--", "zoekt-indexserver"]
