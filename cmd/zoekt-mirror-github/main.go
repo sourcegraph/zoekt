@@ -118,6 +118,7 @@ func main() {
 	}
 
 	if *token != "" {
+		log.Printf("reading token from :%s", *token)
 		content, err := os.ReadFile(*token)
 		if err != nil {
 			log.Fatal(err)
@@ -154,7 +155,7 @@ func main() {
 		log.Printf("no user or org specified, cloning all repos.")
 		repos, err = getUserRepos(client, "", reposFilters)
 	}
-	log.Printf("took %s to get{}Repos\n", time.Since(start))
+	log.Printf("took %s to get{}Repos. There are %d initial repos\n", time.Since(start), len(repos))
 
 	if err != nil {
 		log.Fatal(err)
@@ -185,6 +186,7 @@ func main() {
 		repos = trimmed
 	}
 
+	log.Printf("before cloneRepos there are %d repos", len(repos))
 	if err := cloneRepos(destDir, repos); err != nil {
 		log.Fatalf("cloneRepos: %v", err)
 	}

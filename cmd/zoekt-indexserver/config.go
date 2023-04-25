@@ -15,8 +15,9 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -265,31 +266,20 @@ func executeMirror(cfg []ConfigEntry, repoDir string, parallelListApiReqs, paral
 			cmd.Args = append(cmd.Args, c.GerritApiURL)
 		}
 
-		// stream the stdout from the zoekt-mirror-* commands
-		// each line will be a repo to process. This way, we don't
-		// need to wait for all the repos to be cloned before beginning
-		// indexing
-		log.Printf("run %v", cmd.Args)
-		stdout, err := cmd.StdoutPipe()
+		stdout, stderr := loggedRun(cmd)
 
-		if err != nil {
-			log.Printf("command %s failed: %v\n", cmd.Args, err)
-			return
+		fmt.Println("cmd %v - logs=%s", cmd.Args, string(stderr))
+		// stdout contains the repos. stderr contains every other log
+		reposPushed := 0
+		for _, fn := range bytes.Split(stdout, []byte{'\n'}) {
+			if len(fn) == 0 {
+				continue
+			}
+
+			pendingRepos <- string(fn)
+			reposPushed += 1
 		}
 
-		err = cmd.Start()
-
-		if err != nil {
-			log.Printf("command %s failed: %v\n", cmd.Args, err)
-			return
-		}
-
-		scanner := bufio.NewScanner(stdout)
-		scanner.Split(bufio.ScanLines)
-
-		for scanner.Scan() {
-			t := scanner.Text()
-			pendingRepos <- t
-		}
+		log.Printf("finished %v - pushed %d repos", cmd.Args, reposPushed)
 	}
 }

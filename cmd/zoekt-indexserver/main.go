@@ -107,7 +107,7 @@ func (o *Options) defineFlags() {
 func periodicFetch(repoDir, indexDir string, opts *Options, pendingRepos chan<- string) {
 	t := time.NewTicker(opts.fetchInterval)
 	for {
-		log.Printf("starting periodicFetch\n")
+		fmt.Printf("starting periodicFetch\n")
 		repos, err := gitindex.FindGitRepos(repoDir)
 		if err != nil {
 			log.Println(err)
@@ -116,7 +116,7 @@ func periodicFetch(repoDir, indexDir string, opts *Options, pendingRepos chan<- 
 		if len(repos) == 0 {
 			log.Printf("no repos found under %s", repoDir)
 		} else {
-			log.Printf("found %d repos to fetch with %d workers\n", len(repos), opts.parallelFetches)
+			fmt.Printf("found %d repos to fetch with %d workers\n", len(repos), opts.parallelFetches)
 		}
 
 		g, _ := errgroup.WithContext(context.Background())
