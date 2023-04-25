@@ -268,7 +268,7 @@ func executeMirror(cfg []ConfigEntry, repoDir string, parallelListApiReqs, paral
 
 		stdout, stderr := loggedRun(cmd)
 
-		fmt.Println("cmd %v - logs=%s", cmd.Args, string(stderr))
+		fmt.Printf("cmd %v - logs=%s\n", cmd.Args, string(stderr))
 		// stdout contains the repos. stderr contains every other log
 		reposPushed := 0
 		for _, fn := range bytes.Split(stdout, []byte{'\n'}) {
@@ -280,6 +280,6 @@ func executeMirror(cfg []ConfigEntry, repoDir string, parallelListApiReqs, paral
 			reposPushed += 1
 		}
 
-		log.Printf("finished %v - pushed %d repos", cmd.Args, reposPushed)
+		fmt.Printf("finished %v - pushed %d repos\n", cmd.Args, reposPushed)
 	}
 }
