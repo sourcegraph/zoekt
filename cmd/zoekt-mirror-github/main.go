@@ -279,6 +279,7 @@ func callGithubConcurrently(initialResp *github.Response, concurrencyLimit int, 
 			s <- true
 			defer w.Done()
 
+			log.Printf("fetching repos for page=%d org=%s user=%s\n", page, org, user)
 			var repos []*github.Repository
 			var err error
 			if method == "org" {
@@ -325,6 +326,7 @@ func callGithubConcurrently(initialResp *github.Response, concurrencyLimit int, 
 }
 
 func getOrgRepos(client *github.Client, org string, reposFilters reposFilters) ([]*github.Repository, error) {
+	log.Printf("getting org=%s repos\n", org)
 	opt := &github.RepositoryListByOrgOptions{ListOptions: github.ListOptions{PerPage: 100}}
 	repos, resp, err := client.Repositories.ListByOrg(context.Background(), org, opt)
 
@@ -338,6 +340,7 @@ func getOrgRepos(client *github.Client, org string, reposFilters reposFilters) (
 }
 
 func getUserRepos(client *github.Client, user string, reposFilters reposFilters) ([]*github.Repository, error) {
+	log.Printf("getting user=%s repos\n", user)
 	opt := &github.RepositoryListOptions{ListOptions: github.ListOptions{PerPage: 100}}
 	repos, resp, err := client.Repositories.List(context.Background(), user, opt)
 
