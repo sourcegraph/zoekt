@@ -29,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -144,6 +145,7 @@ func main() {
 	}
 	var repos []*github.Repository
 	var err error
+	start := time.Now()
 	if *org != "" {
 		repos, err = getOrgRepos(client, *org, reposFilters)
 	} else if *user != "" {
@@ -152,6 +154,7 @@ func main() {
 		log.Printf("no user or org specified, cloning all repos.")
 		repos, err = getUserRepos(client, "", reposFilters)
 	}
+	log.Printf("took %s to get{}Repos\n", time.Since(start))
 
 	if err != nil {
 		log.Fatal(err)
@@ -276,10 +279,13 @@ func callGithubConcurrently(initialResp *github.Response, concurrencyLimit int, 
 		wg.Add(1)
 
 		go func(ctx context.Context, page int, c chan *IndexedResponse, s chan bool, w *sync.WaitGroup) {
+			log.Printf("waiting... page=%d org=%s user=%s\n", page, org, user)
+			start := time.Now()
 			s <- true
 			defer w.Done()
 
-			log.Printf("fetching repos for page=%d org=%s user=%s\n", page, org, user)
+			log.Printf("fetching repos for page=%d org=%s user=%s. Waited for=%s\n", page, org, user, time.Since(start))
+			start = time.Now()
 			var repos []*github.Repository
 			var err error
 			if method == "org" {
@@ -291,6 +297,7 @@ func callGithubConcurrently(initialResp *github.Response, concurrencyLimit int, 
 					ListOptions: github.ListOptions{PerPage: 100, Page: page},
 				})
 			}
+			log.Printf("page=%d org=%s user=%s took %s to fetch\n", page, org, user, time.Since(start))
 			repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived)
 			c <- &IndexedResponse{
 				Page:  page,
