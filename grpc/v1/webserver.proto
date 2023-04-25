@@ -21,6 +21,12 @@ service WebserverService {
 message SearchRequest {
   Q query = 1;
   SearchOptions opts = 2;
+
+  // Perf: we support sending a serialized form of the search request
+  // so we can pay the cost of serializing only once for every backend.
+  // If this is set, the server should ignore the other fields and 
+  // treat the serialized message as the actual message.
+  bytes serialized_search_request = 3;
 }
 
 message SearchResponse {
@@ -242,6 +248,12 @@ message Branch {
 message ListRequest {
   Q query = 1;
   ListOptions opts = 2;
+
+  // Perf: we support sending a serialized form of the list request
+  // so we can pay the cost of serializing only once for every backend.
+  // If this is set, the server should ignore the other fields and 
+  // treat the serialized message as the actual message.
+  bytes serialized_list_request = 3;
 }
 
 message ListOptions {

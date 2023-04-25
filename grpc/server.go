@@ -5,6 +5,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/sourcegraph/zoekt"
 	v1 "github.com/sourcegraph/zoekt/grpc/v1"
@@ -24,6 +25,12 @@ type Server struct {
 }
 
 func (s *Server) Search(ctx context.Context, req *v1.SearchRequest) (*v1.SearchResponse, error) {
+	if len(req.SerializedSearchRequest) > 0 {
+		if err := proto.Unmarshal(req.SerializedSearchRequest, req); err != nil {
+			return nil, err
+		}
+	}
+
 	q, err := query.QFromProto(req.GetQuery())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -38,6 +45,12 @@ func (s *Server) Search(ctx context.Context, req *v1.SearchRequest) (*v1.SearchR
 }
 
 func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_StreamSearchServer) error {
+	if len(req.SerializedSearchRequest) > 0 {
+		if err := proto.Unmarshal(req.SerializedSearchRequest, req); err != nil {
+			return err
+		}
+	}
+
 	q, err := query.QFromProto(req.GetQuery())
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
@@ -51,6 +64,12 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 }
 
 func (s *Server) List(ctx context.Context, req *v1.ListRequest) (*v1.ListResponse, error) {
+	if len(req.SerializedListRequest) > 0 {
+		if err := proto.Unmarshal(req.SerializedListRequest, req); err != nil {
+			return nil, err
+		}
+	}
+
 	q, err := query.QFromProto(req.GetQuery())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
