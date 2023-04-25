@@ -179,15 +179,24 @@ func indexPendingRepos(indexDir, repoDir string, opts *Options, repos <-chan str
 				// sourcegraph-indexserver/mutex?
 				indexPendingRepo(dir, indexDir, repoDir, opts)
 
+				// TODO: handle failures better. For now, as this is causing
+				// problems with parallel indexing, so we don't make an effor to
+				// clean up. We can have zoekt-git-index be the one to clean up,
+				// or we can propgate exit status and still handle it here
+
 				// Failures (eg. timeout) will leave temp files
 				// around. We have to clean them, or they will fill up the indexing volume.
-				if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
-					log.Printf("Glob: %v", err)
-				} else {
-					for _, f := range failures {
-						os.Remove(f)
-					}
-				}
+				// Okay, I think what's going on here is indexPendingRepos isn't cleanly working - when
+				// one index finishes (but another is still running and has temp files), the finished
+				// index triggers the filepath.Glob(), and then removes the indexes from the indexer that
+				// hasn't finished!
+				// if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
+				// 	log.Printf("Glob: %v", err)
+				// } else {
+				// 	for _, f := range failures {
+				// 		os.Remove(f)
+				// 	}
+				// }
 			}
 		}(repos)
 	}
