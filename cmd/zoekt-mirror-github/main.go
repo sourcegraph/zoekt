@@ -70,7 +70,7 @@ func main() {
 	token := flag.String("token",
 		filepath.Join(os.Getenv("HOME"), ".github-token"),
 		"file holding API token.")
-	forks := flag.Bool("forks", false, "also mirror forks.")
+	forks := flag.Bool("forks", true, "also mirror forks.")
 	deleteRepos := flag.Bool("delete", false, "delete missing repos")
 	namePattern := flag.String("name", "", "only clone repos whose name matches the given regexp.")
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
