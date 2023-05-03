@@ -261,7 +261,7 @@ func createSymlinkRepo(dir string) error {
 		return err
 	}
 	script := `mkdir adir bdir
-git init
+git init -b master
 git config user.email "you@example.com"
 git config user.name "Your Name"
 

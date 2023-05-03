@@ -526,7 +526,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 			repositoryDir := t.TempDir()
 
 			// setup: initialize the repository and all of its branches
-			runScript(t, repositoryDir, "git init")
+			runScript(t, repositoryDir, "git init -b master")
 			runScript(t, repositoryDir, fmt.Sprintf("git config user.email %q", "you@example.com"))
 			runScript(t, repositoryDir, fmt.Sprintf("git config user.name %q", "Your Name"))
 

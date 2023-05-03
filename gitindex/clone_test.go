@@ -26,7 +26,7 @@ func TestSetRemote(t *testing.T) {
 
 	script := `mkdir orig
 cd orig
-git init
+git init -b master
 cd ..
 git clone orig/.git clone.git
 `
