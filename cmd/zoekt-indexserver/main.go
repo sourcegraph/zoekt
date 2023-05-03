@@ -94,7 +94,7 @@ func (o *Options) defineFlags() {
 	flag.StringVar(&o.mirrorConfigFile, "mirror_config",
 		"", "JSON file holding mirror configuration.")
 	flag.DurationVar(&o.mirrorInterval, "mirror_duration", 24*time.Hour, "find and clone new repos at this frequency.")
-	flag.DurationVar(&o.bruteReindexInterval, "brute-reindex-interval", 24*time.Hour, "re-index all repos even if they had no update. Still runs with -incremental by default.")
+	flag.DurationVar(&o.bruteReindexInterval, "brute_reindex_interval", 24*time.Hour, "re-index all repos even if they had no update. Still runs with -incremental by default.")
 	flag.Float64Var(&o.cpuFraction, "cpu_fraction", 0.25,
 		"use this fraction of the cores for indexing.")
 	flag.StringVar(&o.indexFlagsStr, "git_index_flags", "", "space separated list of flags passed through to zoekt-git-index (e.g. -git_index_flags='-symbols=false -submodules=false'")
