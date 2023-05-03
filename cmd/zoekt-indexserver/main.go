@@ -174,7 +174,7 @@ func fetchGitRepo(dir string) bool {
 		log.Printf("command %s failed: %v\nOUT: %s\nERR: %s",
 			cmd.Args, err, outBuf.String(), errBuf.String())
 	} else {
-		return len(outBuf.Bytes()) != 0
+		return len(errBuf.Bytes()) != 0
 	}
 	return false
 }
