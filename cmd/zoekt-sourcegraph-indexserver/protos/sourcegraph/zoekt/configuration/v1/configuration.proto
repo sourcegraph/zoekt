@@ -59,6 +59,18 @@ message Fingerprint {
   uint64 identifier = 2;
 }
 
+enum CTagsParserType {
+  UNKNOWN = 0;
+	NONE = 1;
+  UNIVERSAL = 2;
+  SCIP = 3;
+}
+
+message LanguageMapping {
+  string language = 1;
+  CTagsParserType ctags = 2;
+}
+
 // ZoektIndexOptions are options which change what we index for a
 // repository. Everytime a repository is indexed by zoekt this structure is
 // fetched.
@@ -102,6 +114,9 @@ message ZoektIndexOptions {
 
   // error, if non-empty, indicates that the request failed for the repo.
   string error = 11;
+
+  // map of languages
+  repeated LanguageMapping language_map = 12;
 }
 
 // ZoektRepositoryBranch describes an indexed branch of a repository.

@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 
 	"go.uber.org/automaxprocs/maxprocs"
@@ -44,6 +45,7 @@ func run() int {
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
 	offlineRanking := flag.String("offline_ranking", "", "the name of the file that contains the ranking info.")
 	offlineRankingVersion := flag.String("offline_ranking_version", "", "a version string identifying the contents in offline_ranking.")
+	languageMap := flag.String("language_map", "", "a mapping between a language and its ctags processor (a:0,b:3).")
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
@@ -94,6 +96,19 @@ func run() int {
 			name = strings.TrimSuffix(filepath.Base(name), ".git")
 		}
 		gitRepos[repoDir] = name
+	}
+
+	opts.LanguageMap = make(map[string]uint8)
+	for _, mapping := range strings.Split(*languageMap, ",") {
+		m := strings.Split(mapping, ":")
+		if len(m) != 2 {
+			continue
+		}
+		val, err := strconv.ParseInt(m[1], 10, 8)
+		if err != nil {
+			continue
+		}
+		opts.LanguageMap[m[0]] = uint8(val)
 	}
 
 	exitStatus := 0
