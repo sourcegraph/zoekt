@@ -264,7 +264,6 @@ nextFileMatch:
 		cp.setDocument(nextDoc)
 
 		known := make(map[matchTree]bool)
-
 		md := d.repoMetaData[d.repos[nextDoc]]
 
 		for cost := costMin; cost <= costMax; cost++ {
@@ -306,10 +305,6 @@ nextFileMatch:
 			}
 		}
 
-		atomMatchCount := 0
-		visitMatches(mt, known, func(mt matchTree) {
-			atomMatchCount++
-		})
 		shouldMergeMatches := !opts.ChunkMatches
 		finalCands := gatherMatches(mt, known, shouldMergeMatches)
 
@@ -334,63 +329,7 @@ nextFileMatch:
 			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
 		}
 
-		maxFileScore := 0.0
-		repetitions := 0
-		for i := range fileMatch.LineMatches {
-			if maxFileScore < fileMatch.LineMatches[i].Score {
-				maxFileScore = fileMatch.LineMatches[i].Score
-				repetitions = 0
-			} else if maxFileScore == fileMatch.LineMatches[i].Score {
-				repetitions += 1
-			}
-
-			// Order by ordering in file.
-			fileMatch.LineMatches[i].Score += scoreLineOrderFactor * (1.0 - (float64(i) / float64(len(fileMatch.LineMatches))))
-		}
-
-		for i := range fileMatch.ChunkMatches {
-			if maxFileScore < fileMatch.ChunkMatches[i].Score {
-				maxFileScore = fileMatch.ChunkMatches[i].Score
-			}
-
-			// Order by ordering in file.
-			fileMatch.ChunkMatches[i].Score += scoreLineOrderFactor * (1.0 - (float64(i) / float64(len(fileMatch.ChunkMatches))))
-		}
-
-		// Maintain ordering of input files. This
-		// strictly dominates the in-file ordering of
-		// the matches.
-		fileMatch.addScore("fragment", maxFileScore, opts.DebugScore)
-
-		// Prefer docs with several top-scored matches.
-		fileMatch.addScore("repetition-boost", scoreRepetitionFactor*float64(repetitions), opts.DebugScore)
-
-		// atom-count boosts files with matches from more than 1 atom. The
-		// maximum boost is scoreFactorAtomMatch.
-		if atomMatchCount > 0 {
-			fileMatch.addScore("atom", (1.0-1.0/float64(atomMatchCount))*scoreFactorAtomMatch, opts.DebugScore)
-		}
-
-		if opts.UseDocumentRanks && len(d.ranks) > int(nextDoc) {
-			weight := scoreFileRankFactor
-			if opts.DocumentRanksWeight > 0.0 {
-				weight = opts.DocumentRanksWeight
-			}
-
-			ranks := d.ranks[nextDoc]
-			// The ranks slice always contains one entry representing the file rank (unless it's empty since the
-			// file doesn't have a rank). This is left over from when documents could have multiple rank signals,
-			// and we plan to clean this up.
-			if len(ranks) > 0 {
-				// The file rank represents a log (base 2) count. The log ranks should be bounded at 32, but we
-				// cap it just in case to ensure it falls in the range [0, 1].
-				normalized := math.Min(1.0, ranks[0]/32.0)
-				fileMatch.addScore("file-rank", weight*normalized, opts.DebugScore)
-			}
-		}
-
-		fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(nextDoc)/float64(len(d.boundaries))), opts.DebugScore)
-		fileMatch.addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)
+		d.scoreFile(&fileMatch, nextDoc, mt, known, opts)
 
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
 		sortMatchesByScore(fileMatch.LineMatches)
@@ -442,6 +381,72 @@ nextFileMatch:
 	}
 
 	return &res, nil
+}
+
+func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, known map[matchTree]bool, opts *SearchOptions) {
+	atomMatchCount := 0
+	visitMatches(mt, known, func(mt matchTree) {
+		atomMatchCount++
+	})
+
+	// atom-count boosts files with matches from more than 1 atom. The
+	// maximum boost is scoreFactorAtomMatch.
+	if atomMatchCount > 0 {
+		fileMatch.addScore("atom", (1.0-1.0/float64(atomMatchCount))*scoreFactorAtomMatch, opts.DebugScore)
+	}
+
+	maxFileScore := 0.0
+	repetitions := 0
+	for i := range fileMatch.LineMatches {
+		if maxFileScore < fileMatch.LineMatches[i].Score {
+			maxFileScore = fileMatch.LineMatches[i].Score
+			repetitions = 0
+		} else if maxFileScore == fileMatch.LineMatches[i].Score {
+			repetitions += 1
+		}
+
+		// Order by ordering in file.
+		fileMatch.LineMatches[i].Score += scoreLineOrderFactor * (1.0 - (float64(i) / float64(len(fileMatch.LineMatches))))
+	}
+
+	for i := range fileMatch.ChunkMatches {
+		if maxFileScore < fileMatch.ChunkMatches[i].Score {
+			maxFileScore = fileMatch.ChunkMatches[i].Score
+		}
+
+		// Order by ordering in file.
+		fileMatch.ChunkMatches[i].Score += scoreLineOrderFactor * (1.0 - (float64(i) / float64(len(fileMatch.ChunkMatches))))
+	}
+
+	// Maintain ordering of input files. This
+	// strictly dominates the in-file ordering of
+	// the matches.
+	fileMatch.addScore("fragment", maxFileScore, opts.DebugScore)
+
+	// Prefer docs with several top-scored matches.
+	fileMatch.addScore("repetition-boost", scoreRepetitionFactor*float64(repetitions), opts.DebugScore)
+
+	if opts.UseDocumentRanks && len(d.ranks) > int(doc) {
+		weight := scoreFileRankFactor
+		if opts.DocumentRanksWeight > 0.0 {
+			weight = opts.DocumentRanksWeight
+		}
+
+		ranks := d.ranks[doc]
+		// The ranks slice always contains one entry representing the file rank (unless it's empty since the
+		// file doesn't have a rank). This is left over from when documents could have multiple rank signals,
+		// and we plan to clean this up.
+		if len(ranks) > 0 {
+			// The file rank represents a log (base 2) count. The log ranks should be bounded at 32, but we
+			// cap it just in case to ensure it falls in the range [0, 1].
+			normalized := math.Min(1.0, ranks[0]/32.0)
+			fileMatch.addScore("file-rank", weight*normalized, opts.DebugScore)
+		}
+	}
+
+	md := d.repoMetaData[d.repos[doc]]
+	fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(doc)/float64(len(d.boundaries))), opts.DebugScore)
+	fileMatch.addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)
 }
 
 func addRepo(res *SearchResult, repo *Repository) {
