@@ -1042,7 +1042,8 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 	scip := make([]*zoekt.Document, 0)
 
 	for _, doc := range todo {
-		// TODO: Move this somewhere where it makes sense
+		// This is also checked later in `shardBuilder.Add`, but we need it now select the right ctags parser
+
 		if doc.Language == "" {
 			c := doc.Content
 			// classifier is faster on small files without losing much accuracy
@@ -1051,7 +1052,10 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 			}
 			doc.Language = enry.GetLanguage(doc.Name, c)
 		}
+
+		// TODO: Remove this
 		log.Println("LANGUAGE", doc.Name, doc.Language, b.opts.LanguageMap[doc.Language])
+
 		switch b.opts.LanguageMap[doc.Language] {
 		case UniversalCTags:
 			universal = append(universal, doc)
