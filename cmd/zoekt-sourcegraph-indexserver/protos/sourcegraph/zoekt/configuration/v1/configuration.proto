@@ -60,10 +60,10 @@ message Fingerprint {
 }
 
 enum CTagsParserType {
-  UNKNOWN = 0;
-  NONE = 1;
-  UNIVERSAL = 2;
-  SCIP = 3;
+  C_TAGS_PARSER_TYPE_UNSPECIFIED = 0;
+  C_TAGS_PARSER_TYPE_NONE = 1;
+  C_TAGS_PARSER_TYPE_UNIVERSAL = 2;
+  C_TAGS_PARSER_TYPE_SCIP = 3;
 }
 
 message LanguageMapping {

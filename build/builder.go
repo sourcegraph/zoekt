@@ -1053,13 +1053,19 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 			doc.Language = enry.GetLanguage(doc.Name, c)
 		}
 
-		// TODO: Remove this
-		log.Println("LANGUAGE", doc.Name, doc.Language, b.opts.LanguageMap[doc.Language])
+		parser, ok := b.opts.LanguageMap[doc.Language]
 
-		switch b.opts.LanguageMap[doc.Language] {
-		case UniversalCTags:
-			universal = append(universal, doc)
-		case ScipCTags:
+		// TODO: Remove this
+		log.Println("LANGUAGE", doc.Name, doc.Language, parser)
+
+		if ok {
+			switch parser {
+			case UniversalCTags:
+				universal = append(universal, doc)
+			case ScipCTags:
+				scip = append(scip, doc)
+			}
+		} else {
 			scip = append(scip, doc)
 		}
 	}
