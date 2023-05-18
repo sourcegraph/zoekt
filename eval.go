@@ -329,7 +329,7 @@ nextFileMatch:
 			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
 		}
 
-		d.scoreFile(&fileMatch, nextDoc, mt, known, opts)
+		d.scoreFileMatch(&fileMatch, nextDoc, mt, known, opts)
 
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
 		sortMatchesByScore(fileMatch.LineMatches)
@@ -383,7 +383,7 @@ nextFileMatch:
 	return &res, nil
 }
 
-func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, known map[matchTree]bool, opts *SearchOptions) {
+func (d *indexData) scoreFileMatch(fileMatch *FileMatch, doc uint32, mt matchTree, known map[matchTree]bool, opts *SearchOptions) {
 	atomMatchCount := 0
 	visitMatches(mt, known, func(mt matchTree) {
 		atomMatchCount++
