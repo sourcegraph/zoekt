@@ -1066,7 +1066,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 				scip = append(scip, doc)
 			}
 		} else {
-			scip = append(scip, doc)
+			universal = append(universal, doc)
 		}
 	}
 

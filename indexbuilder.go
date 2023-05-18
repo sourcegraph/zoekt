@@ -242,7 +242,7 @@ func newIndexBuilder() *IndexBuilder {
 		fileEndSymbol:   []uint32{0},
 		symIndex:        make(map[string]uint32),
 		symKindIndex:    make(map[string]uint32),
-		languageMap:     map[string]uint16{},
+		languageMap:     make(map[string]uint16),
 	}
 }
 

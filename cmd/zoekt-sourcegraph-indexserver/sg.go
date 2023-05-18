@@ -500,7 +500,7 @@ func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
 	languageMap := make(map[string]uint8)
 
 	for _, lang := range x.GetLanguageMap() {
-		languageMap[lang.Language] = uint8(lang.Ctags.Number())
+		languageMap[lang.GetLanguage()] = uint8(lang.GetCtags().Number())
 	}
 
 	item.IndexOptions = IndexOptions{
@@ -535,7 +535,7 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 		})
 	}
 
-	languageMap := make([]*proto.LanguageMapping, len(o.LanguageMap))
+	languageMap := make([]*proto.LanguageMapping, 0, len(o.LanguageMap))
 
 	for lang, parser := range o.LanguageMap {
 		languageMap = append(languageMap, &proto.LanguageMapping{
