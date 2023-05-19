@@ -569,9 +569,6 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	}
 
 	log.Printf("updating index %d", len(args.LanguageMap))
-	for k, v := range args.LanguageMap {
-		fmt.Println(k, v)
-	}
 	log.Printf("updating index %s reason=%s", args.String(), reason)
 
 	metricIndexingTotal.Inc()

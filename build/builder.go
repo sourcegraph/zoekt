@@ -1055,9 +1055,6 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 
 		parser, ok := b.opts.LanguageMap[doc.Language]
 
-		// TODO: Remove this
-		log.Println("LANGUAGE", doc.Name, doc.Language, parser)
-
 		if ok {
 			switch parser {
 			case UniversalCTags:
