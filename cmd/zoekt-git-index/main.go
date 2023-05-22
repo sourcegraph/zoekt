@@ -20,11 +20,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
-	"strconv"
 	"strings"
 
 	"go.uber.org/automaxprocs/maxprocs"
 
+	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/cmd"
 	"github.com/sourcegraph/zoekt/gitindex"
 )
@@ -104,11 +104,7 @@ func run() int {
 		if len(m) != 2 {
 			continue
 		}
-		val, err := strconv.ParseInt(m[1], 10, 8)
-		if err != nil {
-			continue
-		}
-		opts.LanguageMap[m[0]] = uint8(val)
+		opts.LanguageMap[m[0]] = build.StringToParser(m[1])
 	}
 
 	exitStatus := 0

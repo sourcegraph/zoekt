@@ -64,6 +64,32 @@ const (
 	ScipCTags
 )
 
+func ParserToString(parser CTagsParserType) string {
+	switch parser {
+	case NoCTags:
+		return "no"
+	case UniversalCTags:
+		return "universal"
+	case ScipCTags:
+		return "scip"
+	default:
+		return "unknown"
+	}
+}
+
+func StringToParser(str string) CTagsParserType {
+	switch str {
+	case "no":
+		return NoCTags
+	case "universal":
+		return UniversalCTags
+	case "scip":
+		return ScipCTags
+	default:
+		return UniversalCTags
+	}
+}
+
 // Options sets options for the index building.
 type Options struct {
 	// IndexDir is a directory that holds *.zoekt index files.

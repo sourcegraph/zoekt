@@ -397,7 +397,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 	if len(o.LanguageMap) > 0 {
 		var languageMap []string
 		for language, parser := range o.LanguageMap {
-			languageMap = append(languageMap, language+":"+strconv.FormatInt(int64(parser), 10))
+			languageMap = append(languageMap, language+":"+build.ParserToString(parser))
 		}
 		args = append(args, "-language_map", strings.Join(languageMap, ","))
 	}
