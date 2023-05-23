@@ -2,10 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "ctags",
-    srcs = [
-        "json.go",
-        "parse.go",
-    ],
+    srcs = ["json.go"],
     importpath = "github.com/sourcegraph/zoekt/ctags",
     visibility = ["//visibility:public"],
     deps = ["@com_github_sourcegraph_go_ctags//:go-ctags"],
@@ -13,10 +10,7 @@ go_library(
 
 go_test(
     name = "ctags_test",
-    srcs = [
-        "json_test.go",
-        "parse_test.go",
-    ],
+    srcs = ["json_test.go"],
     embed = [":ctags"],
     deps = [
         "@com_github_google_go_cmp//cmp",
