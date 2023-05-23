@@ -329,7 +329,12 @@ nextFileMatch:
 			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
 		}
 
-		d.scoreFileMatch(&fileMatch, nextDoc, mt, known, opts)
+		if opts.UseKeywordScoring {
+			d.scoreFileUsingBM25(&fileMatch, nextDoc, finalCands, opts)
+		} else {
+			// Use the standard, non-experimental scoring method by default
+			d.scoreFile(&fileMatch, nextDoc, mt, known, opts)
+		}
 
 		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
 		sortMatchesByScore(fileMatch.LineMatches)
@@ -383,7 +388,9 @@ nextFileMatch:
 	return &res, nil
 }
 
-func (d *indexData) scoreFileMatch(fileMatch *FileMatch, doc uint32, mt matchTree, known map[matchTree]bool, opts *SearchOptions) {
+// scoreFile computes a score for the file match using various scoring signals, like
+// whether there's an exact match on a symbol, the number of query clauses that matched, etc.
+func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, known map[matchTree]bool, opts *SearchOptions) {
 	atomMatchCount := 0
 	visitMatches(mt, known, func(mt matchTree) {
 		atomMatchCount++
@@ -447,6 +454,39 @@ func (d *indexData) scoreFileMatch(fileMatch *FileMatch, doc uint32, mt matchTre
 	md := d.repoMetaData[d.repos[doc]]
 	fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(doc)/float64(len(d.boundaries))), opts.DebugScore)
 	fileMatch.addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)
+}
+
+// scoreFileUsingBM25 computes a score for the file match using an approximation to BM25, the most common scoring
+// algorithm for keyword search: https://en.wikipedia.org/wiki/Okapi_BM25. It implements all parts of the formula
+// except inverse document frequency (idf), since we don't have access to global term frequency statistics.
+//
+// This scoring strategy ignores all other signals including document ranks. This keeps things simple for now,
+// since BM25 is not normalized and can be tricky to combine with other scoring signals.
+func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands []*candidateMatch, opts *SearchOptions) {
+	// Treat each candidate match as a term and compute the frequencies. For now, ignore case
+	// sensitivity and treat filenames and symbols the same as content.
+	termFreqs := map[string]int{}
+	for _, cand := range cands {
+		term := string(cand.substrLowered)
+		termFreqs[term]++
+	}
+
+	// Compute the file length ratio. Usually the calculation would be based on terms, but using
+	// bytes should work fine, as we're just computing a ratio.
+	fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
+	numFiles := len(d.boundaries)
+	averageFileLength := float64(d.boundaries[numFiles - 1]) / float64(numFiles)
+	L := fileLength / averageFileLength
+
+	// Use standard parameter defaults (used in Lucene and academic papers)
+	k, b := 1.2, 0.75
+	score := 0.0
+	for _, freq := range termFreqs {
+		tf := float64(freq)
+		score += ((k + 1.0) * tf) / (k * (1.0 - b + b * L) + tf)
+	}
+
+	fileMatch.addScore("keyword-score", score, opts.DebugScore)
 }
 
 func addRepo(res *SearchResult, repo *Repository) {

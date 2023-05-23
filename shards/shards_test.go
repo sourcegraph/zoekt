@@ -1108,6 +1108,41 @@ func TestAtomCountScore(t *testing.T) {
 	}
 }
 
+func TestUseKeywordScoring(t *testing.T) {
+	b := testIndexBuilder(t,
+		&zoekt.Repository{},
+		zoekt.Document{Name: "f1", Content: []byte("one two two three")},
+		zoekt.Document{Name: "f2", Content: []byte("one two one two")},
+		zoekt.Document{Name: "f3", Content: []byte("one three three three")})
+
+	ss := newShardedSearcher(1)
+	searcher := searcherForTest(t, b)
+	ss.replace(map[string]zoekt.Searcher{"r1": searcher})
+
+	q := query.NewOr(
+		&query.Substring{Pattern: "one"},
+		&query.Substring{Pattern: "three"})
+
+	opts := zoekt.SearchOptions{
+		UseKeywordScoring: true,
+	}
+
+	results, err := ss.Search(context.Background(), q, &opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for _, f := range results.Files {
+		got = append(got, f.FileName)
+	}
+
+	want := []string{"f3", "f1", "f2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func testShardedStreamSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch {
 	ss := newShardedSearcher(1)
 	searcher := searcherForTest(t, ib)
