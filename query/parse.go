@@ -191,6 +191,11 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 
 		expr = &Symbol{q}
+
+	case tokOwn:
+		// TODO support any and none
+		expr = &Own{SearchTerm: text}
+
 	case tokParenClose:
 		// Caller must consume paren.
 		expr = nil
@@ -393,6 +398,7 @@ const (
 	tokArchived   = 15
 	tokPublic     = 16
 	tokFork       = 17
+	tokOwn        = 18
 )
 
 var tokNames = map[int]string{
@@ -404,6 +410,7 @@ var tokNames = map[int]string{
 	tokFork:       "Fork",
 	tokNegate:     "Negate",
 	tokOr:         "Or",
+	tokOwn:        "Own",
 	tokParenClose: "ParenClose",
 	tokParenOpen:  "ParenOpen",
 	tokPublic:     "Public",
@@ -425,6 +432,7 @@ var prefixes = map[string]int{
 	"f:":        tokFile,
 	"file:":     tokFile,
 	"fork:":     tokFork,
+	"own:":      tokOwn,
 	"public:":   tokPublic,
 	"r:":        tokRepo,
 	"regex:":    tokRegex,

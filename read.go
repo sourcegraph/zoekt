@@ -20,10 +20,13 @@ import (
 	"fmt"
 	"hash/crc64"
 	"log"
+	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/rs/xid"
+	"github.com/sourcegraph/zoekt/own"
 )
 
 // IndexFile is a file suitable for concurrent read access. For performance
@@ -394,6 +397,18 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		err = d.readRanks(toc)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	{
+		dir := filepath.Dir(r.r.Name())
+		for _, md := range d.repoMetaData {
+			o, err := own.Load(filepath.Join(dir, url.QueryEscape(md.Name)) + ".own")
+			if err != nil {
+				log.Printf("ignoring error for loading own for %s: %s", md.Name, err)
+				o = own.Empty
+			}
+			d.own = append(d.own, o)
 		}
 	}
 

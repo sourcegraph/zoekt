@@ -22,6 +22,7 @@ import (
 	"math/bits"
 	"unicode/utf8"
 
+	"github.com/sourcegraph/zoekt/own"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -100,6 +101,9 @@ type indexData struct {
 
 	// rawConfigMasks contains the encoded RawConfig for each repository
 	rawConfigMasks []uint8
+
+	// own per repo
+	own []own.Own
 }
 
 type symbolData struct {
