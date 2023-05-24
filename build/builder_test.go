@@ -482,7 +482,7 @@ func TestBuilder_DeltaShardsBuildsShouldErrorOnIndexOptionsMismatch(t *testing.T
 	}{
 		{
 			name:    "update option CTagsPath to non default",
-			options: func(options *Options) { options.CTagsPath = "ctags_updated_test" },
+			options: func(options *Options) { options.CTagsPath = "ctags_updated_test/universal-ctags" },
 		},
 		{
 			name:    "update option DisableCTags to non default",
