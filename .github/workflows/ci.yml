@@ -81,6 +81,7 @@ jobs:
   # 
   # While we run this job on main and PRs, the actual push is only done on the main branch.
   docker:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs:
       - "test"
@@ -137,7 +138,7 @@ jobs:
           tags: sourcegraph/zoekt-webserver:${{ steps.version.outputs.value }}, ${{ steps.meta-webserver.outputs.tags }}, sourcegraph/zoekt-webserver:latest
           file: Dockerfile.webserver
           cache-from: sourcegraph/zoekt-webserver:latest
-          push: "${{ github.branch == 'main' }}"
+          push: true
 
       - name: build-push-indexserver
         uses: docker/build-push-action@v4
@@ -146,4 +147,4 @@ jobs:
           tags: sourcegraph/zoekt-indexserver:${{ steps.version.outputs.value }}, ${{ steps.meta-indexserver.outputs.tags }}, sourcegraph/zoekt-indexserver:latest
           file: Dockerfile.indexserver
           cache-from: sourcegraph/zoekt-indexserver:latest
-          push: "${{ github.branch == 'main' }}"
+          push: true
