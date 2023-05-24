@@ -1092,7 +1092,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 
 	if !b.opts.DisableCTags {
 		if b.opts.CTagsPath != "" {
-			err := ctagsAddSymbols(universal, b.parser, b.opts.CTagsPath)
+			err := ctagsAddSymbolsParser(universal, b.parser)
 			if b.opts.CTagsMustSucceed && err != nil {
 				return nil, err
 			}
@@ -1102,7 +1102,7 @@ func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishe
 		}
 
 		if b.opts.ScipCTagsPath != "" {
-			err := ctagsAddSymbols(scip, b.scipParser, b.opts.ScipCTagsPath)
+			err := ctagsAddSymbolsParser(scip, b.scipParser)
 			if b.opts.CTagsMustSucceed && err != nil {
 				return nil, err
 			}
