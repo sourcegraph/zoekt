@@ -22,10 +22,22 @@ import (
 	"github.com/sourcegraph/zoekt/ctags"
 )
 
-func ctagsAddSymbolsParser(todo []*zoekt.Document, parser ctags.Parser) error {
+func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserMap ctags.ParserMap) error {
 	for _, doc := range todo {
 		if doc.Symbols != nil {
 			continue
+		}
+
+		zoekt.DetermineLanguageIfUnknown(doc)
+
+		parserKind := languageMap[doc.Language]
+		if parserKind == ctags.NoCTags {
+			continue
+		}
+
+		parser := parserMap[parserKind]
+		if parser == nil {
+			parser = parserMap[ctags.UniversalCTags]
 		}
 
 		es, err := parser.Parse(doc.Name, doc.Content)

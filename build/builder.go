@@ -38,7 +38,6 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar"
-	"github.com/go-enry/go-enry/v2"
 	"github.com/grafana/regexp"
 	"github.com/rs/xid"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -53,41 +52,6 @@ var DefaultDir = filepath.Join(os.Getenv("HOME"), ".zoekt")
 type Branch struct {
 	Name    string
 	Version string
-}
-
-type CTagsParserType = uint8
-
-const (
-	UnknownCTags CTagsParserType = iota
-	NoCTags
-	UniversalCTags
-	ScipCTags
-)
-
-func ParserToString(parser CTagsParserType) string {
-	switch parser {
-	case NoCTags:
-		return "no"
-	case UniversalCTags:
-		return "universal"
-	case ScipCTags:
-		return "scip"
-	default:
-		return "unknown"
-	}
-}
-
-func StringToParser(str string) CTagsParserType {
-	switch str {
-	case "no":
-		return NoCTags
-	case "universal":
-		return UniversalCTags
-	case "scip":
-		return ScipCTags
-	default:
-		return UniversalCTags
-	}
 }
 
 // Options sets options for the index building.
@@ -153,7 +117,7 @@ type Options struct {
 	// in the older shards for this repository.
 	changedOrRemovedFiles []string
 
-	LanguageMap map[string]CTagsParserType
+	LanguageMap ctags.LanguageMap
 }
 
 // HashOptions contains only the options in Options that upon modification leads to IndexState of IndexStateMismatch during the next index building.
@@ -285,8 +249,7 @@ type Builder struct {
 	todo         []*zoekt.Document
 	size         int
 
-	parser     ctags.Parser
-	scipParser ctags.Parser
+	parserMap ctags.ParserMap
 
 	building sync.WaitGroup
 
@@ -605,23 +568,16 @@ func NewBuilder(opts Options) (*Builder, error) {
 		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
 	}
 
-	if opts.CTagsPath != "" {
-		parser, err := ctags.NewParser(opts.CTagsPath)
-		if err != nil && opts.CTagsMustSucceed {
-			return nil, fmt.Errorf("ctags.NewParser: %v", err)
-		}
+	parserMap, err := ctags.NewParserMap(ctags.ParserBinMap{
+		ctags.UniversalCTags: b.opts.CTagsPath,
+		ctags.ScipCTags:      b.opts.ScipCTagsPath,
+	}, b.opts.CTagsMustSucceed)
 
-		b.parser = parser
+	if err != nil {
+		return nil, err
 	}
 
-	if strings.Contains(opts.ScipCTagsPath, "scip-ctags") {
-		parser, err := ctags.NewParser(opts.ScipCTagsPath)
-		if err != nil && opts.CTagsMustSucceed {
-			return nil, fmt.Errorf("ctags.NewParser: %v", err)
-		}
-
-		b.scipParser = parser
-	}
+	b.parserMap = parserMap
 
 	b.shardLogger = &lumberjack.Logger{
 		Filename:   filepath.Join(opts.IndexDir, "zoekt-builder-shard-log.tsv"),
@@ -1061,48 +1017,9 @@ func sortDocuments(todo []*zoekt.Document) {
 }
 
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
-	universal := make([]*zoekt.Document, 0)
-	scip := make([]*zoekt.Document, 0)
-
-	for _, doc := range todo {
-		// This is also checked later in `shardBuilder.Add`, but we need it now select the right ctags parser
-
-		if doc.Language == "" {
-			c := doc.Content
-			// classifier is faster on small files without losing much accuracy
-			if len(c) > 2048 {
-				c = c[:2048]
-			}
-			doc.Language = enry.GetLanguage(doc.Name, c)
-		}
-
-		parser, ok := b.opts.LanguageMap[doc.Language]
-
-		if ok {
-			switch parser {
-			case UniversalCTags:
-				universal = append(universal, doc)
-			case ScipCTags:
-				scip = append(scip, doc)
-			}
-		} else {
-			universal = append(universal, doc)
-		}
-	}
-
 	if !b.opts.DisableCTags {
 		if b.opts.CTagsPath != "" {
-			err := ctagsAddSymbolsParser(universal, b.parser)
-			if b.opts.CTagsMustSucceed && err != nil {
-				return nil, err
-			}
-			if err != nil {
-				log.Printf("ignoring %s error: %v", b.opts.CTagsPath, err)
-			}
-		}
-
-		if b.opts.ScipCTagsPath != "" {
-			err := ctagsAddSymbolsParser(scip, b.scipParser)
+			err := ctagsAddSymbolsParserMap(todo, b.opts.LanguageMap, b.parserMap)
 			if b.opts.CTagsMustSucceed && err != nil {
 				return nil, err
 			}

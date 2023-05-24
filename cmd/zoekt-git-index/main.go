@@ -24,8 +24,8 @@ import (
 
 	"go.uber.org/automaxprocs/maxprocs"
 
-	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/cmd"
+	"github.com/sourcegraph/zoekt/ctags"
 	"github.com/sourcegraph/zoekt/gitindex"
 )
 
@@ -98,13 +98,13 @@ func run() int {
 		gitRepos[repoDir] = name
 	}
 
-	opts.LanguageMap = make(map[string]uint8)
+	opts.LanguageMap = make(ctags.LanguageMap)
 	for _, mapping := range strings.Split(*languageMap, ",") {
 		m := strings.Split(mapping, ":")
 		if len(m) != 2 {
 			continue
 		}
-		opts.LanguageMap[m[0]] = build.StringToParser(m[1])
+		opts.LanguageMap[m[0]] = ctags.StringToParser(m[1])
 	}
 
 	exitStatus := 0

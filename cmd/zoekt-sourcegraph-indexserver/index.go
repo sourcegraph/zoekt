@@ -20,6 +20,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/ctags"
 
 	sglog "github.com/sourcegraph/log"
 )
@@ -69,7 +70,7 @@ type IndexOptions struct {
 	Archived bool
 
 	// Map from language to scip-ctags, universal-ctags, or neither
-	LanguageMap map[string]build.CTagsParserType
+	LanguageMap ctags.LanguageMap
 }
 
 // indexArgs represents the arguments we pass to zoekt-git-index
@@ -397,7 +398,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 	if len(o.LanguageMap) > 0 {
 		var languageMap []string
 		for language, parser := range o.LanguageMap {
-			languageMap = append(languageMap, language+":"+build.ParserToString(parser))
+			languageMap = append(languageMap, language+":"+ctags.ParserToString(parser))
 		}
 		args = append(args, "-language_map", strings.Join(languageMap, ","))
 	}
