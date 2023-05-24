@@ -321,9 +321,6 @@ func checkCTags() string {
 		return ctags
 	}
 
-	if ctags, err := exec.LookPath("ctags-exuberant"); err == nil {
-		return ctags
-	}
 	return ""
 }
 
@@ -608,7 +605,7 @@ func NewBuilder(opts Options) (*Builder, error) {
 		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
 	}
 
-	if strings.Contains(opts.CTagsPath, "universal-ctags") {
+	if opts.CTagsPath != "" {
 		parser, err := ctags.NewParser(opts.CTagsPath)
 		if err != nil && opts.CTagsMustSucceed {
 			return nil, fmt.Errorf("ctags.NewParser: %v", err)

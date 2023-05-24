@@ -4,8 +4,7 @@ CTAGS
 
 Ctags generates indices of symbol definitions in source files. It
 started its life as part of the BSD Unix, but there are several more
-modern flavors. Zoekt supports both [exuberant
-ctags](http://ctags.sourceforge.net/) and
+modern flavors. Zoekt supports
 [universal-ctags](https://github.com/universal-ctags).
 
 It is strongly recommended to use Universal Ctags, [version

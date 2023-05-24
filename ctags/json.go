@@ -133,6 +133,5 @@ func NewParser(bin string) (Parser, error) {
 		}, nil
 	}
 
-	log.Fatal("failed to create new parser! not implemented")
-	return nil, nil
+	return nil, fmt.Errorf("only supports universal-ctags, not %s", bin)
 }
