@@ -41,6 +41,14 @@ import (
 
 const day = time.Hour * 24
 
+var (
+	// we use this for 3 things:
+	// 1. prevent the same git repo from being indexed concurrently
+	// 2. prevent a repo from being indexed and fetched concurrently
+	// 3. stop all indexing/fetching while the periodic backup happens
+	muIndexAndDataDirs indexMutex
+)
+
 func loggedRun(cmd *exec.Cmd) (out, err []byte) {
 	outBuf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
@@ -62,6 +70,7 @@ type Options struct {
 	fetchInterval        time.Duration
 	mirrorInterval       time.Duration
 	bruteReindexInterval time.Duration
+	backupInterval       time.Duration
 	indexFlagsStr        string
 	indexFlags           []string
 	mirrorConfigFile     string
@@ -95,6 +104,7 @@ func (o *Options) defineFlags() {
 		"", "JSON file holding mirror configuration.")
 	flag.DurationVar(&o.mirrorInterval, "mirror_duration", 24*time.Hour, "find and clone new repos at this frequency.")
 	flag.DurationVar(&o.bruteReindexInterval, "brute_reindex_interval", 24*time.Hour, "re-index all repos even if they had no update. Still runs with -incremental by default.")
+	flag.DurationVar(&o.backupInterval, "backup_interval", 24*time.Hour, "backup indices and git repos at this interval. Uses gsutil and backs up to codesearch_backup bucket")
 	flag.Float64Var(&o.cpuFraction, "cpu_fraction", 0.25,
 		"use this fraction of the cores for indexing.")
 	flag.StringVar(&o.indexFlagsStr, "git_index_flags", "", "space separated list of flags passed through to zoekt-git-index (e.g. -git_index_flags='-symbols=false -submodules=false'")
@@ -102,6 +112,29 @@ func (o *Options) defineFlags() {
 	flag.IntVar(&o.parallelClones, "parallel_clones", 1, "number of concurrent gitindex/clone operations. Not all mirrors support this flag")
 	flag.IntVar(&o.parallelFetches, "parallel_fetches", 1, "number of concurrent git fetch ops")
 	flag.IntVar(&o.parallelIndexes, "parallel_indexes", 1, "number of concurrent zoekt-git-index ops")
+}
+
+func periodicBackup(dataDir, indexDir string, opts *Options) {
+	t := time.NewTicker(opts.backupInterval)
+	for {
+		// lock the index and git directories from being written to
+		muIndexAndDataDirs.GlobalWaitForPending(func() {
+			fmt.Printf("starting backup...\n")
+			idxSyncCmd := exec.Command("gsutil", "-m", "rsync", "-r", indexDir, "gs://codesearch-backup/index")
+			gitSyncCmd := exec.Command("gsutil", "-m", "rsync", "-r", dataDir, "gs://codesearch-backup/repos")
+			err := idxSyncCmd.Run()
+			if err != nil {
+				fmt.Printf("ERROR: error backup up index shards %v\n", err)
+			}
+
+			err = gitSyncCmd.Run()
+			if err != nil {
+				fmt.Printf("ERROR: error backing up git repos %v\n", err)
+			}
+			fmt.Printf("finished backup\n")
+		})
+		<-t.C
+	}
 }
 
 // periodicFetch runs git-fetch every once in a while. Results are
@@ -132,17 +165,24 @@ func periodicFetch(repoDir, indexDir string, opts *Options, pendingRepos chan<- 
 		for _, dir := range repos {
 			dir := dir
 			g.Go(func() error {
-				if hasUpdate := fetchGitRepo(dir); !hasUpdate {
-					mu.Lock()
-					later[dir] = struct{}{}
-					mu.Unlock()
-				} else {
-					pendingRepos <- dir
-					count += 1
+				ran := muIndexAndDataDirs.With(dir, func() {
+					if hasUpdate := fetchGitRepo(dir); !hasUpdate {
+						mu.Lock()
+						later[dir] = struct{}{}
+						mu.Unlock()
+					} else {
+						fmt.Printf("dir=%s has update\n", dir)
+						pendingRepos <- dir
+						count += 1
+					}
+				})
+				if !ran {
+					fmt.Printf("either an index or fetch job for repo=%s already running\n", dir)
 				}
 				return nil
 			})
 		}
+		g.Wait()
 		fmt.Printf("%d repos had git updates\n", count)
 
 		if time.Since(lastBruteReindex) >= opts.bruteReindexInterval {
@@ -186,10 +226,12 @@ func indexPendingRepos(indexDir, repoDir string, opts *Options, repos <-chan str
 	for i := 0; i < opts.parallelIndexes; i++ {
 		go func(r <-chan string) {
 			for dir := range r {
-				// TODO: protect against duplicate operations. E.g, the index
-				// being indexed by some other process already. Use
-				// sourcegraph-indexserver/mutex?
-				indexPendingRepo(dir, indexDir, repoDir, opts)
+				ran := muIndexAndDataDirs.With(dir, func() {
+					indexPendingRepo(dir, indexDir, repoDir, opts)
+				})
+				if !ran {
+					fmt.Printf("index job for repository: %s already running\n", dir)
+				}
 
 				// TODO: handle failures better. For now, as this is causing
 				// problems with parallel indexing, so we don't make an effor to
@@ -349,6 +391,7 @@ func main() {
 	go periodicMirrorFile(repoDir, &opts, pendingRepos)
 	go deleteLogsLoop(logDir, opts.maxLogAge)
 	go deleteOrphanIndexes(*indexDir, repoDir, opts.fetchInterval)
+	go periodicBackup(repoDir, *indexDir, &opts)
 	go indexPendingRepos(*indexDir, repoDir, &opts, pendingRepos)
 	periodicFetch(repoDir, *indexDir, &opts, pendingRepos)
 }
