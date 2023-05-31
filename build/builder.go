@@ -1017,15 +1017,13 @@ func sortDocuments(todo []*zoekt.Document) {
 }
 
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
-	if !b.opts.DisableCTags {
-		if b.opts.CTagsPath != "" {
-			err := ctagsAddSymbolsParserMap(todo, b.opts.LanguageMap, b.parserMap)
-			if b.opts.CTagsMustSucceed && err != nil {
-				return nil, err
-			}
-			if err != nil {
-				log.Printf("ignoring %s error: %v", b.opts.ScipCTagsPath, err)
-			}
+	if !b.opts.DisableCTags && (b.opts.CTagsPath != "" || b.opts.ScipCTagsPath != "") {
+		err := ctagsAddSymbolsParserMap(todo, b.opts.LanguageMap, b.parserMap)
+		if b.opts.CTagsMustSucceed && err != nil {
+			return nil, err
+		}
+		if err != nil {
+			log.Printf("ignoring universal:%s or scip:%s error: %v", b.opts.CTagsPath, b.opts.ScipCTagsPath, err)
 		}
 	}
 
