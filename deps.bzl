@@ -168,8 +168,8 @@ def go_dependencies():
         name = "com_github_bwesterb_go_ristretto",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/bwesterb/go-ristretto",
-        sum = "h1:S2C0mmSjCLS3H9+zfXoIoKzl+cOncvBvt6pE+zTm5Ms=",
-        version = "v1.2.2",
+        sum = "h1:1w53tCkGhCQ5djbat3+MH0BAQ5Kfgbt56UZQ/JMzngw=",
+        version = "v1.2.3",
     )
     go_repository(
         name = "com_github_cenkalti_backoff_v4",
@@ -231,8 +231,8 @@ def go_dependencies():
         name = "com_github_cloudflare_circl",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/cloudflare/circl",
-        sum = "h1:VWp8dY3yH69fdM7lM6A1+NhhVoDu9vqK0jOgmkQHFWk=",
-        version = "v1.3.2",
+        sum = "h1:fE/Qz0QdIGqeWfnwq0RE0R7MI51s0M2E4Ga9kq5AEMs=",
+        version = "v1.3.3",
     )
     go_repository(
         name = "com_github_cloudykit_fastprinter",
