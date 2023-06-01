@@ -20,6 +20,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/ctags"
 
 	sglog "github.com/sourcegraph/log"
 )
@@ -67,6 +68,9 @@ type IndexOptions struct {
 
 	// Archived is true if the repository is archived.
 	Archived bool
+
+	// Map from language to scip-ctags, universal-ctags, or neither
+	LanguageMap ctags.LanguageMap
 }
 
 // indexArgs represents the arguments we pass to zoekt-git-index
@@ -123,6 +127,8 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		IsDelta:          o.UseDelta,
 
 		DocumentRanksVersion: o.DocumentRanksVersion,
+
+		LanguageMap: o.LanguageMap,
 	}
 }
 
@@ -387,6 +393,14 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 	if o.UseDelta {
 		args = append(args, "-delta")
 		args = append(args, "-delta_threshold", strconv.FormatUint(o.DeltaShardNumberFallbackThreshold, 10))
+	}
+
+	if len(o.LanguageMap) > 0 {
+		var languageMap []string
+		for language, parser := range o.LanguageMap {
+			languageMap = append(languageMap, language+":"+ctags.ParserToString(parser))
+		}
+		args = append(args, "-language_map", strings.Join(languageMap, ","))
 	}
 
 	args = append(args, buildOptions.Args()...)

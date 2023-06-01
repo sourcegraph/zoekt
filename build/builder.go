@@ -84,6 +84,9 @@ type Options struct {
 	// if a valid binary couldn't be found.
 	CTagsPath string
 
+	// Same as CTagsPath but for scip-ctags
+	ScipCTagsPath string
+
 	// If set, ctags must succeed.
 	CTagsMustSucceed bool
 
@@ -113,6 +116,8 @@ type Options struct {
 	// since the last indexing job for this repository. These files will be tombstoned
 	// in the older shards for this repository.
 	changedOrRemovedFiles []string
+
+	LanguageMap ctags.LanguageMap
 }
 
 // HashOptions contains only the options in Options that upon modification leads to IndexState of IndexStateMismatch during the next index building.
@@ -244,7 +249,7 @@ type Builder struct {
 	todo         []*zoekt.Document
 	size         int
 
-	parser ctags.Parser
+	parserMap ctags.ParserMap
 
 	building sync.WaitGroup
 
@@ -282,10 +287,26 @@ func checkCTags() string {
 	return ""
 }
 
+func checkScipCTags() string {
+	if ctags := os.Getenv("SCIP_CTAGS_COMMAND"); ctags != "" {
+		return ctags
+	}
+
+	if ctags, err := exec.LookPath("scip-ctags"); err == nil {
+		return ctags
+	}
+
+	return ""
+}
+
 // SetDefaults sets reasonable default options.
 func (o *Options) SetDefaults() {
 	if o.CTagsPath == "" && !o.DisableCTags {
 		o.CTagsPath = checkCTags()
+	}
+
+	if o.ScipCTagsPath == "" && !o.DisableCTags {
+		o.ScipCTagsPath = checkScipCTags()
 	}
 
 	if o.Parallelism == 0 {
@@ -547,14 +568,16 @@ func NewBuilder(opts Options) (*Builder, error) {
 		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
 	}
 
-	if opts.CTagsPath != "" {
-		parser, err := ctags.NewParser(opts.CTagsPath)
-		if err != nil && opts.CTagsMustSucceed {
-			return nil, fmt.Errorf("ctags.NewParser: %v", err)
-		}
+	parserMap, err := ctags.NewParserMap(ctags.ParserBinMap{
+		ctags.UniversalCTags: b.opts.CTagsPath,
+		ctags.ScipCTags:      b.opts.ScipCTagsPath,
+	}, b.opts.CTagsMustSucceed)
 
-		b.parser = parser
+	if err != nil {
+		return nil, err
 	}
+
+	b.parserMap = parserMap
 
 	b.shardLogger = &lumberjack.Logger{
 		Filename:   filepath.Join(opts.IndexDir, "zoekt-builder-shard-log.tsv"),
@@ -994,13 +1017,13 @@ func sortDocuments(todo []*zoekt.Document) {
 }
 
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
-	if !b.opts.DisableCTags && b.opts.CTagsPath != "" {
-		err := ctagsAddSymbolsParser(todo, b.parser)
+	if !b.opts.DisableCTags && (b.opts.CTagsPath != "" || b.opts.ScipCTagsPath != "") {
+		err := ctagsAddSymbolsParserMap(todo, b.opts.LanguageMap, b.parserMap)
 		if b.opts.CTagsMustSucceed && err != nil {
 			return nil, err
 		}
 		if err != nil {
-			log.Printf("ignoring %s error: %v", b.opts.CTagsPath, err)
+			log.Printf("ignoring universal:%s or scip:%s error: %v", b.opts.CTagsPath, b.opts.ScipCTagsPath, err)
 		}
 	}
 
