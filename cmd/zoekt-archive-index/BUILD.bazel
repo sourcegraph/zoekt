@@ -21,6 +21,8 @@ go_library(
 go_binary(
     name = "zoekt-archive-index",
     embed = [":zoekt-archive-index_lib"],
+    pure = "on",
+    static = "on",
     visibility = ["//visibility:public"],
 )
 

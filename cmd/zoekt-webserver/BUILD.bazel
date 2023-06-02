@@ -82,5 +82,7 @@ go_library(
 go_binary(
     name = "zoekt-webserver",
     embed = [":zoekt-webserver_lib"],
+    pure = "on",
+    static = "on",
     visibility = ["//visibility:public"],
 )
