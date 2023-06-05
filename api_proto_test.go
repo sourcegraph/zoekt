@@ -254,6 +254,7 @@ func TestProtoRoundtrip(t *testing.T) {
 				// Ignore deprecated and unimplemented fields
 				f1.ShardMaxImportantMatch = 0
 				f1.TotalMaxImportantMatch = 0
+				f1.SpanContext = nil
 			}
 			p1 := f1.ToProto()
 			f2 := SearchOptionsFromProto(p1)
