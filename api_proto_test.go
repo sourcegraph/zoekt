@@ -283,7 +283,7 @@ func (*IndexMetadata) Generate(r *rand.Rand, size int) reflect.Value {
 	return reflect.ValueOf(&i)
 }
 
-func (*Repository) Generate(rng *rand.Rand, size int) reflect.Value {
+func (*Repository) Generate(rng *rand.Rand, _ int) reflect.Value {
 	latestCommitDate := time.Now().Add(time.Duration(rng.Int63n(1000)) * time.Hour)
 	var r Repository
 	v := &Repository{
