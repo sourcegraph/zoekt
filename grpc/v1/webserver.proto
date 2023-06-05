@@ -105,7 +105,7 @@ message Q {
     Regexp regexp = 2;
     Symbol symbol = 3;
     Language language = 4;
-    Const const = 5;
+    bool const = 5;
     Repo repo = 6;
     RepoRegexp repo_regexp = 7;
     BranchesRepos branches_repos = 8;
@@ -150,10 +150,6 @@ message Symbol {
 
 message Language {
   string language = 1;
-}
-
-message Const {
-  bool value = 1;
 }
 
 // TODO: what's the difference between Repo and RepoRegexp?

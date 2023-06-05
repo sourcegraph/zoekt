@@ -20,7 +20,7 @@ func QToProto(q Q) *v1.Q {
 	case *Language:
 		return &v1.Q{Query: &v1.Q_Language{Language: v.ToProto()}}
 	case *Const:
-		return &v1.Q{Query: &v1.Q_Const{Const: v.ToProto()}}
+		return &v1.Q{Query: &v1.Q_Const{Const: v.Value}}
 	case *Repo:
 		return &v1.Q{Query: &v1.Q_Repo{Repo: v.ToProto()}}
 	case *RepoRegexp:
@@ -64,7 +64,7 @@ func QFromProto(p *v1.Q) (Q, error) {
 	case *v1.Q_Language:
 		return LanguageFromProto(v.Language), nil
 	case *v1.Q_Const:
-		return ConstFromProto(v.Const), nil
+		return &Const{Value: v.Const}, nil
 	case *v1.Q_Repo:
 		return RepoFromProto(v.Repo)
 	case *v1.Q_RepoRegexp:
@@ -141,16 +141,6 @@ func LanguageFromProto(p *v1.Language) *Language {
 
 func (l *Language) ToProto() *v1.Language {
 	return &v1.Language{Language: l.Language}
-}
-
-func ConstFromProto(p *v1.Const) *Const {
-	return &Const{
-		Value: p.GetValue(),
-	}
-}
-
-func (q *Const) ToProto() *v1.Const {
-	return &v1.Const{Value: q.Value}
 }
 
 func RepoFromProto(p *v1.Repo) (*Repo, error) {
