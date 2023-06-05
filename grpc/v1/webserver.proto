@@ -123,7 +123,7 @@ message Q {
 
 // RawConfig filters repositories based on their encoded RawConfig map.
 message RawConfig {
-  enum Flags {
+  enum Flag {
     UNKNOWN = 0x00;
     ONLY_PUBLIC = 0x01;
     ONLY_PRIVATE = 0x02;
@@ -133,7 +133,7 @@ message RawConfig {
     NO_ARCHIVED = 0x20;
   }
 
-  uint64 flags = 1;
+  repeated Flag flags = 1;
 }
 
 // Regexp is a query looking for regular expressions matches.

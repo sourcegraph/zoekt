@@ -404,10 +404,45 @@ func (q *Branch) ToProto() *v1.Branch {
 	}
 }
 
-func RawConfigFromProto(p *v1.RawConfig) RawConfig {
-	return RawConfig(p.Flags)
+func RawConfigFromProto(p *v1.RawConfig) (res RawConfig) {
+	for _, protoFlag := range p.Flags {
+		switch protoFlag {
+		case v1.RawConfig_ONLY_PUBLIC:
+			res |= RcOnlyPublic
+		case v1.RawConfig_ONLY_PRIVATE:
+			res |= RcOnlyPrivate
+		case v1.RawConfig_ONLY_FORKS:
+			res |= RcOnlyForks
+		case v1.RawConfig_NO_FORKS:
+			res |= RcNoForks
+		case v1.RawConfig_ONLY_ARCHIVED:
+			res |= RcOnlyArchived
+		case v1.RawConfig_NO_ARCHIVED:
+			res |= RcNoArchived
+		}
+	}
+	return res
 }
 
 func (r RawConfig) ToProto() *v1.RawConfig {
-	return &v1.RawConfig{Flags: uint64(r)}
+	var flags []v1.RawConfig_Flag
+	for _, flag := range flagNames {
+		if r&flag.Mask != 0 {
+			switch flag.Mask {
+			case RcOnlyPublic:
+				flags = append(flags, v1.RawConfig_ONLY_PUBLIC)
+			case RcOnlyPrivate:
+				flags = append(flags, v1.RawConfig_ONLY_PRIVATE)
+			case RcOnlyForks:
+				flags = append(flags, v1.RawConfig_ONLY_FORKS)
+			case RcNoForks:
+				flags = append(flags, v1.RawConfig_NO_FORKS)
+			case RcOnlyArchived:
+				flags = append(flags, v1.RawConfig_ONLY_ARCHIVED)
+			case RcNoArchived:
+				flags = append(flags, v1.RawConfig_NO_ARCHIVED)
+			}
+		}
+	}
+	return &v1.RawConfig{Flags: flags}
 }
