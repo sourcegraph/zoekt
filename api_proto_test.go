@@ -269,7 +269,7 @@ func TestProtoRoundtrip(t *testing.T) {
 	})
 }
 
-func (*IndexMetadata) Generate(r *rand.Rand, size int) reflect.Value {
+func (*IndexMetadata) Generate(r *rand.Rand, _ int) reflect.Value {
 	indexTime := time.Now().Add(time.Duration(r.Int63n(1000)) * time.Hour)
 	var i IndexMetadata
 	i.IndexFormatVersion = gen(i.IndexFormatVersion, r)
