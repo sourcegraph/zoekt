@@ -7,11 +7,13 @@ go_library(
         "marshal.go",
         "parse.go",
         "query.go",
+        "query_proto.go",
         "regexp.go",
     ],
     importpath = "github.com/sourcegraph/zoekt/query",
     visibility = ["//visibility:public"],
     deps = [
+        "//grpc/v1:grpc",
         "@com_github_go_enry_go_enry_v2//:go-enry",
         "@com_github_grafana_regexp//:regexp",
         "@com_github_roaringbitmap_roaring//:roaring",
@@ -23,6 +25,7 @@ go_test(
     srcs = [
         "marshal_test.go",
         "parse_test.go",
+        "query_proto_test.go",
         "query_test.go",
         "regexp_test.go",
     ],

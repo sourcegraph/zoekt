@@ -525,7 +525,7 @@ func (r RepositoryBranch) String() string {
 
 // Repository holds repository metadata.
 type Repository struct {
-	// Sourcergaph's repository ID
+	// Sourcegraph's repository ID
 	ID uint32
 
 	// The repository name

@@ -10,6 +10,10 @@ import (
 	"github.com/sourcegraph/zoekt/trace"
 )
 
+func NewTraceAwareSearcher(s zoekt.Streamer) zoekt.Streamer {
+	return traceAwareSearcher{Searcher: s}
+}
+
 // traceAwareSearcher wraps a zoekt.Searcher instance so that the tracing context item is set in the
 // context. This context item toggles on trace collection via the
 // github.com/sourcegraph/zoekt/trace/ot package.

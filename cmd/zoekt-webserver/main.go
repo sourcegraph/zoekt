@@ -38,10 +38,15 @@ import (
 	"time"
 
 	"github.com/sourcegraph/mountinfo"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/debugserver"
+	zoektgrpc "github.com/sourcegraph/zoekt/grpc"
+	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
@@ -277,9 +282,12 @@ func main() {
 		log.Println("watchdog disabled")
 	}
 
+	grpcServer := grpc.NewServer()
+	v1.RegisterWebserverServiceServer(grpcServer, zoektgrpc.NewServer(web.NewTraceAwareSearcher(s.Searcher)))
+
 	srv := &http.Server{
 		Addr:    *listen,
-		Handler: handler,
+		Handler: multiplexGRPC(grpcServer, handler),
 	}
 
 	go func() {
@@ -309,6 +317,24 @@ func main() {
 			log.Fatalf("http.Server.Shutdown: %v", err)
 		}
 	}
+}
+
+// multiplexGRPC takes a gRPC server and a plain HTTP handler and multiplexes the
+// request handling. Any requests that declare themselves as gRPC requests are routed
+// to the gRPC server, all others are routed to the httpHandler.
+func multiplexGRPC(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
+	newHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(w, r)
+		} else {
+			httpHandler.ServeHTTP(w, r)
+		}
+	})
+
+	// Until we enable TLS, we need to fall back to the h2c protocol, which is
+	// basically HTTP2 without TLS. The standard library does not implement the
+	// h2s protocol, so this hijacks h2s requests and handles them correctly.
+	return h2c.NewHandler(newHandler, &http2.Server{})
 }
 
 // addProxyHandler adds a handler to "mux" that proxies all requests with base

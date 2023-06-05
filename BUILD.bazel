@@ -21,6 +21,7 @@ go_library(
     name = "zoekt",
     srcs = [
         "api.go",
+        "api_proto.go",
         "bits.go",
         "btree.go",
         "contentprovider.go",
@@ -45,12 +46,15 @@ go_library(
     importpath = "github.com/sourcegraph/zoekt",
     visibility = ["//visibility:public"],
     deps = [
+        "//grpc/v1:grpc",
         "//query",
         "@com_github_edsrzf_mmap_go//:mmap-go",
         "@com_github_go_enry_go_enry_v2//:go-enry",
         "@com_github_go_enry_go_enry_v2//data",
         "@com_github_grafana_regexp//:regexp",
         "@com_github_rs_xid//:xid",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ] + select({
         "@io_bazel_rules_go//go/platform:aix": [
             "@org_golang_x_sys//unix",
@@ -98,6 +102,7 @@ go_library(
 go_test(
     name = "zoekt_test",
     srcs = [
+        "api_proto_test.go",
         "api_test.go",
         "bits_test.go",
         "btree_test.go",
@@ -114,12 +119,15 @@ go_test(
     ],
     data = [":testdata"],
     embed = [":zoekt"],
+    embedsrcs = ["//testdata:search_result_1.pb"],  #keep
     deps = [
+        "//grpc/v1:grpc",
         "//query",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",
         "@com_github_grafana_regexp//:regexp",
         "@com_github_kylelemons_godebug//pretty",
         "@com_github_roaringbitmap_roaring//:roaring",
+        "@org_golang_google_protobuf//proto",
     ],
 )
