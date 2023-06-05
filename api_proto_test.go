@@ -308,7 +308,7 @@ func (*Repository) Generate(rng *rand.Rand, size int) reflect.Value {
 	return reflect.ValueOf(v)
 }
 
-func (RepoListField) Generate(rng *rand.Rand, size int) reflect.Value {
+func (RepoListField) Generate(rng *rand.Rand, _ int) reflect.Value {
 	switch rng.Int() % 3 {
 	case 0:
 		return reflect.ValueOf(RepoListField(RepoListFieldRepos))
