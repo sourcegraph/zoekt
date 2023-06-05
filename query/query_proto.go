@@ -284,17 +284,37 @@ func TypeFromProto(p *v1.Type) (*Type, error) {
 		return nil, err
 	}
 
+	var kind uint8
+	switch p.GetType() {
+	case v1.Type_FILE_MATCH:
+		kind = TypeFileMatch
+	case v1.Type_FILE_NAME:
+		kind = TypeFileName
+	case v1.Type_REPO:
+		kind = TypeRepo
+	}
+
 	return &Type{
 		Child: child,
 		// TODO: make proper enum types
-		Type: uint8(p.GetType()),
+		Type: kind,
 	}, nil
 }
 
 func (q *Type) ToProto() *v1.Type {
+	var kind v1.Type_Kind
+	switch q.Type {
+	case TypeFileMatch:
+		kind = v1.Type_FILE_MATCH
+	case TypeFileName:
+		kind = v1.Type_FILE_NAME
+	case TypeRepo:
+		kind = v1.Type_REPO
+	}
+
 	return &v1.Type{
 		Child: QToProto(q.Child),
-		Type:  uint32(q.Type),
+		Type:  kind,
 	}
 }
 

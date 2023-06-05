@@ -61,12 +61,10 @@ message Language {
   string language = 1;
 }
 
-// TODO: what's the difference between Repo and RepoRegexp?
 message Repo {
   string regexp = 1;
 }
 
-// TODO: what's the difference between Repo and RepoRegexp?
 message RepoRegexp {
   string regexp = 1;
 }
@@ -103,9 +101,16 @@ message FileNameSet {
 
 // Type changes the result type returned.
 message Type {
+  enum Kind {
+    UNKNOWN = 0;
+    FILE_MATCH = 1;
+    FILE_NAME = 2;
+    REPO = 3;
+  }
+
   Q child = 1;
   // TODO: type constants
-  uint32 type = 2;
+  Kind type = 2;
 }
 
 message Substring {
@@ -140,4 +145,3 @@ message Branch {
   // exact is true if we want to Pattern to equal branch.
   bool exact = 2;
 }
-
