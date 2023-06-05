@@ -347,52 +347,55 @@ var (
 	exampleSearchResultGo = SearchResultFromProto(exampleSearchResultProto)
 )
 
-// The number of times to do a roundtrip for each benchmark.
-// A high number favors gob more because it amortizes the cost
-// of encoding the type
-const count = 1000
-
 func BenchmarkGobRoundtrip(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
+	for _, count := range []int{1, 100, 1000, 10000} {
+		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				var buf bytes.Buffer
+				enc := gob.NewEncoder(&buf)
 
-		for i := 0; i < count; i++ {
-			err := enc.Encode(exampleSearchResultGo)
-			if err != nil {
-				panic(err)
+				for i := 0; i < count; i++ {
+					err := enc.Encode(exampleSearchResultGo)
+					if err != nil {
+						panic(err)
+					}
+
+				}
+
+				dec := gob.NewDecoder(&buf)
+				for i := 0; i < count; i++ {
+					var res SearchResult
+					err := dec.Decode(&res)
+					if err != nil {
+						panic(err)
+					}
+				}
 			}
-
-		}
-
-		dec := gob.NewDecoder(&buf)
-		for i := 0; i < count; i++ {
-			var res SearchResult
-			err := dec.Decode(&res)
-			if err != nil {
-				panic(err)
-			}
-		}
+		})
 	}
 }
 
 func BenchmarkProtoRoundtrip(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		buffers := make([][]byte, 0, count)
-		for i := 0; i < count; i++ {
-			buf, err := proto.Marshal(exampleSearchResultProto)
-			if err != nil {
-				b.Fatal(err)
-			}
-			buffers = append(buffers, buf)
-		}
+	for _, count := range []int{1, 100, 1000, 10000} {
+		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				buffers := make([][]byte, 0, count)
+				for i := 0; i < count; i++ {
+					buf, err := proto.Marshal(exampleSearchResultProto)
+					if err != nil {
+						b.Fatal(err)
+					}
+					buffers = append(buffers, buf)
+				}
 
-		for _, buf := range buffers {
-			res := new(v1.SearchResponse)
-			err := proto.Unmarshal(buf, res)
-			if err != nil {
-				b.Fatal(err)
+				for _, buf := range buffers {
+					res := new(v1.SearchResponse)
+					err := proto.Unmarshal(buf, res)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
 			}
-		}
+		})
 	}
 }
