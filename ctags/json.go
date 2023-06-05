@@ -120,7 +120,7 @@ func (lp *lockedParser) close() {
 // NewParser creates a parser that is implemented by the given
 // universal-ctags binary. The parser is safe for concurrent use.
 func NewParser(bin string) (Parser, error) {
-	if strings.Contains(bin, "universal-ctags") {
+	if strings.Contains(bin, "universal-ctags") || strings.Contains(bin, "scip-ctags") {
 		opts := goctags.Options{
 			Bin: bin,
 		}
@@ -133,6 +133,5 @@ func NewParser(bin string) (Parser, error) {
 		}, nil
 	}
 
-	log.Fatal("not implemented")
-	return nil, nil
+	return nil, fmt.Errorf("only supports universal-ctags, not %s", bin)
 }

@@ -242,7 +242,7 @@ func newIndexBuilder() *IndexBuilder {
 		fileEndSymbol:   []uint32{0},
 		symIndex:        make(map[string]uint32),
 		symKindIndex:    make(map[string]uint32),
-		languageMap:     map[string]uint16{},
+		languageMap:     make(map[string]uint16),
 	}
 }
 
@@ -423,6 +423,17 @@ func (b *IndexBuilder) addSymbols(symbols []*Symbol) {
 	}
 }
 
+func DetermineLanguageIfUnknown(doc *Document) {
+	if doc.Language == "" {
+		c := doc.Content
+		// classifier is faster on small files without losing much accuracy
+		if len(c) > 2048 {
+			c = c[:2048]
+		}
+		doc.Language = enry.GetLanguage(doc.Name, c)
+	}
+}
+
 // Add a file which only occurs in certain branches.
 func (b *IndexBuilder) Add(doc Document) error {
 	hasher := crc64.New(crc64.MakeTable(crc64.ISO))
@@ -441,14 +452,7 @@ func (b *IndexBuilder) Add(doc Document) error {
 		}
 	}
 
-	if doc.Language == "" {
-		c := doc.Content
-		// classifier is faster on small files without losing much accuracy
-		if len(c) > 2048 {
-			c = c[:2048]
-		}
-		doc.Language = enry.GetLanguage(doc.Name, c)
-	}
+	DetermineLanguageIfUnknown(&doc)
 
 	sort.Sort(symbolSlice{doc.Symbols, doc.SymbolsMetaData})
 	var last DocumentSection

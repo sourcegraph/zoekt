@@ -17,130 +17,27 @@ package build
 import (
 	"bytes"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"time"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ctags"
 )
 
-func runCTags(bin string, inputs map[string][]byte) ([]*ctags.Entry, error) {
-	const debug = false
-	if len(inputs) == 0 {
-		return nil, nil
-	}
-	dir, err := os.MkdirTemp("", "ctags-input")
-	if err != nil {
-		return nil, err
-	}
-	if !debug {
-		defer os.RemoveAll(dir)
-	}
-
-	// --sort shells out to sort(1).
-	args := []string{bin, "-n", "-f", "-", "--sort=no"}
-
-	fileCount := 0
-	for n, c := range inputs {
-		if len(c) == 0 {
-			continue
-		}
-
-		full := filepath.Join(dir, n)
-		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
-			return nil, err
-		}
-		err := os.WriteFile(full, c, 0o600)
-		if err != nil {
-			return nil, err
-		}
-		args = append(args, n)
-		fileCount++
-	}
-	if fileCount == 0 {
-		return nil, nil
-	}
-
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Dir = dir
-
-	var errBuf, outBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-	cmd.Stdout = &outBuf
-
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-
-	errChan := make(chan error, 1)
-	go func() {
-		err := cmd.Wait()
-		errChan <- err
-	}()
-	timeout := time.After(60 * time.Second)
-	select {
-	case <-timeout:
-		_ = cmd.Process.Kill()
-		return nil, fmt.Errorf("timeout executing ctags")
-	case err := <-errChan:
-		if err != nil {
-			return nil, fmt.Errorf("exec(%s): %v, stderr: %s", cmd.Args, err, errBuf.String())
-		}
-	}
-
-	var entries []*ctags.Entry
-	for _, l := range bytes.Split(outBuf.Bytes(), []byte{'\n'}) {
-		if len(l) == 0 {
-			continue
-		}
-		e, err := ctags.Parse(string(l))
-		if err != nil {
-			return nil, err
-		}
-
-		if len(e.Name) == 1 {
-			continue
-		}
-		entries = append(entries, e)
-	}
-	return entries, nil
-}
-
-func runCTagsChunked(bin string, in map[string][]byte) ([]*ctags.Entry, error) {
-	var res []*ctags.Entry
-
-	cur := map[string][]byte{}
-	sz := 0
-	for k, v := range in {
-		cur[k] = v
-		sz += len(k)
-
-		// 100k seems reasonable.
-		if sz > (100 << 10) {
-			r, err := runCTags(bin, cur)
-			if err != nil {
-				return nil, err
-			}
-			res = append(res, r...)
-
-			cur = map[string][]byte{}
-			sz = 0
-		}
-	}
-	r, err := runCTags(bin, cur)
-	if err != nil {
-		return nil, err
-	}
-	res = append(res, r...)
-	return res, nil
-}
-
-func ctagsAddSymbolsParser(todo []*zoekt.Document, parser ctags.Parser) error {
+func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserMap ctags.ParserMap) error {
 	for _, doc := range todo {
 		if doc.Symbols != nil {
 			continue
+		}
+
+		zoekt.DetermineLanguageIfUnknown(doc)
+
+		parserKind := languageMap[doc.Language]
+		if parserKind == ctags.NoCTags {
+			continue
+		}
+
+		parser := parserMap[parserKind]
+		if parser == nil {
+			parser = parserMap[ctags.UniversalCTags]
 		}
 
 		es, err := parser.Parse(doc.Name, doc.Content)
@@ -159,50 +56,6 @@ func ctagsAddSymbolsParser(todo []*zoekt.Document, parser ctags.Parser) error {
 		doc.SymbolsMetaData = symMetaData
 	}
 
-	return nil
-}
-
-func ctagsAddSymbols(todo []*zoekt.Document, parser ctags.Parser, bin string) error {
-	if parser != nil {
-		return ctagsAddSymbolsParser(todo, parser)
-	}
-
-	pathIndices := map[string]int{}
-	contents := map[string][]byte{}
-	for i, t := range todo {
-		if t.Symbols != nil {
-			continue
-		}
-
-		_, ok := pathIndices[t.Name]
-		if ok {
-			continue
-		}
-
-		pathIndices[t.Name] = i
-		contents[t.Name] = t.Content
-	}
-
-	var err error
-	var entries []*ctags.Entry
-	entries, err = runCTagsChunked(bin, contents)
-	if err != nil {
-		return err
-	}
-
-	fileTags := map[string][]*ctags.Entry{}
-	for _, e := range entries {
-		fileTags[e.Path] = append(fileTags[e.Path], e)
-	}
-
-	for k, tags := range fileTags {
-		symOffsets, symMetaData, err := tagsToSections(contents[k], tags)
-		if err != nil {
-			return fmt.Errorf("%s: %v", k, err)
-		}
-		todo[pathIndices[k]].Symbols = symOffsets
-		todo[pathIndices[k]].SymbolsMetaData = symMetaData
-	}
 	return nil
 }
 

@@ -497,6 +497,11 @@ func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
 	}
 
 	item := indexOptionsItem{}
+	languageMap := make(map[string]uint8)
+
+	for _, lang := range x.GetLanguageMap() {
+		languageMap[lang.GetLanguage()] = uint8(lang.GetCtags().Number())
+	}
 
 	item.IndexOptions = IndexOptions{
 		RepoID:     uint32(x.GetRepoId()),
@@ -512,6 +517,8 @@ func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
 		Public:   x.GetPublic(),
 		Fork:     x.GetFork(),
 		Archived: x.GetArchived(),
+
+		LanguageMap: languageMap,
 	}
 
 	item.Error = x.GetError()
@@ -525,6 +532,15 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 		branches = append(branches, &proto.ZoektRepositoryBranch{
 			Name:    b.Name,
 			Version: b.Version,
+		})
+	}
+
+	languageMap := make([]*proto.LanguageMapping, 0, len(o.LanguageMap))
+
+	for lang, parser := range o.LanguageMap {
+		languageMap = append(languageMap, &proto.LanguageMapping{
+			Language: lang,
+			Ctags:    proto.CTagsParserType(parser),
 		})
 	}
 
@@ -544,6 +560,8 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 		Archived: o.Archived,
 
 		Error: o.Error,
+
+		LanguageMap: languageMap,
 	}
 }
 

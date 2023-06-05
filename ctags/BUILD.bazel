@@ -4,7 +4,7 @@ go_library(
     name = "ctags",
     srcs = [
         "json.go",
-        "parse.go",
+        "parser_map.go",
     ],
     importpath = "github.com/sourcegraph/zoekt/ctags",
     visibility = ["//visibility:public"],
@@ -13,10 +13,7 @@ go_library(
 
 go_test(
     name = "ctags_test",
-    srcs = [
-        "json_test.go",
-        "parse_test.go",
-    ],
+    srcs = ["json_test.go"],
     embed = [":ctags"],
     deps = [
         "@com_github_google_go_cmp//cmp",

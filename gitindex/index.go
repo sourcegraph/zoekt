@@ -415,7 +415,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 				continue
 			}
 
-			return fmt.Errorf("getCommit: %w", err)
+			return fmt.Errorf("getCommit(%q, %q): %w", opts.BranchPrefix, b, err)
 		}
 
 		opts.BuildOptions.RepositoryDescription.Branches = append(opts.BuildOptions.RepositoryDescription.Branches, zoekt.RepositoryBranch{
