@@ -97,9 +97,6 @@ message SearchOptions {
 
   // If set, the search results will contain debug information for scoring.
   bool debug_score = 14;
-
-  // SpanContext is the opentracing span context, if it exists, from the zoekt client
-  map<string, string> span_context = 15;
 }
 
 message Q {
