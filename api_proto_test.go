@@ -188,21 +188,73 @@ func TestProtoRoundtrip(t *testing.T) {
 		}
 	})
 
-	// t.Run("RepoListEntry", func(t *testing.T) {
-	// 	f := func(f1 *RepoListEntry) bool {
-	// 		p1 := f1.ToProto()
-	// 		f2 := RepoListEntryFromProto(p1)
-	// 		if diff := cmp.Diff(f1, f2); diff != "" {
-	// 			fmt.Printf("got diff: %s", diff)
-	// 			return false
-	// 		}
-	// 		return true
-	// 	}
-	// 	if err := quick.Check(f, nil); err != nil {
-	// 		t.Fatal(err)
-	// 	}
-	// })
-	//
+	t.Run("RepoListEntry", func(t *testing.T) {
+		r1 := &RepoListEntry{
+			Repository: Repository{
+				ID:     1,
+				Name:   "test",
+				URL:    "testurl",
+				Source: "testsource",
+				Branches: []RepositoryBranch{{
+					Name:    "branch",
+					Version: "version",
+				}},
+				SubRepoMap: map[string]*Repository{
+					"test": {
+						ID:             2,
+						Name:           "subrepo",
+						Branches:       []RepositoryBranch{},
+						SubRepoMap:     map[string]*Repository{},
+						FileTombstones: map[string]struct{}{},
+					},
+				},
+				CommitURLTemplate:    "committemplate",
+				FileURLTemplate:      "fileurltemplate",
+				LineFragmentTemplate: "linefragmenttemplate",
+				priority:             10,
+				RawConfig: map[string]string{
+					"a": "b",
+				},
+				Rank:             32,
+				IndexOptions:     "indexoptions",
+				HasSymbols:       true,
+				Tombstone:        false,
+				LatestCommitDate: time.Now(),
+				FileTombstones: map[string]struct{}{
+					"test1": {},
+				},
+			},
+			IndexMetadata: IndexMetadata{
+				IndexFormatVersion:    32,
+				IndexFeatureVersion:   42,
+				IndexMinReaderVersion: 52,
+				IndexTime:             time.Now(),
+				PlainASCII:            true,
+				LanguageMap: map[string]uint16{
+					"go": 1,
+				},
+				ZoektVersion: "32",
+				ID:           "52",
+			},
+			Stats: RepoStats{
+				Repos:                      3,
+				Shards:                     4,
+				Documents:                  5,
+				IndexBytes:                 6,
+				ContentBytes:               7,
+				NewLinesCount:              8,
+				DefaultBranchNewLinesCount: 9,
+				OtherBranchesNewLinesCount: 10,
+			},
+		}
+
+		p1 := r1.ToProto()
+		r2 := RepoListEntryFromProto(p1)
+		if diff := cmp.Diff(r1, r2, cmpopts.IgnoreUnexported(Repository{})); diff != "" {
+			t.Fatalf("got diff: %s", diff)
+		}
+	})
+
 	t.Run("RepositoryBranch", func(t *testing.T) {
 		f := func(f1 RepositoryBranch) bool {
 			p1 := f1.ToProto()
