@@ -117,10 +117,12 @@ go_test(
         "read_test.go",
         "tombstones_test.go",
     ],
-    data = [":testdata"],
     embed = [":zoekt"],
-    embedsrcs = ["//testdata:search_result_1.pb"],  #keep
+    embedsrcs = [
+        "//testdata:search_result_1.pb",
+    ],
     deps = [
+        "//testdata",
         "//grpc/v1:grpc",
         "//query",
         "@com_github_google_go_cmp//cmp",
