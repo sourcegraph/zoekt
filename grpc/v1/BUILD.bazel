@@ -4,11 +4,14 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
 proto_library(
     name = "v1_proto",
-    srcs = ["webserver.proto"],
+    srcs = [
+        "query.proto",
+        "webserver.proto",
+    ],
+    strip_import_prefix = "/grpc/v1",
     visibility = ["//visibility:public"],
     deps = [
         "@com_google_protobuf//:duration_proto",
-        "@com_google_protobuf//:empty_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )

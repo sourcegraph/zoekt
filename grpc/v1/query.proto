@@ -2,10 +2,6 @@ syntax = "proto3";
 
 package grpc.v1;
 
-import "google/protobuf/duration.proto";
-import "google/protobuf/empty.proto";
-import "google/protobuf/timestamp.proto";
-
 option go_package = "github.com/sourcegraph/zoekt/grpc/v1";
 
 message Q {
