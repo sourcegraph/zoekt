@@ -8,6 +8,7 @@ proto_library(
         "query.proto",
         "webserver.proto",
     ],
+    strip_import_prefix = "/grpc/v1",
     visibility = ["//visibility:public"],
     deps = [
         "@com_google_protobuf//:duration_proto",

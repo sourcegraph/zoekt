@@ -4,7 +4,7 @@ package grpc.v1;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-import "grpc/v1/query.proto";
+import "query.proto";
 
 option go_package = "github.com/sourcegraph/zoekt/grpc/v1";
 
