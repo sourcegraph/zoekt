@@ -117,9 +117,9 @@ go_test(
         "read_test.go",
         "tombstones_test.go",
     ],
-    data = ["//testdata:testdata"],
-    embedsrcs = ["//testdata:testdata"],
+    data = ["//testdata"],
     embed = [":zoekt"],
+    embedsrcs = ["//testdata:testdata"],  #keep
     deps = [
         "//grpc/v1:grpc",
         "//query",
