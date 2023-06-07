@@ -30,6 +30,7 @@ go_library(
         "@com_github_sourcegraph_log//:log",
         "@com_github_sourcegraph_mountinfo//:mountinfo",
         "@com_github_uber_jaeger_client_go//:jaeger-client-go",
+        "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:go_default_library",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_x_net//http2",

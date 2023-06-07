@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"github.com/sourcegraph/mountinfo"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
@@ -282,7 +283,10 @@ func main() {
 		log.Println("watchdog disabled")
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
+		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+	)
 	v1.RegisterWebserverServiceServer(grpcServer, zoektgrpc.NewServer(web.NewTraceAwareSearcher(s.Searcher)))
 
 	srv := &http.Server{
