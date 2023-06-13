@@ -17,10 +17,25 @@ package build
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ctags"
 )
+
+// Make sure all names are lowercase here, since they are normalized
+var enryLanguageMappings = map[string]string{
+	"c#": "c_sharp",
+}
+
+func normalizeLanguage(filetype string) string {
+	normalized := strings.ToLower(filetype)
+	if mapped, ok := enryLanguageMappings[normalized]; ok {
+		normalized = mapped
+	}
+
+	return normalized
+}
 
 func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserMap ctags.ParserMap) error {
 	for _, doc := range todo {
@@ -30,7 +45,7 @@ func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.Language
 
 		zoekt.DetermineLanguageIfUnknown(doc)
 
-		parserKind := languageMap[doc.Language]
+		parserKind := languageMap[normalizeLanguage(doc.Language)]
 		if parserKind == ctags.NoCTags {
 			continue
 		}
