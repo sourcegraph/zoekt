@@ -38,6 +38,13 @@ func (m *FileMatch) addScore(what string, s float64, debugScore bool) {
 	m.Score += s
 }
 
+func (m *FileMatch) addKeywordScore(score float64, sumTf float64, L float64, debugScore bool) {
+	if debugScore {
+		m.Debug += fmt.Sprintf("keyword-score:%.2f (sum-tf: %.2f, length-ratio: %.2f)", score, sumTf, L)
+	}
+	m.Score += score
+}
+
 // simplifyMultiRepo takes a query and a predicate. It returns Const(true) if all
 // repository names fulfill the predicate, Const(false) if none of them do, and q
 // otherwise.
@@ -480,13 +487,15 @@ func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands [
 
 	// Use standard parameter defaults (used in Lucene and academic papers)
 	k, b := 1.2, 0.75
+	sumTf := 0.0 // Just for debugging
 	score := 0.0
 	for _, freq := range termFreqs {
 		tf := float64(freq)
+		sumTf += tf
 		score += ((k + 1.0) * tf) / (k * (1.0 - b + b * L) + tf)
 	}
 
-	fileMatch.addScore("keyword-score", score, opts.DebugScore)
+	fileMatch.addKeywordScore(score, sumTf, L, opts.DebugScore)
 }
 
 func addRepo(res *SearchResult, repo *Repository) {
