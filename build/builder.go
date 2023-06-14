@@ -438,15 +438,15 @@ func (o *Options) IndexState() (IndexState, string) {
 // FindRepositoryMetadata returns the index metadata for the repository
 // specified in the options. 'ok' is false if the repository's metadata
 // couldn't be found or if an error occurred.
-func (o *Options) FindRepositoryMetadata() (repository *zoekt.Repository, ok bool, err error) {
+func (o *Options) FindRepositoryMetadata() (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error) {
 	shard := o.findShard()
 	if shard == "" {
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 
-	repositories, _, err := zoekt.ReadMetadataPathAlive(shard)
+	repositories, metadata, err := zoekt.ReadMetadataPathAlive(shard)
 	if err != nil {
-		return nil, false, fmt.Errorf("reading metadata for shard %q: %w", shard, err)
+		return nil, nil, false, fmt.Errorf("reading metadata for shard %q: %w", shard, err)
 	}
 
 	ID := o.RepositoryDescription.ID
@@ -454,7 +454,7 @@ func (o *Options) FindRepositoryMetadata() (repository *zoekt.Repository, ok boo
 		// compound shards contain multiple repositories, so we
 		// have to pick only the one we're looking for
 		if r.ID == ID {
-			return r, true, nil
+			return r, metadata, true, nil
 		}
 	}
 
@@ -462,7 +462,7 @@ func (o *Options) FindRepositoryMetadata() (repository *zoekt.Repository, ok boo
 	// shard that's missing the repository metadata we're looking for. This
 	// should never happen.
 	name := o.RepositoryDescription.Name
-	return nil, false, fmt.Errorf("matching shard %q doesn't contain metadata for repo id %d (%q)", shard, ID, name)
+	return nil, nil, false, fmt.Errorf("matching shard %q doesn't contain metadata for repo id %d (%q)", shard, ID, name)
 }
 
 func (o *Options) findShard() string {

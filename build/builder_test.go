@@ -733,7 +733,7 @@ func TestFindRepositoryMetadata(t *testing.T) {
 			o.SetDefaults()
 
 			// run test
-			got, gotOk, err := o.FindRepositoryMetadata()
+			got, _, gotOk, err := o.FindRepositoryMetadata()
 			if err != nil {
 				t.Errorf("received unexpected error: %v", err)
 				return

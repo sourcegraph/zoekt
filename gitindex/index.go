@@ -651,7 +651,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	}
 
 	// discover what commits we indexed during our last build
-	existingRepository, ok, err := options.BuildOptions.FindRepositoryMetadata()
+	existingRepository, _, ok, err := options.BuildOptions.FindRepositoryMetadata()
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to get repository metadata: %w", err)
 	}

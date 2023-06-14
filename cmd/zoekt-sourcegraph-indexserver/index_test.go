@@ -844,12 +844,12 @@ func TestIndex(t *testing.T) {
 				return nil
 			}
 
-			findRepositoryMetadata := func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error) {
+			findRepositoryMetadata := func(args *indexArgs) (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error) {
 				if tc.mockRepositoryMetadata == nil {
 					return args.BuildOptions().FindRepositoryMetadata()
 				}
 
-				return tc.mockRepositoryMetadata, true, nil
+				return tc.mockRepositoryMetadata, &zoekt.IndexMetadata{}, true, nil
 			}
 
 			c := gitIndexConfig{

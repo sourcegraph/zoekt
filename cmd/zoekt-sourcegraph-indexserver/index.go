@@ -162,7 +162,7 @@ type gitIndexConfig struct {
 	//
 	// The primary purpose of this configuration option is to be able to provide a stub
 	// implementation for this in our test suite. All other callers should use build.Options.FindRepositoryMetadata().
-	findRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error)
+	findRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error)
 }
 
 func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
@@ -416,7 +416,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 }
 
 func priorBranches(c gitIndexConfig, o *indexArgs) ([]zoekt.RepositoryBranch, error) {
-	existingRepository, found, err := c.findRepositoryMetadata(o)
+	existingRepository, _, found, err := c.findRepositoryMetadata(o)
 	if err != nil {
 		return nil, fmt.Errorf("loading repository metadata: %w", err)
 	}

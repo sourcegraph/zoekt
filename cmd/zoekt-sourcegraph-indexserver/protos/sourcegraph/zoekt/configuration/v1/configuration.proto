@@ -182,6 +182,9 @@ message UpdateIndexStatusRequest {
 
     // branches is the list of branches that the client has indexed.
     repeated ZoektRepositoryBranch branches = 2;
+
+    // index_time_unix is the unix timestamp for when the index was created.
+    int64 index_time_unix = 3;
   }
 
   repeated Repository repositories = 1;
