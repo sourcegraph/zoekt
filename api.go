@@ -742,9 +742,29 @@ type RepoListEntry struct {
 	Stats         RepoStats
 }
 
+// MinimalRepoListEntry is a subset of RepoListEntry. It was added after
+// performance profiling of sourcegraph.com revealed that querying this
+// information from Zoekt was causing lots of CPU and memory usage. Note: we
+// can revisit this, how we store and query this information has changed a lot
+// since this was introduced.
 type MinimalRepoListEntry struct {
+	// HasSymbols is exported since Sourcegraph uses this information at search
+	// planning time to decide between Zoekt and an unindexed symbol search.
+	//
+	// Note: it pretty much is always true in practice.
 	HasSymbols bool
-	Branches   []RepositoryBranch
+
+	// Branches is used by Sourcegraphs query planner to decided if it can use
+	// zoekt or go via an unindexed code path.
+	Branches []RepositoryBranch
+
+	// IndexTime is used as a heuristic in Sourcegraph to decide in aggregate
+	// how many repositories need updating after a ranking change/etc.
+	//
+	// TODO(keegancsmith) audit updates to IndexTime and document how and when
+	// it changes. Concerned about things like metadata updates or compound
+	// shards leading to untrustworthy data here.
+	IndexTime time.Time
 }
 
 type ReposMap map[uint32]MinimalRepoListEntry

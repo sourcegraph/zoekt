@@ -170,7 +170,7 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 
 	indexTime := b.IndexTime
 	if indexTime.IsZero() {
-		indexTime = time.Now()
+		indexTime = time.Now().UTC()
 	}
 
 	if err := b.writeJSON(&IndexMetadata{

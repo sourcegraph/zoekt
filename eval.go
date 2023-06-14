@@ -719,11 +719,13 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 			l.Minimal[rle.Repository.ID] = &MinimalRepoListEntry{
 				HasSymbols: rle.Repository.HasSymbols,
 				Branches:   rle.Repository.Branches,
+				IndexTime:  rle.IndexMetadata.IndexTime,
 			}
 		case RepoListFieldReposMap:
 			l.ReposMap[rle.Repository.ID] = MinimalRepoListEntry{
 				HasSymbols: rle.Repository.HasSymbols,
 				Branches:   rle.Repository.Branches,
+				IndexTime:  rle.IndexMetadata.IndexTime,
 			}
 		}
 

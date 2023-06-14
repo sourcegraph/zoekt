@@ -19,6 +19,7 @@ import (
 	"encoding/gob"
 	"strings"
 	"testing"
+	"time"
 )
 
 /*
@@ -32,21 +33,25 @@ func BenchmarkMinimalRepoListEncodings(b *testing.B) {
 		ID         uint32
 		HasSymbols bool
 		Branches   []RepositoryBranch
+		IndexTime  time.Time
 	}
 
 	branches := []RepositoryBranch{{Name: "HEAD", Version: strings.Repeat("a", 40)}}
 	mapData := make(map[uint32]*MinimalRepoListEntry, size)
 	sliceData := make([]Slice, 0, size)
+	indexTime := time.Now()
 
 	for id := uint32(1); id <= size; id++ {
 		mapData[id] = &MinimalRepoListEntry{
 			HasSymbols: true,
 			Branches:   branches,
+			IndexTime:  indexTime,
 		}
 		sliceData = append(sliceData, Slice{
 			ID:         id,
 			HasSymbols: true,
 			Branches:   branches,
+			IndexTime:  indexTime,
 		})
 	}
 

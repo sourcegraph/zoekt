@@ -271,7 +271,22 @@ func TestProtoRoundtrip(t *testing.T) {
 	})
 
 	t.Run("MinimalRepoListEntry", func(t *testing.T) {
-		f := func(f1 MinimalRepoListEntry) bool {
+		// Can't directly use MinimalRepoListEntry since time.Time has private
+		// fields.
+		type entry struct {
+			HasSymbols bool
+			Branches   []RepositoryBranch
+			// uint32 represents what the time syscall actually returns (at the
+			// moment)
+			IndexTime uint32
+		}
+
+		f := func(f0 entry) bool {
+			f1 := MinimalRepoListEntry{
+				HasSymbols: f0.HasSymbols,
+				Branches:   f0.Branches,
+				IndexTime:  time.Unix(int64(f0.IndexTime), 0),
+			}
 			p1 := f1.ToProto()
 			f2 := MinimalRepoListEntryFromProto(p1)
 			if diff := cmp.Diff(f1, f2); diff != "" {

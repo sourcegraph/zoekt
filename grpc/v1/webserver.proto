@@ -232,6 +232,7 @@ message IndexMetadata {
 message MinimalRepoListEntry {
   bool has_symbols = 1;
   repeated RepositoryBranch branches = 2;
+  google.protobuf.Timestamp index_time = 3;
 }
 
 // RepositoryBranch describes an indexed branch, which is a name

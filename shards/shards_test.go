@@ -604,6 +604,7 @@ func TestShardedSearcher_List(t *testing.T) {
 
 			ignored := []cmp.Option{
 				cmpopts.EquateEmpty(),
+				cmpopts.IgnoreFields(zoekt.MinimalRepoListEntry{}, "IndexTime"),
 				cmpopts.IgnoreFields(zoekt.RepoListEntry{}, "IndexMetadata"),
 				cmpopts.IgnoreFields(zoekt.RepoStats{}, "IndexBytes"),
 				cmpopts.IgnoreFields(zoekt.Repository{}, "SubRepoMap"),
