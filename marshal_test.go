@@ -73,11 +73,11 @@ func TestRepoList_Marshal(t *testing.T) {
 
 func genRepoList(size int) *RepoList {
 	m := make(ReposMap, size)
-	indexTime := time.Now().UTC().Truncate(time.Second)
+	indexTime := time.Now().Unix()
 	for i := 0; i < size; i++ {
 		m[uint32(i)] = MinimalRepoListEntry{
-			HasSymbols: true,
-			IndexTime:  indexTime,
+			HasSymbols:    true,
+			IndexTimeUnix: indexTime,
 			Branches: []RepositoryBranch{{
 				Name:    "HEAD",
 				Version: "c301e5c82b6e1632dce5c39902691c359559852e",

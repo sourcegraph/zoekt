@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"time"
 	"unsafe"
 )
 
@@ -16,13 +15,13 @@ import (
 // for repoID, entry in minimal:
 //   uvarint(repoID)
 //   byte(entry.HasSymbols)
-//   uvarint(entry.IndexTime)
+//   uvarint(entry.IndexTimeUnix)
 //   uvarint(len(entry.Branches))
 //   for b in entry.Branches:
 //     str(b.Name)
 //     str(b.Version)
 //
-// Version 1 was the same, except it didn't have the IndexTime field.
+// Version 1 was the same, except it didn't have the IndexTimeUnix field.
 
 // reposMapEncode implements an efficient encoder for ReposMap.
 func reposMapEncode(minimal ReposMap) ([]byte, error) {
@@ -57,8 +56,8 @@ func reposMapEncode(minimal ReposMap) ([]byte, error) {
 	size += binary.PutUvarint(enc[:], uint64(allBranchesLen))
 	for repoID, entry := range minimal {
 		size += binary.PutUvarint(enc[:], uint64(repoID))
-		size += 1                                                               // HasSymbols
-		size += binary.PutUvarint(enc[:], uint64(entry.IndexTime.UTC().Unix())) // IndexTime
+		size += 1 // HasSymbols
+		size += binary.PutUvarint(enc[:], uint64(entry.IndexTimeUnix))
 		size += binary.PutUvarint(enc[:], uint64(len(entry.Branches)))
 		for _, b := range entry.Branches {
 			size += strSize(b.Name)
@@ -84,7 +83,7 @@ func reposMapEncode(minimal ReposMap) ([]byte, error) {
 		}
 		b.WriteByte(hasSymbols)
 
-		varint(int(entry.IndexTime.UTC().Unix()))
+		varint(int(entry.IndexTimeUnix))
 
 		varint(len(entry.Branches))
 		for _, b := range entry.Branches {
@@ -133,9 +132,9 @@ func reposMapDecode(b []byte) (ReposMap, error) {
 	for i := 0; i < l; i++ {
 		repoID := r.uvarint()
 		hasSymbols := r.byt() == 1
-		var indexTime time.Time
+		var indexTimeUnix int64
 		if readIndexTime {
-			indexTime = time.Unix(int64(r.uvarint()), 0).UTC()
+			indexTimeUnix = int64(r.uvarint())
 		}
 		lb := r.uvarint()
 		for i := 0; i < lb; i++ {
@@ -146,9 +145,9 @@ func reposMapDecode(b []byte) (ReposMap, error) {
 		}
 		branches := allBranches[len(allBranches)-lb:]
 		m[uint32(repoID)] = MinimalRepoListEntry{
-			HasSymbols: hasSymbols,
-			Branches:   branches,
-			IndexTime:  indexTime,
+			HasSymbols:    hasSymbols,
+			Branches:      branches,
+			IndexTimeUnix: indexTimeUnix,
 		}
 	}
 

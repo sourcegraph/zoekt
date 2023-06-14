@@ -568,9 +568,9 @@ func MinimalRepoListEntryFromProto(p *proto.MinimalRepoListEntry) MinimalRepoLis
 	}
 
 	return MinimalRepoListEntry{
-		HasSymbols: p.GetHasSymbols(),
-		Branches:   branches,
-		IndexTime:  p.GetIndexTime().AsTime(),
+		HasSymbols:    p.GetHasSymbols(),
+		Branches:      branches,
+		IndexTimeUnix: p.GetIndexTimeUnix(),
 	}
 }
 
@@ -580,9 +580,9 @@ func (m *MinimalRepoListEntry) ToProto() *proto.MinimalRepoListEntry {
 		branches[i] = branch.ToProto()
 	}
 	return &proto.MinimalRepoListEntry{
-		HasSymbols: m.HasSymbols,
-		Branches:   branches,
-		IndexTime:  timestamppb.New(m.IndexTime),
+		HasSymbols:    m.HasSymbols,
+		Branches:      branches,
+		IndexTimeUnix: m.IndexTimeUnix,
 	}
 }
 

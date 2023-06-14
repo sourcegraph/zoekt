@@ -758,13 +758,18 @@ type MinimalRepoListEntry struct {
 	// zoekt or go via an unindexed code path.
 	Branches []RepositoryBranch
 
+	// IndexTimeUnix is the IndexTime converted to unix time (number of seconds
+	// since the epoch). This is to make it clear we are not transporting the
+	// full fidelty timestamp (ie with milliseconds and location). Additionally
+	// it saves 16 bytes in this struct.
+	//
 	// IndexTime is used as a heuristic in Sourcegraph to decide in aggregate
 	// how many repositories need updating after a ranking change/etc.
 	//
 	// TODO(keegancsmith) audit updates to IndexTime and document how and when
 	// it changes. Concerned about things like metadata updates or compound
 	// shards leading to untrustworthy data here.
-	IndexTime time.Time
+	IndexTimeUnix int64
 }
 
 type ReposMap map[uint32]MinimalRepoListEntry

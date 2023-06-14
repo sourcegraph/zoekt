@@ -1783,7 +1783,7 @@ func TestListRepos(t *testing.T) {
 		}
 
 		ignored := []cmp.Option{
-			cmpopts.IgnoreFields(MinimalRepoListEntry{}, "IndexTime"),
+			cmpopts.IgnoreFields(MinimalRepoListEntry{}, "IndexTimeUnix"),
 		}
 		if diff := cmp.Diff(want, res, ignored...); diff != "" {
 			t.Fatalf("mismatch (-want +got):\n%s", diff)
