@@ -117,7 +117,7 @@ func TestBasic(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 
-	nowStr := time.Now().Format("Jan 02, 2006 15:04")
+	nowStr := time.Now().UTC().Format("Jan 02, 2006 15:04")
 	for req, needles := range map[string][]string{
 		"/": {"from 1 repositories"},
 		"/search?q=water": {

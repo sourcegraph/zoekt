@@ -717,13 +717,15 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 			l.Repos = append(l.Repos, rle)
 		case RepoListFieldMinimal:
 			l.Minimal[rle.Repository.ID] = &MinimalRepoListEntry{
-				HasSymbols: rle.Repository.HasSymbols,
-				Branches:   rle.Repository.Branches,
+				HasSymbols:    rle.Repository.HasSymbols,
+				Branches:      rle.Repository.Branches,
+				IndexTimeUnix: rle.IndexMetadata.IndexTime.Unix(),
 			}
 		case RepoListFieldReposMap:
 			l.ReposMap[rle.Repository.ID] = MinimalRepoListEntry{
-				HasSymbols: rle.Repository.HasSymbols,
-				Branches:   rle.Repository.Branches,
+				HasSymbols:    rle.Repository.HasSymbols,
+				Branches:      rle.Repository.Branches,
+				IndexTimeUnix: rle.IndexMetadata.IndexTime.Unix(),
 			}
 		}
 

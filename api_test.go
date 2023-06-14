@@ -19,6 +19,7 @@ import (
 	"encoding/gob"
 	"strings"
 	"testing"
+	"time"
 )
 
 /*
@@ -29,24 +30,28 @@ func BenchmarkMinimalRepoListEncodings(b *testing.B) {
 	size := uint32(13000) // 2021-06-24 rough estimate of number of repos on a replica.
 
 	type Slice struct {
-		ID         uint32
-		HasSymbols bool
-		Branches   []RepositoryBranch
+		ID            uint32
+		HasSymbols    bool
+		Branches      []RepositoryBranch
+		IndexTimeUnix int64
 	}
 
 	branches := []RepositoryBranch{{Name: "HEAD", Version: strings.Repeat("a", 40)}}
 	mapData := make(map[uint32]*MinimalRepoListEntry, size)
 	sliceData := make([]Slice, 0, size)
+	indexTime := time.Now().Unix()
 
 	for id := uint32(1); id <= size; id++ {
 		mapData[id] = &MinimalRepoListEntry{
-			HasSymbols: true,
-			Branches:   branches,
+			HasSymbols:    true,
+			Branches:      branches,
+			IndexTimeUnix: indexTime,
 		}
 		sliceData = append(sliceData, Slice{
-			ID:         id,
-			HasSymbols: true,
-			Branches:   branches,
+			ID:            id,
+			HasSymbols:    true,
+			Branches:      branches,
+			IndexTimeUnix: indexTime,
 		})
 	}
 
