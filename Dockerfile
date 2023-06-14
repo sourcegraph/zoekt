@@ -16,9 +16,9 @@ RUN go install -ldflags "-X github.com/sourcegraph/zoekt.Version=$VERSION" ./cmd
 FROM rust:alpine3.17 AS rust-builder
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
-    apk add --no-cache git musl-dev>=1.1.24-r10 build-base
+    apk add --no-cache git wget musl-dev>=1.1.24-r10 build-base
 
-RUN git clone https://github.com/sourcegraph/sourcegraph && cd sourcegraph && git reset --hard 6dd16ddde8a02f3bf3fe36165e9724727277d97a && cd /
+RUN wget -qO- https://github.com/sourcegraph/sourcegraph/archive/6dd16ddde8a02f3bf3fe36165e9724727277d97a.tar.gz | tar xz && mv sourcegraph-* sourcegraph
 
 ARG TARGETARCH
 
