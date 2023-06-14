@@ -18,7 +18,7 @@ FROM rust:alpine3.17 AS rust-builder
 RUN apk update --no-cache && apk upgrade --no-cache && \
     apk add --no-cache git wget musl-dev>=1.1.24-r10 build-base
 
-RUN wget -qO- https://github.com/sourcegraph/sourcegraph/archive/6dd16ddde8a02f3bf3fe36165e9724727277d97a.tar.gz | tar xz && mv sourcegraph-* sourcegraph
+RUN wget -qO- https://github.com/sourcegraph/sourcegraph/archive/0c8aa18eece45922a2b56dc0f94e21b1bb533e7d.tar.gz | tar xz && mv sourcegraph-* sourcegraph
 
 ARG TARGETARCH
 
