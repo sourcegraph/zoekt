@@ -576,7 +576,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 			return s.loggedRun(tr, cmd)
 		},
 
-		findRepositoryMetadata: func(args *indexArgs) (repository *zoekt.Repository, ok bool, err error) {
+		findRepositoryMetadata: func(args *indexArgs) (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error) {
 			return args.BuildOptions().FindRepositoryMetadata()
 		},
 	}
@@ -586,22 +586,48 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		return indexStateFail, err
 	}
 
-	status := []indexStatus{{RepoID: args.RepoID, Branches: args.Branches}}
-	if err := s.Sourcegraph.UpdateIndexStatus(status); err != nil {
-		branches := make([]string, len(args.Branches))
-		for i, b := range args.Branches {
-			branches[i] = fmt.Sprintf("%s=%s", b.Name, b.Version)
-		}
-
+	if err := updateIndexStatusOnSourcegraph(c, args, s.Sourcegraph); err != nil {
 		s.logger.Error("failed to update index status",
 			sglog.String("repo", args.Name),
 			sglog.Uint32("id", args.RepoID),
-			sglog.Strings("branches", branches),
+			sglogBranches("branches", args.Branches),
 			sglog.Error(err),
 		)
 	}
 
 	return indexStateSuccess, nil
+}
+
+// updateIndexStatusOnSourcegraph pushes the current state to sourcegraph so
+// it can update the zoekt_repos table.
+func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Sourcegraph) error {
+	// We need to read from disk for IndexTime.
+	_, metadata, ok, err := c.findRepositoryMetadata(args)
+	if err != nil {
+		return fmt.Errorf("failed to read metadata for new/updated index: %w", err)
+	}
+	if !ok {
+		return errors.New("failed to find metadata for new/updated index")
+	}
+
+	status := []indexStatus{{
+		RepoID:        args.RepoID,
+		Branches:      args.Branches,
+		IndexTimeUnix: metadata.IndexTime.Unix(),
+	}}
+	if err := sg.UpdateIndexStatus(status); err != nil {
+		return fmt.Errorf("failed to update sourcegraph with status: %w", err)
+	}
+
+	return nil
+}
+
+func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
+	ss := make([]string, len(branches))
+	for i, b := range branches {
+		ss[i] = fmt.Sprintf("%s=%s", b.Name, b.Version)
+	}
+	return sglog.Strings(key, ss)
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {

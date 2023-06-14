@@ -726,8 +726,9 @@ func (s *sourcegraphClient) listRepoIDsREST(_ context.Context, indexed []uint32)
 }
 
 type indexStatus struct {
-	RepoID   uint32
-	Branches []zoekt.RepositoryBranch
+	RepoID        uint32
+	Branches      []zoekt.RepositoryBranch
+	IndexTimeUnix int64
 }
 
 type updateIndexStatusRequest struct {
@@ -748,8 +749,9 @@ func (u *updateIndexStatusRequest) ToProto() *proto.UpdateIndexStatusRequest {
 		}
 
 		repositories = append(repositories, &proto.UpdateIndexStatusRequest_Repository{
-			RepoId:   repo.RepoID,
-			Branches: branches,
+			RepoId:        repo.RepoID,
+			Branches:      branches,
+			IndexTimeUnix: repo.IndexTimeUnix,
 		})
 	}
 
@@ -774,8 +776,9 @@ func (u *updateIndexStatusRequest) FromProto(x *proto.UpdateIndexStatusRequest) 
 		}
 
 		repositories = append(repositories, indexStatus{
-			RepoID:   repo.GetRepoId(),
-			Branches: branches,
+			RepoID:        repo.GetRepoId(),
+			Branches:      branches,
+			IndexTimeUnix: repo.GetIndexTimeUnix(),
 		})
 	}
 
