@@ -18,7 +18,7 @@ FROM rust:alpine3.17 AS rust-builder
 RUN apk update --no-cache && apk upgrade --no-cache && \
     apk add --no-cache git musl-dev>=1.1.24-r10 build-base
 
-RUN git clone https://github.com/sourcegraph/sourcegraph && git reset --hard 6dd16ddde8a02f3bf3fe36165e9724727277d97a
+RUN git clone https://github.com/sourcegraph/sourcegraph && cd sourcegraph && git reset --hard 6dd16ddde8a02f3bf3fe36165e9724727277d97a && cd /
 
 ARG TARGETARCH
 
