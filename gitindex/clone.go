@@ -26,6 +26,27 @@ import (
 	"github.com/go-git/go-git/v5/config"
 )
 
+// Updates the zoekt.* git config options after a repo is cloned.
+// Once a repo is cloned, we can no longer use the --config flag to update all
+// of it's zoekt.* settings at once. `git config` is limited to one option at once.
+func updateZoektGitConfig(repoDest string, settings map[string]string) error {
+	var keys []string
+	for k := range settings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		if settings[k] != "" {
+			if err := exec.Command("git", "-C", repoDest, "config", k, settings[k]).Run(); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // CloneRepo clones one repository, adding the given config
 // settings. It returns the bare repo directory. The `name` argument
 // determines where the repo is stored relative to `destDir`. Returns
@@ -38,7 +59,7 @@ func CloneRepo(destDir, name, cloneURL string, settings map[string]string) (stri
 
 	repoDest := filepath.Join(parent, filepath.Base(name)+".git")
 	if _, err := os.Lstat(repoDest); err == nil {
-		return "", nil
+		return "", updateZoektGitConfig(repoDest, settings)
 	}
 
 	var keys []string
