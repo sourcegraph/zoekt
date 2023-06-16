@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "trace",
     srcs = [
+        "middleware.go",
         "opentracing.go",
         "trace.go",
     ],

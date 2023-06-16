@@ -53,6 +53,7 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/shards"
 	"github.com/sourcegraph/zoekt/stream"
+	"github.com/sourcegraph/zoekt/trace"
 	"github.com/sourcegraph/zoekt/web"
 
 	"github.com/opentracing/opentracing-go"
@@ -244,18 +245,20 @@ func main() {
 		}
 	}
 
-	handler, err := web.NewMux(s)
+	serveMux, err := web.NewMux(s)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	debugserver.AddHandlers(handler, *enablePprof)
+	debugserver.AddHandlers(serveMux, *enablePprof)
 
 	if *enableIndexserverProxy {
 		socket := filepath.Join(*index, "indexserver.sock")
 		sglog.Scoped("server", "").Info("adding reverse proxy", sglog.String("socket", socket))
-		addProxyHandler(handler, socket)
+		addProxyHandler(serveMux, socket)
 	}
+
+	handler := trace.Middleware(serveMux)
 
 	// Sourcegraph: We use environment variables to configure watchdog since
 	// they are more convenient than flags in containerized environments.
@@ -289,9 +292,11 @@ func main() {
 	)
 	v1.RegisterWebserverServiceServer(grpcServer, zoektgrpc.NewServer(web.NewTraceAwareSearcher(s.Searcher)))
 
+	handler = multiplexGRPC(grpcServer, handler)
+
 	srv := &http.Server{
 		Addr:    *listen,
-		Handler: multiplexGRPC(grpcServer, handler),
+		Handler: handler,
 	}
 
 	go func() {
