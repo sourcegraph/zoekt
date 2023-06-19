@@ -24,7 +24,7 @@ type spanContextKey struct{}
 
 // SpanContextFromContext retrieves the opentracing.SpanContext set on the context by Middleware
 func SpanContextFromContext(ctx context.Context) opentracing.SpanContext {
-	if v := ctx.Value(spanContextKey{}); v == nil {
+	if v := ctx.Value(spanContextKey{}); v != nil {
 		return v.(opentracing.SpanContext)
 	}
 	return nil
