@@ -1,8 +1,9 @@
 FROM alpine:3.16.4
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
-    apk add --no-cache ca-certificates bind-tools tini git jansson curl tar && \
-    apk add --upgrade --no-cache 'libcrypto1.1>=1.1.1n-r0' 'libssl1.1>=1.1.1n-r0' 'pcre2>=10.40-r0' 'e2fsprogs>=1.46.6-r0'
+    apk add --no-cache ca-certificates bind-tools tini git jansson curl tar python3 && \
+    apk add --upgrade --no-cache 'libcrypto1.1>=1.1.1n-r0' 'libssl1.1>=1.1.1n-r0' 'pcre2>=10.40-r0' 'e2fsprogs>=1.46.6-r0' && \
+    ln -sf python3 /usr/bin/python
 # Run as non-root user sourcegraph. External volumes should be mounted under /data (which will be owned by sourcegraph).
 
 # TODO: strip out the rest of the sourcegraph specific stuff
