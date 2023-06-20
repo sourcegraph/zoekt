@@ -19,8 +19,13 @@ RUN apk update --no-cache && apk upgrade --no-cache && \
 # Install GCP tools
 RUN echo "Setting up gsutil"
 RUN curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-435.0.0-linux-x86_64.tar.gz
-RUN tar -xf google-cloud-cli-435.0.0-linux-x86_64.tar.gz
-RUN yes | ./google-cloud-sdk/install.sh
+RUN mkdir -p /usr/local/gcloud && \ 
+tar -C /usr/local/gcloud -xvf google-cloud-cli-435.0.0-linux-x86_64.tar.gz
+RUN yes | /usr/local/gcloud/google-cloud-sdk/install.sh
+
+# Adding gcloud to path
+ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
+
 
 COPY --from=zoekt \
     /usr/local/bin/universal-* \
