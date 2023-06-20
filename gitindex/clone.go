@@ -29,10 +29,9 @@ import (
 )
 
 // returns a list of all the git zoekt settings that have changed or are
-// new
+// new. To do this it gets the current config, turns into into a map and diffs
+// against the new settings map
 func getZoektSettingsToUpdate(repoDest string, newSettings map[string]string, newSettingsKeys []string) ([]string, error) {
-	// get the existing config for this repo - and turn it into a map. Used to check
-	// diff between old/new config
 	cmd := exec.Command("git", "-C", repoDest, "config", "--local", "--get-regexp", "zoekt")
 	outBuf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
@@ -44,7 +43,7 @@ func getZoektSettingsToUpdate(repoDest string, newSettings map[string]string, ne
 		return nil, err
 	}
 
-	// turn it into a settings map
+	// collect every current setting and put it into a map
 	oldSettings := make(map[string]string)
 	for _, cl := range bytes.Split(outBuf.Bytes(), []byte{'\n'}) {
 		if len(cl) == 0 {
@@ -57,12 +56,6 @@ func getZoektSettingsToUpdate(repoDest string, newSettings map[string]string, ne
 		}
 		oldSettings[string(parts[0])] = strings.TrimSpace(string(parts[1]))
 	}
-
-	var oldSettingsKeys []string
-	for k := range oldSettings {
-		oldSettingsKeys = append(oldSettingsKeys, k)
-	}
-	sort.Strings(oldSettingsKeys)
 
 	// get the list of settings that have changed, or are new
 	var settingsToUpdate []string
@@ -79,8 +72,7 @@ func getZoektSettingsToUpdate(repoDest string, newSettings map[string]string, ne
 // Updates the zoekt.* git config options after a repo is cloned.
 // Once a repo is cloned, we can no longer use the --config flag to update all
 // of it's zoekt.* settings at once. `git config` is limited to one option at once.
-// Settings are brute updated
-func updateZoektGitConfig(repoDest string, settings map[string]string) (hasChange bool, err error) {
+func updateZoektGitConfig(repoDest string, settings map[string]string) (bool, error) {
 	var keys []string
 	for k := range settings {
 		keys = append(keys, k)
@@ -91,7 +83,7 @@ func updateZoektGitConfig(repoDest string, settings map[string]string) (hasChang
 	if err != nil {
 		return false, err
 	}
-	// if there is nothing to update, return
+
 	if len(settingsToUpdate) == 0 {
 		return false, nil
 	}
@@ -99,7 +91,7 @@ func updateZoektGitConfig(repoDest string, settings map[string]string) (hasChang
 	for _, k := range settingsToUpdate {
 		if settings[k] != "" {
 			if err := exec.Command("git", "-C", repoDest, "config", k, settings[k]).Run(); err != nil {
-				return true, err
+				return false, err
 			}
 		}
 	}
@@ -124,10 +116,6 @@ func CloneRepo(destDir, name, cloneURL string, settings map[string]string) (stri
 		if err != nil {
 			return "", fmt.Errorf("failed to update repository settings: %w", err)
 		}
-		// For xvandish/zoekt only, we trigger a re-index here, since we have logic
-		// to only brute-reindex on an interval. In that case, after a zoektConfig update,
-		// if may take bruteReindexInterval hours for the repo-to be re-index and that config
-		// to actually be reflected. Unfortunately we have no easy way of knowing whether
 		if hadUpdate {
 			return repoDest, nil
 		}
