@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +32,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/rpc"
+	"github.com/sourcegraph/zoekt/stream"
 )
 
 // TODO(hanwen): cut & paste from ../ . Should create internal test
@@ -953,5 +956,78 @@ func TestHealthz(t *testing.T) {
 
 	if reflect.DeepEqual(result, zoekt.SearchResult{}) {
 		t.Fatal("empty result in response")
+	}
+}
+
+func TestRPC(t *testing.T) {
+	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+		Name:                 "name",
+		URL:                  "repo-url",
+		CommitURLTemplate:    "{{.Version}}",
+		FileURLTemplate:      "file-url",
+		LineFragmentTemplate: "#line",
+		Branches:             []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
+	})
+	if err != nil {
+		t.Fatalf("NewIndexBuilder: %v", err)
+	}
+	if err := b.Add(zoekt.Document{
+		Name:    "f2",
+		Content: []byte("to carry water in the no later bla"),
+		// --------------0123456789012345678901234567890123
+		// --------------0         1         2         3
+		Branches: []string{"master"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	s := searcherForTest(t, b)
+	srv := Server{
+		Searcher: s,
+		RPC:      true,
+		Top:      Top,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	endpoint := ts.Listener.Addr().String()
+
+	client := stream.NewClient("http://"+endpoint, nil).WithSearcher(rpc.Client(endpoint))
+
+	ctx := context.Background()
+	q := &query.Substring{Pattern: "water"}
+	opts := &zoekt.SearchOptions{ChunkMatches: true}
+	opts.SetDefaults()
+	results, err := client.Search(ctx, q, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertResults(t, results.Files, "f2: to carry water in the no later bla")
+
+	// TODO grpc, List, StreamSearch
+}
+
+func assertResults(t *testing.T, files []zoekt.FileMatch, want string) {
+	t.Helper()
+
+	var lines []string
+	for _, fm := range files {
+		for _, cm := range fm.ChunkMatches {
+			lines = append(lines, fmt.Sprintf("%s: %s", fm.FileName, string(cm.Content)))
+		}
+	}
+	sort.Strings(lines)
+	got := strings.TrimSpace(strings.Join(lines, "\n"))
+	want = strings.TrimSpace(want)
+
+	if d := cmp.Diff(want, got); d != "" {
+		t.Fatalf("unexpected results (-want, +got):\n%s", d)
 	}
 }

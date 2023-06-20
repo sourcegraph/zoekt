@@ -103,3 +103,18 @@ func (c *Client) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 		}
 	}
 }
+
+// WithSearcher returns Streamer composed of s and the streaming client. All
+// non-streaming calls will go via s, while streaming calls will go via the
+// streaming client.
+func (c *Client) WithSearcher(s zoekt.Searcher) zoekt.Streamer {
+	return &streamer{
+		Searcher: s,
+		Client:   c,
+	}
+}
+
+type streamer struct {
+	zoekt.Searcher
+	*Client
+}
