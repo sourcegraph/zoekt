@@ -874,7 +874,6 @@ var splitargs = cmpopts.AcyclicTransformer("splitargs", func(cmd string) []strin
 type mockGRPCClient struct {
 	mockSearchConfiguration func(context.Context, *proto.SearchConfigurationRequest, ...grpc.CallOption) (*proto.SearchConfigurationResponse, error)
 	mockList                func(context.Context, *proto.ListRequest, ...grpc.CallOption) (*proto.ListResponse, error)
-	mockRepositoryRank      func(context.Context, *proto.RepositoryRankRequest, ...grpc.CallOption) (*proto.RepositoryRankResponse, error)
 	mockDocumentRanks       func(context.Context, *proto.DocumentRanksRequest, ...grpc.CallOption) (*proto.DocumentRanksResponse, error)
 	mockUpdateIndexStatus   func(context.Context, *proto.UpdateIndexStatusRequest, ...grpc.CallOption) (*proto.UpdateIndexStatusResponse, error)
 }
@@ -893,14 +892,6 @@ func (m *mockGRPCClient) List(ctx context.Context, in *proto.ListRequest, opts .
 	}
 
 	return nil, fmt.Errorf("mock RPC List not implemented")
-}
-
-func (m *mockGRPCClient) RepositoryRank(ctx context.Context, in *proto.RepositoryRankRequest, opts ...grpc.CallOption) (*proto.RepositoryRankResponse, error) {
-	if m.mockRepositoryRank != nil {
-		return m.mockRepositoryRank(ctx, in, opts...)
-	}
-
-	return nil, fmt.Errorf("mock RPC RepositoryRank not implemented")
 }
 
 func (m *mockGRPCClient) DocumentRanks(ctx context.Context, in *proto.DocumentRanksRequest, opts ...grpc.CallOption) (*proto.DocumentRanksResponse, error) {
