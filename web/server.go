@@ -349,13 +349,7 @@ func (s *Server) fetchStats(ctx context.Context) (*zoekt.RepoStats, error) {
 		return nil, err
 	}
 
-	stats = &zoekt.RepoStats{}
-	names := map[string]struct{}{}
-	for _, r := range repos.Repos {
-		stats.Add(&r.Stats)
-		names[r.Repository.Name] = struct{}{}
-	}
-	stats.Repos = len(names)
+	stats = &repos.Stats
 
 	s.lastStatsMu.Lock()
 	s.lastStatsTS = time.Now()

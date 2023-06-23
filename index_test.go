@@ -1711,6 +1711,7 @@ func TestListRepos(t *testing.T) {
 						},
 					}},
 					Stats: RepoStats{
+						Repos:        1,
 						Documents:    4,
 						ContentBytes: 68,
 						Shards:       1,
@@ -1772,6 +1773,7 @@ func TestListRepos(t *testing.T) {
 				},
 			},
 			Stats: RepoStats{
+				Repos:                      1,
 				Shards:                     1,
 				Documents:                  4,
 				IndexBytes:                 412,

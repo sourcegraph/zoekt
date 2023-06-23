@@ -684,6 +684,9 @@ type IndexMetadata struct {
 // Statistics of a (collection of) repositories.
 type RepoStats struct {
 	// Repos is used for aggregrating the number of repositories.
+	//
+	// Note: This field is not populated on RepoListEntry.Stats (individual) but
+	// only for RepoList.Stats (aggregate).
 	Repos int
 
 	// Shards is the total number of search shards.
