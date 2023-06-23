@@ -21,7 +21,6 @@ const _ = grpc.SupportPackageIsVersion7
 const (
 	ZoektConfigurationService_SearchConfiguration_FullMethodName = "/sourcegraph.zoekt.configuration.v1.ZoektConfigurationService/SearchConfiguration"
 	ZoektConfigurationService_List_FullMethodName                = "/sourcegraph.zoekt.configuration.v1.ZoektConfigurationService/List"
-	ZoektConfigurationService_RepositoryRank_FullMethodName      = "/sourcegraph.zoekt.configuration.v1.ZoektConfigurationService/RepositoryRank"
 	ZoektConfigurationService_DocumentRanks_FullMethodName       = "/sourcegraph.zoekt.configuration.v1.ZoektConfigurationService/DocumentRanks"
 	ZoektConfigurationService_UpdateIndexStatus_FullMethodName   = "/sourcegraph.zoekt.configuration.v1.ZoektConfigurationService/UpdateIndexStatus"
 )
@@ -34,8 +33,6 @@ type ZoektConfigurationServiceClient interface {
 	SearchConfiguration(ctx context.Context, in *SearchConfigurationRequest, opts ...grpc.CallOption) (*SearchConfigurationResponse, error)
 	// List returns the list of repositories that the client should index.
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
-	// RepositoryRank returns the rank vector for the specified repository.
-	RepositoryRank(ctx context.Context, in *RepositoryRankRequest, opts ...grpc.CallOption) (*RepositoryRankResponse, error)
 	// DocumentRanks returns the rank vectors for all documents in the specified repository.
 	DocumentRanks(ctx context.Context, in *DocumentRanksRequest, opts ...grpc.CallOption) (*DocumentRanksResponse, error)
 	// UpdateIndexStatus informs the server that the caller has indexed the specified repositories
@@ -69,15 +66,6 @@ func (c *zoektConfigurationServiceClient) List(ctx context.Context, in *ListRequ
 	return out, nil
 }
 
-func (c *zoektConfigurationServiceClient) RepositoryRank(ctx context.Context, in *RepositoryRankRequest, opts ...grpc.CallOption) (*RepositoryRankResponse, error) {
-	out := new(RepositoryRankResponse)
-	err := c.cc.Invoke(ctx, ZoektConfigurationService_RepositoryRank_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *zoektConfigurationServiceClient) DocumentRanks(ctx context.Context, in *DocumentRanksRequest, opts ...grpc.CallOption) (*DocumentRanksResponse, error) {
 	out := new(DocumentRanksResponse)
 	err := c.cc.Invoke(ctx, ZoektConfigurationService_DocumentRanks_FullMethodName, in, out, opts...)
@@ -104,8 +92,6 @@ type ZoektConfigurationServiceServer interface {
 	SearchConfiguration(context.Context, *SearchConfigurationRequest) (*SearchConfigurationResponse, error)
 	// List returns the list of repositories that the client should index.
 	List(context.Context, *ListRequest) (*ListResponse, error)
-	// RepositoryRank returns the rank vector for the specified repository.
-	RepositoryRank(context.Context, *RepositoryRankRequest) (*RepositoryRankResponse, error)
 	// DocumentRanks returns the rank vectors for all documents in the specified repository.
 	DocumentRanks(context.Context, *DocumentRanksRequest) (*DocumentRanksResponse, error)
 	// UpdateIndexStatus informs the server that the caller has indexed the specified repositories
@@ -123,9 +109,6 @@ func (UnimplementedZoektConfigurationServiceServer) SearchConfiguration(context.
 }
 func (UnimplementedZoektConfigurationServiceServer) List(context.Context, *ListRequest) (*ListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
-}
-func (UnimplementedZoektConfigurationServiceServer) RepositoryRank(context.Context, *RepositoryRankRequest) (*RepositoryRankResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RepositoryRank not implemented")
 }
 func (UnimplementedZoektConfigurationServiceServer) DocumentRanks(context.Context, *DocumentRanksRequest) (*DocumentRanksResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DocumentRanks not implemented")
@@ -183,24 +166,6 @@ func _ZoektConfigurationService_List_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ZoektConfigurationService_RepositoryRank_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RepositoryRankRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ZoektConfigurationServiceServer).RepositoryRank(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ZoektConfigurationService_RepositoryRank_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ZoektConfigurationServiceServer).RepositoryRank(ctx, req.(*RepositoryRankRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _ZoektConfigurationService_DocumentRanks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DocumentRanksRequest)
 	if err := dec(in); err != nil {
@@ -251,10 +216,6 @@ var ZoektConfigurationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "List",
 			Handler:    _ZoektConfigurationService_List_Handler,
-		},
-		{
-			MethodName: "RepositoryRank",
-			Handler:    _ZoektConfigurationService_RepositoryRank_Handler,
 		},
 		{
 			MethodName: "DocumentRanks",

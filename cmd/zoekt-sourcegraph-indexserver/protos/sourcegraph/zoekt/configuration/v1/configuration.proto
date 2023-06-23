@@ -13,9 +13,6 @@ service ZoektConfigurationService {
   // List returns the list of repositories that the client should index.
   rpc List(ListRequest) returns (ListResponse) {}
 
-  // RepositoryRank returns the rank vector for the specified repository.
-  rpc RepositoryRank(RepositoryRankRequest) returns (RepositoryRankResponse) {}
-
   // DocumentRanks returns the rank vectors for all documents in the specified repository.
   rpc DocumentRanks(DocumentRanksRequest) returns (DocumentRanksResponse) {}
 
@@ -141,19 +138,6 @@ message ListRequest {
 message ListResponse {
   // repo_ids is the list of repository IDs that the client should index.
   repeated int32 repo_ids = 1;
-}
-
-// RepositoryRankRequest is the request to the RepositoryRank RPC.
-message RepositoryRankRequest {
-  // repository is the repository name.
-  string repository = 1;
-}
-
-message RepositoryRankResponse {
-  // rank is the rank vector for the given repository. Repositories are assumed to
-  // be ordered by each pairwise component of the resulting vector, higher ranks coming earlier.
-  // We currently rank first by user-defined scores, then by GitHub star count.
-  repeated double rank = 1;
 }
 
 // DocumentRanksRequest is the request to the DocumentRanks RPC.

@@ -72,11 +72,6 @@ type Sourcegraph interface {
 	// options for each id in repos.
 	ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32)
 
-	// GetRepoRank returns a rank vector for the given repository. Repositories are
-	// assumed to be ordered by each pairwise component of the resulting vector,
-	// higher ranks coming earlier.
-	GetRepoRank(ctx context.Context, repoName string) ([]float64, error)
-
 	// GetDocumentRanks returns a map from paths within the given repo to their
 	// rank vectors. Paths are assumed to be ordered by each pairwise component of
 	// the resulting vector, higher ranks coming earlier
@@ -193,43 +188,6 @@ type sourcegraphClient struct {
 
 	// useGRPC indicates whether we should use a gRPC client to communicate with Sourcegraph.
 	useGRPC bool
-}
-
-// GetRepoRank asks Sourcegraph for the rank vector of repoName.
-func (s *sourcegraphClient) GetRepoRank(ctx context.Context, repoName string) ([]float64, error) {
-	if s.useGRPC {
-		return s.getRepoRankGRPC(ctx, repoName)
-	}
-
-	return s.getRepoRankREST(ctx, repoName)
-}
-
-func (s *sourcegraphClient) getRepoRankGRPC(ctx context.Context, repoName string) ([]float64, error) {
-	resp, err := s.grpcClient.RepositoryRank(ctx, &proto.RepositoryRankRequest{Repository: repoName})
-	if err != nil {
-		return nil, err
-	}
-
-	return resp.GetRank(), nil
-}
-
-func (s *sourcegraphClient) getRepoRankREST(ctx context.Context, repoName string) ([]float64, error) {
-	u := s.Root.ResolveReference(&url.URL{
-		Path: "/.internal/ranks/" + strings.Trim(repoName, "/"),
-	})
-
-	b, err := s.get(ctx, u)
-	if err != nil {
-		return nil, err
-	}
-
-	var ranks []float64
-	err = json.Unmarshal(b, &ranks)
-	if err != nil {
-		return nil, err
-	}
-
-	return ranks, nil
 }
 
 // GetDocumentRanks asks Sourcegraph for a mapping of file paths to rank
@@ -852,19 +810,6 @@ type sourcegraphFake struct {
 	Log     *log.Logger
 }
 
-// GetRepoRank expects a file with exactly 1 line containing a comma separated
-// list of float64 as ranks.
-func (sf sourcegraphFake) GetRepoRank(ctx context.Context, repoName string) ([]float64, error) {
-	dir := filepath.Join(sf.RootDir, filepath.FromSlash(repoName))
-
-	b, err := os.ReadFile(filepath.Join(dir, "SG_REPO_RANKS"))
-	if err != nil {
-		return nil, err
-	}
-
-	return floats64(string(b)), nil
-}
-
 // GetDocumentRanks expects a file where each line has the following format:
 // path<tab>rank... where rank is a float64.
 func (sf sourcegraphFake) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
@@ -1142,10 +1087,6 @@ func (s sourcegraphNop) ForceIterateIndexOptions(onSuccess func(IndexOptions), o
 	return
 }
 
-func (s sourcegraphNop) GetRepoRank(ctx context.Context, repoName string) ([]float64, error) {
-	return nil, nil
-}
-
 func (s sourcegraphNop) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
 	return RepoPathRanks{}, nil
 }
@@ -1191,10 +1132,6 @@ func (n noopGRPCClient) SearchConfiguration(ctx context.Context, in *proto.Searc
 }
 
 func (n noopGRPCClient) List(ctx context.Context, in *proto.ListRequest, opts ...grpc.CallOption) (*proto.ListResponse, error) {
-	return nil, fmt.Errorf("grpc client not enabled")
-}
-
-func (n noopGRPCClient) RepositoryRank(ctx context.Context, in *proto.RepositoryRankRequest, opts ...grpc.CallOption) (*proto.RepositoryRankResponse, error) {
 	return nil, fmt.Errorf("grpc client not enabled")
 }
 
