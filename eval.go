@@ -731,6 +731,10 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 
 	}
 
+	// Only one of these fields is populated and in all cases the size of that
+	// field is the number of Repos in this shard.
+	l.Stats.Repos = len(l.Repos) + len(l.Minimal) + len(l.ReposMap)
+
 	return &l, nil
 }
 

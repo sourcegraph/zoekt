@@ -472,6 +472,7 @@ func TestShardedSearcher_List(t *testing.T) {
 
 	aggStats := stats
 	aggStats.Add(&aggStats) // since both repos have the exact same stats, this works
+	aggStats.Repos = 2      // Add doesn't populate Repos, this is done in Shards	based on the response sizes.
 
 	for _, tc := range []struct {
 		name string

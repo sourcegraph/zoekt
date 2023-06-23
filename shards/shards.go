@@ -987,6 +987,13 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		agg.Repos = append(agg.Repos, r)
 	}
 
+	// Only one of these fields is populated and in all cases the size of that
+	// field is the number of Repos.
+	//
+	// Note: we don't just add individual Stats.Repos since a repository can
+	// have multiple shards.
+	agg.Stats.Repos = len(uniq) + len(agg.Minimal) + len(agg.ReposMap)
+
 	if isAll && len(agg.Repos) > 0 {
 		reportListAllMetrics(agg.Repos)
 	}
