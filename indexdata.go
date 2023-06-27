@@ -356,7 +356,9 @@ func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
 		return 0
 	}
 
-	return data.ngrams.Get(ng).sz
+	sec, statsTODO := data.ngrams.Get(ng)
+	_ = statsTODO
+	return sec.sz
 }
 
 type ngramIterationResults struct {

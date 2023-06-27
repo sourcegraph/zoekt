@@ -309,9 +309,9 @@ func (b btreeIndex) SizeBytes() (sz int) {
 // 2. Read the bucket from disk (1 disk access)
 // 3. Binary search the bucket (in MEM)
 // 4. Return the simple section pointing to the posting list (in MEM)
-func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
+func (b btreeIndex) Get(ng ngram) (ss simpleSection, stats ngramIndexGetStats) {
 	if b.bt == nil {
-		return simpleSection{}
+		return simpleSection{}, stats
 	}
 
 	// find bucket
@@ -321,11 +321,12 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 	off, sz := b.getBucket(bucketIndex)
 	bucket, err := b.file.Read(off, sz)
 	if err != nil {
-		return simpleSection{}
+		return simpleSection{}, stats
 	}
 
 	// find ngram in bucket
 	getNGram := func(i int) ngram {
+		stats.NgramsAccessed++
 		i *= ngramEncoding
 		return ngram(binary.BigEndian.Uint64(bucket[i : i+ngramEncoding]))
 	}
@@ -337,10 +338,10 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 
 	// return associated posting list
 	if x >= bucketSize || getNGram(x) != ng {
-		return simpleSection{}
+		return simpleSection{}, stats
 	}
 
-	return b.getPostingList(postingIndexOffset + x)
+	return b.getPostingList(postingIndexOffset + x), stats
 }
 
 // getPostingList returns the simple section pointing to the posting list of

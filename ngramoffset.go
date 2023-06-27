@@ -191,9 +191,9 @@ func makeCombinedNgramOffset(ngrams []ngram, offsets []uint32) combinedNgramOffs
 
 // Get returns a simpleSection with sz=0 if no entry, otherwise the appropriate
 // offset based on the underlying ASCII or Unicode offset index.
-func (a combinedNgramOffset) Get(gram ngram) simpleSection {
+func (a combinedNgramOffset) Get(gram ngram) (simpleSection, ngramIndexGetStats) {
 	if a.asc == nil {
-		return simpleSection{}
+		return simpleSection{}, ngramIndexGetStats{}
 	}
 
 	var sec simpleSection
@@ -208,7 +208,10 @@ func (a combinedNgramOffset) Get(gram ngram) simpleSection {
 		sec = a.uni.Get(gram)
 	}
 
-	return sec
+	// TODO consider populating stats, although we will likely delete non-btree
+	// code paths soon.
+
+	return sec, ngramIndexGetStats{}
 }
 
 func (a combinedNgramOffset) DumpMap() map[ngram]simpleSection {
@@ -357,8 +360,13 @@ func (a *asciiNgramOffset) SizeBytes() int {
 	return 4*len(a.entries) + 4*len(a.chunkOffsets)
 }
 
+type ngramIndexGetStats struct {
+	// NgramsAccessed is the number of ngrams accessed to lookup gram.
+	NgramsAccessed int
+}
+
 type ngramIndex interface {
-	Get(gram ngram) simpleSection
+	Get(gram ngram) (simpleSection, ngramIndexGetStats)
 	DumpMap() map[ngram]simpleSection
 	SizeBytes() int
 }
@@ -381,7 +389,8 @@ func (n fileNameNgrams) GetBlob(ng ngram) ([]byte, error) {
 	if n.m != nil {
 		return n.m[ng], nil
 	}
-	sec := n.bt.Get(ng)
+	sec, statsTODO := n.bt.Get(ng)
+	_ = statsTODO
 	return n.bt.file.Read(sec.off, sec.sz)
 }
 
@@ -389,7 +398,9 @@ func (n fileNameNgrams) Frequency(ng ngram) uint32 {
 	if n.m != nil {
 		return uint32(len(n.m[ng]))
 	}
-	return n.bt.Get(ng).sz
+	sec, statsTODO := n.bt.Get(ng)
+	_ = statsTODO
+	return sec.sz
 }
 
 func (n fileNameNgrams) SizeBytes() int {

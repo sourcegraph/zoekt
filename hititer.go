@@ -132,7 +132,8 @@ func (d *indexData) trigramHitIterator(ng ngram, caseSensitive, fileName bool) (
 			continue
 		}
 
-		sec := d.ngrams.Get(v)
+		sec, statsTODO := d.ngrams.Get(v)
+		_ = statsTODO
 		blob, err := d.readSectionBlob(sec)
 		if err != nil {
 			return nil, err

@@ -96,16 +96,16 @@ func TestMakeCombinedNgramOffset(t *testing.T) {
 
 	for i, ng := range ngrams {
 		want := simpleSection{offsets[i], offsets[i+1] - offsets[i]}
-		got := m.Get(ng)
+		got, _ := m.Get(ng)
 		if want != got {
 			t.Errorf("#%d: Get(%q) got %v, want %v", i, ng, got, want)
 		}
 		failn := ngram(uint64(ng - 1))
-		if getFail := m.Get(failn); !ngramMap[failn] && getFail != (simpleSection{}) {
+		if getFail, _ := m.Get(failn); !ngramMap[failn] && getFail != (simpleSection{}) {
 			t.Errorf("#%d: Get(%q) got %v, want zero", i, failn, getFail)
 		}
 		failn = ngram(uint64(ng + 1))
-		if getFail := m.Get(failn); !ngramMap[failn] && getFail != (simpleSection{}) {
+		if getFail, _ := m.Get(failn); !ngramMap[failn] && getFail != (simpleSection{}) {
 			t.Errorf("#%d: Get(%q) got %v, want zero", i, failn, getFail)
 		}
 	}

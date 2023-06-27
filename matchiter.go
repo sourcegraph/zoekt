@@ -69,6 +69,9 @@ type matchIterator interface {
 // noMatchTree is both matchIterator and matchTree that matches nothing.
 type noMatchTree struct {
 	Why string
+
+	// Stats captures the work done to create the noMatchTree.
+	//Stats *Stats
 }
 
 func (t *noMatchTree) String() string {
@@ -89,7 +92,11 @@ func (t *noMatchTree) matches(cp *contentProvider, cost int, known map[matchTree
 	return false, true
 }
 
-func (t *noMatchTree) updateStats(*Stats) {}
+func (t *noMatchTree) updateStats(s *Stats) {
+	//if t.Stats != nil {
+	//	s.Add(*(t.Stats))
+	//}
+}
 
 func (m *candidateMatch) String() string {
 	return fmt.Sprintf("%d:%d", m.file, m.runeOffset)

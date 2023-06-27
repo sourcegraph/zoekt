@@ -78,7 +78,7 @@ func TestReadWrite(t *testing.T) {
 		t.Fatalf("got ngrams %v, want 3 ngrams", data.ngrams)
 	}
 
-	if sec := data.ngrams.Get(stringToNGram("bcq")); sec.sz > 0 {
+	if sec, _ := data.ngrams.Get(stringToNGram("bcq")); sec.sz > 0 {
 		t.Errorf("found ngram bcq (%v) in %v", uint64(stringToNGram("bcq")), data.ngrams)
 	}
 }
@@ -193,7 +193,7 @@ func TestGet(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.ng, func(t *testing.T) {
-			havePostingList := id.ngrams.Get(stringToNGram(tt.ng))
+			havePostingList, _ := id.ngrams.Get(stringToNGram(tt.ng))
 			if !reflect.DeepEqual(tt.wantPostingList, havePostingList) {
 				t.Fatalf("\nwant:%+v\ngot: %+v", tt.wantPostingList, havePostingList)
 			}
@@ -421,7 +421,7 @@ func TestBackwardsCompat(t *testing.T) {
 					t.Fatalf("got ngrams %v, want 3 ngrams", data.ngrams)
 				}
 
-				if sec := data.ngrams.Get(stringToNGram("bcq")); sec.sz > 0 {
+				if sec, _ := data.ngrams.Get(stringToNGram("bcq")); sec.sz > 0 {
 					t.Errorf("found ngram bcd in %v", data.ngrams)
 				}
 			},
