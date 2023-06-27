@@ -130,20 +130,15 @@ func periodicFetch(repoDir, indexDir string, opts *Options, pendingRepos chan<- 
 // update.
 func fetchGitRepo(dir string) bool {
 	cmd := exec.Command("git", "--git-dir", dir, "fetch", "origin")
-	outBuf := &bytes.Buffer{}
-	errBuf := &bytes.Buffer{}
 
-	// Prevent prompting
-	cmd.Stdin = &bytes.Buffer{}
-	cmd.Stderr = errBuf
-	cmd.Stdout = outBuf
-	if err := cmd.Run(); err != nil {
-		log.Printf("command %s failed: %v\nOUT: %s\nERR: %s",
-			cmd.Args, err, outBuf.String(), errBuf.String())
-	} else {
-		return len(errBuf.Bytes()) != 0
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("command %s failed: %v\nCOMBINED_OUT: %s\n",
+			cmd.Args, err, string(output))
+		return false
 	}
-	return false
+	// When fetch found no updates, it prints nothing out
+	return len(output) != 0
 }
 
 // indexPendingRepos consumes the directories on the repos channel and
