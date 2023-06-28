@@ -63,6 +63,10 @@ type matchIterator interface {
 	docIterator
 
 	candidates() []*candidateMatch
+
+	// updateStats is called twice. After matchtree construction and after
+	// searching is done. Implementations must take care to not report
+	// statistics twice.
 	updateStats(*Stats)
 }
 
@@ -150,6 +154,7 @@ func (i *ngramDocIterator) prepare(nextDoc uint32) {
 func (i *ngramDocIterator) updateStats(s *Stats) {
 	i.iter.updateStats(s)
 	s.NgramMatches += i.matchCount
+	i.matchCount = 0
 }
 
 func (i *ngramDocIterator) candidates() []*candidateMatch {
