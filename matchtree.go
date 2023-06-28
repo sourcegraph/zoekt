@@ -963,12 +963,12 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		if s.Value {
 			return &bruteForceMatchTree{}, nil
 		} else {
-			return &noMatchTree{"const"}, nil
+			return &noMatchTree{Why: "const"}, nil
 		}
 	case *query.Language:
 		code, ok := d.metaData.LanguageMap[s.Language]
 		if !ok {
-			return &noMatchTree{"lang"}, nil
+			return &noMatchTree{Why: "lang"}, nil
 		}
 		return &docMatchTree{
 			reason:  "language",

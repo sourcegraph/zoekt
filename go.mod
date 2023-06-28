@@ -18,7 +18,6 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.2
 	github.com/keegancsmith/rpc v1.3.0
 	github.com/keegancsmith/tmpfriend v0.0.0-20180423180255-86e88902a513
-	github.com/kylelemons/godebug v1.1.0
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/peterbourgon/ff/v3 v3.3.0
@@ -34,6 +33,7 @@ require (
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	github.com/xanzy/go-gitlab v0.80.0
 	github.com/xeipuuv/gojsonschema v1.2.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.39.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.14.0
 	go.opentelemetry.io/contrib/propagators/ot v1.14.0
 	go.opentelemetry.io/otel v1.13.0
@@ -115,7 +115,6 @@ require (
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.39.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.13.0 // indirect
 	go.opentelemetry.io/otel/metric v0.36.0 // indirect
 	go.opentelemetry.io/proto/otlp v0.19.0 // indirect

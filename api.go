@@ -382,6 +382,9 @@ type Stats struct {
 	// Number of candidate matches as a result of searching ngrams.
 	NgramMatches int
 
+	// NgramLookups is the number of times we accessed an ngram in the index.
+	NgramLookups int
+
 	// Wall clock time for queued search.
 	Wait time.Duration
 
@@ -409,6 +412,7 @@ func (s *Stats) Add(o Stats) {
 	s.FilesSkipped += o.FilesSkipped
 	s.MatchCount += o.MatchCount
 	s.NgramMatches += o.NgramMatches
+	s.NgramLookups += o.NgramLookups
 	s.ShardFilesConsidered += o.ShardFilesConsidered
 	s.ShardsScanned += o.ShardsScanned
 	s.ShardsSkipped += o.ShardsSkipped
@@ -438,6 +442,7 @@ func (s *Stats) Zero() bool {
 		s.FilesSkipped > 0 ||
 		s.MatchCount > 0 ||
 		s.NgramMatches > 0 ||
+		s.NgramLookups > 0 ||
 		s.ShardFilesConsidered > 0 ||
 		s.ShardsScanned > 0 ||
 		s.ShardsSkipped > 0 ||

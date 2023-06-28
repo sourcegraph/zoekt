@@ -26,7 +26,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
-	"github.com/kylelemons/godebug/pretty"
 
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -370,23 +369,29 @@ func TestCaseFold(t *testing.T) {
 	})
 }
 
-func TestAndSearch(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+func TestSearchStats(t *testing.T) {
+	ctx := context.Background()
+	searcher := searcherForTest(t, testIndexBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("x banana y")},
 		Document{Name: "f2", Content: []byte("x apple y")},
 		Document{Name: "f3", Content: []byte("x banana apple y")},
-	// ---------------------------------------0123456789012345
+		// -----------------------------------0123456789012345
+	))
+
+	andQuery := query.NewAnd(
+		&query.Substring{
+			Pattern: "banana",
+		},
+		&query.Substring{
+			Pattern: "apple",
+		},
 	)
 
 	t.Run("LineMatches", func(t *testing.T) {
-		sres := searchForTest(t, b, query.NewAnd(
-			&query.Substring{
-				Pattern: "banana",
-			},
-			&query.Substring{
-				Pattern: "apple",
-			},
-		))
+		sres, err := searcher.Search(ctx, andQuery, &SearchOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
 		matches := sres.Files
 		if len(matches) != 1 || len(matches[0].LineMatches) != 1 || len(matches[0].LineMatches[0].LineFragments) != 2 {
 			t.Fatalf("got %#v, want 1 match with 2 fragments", matches)
@@ -395,31 +400,12 @@ func TestAndSearch(t *testing.T) {
 		if matches[0].LineMatches[0].LineFragments[0].Offset != 2 || matches[0].LineMatches[0].LineFragments[1].Offset != 9 {
 			t.Fatalf("got %#v, want offsets 2,9", matches)
 		}
-
-		wantStats := Stats{
-			FilesLoaded:        1,
-			ContentBytesLoaded: 18,
-			IndexBytesLoaded:   8,
-			NgramMatches:       3, // we look at doc 1, because it's max(0,1) due to AND
-			MatchCount:         1,
-			FileCount:          1,
-			FilesConsidered:    2,
-			ShardsScanned:      1,
-		}
-		if diff := pretty.Compare(wantStats, sres.Stats); diff != "" {
-			t.Errorf("got stats diff %s", diff)
-		}
 	})
-
 	t.Run("ChunkMatches", func(t *testing.T) {
-		sres := searchForTest(t, b, query.NewAnd(
-			&query.Substring{
-				Pattern: "banana",
-			},
-			&query.Substring{
-				Pattern: "apple",
-			},
-		), chunkOpts)
+		sres, err := searcher.Search(ctx, andQuery, &chunkOpts)
+		if err != nil {
+			t.Fatal(err)
+		}
 		matches := sres.Files
 		if len(matches) != 1 || len(matches[0].ChunkMatches) != 1 || len(matches[0].ChunkMatches[0].Ranges) != 2 {
 			t.Fatalf("got %#v, want 1 chunk match with 2 ranges", matches)
@@ -428,20 +414,105 @@ func TestAndSearch(t *testing.T) {
 		if matches[0].ChunkMatches[0].Ranges[0].Start.ByteOffset != 2 || matches[0].ChunkMatches[0].Ranges[1].Start.ByteOffset != 9 {
 			t.Fatalf("got %#v, want offsets 2,9", matches)
 		}
+	})
+	t.Run("Stats", func(t *testing.T) {
+		cases := []struct {
+			Name string
+			Q    query.Q
+			Want Stats
+		}{{
+			Name: "and-query",
+			Q:    andQuery,
+			Want: Stats{
+				FilesLoaded:        1,
+				ContentBytesLoaded: 18,
+				IndexBytesLoaded:   8,
+				NgramMatches:       3, // we look at doc 1, because it's max(0,1) due to AND
+				NgramLookups:       104,
+				MatchCount:         2,
+				FileCount:          1,
+				FilesConsidered:    2,
+				ShardsScanned:      1,
+			},
+		}, {
+			Name: "one-trigram",
+			Q: &query.Substring{
+				Pattern:       "a y",
+				Content:       true,
+				CaseSensitive: true,
+			},
+			Want: Stats{
+				ContentBytesLoaded: 12,
+				IndexBytesLoaded:   1,
+				FileCount:          1,
+				FilesConsidered:    1,
+				FilesLoaded:        1,
+				ShardsScanned:      1,
+				MatchCount:         1,
+				NgramMatches:       1,
+				NgramLookups:       2, // once to lookup frequency then again to access posting list.
+			},
+		}, {
+			Name: "one-trigram-case-insensitive",
+			Q: &query.Substring{
+				Pattern: "a y",
+				Content: true,
+			},
+			Want: Stats{
+				ContentBytesLoaded: 12,
+				IndexBytesLoaded:   1,
+				FileCount:          1,
+				FilesConsidered:    1,
+				FilesLoaded:        1,
+				ShardsScanned:      1,
+				MatchCount:         1,
+				NgramMatches:       1,
+				NgramLookups:       8, // "a y" has 2**2 casings which we lookup twice.
+			},
+		}, {
+			Name: "one-trigram-pruned",
+			Q: &query.Substring{
+				Pattern:       "foo",
+				Content:       true,
+				CaseSensitive: true,
+			},
+			Want: Stats{
+				ShardsSkippedFilter: 1,
+				NgramLookups:        1, // only had to lookup once
+			},
+		}, {
+			Name: "one-trigram-branch-pruned",
+			Q: query.NewAnd(
+				&query.Substring{
+					Pattern:       "foo",
+					Content:       true,
+					CaseSensitive: true,
+				},
+				&query.Substring{
+					Pattern:       "a y",
+					Content:       true,
+					CaseSensitive: true,
+				},
+			),
+			Want: Stats{
+				IndexBytesLoaded:    1, // we created an iterator for "a y" before pruning.
+				ShardsSkippedFilter: 1,
+				NgramLookups:        3, // we lookedup "foo" once (1), but lookedup and created "a y" (2).
+			},
+		}}
 
-		wantStats := Stats{
-			FilesLoaded:        1,
-			ContentBytesLoaded: 18,
-			IndexBytesLoaded:   8,
-			NgramMatches:       3, // we look at doc 1, because it's max(0,1) due to AND
-			MatchCount:         2,
-			FileCount:          1,
-			FilesConsidered:    2,
-			ShardsScanned:      1,
+		for _, tc := range cases {
+			t.Run(tc.Name, func(t *testing.T) {
+				sres, err := searcher.Search(ctx, tc.Q, &chunkOpts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(tc.Want, sres.Stats); diff != "" {
+					t.Errorf("unexpected Stats (-want +got):\n%s", diff)
+				}
+			})
 		}
-		if diff := pretty.Compare(wantStats, sres.Stats); diff != "" {
-			t.Errorf("got stats diff %s", diff)
-		}
+
 	})
 }
 
