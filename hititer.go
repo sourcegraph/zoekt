@@ -183,18 +183,19 @@ func (i *inMemoryIterator) next(limit uint32) {
 // compressedPostingIterator goes over a delta varint encoded posting
 // list.
 type compressedPostingIterator struct {
-	blob, orig []byte
-	_first     uint32
-	what       ngram
+	blob             []byte
+	indexBytesLoaded int
+	_first           uint32
+	what             ngram
 }
 
 func newCompressedPostingIterator(b []byte, w ngram) *compressedPostingIterator {
 	d, sz := binary.Uvarint(b)
 	return &compressedPostingIterator{
-		_first: uint32(d),
-		blob:   b[sz:],
-		orig:   b,
-		what:   w,
+		_first:           uint32(d),
+		blob:             b[sz:],
+		indexBytesLoaded: sz,
+		what:             w,
 	}
 }
 
@@ -216,6 +217,7 @@ func (i *compressedPostingIterator) next(limit uint32) {
 	for i._first <= limit && len(i.blob) > 0 {
 		delta, sz := binary.Uvarint(i.blob)
 		i._first += uint32(delta)
+		i.indexBytesLoaded += sz
 		i.blob = i.blob[sz:]
 	}
 
@@ -225,7 +227,8 @@ func (i *compressedPostingIterator) next(limit uint32) {
 }
 
 func (i *compressedPostingIterator) updateStats(s *Stats) {
-	s.IndexBytesLoaded += int64(len(i.orig) - len(i.blob))
+	s.IndexBytesLoaded += int64(i.indexBytesLoaded)
+	i.indexBytesLoaded = 0
 }
 
 // mergingIterator forms the merge of a set of hitIterators, to

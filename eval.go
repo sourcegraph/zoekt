@@ -181,6 +181,9 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 		return nil, err
 	}
 
+	// Capture the costs of construction before pruning
+	updateMatchTreeStats(mt, &res.Stats)
+
 	mt, err = pruneMatchTree(mt)
 	if err != nil {
 		return nil, err
@@ -380,11 +383,8 @@ nextFileMatch:
 		}
 	}
 
-	visitMatchTree(mt, func(mt matchTree) {
-		if atom, ok := mt.(interface{ updateStats(*Stats) }); ok {
-			atom.updateStats(&res.Stats)
-		}
-	})
+	// Update stats based on work done during document search.
+	updateMatchTreeStats(mt, &res.Stats)
 
 	// If document ranking is enabled, then we can rank and truncate the files to save memory.
 	if limit := opts.MaxDocDisplayCount; opts.UseDocumentRanks && limit > 0 && limit < len(res.Files) {

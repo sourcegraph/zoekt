@@ -520,6 +520,16 @@ func visitMatchTree(t matchTree, f func(matchTree)) {
 	}
 }
 
+// updateMatchTreeStats calls updateStats on all atoms in mt which have that
+// function defined.
+func updateMatchTreeStats(mt matchTree, stats *Stats) {
+	visitMatchTree(mt, func(mt matchTree) {
+		if atom, ok := mt.(interface{ updateStats(*Stats) }); ok {
+			atom.updateStats(stats)
+		}
+	})
+}
+
 // visitMatches visits all atoms which can contribute matches. Note: This
 // skips noVisitMatchTree.
 func visitMatches(t matchTree, known map[matchTree]bool, f func(matchTree)) {
