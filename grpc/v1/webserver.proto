@@ -337,6 +337,9 @@ message Stats {
 
   // FlushReason explains why results were flushed.
   FlushReason flush_reason = 17;
+
+  // NgramLookups is the number of times we accessed an ngram in the index.
+  int64 ngram_lookups = 18;
 }
 
 enum FlushReason {

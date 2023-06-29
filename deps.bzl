@@ -1256,13 +1256,7 @@ def go_dependencies():
         sum = "h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=",
         version = "v0.2.0",
     )
-    go_repository(
-        name = "com_github_kylelemons_godebug",
-        build_file_proto_mode = "disable_global",
-        importpath = "github.com/kylelemons/godebug",
-        sum = "h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=",
-        version = "v1.1.0",
-    )
+
     go_repository(
         name = "com_github_labstack_echo_v4",
         build_file_proto_mode = "disable_global",

@@ -811,7 +811,7 @@ func (d *indexData) regexpToMatchTreeRecursive(r *syntax.Regexp, minTextSize int
 			}
 		}
 		if len(qs) == 0 {
-			return &noMatchTree{"const"}, isEq, false, nil
+			return &noMatchTree{Why: "const"}, isEq, false, nil
 		}
 		return &orMatchTree{qs}, isEq, false, nil
 	case syntax.OpStar:

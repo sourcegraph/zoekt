@@ -120,9 +120,11 @@ func (d *indexData) trigramHitIterator(ng ngram, caseSensitive, fileName bool) (
 	}
 
 	iters := make([]hitIterator, 0, len(variants))
+	ngramLookups := 0
 	for _, v := range variants {
 		if fileName {
 			blob, err := d.fileNameNgrams.GetBlob(v)
+			ngramLookups++
 			if err != nil {
 				return nil, err
 			}
@@ -133,6 +135,7 @@ func (d *indexData) trigramHitIterator(ng ngram, caseSensitive, fileName bool) (
 		}
 
 		sec := d.ngrams.Get(v)
+		ngramLookups++
 		blob, err := d.readSectionBlob(sec)
 		if err != nil {
 			return nil, err
@@ -143,10 +146,14 @@ func (d *indexData) trigramHitIterator(ng ngram, caseSensitive, fileName bool) (
 	}
 
 	if len(iters) == 1 {
-		return iters[0], nil
+		// if we only return 1 then we need to include our ngramLookups stats
+		iter := (iters[0]).(*compressedPostingIterator)
+		iter.ngramLookups = ngramLookups
+		return iter, nil
 	}
 	return &mergingIterator{
-		iters: iters,
+		ngramLookups: ngramLookups,
+		iters:        iters,
 	}, nil
 }
 
@@ -185,6 +192,7 @@ func (i *inMemoryIterator) next(limit uint32) {
 type compressedPostingIterator struct {
 	blob             []byte
 	indexBytesLoaded int
+	ngramLookups     int
 	_first           uint32
 	what             ngram
 }
@@ -228,13 +236,16 @@ func (i *compressedPostingIterator) next(limit uint32) {
 
 func (i *compressedPostingIterator) updateStats(s *Stats) {
 	s.IndexBytesLoaded += int64(i.indexBytesLoaded)
+	s.NgramLookups += i.ngramLookups
 	i.indexBytesLoaded = 0
+	i.ngramLookups = 0
 }
 
 // mergingIterator forms the merge of a set of hitIterators, to
 // implement an OR operation at the hit level.
 type mergingIterator struct {
-	iters []hitIterator
+	iters        []hitIterator
+	ngramLookups int
 }
 
 func (i *mergingIterator) String() string {
@@ -242,6 +253,8 @@ func (i *mergingIterator) String() string {
 }
 
 func (i *mergingIterator) updateStats(s *Stats) {
+	s.NgramLookups += i.ngramLookups
+	i.ngramLookups = 0
 	for _, j := range i.iters {
 		j.updateStats(s)
 	}

@@ -389,13 +389,16 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 	// Find the 2 least common ngrams from the string.
 	ngramOffs := splitNGrams([]byte(query.Pattern))
 	frequencies := make([]uint32, 0, len(ngramOffs))
+	ngramLookups := 0
 	for _, o := range ngramOffs {
 		var freq uint32
 		if query.CaseSensitive {
 			freq = d.ngramFrequency(o.ngram, query.FileName)
+			ngramLookups++
 		} else {
 			for _, v := range generateCaseNgrams(o.ngram) {
 				freq += d.ngramFrequency(v, query.FileName)
+				ngramLookups++
 			}
 		}
 
@@ -403,6 +406,9 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 			return &ngramIterationResults{
 				matchIterator: &noMatchTree{
 					Why: "freq=0",
+					Stats: Stats{
+						NgramLookups: ngramLookups,
+					},
 				},
 			}, nil
 		}
@@ -419,8 +425,9 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 	firstNG := ngramOffs[firstI].ngram
 	lastNG := ngramOffs[lastI].ngram
 	iter := &ngramDocIterator{
-		leftPad:  firstI,
-		rightPad: uint32(utf8.RuneCountInString(str)) - firstI,
+		leftPad:      firstI,
+		rightPad:     uint32(utf8.RuneCountInString(str)) - firstI,
+		ngramLookups: ngramLookups,
 	}
 	if query.FileName {
 		iter.ends = d.fileNameEndRunes

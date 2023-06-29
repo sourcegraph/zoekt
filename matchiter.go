@@ -73,6 +73,9 @@ type matchIterator interface {
 // noMatchTree is both matchIterator and matchTree that matches nothing.
 type noMatchTree struct {
 	Why string
+
+	// Stats captures the work done to create the noMatchTree.
+	Stats Stats
 }
 
 func (t *noMatchTree) String() string {
@@ -93,7 +96,10 @@ func (t *noMatchTree) matches(cp *contentProvider, cost int, known map[matchTree
 	return false, true
 }
 
-func (t *noMatchTree) updateStats(*Stats) {}
+func (t *noMatchTree) updateStats(s *Stats) {
+	s.Add(t.Stats)
+	t.Stats = Stats{}
+}
 
 func (m *candidateMatch) String() string {
 	return fmt.Sprintf("%d:%d", m.file, m.runeOffset)
@@ -105,6 +111,9 @@ type ngramDocIterator struct {
 
 	iter hitIterator
 	ends []uint32
+
+	// ngramLookups is how many lookups we did to create this iterator.
+	ngramLookups int
 
 	// mutable
 	fileIdx    uint32
@@ -154,7 +163,9 @@ func (i *ngramDocIterator) prepare(nextDoc uint32) {
 func (i *ngramDocIterator) updateStats(s *Stats) {
 	i.iter.updateStats(s)
 	s.NgramMatches += i.matchCount
+	s.NgramLookups += i.ngramLookups
 	i.matchCount = 0
+	i.ngramLookups = 0
 }
 
 func (i *ngramDocIterator) candidates() []*candidateMatch {
