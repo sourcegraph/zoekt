@@ -1,7 +1,7 @@
 FROM alpine:3.16.4
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
-    apk add --no-cache ca-certificates bind-tools tini git jansson curl tar python3 && \
+    apk add --no-cache ca-certificates bind-tools tini git jansson curl tar python3 rsync && \
     apk add --upgrade --no-cache 'libcrypto1.1>=1.1.1n-r0' 'libssl1.1>=1.1.1n-r0' 'pcre2>=10.40-r0' 'e2fsprogs>=1.46.6-r0' && \
     ln -sf python3 /usr/bin/python
 # Run as non-root user sourcegraph. External volumes should be mounted under /data (which will be owned by sourcegraph).
@@ -15,16 +15,6 @@ RUN apk update --no-cache && apk upgrade --no-cache && \
 # ENV SRC_FRONTEND_INTERNAL http://sourcegraph-frontend-internal
 # ENV DATA_DIR /data/index
 # RUN mkdir -p ${DATA_DIR}
-
-# Install GCP tools
-RUN echo "Setting up gsutil"
-RUN curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-435.0.0-linux-x86_64.tar.gz
-RUN mkdir -p /usr/local/gcloud && \ 
-tar -C /usr/local/gcloud -xvf google-cloud-cli-435.0.0-linux-x86_64.tar.gz
-RUN yes | /usr/local/gcloud/google-cloud-sdk/install.sh
-
-# Adding gcloud to path
-ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
 
 
 COPY --from=zoekt \

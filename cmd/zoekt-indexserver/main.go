@@ -120,13 +120,13 @@ func periodicBackup(dataDir, indexDir string, opts *Options) {
 		// lock the index and git directories from being written to
 		muIndexAndDataDirs.GlobalWaitForPending(func() {
 			fmt.Printf("starting backup...\n")
-			idxSyncCmd := exec.Command("gsutil", "-m", "rsync", "-r", indexDir, "gs://codesearch-backup/index")
-			gitSyncCmd := exec.Command("gsutil", "-m", "rsync", "-r", dataDir, "gs://codesearch-backup/repos")
+			idxSyncCmd := exec.Command("rsync", "-ruv", indexDir+"/", "zoekt-backup/indices/")
 			err := idxSyncCmd.Run()
 			if err != nil {
 				fmt.Printf("ERROR: error backup up index shards %v\n", err)
 			}
 
+			gitSyncCmd := exec.Command("rsync", "-ruv", dataDir+"/", "zoekt-backup/repos/")
 			err = gitSyncCmd.Run()
 			if err != nil {
 				fmt.Printf("ERROR: error backing up git repos %v\n", err)
