@@ -743,10 +743,10 @@ type Repository struct {
 	// URL template to link to the commit of a branch
 	CommitUrlTemplate string `protobuf:"bytes,7,opt,name=commit_url_template,json=commitUrlTemplate,proto3" json:"commit_url_template,omitempty"`
 	// The repository URL for getting to a file.  Has access to
-	// {{Branch}}, {{Path}}
+	// {{.Version}}, {{.Path}}
 	FileUrlTemplate string `protobuf:"bytes,8,opt,name=file_url_template,json=fileUrlTemplate,proto3" json:"file_url_template,omitempty"`
 	// The URL fragment to add to a file URL for line numbers. has
-	// access to {{LineNumber}}. The fragment should include the
+	// access to {{.LineNumber}}. The fragment should include the
 	// separator, generally '#' or ';'.
 	LineFragmentTemplate string `protobuf:"bytes,9,opt,name=line_fragment_template,json=lineFragmentTemplate,proto3" json:"line_fragment_template,omitempty"`
 	// Perf optimization: priority is set when we load the shard. It corresponds to

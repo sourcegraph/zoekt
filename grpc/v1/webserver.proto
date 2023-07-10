@@ -177,11 +177,11 @@ message Repository {
   string commit_url_template = 7;
 
   // The repository URL for getting to a file.  Has access to
-  // {{Branch}}, {{Path}}
+  // {{.Version}}, {{.Path}}
   string file_url_template = 8;
 
   // The URL fragment to add to a file URL for line numbers. has
-  // access to {{LineNumber}}. The fragment should include the
+  // access to {{.LineNumber}}. The fragment should include the
   // separator, generally '#' or ';'.
   string line_fragment_template = 9;
 

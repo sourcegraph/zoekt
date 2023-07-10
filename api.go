@@ -555,11 +555,11 @@ type Repository struct {
 	CommitURLTemplate string
 
 	// The repository URL for getting to a file.  Has access to
-	// {{Branch}}, {{Path}}
+	// {{.Version}}, {{.Path}}
 	FileURLTemplate string
 
 	// The URL fragment to add to a file URL for line numbers. has
-	// access to {{LineNumber}}. The fragment should include the
+	// access to {{.LineNumber}}. The fragment should include the
 	// separator, generally '#' or ';'.
 	LineFragmentTemplate string
 
