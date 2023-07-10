@@ -596,6 +596,8 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 		sglog.Int("stat.NgramMatches", st.NgramMatches),
 		sglog.Int("stat.NgramLookups", st.NgramLookups),
 		sglog.Duration("stat.Wait", st.Wait),
+		sglog.Int("stat.RegexpsConsidered", st.RegexpsConsidered),
+		sglog.String("stat.FlushReason", st.FlushReason.String()),
 	)
 }
 

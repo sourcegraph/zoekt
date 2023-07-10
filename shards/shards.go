@@ -119,6 +119,10 @@ var (
 		Name: "zoekt_search_ngram_lookups_total",
 		Help: "Total number of times we accessed an ngram in the index",
 	})
+	metricSearchRegexpsConsideredTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "zoekt_search_regexps_considered_total",
+		Help: "Total number of times regexp was called on files that we evaluated",
+	})
 
 	metricListRunning = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "zoekt_list_running",
@@ -826,6 +830,7 @@ func observeMetrics(sr *zoekt.SearchResult) {
 	metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
 	metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
 	metricSearchNgramLookupsTotal.Add(float64(sr.Stats.NgramLookups))
+	metricSearchRegexpsConsideredTotal.Add(float64(sr.Stats.RegexpsConsidered))
 }
 
 func copySlice(src *[]byte) {
