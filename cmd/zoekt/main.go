@@ -166,9 +166,14 @@ func main() {
 		if err := pprof.StartCPUProfile(f); err != nil {
 			log.Fatal(err)
 		}
+		count := 0
 		for {
 			sres, _ = searcher.Search(context.Background(), q, &sOpts)
-			if time.Since(t) > *profileTime {
+			count++
+			if elapsed := time.Since(t); elapsed > *profileTime {
+				if *verbose {
+					log.Printf("ran %d times in %v (%f searches/s)", count, elapsed, float64(count)/elapsed.Seconds())
+				}
 				break
 			}
 		}
@@ -189,9 +194,14 @@ func main() {
 
 		t := time.Now()
 		stopProfile := fgprof.Start(f, fgprof.FormatPprof)
+		count := 0
 		for {
 			sres, _ = searcher.Search(context.Background(), q, &sOpts)
-			if time.Since(t) > *profileTime {
+			count++
+			if elapsed := time.Since(t); elapsed > *profileTime {
+				if *verbose {
+					log.Printf("ran %d times in %v (%f searches/s)", count, elapsed, float64(count)/elapsed.Seconds())
+				}
 				break
 			}
 		}
