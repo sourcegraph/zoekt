@@ -9,6 +9,7 @@ go_library(
         "//:zoekt",
         "//query",
         "//shards",
+        "@com_github_felixge_fgprof//:fgprof",
     ],
 )
 
