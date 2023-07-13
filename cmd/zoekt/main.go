@@ -25,6 +25,7 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"github.com/felixge/fgprof"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/shards"
@@ -82,6 +83,7 @@ func main() {
 	index := flag.String("index_dir",
 		filepath.Join(os.Getenv("HOME"), ".zoekt"), "search for index files in `directory`")
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to `file`")
+	fullProfile := flag.String("full_profile", "", "write full profile to `file`")
 	profileTime := flag.Duration("profile_time", time.Second, "run this long to gather stats.")
 	verbose := flag.Bool("v", false, "print some background data")
 	withRepo := flag.Bool("r", false, "print the repo before the file name")
@@ -171,6 +173,31 @@ func main() {
 			}
 		}
 		pprof.StopCPUProfile()
+	}
+
+	if *fullProfile != "" {
+		// If profiling, do it another time so we measure with
+		// warm caches.
+		f, err := os.Create(*fullProfile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+		if *verbose {
+			log.Println("Displaying matches...")
+		}
+
+		t := time.Now()
+		stopProfile := fgprof.Start(f, fgprof.FormatPprof)
+		for {
+			sres, _ = searcher.Search(context.Background(), q, &sOpts)
+			if time.Since(t) > *profileTime {
+				break
+			}
+		}
+		if err := stopProfile(); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	if err != nil {

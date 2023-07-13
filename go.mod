@@ -6,6 +6,7 @@ require (
 	github.com/andygrunwald/go-gerrit v0.0.0-20230628115649-c44fe2fbf2ca
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/edsrzf/mmap-go v1.1.0
+	github.com/felixge/fgprof v0.9.3
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/gfleury/go-bitbucket-v1 v0.0.0-20230626192437-8d7be5866751
 	github.com/go-enry/go-enry/v2 v2.8.4
