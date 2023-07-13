@@ -261,7 +261,7 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			}
 			cmd.Args = append(cmd.Args, c.GerritApiURL)
 		} else {
-			log.Printf("executeMirror: ignoring config, because it does not contain any valid repository definition: %q", c)
+			log.Printf("executeMirror: ignoring config, because it does not contain any valid repository definition: %v", c)
 			continue
 		}
 
