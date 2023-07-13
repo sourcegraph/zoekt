@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -85,6 +86,7 @@ func main() {
 	verbose := flag.Bool("v", false, "print some background data")
 	withRepo := flag.Bool("r", false, "print the repo before the file name")
 	list := flag.Bool("l", false, "print matching filenames only")
+	exact := flag.Bool("exact_stdin", false, "look for exact matches on STDIN")
 
 	flag.Usage = func() {
 		name := os.Args[0]
@@ -95,12 +97,39 @@ func main() {
 	}
 	flag.Parse()
 
-	if len(flag.Args()) == 0 {
+	var pat string
+	var q query.Q
+	var sOpts zoekt.SearchOptions
+	if *exact {
+		needle, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pat = string(needle)
+		q = &query.Substring{
+			Pattern:       pat,
+			CaseSensitive: true,
+			Content:       true,
+		}
+		sOpts = zoekt.SearchOptions{
+			ShardMaxMatchCount:     10_000,
+			ShardRepoMaxMatchCount: 1,
+			TotalMaxMatchCount:     100_000,
+			MaxWallTime:            20 * time.Second,
+			MaxDocDisplayCount:     5,
+		}
+	} else if len(flag.Args()) == 0 {
 		fmt.Fprintf(os.Stderr, "Pattern is missing.\n")
 		flag.Usage()
 		os.Exit(2)
+	} else {
+		var err error
+		pat = flag.Arg(0)
+		q, err = query.Parse(pat)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	pat := flag.Arg(0)
 
 	var searcher zoekt.Searcher
 	var err error
@@ -114,16 +143,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	query, err := query.Parse(pat)
-	if err != nil {
-		log.Fatal(err)
-	}
 	if *verbose {
-		log.Println("query:", query)
+		log.Println("query:", q)
 	}
 
-	var sOpts zoekt.SearchOptions
-	sres, err := searcher.Search(context.Background(), query, &sOpts)
+	sres, err := searcher.Search(context.Background(), q, &sOpts)
 	if *cpuProfile != "" {
 		// If profiling, do it another time so we measure with
 		// warm caches.
@@ -141,7 +165,7 @@ func main() {
 			log.Fatal(err)
 		}
 		for {
-			sres, _ = searcher.Search(context.Background(), query, &sOpts)
+			sres, _ = searcher.Search(context.Background(), q, &sOpts)
 			if time.Since(t) > *profileTime {
 				break
 			}
