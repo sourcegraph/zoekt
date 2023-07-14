@@ -166,7 +166,7 @@ func main() {
 		t := time.Now()
 		stopProfile := fgprof.Start(f, fgprof.FormatPprof)
 		for {
-			sres, _ = searcher.Search(context.Background(), q, &sOpts)
+			sres, _ = searcher.Search(context.Background(), query, &sOpts)
 			if time.Since(t) > *profileTime {
 				break
 			}
