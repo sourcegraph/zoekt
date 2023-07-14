@@ -561,6 +561,7 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 			sglog.Int("opts.TotalMaxMatchCount", opts.TotalMaxMatchCount),
 			sglog.Duration("opts.MaxWallTime", opts.MaxWallTime),
 			sglog.Int("opts.MaxDocDisplayCount", opts.MaxDocDisplayCount),
+			sglog.Int("opts.MaxMatchDisplayCount", opts.MaxMatchDisplayCount),
 		)
 
 	if err != nil {
