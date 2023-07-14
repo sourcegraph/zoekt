@@ -288,11 +288,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	bt, err := d.newBtreeIndex(toc.ngramText, toc.postings)
+	d.ngrams, err = d.newBtreeIndex(toc.ngramText, toc.postings)
 	if err != nil {
 		return nil, err
 	}
-	d.ngrams = bt
 
 	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
 	if err != nil {
@@ -306,7 +305,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 
 	d.fileNameIndex = toc.fileNames.relativeIndex()
 
-	d.fileNameNgrams.bt, err = d.newBtreeIndex(toc.nameNgramText, toc.namePostings)
+	d.fileNameNgrams, err = d.newBtreeIndex(toc.nameNgramText, toc.namePostings)
 	if err != nil {
 		return nil, err
 	}
@@ -656,9 +655,6 @@ func PrintNgramStats(r IndexFile) error {
 		return err
 	}
 
-	if id.ngrams == nil {
-		return fmt.Errorf("PrintNgramStats: ngrams=nil")
-	}
 	var rNgram [3]rune
 	for ngram, ss := range id.ngrams.DumpMap() {
 		rNgram = ngramToRunes(ngram)

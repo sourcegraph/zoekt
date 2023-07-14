@@ -33,7 +33,7 @@ type indexData struct {
 
 	file IndexFile
 
-	ngrams ngramIndex
+	ngrams btreeIndex
 
 	newlinesStart uint32
 	newlinesIndex []uint32
@@ -56,7 +56,7 @@ type indexData struct {
 
 	fileNameContent []byte
 	fileNameIndex   []uint32
-	fileNameNgrams  fileNameNgrams
+	fileNameNgrams  btreeIndex
 
 	// fileEndSymbol[i] is the index of the first symbol for document i.
 	fileEndSymbol []uint32
@@ -314,9 +314,7 @@ func (d *indexData) memoryUse() int {
 	}
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
-	if d.ngrams != nil {
-		sz += d.ngrams.SizeBytes()
-	}
+	sz += d.ngrams.SizeBytes()
 	sz += d.fileNameNgrams.SizeBytes()
 	return sz
 }
@@ -349,13 +347,8 @@ func lastMinarg(xs []uint32) uint32 {
 
 func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
 	if filename {
-		return data.fileNameNgrams.Frequency(ng)
+		return data.fileNameNgrams.Get(ng).sz
 	}
-
-	if data.ngrams == nil {
-		return 0
-	}
-
 	return data.ngrams.Get(ng).sz
 }
 

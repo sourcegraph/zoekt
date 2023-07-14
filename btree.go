@@ -289,6 +289,7 @@ type btreeIndex struct {
 	postingIndex simpleSection
 }
 
+// SizeBytes returns how much memory this structure uses in the heap.
 func (b btreeIndex) SizeBytes() (sz int) {
 	// btree
 	if b.bt != nil {
@@ -401,6 +402,9 @@ func (b btreeIndex) getBucket(bucketIndex int) (off uint32, sz uint32) {
 	return
 }
 
+// DumpMap is a debug method which returns the btree as an in-memory
+// representation. This is how zoekt represents the ngram index in
+// google/zoekt.
 func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 	if b.bt == nil {
 		return nil
@@ -428,36 +432,10 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 	return m
 }
 
-type ngramIndex interface {
-	Get(gram ngram) simpleSection
-	DumpMap() map[ngram]simpleSection
-	SizeBytes() int
-}
-
-// This is a temporary type to wrap two very different implementations of the
-// inverted index for the purpose of feature-flagging. We will remove this after
-// we enable the b-tree permanently.
+// GetBlob returns the raw encoded offset list for ng.
 //
-// Alternatively we could have adapted/extended the interface "ngramIndex".
-// However, adapting the existing implementations and their tests to match the
-// access pattern of map[ngram][]byte seems more cumbersome than this makeshift
-// wrapper. In the end, both ngramIndex and this wrapper will be replaced by a
-// concrete type.
-//
-// TODO we have remove non-btree code, lets create the concrete type.
-type fileNameNgrams struct {
-	bt btreeIndex
-}
-
-func (n fileNameNgrams) GetBlob(ng ngram) ([]byte, error) {
-	sec := n.bt.Get(ng)
-	return n.bt.file.Read(sec.off, sec.sz)
-}
-
-func (n fileNameNgrams) Frequency(ng ngram) uint32 {
-	return n.bt.Get(ng).sz
-}
-
-func (n fileNameNgrams) SizeBytes() int {
-	return n.bt.SizeBytes()
+// Note: the returned byte slice is mmap backed normally.
+func (b btreeIndex) GetBlob(ng ngram) ([]byte, error) {
+	sec := b.Get(ng)
+	return b.file.Read(sec.off, sec.sz)
 }

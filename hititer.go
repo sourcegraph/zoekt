@@ -110,10 +110,6 @@ func (d *indexData) newDistanceTrigramIter(ng1, ng2 ngram, dist uint32, caseSens
 }
 
 func (d *indexData) trigramHitIterator(ng ngram, caseSensitive, fileName bool) (hitIterator, error) {
-	if d.ngrams == nil {
-		return nil, fmt.Errorf("trigramHitIterator: ngrams=nil")
-	}
-
 	variants := []ngram{ng}
 	if !caseSensitive {
 		variants = generateCaseNgrams(ng)
