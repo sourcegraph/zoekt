@@ -106,10 +106,9 @@ func (n ngram) String() string {
 }
 
 type runeNgramOff struct {
-	ngram    ngram
-	byteSize uint32 // size of ngram
-	byteOff  uint32
-	runeOff  uint32
+	ngram ngram
+	// index is the original index inside of the returned array of splitNGrams
+	index uint32
 }
 
 func splitNGrams(str []byte) []runeNgramOff {
@@ -120,9 +119,7 @@ func splitNGrams(str []byte) []runeNgramOff {
 	result := make([]runeNgramOff, 0, len(str))
 	var i uint32
 
-	chars := -1
 	for len(str) > 0 {
-		chars++
 		r, sz := utf8.DecodeRune(str)
 		str = str[sz:]
 		runeGram[0] = runeGram[1]
@@ -139,10 +136,8 @@ func splitNGrams(str []byte) []runeNgramOff {
 
 		ng := runesToNGram(runeGram)
 		result = append(result, runeNgramOff{
-			ngram:    ng,
-			byteSize: i - off[0],
-			byteOff:  off[0],
-			runeOff:  uint32(chars),
+			ngram: ng,
+			index: uint32(len(result)),
 		})
 	}
 	return result
