@@ -208,12 +208,13 @@ func (n *innerNode) insert(ng ngram, opts btreeOpts) {
 
 // See btree.find
 func (n *innerNode) find(ng ngram) (int, int) {
-	for i, k := range n.keys {
-		if ng < k {
-			return n.children[i].find(ng)
-		}
+	i := sort.Search(len(n.keys), func(i int) bool {
+		return ng < n.keys[i]
+	})
+	if i >= len(n.children) {
+		i = len(n.children) - 1
 	}
-	return n.children[len(n.children)-1].find(ng)
+	return n.children[i].find(ng)
 }
 
 // See btree.find
