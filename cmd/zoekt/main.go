@@ -18,12 +18,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime/pprof"
 	"time"
 
+	"github.com/felixge/fgprof"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/shards"
@@ -76,11 +78,57 @@ func loadShard(fn string, verbose bool) (zoekt.Searcher, error) {
 	return s, nil
 }
 
+func profile(path string, duration time.Duration, start func(io.Writer) (stop func())) func() bool {
+	if path == "" {
+		return func() bool { return false }
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	t := time.Now()
+	stop := start(f)
+
+	return func() bool {
+		if time.Since(t) < duration {
+			return true
+		}
+		stop()
+		f.Close()
+		return false
+	}
+}
+
+func startCPUProfile(path string, duration time.Duration) func() bool {
+	return profile(path, duration, func(w io.Writer) func() {
+		if err := pprof.StartCPUProfile(w); err != nil {
+			log.Fatal(err)
+		}
+
+		return pprof.StopCPUProfile
+	})
+}
+
+func startFullProfile(path string, duration time.Duration) func() bool {
+	return profile(path, duration, func(w io.Writer) func() {
+		stop := fgprof.Start(w, fgprof.FormatPprof)
+
+		return func() {
+			if err := stop(); err != nil {
+				log.Fatal(err)
+			}
+		}
+	})
+}
+
 func main() {
 	shard := flag.String("shard", "", "search in a specific shard")
 	index := flag.String("index_dir",
 		filepath.Join(os.Getenv("HOME"), ".zoekt"), "search for index files in `directory`")
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to `file`")
+	fullProfile := flag.String("full_profile", "", "write full profile to `file`")
 	profileTime := flag.Duration("profile_time", time.Second, "run this long to gather stats.")
 	verbose := flag.Bool("v", false, "print some background data")
 	withRepo := flag.Bool("r", false, "print the repo before the file name")
@@ -124,33 +172,17 @@ func main() {
 
 	var sOpts zoekt.SearchOptions
 	sres, err := searcher.Search(context.Background(), query, &sOpts)
-	if *cpuProfile != "" {
-		// If profiling, do it another time so we measure with
-		// warm caches.
-		f, err := os.Create(*cpuProfile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer f.Close()
-		if *verbose {
-			log.Println("Displaying matches...")
-		}
-
-		t := time.Now()
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal(err)
-		}
-		for {
-			sres, _ = searcher.Search(context.Background(), query, &sOpts)
-			if time.Since(t) > *profileTime {
-				break
-			}
-		}
-		pprof.StopCPUProfile()
-	}
-
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	// If profiling, do it another time so we measure with
+	// warm caches.
+	for run := startCPUProfile(*cpuProfile, *profileTime); run(); {
+		sres, _ = searcher.Search(context.Background(), query, &sOpts)
+	}
+	for run := startFullProfile(*fullProfile, *profileTime); run(); {
+		sres, _ = searcher.Search(context.Background(), query, &sOpts)
 	}
 
 	displayMatches(sres.Files, pat, *withRepo, *list)
