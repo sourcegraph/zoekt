@@ -18,12 +18,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime/pprof"
 	"time"
 
+	"github.com/felixge/fgprof"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/shards"
@@ -81,10 +83,12 @@ func main() {
 	index := flag.String("index_dir",
 		filepath.Join(os.Getenv("HOME"), ".zoekt"), "search for index files in `directory`")
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to `file`")
+	fullProfile := flag.String("full_profile", "", "write full profile to `file`")
 	profileTime := flag.Duration("profile_time", time.Second, "run this long to gather stats.")
 	verbose := flag.Bool("v", false, "print some background data")
 	withRepo := flag.Bool("r", false, "print the repo before the file name")
 	list := flag.Bool("l", false, "print matching filenames only")
+	exact := flag.Bool("exact_stdin", false, "look for exact matches on STDIN")
 
 	flag.Usage = func() {
 		name := os.Args[0]
@@ -95,12 +99,39 @@ func main() {
 	}
 	flag.Parse()
 
-	if len(flag.Args()) == 0 {
+	var pat string
+	var q query.Q
+	var sOpts zoekt.SearchOptions
+	if *exact {
+		needle, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pat = string(needle)
+		q = &query.Substring{
+			Pattern:       pat,
+			CaseSensitive: true,
+			Content:       true,
+		}
+		sOpts = zoekt.SearchOptions{
+			ShardMaxMatchCount:     10_000,
+			ShardRepoMaxMatchCount: 1,
+			TotalMaxMatchCount:     100_000,
+			MaxWallTime:            20 * time.Second,
+			MaxDocDisplayCount:     5,
+		}
+	} else if len(flag.Args()) == 0 {
 		fmt.Fprintf(os.Stderr, "Pattern is missing.\n")
 		flag.Usage()
 		os.Exit(2)
+	} else {
+		var err error
+		pat = flag.Arg(0)
+		q, err = query.Parse(pat)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	pat := flag.Arg(0)
 
 	var searcher zoekt.Searcher
 	var err error
@@ -114,16 +145,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	query, err := query.Parse(pat)
-	if err != nil {
-		log.Fatal(err)
-	}
 	if *verbose {
-		log.Println("query:", query)
+		log.Println("query:", q)
 	}
 
-	var sOpts zoekt.SearchOptions
-	sres, err := searcher.Search(context.Background(), query, &sOpts)
+	sres, err := searcher.Search(context.Background(), q, &sOpts)
 	if *cpuProfile != "" {
 		// If profiling, do it another time so we measure with
 		// warm caches.
@@ -140,13 +166,48 @@ func main() {
 		if err := pprof.StartCPUProfile(f); err != nil {
 			log.Fatal(err)
 		}
+		count := 0
 		for {
-			sres, _ = searcher.Search(context.Background(), query, &sOpts)
-			if time.Since(t) > *profileTime {
+			sres, _ = searcher.Search(context.Background(), q, &sOpts)
+			count++
+			if elapsed := time.Since(t); elapsed > *profileTime {
+				if *verbose {
+					log.Printf("ran %d times in %v (%f searches/s)", count, elapsed, float64(count)/elapsed.Seconds())
+				}
 				break
 			}
 		}
 		pprof.StopCPUProfile()
+	}
+
+	if *fullProfile != "" {
+		// If profiling, do it another time so we measure with
+		// warm caches.
+		f, err := os.Create(*fullProfile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+		if *verbose {
+			log.Println("Displaying matches...")
+		}
+
+		t := time.Now()
+		stopProfile := fgprof.Start(f, fgprof.FormatPprof)
+		count := 0
+		for {
+			sres, _ = searcher.Search(context.Background(), q, &sOpts)
+			count++
+			if elapsed := time.Since(t); elapsed > *profileTime {
+				if *verbose {
+					log.Printf("ran %d times in %v (%f searches/s)", count, elapsed, float64(count)/elapsed.Seconds())
+				}
+				break
+			}
+		}
+		if err := stopProfile(); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	if err != nil {

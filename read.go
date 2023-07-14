@@ -288,7 +288,13 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	if os.Getenv("ZOEKT_DISABLE_BTREE") != "" {
+	if os.Getenv("ZOEKT_INMEM") != "" {
+		offsetMap, err := d.readInMemoryNgrams(toc)
+		if err != nil {
+			return nil, err
+		}
+		d.ngrams = offsetMap
+	} else if os.Getenv("ZOEKT_DISABLE_BTREE") != "" {
 		offsetMap, err := d.readNgrams(toc)
 		if err != nil {
 			return nil, err
@@ -505,6 +511,26 @@ func (d *indexData) newBtreeIndex(ngramSec simpleSection, postings compoundSecti
 	bi.postingIndex = postings.index
 
 	return bi, nil
+}
+
+func (d *indexData) readInMemoryNgrams(toc *indexTOC) (inMemoryNgrams, error) {
+	textContent, err := d.readSectionBlob(toc.ngramText)
+	if err != nil {
+		return nil, err
+	}
+	postingsIndex := toc.postings.relativeIndex()
+
+	ngrams := make(inMemoryNgrams, len(textContent)/ngramEncoding)
+	for i := 0; i < len(textContent); i += ngramEncoding {
+		j := i / ngramEncoding
+		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
+		ngrams[ng] = simpleSection{
+			toc.postings.data.off + postingsIndex[j],
+			postingsIndex[j+1] - postingsIndex[j],
+		}
+	}
+
+	return ngrams, nil
 }
 
 func (d *indexData) readFileNameNgrams(toc *indexTOC) (map[ngram][]byte, error) {
