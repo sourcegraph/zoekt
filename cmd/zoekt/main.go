@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -77,6 +78,51 @@ func loadShard(fn string, verbose bool) (zoekt.Searcher, error) {
 	return s, nil
 }
 
+func profile(path string, duration time.Duration, start func(io.Writer) (stop func())) func() bool {
+	if path == "" {
+		return func() bool { return false }
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	t := time.Now()
+	stop := start(f)
+
+	return func() bool {
+		if time.Since(t) < duration {
+			return true
+		}
+		stop()
+		f.Close()
+		return false
+	}
+}
+
+func startCPUProfile(path string, duration time.Duration) func() bool {
+	return profile(path, duration, func(w io.Writer) func() {
+		if err := pprof.StartCPUProfile(w); err != nil {
+			log.Fatal(err)
+		}
+
+		return pprof.StopCPUProfile
+	})
+}
+
+func startFullProfile(path string, duration time.Duration) func() bool {
+	return profile(path, duration, func(w io.Writer) func() {
+		stop := fgprof.Start(w, fgprof.FormatPprof)
+
+		return func() {
+			if err := stop(); err != nil {
+				log.Fatal(err)
+			}
+		}
+	})
+}
+
 func main() {
 	shard := flag.String("shard", "", "search in a specific shard")
 	index := flag.String("index_dir",
@@ -126,58 +172,17 @@ func main() {
 
 	var sOpts zoekt.SearchOptions
 	sres, err := searcher.Search(context.Background(), query, &sOpts)
-	if *cpuProfile != "" {
-		// If profiling, do it another time so we measure with
-		// warm caches.
-		f, err := os.Create(*cpuProfile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer f.Close()
-		if *verbose {
-			log.Println("Displaying matches...")
-		}
-
-		t := time.Now()
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal(err)
-		}
-		for {
-			sres, _ = searcher.Search(context.Background(), query, &sOpts)
-			if time.Since(t) > *profileTime {
-				break
-			}
-		}
-		pprof.StopCPUProfile()
-	}
-
-	if *fullProfile != "" {
-		// If profiling, do it another time so we measure with
-		// warm caches.
-		f, err := os.Create(*fullProfile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer f.Close()
-		if *verbose {
-			log.Println("Displaying matches...")
-		}
-
-		t := time.Now()
-		stopProfile := fgprof.Start(f, fgprof.FormatPprof)
-		for {
-			sres, _ = searcher.Search(context.Background(), query, &sOpts)
-			if time.Since(t) > *profileTime {
-				break
-			}
-		}
-		if err := stopProfile(); err != nil {
-			log.Fatal(err)
-		}
-	}
-
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	// If profiling, do it another time so we measure with
+	// warm caches.
+	for run := startCPUProfile(*cpuProfile, *profileTime); run(); {
+		sres, _ = searcher.Search(context.Background(), query, &sOpts)
+	}
+	for run := startFullProfile(*fullProfile, *profileTime); run(); {
+		sres, _ = searcher.Search(context.Background(), query, &sOpts)
 	}
 
 	displayMatches(sres.Files, pat, *withRepo, *list)
