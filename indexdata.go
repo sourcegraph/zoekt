@@ -22,8 +22,9 @@ import (
 	"math/bits"
 	"unicode/utf8"
 
-	"github.com/sourcegraph/zoekt/query"
 	"golang.org/x/exp/slices"
+
+	"github.com/sourcegraph/zoekt/query"
 )
 
 // indexData holds the pattern-independent data that we have to have
@@ -346,13 +347,6 @@ func lastMinarg(xs []uint32) uint32 {
 	return uint32(j)
 }
 
-func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
-	if filename {
-		return data.fileNameNgrams.Get(ng).sz
-	}
-	return data.ngrams.Get(ng).sz
-}
-
 // ngramIndexes returns the indexes of the ngrams in the index. We return a
 // slice of slices because we have to keep track of ngram variants in case of
 // case-insensitive search.
@@ -418,7 +412,6 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 	for _, ng := range ngramOffs {
 		ngrams = append(ngrams, ng.ngram)
 	}
-
 
 	// Look up ngram indexes without loading posting lists. This way we can stop
 	// early if a ngram does not exist. On the flip side we incur an additional
