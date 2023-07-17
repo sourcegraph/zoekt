@@ -43,8 +43,7 @@ type indexData struct {
 	docSectionsStart uint32
 	docSectionsIndex []uint32
 
-	runeDocSections    []DocumentSection
-	runeDocSectionsRaw []byte
+	runeDocSections []DocumentSection
 
 	// rune offset=>byte offset mapping, relative to the start of the content corpus
 	runeOffsets runeOffsetMap
