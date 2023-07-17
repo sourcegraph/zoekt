@@ -322,28 +322,18 @@ func (d *indexData) memoryUse() int {
 
 const maxUInt32 = 0xffffffff
 
-func firstMinarg(xs []uint32) uint32 {
-	m := uint32(maxUInt32)
-	j := len(xs)
+func min2Index(xs []uint32) (idx0, idx1 int) {
+	min0, min1 := uint32(maxUInt32), uint32(maxUInt32)
 	for i, x := range xs {
-		if x < m {
-			m = x
-			j = i
+		if x <= min0 {
+			idx0, idx1 = i, idx0
+			min0, min1 = x, min0
+		} else if x <= min1 {
+			idx1 = i
+			min1 = x
 		}
 	}
-	return uint32(j)
-}
-
-func lastMinarg(xs []uint32) uint32 {
-	m := uint32(maxUInt32)
-	j := len(xs)
-	for i, x := range xs {
-		if x <= m {
-			m = x
-			j = i
-		}
-	}
-	return uint32(j)
+	return
 }
 
 func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
@@ -415,13 +405,31 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 		frequencies = append(frequencies, freq)
 	}
 
+	// We pick the two lowest frequency trigrams to pass to the distance
+	// iterator. If they have the same frequency, we maximise the distance
+	// between them.
 	var first, last runeNgramOff
 	{
-		firstI := firstMinarg(frequencies)
-		frequencies[firstI] = maxUInt32
-		lastI := lastMinarg(frequencies)
+		firstI, lastI := min2Index(frequencies)
+		// If the frequencies are equal lets maximise distance in the query
+		// string. This optimization normally triggers for long repeated trigrams
+		// in a string, eg a query like "AAAAA..."
+		if frequencies[firstI] == frequencies[lastI] {
+			for i, freq := range frequencies {
+				if freq != frequencies[firstI] {
+					continue
+				}
+				if ngramOffs[i].index < ngramOffs[firstI].index {
+					firstI = i
+				}
+				if ngramOffs[i].index > ngramOffs[lastI].index {
+					lastI = i
+				}
+			}
+		}
 		first = ngramOffs[firstI]
 		last = ngramOffs[lastI]
+		// Ensure first appears before last to make distance logic below clean.
 		if first.index > last.index {
 			last, first = first, last
 		}
