@@ -289,6 +289,7 @@ type btreeIndex struct {
 	postingIndex simpleSection
 }
 
+// SizeBytes returns how much memory this structure uses in the heap.
 func (b btreeIndex) SizeBytes() (sz int) {
 	// btree
 	if b.bt != nil {
@@ -401,6 +402,9 @@ func (b btreeIndex) getBucket(bucketIndex int) (off uint32, sz uint32) {
 	return
 }
 
+// DumpMap is a debug method which returns the btree as an in-memory
+// representation. This is how zoekt represents the ngram index in
+// google/zoekt.
 func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 	if b.bt == nil {
 		return nil
@@ -426,4 +430,12 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 	})
 
 	return m
+}
+
+// GetBlob returns the raw encoded offset list for ng.
+//
+// Note: the returned byte slice is mmap backed normally.
+func (b btreeIndex) GetBlob(ng ngram) ([]byte, error) {
+	sec := b.Get(ng)
+	return b.file.Read(sec.off, sec.sz)
 }
