@@ -16,6 +16,7 @@ package zoekt
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc64"
 	"log"
@@ -322,28 +323,48 @@ func (d *indexData) memoryUse() int {
 
 const maxUInt32 = 0xffffffff
 
-func firstMinarg(xs []uint32) uint32 {
-	m := uint32(maxUInt32)
-	j := len(xs)
+func min2Index(xs []uint32) (idx0, idx1 int) {
+	min0, min1 := uint32(maxUInt32), uint32(maxUInt32)
 	for i, x := range xs {
-		if x < m {
-			m = x
-			j = i
+		if x <= min0 {
+			idx0, idx1 = i, idx0
+			min0, min1 = x, min0
+		} else if x <= min1 {
+			idx1 = i
+			min1 = x
 		}
 	}
-	return uint32(j)
+	return
 }
 
-func lastMinarg(xs []uint32) uint32 {
-	m := uint32(maxUInt32)
-	j := len(xs)
-	for i, x := range xs {
-		if x <= m {
-			m = x
-			j = i
+// minFrequencyNgramOffsets returns the two lowest frequency ngrams to pass to
+// the distance iterator. If they have the same frequency, we maximise the
+// distance between them. first will always have a smaller index than last.
+func minFrequencyNgramOffsets(ngramOffs []runeNgramOff, frequencies []uint32) (first, last runeNgramOff) {
+	firstI, lastI := min2Index(frequencies)
+	// If the frequencies are equal lets maximise distance in the query
+	// string. This optimization normally triggers for long repeated trigrams
+	// in a string, eg a query like "AAAAA..."
+	if frequencies[firstI] == frequencies[lastI] {
+		for i, freq := range frequencies {
+			if freq != frequencies[firstI] {
+				continue
+			}
+			if ngramOffs[i].index < ngramOffs[firstI].index {
+				firstI = i
+			}
+			if ngramOffs[i].index > ngramOffs[lastI].index {
+				lastI = i
+			}
 		}
 	}
-	return uint32(j)
+	first = ngramOffs[firstI]
+	last = ngramOffs[lastI]
+	// Ensure first appears before last to make distance logic below clean.
+	if first.index > last.index {
+		last, first = first, last
+	}
+	return first, last
 }
 
 func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
@@ -382,6 +403,12 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 
 	// Find the 2 least common ngrams from the string.
 	ngramOffs := splitNGrams([]byte(query.Pattern))
+
+	// protect against accidental searching of empty strings
+	if len(ngramOffs) == 0 {
+		return nil, errors.New("iterateNgrams needs non empty string")
+	}
+
 	// PERF: Sort to increase the chances adjacent checks are in the same btree
 	// bucket (which can cause disk IO).
 	slices.SortFunc(ngramOffs, func(a, b runeNgramOff) bool {
@@ -415,17 +442,9 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 		frequencies = append(frequencies, freq)
 	}
 
-	var first, last runeNgramOff
-	{
-		firstI := firstMinarg(frequencies)
-		frequencies[firstI] = maxUInt32
-		lastI := lastMinarg(frequencies)
-		first = ngramOffs[firstI]
-		last = ngramOffs[lastI]
-		if first.index > last.index {
-			last, first = first, last
-		}
-	}
+	// first and last are now the smallest trigram posting lists to iterate
+	// through.
+	first, last := minFrequencyNgramOffsets(ngramOffs, frequencies)
 
 	iter := &ngramDocIterator{
 		leftPad:      first.index,
