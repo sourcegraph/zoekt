@@ -304,41 +304,20 @@ func (b btreeIndex) SizeBytes() (sz int) {
 	return
 }
 
-func (b btreeIndex) NgramIndexes(ngrams []ngram, caseSensitive bool) ([][]int, int) {
+func (b btreeIndex) NgramIndexes(ngrams []ngram) ([]int, int) {
 	lookups := 0
-	ngramIndexes := make([][]int, 0, len(ngrams))
+	ngramIndexes := make([]int, 0, len(ngrams))
 
-	if caseSensitive {
-		for _, ng := range ngrams {
-			ix := b.ngramIndex(ng)
-			lookups++
-			if ix == -1 {
-				return nil, lookups
-			}
-			ngramIndexes = append(ngramIndexes, []int{ix})
-
+	for _, ng := range ngrams {
+		ix := b.ngramIndex(ng)
+		lookups++
+		if ix == -1 {
+			return nil, len(ngramIndexes) + 1
 		}
-	} else {
-		for _, ng := range ngrams {
-			var variantIndexes []int
-			for _, variant := range generateCaseNgrams(ng) {
-				ix := b.ngramIndex(variant)
-				lookups++
-				if ix == -1 {
-					continue
-				}
-				variantIndexes = append(variantIndexes, ix)
-			}
-
-			if len(variantIndexes) == 0 {
-				return nil, lookups
-			}
-
-			ngramIndexes = append(ngramIndexes, variantIndexes)
-		}
+		ngramIndexes = append(ngramIndexes, ix)
 	}
 
-	return ngramIndexes, lookups
+	return ngramIndexes, len(ngramIndexes)
 }
 
 func (b btreeIndex) ngramIndex(ng ngram) int {
