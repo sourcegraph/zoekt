@@ -336,6 +336,36 @@ func min2Index(xs []uint32) (idx0, idx1 int) {
 	return
 }
 
+// minFrequencyNgramOffsets returns the two lowest frequency ngrams to pass to
+// the distance iterator. If they have the same frequency, we maximise the
+// distance between them. first will always have a smaller index than last.
+func minFrequencyNgramOffsets(ngramOffs []runeNgramOff, frequencies []uint32) (first, last runeNgramOff) {
+	firstI, lastI := min2Index(frequencies)
+	// If the frequencies are equal lets maximise distance in the query
+	// string. This optimization normally triggers for long repeated trigrams
+	// in a string, eg a query like "AAAAA..."
+	if frequencies[firstI] == frequencies[lastI] {
+		for i, freq := range frequencies {
+			if freq != frequencies[firstI] {
+				continue
+			}
+			if ngramOffs[i].index < ngramOffs[firstI].index {
+				firstI = i
+			}
+			if ngramOffs[i].index > ngramOffs[lastI].index {
+				lastI = i
+			}
+		}
+	}
+	first = ngramOffs[firstI]
+	last = ngramOffs[lastI]
+	// Ensure first appears before last to make distance logic below clean.
+	if first.index > last.index {
+		last, first = first, last
+	}
+	return first, last
+}
+
 func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
 	if filename {
 		return data.fileNameNgrams.Get(ng).sz
@@ -405,35 +435,9 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 		frequencies = append(frequencies, freq)
 	}
 
-	// We pick the two lowest frequency trigrams to pass to the distance
-	// iterator. If they have the same frequency, we maximise the distance
-	// between them.
-	var first, last runeNgramOff
-	{
-		firstI, lastI := min2Index(frequencies)
-		// If the frequencies are equal lets maximise distance in the query
-		// string. This optimization normally triggers for long repeated trigrams
-		// in a string, eg a query like "AAAAA..."
-		if frequencies[firstI] == frequencies[lastI] {
-			for i, freq := range frequencies {
-				if freq != frequencies[firstI] {
-					continue
-				}
-				if ngramOffs[i].index < ngramOffs[firstI].index {
-					firstI = i
-				}
-				if ngramOffs[i].index > ngramOffs[lastI].index {
-					lastI = i
-				}
-			}
-		}
-		first = ngramOffs[firstI]
-		last = ngramOffs[lastI]
-		// Ensure first appears before last to make distance logic below clean.
-		if first.index > last.index {
-			last, first = first, last
-		}
-	}
+	// first and last are now the smallest trigram posting lists to iterate
+	// through.
+	first, last := minFrequencyNgramOffsets(ngramOffs, frequencies)
 
 	iter := &ngramDocIterator{
 		leftPad:      first.index,
