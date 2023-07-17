@@ -353,6 +353,32 @@ func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
 	return data.ngrams.Get(ng).sz
 }
 
+// ngramIndexes returns the indexes of the ngrams in the index. We return a
+// slice of slices because we have to keep track of ngram variants in case of
+// case-insensitive search.
+func (data *indexData) ngramIndexes(ngrams []ngram, filename bool, caseSensitive bool) ([][]int, int) {
+	if filename {
+		return data.fileNameNgrams.NgramIndexes(ngrams, caseSensitive)
+	}
+	return data.ngrams.NgramIndexes(ngrams, caseSensitive)
+}
+
+// ngramIndexFrequency returns the sum of the frequencies of the ngrams at the
+// given indexes.
+func (data *indexData) ngramIndexFrequency(ngramIndex []int, filename bool) uint32 {
+	var freq uint32
+	if filename {
+		for _, i := range ngramIndex {
+			freq += data.fileNameNgrams.GetPostingList(i).sz
+		}
+		return freq
+	}
+	for _, i := range ngramIndex {
+		freq += data.ngrams.GetPostingList(i).sz
+	}
+	return freq
+}
+
 type ngramIterationResults struct {
 	matchIterator
 
@@ -387,32 +413,31 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 	slices.SortFunc(ngramOffs, func(a, b runeNgramOff) bool {
 		return a.ngram < b.ngram
 	})
-	frequencies := make([]uint32, 0, len(ngramOffs))
-	ngramLookups := 0
-	for _, o := range ngramOffs {
-		var freq uint32
-		if query.CaseSensitive {
-			freq = d.ngramFrequency(o.ngram, query.FileName)
-			ngramLookups++
-		} else {
-			for _, v := range generateCaseNgrams(o.ngram) {
-				freq += d.ngramFrequency(v, query.FileName)
-				ngramLookups++
-			}
-		}
 
-		if freq == 0 {
-			return &ngramIterationResults{
-				matchIterator: &noMatchTree{
-					Why: "freq=0",
-					Stats: Stats{
-						NgramLookups: ngramLookups,
-					},
+	ngrams := make([]ngram, 0, len(ngramOffs))
+	for _, ng := range ngramOffs {
+		ngrams = append(ngrams, ng.ngram)
+	}
+
+
+	// Look up ngram indexes without loading posting lists. This way we can stop
+	// early if a ngram does not exist. On the flip side we incur an additional
+	// loop.
+	ngramIndexes, ngramLookups := d.ngramIndexes(ngrams, query.FileName, query.CaseSensitive)
+	if len(ngramIndexes) == 0 {
+		return &ngramIterationResults{
+			matchIterator: &noMatchTree{
+				Why: "freq=0",
+				Stats: Stats{
+					NgramLookups: ngramLookups,
 				},
-			}, nil
-		}
+			},
+		}, nil
+	}
 
-		frequencies = append(frequencies, freq)
+	frequencies := make([]uint32, 0, len(ngramOffs))
+	for _, ngramIndex := range ngramIndexes {
+		frequencies = append(frequencies, d.ngramIndexFrequency(ngramIndex, query.FileName))
 	}
 
 	var first, last runeNgramOff
