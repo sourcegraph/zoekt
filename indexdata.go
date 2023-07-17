@@ -23,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sourcegraph/zoekt/query"
+	"golang.org/x/exp/slices"
 )
 
 // indexData holds the pattern-independent data that we have to have
@@ -381,6 +382,11 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 
 	// Find the 2 least common ngrams from the string.
 	ngramOffs := splitNGrams([]byte(query.Pattern))
+	// PERF: Sort to increase the chances adjacent checks are in the same btree
+	// bucket (which can cause disk IO).
+	slices.SortFunc(ngramOffs, func(a, b runeNgramOff) bool {
+		return a.ngram < b.ngram
+	})
 	frequencies := make([]uint32, 0, len(ngramOffs))
 	ngramLookups := 0
 	for _, o := range ngramOffs {
@@ -408,18 +414,22 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 
 		frequencies = append(frequencies, freq)
 	}
-	firstI := firstMinarg(frequencies)
-	frequencies[firstI] = maxUInt32
-	lastI := lastMinarg(frequencies)
-	if firstI > lastI {
-		lastI, firstI = firstI, lastI
+
+	var first, last runeNgramOff
+	{
+		firstI := firstMinarg(frequencies)
+		frequencies[firstI] = maxUInt32
+		lastI := lastMinarg(frequencies)
+		first = ngramOffs[firstI]
+		last = ngramOffs[lastI]
+		if first.index > last.index {
+			last, first = first, last
+		}
 	}
 
-	firstNG := ngramOffs[firstI].ngram
-	lastNG := ngramOffs[lastI].ngram
 	iter := &ngramDocIterator{
-		leftPad:      firstI,
-		rightPad:     uint32(utf8.RuneCountInString(str)) - firstI,
+		leftPad:      first.index,
+		rightPad:     uint32(utf8.RuneCountInString(str)) - first.index,
 		ngramLookups: ngramLookups,
 	}
 	if query.FileName {
@@ -428,15 +438,16 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 		iter.ends = d.fileEndRunes
 	}
 
-	if firstI != lastI {
-		i, err := d.newDistanceTrigramIter(firstNG, lastNG, lastI-firstI, query.CaseSensitive, query.FileName)
+	if first != last {
+		runeDist := last.index - first.index
+		i, err := d.newDistanceTrigramIter(first.ngram, last.ngram, runeDist, query.CaseSensitive, query.FileName)
 		if err != nil {
 			return nil, err
 		}
 
 		iter.iter = i
 	} else {
-		hitIter, err := d.trigramHitIterator(lastNG, query.CaseSensitive, query.FileName)
+		hitIter, err := d.trigramHitIterator(last.ngram, query.CaseSensitive, query.FileName)
 		if err != nil {
 			return nil, err
 		}

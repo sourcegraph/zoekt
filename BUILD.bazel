@@ -55,6 +55,7 @@ go_library(
         "@com_github_rs_xid//:xid",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_golang_x_exp//slices",
     ] + select({
         "@io_bazel_rules_go//go/platform:aix": [
             "@org_golang_x_sys//unix",
