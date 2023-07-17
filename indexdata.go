@@ -16,6 +16,7 @@ package zoekt
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc64"
 	"log"
@@ -402,6 +403,12 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 
 	// Find the 2 least common ngrams from the string.
 	ngramOffs := splitNGrams([]byte(query.Pattern))
+
+	// protect against accidental searching of empty strings
+	if len(ngramOffs) == 0 {
+		return nil, errors.New("iterateNgrams needs non empty string")
+	}
+
 	// PERF: Sort to increase the chances adjacent checks are in the same btree
 	// bucket (which can cause disk IO).
 	slices.SortFunc(ngramOffs, func(a, b runeNgramOff) bool {
