@@ -119,23 +119,23 @@ message ListRequest {
 }
 
 message ListOptions {
+  reserved 16;
+
   enum RepoListField {
+    reserved 2;
+
     REPO_LIST_FIELD_UNKNOWN_UNSPECIFIED = 0;
     REPO_LIST_FIELD_REPOS = 1;
-    REPO_LIST_FIELD_MINIMAL = 2;
     REPO_LIST_FIELD_REPOS_MAP = 3;
   }
 
   // Field decides which field to populate in RepoList response.
   RepoListField field = 1;
-
-  // Return only Minimal data per repo that Sourcegraph frontend needs.
-  //
-  // Deprecated: use Field
-  bool minimal = 16;
 }
 
 message ListResponse {
+  reserved 5;
+
   // Returned when ListOptions.Field is RepoListFieldRepos.
   repeated RepoListEntry repos = 1;
 
@@ -147,11 +147,6 @@ message ListResponse {
   // Stats response to a List request.
   // This is the aggregate RepoStats of all repos matching the input query.
   RepoStats stats = 4;
-
-  // Returned when ListOptions.Field is RepoListFieldMinimal.
-  //
-  // Deprecated: use ReposMap.
-  map<uint32, MinimalRepoListEntry> minimal = 5;
 }
 
 message RepoListEntry {

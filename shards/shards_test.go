@@ -497,8 +497,8 @@ func TestShardedSearcher_List(t *testing.T) {
 			},
 		},
 		{
-			name: "minimal=false",
-			opts: &zoekt.ListOptions{Minimal: false},
+			name: "default",
+			opts: &zoekt.ListOptions{},
 			want: &zoekt.RepoList{
 				Repos: []*zoekt.RepoListEntry{
 					{
@@ -508,25 +508,6 @@ func TestShardedSearcher_List(t *testing.T) {
 					{
 						Repository: *repos[1],
 						Stats:      stats,
-					},
-				},
-				Stats: aggStats,
-			},
-		},
-		{
-			name: "minimal=true",
-			opts: &zoekt.ListOptions{Minimal: true},
-			want: &zoekt.RepoList{
-				Repos: []*zoekt.RepoListEntry{
-					{
-						Repository: *repos[1],
-						Stats:      stats,
-					},
-				},
-				Minimal: map[uint32]*zoekt.MinimalRepoListEntry{
-					repos[0].ID: {
-						HasSymbols: repos[0].HasSymbols,
-						Branches:   repos[0].Branches,
 					},
 				},
 				Stats: aggStats,
@@ -544,25 +525,6 @@ func TestShardedSearcher_List(t *testing.T) {
 					{
 						Repository: *repos[1],
 						Stats:      stats,
-					},
-				},
-				Stats: aggStats,
-			},
-		},
-		{
-			name: "field=minimal",
-			opts: &zoekt.ListOptions{Field: zoekt.RepoListFieldMinimal},
-			want: &zoekt.RepoList{
-				Repos: []*zoekt.RepoListEntry{
-					{
-						Repository: *repos[1],
-						Stats:      stats,
-					},
-				},
-				Minimal: map[uint32]*zoekt.MinimalRepoListEntry{
-					repos[0].ID: {
-						HasSymbols: repos[0].HasSymbols,
-						Branches:   repos[0].Branches,
 					},
 				},
 				Stats: aggStats,
