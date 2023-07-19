@@ -35,7 +35,7 @@ type indexData struct {
 
 	file IndexFile
 
-	ngrams btreeIndex
+	contentNgrams btreeIndex
 
 	newlinesStart uint32
 	newlinesIndex []uint32
@@ -315,7 +315,7 @@ func (d *indexData) memoryUse() int {
 	}
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
-	sz += d.ngrams.SizeBytes()
+	sz += d.contentNgrams.SizeBytes()
 	sz += d.fileNameNgrams.SizeBytes()
 	return sz
 }
@@ -366,11 +366,11 @@ func minFrequencyNgramOffsets(ngramOffs []runeNgramOff, frequencies []uint32) (f
 	return first, last
 }
 
-func (data *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
+func (data *indexData) ngrams(filename bool) btreeIndex {
 	if filename {
-		return data.fileNameNgrams.Get(ng).sz
+		return data.fileNameNgrams
 	}
-	return data.ngrams.Get(ng).sz
+	return data.contentNgrams
 }
 
 type ngramIterationResults struct {
@@ -415,14 +415,15 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 	})
 	frequencies := make([]uint32, 0, len(ngramOffs))
 	ngramLookups := 0
+	ngrams := d.ngrams(query.FileName)
 	for _, o := range ngramOffs {
 		var freq uint32
 		if query.CaseSensitive {
-			freq = d.ngramFrequency(o.ngram, query.FileName)
+			freq = ngrams.Get(o.ngram).sz
 			ngramLookups++
 		} else {
 			for _, v := range generateCaseNgrams(o.ngram) {
-				freq += d.ngramFrequency(v, query.FileName)
+				freq += ngrams.Get(v).sz
 				ngramLookups++
 			}
 		}

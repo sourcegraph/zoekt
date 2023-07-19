@@ -431,11 +431,3 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 
 	return m
 }
-
-// GetBlob returns the raw encoded offset list for ng.
-//
-// Note: the returned byte slice is mmap backed normally.
-func (b btreeIndex) GetBlob(ng ngram) ([]byte, error) {
-	sec := b.Get(ng)
-	return b.file.Read(sec.off, sec.sz)
-}
