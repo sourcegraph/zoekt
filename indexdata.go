@@ -23,8 +23,9 @@ import (
 	"math/bits"
 	"unicode/utf8"
 
-	"github.com/sourcegraph/zoekt/query"
 	"golang.org/x/exp/slices"
+
+	"github.com/sourcegraph/zoekt/query"
 )
 
 // indexData holds the pattern-independent data that we have to have
@@ -413,22 +414,23 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 	slices.SortFunc(ngramOffs, func(a, b runeNgramOff) bool {
 		return a.ngram < b.ngram
 	})
+
+	index := d.ngrams(query.FileName)
 	frequencies := make([]uint32, 0, len(ngramOffs))
 	ngramLookups := 0
-	ngrams := d.ngrams(query.FileName)
-	for _, o := range ngramOffs {
-		var freq uint32
-		if query.CaseSensitive {
-			freq = ngrams.Get(o.ngram).sz
-			ngramLookups++
-		} else {
-			for _, v := range generateCaseNgrams(o.ngram) {
-				freq += ngrams.Get(v).sz
-				ngramLookups++
-			}
+	if query.CaseSensitive {
+		// Perf: Look up ngram indexes without loading posting lists. This way we can
+		// stop early if a ngram does not exist. On the flip side we incur an additional
+		// loop and more memory allocations.
+
+		ngrams := make([]ngram, 0, len(ngramOffs))
+		for _, ng := range ngramOffs {
+			ngrams = append(ngrams, ng.ngram)
 		}
 
-		if freq == 0 {
+		var ngramIndexes []int
+		ngramIndexes, ngramLookups = index.NgramIndexes(ngrams)
+		if len(ngramIndexes) == 0 {
 			return &ngramIterationResults{
 				matchIterator: &noMatchTree{
 					Why: "freq=0",
@@ -439,7 +441,35 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 			}, nil
 		}
 
-		frequencies = append(frequencies, freq)
+		for _, ngramIndex := range ngramIndexes {
+			frequencies = append(frequencies, index.GetPostingList(ngramIndex).sz)
+		}
+	} else {
+		for _, o := range ngramOffs {
+			var freq uint32
+			if query.CaseSensitive {
+				freq = index.Get(o.ngram).sz
+				ngramLookups++
+			} else {
+				for _, v := range generateCaseNgrams(o.ngram) {
+					freq += index.Get(v).sz
+					ngramLookups++
+				}
+			}
+
+			if freq == 0 {
+				return &ngramIterationResults{
+					matchIterator: &noMatchTree{
+						Why: "freq=0",
+						Stats: Stats{
+							NgramLookups: ngramLookups,
+						},
+					},
+				}, nil
+			}
+
+			frequencies = append(frequencies, freq)
+		}
 	}
 
 	// first and last are now the smallest trigram posting lists to iterate

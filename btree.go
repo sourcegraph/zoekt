@@ -304,6 +304,59 @@ func (b btreeIndex) SizeBytes() (sz int) {
 	return
 }
 
+// NgramIndexes returns the indexes of the ngrams in the index. We return a
+// slice of slices because we have to keep track of ngram variants in case of
+// case-insensitive search.
+func (b btreeIndex) NgramIndexes(ngrams []ngram) ([]int, int) {
+	lookups := 0
+	ngramIndexes := make([]int, 0, len(ngrams))
+
+	for _, ng := range ngrams {
+		ix := b.ngramIndex(ng)
+		lookups++
+		if ix == -1 {
+			return nil, len(ngramIndexes) + 1
+		}
+		ngramIndexes = append(ngramIndexes, ix)
+	}
+
+	return ngramIndexes, len(ngramIndexes)
+}
+
+func (b btreeIndex) ngramIndex(ng ngram) int {
+	if b.bt == nil {
+		return -1
+	}
+
+	// find bucket
+	bucketIndex, postingIndexOffset := b.bt.find(ng)
+
+	// read bucket into memory
+	off, sz := b.getBucket(bucketIndex)
+	bucket, err := b.file.Read(off, sz)
+	if err != nil {
+		return -1
+	}
+
+	// find ngram in bucket
+	getNGram := func(i int) ngram {
+		i *= ngramEncoding
+		return ngram(binary.BigEndian.Uint64(bucket[i : i+ngramEncoding]))
+	}
+
+	bucketSize := len(bucket) / ngramEncoding
+	x := sort.Search(bucketSize, func(i int) bool {
+		return ng <= getNGram(i)
+	})
+
+	// return index of associated posting list
+	if x >= bucketSize || getNGram(x) != ng {
+		return -1
+	}
+
+	return postingIndexOffset + x
+}
+
 // Get returns the simple section of the posting list associated with the
 // ngram. The logic is as follows:
 // 1. Search the inner nodes to find the bucket that may contain ng (in MEM)
@@ -341,15 +394,15 @@ func (b btreeIndex) Get(ng ngram) (ss simpleSection) {
 		return simpleSection{}
 	}
 
-	return b.getPostingList(postingIndexOffset + x)
+	return b.GetPostingList(postingIndexOffset + x)
 }
 
-// getPostingList returns the simple section pointing to the posting list of
+// GetPostingList returns the simple section pointing to the posting list of
 // the ngram at ngramIndex.
 //
 // Assumming we don't hit a page boundary, which should be rare given that we
 // only read 8 bytes, we need 1 disk access to read the posting offset.
-func (b btreeIndex) getPostingList(ngramIndex int) simpleSection {
+func (b btreeIndex) GetPostingList(ngramIndex int) simpleSection {
 	relativeOffsetBytes := uint32(ngramIndex) * 4
 
 	if relativeOffsetBytes+8 <= b.postingIndex.sz {
@@ -422,7 +475,7 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 			// decode all ngrams in the bucket and fill map
 			for i := 0; i < len(bucket)/ngramEncoding; i++ {
 				gram := ngram(binary.BigEndian.Uint64(bucket[i*8:]))
-				m[gram] = b.getPostingList(int(n.postingIndexOffset) + i)
+				m[gram] = b.GetPostingList(int(n.postingIndexOffset) + i)
 			}
 		case *innerNode:
 			return
