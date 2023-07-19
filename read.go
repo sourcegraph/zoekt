@@ -328,11 +328,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	if os.Getenv("ZOEKT_ENABLE_LAZY_DOC_SECTIONS") != "" {
-		d.runeDocSectionsRaw = blob
-	} else {
-		d.runeDocSections = unmarshalDocSections(blob, nil)
-	}
+	d.runeDocSections = unmarshalDocSections(blob, nil)
 
 	var runeOffsets, fileNameRuneOffsets []uint32
 
