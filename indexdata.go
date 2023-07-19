@@ -16,6 +16,7 @@ package zoekt
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc64"
 	"log"
@@ -35,7 +36,7 @@ type indexData struct {
 
 	file IndexFile
 
-	ngrams btreeIndex
+	contentNgrams btreeIndex
 
 	newlinesStart uint32
 	newlinesIndex []uint32
@@ -43,8 +44,7 @@ type indexData struct {
 	docSectionsStart uint32
 	docSectionsIndex []uint32
 
-	runeDocSections    []DocumentSection
-	runeDocSectionsRaw []byte
+	runeDocSections []DocumentSection
 
 	// rune offset=>byte offset mapping, relative to the start of the content corpus
 	runeOffsets runeOffsetMap
@@ -316,59 +316,62 @@ func (d *indexData) memoryUse() int {
 	}
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
-	sz += d.ngrams.SizeBytes()
+	sz += d.contentNgrams.SizeBytes()
 	sz += d.fileNameNgrams.SizeBytes()
 	return sz
 }
 
 const maxUInt32 = 0xffffffff
 
-func firstMinarg(xs []uint32) uint32 {
-	m := uint32(maxUInt32)
-	j := len(xs)
+func min2Index(xs []uint32) (idx0, idx1 int) {
+	min0, min1 := uint32(maxUInt32), uint32(maxUInt32)
 	for i, x := range xs {
-		if x < m {
-			m = x
-			j = i
+		if x <= min0 {
+			idx0, idx1 = i, idx0
+			min0, min1 = x, min0
+		} else if x <= min1 {
+			idx1 = i
+			min1 = x
 		}
 	}
-	return uint32(j)
+	return
 }
 
-func lastMinarg(xs []uint32) uint32 {
-	m := uint32(maxUInt32)
-	j := len(xs)
-	for i, x := range xs {
-		if x <= m {
-			m = x
-			j = i
+// minFrequencyNgramOffsets returns the two lowest frequency ngrams to pass to
+// the distance iterator. If they have the same frequency, we maximise the
+// distance between them. first will always have a smaller index than last.
+func minFrequencyNgramOffsets(ngramOffs []runeNgramOff, frequencies []uint32) (first, last runeNgramOff) {
+	firstI, lastI := min2Index(frequencies)
+	// If the frequencies are equal lets maximise distance in the query
+	// string. This optimization normally triggers for long repeated trigrams
+	// in a string, eg a query like "AAAAA..."
+	if frequencies[firstI] == frequencies[lastI] {
+		for i, freq := range frequencies {
+			if freq != frequencies[firstI] {
+				continue
+			}
+			if ngramOffs[i].index < ngramOffs[firstI].index {
+				firstI = i
+			}
+			if ngramOffs[i].index > ngramOffs[lastI].index {
+				lastI = i
+			}
 		}
 	}
-	return uint32(j)
+	first = ngramOffs[firstI]
+	last = ngramOffs[lastI]
+	// Ensure first appears before last to make distance logic below clean.
+	if first.index > last.index {
+		last, first = first, last
+	}
+	return first, last
 }
 
-func (d *indexData) ngramFrequency(ng ngram, filename bool) uint32 {
+func (data *indexData) ngrams(filename bool) btreeIndex {
 	if filename {
-		return d.fileNameNgrams.Get(ng).sz
+		return data.fileNameNgrams
 	}
-	return d.ngrams.Get(ng).sz
-}
-
-// ngramIndexes returns the indexes of the ngrams in the index. We return a
-// slice of slices because we have to keep track of ngram variants in case of
-// case-insensitive search.
-func (d *indexData) ngramIndexes(ngrams []ngram, filename bool) ([]int, int) {
-	if filename {
-		return d.fileNameNgrams.NgramIndexes(ngrams)
-	}
-	return d.ngrams.NgramIndexes(ngrams)
-}
-
-func (d *indexData) ngramIndexFrequency(ngramIndex int, filename bool) uint32 {
-	if filename {
-		return d.fileNameNgrams.GetPostingList(ngramIndex).sz
-	}
-	return d.ngrams.GetPostingList(ngramIndex).sz
+	return data.contentNgrams
 }
 
 type ngramIterationResults struct {
@@ -400,12 +403,19 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 
 	// Find the 2 least common ngrams from the string.
 	ngramOffs := splitNGrams([]byte(query.Pattern))
+
+	// protect against accidental searching of empty strings
+	if len(ngramOffs) == 0 {
+		return nil, errors.New("iterateNgrams needs non empty string")
+	}
+
 	// PERF: Sort to increase the chances adjacent checks are in the same btree
 	// bucket (which can cause disk IO).
 	slices.SortFunc(ngramOffs, func(a, b runeNgramOff) bool {
 		return a.ngram < b.ngram
 	})
 
+	index := d.ngrams(query.FileName)
 	frequencies := make([]uint32, 0, len(ngramOffs))
 	ngramLookups := 0
 	if query.CaseSensitive {
@@ -419,7 +429,7 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 		}
 
 		var ngramIndexes []int
-		ngramIndexes, ngramLookups = d.ngramIndexes(ngrams, query.FileName)
+		ngramIndexes, ngramLookups = index.NgramIndexes(ngrams)
 		if len(ngramIndexes) == 0 {
 			return &ngramIterationResults{
 				matchIterator: &noMatchTree{
@@ -432,17 +442,17 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 		}
 
 		for _, ngramIndex := range ngramIndexes {
-			frequencies = append(frequencies, d.ngramIndexFrequency(ngramIndex, query.FileName))
+			frequencies = append(frequencies, index.GetPostingList(ngramIndex).sz)
 		}
 	} else {
 		for _, o := range ngramOffs {
 			var freq uint32
 			if query.CaseSensitive {
-				freq = d.ngramFrequency(o.ngram, query.FileName)
+				freq = index.Get(o.ngram).sz
 				ngramLookups++
 			} else {
 				for _, v := range generateCaseNgrams(o.ngram) {
-					freq += d.ngramFrequency(v, query.FileName)
+					freq += index.Get(v).sz
 					ngramLookups++
 				}
 			}
@@ -462,17 +472,9 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 		}
 	}
 
-	var first, last runeNgramOff
-	{
-		firstI := firstMinarg(frequencies)
-		frequencies[firstI] = maxUInt32
-		lastI := lastMinarg(frequencies)
-		first = ngramOffs[firstI]
-		last = ngramOffs[lastI]
-		if first.index > last.index {
-			last, first = first, last
-		}
-	}
+	// first and last are now the smallest trigram posting lists to iterate
+	// through.
+	first, last := minFrequencyNgramOffsets(ngramOffs, frequencies)
 
 	iter := &ngramDocIterator{
 		leftPad:      first.index,

@@ -304,6 +304,9 @@ func (b btreeIndex) SizeBytes() (sz int) {
 	return
 }
 
+// NgramIndexes returns the indexes of the ngrams in the index. We return a
+// slice of slices because we have to keep track of ngram variants in case of
+// case-insensitive search.
 func (b btreeIndex) NgramIndexes(ngrams []ngram) ([]int, int) {
 	lookups := 0
 	ngramIndexes := make([]int, 0, len(ngrams))
@@ -480,12 +483,4 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 	})
 
 	return m
-}
-
-// GetBlob returns the raw encoded offset list for ng.
-//
-// Note: the returned byte slice is mmap backed normally.
-func (b btreeIndex) GetBlob(ng ngram) ([]byte, error) {
-	sec := b.Get(ng)
-	return b.file.Read(sec.off, sec.sz)
 }

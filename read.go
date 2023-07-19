@@ -288,7 +288,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	d.ngrams, err = d.newBtreeIndex(toc.ngramText, toc.postings)
+	d.contentNgrams, err = d.newBtreeIndex(toc.ngramText, toc.postings)
 	if err != nil {
 		return nil, err
 	}
@@ -328,11 +328,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	if os.Getenv("ZOEKT_ENABLE_LAZY_DOC_SECTIONS") != "" {
-		d.runeDocSectionsRaw = blob
-	} else {
-		d.runeDocSections = unmarshalDocSections(blob, nil)
-	}
+	d.runeDocSections = unmarshalDocSections(blob, nil)
 
 	var runeOffsets, fileNameRuneOffsets []uint32
 
@@ -656,7 +652,7 @@ func PrintNgramStats(r IndexFile) error {
 	}
 
 	var rNgram [3]rune
-	for ngram, ss := range id.ngrams.DumpMap() {
+	for ngram, ss := range id.contentNgrams.DumpMap() {
 		rNgram = ngramToRunes(ngram)
 		fmt.Printf("%d\t%q\n", ss.sz, string(rNgram[:]))
 	}
