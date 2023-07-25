@@ -4,6 +4,7 @@ on:
       - opened
     paths:
       - '*.proto'
+  workflow_dispatch: {}
 jobs:
   validate-protos:
     runs-on: ubuntu-latest
