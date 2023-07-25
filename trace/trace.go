@@ -31,30 +31,18 @@ func New(ctx context.Context, family, title string) (*Trace, context.Context) {
 
 // New returns a new Trace with the specified family and title.
 func (t Tracer) New(ctx context.Context, family, title string) (*Trace, context.Context) {
-	// In Zoekt child OpenTracing Spans don't really make much sense since all
-	// our spans are either middleware which just wrap an actual search, or the
-	// actual search. So we only create a new span if there is no parent.
-	parent := TraceFromContext(ctx)
-	var span opentracing.Span
-	if parent != nil {
-		span = parent.span
-		span.LogFields(log.String("child.family", family), log.String("child.title", title))
-	} else {
-		span, ctx = StartSpanFromContextWithTracer(
-			ctx,
-			t.Tracer,
-			family,
-			opentracing.Tag{Key: "title", Value: title},
-		)
-	}
-
+	span, ctx := StartSpanFromContextWithTracer(
+		ctx,
+		t.Tracer,
+		family,
+		opentracing.Tag{Key: "title", Value: title},
+	)
 	tr := nettrace.New(family, title)
 	trace := &Trace{span: span, trace: tr, family: family}
-	if parent != nil {
+	if parent := TraceFromContext(ctx); parent != nil {
 		tr.LazyPrintf("parent: %s", parent.family)
 		trace.family = parent.family + " > " + family
 	}
-
 	return trace, ContextWithTrace(ctx, trace)
 }
 
