@@ -33,7 +33,7 @@ import (
 //
 // This setup is based on the one done in sourcegraph/sourcegraph - when making changes,
 // be wary of divergences from the source: https://github.com/sourcegraph/sourcegraph/blob/main/internal/tracer/otel.go
-func configureOpenTelemetry(svcName string, version string) (opentracing.Tracer, error) {
+func configureOpenTelemetry(svcName string, version string, instanceID string) (opentracing.Tracer, error) {
 	// Ensure propagation between services continues to work. This is also done by another
 	// project that uses the OpenTracing bridge:
 	// https://sourcegraph.com/github.com/thanos-io/thanos/-/blob/pkg/tracing/migration/bridge.go?L62
@@ -54,6 +54,7 @@ func configureOpenTelemetry(svcName string, version string) (opentracing.Tracer,
 		oteltracesdk.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String(svcName),
+			semconv.ServiceInstanceIDKey.String(instanceID),
 			semconv.ServiceVersionKey.String(version))),
 		oteltracesdk.WithSampler(oteltracesdk.AlwaysSample()),
 		oteltracesdk.WithSpanProcessor(processor),

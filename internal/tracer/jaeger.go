@@ -10,13 +10,17 @@ import (
 	jaegermetrics "github.com/uber/jaeger-lib/metrics"
 )
 
-func configureJaeger(svcName string, version string) (opentracing.Tracer, error) {
+func configureJaeger(svcName string, version string, instanceID string) (opentracing.Tracer, error) {
 	cfg, err := jaegercfg.FromEnv()
 	cfg.ServiceName = svcName
 	if err != nil {
 		return nil, err
 	}
-	cfg.Tags = append(cfg.Tags, opentracing.Tag{Key: "service.version", Value: version})
+	cfg.Tags = append(
+		cfg.Tags,
+		opentracing.Tag{Key: "service.version", Value: version},
+		opentracing.Tag{Key: "service.instance.id", Value: instanceID},
+	)
 	if reflect.DeepEqual(cfg.Sampler, &jaegercfg.SamplerConfig{}) {
 		// Default sampler configuration for when it is not specified via
 		// JAEGER_SAMPLER_* env vars. In most cases, this is sufficient

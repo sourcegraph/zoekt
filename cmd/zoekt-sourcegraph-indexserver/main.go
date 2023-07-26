@@ -970,17 +970,6 @@ func listIndexed(indexDir string) []uint32 {
 	return repoIDs
 }
 
-func hostnameBestEffort() string {
-	if h := os.Getenv("NODE_NAME"); h != "" {
-		return h
-	}
-	if h := os.Getenv("HOSTNAME"); h != "" {
-		return h
-	}
-	hostname, _ := os.Hostname()
-	return hostname
-}
-
 // setupTmpDir sets up a temporary directory on the same volume as the
 // indexes.
 //
@@ -1207,7 +1196,7 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.Int64Var(&rc.indexConcurrency, "index_concurrency", getEnvWithDefaultInt64("SRC_INDEX_CONCURRENCY", 1), "the number of concurrent index jobs to run.")
 	fs.StringVar(&rc.index, "index", getEnvWithDefaultString("DATA_DIR", build.DefaultDir), "set index directory to use")
 	fs.StringVar(&rc.listen, "listen", ":6072", "listen on this address.")
-	fs.StringVar(&rc.hostname, "hostname", hostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
+	fs.StringVar(&rc.hostname, "hostname", zoekt.HostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	fs.Float64Var(&rc.cpuFraction, "cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
 	fs.IntVar(&rc.blockProfileRate, "block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler Var(default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
 	fs.DurationVar(&rc.backoffDuration, "backoff_duration", getEnvWithDefaultDuration("BACKOFF_DURATION", 10*time.Minute), "for the given duration we backoff from enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase the duration of the delay linearly up to the maxBackoffDuration. A negative value disables indexing backoff.")
@@ -1521,7 +1510,7 @@ func main() {
 	liblog := sglog.Init(sglog.Resource{
 		Name:       "zoekt-indexserver",
 		Version:    zoekt.Version,
-		InstanceID: hostnameBestEffort(),
+		InstanceID: zoekt.HostnameBestEffort(),
 	})
 	defer liblog.Sync()
 

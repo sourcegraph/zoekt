@@ -35,7 +35,7 @@ func inferTracerType() tracerType {
 // Init should only be called from main and only once
 // It will initialize the configured tracer, and register it as the global tracer
 // This MUST be the same tracer as the one used by Sourcegraph
-func Init(svcName, version string) {
+func Init(svcName, version, instanceID string) {
 	var (
 		tt     = inferTracerType()
 		tracer opentracing.Tracer
@@ -43,7 +43,7 @@ func Init(svcName, version string) {
 	)
 	switch tt {
 	case tracerTypeJaeger:
-		tracer, err = configureJaeger(svcName, version)
+		tracer, err = configureJaeger(svcName, version, instanceID)
 		if err != nil {
 			log.Printf("failed to configure Jaeger tracer: %v", err)
 			return
@@ -51,7 +51,7 @@ func Init(svcName, version string) {
 		log.Printf("INFO: using Jaeger tracer")
 
 	case tracerTypeOpenTelemetry:
-		tracer, err = configureOpenTelemetry(svcName, version)
+		tracer, err = configureOpenTelemetry(svcName, version, instanceID)
 		if err != nil {
 			log.Printf("failed to configure OpenTelemetry tracer: %v", err)
 			return
