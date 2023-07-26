@@ -5,6 +5,7 @@ on:
     paths:
       - '*.proto'
   workflow_dispatch: {}
+name: "buf breaking check"
 jobs:
   validate-protos:
     runs-on: ubuntu-latest
@@ -14,6 +15,7 @@ jobs:
       # Install the `buf` CLI
       - uses: bufbuild/buf-setup-action@v1
       # Run breaking change detection against the `main` branch
-      - uses: bufbuild/buf-breaking-action@v1
+      - name: "do bufbuild/buf-breaking-action"
+        uses: bufbuild/buf-breaking-action@v1
         with:
           against: 'https://github.com/sourcegraph/zoekt.git#branch=main'
