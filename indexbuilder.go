@@ -21,6 +21,7 @@ import (
 	"hash/crc64"
 	"html/template"
 	"log"
+	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -39,6 +40,17 @@ type searchableString struct {
 
 // Filled by the linker
 var Version string
+
+func HostnameBestEffort() string {
+	if h := os.Getenv("NODE_NAME"); h != "" {
+		return h
+	}
+	if h := os.Getenv("HOSTNAME"); h != "" {
+		return h
+	}
+	hostname, _ := os.Hostname()
+	return hostname
+}
 
 // Store character (unicode codepoint) offset (in bytes) this often.
 const runeOffsetFrequency = 100

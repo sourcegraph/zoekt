@@ -164,13 +164,15 @@ func main() {
 		os.Exit(0)
 	}
 
-	liblog := sglog.Init(sglog.Resource{
+	resource := sglog.Resource{
 		Name:       "zoekt-webserver",
 		Version:    zoekt.Version,
-		InstanceID: os.Getenv("HOSTNAME"),
-	})
+		InstanceID: zoekt.HostnameBestEffort(),
+	}
+
+	liblog := sglog.Init(resource)
 	defer liblog.Sync()
-	tracer.Init("zoekt-webserver", zoekt.Version)
+	tracer.Init(resource)
 	profiler.Init("zoekt-webserver", zoekt.Version, -1)
 
 	if *logDir != "" {

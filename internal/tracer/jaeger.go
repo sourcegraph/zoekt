@@ -5,18 +5,23 @@ import (
 	"reflect"
 
 	"github.com/opentracing/opentracing-go"
+	sglog "github.com/sourcegraph/log"
 	"github.com/uber/jaeger-client-go"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 	jaegermetrics "github.com/uber/jaeger-lib/metrics"
 )
 
-func configureJaeger(svcName string, version string) (opentracing.Tracer, error) {
+func configureJaeger(resource sglog.Resource) (opentracing.Tracer, error) {
 	cfg, err := jaegercfg.FromEnv()
-	cfg.ServiceName = svcName
+	cfg.ServiceName = resource.Name
 	if err != nil {
 		return nil, err
 	}
-	cfg.Tags = append(cfg.Tags, opentracing.Tag{Key: "service.version", Value: version})
+	cfg.Tags = append(
+		cfg.Tags,
+		opentracing.Tag{Key: "service.version", Value: resource.Version},
+		opentracing.Tag{Key: "service.instance.id", Value: resource.InstanceID},
+	)
 	if reflect.DeepEqual(cfg.Sampler, &jaegercfg.SamplerConfig{}) {
 		// Default sampler configuration for when it is not specified via
 		// JAEGER_SAMPLER_* env vars. In most cases, this is sufficient

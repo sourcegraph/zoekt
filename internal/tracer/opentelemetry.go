@@ -8,6 +8,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
+	sglog "github.com/sourcegraph/log"
 	jaegerpropagator "go.opentelemetry.io/contrib/propagators/jaeger"
 	otpropagator "go.opentelemetry.io/contrib/propagators/ot"
 	"go.opentelemetry.io/otel"
@@ -16,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	w3cpropagator "go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
+	otelresource "go.opentelemetry.io/otel/sdk/resource"
 	oteltracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 
@@ -33,7 +34,7 @@ import (
 //
 // This setup is based on the one done in sourcegraph/sourcegraph - when making changes,
 // be wary of divergences from the source: https://github.com/sourcegraph/sourcegraph/blob/main/internal/tracer/otel.go
-func configureOpenTelemetry(svcName string, version string) (opentracing.Tracer, error) {
+func configureOpenTelemetry(resource sglog.Resource) (opentracing.Tracer, error) {
 	// Ensure propagation between services continues to work. This is also done by another
 	// project that uses the OpenTracing bridge:
 	// https://sourcegraph.com/github.com/thanos-io/thanos/-/blob/pkg/tracing/migration/bridge.go?L62
@@ -51,10 +52,11 @@ func configureOpenTelemetry(svcName string, version string) (opentracing.Tracer,
 		return nil, fmt.Errorf("new exporter: %w", err)
 	}
 	provider := oteltracesdk.NewTracerProvider(
-		oteltracesdk.WithResource(resource.NewWithAttributes(
+		oteltracesdk.WithResource(otelresource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(svcName),
-			semconv.ServiceVersionKey.String(version))),
+			semconv.ServiceNameKey.String(resource.Name),
+			semconv.ServiceInstanceIDKey.String(resource.InstanceID),
+			semconv.ServiceVersionKey.String(resource.Version))),
 		oteltracesdk.WithSampler(oteltracesdk.AlwaysSample()),
 		oteltracesdk.WithSpanProcessor(processor),
 	)
