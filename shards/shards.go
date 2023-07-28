@@ -487,10 +487,6 @@ func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
 func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.Search", "")
 	defer func() {
-		if sr != nil {
-			tr.LazyPrintf("num files: %d", len(sr.Files))
-			tr.LazyPrintf("stats: %+v", sr.Stats)
-		}
 		tr.Finish()
 	}()
 	ctx, cancel := context.WithCancel(ctx)
@@ -618,8 +614,6 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 // SearchResults it returns/streams out before calling done.
 func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, shards []*rankedShard, sender zoekt.Sender) (done func(), err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
-	tr.LazyLog(q, true)
-	tr.LazyPrintf("opts: %+v", opts)
 	overallStart := time.Now()
 	metricSearchRunning.Inc()
 	defer func() {
@@ -897,8 +891,6 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.
 
 func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.List", "")
-	tr.LazyLog(r, true)
-	tr.LazyPrintf("opts: %s", opts)
 	metricListRunning.Inc()
 	defer func() {
 		metricListRunning.Dec()
