@@ -585,11 +585,11 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	// For streaming, the wrapping has to happen in the inverted order.
 	sender = copyFileSender(sender)
 
-	if opts.MaxDocDisplayCount > 0 || opts.MaxMatchDisplayCount > 0 {
+	if truncator, hasLimits := zoekt.NewDisplayTruncator(opts); hasLimits {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithCancel(ctx)
 		defer cancel()
-		sender = limitSender(cancel, sender, opts.MaxDocDisplayCount, opts.MaxMatchDisplayCount, opts.ChunkMatches)
+		sender = limitSender(cancel, sender, truncator)
 	}
 
 	sender, flush := newFlushCollectSender(opts, sender)

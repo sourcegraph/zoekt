@@ -103,7 +103,10 @@ func TestLimitMatches(t *testing.T) {
 				res.Files = append(res.Files, fm)
 			}
 
-			res.LimitMatches(tc.limit, true)
+			res.Files = SortAndTruncateFiles(res.Files, &SearchOptions{
+				MaxMatchDisplayCount: tc.limit,
+				ChunkMatches:         true,
+			})
 
 			var got [][]int
 			for _, fm := range res.Files {
@@ -139,7 +142,10 @@ func TestLimitMatches(t *testing.T) {
 				res.Files = append(res.Files, fm)
 			}
 
-			res.LimitMatches(tc.limit, false)
+			res.Files = SortAndTruncateFiles(res.Files, &SearchOptions{
+				MaxMatchDisplayCount: tc.limit,
+				ChunkMatches:         false,
+			})
 
 			var got [][]int
 			for _, fm := range res.Files {

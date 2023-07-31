@@ -388,17 +388,7 @@ nextFileMatch:
 
 	// If document ranking is enabled, then we can rank and truncate the files to save memory.
 	if opts.UseDocumentRanks {
-		truncateDocs := opts.MaxDocDisplayCount > 0 && opts.MaxDocDisplayCount < len(res.Files)
-		truncateMatches := opts.MaxMatchDisplayCount > 0
-		if truncateDocs || truncateMatches {
-			SortFiles(res.Files)
-		}
-		if truncateDocs {
-			res.Files = res.Files[:opts.MaxDocDisplayCount]
-		}
-		if truncateMatches {
-			res.LimitMatches(opts.MaxMatchDisplayCount, opts.ChunkMatches)
-		}
+		res.Files = SortAndTruncateFiles(res.Files, opts)
 	}
 
 	return &res, nil
