@@ -13,6 +13,7 @@ go_library(
         "//internal/otlpenv",
         "@com_github_opentracing_opentracing_go//:opentracing-go",
         "@com_github_pkg_errors//:errors",
+        "@com_github_sourcegraph_log//:log",
         "@com_github_uber_jaeger_client_go//:jaeger-client-go",
         "@com_github_uber_jaeger_client_go//config",
         "@com_github_uber_jaeger_lib//metrics",

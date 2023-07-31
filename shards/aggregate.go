@@ -49,13 +49,7 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 	if len(r.Files) > 0 {
 		c.aggregate.Files = append(c.aggregate.Files, r.Files...)
 
-		zoekt.SortFiles(c.aggregate.Files)
-		if max := c.opts.MaxDocDisplayCount; max > 0 && max < len(c.aggregate.Files) {
-			c.aggregate.Files = c.aggregate.Files[:max]
-		}
-		if max := c.opts.MaxMatchDisplayCount; max > 0 {
-			c.aggregate.LimitMatches(max, c.opts.ChunkMatches)
-		}
+		c.aggregate.Files = zoekt.SortAndTruncateFiles(c.aggregate.Files, c.opts)
 
 		for k, v := range r.RepoURLs {
 			c.aggregate.RepoURLs[k] = v
@@ -157,30 +151,15 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 	}), finalFlush
 }
 
-// limitSender wraps a sender and calls cancel once it has seen either of
-// `docLimit` files or `matchLimit` matches.
-func limitSender(cancel context.CancelFunc, sender zoekt.Sender, docLimit, matchLimit int, chunkMatches bool) zoekt.Sender {
-	docLimited := docLimit > 0
-	matchLimited := matchLimit > 0
+// limitSender wraps a sender and calls cancel once the truncator has finished
+// truncating.
+func limitSender(cancel context.CancelFunc, sender zoekt.Sender, truncator zoekt.DisplayTruncator) zoekt.Sender {
 	return stream.SenderFunc(func(result *zoekt.SearchResult) {
-		// We cancel when we hit either of the two limits. It is assumed that,
-		// after canceling, we are not called again.
-
-		if docLimited {
-			if len(result.Files) >= docLimit {
-				result.Files = result.Files[:docLimit]
-				cancel()
-			}
-			docLimit -= len(result.Files)
+		var hasMore bool
+		result.Files, hasMore = truncator(result.Files)
+		if !hasMore {
+			cancel()
 		}
-
-		if matchLimited {
-			matchLimit = result.LimitMatches(matchLimit, chunkMatches)
-			if matchLimit == 0 {
-				cancel()
-			}
-		}
-
 		sender.Send(result)
 	})
 }

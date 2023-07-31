@@ -30,6 +30,7 @@ go_library(
         "indexbuilder.go",
         "indexdata.go",
         "indexfile.go",
+        "limit.go",
         "marshal.go",
         "matchiter.go",
         "matchtree.go",
@@ -110,6 +111,8 @@ go_test(
         "eval_test.go",
         "hititer_test.go",
         "index_test.go",
+        "indexdata_test.go",
+        "limit_test.go",
         "marshal_test.go",
         "matchtree_test.go",
         "merge_test.go",
@@ -127,5 +130,6 @@ go_test(
         "@com_github_grafana_regexp//:regexp",
         "@com_github_roaringbitmap_roaring//:roaring",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_x_exp//slices",
     ],
 )
