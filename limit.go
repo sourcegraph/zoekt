@@ -18,9 +18,9 @@ func SortAndTruncateFiles(files []FileMatch, opts *SearchOptions) []FileMatch {
 // return an empty after and hasMore false.
 type DisplayTruncator func(before []FileMatch) (after []FileMatch, hasMore bool)
 
-// NewDisplayTruncator will return a MatchLimiter which enforces the limits in
+// NewDisplayTruncator will return a DisplayTruncator which enforces the limits in
 // opts. If there are no limits to enforce, hasLimits is false and there is no
-// need to call MatchLimiter.
+// need to call DisplayTruncator.
 func NewDisplayTruncator(opts *SearchOptions) (_ DisplayTruncator, hasLimits bool) {
 	docLimit := opts.MaxDocDisplayCount
 	docLimited := docLimit > 0
