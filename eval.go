@@ -481,7 +481,7 @@ func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands [
 	// bytes should work fine, as we're just computing a ratio.
 	fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
 	numFiles := len(d.boundaries)
-	averageFileLength := float64(d.boundaries[numFiles - 1]) / float64(numFiles)
+	averageFileLength := float64(d.boundaries[numFiles-1]) / float64(numFiles)
 	L := fileLength / averageFileLength
 
 	// Use standard parameter defaults (used in Lucene and academic papers)
@@ -491,7 +491,7 @@ func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands [
 	for _, freq := range termFreqs {
 		tf := float64(freq)
 		sumTf += tf
-		score += ((k + 1.0) * tf) / (k * (1.0 - b + b * L) + tf)
+		score += ((k + 1.0) * tf) / (k*(1.0-b+b*L) + tf)
 	}
 
 	fileMatch.addKeywordScore(score, sumTf, L, opts.DebugScore)

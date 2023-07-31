@@ -370,8 +370,8 @@ func TestGatherBranches(t *testing.T) {
 	}
 
 	want := map[string][]string{
-		"f1": []string{"foo", "quz"},
-		"f2": []string{"foo", "foo-2"},
+		"f1": {"foo", "quz"},
+		"f2": {"foo", "foo-2"},
 	}
 
 	if len(sr.Files) != 2 {
