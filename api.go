@@ -898,9 +898,12 @@ type SearchOptions struct {
 	// be sent and then the behaviour will revert to the normal streaming.
 	FlushWallTime time.Duration
 
-	// Trim the number of results after collating and sorting the
-	// results
+	// Truncates the number of documents (i.e. files) after collating and
+	// sorting the results.
 	MaxDocDisplayCount int
+
+	// Truncates the number of matchs after collating and sorting the results.
+	MaxMatchDisplayCount int
 
 	// If set to a number greater than zero then up to this many number
 	// of context lines will be added before and after each matched line.

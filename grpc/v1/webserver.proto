@@ -68,9 +68,12 @@ message SearchOptions {
   // be sent and then the behaviour will revert to the normal streaming.
   google.protobuf.Duration flush_wall_time = 7;
 
-  // Trim the number of results after collating and sorting the
-  // results
+  // Truncates the number of documents (i.e. files) after collating and
+  // sorting the results.
   int64 max_doc_display_count = 8;
+
+  // Truncates the number of matchs after collating and sorting the results.
+  int64 max_match_display_count = 16;
 
   // If set to a number greater than zero then up to this many number
   // of context lines will be added before and after each matched line.
