@@ -44,7 +44,7 @@ func NewDisplayTruncator(opts *SearchOptions) (_ DisplayTruncator, hasLimits boo
 		if docLimited {
 			if len(fm) >= docLimit {
 				done = true
-				return fm[:docLimit], false
+				fm = fm[:docLimit]
 			}
 			docLimit -= len(fm)
 		}
@@ -53,11 +53,10 @@ func NewDisplayTruncator(opts *SearchOptions) (_ DisplayTruncator, hasLimits boo
 			fm, matchLimit = limitMatches(fm, matchLimit, opts.ChunkMatches)
 			if matchLimit <= 0 {
 				done = true
-				return fm, false
 			}
 		}
 
-		return fm, true
+		return fm, !done
 	}, true
 }
 
