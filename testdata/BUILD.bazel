@@ -1,8 +1,0 @@
-# gazelle:exclude repo
-# gazelle:exclude repo2
-
-filegroup(
-    name = "testdata",
-    srcs = glob(["**"]),
-    visibility = ["//visibility:public"],
-)
