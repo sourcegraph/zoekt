@@ -335,6 +335,14 @@ message Stats {
   // Wall clock time for queued search.
   google.protobuf.Duration wait = 15;
 
+  // Aggregate wall clock time spent constructing and pruning the match tree.
+  // This accounts for time such as lookups in the trigram index.
+  google.protobuf.Duration match_tree_construction = 19;
+
+  // Aggregate wall clock time spent searching the match tree. This accounts
+  // for the bulk of search work done looking for matches.
+  google.protobuf.Duration match_tree_search = 20;
+
   // Number of times regexp was called on files that we evaluated.
   int64 regexps_considered = 16;
 

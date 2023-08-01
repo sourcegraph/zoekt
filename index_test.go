@@ -507,7 +507,7 @@ func TestSearchStats(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if diff := cmp.Diff(tc.Want, sres.Stats); diff != "" {
+				if diff := cmp.Diff(tc.Want, sres.Stats, cmpopts.IgnoreFields(Stats{}, "MatchTreeConstruction", "MatchTreeSearch")); diff != "" {
 					t.Errorf("unexpected Stats (-want +got):\n%s", diff)
 				}
 			})
