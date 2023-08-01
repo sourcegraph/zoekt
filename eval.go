@@ -22,6 +22,7 @@ import (
 	"regexp/syntax"
 	"sort"
 	"strings"
+	"time"
 
 	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/grafana/regexp"
@@ -148,6 +149,8 @@ func (o *SearchOptions) SetDefaults() {
 }
 
 func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) (sr *SearchResult, err error) {
+	timer := newTimer()
+
 	copyOpts := *opts
 	opts = &copyOpts
 	opts.SetDefaults()
@@ -188,6 +191,7 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 	if err != nil {
 		return nil, err
 	}
+	res.Stats.MatchTreeConstruction = timer.Elapsed()
 	if mt == nil {
 		res.Stats.ShardsSkippedFilter++
 		return &res, nil
@@ -390,6 +394,8 @@ nextFileMatch:
 	if opts.UseDocumentRanks {
 		res.Files = SortAndTruncateFiles(res.Files, opts)
 	}
+
+	res.Stats.MatchTreeSearch = timer.Elapsed()
 
 	return &res, nil
 }
@@ -819,4 +825,21 @@ func (d *indexData) regexpToMatchTreeRecursive(r *syntax.Regexp, minTextSize int
 		}
 	}
 	return &bruteForceMatchTree{}, false, false, nil
+}
+
+type timer struct {
+	last time.Time
+}
+
+func newTimer() *timer {
+	return &timer{
+		last: time.Now(),
+	}
+}
+
+func (t *timer) Elapsed() time.Duration {
+	now := time.Now()
+	d := now.Sub(t.last)
+	t.last = now
+	return d
 }

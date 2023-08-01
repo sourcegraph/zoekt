@@ -388,6 +388,14 @@ type Stats struct {
 	// Wall clock time for queued search.
 	Wait time.Duration
 
+	// Aggregate wall clock time spent constructing and pruning the match tree.
+	// This accounts for time such as lookups in the trigram index.
+	MatchTreeConstruction time.Duration
+
+	// Aggregate wall clock time spent searching the match tree. This accounts
+	// for the bulk of search work done looking for matches.
+	MatchTreeSearch time.Duration
+
 	// Number of times regexp was called on files that we evaluated.
 	RegexpsConsidered int
 
@@ -418,6 +426,8 @@ func (s *Stats) Add(o Stats) {
 	s.ShardsSkipped += o.ShardsSkipped
 	s.ShardsSkippedFilter += o.ShardsSkippedFilter
 	s.Wait += o.Wait
+	s.MatchTreeConstruction += o.MatchTreeConstruction
+	s.MatchTreeSearch += o.MatchTreeSearch
 	s.RegexpsConsidered += o.RegexpsConsidered
 
 	// We want the first non-zero FlushReason to be sticky. This is a useful
@@ -448,6 +458,8 @@ func (s *Stats) Zero() bool {
 		s.ShardsSkipped > 0 ||
 		s.ShardsSkippedFilter > 0 ||
 		s.Wait > 0 ||
+		s.MatchTreeConstruction > 0 ||
+		s.MatchTreeSearch > 0 ||
 		s.RegexpsConsidered > 0)
 }
 

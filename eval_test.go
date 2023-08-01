@@ -24,6 +24,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt/query"
@@ -166,7 +167,7 @@ func TestSearch_ShardRepoMaxMatchCountOpt(t *testing.T) {
 			ShardsScanned:      1,
 			MatchCount:         2,
 		}
-		if diff := cmp.Diff(want, got); diff != "" {
+		if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(Stats{}, "MatchTreeConstruction", "MatchTreeSearch")); diff != "" {
 			t.Errorf("mismatch (-want, +got): %s", diff)
 		}
 	})
