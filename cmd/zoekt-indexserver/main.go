@@ -40,6 +40,7 @@ import (
 )
 
 const day = time.Hour * 24
+const iso8601Format = "2006-01-02T15:04:05Z07:00"
 
 var (
 	// we use this for 3 things:
@@ -137,66 +138,232 @@ func periodicBackup(dataDir, indexDir string, opts *Options) {
 	}
 }
 
+func timeTaken(msg string, start time.Time) {
+	fmt.Printf("%v: %v\n", msg, time.Since(start))
+}
+
+// GitHub ONLY
+// rather than running git-fetch in a brute manner, we ask GitHub which repos have
+// been updated since the last time peridicFetch was run
 // periodicFetch runs git-fetch every once in a while. Results are
 // posted on pendingRepos.
-func periodicFetch(repoDir, indexDir string, opts *Options, pendingRepos chan<- string) {
+func periodicSmartGHFetch(repoDir, indexDir string, opts *Options, pendingRepos chan<- string) {
 	t := time.NewTicker(opts.fetchInterval)
 	lastBruteReindex := time.Now()
+
 	for {
-		fmt.Printf("starting periodicFetch\n")
-		repos, err := gitindex.FindGitRepos(repoDir)
-		if err != nil {
-			log.Println(err)
+		fmt.Printf("starting periodicSmartGHFetch\n")
+		start := time.Now()
+
+		// if it's time to brute re-index, use the standard gitFetch method
+		if time.Since(lastBruteReindex) >= opts.bruteReindexInterval {
+			fmt.Printf("bruteReindexing\n")
+			lastBruteReindex = gitFetchNeededRepos(repoDir, indexDir, opts, pendingRepos, lastBruteReindex)
 			continue
 		}
-		if len(repos) == 0 {
-			log.Printf("no repos found under %s", repoDir)
-		} else {
-			fmt.Printf("found %d repos to fetch with %d workers\n", len(repos), opts.parallelFetches)
+
+		// otherwise, we ask GH which repos to update
+		fmt.Printf("using smart method\n")
+		var cmd *exec.Cmd
+
+		cfg, err := readConfigURL(opts.mirrorConfigFile)
+
+		if err != nil {
+			fmt.Printf("err=%v\n", err)
+			continue
 		}
 
-		g, _ := errgroup.WithContext(context.Background())
-		g.SetLimit(opts.parallelFetches)
+		var reposToFetchAndIndex []string
+		var shouldSkip bool
+		// now... what the hell is the appropriate logic for since?
+		// the easy one is at the time of this run. In the case of the program
+		// stopping and not running for a while though, we need to persist the run time
+		since := time.Now()
+		now := time.Now()
 
-		// TODO: Randomize to make sure quota throttling hits everyone.
-		var mu sync.Mutex
-		later := map[string]struct{}{}
-		count := 0
-		for _, dir := range repos {
-			dir := dir
-			g.Go(func() error {
-				ran := muIndexAndDataDirs.With(dir, func() {
-					if hasUpdate := fetchGitRepo(dir); !hasUpdate {
-						mu.Lock()
-						later[dir] = struct{}{}
-						mu.Unlock()
-					} else {
-						fmt.Printf("dir=%s has update\n", dir)
-						pendingRepos <- dir
-						count += 1
-					}
-				})
-				if !ran {
-					fmt.Printf("either an index or fetch job for repo=%s already running\n", dir)
-				}
-				return nil
-			})
-		}
-		g.Wait()
-		fmt.Printf("%d repos had git updates\n", count)
+		// read the time we were supposed to run on
+		// if we're running later than that time, use it as since
+		// otherwise, just use the current time
+		db, _ := os.ReadFile(filepath.Join(repoDir, "time-of-last-update.txt"))
+		s := string(db)
+		s = strings.TrimSpace(s)
+		plannedNextRun, err := time.Parse(iso8601Format, s)
 
-		if time.Since(lastBruteReindex) >= opts.bruteReindexInterval {
-			fmt.Printf("re-indexing the %d repos that had no update\n", len(later))
-			for r := range later {
-				pendingRepos <- r
+		if err != nil {
+			fmt.Printf("error reading timeFile or parsing date in it %v. Falling back to brute index\n", err)
+			// write the current time to a file
+			file := filepath.Join(repoDir, "time-of-last-update.txt")
+			err = os.WriteFile(file, []byte(since.Format(iso8601Format)), 0644)
+			if err != nil {
+				fmt.Printf("error writing time to file: %v\n", err)
 			}
-			lastBruteReindex = time.Now()
-		} else {
-			fmt.Printf("not re-indexing the %d repos that had no update\n", len(later))
+
+			lastBruteReindex = gitFetchNeededRepos(repoDir, indexDir, opts, pendingRepos, lastBruteReindex)
+			shouldSkip = true
+			break
+		}
+
+		if plannedNextRun.Before(since) {
+			fmt.Printf("the planned next time is behind the current time. Using it.\n")
+			since = plannedNextRun
+		}
+		for _, c := range cfg {
+			// make sure this is a github cfg
+			if c.GitHubURL == "" && c.GithubUser == "" && c.GithubOrg == "" {
+				fmt.Printf("periodicSmartGHFetch can only be used for GitHub only indexservers. Falling back to normal periodicFetch\n")
+				lastBruteReindex = gitFetchNeededRepos(repoDir, indexDir, opts, pendingRepos, lastBruteReindex)
+				shouldSkip = true
+
+				// how do I jump to the top of this for loop?
+				break
+			}
+
+			cmd = exec.Command("zoekt-github-get-repos-modified-since",
+				"-dest", repoDir)
+			if c.GitHubURL != "" {
+				cmd.Args = append(cmd.Args, "-url", c.GitHubURL)
+			}
+			if c.GithubUser != "" {
+				cmd.Args = append(cmd.Args, "-user", c.GithubUser)
+			} else if c.GithubOrg != "" {
+				cmd.Args = append(cmd.Args, "-org", c.GithubOrg)
+			}
+			if c.Name != "" {
+				cmd.Args = append(cmd.Args, "-name", c.Name)
+			}
+			if c.Exclude != "" {
+				cmd.Args = append(cmd.Args, "-exclude", c.Exclude)
+			}
+			if c.CredentialPath != "" {
+				cmd.Args = append(cmd.Args, "-token", c.CredentialPath)
+			}
+			for _, topic := range c.Topics {
+				cmd.Args = append(cmd.Args, "-topic", topic)
+			}
+			for _, topic := range c.ExcludeTopics {
+				cmd.Args = append(cmd.Args, "-exclude_topic", topic)
+			}
+			if c.NoArchived {
+				cmd.Args = append(cmd.Args, "-no_archived")
+			}
+
+			cmd.Args = append(cmd.Args, "-since", since.Format(iso8601Format))
+
+			// cmd.Args = append(cmd.Args, "--max-concurrent-gh-requests", strconv.Itoa(opts.parallelListApiReqs))
+
+			stdout, stderr := loggedRun(cmd)
+
+			fmt.Printf("cmd %v - logs=%s\n", cmd.Args, string(stderr))
+			reposPushed := 0
+			for _, fn := range bytes.Split(stdout, []byte{'\n'}) {
+				if len(fn) == 0 {
+					continue
+				}
+				reposToFetchAndIndex = append(reposToFetchAndIndex, string(fn))
+				// pendingRepos <- string(fn)
+				reposPushed += 1
+			}
+
+			fmt.Printf("%v - there are %d repos to fetch and index\n", cmd.Args, reposPushed)
+		}
+
+		fmt.Printf("there are %d total repos to fetch and index\n", len(reposToFetchAndIndex))
+
+		if !shouldSkip {
+			g, _ := errgroup.WithContext(context.Background())
+			g.SetLimit(opts.parallelFetches)
+			for _, dir := range reposToFetchAndIndex {
+				dir := dir
+				g.Go(func() error {
+					ran := muIndexAndDataDirs.With(dir, func() {
+						if hasUpdate := fetchGitRepo(dir); !hasUpdate {
+							fmt.Printf("ERROR: we mistakenly thought %s had an update. Check smartGH logic\n", dir)
+						} else {
+							fmt.Printf("dir=%s has update\n", dir)
+							pendingRepos <- dir
+						}
+					})
+
+					if !ran {
+						fmt.Printf("either an index or fetch job for repo=%s already running\n", dir)
+					}
+					return nil
+				})
+			}
+			g.Wait()
+
+		}
+
+		fmt.Printf("finished periodicSmartGHFetch. took %s\n", time.Since(start))
+
+		// write the time that the next run should happen on
+		// we fetched all repos with updates between since--->now
+		// so now "now+fetchInterval" is our theoretical next run
+		nextRunTime := now.Add(opts.fetchInterval)
+		file := filepath.Join(repoDir, "time-of-last-update.txt")
+		err = os.WriteFile(file, []byte(nextRunTime.Format(iso8601Format)), 0644)
+		if err != nil {
+			fmt.Printf("error writing time to file: %v\n", err)
 		}
 
 		<-t.C
 	}
+}
+
+func gitFetchNeededRepos(repoDir, indexDir string, opts *Options, pendingRepos chan<- string, lastBruteReindex time.Time) time.Time {
+	fmt.Printf("running gitFetchNeededRepos\n")
+	repos, err := gitindex.FindGitRepos(repoDir)
+	if err != nil {
+		log.Println(err)
+		return lastBruteReindex
+	}
+	if len(repos) == 0 {
+		log.Printf("no repos found under %s", repoDir)
+	} else {
+		fmt.Printf("found %d repos to fetch with %d workers\n", len(repos), opts.parallelFetches)
+	}
+
+	g, _ := errgroup.WithContext(context.Background())
+	g.SetLimit(opts.parallelFetches)
+
+	// TODO: Randomize to make sure quota throttling hits everyone.
+	var mu sync.Mutex
+	later := map[string]struct{}{}
+	count := 0
+	for _, dir := range repos {
+		dir := dir
+		g.Go(func() error {
+			ran := muIndexAndDataDirs.With(dir, func() {
+				if hasUpdate := fetchGitRepo(dir); !hasUpdate {
+					mu.Lock()
+					later[dir] = struct{}{}
+					mu.Unlock()
+				} else {
+					fmt.Printf("dir=%s has update\n", dir)
+					pendingRepos <- dir
+					count += 1
+				}
+			})
+			if !ran {
+				fmt.Printf("either an index or fetch job for repo=%s already running\n", dir)
+			}
+			return nil
+		})
+	}
+	g.Wait()
+	fmt.Printf("%d repos had git updates\n", count)
+
+	if time.Since(lastBruteReindex) >= opts.bruteReindexInterval {
+		fmt.Printf("re-indexing the %d repos that had no update\n", len(later))
+		for r := range later {
+			pendingRepos <- r
+		}
+		lastBruteReindex = time.Now()
+	} else {
+		fmt.Printf("not re-indexing the %d repos that had no update\n", len(later))
+	}
+
+	return lastBruteReindex
 }
 
 // fetchGitRepo runs git-fetch, and returns true if there was an
@@ -393,5 +560,7 @@ func main() {
 	go deleteOrphanIndexes(*indexDir, repoDir, opts.fetchInterval)
 	go periodicBackup(repoDir, *indexDir, &opts)
 	go indexPendingRepos(*indexDir, repoDir, &opts, pendingRepos)
-	periodicFetch(repoDir, *indexDir, &opts, pendingRepos)
+
+	// if github only configs, run periodic smart GH fetch
+	periodicSmartGHFetch(repoDir, *indexDir, &opts, pendingRepos)
 }
