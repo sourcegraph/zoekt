@@ -314,10 +314,10 @@ func main() {
 	}
 
 	pendingRepos := make(chan string, 6000)
-	// go periodicMirrorFile(repoDir, &opts, pendingRepos)
-	// go deleteLogsLoop(logDir, opts.maxLogAge)
-	// go deleteOrphanIndexes(*indexDir, repoDir, opts.fetchInterval)
-	// go periodicBackup(repoDir, *indexDir, &opts)
+	go periodicMirrorFile(repoDir, &opts, pendingRepos)
+	go deleteLogsLoop(logDir, opts.maxLogAge)
+	go deleteOrphanIndexes(*indexDir, repoDir, opts.fetchInterval)
+	go periodicBackup(repoDir, *indexDir, &opts)
 	go indexPendingRepos(*indexDir, repoDir, &opts, pendingRepos)
 
 	if opts.useSmartGHFetch {
