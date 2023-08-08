@@ -54,6 +54,14 @@ type ConfigEntry struct {
 	NoArchived             bool
 }
 
+func (c ConfigEntry) IsGithubConfig() bool {
+	if c.GitHubURL != "" || c.GithubUser != "" || c.GithubOrg != "" {
+		return true
+	}
+
+	return false
+}
+
 func randomize(entries []ConfigEntry) []ConfigEntry {
 	perm := rand.Perm(len(entries))
 
@@ -159,6 +167,38 @@ func periodicMirrorFile(repoDir string, opts *Options, pendingRepos chan<- strin
 	}
 }
 
+func createGithubArgsMirrorAndFetchArgs(c ConfigEntry) []string {
+	args := make([]string, 0)
+	if c.GitHubURL != "" {
+		args = append(args, "-url", c.GitHubURL)
+	}
+	if c.GithubUser != "" {
+		args = append(args, "-user", c.GithubUser)
+	} else if c.GithubOrg != "" {
+		args = append(args, "-org", c.GithubOrg)
+	}
+	if c.Name != "" {
+		args = append(args, "-name", c.Name)
+	}
+	if c.Exclude != "" {
+		args = append(args, "-exclude", c.Exclude)
+	}
+	if c.CredentialPath != "" {
+		args = append(args, "-token", c.CredentialPath)
+	}
+	for _, topic := range c.Topics {
+		args = append(args, "-topic", topic)
+	}
+	for _, topic := range c.ExcludeTopics {
+		args = append(args, "-exclude_topic", topic)
+	}
+	if c.NoArchived {
+		args = append(args, "-no_archived")
+	}
+
+	return args
+}
+
 func executeMirror(cfg []ConfigEntry, repoDir string, parallelListApiReqs, parallelClones int, pendingRepos chan<- string) {
 	// Randomize the ordering in which we query
 	// things. This is to ensure that quota limits don't
@@ -169,32 +209,7 @@ func executeMirror(cfg []ConfigEntry, repoDir string, parallelListApiReqs, paral
 		if c.GitHubURL != "" || c.GithubUser != "" || c.GithubOrg != "" {
 			cmd = exec.Command("zoekt-mirror-github",
 				"-dest", repoDir, "-delete")
-			if c.GitHubURL != "" {
-				cmd.Args = append(cmd.Args, "-url", c.GitHubURL)
-			}
-			if c.GithubUser != "" {
-				cmd.Args = append(cmd.Args, "-user", c.GithubUser)
-			} else if c.GithubOrg != "" {
-				cmd.Args = append(cmd.Args, "-org", c.GithubOrg)
-			}
-			if c.Name != "" {
-				cmd.Args = append(cmd.Args, "-name", c.Name)
-			}
-			if c.Exclude != "" {
-				cmd.Args = append(cmd.Args, "-exclude", c.Exclude)
-			}
-			if c.CredentialPath != "" {
-				cmd.Args = append(cmd.Args, "-token", c.CredentialPath)
-			}
-			for _, topic := range c.Topics {
-				cmd.Args = append(cmd.Args, "-topic", topic)
-			}
-			for _, topic := range c.ExcludeTopics {
-				cmd.Args = append(cmd.Args, "-exclude_topic", topic)
-			}
-			if c.NoArchived {
-				cmd.Args = append(cmd.Args, "-no_archived")
-			}
+			cmd.Args = append(cmd.Args, createGithubArgsMirrorAndFetchArgs(c)...)
 			cmd.Args = append(cmd.Args, "--parallel_clone", strconv.Itoa(parallelClones))
 			cmd.Args = append(cmd.Args, "--max-concurrent-gh-requests", strconv.Itoa(parallelListApiReqs))
 		} else if c.GitilesURL != "" {
