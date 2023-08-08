@@ -37,8 +37,7 @@ func callGetReposModifiedSinceForCfgs(cfgs []ConfigEntry, lookbackInterval time.
 		cmd.Args = append(cmd.Args, createGithubArgsMirrorAndFetchArgs(c)...)
 		cmd.Args = append(cmd.Args, "-since", lookbackInterval.Format(iso8601Format))
 
-		stdout, stderr := loggedRun(cmd)
-		fmt.Printf("cmd %v - logs=%s\n", cmd.Args, string(stderr))
+		stdout, _ := loggedRun(cmd)
 		reposPushed := 0
 		for _, fn := range bytes.Split(stdout, []byte{'\n'}) {
 			if len(fn) == 0 {
@@ -112,17 +111,20 @@ func readFetchTimeFromFile(repoDir string) (time.Time, error) {
 const accetableLookbackDiffThreshold = 5 * time.Second
 const dayAgo = 24 * time.Hour
 
-func getLookbackWindowStart(repoDir string, fetchInterval time.Duration) time.Time {
+// this function determines the "lookback" period -
+// i.e. the time that github will use to find all repos that
+// have been updated since. In the case that that time is > fetchInterval ago,
+// we also return a newer timeToWrite that will be written to the file. This prevents an
+// endless loop, which I will explain later...
+func getLookbackWindowStart(repoDir string, fetchInterval time.Duration) (time.Time, time.Time) {
 	now := time.Now()
-	fmt.Printf("now=%s\n", now.String())
-	fmt.Printf("fetchInterval=%s\n", fetchInterval.String())
 	lookbackIntervalStart := now.Add(-fetchInterval)
 
 	// if there is an error reading the previousLookbackInterval
 	prevLookbackIntervalStart, err := readFetchTimeFromFile(repoDir)
 	if err != nil { // no file exists, or format wrong
 		fmt.Printf("using a 24 hour lookback window.\n")
-		return lookbackIntervalStart.Add(time.Duration(-24) * time.Hour)
+		return now, lookbackIntervalStart.Add(time.Duration(-24) * time.Hour)
 	}
 
 	diff := lookbackIntervalStart.Sub(prevLookbackIntervalStart)
@@ -130,18 +132,18 @@ func getLookbackWindowStart(repoDir string, fetchInterval time.Duration) time.Ti
 	// this should never happen. If it does, we have a problem, most likely in the
 	// file writing phase
 	if diff < 0 {
-		fmt.Printf("Diff of prevLookback=%s and lookback=%s is < 0. Using a 24 hour window.\n", prevLookbackIntervalStart.String(), lookbackIntervalStart.String())
-		return lookbackIntervalStart.Add(time.Duration(-24) * time.Hour)
+		fmt.Printf("Diff of prevLookback=%s and lookback=%s is < 0. Using current time.\n", prevLookbackIntervalStart.String(), lookbackIntervalStart.String())
+		return now, lookbackIntervalStart
 	}
 
 	// if the prevLookbackIntervalStart happened longer ago than we're comfortable with
 	// we use it, in the case that repos haven't been updated since that time
 	if diff > accetableLookbackDiffThreshold {
 		fmt.Printf("Diff of prevLookback=%s and lookback=%s > %s. Using prevLookbackIntervalStart\n", prevLookbackIntervalStart.Format(iso8601Format), lookbackIntervalStart.Format(iso8601Format), accetableLookbackDiffThreshold)
-		return prevLookbackIntervalStart
+		return now, prevLookbackIntervalStart
 	}
 
-	return lookbackIntervalStart
+	return now, lookbackIntervalStart
 }
 
 func periodicSmartGHFetchV2(repoDir, indexDir string, opts *Options, pendingRepos chan<- string) {
@@ -149,7 +151,7 @@ func periodicSmartGHFetchV2(repoDir, indexDir string, opts *Options, pendingRepo
 	lastBruteReindex := time.Now()
 
 	for {
-		lookbackIntervalStart := getLookbackWindowStart(repoDir, opts.fetchInterval)
+		timeToWrite, lookbackIntervalStart := getLookbackWindowStart(repoDir, opts.fetchInterval)
 		fmt.Printf("lookbackIntervalStart=%s\n", lookbackIntervalStart.String())
 
 		if time.Since(lastBruteReindex) >= opts.bruteReindexInterval {
@@ -169,7 +171,7 @@ func periodicSmartGHFetchV2(repoDir, indexDir string, opts *Options, pendingRepo
 		reposToFetchAndIndex := callGetReposModifiedSinceForCfgs(cfg, lookbackIntervalStart, repoDir)
 		processReposToFetchAndIndex(reposToFetchAndIndex, opts.parallelFetches, pendingRepos)
 
-		writeFetchTimeToFile(repoDir, lookbackIntervalStart)
+		writeFetchTimeToFile(repoDir, timeToWrite)
 		<-t.C
 	}
 
