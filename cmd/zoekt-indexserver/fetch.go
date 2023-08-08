@@ -44,7 +44,6 @@ func callGetReposModifiedSinceForCfgs(cfgs []ConfigEntry, lookbackInterval time.
 				continue
 			}
 			reposToFetchAndIndex = append(reposToFetchAndIndex, string(fn))
-			// pendingRepos <- string(fn)
 			reposPushed += 1
 		}
 
