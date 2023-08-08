@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v27/github"
+	"github.com/xvandish/zoekt/gitindex"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 )
@@ -26,15 +27,15 @@ func main() {
 	token := flag.String("token",
 		filepath.Join(os.Getenv("HOME"), ".github-token"),
 		"file holding API token.")
-	// forks := flag.Bool("forks", true, "also mirror forks.")
+	forks := flag.Bool("forks", true, "whether to allow forks or not. This DOES NOT mean that only forks are allowed")
 	// deleteRepos := flag.Bool("delete", false, "delete missing repos")
-	namePattern := flag.String("name", "", "only clone repos whose name matches the given regexp.")
-	// excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
+	namePattern := flag.String("name", "", "only return repos whose name matches the given regexp.")
+	excludePattern := flag.String("exclude", "", "don't return repos whose names match this regexp.")
 	topics := topicsFlag{}
 	flag.Var(&topics, "topic", "only clone repos whose have one of given topics. You can add multiple topics by setting this more than once.")
 	excludeTopics := topicsFlag{}
 	flag.Var(&excludeTopics, "exclude_topic", "don't clone repos whose have one of given topics. You can add multiple topics by setting this more than once.")
-	noArchived := flag.Bool("no_archived", false, "mirror only projects that are not archived")
+	noArchived := flag.Bool("no_archived", false, "search and return for only projects that are not archived")
 	parallelSearchReqs := flag.Int("parallel_search_api_reqs", 1, "Number of search requests that can be in flight at the same time. Used to fetch multiple pages of large results at once.")
 
 	since := flag.String("since", "", "an ISOxxx string. Repos returned will be updated at or after this time")
@@ -89,7 +90,6 @@ func main() {
 	}
 
 	if *token != "" {
-		log.Printf("reading token from :%s", *token)
 		content, err := os.ReadFile(*token)
 		if err != nil {
 			log.Fatal(err)
@@ -129,16 +129,33 @@ func main() {
 
 	// threeMinsAgo := now.Add(time.Duration(-80) * time.Minute)
 	if *org != "" {
-		repos, err = getReposUpdatedAfterLastUpdate(client, "org", *org, *namePattern, reposFilters, sinceTime, *parallelSearchReqs)
+		repos, err = getReposUpdatedAfterLastUpdate(client, "org", *org, *namePattern, reposFilters, sinceTime, *parallelSearchReqs, *forks)
 	} else if *user != "" {
-		repos, err = getReposUpdatedAfterLastUpdate(client, "user", *user, *namePattern, reposFilters, sinceTime, *parallelSearchReqs)
+		repos, err = getReposUpdatedAfterLastUpdate(client, "user", *user, *namePattern, reposFilters, sinceTime, *parallelSearchReqs, *forks)
 	} else {
 		log.Fatal("must specify org or user")
 	}
-	fmt.Printf("there are %d repos\n", len(repos))
 
 	if err != nil {
 		return
+	}
+
+	filter, err := gitindex.NewFilter(*namePattern, *excludePattern)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// remove repos that don't match our naming pattern, or contain a topic
+	// we want to exclude. The inclusion logic for topics is in the search query
+	// as GitHub supports it there (but not exclusion)
+	{
+		trimmed := repos[:0]
+		for _, r := range repos {
+			if filter.Include(*r.Name) && !hasIntersection(reposFilters.excludeTopics, r.Topics) {
+				trimmed = append(trimmed, r)
+			}
+		}
+		repos = trimmed
 	}
 
 	// otherwise, print a newline delimited list of all the repos that have changed recently.
@@ -147,15 +164,27 @@ func main() {
 	}
 }
 
+func hasIntersection(s1, s2 []string) bool {
+	hash := make(map[string]bool)
+	for _, e := range s1 {
+		hash[e] = true
+	}
+	for _, e := range s2 {
+		if hash[e] {
+			return true
+		}
+	}
+	return false
+}
+
 // fetches a specific page of github repository search results
 // TODO: how to handle a specific page failing
 func fetchPage(client *github.Client, searchQuery string, page int, results chan<- []github.Repository) error {
-	fmt.Printf("in page=%d\n", page)
 	opts := &github.SearchOptions{TextMatch: false, ListOptions: github.ListOptions{PerPage: 100, Page: page}}
 	result, _, err := client.Search.Repositories(context.Background(), searchQuery, opts)
 
 	if err != nil {
-		fmt.Printf("ERROR: query=%s error getting page=%d\n", searchQuery, page)
+		log.Printf("ERROR: query=%s error getting page=%d\n", searchQuery, page)
 		return err
 	}
 
@@ -182,9 +211,9 @@ func callGithubRepoSearchConcurrently(initialResp *github.Response, concurrencyL
 
 	go func() {
 		if err := g.Wait(); err != nil {
-			fmt.Printf("Error fetching pages %v", err)
+			log.Printf("Error fetching pages %v", err)
 		} else {
-			fmt.Printf("finished waiting for g\n")
+			log.Printf("finished waiting for g\n")
 		}
 		close(results)
 	}()
@@ -194,25 +223,34 @@ func callGithubRepoSearchConcurrently(initialResp *github.Response, concurrencyL
 	}
 	reposToUpdate = append(reposToUpdate, firstResult.Repositories...)
 
-	fmt.Printf("callGithubRepoSearchConcurrently len=%d\n", len(reposToUpdate))
 	return reposToUpdate, nil
 }
 
-func getReposUpdatedAfterLastUpdate(client *github.Client, key string, orgOrUser string, namePattern string, reposFilters reposFilters, lastUpdate time.Time, maxParallelSearchReqs int) ([]github.Repository, error) {
-	searchQuery := fmt.Sprintf("%s:%s pushed:>=%s %s", key, orgOrUser, lastUpdate.Format("2006-01-02T15:04:05Z07:00"), namePattern)
-	log.Printf("searchQuery=%s\n", searchQuery)
-	start := time.Now()
+func getReposUpdatedAfterLastUpdate(client *github.Client, key string, orgOrUser string, namePattern string, reposFilters reposFilters, lastUpdate time.Time, maxParallelSearchReqs int, forksPresent bool) ([]github.Repository, error) {
+	forkString := "true"
+	if !forksPresent {
+		forkString = "false"
+	}
+
+	// we can't use the `x in:name` qualifier for namePattern, as unfortunately regex isn't yet supported, and our config
+	// allows regex in the name pattern. We instead filter later.
+	searchQuery := fmt.Sprintf("%s:%s pushed:>=%s fork:%s", key, orgOrUser, lastUpdate.Format(iso8601Format), forkString)
+	if *reposFilters.noArchived {
+		searchQuery = searchQuery + fmt.Sprintf(" archived:false")
+	}
+	// we can include topics but can't exclude them. We exclude them at the end
+	for _, topic := range reposFilters.topics {
+		searchQuery = searchQuery + fmt.Sprintf(" topic:%s", topic)
+	}
+
 	result, resp, err := client.Search.Repositories(context.Background(), searchQuery, &github.SearchOptions{TextMatch: false,
 		ListOptions: github.ListOptions{PerPage: 100},
 	})
-	fmt.Printf("took %s for first query\n", time.Since(start))
 
-	// fmt.Printf("result=%v resp=%v err=%v\n", result, resp, err)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("numRepos=%d firstPage=%d lastPage=%d\n", result.GetTotal(), resp.FirstPage, resp.LastPage)
 	if resp.FirstPage == resp.LastPage {
 		return result.Repositories, nil
 	}
