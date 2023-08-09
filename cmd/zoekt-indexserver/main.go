@@ -66,6 +66,7 @@ type Options struct {
 	cpuFraction          float64
 	cpuCount             int
 	fetchInterval        time.Duration
+	fetchIntervalSlow    time.Duration
 	mirrorInterval       time.Duration
 	bruteReindexInterval time.Duration
 	backupInterval       time.Duration
@@ -79,6 +80,11 @@ type Options struct {
 	parallelFetches      int
 	parallelIndexes      int
 	useSmartGHFetch      bool
+	workingHoursStart    int
+	workingHoursEnd      int
+	// time.Location
+	workingHoursZoneStr string
+	workingHoursZone    *time.Location
 }
 
 func (o *Options) validate() {
@@ -93,12 +99,30 @@ func (o *Options) validate() {
 	if o.indexFlagsStr != "" {
 		o.indexFlags = strings.Split(o.indexFlagsStr, " ")
 	}
+
+	if o.workingHoursZoneStr != "" {
+		l, err := time.LoadLocation(o.workingHoursZoneStr)
+		if err != nil {
+			log.Fatalf("could not load location=%s. %v\n", o.workingHoursZoneStr, err)
+		}
+		o.workingHoursZone = l
+	}
+
+	if o.workingHoursStart > 0 {
+		if o.workingHoursStart >= o.workingHoursEnd {
+			log.Fatal("working_hours_start must be smaller than working_hours_end")
+		}
+		if o.workingHoursZoneStr == "" {
+			log.Fatal("you must set a location if using working_hours. See time.Location for valid locations")
+		}
+	}
 }
 
 func (o *Options) defineFlags() {
 	flag.DurationVar(&o.indexTimeout, "index_timeout", time.Hour, "kill index job after this much time")
 	flag.DurationVar(&o.maxLogAge, "max_log_age", 3*day, "recycle index logs after this much time")
 	flag.DurationVar(&o.fetchInterval, "fetch_interval", time.Hour, "run fetches this often")
+	flag.DurationVar(&o.fetchIntervalSlow, "fetch_interval_slow", time.Hour*5, "run fetches this often during non-work hours")
 	flag.StringVar(&o.mirrorConfigFile, "mirror_config",
 		"", "JSON file holding mirror configuration.")
 	flag.DurationVar(&o.mirrorInterval, "mirror_duration", 24*time.Hour, "find and clone new repos at this frequency.")
@@ -112,6 +136,9 @@ func (o *Options) defineFlags() {
 	flag.IntVar(&o.parallelFetches, "parallel_fetches", 1, "number of concurrent git fetch ops")
 	flag.IntVar(&o.parallelIndexes, "parallel_indexes", 1, "number of concurrent zoekt-git-index ops")
 	flag.BoolVar(&o.useSmartGHFetch, "use_smart_gh_fetch", false, "When enabled, uses the GitHub search api to find which repos to run git fetch on")
+	flag.IntVar(&o.workingHoursStart, "working_hours_start", -1, "The start of working hours in 24 hour representation. E.g 9 for 9AM and 17 for 5pm. If set to a non-negative value, it will be used, along with working_hours_end, to decide between fetchInterval or fetchIntervalSlow")
+	flag.IntVar(&o.workingHoursEnd, "working_hours_end", -1, "The end of working hours in 24 hour format. E.g 9 for 9AM and 17 for 5PM. If set to a non-negative value, it will be used, along with working_hours_start, to decide between fetchInterval and fetchIntervalSlow")
+	flag.StringVar(&o.workingHoursZoneStr, "working_hours_zone", "America/NYC", "A time.Location string to set work location")
 }
 
 func periodicBackup(dataDir, indexDir string, opts *Options) {
