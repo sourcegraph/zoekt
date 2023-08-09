@@ -145,8 +145,8 @@ func getLookbackWindowStart(repoDir string, fetchInterval time.Duration) (time.T
 	return now, lookbackIntervalStart
 }
 
-func isDuringWorkHours(timeToCheck time.Time, startHour, endHour int) bool {
-	currHour := timeToCheck.Hour()
+func isDuringWorkHours(timeToCheck time.Time, startHour, endHour int, zone *time.Location) bool {
+	currHour := timeToCheck.In(zone).Hour()
 	return currHour >= startHour && currHour <= endHour
 }
 func workingHoursEnabled(opts *Options) bool {
@@ -155,7 +155,7 @@ func workingHoursEnabled(opts *Options) bool {
 
 func periodicSmartGHFetchV2(repoDir, indexDir string, opts *Options, pendingRepos chan<- string) {
 	startingInterval := opts.fetchInterval
-	if workingHoursEnabled(opts) && !isDuringWorkHours(time.Now(), opts.workingHoursStart, opts.workingHoursEnd) {
+	if workingHoursEnabled(opts) && !isDuringWorkHours(time.Now(), opts.workingHoursStart, opts.workingHoursEnd, opts.workingHoursZone) {
 		startingInterval = opts.fetchIntervalSlow
 		fmt.Printf("not during working hours. Starting interval is %s\n", opts.fetchIntervalSlow)
 	}
@@ -190,7 +190,7 @@ func periodicSmartGHFetchV2(repoDir, indexDir string, opts *Options, pendingRepo
 		// that the entire fetchIntervalSlow elapses before we switch back to the faster fetchInterval.
 		// As I'm planning on using only a 10min slow interval, this is a problem for later.
 		if workingHoursEnabled(opts) {
-			if isDuringWorkHours(time.Now(), opts.workingHoursStart, opts.workingHoursEnd) {
+			if isDuringWorkHours(time.Now(), opts.workingHoursStart, opts.workingHoursEnd, opts.workingHoursZone) {
 				t.Reset(opts.fetchInterval)
 			} else {
 				fmt.Printf("not during working hours. Setting interval to=%s\n", opts.fetchIntervalSlow)
