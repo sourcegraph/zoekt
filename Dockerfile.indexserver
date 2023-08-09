@@ -25,6 +25,7 @@ COPY --from=zoekt \
     /usr/local/bin/zoekt-git-index \ 
     /usr/local/bin/zoekt-merge-index \
     /usr/local/bin/zoekt-mirror-github \
+    /usr/local/bin/zoekt-github-get-repos-modified-since \
     /usr/local/bin/
 
 ENTRYPOINT ["/sbin/tini", "--", "zoekt-indexserver"]
