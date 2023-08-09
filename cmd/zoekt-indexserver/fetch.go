@@ -154,17 +154,17 @@ func workingHoursEnabled(opts *Options) bool {
 }
 
 func periodicSmartGHFetchV2(repoDir, indexDir string, opts *Options, pendingRepos chan<- string) {
-	startingInterval := opts.fetchInterval
+	currInterval := opts.fetchInterval
 	if workingHoursEnabled(opts) && !isDuringWorkHours(time.Now(), opts.workingHoursStart, opts.workingHoursEnd, opts.workingHoursZone) {
-		startingInterval = opts.fetchIntervalSlow
+		currInterval = opts.fetchIntervalSlow
 		fmt.Printf("not during working hours. Starting interval is %s\n", opts.fetchIntervalSlow)
 	}
 
-	t := time.NewTicker(startingInterval)
+	t := time.NewTicker(currInterval)
 	lastBruteReindex := time.Now()
 
 	for {
-		timeToWrite, lookbackIntervalStart := getLookbackWindowStart(repoDir, opts.fetchInterval)
+		timeToWrite, lookbackIntervalStart := getLookbackWindowStart(repoDir, currInterval)
 		fmt.Printf("lookbackIntervalStart=%s\n", lookbackIntervalStart.String())
 
 		if time.Since(lastBruteReindex) >= opts.bruteReindexInterval {
@@ -192,9 +192,11 @@ func periodicSmartGHFetchV2(repoDir, indexDir string, opts *Options, pendingRepo
 		if workingHoursEnabled(opts) {
 			if isDuringWorkHours(time.Now(), opts.workingHoursStart, opts.workingHoursEnd, opts.workingHoursZone) {
 				t.Reset(opts.fetchInterval)
+				currInterval = opts.fetchInterval
 			} else {
 				fmt.Printf("not during working hours. Setting interval to=%s\n", opts.fetchIntervalSlow)
 				t.Reset(opts.fetchIntervalSlow)
+				currInterval = opts.fetchIntervalSlow
 			}
 		}
 
