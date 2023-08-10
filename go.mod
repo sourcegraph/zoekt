@@ -5,6 +5,7 @@ require (
 	github.com/RoaringBitmap/roaring v1.3.0
 	github.com/andygrunwald/go-gerrit v0.0.0-20230628115649-c44fe2fbf2ca
 	github.com/bmatcuk/doublestar v1.3.4
+	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/felixge/fgprof v0.9.3
 	github.com/fsnotify/fsnotify v1.6.0
@@ -30,6 +31,7 @@ require (
 	github.com/sourcegraph/go-ctags v0.0.0-20230111110657-c27675da7f71
 	github.com/sourcegraph/log v0.0.0-20230523201558-ad2d71b4d2ee
 	github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67
+	github.com/stretchr/testify v1.8.3
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	github.com/xanzy/go-gitlab v0.86.0
@@ -73,6 +75,7 @@ require (
 	github.com/cockroachdb/errors v1.10.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/redact v1.1.5 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fatih/color v1.15.0 // indirect
 	github.com/getsentry/sentry-go v0.22.0 // indirect
@@ -106,6 +109,7 @@ require (
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
 	github.com/prometheus/client_model v0.4.0 // indirect
 	github.com/prometheus/common v0.44.0 // indirect
@@ -133,6 +137,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20230628200519-e449d1ea0e82 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230628200519-e449d1ea0e82 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 go 1.18

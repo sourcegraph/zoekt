@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 
+	"github.com/sourcegraph/zoekt/grpc/chunk"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -43,8 +44,27 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	onMatch := stream.SenderFunc(func(res *zoekt.SearchResult) {
-		ss.Send(res.ToProto())
+	onMatch := stream.SenderFunc(func(r *zoekt.SearchResult) {
+		result := r.ToProto()
+
+		f := func(filesChunk []*v1.FileMatch) error {
+			return ss.Send(&v1.SearchResponse{
+				Stats:         result.GetStats(),
+				Progress:      result.GetProgress(),
+				RepoUrls:      result.GetRepoUrls(),
+				LineFragments: result.GetLineFragments(),
+
+				Files: filesChunk,
+			})
+		}
+
+		chunker := chunk.New(f)
+		err := chunker.Send(result.GetFiles()...)
+		if err != nil {
+			return
+		}
+
+		_ = chunker.Flush()
 	})
 
 	return s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(req.GetOpts()), onMatch)
