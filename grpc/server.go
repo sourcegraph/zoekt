@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"math"
 
 	"github.com/sourcegraph/zoekt/grpc/chunk"
 	"google.golang.org/grpc/codes"
@@ -47,18 +48,38 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 	onMatch := stream.SenderFunc(func(r *zoekt.SearchResult) {
 		result := r.ToProto()
 
-		f := func(filesChunk []*v1.FileMatch) error {
-			return ss.Send(&v1.SearchResponse{
-				Stats:         result.GetStats(),
-				Progress:      result.GetProgress(),
-				RepoUrls:      result.GetRepoUrls(),
-				LineFragments: result.GetLineFragments(),
-
-				Files: filesChunk,
-			})
+		if len(result.GetFiles()) == 0 { // stats-only result, send it immediately
+			_ = ss.Send(result)
+			return
 		}
 
-		chunker := chunk.New(f)
+		filesSent := 0
+		sendFunc := func(filesChunk []*v1.FileMatch) error {
+			filesSent += len(filesChunk)
+
+			response := &v1.SearchResponse{
+				Files: filesChunk,
+				Progress: &v1.Progress{
+					Priority: result.GetProgress().GetPriority(),
+
+					// We want the client to consume the entire set of chunks - so we manually
+					// patch the MaxPendingPriority to be >= overall priority.
+					MaxPendingPriority: math.Max( //
+						result.GetProgress().GetPriority(),
+						result.GetProgress().GetMaxPendingPriority(),
+					),
+				},
+			}
+
+			if filesSent == len(result.GetFiles()) { // last chunk
+				response.Stats = result.GetStats()       // only send stats on last chunk
+				response.Progress = result.GetProgress() // only send the original progress on last chunk
+			}
+
+			return ss.Send(response)
+		}
+
+		chunker := chunk.New(sendFunc)
 		err := chunker.Send(result.GetFiles()...)
 		if err != nil {
 			return
