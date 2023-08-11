@@ -150,6 +150,8 @@ func registerGob() {
 	rpc.RegisterGob()
 }
 
+// NewSamplingSender is a zoekt.Sender that samples stats events
+// to avoid sending many empty stats events over the wire.
 func NewSamplingSender(next zoekt.Sender) *samplingSender {
 	return &samplingSender{
 		next:     next,
@@ -158,8 +160,6 @@ func NewSamplingSender(next zoekt.Sender) *samplingSender {
 	}
 }
 
-// samplingSender is a zoekt.Sender that samples stats events
-// to avoid sending many empty stats events over the wire.
 type samplingSender struct {
 	next     zoekt.Sender
 	agg      zoekt.SearchResult
