@@ -69,7 +69,7 @@ func (s *Server) List(ctx context.Context, req *v1.ListRequest) (*v1.ListRespons
 	return repoList.ToProto(), nil
 }
 
-// gRPCChunkSender is a zoekt.Sender that sends chunks of FileMatches
+// gRPCChunkSender is a zoekt.Sender that sends small chunks of FileMatches to the provided gRPC stream.
 func gRPCChunkSender(ss v1.WebserverService_StreamSearchServer) zoekt.Sender {
 	f := func(r *zoekt.SearchResult) {
 		result := r.ToProto()
