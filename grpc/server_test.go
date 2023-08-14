@@ -105,6 +105,17 @@ func TestClientServer(t *testing.T) {
 
 func TestFuzzGRPCChunkSender(t *testing.T) {
 	validateResult := func(input zoekt.SearchResult) error {
+		// Setup: we constrain the input to be a valid zoekt.SearchResult by ensuring that the
+		// RepoURLs and LineFragment fields are derived from the FileMatches
+		// (instead of being random maps from quick.Check)
+
+		input.RepoURLs = make(map[string]string)
+		input.LineFragments = make(map[string]string)
+		for _, file := range input.Files {
+			input.RepoURLs[file.Repository] = fmt.Sprintf("https://github.com/%s", file.Repository)
+			input.LineFragments[file.Repository] = fmt.Sprintf("line fragment for %s", file.Repository)
+		}
+
 		clientStream, serverStream := newPairedSearchStream(t)
 		sender := gRPCChunkSender(serverStream)
 
@@ -148,8 +159,8 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 					"stats",    // aggregated stats are tested below
 					"files",    // files are tested separately
 
-					"repo_urls",      // We no longer send repo_urls to the client
-					"line_fragments", // We no longer send line_fragments to the client
+					"repo_urls",      // tested below
+					"line_fragments", // tested below
 				),
 			}
 
@@ -158,21 +169,42 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 			}
 		}
 
-		allStats := &zoekt.Stats{}
+		receivedStats := &zoekt.Stats{}
+		receivedRepoURLs := make(map[string]string)
+		receivedLineFragments := make(map[string]string)
+
 		var receivedFileMatches []*v1.FileMatch
 		for _, r := range allResponses {
-			allStats.Add(zoekt.StatsFromProto(r.GetStats()))
+			receivedStats.Add(zoekt.StatsFromProto(r.GetStats()))
 			receivedFileMatches = append(receivedFileMatches, r.GetFiles()...)
+
+			for k, v := range r.GetRepoUrls() {
+				receivedRepoURLs[k] = v
+			}
+
+			for k, v := range r.GetLineFragments() {
+				receivedLineFragments[k] = v
+			}
 		}
 
 		// Check to make sure that we get one set of stats back
-		if diff := cmp.Diff(expectedResult.GetStats(), allStats.ToProto(),
+		if diff := cmp.Diff(expectedResult.GetStats(), receivedStats.ToProto(),
 			protocmp.Transform(),
 			protocmp.IgnoreFields(&v1.Stats{},
 				"duration", // for whatever the duration field isn't updated when zoekt.Stats.Add is called
 			),
 		); diff != "" {
 			return fmt.Errorf("unexpected difference in stats (-want +got):\n%s", diff)
+		}
+
+		// Check to make sure that we get the expected set of repo URLs back
+		if diff := cmp.Diff(expectedResult.GetRepoUrls(), receivedRepoURLs, cmpopts.EquateEmpty()); diff != "" {
+			return fmt.Errorf("unexpected difference in repo URLs (-want +got):\n%s", diff)
+		}
+
+		// Check to make sure that we get the expected set of line fragments back
+		if diff := cmp.Diff(expectedResult.GetLineFragments(), receivedLineFragments, cmpopts.EquateEmpty()); diff != "" {
+			return fmt.Errorf("unexpected difference in line fragments (-want +got):\n%s", diff)
 		}
 
 		// Check to make sure that we get the same set of file matches back
