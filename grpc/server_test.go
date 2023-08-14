@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"go.uber.org/atomic"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
@@ -102,67 +103,40 @@ func TestClientServer(t *testing.T) {
 	}
 }
 
-func TestFuzzStreamSearch(t *testing.T) {
-	mock := &mockSearcher.MockSearcher{
-		WantSearch:   query.NewAnd(mustParse("hello world|universe")),
-		SearchResult: &zoekt.SearchResult{},
-	}
-	gs := grpc.NewServer()
-	defer gs.Stop()
+func TestFuzzGRPCChunkSender(t *testing.T) {
+	validateResult := func(input zoekt.SearchResult) error {
+		clientStream, serverStream := newPairedSearchStream(t)
+		sender := gRPCChunkSender(serverStream)
 
-	v1.RegisterWebserverServiceServer(gs, NewServer(adapter{mock}))
-	ts := httptest.NewServer(h2c.NewHandler(gs, &http2.Server{}))
-	defer ts.Close()
+		sender.Send(&input)
 
-	u, err := url.Parse(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cc, err := grpc.Dial(u.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer cc.Close()
-
-	client := v1.NewWebserverServiceClient(cc)
-
-	errString := "no error"
-	f := func(results zoekt.SearchResult) bool {
-
-		mock.SearchResult = &results
-		expectedResult := mock.SearchResult.ToProto()
-
-		cs, err := client.StreamSearch(context.Background(), &v1.SearchRequest{Query: query.QToProto(mock.WantSearch)})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		allResponses := readAllStream(t, cs)
+		allResponses := readAllStream(t, clientStream)
 		if len(allResponses) == 0 {
-			errString = "received no responses"
-			return false
+			return errors.New("received no responses")
 		}
+
+		expectedResult := input.ToProto()
 
 		for i, receivedResponse := range allResponses {
-
 			// First, check some invariants about the progress field
 
 			if i == len(allResponses)-1 {
 				// The last response should have the same progress as the original search result
-
 				if diff := cmp.Diff(expectedResult.GetProgress(), receivedResponse.GetProgress(), protocmp.Transform()); diff != "" {
-					errString = fmt.Sprintf("unexpected difference in progress (-want +got):\n%s", diff)
-					return false
+					return fmt.Errorf("unexpected difference in progress (-want +got):\n%s", diff)
 				}
+
 			} else {
 				// All other responses should ensure that the progress' priority is less than the max-pending priority, to
 				// ensure that the client consumes the entire set of chunks
 
 				if receivedResponse.GetProgress().GetPriority() > receivedResponse.GetProgress().GetMaxPendingPriority() {
-					errString = fmt.Sprintf("received response %d has priority %.6f, which is greater than the max pending priority %.6f", i, receivedResponse.GetProgress().GetPriority(), receivedResponse.GetProgress().GetMaxPendingPriority())
-					return false
+					return fmt.Errorf(
+						"received response %d (%s) has priority %.6f, which is greater than the max pending priority %.6f",
+						i, receivedResponse,
+						receivedResponse.GetProgress().GetPriority(), receivedResponse.GetProgress().GetMaxPendingPriority(),
+					)
+
 				}
 			}
 
@@ -180,8 +154,7 @@ func TestFuzzStreamSearch(t *testing.T) {
 			}
 
 			if diff := cmp.Diff(expectedResult, receivedResponse, opts...); diff != "" {
-				errString = fmt.Sprintf("unexpected difference in response fields (-want +got):\n%s", diff)
-				return false
+				return fmt.Errorf("unexpected difference in response fields (-want +got):\n%s", diff)
 			}
 		}
 
@@ -199,25 +172,84 @@ func TestFuzzStreamSearch(t *testing.T) {
 				"duration", // for whatever the duration field isn't updated when zoekt.Stats.Add is called
 			),
 		); diff != "" {
-			errString = fmt.Sprintf("unexpected difference in stats (-want +got):\n%s", diff)
-			return false
+			return fmt.Errorf("unexpected difference in stats (-want +got):\n%s", diff)
 		}
 
 		// Check to make sure that we get the same set of file matches back
 		if diff := cmp.Diff(expectedResult.GetFiles(), receivedFileMatches,
 			protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
-			errString = fmt.Sprintf("unexpected difference in file matches (-want +got):\n%s", diff)
-			return false
+			return fmt.Errorf("unexpected difference in file matches (-want +got):\n%s", diff)
 		}
 
-		return true
-
+		return nil
 	}
 
-	if err := quick.Check(f, nil); err != nil {
-		t.Fatal(errString)
+	var lastErr error
+	if err := quick.Check(func(r zoekt.SearchResult) bool {
+		lastErr = validateResult(r)
+
+		return lastErr == nil
+	}, nil); err != nil {
+		t.Fatal(lastErr.Error())
 	}
 }
+
+// newPairedSearchStream returns a pair of client and server search streams that are connected to each other.
+func newPairedSearchStream(t *testing.T) (v1.WebserverService_StreamSearchClient, v1.WebserverService_StreamSearchServer) {
+	client := &mockSearchStreamClient{t: t}
+	server := &mockSearchStreamServer{t: t, pairedClient: client}
+
+	return client, server
+}
+
+type mockSearchStreamClient struct {
+	t *testing.T
+
+	storedResponses []*v1.SearchResponse
+	index           int
+
+	startedReading atomic.Bool
+
+	grpc.ClientStream
+}
+
+func (m *mockSearchStreamClient) Recv() (*v1.SearchResponse, error) {
+	m.startedReading.Store(true)
+
+	if m.index >= len(m.storedResponses) {
+		return nil, io.EOF
+	}
+
+	r := m.storedResponses[m.index]
+	m.index++
+	return r, nil
+}
+
+func (m *mockSearchStreamClient) storeResponse(r *v1.SearchResponse) {
+	if m.startedReading.Load() {
+		m.t.Fatalf("cannot store additional responses after starting to read from stream")
+	}
+
+	m.storedResponses = append(m.storedResponses, r)
+}
+
+type mockSearchStreamServer struct {
+	t *testing.T
+
+	pairedClient *mockSearchStreamClient
+
+	grpc.ServerStream
+}
+
+func (m *mockSearchStreamServer) Send(r *v1.SearchResponse) error {
+	m.pairedClient.storeResponse(r)
+	return nil
+}
+
+var (
+	_ v1.WebserverService_StreamSearchServer = &mockSearchStreamServer{}
+	_ v1.WebserverService_StreamSearchClient = &mockSearchStreamClient{}
+)
 
 func readAllStream(t *testing.T, cs v1.WebserverService_StreamSearchClient) []*v1.SearchResponse {
 	var got []*v1.SearchResponse

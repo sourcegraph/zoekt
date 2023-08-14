@@ -45,7 +45,33 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	onMatch := stream.SenderFunc(func(r *zoekt.SearchResult) {
+	sender := gRPCChunkSender(ss)
+	sampler := stream.NewSamplingSender(sender)
+
+	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(req.GetOpts()), sampler)
+	if err == nil {
+		sampler.Flush()
+	}
+	return err
+}
+
+func (s *Server) List(ctx context.Context, req *v1.ListRequest) (*v1.ListResponse, error) {
+	q, err := query.QFromProto(req.GetQuery())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	repoList, err := s.streamer.List(ctx, q, zoekt.ListOptionsFromProto(req.GetOpts()))
+	if err != nil {
+		return nil, err
+	}
+
+	return repoList.ToProto(), nil
+}
+
+// gRPCChunkSender is a zoekt.Sender that sends chunks of FileMatches
+func gRPCChunkSender(ss v1.WebserverService_StreamSearchServer) zoekt.Sender {
+	f := func(r *zoekt.SearchResult) {
 		result := r.ToProto()
 
 		if len(result.GetFiles()) == 0 { // stats-only result, send it immediately
@@ -53,11 +79,13 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 			return
 		}
 
+		// Otherwise, chunk the file matches into multiple responses
+
 		statsSent := false
-		filesSent := 0
+		numFilesSent := 0
 
 		sendFunc := func(filesChunk []*v1.FileMatch) error {
-			filesSent += len(filesChunk)
+			numFilesSent += len(filesChunk)
 
 			var stats *v1.Stats
 			if !statsSent { // We only send stats back on the first chunk
@@ -67,7 +95,7 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 
 			progress := result.GetProgress()
 
-			if filesSent < len(result.GetFiles()) { // more chunks to come
+			if numFilesSent < len(result.GetFiles()) { // more chunks to come
 				progress = &v1.Progress{
 					Priority: result.GetProgress().GetPriority(),
 
@@ -97,26 +125,7 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 		}
 
 		_ = chunker.Flush()
-	})
-	sampler := stream.NewSamplingSender(onMatch)
-
-	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(req.GetOpts()), sampler)
-	if err == nil {
-		sampler.Flush()
-	}
-	return err
-}
-
-func (s *Server) List(ctx context.Context, req *v1.ListRequest) (*v1.ListResponse, error) {
-	q, err := query.QFromProto(req.GetQuery())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	repoList, err := s.streamer.List(ctx, q, zoekt.ListOptionsFromProto(req.GetOpts()))
-	if err != nil {
-		return nil, err
-	}
-
-	return repoList.ToProto(), nil
+	return stream.SenderFunc(f)
 }
