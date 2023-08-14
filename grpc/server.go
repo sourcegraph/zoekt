@@ -98,8 +98,13 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 
 		_ = chunker.Flush()
 	})
+	sampler := stream.NewSamplingSender(onMatch)
 
-	return s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(req.GetOpts()), onMatch)
+	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(req.GetOpts()), sampler)
+	if err == nil {
+		sampler.Flush()
+	}
+	return err
 }
 
 func (s *Server) List(ctx context.Context, req *v1.ListRequest) (*v1.ListResponse, error) {
