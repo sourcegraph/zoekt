@@ -53,27 +53,38 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 			return
 		}
 
+		statsSent := false
 		filesSent := 0
+
 		sendFunc := func(filesChunk []*v1.FileMatch) error {
 			filesSent += len(filesChunk)
 
-			response := &v1.SearchResponse{
-				Files: filesChunk,
-				Progress: &v1.Progress{
+			var stats *v1.Stats
+			if !statsSent { // We only send stats back on the first chunk
+				statsSent = true
+				stats = result.GetStats()
+			}
+
+			progress := result.GetProgress()
+
+			if filesSent < len(result.GetFiles()) { // more chunks to come
+				progress = &v1.Progress{
 					Priority: result.GetProgress().GetPriority(),
 
 					// We want the client to consume the entire set of chunks - so we manually
 					// patch the MaxPendingPriority to be >= overall priority.
-					MaxPendingPriority: math.Max( //
+					MaxPendingPriority: math.Max(
 						result.GetProgress().GetPriority(),
 						result.GetProgress().GetMaxPendingPriority(),
 					),
-				},
+				}
 			}
 
-			if filesSent == len(result.GetFiles()) { // last chunk
-				response.Stats = result.GetStats()       // only send stats on last chunk
-				response.Progress = result.GetProgress() // only send the original progress on last chunk
+			response := &v1.SearchResponse{
+				Files: filesChunk,
+
+				Stats:    stats,
+				Progress: progress,
 			}
 
 			return ss.Send(response)

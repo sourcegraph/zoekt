@@ -91,19 +91,7 @@ func TestClientServer(t *testing.T) {
 
 	allResponses := readAllStream(t, cs)
 
-	for _, receivedResponse := range allResponses { // check to make sure that all responses have the same fields set
-		opts := []cmp.Option{
-			protocmp.Transform(),
-			cmpopts.IgnoreFields(v1.SearchResponse{}, "Files"), // Files is tested separately
-		}
-
-		if diff := cmp.Diff(receivedResponse, mock.SearchResult.ToProto(), opts...); diff != "" {
-			t.Fatalf("unexpected difference in response fields (-want +got):\n%s", diff)
-		}
-	}
-
 	// check to make sure that we get the same set of file matches back
-
 	var receivedFileMatches []*v1.FileMatch
 	for _, r := range allResponses {
 		receivedFileMatches = append(receivedFileMatches, r.GetFiles()...)
@@ -140,9 +128,11 @@ func TestFuzzStreamSearch(t *testing.T) {
 
 	client := v1.NewWebserverServiceClient(cc)
 
-	errString := "error"
+	errString := "no error"
 	f := func(results zoekt.SearchResult) bool {
+
 		mock.SearchResult = &results
+		expectedResult := mock.SearchResult.ToProto()
 
 		cs, err := client.StreamSearch(context.Background(), &v1.SearchRequest{Query: query.QToProto(mock.WantSearch)})
 		if err != nil {
@@ -150,26 +140,72 @@ func TestFuzzStreamSearch(t *testing.T) {
 		}
 
 		allResponses := readAllStream(t, cs)
-		for _, receivedResponse := range allResponses { // check to make sure that all responses have the same fields set
-			opts := []cmp.Option{
-				protocmp.Transform(),
-				cmpopts.IgnoreFields(v1.SearchResponse{}, "Files"), // Files is tested separately
+		if len(allResponses) == 0 {
+			errString = "received no responses"
+			return false
+		}
+
+		for i, receivedResponse := range allResponses {
+
+			// First, check some invariants about the progress field
+
+			if i == len(allResponses)-1 {
+				// The last response should have the same progress as the original search result
+
+				if diff := cmp.Diff(expectedResult.GetProgress(), receivedResponse.GetProgress(), protocmp.Transform()); diff != "" {
+					errString = fmt.Sprintf("unexpected difference in progress (-want +got):\n%s", diff)
+					return false
+				}
+			} else {
+				// All other responses should ensure that the progress' priority is less than the max-pending priority, to
+				// ensure that the client consumes the entire set of chunks
+
+				if receivedResponse.GetProgress().GetPriority() > receivedResponse.GetProgress().GetMaxPendingPriority() {
+					errString = fmt.Sprintf("received response %d has priority %.6f, which is greater than the max pending priority %.6f", i, receivedResponse.GetProgress().GetPriority(), receivedResponse.GetProgress().GetMaxPendingPriority())
+					return false
+				}
 			}
 
-			if diff := cmp.Diff(receivedResponse, mock.SearchResult.ToProto(), opts...); diff != "" {
+			// Safety, ensure that all other fields are echoed back correctly if the schema ever changes
+			opts := []cmp.Option{
+				protocmp.Transform(),
+				protocmp.IgnoreFields(&v1.SearchResponse{},
+					"progress", // progress is tested above
+					"stats",    // aggregated stats are tested below
+					"files",    // files are tested separately
+
+					"repo_urls",      // We no longer send repo_urls to the client
+					"line_fragments", // We no longer send line_fragments to the client
+				),
+			}
+
+			if diff := cmp.Diff(expectedResult, receivedResponse, opts...); diff != "" {
 				errString = fmt.Sprintf("unexpected difference in response fields (-want +got):\n%s", diff)
 				return false
 			}
 		}
 
-		// check to make sure that we get the same set of file matches back
-
+		allStats := &zoekt.Stats{}
 		var receivedFileMatches []*v1.FileMatch
 		for _, r := range allResponses {
+			allStats.Add(zoekt.StatsFromProto(r.GetStats()))
 			receivedFileMatches = append(receivedFileMatches, r.GetFiles()...)
 		}
 
-		if diff := cmp.Diff(receivedFileMatches, mock.SearchResult.ToProto().GetFiles(), protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+		// Check to make sure that we get one set of stats back
+		if diff := cmp.Diff(expectedResult.GetStats(), allStats.ToProto(),
+			protocmp.Transform(),
+			protocmp.IgnoreFields(&v1.Stats{},
+				"duration", // for whatever the duration field isn't updated when zoekt.Stats.Add is called
+			),
+		); diff != "" {
+			errString = fmt.Sprintf("unexpected difference in stats (-want +got):\n%s", diff)
+			return false
+		}
+
+		// Check to make sure that we get the same set of file matches back
+		if diff := cmp.Diff(expectedResult.GetFiles(), receivedFileMatches,
+			protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
 			errString = fmt.Sprintf("unexpected difference in file matches (-want +got):\n%s", diff)
 			return false
 		}
