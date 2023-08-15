@@ -108,14 +108,6 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 		// Setup: we constrain the input to be a valid zoekt.SearchResult by ensuring that the
 		// RepoURLs and LineFragment fields are derived from the FileMatches
 		// (instead of being random maps from quick.Check)
-
-		input.RepoURLs = make(map[string]string)
-		input.LineFragments = make(map[string]string)
-		for _, file := range input.Files {
-			input.RepoURLs[file.Repository] = fmt.Sprintf("https://github.com/%s", file.Repository)
-			input.LineFragments[file.Repository] = fmt.Sprintf("line fragment for %s", file.Repository)
-		}
-
 		clientStream, serverStream := newPairedSearchStream(t)
 		sender := gRPCChunkSender(serverStream)
 
@@ -158,9 +150,6 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 					"progress", // progress is tested above
 					"stats",    // aggregated stats are tested below
 					"files",    // files are tested separately
-
-					"repo_urls",      // tested below
-					"line_fragments", // tested below
 				),
 			}
 
@@ -170,21 +159,11 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 		}
 
 		receivedStats := &zoekt.Stats{}
-		receivedRepoURLs := make(map[string]string)
-		receivedLineFragments := make(map[string]string)
 
 		var receivedFileMatches []*v1.FileMatch
 		for _, r := range allResponses {
 			receivedStats.Add(zoekt.StatsFromProto(r.GetStats()))
 			receivedFileMatches = append(receivedFileMatches, r.GetFiles()...)
-
-			for k, v := range r.GetRepoUrls() {
-				receivedRepoURLs[k] = v
-			}
-
-			for k, v := range r.GetLineFragments() {
-				receivedLineFragments[k] = v
-			}
 		}
 
 		// Check to make sure that we get one set of stats back
@@ -195,16 +174,6 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 			),
 		); diff != "" {
 			return fmt.Errorf("unexpected difference in stats (-want +got):\n%s", diff)
-		}
-
-		// Check to make sure that we get the expected set of repo URLs back
-		if diff := cmp.Diff(expectedResult.GetRepoUrls(), receivedRepoURLs, cmpopts.EquateEmpty()); diff != "" {
-			return fmt.Errorf("unexpected difference in repo URLs (-want +got):\n%s", diff)
-		}
-
-		// Check to make sure that we get the expected set of line fragments back
-		if diff := cmp.Diff(expectedResult.GetLineFragments(), receivedLineFragments, cmpopts.EquateEmpty()); diff != "" {
-			return fmt.Errorf("unexpected difference in line fragments (-want +got):\n%s", diff)
 		}
 
 		// Check to make sure that we get the same set of file matches back

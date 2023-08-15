@@ -108,30 +108,11 @@ func gRPCChunkSender(ss v1.WebserverService_StreamSearchServer) zoekt.Sender {
 				}
 			}
 
-			// We need to ensure that we send the repository URLs and LineFragments for only the repositories
-			// actually mentioned in this chunk of files.
-			repoURLs := make(map[string]string, len(result.GetRepoUrls()))
-			lineFragments := make(map[string]string, len(result.GetLineFragments()))
-
-			for _, file := range filesChunk {
-				repository := file.GetRepository()
-
-				if url, ok := result.GetRepoUrls()[repository]; ok {
-					repoURLs[repository] = url
-				}
-
-				if fragment, ok := result.GetLineFragments()[repository]; ok {
-					lineFragments[repository] = fragment
-				}
-			}
-
 			response := &v1.SearchResponse{
-				Files:    filesChunk,
+				Files: filesChunk,
+
 				Stats:    stats,
 				Progress: progress,
-
-				RepoUrls:      repoURLs,
-				LineFragments: lineFragments,
 			}
 
 			return ss.Send(response)
