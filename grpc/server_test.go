@@ -105,9 +105,6 @@ func TestClientServer(t *testing.T) {
 
 func TestFuzzGRPCChunkSender(t *testing.T) {
 	validateResult := func(input zoekt.SearchResult) error {
-		// Setup: we constrain the input to be a valid zoekt.SearchResult by ensuring that the
-		// RepoURLs and LineFragment fields are derived from the FileMatches
-		// (instead of being random maps from quick.Check)
 		clientStream, serverStream := newPairedSearchStream(t)
 		sender := gRPCChunkSender(serverStream)
 
