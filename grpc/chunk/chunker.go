@@ -90,3 +90,18 @@ func (c *Chunker[T]) Flush() error {
 
 	return c.sendResponseMsg()
 }
+
+// SendAll is a convenience function that immediately sends all provided items in smaller chunks using the provided
+// sendFunc.
+//
+// See the documentation for Chunker.Send() for more information.
+func SendAll[T Message](sendFunc func([]T) error, items ...T) error {
+	c := New(sendFunc)
+
+	err := c.Send(items...)
+	if err != nil {
+		return err
+	}
+
+	return c.Flush()
+}

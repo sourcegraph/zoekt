@@ -118,13 +118,7 @@ func gRPCChunkSender(ss v1.WebserverService_StreamSearchServer) zoekt.Sender {
 			return ss.Send(response)
 		}
 
-		chunker := chunk.New(sendFunc)
-		err := chunker.Send(result.GetFiles()...)
-		if err != nil {
-			return
-		}
-
-		_ = chunker.Flush()
+		_ = chunk.SendAll(sendFunc, result.GetFiles()...)
 	}
 
 	return stream.SenderFunc(f)
