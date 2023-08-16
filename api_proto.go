@@ -345,7 +345,7 @@ func (p *Progress) ToProto() *proto.Progress {
 	}
 }
 
-func SearchResultFromProto(p *proto.SearchResponse, repoURls, lineFragments map[string]string) *SearchResult {
+func SearchResultFromProto(p *proto.SearchResponse, repoURLs, lineFragments map[string]string) *SearchResult {
 	if p == nil {
 		return nil
 	}
@@ -361,7 +361,7 @@ func SearchResultFromProto(p *proto.SearchResponse, repoURls, lineFragments map[
 
 		Files: files,
 
-		RepoURLs:      repoURls,
+		RepoURLs:      repoURLs,
 		LineFragments: lineFragments,
 	}
 }
