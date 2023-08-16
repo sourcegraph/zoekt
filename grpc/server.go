@@ -2,7 +2,9 @@ package grpc
 
 import (
 	"context"
+	"math"
 
+	"github.com/sourcegraph/zoekt/grpc/chunk"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -43,10 +45,8 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	onMatch := stream.SenderFunc(func(res *zoekt.SearchResult) {
-		ss.Send(res.ToProto())
-	})
-	sampler := stream.NewSamplingSender(onMatch)
+	sender := gRPCChunkSender(ss)
+	sampler := stream.NewSamplingSender(sender)
 
 	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(req.GetOpts()), sampler)
 	if err == nil {
@@ -67,4 +67,59 @@ func (s *Server) List(ctx context.Context, req *v1.ListRequest) (*v1.ListRespons
 	}
 
 	return repoList.ToProto(), nil
+}
+
+// gRPCChunkSender is a zoekt.Sender that sends small chunks of FileMatches to the provided gRPC stream.
+func gRPCChunkSender(ss v1.WebserverService_StreamSearchServer) zoekt.Sender {
+	f := func(r *zoekt.SearchResult) {
+		result := r.ToProto()
+
+		if len(result.GetFiles()) == 0 { // stats-only result, send it immediately
+			_ = ss.Send(result)
+			return
+		}
+
+		// Otherwise, chunk the file matches into multiple responses
+
+		statsSent := false
+		numFilesSent := 0
+
+		sendFunc := func(filesChunk []*v1.FileMatch) error {
+			numFilesSent += len(filesChunk)
+
+			var stats *v1.Stats
+			if !statsSent { // We only send stats back on the first chunk
+				statsSent = true
+				stats = result.GetStats()
+			}
+
+			progress := result.GetProgress()
+
+			if numFilesSent < len(result.GetFiles()) { // more chunks to come
+				progress = &v1.Progress{
+					Priority: result.GetProgress().GetPriority(),
+
+					// We want the client to consume the entire set of chunks - so we manually
+					// patch the MaxPendingPriority to be >= overall priority.
+					MaxPendingPriority: math.Max(
+						result.GetProgress().GetPriority(),
+						result.GetProgress().GetMaxPendingPriority(),
+					),
+				}
+			}
+
+			response := &v1.SearchResponse{
+				Files: filesChunk,
+
+				Stats:    stats,
+				Progress: progress,
+			}
+
+			return ss.Send(response)
+		}
+
+		_ = chunk.SendAll(sendFunc, result.GetFiles()...)
+	}
+
+	return stream.SenderFunc(f)
 }

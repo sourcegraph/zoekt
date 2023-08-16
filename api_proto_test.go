@@ -134,8 +134,17 @@ func TestProtoRoundtrip(t *testing.T) {
 
 	t.Run("SearchResult", func(t *testing.T) {
 		f := func(f1 *SearchResult) bool {
+			var repoURLs map[string]string
+			var lineFragments map[string]string
+
+			if f1 != nil {
+				repoURLs = f1.RepoURLs
+				lineFragments = f1.LineFragments
+			}
+
 			p1 := f1.ToProto()
-			f2 := SearchResultFromProto(p1)
+			f2 := SearchResultFromProto(p1, repoURLs, lineFragments)
+
 			return reflect.DeepEqual(f1, f2)
 		}
 		if err := quick.Check(f, nil); err != nil {
@@ -397,7 +406,7 @@ var (
 	}()
 
 	// The non-proto struct representation of the search result
-	exampleSearchResultGo = SearchResultFromProto(exampleSearchResultProto)
+	exampleSearchResultGo = SearchResultFromProto(exampleSearchResultProto, nil, nil)
 )
 
 func BenchmarkGobRoundtrip(b *testing.B) {

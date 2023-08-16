@@ -345,7 +345,7 @@ func (p *Progress) ToProto() *proto.Progress {
 	}
 }
 
-func SearchResultFromProto(p *proto.SearchResponse) *SearchResult {
+func SearchResultFromProto(p *proto.SearchResponse, repoURLs, lineFragments map[string]string) *SearchResult {
 	if p == nil {
 		return nil
 	}
@@ -356,11 +356,13 @@ func SearchResultFromProto(p *proto.SearchResponse) *SearchResult {
 	}
 
 	return &SearchResult{
-		Stats:         StatsFromProto(p.GetStats()),
-		Progress:      ProgressFromProto(p.GetProgress()),
-		Files:         files,
-		RepoURLs:      p.RepoUrls,
-		LineFragments: p.LineFragments,
+		Stats:    StatsFromProto(p.GetStats()),
+		Progress: ProgressFromProto(p.GetProgress()),
+
+		Files: files,
+
+		RepoURLs:      repoURLs,
+		LineFragments: lineFragments,
 	}
 }
 
@@ -375,11 +377,10 @@ func (sr *SearchResult) ToProto() *proto.SearchResponse {
 	}
 
 	return &proto.SearchResponse{
-		Stats:         sr.Stats.ToProto(),
-		Progress:      sr.Progress.ToProto(),
-		Files:         files,
-		RepoUrls:      sr.RepoURLs,
-		LineFragments: sr.LineFragments,
+		Stats:    sr.Stats.ToProto(),
+		Progress: sr.Progress.ToProto(),
+
+		Files: files,
 	}
 }
 

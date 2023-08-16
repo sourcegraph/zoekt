@@ -24,17 +24,13 @@ message SearchRequest {
 }
 
 message SearchResponse {
+  reserved 4, 5;
+  reserved "repo_urls", "line_fragments";
+
   Stats stats = 1;
   Progress progress = 2;
 
   repeated FileMatch files = 3;
-
-  // RepoURLs holds a repo => template string map.
-  map<string, string> repo_urls = 4;
-
-  // FragmentNames holds a repo => template string map, for
-  // the line number fragment.
-  map<string, string> line_fragments = 5;
 }
 
 message SearchOptions {
