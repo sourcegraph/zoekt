@@ -58,8 +58,8 @@ func TestChunker_DeliverAllMessages(t *testing.T) {
 		}
 
 		// Confirm that we received the same number of payloads as we sent.
-		if len(receivedPayloads) != len(inputPayloads) {
-			return fmt.Errorf("expected %d payloads, got %d", len(inputPayloads), len(receivedPayloads))
+		if diff := cmp.Diff(len(inputPayloads), len(receivedPayloads)); diff != "" {
+			return fmt.Errorf("unexpected number of payloads (-want +got):\n%s", diff)
 		}
 
 		// Confirm that each received payload is the same as the original.
@@ -76,16 +76,20 @@ func TestChunker_DeliverAllMessages(t *testing.T) {
 		}
 
 		// Confirm that the total size of the payloads we received is the same as the total size of the payloads we sent.
-		if receivedPayloadSizeBytes != expectedPayloadSizeBytes {
-			return fmt.Errorf("expected %d bytes, got %d bytes", expectedPayloadSizeBytes, receivedPayloadSizeBytes)
+		if diff := cmp.Diff(expectedPayloadSizeBytes, receivedPayloadSizeBytes); diff != "" {
+			return fmt.Errorf("unexpected payload size (-want +got):\n%s", diff)
 		}
 
 		return nil
 	}
 
 	t.Run("normal", func(t *testing.T) {
+		t.Parallel()
+
 		inputPayloads := [][]byte{
 			{1, 2, 3},
+			bytes.Repeat([]byte("a"), int(3.5*maxMessageSize)),
+			{4, 5, 6},
 		}
 
 		if err := runTest(inputPayloads); err != nil {
@@ -94,6 +98,8 @@ func TestChunker_DeliverAllMessages(t *testing.T) {
 	})
 
 	t.Run("some empty", func(t *testing.T) {
+		t.Parallel()
+
 		inputPayloads := [][]byte{
 			{},
 			[]byte("foo, bar, baz"),
@@ -107,6 +113,8 @@ func TestChunker_DeliverAllMessages(t *testing.T) {
 	})
 
 	t.Run("fuzz", func(t *testing.T) {
+		t.Parallel()
+
 		var lastErr error
 
 		if err := quick.Check(func(payloads [][]byte) bool {
