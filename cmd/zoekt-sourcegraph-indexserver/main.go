@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
@@ -1370,10 +1371,20 @@ func newServer(conf rootConfig) (*Server, error) {
 			WithShouldUseGRPC(conf.useGRPC),
 		}
 
+		logger := sglog.Scoped("zoektConfigurationGRPCClient", "")
+
 		gRPCConnectionOptions := []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithChainStreamInterceptor(internalActorStreamInterceptor()),
-			grpc.WithChainUnaryInterceptor(internalActorUnaryInterceptor()),
+			grpc.WithChainStreamInterceptor(
+				internalActorStreamInterceptor(),
+				internalerrs.LoggingStreamClientInterceptor(logger),
+				internalerrs.PrometheusStreamClientInterceptor,
+			),
+			grpc.WithChainUnaryInterceptor(
+				internalActorUnaryInterceptor(),
+				internalerrs.LoggingUnaryClientInterceptor(logger),
+				internalerrs.PrometheusUnaryClientInterceptor,
+			),
 			grpc.WithDefaultServiceConfig(defaultGRPCServiceConfigurationJSON),
 		}
 
