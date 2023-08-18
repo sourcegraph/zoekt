@@ -38,6 +38,8 @@ import (
 	"time"
 
 	"github.com/sourcegraph/mountinfo"
+	"github.com/sourcegraph/zoekt/grpc/internalerrs"
+	zoektgrpc "github.com/sourcegraph/zoekt/grpc/server"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -46,7 +48,6 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/debugserver"
-	zoektgrpc "github.com/sourcegraph/zoekt/grpc"
 	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tracer"
@@ -288,9 +289,17 @@ func main() {
 		log.Println("watchdog disabled")
 	}
 
+	logger := sglog.Scoped("ZoektWebserverGRPCServer", "The Zoekt Webserver GRPC Server")
+
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
-		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(
+			otelgrpc.StreamServerInterceptor(),
+			internalerrs.LoggingStreamServerInterceptor(logger),
+		),
+		grpc.ChainUnaryInterceptor(
+			otelgrpc.UnaryServerInterceptor(),
+			internalerrs.LoggingUnaryServerInterceptor(logger),
+		),
 	)
 	v1.RegisterWebserverServiceServer(grpcServer, zoektgrpc.NewServer(web.NewTraceAwareSearcher(s.Searcher)))
 
