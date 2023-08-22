@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
+	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
@@ -1372,33 +1373,12 @@ func newServer(conf rootConfig) (*Server, error) {
 		}
 
 		logger := sglog.Scoped("zoektConfigurationGRPCClient", "")
-
-		gRPCConnectionOptions := []grpc.DialOption{
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithChainStreamInterceptor(
-				internalActorStreamInterceptor(),
-				internalerrs.LoggingStreamClientInterceptor(logger),
-				internalerrs.PrometheusStreamClientInterceptor,
-			),
-			grpc.WithChainUnaryInterceptor(
-				internalActorUnaryInterceptor(),
-				internalerrs.LoggingUnaryClientInterceptor(logger),
-				internalerrs.PrometheusUnaryClientInterceptor,
-			),
-			grpc.WithDefaultServiceConfig(defaultGRPCServiceConfigurationJSON),
-		}
-
-		// This dialer is used to connect via gRPC to the Sourcegraph instance.
-		// This is done lazily, so we can provide the client to use regardless of
-		// whether we enabled gRPC or not initially.
-		cc, err := grpc.Dial(rootURL.Host, gRPCConnectionOptions...)
+		client, err := dialGRPCClient(rootURL.Host, logger)
 		if err != nil {
 			return nil, fmt.Errorf("initializing gRPC connection to %q: %w", rootURL.Host, err)
 		}
 
-		client := proto.NewZoektConfigurationServiceClient(cc)
 		opts = append(opts, WithGRPCClient(client))
-
 		sg = newSourcegraphClient(rootURL, conf.hostname, opts...)
 
 	} else {
@@ -1470,6 +1450,48 @@ func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
 		ctx = metadata.AppendToOutgoingContext(ctx, "X-Sourcegraph-Actor-UID", "internal")
 		return streamer(ctx, desc, cc, method, opts...)
 	}
+}
+
+// defaultGRPCMessageReceiveSizeBytes is the default message size that gRPCs servers and clients are allowed to process.
+// This can be overridden by providing custom Server/Dial options.
+const defaultGRPCMessageReceiveSizeBytes = 90 * 1024 * 1024 // 90 MB
+
+func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.DialOption) (proto.ZoektConfigurationServiceClient, error) {
+	opts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainStreamInterceptor(
+			internalActorStreamInterceptor(),
+			internalerrs.LoggingStreamClientInterceptor(logger),
+			internalerrs.PrometheusStreamClientInterceptor,
+		),
+		grpc.WithChainUnaryInterceptor(
+			internalActorUnaryInterceptor(),
+			internalerrs.LoggingUnaryClientInterceptor(logger),
+			internalerrs.PrometheusUnaryClientInterceptor,
+		),
+		grpc.WithDefaultServiceConfig(defaultGRPCServiceConfigurationJSON),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaultGRPCMessageReceiveSizeBytes)),
+	}
+
+	opts = append(opts, additionalOpts...)
+
+	// Ensure that the message size options are set last, so they override any other
+	// client-specific options that tweak the message size.
+	//
+	// The message size options are only provided if the environment variable is set. These options serve as an escape hatch, so they
+	// take precedence over everything else with a uniform size setting that's easy to reason about.
+	opts = append(opts, messagesize.MustGetClientMessageSizeFromEnv()...)
+
+	// This dialer is used to connect via gRPC to the Sourcegraph instance.
+	// This is done lazily, so we can provide the client to use regardless of
+	// whether we enabled gRPC or not initially.
+	cc, err := grpc.Dial(addr, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("dialing %q: %w", addr, err)
+	}
+
+	client := proto.NewZoektConfigurationServiceClient(cc)
+	return client, nil
 }
 
 // addDefaultPort adds a default port to a URL if one is not specified.

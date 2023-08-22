@@ -39,6 +39,7 @@ import (
 
 	"github.com/sourcegraph/mountinfo"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
+	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	zoektgrpc "github.com/sourcegraph/zoekt/grpc/server"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/net/http2"
@@ -291,17 +292,8 @@ func main() {
 
 	logger := sglog.Scoped("ZoektWebserverGRPCServer", "The Zoekt Webserver GRPC Server")
 
-	grpcServer := grpc.NewServer(
-		grpc.ChainStreamInterceptor(
-			otelgrpc.StreamServerInterceptor(),
-			internalerrs.LoggingStreamServerInterceptor(logger),
-		),
-		grpc.ChainUnaryInterceptor(
-			otelgrpc.UnaryServerInterceptor(),
-			internalerrs.LoggingUnaryServerInterceptor(logger),
-		),
-	)
-	v1.RegisterWebserverServiceServer(grpcServer, zoektgrpc.NewServer(web.NewTraceAwareSearcher(s.Searcher)))
+	streamer := web.NewTraceAwareSearcher(s.Searcher)
+	grpcServer := newGRPCServer(logger, streamer)
 
 	handler = multiplexGRPC(grpcServer, handler)
 
@@ -634,6 +626,33 @@ func traceContext(ctx context.Context) sglog.TraceContext {
 	}
 
 	return sglog.TraceContext{}
+}
+
+func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts ...grpc.ServerOption) *grpc.Server {
+	opts := []grpc.ServerOption{
+		grpc.ChainStreamInterceptor(
+			otelgrpc.StreamServerInterceptor(),
+			internalerrs.LoggingStreamServerInterceptor(logger),
+		),
+		grpc.ChainUnaryInterceptor(
+			otelgrpc.UnaryServerInterceptor(),
+			internalerrs.LoggingUnaryServerInterceptor(logger),
+		),
+	}
+
+	opts = append(opts, additionalOpts...)
+
+	// Ensure that the message size options are set last, so they override any other
+	// server-specific options that tweak the message size.
+	//
+	// The message size options are only provided if the environment variable is set. These options serve as an escape hatch, so they
+	// take precedence over everything else with a uniform size setting that's easy to reason about.
+	opts = append(opts, messagesize.MustGetServerMessageSizeFromEnv()...)
+
+	s := grpc.NewServer(opts...)
+	v1.RegisterWebserverServiceServer(s, zoektgrpc.NewServer(streamer))
+
+	return s
 }
 
 var (
