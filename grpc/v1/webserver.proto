@@ -380,7 +380,9 @@ message FileMatch {
   // other packages can print some diagnostics.
   string debug = 2;
 
-  string file_name = 3;
+  // The repository-relative path to the file.
+  // 🚨 Warning: file_name might not be a valid UTF-8 string.
+  bytes file_name = 3;
 
   // Repository is the globally unique name of the repo of the
   // match
