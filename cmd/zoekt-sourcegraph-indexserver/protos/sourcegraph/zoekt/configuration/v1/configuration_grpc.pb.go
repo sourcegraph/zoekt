@@ -34,7 +34,7 @@ type ZoektConfigurationServiceClient interface {
 	// List returns the list of repositories that the client should index.
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
 	// DocumentRanks returns the rank vectors for all documents in the specified repository.
-	DocumentRanks(ctx context.Context, in *DocumentRanksRequest, opts ...grpc.CallOption) (*DocumentRanksResponse, error)
+	DocumentRanks(ctx context.Context, in *DocumentRanksRequest, opts ...grpc.CallOption) (ZoektConfigurationService_DocumentRanksClient, error)
 	// UpdateIndexStatus informs the server that the caller has indexed the specified repositories
 	// at the specified commits.
 	UpdateIndexStatus(ctx context.Context, in *UpdateIndexStatusRequest, opts ...grpc.CallOption) (*UpdateIndexStatusResponse, error)
@@ -66,13 +66,36 @@ func (c *zoektConfigurationServiceClient) List(ctx context.Context, in *ListRequ
 	return out, nil
 }
 
-func (c *zoektConfigurationServiceClient) DocumentRanks(ctx context.Context, in *DocumentRanksRequest, opts ...grpc.CallOption) (*DocumentRanksResponse, error) {
-	out := new(DocumentRanksResponse)
-	err := c.cc.Invoke(ctx, ZoektConfigurationService_DocumentRanks_FullMethodName, in, out, opts...)
+func (c *zoektConfigurationServiceClient) DocumentRanks(ctx context.Context, in *DocumentRanksRequest, opts ...grpc.CallOption) (ZoektConfigurationService_DocumentRanksClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ZoektConfigurationService_ServiceDesc.Streams[0], ZoektConfigurationService_DocumentRanks_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &zoektConfigurationServiceDocumentRanksClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type ZoektConfigurationService_DocumentRanksClient interface {
+	Recv() (*DocumentRanksResponse, error)
+	grpc.ClientStream
+}
+
+type zoektConfigurationServiceDocumentRanksClient struct {
+	grpc.ClientStream
+}
+
+func (x *zoektConfigurationServiceDocumentRanksClient) Recv() (*DocumentRanksResponse, error) {
+	m := new(DocumentRanksResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (c *zoektConfigurationServiceClient) UpdateIndexStatus(ctx context.Context, in *UpdateIndexStatusRequest, opts ...grpc.CallOption) (*UpdateIndexStatusResponse, error) {
@@ -93,7 +116,7 @@ type ZoektConfigurationServiceServer interface {
 	// List returns the list of repositories that the client should index.
 	List(context.Context, *ListRequest) (*ListResponse, error)
 	// DocumentRanks returns the rank vectors for all documents in the specified repository.
-	DocumentRanks(context.Context, *DocumentRanksRequest) (*DocumentRanksResponse, error)
+	DocumentRanks(*DocumentRanksRequest, ZoektConfigurationService_DocumentRanksServer) error
 	// UpdateIndexStatus informs the server that the caller has indexed the specified repositories
 	// at the specified commits.
 	UpdateIndexStatus(context.Context, *UpdateIndexStatusRequest) (*UpdateIndexStatusResponse, error)
@@ -110,8 +133,8 @@ func (UnimplementedZoektConfigurationServiceServer) SearchConfiguration(context.
 func (UnimplementedZoektConfigurationServiceServer) List(context.Context, *ListRequest) (*ListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
 }
-func (UnimplementedZoektConfigurationServiceServer) DocumentRanks(context.Context, *DocumentRanksRequest) (*DocumentRanksResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DocumentRanks not implemented")
+func (UnimplementedZoektConfigurationServiceServer) DocumentRanks(*DocumentRanksRequest, ZoektConfigurationService_DocumentRanksServer) error {
+	return status.Errorf(codes.Unimplemented, "method DocumentRanks not implemented")
 }
 func (UnimplementedZoektConfigurationServiceServer) UpdateIndexStatus(context.Context, *UpdateIndexStatusRequest) (*UpdateIndexStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateIndexStatus not implemented")
@@ -166,22 +189,25 @@ func _ZoektConfigurationService_List_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ZoektConfigurationService_DocumentRanks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DocumentRanksRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+func _ZoektConfigurationService_DocumentRanks_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DocumentRanksRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(ZoektConfigurationServiceServer).DocumentRanks(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ZoektConfigurationService_DocumentRanks_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ZoektConfigurationServiceServer).DocumentRanks(ctx, req.(*DocumentRanksRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(ZoektConfigurationServiceServer).DocumentRanks(m, &zoektConfigurationServiceDocumentRanksServer{stream})
+}
+
+type ZoektConfigurationService_DocumentRanksServer interface {
+	Send(*DocumentRanksResponse) error
+	grpc.ServerStream
+}
+
+type zoektConfigurationServiceDocumentRanksServer struct {
+	grpc.ServerStream
+}
+
+func (x *zoektConfigurationServiceDocumentRanksServer) Send(m *DocumentRanksResponse) error {
+	return x.ServerStream.SendMsg(m)
 }
 
 func _ZoektConfigurationService_UpdateIndexStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -218,14 +244,16 @@ var ZoektConfigurationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ZoektConfigurationService_List_Handler,
 		},
 		{
-			MethodName: "DocumentRanks",
-			Handler:    _ZoektConfigurationService_DocumentRanks_Handler,
-		},
-		{
 			MethodName: "UpdateIndexStatus",
 			Handler:    _ZoektConfigurationService_UpdateIndexStatus_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "DocumentRanks",
+			Handler:       _ZoektConfigurationService_DocumentRanks_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "configuration.proto",
 }

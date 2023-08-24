@@ -34,7 +34,9 @@ func TestRepoPathRanks_RoundTrip(t *testing.T) {
 	var diff string
 	f := func(original RepoPathRanks) bool {
 		var converted RepoPathRanks
-		converted.FromProto(original.ToProto())
+
+		meanRanks, pathRanks := original.ToProto()
+		converted.FromProto(meanRanks, pathRanks)
 
 		options := []cmp.Option{
 			cmpopts.EquateEmpty(),

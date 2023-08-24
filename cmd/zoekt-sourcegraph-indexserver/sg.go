@@ -25,6 +25,8 @@ import (
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"golang.org/x/net/trace"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/sourcegraph/zoekt"
 	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
@@ -201,13 +203,49 @@ func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName strin
 }
 
 func (s *sourcegraphClient) getDocumentRanksGRPC(ctx context.Context, repoName string) (RepoPathRanks, error) {
-	resp, err := s.grpcClient.DocumentRanks(ctx, &proto.DocumentRanksRequest{Repository: repoName})
+	stream, err := s.grpcClient.DocumentRanks(ctx, &proto.DocumentRanksRequest{Repository: repoName})
 	if err != nil {
 		return RepoPathRanks{}, err
 	}
 
-	var out RepoPathRanks
-	out.FromProto(resp)
+	receivedMeanRankMessage := false
+	meanRank := float64(0)
+
+	var allPathRanks []*proto.DocumentRanksResponse_PathRank
+
+	for {
+		response, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			return RepoPathRanks{}, err
+		}
+
+		switch response.GetPayload().(type) {
+		case *proto.DocumentRanksResponse_MeanRank_:
+			receivedMeanRankMessage = true
+			meanRank = response.GetMeanRank().GetRank()
+		case *proto.DocumentRanksResponse_PathRanks_:
+			allPathRanks = append(allPathRanks, response.GetPathRanks().GetPathRanks()...)
+		case nil:
+			continue
+		default:
+			// TODO@ggilmore: Does this break forwards compatibility - should I just log and continue?
+
+			err := status.Errorf(codes.InvalidArgument, "unknown rank type: %T", response.GetPayload())
+			return RepoPathRanks{}, err
+		}
+	}
+
+	if !receivedMeanRankMessage {
+		err := status.Error(codes.InvalidArgument, "no mean rank message received")
+		return RepoPathRanks{}, err
+	}
+
+	out := RepoPathRanks{}
+	out.FromProto(meanRank, allPathRanks)
 
 	return out, nil
 }
@@ -1100,29 +1138,32 @@ type RepoPathRanks struct {
 	Paths    map[string]float64 `json:"paths"`
 }
 
-func (r *RepoPathRanks) FromProto(x *proto.DocumentRanksResponse) {
-	protoPaths := x.GetPaths()
-	ranks := make(map[string]float64, len(protoPaths))
-	for filePath, rank := range protoPaths {
-		ranks[filePath] = rank
+func (r *RepoPathRanks) FromProto(meanRank float64, pathRanks []*proto.DocumentRanksResponse_PathRank) {
+	ranks := make(map[string]float64, len(pathRanks))
+
+	for _, p := range pathRanks {
+		// Note: it's possible for a file path to be non-utf8 encoded.
+		// We don't perform any validation on Sourcegraph's side, so it's possible.
+		filePath := string(p.GetPath())
+		ranks[filePath] = p.GetRank()
 	}
 
 	*r = RepoPathRanks{
-		MeanRank: x.GetMeanRank(),
+		MeanRank: meanRank,
 		Paths:    ranks,
 	}
 }
 
-func (r *RepoPathRanks) ToProto() *proto.DocumentRanksResponse {
-	paths := make(map[string]float64, len(r.Paths))
+func (r *RepoPathRanks) ToProto() (meanRank float64, pathRanks []*proto.DocumentRanksResponse_PathRank) {
+	paths := make([]*proto.DocumentRanksResponse_PathRank, 0, len(r.Paths))
 	for filePath, rank := range r.Paths {
-		paths[filePath] = rank
+		paths = append(paths, &proto.DocumentRanksResponse_PathRank{
+			Path: []byte(filePath),
+			Rank: rank,
+		})
 	}
 
-	return &proto.DocumentRanksResponse{
-		MeanRank: r.MeanRank,
-		Paths:    paths,
-	}
+	return r.MeanRank, paths
 }
 
 type noopGRPCClient struct{}
@@ -1135,7 +1176,7 @@ func (n noopGRPCClient) List(ctx context.Context, in *proto.ListRequest, opts ..
 	return nil, fmt.Errorf("grpc client not enabled")
 }
 
-func (n noopGRPCClient) DocumentRanks(ctx context.Context, in *proto.DocumentRanksRequest, opts ...grpc.CallOption) (*proto.DocumentRanksResponse, error) {
+func (n noopGRPCClient) DocumentRanks(ctx context.Context, in *proto.DocumentRanksRequest, opts ...grpc.CallOption) (proto.ZoektConfigurationService_DocumentRanksClient, error) {
 	return nil, fmt.Errorf("grpc client not enabled")
 }
 

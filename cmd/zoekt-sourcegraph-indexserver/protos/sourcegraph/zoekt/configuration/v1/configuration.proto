@@ -14,7 +14,7 @@ service ZoektConfigurationService {
   rpc List(ListRequest) returns (ListResponse) {}
 
   // DocumentRanks returns the rank vectors for all documents in the specified repository.
-  rpc DocumentRanks(DocumentRanksRequest) returns (DocumentRanksResponse) {}
+  rpc DocumentRanks(DocumentRanksRequest) returns (stream DocumentRanksResponse) {}
 
   // UpdateIndexStatus informs the server that the caller has indexed the specified repositories
   // at the specified commits.
@@ -148,14 +148,34 @@ message DocumentRanksRequest {
 
 // DocumentRanksResponse is the response from the DocumentRanks RPC.
 message DocumentRanksResponse {
-  // Paths is a map from path name to the normalized number of references for
-  // a symbol defined in that path for a particular repository. Normalized counts
-  // equal log_2({number of references to file} + 1), where references are considered
-  // over all repositories.
-  map<string, double> paths = 1;
+  reserved 1, 2;
 
-  // mean_rank is the mean rank of all documents in the repository.
-  double mean_rank = 2;
+  message PathRanks {
+    // path_ranks is a list of path ranks.
+    repeated PathRank path_ranks = 1;
+  }
+
+  message PathRank {
+    // path is the path name.
+    //
+    // Note: The file path is not guaranteed to UTF-8 encoded.
+    bytes path = 1;
+
+    // rank is the normalized number of references for a symbol defined in that path for a particular repository.
+    // Normalized counts equal log_2({number of references to file} + 1), where references are considered
+    // over all repositories.
+    double rank = 2;
+  }
+
+  message MeanRank {
+    // rank is the mean rank of all documents in the repository.
+    double rank = 1;
+  }
+
+  oneof payload {
+    PathRanks path_ranks = 3;
+    MeanRank mean_rank = 4;
+  }
 }
 
 // UpdateIndexStatusRequest is the request to the UpdateIndexStatus RPC.
