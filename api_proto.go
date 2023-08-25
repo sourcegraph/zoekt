@@ -37,7 +37,7 @@ func FileMatchFromProto(p *proto.FileMatch) FileMatch {
 	return FileMatch{
 		Score:              p.GetScore(),
 		Debug:              p.GetDebug(),
-		FileName:           p.GetFileName(),
+		FileName:           string(p.GetFileName()), // Note: 🚨Warning, this filename may be a non-UTF8 string.
 		Repository:         p.GetRepository(),
 		Branches:           p.GetBranches(),
 		LineMatches:        lineMatches,
@@ -67,7 +67,7 @@ func (m *FileMatch) ToProto() *proto.FileMatch {
 	return &proto.FileMatch{
 		Score:              m.Score,
 		Debug:              m.Debug,
-		FileName:           m.FileName,
+		FileName:           []byte(m.FileName),
 		Repository:         m.Repository,
 		Branches:           m.Branches,
 		LineMatches:        lineMatches,
