@@ -17,6 +17,7 @@ require (
 	github.com/google/go-github/v27 v27.0.6
 	github.com/google/slothfs v0.0.0-20190717100203-59c1163fd173
 	github.com/grafana/regexp v0.0.0-20221123153739-15dc172cd2db
+	github.com/grpc-ecosystem/go-grpc-middleware/providers/openmetrics/v2 v2.0.0-rc.3
 	github.com/hashicorp/go-retryablehttp v0.7.4
 	github.com/keegancsmith/rpc v1.3.0
 	github.com/keegancsmith/tmpfriend v0.0.0-20180423180255-86e88902a513
@@ -94,6 +95,7 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.5 // indirect
 	github.com/googleapis/gax-go/v2 v2.11.0 // indirect
+	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.2.0.20210128111500-3ff779b52992 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v0.16.2 // indirect
@@ -139,5 +141,14 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// As of https://github.com/grpc-ecosystem/go-grpc-middleware/blob/7ac0846398432dee083fd8bc4ad7abacf8147ff2/providers/openmetrics/go.mod#L7,
+// the latest release of the gRPC Prometheus middleware depends on a version of go-grpc-middleware that is two years old, and
+// is incompatible with the latest gRPC releases.
+//
+// The parent project is currently working around this by using a local replace directive in their go.mod file (which ensures
+// that they always use the current version of go-grpc-middleware that they're developing). Until this issue is fixed,
+// we'll need to ensure that we explicitly depend on the latest version of go-grpc-middleware (v2.0.0-rc.3) as of this writing.
+replace github.com/grpc-ecosystem/go-grpc-middleware/v2 => github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.3
 
 go 1.18

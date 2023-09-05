@@ -35,8 +35,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/openmetrics/v2"
 	"github.com/sourcegraph/mountinfo"
 	proto "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/protos/zoekt/webserver/v1"
 	zoektgrpc "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server"
@@ -629,13 +631,17 @@ func traceContext(ctx context.Context) sglog.TraceContext {
 }
 
 func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts ...grpc.ServerOption) *grpc.Server {
+	metrics := mustGetServerMetrics()
+
 	opts := []grpc.ServerOption{
 		grpc.ChainStreamInterceptor(
 			otelgrpc.StreamServerInterceptor(),
+			grpc_prometheus.StreamServerInterceptor(metrics),
 			internalerrs.LoggingStreamServerInterceptor(logger),
 		),
 		grpc.ChainUnaryInterceptor(
 			otelgrpc.UnaryServerInterceptor(),
+			grpc_prometheus.UnaryServerInterceptor(metrics),
 			internalerrs.LoggingUnaryServerInterceptor(logger),
 		),
 	}
@@ -672,4 +678,23 @@ var (
 		Name: "zoekt_search_requests_total",
 		Help: "The total number of search requests that zoekt received",
 	})
+
+	serverMetricsOnce sync.Once
+	serverMetrics     *grpc_prometheus.ServerMetrics
 )
+
+// mustGetServerMetrics returns a singleton instance of the server metrics
+// that are shared across all gRPC servers that this process creates.
+//
+// This function panics if the metrics cannot be registered with the default
+// Prometheus registry.
+func mustGetServerMetrics() *grpc_prometheus.ServerMetrics {
+	serverMetricsOnce.Do(func() {
+		serverMetrics = grpc_prometheus.NewRegisteredServerMetrics(prometheus.DefaultRegisterer,
+			grpc_prometheus.WithServerCounterOptions(),
+			grpc_prometheus.WithServerHandlingTimeHistogram(), // record the overall response latency for a gRPC request)
+		)
+	})
+
+	return serverMetrics
+}
