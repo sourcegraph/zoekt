@@ -18,7 +18,7 @@ import (
 	"math/rand"
 	"reflect"
 
-	proto "github.com/sourcegraph/zoekt/grpc/v1"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/protos/zoekt/webserver/v1"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

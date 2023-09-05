@@ -38,9 +38,10 @@ import (
 	"time"
 
 	"github.com/sourcegraph/mountinfo"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/protos/zoekt/webserver/v1"
+	zoektgrpc "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
-	zoektgrpc "github.com/sourcegraph/zoekt/grpc/server"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -49,7 +50,6 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/debugserver"
-	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
@@ -650,7 +650,7 @@ func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts 
 	opts = append(opts, messagesize.MustGetServerMessageSizeFromEnv()...)
 
 	s := grpc.NewServer(opts...)
-	v1.RegisterWebserverServiceServer(s, zoektgrpc.NewServer(streamer))
+	proto.RegisterWebserverServiceServer(s, zoektgrpc.NewServer(streamer))
 
 	return s
 }

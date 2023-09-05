@@ -1,12 +1,12 @@
 syntax = "proto3";
 
-package grpc.v1;
+package zoekt.webserver.v1;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "query.proto";
 
-option go_package = "github.com/sourcegraph/zoekt/grpc/v1";
+option go_package = "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/protos/zoekt/webserver/v1";
 
 service WebserverService {
   rpc Search(SearchRequest) returns (SearchResponse) {}

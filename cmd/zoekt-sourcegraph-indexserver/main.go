@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"go.uber.org/automaxprocs/maxprocs"
@@ -49,7 +50,6 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/debugserver"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 )

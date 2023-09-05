@@ -19,9 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	WebserverService_Search_FullMethodName       = "/grpc.v1.WebserverService/Search"
-	WebserverService_StreamSearch_FullMethodName = "/grpc.v1.WebserverService/StreamSearch"
-	WebserverService_List_FullMethodName         = "/grpc.v1.WebserverService/List"
+	WebserverService_Search_FullMethodName       = "/zoekt.webserver.v1.WebserverService/Search"
+	WebserverService_StreamSearch_FullMethodName = "/zoekt.webserver.v1.WebserverService/StreamSearch"
+	WebserverService_List_FullMethodName         = "/zoekt.webserver.v1.WebserverService/List"
 )
 
 // WebserverServiceClient is the client API for WebserverService service.
@@ -192,7 +192,7 @@ func _WebserverService_List_Handler(srv interface{}, ctx context.Context, dec fu
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var WebserverService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "grpc.v1.WebserverService",
+	ServiceName: "zoekt.webserver.v1.WebserverService",
 	HandlerType: (*WebserverServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
