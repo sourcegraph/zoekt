@@ -286,11 +286,11 @@ func TypeFromProto(p *proto.Type) (*Type, error) {
 
 	var kind uint8
 	switch p.GetType() {
-	case proto.Type_FILE_MATCH:
+	case proto.Type_KIND_FILE_MATCH:
 		kind = TypeFileMatch
-	case proto.Type_FILE_NAME:
+	case proto.Type_KIND_FILE_NAME:
 		kind = TypeFileName
-	case proto.Type_REPO:
+	case proto.Type_KIND_REPO:
 		kind = TypeRepo
 	}
 
@@ -305,11 +305,11 @@ func (q *Type) ToProto() *proto.Type {
 	var kind proto.Type_Kind
 	switch q.Type {
 	case TypeFileMatch:
-		kind = proto.Type_FILE_MATCH
+		kind = proto.Type_KIND_FILE_MATCH
 	case TypeFileName:
-		kind = proto.Type_FILE_NAME
+		kind = proto.Type_KIND_FILE_NAME
 	case TypeRepo:
-		kind = proto.Type_REPO
+		kind = proto.Type_KIND_REPO
 	}
 
 	return &proto.Type{
@@ -417,17 +417,17 @@ func (q *Branch) ToProto() *proto.Branch {
 func RawConfigFromProto(p *proto.RawConfig) (res RawConfig) {
 	for _, protoFlag := range p.Flags {
 		switch protoFlag {
-		case proto.RawConfig_ONLY_PUBLIC:
+		case proto.RawConfig_FLAG_ONLY_PUBLIC:
 			res |= RcOnlyPublic
-		case proto.RawConfig_ONLY_PRIVATE:
+		case proto.RawConfig_FLAG_ONLY_PRIVATE:
 			res |= RcOnlyPrivate
-		case proto.RawConfig_ONLY_FORKS:
+		case proto.RawConfig_FLAG_ONLY_FORKS:
 			res |= RcOnlyForks
-		case proto.RawConfig_NO_FORKS:
+		case proto.RawConfig_FLAG_NO_FORKS:
 			res |= RcNoForks
-		case proto.RawConfig_ONLY_ARCHIVED:
+		case proto.RawConfig_FLAG_ONLY_ARCHIVED:
 			res |= RcOnlyArchived
-		case proto.RawConfig_NO_ARCHIVED:
+		case proto.RawConfig_FLAG_NO_ARCHIVED:
 			res |= RcNoArchived
 		}
 	}
@@ -440,17 +440,17 @@ func (r RawConfig) ToProto() *proto.RawConfig {
 		if r&flag.Mask != 0 {
 			switch flag.Mask {
 			case RcOnlyPublic:
-				flags = append(flags, proto.RawConfig_ONLY_PUBLIC)
+				flags = append(flags, proto.RawConfig_FLAG_ONLY_PUBLIC)
 			case RcOnlyPrivate:
-				flags = append(flags, proto.RawConfig_ONLY_PRIVATE)
+				flags = append(flags, proto.RawConfig_FLAG_ONLY_PRIVATE)
 			case RcOnlyForks:
-				flags = append(flags, proto.RawConfig_ONLY_FORKS)
+				flags = append(flags, proto.RawConfig_FLAG_ONLY_FORKS)
 			case RcNoForks:
-				flags = append(flags, proto.RawConfig_NO_FORKS)
+				flags = append(flags, proto.RawConfig_FLAG_NO_FORKS)
 			case RcOnlyArchived:
-				flags = append(flags, proto.RawConfig_ONLY_ARCHIVED)
+				flags = append(flags, proto.RawConfig_FLAG_ONLY_ARCHIVED)
 			case RcNoArchived:
-				flags = append(flags, proto.RawConfig_NO_ARCHIVED)
+				flags = append(flags, proto.RawConfig_FLAG_NO_ARCHIVED)
 			}
 		}
 	}

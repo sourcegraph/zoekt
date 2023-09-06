@@ -39,8 +39,10 @@ func (s *Server) Search(ctx context.Context, req *proto.SearchRequest) (*proto.S
 	return res.ToProto(), nil
 }
 
-func (s *Server) StreamSearch(req *proto.SearchRequest, ss proto.WebserverService_StreamSearchServer) error {
-	q, err := query.QFromProto(req.GetQuery())
+func (s *Server) StreamSearch(req *proto.StreamSearchRequest, ss proto.WebserverService_StreamSearchServer) error {
+	request := req.GetRequest()
+
+	q, err := query.QFromProto(request.GetQuery())
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -48,7 +50,7 @@ func (s *Server) StreamSearch(req *proto.SearchRequest, ss proto.WebserverServic
 	sender := gRPCChunkSender(ss)
 	sampler := stream.NewSamplingSender(sender)
 
-	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(req.GetOpts()), sampler)
+	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(request.GetOpts()), sampler)
 	if err == nil {
 		sampler.Flush()
 	}
@@ -75,7 +77,9 @@ func gRPCChunkSender(ss proto.WebserverService_StreamSearchServer) zoekt.Sender 
 		result := r.ToProto()
 
 		if len(result.GetFiles()) == 0 { // stats-only result, send it immediately
-			_ = ss.Send(result)
+			_ = ss.Send(&proto.StreamSearchResponse{
+				ResponseChunk: result,
+			})
 			return
 		}
 
@@ -108,14 +112,14 @@ func gRPCChunkSender(ss proto.WebserverService_StreamSearchServer) zoekt.Sender 
 				}
 			}
 
-			response := &proto.SearchResponse{
-				Files: filesChunk,
+			return ss.Send(&proto.StreamSearchResponse{
+				ResponseChunk: &proto.SearchResponse{
+					Files: filesChunk,
 
-				Stats:    stats,
-				Progress: progress,
-			}
-
-			return ss.Send(response)
+					Stats:    stats,
+					Progress: progress,
+				},
+			})
 		}
 
 		_ = chunk.SendAll(sendFunc, result.GetFiles()...)

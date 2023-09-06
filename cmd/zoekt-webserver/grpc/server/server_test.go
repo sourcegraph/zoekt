@@ -85,7 +85,11 @@ func TestClientServer(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", l, mock.RepoList.ToProto())
 	}
 
-	cs, err := client.StreamSearch(context.Background(), &webserverproto.SearchRequest{Query: query.QToProto(mock.WantSearch)})
+	request := webserverproto.StreamSearchRequest{
+		Request: &webserverproto.SearchRequest{Query: query.QToProto(mock.WantSearch)},
+	}
+
+	cs, err := client.StreamSearch(context.Background(), &request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +207,7 @@ func newPairedSearchStream(t *testing.T) (webserverproto.WebserverService_Stream
 type mockSearchStreamClient struct {
 	t *testing.T
 
-	storedResponses []*webserverproto.SearchResponse
+	storedResponses []*webserverproto.StreamSearchResponse
 	index           int
 
 	startedReading atomic.Bool
@@ -211,7 +215,7 @@ type mockSearchStreamClient struct {
 	grpc.ClientStream
 }
 
-func (m *mockSearchStreamClient) Recv() (*webserverproto.SearchResponse, error) {
+func (m *mockSearchStreamClient) Recv() (*webserverproto.StreamSearchResponse, error) {
 	m.startedReading.Store(true)
 
 	if m.index >= len(m.storedResponses) {
@@ -223,7 +227,7 @@ func (m *mockSearchStreamClient) Recv() (*webserverproto.SearchResponse, error) 
 	return r, nil
 }
 
-func (m *mockSearchStreamClient) storeResponse(r *webserverproto.SearchResponse) {
+func (m *mockSearchStreamClient) storeResponse(r *webserverproto.StreamSearchResponse) {
 	if m.startedReading.Load() {
 		m.t.Fatalf("cannot store additional responses after starting to read from stream")
 	}
@@ -239,7 +243,7 @@ type mockSearchStreamServer struct {
 	grpc.ServerStream
 }
 
-func (m *mockSearchStreamServer) Send(r *webserverproto.SearchResponse) error {
+func (m *mockSearchStreamServer) Send(r *webserverproto.StreamSearchResponse) error {
 	m.pairedClient.storeResponse(r)
 	return nil
 }
@@ -261,7 +265,7 @@ func readAllStream(t *testing.T, cs webserverproto.WebserverService_StreamSearch
 			t.Fatal(err)
 		}
 
-		got = append(got, r)
+		got = append(got, r.GetResponseChunk())
 	}
 
 	return got

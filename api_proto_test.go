@@ -132,23 +132,45 @@ func TestProtoRoundtrip(t *testing.T) {
 	})
 
 	t.Run("SearchResult", func(t *testing.T) {
-		f := func(f1 *SearchResult) bool {
-			var repoURLs map[string]string
-			var lineFragments map[string]string
+		t.Run("unary", func(t *testing.T) {
+			f := func(f1 *SearchResult) bool {
+				var repoURLs map[string]string
+				var lineFragments map[string]string
 
-			if f1 != nil {
-				repoURLs = f1.RepoURLs
-				lineFragments = f1.LineFragments
+				if f1 != nil {
+					repoURLs = f1.RepoURLs
+					lineFragments = f1.LineFragments
+				}
+
+				p1 := f1.ToProto()
+				f2 := SearchResultFromProto(p1, repoURLs, lineFragments)
+
+				return reflect.DeepEqual(f1, f2)
 			}
+			if err := quick.Check(f, nil); err != nil {
+				t.Fatal(err)
+			}
+		})
 
-			p1 := f1.ToProto()
-			f2 := SearchResultFromProto(p1, repoURLs, lineFragments)
+		t.Run("stream", func(t *testing.T) {
+			f := func(f1 *SearchResult) bool {
+				var repoURLs map[string]string
+				var lineFragments map[string]string
 
-			return reflect.DeepEqual(f1, f2)
-		}
-		if err := quick.Check(f, nil); err != nil {
-			t.Fatal(err)
-		}
+				if f1 != nil {
+					repoURLs = f1.RepoURLs
+					lineFragments = f1.LineFragments
+				}
+
+				p1 := f1.ToStreamProto()
+				f2 := SearchResultFromStreamProto(p1, repoURLs, lineFragments)
+
+				return reflect.DeepEqual(f1, f2)
+			}
+			if err := quick.Check(f, nil); err != nil {
+				t.Fatal(err)
+			}
+		})
 	})
 
 	t.Run("Repository", func(t *testing.T) {
