@@ -5,11 +5,11 @@ import (
 	"math"
 
 	"github.com/sourcegraph/zoekt/grpc/chunk"
+	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/sourcegraph/zoekt"
-	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/stream"
 )
@@ -21,11 +21,11 @@ func NewServer(s zoekt.Streamer) *Server {
 }
 
 type Server struct {
-	v1.UnimplementedWebserverServiceServer
+	proto.UnimplementedWebserverServiceServer
 	streamer zoekt.Streamer
 }
 
-func (s *Server) Search(ctx context.Context, req *v1.SearchRequest) (*v1.SearchResponse, error) {
+func (s *Server) Search(ctx context.Context, req *proto.SearchRequest) (*proto.SearchResponse, error) {
 	q, err := query.QFromProto(req.GetQuery())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -39,8 +39,10 @@ func (s *Server) Search(ctx context.Context, req *v1.SearchRequest) (*v1.SearchR
 	return res.ToProto(), nil
 }
 
-func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_StreamSearchServer) error {
-	q, err := query.QFromProto(req.GetQuery())
+func (s *Server) StreamSearch(req *proto.StreamSearchRequest, ss proto.WebserverService_StreamSearchServer) error {
+	request := req.GetRequest()
+
+	q, err := query.QFromProto(request.GetQuery())
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -48,14 +50,14 @@ func (s *Server) StreamSearch(req *v1.SearchRequest, ss v1.WebserverService_Stre
 	sender := gRPCChunkSender(ss)
 	sampler := stream.NewSamplingSender(sender)
 
-	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(req.GetOpts()), sampler)
+	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(request.GetOpts()), sampler)
 	if err == nil {
 		sampler.Flush()
 	}
 	return err
 }
 
-func (s *Server) List(ctx context.Context, req *v1.ListRequest) (*v1.ListResponse, error) {
+func (s *Server) List(ctx context.Context, req *proto.ListRequest) (*proto.ListResponse, error) {
 	q, err := query.QFromProto(req.GetQuery())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -70,12 +72,14 @@ func (s *Server) List(ctx context.Context, req *v1.ListRequest) (*v1.ListRespons
 }
 
 // gRPCChunkSender is a zoekt.Sender that sends small chunks of FileMatches to the provided gRPC stream.
-func gRPCChunkSender(ss v1.WebserverService_StreamSearchServer) zoekt.Sender {
+func gRPCChunkSender(ss proto.WebserverService_StreamSearchServer) zoekt.Sender {
 	f := func(r *zoekt.SearchResult) {
-		result := r.ToProto()
+		result := r.ToStreamProto().GetResponseChunk()
 
 		if len(result.GetFiles()) == 0 { // stats-only result, send it immediately
-			_ = ss.Send(result)
+			_ = ss.Send(&proto.StreamSearchResponse{
+				ResponseChunk: result,
+			})
 			return
 		}
 
@@ -84,10 +88,10 @@ func gRPCChunkSender(ss v1.WebserverService_StreamSearchServer) zoekt.Sender {
 		statsSent := false
 		numFilesSent := 0
 
-		sendFunc := func(filesChunk []*v1.FileMatch) error {
+		sendFunc := func(filesChunk []*proto.FileMatch) error {
 			numFilesSent += len(filesChunk)
 
-			var stats *v1.Stats
+			var stats *proto.Stats
 			if !statsSent { // We only send stats back on the first chunk
 				statsSent = true
 				stats = result.GetStats()
@@ -96,7 +100,7 @@ func gRPCChunkSender(ss v1.WebserverService_StreamSearchServer) zoekt.Sender {
 			progress := result.GetProgress()
 
 			if numFilesSent < len(result.GetFiles()) { // more chunks to come
-				progress = &v1.Progress{
+				progress = &proto.Progress{
 					Priority: result.GetProgress().GetPriority(),
 
 					// We want the client to consume the entire set of chunks - so we manually
@@ -108,14 +112,14 @@ func gRPCChunkSender(ss v1.WebserverService_StreamSearchServer) zoekt.Sender {
 				}
 			}
 
-			response := &v1.SearchResponse{
-				Files: filesChunk,
+			return ss.Send(&proto.StreamSearchResponse{
+				ResponseChunk: &proto.SearchResponse{
+					Files: filesChunk,
 
-				Stats:    stats,
-				Progress: progress,
-			}
-
-			return ss.Send(response)
+					Stats:    stats,
+					Progress: progress,
+				},
+			})
 		}
 
 		_ = chunk.SendAll(sendFunc, result.GetFiles()...)

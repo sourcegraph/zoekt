@@ -17,7 +17,6 @@ import (
 
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/log/logtest"
-
 	"github.com/xeipuuv/gojsonschema"
 	"google.golang.org/grpc"
 

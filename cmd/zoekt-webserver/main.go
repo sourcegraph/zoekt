@@ -35,12 +35,15 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/openmetrics/v2"
 	"github.com/sourcegraph/mountinfo"
+	zoektgrpc "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
-	zoektgrpc "github.com/sourcegraph/zoekt/grpc/server"
+	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -49,7 +52,6 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/debugserver"
-	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
@@ -629,13 +631,17 @@ func traceContext(ctx context.Context) sglog.TraceContext {
 }
 
 func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts ...grpc.ServerOption) *grpc.Server {
+	metrics := mustGetServerMetrics()
+
 	opts := []grpc.ServerOption{
 		grpc.ChainStreamInterceptor(
 			otelgrpc.StreamServerInterceptor(),
+			grpc_prometheus.StreamServerInterceptor(metrics),
 			internalerrs.LoggingStreamServerInterceptor(logger),
 		),
 		grpc.ChainUnaryInterceptor(
 			otelgrpc.UnaryServerInterceptor(),
+			grpc_prometheus.UnaryServerInterceptor(metrics),
 			internalerrs.LoggingUnaryServerInterceptor(logger),
 		),
 	}
@@ -650,7 +656,7 @@ func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts 
 	opts = append(opts, messagesize.MustGetServerMessageSizeFromEnv()...)
 
 	s := grpc.NewServer(opts...)
-	v1.RegisterWebserverServiceServer(s, zoektgrpc.NewServer(streamer))
+	proto.RegisterWebserverServiceServer(s, zoektgrpc.NewServer(streamer))
 
 	return s
 }
@@ -672,4 +678,23 @@ var (
 		Name: "zoekt_search_requests_total",
 		Help: "The total number of search requests that zoekt received",
 	})
+
+	serverMetricsOnce sync.Once
+	serverMetrics     *grpc_prometheus.ServerMetrics
 )
+
+// mustGetServerMetrics returns a singleton instance of the server metrics
+// that are shared across all gRPC servers that this process creates.
+//
+// This function panics if the metrics cannot be registered with the default
+// Prometheus registry.
+func mustGetServerMetrics() *grpc_prometheus.ServerMetrics {
+	serverMetricsOnce.Do(func() {
+		serverMetrics = grpc_prometheus.NewRegisteredServerMetrics(prometheus.DefaultRegisterer,
+			grpc_prometheus.WithServerCounterOptions(),
+			grpc_prometheus.WithServerHandlingTimeHistogram(), // record the overall response latency for a gRPC request)
+		)
+	})
+
+	return serverMetrics
+}

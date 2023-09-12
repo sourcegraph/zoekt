@@ -23,11 +23,11 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"golang.org/x/net/trace"
 	"google.golang.org/grpc"
 
 	"github.com/sourcegraph/zoekt"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 )
 
 // SourcegraphListResult is the return value of Sourcegraph.List. It is its

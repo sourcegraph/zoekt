@@ -18,7 +18,7 @@ import (
 	"math/rand"
 	"reflect"
 
-	proto "github.com/sourcegraph/zoekt/grpc/v1"
+	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -243,11 +243,11 @@ func (lfm *LineFragmentMatch) ToProto() *proto.LineFragmentMatch {
 
 func FlushReasonFromProto(p proto.FlushReason) FlushReason {
 	switch p {
-	case proto.FlushReason_TIMER_EXPIRED:
+	case proto.FlushReason_FLUSH_REASON_TIMER_EXPIRED:
 		return FlushReasonTimerExpired
-	case proto.FlushReason_FINAL_FLUSH:
+	case proto.FlushReason_FLUSH_REASON_FINAL_FLUSH:
 		return FlushReasonFinalFlush
-	case proto.FlushReason_MAX_SIZE:
+	case proto.FlushReason_FLUSH_REASON_MAX_SIZE:
 		return FlushReasonMaxSize
 	default:
 		return FlushReason(0)
@@ -257,13 +257,13 @@ func FlushReasonFromProto(p proto.FlushReason) FlushReason {
 func (fr FlushReason) ToProto() proto.FlushReason {
 	switch fr {
 	case FlushReasonTimerExpired:
-		return proto.FlushReason_TIMER_EXPIRED
+		return proto.FlushReason_FLUSH_REASON_TIMER_EXPIRED
 	case FlushReasonFinalFlush:
-		return proto.FlushReason_FINAL_FLUSH
+		return proto.FlushReason_FLUSH_REASON_FINAL_FLUSH
 	case FlushReasonMaxSize:
-		return proto.FlushReason_MAX_SIZE
+		return proto.FlushReason_FLUSH_REASON_MAX_SIZE
 	default:
-		return proto.FlushReason_UNKNOWN
+		return proto.FlushReason_FLUSH_REASON_UNKNOWN_UNSPECIFIED
 	}
 }
 
@@ -345,6 +345,14 @@ func (p *Progress) ToProto() *proto.Progress {
 	}
 }
 
+func SearchResultFromStreamProto(p *proto.StreamSearchResponse, repoURLs, lineFragments map[string]string) *SearchResult {
+	if p == nil {
+		return nil
+	}
+
+	return SearchResultFromProto(p.GetResponseChunk(), repoURLs, lineFragments)
+}
+
 func SearchResultFromProto(p *proto.SearchResponse, repoURLs, lineFragments map[string]string) *SearchResult {
 	if p == nil {
 		return nil
@@ -382,6 +390,14 @@ func (sr *SearchResult) ToProto() *proto.SearchResponse {
 
 		Files: files,
 	}
+}
+
+func (sr *SearchResult) ToStreamProto() *proto.StreamSearchResponse {
+	if sr == nil {
+		return nil
+	}
+
+	return &proto.StreamSearchResponse{ResponseChunk: sr.ToProto()}
 }
 
 func RepositoryBranchFromProto(p *proto.RepositoryBranch) RepositoryBranch {

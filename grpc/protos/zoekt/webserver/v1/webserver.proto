@@ -1,17 +1,17 @@
 syntax = "proto3";
 
-package grpc.v1;
+package zoekt.webserver.v1;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-import "query.proto";
+import "zoekt/webserver/v1/query.proto";
 
-option go_package = "github.com/sourcegraph/zoekt/grpc/v1";
+option go_package = "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1";
 
 service WebserverService {
   rpc Search(SearchRequest) returns (SearchResponse) {}
 
-  rpc StreamSearch(SearchRequest) returns (stream SearchResponse) {}
+  rpc StreamSearch(StreamSearchRequest) returns (stream StreamSearchResponse) {}
 
   // List lists repositories. The query `q` can only contain
   // query.Repo atoms.
@@ -31,6 +31,16 @@ message SearchResponse {
   Progress progress = 2;
 
   repeated FileMatch files = 3;
+}
+
+message StreamSearchRequest {
+  reserved 1 to 2;
+  SearchRequest request = 3;
+}
+
+message StreamSearchResponse {
+  reserved 1 to 5;
+  SearchResponse response_chunk = 6;
 }
 
 message SearchOptions {
@@ -110,7 +120,7 @@ message ListRequest {
 
 message ListOptions {
   enum RepoListField {
-    REPO_LIST_FIELD_UNKNOWN = 0;
+    REPO_LIST_FIELD_UNKNOWN_UNSPECIFIED = 0;
     REPO_LIST_FIELD_REPOS = 1;
     REPO_LIST_FIELD_MINIMAL = 2;
     REPO_LIST_FIELD_REPOS_MAP = 3;
@@ -214,7 +224,7 @@ message Repository {
 
   // file_tombstones is a set of file paths that should be ignored across all branches
   // in this shard.
-  repeated string FileTombstones = 17;
+  repeated string file_tombstones = 17;
 }
 
 message IndexMetadata {
@@ -350,10 +360,10 @@ message Stats {
 }
 
 enum FlushReason {
-  UNKNOWN = 0;
-  TIMER_EXPIRED = 1;
-  FINAL_FLUSH = 2;
-  MAX_SIZE = 3;
+  FLUSH_REASON_UNKNOWN_UNSPECIFIED = 0;
+  FLUSH_REASON_TIMER_EXPIRED = 1;
+  FLUSH_REASON_FINAL_FLUSH = 2;
+  FLUSH_REASON_MAX_SIZE = 3;
 }
 
 // Progress contains information about the global progress of the running search query.

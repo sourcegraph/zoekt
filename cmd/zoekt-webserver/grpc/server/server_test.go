@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"go.uber.org/atomic"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -21,7 +22,6 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/sourcegraph/zoekt"
-	v1 "github.com/sourcegraph/zoekt/grpc/v1"
 	"github.com/sourcegraph/zoekt/internal/mockSearcher"
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -85,7 +85,11 @@ func TestClientServer(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", l, mock.RepoList.ToProto())
 	}
 
-	cs, err := client.StreamSearch(context.Background(), &v1.SearchRequest{Query: query.QToProto(mock.WantSearch)})
+	request := v1.StreamSearchRequest{
+		Request: &v1.SearchRequest{Query: query.QToProto(mock.WantSearch)},
+	}
+
+	cs, err := client.StreamSearch(context.Background(), &request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +207,7 @@ func newPairedSearchStream(t *testing.T) (v1.WebserverService_StreamSearchClient
 type mockSearchStreamClient struct {
 	t *testing.T
 
-	storedResponses []*v1.SearchResponse
+	storedResponses []*v1.StreamSearchResponse
 	index           int
 
 	startedReading atomic.Bool
@@ -211,7 +215,7 @@ type mockSearchStreamClient struct {
 	grpc.ClientStream
 }
 
-func (m *mockSearchStreamClient) Recv() (*v1.SearchResponse, error) {
+func (m *mockSearchStreamClient) Recv() (*v1.StreamSearchResponse, error) {
 	m.startedReading.Store(true)
 
 	if m.index >= len(m.storedResponses) {
@@ -223,7 +227,7 @@ func (m *mockSearchStreamClient) Recv() (*v1.SearchResponse, error) {
 	return r, nil
 }
 
-func (m *mockSearchStreamClient) storeResponse(r *v1.SearchResponse) {
+func (m *mockSearchStreamClient) storeResponse(r *v1.StreamSearchResponse) {
 	if m.startedReading.Load() {
 		m.t.Fatalf("cannot store additional responses after starting to read from stream")
 	}
@@ -239,7 +243,7 @@ type mockSearchStreamServer struct {
 	grpc.ServerStream
 }
 
-func (m *mockSearchStreamServer) Send(r *v1.SearchResponse) error {
+func (m *mockSearchStreamServer) Send(r *v1.StreamSearchResponse) error {
 	m.pairedClient.storeResponse(r)
 	return nil
 }
@@ -261,7 +265,7 @@ func readAllStream(t *testing.T, cs v1.WebserverService_StreamSearchClient) []*v
 			t.Fatal(err)
 		}
 
-		got = append(got, r)
+		got = append(got, r.GetResponseChunk())
 	}
 
 	return got

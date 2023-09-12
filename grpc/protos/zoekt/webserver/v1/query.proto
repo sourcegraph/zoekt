@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package grpc.v1;
+package zoekt.webserver.v1;
 
-option go_package = "github.com/sourcegraph/zoekt/grpc/v1";
+option go_package = "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1";
 
 message Q {
   oneof query {
@@ -29,13 +29,13 @@ message Q {
 // RawConfig filters repositories based on their encoded RawConfig map.
 message RawConfig {
   enum Flag {
-    UNKNOWN = 0x00;
-    ONLY_PUBLIC = 0x01;
-    ONLY_PRIVATE = 0x02;
-    ONLY_FORKS = 0x04;
-    NO_FORKS = 0x08;
-    ONLY_ARCHIVED = 0x10;
-    NO_ARCHIVED = 0x20;
+    FLAG_UNKNOWN_UNSPECIFIED = 0x00;
+    FLAG_ONLY_PUBLIC = 0x01;
+    FLAG_ONLY_PRIVATE = 0x02;
+    FLAG_ONLY_FORKS = 0x04;
+    FLAG_NO_FORKS = 0x08;
+    FLAG_ONLY_ARCHIVED = 0x10;
+    FLAG_NO_ARCHIVED = 0x20;
   }
 
   repeated Flag flags = 1;
@@ -98,10 +98,10 @@ message FileNameSet {
 // Type changes the result type returned.
 message Type {
   enum Kind {
-    UNKNOWN = 0;
-    FILE_MATCH = 1;
-    FILE_NAME = 2;
-    REPO = 3;
+    KIND_UNKNOWN_UNSPECIFIED = 0;
+    KIND_FILE_MATCH = 1;
+    KIND_FILE_NAME = 2;
+    KIND_REPO = 3;
   }
 
   Q child = 1;

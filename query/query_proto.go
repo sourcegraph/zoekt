@@ -6,45 +6,45 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/grafana/regexp"
-	v1 "github.com/sourcegraph/zoekt/grpc/v1"
+	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 )
 
-func QToProto(q Q) *v1.Q {
+func QToProto(q Q) *proto.Q {
 	switch v := q.(type) {
 	case RawConfig:
-		return &v1.Q{Query: &v1.Q_RawConfig{RawConfig: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_RawConfig{RawConfig: v.ToProto()}}
 	case *Regexp:
-		return &v1.Q{Query: &v1.Q_Regexp{Regexp: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_Regexp{Regexp: v.ToProto()}}
 	case *Symbol:
-		return &v1.Q{Query: &v1.Q_Symbol{Symbol: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_Symbol{Symbol: v.ToProto()}}
 	case *Language:
-		return &v1.Q{Query: &v1.Q_Language{Language: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_Language{Language: v.ToProto()}}
 	case *Const:
-		return &v1.Q{Query: &v1.Q_Const{Const: v.Value}}
+		return &proto.Q{Query: &proto.Q_Const{Const: v.Value}}
 	case *Repo:
-		return &v1.Q{Query: &v1.Q_Repo{Repo: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_Repo{Repo: v.ToProto()}}
 	case *RepoRegexp:
-		return &v1.Q{Query: &v1.Q_RepoRegexp{RepoRegexp: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_RepoRegexp{RepoRegexp: v.ToProto()}}
 	case *BranchesRepos:
-		return &v1.Q{Query: &v1.Q_BranchesRepos{BranchesRepos: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_BranchesRepos{BranchesRepos: v.ToProto()}}
 	case *RepoIDs:
-		return &v1.Q{Query: &v1.Q_RepoIds{RepoIds: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_RepoIds{RepoIds: v.ToProto()}}
 	case *RepoSet:
-		return &v1.Q{Query: &v1.Q_RepoSet{RepoSet: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_RepoSet{RepoSet: v.ToProto()}}
 	case *FileNameSet:
-		return &v1.Q{Query: &v1.Q_FileNameSet{FileNameSet: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_FileNameSet{FileNameSet: v.ToProto()}}
 	case *Type:
-		return &v1.Q{Query: &v1.Q_Type{Type: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_Type{Type: v.ToProto()}}
 	case *Substring:
-		return &v1.Q{Query: &v1.Q_Substring{Substring: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_Substring{Substring: v.ToProto()}}
 	case *And:
-		return &v1.Q{Query: &v1.Q_And{And: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_And{And: v.ToProto()}}
 	case *Or:
-		return &v1.Q{Query: &v1.Q_Or{Or: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_Or{Or: v.ToProto()}}
 	case *Not:
-		return &v1.Q{Query: &v1.Q_Not{Not: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_Not{Not: v.ToProto()}}
 	case *Branch:
-		return &v1.Q{Query: &v1.Q_Branch{Branch: v.ToProto()}}
+		return &proto.Q{Query: &proto.Q_Branch{Branch: v.ToProto()}}
 	default:
 		// The following nodes do not have a proto representation:
 		// - GobCache: only needed for Gob encoding
@@ -53,48 +53,48 @@ func QToProto(q Q) *v1.Q {
 	}
 }
 
-func QFromProto(p *v1.Q) (Q, error) {
+func QFromProto(p *proto.Q) (Q, error) {
 	switch v := p.Query.(type) {
-	case *v1.Q_RawConfig:
+	case *proto.Q_RawConfig:
 		return RawConfigFromProto(v.RawConfig), nil
-	case *v1.Q_Regexp:
+	case *proto.Q_Regexp:
 		return RegexpFromProto(v.Regexp)
-	case *v1.Q_Symbol:
+	case *proto.Q_Symbol:
 		return SymbolFromProto(v.Symbol)
-	case *v1.Q_Language:
+	case *proto.Q_Language:
 		return LanguageFromProto(v.Language), nil
-	case *v1.Q_Const:
+	case *proto.Q_Const:
 		return &Const{Value: v.Const}, nil
-	case *v1.Q_Repo:
+	case *proto.Q_Repo:
 		return RepoFromProto(v.Repo)
-	case *v1.Q_RepoRegexp:
+	case *proto.Q_RepoRegexp:
 		return RepoRegexpFromProto(v.RepoRegexp)
-	case *v1.Q_BranchesRepos:
+	case *proto.Q_BranchesRepos:
 		return BranchesReposFromProto(v.BranchesRepos)
-	case *v1.Q_RepoIds:
+	case *proto.Q_RepoIds:
 		return RepoIDsFromProto(v.RepoIds)
-	case *v1.Q_RepoSet:
+	case *proto.Q_RepoSet:
 		return RepoSetFromProto(v.RepoSet), nil
-	case *v1.Q_FileNameSet:
+	case *proto.Q_FileNameSet:
 		return FileNameSetFromProto(v.FileNameSet), nil
-	case *v1.Q_Type:
+	case *proto.Q_Type:
 		return TypeFromProto(v.Type)
-	case *v1.Q_Substring:
+	case *proto.Q_Substring:
 		return SubstringFromProto(v.Substring), nil
-	case *v1.Q_And:
+	case *proto.Q_And:
 		return AndFromProto(v.And)
-	case *v1.Q_Or:
+	case *proto.Q_Or:
 		return OrFromProto(v.Or)
-	case *v1.Q_Not:
+	case *proto.Q_Not:
 		return NotFromProto(v.Not)
-	case *v1.Q_Branch:
+	case *proto.Q_Branch:
 		return BranchFromProto(v.Branch), nil
 	default:
 		panic(fmt.Sprintf("unknown query node %T", p.Query))
 	}
 }
 
-func RegexpFromProto(p *v1.Regexp) (*Regexp, error) {
+func RegexpFromProto(p *proto.Regexp) (*Regexp, error) {
 	parsed, err := syntax.Parse(p.GetRegexp(), regexpFlags)
 	if err != nil {
 		return nil, err
@@ -107,8 +107,8 @@ func RegexpFromProto(p *v1.Regexp) (*Regexp, error) {
 	}, nil
 }
 
-func (r *Regexp) ToProto() *v1.Regexp {
-	return &v1.Regexp{
+func (r *Regexp) ToProto() *proto.Regexp {
+	return &proto.Regexp{
 		Regexp:        r.Regexp.String(),
 		FileName:      r.FileName,
 		Content:       r.Content,
@@ -116,7 +116,7 @@ func (r *Regexp) ToProto() *v1.Regexp {
 	}
 }
 
-func SymbolFromProto(p *v1.Symbol) (*Symbol, error) {
+func SymbolFromProto(p *proto.Symbol) (*Symbol, error) {
 	expr, err := QFromProto(p.GetExpr())
 	if err != nil {
 		return nil, err
@@ -127,23 +127,23 @@ func SymbolFromProto(p *v1.Symbol) (*Symbol, error) {
 	}, nil
 }
 
-func (s *Symbol) ToProto() *v1.Symbol {
-	return &v1.Symbol{
+func (s *Symbol) ToProto() *proto.Symbol {
+	return &proto.Symbol{
 		Expr: QToProto(s.Expr),
 	}
 }
 
-func LanguageFromProto(p *v1.Language) *Language {
+func LanguageFromProto(p *proto.Language) *Language {
 	return &Language{
 		Language: p.GetLanguage(),
 	}
 }
 
-func (l *Language) ToProto() *v1.Language {
-	return &v1.Language{Language: l.Language}
+func (l *Language) ToProto() *proto.Language {
+	return &proto.Language{Language: l.Language}
 }
 
-func RepoFromProto(p *v1.Repo) (*Repo, error) {
+func RepoFromProto(p *proto.Repo) (*Repo, error) {
 	r, err := regexp.Compile(p.GetRegexp())
 	if err != nil {
 		return nil, err
@@ -153,13 +153,13 @@ func RepoFromProto(p *v1.Repo) (*Repo, error) {
 	}, nil
 }
 
-func (q *Repo) ToProto() *v1.Repo {
-	return &v1.Repo{
+func (q *Repo) ToProto() *proto.Repo {
+	return &proto.Repo{
 		Regexp: q.Regexp.String(),
 	}
 }
 
-func RepoRegexpFromProto(p *v1.RepoRegexp) (*RepoRegexp, error) {
+func RepoRegexpFromProto(p *proto.RepoRegexp) (*RepoRegexp, error) {
 	r, err := regexp.Compile(p.GetRegexp())
 	if err != nil {
 		return nil, err
@@ -169,13 +169,13 @@ func RepoRegexpFromProto(p *v1.RepoRegexp) (*RepoRegexp, error) {
 	}, nil
 }
 
-func (q *RepoRegexp) ToProto() *v1.RepoRegexp {
-	return &v1.RepoRegexp{
+func (q *RepoRegexp) ToProto() *proto.RepoRegexp {
+	return &proto.RepoRegexp{
 		Regexp: q.Regexp.String(),
 	}
 }
 
-func BranchesReposFromProto(p *v1.BranchesRepos) (*BranchesRepos, error) {
+func BranchesReposFromProto(p *proto.BranchesRepos) (*BranchesRepos, error) {
 	brs := make([]BranchRepos, len(p.GetList()))
 	for i, br := range p.GetList() {
 		branchRepos, err := BranchReposFromProto(br)
@@ -189,18 +189,18 @@ func BranchesReposFromProto(p *v1.BranchesRepos) (*BranchesRepos, error) {
 	}, nil
 }
 
-func (br *BranchesRepos) ToProto() *v1.BranchesRepos {
-	list := make([]*v1.BranchRepos, len(br.List))
+func (br *BranchesRepos) ToProto() *proto.BranchesRepos {
+	list := make([]*proto.BranchRepos, len(br.List))
 	for i, branchRepo := range br.List {
 		list[i] = branchRepo.ToProto()
 	}
 
-	return &v1.BranchesRepos{
+	return &proto.BranchesRepos{
 		List: list,
 	}
 }
 
-func RepoIDsFromProto(p *v1.RepoIds) (*RepoIDs, error) {
+func RepoIDsFromProto(p *proto.RepoIds) (*RepoIDs, error) {
 	bm := roaring.NewBitmap()
 	err := bm.UnmarshalBinary(p.GetRepos())
 	if err != nil {
@@ -212,17 +212,17 @@ func RepoIDsFromProto(p *v1.RepoIds) (*RepoIDs, error) {
 	}, nil
 }
 
-func (q *RepoIDs) ToProto() *v1.RepoIds {
+func (q *RepoIDs) ToProto() *proto.RepoIds {
 	b, err := q.Repos.ToBytes()
 	if err != nil {
 		panic("unexpected error marshalling bitmap: " + err.Error())
 	}
-	return &v1.RepoIds{
+	return &proto.RepoIds{
 		Repos: b,
 	}
 }
 
-func BranchReposFromProto(p *v1.BranchRepos) (BranchRepos, error) {
+func BranchReposFromProto(p *proto.BranchRepos) (BranchRepos, error) {
 	bm := roaring.NewBitmap()
 	err := bm.UnmarshalBinary(p.GetRepos())
 	if err != nil {
@@ -234,31 +234,31 @@ func BranchReposFromProto(p *v1.BranchRepos) (BranchRepos, error) {
 	}, nil
 }
 
-func (br *BranchRepos) ToProto() *v1.BranchRepos {
+func (br *BranchRepos) ToProto() *proto.BranchRepos {
 	b, err := br.Repos.ToBytes()
 	if err != nil {
 		panic("unexpected error marshalling bitmap: " + err.Error())
 	}
 
-	return &v1.BranchRepos{
+	return &proto.BranchRepos{
 		Branch: br.Branch,
 		Repos:  b,
 	}
 }
 
-func RepoSetFromProto(p *v1.RepoSet) *RepoSet {
+func RepoSetFromProto(p *proto.RepoSet) *RepoSet {
 	return &RepoSet{
 		Set: p.GetSet(),
 	}
 }
 
-func (q *RepoSet) ToProto() *v1.RepoSet {
-	return &v1.RepoSet{
+func (q *RepoSet) ToProto() *proto.RepoSet {
+	return &proto.RepoSet{
 		Set: q.Set,
 	}
 }
 
-func FileNameSetFromProto(p *v1.FileNameSet) *FileNameSet {
+func FileNameSetFromProto(p *proto.FileNameSet) *FileNameSet {
 	m := make(map[string]struct{}, len(p.GetSet()))
 	for _, name := range p.GetSet() {
 		m[name] = struct{}{}
@@ -268,17 +268,17 @@ func FileNameSetFromProto(p *v1.FileNameSet) *FileNameSet {
 	}
 }
 
-func (q *FileNameSet) ToProto() *v1.FileNameSet {
+func (q *FileNameSet) ToProto() *proto.FileNameSet {
 	s := make([]string, 0, len(q.Set))
 	for name := range q.Set {
 		s = append(s, name)
 	}
-	return &v1.FileNameSet{
+	return &proto.FileNameSet{
 		Set: s,
 	}
 }
 
-func TypeFromProto(p *v1.Type) (*Type, error) {
+func TypeFromProto(p *proto.Type) (*Type, error) {
 	child, err := QFromProto(p.GetChild())
 	if err != nil {
 		return nil, err
@@ -286,11 +286,11 @@ func TypeFromProto(p *v1.Type) (*Type, error) {
 
 	var kind uint8
 	switch p.GetType() {
-	case v1.Type_FILE_MATCH:
+	case proto.Type_KIND_FILE_MATCH:
 		kind = TypeFileMatch
-	case v1.Type_FILE_NAME:
+	case proto.Type_KIND_FILE_NAME:
 		kind = TypeFileName
-	case v1.Type_REPO:
+	case proto.Type_KIND_REPO:
 		kind = TypeRepo
 	}
 
@@ -301,24 +301,24 @@ func TypeFromProto(p *v1.Type) (*Type, error) {
 	}, nil
 }
 
-func (q *Type) ToProto() *v1.Type {
-	var kind v1.Type_Kind
+func (q *Type) ToProto() *proto.Type {
+	var kind proto.Type_Kind
 	switch q.Type {
 	case TypeFileMatch:
-		kind = v1.Type_FILE_MATCH
+		kind = proto.Type_KIND_FILE_MATCH
 	case TypeFileName:
-		kind = v1.Type_FILE_NAME
+		kind = proto.Type_KIND_FILE_NAME
 	case TypeRepo:
-		kind = v1.Type_REPO
+		kind = proto.Type_KIND_REPO
 	}
 
-	return &v1.Type{
+	return &proto.Type{
 		Child: QToProto(q.Child),
 		Type:  kind,
 	}
 }
 
-func SubstringFromProto(p *v1.Substring) *Substring {
+func SubstringFromProto(p *proto.Substring) *Substring {
 	return &Substring{
 		Pattern:       p.GetPattern(),
 		CaseSensitive: p.GetCaseSensitive(),
@@ -327,8 +327,8 @@ func SubstringFromProto(p *v1.Substring) *Substring {
 	}
 }
 
-func (q *Substring) ToProto() *v1.Substring {
-	return &v1.Substring{
+func (q *Substring) ToProto() *proto.Substring {
+	return &proto.Substring{
 		Pattern:       q.Pattern,
 		CaseSensitive: q.CaseSensitive,
 		FileName:      q.FileName,
@@ -336,7 +336,7 @@ func (q *Substring) ToProto() *v1.Substring {
 	}
 }
 
-func OrFromProto(p *v1.Or) (*Or, error) {
+func OrFromProto(p *proto.Or) (*Or, error) {
 	children := make([]Q, len(p.GetChildren()))
 	for i, child := range p.GetChildren() {
 		c, err := QFromProto(child)
@@ -350,17 +350,17 @@ func OrFromProto(p *v1.Or) (*Or, error) {
 	}, nil
 }
 
-func (q *Or) ToProto() *v1.Or {
-	children := make([]*v1.Q, len(q.Children))
+func (q *Or) ToProto() *proto.Or {
+	children := make([]*proto.Q, len(q.Children))
 	for i, child := range q.Children {
 		children[i] = QToProto(child)
 	}
-	return &v1.Or{
+	return &proto.Or{
 		Children: children,
 	}
 }
 
-func NotFromProto(p *v1.Not) (*Not, error) {
+func NotFromProto(p *proto.Not) (*Not, error) {
 	child, err := QFromProto(p.GetChild())
 	if err != nil {
 		return nil, err
@@ -370,13 +370,13 @@ func NotFromProto(p *v1.Not) (*Not, error) {
 	}, nil
 }
 
-func (q *Not) ToProto() *v1.Not {
-	return &v1.Not{
+func (q *Not) ToProto() *proto.Not {
+	return &proto.Not{
 		Child: QToProto(q.Child),
 	}
 }
 
-func AndFromProto(p *v1.And) (*And, error) {
+func AndFromProto(p *proto.And) (*And, error) {
 	children := make([]Q, len(p.GetChildren()))
 	for i, child := range p.GetChildren() {
 		c, err := QFromProto(child)
@@ -390,69 +390,69 @@ func AndFromProto(p *v1.And) (*And, error) {
 	}, nil
 }
 
-func (q *And) ToProto() *v1.And {
-	children := make([]*v1.Q, len(q.Children))
+func (q *And) ToProto() *proto.And {
+	children := make([]*proto.Q, len(q.Children))
 	for i, child := range q.Children {
 		children[i] = QToProto(child)
 	}
-	return &v1.And{
+	return &proto.And{
 		Children: children,
 	}
 }
 
-func BranchFromProto(p *v1.Branch) *Branch {
+func BranchFromProto(p *proto.Branch) *Branch {
 	return &Branch{
 		Pattern: p.GetPattern(),
 		Exact:   p.GetExact(),
 	}
 }
 
-func (q *Branch) ToProto() *v1.Branch {
-	return &v1.Branch{
+func (q *Branch) ToProto() *proto.Branch {
+	return &proto.Branch{
 		Pattern: q.Pattern,
 		Exact:   q.Exact,
 	}
 }
 
-func RawConfigFromProto(p *v1.RawConfig) (res RawConfig) {
+func RawConfigFromProto(p *proto.RawConfig) (res RawConfig) {
 	for _, protoFlag := range p.Flags {
 		switch protoFlag {
-		case v1.RawConfig_ONLY_PUBLIC:
+		case proto.RawConfig_FLAG_ONLY_PUBLIC:
 			res |= RcOnlyPublic
-		case v1.RawConfig_ONLY_PRIVATE:
+		case proto.RawConfig_FLAG_ONLY_PRIVATE:
 			res |= RcOnlyPrivate
-		case v1.RawConfig_ONLY_FORKS:
+		case proto.RawConfig_FLAG_ONLY_FORKS:
 			res |= RcOnlyForks
-		case v1.RawConfig_NO_FORKS:
+		case proto.RawConfig_FLAG_NO_FORKS:
 			res |= RcNoForks
-		case v1.RawConfig_ONLY_ARCHIVED:
+		case proto.RawConfig_FLAG_ONLY_ARCHIVED:
 			res |= RcOnlyArchived
-		case v1.RawConfig_NO_ARCHIVED:
+		case proto.RawConfig_FLAG_NO_ARCHIVED:
 			res |= RcNoArchived
 		}
 	}
 	return res
 }
 
-func (r RawConfig) ToProto() *v1.RawConfig {
-	var flags []v1.RawConfig_Flag
+func (r RawConfig) ToProto() *proto.RawConfig {
+	var flags []proto.RawConfig_Flag
 	for _, flag := range flagNames {
 		if r&flag.Mask != 0 {
 			switch flag.Mask {
 			case RcOnlyPublic:
-				flags = append(flags, v1.RawConfig_ONLY_PUBLIC)
+				flags = append(flags, proto.RawConfig_FLAG_ONLY_PUBLIC)
 			case RcOnlyPrivate:
-				flags = append(flags, v1.RawConfig_ONLY_PRIVATE)
+				flags = append(flags, proto.RawConfig_FLAG_ONLY_PRIVATE)
 			case RcOnlyForks:
-				flags = append(flags, v1.RawConfig_ONLY_FORKS)
+				flags = append(flags, proto.RawConfig_FLAG_ONLY_FORKS)
 			case RcNoForks:
-				flags = append(flags, v1.RawConfig_NO_FORKS)
+				flags = append(flags, proto.RawConfig_FLAG_NO_FORKS)
 			case RcOnlyArchived:
-				flags = append(flags, v1.RawConfig_ONLY_ARCHIVED)
+				flags = append(flags, proto.RawConfig_FLAG_ONLY_ARCHIVED)
 			case RcNoArchived:
-				flags = append(flags, v1.RawConfig_NO_ARCHIVED)
+				flags = append(flags, proto.RawConfig_FLAG_NO_ARCHIVED)
 			}
 		}
 	}
-	return &v1.RawConfig{Flags: flags}
+	return &proto.RawConfig{Flags: flags}
 }

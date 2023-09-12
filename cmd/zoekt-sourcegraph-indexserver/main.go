@@ -31,11 +31,13 @@ import (
 	"text/tabwriter"
 	"time"
 
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/openmetrics/v2"
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"go.uber.org/automaxprocs/maxprocs"
@@ -49,7 +51,6 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/debugserver"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 )
@@ -126,6 +127,9 @@ var (
 		Name: "index_num_stopped_tracking_total",
 		Help: "Counts the number of repos we stopped tracking.",
 	})
+
+	clientMetricsOnce sync.Once
+	clientMetrics     *grpc_prometheus.ClientMetrics
 )
 
 // set of repositories that we want to capture separate indexing metrics for
@@ -1457,14 +1461,18 @@ func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
 const defaultGRPCMessageReceiveSizeBytes = 90 * 1024 * 1024 // 90 MB
 
 func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.DialOption) (proto.ZoektConfigurationServiceClient, error) {
+	metrics := mustGetClientMetrics()
+
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainStreamInterceptor(
+			grpc_prometheus.StreamClientInterceptor(metrics),
 			internalActorStreamInterceptor(),
 			internalerrs.LoggingStreamClientInterceptor(logger),
 			internalerrs.PrometheusStreamClientInterceptor,
 		),
 		grpc.WithChainUnaryInterceptor(
+			grpc_prometheus.UnaryClientInterceptor(metrics),
 			internalActorUnaryInterceptor(),
 			internalerrs.LoggingUnaryClientInterceptor(logger),
 			internalerrs.PrometheusUnaryClientInterceptor,
@@ -1492,6 +1500,24 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 
 	client := proto.NewZoektConfigurationServiceClient(cc)
 	return client, nil
+}
+
+// mustGetClientMetrics returns a singleton instance of the client metrics
+// that are shared across all gRPC clients that this process creates.
+//
+// This function panics if the metrics cannot be registered with the default
+// Prometheus registry.
+func mustGetClientMetrics() *grpc_prometheus.ClientMetrics {
+	clientMetricsOnce.Do(func() {
+		clientMetrics = grpc_prometheus.NewRegisteredClientMetrics(prometheus.DefaultRegisterer,
+			grpc_prometheus.WithClientCounterOptions(),
+			grpc_prometheus.WithClientHandlingTimeHistogram(), // record the overall request latency for a gRPC request
+			grpc_prometheus.WithClientStreamRecvHistogram(),   // record how long it takes for a client to receive a message during a streaming RPC
+			grpc_prometheus.WithClientStreamSendHistogram(),   // record how long it takes for a client to send a message during a streaming RPC
+		)
+	})
+
+	return clientMetrics
 }
 
 // addDefaultPort adds a default port to a URL if one is not specified.
