@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	webserverproto "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/protos/zoekt/webserver/v1"
+	"github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"go.uber.org/atomic"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -52,7 +52,7 @@ func TestClientServer(t *testing.T) {
 	gs := grpc.NewServer()
 	defer gs.Stop()
 
-	webserverproto.RegisterWebserverServiceServer(gs, NewServer(adapter{mock}))
+	v1.RegisterWebserverServiceServer(gs, NewServer(adapter{mock}))
 	ts := httptest.NewServer(h2c.NewHandler(gs, &http2.Server{}))
 	defer ts.Close()
 
@@ -66,9 +66,9 @@ func TestClientServer(t *testing.T) {
 	}
 	defer cc.Close()
 
-	client := webserverproto.NewWebserverServiceClient(cc)
+	client := v1.NewWebserverServiceClient(cc)
 
-	r, err := client.Search(context.Background(), &webserverproto.SearchRequest{Query: query.QToProto(mock.WantSearch)})
+	r, err := client.Search(context.Background(), &v1.SearchRequest{Query: query.QToProto(mock.WantSearch)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestClientServer(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", r, mock.SearchResult.ToProto())
 	}
 
-	l, err := client.List(context.Background(), &webserverproto.ListRequest{Query: query.QToProto(mock.WantList)})
+	l, err := client.List(context.Background(), &v1.ListRequest{Query: query.QToProto(mock.WantList)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,8 +85,8 @@ func TestClientServer(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", l, mock.RepoList.ToProto())
 	}
 
-	request := webserverproto.StreamSearchRequest{
-		Request: &webserverproto.SearchRequest{Query: query.QToProto(mock.WantSearch)},
+	request := v1.StreamSearchRequest{
+		Request: &v1.SearchRequest{Query: query.QToProto(mock.WantSearch)},
 	}
 
 	cs, err := client.StreamSearch(context.Background(), &request)
@@ -97,7 +97,7 @@ func TestClientServer(t *testing.T) {
 	allResponses := readAllStream(t, cs)
 
 	// check to make sure that we get the same set of file matches back
-	var receivedFileMatches []*webserverproto.FileMatch
+	var receivedFileMatches []*v1.FileMatch
 	for _, r := range allResponses {
 		receivedFileMatches = append(receivedFileMatches, r.GetFiles()...)
 	}
@@ -147,7 +147,7 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 			// Safety, ensure that all other fields are echoed back correctly if the schema ever changes
 			opts := []cmp.Option{
 				protocmp.Transform(),
-				protocmp.IgnoreFields(&webserverproto.SearchResponse{},
+				protocmp.IgnoreFields(&v1.SearchResponse{},
 					"progress", // progress is tested above
 					"stats",    // aggregated stats are tested below
 					"files",    // files are tested separately
@@ -161,7 +161,7 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 
 		receivedStats := &zoekt.Stats{}
 
-		var receivedFileMatches []*webserverproto.FileMatch
+		var receivedFileMatches []*v1.FileMatch
 		for _, r := range allResponses {
 			receivedStats.Add(zoekt.StatsFromProto(r.GetStats()))
 			receivedFileMatches = append(receivedFileMatches, r.GetFiles()...)
@@ -170,7 +170,7 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 		// Check to make sure that we get one set of stats back
 		if diff := cmp.Diff(expectedResult.GetStats(), receivedStats.ToProto(),
 			protocmp.Transform(),
-			protocmp.IgnoreFields(&webserverproto.Stats{},
+			protocmp.IgnoreFields(&v1.Stats{},
 				"duration", // for whatever the duration field isn't updated when zoekt.Stats.Add is called
 			),
 		); diff != "" {
@@ -197,7 +197,7 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 }
 
 // newPairedSearchStream returns a pair of client and server search streams that are connected to each other.
-func newPairedSearchStream(t *testing.T) (webserverproto.WebserverService_StreamSearchClient, webserverproto.WebserverService_StreamSearchServer) {
+func newPairedSearchStream(t *testing.T) (v1.WebserverService_StreamSearchClient, v1.WebserverService_StreamSearchServer) {
 	client := &mockSearchStreamClient{t: t}
 	server := &mockSearchStreamServer{t: t, pairedClient: client}
 
@@ -207,7 +207,7 @@ func newPairedSearchStream(t *testing.T) (webserverproto.WebserverService_Stream
 type mockSearchStreamClient struct {
 	t *testing.T
 
-	storedResponses []*webserverproto.StreamSearchResponse
+	storedResponses []*v1.StreamSearchResponse
 	index           int
 
 	startedReading atomic.Bool
@@ -215,7 +215,7 @@ type mockSearchStreamClient struct {
 	grpc.ClientStream
 }
 
-func (m *mockSearchStreamClient) Recv() (*webserverproto.StreamSearchResponse, error) {
+func (m *mockSearchStreamClient) Recv() (*v1.StreamSearchResponse, error) {
 	m.startedReading.Store(true)
 
 	if m.index >= len(m.storedResponses) {
@@ -227,7 +227,7 @@ func (m *mockSearchStreamClient) Recv() (*webserverproto.StreamSearchResponse, e
 	return r, nil
 }
 
-func (m *mockSearchStreamClient) storeResponse(r *webserverproto.StreamSearchResponse) {
+func (m *mockSearchStreamClient) storeResponse(r *v1.StreamSearchResponse) {
 	if m.startedReading.Load() {
 		m.t.Fatalf("cannot store additional responses after starting to read from stream")
 	}
@@ -243,18 +243,18 @@ type mockSearchStreamServer struct {
 	grpc.ServerStream
 }
 
-func (m *mockSearchStreamServer) Send(r *webserverproto.StreamSearchResponse) error {
+func (m *mockSearchStreamServer) Send(r *v1.StreamSearchResponse) error {
 	m.pairedClient.storeResponse(r)
 	return nil
 }
 
 var (
-	_ webserverproto.WebserverService_StreamSearchServer = &mockSearchStreamServer{}
-	_ webserverproto.WebserverService_StreamSearchClient = &mockSearchStreamClient{}
+	_ v1.WebserverService_StreamSearchServer = &mockSearchStreamServer{}
+	_ v1.WebserverService_StreamSearchClient = &mockSearchStreamClient{}
 )
 
-func readAllStream(t *testing.T, cs webserverproto.WebserverService_StreamSearchClient) []*webserverproto.SearchResponse {
-	var got []*webserverproto.SearchResponse
+func readAllStream(t *testing.T, cs v1.WebserverService_StreamSearchClient) []*v1.SearchResponse {
+	var got []*v1.SearchResponse
 	for { // collect all responses from the stream
 		r, err := cs.Recv()
 		if errors.Is(err, io.EOF) {

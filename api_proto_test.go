@@ -27,7 +27,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	webserverproto "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/protos/zoekt/webserver/v1"
+	webproto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -417,8 +417,8 @@ var (
 	exampleSearchResultBytes []byte
 
 	// The proto struct representation of the search result
-	exampleSearchResultProto = func() *webserverproto.SearchResponse {
-		sr := new(webserverproto.SearchResponse)
+	exampleSearchResultProto = func() *webproto.SearchResponse {
+		sr := new(webproto.SearchResponse)
 		err := proto.Unmarshal(exampleSearchResultBytes, sr)
 		if err != nil {
 			panic(err)
@@ -472,7 +472,7 @@ func BenchmarkProtoRoundtrip(b *testing.B) {
 				}
 
 				for _, buf := range buffers {
-					res := new(webserverproto.SearchResponse)
+					res := new(webproto.SearchResponse)
 					err := proto.Unmarshal(buf, res)
 					if err != nil {
 						b.Fatal(err)

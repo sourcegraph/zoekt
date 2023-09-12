@@ -6,7 +6,7 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "zoekt/webserver/v1/query.proto";
 
-option go_package = "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/protos/zoekt/webserver/v1";
+option go_package = "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1";
 
 service WebserverService {
   rpc Search(SearchRequest) returns (SearchResponse) {}

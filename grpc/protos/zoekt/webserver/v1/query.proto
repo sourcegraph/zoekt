@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package zoekt.webserver.v1;
 
-option go_package = "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/protos/zoekt/webserver/v1";
+option go_package = "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1";
 
 message Q {
   oneof query {

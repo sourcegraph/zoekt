@@ -4,8 +4,8 @@ import (
 	"context"
 	"math"
 
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/protos/zoekt/webserver/v1"
 	"github.com/sourcegraph/zoekt/grpc/chunk"
+	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
