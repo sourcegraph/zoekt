@@ -652,7 +652,7 @@ func (r *RepoList) ToProto() *proto.ListResponse {
 	}
 
 	return &proto.ListResponse{
-		Repos:    []*proto.RepoListEntry{},
+		Repos:    repos,
 		ReposMap: reposMap,
 		Crashes:  int64(r.Crashes),
 		Stats:    r.Stats.ToProto(),
