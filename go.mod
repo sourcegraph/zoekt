@@ -2,6 +2,7 @@ module github.com/sourcegraph/zoekt
 
 require (
 	cloud.google.com/go/profiler v0.3.1
+	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24
 	github.com/RoaringBitmap/roaring v1.3.0
 	github.com/andygrunwald/go-gerrit v0.0.0-20230628115649-c44fe2fbf2ca
 	github.com/bmatcuk/doublestar v1.3.4
@@ -18,6 +19,7 @@ require (
 	github.com/google/slothfs v0.0.0-20190717100203-59c1163fd173
 	github.com/grafana/regexp v0.0.0-20221123153739-15dc172cd2db
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/openmetrics/v2 v2.0.0-rc.3
+	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.2.0.20210128111500-3ff779b52992
 	github.com/hashicorp/go-retryablehttp v0.7.4
 	github.com/keegancsmith/rpc v1.3.0
 	github.com/keegancsmith/tmpfriend v0.0.0-20180423180255-86e88902a513
@@ -63,7 +65,6 @@ require (
 	cloud.google.com/go v0.110.3 // indirect
 	cloud.google.com/go/compute v1.20.1 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
-	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24 // indirect
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20230626094100-7e9e0395ebec // indirect
@@ -96,7 +97,6 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.5 // indirect
 	github.com/googleapis/gax-go/v2 v2.11.0 // indirect
-	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.2.0.20210128111500-3ff779b52992 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v0.16.2 // indirect
