@@ -29,6 +29,8 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	webproto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"google.golang.org/protobuf/proto"
+
+	fuzz "github.com/AdaLogics/go-fuzz-headers"
 )
 
 func TestProtoRoundtrip(t *testing.T) {
@@ -481,4 +483,29 @@ func BenchmarkProtoRoundtrip(b *testing.B) {
 			}
 		})
 	}
+}
+
+func Fuzz_RepoList_ProtoRoundTrip(f *testing.F) {
+	f.Fuzz(func(t *testing.T, data []byte) {
+		fc := fuzz.NewConsumer(data)
+		fc.AllowUnexportedFields()
+
+		original := &RepoList{}
+		err := fc.GenerateStruct(original)
+		if err != nil {
+			return
+		}
+
+		p := original.ToProto()
+		converted := RepoListFromProto(p)
+
+		opts := []cmp.Option{
+			cmpopts.IgnoreUnexported(Repository{}),
+			cmpopts.EquateEmpty(),
+		}
+
+		if diff := cmp.Diff(original, converted, opts...); diff != "" {
+			t.Fatalf("unexpected diff (-want +got)\n%s", diff)
+		}
+	})
 }
