@@ -33,14 +33,10 @@ import (
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/openmetrics/v2"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
-	"github.com/keegancsmith/tmpfriend"
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
-	"github.com/sourcegraph/zoekt/grpc/internalerrs"
-	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
@@ -48,6 +44,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/grpc/internalerrs"
+	"github.com/sourcegraph/zoekt/grpc/messagesize"
 
 	"github.com/sourcegraph/mountinfo"
 
@@ -983,8 +983,8 @@ func listIndexed(indexDir string) []uint32 {
 //
 // If main is true we will delete older temp directories left around. main is
 // false when this is a debug command.
-func setupTmpDir(main bool, index string) error {
-	// change the target tmp directory depending on if its our main daemon or a
+func setupTmpDir(logger sglog.Logger, main bool, index string) error {
+	// change the target tmp directory depending on if it's our main daemon or a
 	// debug sub command.
 	dir := ".indexserver.debug.tmp"
 	if main {
@@ -992,14 +992,19 @@ func setupTmpDir(main bool, index string) error {
 	}
 
 	tmpRoot := filepath.Join(index, dir)
+
+	if main {
+		err := os.RemoveAll(tmpRoot)
+		if err != nil {
+			logger.Error("failed to remove tmp dir", sglog.String("tmpRoot", tmpRoot), sglog.Error(err))
+		}
+	}
+
 	if err := os.MkdirAll(tmpRoot, 0755); err != nil {
 		return err
 	}
-	if !tmpfriend.IsTmpFriendDir(tmpRoot) {
-		_, err := tmpfriend.RootTempDir(tmpRoot)
-		return err
-	}
-	return nil
+
+	return os.Setenv("TMPDIR", tmpRoot)
 }
 
 func printMetaData(fn string) error {
@@ -1298,6 +1303,8 @@ func startServer(conf rootConfig) error {
 }
 
 func newServer(conf rootConfig) (*Server, error) {
+	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
+
 	if conf.cpuFraction <= 0.0 || conf.cpuFraction > 1.0 {
 		return nil, fmt.Errorf("cpu_fraction must be between 0.0 and 1.0")
 	}
@@ -1333,7 +1340,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		}
 	}
 
-	if err := setupTmpDir(conf.Main, conf.index); err != nil {
+	if err := setupTmpDir(logger, conf.Main, conf.index); err != nil {
 		return nil, fmt.Errorf("failed to setup TMPDIR under %s: %v", conf.index, err)
 	}
 
@@ -1402,8 +1409,6 @@ func newServer(conf rootConfig) (*Server, error) {
 	if cpuCount < 1 {
 		cpuCount = 1
 	}
-
-	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
 
 	q := NewQueue(conf.backoffDuration, conf.maxBackoffDuration, logger)
 
