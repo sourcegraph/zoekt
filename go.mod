@@ -18,8 +18,8 @@ require (
 	github.com/google/go-github/v27 v27.0.6
 	github.com/google/slothfs v0.0.0-20190717100203-59c1163fd173
 	github.com/grafana/regexp v0.0.0-20221123153739-15dc172cd2db
-	github.com/grpc-ecosystem/go-grpc-middleware/providers/openmetrics/v2 v2.0.0-rc.3
-	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.2.0.20210128111500-3ff779b52992
+	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.0-rc.0
+	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0
 	github.com/hashicorp/go-retryablehttp v0.7.4
 	github.com/keegancsmith/rpc v1.3.0
 	github.com/keegancsmith/tmpfriend v0.0.0-20180423180255-86e88902a513
@@ -34,7 +34,7 @@ require (
 	github.com/sourcegraph/go-ctags v0.0.0-20230111110657-c27675da7f71
 	github.com/sourcegraph/log v0.0.0-20230523201558-ad2d71b4d2ee
 	github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67
-	github.com/stretchr/testify v1.8.3
+	github.com/stretchr/testify v1.8.4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	github.com/xanzy/go-gitlab v0.86.0
@@ -52,10 +52,10 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.5.2
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
-	golang.org/x/net v0.11.0
+	golang.org/x/net v0.14.0
 	golang.org/x/oauth2 v0.9.0
 	golang.org/x/sync v0.3.0
-	golang.org/x/sys v0.9.0
+	golang.org/x/sys v0.11.0
 	google.golang.org/grpc v1.56.1
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
@@ -129,9 +129,9 @@ require (
 	go.opentelemetry.io/proto/otlp v0.20.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/crypto v0.10.0 // indirect
+	golang.org/x/crypto v0.12.0 // indirect
 	golang.org/x/mod v0.11.0 // indirect
-	golang.org/x/text v0.10.0 // indirect
+	golang.org/x/text v0.12.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.10.0 // indirect
 	google.golang.org/api v0.129.0 // indirect
@@ -142,14 +142,5 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// As of https://github.com/grpc-ecosystem/go-grpc-middleware/blob/7ac0846398432dee083fd8bc4ad7abacf8147ff2/providers/openmetrics/go.mod#L7,
-// the latest release of the gRPC Prometheus middleware depends on a version of go-grpc-middleware that is two years old, and
-// is incompatible with the latest gRPC releases.
-//
-// The parent project is currently working around this by using a local replace directive in their go.mod file (which ensures
-// that they always use the current version of go-grpc-middleware that they're developing). Until this issue is fixed,
-// we'll need to ensure that we explicitly depend on the latest version of go-grpc-middleware (v2.0.0-rc.3) as of this writing.
-replace github.com/grpc-ecosystem/go-grpc-middleware/v2 => github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.3
 
 go 1.18

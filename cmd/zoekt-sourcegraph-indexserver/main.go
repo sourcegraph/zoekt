@@ -31,7 +31,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/openmetrics/v2"
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/peterbourgon/ff/v3/ffcli"
@@ -131,7 +131,7 @@ var (
 	})
 
 	clientMetricsOnce sync.Once
-	clientMetrics     *grpc_prometheus.ClientMetrics
+	clientMetrics     *grpcprom.ClientMetrics
 )
 
 // set of repositories that we want to capture separate indexing metrics for
@@ -1477,14 +1477,14 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainStreamInterceptor(
-			grpc_prometheus.StreamClientInterceptor(metrics),
+			metrics.StreamClientInterceptor(),
 			internalActorStreamInterceptor(),
 			internalerrs.LoggingStreamClientInterceptor(logger),
 			internalerrs.PrometheusStreamClientInterceptor,
 			retry.StreamClientInterceptor(retryOpts...),
 		),
 		grpc.WithChainUnaryInterceptor(
-			grpc_prometheus.UnaryClientInterceptor(metrics),
+			metrics.UnaryClientInterceptor(),
 			internalActorUnaryInterceptor(),
 			internalerrs.LoggingUnaryClientInterceptor(logger),
 			internalerrs.PrometheusUnaryClientInterceptor,
@@ -1520,14 +1520,16 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 //
 // This function panics if the metrics cannot be registered with the default
 // Prometheus registry.
-func mustGetClientMetrics() *grpc_prometheus.ClientMetrics {
+func mustGetClientMetrics() *grpcprom.ClientMetrics {
 	clientMetricsOnce.Do(func() {
-		clientMetrics = grpc_prometheus.NewRegisteredClientMetrics(prometheus.DefaultRegisterer,
-			grpc_prometheus.WithClientCounterOptions(),
-			grpc_prometheus.WithClientHandlingTimeHistogram(), // record the overall request latency for a gRPC request
-			grpc_prometheus.WithClientStreamRecvHistogram(),   // record how long it takes for a client to receive a message during a streaming RPC
-			grpc_prometheus.WithClientStreamSendHistogram(),   // record how long it takes for a client to send a message during a streaming RPC
+		clientMetrics = grpcprom.NewClientMetrics(
+			grpcprom.WithClientCounterOptions(),
+			grpcprom.WithClientHandlingTimeHistogram(), // record the overall request latency for a gRPC request
+			grpcprom.WithClientStreamRecvHistogram(),   // record how long it takes for a client to receive a message during a streaming RPC
+			grpcprom.WithClientStreamSendHistogram(),   // record how long it takes for a client to send a message during a streaming RPC
 		)
+
+		prometheus.DefaultRegisterer.MustRegister(clientMetrics)
 	})
 
 	return clientMetrics
