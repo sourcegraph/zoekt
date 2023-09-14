@@ -32,6 +32,7 @@ import (
 	"time"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/openmetrics/v2"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"github.com/keegancsmith/tmpfriend"
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/prometheus/client_golang/prometheus"
@@ -44,6 +45,7 @@ import (
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
@@ -1463,6 +1465,15 @@ const defaultGRPCMessageReceiveSizeBytes = 90 * 1024 * 1024 // 90 MB
 func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.DialOption) (proto.ZoektConfigurationServiceClient, error) {
 	metrics := mustGetClientMetrics()
 
+	// If the service seems to be unavailable, this
+	// will retry after [1s, 2s, 4s, 8s, 16s] with a jitterFraction of .1
+	// Ex: (on the first retry attempt, we will wait between [.9s and 1.1s])
+	retryOpts := []retry.CallOption{
+		retry.WithMax(5),
+		retry.WithBackoff(retry.BackoffExponentialWithJitter(1*time.Second, .1)),
+		retry.WithCodes(codes.Unavailable),
+	}
+
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainStreamInterceptor(
@@ -1470,12 +1481,14 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 			internalActorStreamInterceptor(),
 			internalerrs.LoggingStreamClientInterceptor(logger),
 			internalerrs.PrometheusStreamClientInterceptor,
+			retry.StreamClientInterceptor(retryOpts...),
 		),
 		grpc.WithChainUnaryInterceptor(
 			grpc_prometheus.UnaryClientInterceptor(metrics),
 			internalActorUnaryInterceptor(),
 			internalerrs.LoggingUnaryClientInterceptor(logger),
 			internalerrs.PrometheusUnaryClientInterceptor,
+			retry.UnaryClientInterceptor(retryOpts...),
 		),
 		grpc.WithDefaultServiceConfig(defaultGRPCServiceConfigurationJSON),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaultGRPCMessageReceiveSizeBytes)),
