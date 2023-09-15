@@ -24,6 +24,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -438,9 +439,11 @@ func watchdogOnce(ctx context.Context, client *http.Client, addr string) error {
 	if err != nil {
 		return err
 	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("watchdog: status %v", resp.StatusCode)
+		return fmt.Errorf("watchdog: status=%v body=%q", resp.StatusCode, string(body))
 	}
 	return nil
 }
@@ -462,7 +465,15 @@ func watchdog(dt time.Duration, maxErrCount int, addr string) {
 			metricWatchdogErrors.Set(float64(errCount))
 			metricWatchdogErrorsTotal.Inc()
 			if errCount >= maxErrCount {
-				log.Panicf("watchdog: %v", err)
+				log.Printf(`watchdog health check has consecutively failed %d times indicating is likely an unrecoverable error affecting zoekt. As such this process will exit with code 3.
+
+Final error: %v
+
+Possible remediations:
+- If this rarely happens, ignore and let your process manager restart zoekt.
+- Possibly under provisioned. Try increasing CPU or disk IO.
+- A bug. Reach out with logs and screenshots of metrics when this occurs.`, errCount, err)
+				os.Exit(3)
 			} else {
 				log.Printf("watchdog: failed, will try %d more times: %v", maxErrCount-errCount, err)
 			}
