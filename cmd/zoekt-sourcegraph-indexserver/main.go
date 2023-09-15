@@ -994,6 +994,7 @@ func setupTmpDir(logger sglog.Logger, main bool, index string) error {
 	tmpRoot := filepath.Join(index, dir)
 
 	if main {
+		logger.Info("removing tmp dir", sglog.String("tmpRoot", tmpRoot))
 		err := os.RemoveAll(tmpRoot)
 		if err != nil {
 			logger.Error("failed to remove tmp dir", sglog.String("tmpRoot", tmpRoot), sglog.Error(err))
