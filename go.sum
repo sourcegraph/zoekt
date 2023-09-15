@@ -364,8 +364,6 @@ github.com/julienschmidt/httprouter v1.3.0/go.mod h1:JR6WtHb+2LUe8TCKY3cZOxFyyO8
 github.com/jung-kurt/gofpdf v1.0.3-0.20190309125859-24315acbbda5/go.mod h1:7Id9E/uU8ce6rXgefFLlgrJj/GYY22cpxn+r32jIOes=
 github.com/keegancsmith/rpc v1.3.0 h1:wGWOpjcNrZaY8GDYZJfvyxmlLljm3YQWF+p918DXtDk=
 github.com/keegancsmith/rpc v1.3.0/go.mod h1:6O2xnOGjPyvIPbvp0MdrOe5r6cu1GZ4JoTzpzDhWeo0=
-github.com/keegancsmith/tmpfriend v0.0.0-20180423180255-86e88902a513 h1:xa9SZfAid/jlS3kjwAvVDQFpe6t8SiS0Vl/H51BZYww=
-github.com/keegancsmith/tmpfriend v0.0.0-20180423180255-86e88902a513/go.mod h1:MhGoae1pr+JFXxDAYx3b0fMn1xtr1ly9dHa0+KHHon4=
 github.com/kevinburke/ssh_config v1.2.0 h1:x584FjTGwHzMwvHx18PXxbBVzfnxogHaAReU4gf13a4=
 github.com/kevinburke/ssh_config v1.2.0/go.mod h1:CT57kijsi8u/K/BOFA39wgDQJ9CxiF4nAY/ojJ6r6mM=
 github.com/kisielk/errcheck v1.1.0/go.mod h1:EZBBE59ingxPouuu3KfxchcWSUPOHkagtvWXihfKN4Q=
@@ -537,8 +535,8 @@ github.com/soheilhy/cmux v0.1.4/go.mod h1:IM3LyeVVIOuxMH7sFAkER9+bJ4dT7Ms6E4xg4k
 github.com/sony/gobreaker v0.4.1/go.mod h1:ZKptC7FHNvhBz7dN2LGjPVBz2sZJmc0/PkyDJOjmxWY=
 github.com/sourcegraph/go-ctags v0.0.0-20230111110657-c27675da7f71 h1:tsWE3F3StWvnwLnC4JWb0zX0UHY9GULQtu/aoQvLJvI=
 github.com/sourcegraph/go-ctags v0.0.0-20230111110657-c27675da7f71/go.mod h1:ZYjpRXoJrRlxjU9ZfpaUKJkk62AjhJPffN3rlw2aqxM=
-github.com/sourcegraph/log v0.0.0-20230523201558-ad2d71b4d2ee h1:xz1lIhx6YvYYhiLio9INCIWHCZFH9MoRVuFye/lz07c=
-github.com/sourcegraph/log v0.0.0-20230523201558-ad2d71b4d2ee/go.mod h1:IDp09QkoqS8Z3CyN2RW6vXjgABkNpDbyjLIHNQwQ8P8=
+github.com/sourcegraph/log v0.0.0-20230711093019-40c57b632cca h1:VwYrG1+YNyOD3nSb0M84ISMQiOOS/5Js05HqU1iNFSU=
+github.com/sourcegraph/log v0.0.0-20230711093019-40c57b632cca/go.mod h1:IDp09QkoqS8Z3CyN2RW6vXjgABkNpDbyjLIHNQwQ8P8=
 github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67 h1:NSYSPQOE7yyyytLbKQHjxSkPnBagaGQblgVMQrQ1je0=
 github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67/go.mod h1:4DAabK408OEbyK2NUEQ5YRApyB/p0XNGJyC1YPBAKq4=
 github.com/spf13/cobra v0.0.3/go.mod h1:1l0Ry5zgKvJasoi3XT1TypsSe7PqH0Sj9dhYf7v3XqQ=

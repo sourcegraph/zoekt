@@ -22,7 +22,6 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.2.0.20210128111500-3ff779b52992
 	github.com/hashicorp/go-retryablehttp v0.7.4
 	github.com/keegancsmith/rpc v1.3.0
-	github.com/keegancsmith/tmpfriend v0.0.0-20180423180255-86e88902a513
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/peterbourgon/ff/v3 v3.3.2
@@ -32,7 +31,7 @@ require (
 	github.com/rs/xid v1.5.0
 	github.com/shirou/gopsutil/v3 v3.23.5
 	github.com/sourcegraph/go-ctags v0.0.0-20230111110657-c27675da7f71
-	github.com/sourcegraph/log v0.0.0-20230523201558-ad2d71b4d2ee
+	github.com/sourcegraph/log v0.0.0-20230711093019-40c57b632cca
 	github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67
 	github.com/stretchr/testify v1.8.3
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
