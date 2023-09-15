@@ -466,8 +466,10 @@ func watchdog(dt time.Duration, maxErrCount int, addr string) {
 			metricWatchdogErrorsTotal.Inc()
 			if errCount >= maxErrCount {
 				log.Printf(`watchdog health check has consecutively failed %d times indicating is likely an unrecoverable error affecting zoekt. As such this process will exit with code 3.
+
 Final error: %v
-Possible Remediations:
+
+Possible remediations:
 - If this rarely happens, ignore and let your process manager restart zoekt.
 - Possibly under provisioned. Try increasing CPU or disk IO.
 - A bug. Reach out with logs and screenshots of metrics when this occurs.`, errCount, err)
