@@ -1213,7 +1213,7 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.IntVar(&rc.blockProfileRate, "block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler Var(default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
 	fs.DurationVar(&rc.backoffDuration, "backoff_duration", getEnvWithDefaultDuration("BACKOFF_DURATION", 10*time.Minute), "for the given duration we backoff from enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase the duration of the delay linearly up to the maxBackoffDuration. A negative value disables indexing backoff.")
 	fs.DurationVar(&rc.maxBackoffDuration, "max_backoff_duration", getEnvWithDefaultDuration("MAX_BACKOFF_DURATION", 120*time.Minute), "the maximum duration to backoff from enqueueing a repo for indexing.  A negative value disables indexing backoff.")
-	fs.BoolVar(&rc.useGRPC, "use_grpc", getEnvWithDefaultBool("GRPC_ENABLED", false), "use the gRPC API to talk to Sourcegraph")
+	fs.BoolVar(&rc.useGRPC, "use_grpc", mustGetBoolFromEnvironmentVariables([]string{"GRPC_ENABLED", "SG_FEATURE_FLAG_GRPC"}, true), "use the gRPC API to talk to Sourcegraph")
 
 	// flags related to shard merging
 	fs.DurationVar(&rc.vacuumInterval, "vacuum_interval", getEnvWithDefaultDuration("SRC_VACUUM_INTERVAL", 24*time.Hour), "run vacuum this often")
@@ -1595,4 +1595,37 @@ func main() {
 	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// mustGetBoolFromEnvironmentVariables is like getBoolFromEnvironmentVariables, but it panics
+// if any of the provided environment variables fails to parse as a boolean.
+func mustGetBoolFromEnvironmentVariables(envVarNames []string, defaultBool bool) bool {
+	value, err := getBoolFromEnvironmentVariables(envVarNames, defaultBool)
+	if err != nil {
+		panic(err)
+	}
+
+	return value
+}
+
+// getBoolFromEnvironmentVariables returns the boolean defined by the first environment
+// variable listed in envVarNames that is set in the current process environment, or the defaultBool if none are set.
+//
+// An error is returned of the provided environment variables fails to parse as a boolean.
+func getBoolFromEnvironmentVariables(envVarNames []string, defaultBool bool) (bool, error) {
+	for _, envVar := range envVarNames {
+		v := os.Getenv(envVar)
+		if v == "" {
+			continue
+		}
+
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return false, fmt.Errorf("parsing environment variable %q to boolean: %v", envVar, err)
+		}
+
+		return b, nil
+	}
+
+	return defaultBool, nil
 }
