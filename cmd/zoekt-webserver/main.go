@@ -648,11 +648,13 @@ func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts 
 		grpc.ChainStreamInterceptor(
 			otelgrpc.StreamServerInterceptor(),
 			metrics.StreamServerInterceptor(),
+			messagesize.StreamServerInterceptor,
 			internalerrs.LoggingStreamServerInterceptor(logger),
 		),
 		grpc.ChainUnaryInterceptor(
 			otelgrpc.UnaryServerInterceptor(),
 			metrics.UnaryServerInterceptor(),
+			messagesize.UnaryServerInterceptor,
 			internalerrs.LoggingUnaryServerInterceptor(logger),
 		),
 	}

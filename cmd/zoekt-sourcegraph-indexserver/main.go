@@ -1482,6 +1482,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainStreamInterceptor(
 			metrics.StreamClientInterceptor(),
+			messagesize.StreamClientInterceptor,
 			internalActorStreamInterceptor(),
 			internalerrs.LoggingStreamClientInterceptor(logger),
 			internalerrs.PrometheusStreamClientInterceptor,
@@ -1489,6 +1490,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 		),
 		grpc.WithChainUnaryInterceptor(
 			metrics.UnaryClientInterceptor(),
+			messagesize.UnaryClientInterceptor,
 			internalActorUnaryInterceptor(),
 			internalerrs.LoggingUnaryClientInterceptor(logger),
 			internalerrs.PrometheusUnaryClientInterceptor,
