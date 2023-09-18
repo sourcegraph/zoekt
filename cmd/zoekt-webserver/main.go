@@ -39,7 +39,7 @@ import (
 	"sync"
 	"time"
 
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/openmetrics/v2"
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/sourcegraph/mountinfo"
 	zoektgrpc "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
@@ -647,12 +647,12 @@ func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts 
 	opts := []grpc.ServerOption{
 		grpc.ChainStreamInterceptor(
 			otelgrpc.StreamServerInterceptor(),
-			grpc_prometheus.StreamServerInterceptor(metrics),
+			metrics.StreamServerInterceptor(),
 			internalerrs.LoggingStreamServerInterceptor(logger),
 		),
 		grpc.ChainUnaryInterceptor(
 			otelgrpc.UnaryServerInterceptor(),
-			grpc_prometheus.UnaryServerInterceptor(metrics),
+			metrics.UnaryServerInterceptor(),
 			internalerrs.LoggingUnaryServerInterceptor(logger),
 		),
 	}
@@ -691,7 +691,7 @@ var (
 	})
 
 	serverMetricsOnce sync.Once
-	serverMetrics     *grpc_prometheus.ServerMetrics
+	serverMetrics     *grpcprom.ServerMetrics
 )
 
 // mustGetServerMetrics returns a singleton instance of the server metrics
@@ -699,12 +699,14 @@ var (
 //
 // This function panics if the metrics cannot be registered with the default
 // Prometheus registry.
-func mustGetServerMetrics() *grpc_prometheus.ServerMetrics {
+func mustGetServerMetrics() *grpcprom.ServerMetrics {
 	serverMetricsOnce.Do(func() {
-		serverMetrics = grpc_prometheus.NewRegisteredServerMetrics(prometheus.DefaultRegisterer,
-			grpc_prometheus.WithServerCounterOptions(),
-			grpc_prometheus.WithServerHandlingTimeHistogram(), // record the overall response latency for a gRPC request)
+		serverMetrics = grpcprom.NewServerMetrics(
+			grpcprom.WithServerCounterOptions(),
+			grpcprom.WithServerHandlingTimeHistogram(), // record the overall response latency for a gRPC request)
 		)
+
+		prometheus.DefaultRegisterer.MustRegister(serverMetrics)
 	})
 
 	return serverMetrics
