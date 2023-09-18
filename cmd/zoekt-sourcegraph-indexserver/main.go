@@ -1598,7 +1598,7 @@ func main() {
 }
 
 // mustGetBoolFromEnvironmentVariables is like getBoolFromEnvironmentVariables, but it panics
-// if any of the provided environment variables fails to parse is a boolean.
+// if any of the provided environment variables fails to parse as a boolean.
 func mustGetBoolFromEnvironmentVariables(envVarNames []string, defaultBool bool) bool {
 	value, err := getBoolFromEnvironmentVariables(envVarNames, defaultBool)
 	if err != nil {
