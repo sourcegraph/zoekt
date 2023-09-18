@@ -286,6 +286,103 @@ func TestDefaultGRPCServiceConfigurationSyntax(t *testing.T) {
 	}
 }
 
+func TestGetBoolFromEnvironmentVariables(t *testing.T) {
+	testCases := []struct {
+		name         string
+		envVarsToSet map[string]string
+
+		envVarNames []string
+		defaultBool bool
+
+		wantBool bool
+		wantErr  bool
+	}{
+		{
+			name: "respect default value: true",
+
+			envVarsToSet: map[string]string{},
+
+			envVarNames: []string{"FOO", "BAR"},
+			defaultBool: true,
+
+			wantBool: true,
+		},
+		{
+			name: "respect default value: false",
+
+			envVarsToSet: map[string]string{},
+
+			envVarNames: []string{"FOO", "BAR"},
+			defaultBool: false,
+
+			wantBool: false,
+		},
+		{
+			name: "read from environment",
+
+			envVarsToSet: map[string]string{"FOO": "1"},
+
+			envVarNames: []string{"FOO"},
+			defaultBool: false,
+
+			wantBool: true,
+		},
+		{
+			name: "read from first env var that is set",
+
+			envVarsToSet: map[string]string{
+				"BAR": "false",
+				"BAZ": "true",
+			},
+
+			envVarNames: []string{"FOO", "BAR", "BAZ"},
+			defaultBool: true,
+
+			wantBool: false,
+		},
+
+		{
+			name: "should error for invalid input",
+
+			envVarsToSet: map[string]string{"INVALID": "not a boolean"},
+
+			envVarNames: []string{"INVALID"},
+			defaultBool: false,
+
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run("", func(t *testing.T) {
+			// Prepare the environment by loading all the appropriate environment variables
+			for _, v := range tc.envVarNames {
+				_ = os.Unsetenv(v)
+			}
+
+			for k, _ := range tc.envVarsToSet {
+				_ = os.Unsetenv(k)
+			}
+
+			for k, v := range tc.envVarsToSet {
+				t.Setenv(k, v)
+			}
+
+			// Run the test
+			got, err := getBoolFromEnvironmentVariables(tc.envVarNames, tc.defaultBool)
+
+			// Examine the results
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("unexpected error (wantErr = %t): %v", tc.wantErr, err)
+			}
+
+			if got != tc.wantBool {
+				t.Errorf("got %v, want %v", got, tc.wantBool)
+			}
+		})
+	}
+}
+
 func TestAddDefaultPort(t *testing.T) {
 	tests := []struct {
 		name  string
