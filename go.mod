@@ -30,7 +30,7 @@ require (
 	github.com/prometheus/procfs v0.11.0
 	github.com/rs/xid v1.5.0
 	github.com/shirou/gopsutil/v3 v3.23.5
-	github.com/sourcegraph/go-ctags v0.0.0-20230111110657-c27675da7f71
+	github.com/sourcegraph/go-ctags v0.0.0-20230929045819-c736fcb519eb
 	github.com/sourcegraph/log v0.0.0-20230711093019-40c57b632cca
 	github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67
 	github.com/stretchr/testify v1.8.4
