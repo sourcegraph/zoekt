@@ -66,7 +66,7 @@ func NewParserMap(bins ParserBinMap, cTagsMustSucceed bool) (ParserMap, error) {
 	for _, parserType := range []CTagsParserType{UniversalCTags, ScipCTags} {
 		bin := bins[parserType]
 		if bin != "" {
-			parser, err := NewParser(bin)
+			parser, err := NewParser(parserType, bin)
 
 			if err != nil && cTagsMustSucceed {
 				return nil, fmt.Errorf("ctags.NewParserMap: %v", err)
