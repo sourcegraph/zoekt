@@ -27,7 +27,7 @@ func TestJSON(t *testing.T) {
 		t.Skip(err)
 	}
 
-	p, err := NewParser("universal-ctags")
+	p, err := NewParser(UniversalCTags, "universal-ctags")
 	if err != nil {
 		t.Fatal("newProcess", err)
 	}
