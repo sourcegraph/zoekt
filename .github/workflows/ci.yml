@@ -3,6 +3,7 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 name: CI
 jobs:
   test:
