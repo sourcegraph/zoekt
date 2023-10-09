@@ -1757,8 +1757,9 @@ func TestListRepos(t *testing.T) {
 
 		for _, opts := range []*ListOptions{
 			nil,
-			{Minimal: false},
-			{Minimal: true},
+			{},
+			{Field: RepoListFieldRepos},
+			{Field: RepoListFieldReposMap},
 		} {
 			t.Run(fmt.Sprint(opts), func(t *testing.T) {
 				q := &query.Repo{Regexp: regexp.MustCompile("epo")}
@@ -1808,7 +1809,7 @@ func TestListRepos(t *testing.T) {
 				if err != nil {
 					t.Fatalf("List(%v): %v", q, err)
 				}
-				if len(res.Repos) != 0 || len(res.Minimal) != 0 {
+				if len(res.Repos) != 0 || len(res.ReposMap) != 0 {
 					t.Fatalf("got %v, want 0 matches", res)
 				}
 			})
@@ -1831,13 +1832,13 @@ func TestListRepos(t *testing.T) {
 		searcher := searcherForTest(t, b)
 
 		q := &query.Repo{Regexp: regexp.MustCompile("epo")}
-		res, err := searcher.List(context.Background(), q, &ListOptions{Minimal: true})
+		res, err := searcher.List(context.Background(), q, &ListOptions{Field: RepoListFieldReposMap})
 		if err != nil {
 			t.Fatalf("List(%v): %v", q, err)
 		}
 
 		want := &RepoList{
-			Minimal: map[uint32]*MinimalRepoListEntry{
+			ReposMap: ReposMap{
 				repo.ID: {
 					HasSymbols: repo.HasSymbols,
 					Branches:   repo.Branches,
@@ -1863,11 +1864,11 @@ func TestListRepos(t *testing.T) {
 		}
 
 		q = &query.Repo{Regexp: regexp.MustCompile("bla")}
-		res, err = searcher.List(context.Background(), q, &ListOptions{Minimal: true})
+		res, err = searcher.List(context.Background(), q, &ListOptions{Field: RepoListFieldReposMap})
 		if err != nil {
 			t.Fatalf("List(%v): %v", q, err)
 		}
-		if len(res.Repos) != 0 || len(res.Minimal) != 0 {
+		if len(res.Repos) != 0 || len(res.ReposMap) != 0 {
 			t.Fatalf("got %v, want 0 matches", res)
 		}
 	})

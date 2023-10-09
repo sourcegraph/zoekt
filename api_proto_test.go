@@ -394,12 +394,9 @@ func (*Repository) Generate(rng *rand.Rand, _ int) reflect.Value {
 }
 
 func (RepoListField) Generate(rng *rand.Rand, _ int) reflect.Value {
-	switch rng.Int() % 3 {
-	case 0:
+	if rng.Intn(2) == 0 {
 		return reflect.ValueOf(RepoListField(RepoListFieldRepos))
-	case 1:
-		return reflect.ValueOf(RepoListField(RepoListFieldMinimal))
-	default:
+	} else {
 		return reflect.ValueOf(RepoListField(RepoListFieldReposMap))
 	}
 }
