@@ -653,33 +653,48 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 	return maxScore.score, maxScore.what
 }
 
+type SymbolScore float64
+const (
+	Class         SymbolScore = 10
+	Struct        SymbolScore = 9.5
+	Enum          SymbolScore = 9
+	MethodSpec    SymbolScore = 8.5
+	Interface     SymbolScore = 8
+	Function      SymbolScore = 7
+	Method        SymbolScore = 6
+	Field         SymbolScore = 5.5
+	Constant      SymbolScore = 5
+	Variable      SymbolScore = 4
+	LocalVariable SymbolScore = 3
+)
+
 // scoreKind boosts a match based on the combination of language and kind. The
 // language string comes from go-enry, the kind string from ctags.
 func scoreKind(language string, kind string) float64 {
-	var factor float64
+	var score SymbolScore
 
 	// Generic ranking which will be overriden by language specific ranking
 	switch kind {
 	case "type": // scip-ctags regression workaround https://github.com/sourcegraph/sourcegraph/issues/57659
-		factor = 8
+		score = Interface
 	case "class":
-		factor = 10
+		score = Class
 	case "struct":
-		factor = 9.5
+		score = Struct
 	case "enum":
-		factor = 9
+		score = Enum
 	case "interface":
-		factor = 8
+		score = Interface
 	case "function", "func":
-		factor = 7
+		score = Function
 	case "method":
-		factor = 6
+		score = Method
 	case "member", "field":
-		factor = 5.5
+		score = Field
 	case "constant", "const":
-		factor = 5
+		score = Constant
 	case "var", "variable":
-		factor = 4
+		score = Variable
 	}
 
 	// Refer to universal-ctags --list-kinds-full=<language> to learn about which
@@ -694,64 +709,64 @@ func scoreKind(language string, kind string) float64 {
 		// to "classes" instead of "c". We have to cover both cases to support existing
 		// indexes.
 		case "class", "classes":
-			factor = 10
+			score = Class
 		case "enum":
-			factor = 9
+			score = Enum
 		case "interface":
-			factor = 8
+			score = Interface
 		case "method":
-			factor = 7
+			score = Function
 		case "field":
-			factor = 6
+			score = Method
 		case "enumConstant":
-			factor = 5
+			score = Constant
 		}
 	case "Kotlin", "kotlin":
 		switch kind {
 		case "class":
-			factor = 10
+			score = Class
 		case "interface":
-			factor = 9
+			score = Enum
 		case "method":
-			factor = 8
+			score = Interface
 		case "typealias":
-			factor = 7
+			score = Function
 		case "constant":
-			factor = 6
+			score = Method
 		case "variable":
-			factor = 5
+			score = Constant
 		}
 	case "Go", "go":
 		switch kind {
 		// scip-ctags regression workaround https://github.com/sourcegraph/sourcegraph/issues/57659
 		// for each case a description of the fields in ctags in the comment
 		case "type": // interface struct talias
-			factor = 10
+			score = Class
 		case "method": // methodSpec
-			factor = 8.5
+			score = MethodSpec
 		case "function": // func
-			factor = 8
+			score = Interface
 		case "variable": // var member
-			factor = 7
+			score = Function
 		case "constant": // const
-			factor = 6
+			score = Method
 
 		case "interface": // interfaces
-			factor = 10
+			score = Class
 		case "struct": // structs
-			factor = 9
+			score = Enum
 		case "talias": // type aliases
-			factor = 9
+			score = Enum
 		case "methodSpec": // interface method specification
-			factor = 8.5
+			score = MethodSpec
 		case "func": // functions
-			factor = 8
+			score = Interface
 		case "member": // struct members
-			factor = 7
+			score = Function
 		case "const": // constants
-			factor = 6
+			score = Method
 		case "var": // variables
-			factor = 5
+			score = Constant
 		}
 		// Could also rank on:
 		//
@@ -764,21 +779,21 @@ func scoreKind(language string, kind string) float64 {
 	case "C++", "c++":
 		switch kind {
 		case "class": // classes
-			factor = 10
+			score = Class
 		case "enum": // enumeration names
-			factor = 9
+			score = Enum
 		case "function": // function definitions
-			factor = 8
+			score = Interface
 		case "struct": // structure names
-			factor = 7
+			score = Function
 		case "union": // union names
-			factor = 6
+			score = Method
 		case "typdef": // typedefs
-			factor = 5
+			score = Constant
 		case "member": // class, struct, and union members
-			factor = 4
-		case "variable": // varialbe definitions
-			factor = 3
+			score = Variable
+		case "variable": // variable definitions
+			score = LocalVariable
 		}
 	// Could also rank on:
 	// NAME        DESCRIPTION
@@ -790,32 +805,32 @@ func scoreKind(language string, kind string) float64 {
 	case "Scala", "scala":
 		switch kind {
 		case "class":
-			factor = 10
+			score = Class
 		case "interface":
-			factor = 9
+			score = Enum
 		case "object":
-			factor = 8
+			score = Interface
 		case "method":
-			factor = 7
+			score = Function
 		case "type":
-			factor = 6
+			score = Method
 		case "variable":
-			factor = 5
+			score = Constant
 		case "package":
-			factor = 4
+			score = Variable
 		}
 	case "Python", "python":
 		switch kind {
 		case "class": // classes
-			factor = 10
+			score = Class
 		case "function": // function definitions
-			factor = 8
+			score = Interface
 		case "member": // class, struct, and union members
-			factor = 4
+			score = Variable
 		case "variable": // variable definitions
-			factor = 3
+			score = LocalVariable
 		case "local": // local variables
-			factor = 2
+			score = 2
 		}
 		// Could also rank on:
 		//
@@ -826,46 +841,46 @@ func scoreKind(language string, kind string) float64 {
 	case "Ruby", "ruby":
 		switch kind {
 		case "class":
-			factor = 10
+			score = Class
 		case "method":
-			factor = 9
+			score = Enum
 		case "alias":
-			factor = 8
+			score = Interface
 		case "module":
-			factor = 7
+			score = Function
 		case "singletonMethod":
-			factor = 6
+			score = Method
 		case "constant":
-			factor = 5
+			score = Constant
 		case "accessor":
-			factor = 4
+			score = Variable
 		case "library":
-			factor = 3
+			score = LocalVariable
 		}
 	case "PHP", "php":
 		switch kind {
 		case "class":
-			factor = 10
+			score = Class
 		case "interface":
-			factor = 9
+			score = Enum
 		case "function":
-			factor = 8
+			score = Interface
 		case "trait":
-			factor = 7
+			score = Function
 		case "define":
-			factor = 6
+			score = Method
 		case "namespace":
-			factor = 5
+			score = Constant
 		case "alias":
-			factor = 4
+			score = Variable
 		case "variable":
-			factor = 3
+			score = LocalVariable
 		case "local":
-			factor = 3
+			score = LocalVariable
 		}
 	}
 
-	return factor * scoreKindMatch
+	return float64(score) * scoreKindMatch
 }
 
 type matchScoreSlice []LineMatch
