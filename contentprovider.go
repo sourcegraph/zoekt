@@ -660,6 +660,8 @@ func scoreKind(language string, kind string) float64 {
 
 	// Generic ranking which will be overriden by language specific ranking
 	switch kind {
+	case "type": // scip-ctags regression workaround https://github.com/sourcegraph/sourcegraph/issues/57659
+		factor = 8
 	case "class":
 		factor = 10
 	case "struct":
@@ -721,6 +723,19 @@ func scoreKind(language string, kind string) float64 {
 		}
 	case "Go", "go":
 		switch kind {
+		// scip-ctags regression workaround https://github.com/sourcegraph/sourcegraph/issues/57659
+		// for each case a description of the fields in ctags in the comment
+		case "type": // interface struct talias
+			factor = 10
+		case "method": // methodSpec
+			factor = 8.5
+		case "function": // func
+			factor = 8
+		case "variable": // var member
+			factor = 7
+		case "constant": // const
+			factor = 6
+
 		case "interface": // interfaces
 			factor = 10
 		case "struct": // structs
