@@ -166,7 +166,7 @@ type gitIndexConfig struct {
 }
 
 func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
-	logger := l.Scoped("gitIndex", "fetch commits and then run zoekt-git-index against contents")
+	logger := l.Scoped("gitIndex")
 
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
