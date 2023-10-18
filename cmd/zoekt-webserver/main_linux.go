@@ -8,7 +8,7 @@ import (
 )
 
 func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
-	logger = logger.Scoped("memoryMapMetrics", "")
+	logger = logger.Scoped("memoryMapMetrics")
 
 	// The memory map metrics are collected via /proc, which
 	// is only available on linux-based operating systems.

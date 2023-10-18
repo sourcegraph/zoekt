@@ -199,7 +199,7 @@ func main() {
 
 	mustRegisterDiskMonitor(*index)
 
-	metricsLogger := sglog.Scoped("metricsRegistration", "")
+	metricsLogger := sglog.Scoped("metricsRegistration")
 
 	mustRegisterMemoryMapMetrics(metricsLogger)
 
@@ -218,7 +218,7 @@ func main() {
 
 	searcher = &loggedSearcher{
 		Streamer: searcher,
-		Logger:   sglog.Scoped("searcher", ""),
+		Logger:   sglog.Scoped("searcher"),
 	}
 
 	s := &web.Server{
@@ -261,7 +261,7 @@ func main() {
 
 	if *enableIndexserverProxy {
 		socket := filepath.Join(*index, "indexserver.sock")
-		sglog.Scoped("server", "").Info("adding reverse proxy", sglog.String("socket", socket))
+		sglog.Scoped("server").Info("adding reverse proxy", sglog.String("socket", socket))
 		addProxyHandler(serveMux, socket)
 	}
 
@@ -293,7 +293,7 @@ func main() {
 		log.Println("watchdog disabled")
 	}
 
-	logger := sglog.Scoped("ZoektWebserverGRPCServer", "The Zoekt Webserver GRPC Server")
+	logger := sglog.Scoped("ZoektWebserverGRPCServer")
 
 	streamer := web.NewTraceAwareSearcher(s.Searcher)
 	grpcServer := newGRPCServer(logger, streamer)
@@ -306,7 +306,7 @@ func main() {
 	}
 
 	go func() {
-		sglog.Scoped("server", "").Info("starting server", sglog.Stringp("address", listen))
+		sglog.Scoped("server").Info("starting server", sglog.Stringp("address", listen))
 		var err error
 		if *sslCert != "" || *sslKey != "" {
 			err = srv.ListenAndServeTLS(*sslCert, *sslKey)

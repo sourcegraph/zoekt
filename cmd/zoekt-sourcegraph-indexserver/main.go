@@ -1291,7 +1291,7 @@ func startServer(conf rootConfig) error {
 	}
 	go oc.Run()
 
-	logger := sglog.Scoped("metricsRegistration", "")
+	logger := sglog.Scoped("metricsRegistration")
 	opts := mountinfo.CollectorOpts{Namespace: "zoekt_indexserver"}
 
 	c := mountinfo.NewCollector(logger, opts, map[string]string{"indexDir": conf.index})
@@ -1302,7 +1302,7 @@ func startServer(conf rootConfig) error {
 }
 
 func newServer(conf rootConfig) (*Server, error) {
-	logger := sglog.Scoped("server", "periodically reindexes enabled repositories on sourcegraph")
+	logger := sglog.Scoped("server")
 
 	if conf.cpuFraction <= 0.0 || conf.cpuFraction > 1.0 {
 		return nil, fmt.Errorf("cpu_fraction must be between 0.0 and 1.0")
@@ -1384,7 +1384,7 @@ func newServer(conf rootConfig) (*Server, error) {
 			WithShouldUseGRPC(conf.useGRPC),
 		}
 
-		logger := sglog.Scoped("zoektConfigurationGRPCClient", "")
+		logger := sglog.Scoped("zoektConfigurationGRPCClient")
 		client, err := dialGRPCClient(rootURL.Host, logger)
 		if err != nil {
 			return nil, fmt.Errorf("initializing gRPC connection to %q: %w", rootURL.Host, err)

@@ -75,7 +75,7 @@ func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l sglog.Logger)
 
 	q := &Queue{
 		newQueueItem: newQueueItem,
-		logger:       l.Scoped("queue", "zoekt-indexserver queue operations"),
+		logger:       l.Scoped("queue"),
 	}
 
 	q.init()
