@@ -31,7 +31,7 @@ require (
 	github.com/rs/xid v1.5.0
 	github.com/shirou/gopsutil/v3 v3.23.5
 	github.com/sourcegraph/go-ctags v0.0.0-20230929045819-c736fcb519eb
-	github.com/sourcegraph/log v0.0.0-20230711093019-40c57b632cca
+	github.com/sourcegraph/log v0.0.0-20231018072732-c9c6af5e5ade
 	github.com/sourcegraph/mountinfo v0.0.0-20230106004439-7026e28cef67
 	github.com/stretchr/testify v1.8.4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
