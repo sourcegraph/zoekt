@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/bits"
 	"regexp/syntax"
 	"sort"
 	"strings"
@@ -415,7 +416,7 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	}
 
 	maxFileScore := 0.0
-	repetitions := 0
+	repetitions := uint(0)
 	for i := range fileMatch.LineMatches {
 		if maxFileScore < fileMatch.LineMatches[i].Score {
 			maxFileScore = fileMatch.LineMatches[i].Score
@@ -442,8 +443,12 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	// the matches.
 	fileMatch.addScore("fragment", maxFileScore, opts.DebugScore)
 
-	// Prefer docs with several top-scored matches.
-	fileMatch.addScore("repetition-boost", scoreRepetitionFactor*float64(repetitions), opts.DebugScore)
+	if repetitions != 0 {
+		// Prefer docs with several top-scored matches. We use log_2 (bits.Len) to
+		// prevent the repetitions overriding other factors. In this way it acts
+		// more like a tie break.
+		fileMatch.addScore("repetition-boost", scoreRepetitionFactor*float64(bits.Len(repetitions)), opts.DebugScore)
+	}
 
 	if opts.UseDocumentRanks && len(d.ranks) > int(doc) {
 		weight := scoreFileRankFactor
