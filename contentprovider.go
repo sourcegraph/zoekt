@@ -863,6 +863,11 @@ func scoreKind(language string, kind string) float64 {
 		case "local":
 			factor = 3
 		}
+	case "GraphQL", "graphql":
+		switch kind {
+		case "type":
+			factor = 10
+		}
 	}
 
 	return factor * scoreKindMatch
