@@ -501,7 +501,7 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 	maxScore := &debugScore{}
 
 	addScore := func(what string, s float64) {
-		if debug {
+		if s != 0 && debug {
 			score.what += fmt.Sprintf("%s:%.2f, ", what, s)
 		}
 		score.score += s
@@ -568,7 +568,7 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 	}
 
 	if debug {
-		maxScore.what = fmt.Sprintf("score:%f <- %s", maxScore.score, strings.TrimRight(maxScore.what, ", "))
+		maxScore.what = fmt.Sprintf("score:%.2f <- %s", maxScore.score, strings.TrimSuffix(maxScore.what, ", "))
 	}
 
 	return maxScore.score, maxScore.what
@@ -584,7 +584,7 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 	maxScore := &debugScore{}
 
 	addScore := func(what string, s float64) {
-		if debug {
+		if s != 0 && debug {
 			score.what += fmt.Sprintf("%s:%.2f, ", what, s)
 		}
 		score.score += s

@@ -33,7 +33,7 @@ import (
 const maxUInt16 = 0xffff
 
 func (m *FileMatch) addScore(what string, s float64, debugScore bool) {
-	if debugScore {
+	if s != 0 && debugScore {
 		m.Debug += fmt.Sprintf("%s:%.2f, ", what, s)
 	}
 	m.Score += s
@@ -466,6 +466,10 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	md := d.repoMetaData[d.repos[doc]]
 	fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(doc)/float64(len(d.boundaries))), opts.DebugScore)
 	fileMatch.addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank)/maxUInt16, opts.DebugScore)
+
+	if opts.DebugScore {
+		fileMatch.Debug = strings.TrimSuffix(fileMatch.Debug, ", ")
+	}
 }
 
 // scoreFileUsingBM25 computes a score for the file match using an approximation to BM25, the most common scoring
