@@ -670,10 +670,8 @@ func scoreKind(language string, kind string) float64 {
 		factor = 9
 	case "interface":
 		factor = 8
-	case "function", "func":
+	case "function", "func", "method":
 		factor = 7
-	case "method":
-		factor = 6
 	case "member", "field":
 		factor = 5.5
 	case "constant", "const":
@@ -731,9 +729,7 @@ func scoreKind(language string, kind string) float64 {
 		// for each case a description of the fields in ctags in the comment
 		case "type": // interface struct talias
 			factor = 10
-		case "method": // methodSpec
-			factor = 8.5
-		case "function": // func
+		case "method", "function": // methodSpec
 			factor = 8
 		case "variable": // var member
 			factor = 7
