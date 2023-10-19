@@ -680,6 +680,10 @@ func scoreKind(language string, kind string) float64 {
 		factor = 5
 	case "var", "variable":
 		factor = 4
+
+	default:
+		// No idea what it is, but its something regarded as a symbol
+		factor = 1
 	}
 
 	// Refer to universal-ctags --list-kinds-full=<language> to learn about which
