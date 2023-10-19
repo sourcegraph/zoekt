@@ -461,7 +461,6 @@ const (
 	scoreSymbol           = 7000.0
 	scorePartialSymbol    = 4000.0
 	scoreKindMatch        = 100.0
-	scoreRepetitionFactor = 1.0
 	scoreFactorAtomMatch  = 400.0
 
 	// File-only scoring signals. For now these are also bounded ~9000 to give them
