@@ -868,6 +868,16 @@ func scoreKind(language string, kind string) float64 {
 		case "type":
 			factor = 10
 		}
+	case "Markdown", "markdown":
+		// Headers are good signal in docs, but do not rank as highly as code.
+		switch kind {
+		case "chapter": // #
+			factor = 4
+		case "section": // ##
+			factor = 3
+		case "subsection": // ###
+			factor = 2
+		}
 	}
 
 	return factor * scoreKindMatch
