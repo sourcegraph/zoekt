@@ -56,9 +56,9 @@ func displayMatches(files []zoekt.FileMatch, withRepo bool, list bool) {
 			continue
 		}
 
-		lines, hidden := splitAtIndex(f.ChunkMatches, chunkMatchesPerFile)
+		chunks, hidden := splitAtIndex(f.ChunkMatches, chunkMatchesPerFile)
 
-		for _, m := range lines {
+		for _, m := range chunks {
 			fmt.Printf("%d:%s%s\n", m.ContentStart.LineNumber, string(m.Content), addTabIfNonEmpty(m.DebugScore))
 		}
 
