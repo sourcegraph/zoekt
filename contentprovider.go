@@ -20,6 +20,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -506,6 +507,8 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 		score.score += s
 	}
 
+	data := p.data(m.FileName)
+
 	for i, r := range m.Ranges {
 		// calculate the start and end offset relative to the start of the content
 		relStartOffset := int(r.Start.ByteOffset - m.ContentStart.ByteOffset)
@@ -556,7 +559,8 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 				si = p.id.symbols.data(start + uint32(secIdx))
 			}
 			if si != nil {
-				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreKind(language, si.Kind))
+				sym := sectionSlice(data, sec)
+				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, sym, si.Kind))
 			}
 		}
 
@@ -588,6 +592,8 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 		}
 		score.score += s
 	}
+
+	data := p.data(m.FileName)
 
 	for _, f := range m.LineFragments {
 		startBoundary := f.LineOffset < len(m.Line) && (f.LineOffset == 0 || byteClass(m.Line[f.LineOffset-1]) != byteClass(m.Line[f.LineOffset]))
@@ -635,7 +641,8 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 			}
 			if si != nil {
 				// the LineFragment may not be on a symbol, then si will be nil.
-				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreKind(language, si.Kind))
+				sym := sectionSlice(data, sec)
+				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, sym, si.Kind))
 			}
 		}
 
@@ -652,9 +659,23 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 	return maxScore.score, maxScore.what
 }
 
-// scoreKind boosts a match based on the combination of language and kind. The
-// language string comes from go-enry, the kind string from ctags.
-func scoreKind(language string, kind string) float64 {
+// sectionSlice will return data[sec.Start:sec.End] but will clip Start and
+// End such that it won't be out of range.
+func sectionSlice(data []byte, sec DocumentSection) []byte {
+	l := uint32(len(data))
+	if sec.Start >= l {
+		return nil
+	}
+	if sec.End > l {
+		sec.End = l
+	}
+	return data[sec.Start:sec.End]
+}
+
+// scoreSymbolKind boosts a match based on the combination of language, symbol
+// and kind. The language string comes from go-enry, the symbol and kind from
+// ctags.
+func scoreSymbolKind(language string, sym []byte, kind string) float64 {
 	var factor float64
 
 	// Generic ranking which will be overriden by language specific ranking
@@ -752,6 +773,12 @@ func scoreKind(language string, kind string) float64 {
 		case "var": // variables
 			factor = 5
 		}
+
+		// Boost exported go symbols. Same implementation as token.IsExported
+		if ch, _ := utf8.DecodeRune(sym); unicode.IsUpper(ch) {
+			factor += 0.5
+		}
+
 		// Could also rank on:
 		//
 		//   - anonMember  struct anonymous members

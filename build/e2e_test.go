@@ -1041,8 +1041,8 @@ func Get() {
 				&query.Symbol{Expr: &query.Substring{Pattern: "http", Content: true}},
 				&query.Symbol{Expr: &query.Substring{Pattern: "Get", Content: true}}}},
 			wantLanguage: "Go",
-			// 7000 (full base match) + 800 (Go func) + 500 (word) + 200 (atom) + 10 (file order)
-			wantScore: 8510,
+			// 7000 (full base match) + 800 (Go func) + 50 (Exported Go) + 500 (word) + 200 (atom) + 10 (file order)
+			wantScore: 8560,
 		},
 		//
 		// C++
