@@ -415,13 +415,9 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	}
 
 	maxFileScore := 0.0
-	repetitions := 0
 	for i := range fileMatch.LineMatches {
 		if maxFileScore < fileMatch.LineMatches[i].Score {
 			maxFileScore = fileMatch.LineMatches[i].Score
-			repetitions = 0
-		} else if maxFileScore == fileMatch.LineMatches[i].Score {
-			repetitions += 1
 		}
 
 		// Order by ordering in file.
@@ -441,9 +437,6 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	// strictly dominates the in-file ordering of
 	// the matches.
 	fileMatch.addScore("fragment", maxFileScore, opts.DebugScore)
-
-	// Prefer docs with several top-scored matches.
-	fileMatch.addScore("repetition-boost", scoreRepetitionFactor*float64(repetitions), opts.DebugScore)
 
 	if opts.UseDocumentRanks && len(d.ranks) > int(doc) {
 		weight := scoreFileRankFactor
