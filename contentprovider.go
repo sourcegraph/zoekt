@@ -508,6 +508,7 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 	}
 
 	data := p.data(m.FileName)
+	filename := p.data(true)
 
 	for i, r := range m.Ranges {
 		// calculate the start and end offset relative to the start of the content
@@ -560,7 +561,7 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 			}
 			if si != nil {
 				sym := sectionSlice(data, sec)
-				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, sym, si.Kind))
+				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, si.Kind))
 			}
 		}
 
@@ -594,6 +595,7 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 	}
 
 	data := p.data(m.FileName)
+	filename := p.data(true)
 
 	for _, f := range m.LineFragments {
 		startBoundary := f.LineOffset < len(m.Line) && (f.LineOffset == 0 || byteClass(m.Line[f.LineOffset-1]) != byteClass(m.Line[f.LineOffset]))
@@ -642,7 +644,7 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 			if si != nil {
 				// the LineFragment may not be on a symbol, then si will be nil.
 				sym := sectionSlice(data, sec)
-				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, sym, si.Kind))
+				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, si.Kind))
 			}
 		}
 
@@ -675,7 +677,7 @@ func sectionSlice(data []byte, sec DocumentSection) []byte {
 // scoreSymbolKind boosts a match based on the combination of language, symbol
 // and kind. The language string comes from go-enry, the symbol and kind from
 // ctags.
-func scoreSymbolKind(language string, sym []byte, kind string) float64 {
+func scoreSymbolKind(language string, filename []byte, sym []byte, kind string) float64 {
 	var factor float64
 
 	// Generic ranking which will be overriden by language specific ranking
@@ -748,8 +750,8 @@ func scoreSymbolKind(language string, sym []byte, kind string) float64 {
 		// scip-ctags regression workaround https://github.com/sourcegraph/sourcegraph/issues/57659
 		// for each case a description of the fields in ctags in the comment
 		case "type": // interface struct talias
-			factor = 10
-		case "method", "function": // methodSpec
+			factor = 9
+		case "method", "function": // methodSpec func
 			factor = 8
 		case "variable": // var member
 			factor = 7
@@ -777,6 +779,10 @@ func scoreSymbolKind(language string, sym []byte, kind string) float64 {
 		// Boost exported go symbols. Same implementation as token.IsExported
 		if ch, _ := utf8.DecodeRune(sym); unicode.IsUpper(ch) {
 			factor += 0.5
+		}
+
+		if bytes.HasSuffix(filename, []byte("_test.go")) {
+			factor *= 0.8
 		}
 
 		// Could also rank on:
