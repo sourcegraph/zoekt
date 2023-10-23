@@ -1193,20 +1193,20 @@ func TestScoringWithDocumentRanks(t *testing.T) {
 		{
 			name: "score with no document ranks",
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order)
-			wantScore: 7012.00,
+			wantScore: 7010.00,
 		},
 		{
 			name:         "score with document ranks",
 			documentRank: 0.8,
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 225 (file rank) + 10 (file order)
-			wantScore: 7237.00,
+			wantScore: 7235.00,
 		},
 		{
 			name:                "score with custom document ranks weight",
 			documentRank:        0.8,
 			documentRanksWeight: 1000.0,
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 25.00 (file rank) + 10 (file order)
-			wantScore: 7037.00,
+			wantScore: 7035.00,
 		},
 	}
 
@@ -1281,19 +1281,19 @@ func TestRepoRanks(t *testing.T) {
 		{
 			name: "no shard rank",
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order)
-			wantScore: 7012.00,
+			wantScore: 7010.00,
 		},
 		{
 			name:     "medium shard rank",
 			repoRank: 30000,
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order) + 9.16 (repo rank)
-			wantScore: 7021.16,
+			wantScore: 7019.16,
 		},
 		{
 			name:     "high shard rank",
 			repoRank: 60000,
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order) + 18.31 (repo rank)
-			wantScore: 7030.31,
+			wantScore: 7028.31,
 		},
 	}
 
