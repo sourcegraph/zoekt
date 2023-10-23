@@ -38,12 +38,13 @@ const maxUInt16 = 0xffff
 // -1, it is ignored. Otherwise, it is added to the debug string.
 func (m *FileMatch) addScore(what string, computed float64, raw float64, debugScore bool) {
 	if computed != 0 && debugScore {
-		m.Debug += fmt.Sprintf("%s:%.2f", what, computed)
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s", what)
 		if raw != -1 {
-			m.Debug += fmt.Sprintf("(%s), ", strconv.FormatFloat(raw, 'f', -1, 64)) // uses the smallest number of digits necessary to represent raw.
-		} else {
-			m.Debug += ", "
+			fmt.Fprintf(&b, "(%s)", strconv.FormatFloat(raw, 'f', -1, 64))
 		}
+		fmt.Fprintf(&b, ":%.2f, ", computed)
+		m.Debug += b.String()
 	}
 	m.Score += computed
 }
@@ -417,11 +418,14 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 		atomMatchCount++
 	})
 
+	addScore := func(what string, computed float64) {
+		fileMatch.addScore(what, computed, -1, opts.DebugScore)
+	}
+
 	// atom-count boosts files with matches from more than 1 atom. The
 	// maximum boost is scoreFactorAtomMatch.
 	if atomMatchCount > 0 {
 		fileMatch.addScore("atom", (1.0-1.0/float64(atomMatchCount))*scoreFactorAtomMatch, float64(atomMatchCount), opts.DebugScore)
-
 	}
 
 	maxFileScore := 0.0
@@ -446,7 +450,7 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	// Maintain ordering of input files. This
 	// strictly dominates the in-file ordering of
 	// the matches.
-	fileMatch.addScore("fragment", maxFileScore, -1, opts.DebugScore)
+	addScore("fragment", maxFileScore)
 
 	if opts.UseDocumentRanks && len(d.ranks) > int(doc) {
 		weight := scoreFileRankFactor
@@ -462,13 +466,13 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 			// The file rank represents a log (base 2) count. The log ranks should be bounded at 32, but we
 			// cap it just in case to ensure it falls in the range [0, 1].
 			normalized := math.Min(1.0, ranks[0]/32.0)
-			fileMatch.addScore("file-rank", weight*normalized, -1, opts.DebugScore)
+			addScore("file-rank", weight*normalized)
 		}
 	}
 
 	md := d.repoMetaData[d.repos[doc]]
-	fileMatch.addScore("doc-order", scoreFileOrderFactor*(1.0-float64(doc)/float64(len(d.boundaries))), -1, opts.DebugScore)
-	fileMatch.addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank)/maxUInt16, -1, opts.DebugScore)
+	addScore("doc-order", scoreFileOrderFactor*(1.0-float64(doc)/float64(len(d.boundaries))))
+	addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank)/maxUInt16)
 
 	if opts.DebugScore {
 		fileMatch.Debug = strings.TrimSuffix(fileMatch.Debug, ", ")
