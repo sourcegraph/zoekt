@@ -411,7 +411,7 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	// atom-count boosts files with matches from more than 1 atom. The
 	// maximum boost is scoreFactorAtomMatch.
 	if atomMatchCount > 0 {
-		fileMatch.addScore("atom", (1.0-1.0/float64(atomMatchCount))*scoreFactorAtomMatch, opts.DebugScore)
+		fileMatch.addScore(fmt.Sprintf("atom(%d)", atomMatchCount), (1.0-1.0/float64(atomMatchCount))*scoreFactorAtomMatch, opts.DebugScore)
 	}
 
 	maxFileScore := 0.0
