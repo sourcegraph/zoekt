@@ -18,7 +18,7 @@ import (
 	"fmt"
 )
 
-type CTagsParserType = uint8
+type CTagsParserType uint8
 
 const (
 	UnknownCTags CTagsParserType = iota
