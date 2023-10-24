@@ -24,6 +24,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/ctags"
 	"golang.org/x/net/trace"
 	"google.golang.org/grpc"
 
@@ -455,10 +456,10 @@ func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
 	}
 
 	item := indexOptionsItem{}
-	languageMap := make(map[string]uint8)
+	languageMap := make(map[string]ctags.CTagsParserType)
 
 	for _, lang := range x.GetLanguageMap() {
-		languageMap[lang.GetLanguage()] = uint8(lang.GetCtags().Number())
+		languageMap[lang.GetLanguage()] = ctags.CTagsParserType(lang.GetCtags().Number())
 	}
 
 	item.IndexOptions = IndexOptions{
