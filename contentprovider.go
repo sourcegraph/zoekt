@@ -917,7 +917,7 @@ func sortChunkMatchesByScore(ms []ChunkMatch) {
 	sort.Sort(chunkMatchScoreSlice(ms))
 }
 
-var doNovelty = os.Getenv("ZOEKT_NOVELTY") != ""
+var doNovelty = os.Getenv("ZOEKT_NOVELTY_DISABLE") == ""
 
 // SortFiles sorts files matches. The order depends on the match score, which includes both
 // query-dependent signals like word overlap, and file-only signals like the file ranks (if
