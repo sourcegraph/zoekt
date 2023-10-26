@@ -18,11 +18,15 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
+	"path"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/sourcegraph/zoekt/ctags"
+	"golang.org/x/exp/slices"
 )
 
 var _ = log.Println
@@ -508,6 +512,9 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 		score.score += s
 	}
 
+	data := p.data(m.FileName)
+	filename := p.data(true)
+
 	for i, r := range m.Ranges {
 		// calculate the start and end offset relative to the start of the content
 		relStartOffset := int(r.Start.ByteOffset - m.ContentStart.ByteOffset)
@@ -559,7 +566,8 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 			}
 			if si != nil {
 				symbolKind := ctags.ParseSymbolKind(si.Kind)
-				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreKind(language, symbolKind))
+				sym := sectionSlice(data, sec)
+				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, symbolKind))
 			}
 		}
 
@@ -591,6 +599,9 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 		}
 		score.score += s
 	}
+
+	data := p.data(m.FileName)
+	filename := p.data(true)
 
 	for _, f := range m.LineFragments {
 		startBoundary := f.LineOffset < len(m.Line) && (f.LineOffset == 0 || byteClass(m.Line[f.LineOffset-1]) != byteClass(m.Line[f.LineOffset]))
@@ -639,7 +650,8 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 			if si != nil {
 				// the LineFragment may not be on a symbol, then si will be nil.
 				symbolKind := ctags.ParseSymbolKind(si.Kind)
-				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreKind(language, symbolKind))
+				sym := sectionSlice(data, sec)
+				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, symbolKind))
 			}
 		}
 
@@ -656,9 +668,24 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 	return maxScore.score, maxScore.what
 }
 
-// scoreKind boosts a match based on the combination of language and kind. The
-// language string comes from go-enry, the kind string from ctags.
-func scoreKind(language string, kind ctags.SymbolKind) float64 {
+// sectionSlice will return data[sec.Start:sec.End] but will clip Start and
+// End such that it won't be out of range.
+func sectionSlice(data []byte, sec DocumentSection) []byte {
+	l := uint32(len(data))
+	if sec.Start >= l {
+		return nil
+	}
+	if sec.End > l {
+		sec.End = l
+	}
+	return data[sec.Start:sec.End]
+}
+
+
+// scoreSymbolKind boosts a match based on the combination of language, symbol
+// and kind. The language string comes from go-enry, the symbol and kind from
+// ctags.
+func scoreSymbolKind(language string, filename []byte, sym []byte, kind ctags.SymbolKind) float64 {
 	var factor float64
 
 	// Generic ranking which will be overriden by language specific ranking
@@ -725,7 +752,7 @@ func scoreKind(language string, kind ctags.SymbolKind) float64 {
 		// scip-ctags regression workaround https://github.com/sourcegraph/sourcegraph/issues/57659
 		// for each case a description of the fields in ctags in the comment
 		case ctags.Type: // interface struct talias
-			factor = 10
+			factor = 9
 		case ctags.Interface: // interfaces
 			factor = 10
 		case ctags.Struct: // structs
@@ -743,6 +770,16 @@ func scoreKind(language string, kind ctags.SymbolKind) float64 {
 		case ctags.Variable: // variables
 			factor = 5
 		}
+
+		// Boost exported go symbols. Same implementation as token.IsExported
+		if ch, _ := utf8.DecodeRune(sym); unicode.IsUpper(ch) {
+			factor += 0.5
+		}
+
+		if bytes.HasSuffix(filename, []byte("_test.go")) {
+			factor *= 0.8
+		}
+
 		// Could also rank on:
 		//
 		//   - anonMember  struct anonymous members
@@ -899,9 +936,57 @@ func sortChunkMatchesByScore(ms []ChunkMatch) {
 	sort.Sort(chunkMatchScoreSlice(ms))
 }
 
-// SortFiles sorts files matches. The order depends on the match score, which includes both
-// query-dependent signals like word overlap, and file-only signals like the file ranks (if
-// file ranks are enabled).
+var doNovelty = os.Getenv("ZOEKT_NOVELTY_DISABLE") == ""
+
+// SortFiles sorts files matches in the order we want to present results to
+// users. The order depends on the match score, which includes both
+// query-dependent signals like word overlap, and file-only signals like the
+// file ranks (if file ranks are enabled).
+//
+// We don't only use the scores, we will also boost some results to present
+// files with novel extensions.
 func SortFiles(ms []FileMatch) {
 	sort.Sort(fileMatchesByScore(ms))
+
+	if doNovelty {
+		// Experimentally boost something into the third filematch
+		boostNovelExtension(ms, 2, 0.9)
+	}
+}
+
+func boostNovelExtension(ms []FileMatch, boostOffset int, minScoreRatio float64) {
+	if len(ms) <= boostOffset+1 {
+		return
+	}
+
+	top := ms[:boostOffset]
+	candidates := ms[boostOffset:]
+
+	// Don't bother boosting something which is significantly different to the
+	// result it replaces.
+	minScoreForNovelty := candidates[0].Score * minScoreRatio
+
+	// We want to look for an ext that isn't in the top exts
+	exts := make([]string, len(top))
+	for i := range top {
+		exts[i] = path.Ext(top[i].FileName)
+	}
+
+	for i := range candidates {
+		// Do not assume sorted due to boostNovelExtension being called on subsets
+		if candidates[i].Score < minScoreForNovelty {
+			continue
+		}
+
+		if slices.Contains(exts, path.Ext(candidates[i].FileName)) {
+			continue
+		}
+
+		// Found what we are looking for, now boost to front of candidates (which
+		// is ms[boostOffset])
+		for ; i > 0; i-- {
+			candidates[i], candidates[i-1] = candidates[i-1], candidates[i]
+		}
+		return
+	}
 }
