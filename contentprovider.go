@@ -18,9 +18,13 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
+	"path"
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"golang.org/x/exp/slices"
 )
 
 var _ = log.Println
@@ -908,9 +912,57 @@ func sortChunkMatchesByScore(ms []ChunkMatch) {
 	sort.Sort(chunkMatchScoreSlice(ms))
 }
 
-// SortFiles sorts files matches. The order depends on the match score, which includes both
-// query-dependent signals like word overlap, and file-only signals like the file ranks (if
-// file ranks are enabled).
+var doNovelty = os.Getenv("ZOEKT_NOVELTY_DISABLE") == ""
+
+// SortFiles sorts files matches in the order we want to present results to
+// users. The order depends on the match score, which includes both
+// query-dependent signals like word overlap, and file-only signals like the
+// file ranks (if file ranks are enabled).
+//
+// We don't only use the scores, we will also boost some results to present
+// files with novel extensions.
 func SortFiles(ms []FileMatch) {
 	sort.Sort(fileMatchesByScore(ms))
+
+	if doNovelty {
+		// Experimentally boost something into the third filematch
+		boostNovelExtension(ms, 2, 0.9)
+	}
+}
+
+func boostNovelExtension(ms []FileMatch, boostOffset int, minScoreRatio float64) {
+	if len(ms) <= boostOffset+1 {
+		return
+	}
+
+	top := ms[:boostOffset]
+	candidates := ms[boostOffset:]
+
+	// Don't bother boosting something which is significantly different to the
+	// result it replaces.
+	minScoreForNovelty := candidates[0].Score * minScoreRatio
+
+	// We want to look for an ext that isn't in the top exts
+	exts := make([]string, len(top))
+	for i := range top {
+		exts[i] = path.Ext(top[i].FileName)
+	}
+
+	for i := range candidates {
+		// Do not assume sorted due to boostNovelExtension being called on subsets
+		if candidates[i].Score < minScoreForNovelty {
+			continue
+		}
+
+		if slices.Contains(exts, path.Ext(candidates[i].FileName)) {
+			continue
+		}
+
+		// Found what we are looking for, now boost to front of candidates (which
+		// is ms[boostOffset])
+		for ; i > 0; i-- {
+			candidates[i], candidates[i-1] = candidates[i-1], candidates[i]
+		}
+		return
+	}
 }
