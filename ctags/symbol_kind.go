@@ -61,7 +61,7 @@ func ParseSymbolKind(kind string) SymbolKind {
 		return Define
 	case "enum":
 		return Enum
-	case "enumconstant", "enummember":
+	case "enumerator", "enumconstant", "enummember":
 		return EnumConstant
 	case "field", "member":
 		return Field
