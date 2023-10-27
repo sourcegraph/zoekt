@@ -815,6 +815,16 @@ func TestScoring(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	examplePython, err := os.ReadFile("./testdata/example.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exampleRuby, err := os.ReadFile("./testdata/example.rb")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	exampleScala, err := os.ReadFile("./testdata/example.scala")
 	if err != nil {
 		t.Fatal(err)
@@ -1086,6 +1096,60 @@ func Get() {
 			wantLanguage: "C++",
 			// 7000 (Symbol) + 600 (C++ union) + 500 (full word) + 10 (file order)
 			wantScore: 8110,
+		},
+		//
+		// Python
+		//
+		{
+			fileName:     "example.py",
+			content:      examplePython,
+			query:        &query.Substring{Content: true, Pattern: "C1"},
+			wantLanguage: "Python",
+			// 7000 (symbol) + 1000 (Python class) + 500 (word) + 10 (file order)
+			wantScore: 8510,
+		},
+		{
+			fileName:     "example.py",
+			content:      examplePython,
+			query:        &query.Substring{Content: true, Pattern: "g"},
+			wantLanguage: "Python",
+			// 7000 (symbol) + 800 (Python function) + 500 (word) + 10 (file order)
+			wantScore: 8310,
+		},
+		{
+			fileName:     "example.py",
+			content:      examplePython,
+			query:        &query.Substring{Content: true, Pattern: "__init__"},
+			wantLanguage: "Python",
+			// 7000 (symbol) + 400 (Python member) + 50 (partial word) + 10 (file order)
+			wantScore: 7460,
+		},
+		//
+		// Ruby
+		//
+		{
+			fileName:     "example.rb",
+			content:      exampleRuby,
+			query:        &query.Substring{Content: true, Pattern: "Parental"},
+			wantLanguage: "Ruby",
+			// 7000 (symbol) + 1000 (Ruby class) + 500 (word) + 10 (file order)
+			wantScore: 8510,
+		},
+		{
+			fileName:     "example.rb",
+			content:      exampleRuby,
+			query:        &query.Substring{Content: true, Pattern: "parental_func"},
+			wantLanguage: "Ruby",
+			// 7000 (symbol) + 900 (Ruby method) + 500 (word) + 10 (file order)
+			wantScore: 8410,
+		},
+		{
+			fileName:     "example.rb",
+			content:      exampleRuby,
+			query:        &query.Substring{Content: true, Pattern: "MyModule"},
+			wantLanguage: "Ruby",
+			// 7000 (symbol) + 500 (Ruby module) + 500 (word) + 10 (file order)
+			wantScore: 8210,
 		},
 		//
 		// Scala

@@ -25,6 +25,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/sourcegraph/zoekt/ctags"
 	"golang.org/x/exp/slices"
 )
 
@@ -564,8 +565,9 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 				si = p.id.symbols.data(start + uint32(secIdx))
 			}
 			if si != nil {
+				symbolKind := ctags.ParseSymbolKind(si.Kind)
 				sym := sectionSlice(data, sec)
-				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, si.Kind))
+				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, symbolKind))
 			}
 		}
 
@@ -647,8 +649,9 @@ func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, langu
 			}
 			if si != nil {
 				// the LineFragment may not be on a symbol, then si will be nil.
+				symbolKind := ctags.ParseSymbolKind(si.Kind)
 				sym := sectionSlice(data, sec)
-				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, si.Kind))
+				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, symbolKind))
 			}
 		}
 
@@ -678,105 +681,93 @@ func sectionSlice(data []byte, sec DocumentSection) []byte {
 	return data[sec.Start:sec.End]
 }
 
+
 // scoreSymbolKind boosts a match based on the combination of language, symbol
 // and kind. The language string comes from go-enry, the symbol and kind from
 // ctags.
-func scoreSymbolKind(language string, filename []byte, sym []byte, kind string) float64 {
+func scoreSymbolKind(language string, filename []byte, sym []byte, kind ctags.SymbolKind) float64 {
 	var factor float64
 
 	// Generic ranking which will be overriden by language specific ranking
 	switch kind {
-	case "type": // scip-ctags regression workaround https://github.com/sourcegraph/sourcegraph/issues/57659
+	case ctags.Type: // scip-ctags regression workaround https://github.com/sourcegraph/sourcegraph/issues/57659
 		factor = 8
-	case "class":
+	case ctags.Class:
 		factor = 10
-	case "struct":
+	case ctags.Struct:
 		factor = 9.5
-	case "enum":
+	case ctags.Enum:
 		factor = 9
-	case "interface":
+	case ctags.Interface:
 		factor = 8
-	case "function", "func", "method":
+	case ctags.Function, ctags.Method:
 		factor = 7
-	case "member", "field":
+	case ctags.Field:
 		factor = 5.5
-	case "constant", "const":
+	case ctags.Constant:
 		factor = 5
-	case "var", "variable":
+	case ctags.Variable:
 		factor = 4
-
 	default:
-		// No idea what it is, but its something regarded as a symbol
+		// For all other kinds, assign a low score by default.
 		factor = 1
 	}
 
-	// Refer to universal-ctags --list-kinds-full=<language> to learn about which
-	// kinds are detected for which language.
-	//
-	// Note that go-ctags uses universal-ctags's interactive mode and thus returns
-	// the full name for "kind" and not the one-letter abbreviation.
 	switch language {
 	case "Java", "java":
 		switch kind {
 		// 2022-03-30: go-ctags contains a regex rule for Java classes that sets "kind"
 		// to "classes" instead of "c". We have to cover both cases to support existing
 		// indexes.
-		case "class", "classes":
+		case ctags.Class:
 			factor = 10
-		case "enum":
+		case ctags.Enum:
 			factor = 9
-		case "interface":
+		case ctags.Interface:
 			factor = 8
-		case "method":
+		case ctags.Method:
 			factor = 7
-		case "field":
+		case ctags.Field:
 			factor = 6
-		case "enumConstant":
+		case ctags.EnumConstant:
 			factor = 5
 		}
 	case "Kotlin", "kotlin":
 		switch kind {
-		case "class":
+		case ctags.Class:
 			factor = 10
-		case "interface":
+		case ctags.Interface:
 			factor = 9
-		case "method":
+		case ctags.Method:
 			factor = 8
-		case "typealias":
+		case ctags.TypeAlias:
 			factor = 7
-		case "constant":
+		case ctags.Constant:
 			factor = 6
-		case "variable":
+		case ctags.Variable:
 			factor = 5
 		}
 	case "Go", "go":
 		switch kind {
 		// scip-ctags regression workaround https://github.com/sourcegraph/sourcegraph/issues/57659
 		// for each case a description of the fields in ctags in the comment
-		case "type": // interface struct talias
+		case ctags.Type: // interface struct talias
 			factor = 9
-		case "method", "function": // methodSpec func
-			factor = 8
-		case "variable": // var member
-			factor = 7
-		case "constant": // const
-			factor = 6
-
-		case "interface": // interfaces
+		case ctags.Interface: // interfaces
 			factor = 10
-		case "struct": // structs
+		case ctags.Struct: // structs
 			factor = 9
-		case "talias": // type aliases
+		case ctags.TypeAlias: // type aliases
 			factor = 9
-		case "methodSpec": // interface method specification
+		case ctags.MethodSpec: // interface method specification
 			factor = 8.5
-		case "func": // functions
+		case ctags.Method, ctags.Function: // functions
 			factor = 8
-		case "member": // struct members
+		case ctags.Field: // struct fields
 			factor = 7
-		case "const": // constants
+		case ctags.Constant: // constants
 			factor = 6
-		case "var": // variables
+		case ctags.Variable: // variables
 			factor = 5
 		}
 
@@ -799,21 +790,21 @@ func scoreSymbolKind(language string, filename []byte, sym []byte, kind string) 
 		//   - unknown     unknown
 	case "C++", "c++":
 		switch kind {
-		case "class": // classes
+		case ctags.Class: // classes
 			factor = 10
-		case "enum": // enumeration names
+		case ctags.Enum: // enumeration names
 			factor = 9
-		case "function": // function definitions
+		case ctags.Function: // function definitions
 			factor = 8
-		case "struct": // structure names
+		case ctags.Struct: // structure names
 			factor = 7
-		case "union": // union names
+		case ctags.Union: // union names
 			factor = 6
-		case "typdef": // typedefs
+		case ctags.TypeAlias: // typedefs
 			factor = 5
-		case "member": // class, struct, and union members
+		case ctags.Field: // class, struct, and union members
 			factor = 4
-		case "variable": // varialbe definitions
+		case ctags.Variable: // varialbe definitions
 			factor = 3
 		}
 	// Could also rank on:
@@ -825,32 +816,32 @@ func scoreSymbolKind(language string, filename []byte, sym []byte, kind string) 
 	// variable    variable definitions
 	case "Scala", "scala":
 		switch kind {
-		case "class":
+		case ctags.Class:
 			factor = 10
-		case "interface":
+		case ctags.Interface:
 			factor = 9
-		case "object":
+		case ctags.Object:
 			factor = 8
-		case "method":
+		case ctags.Function:
 			factor = 7
-		case "type":
+		case ctags.Type:
 			factor = 6
-		case "variable":
+		case ctags.Variable:
 			factor = 5
-		case "package":
+		case ctags.Package:
 			factor = 4
 		}
 	case "Python", "python":
 		switch kind {
-		case "class": // classes
+		case ctags.Class: // classes
 			factor = 10
-		case "function": // function definitions
+		case ctags.Function: // function definitions
 			factor = 8
-		case "member": // class, struct, and union members
+		case ctags.Field: // class, struct, and union members
 			factor = 4
-		case "variable": // variable definitions
+		case ctags.Variable: // variable definitions
 			factor = 3
-		case "local": // local variables
+		case ctags.Local: // local variables
 			factor = 2
 		}
 		// Could also rank on:
@@ -861,57 +852,57 @@ func scoreSymbolKind(language string, filename []byte, sym []byte, kind string) 
 		//   - parameter function parameters
 	case "Ruby", "ruby":
 		switch kind {
-		case "class":
+		case ctags.Class:
 			factor = 10
-		case "method":
+		case ctags.Method:
 			factor = 9
-		case "alias":
+		case ctags.MethodAlias:
 			factor = 8
-		case "module":
+		case ctags.Module:
 			factor = 7
-		case "singletonMethod":
+		case ctags.SingletonMethod:
 			factor = 6
-		case "constant":
+		case ctags.Constant:
 			factor = 5
-		case "accessor":
+		case ctags.Accessor:
 			factor = 4
-		case "library":
+		case ctags.Library:
 			factor = 3
 		}
 	case "PHP", "php":
 		switch kind {
-		case "class":
+		case ctags.Class:
 			factor = 10
-		case "interface":
+		case ctags.Interface:
 			factor = 9
-		case "function":
+		case ctags.Function:
 			factor = 8
-		case "trait":
+		case ctags.Trait:
 			factor = 7
-		case "define":
+		case ctags.Define:
 			factor = 6
-		case "namespace":
+		case ctags.Namespace:
 			factor = 5
-		case "alias":
+		case ctags.MethodAlias:
 			factor = 4
-		case "variable":
+		case ctags.Variable:
 			factor = 3
-		case "local":
+		case ctags.Local:
 			factor = 3
 		}
 	case "GraphQL", "graphql":
 		switch kind {
-		case "type":
+		case ctags.Type:
 			factor = 10
 		}
 	case "Markdown", "markdown":
 		// Headers are good signal in docs, but do not rank as highly as code.
 		switch kind {
-		case "chapter": // #
+		case ctags.Chapter: // #
 			factor = 4
-		case "section": // ##
+		case ctags.Section: // ##
 			factor = 3
-		case "subsection": // ###
+		case ctags.Subsection: // ###
 			factor = 2
 		}
 	}
