@@ -82,7 +82,7 @@ var (
 		Help: "A histogram of latencies for indexing a repository.",
 		Buckets: prometheus.ExponentialBucketsRange(
 			(100 * time.Millisecond).Seconds(),
-			(40*time.Minute + indexTimeout).Seconds(), // add an extra 40 minutes to account for the time it takes to clone the repo
+			(40*time.Minute + defaultIndexingTimeout).Seconds(), // add an extra 40 minutes to account for the time it takes to clone the repo
 			20),
 	}, []string{
 		"state", // state is an indexState

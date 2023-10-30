@@ -1088,8 +1088,11 @@ func (b *Builder) writeShard(fn string, ib *zoekt.IndexBuilder) (*finishedShard,
 		return nil, err
 	}
 
-	log.Printf("finished %s: %d index bytes (overhead %3.1f)", fn, fi.Size(),
-		float64(fi.Size())/float64(ib.ContentSize()+1))
+	log.Printf("finished shard %s: %d index bytes (overhead %3.1f), %d files processed \n",
+		fn,
+		fi.Size(),
+		float64(fi.Size())/float64(ib.ContentSize()+1),
+		ib.NumFiles())
 
 	return &finishedShard{f.Name(), fn}, nil
 }
