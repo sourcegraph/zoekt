@@ -82,7 +82,7 @@ func builderWriteAll(fn string, ib *IndexBuilder) error {
 		return err
 	}
 
-	log.Printf("finished %s: %d index bytes (overhead %3.1f)", fn, fi.Size(),
+	log.Printf("finished shard %s: %d index bytes (overhead %3.1f)", fn, fi.Size(),
 		float64(fi.Size())/float64(ib.ContentSize()+1))
 
 	return nil

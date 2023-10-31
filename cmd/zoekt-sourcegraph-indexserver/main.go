@@ -82,7 +82,7 @@ var (
 		Help: "A histogram of latencies for indexing a repository.",
 		Buckets: prometheus.ExponentialBucketsRange(
 			(100 * time.Millisecond).Seconds(),
-			(40*time.Minute + indexTimeout).Seconds(), // add an extra 40 minutes to account for the time it takes to clone the repo
+			(40*time.Minute + defaultIndexingTimeout).Seconds(), // add an extra 40 minutes to account for the time it takes to clone the repo
 			20),
 	}, []string{
 		"state", // state is an indexState
@@ -188,6 +188,9 @@ type Server struct {
 	hostname string
 
 	mergeOpts mergeOpts
+
+	// timeout defines how long the index server waits before killing an indexing job.
+	timeout time.Duration
 }
 
 var debug = log.New(io.Discard, "", log.LstdFlags)
@@ -585,6 +588,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		findRepositoryMetadata: func(args *indexArgs) (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error) {
 			return args.BuildOptions().FindRepositoryMetadata()
 		},
+		timeout: s.timeout,
 	}
 
 	err = gitIndex(c, args, s.Sourcegraph, s.logger)
@@ -1369,6 +1373,11 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug.Printf("skipping generating symbols metadata for: %s", joinStringSet(reposShouldSkipSymbolsCalculation, ", "))
 	}
 
+	indexingTimeout := getEnvWithDefaultDuration("INDEXING_TIMEOUT", defaultIndexingTimeout)
+	if indexingTimeout != defaultIndexingTimeout {
+		debug.Printf("using configured indexing timeout: %s", indexingTimeout)
+	}
+
 	var sg Sourcegraph
 	if rootURL.IsAbs() {
 		var batchSize int
@@ -1432,6 +1441,7 @@ func newServer(conf rootConfig) (*Server, error) {
 			minAgeDays:      conf.minAgeDays,
 			maxPriority:     conf.maxPriority,
 		},
+		timeout: indexingTimeout,
 	}, err
 }
 

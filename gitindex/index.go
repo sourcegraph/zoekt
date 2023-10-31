@@ -529,15 +529,19 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 
 	var names []string
 	fileKeys := map[string][]fileKey{}
+	totalFiles := 0
+
 	for key := range repos {
 		n := key.FullPath()
 		fileKeys[n] = append(fileKeys[n], key)
 		names = append(names, n)
+		totalFiles++
 	}
 
 	sort.Strings(names)
 	names = uniq(names)
 
+	log.Printf("attempting to index %d total files", totalFiles)
 	for _, name := range names {
 		keys := fileKeys[name]
 

@@ -25,9 +25,7 @@ import (
 	sglog "github.com/sourcegraph/log"
 )
 
-// indexTimeout defines how long the indexserver waits before
-// killing an indexing job.
-const indexTimeout = 1*time.Hour + 30*time.Minute // an index should never take longer than an hour and a half
+const defaultIndexingTimeout = 1*time.Hour + 30*time.Minute
 
 // IndexOptions are the options that Sourcegraph can set via it's search
 // configuration endpoint.
@@ -163,6 +161,9 @@ type gitIndexConfig struct {
 	// The primary purpose of this configuration option is to be able to provide a stub
 	// implementation for this in our test suite. All other callers should use build.Options.FindRepositoryMetadata().
 	findRepositoryMetadata func(args *indexArgs) (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error)
+
+	// timeout defines how long the index server waits before killing an indexing job.
+	timeout time.Duration
 }
 
 func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
@@ -182,8 +183,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 	}
 
 	buildOptions := o.BuildOptions()
-
-	ctx, cancel := context.WithTimeout(context.Background(), indexTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
 	gitDir, err := tmpGitDir(o.Name)
