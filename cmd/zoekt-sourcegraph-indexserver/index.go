@@ -94,6 +94,9 @@ type indexArgs struct {
 	// DeltaShardNumberFallbackThreshold is an upper limit on the number of preexisting shards that can exist
 	// before attempting a delta build.
 	DeltaShardNumberFallbackThreshold uint64
+
+	// Timeout defines how long the indexserver waits before killing an indexing job.
+	Timeout time.Duration
 }
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
@@ -180,14 +183,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 	}
 
 	buildOptions := o.BuildOptions()
-
-	// indexingTimeout defines how long the indexserver waits before killing an indexing job.
-	indexingTimeout := getEnvWithDefaultDuration("INDEXING_TIMEOUT", defaultIndexingTimeout)
-	if indexingTimeout != defaultIndexingTimeout {
-		debug.Printf("using configured indexing timeout: %s", indexingTimeout)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), indexingTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
 	defer cancel()
 
 	gitDir, err := tmpGitDir(o.Name)

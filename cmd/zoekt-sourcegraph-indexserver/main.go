@@ -188,6 +188,9 @@ type Server struct {
 	hostname string
 
 	mergeOpts mergeOpts
+
+	// timeout defines how long the indexserver waits before killing an indexing job.
+	timeout time.Duration
 }
 
 var debug = log.New(io.Discard, "", log.LstdFlags)
@@ -545,6 +548,8 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		tr.LazyPrintf("skipping symbols calculation")
 		args.Symbols = false
 	}
+
+	args.Timeout = s.timeout
 
 	reason := "forced"
 
@@ -1369,6 +1374,11 @@ func newServer(conf rootConfig) (*Server, error) {
 		debug.Printf("skipping generating symbols metadata for: %s", joinStringSet(reposShouldSkipSymbolsCalculation, ", "))
 	}
 
+	indexingTimeout := getEnvWithDefaultDuration("INDEXING_TIMEOUT", defaultIndexingTimeout)
+	if indexingTimeout != defaultIndexingTimeout {
+		debug.Printf("using configured indexing timeout: %s", indexingTimeout)
+	}
+
 	var sg Sourcegraph
 	if rootURL.IsAbs() {
 		var batchSize int
@@ -1432,6 +1442,7 @@ func newServer(conf rootConfig) (*Server, error) {
 			minAgeDays:      conf.minAgeDays,
 			maxPriority:     conf.maxPriority,
 		},
+		timeout: indexingTimeout,
 	}, err
 }
 
