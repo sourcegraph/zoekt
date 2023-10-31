@@ -189,7 +189,7 @@ type Server struct {
 
 	mergeOpts mergeOpts
 
-	// timeout defines how long the indexserver waits before killing an indexing job.
+	// timeout defines how long the index server waits before killing an indexing job.
 	timeout time.Duration
 }
 
@@ -549,8 +549,6 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		args.Symbols = false
 	}
 
-	args.Timeout = s.timeout
-
 	reason := "forced"
 
 	if args.Incremental {
@@ -590,6 +588,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		findRepositoryMetadata: func(args *indexArgs) (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error) {
 			return args.BuildOptions().FindRepositoryMetadata()
 		},
+		timeout: s.timeout,
 	}
 
 	err = gitIndex(c, args, s.Sourcegraph, s.logger)
