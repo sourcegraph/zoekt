@@ -230,6 +230,11 @@ func (b *IndexBuilder) ContentSize() uint32 {
 	return b.contentPostings.endByte + b.namePostings.endByte
 }
 
+// NumFiles returns the number of files added to this builder
+func (b *IndexBuilder) NumFiles() int {
+	return len(b.contentStrings)
+}
+
 // NewIndexBuilder creates a fresh IndexBuilder. The passed in
 // Repository contains repo metadata, and may be set to nil.
 func NewIndexBuilder(r *Repository) (*IndexBuilder, error) {
