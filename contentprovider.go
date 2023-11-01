@@ -835,7 +835,7 @@ func scoreSymbolKind(language string, filename []byte, sym []byte, kind ctags.Sy
 		switch kind {
 		case ctags.Class: // classes
 			factor = 10
-		case ctags.Function: // function definitions
+		case ctags.Function, ctags.Method: // function definitions
 			factor = 8
 		case ctags.Field: // class, struct, and union members
 			factor = 4
