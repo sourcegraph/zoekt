@@ -232,6 +232,10 @@ func TestOverlaps(t *testing.T) {
 }
 
 func BenchmarkTagsToSections(b *testing.B) {
+	if checkCTags() == "" {
+		b.Skip("ctags not available")
+	}
+
 	file, err := os.ReadFile("./testdata/large_file.cc")
 	parser, err := ctags.NewParser(ctags.UniversalCTags, "universal-ctags")
 	if err != nil {
