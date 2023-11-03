@@ -15,6 +15,7 @@
 package build
 
 import (
+	"os"
 	"reflect"
 	"testing"
 
@@ -227,5 +228,37 @@ func TestOverlaps(t *testing.T) {
 				t.Fatalf("want %d, got %d", tt.pos, got)
 			}
 		})
+	}
+}
+
+func BenchmarkTagsToSections(b *testing.B) {
+	file, err := os.ReadFile("./testdata/large_file.cc")
+	parser, err := ctags.NewParser(ctags.UniversalCTags, "universal-ctags")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	entries, err := parser.Parse("./testdata/large_file.cc", file)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	secs, _, err := tagsToSections(file, entries)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	if len(secs) != 439 {
+		b.Fatalf("got %d sections, want 439 sections", len(secs))
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		_, _, err := tagsToSections(file, entries)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
