@@ -17,7 +17,10 @@ package build
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ctags"
@@ -38,6 +41,9 @@ func normalizeLanguage(filetype string) string {
 }
 
 func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserMap ctags.ParserMap) error {
+	monitor := newMonitor()
+	defer monitor.Stop()
+
 	for _, doc := range todo {
 		if doc.Symbols != nil {
 			continue
@@ -59,7 +65,10 @@ func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.Language
 			}
 		}
 
+		monitor.BeginParsing(doc)
 		es, err := parser.Parse(doc.Name, doc.Content)
+		monitor.EndParsing(es)
+
 		if err != nil {
 			return err
 		}
@@ -166,4 +175,112 @@ func newLinesIndices(in []byte) []uint32 {
 		}
 	}
 	return out
+}
+
+// monitorReportStuck is how long we need to be analysing a document before
+// reporting it to stdout.
+const monitorReportStuck = 10 * time.Second
+
+// monitorReportStatus is how often we given status updates
+const monitorReportStatus = time.Minute
+
+type monitor struct {
+	mu sync.Mutex
+
+	lastUpdate time.Time
+
+	start        time.Time
+	totalSize    int
+	totalSymbols int
+
+	currentDocName       string
+	currentDocSize       int
+	currentDocStuckCount int
+
+	done chan struct{}
+}
+
+func newMonitor() *monitor {
+	start := time.Now()
+	m := &monitor{
+		start:      start,
+		lastUpdate: start,
+		done:       make(chan struct{}),
+	}
+	go m.run()
+	return m
+}
+
+func (m *monitor) BeginParsing(doc *zoekt.Document) {
+	now := time.Now()
+	m.mu.Lock()
+	m.lastUpdate = now
+
+	// set current doc
+	m.currentDocName = doc.Name
+	m.currentDocSize = len(doc.Content)
+
+	m.mu.Unlock()
+}
+
+func (m *monitor) EndParsing(entries []*ctags.Entry) {
+	now := time.Now()
+	m.mu.Lock()
+	m.lastUpdate = now
+
+	// update aggregate stats
+	m.totalSize += m.currentDocSize
+	m.totalSymbols += len(entries)
+
+	// inform done if we warned about current document
+	if m.currentDocStuckCount > 0 {
+		log.Printf("symbol analysis for %s (size %d bytes) is done and found %d symbols", m.currentDocName, m.currentDocSize, len(entries))
+		m.currentDocStuckCount = 0
+	}
+
+	// unset current document
+	m.currentDocName = ""
+	m.currentDocSize = 0
+
+	m.mu.Unlock()
+}
+
+func (m *monitor) Stop() {
+	close(m.done)
+}
+
+func (m *monitor) run() {
+	stuckTicker := time.NewTicker(monitorReportStuck / 2) // half due to sampling theorem (nyquist)
+	statusTicker := time.NewTicker(monitorReportStatus)
+
+	defer stuckTicker.Stop()
+	defer statusTicker.Stop()
+
+	for {
+		select {
+		case <-m.done:
+			now := time.Now()
+			m.mu.Lock()
+			log.Printf("symbol analysis finished for shard statistics: duration=%v symbols=%d bytes=%d", now.Sub(m.start).Truncate(time.Second), m.totalSymbols, m.totalSize)
+			m.mu.Unlock()
+			return
+
+		case <-stuckTicker.C:
+			now := time.Now()
+			m.mu.Lock()
+			running := now.Sub(m.lastUpdate).Truncate(time.Second)
+			report := monitorReportStuck * (1 << m.currentDocStuckCount) // double the amount of time each time we report
+			if m.currentDocName != "" && running >= report {
+				m.currentDocStuckCount++
+				log.Printf("WARN: symbol analysis for %s (%d bytes) has been running for %v", m.currentDocName, m.currentDocSize, running)
+			}
+			m.mu.Unlock()
+
+		case <-statusTicker.C:
+			now := time.Now()
+			m.mu.Lock()
+			log.Printf("DEBUG: symbol analysis still running for shard statistics: duration=%v symbols=%d bytes=%d", now.Sub(m.start).Truncate(time.Second), m.totalSymbols, m.totalSize)
+			m.mu.Unlock()
+		}
+	}
 }
