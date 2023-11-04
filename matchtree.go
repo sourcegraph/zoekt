@@ -298,9 +298,15 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 			continue
 		}
 
+		if t.exact && !(start == sections[secIdx].Start && end == sections[secIdx].End) {
+			t.current = t.current[1:]
+			continue
+		}
+
 		t.current[0].symbol = true
 		t.current[0].symbolIdx = uint32(secIdx)
 		trimmed = append(trimmed, t.current[0])
+		t.current = t.current[1:]
 	}
 	t.current = trimmed
 }
@@ -986,6 +992,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		optCopy.DisableWordMatchOptimization = true
 
 		exact := false
+		expr := s.Expr
 		switch e := s.Expr.(type) {
 		case *query.Regexp:
 			if e.Regexp.Op != syntax.OpConcat || len(e.Regexp.Sub) != 3 {
@@ -1002,10 +1009,12 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 				break
 			}
 			exact = true
-			e.Regexp = ops[1]
+			exprCopy := *e
+			exprCopy.Regexp = ops[1]
+			expr = &exprCopy
 		}
 
-		subMT, err := d.newMatchTree(s.Expr, optCopy)
+		subMT, err := d.newMatchTree(expr, optCopy)
 		if err != nil {
 			return nil, err
 		}
