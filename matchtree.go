@@ -239,6 +239,7 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 type symbolSubstrMatchTree struct {
 	*substrMatchTree
 
+	exact         bool
 	patternSize   uint32
 	fileEndRunes  []uint32
 	fileEndSymbol []uint32
@@ -983,6 +984,26 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		optCopy := opt
 		optCopy.DisableWordMatchOptimization = true
 
+		exact := false
+		switch e := s.Expr.(type) {
+		case *query.Regexp:
+			if e.Regexp.Op != syntax.OpConcat || len(e.Regexp.Sub) != 3 {
+				break
+			}
+			ops := e.Regexp.Sub
+			if !(ops[0].Op == syntax.OpBeginLine || ops[0].Op == syntax.OpBeginText) {
+				break
+			}
+			if ops[1].Op != syntax.OpLiteral {
+				break
+			}
+			if !(ops[2].Op == syntax.OpEndLine || ops[2].Op == syntax.OpEndText) {
+				break
+			}
+			exact = true
+			e.Regexp = ops[1]
+		}
+
 		subMT, err := d.newMatchTree(s.Expr, optCopy)
 		if err != nil {
 			return nil, err
@@ -991,6 +1012,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		if substr, ok := subMT.(*substrMatchTree); ok {
 			return &symbolSubstrMatchTree{
 				substrMatchTree: substr,
+				exact:           exact,
 				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
 				fileEndRunes:    d.fileEndRunes,
 				fileEndSymbol:   d.fileEndSymbol,
