@@ -293,13 +293,14 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 			continue
 		}
 
-		if end <= sections[secIdx].End {
-			t.current[0].symbol = true
-			t.current[0].symbolIdx = uint32(secIdx)
-			trimmed = append(trimmed, t.current[0])
+		if end > sections[secIdx].End {
+			t.current = t.current[1:]
+			continue
 		}
 
-		t.current = t.current[1:]
+		t.current[0].symbol = true
+		t.current[0].symbolIdx = uint32(secIdx)
+		trimmed = append(trimmed, t.current[0])
 	}
 	t.current = trimmed
 }
