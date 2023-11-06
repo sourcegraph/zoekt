@@ -112,8 +112,8 @@ func overlaps(symOffsets []zoekt.DocumentSection, start, end uint32) int {
 func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSection, []*zoekt.Symbol, error) {
 	nls := newLinesIndices(content)
 	nls = append(nls, uint32(len(content)))
-	var symOffsets []zoekt.DocumentSection
-	var symMetaData []*zoekt.Symbol
+	symOffsets := make([]zoekt.DocumentSection, 0, len(tags))
+	symMetaData := make([]*zoekt.Symbol, 0, len(tags))
 
 	for _, t := range tags {
 		if t.Line <= 0 {
