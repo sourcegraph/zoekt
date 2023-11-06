@@ -169,11 +169,19 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 }
 
 func newLinesIndices(in []byte) []uint32 {
+	off := uint32(0)
 	out := make([]uint32, 0, len(in)/30)
-	for i, c := range in {
-		if c == '\n' {
-			out = append(out, uint32(i))
+	for len(in) > 0 {
+		i := bytes.IndexByte(in, '\n')
+		if i < 0 {
+			return out
 		}
+
+		off += uint32(i)
+		out = append(out, off)
+
+		in = in[i+1:]
+		off++
 	}
 	return out
 }
