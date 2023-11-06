@@ -46,6 +46,8 @@ func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.Language
 	monitor := newMonitor()
 	defer monitor.Stop()
 
+	var tagsToSections tagsToSections
+
 	for _, doc := range todo {
 		if doc.Symbols != nil {
 			continue
@@ -78,7 +80,7 @@ func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.Language
 			continue
 		}
 
-		symOffsets, symMetaData, err := tagsToSections(doc.Content, es)
+		symOffsets, symMetaData, err := tagsToSections.Convert(doc.Content, es)
 		if err != nil {
 			return fmt.Errorf("%s: %v", doc.Name, err)
 		}
@@ -109,11 +111,19 @@ func overlaps(symOffsets []zoekt.DocumentSection, start, end uint32) int {
 	return i + 1
 }
 
-// tagsToSections converts ctags entries to byte ranges (zoekt.DocumentSection)
-// with corresponding metadata (zoekt.Symbol).
-func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSection, []*zoekt.Symbol, error) {
-	nls := newLinesIndices(content)
-	nls = append(nls, uint32(len(content)))
+// tagsToSections contains buffers to be reused between conversions of bytes
+// ranges to metadata. This is done to reduce pressure on the garbage
+// collector.
+type tagsToSections struct {
+	nlsBuf []uint32
+}
+
+// Convert ctags entries to byte ranges (zoekt.DocumentSection) with
+// corresponding metadata (zoekt.Symbol).
+//
+// This can not be called concurrently.
+func (t *tagsToSections) Convert(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSection, []*zoekt.Symbol, error) {
+	nls := t.newLinesIndices(content)
 	symOffsets := make([]zoekt.DocumentSection, 0, len(tags))
 	symMetaData := make([]*zoekt.Symbol, 0, len(tags))
 
@@ -168,13 +178,34 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 	return symOffsets, symMetaData, nil
 }
 
-func newLinesIndices(in []byte) []uint32 {
-	out := make([]uint32, 0, len(in)/30)
-	for i, c := range in {
-		if c == '\n' {
-			out = append(out, uint32(i))
-		}
+// newLinesIndices returns an array of all indexes of '\n' aswell as a final
+// value for the length of the document.
+func (t *tagsToSections) newLinesIndices(in []byte) []uint32 {
+	// reuse nlsBuf between calls to tagsToSections.Convert
+	out := t.nlsBuf
+	if out == nil {
+		out = make([]uint32, 0, len(in)/30)
 	}
+
+	finalEntry := uint32(len(in))
+	off := uint32(0)
+	for len(in) > 0 {
+		i := bytes.IndexByte(in, '\n')
+		if i < 0 {
+			out = append(out, finalEntry)
+			break
+		}
+
+		off += uint32(i)
+		out = append(out, off)
+
+		in = in[i+1:]
+		off++
+	}
+
+	// save buffer for reuse
+	t.nlsBuf = out[:0]
+
 	return out
 }
 

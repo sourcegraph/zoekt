@@ -34,7 +34,7 @@ func TestTagsToSections(t *testing.T) {
 		},
 	}
 
-	secs, _, err := tagsToSections(c, tags)
+	secs, _, err := (&tagsToSections{}).Convert(c, tags)
 	if err != nil {
 		t.Fatal("tagsToSections", err)
 	}
@@ -59,7 +59,7 @@ func TestTagsToSectionsMultiple(t *testing.T) {
 		},
 	}
 
-	got, _, err := tagsToSections(c, tags)
+	got, _, err := (&tagsToSections{}).Convert(c, tags)
 	if err != nil {
 		t.Fatal("tagsToSections", err)
 	}
@@ -92,7 +92,7 @@ func TestTagsToSectionsReverse(t *testing.T) {
 		},
 	}
 
-	got, _, err := tagsToSections(c, tags)
+	got, _, err := (&tagsToSections{}).Convert(c, tags)
 	if err != nil {
 		t.Fatal("tagsToSections", err)
 	}
@@ -118,7 +118,7 @@ func TestTagsToSectionsEOF(t *testing.T) {
 		},
 	}
 
-	secs, _, err := tagsToSections(c, tags)
+	secs, _, err := (&tagsToSections{}).Convert(c, tags)
 	if err != nil {
 		t.Fatal("tagsToSections", err)
 	}
@@ -242,12 +242,14 @@ func BenchmarkTagsToSections(b *testing.B) {
 		b.Fatal(err)
 	}
 
+	var tagsToSections tagsToSections
+
 	entries, err := parser.Parse("./testdata/large_file.cc", file)
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	secs, _, err := tagsToSections(file, entries)
+	secs, _, err := tagsToSections.Convert(file, entries)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -260,7 +262,7 @@ func BenchmarkTagsToSections(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, _, err := tagsToSections(file, entries)
+		_, _, err := tagsToSections.Convert(file, entries)
 		if err != nil {
 			b.Fatal(err)
 		}
