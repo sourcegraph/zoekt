@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ctags"
 )
@@ -151,17 +153,16 @@ func tagsToSections(content []byte, tags []*ctags.Entry) ([]zoekt.DocumentSectio
 			continue
 		}
 
-		symOffsets = append(
-			symOffsets[:i],
-			append([]zoekt.DocumentSection{{Start: start, End: endSym}}, symOffsets[i:]...)...,
-		)
-		symMetaData = append(
-			symMetaData[:i],
-			append(
-				[]*zoekt.Symbol{{Sym: t.Name, Kind: t.Kind, Parent: t.Parent, ParentKind: t.ParentKind}},
-				symMetaData[i:]...,
-			)...,
-		)
+		symOffsets = slices.Insert(symOffsets, i, zoekt.DocumentSection{
+			Start: start,
+			End:   endSym,
+		})
+		symMetaData = slices.Insert(symMetaData, i, &zoekt.Symbol{
+			Sym:        t.Name,
+			Kind:       t.Kind,
+			Parent:     t.Parent,
+			ParentKind: t.ParentKind,
+		})
 	}
 
 	return symOffsets, symMetaData, nil
