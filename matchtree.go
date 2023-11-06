@@ -239,7 +239,7 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 type symbolSubstrMatchTree struct {
 	*substrMatchTree
 
-	exact         bool
+	anchored      bool
 	patternSize   uint32
 	fileEndRunes  []uint32
 	fileEndSymbol []uint32
@@ -298,7 +298,7 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 			continue
 		}
 
-		if t.exact && !(start == sections[secIdx].Start && end == sections[secIdx].End) {
+		if t.anchored && !(start == sections[secIdx].Start && end == sections[secIdx].End) {
 			t.current = t.current[1:]
 			continue
 		}
@@ -991,27 +991,22 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		optCopy := opt
 		optCopy.DisableWordMatchOptimization = true
 
-		exact := false
+		anchored := false
 		expr := s.Expr
 		switch e := s.Expr.(type) {
 		case *query.Regexp:
-			if e.Regexp.Op != syntax.OpConcat || len(e.Regexp.Sub) != 3 {
-				break
+			pattern := e.Regexp.String()
+			if strings.HasPrefix(pattern, "^") && strings.HasSuffix(pattern, "$") {
+				pattern = pattern[1 : len(pattern)-1]
+				parsedPattern, err := syntax.Parse(pattern, e.Regexp.Flags)
+				if err != nil {
+					return nil, err
+				}
+				eCopy := *e
+				eCopy.Regexp = parsedPattern
+				expr = &eCopy
+				anchored = true
 			}
-			ops := e.Regexp.Sub
-			if !(ops[0].Op == syntax.OpBeginLine || ops[0].Op == syntax.OpBeginText) {
-				break
-			}
-			if ops[1].Op != syntax.OpLiteral {
-				break
-			}
-			if !(ops[2].Op == syntax.OpEndLine || ops[2].Op == syntax.OpEndText) {
-				break
-			}
-			exact = true
-			exprCopy := *e
-			exprCopy.Regexp = ops[1]
-			expr = &exprCopy
 		}
 
 		subMT, err := d.newMatchTree(expr, optCopy)
@@ -1022,7 +1017,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		if substr, ok := subMT.(*substrMatchTree); ok {
 			return &symbolSubstrMatchTree{
 				substrMatchTree: substr,
-				exact:           exact,
+				anchored:        anchored,
 				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
 				fileEndRunes:    d.fileEndRunes,
 				fileEndSymbol:   d.fileEndSymbol,
