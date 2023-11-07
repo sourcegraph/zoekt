@@ -239,7 +239,7 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 type symbolSubstrMatchTree struct {
 	*substrMatchTree
 
-	anchored      bool
+	exact         bool
 	patternSize   uint32
 	fileEndRunes  []uint32
 	fileEndSymbol []uint32
@@ -298,7 +298,7 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 			continue
 		}
 
-		if t.anchored && !(start == sections[secIdx].Start && end == sections[secIdx].End) {
+		if t.exact && !(start == sections[secIdx].Start && end == sections[secIdx].End) {
 			t.current = t.current[1:]
 			continue
 		}
@@ -991,22 +991,9 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		optCopy := opt
 		optCopy.DisableWordMatchOptimization = true
 
-		anchored := false
-		expr := s.Expr
-		switch e := s.Expr.(type) {
-		case *query.Regexp:
-			pattern := e.Regexp.String()
-			if strings.HasPrefix(pattern, "^") && strings.HasSuffix(pattern, "$") {
-				pattern = pattern[1 : len(pattern)-1]
-				parsedPattern, err := syntax.Parse(pattern, e.Regexp.Flags)
-				if err != nil {
-					return nil, err
-				}
-				eCopy := *e
-				eCopy.Regexp = parsedPattern
-				expr = &eCopy
-				anchored = true
-			}
+		expr, wasAnchored := s.Expr, false
+		if regexpExpr, ok := expr.(*query.Regexp); ok {
+			expr, wasAnchored = stripAnchors(regexpExpr)
 		}
 
 		subMT, err := d.newMatchTree(expr, optCopy)
@@ -1017,7 +1004,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		if substr, ok := subMT.(*substrMatchTree); ok {
 			return &symbolSubstrMatchTree{
 				substrMatchTree: substr,
-				anchored:        anchored,
+				exact:           wasAnchored,
 				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
 				fileEndRunes:    d.fileEndRunes,
 				fileEndSymbol:   d.fileEndSymbol,
@@ -1282,4 +1269,38 @@ func pruneMatchTree(mt matchTree) (matchTree, error) {
 	case *wordMatchTree:
 	}
 	return mt, err
+}
+
+func stripAnchors(in *query.Regexp) (out *query.Regexp, stripped bool) {
+	stripRegexpAnchors := func(in *syntax.Regexp) (out *syntax.Regexp, stripped bool) {
+		if in.Op != syntax.OpConcat {
+			return out, false
+		}
+
+		if len(in.Sub) < 3 {
+			return out, false
+		}
+
+		firstOp, lastOp := in.Sub[0].Op, in.Sub[len(in.Sub)-1].Op
+
+		if firstOp != syntax.OpBeginLine && firstOp != syntax.OpBeginText {
+			return out, false
+		}
+		if lastOp != syntax.OpEndLine && lastOp != syntax.OpEndText {
+			return out, false
+		}
+
+		inCopy := *in
+		inCopy.Sub = in.Sub[1 : len(in.Sub)-1] // remove the first and last ops, which are the anchors
+		return &inCopy, true
+	}
+
+	newRegexp, stripped := stripRegexpAnchors(in.Regexp)
+	if !stripped {
+		return in, false
+	}
+
+	inCopy := *in
+	inCopy.Regexp = newRegexp
+	return &inCopy, true
 }
