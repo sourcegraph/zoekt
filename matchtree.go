@@ -196,6 +196,8 @@ type symbolRegexpMatchTree struct {
 
 func (t *symbolRegexpMatchTree) prepare(doc uint32) {
 	t.reEvaluated = false
+	t.found = t.found[:0]
+	t.matchTree.prepare(doc)
 }
 
 func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
