@@ -369,13 +369,28 @@ func TestCaseFold(t *testing.T) {
 	})
 }
 
+// wordsAsSymbols finds all ASCII words in doc.Content which are longer than 2
+// chars. Those are then set as symbols.
+func wordsAsSymbols(doc Document) Document {
+	re := regexp.MustCompile(`\b\w{2,}\b`)
+	var symbols []DocumentSection
+	for _, match := range re.FindAllIndex(doc.Content, -1) {
+		symbols = append(symbols, DocumentSection{
+			Start: uint32(match[0]),
+			End:   uint32(match[1]),
+		})
+	}
+	doc.Symbols = symbols
+	return doc
+}
+
 func TestSearchStats(t *testing.T) {
 	ctx := context.Background()
 	searcher := searcherForTest(t, testIndexBuilder(t, nil,
-		Document{Name: "f1", Content: []byte("x banana y")},
-		Document{Name: "f2", Content: []byte("x apple y")},
-		Document{Name: "f3", Content: []byte("x banana apple y")},
-		// -----------------------------------0123456789012345
+		wordsAsSymbols(Document{Name: "f1", Content: []byte("x banana y")}),
+		wordsAsSymbols(Document{Name: "f2", Content: []byte("x apple y")}),
+		wordsAsSymbols(Document{Name: "f3", Content: []byte("x banana apple y")}),
+		// --------------------------------------------------0123456789012345
 	))
 
 	andQuery := query.NewAnd(
@@ -425,7 +440,7 @@ func TestSearchStats(t *testing.T) {
 			Q:    andQuery,
 			Want: Stats{
 				FilesLoaded:        1,
-				ContentBytesLoaded: 18,
+				ContentBytesLoaded: 22,
 				IndexBytesLoaded:   8,
 				NgramMatches:       3, // we look at doc 1, because it's max(0,1) due to AND
 				NgramLookups:       104,
@@ -442,7 +457,7 @@ func TestSearchStats(t *testing.T) {
 				CaseSensitive: true,
 			},
 			Want: Stats{
-				ContentBytesLoaded: 12,
+				ContentBytesLoaded: 14,
 				IndexBytesLoaded:   1,
 				FileCount:          1,
 				FilesConsidered:    1,
@@ -459,7 +474,7 @@ func TestSearchStats(t *testing.T) {
 				Content: true,
 			},
 			Want: Stats{
-				ContentBytesLoaded: 12,
+				ContentBytesLoaded: 14,
 				IndexBytesLoaded:   1,
 				FileCount:          1,
 				FilesConsidered:    1,
@@ -498,6 +513,74 @@ func TestSearchStats(t *testing.T) {
 				IndexBytesLoaded:    1, // we created an iterator for "a y" before pruning.
 				ShardsSkippedFilter: 1,
 				NgramLookups:        3, // we lookedup "foo" once (1), but lookedup and created "a y" (2).
+			},
+		}, {
+			Name: "symbol-substr-nomatch",
+			Q: &query.Symbol{Expr: &query.Substring{
+				Pattern:       "banana apple",
+				Content:       true,
+				CaseSensitive: true,
+			}},
+			Want: Stats{
+				IndexBytesLoaded: 3,
+				FilesConsidered:  1, // important that we only check 1 file to ensure we are using the index
+				MatchCount:       0, // even though there is a match it doesn't align with a symbol
+				ShardsScanned:    1,
+				NgramMatches:     1,
+				NgramLookups:     12,
+			},
+		}, {
+			Name: "symbol-substr",
+			Q: &query.Symbol{Expr: &query.Substring{
+				Pattern:       "apple",
+				Content:       true,
+				CaseSensitive: true,
+			}},
+			Want: Stats{
+				ContentBytesLoaded: 35,
+				IndexBytesLoaded:   4,
+				FileCount:          2,
+				FilesConsidered:    2, // must be 2 to ensure we used the index
+				FilesLoaded:        2,
+				MatchCount:         2, // apple symbols is in two files
+				ShardsScanned:      1,
+				NgramMatches:       2,
+				NgramLookups:       5,
+			},
+		}, {
+			Name: "symbol-regexp-nomatch",
+			Q: &query.Symbol{Expr: &query.Regexp{
+				Regexp:        mustParseRE("^apple.banana$"),
+				Content:       true,
+				CaseSensitive: true,
+			}},
+			Want: Stats{
+				ContentBytesLoaded: 33, // we still have to run regex since "app" matches two documents
+				IndexBytesLoaded:   8,
+				FilesConsidered:    2, // important that we don't check 3 to ensure we are using the index
+				FilesLoaded:        2,
+				MatchCount:         0, // even though there is a match it doesn't align with a symbol
+				ShardsScanned:      1,
+				NgramMatches:       3,
+				NgramLookups:       11,
+			},
+		}, {
+			Name: "symbol-regexp",
+			Q: &query.Symbol{Expr: &query.Regexp{
+				Regexp:        mustParseRE("^app.e$"),
+				Content:       true,
+				CaseSensitive: true,
+			}},
+			Want: Stats{
+				ContentBytesLoaded: 35,
+				IndexBytesLoaded:   2,
+				FileCount:          2,
+				FilesConsidered:    2, // must be 2 to ensure we used the index
+				FilesLoaded:        2,
+				MatchCount:         2, // apple symbols is in two files
+				ShardsScanned:      1,
+				NgramMatches:       2,
+				NgramLookups:       2,
 			},
 		}}
 
