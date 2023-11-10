@@ -642,6 +642,9 @@ func (b *Builder) Add(doc zoekt.Document) error {
 		b.size += len(doc.Name) + len(doc.Content)
 	} else {
 		b.size += len(doc.Name) + len(doc.SkipReason)
+		// Drop the content if we are skipping the document. Skipped content is not counted towards the
+		// shard size limit, so otherwise we might buffer too much data in memory before flushing.
+		doc.Content = nil
 	}
 
 	if b.size > b.opts.ShardMax {
