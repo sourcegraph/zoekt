@@ -951,6 +951,11 @@ type rankedDoc struct {
 // at query time, because earlier documents receive a boost at query time and
 // have a higher chance of being searched before limits kick in.
 func rank(d *zoekt.Document, origIdx int) []float64 {
+	skipped := 0.0
+	if d.SkipReason != "" {
+		skipped = 1.0
+	}
+
 	generated := 0.0
 	if isGenerated(d.Name) {
 		generated = 1.0
@@ -968,6 +973,9 @@ func rank(d *zoekt.Document, origIdx int) []float64 {
 
 	// Smaller is earlier (=better).
 	return []float64{
+		// Always place skipped docs last
+		skipped,
+
 		// Prefer docs that are not generated
 		generated,
 
