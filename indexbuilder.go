@@ -339,7 +339,7 @@ func (b *IndexBuilder) AddFile(name string, content []byte) error {
 }
 
 // CheckText returns a reason why the given contents are probably not source texts.
-func CheckText(content []byte, maxTrigramCount int) error {
+func CheckText(content []byte, maxTrigramCount int, allowLargeFile bool) error {
 	if len(content) == 0 {
 		return nil
 	}
@@ -348,20 +348,20 @@ func CheckText(content []byte, maxTrigramCount int) error {
 		return fmt.Errorf("file size smaller than %d", ngramSize)
 	}
 
-	// PERF: we only need to do the trigram check if the upperbound on content
-	// is greater than our threshold.
+	if index := bytes.IndexByte(content, 0); index > 0 {
+		return fmt.Errorf("binary data at byte offset %d", index)
+	}
+
+	// PERF: we only need to do the trigram check if the upperbound on content is greater than
+	// our threshold. Also skip the trigram check if the file is explicitly marked as allowed.
 	var trigrams map[ngram]struct{}
-	if trigramsUpperBound := len(content) - ngramSize + 1; trigramsUpperBound > maxTrigramCount {
+	if trigramsUpperBound := len(content) - ngramSize + 1; trigramsUpperBound > maxTrigramCount && !allowLargeFile {
 		trigrams = make(map[ngram]struct{}, maxTrigramCount+1)
 	}
 
 	var cur [3]rune
 	byteCount := 0
 	for len(content) > 0 {
-		if content[0] == 0 {
-			return fmt.Errorf("binary data at byte offset %d", byteCount)
-		}
-
 		r, sz := utf8.DecodeRune(content)
 		content = content[sz:]
 		byteCount += sz
