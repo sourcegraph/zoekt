@@ -338,51 +338,6 @@ func (b *IndexBuilder) AddFile(name string, content []byte) error {
 	return b.Add(Document{Name: name, Content: content})
 }
 
-// CheckText returns a reason why the given contents are probably not source texts.
-func CheckText(content []byte, maxTrigramCount int, allowLargeFile bool) error {
-	if len(content) == 0 {
-		return nil
-	}
-
-	if len(content) < ngramSize {
-		return fmt.Errorf("file size smaller than %d", ngramSize)
-	}
-
-	if index := bytes.IndexByte(content, 0); index > 0 {
-		return fmt.Errorf("binary data at byte offset %d", index)
-	}
-
-	// PERF: we only need to do the trigram check if the upperbound on content is greater than
-	// our threshold. Also skip the trigram check if the file is explicitly marked as allowed.
-	var trigrams map[ngram]struct{}
-	if trigramsUpperBound := len(content) - ngramSize + 1; trigramsUpperBound > maxTrigramCount && !allowLargeFile {
-		trigrams = make(map[ngram]struct{}, maxTrigramCount+1)
-	}
-
-	var cur [3]rune
-	byteCount := 0
-	for len(content) > 0 {
-		r, sz := utf8.DecodeRune(content)
-		content = content[sz:]
-		byteCount += sz
-
-		cur[0], cur[1], cur[2] = cur[1], cur[2], r
-		if cur[0] == 0 {
-			// start of file.
-			continue
-		}
-
-		if trigrams != nil {
-			trigrams[runesToNGram(cur)] = struct{}{}
-			if len(trigrams) > maxTrigramCount {
-				// probably not text.
-				return fmt.Errorf("number of trigrams exceeds %d", maxTrigramCount)
-			}
-		}
-	}
-	return nil
-}
-
 func (b *IndexBuilder) populateSubRepoIndices() error {
 	if len(b.subRepoIndices) == len(b.repoList) {
 		return nil
@@ -558,4 +513,62 @@ func (b *IndexBuilder) branchMask(br string) uint64 {
 		}
 	}
 	return 0
+}
+
+type DocChecker struct {
+	// A map to count the unique trigrams in a doc. Reused across docs to cut down on allocations.
+	trigrams map[ngram]struct{}
+}
+
+// Check returns a reason why the given contents are probably not source texts.
+func (t *DocChecker) Check(content []byte, maxTrigramCount int, allowLargeFile bool) error {
+	if len(content) == 0 {
+		return nil
+	}
+
+	if len(content) < ngramSize {
+		return fmt.Errorf("file size smaller than %d", ngramSize)
+	}
+
+	if index := bytes.IndexByte(content, 0); index > 0 {
+		return fmt.Errorf("binary data at byte offset %d", index)
+	}
+
+	// PERF: we only need to do the trigram check if the upperbound on content is greater than
+	// our threshold. Also skip the trigram check if the file is explicitly marked as allowed.
+	if trigramsUpperBound := len(content) - ngramSize + 1; trigramsUpperBound <= maxTrigramCount || allowLargeFile {
+		return nil
+	}
+
+	var cur [3]rune
+	byteCount := 0
+	t.clearTrigrams(maxTrigramCount)
+
+	for len(content) > 0 {
+		r, sz := utf8.DecodeRune(content)
+		content = content[sz:]
+		byteCount += sz
+
+		cur[0], cur[1], cur[2] = cur[1], cur[2], r
+		if cur[0] == 0 {
+			// start of file.
+			continue
+		}
+
+		t.trigrams[runesToNGram(cur)] = struct{}{}
+		if len(t.trigrams) > maxTrigramCount {
+			// probably not text.
+			return fmt.Errorf("number of trigrams exceeds %d", maxTrigramCount)
+		}
+	}
+	return nil
+}
+
+func (t *DocChecker) clearTrigrams(maxTrigramCount int) {
+	if t.trigrams == nil {
+		t.trigrams = make(map[ngram]struct{}, maxTrigramCount)
+	}
+	for key := range t.trigrams {
+		delete(t.trigrams, key)
+	}
 }

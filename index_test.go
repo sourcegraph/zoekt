@@ -3204,28 +3204,30 @@ func TestSkipInvalidContent(t *testing.T) {
 	}
 }
 
-func TestCheckText(t *testing.T) {
+func TestDocChecker(t *testing.T) {
+	docChecker := DocChecker{}
+
 	// Test valid and invalid text
 	for _, text := range []string{"", "simple ascii", "símplé unicödé", "\uFEFFwith utf8 'bom'", "with \uFFFD unicode replacement char"} {
-		if err := CheckText([]byte(text), 20000, false); err != nil {
-			t.Errorf("CheckText(%q): %v", text, err)
+		if err := docChecker.Check([]byte(text), 20000, false); err != nil {
+			t.Errorf("Check(%q): %v", text, err)
 		}
 	}
 	for _, text := range []string{"zero\x00byte", "xx", "0123456789abcdefghi"} {
-		if err := CheckText([]byte(text), 15, false); err == nil {
-			t.Errorf("CheckText(%q) succeeded", text)
+		if err := docChecker.Check([]byte(text), 15, false); err == nil {
+			t.Errorf("Check(%q) succeeded", text)
 		}
 	}
 
 	// Test valid and invalid text with an allowed large file
 	for _, text := range []string{"0123456789abcdefghi", "qwertyuiopasdfghjklzxcvbnm"} {
-		if err := CheckText([]byte(text), 15, true); err != nil {
-			t.Errorf("CheckText(%q): %v", text, err)
+		if err := docChecker.Check([]byte(text), 15, true); err != nil {
+			t.Errorf("Check(%q): %v", text, err)
 		}
 	}
 	for _, text := range []string{"zero\x00byte", "xx"} {
-		if err := CheckText([]byte(text), 15, true); err == nil {
-			t.Errorf("CheckText(%q) succeeded", text)
+		if err := docChecker.Check([]byte(text), 15, true); err == nil {
+			t.Errorf("Check(%q) succeeded", text)
 		}
 	}
 }

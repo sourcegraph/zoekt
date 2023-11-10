@@ -248,9 +248,9 @@ type Builder struct {
 	todo         []*zoekt.Document
 	size         int
 
-	parserMap ctags.ParserMap
-
-	building sync.WaitGroup
+	parserMap  ctags.ParserMap
+	docChecker zoekt.DocChecker
+	building   sync.WaitGroup
 
 	errMu      sync.Mutex
 	buildError error
@@ -623,7 +623,7 @@ func (b *Builder) Add(doc zoekt.Document) error {
 		// files, the corresponding shard would be mostly empty, so
 		// insert a reason here too.
 		doc.SkipReason = fmt.Sprintf("document size %d larger than limit %d", len(doc.Content), b.opts.SizeMax)
-	} else if err := zoekt.CheckText(doc.Content, b.opts.TrigramMax, allowLargeFile); err != nil {
+	} else if err := b.docChecker.Check(doc.Content, b.opts.TrigramMax, allowLargeFile); err != nil {
 		doc.SkipReason = err.Error()
 		doc.Language = "binary"
 	}
