@@ -244,6 +244,9 @@ func TestDontCountContentOfSkippedFiles(t *testing.T) {
 	if len(b.todo) != 1 || b.todo[0].SkipReason == "" {
 		t.Fatalf("document should have been skipped")
 	}
+	if b.todo[0].Content != nil {
+		t.Fatalf("document content should be empty")
+	}
 	if b.size >= 100 {
 		t.Fatalf("content of skipped documents should not count towards shard size thresold")
 	}
