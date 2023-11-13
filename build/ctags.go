@@ -49,7 +49,7 @@ func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.Language
 	var tagsToSections tagsToSections
 
 	for _, doc := range todo {
-		if doc.Content == nil || doc.Symbols != nil {
+		if len(doc.Content) == 0 || doc.Symbols != nil {
 			continue
 		}
 
