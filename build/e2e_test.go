@@ -525,6 +525,27 @@ func TestFileRank(t *testing.T) {
 			},
 		},
 		want: []int{0, 2, 1},
+	}, {
+		name: "skipped docs",
+		docs: []*zoekt.Document{
+			{
+				Name: "binary_file",
+				SkipReason: "binary file",
+			},
+			{
+				Name: "some_test.go",
+				Content: []byte("bla"),
+			},
+			{
+				Name: "large_file.go",
+				SkipReason: "too large",
+			},
+			{
+				Name: "file.go",
+				Content: []byte("blabla"),
+			},
+		},
+		want: []int{3, 1, 0, 2},
 	}} {
 		t.Run(c.name, func(t *testing.T) {
 			testFileRankAspect(t, c)
