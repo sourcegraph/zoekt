@@ -1,0 +1,40 @@
+queryString: graphql type User
+query: (and substr:"graphql" substr:"type" case_substr:"User")
+
+github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/schema.graphql	score:8807.21 <- atom(4):300.00, fragment:8500.00, doc-order:7.21
+6376:type User implements Node & SettingsSubject & Namespace {	score:8500.00 <- WordMatch:500.00, Symbol:7000.00, kind:GraphQL:type:1000.00
+3862:        type: GitRefType	score:8050.00 <- WordMatch:500.00, Symbol:7000.00, kind:GraphQL:field:550.00
+5037:    type: GitRefType!	score:8050.00 <- WordMatch:500.00, Symbol:7000.00, kind:GraphQL:field:550.00
+hidden 460 more line matches
+
+github.com/sourcegraph/sourcegraph/internal/types/types.go	score:8759.73 <- atom(4):300.00, fragment:8450.00, doc-order:9.73
+850:type User struct {	score:8450.00 <- WordMatch:500.00, Symbol:7000.00, kind:Go:struct:950.00
+1372:	Type               *SearchCountStatistics	score:8250.00 <- WordMatch:500.00, Symbol:7000.00, kind:Go:member:750.00
+1766:	Type       string	score:8250.00 <- WordMatch:500.00, Symbol:7000.00, kind:Go:member:750.00
+hidden 234 more line matches
+
+github.com/sourcegraph/sourcegraph/client/web/src/enterprise/insights/core/backend/gql-backend/methods/get-dashboard-owners.ts	score:8269.38 <- atom(3):266.67, fragment:8000.00, doc-order:2.71
+22:                type: InsightsDashboardOwnerType.Global,	score:8000.00 <- WordMatch:500.00, Symbol:7000.00, kind:TypeScript:constant:500.00
+32:                type: InsightsDashboardOwnerType.Personal,	score:8000.00 <- WordMatch:500.00, Symbol:7000.00, kind:TypeScript:constant:500.00
+18:            const { currentUser, site } = data	score:6500.00 <- WordMatch:500.00, EdgeSymbol:5500.00, kind:TypeScript:constant:500.00
+hidden 8 more line matches
+
+github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/apitest/types.go	score:8751.64 <- atom(4):300.00, fragment:8450.00, doc-order:1.64
+47:type User struct {	score:8450.00 <- WordMatch:500.00, Symbol:7000.00, kind:Go:struct:950.00
+9:	Typename    string `json:"__typename"`	score:6300.00 <- PartialWordMatch:50.00, EdgeSymbol:5500.00, kind:Go:member:750.00
+32:	Typename    string `json:"__typename"`	score:6300.00 <- PartialWordMatch:50.00, EdgeSymbol:5500.00, kind:Go:member:750.00
+hidden 11 more line matches
+
+github.com/sourcegraph/sourcegraph/cmd/frontend/internal/batches/resolvers/apitest/types.go	score:8751.15 <- atom(4):300.00, fragment:8450.00, doc-order:1.15
+52:type User struct {	score:8450.00 <- WordMatch:500.00, Symbol:7000.00, kind:Go:struct:950.00
+364:	User  *User	score:8250.00 <- WordMatch:500.00, Symbol:7000.00, kind:Go:member:750.00
+393:	Type       string	score:8250.00 <- WordMatch:500.00, Symbol:7000.00, kind:Go:member:750.00
+hidden 68 more line matches
+
+github.com/sourcegraph/sourcegraph/internal/extsvc/github/common.go	score:8725.50 <- atom(3):266.67, fragment:8450.00, doc-order:8.84
+2030:type User struct {	score:8450.00 <- WordMatch:500.00, Symbol:7000.00, kind:Go:struct:950.00
+66:	User      *Actor `json:"User,omitempty"`	score:8250.00 <- WordMatch:500.00, Symbol:7000.00, kind:Go:member:750.00
+527:	Type string	score:8250.00 <- WordMatch:500.00, Symbol:7000.00, kind:Go:member:750.00
+hidden 136 more line matches
+
+hidden 743 more file matches
