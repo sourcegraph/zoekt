@@ -134,7 +134,7 @@ func (t *tagsToSections) Convert(content []byte, tags []*ctags.Entry) ([]zoekt.D
 		}
 		lineIdx := t.Line - 1
 		if lineIdx >= len(nls) {
-			return nil, nil, fmt.Errorf("linenum for entry out of range %v", t)
+			return nil, nil, fmt.Errorf("linenum for entry out of range %v (lineIdx=%d, lines=%d)", t, lineIdx, len(nls))
 		}
 
 		lineOff := uint32(0)
@@ -192,7 +192,6 @@ func (t *tagsToSections) newLinesIndices(in []byte) []uint32 {
 	for len(in) > 0 {
 		i := bytes.IndexByte(in, '\n')
 		if i < 0 {
-			out = append(out, finalEntry)
 			break
 		}
 
@@ -202,6 +201,8 @@ func (t *tagsToSections) newLinesIndices(in []byte) []uint32 {
 		in = in[i+1:]
 		off++
 	}
+
+	out = append(out, finalEntry)
 
 	// save buffer for reuse
 	t.nlsBuf = out[:0]
