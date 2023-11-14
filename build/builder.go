@@ -854,8 +854,8 @@ func (b *Builder) flush() error {
 
 	if b.opts.Parallelism > 1 && b.opts.MemProfile == "" {
 		b.building.Add(1)
+		b.throttle <- 1
 		go func() {
-			b.throttle <- 1
 			done, err := b.buildShard(todo, shard)
 			<-b.throttle
 
