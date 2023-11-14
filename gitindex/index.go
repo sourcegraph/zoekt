@@ -546,46 +546,13 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		keys := fileKeys[name]
 
 		for _, key := range keys {
-			brs := branchMap[key]
-			blob, err := repos[key].Repo.BlobObject(key.ID)
+			doc, err := createDocument(key, repos, branchMap, ranks, opts)
 			if err != nil {
 				return err
 			}
 
-			keyFullPath := key.FullPath()
-
-			if blob.Size > int64(opts.BuildOptions.SizeMax) && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
-				if err := builder.Add(zoekt.Document{
-					SkipReason:        fmt.Sprintf("file size %d exceeds maximum size %d", blob.Size, opts.BuildOptions.SizeMax),
-					Name:              keyFullPath,
-					Branches:          brs,
-					SubRepositoryPath: key.SubRepoPath,
-				}); err != nil {
-					return err
-				}
-				continue
-			}
-
-			contents, err := blobContents(blob)
-			if err != nil {
-				return err
-			}
-
-			var pathRanks []float64
-			if len(ranks.Paths) > 0 {
-				// If the repository has ranking data, then store the file's rank.
-				pathRank := ranks.rank(keyFullPath)
-				pathRanks = []float64{pathRank}
-			}
-
-			if err := builder.Add(zoekt.Document{
-				SubRepositoryPath: key.SubRepoPath,
-				Name:              keyFullPath,
-				Content:           contents,
-				Branches:          brs,
-				Ranks:             pathRanks,
-			}); err != nil {
-				return fmt.Errorf("error adding document with name %s: %w", keyFullPath, err)
+			if err := builder.Add(doc); err != nil {
+				return fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
 			}
 		}
 	}
@@ -893,6 +860,62 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 	return repos, branchMap, branchVersions, nil
 }
 
+func uniq(ss []string) []string {
+	result := ss[:0]
+	var last string
+	for i, s := range ss {
+		if i == 0 || s != last {
+			result = append(result, s)
+		}
+		last = s
+	}
+	return result
+}
+
+func createDocument(
+	key fileKey,
+	repos map[fileKey]BlobLocation,
+	branchMap map[fileKey][]string,
+	ranks repoPathRanks,
+	opts Options,
+) (zoekt.Document, error) {
+	blob, err := repos[key].Repo.BlobObject(key.ID)
+	if err != nil {
+		return zoekt.Document{}, err
+	}
+
+	keyFullPath := key.FullPath()
+
+	if blob.Size > int64(opts.BuildOptions.SizeMax) && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
+		return zoekt.Document{
+			SkipReason:        fmt.Sprintf("file size %d exceeds maximum size %d", blob.Size, opts.BuildOptions.SizeMax),
+			Name:              key.FullPath(),
+			Branches:          branchMap[key],
+			SubRepositoryPath: key.SubRepoPath,
+		}, nil
+	}
+
+	contents, err := blobContents(blob)
+	if err != nil {
+		return zoekt.Document{}, err
+	}
+
+	var pathRanks []float64
+	if len(ranks.Paths) > 0 {
+		// If the repository has ranking data, then store the file's rank.
+		pathRank := ranks.rank(keyFullPath)
+		pathRanks = []float64{pathRank}
+	}
+
+	return zoekt.Document{
+		SubRepositoryPath: key.SubRepoPath,
+		Name:              keyFullPath,
+		Content:           contents,
+		Branches:          branchMap[key],
+		Ranks:             pathRanks,
+	}, nil
+}
+
 func blobContents(blob *object.Blob) ([]byte, error) {
 	r, err := blob.Reader()
 	if err != nil {
@@ -907,16 +930,4 @@ func blobContents(blob *object.Blob) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-func uniq(ss []string) []string {
-	result := ss[:0]
-	var last string
-	for i, s := range ss {
-		if i == 0 || s != last {
-			result = append(result, s)
-		}
-		last = s
-	}
-	return result
 }
