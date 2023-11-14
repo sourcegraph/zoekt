@@ -246,11 +246,11 @@ type Builder struct {
 
 	nextShardNum int
 	todo         []*zoekt.Document
+	docChecker   zoekt.DocChecker
 	size         int
 
-	parserMap  ctags.ParserMap
-	docChecker zoekt.DocChecker
-	building   sync.WaitGroup
+	parserMap ctags.ParserMap
+	building  sync.WaitGroup
 
 	errMu      sync.Mutex
 	buildError error
