@@ -860,18 +860,6 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 	return repos, branchMap, branchVersions, nil
 }
 
-func uniq(ss []string) []string {
-	result := ss[:0]
-	var last string
-	for i, s := range ss {
-		if i == 0 || s != last {
-			result = append(result, s)
-		}
-		last = s
-	}
-	return result
-}
-
 func createDocument(
 	key fileKey,
 	repos map[fileKey]BlobLocation,
@@ -930,4 +918,16 @@ func blobContents(blob *object.Blob) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func uniq(ss []string) []string {
+	result := ss[:0]
+	var last string
+	for i, s := range ss {
+		if i == 0 || s != last {
+			result = append(result, s)
+		}
+		last = s
+	}
+	return result
 }
