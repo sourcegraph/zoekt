@@ -21,6 +21,7 @@ import (
 )
 
 var update = flag.Bool("update", false, "update golden file")
+var noShardCache = flag.Bool("noShardCache", os.Getenv("CI") != "", "by default we reuse the shard cache to speed up testing")
 
 func TestRanking(t *testing.T) {
 	requireCTags(t)
@@ -32,7 +33,13 @@ func TestRanking(t *testing.T) {
 		"graphql type User",
 	}
 
-	indexDir := t.TempDir()
+	var indexDir string
+	if *noShardCache {
+		indexDir = t.TempDir()
+	} else {
+		t.Logf("reusing index dir to speed up testing. If you have unexpected results try go test -no_shard_cache or remove %s", shardCache)
+		indexDir = shardCache
+	}
 
 	for _, u := range archiveURLs {
 		if err := indexURL(indexDir, u); err != nil {
@@ -97,6 +104,7 @@ func TestRanking(t *testing.T) {
 }
 
 var tarballCache = "/tmp/zoekt-test-ranking-tarballs-" + os.Getenv("USER")
+var shardCache = "/tmp/zoekt-test-ranking-shards-" + os.Getenv("USER")
 
 func indexURL(indexDir, u string) error {
 	if err := os.MkdirAll(tarballCache, 0700); err != nil {
@@ -104,7 +112,8 @@ func indexURL(indexDir, u string) error {
 	}
 
 	opts := Options{
-		Archive: u,
+		Incremental: true,
+		Archive:     u,
 	}
 	opts.SetDefaults() // sets metadata like Name and the codeload URL
 	u = opts.Archive
