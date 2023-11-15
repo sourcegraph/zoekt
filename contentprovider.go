@@ -25,8 +25,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/sourcegraph/zoekt/ctags"
 	"golang.org/x/exp/slices"
+
+	"github.com/sourcegraph/zoekt/ctags"
 )
 
 var _ = log.Println
@@ -512,6 +513,8 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 		score.score += s
 	}
 
+	symScores := make(map[string]debugScore)
+
 	data := p.data(m.FileName)
 	filename := p.data(true)
 
@@ -545,6 +548,8 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 			}
 		} else if secIdx, ok := findSection(secs, uint32(r.Start.ByteOffset), uint32(r.End.ByteOffset-r.Start.ByteOffset)); ok {
 			sec := secs[secIdx]
+			sym := string(sectionSlice(data, sec))
+
 			startMatch := sec.Start == uint32(r.Start.ByteOffset)
 			endMatch := sec.End == uint32(r.End.ByteOffset)
 			if startMatch && endMatch {
@@ -566,7 +571,6 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 			}
 			if si != nil {
 				symbolKind := ctags.ParseSymbolKind(si.Kind)
-				sym := sectionSlice(data, sec)
 				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, symbolKind))
 			}
 		}
@@ -680,7 +684,6 @@ func sectionSlice(data []byte, sec DocumentSection) []byte {
 	}
 	return data[sec.Start:sec.End]
 }
-
 
 // scoreSymbolKind boosts a match based on the combination of language, symbol
 // and kind. The language string comes from go-enry, the symbol and kind from

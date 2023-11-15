@@ -544,18 +544,35 @@ func (m sortByOffsetSlice) Less(i, j int) bool {
 // but adjacent matches will remain.
 func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candidateMatch {
 	var cands []*candidateMatch
+	var cur uint32
 	visitMatches(mt, known, func(mt matchTree) {
-		if smt, ok := mt.(*substrMatchTree); ok {
-			cands = append(cands, smt.current...)
+		if m, ok := mt.(*substrMatchTree); ok {
+			for _, c := range m.current {
+				c.id = cur
+				cands = append(cands, c)
+			}
+			cur++
 		}
-		if rmt, ok := mt.(*regexpMatchTree); ok {
-			cands = append(cands, rmt.found...)
+		if m, ok := mt.(*regexpMatchTree); ok {
+			for _, c := range m.found {
+				c.id = cur
+				cands = append(cands, c)
+			}
+			cur++
 		}
-		if rmt, ok := mt.(*wordMatchTree); ok {
-			cands = append(cands, rmt.found...)
+		if m, ok := mt.(*wordMatchTree); ok {
+			for _, c := range m.found {
+				c.id = cur
+				cands = append(cands, c)
+			}
+			cur++
 		}
-		if smt, ok := mt.(*symbolRegexpMatchTree); ok {
-			cands = append(cands, smt.found...)
+		if m, ok := mt.(*symbolRegexpMatchTree); ok {
+			for _, c := range m.found {
+				c.id = cur
+				cands = append(cands, c)
+			}
+			cur++
 		}
 	})
 

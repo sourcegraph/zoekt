@@ -21,6 +21,8 @@ import (
 
 // candidateMatch is a candidate match for a substring.
 type candidateMatch struct {
+	id uint32
+
 	caseSensitive bool
 	fileName      bool
 	symbol        bool
