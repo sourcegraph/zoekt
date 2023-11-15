@@ -1,0 +1,40 @@
+queryString: Get database/user
+query: (and case_substr:"Get" substr:"database/user")
+
+github.com/sourcegraph/sourcegraph/internal/database/user_emails.go
+161:func (s *userEmailsStore) Get(ctx context.Context, userID int32, email string) (emailCanonicalCase string, verified bool, err error) {
+50:	Get(ctx context.Context, userID int32, email string) (emailCanonicalCase string, verified bool, err error)
+91:func (s *userEmailsStore) GetInitialSiteAdminInfo(ctx context.Context) (email string, tosAccepted bool, err error) {
+hidden 14 more line matches
+
+github.com/sourcegraph/sourcegraph/internal/database/user_roles.go
+35:	GetUserRoleOpts    UserRoleOpts
+358:func (r *userRoleStore) GetByUserID(ctx context.Context, opts GetUserRoleOpts) ([]*types.UserRole, error) {
+365:func (r *userRoleStore) GetByRoleID(ctx context.Context, opts GetUserRoleOpts) ([]*types.UserRole, error) {
+hidden 8 more line matches
+
+github.com/sourcegraph/sourcegraph/internal/database/users.go
+940:func (u *userStore) GetByID(ctx context.Context, id int32) (*types.User, error) {
+947:func (u *userStore) GetByVerifiedEmail(ctx context.Context, email string) (*types.User, error) {
+951:func (u *userStore) GetByUsername(ctx context.Context, username string) (*types.User, error) {
+hidden 17 more line matches
+
+github.com/sourcegraph/sourcegraph/internal/database/user_credentials.go
+248:func (s *userCredentialsStore) GetByID(ctx context.Context, id int64) (*UserCredential, error) {
+271:func (s *userCredentialsStore) GetByScope(ctx context.Context, scope UserCredentialScope) (*UserCredential, error) {
+108:	GetByID(ctx context.Context, id int64) (*UserCredential, error)
+hidden 8 more line matches
+
+github.com/sourcegraph/sourcegraph/internal/database/user_emails_test.go
+56:func TestUserEmails_Get(t *testing.T) {
+106:func TestUserEmails_GetPrimary(t *testing.T) {
+585:func TestUserEmails_GetLatestVerificationSentEmail(t *testing.T) {
+hidden 10 more line matches
+
+github.com/sourcegraph/sourcegraph/internal/database/users_test.go
+628:func TestUsers_GetByVerifiedEmail(t *testing.T) {
+664:func TestUsers_GetByUsername(t *testing.T) {
+711:func TestUsers_GetByUsernames(t *testing.T) {
+hidden 32 more line matches
+
+hidden 3 more file matches

@@ -1,0 +1,40 @@
+queryString: test server
+query: (and substr:"test" substr:"server")
+
+github.com/golang/go/src/net/http/httptest/server.go
+26:type Server struct {
+105:func NewServer(handler http.Handler) *Server {
+117:func NewUnstartedServer(handler http.Handler) *Server {
+hidden 62 more line matches
+
+github.com/golang/go/src/net/rpc/server.go
+188:type Server struct {
+656:type ServerCodec interface {
+197:func NewServer() *Server {
+hidden 104 more line matches
+
+github.com/sourcegraph/cody/vscode/test/fixtures/mock-server.ts
+126:    const server = app.listen(SERVER_PORT, () => {
+19:const SERVER_PORT = 49300
+21:export const SERVER_URL = 'http://localhost:49300'
+hidden 24 more line matches
+
+github.com/golang/go/src/net/http/server.go
+2617:type Server struct {
+256:	server *Server
+2925:type serverHandler struct {
+hidden 180 more line matches
+
+github.com/sourcegraph/sourcegraph/cmd/gitserver/server/server.go
+132:type Server struct {
+2:package server
+741:func (s *Server) serverContext() (context.Context, context.CancelFunc) {
+hidden 166 more line matches
+
+github.com/golang/go/src/cmd/go/internal/vcweb/vcstest/vcstest.go
+32:type Server struct {
+42:func NewServer() (srv *Server, err error) {
+7:package vcstest
+hidden 31 more line matches
+
+hidden 494 more file matches

@@ -1,0 +1,40 @@
+queryString: generate unit test
+query: (and substr:"generate" substr:"unit" substr:"test")
+
+github.com/sourcegraph/sourcegraph/cmd/frontend/internal/insights/resolvers/insight_series_resolver.go
+300:func (j *seriesResolverGenerator) Generate(ctx context.Context, series types.InsightViewSeries, baseResolver baseInsightResolver, filters types.InsightViewFilters, options types.SeriesDisplayOptions) ([]graphqlbackend.InsightSeriesResolver, error) {
+275:	Generate(ctx context.Context, series types.InsightViewSeries, baseResolver baseInsightResolver, filters types.InsightViewFilters, options types.SeriesDisplayOptions) ([]graphqlbackend.InsightSeriesResolver, error)
+286:	generateResolver resolverGenerator
+hidden 16 more line matches
+
+github.com/golang/go/src/cmd/vendor/github.com/google/pprof/internal/report/report.go
+87:func Generate(w io.Writer, rpt *Report, obj plugin.ObjTool) error {
+187:func (rpt *Report) selectOutputUnit(g *graph.Graph) {
+75:	SampleUnit        string // Unit for the sample data from the profile.
+hidden 48 more line matches
+
+github.com/sourcegraph/sourcegraph/internal/codeintel/autoindexing/internal/inference/lua/test.lua
+9:  generate = function(_, paths)
+6:  patterns = { pattern.new_path_basename "sg-test" },
+8:  -- Invoked as part of unit tests for the autoindexing service
+hidden 1 more line matches
+
+github.com/golang/go/src/cmd/internal/testdir/testdir_test.go
+273:type test struct {
+74:func Test(t *testing.T) {
+263:type testCommon struct {
+hidden 120 more line matches
+
+github.com/golang/go/src/cmd/vendor/github.com/google/pprof/profile/profile.go
+65:	Unit string // seconds, nanoseconds, bytes, etc
+77:	NumUnit  map[string][]string
+68:	unitX int64
+hidden 44 more line matches
+
+github.com/golang/go/src/cmd/link/internal/loader/loader.go
+79:	unit         *sym.CompilationUnit
+1544:func (l *Loader) SymUnit(i Sym) *sym.CompilationUnit {
+228:	generatedSyms        Bitmap // symbols that generate their content, indexed by ext sym idx
+hidden 50 more line matches
+
+hidden 244 more file matches

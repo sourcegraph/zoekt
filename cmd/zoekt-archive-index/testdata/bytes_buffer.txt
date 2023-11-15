@@ -1,0 +1,40 @@
+queryString: bytes buffer
+query: (and substr:"bytes" substr:"buffer")
+
+github.com/golang/go/src/bytes/buffer.go
+20:type Buffer struct {
+54:func (b *Buffer) Bytes() []byte { return b.buf[b.off:] }
+5:package bytes
+hidden 126 more line matches
+
+github.com/golang/go/src/cmd/internal/edit/edit.go
+14:type Buffer struct {
+68:func (b *Buffer) Bytes() []byte {
+41:func NewBuffer(data []byte) *Buffer {
+hidden 13 more line matches
+
+github.com/golang/go/src/hash/crc32/crc32_ppc64le.s
+122:	SLD     $2,R8           // convert index-> bytes
+59:	MOVWZ	0(R5),R8	// 0-3 bytes of p ?Endian?
+60:	MOVWZ	4(R5),R9	// 4-7 bytes of p
+hidden 35 more line matches
+
+github.com/golang/go/src/fmt/print.go
+101:type buffer []byte
+509:func (p *pp) fmtBytes(v []byte, verb rune, typeString string) {
+17:// Strings for use with buffer.WriteString.
+hidden 28 more line matches
+
+github.com/golang/go/src/bufio/scan.go
+106:func (s *Scanner) Bytes() []byte {
+267:func (s *Scanner) Buffer(buf []byte, max int) {
+289:func ScanBytes(data []byte, atEOF bool) (advance int, token []byte, err error) {
+hidden 26 more line matches
+
+github.com/golang/go/src/os/exec/exec.go
+1134:func (w *prefixSuffixSaver) Bytes() []byte {
+94:	"bytes"
+396:			if i := bytes.Index(stack, []byte("\nos/exec.Command(")); i >= 0 {
+hidden 17 more line matches
+
+hidden 494 more file matches
