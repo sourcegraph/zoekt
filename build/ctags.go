@@ -134,7 +134,8 @@ func (t *tagsToSections) Convert(content []byte, tags []*ctags.Entry) ([]zoekt.D
 		}
 		lineIdx := t.Line - 1
 		if lineIdx >= len(nls) {
-			return nil, nil, fmt.Errorf("linenum for entry out of range %v", t)
+			// Observed this with a .TS file.
+			continue
 		}
 
 		lineOff := uint32(0)
