@@ -546,7 +546,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) error {
 		keys := fileKeys[name]
 
 		for _, key := range keys {
-			doc, err := createDocument(key, repos, branchMap, ranks, opts)
+			doc, err := createDocument(key, repos, branchMap, ranks, opts.BuildOptions)
 			if err != nil {
 				return err
 			}
@@ -860,12 +860,11 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 	return repos, branchMap, branchVersions, nil
 }
 
-func createDocument(
-	key fileKey,
+func createDocument(key fileKey,
 	repos map[fileKey]BlobLocation,
 	branchMap map[fileKey][]string,
 	ranks repoPathRanks,
-	opts Options,
+	opts build.Options,
 ) (zoekt.Document, error) {
 	blob, err := repos[key].Repo.BlobObject(key.ID)
 	if err != nil {
@@ -873,10 +872,9 @@ func createDocument(
 	}
 
 	keyFullPath := key.FullPath()
-
-	if blob.Size > int64(opts.BuildOptions.SizeMax) && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
+	if blob.Size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(keyFullPath) {
 		return zoekt.Document{
-			SkipReason:        fmt.Sprintf("file size %d exceeds maximum size %d", blob.Size, opts.BuildOptions.SizeMax),
+			SkipReason:        fmt.Sprintf("file size %d exceeds maximum size %d", blob.Size, opts.SizeMax),
 			Name:              key.FullPath(),
 			Branches:          branchMap[key],
 			SubRepositoryPath: key.SubRepoPath,
