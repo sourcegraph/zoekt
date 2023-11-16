@@ -92,8 +92,8 @@ func (t *noMatchTree) nextDoc() uint32 {
 
 func (t *noMatchTree) prepare(uint32) {}
 
-func (t *noMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) (bool, bool) {
-	return false, true
+func (t *noMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) matchesState {
+	return matchesNone
 }
 
 func (t *noMatchTree) updateStats(s *Stats) {

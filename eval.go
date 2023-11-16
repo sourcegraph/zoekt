@@ -291,14 +291,17 @@ nextFileMatch:
 		md := d.repoMetaData[d.repos[nextDoc]]
 
 		for cost := costMin; cost <= costMax; cost++ {
-			v, ok := mt.matches(cp, cost, known)
-			if ok && !v {
+			switch mt.matches(cp, cost, known) {
+			case matchesRequiresHigherCost:
+				if cost == costMax {
+					log.Panicf("did not decide. Repo %s, doc %d, known %v",
+						md.Name, nextDoc, known)
+				}
+			case matchesFound:
+				// could short-circuit now, but we want to run higher costs to
+				// potentially find higher ranked matches.
+			case matchesNone:
 				continue nextFileMatch
-			}
-
-			if cost == costMax && !ok {
-				log.Panicf("did not decide. Repo %s, doc %d, known %v",
-					md.Name, nextDoc, known)
 			}
 		}
 
