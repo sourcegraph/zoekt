@@ -60,13 +60,15 @@ func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.Language
 			continue
 		}
 
+		// If the parser kind is unknown, default to universal-ctags
+		if parserKind == ctags.UnknownCTags {
+			parserKind = ctags.UniversalCTags
+		}
+
 		parser := parserMap[parserKind]
 		if parser == nil {
-			parser = parserMap[ctags.UniversalCTags]
-			if parser == nil {
-				// this happens if CTagsMustSucceed is not true and we didn't find universal-ctags
-				continue
-			}
+			// this happens if CTagsMustSucceed is false and we didn't find the binary
+			continue
 		}
 
 		monitor.BeginParsing(doc)
