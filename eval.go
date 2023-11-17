@@ -291,7 +291,7 @@ nextFileMatch:
 		md := d.repoMetaData[d.repos[nextDoc]]
 
 		for cost := costMin; cost <= costMax; cost++ {
-			switch mt.matches(cp, cost, known) {
+			switch evalMatchTree(cp, cost, known, mt) {
 			case matchesRequiresHigherCost:
 				if cost == costMax {
 					log.Panicf("did not decide. Repo %s, doc %d, known %v",

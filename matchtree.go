@@ -118,8 +118,12 @@ func matchesStateForSlice[T any](v []T) matchesState {
 type matchTree interface {
 	docIterator
 
-	// matches if cost is high enough, caching known values for future
-	// evaluation at higher costs. See documentation for matchesState's values.
+	// matches if cost is high enough. See documentation for matchesState's
+	// values.
+	//
+	// Note: Do not call this directly, rather use evalMatchTree which uses
+	// known to cache responses once the state transitions away from
+	// matchesRequiresHigherCost.
 	matches(cp *contentProvider, cost int, known map[matchTree]bool) matchesState
 }
 
@@ -615,7 +619,7 @@ func (t *bruteForceMatchTree) matches(cp *contentProvider, cost int, known map[m
 // searches we don't want to run the regex engine if there is no line that
 // contains matches from all terms.
 func (t *andLineMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) matchesState {
-	if state := t.andMatchTree.matches(cp, cost, known); state != matchesFound {
+	if state := evalMatchTree(cp, cost, known, &t.andMatchTree); state != matchesFound {
 		return state
 	}
 
@@ -839,6 +843,9 @@ func breakOnNewlines(cm *candidateMatch, text []byte) []*candidateMatch {
 	return cms
 }
 
+// evalMatchTree should be called instead of directly calling
+// matchTree.matches. It cache known values for future evaluation at higher
+// costs.
 func evalMatchTree(cp *contentProvider, cost int, known map[matchTree]bool, mt matchTree) matchesState {
 	if v, ok := known[mt]; ok {
 		return matchesStatePred(v)
