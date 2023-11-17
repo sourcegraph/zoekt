@@ -641,12 +641,12 @@ func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
-	parallelism := s.CPUCount / s.IndexConcurrency
+	parallelism := math.Ceil(float64(s.CPUCount) / float64(s.IndexConcurrency))
 	return &indexArgs{
 		IndexOptions: opts,
 
 		IndexDir:    s.IndexDir,
-		Parallelism: parallelism,
+		Parallelism: int(parallelism),
 
 		Incremental: true,
 

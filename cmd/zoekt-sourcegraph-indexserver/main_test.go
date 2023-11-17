@@ -72,10 +72,10 @@ func TestServer_parallelism(t *testing.T) {
 			wantParallelism:  8,
 		},
 		{
-			name:             "round parallelism down",
+			name:             "round parallelism up",
 			cpuCount:         4,
 			indexConcurrency: 3,
-			wantParallelism:  1,
+			wantParallelism:  2,
 		},
 		{
 			name:             "no shard level parallelism",
@@ -96,7 +96,7 @@ func TestServer_parallelism(t *testing.T) {
 
 			got := s.indexArgs(IndexOptions{Name: "testName"})
 			if !cmp.Equal(got.Parallelism, tt.wantParallelism) {
-				t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(tt.wantParallelism, got))
+				t.Errorf("mismatch, want: %d, got: %d", tt.wantParallelism, got.Parallelism)
 			}
 		})
 	}
