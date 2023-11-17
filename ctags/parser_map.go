@@ -60,14 +60,23 @@ func StringToParser(str string) CTagsParserType {
 type ParserMap map[CTagsParserType]Parser
 type ParserBinMap map[CTagsParserType]string
 
-func NewParserMap(bins ParserBinMap, cTagsMustSucceed bool) (ParserMap, error) {
+func NewParserMap(bins ParserBinMap, languageMap LanguageMap, cTagsMustSucceed bool) (ParserMap, error) {
 	parsers := make(ParserMap)
 
-	for _, parserType := range []CTagsParserType{UniversalCTags, ScipCTags} {
-		bin := bins[parserType]
-		if bin != "" {
-			parser, err := NewParser(parserType, bin)
+	requiredTypes := []CTagsParserType{UniversalCTags}
+	for _, parserType := range languageMap {
+		if parserType == ScipCTags {
+			requiredTypes = append(requiredTypes, ScipCTags)
+			break
+		}
+	}
 
+	for _, parserType := range requiredTypes {
+		bin := bins[parserType]
+		if bin == "" && cTagsMustSucceed {
+			return nil, fmt.Errorf("ctags binary not found for %s parser type", ParserToString(parserType))
+		} else {
+			parser, err := NewParser(parserType, bin)
 			if err != nil && cTagsMustSucceed {
 				return nil, fmt.Errorf("ctags.NewParserMap: %v", err)
 			}

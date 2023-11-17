@@ -564,14 +564,14 @@ func NewBuilder(opts Options) (*Builder, error) {
 		finishedShards: map[string]string{},
 	}
 
-	if b.opts.CTagsPath == "" && b.opts.CTagsMustSucceed {
-		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
-	}
-
-	parserMap, err := ctags.NewParserMap(ctags.ParserBinMap{
-		ctags.UniversalCTags: b.opts.CTagsPath,
-		ctags.ScipCTags:      b.opts.ScipCTagsPath,
-	}, b.opts.CTagsMustSucceed)
+	parserMap, err := ctags.NewParserMap(
+		ctags.ParserBinMap{
+			ctags.UniversalCTags: b.opts.CTagsPath,
+			ctags.ScipCTags:      b.opts.ScipCTagsPath,
+		},
+		opts.LanguageMap,
+		b.opts.CTagsMustSucceed,
+	)
 
 	if err != nil {
 		return nil, err
