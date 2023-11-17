@@ -118,8 +118,8 @@ func matchesStateForSlice[T any](v []T) matchesState {
 type matchTree interface {
 	docIterator
 
-	// matches if cost is high enough, caching known values for future
-	// evaluation at higher costs. See documentation for matchesState's values.
+	// matches if cost is high enough. See documentation for matchesState's
+	// values.
 	//
 	// Note: Do not call this directly, rather use evalMatchTree which uses
 	// known to cache responses once the state transitions away from
@@ -843,6 +843,9 @@ func breakOnNewlines(cm *candidateMatch, text []byte) []*candidateMatch {
 	return cms
 }
 
+// evalMatchTree should be called instead of directly calling
+// matchTree.matches. It cache known values for future evaluation at higher
+// costs.
 func evalMatchTree(cp *contentProvider, cost int, known map[matchTree]bool, mt matchTree) matchesState {
 	if v, ok := known[mt]; ok {
 		return matchesStatePred(v)
