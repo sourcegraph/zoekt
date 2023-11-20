@@ -60,11 +60,11 @@ func StringToParser(str string) CTagsParserType {
 	}
 }
 
-type ParserMap map[CTagsParserType]Parser
+type ParserFactory map[CTagsParserType]Parser
 type ParserBinMap map[CTagsParserType]string
 
-func NewParserMap(bins ParserBinMap, languageMap LanguageMap, cTagsMustSucceed bool) (ParserMap, error) {
-	parsers := make(ParserMap)
+func NewParserFactory(bins ParserBinMap, languageMap LanguageMap, cTagsMustSucceed bool) (ParserFactory, error) {
+	parsers := make(ParserFactory)
 
 	requiredTypes := []CTagsParserType{UniversalCTags}
 	for _, parserType := range languageMap {
@@ -81,7 +81,7 @@ func NewParserMap(bins ParserBinMap, languageMap LanguageMap, cTagsMustSucceed b
 		}
 
 		if err := checkBinary(parserType, bin); err != nil && cTagsMustSucceed {
-			return nil, fmt.Errorf("ctags.NewParserMap: %v", err)
+			return nil, fmt.Errorf("ctags.NewParserFactory: %v", err)
 		}
 
 		parsers[parserType] = NewParser(bin)

@@ -42,7 +42,7 @@ func normalizeLanguage(filetype string) string {
 	return normalized
 }
 
-func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserMap ctags.ParserMap) error {
+func parseSymbols(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserFactory ctags.ParserFactory) error {
 	monitor := newMonitor()
 	defer monitor.Stop()
 
@@ -65,7 +65,7 @@ func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.Language
 			parserKind = ctags.UniversalCTags
 		}
 
-		parser := parserMap[parserKind]
+		parser := parserFactory[parserKind]
 		if parser == nil {
 			// this happens if CTagsMustSucceed is false and we didn't find the binary
 			continue

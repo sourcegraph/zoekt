@@ -249,8 +249,8 @@ type Builder struct {
 	docChecker   zoekt.DocChecker
 	size         int
 
-	parserMap ctags.ParserMap
-	building  sync.WaitGroup
+	parserFactory ctags.ParserFactory
+	building sync.WaitGroup
 
 	errMu      sync.Mutex
 	buildError error
@@ -563,7 +563,7 @@ func NewBuilder(opts Options) (*Builder, error) {
 		finishedShards: map[string]string{},
 	}
 
-	parserMap, err := ctags.NewParserMap(
+	parserFactory, err := ctags.NewParserFactory(
 		ctags.ParserBinMap{
 			ctags.UniversalCTags: b.opts.CTagsPath,
 			ctags.ScipCTags:      b.opts.ScipCTagsPath,
@@ -576,7 +576,7 @@ func NewBuilder(opts Options) (*Builder, error) {
 		return nil, err
 	}
 
-	b.parserMap = parserMap
+	b.parserFactory = parserFactory
 
 	b.shardLogger = &lumberjack.Logger{
 		Filename:   filepath.Join(opts.IndexDir, "zoekt-builder-shard-log.tsv"),
@@ -1021,7 +1021,7 @@ func sortDocuments(todo []*zoekt.Document) {
 
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
 	if !b.opts.DisableCTags && (b.opts.CTagsPath != "" || b.opts.ScipCTagsPath != "") {
-		err := ctagsAddSymbolsParserMap(todo, b.opts.LanguageMap, b.parserMap)
+		err := parseSymbols(todo, b.opts.LanguageMap, b.parserFactory)
 		if b.opts.CTagsMustSucceed && err != nil {
 			return nil, err
 		}
