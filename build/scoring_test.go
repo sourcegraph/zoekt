@@ -27,8 +27,8 @@ import (
 )
 
 type scoreCase struct {
-	fileName           string
-	content            []byte
+	fileName  string
+	content   []byte
 	query     query.Q
 	language  string
 	wantScore float64
@@ -58,7 +58,7 @@ func TestFileNameMatch(t *testing.T) {
 			wantScore: 510,
 		},
 	}
-	
+
 	for _, c := range cases {
 		checkScoring(t, c, ctags.UniversalCTags)
 	}
@@ -165,7 +165,7 @@ func TestJava(t *testing.T) {
 	}
 
 	for _, c := range cases {
-        checkScoring(t, c, ctags.UniversalCTags)
+		checkScoring(t, c, ctags.UniversalCTags)
 	}
 }
 
@@ -174,7 +174,7 @@ func TestKotlin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	cases := []scoreCase{
 		{
 			fileName: "example.kt",
@@ -239,7 +239,7 @@ func TestCpp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	cases := []scoreCase{
 		{
 			fileName: "example.cc",
@@ -489,9 +489,7 @@ func skipIfCTagsUnavailable(t *testing.T, parserType ctags.CTagsParserType) {
 
 	switch parserType {
 	case ctags.UniversalCTags:
-		if checkCTags() == "" {
-			t.Skip("ctags not available")
-		}
+		requireCTags(t)
 	case ctags.ScipCTags:
 		if checkScipCTags() == "" {
 			t.Skip("scip-ctags not available")
@@ -560,9 +558,7 @@ func checkScoring(t *testing.T, c scoreCase, parserType ctags.CTagsParserType) {
 }
 
 func TestDocumentRanks(t *testing.T) {
-	if os.Getenv("CI") == "" && checkCTags() == "" {
-		t.Skip("ctags not available")
-	}
+	requireCTags(t)
 	dir := t.TempDir()
 
 	opts := Options{
@@ -649,9 +645,7 @@ func TestDocumentRanks(t *testing.T) {
 }
 
 func TestRepoRanks(t *testing.T) {
-	if os.Getenv("CI") == "" && checkCTags() == "" {
-		t.Skip("ctags not available")
-	}
+	requireCTags(t)
 	dir := t.TempDir()
 
 	opts := Options{

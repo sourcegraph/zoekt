@@ -641,11 +641,12 @@ func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
+	parallelism := math.Ceil(float64(s.CPUCount) / float64(s.IndexConcurrency))
 	return &indexArgs{
 		IndexOptions: opts,
 
 		IndexDir:    s.IndexDir,
-		Parallelism: s.CPUCount,
+		Parallelism: int(parallelism),
 
 		Incremental: true,
 
@@ -1409,13 +1410,15 @@ func newServer(conf rootConfig) (*Server, error) {
 		}
 	}
 
-	if conf.indexConcurrency < 1 {
-		conf.indexConcurrency = 1
-	}
-
 	cpuCount := int(math.Round(float64(runtime.GOMAXPROCS(0)) * (conf.cpuFraction)))
 	if cpuCount < 1 {
 		cpuCount = 1
+	}
+
+	if conf.indexConcurrency < 1 {
+		conf.indexConcurrency = 1
+	} else if conf.indexConcurrency > int64(cpuCount) {
+		conf.indexConcurrency = int64(cpuCount)
 	}
 
 	q := NewQueue(conf.backoffDuration, conf.maxBackoffDuration, logger)

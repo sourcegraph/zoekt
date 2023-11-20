@@ -11,9 +11,15 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 )
 
+// Doer implements the minimal surface of *http.Client and http.RoundTripper needed
+// by Client.
+type Doer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
 // NewClient returns a client which implements StreamSearch. If httpClient is
 // nil, http.DefaultClient is used.
-func NewClient(address string, httpClient *http.Client) *Client {
+func NewClient(address string, httpClient Doer) *Client {
 	registerGob()
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -31,7 +37,7 @@ type Client struct {
 	address string
 
 	// httpClient when set is used instead of http.DefaultClient
-	httpClient *http.Client
+	httpClient Doer
 }
 
 // SenderFunc is an adapter to allow the use of ordinary functions as Sender.

@@ -33,9 +33,10 @@ func TestServer_defaultArgs(t *testing.T) {
 	}
 
 	s := &Server{
-		Sourcegraph: newSourcegraphClient(root, "", WithBatchSize(0)),
-		IndexDir:    "/testdata/index",
-		CPUCount:    6,
+		Sourcegraph:      newSourcegraphClient(root, "", WithBatchSize(0)),
+		IndexDir:         "/testdata/index",
+		CPUCount:         6,
+		IndexConcurrency: 1,
 	}
 	want := &indexArgs{
 		IndexOptions: IndexOptions{
@@ -49,6 +50,55 @@ func TestServer_defaultArgs(t *testing.T) {
 	got := s.indexArgs(IndexOptions{Name: "testName"})
 	if !cmp.Equal(got, want) {
 		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestServer_parallelism(t *testing.T) {
+	root, err := url.Parse("http://api.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name             string
+		cpuCount         int
+		indexConcurrency int
+		wantParallelism  int
+	}{
+		{
+			name:             "CPU count divides evenly",
+			cpuCount:         16,
+			indexConcurrency: 2,
+			wantParallelism:  8,
+		},
+		{
+			name:             "round parallelism up",
+			cpuCount:         4,
+			indexConcurrency: 3,
+			wantParallelism:  2,
+		},
+		{
+			name:             "no shard level parallelism",
+			cpuCount:         4,
+			indexConcurrency: 4,
+			wantParallelism:  1,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name,  func(t *testing.T) {
+			s := &Server{
+				Sourcegraph:      newSourcegraphClient(root, "", WithBatchSize(0)),
+				IndexDir:         "/testdata/index",
+				CPUCount:         tt.cpuCount,
+				IndexConcurrency: tt.indexConcurrency,
+			}
+
+			got := s.indexArgs(IndexOptions{Name: "testName"})
+			if !cmp.Equal(got.Parallelism, tt.wantParallelism) {
+				t.Errorf("mismatch, want: %d, got: %d", tt.wantParallelism, got.Parallelism)
+			}
+		})
 	}
 }
 

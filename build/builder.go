@@ -563,14 +563,14 @@ func NewBuilder(opts Options) (*Builder, error) {
 		finishedShards: map[string]string{},
 	}
 
-	if b.opts.CTagsPath == "" && b.opts.CTagsMustSucceed {
-		return nil, fmt.Errorf("ctags binary not found, but CTagsMustSucceed set")
-	}
-
-	parserMap, err := ctags.NewParserMap(ctags.ParserBinMap{
-		ctags.UniversalCTags: b.opts.CTagsPath,
-		ctags.ScipCTags:      b.opts.ScipCTagsPath,
-	}, b.opts.CTagsMustSucceed)
+	parserMap, err := ctags.NewParserMap(
+		ctags.ParserBinMap{
+			ctags.UniversalCTags: b.opts.CTagsPath,
+			ctags.ScipCTags:      b.opts.ScipCTagsPath,
+		},
+		opts.LanguageMap,
+		b.opts.CTagsMustSucceed,
+	)
 
 	if err != nil {
 		return nil, err
@@ -846,8 +846,8 @@ func (b *Builder) flush() error {
 
 	if b.opts.Parallelism > 1 && b.opts.MemProfile == "" {
 		b.building.Add(1)
+		b.throttle <- 1
 		go func() {
-			b.throttle <- 1
 			done, err := b.buildShard(todo, shard)
 			<-b.throttle
 
@@ -943,6 +943,11 @@ type rankedDoc struct {
 // at query time, because earlier documents receive a boost at query time and
 // have a higher chance of being searched before limits kick in.
 func rank(d *zoekt.Document, origIdx int) []float64 {
+	skipped := 0.0
+	if d.SkipReason != "" {
+		skipped = 1.0
+	}
+
 	generated := 0.0
 	if isGenerated(d.Name) {
 		generated = 1.0
@@ -960,6 +965,9 @@ func rank(d *zoekt.Document, origIdx int) []float64 {
 
 	// Smaller is earlier (=better).
 	return []float64{
+		// Always place skipped docs last
+		skipped,
+
 		// Prefer docs that are not generated
 		generated,
 

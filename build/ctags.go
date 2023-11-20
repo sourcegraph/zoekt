@@ -49,7 +49,7 @@ func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.Language
 	var tagsToSections tagsToSections
 
 	for _, doc := range todo {
-		if doc.Symbols != nil {
+		if len(doc.Content) == 0 || doc.Symbols != nil {
 			continue
 		}
 
@@ -60,13 +60,15 @@ func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.Language
 			continue
 		}
 
+		// If the parser kind is unknown, default to universal-ctags
+		if parserKind == ctags.UnknownCTags {
+			parserKind = ctags.UniversalCTags
+		}
+
 		parser := parserMap[parserKind]
 		if parser == nil {
-			parser = parserMap[ctags.UniversalCTags]
-			if parser == nil {
-				// this happens if CTagsMustSucceed is not true and we didn't find universal-ctags
-				continue
-			}
+			// this happens if CTagsMustSucceed is false and we didn't find the binary
+			continue
 		}
 
 		monitor.BeginParsing(doc)
@@ -134,7 +136,8 @@ func (t *tagsToSections) Convert(content []byte, tags []*ctags.Entry) ([]zoekt.D
 		}
 		lineIdx := t.Line - 1
 		if lineIdx >= len(nls) {
-			return nil, nil, fmt.Errorf("linenum for entry out of range %v", t)
+			// Observed this with a .TS file.
+			continue
 		}
 
 		lineOff := uint32(0)

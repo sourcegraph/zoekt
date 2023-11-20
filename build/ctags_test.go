@@ -116,16 +116,38 @@ func TestTagsToSectionsEOF(t *testing.T) {
 			Name: "bar",
 			Line: 2,
 		},
+
+		// We have seen ctags do this on a JS file
+		{
+			Name: "wat",
+			Line: -1,
+		},
+
+		// We have seen ctags return out of bounds lines
+		{
+			Name: "goliath",
+			Line: 3,
+		},
 	}
 
-	secs, _, err := (&tagsToSections{}).Convert(c, tags)
-	if err != nil {
-		t.Fatal("tagsToSections", err)
+	// We run this test twice. Once with a final \n and without.
+	do := func(t *testing.T, doc []byte) {
+		secs, _, err := (&tagsToSections{}).Convert(doc, tags)
+		if err != nil {
+			t.Fatal("tagsToSections", err)
+		}
+
+		if len(secs) != 1 || secs[0].Start != 17 || secs[0].End != 20 {
+			t.Fatalf("got %#v, want 1 section (17,20)", secs)
+		}
 	}
 
-	if len(secs) != 1 || secs[0].Start != 17 || secs[0].End != 20 {
-		t.Fatalf("got %#v, want 1 section (17,20)", secs)
-	}
+	t.Run("no final newline", func(t *testing.T) {
+		do(t, c)
+	})
+	t.Run("trailing newline", func(t *testing.T) {
+		do(t, append(c, '\n'))
+	})
 }
 
 func TestOverlaps(t *testing.T) {
@@ -232,9 +254,7 @@ func TestOverlaps(t *testing.T) {
 }
 
 func BenchmarkTagsToSections(b *testing.B) {
-	if checkCTags() == "" {
-		b.Skip("ctags not available")
-	}
+	requireCTags(b)
 
 	file, err := os.ReadFile("./testdata/large_file.cc")
 	parser, err := ctags.NewParser(ctags.UniversalCTags, "universal-ctags")
@@ -266,5 +286,20 @@ func BenchmarkTagsToSections(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func requireCTags(tb testing.TB) {
+	tb.Helper()
+
+	if checkCTags() != "" {
+		return
+	}
+
+	// On CI we require ctags to be available. Otherwise we skip
+	if os.Getenv("CI") != "" {
+		tb.Fatal("universal-ctags is missing")
+	} else {
+		tb.Skip("universal-ctags is missing")
 	}
 }
