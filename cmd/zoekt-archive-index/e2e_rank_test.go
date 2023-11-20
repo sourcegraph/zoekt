@@ -28,6 +28,10 @@ var update = flag.Bool("update", false, "update golden file")
 var debugScore = flag.Bool("debug_score", false, "include debug output in golden files.")
 
 func TestRanking(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping due to short flag")
+	}
+
 	requireCTags(t)
 
 	archiveURLs := []string{
