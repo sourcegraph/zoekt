@@ -564,14 +564,11 @@ func NewBuilder(opts Options) (*Builder, error) {
 	}
 
 	parserFactory, err := ctags.NewParserFactory(
-		ctags.ParserBinMap{
-			ctags.UniversalCTags: b.opts.CTagsPath,
-			ctags.ScipCTags:      b.opts.ScipCTagsPath,
-		},
+		b.opts.CTagsPath,
+		b.opts.ScipCTagsPath,
 		opts.LanguageMap,
 		b.opts.CTagsMustSucceed,
 	)
-
 	if err != nil {
 		return nil, err
 	}

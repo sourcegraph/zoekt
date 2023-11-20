@@ -16,8 +16,6 @@ package ctags
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -114,17 +112,4 @@ func (lp *lockedParser) close() {
 	close(lp.send)
 	lp.send = nil
 	lp.recv = nil
-}
-
-// NewParser creates a parser that is implemented by the given
-// universal-ctags binary. The parser is safe for concurrent use.
-func NewParser(bin string) Parser {
-	opts := goctags.Options{
-		Bin: bin,
-	}
-	if debug {
-		opts.Info = log.New(os.Stderr, "CTAGS INF: ", log.LstdFlags)
-		opts.Debug = log.New(os.Stderr, "CTAGS DBG: ", log.LstdFlags)
-	}
-	return &lockedParser{opts: opts,}
 }

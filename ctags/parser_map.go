@@ -17,8 +17,12 @@ package ctags
 import (
 	"bytes"
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
 	"strings"
+
+	goctags "github.com/sourcegraph/go-ctags"
 )
 
 type CTagsParserType uint8
@@ -60,34 +64,34 @@ func StringToParser(str string) CTagsParserType {
 	}
 }
 
-type ParserFactory map[CTagsParserType]Parser
-type ParserBinMap map[CTagsParserType]string
+type ParserFactory map[CTagsParserType]string
 
-func NewParserFactory(bins ParserBinMap, languageMap LanguageMap, cTagsMustSucceed bool) (ParserFactory, error) {
-	parsers := make(ParserFactory)
-
-	requiredTypes := []CTagsParserType{UniversalCTags}
+func NewParserFactory(
+	ctagsPath string,
+	scipCTagsPath string,
+	languageMap LanguageMap,
+	cTagsMustSucceed bool,
+) (ParserFactory, error) {
+	validBins := make(map[CTagsParserType]string)
+	requiredBins := map[CTagsParserType]string{UniversalCTags: ctagsPath}
 	for _, parserType := range languageMap {
 		if parserType == ScipCTags {
-			requiredTypes = append(requiredTypes, ScipCTags)
+			requiredBins[ScipCTags] = scipCTagsPath
 			break
 		}
 	}
 
-	for _, parserType := range requiredTypes {
-		bin := bins[parserType]
+	for parserType, bin := range requiredBins {
 		if bin == "" && cTagsMustSucceed {
 			return nil, fmt.Errorf("ctags binary not found for %s parser type", ParserToString(parserType))
 		}
-
 		if err := checkBinary(parserType, bin); err != nil && cTagsMustSucceed {
 			return nil, fmt.Errorf("ctags.NewParserFactory: %v", err)
 		}
-
-		parsers[parserType] = NewParser(bin)
+		validBins[parserType] = bin
 	}
 
-	return parsers, nil
+	return validBins, nil
 }
 
 // checkBinary does checks on bin to ensure we can correctly use the binary
@@ -110,4 +114,20 @@ func checkBinary(typ CTagsParserType, bin string) error {
 	}
 
 	return nil
+}
+
+// NewParser creates a parser that is implemented by the given
+// ctags binary. The parser is safe for concurrent use.
+func (p ParserFactory) NewParser(typ CTagsParserType) Parser {
+	bin := p[typ]
+	if bin == "" {
+		return nil
+	}
+
+	opts := goctags.Options{Bin: bin}
+	if debug {
+		opts.Info = log.New(os.Stderr, "CTAGS INF: ", log.LstdFlags)
+		opts.Debug = log.New(os.Stderr, "CTAGS DBG: ", log.LstdFlags)
+	}
+	return &lockedParser{opts: opts}
 }

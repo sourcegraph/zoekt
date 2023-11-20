@@ -48,6 +48,8 @@ func parseSymbols(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserF
 
 	var tagsToSections tagsToSections
 
+	parsers := make(map[ctags.CTagsParserType]ctags.Parser)
+
 	for _, doc := range todo {
 		if len(doc.Content) == 0 || doc.Symbols != nil {
 			continue
@@ -65,10 +67,16 @@ func parseSymbols(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserF
 			parserKind = ctags.UniversalCTags
 		}
 
-		parser := parserFactory[parserKind]
+		parser := parsers[parserKind]
 		if parser == nil {
-			// this happens if CTagsMustSucceed is false and we didn't find the binary
-			continue
+			// Spin up a new parser for this parser kind
+			parser = parserFactory.NewParser(parserKind)
+			if parser == nil {
+				// this happens if CTagsMustSucceed is false and we didn't find the binary
+				continue
+			}
+			parsers[parserKind] = parser
+			defer parser.Close()
 		}
 
 		monitor.BeginParsing(doc)
