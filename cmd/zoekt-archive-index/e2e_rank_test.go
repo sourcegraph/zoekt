@@ -22,6 +22,11 @@ import (
 
 var update = flag.Bool("update", false, "update golden file")
 
+// debugScore can be set to include much more output. Do not commit the
+// updated golden files, this is purely used for debugging in a local
+// environment.
+var debugScore = flag.Bool("debug_score", false, "include debug output in golden files.")
+
 func TestRanking(t *testing.T) {
 	requireCTags(t)
 
@@ -67,7 +72,7 @@ func TestRanking(t *testing.T) {
 			}
 
 			sOpts := zoekt.SearchOptions{
-				DebugScore: true,
+				DebugScore: *debugScore,
 			}
 			result, err := ss.Search(context.Background(), q, &sOpts)
 			if err != nil {
@@ -176,12 +181,12 @@ func marshalMatches(w io.Writer, queryStr string, q query.Q, files []zoekt.FileM
 
 	files, hiddenFiles := splitAtIndex(files, fileMatchesPerSearch)
 	for _, f := range files {
-		_, _ = fmt.Fprintf(w, "%s/%s\t%s\n", f.Repository, f.FileName, f.Debug)
+		_, _ = fmt.Fprintf(w, "%s/%s%s\n", f.Repository, f.FileName, addTabIfNonEmpty(f.Debug))
 
 		lines, hidden := splitAtIndex(f.LineMatches, lineMatchesPerFile)
 
 		for _, m := range lines {
-			_, _ = fmt.Fprintf(w, "%d:%s\t%s\n", m.LineNumber, m.Line, m.DebugScore)
+			_, _ = fmt.Fprintf(w, "%d:%s%s\n", m.LineNumber, m.Line, addTabIfNonEmpty(m.DebugScore))
 		}
 
 		if len(hidden) > 0 {
@@ -200,6 +205,13 @@ func splitAtIndex[E any](s []E, idx int) ([]E, []E) {
 		return s[:idx], s[idx:]
 	}
 	return s, nil
+}
+
+func addTabIfNonEmpty(s string) string {
+	if s != "" {
+		return "\t" + s
+	}
+	return s
 }
 
 func requireCTags(tb testing.TB) {
