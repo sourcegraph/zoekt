@@ -257,10 +257,7 @@ func BenchmarkTagsToSections(b *testing.B) {
 	requireCTags(b)
 
 	file, err := os.ReadFile("./testdata/large_file.cc")
-	parser, err := ctags.NewParser(ctags.UniversalCTags, "universal-ctags")
-	if err != nil {
-		b.Fatal(err)
-	}
+	parser := ctags.NewParser("universal-ctags")
 
 	var tagsToSections tagsToSections
 

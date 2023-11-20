@@ -15,7 +15,10 @@
 package ctags
 
 import (
+	"bytes"
 	"fmt"
+	"os/exec"
+	"strings"
 )
 
 type CTagsParserType uint8
@@ -75,15 +78,36 @@ func NewParserMap(bins ParserBinMap, languageMap LanguageMap, cTagsMustSucceed b
 		bin := bins[parserType]
 		if bin == "" && cTagsMustSucceed {
 			return nil, fmt.Errorf("ctags binary not found for %s parser type", ParserToString(parserType))
-		} else {
-			parser, err := NewParser(parserType, bin)
-			if err != nil && cTagsMustSucceed {
-				return nil, fmt.Errorf("ctags.NewParserMap: %v", err)
-			}
-
-			parsers[parserType] = parser
 		}
+
+		if err := checkBinary(parserType, bin); err != nil && cTagsMustSucceed {
+			return nil, fmt.Errorf("ctags.NewParserMap: %v", err)
+		}
+
+		parsers[parserType] = NewParser(bin)
 	}
 
 	return parsers, nil
+}
+
+// checkBinary does checks on bin to ensure we can correctly use the binary
+// for symbols. It is more user friendly to fail early in this case.
+func checkBinary(typ CTagsParserType, bin string) error {
+	switch typ {
+	case UniversalCTags:
+		helpOutput, err := exec.Command(bin, "--help").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to check if %s is universal-ctags: %w\n--help output:\n%s", bin, err, string(helpOutput))
+		}
+		if !bytes.Contains(helpOutput, []byte("+interactive")) {
+			return fmt.Errorf("ctags binary is not universal-ctags or is not compiled with +interactive feature: bin=%s", bin)
+		}
+
+	case ScipCTags:
+		if !strings.Contains(bin, "scip-ctags") {
+			return fmt.Errorf("only supports scip-ctags, not %s", bin)
+		}
+	}
+
+	return nil
 }
