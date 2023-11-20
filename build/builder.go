@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net/url"
 	"os"
 	"os/exec"
@@ -247,11 +246,11 @@ type Builder struct {
 
 	nextShardNum int
 	todo         []*zoekt.Document
+	docChecker   zoekt.DocChecker
 	size         int
 
 	parserMap ctags.ParserMap
-
-	building sync.WaitGroup
+	building  sync.WaitGroup
 
 	errMu      sync.Mutex
 	buildError error
@@ -618,20 +617,13 @@ func (b *Builder) Add(doc zoekt.Document) error {
 	}
 
 	allowLargeFile := b.opts.IgnoreSizeMax(doc.Name)
-
-	// Adjust trigramMax for allowed large files so we don't exclude them.
-	trigramMax := b.opts.TrigramMax
-	if allowLargeFile {
-		trigramMax = math.MaxInt64
-	}
-
 	if len(doc.Content) > b.opts.SizeMax && !allowLargeFile {
 		// We could pass the document on to the shardbuilder, but if
 		// we pass through a part of the source tree with binary/large
 		// files, the corresponding shard would be mostly empty, so
 		// insert a reason here too.
 		doc.SkipReason = fmt.Sprintf("document size %d larger than limit %d", len(doc.Content), b.opts.SizeMax)
-	} else if err := zoekt.CheckText(doc.Content, trigramMax); err != nil {
+	} else if err := b.docChecker.Check(doc.Content, b.opts.TrigramMax, allowLargeFile); err != nil {
 		doc.SkipReason = err.Error()
 		doc.Language = "binary"
 	}
