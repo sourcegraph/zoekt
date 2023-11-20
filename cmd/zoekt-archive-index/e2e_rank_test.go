@@ -37,9 +37,24 @@ func TestRanking(t *testing.T) {
 
 	archiveURLs := []string{
 		"https://github.com/sourcegraph/sourcegraph/tree/v5.2.2",
+		"https://github.com/golang/go/tree/go1.21.4",
+		"https://github.com/sourcegraph/cody/tree/vscode-v0.14.5",
 	}
 	queries := []string{
+		// golang/go
+		"test server",
+		"bytes buffer",
+		"bufio buffer",
+
+		// sourcegraph/sourcegraph
 		"graphql type User",
+		"Get database/user",
+		"InternalDoer",
+		"Repository metadata Write rbac",
+
+		// cody
+		"generate unit test",
+		"r:cody sourcegraph url",
 	}
 
 	indexDir := t.TempDir()
