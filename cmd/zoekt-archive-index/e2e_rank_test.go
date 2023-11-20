@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/sourcegraph/zoekt"
@@ -76,6 +77,13 @@ func TestRanking(t *testing.T) {
 			}
 
 			sOpts := zoekt.SearchOptions{
+				// Use the same options sourcegraph has by default
+				ChunkMatches:       true,
+				MaxWallTime:        20 * time.Second,
+				ShardMaxMatchCount: 10_000 * 10,
+				TotalMaxMatchCount: 100_000 * 10,
+				MaxDocDisplayCount: 500,
+
 				DebugScore: *debugScore,
 			}
 			result, err := ss.Search(context.Background(), q, &sOpts)
@@ -175,7 +183,7 @@ func download(url, dst string) error {
 }
 
 const (
-	lineMatchesPerFile   = 3
+	chunkMatchesPerFile  = 3
 	fileMatchesPerSearch = 6
 )
 
@@ -187,10 +195,10 @@ func marshalMatches(w io.Writer, queryStr string, q query.Q, files []zoekt.FileM
 	for _, f := range files {
 		_, _ = fmt.Fprintf(w, "%s/%s%s\n", f.Repository, f.FileName, addTabIfNonEmpty(f.Debug))
 
-		lines, hidden := splitAtIndex(f.LineMatches, lineMatchesPerFile)
+		chunks, hidden := splitAtIndex(f.ChunkMatches, chunkMatchesPerFile)
 
-		for _, m := range lines {
-			_, _ = fmt.Fprintf(w, "%d:%s%s\n", m.LineNumber, m.Line, addTabIfNonEmpty(m.DebugScore))
+		for _, m := range chunks {
+			_, _ = fmt.Fprintf(w, "%d:%s%s\n", m.ContentStart.LineNumber, string(m.Content), addTabIfNonEmpty(m.DebugScore))
 		}
 
 		if len(hidden) > 0 {

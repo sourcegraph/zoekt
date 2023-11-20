@@ -37,4 +37,4 @@ github.com/sourcegraph/sourcegraph/internal/extsvc/github/common.go
 527:	Type string
 hidden 136 more line matches
 
-hidden 743 more file matches
+hidden 494 more file matches
