@@ -69,6 +69,10 @@ type IndexOptions struct {
 
 	// Map from language to scip-ctags, universal-ctags, or neither
 	LanguageMap ctags.LanguageMap
+
+	// The number of CPUs to use for indexing. Defaults to using all available CPUs. If
+	// the server flag -cpu_fraction is set, then this value overrides it.
+	CPUCount int32
 }
 
 // indexArgs represents the arguments we pass to zoekt-git-index

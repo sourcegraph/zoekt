@@ -63,6 +63,7 @@ func TestServer_parallelism(t *testing.T) {
 		name             string
 		cpuCount         int
 		indexConcurrency int
+		options          IndexOptions
 		wantParallelism  int
 	}{
 		{
@@ -72,16 +73,34 @@ func TestServer_parallelism(t *testing.T) {
 			wantParallelism:  8,
 		},
 		{
-			name:             "round parallelism up",
+			name:             "no shard level parallelism",
 			cpuCount:         4,
-			indexConcurrency: 3,
-			wantParallelism:  2,
+			indexConcurrency: 4,
+			wantParallelism:  1,
 		},
 		{
 			name:             "no shard level parallelism",
 			cpuCount:         4,
 			indexConcurrency: 4,
 			wantParallelism:  1,
+		},
+		{
+			name:             "index option overrides server flag",
+			cpuCount:         2,
+			indexConcurrency: 1,
+			options: IndexOptions {
+				CPUCount: 1,
+			},
+			wantParallelism: 1,
+		},
+		{
+			name:             "ignore invalid index option",
+			cpuCount:         8,
+			indexConcurrency: 2,
+			options: IndexOptions {
+				CPUCount: -1,
+			},
+			wantParallelism: 4,
 		},
 	}
 
@@ -94,12 +113,28 @@ func TestServer_parallelism(t *testing.T) {
 				IndexConcurrency: tt.indexConcurrency,
 			}
 
-			got := s.indexArgs(IndexOptions{Name: "testName"})
-			if !cmp.Equal(got.Parallelism, tt.wantParallelism) {
+			got := s.indexArgs(tt.options)
+			if tt.wantParallelism != got.Parallelism {
 				t.Errorf("mismatch, want: %d, got: %d", tt.wantParallelism, got.Parallelism)
 			}
 		})
 	}
+
+	t.Run("index option is limited by available CPU", func(t *testing.T) {
+		s := &Server{
+			Sourcegraph:      newSourcegraphClient(root, "", WithBatchSize(0)),
+			IndexDir:         "/testdata/index",
+			IndexConcurrency: 1,
+		}
+
+		got := s.indexArgs(IndexOptions {
+			CPUCount: 2048, // Some number that's way too high
+		})
+
+		if got.Parallelism >= 2048 {
+			t.Errorf("parallelism should be limited by available CPUs, instead got %d", got.Parallelism)
+		}
+	})
 }
 
 func TestListRepoIDs(t *testing.T) {

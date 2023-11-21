@@ -478,6 +478,7 @@ func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
 		Archived: x.GetArchived(),
 
 		LanguageMap: languageMap,
+		CPUCount:    x.GetCpuCount(),
 	}
 
 	item.Error = x.GetError()
@@ -521,6 +522,7 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 		Error: o.Error,
 
 		LanguageMap: languageMap,
+		CpuCount: o.CPUCount,
 	}
 }
 
