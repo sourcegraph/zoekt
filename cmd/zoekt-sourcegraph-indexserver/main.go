@@ -161,8 +161,8 @@ type Server struct {
 
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
-	// CPUCount is the amount of parallelism to use when indexing a
-	// repository.
+
+	// CPUCount is the number of CPUs to use for indexing shards.
 	CPUCount int
 
 	queue Queue
@@ -641,18 +641,41 @@ func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
-	parallelism := math.Ceil(float64(s.CPUCount) / float64(s.IndexConcurrency))
+	parallelism := s.parallelism(opts, runtime.GOMAXPROCS(0))
 	return &indexArgs{
 		IndexOptions: opts,
-
 		IndexDir:    s.IndexDir,
-		Parallelism: int(parallelism),
-
+		Parallelism: parallelism,
 		Incremental: true,
 
 		// 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
 		FileLimit: 1 << 20,
 	}
+}
+
+// parallelism consults both the server flags and index options to determine the number
+// of shards to index in parallel. If the CPUCount index option is provided, it always
+// overrides the server flag.
+func (s *Server) parallelism(opts IndexOptions, maxProcs int) int {
+	var parallelism int
+	if opts.ShardConcurrency > 0 {
+		parallelism = int(opts.ShardConcurrency)
+	} else {
+		parallelism = s.CPUCount
+	}
+
+	// In case this was accidentally misconfigured, we cap the threads at 4 times the available CPUs
+	if parallelism > 4 * maxProcs {
+		parallelism = 4 * maxProcs
+	}
+
+	// If index concurrency is set, then divide the parallelism by the number of
+	// repos we're indexing in parallel
+	if s.IndexConcurrency > 1 {
+		parallelism = int(math.Ceil(float64(parallelism) / float64(s.IndexConcurrency)))
+	}
+
+	return parallelism
 }
 
 func createEmptyShard(args *indexArgs) error {
@@ -1210,7 +1233,7 @@ type rootConfig struct {
 func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.StringVar(&rc.root, "sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	fs.DurationVar(&rc.interval, "interval", time.Minute, "sync with sourcegraph this often")
-	fs.Int64Var(&rc.indexConcurrency, "index_concurrency", getEnvWithDefaultInt64("SRC_INDEX_CONCURRENCY", 1), "the number of concurrent index jobs to run.")
+	fs.Int64Var(&rc.indexConcurrency, "index_concurrency", getEnvWithDefaultInt64("SRC_INDEX_CONCURRENCY", 1), "the number of repos to index concurrently")
 	fs.StringVar(&rc.index, "index", getEnvWithDefaultString("DATA_DIR", build.DefaultDir), "set index directory to use")
 	fs.StringVar(&rc.listen, "listen", ":6072", "listen on this address.")
 	fs.StringVar(&rc.hostname, "hostname", zoekt.HostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
