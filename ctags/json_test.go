@@ -27,11 +27,12 @@ func TestJSON(t *testing.T) {
 		t.Skip(err)
 	}
 
-	p, err := NewParser(UniversalCTags, "universal-ctags")
+	factory, err := NewParserFactory("universal-ctags", "", LanguageMap{}, true)
 	if err != nil {
-		t.Fatal("newProcess", err)
+		t.Fatal(err)
 	}
 
+	p := factory.NewParser(UniversalCTags)
 	defer p.Close()
 
 	java := `

@@ -42,11 +42,13 @@ func normalizeLanguage(filetype string) string {
 	return normalized
 }
 
-func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserMap ctags.ParserMap) error {
+func parseSymbols(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserFactory ctags.ParserFactory) error {
 	monitor := newMonitor()
 	defer monitor.Stop()
 
 	var tagsToSections tagsToSections
+
+	parsers := make(map[ctags.CTagsParserType]ctags.Parser)
 
 	for _, doc := range todo {
 		if len(doc.Content) == 0 || doc.Symbols != nil {
@@ -65,10 +67,16 @@ func ctagsAddSymbolsParserMap(todo []*zoekt.Document, languageMap ctags.Language
 			parserKind = ctags.UniversalCTags
 		}
 
-		parser := parserMap[parserKind]
+		parser := parsers[parserKind]
 		if parser == nil {
-			// this happens if CTagsMustSucceed is false and we didn't find the binary
-			continue
+			// Spin up a new parser for this parser kind
+			parser = parserFactory.NewParser(parserKind)
+			if parser == nil {
+				// this happens if CTagsMustSucceed is false and we didn't find the binary
+				continue
+			}
+			parsers[parserKind] = parser
+			defer parser.Close()
 		}
 
 		monitor.BeginParsing(doc)

@@ -15,12 +15,7 @@
 package ctags
 
 import (
-	"bytes"
 	"fmt"
-	"log"
-	"os"
-	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
@@ -117,45 +112,4 @@ func (lp *lockedParser) close() {
 	close(lp.send)
 	lp.send = nil
 	lp.recv = nil
-}
-
-// NewParser creates a parser that is implemented by the given
-// universal-ctags binary. The parser is safe for concurrent use.
-func NewParser(parserType CTagsParserType, bin string) (Parser, error) {
-	if err := checkBinary(parserType, bin); err != nil {
-		return nil, err
-	}
-
-	opts := goctags.Options{
-		Bin: bin,
-	}
-	if debug {
-		opts.Info = log.New(os.Stderr, "CTAGS INF: ", log.LstdFlags)
-		opts.Debug = log.New(os.Stderr, "CTAGS DBG: ", log.LstdFlags)
-	}
-	return &lockedParser{
-		opts: opts,
-	}, nil
-}
-
-// checkBinary does checks on bin to ensure we can correctly use the binary
-// for symbols. It is more user friendly to fail early in this case.
-func checkBinary(typ CTagsParserType, bin string) error {
-	switch typ {
-	case UniversalCTags:
-		helpOutput, err := exec.Command(bin, "--help").CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to check if %s is universal-ctags: %w\n--help output:\n%s", bin, err, string(helpOutput))
-		}
-		if !bytes.Contains(helpOutput, []byte("+interactive")) {
-			return fmt.Errorf("ctags binary is not universal-ctags or is not compiled with +interactive feature: bin=%s", bin)
-		}
-
-	case ScipCTags:
-		if !strings.Contains(bin, "scip-ctags") {
-			return fmt.Errorf("only supports scip-ctags, not %s", bin)
-		}
-	}
-
-	return nil
 }
