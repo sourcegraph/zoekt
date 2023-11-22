@@ -63,25 +63,38 @@ func TestServer_parallelism(t *testing.T) {
 		name             string
 		cpuCount         int
 		indexConcurrency int
-		wantParallelism  int
+		options IndexOptions
+		want    int
 	}{
 		{
 			name:             "CPU count divides evenly",
 			cpuCount:         16,
-			indexConcurrency: 2,
-			wantParallelism:  8,
-		},
-		{
-			name:             "round parallelism up",
-			cpuCount:         4,
-			indexConcurrency: 3,
-			wantParallelism:  2,
+			indexConcurrency: 8,
+			want:             2,
 		},
 		{
 			name:             "no shard level parallelism",
 			cpuCount:         4,
 			indexConcurrency: 4,
-			wantParallelism:  1,
+			want:             1,
+		},
+		{
+			name:             "index option overrides server flag",
+			cpuCount:         2,
+			indexConcurrency: 1,
+			options: IndexOptions {
+				ShardConcurrency: 1,
+			},
+			want: 1,
+		},
+		{
+			name:             "ignore invalid index option",
+			cpuCount:         8,
+			indexConcurrency: 2,
+			options: IndexOptions {
+				ShardConcurrency: -1,
+			},
+			want: 4,
 		},
 	}
 
@@ -94,12 +107,29 @@ func TestServer_parallelism(t *testing.T) {
 				IndexConcurrency: tt.indexConcurrency,
 			}
 
-			got := s.indexArgs(IndexOptions{Name: "testName"})
-			if !cmp.Equal(got.Parallelism, tt.wantParallelism) {
-				t.Errorf("mismatch, want: %d, got: %d", tt.wantParallelism, got.Parallelism)
+			maxProcs := 16
+			got := s.parallelism(tt.options, maxProcs)
+			if tt.want != got{
+				t.Errorf("mismatch, want: %d, got: %d", tt.want, got)
 			}
 		})
 	}
+
+	t.Run("index option is limited by available CPU", func(t *testing.T) {
+		s := &Server{
+			Sourcegraph:      newSourcegraphClient(root, "", WithBatchSize(0)),
+			IndexDir:         "/testdata/index",
+			IndexConcurrency: 1,
+		}
+
+		got := s.indexArgs(IndexOptions {
+			ShardConcurrency: 2048, // Some number that's way too high
+		})
+
+		if got.Parallelism >= 2048 {
+			t.Errorf("parallelism should be limited by available CPUs, instead got %d", got.Parallelism)
+		}
+	})
 }
 
 func TestListRepoIDs(t *testing.T) {
