@@ -477,8 +477,8 @@ func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
 		Fork:     x.GetFork(),
 		Archived: x.GetArchived(),
 
-		LanguageMap: languageMap,
-		CPUCount:    x.GetCpuCount(),
+		LanguageMap:      languageMap,
+		ShardConcurrency: x.GetShardConcurrency(),
 	}
 
 	item.Error = x.GetError()
@@ -522,7 +522,7 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 		Error: o.Error,
 
 		LanguageMap: languageMap,
-		CpuCount: o.CPUCount,
+		ShardConcurrency:    o.ShardConcurrency,
 	}
 }
 

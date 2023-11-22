@@ -162,7 +162,7 @@ type Server struct {
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
 
-	// CPUCount is the number of CPUs to use for indexing.
+	// CPUCount is the number of CPUs to use for indexing shards.
 	CPUCount int
 
 	queue Queue
@@ -641,12 +641,11 @@ func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
-	cpuCount := s.cpuCount(opts)
-	parallelism := math.Ceil(float64(cpuCount) / float64(s.IndexConcurrency))
+	parallelism := s.parallelism(opts, runtime.GOMAXPROCS(0))
 	return &indexArgs{
 		IndexOptions: opts,
 		IndexDir:    s.IndexDir,
-		Parallelism: int(parallelism),
+		Parallelism: parallelism,
 		Incremental: true,
 
 		// 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
@@ -654,14 +653,29 @@ func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 	}
 }
 
-// cpuCount consults both the server flags and index options to determine the number
-// of CPUs to use for indexing. If the index option is provided, it always overrides
-// the server flag.
-func (s *Server) cpuCount(opts IndexOptions) int {
-	if opts.CPUCount > 0 {
-		return int(math.Min(float64(opts.CPUCount), float64(runtime.GOMAXPROCS(0))))
+// parallelism consults both the server flags and index options to determine the number
+// of shards to index in parallel. If the CPUCount index option is provided, it always
+// overrides the server flag.
+func (s *Server) parallelism(opts IndexOptions, maxProcs int) int {
+	var parallelism int
+	if opts.ShardConcurrency > 0 {
+		parallelism = int(opts.ShardConcurrency)
+	} else {
+		parallelism = s.CPUCount
 	}
-	return s.CPUCount
+
+	// At the moment, we don't allow using more threads than available CPUs
+	if parallelism > maxProcs {
+		parallelism = maxProcs
+	}
+
+	// If index concurrency is set, then divide the parallelism by the number of
+	// repos we're indexing in parallel
+	if s.IndexConcurrency > 1 {
+		parallelism = int(math.Ceil(float64(parallelism) / float64(s.IndexConcurrency)))
+	}
+
+	return parallelism
 }
 
 func createEmptyShard(args *indexArgs) error {

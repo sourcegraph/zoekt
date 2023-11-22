@@ -115,8 +115,8 @@ message ZoektIndexOptions {
   // map of languages
   repeated LanguageMapping language_map = 12;
 
-  // the number of CPUs to use for indexing
-  int32 cpu_count = 13;
+  // the number of threads to use for indexing shards.
+  int32 shard_concurrency = 13;
 }
 
 // ZoektRepositoryBranch describes an indexed branch of a repository.
