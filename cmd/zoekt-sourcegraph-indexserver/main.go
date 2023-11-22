@@ -664,7 +664,7 @@ func (s *Server) parallelism(opts IndexOptions, maxProcs int) int {
 		parallelism = s.CPUCount
 	}
 
-	// In case this was accidentally misconfigured, we cap the threads at 2 times the available CPUs
+	// In case this was accidentally misconfigured, we cap the threads at 4 times the available CPUs
 	if parallelism > 4 * maxProcs {
 		parallelism = 4 * maxProcs
 	}
