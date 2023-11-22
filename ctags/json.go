@@ -16,7 +16,6 @@ package ctags
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	goctags "github.com/sourcegraph/go-ctags"
@@ -38,7 +37,6 @@ type parseResp struct {
 }
 
 type lockedParser struct {
-	mu   sync.Mutex
 	opts goctags.Options
 	p    Parser
 	send chan<- parseReq
@@ -51,13 +49,9 @@ type lockedParser struct {
 const parseTimeout = time.Minute
 
 // Parse wraps go-ctags Parse. It lazily starts the process and adds a timeout
-// around parse requests. Additionally it serializes access to the parsing
-// process. The timeout is important since we occasionally come across
-// documents which hang universal-ctags.
+// around parse requests. The timeout is important since we occasionally come
+// across documents which hang universal-ctags.
 func (lp *lockedParser) Parse(name string, content []byte) ([]*Entry, error) {
-	lp.mu.Lock()
-	defer lp.mu.Unlock()
-
 	if lp.p == nil {
 		p, err := goctags.New(lp.opts)
 		if err != nil {
@@ -96,12 +90,9 @@ func (lp *lockedParser) Parse(name string, content []byte) ([]*Entry, error) {
 }
 
 func (lp *lockedParser) Close() {
-	lp.mu.Lock()
-	defer lp.mu.Unlock()
 	lp.close()
 }
 
-// close assumes lp.mu is held.
 func (lp *lockedParser) close() {
 	if lp.p == nil {
 		return
