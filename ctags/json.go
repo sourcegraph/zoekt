@@ -15,36 +15,55 @@
 package ctags
 
 import (
+	"log"
+	"os"
+
 	goctags "github.com/sourcegraph/go-ctags"
 )
 
-const debug = false
-
-type Parser = goctags.Parser
 type Entry = goctags.Entry
 
-type lockedParser struct {
-	opts goctags.Options
-	p    Parser
+// CTagsParser wraps go-ctags and delegates to the right process (like universal-ctags or scip-ctags).
+// It is only safe for single-threaded use.
+type CTagsParser struct {
+	bins    ParserBinMap
+	parsers map[CTagsParserType]goctags.Parser
 }
 
-// Parse wraps go-ctags Parse and lazily starts the process.
-func (lp *lockedParser) Parse(name string, content []byte) ([]*Entry, error) {
-	if lp.p == nil {
-		p, err := goctags.New(lp.opts)
+func NewCTagsParser(bins ParserBinMap) CTagsParser {
+	return CTagsParser{bins: bins, parsers: make(map[CTagsParserType]goctags.Parser)}
+}
+
+func (lp *CTagsParser) Parse(name string, content []byte, typ CTagsParserType) ([]*Entry, error) {
+	if lp.parsers[typ] == nil {
+		parser, err := lp.newCTagsParser(typ)
 		if err != nil {
 			return nil, err
 		}
-		lp.p = p
+		lp.parsers[typ] = parser
 	}
 
-	return lp.p.Parse(name, content)
+	parser := lp.parsers[typ]
+	return parser.Parse(name, content)
 }
 
-func (lp *lockedParser) Close() {
-	if lp.p == nil {
-		return
+func (lp *CTagsParser) newCTagsParser(typ CTagsParserType) (goctags.Parser, error) {
+	bin := lp.bins[typ]
+	if bin == "" {
+		// This happens if CTagsMustSucceed is false and we didn't find the binary
+		return nil, nil
 	}
-	lp.p.Close()
-	lp.p = nil
+
+	opts := goctags.Options{Bin: bin}
+	if debug {
+		opts.Info = log.New(os.Stderr, "CTAGS INF: ", log.LstdFlags)
+		opts.Debug = log.New(os.Stderr, "CTAGS DBG: ", log.LstdFlags)
+	}
+	return goctags.New(opts)
+}
+
+func (lp *CTagsParser) Close() {
+	for _, parser := range lp.parsers {
+		parser.Close()
+	}
 }

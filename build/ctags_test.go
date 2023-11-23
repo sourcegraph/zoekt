@@ -261,13 +261,13 @@ func BenchmarkTagsToSections(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	factory, err := ctags.NewParserFactory("universal-ctags", "", ctags.LanguageMap{}, true)
+	bins, err := ctags.NewParserBinMap("universal-ctags", "", ctags.LanguageMap{}, true)
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	parser := factory.NewParser(ctags.UniversalCTags)
-	entries, err := parser.Parse("./testdata/large_file.cc", file)
+	parser := ctags.NewCTagsParser(bins)
+	entries, err := parser.Parse("./testdata/large_file.cc", file, ctags.UniversalCTags)
 	if err != nil {
 		b.Fatal(err)
 	}
