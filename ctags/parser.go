@@ -50,8 +50,8 @@ type parseResult struct {
 
 func (lp *CTagsParser) Parse(name string, content []byte, typ CTagsParserType) ([]*Entry, error) {
 	if lp.parsers[typ] == nil {
-		parser, err := lp.newCTagsParser(typ)
-		if err != nil {
+		parser, err := lp.newParserProcess(typ)
+		if parser == nil {
 			return nil, err
 		}
 		lp.parsers[typ] = parser
@@ -76,7 +76,7 @@ func (lp *CTagsParser) Parse(name string, content []byte, typ CTagsParserType) (
 	}
 }
 
-func (lp *CTagsParser) newCTagsParser(typ CTagsParserType) (goctags.Parser, error) {
+func (lp *CTagsParser) newParserProcess(typ CTagsParserType) (goctags.Parser, error) {
 	bin := lp.bins[typ]
 	if bin == "" {
 		// This happens if CTagsMustSucceed is false and we didn't find the binary
