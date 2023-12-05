@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/sourcegraph/zoekt"
 )
@@ -97,10 +96,10 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		simple := shards[:0]
 		for _, s := range shards {
 			if shardMerging && maybeSetTombstone([]shard{s}, repo) {
-				shardsLog(indexDir, "tombname", []shard{s})
-			} else {
-				simple = append(simple, s)
+				continue
 			}
+
+			simple = append(simple, s)
 		}
 
 		if len(simple) == 0 {
@@ -108,7 +107,6 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		}
 
 		removeAll(simple...)
-		shardsLog(indexDir, "removename", simple)
 	}
 
 	// index: Move missing repos from trash into index
@@ -121,7 +119,6 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		if shards, ok := trash[repo]; ok {
 			log.Printf("restoring shards from trash for %v", repo)
 			moveAll(indexDir, shards)
-			shardsLog(indexDir, "restore", shards)
 			continue
 		}
 
@@ -130,8 +127,6 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			err := zoekt.UnsetTombstone(s.Path, repo)
 			if err != nil {
 				log.Printf("error removing tombstone for %v: %s", repo, err)
-			} else {
-				shardsLog(indexDir, "untomb", []shard{s})
 			}
 		}
 	}
@@ -145,11 +140,9 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		}
 
 		if shardMerging && maybeSetTombstone(shards, repo) {
-			shardsLog(indexDir, "tomb", shards)
 			continue
 		}
 		moveAll(trashDir, shards)
-		shardsLog(indexDir, "remove", shards)
 	}
 
 	// Remove .tmp files from crashed indexer runs-- for example, if an indexer
@@ -382,24 +375,6 @@ func maybeSetTombstone(shards []shard, repoID uint32) bool {
 	return true
 }
 
-func shardsLog(indexDir, action string, shards []shard) {
-	shardLogger := &lumberjack.Logger{
-		Filename:   filepath.Join(indexDir, "zoekt-indexserver-shard-log.tsv"),
-		MaxSize:    100, // Megabyte
-		MaxBackups: 5,
-	}
-	defer shardLogger.Close()
-
-	for _, s := range shards {
-		shardName := filepath.Base(s.Path)
-		var shardSize int64
-		if fi, err := os.Stat(filepath.Join(indexDir, shardName)); err == nil {
-			shardSize = fi.Size()
-		}
-		_, _ = fmt.Fprintf(shardLogger, "%s\t%s\t%s\t%d\t%s\t%d\n", time.Now().UTC().Format(time.RFC3339), action, shardName, shardSize, s.RepoName, s.RepoID)
-	}
-}
-
 var metricVacuumRunning = promauto.NewGauge(prometheus.GaugeOpts{
 	Name: "index_vacuum_running",
 	Help: "Set to 1 if indexserver's vacuum job is running.",
@@ -448,27 +423,16 @@ func (s *Server) vacuum() {
 
 			if err != nil {
 				debug.Printf("failed to explode compound shard %s: %s", path, string(b))
-			} else {
-				shardsLog(s.IndexDir, "explode", []shard{{Path: path}})
 			}
 			continue
 		}
 
-		var removed []*zoekt.Repository
 		s.muIndexDir.Global(func() {
-			removed, err = removeTombstones(path)
+			_, err = removeTombstones(path)
 		})
 
 		if err != nil {
 			debug.Printf("error while removing tombstones in %s: %s", fn, err)
-		}
-		for _, repo := range removed {
-			shardsLog(s.IndexDir, "vac", []shard{{
-				RepoID:   repo.ID,
-				RepoName: repo.Name,
-				Path:     filepath.Join(s.IndexDir, fn),
-				ModTime:  info.ModTime(),
-			}})
 		}
 	}
 }

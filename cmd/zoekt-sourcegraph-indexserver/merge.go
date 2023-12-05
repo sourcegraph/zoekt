@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -13,7 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
-	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/sourcegraph/zoekt"
 )
@@ -71,12 +69,6 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 	metricShardMergingRunning.Set(1)
 	defer metricShardMergingRunning.Set(0)
 
-	wc := &lumberjack.Logger{
-		Filename:   filepath.Join(s.IndexDir, "zoekt-merge-log.tsv"),
-		MaxSize:    100, // Megabyte
-		MaxBackups: 5,
-	}
-
 	// We keep creating compound shards until we run out of shards to merge or until
 	// we encounter an error during merging.
 	next := true
@@ -105,12 +97,6 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 			if err != nil {
 				log.Printf("mergeCmd: out=%s, err=%s", out, err)
 				return
-			}
-
-			newCompoundName := reCompound.Find(out)
-			now := time.Now()
-			for _, s := range c.shards {
-				_, _ = fmt.Fprintf(wc, "%s\t%s\t%s\t%s\n", now.UTC().Format(time.RFC3339), "merge", filepath.Base(s.path), string(newCompoundName))
 			}
 
 			next = true

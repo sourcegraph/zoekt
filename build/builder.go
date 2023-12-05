@@ -39,7 +39,6 @@ import (
 	"github.com/bmatcuk/doublestar"
 	"github.com/grafana/regexp"
 	"github.com/rs/xid"
-	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ctags"
@@ -250,7 +249,7 @@ type Builder struct {
 	size         int
 
 	parserFactory ctags.ParserFactory
-	building sync.WaitGroup
+	building      sync.WaitGroup
 
 	errMu      sync.Mutex
 	buildError error
@@ -258,8 +257,6 @@ type Builder struct {
 	// temp name => final name for finished shards. We only rename
 	// them once all shards succeed to avoid Frankstein corpuses.
 	finishedShards map[string]string
-
-	shardLogger io.WriteCloser
 
 	// indexTime is set by tests for doing reproducible builds.
 	indexTime time.Time
@@ -575,12 +572,6 @@ func NewBuilder(opts Options) (*Builder, error) {
 
 	b.parserFactory = parserFactory
 
-	b.shardLogger = &lumberjack.Logger{
-		Filename:   filepath.Join(opts.IndexDir, "zoekt-builder-shard-log.tsv"),
-		MaxSize:    100, // Megabyte
-		MaxBackups: 5,
-	}
-
 	if opts.IsDelta {
 		// Delta shards build on top of previously existing shards.
 		// As a consequence, the shardNum for delta shards starts from
@@ -747,8 +738,6 @@ func (b *Builder) Finish() error {
 		return b.buildError
 	}
 
-	defer b.shardLogger.Close()
-
 	// Collect a map of the old shards on disk. For each new shard we replace we
 	// delete it from toDelete. Anything remaining in toDelete will be removed
 	// after we have renamed everything into place.
@@ -779,8 +768,6 @@ func (b *Builder) Finish() error {
 		}
 
 		delete(toDelete, final)
-
-		b.shardLog("upsert", final, b.opts.RepositoryDescription.Name)
 	}
 
 	b.finishedShards = map[string]string{}
@@ -791,13 +778,11 @@ func (b *Builder) Finish() error {
 			if !strings.HasSuffix(p, ".zoekt") {
 				continue
 			}
-			b.shardLog("tomb", p, b.opts.RepositoryDescription.Name)
 			err := zoekt.SetTombstone(p, b.opts.RepositoryDescription.ID)
 			b.buildError = err
 			continue
 		}
 		log.Printf("removing old shard file: %s", p)
-		b.shardLog("remove", p, b.opts.RepositoryDescription.Name)
 		if err := os.Remove(p); err != nil {
 			b.buildError = err
 		}
@@ -876,15 +861,6 @@ func (b *Builder) flush() error {
 	}
 
 	return nil
-}
-
-func (b *Builder) shardLog(action, shard string, repoName string) {
-	shard = filepath.Base(shard)
-	var shardSize int64
-	if fi, err := os.Stat(filepath.Join(b.opts.IndexDir, shard)); err == nil {
-		shardSize = fi.Size()
-	}
-	_, _ = fmt.Fprintf(b.shardLogger, "%s\t%s\t%s\t%d\t%s\n", time.Now().UTC().Format(time.RFC3339), action, shard, shardSize, repoName)
 }
 
 var profileNumber int
