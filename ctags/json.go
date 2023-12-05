@@ -15,8 +15,10 @@
 package ctags
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"time"
 
 	goctags "github.com/sourcegraph/go-ctags"
 )
@@ -24,14 +26,26 @@ import (
 type Entry = goctags.Entry
 
 // CTagsParser wraps go-ctags and delegates to the right process (like universal-ctags or scip-ctags).
-// It is only safe for single-threaded use.
+// It is only safe for single-threaded use. This wrapper also enforces a timeout on parsing a single
+// document, which is important since documents can occasionally hang universal-ctags.
+// documents which hang universal-ctags.
 type CTagsParser struct {
 	bins    ParserBinMap
 	parsers map[CTagsParserType]goctags.Parser
 }
 
+// parseTimeout is how long we wait for a response for parsing a single file
+// in ctags. 1 minute is a very conservative timeout which we should only hit
+// if ctags hangs.
+const parseTimeout = time.Minute
+
 func NewCTagsParser(bins ParserBinMap) CTagsParser {
 	return CTagsParser{bins: bins, parsers: make(map[CTagsParserType]goctags.Parser)}
+}
+
+type parseResult struct {
+	entries []*Entry
+	err     error
 }
 
 func (lp *CTagsParser) Parse(name string, content []byte, typ CTagsParserType) ([]*Entry, error) {
@@ -43,8 +57,23 @@ func (lp *CTagsParser) Parse(name string, content []byte, typ CTagsParserType) (
 		lp.parsers[typ] = parser
 	}
 
+	deadline := time.NewTimer(parseTimeout)
+	defer deadline.Stop()
+
 	parser := lp.parsers[typ]
-	return parser.Parse(name, content)
+	recv := make(chan parseResult, 1)
+	go func() {
+		entry, err := parser.Parse(name, content)
+		recv <- parseResult{entries: entry, err: err}
+	}()
+
+	select {
+	case resp := <-recv:
+		return resp.entries, resp.err
+	case <-deadline.C:
+		// Error out since ctags hanging is a sign something bad is happening.
+		return nil, fmt.Errorf("ctags timedout after %s parsing %s", parseTimeout, name)
+	}
 }
 
 func (lp *CTagsParser) newCTagsParser(typ CTagsParserType) (goctags.Parser, error) {
