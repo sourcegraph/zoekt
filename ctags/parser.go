@@ -51,7 +51,7 @@ type parseResult struct {
 func (lp *CTagsParser) Parse(name string, content []byte, typ CTagsParserType) ([]*Entry, error) {
 	if lp.parsers[typ] == nil {
 		parser, err := lp.newParserProcess(typ)
-		if parser == nil {
+		if parser == nil || err != nil {
 			return nil, err
 		}
 		lp.parsers[typ] = parser
