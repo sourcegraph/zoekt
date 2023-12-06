@@ -247,9 +247,9 @@ type Builder struct {
 	todo         []*zoekt.Document
 	docChecker   zoekt.DocChecker
 	size         int
-
-	parserFactory ctags.ParserFactory
-	building      sync.WaitGroup
+	
+	parserBins ctags.ParserBinMap
+	building   sync.WaitGroup
 
 	errMu      sync.Mutex
 	buildError error
@@ -560,7 +560,7 @@ func NewBuilder(opts Options) (*Builder, error) {
 		finishedShards: map[string]string{},
 	}
 
-	parserFactory, err := ctags.NewParserFactory(
+	parserBins, err := ctags.NewParserBinMap(
 		b.opts.CTagsPath,
 		b.opts.ScipCTagsPath,
 		opts.LanguageMap,
@@ -570,7 +570,7 @@ func NewBuilder(opts Options) (*Builder, error) {
 		return nil, err
 	}
 
-	b.parserFactory = parserFactory
+	b.parserBins = parserBins
 
 	if opts.IsDelta {
 		// Delta shards build on top of previously existing shards.
@@ -994,7 +994,7 @@ func sortDocuments(todo []*zoekt.Document) {
 
 func (b *Builder) buildShard(todo []*zoekt.Document, nextShardNum int) (*finishedShard, error) {
 	if !b.opts.DisableCTags && (b.opts.CTagsPath != "" || b.opts.ScipCTagsPath != "") {
-		err := parseSymbols(todo, b.opts.LanguageMap, b.parserFactory)
+		err := parseSymbols(todo, b.opts.LanguageMap, b.parserBins)
 		if b.opts.CTagsMustSucceed && err != nil {
 			return nil, err
 		}

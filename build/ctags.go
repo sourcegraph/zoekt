@@ -42,13 +42,14 @@ func normalizeLanguage(filetype string) string {
 	return normalized
 }
 
-func parseSymbols(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserFactory ctags.ParserFactory) error {
+func parseSymbols(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserBins ctags.ParserBinMap) error {
 	monitor := newMonitor()
 	defer monitor.Stop()
 
 	var tagsToSections tagsToSections
 
-	parsers := make(map[ctags.CTagsParserType]ctags.Parser)
+	parser := ctags.NewCTagsParser(parserBins)
+	defer parser.Close()
 
 	for _, doc := range todo {
 		if len(doc.Content) == 0 || doc.Symbols != nil {
@@ -57,30 +58,18 @@ func parseSymbols(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserF
 
 		zoekt.DetermineLanguageIfUnknown(doc)
 
-		parserKind := languageMap[normalizeLanguage(doc.Language)]
-		if parserKind == ctags.NoCTags {
+		parserType := languageMap[normalizeLanguage(doc.Language)]
+		if parserType == ctags.NoCTags {
 			continue
 		}
 
-		// If the parser kind is unknown, default to universal-ctags
-		if parserKind == ctags.UnknownCTags {
-			parserKind = ctags.UniversalCTags
-		}
-
-		parser := parsers[parserKind]
-		if parser == nil {
-			// Spin up a new parser for this parser kind
-			parser = parserFactory.NewParser(parserKind)
-			if parser == nil {
-				// this happens if CTagsMustSucceed is false and we didn't find the binary
-				continue
-			}
-			parsers[parserKind] = parser
-			defer parser.Close()
+		// If the parser type is unknown, default to universal-ctags
+		if parserType == ctags.UnknownCTags {
+			parserType = ctags.UniversalCTags
 		}
 
 		monitor.BeginParsing(doc)
-		es, err := parser.Parse(doc.Name, doc.Content)
+		es, err := parser.Parse(doc.Name, doc.Content, parserType)
 		monitor.EndParsing(es)
 
 		if err != nil {

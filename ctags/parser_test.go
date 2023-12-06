@@ -27,12 +27,7 @@ func TestJSON(t *testing.T) {
 		t.Skip(err)
 	}
 
-	factory, err := NewParserFactory("universal-ctags", "", LanguageMap{}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p := factory.NewParser(UniversalCTags)
+	p := NewCTagsParser(map[CTagsParserType]string{UniversalCTags: "universal-ctags"})
 	defer p.Close()
 
 	java := `
@@ -50,7 +45,7 @@ class Back implements Future extends Frob {
 }
 `
 	name := "io/zoekt/Back.java"
-	got, err := p.Parse(name, []byte(java))
+	got, err := p.Parse(name, []byte(java), UniversalCTags)
 	if err != nil {
 		t.Errorf("Process: %v", err)
 	}

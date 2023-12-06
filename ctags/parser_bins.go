@@ -17,12 +17,8 @@ package ctags
 import (
 	"bytes"
 	"fmt"
-	"log"
-	"os"
 	"os/exec"
 	"strings"
-
-	goctags "github.com/sourcegraph/go-ctags"
 )
 
 type CTagsParserType uint8
@@ -33,6 +29,8 @@ const (
 	UniversalCTags
 	ScipCTags
 )
+
+const debug = false
 
 type LanguageMap = map[string]CTagsParserType
 
@@ -64,14 +62,14 @@ func StringToParser(str string) CTagsParserType {
 	}
 }
 
-type ParserFactory map[CTagsParserType]string
+type ParserBinMap map[CTagsParserType]string
 
-func NewParserFactory(
+func NewParserBinMap(
 	ctagsPath string,
 	scipCTagsPath string,
 	languageMap LanguageMap,
 	cTagsMustSucceed bool,
-) (ParserFactory, error) {
+) (ParserBinMap, error) {
 	validBins := make(map[CTagsParserType]string)
 	requiredBins := map[CTagsParserType]string{UniversalCTags: ctagsPath}
 	for _, parserType := range languageMap {
@@ -86,7 +84,7 @@ func NewParserFactory(
 			return nil, fmt.Errorf("ctags binary not found for %s parser type", ParserToString(parserType))
 		}
 		if err := checkBinary(parserType, bin); err != nil && cTagsMustSucceed {
-			return nil, fmt.Errorf("ctags.NewParserFactory: %v", err)
+			return nil, fmt.Errorf("ctags.NewParserBinMap: %v", err)
 		}
 		validBins[parserType] = bin
 	}
@@ -116,18 +114,3 @@ func checkBinary(typ CTagsParserType, bin string) error {
 	return nil
 }
 
-// NewParser creates a parser that is implemented by the given
-// ctags binary. The parser is safe for concurrent use.
-func (p ParserFactory) NewParser(typ CTagsParserType) Parser {
-	bin := p[typ]
-	if bin == "" {
-		return nil
-	}
-
-	opts := goctags.Options{Bin: bin}
-	if debug {
-		opts.Info = log.New(os.Stderr, "CTAGS INF: ", log.LstdFlags)
-		opts.Debug = log.New(os.Stderr, "CTAGS DBG: ", log.LstdFlags)
-	}
-	return &lockedParser{opts: opts}
-}
