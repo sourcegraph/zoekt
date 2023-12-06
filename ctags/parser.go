@@ -84,9 +84,10 @@ func (lp *CTagsParser) newParserProcess(typ CTagsParserType) (goctags.Parser, er
 	}
 
 	opts := goctags.Options{Bin: bin}
+	parserType := ParserToString(typ)
 	if debug {
-		opts.Info = log.New(os.Stderr, "CTAGS INF: ", log.LstdFlags)
-		opts.Debug = log.New(os.Stderr, "CTAGS DBG: ", log.LstdFlags)
+		opts.Info = log.New(os.Stderr, "CTAGS (" + parserType + ") INF: ", log.LstdFlags)
+		opts.Debug = log.New(os.Stderr, "CTAGS (" + parserType + ") DBG: ", log.LstdFlags)
 	}
 	return goctags.New(opts)
 }
