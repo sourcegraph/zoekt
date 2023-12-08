@@ -23,7 +23,7 @@ jobs:
     name: fuzz test
     runs-on: ubuntu-latest
     steps:
-      - uses: jidicula/go-fuzz-action@4f24eed45b25214f31a9fe035ca68ea2c88c6a13 # v1.2.0
+      - uses: jidicula/go-fuzz-action@0206b61afc603b665297621fa5e691b1447a5e57 # to make go version configurable
         with:
           packages: 'github.com/sourcegraph/zoekt' # This is the package where the Protobuf round trip tests are defined
           fuzz-time: 30s
