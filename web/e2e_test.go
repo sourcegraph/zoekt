@@ -560,7 +560,10 @@ func TestContextLines(t *testing.T) {
 						// Returns 3 instead of 4 new line characters since we swallow
 						// the last new line in Before, Fragments and After.
 						Before: "\n\n\n",
-						After:  "\n\n\n",
+						// Returns 2 instead of 3 new line characters since a
+						// trailing newline at the end of the file does not
+						// constitue a new line.
+						After: "\n\n",
 					},
 				},
 			},
