@@ -454,6 +454,18 @@ func (nls newlines) getLines(data []byte, low, high int) []byte {
 	lowStart, _ := nls.lineBounds(low)
 	_, highEnd := nls.lineBounds(high - 1)
 
+	// Drop any trailing newline. Editors do not treat a trailing newline as
+	// the start of a new line, so we should not either. lineBounds clamps to
+	// len(data) when an out-of-bounds line is requested.
+	//
+	// As an example, if we request lines 1-5 from a file with contents
+	// `one\ntwo\nthree\n`, we should return `one\ntwo\nthree` because those are
+	// the three "lines" in the file, separated by newlines.
+	if highEnd == uint32(len(data)) && bytes.HasSuffix(data, []byte{'\n'}) {
+		highEnd = highEnd - 1
+		lowStart = min(lowStart, highEnd)
+	}
+
 	return data[lowStart:highEnd]
 }
 
@@ -680,7 +692,6 @@ func sectionSlice(data []byte, sec DocumentSection) []byte {
 	}
 	return data[sec.Start:sec.End]
 }
-
 
 // scoreSymbolKind boosts a match based on the combination of language, symbol
 // and kind. The language string comes from go-enry, the symbol and kind from

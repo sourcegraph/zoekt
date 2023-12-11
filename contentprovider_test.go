@@ -32,7 +32,8 @@ func TestGetLines(t *testing.T) {
 	for _, content := range contents {
 		t.Run("", func(t *testing.T) {
 			newLines := getNewlines(content)
-			lines := bytes.Split(content, []byte{'\n'}) // TODO does split group consecutive sep?
+			// Trim the last newline before splitting because a trailing newline does not constitute a new line
+			lines := bytes.Split(bytes.TrimSuffix(content, []byte{'\n'}), []byte{'\n'})
 			wantGetLines := func(low, high int) []byte {
 				low--
 				high--
