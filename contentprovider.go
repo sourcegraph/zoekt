@@ -461,7 +461,7 @@ func (nls newlines) getLines(data []byte, low, high int) []byte {
 	// As an example, if we request lines 1-5 from a file with contents
 	// `one\ntwo\nthree\n`, we should return `one\ntwo\nthree` because those are
 	// the three "lines" in the file, separated by newlines.
-	if highEnd == uint32(len(data)) && len(data) > 0 && data[len(data)-1] == '\n' {
+	if highEnd == uint32(len(data)) && bytes.HasSuffix(data, []byte{'\n'}) {
 		highEnd = highEnd - 1
 		lowStart = min(lowStart, highEnd)
 	}
