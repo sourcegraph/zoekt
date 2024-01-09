@@ -400,13 +400,32 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 // makes this operation O(n) instead.
 type columnHelper struct {
 	data []byte
+
+	// 0 values for all these are valid values
+	lastLineOffset int
+	lastOffset     uint32
+	lastRuneCount  uint32
 }
 
 // get returns the line column for offset. offset is the byte offset of the
 // rune in data. lineOffset is the byte offset inside of data for the line
 // containing offset.
 func (c *columnHelper) get(lineOffset int, offset uint32) uint32 {
-	return uint32(utf8.RuneCount(c.data[lineOffset:offset]) + 1)
+	var runeCount uint32
+
+	if lineOffset == c.lastLineOffset && offset >= c.lastOffset {
+		// Can count from last calculation
+		runeCount = c.lastRuneCount + uint32(utf8.RuneCount(c.data[c.lastOffset:offset]))
+	} else {
+		// Need to count from the beginning of line
+		runeCount = uint32(utf8.RuneCount(c.data[lineOffset:offset]))
+	}
+
+	c.lastLineOffset = lineOffset
+	c.lastOffset = offset
+	c.lastRuneCount = runeCount
+
+	return runeCount + 1
 }
 
 type newlines struct {
