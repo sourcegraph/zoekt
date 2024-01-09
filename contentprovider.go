@@ -293,6 +293,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 	chunks := chunkCandidates(ms, newlines, numContextLines)
 	data := p.data(false)
 	chunkMatches := make([]ChunkMatch, 0, len(chunks))
+	columnHelper := columnHelper{data: data}
 	for _, chunk := range chunks {
 		ranges := make([]Range, 0, len(chunk.candidates))
 		var symbolInfo []*Symbol
@@ -306,12 +307,12 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 				Start: Location{
 					ByteOffset: startOffset,
 					LineNumber: uint32(startLine),
-					Column:     uint32(utf8.RuneCount(data[startLineOffset:startOffset]) + 1),
+					Column:     columnHelper.get(startLineOffset, startOffset),
 				},
 				End: Location{
 					ByteOffset: endOffset,
 					LineNumber: uint32(endLine),
-					Column:     uint32(utf8.RuneCount(data[endLineOffset:endOffset]) + 1),
+					Column:     columnHelper.get(endLineOffset, endOffset),
 				},
 			})
 
@@ -390,6 +391,22 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 		}
 	}
 	return chunks
+}
+
+// columnHelper is a helper struct which caches the number of runes last
+// counted. If we naively use utf8.RuneCount for each match on a line, this
+// leads to an O(nm) algorithm where m is the number of matches and n is the
+// length of the line. Aassuming we our candidates are increasing in offset
+// makes this operation O(n) instead.
+type columnHelper struct {
+	data []byte
+}
+
+// get returns the line column for offset. offset is the byte offset of the
+// rune in data. lineOffset is the byte offset inside of data for the line
+// containing offset.
+func (c *columnHelper) get(lineOffset int, offset uint32) uint32 {
+	return uint32(utf8.RuneCount(c.data[lineOffset:offset]) + 1)
 }
 
 type newlines struct {
