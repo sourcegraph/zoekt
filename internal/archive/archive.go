@@ -1,4 +1,4 @@
-package main
+package archive
 
 import (
 	"archive/tar"
@@ -126,7 +126,8 @@ func detectContentType(r io.Reader) (string, io.Reader, error) {
 	return ct, io.MultiReader(bytes.NewReader(buf[:n]), r), nil
 }
 
-func openReader(u string) (io.ReadCloser, error) {
+// OpenReader returns a reader for the archive at the URL u.
+func OpenReader(u string) (io.ReadCloser, error) {
 	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
 		resp, err := http.Get(u)
 		if err != nil {
@@ -155,7 +156,7 @@ func openReader(u string) (io.ReadCloser, error) {
 // openArchive opens the tar at the URL or filepath u. Also supported is tgz
 // files over http.
 func openArchive(u string) (ar Archive, err error) {
-	readCloser, err := openReader(u)
+	readCloser, err := OpenReader(u)
 	if err != nil {
 		return nil, err
 	}
