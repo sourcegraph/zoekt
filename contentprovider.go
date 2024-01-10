@@ -169,6 +169,12 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 	return result
 }
 
+// fillChunkMatches converts the internal candidateMatch slice into our APIs ChunkMatch.
+//
+// Performance invariant: ms is sorted and non-overlapping.
+//
+// Note: the byte slices may be backed by mmapped data, so before being
+// returned by the API it needs to be copied.
 func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
 	var result []ChunkMatch
 	if ms[0].fileName {
@@ -290,10 +296,21 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 
 func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int) []ChunkMatch {
 	newlines := p.newlines()
-	chunks := chunkCandidates(ms, newlines, numContextLines)
 	data := p.data(false)
-	chunkMatches := make([]ChunkMatch, 0, len(chunks))
+
+	// columnHelper prevents O(len(ms) * len(data)) lookups for all columns.
+	// However, it depends on ms being sorted by byteOffset and non-overlapping.
+	// This invariant is true at the time of writing, but we conservatively
+	// enforce this. Note: chunkCandidates preserves the sorting so safe to
+	// transform now.
 	columnHelper := columnHelper{data: data}
+	if !sort.IsSorted((sortByOffsetSlice)(ms)) {
+		log.Printf("WARN: performance invariant violated. candidate matches are not sorted in fillContentChunkMatches. Report to developers.")
+		sort.Sort((sortByOffsetSlice)(ms))
+	}
+
+	chunks := chunkCandidates(ms, newlines, numContextLines)
+	chunkMatches := make([]ChunkMatch, 0, len(chunks))
 	for _, chunk := range chunks {
 		ranges := make([]Range, 0, len(chunk.candidates))
 		var symbolInfo []*Symbol
@@ -362,6 +379,9 @@ type candidateChunk struct {
 // chunkCandidates groups a set of sorted, non-overlapping candidate matches by line number. Adjacent
 // chunks will be merged if adding `numContextLines` to the beginning and end of the chunk would cause
 // it to overlap with an adjacent chunk.
+//
+// input invariants: ms is sorted by byteOffset and is non overlapping with respect to endOffset.
+// output invariants: if you flatten candidates the input invariant is retained.
 func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines int) []candidateChunk {
 	var chunks []candidateChunk
 	for _, m := range ms {

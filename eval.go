@@ -332,6 +332,9 @@ nextFileMatch:
 			}
 		}
 
+		// Important invariant for performance: finalCands is sorted by offset and
+		// non-overlapping. gatherMatches respects this invariant and all later
+		// transformations respect this.
 		shouldMergeMatches := !opts.ChunkMatches
 		finalCands := gatherMatches(mt, known, shouldMergeMatches)
 
