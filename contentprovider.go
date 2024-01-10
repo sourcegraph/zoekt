@@ -169,6 +169,12 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 	return result
 }
 
+// fillChunkMatches converts the internal candidateMatch slice into our APIs ChunkMatch.
+//
+// Performance invariant: ms is sorted and non-overlapping.
+//
+// Note: the byte slices may be backed by mmapped data, so before being
+// returned by the API it needs to be copied.
 func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
 	var result []ChunkMatch
 	if ms[0].fileName {
@@ -290,8 +296,20 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 
 func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int) []ChunkMatch {
 	newlines := p.newlines()
-	chunks := chunkCandidates(ms, newlines, numContextLines)
 	data := p.data(false)
+
+	// columnHelper prevents O(len(ms) * len(data)) lookups for all columns.
+	// However, it depends on ms being sorted by byteOffset and non-overlapping.
+	// This invariant is true at the time of writing, but we conservatively
+	// enforce this. Note: chunkCandidates preserves the sorting so safe to
+	// transform now.
+	columnHelper := columnHelper{data: data}
+	if !sort.IsSorted((sortByOffsetSlice)(ms)) {
+		log.Printf("WARN: performance invariant violated. candidate matches are not sorted in fillContentChunkMatches. Report to developers.")
+		sort.Sort((sortByOffsetSlice)(ms))
+	}
+
+	chunks := chunkCandidates(ms, newlines, numContextLines)
 	chunkMatches := make([]ChunkMatch, 0, len(chunks))
 	for _, chunk := range chunks {
 		ranges := make([]Range, 0, len(chunk.candidates))
@@ -306,12 +324,12 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 				Start: Location{
 					ByteOffset: startOffset,
 					LineNumber: uint32(startLine),
-					Column:     uint32(utf8.RuneCount(data[startLineOffset:startOffset]) + 1),
+					Column:     columnHelper.get(startLineOffset, startOffset),
 				},
 				End: Location{
 					ByteOffset: endOffset,
 					LineNumber: uint32(endLine),
-					Column:     uint32(utf8.RuneCount(data[endLineOffset:endOffset]) + 1),
+					Column:     columnHelper.get(endLineOffset, endOffset),
 				},
 			})
 
@@ -361,6 +379,9 @@ type candidateChunk struct {
 // chunkCandidates groups a set of sorted, non-overlapping candidate matches by line number. Adjacent
 // chunks will be merged if adding `numContextLines` to the beginning and end of the chunk would cause
 // it to overlap with an adjacent chunk.
+//
+// input invariants: ms is sorted by byteOffset and is non overlapping with respect to endOffset.
+// output invariants: if you flatten candidates the input invariant is retained.
 func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines int) []candidateChunk {
 	var chunks []candidateChunk
 	for _, m := range ms {
@@ -390,6 +411,41 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 		}
 	}
 	return chunks
+}
+
+// columnHelper is a helper struct which caches the number of runes last
+// counted. If we naively use utf8.RuneCount for each match on a line, this
+// leads to an O(nm) algorithm where m is the number of matches and n is the
+// length of the line. Aassuming we our candidates are increasing in offset
+// makes this operation O(n) instead.
+type columnHelper struct {
+	data []byte
+
+	// 0 values for all these are valid values
+	lastLineOffset int
+	lastOffset     uint32
+	lastRuneCount  uint32
+}
+
+// get returns the line column for offset. offset is the byte offset of the
+// rune in data. lineOffset is the byte offset inside of data for the line
+// containing offset.
+func (c *columnHelper) get(lineOffset int, offset uint32) uint32 {
+	var runeCount uint32
+
+	if lineOffset == c.lastLineOffset && offset >= c.lastOffset {
+		// Can count from last calculation
+		runeCount = c.lastRuneCount + uint32(utf8.RuneCount(c.data[c.lastOffset:offset]))
+	} else {
+		// Need to count from the beginning of line
+		runeCount = uint32(utf8.RuneCount(c.data[lineOffset:offset]))
+	}
+
+	c.lastLineOffset = lineOffset
+	c.lastOffset = offset
+	c.lastRuneCount = runeCount
+
+	return runeCount + 1
 }
 
 type newlines struct {
