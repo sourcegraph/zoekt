@@ -1,5 +1,6 @@
 queryString: generate unit test
 query: (and substr:"generate" substr:"unit" substr:"test")
+targetRank: 11
 
 github.com/sourcegraph/sourcegraph/cmd/frontend/internal/insights/resolvers/insight_series_resolver.go
 300:func (j *seriesResolverGenerator) Generate(ctx context.Context, series types.InsightViewSeries, baseResolver baseInsightResolver, filters types.InsightViewFilters, options types.SeriesDisplayOptions) ([]graphqlbackend.InsightSeriesResolver, error) {

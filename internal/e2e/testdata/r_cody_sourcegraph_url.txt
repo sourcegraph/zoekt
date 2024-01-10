@@ -1,7 +1,8 @@
 queryString: r:cody sourcegraph url
 query: (and repo:cody substr:"sourcegraph" substr:"url")
+targetRank: 1
 
-github.com/sourcegraph/cody/lib/shared/src/sourcegraph-api/graphql/client.ts
+**github.com/sourcegraph/cody/lib/shared/src/sourcegraph-api/graphql/client.ts**
 611:        const url = buildGraphQLUrl({ request: query, baseUrl: this.config.serverEndpoint })
 626:        const url = buildGraphQLUrl({ request: query, baseUrl: this.dotcomUrl.href })
 641:        const url = 'http://localhost:49300/.api/testLogging'
