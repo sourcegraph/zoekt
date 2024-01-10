@@ -1,4 +1,4 @@
-package main
+package archive
 
 import (
 	"archive/tar"
@@ -163,7 +163,7 @@ func testIndexIncrementally(t *testing.T, format string) {
 			Strip:       0,
 		}
 
-		if err := do(opts, bopts); err != nil {
+		if err := Index(opts, bopts); err != nil {
 			t.Fatalf("error creating index: %v", err)
 		}
 

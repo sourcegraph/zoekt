@@ -1,4 +1,4 @@
-package main
+package e2e
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/internal/archive"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/shards"
 )
@@ -135,7 +136,7 @@ func indexURL(indexDir, u string) error {
 		return err
 	}
 
-	opts := Options{
+	opts := archive.Options{
 		Archive: u,
 	}
 	opts.SetDefaults() // sets metadata like Name and the codeload URL
@@ -158,7 +159,7 @@ func indexURL(indexDir, u string) error {
 	// 	languageMap[lang] = ctags.ScipCTags
 	// }
 
-	err := do(opts, build.Options{
+	err := archive.Index(opts, build.Options{
 		IndexDir:         indexDir,
 		CTagsMustSucceed: true,
 	})
@@ -172,7 +173,7 @@ func indexURL(indexDir, u string) error {
 func download(url, dst string) error {
 	tmpPath := dst + ".part"
 
-	rc, err := openReader(url)
+	rc, err := archive.OpenReader(url)
 	if err != nil {
 		return err
 	}
