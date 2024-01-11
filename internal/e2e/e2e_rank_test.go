@@ -24,6 +24,8 @@ import (
 
 var update = flag.Bool("update", false, "update golden file")
 
+var useShardCache = flag.Bool("shard_cache", false, "cache computed shards for faster test runs")
+
 // debugScore can be set to include much more output. Do not commit the
 // updated golden files, this is purely used for debugging in a local
 // environment.
@@ -58,7 +60,13 @@ func TestRanking(t *testing.T) {
 		"r:cody sourcegraph url",
 	}
 
-	indexDir := t.TempDir()
+	var indexDir string
+	if *useShardCache {
+		t.Logf("reusing index dir to speed up testing. If you have unexpected results remove %s", shardCache)
+		indexDir = shardCache
+	} else {
+		indexDir = t.TempDir()
+	}
 
 	for _, u := range archiveURLs {
 		if err := indexURL(indexDir, u); err != nil {
@@ -130,6 +138,7 @@ func TestRanking(t *testing.T) {
 }
 
 var tarballCache = "/tmp/zoekt-test-ranking-tarballs-" + os.Getenv("USER")
+var shardCache = "/tmp/zoekt-test-ranking-shards-" + os.Getenv("USER")
 
 func indexURL(indexDir, u string) error {
 	if err := os.MkdirAll(tarballCache, 0700); err != nil {
@@ -137,7 +146,8 @@ func indexURL(indexDir, u string) error {
 	}
 
 	opts := archive.Options{
-		Archive: u,
+		Archive:     u,
+		Incremental: true,
 	}
 	opts.SetDefaults() // sets metadata like Name and the codeload URL
 	u = opts.Archive
