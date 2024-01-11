@@ -1,7 +1,8 @@
 queryString: graphql type User
 query: (and substr:"graphql" substr:"type" case_substr:"User")
+targetRank: 1
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/schema.graphql
+**github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/schema.graphql**
 6376:type User implements Node & SettingsSubject & Namespace {
 3862:        type: GitRefType
 5037:    type: GitRefType!

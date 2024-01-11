@@ -1,7 +1,8 @@
 queryString: InternalDoer
 query: case_substr:"InternalDoer"
+targetRank: 1
 
-github.com/sourcegraph/sourcegraph/internal/httpcli/client.go
+**github.com/sourcegraph/sourcegraph/internal/httpcli/client.go**
 217:var InternalDoer, _ = InternalClientFactory.Doer()
 215:// InternalDoer is a shared client for internal communication. This is a
 

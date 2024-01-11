@@ -1,5 +1,6 @@
 queryString: bufio buffer
 query: (and substr:"bufio" substr:"buffer")
+targetRank: 2
 
 github.com/golang/go/src/bytes/buffer.go
 20:type Buffer struct {
@@ -7,7 +8,7 @@ github.com/golang/go/src/bytes/buffer.go
 472:func NewBuffer(buf []byte) *Buffer { return &Buffer{buf: buf} }
 hidden 108 more line matches
 
-github.com/golang/go/src/bufio/scan.go
+**github.com/golang/go/src/bufio/scan.go**
 267:func (s *Scanner) Buffer(buf []byte, max int) {
 5:package bufio
 25:// large to fit in the buffer. When a scan stops, the reader may have

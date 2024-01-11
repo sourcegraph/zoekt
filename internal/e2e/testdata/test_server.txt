@@ -1,7 +1,8 @@
 queryString: test server
 query: (and substr:"test" substr:"server")
+targetRank: 1
 
-github.com/golang/go/src/net/http/httptest/server.go
+**github.com/golang/go/src/net/http/httptest/server.go**
 26:type Server struct {
 105:func NewServer(handler http.Handler) *Server {
 117:func NewUnstartedServer(handler http.Handler) *Server {

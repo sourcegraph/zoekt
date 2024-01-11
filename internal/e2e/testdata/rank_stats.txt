@@ -1,0 +1,4 @@
+queries: 9
+recall@1: 5 (56%)
+recall@5: 7 (78%)
+mrr: 0.658249

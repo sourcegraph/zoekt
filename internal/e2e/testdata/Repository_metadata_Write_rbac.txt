@@ -1,5 +1,6 @@
 queryString: Repository metadata Write rbac
 query: (and case_substr:"Repository" substr:"metadata" case_substr:"Write" substr:"rbac")
+targetRank: -1
 
 github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/repository_metadata.go
 54:func (r *schemaResolver) AddRepoMetadata(ctx context.Context, args struct {

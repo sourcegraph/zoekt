@@ -1,5 +1,6 @@
 queryString: Get database/user
 query: (and case_substr:"Get" substr:"database/user")
+targetRank: 3
 
 github.com/sourcegraph/sourcegraph/internal/database/user_emails.go
 161:func (s *userEmailsStore) Get(ctx context.Context, userID int32, email string) (emailCanonicalCase string, verified bool, err error) {
@@ -13,7 +14,7 @@ github.com/sourcegraph/sourcegraph/internal/database/user_roles.go
 365:func (r *userRoleStore) GetByRoleID(ctx context.Context, opts GetUserRoleOpts) ([]*types.UserRole, error) {
 hidden 8 more line matches
 
-github.com/sourcegraph/sourcegraph/internal/database/users.go
+**github.com/sourcegraph/sourcegraph/internal/database/users.go**
 940:func (u *userStore) GetByID(ctx context.Context, id int32) (*types.User, error) {
 947:func (u *userStore) GetByVerifiedEmail(ctx context.Context, email string) (*types.User, error) {
 951:func (u *userStore) GetByUsername(ctx context.Context, username string) (*types.User, error) {

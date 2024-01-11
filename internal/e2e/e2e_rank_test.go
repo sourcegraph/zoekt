@@ -43,21 +43,24 @@ func TestRanking(t *testing.T) {
 		"https://github.com/golang/go/tree/go1.21.4",
 		"https://github.com/sourcegraph/cody/tree/vscode-v0.14.5",
 	}
-	queries := []string{
+	q := func(query, target string) rankingQuery {
+		return rankingQuery{Query: query, Target: target}
+	}
+	queries := []rankingQuery{
 		// golang/go
-		"test server",
-		"bytes buffer",
-		"bufio buffer",
+		q("test server", "github.com/golang/go/src/net/http/httptest/server.go"),
+		q("bytes buffer", "github.com/golang/go/src/bytes/buffer.go"),
+		q("bufio buffer", "github.com/golang/go/src/bufio/scan.go"),
 
 		// sourcegraph/sourcegraph
-		"graphql type User",
-		"Get database/user",
-		"InternalDoer",
-		"Repository metadata Write rbac",
+		q("graphql type User", "github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/schema.graphql"),
+		q("Get database/user", "github.com/sourcegraph/sourcegraph/internal/database/users.go"),
+		q("InternalDoer", "github.com/sourcegraph/sourcegraph/internal/httpcli/client.go"),
+		q("Repository metadata Write rbac", "github.com/sourcegraph/sourcegraph/internal/rbac/constants.go"), // unsure if this is the best doc?
 
 		// cody
-		"generate unit test",
-		"r:cody sourcegraph url",
+		q("generate unit test", "github.com/sourcegraph/cody/lib/shared/src/chat/recipes/generate-test.ts"),
+		q("r:cody sourcegraph url", "github.com/sourcegraph/cody/lib/shared/src/sourcegraph-api/graphql/client.ts"),
 	}
 
 	var indexDir string
@@ -80,7 +83,8 @@ func TestRanking(t *testing.T) {
 	}
 	defer ss.Close()
 
-	for _, queryStr := range queries {
+	var ranks []int
+	for _, rq := range queries {
 		// normalise queryStr for writing to fs
 		name := strings.Map(func(r rune) rune {
 			if strings.ContainsRune(" :", r) {
@@ -92,10 +96,10 @@ func TestRanking(t *testing.T) {
 				return r
 			}
 			return -1
-		}, queryStr)
+		}, rq.Query)
 
 		t.Run(name, func(t *testing.T) {
-			q, err := query.Parse(queryStr)
+			q, err := query.Parse(rq.Query)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -115,26 +119,73 @@ func TestRanking(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			ranks = append(ranks, targetRank(rq, result.Files))
+
 			var gotBuf bytes.Buffer
-			marshalMatches(&gotBuf, queryStr, q, result.Files)
-			got := gotBuf.Bytes()
-
-			wantPath := filepath.Join("testdata", name+".txt")
-			if *update {
-				if err := os.WriteFile(wantPath, got, 0600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			want, err := os.ReadFile(wantPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if d := cmp.Diff(string(want), string(got)); d != "" {
-				t.Fatalf("unexpected (-want, +got):\n%s", d)
-			}
+			marshalMatches(&gotBuf, rq, q, result.Files)
+			assertGolden(t, name, gotBuf.Bytes())
 		})
 	}
+
+	t.Run("rank_stats", func(t *testing.T) {
+		if len(ranks) != len(queries) {
+			t.Skip("not computing rank stats since not all query cases ran")
+		}
+
+		var gotBuf bytes.Buffer
+		printf := func(format string, a ...any) {
+			_, _ = fmt.Fprintf(&gotBuf, format, a...)
+		}
+
+		printf("queries: %d\n", len(ranks))
+
+		for _, recallThreshold := range []int{1, 5} {
+			count := 0
+			for _, rank := range ranks {
+				if rank <= recallThreshold && rank > 0 {
+					count++
+				}
+			}
+			countp := float64(count) * 100 / float64(len(ranks))
+			printf("recall@%d: %d (%.0f%%)\n", recallThreshold, count, countp)
+		}
+
+		// Mean reciprocal rank
+		mrr := float64(0)
+		for _, rank := range ranks {
+			if rank > 0 {
+				mrr += 1 / float64(rank)
+			}
+		}
+		mrr /= float64(len(ranks))
+		printf("mrr: %f\n", mrr)
+
+		assertGolden(t, "rank_stats", gotBuf.Bytes())
+	})
+}
+
+func assertGolden(t *testing.T, name string, got []byte) {
+	t.Helper()
+
+	wantPath := filepath.Join("testdata", name+".txt")
+	if *update {
+		if err := os.WriteFile(wantPath, got, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if d := cmp.Diff(string(want), string(got)); d != "" {
+		t.Fatalf("unexpected (-want, +got):\n%s", d)
+	}
+}
+
+type rankingQuery struct {
+	Query  string
+	Target string
 }
 
 var tarballCache = "/tmp/zoekt-test-ranking-tarballs-" + os.Getenv("USER")
@@ -166,7 +217,7 @@ func indexURL(indexDir, u string) error {
 	// TODO scip
 	// languageMap := make(ctags.LanguageMap)
 	// for _, lang := range []string{"kotlin", "rust", "ruby", "go", "python", "javascript", "c_sharp", "scala", "typescript", "zig"} {
-	// 	languageMap[lang] = ctags.ScipCTags
+	//	languageMap[lang] = ctags.ScipCTags
 	// }
 
 	err := archive.Index(opts, build.Options{
@@ -213,13 +264,22 @@ const (
 	fileMatchesPerSearch = 6
 )
 
-func marshalMatches(w io.Writer, queryStr string, q query.Q, files []zoekt.FileMatch) {
-	_, _ = fmt.Fprintf(w, "queryString: %s\n", queryStr)
-	_, _ = fmt.Fprintf(w, "query: %s\n\n", q)
+func docName(f zoekt.FileMatch) string {
+	return f.Repository + "/" + f.FileName
+}
+
+func marshalMatches(w io.Writer, rq rankingQuery, q query.Q, files []zoekt.FileMatch) {
+	_, _ = fmt.Fprintf(w, "queryString: %s\n", rq.Query)
+	_, _ = fmt.Fprintf(w, "query: %s\n", q)
+	_, _ = fmt.Fprintf(w, "targetRank: %d\n\n", targetRank(rq, files))
 
 	files, hiddenFiles := splitAtIndex(files, fileMatchesPerSearch)
 	for _, f := range files {
-		_, _ = fmt.Fprintf(w, "%s/%s%s\n", f.Repository, f.FileName, addTabIfNonEmpty(f.Debug))
+		doc := docName(f)
+		if doc == rq.Target {
+			doc = "**" + doc + "**"
+		}
+		_, _ = fmt.Fprintf(w, "%s%s\n", doc, addTabIfNonEmpty(f.Debug))
 
 		chunks, hidden := splitAtIndex(f.ChunkMatches, chunkMatchesPerFile)
 
@@ -236,6 +296,15 @@ func marshalMatches(w io.Writer, queryStr string, q query.Q, files []zoekt.FileM
 	if len(hiddenFiles) > 0 {
 		fmt.Fprintf(w, "hidden %d more file matches\n", len(hiddenFiles))
 	}
+}
+
+func targetRank(rq rankingQuery, files []zoekt.FileMatch) int {
+	for i, f := range files {
+		if docName(f) == rq.Target {
+			return i + 1
+		}
+	}
+	return -1
 }
 
 func splitAtIndex[E any](s []E, idx int) ([]E, []E) {

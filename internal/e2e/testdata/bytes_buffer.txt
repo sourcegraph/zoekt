@@ -1,7 +1,8 @@
 queryString: bytes buffer
 query: (and substr:"bytes" substr:"buffer")
+targetRank: 1
 
-github.com/golang/go/src/bytes/buffer.go
+**github.com/golang/go/src/bytes/buffer.go**
 20:type Buffer struct {
 54:func (b *Buffer) Bytes() []byte { return b.buf[b.off:] }
 5:package bytes
