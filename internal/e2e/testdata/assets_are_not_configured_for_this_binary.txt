@@ -14,18 +14,6 @@ github.com/sourcegraph/sourcegraph/schema/schema.go
 1538:type Notifications struct {
 hidden 668 more line matches
 
-github.com/sourcegraph/sourcegraph/doc/admin/executors/deploy_executors.md
-118:## Confirm executors are working
-194:### Configuring the auth config for use in executors
-216:### Adding certificates to a binary deployment
-hidden 47 more line matches
-
-github.com/sourcegraph/sourcegraph/doc/getting-started/github-vs-sourcegraph.md
-8:## Which is best for you?
-110:### Searching repositories, branches, and forks
-18:As your codebase grows in complexity, the value of code search quickly increases. Sourcegraph may be a good fit for your team if:
-hidden 66 more line matches
-
 github.com/sourcegraph/sourcegraph/doc/admin/executors/deploy_executors_terraform.md
 1:# Deploying Sourcegraph executors using Terraform on AWS or GCP
 56:## Terraform Version
@@ -35,7 +23,19 @@ hidden 68 more line matches
 github.com/sourcegraph/sourcegraph/doc/dev/background-information/sg/reference.md
 496:### sg lint format
 505:### sg lint format
-1:<!-- DO NOT EDIT: generated via: go generate ./dev/sg -->
+726:* `--skip-upgrade-validation`: Do not attempt to compare the previous instance version with the target instance version for upgrade compatibility. Please refer to https://docs.sourcegraph.com/admin/updates#update-policy for our instance upgrade compatibility policy.
 hidden 265 more line matches
+
+github.com/sourcegraph/sourcegraph/doc/admin/executors/deploy_executors.md
+118:## Confirm executors are working
+194:### Configuring the auth config for use in executors
+216:### Adding certificates to a binary deployment
+hidden 47 more line matches
+
+github.com/sourcegraph/sourcegraph/doc/getting-started/github-vs-sourcegraph.md
+8:## Which is best for you?
+110:### Searching repositories, branches, and forks
+28:For a high-level overview of how Sourcegraph compares to GitHub code search, see this [document](https://storage.googleapis.com/sourcegraph-assets/docs/PDFs/Sourcegraph%20vs.%20GitHub%20code%20search%20chart.pdf).  
+hidden 66 more line matches
 
 hidden 3 more file matches

@@ -1,6 +1,29 @@
 queryString: test server
 query: (and substr:"test" substr:"server")
-targetRank: 1
+targetRank: 5
+
+github.com/golang/go/test/fixedbugs/issue33355.go
+38:type Server struct {
+10:package server
+20:	srv  *Server
+
+github.com/golang/go/src/go/internal/gccgoimporter/testdata/issue29198.go
+27:type Server struct {
+5:package server
+21:type FooServer Server
+hidden 7 more line matches
+
+github.com/sourcegraph/sourcegraph/client/shared/src/testing/MockIntersectionObserver.ts
+11:export class MockIntersectionObserver implements IntersectionObserver {
+8: * An IntersectionObserver implementation that will immediately signal all
+16:    constructor(private callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+hidden 1 more line matches
+
+github.com/sourcegraph/sourcegraph/cmd/worker/internal/outboundwebhooks/handler_test.go
+158:	*httptest.Server
+162:func newMockServer(t *testing.T, expectedPayload []byte, statusCode int) *mockServer {
+157:type mockServer struct {
+hidden 25 more line matches
 
 **github.com/golang/go/src/net/http/httptest/server.go**
 26:type Server struct {
@@ -13,29 +36,5 @@ github.com/golang/go/src/net/rpc/server.go
 656:type ServerCodec interface {
 197:func NewServer() *Server {
 hidden 104 more line matches
-
-github.com/sourcegraph/cody/vscode/test/fixtures/mock-server.ts
-126:    const server = app.listen(SERVER_PORT, () => {
-19:const SERVER_PORT = 49300
-21:export const SERVER_URL = 'http://localhost:49300'
-hidden 24 more line matches
-
-github.com/golang/go/src/net/http/server.go
-2617:type Server struct {
-256:	server *Server
-2925:type serverHandler struct {
-hidden 180 more line matches
-
-github.com/sourcegraph/sourcegraph/cmd/gitserver/server/server.go
-132:type Server struct {
-2:package server
-741:func (s *Server) serverContext() (context.Context, context.CancelFunc) {
-hidden 166 more line matches
-
-github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/main.go
-150:type Server struct {
-1232:func startServer(conf rootConfig) error {
-1309:func newServer(conf rootConfig) (*Server, error) {
-hidden 52 more line matches
 
 hidden 494 more file matches

@@ -1,6 +1,12 @@
 queryString: graphql type User
 query: (and substr:"graphql" substr:"type" case_substr:"User")
-targetRank: 1
+targetRank: 2
+
+github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/apitest/types.go
+47:type User struct {
+9:	Typename    string `json:"__typename"`
+32:	Typename    string `json:"__typename"`
+hidden 11 more line matches
 
 **github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/schema.graphql**
 6376:type User implements Node & SettingsSubject & Namespace {
@@ -14,28 +20,22 @@ github.com/sourcegraph/sourcegraph/internal/types/types.go
 1766:	Type       string
 hidden 234 more line matches
 
-github.com/sourcegraph/sourcegraph/client/web/src/enterprise/insights/core/backend/gql-backend/methods/get-dashboard-owners.ts
-22:                type: InsightsDashboardOwnerType.Global,
-32:                type: InsightsDashboardOwnerType.Personal,
-18:            const { currentUser, site } = data
-hidden 8 more line matches
-
-github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/apitest/types.go
-47:type User struct {
-9:	Typename    string `json:"__typename"`
-32:	Typename    string `json:"__typename"`
-hidden 11 more line matches
-
 github.com/sourcegraph/sourcegraph/cmd/frontend/internal/batches/resolvers/apitest/types.go
 52:type User struct {
 364:	User  *User
 393:	Type       string
 hidden 68 more line matches
 
-github.com/sourcegraph/sourcegraph/internal/extsvc/github/common.go
-2030:type User struct {
-66:	User      *Actor `json:"User,omitempty"`
-527:	Type string
-hidden 136 more line matches
+github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/user.go
+239:	User        graphql.ID
+643:	User  graphql.ID
+681:	User  graphql.ID
+hidden 166 more line matches
+
+github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/rbac.go
+49:	User   *graphql.ID
+56:	User *graphql.ID
+65:	User  graphql.ID
+hidden 24 more line matches
 
 hidden 494 more file matches

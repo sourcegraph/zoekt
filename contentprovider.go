@@ -137,10 +137,10 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
-func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
+func (p *contentProvider) fillMatches(mts matchTreeScorer, ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
 	var result []LineMatch
 	if ms[0].fileName {
-		score, debugScore, _ := p.candidateMatchScore(ms, language, debug)
+		score, debugScore, _ := p.candidateMatchScore(mts, ms, language, debug)
 
 		// There is only "line" in a filename.
 		res := LineMatch{
@@ -162,7 +162,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 		}
 	} else {
 		ms = breakMatchesOnNewlines(ms, p.data(false))
-		result = p.fillContentMatches(ms, numContextLines, language, debug)
+		result = p.fillContentMatches(mts, ms, numContextLines, language, debug)
 	}
 
 	return result
@@ -174,13 +174,13 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 //
 // Note: the byte slices may be backed by mmapped data, so before being
 // returned by the API it needs to be copied.
-func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
+func (p *contentProvider) fillChunkMatches(mts matchTreeScorer, ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
 	var result []ChunkMatch
 	if ms[0].fileName {
 		// If the first match is a filename match, there will only be
 		// one match and the matched content will be the filename.
 
-		score, debugScore, _ := p.candidateMatchScore(ms, language, debug)
+		score, debugScore, _ := p.candidateMatchScore(mts, ms, language, debug)
 
 		fileName := p.id.fileName(p.idx)
 		ranges := make([]Range, 0, len(ms))
@@ -209,13 +209,13 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 			DebugScore: debugScore,
 		}}
 	} else {
-		result = p.fillContentChunkMatches(ms, numContextLines, language, debug)
+		result = p.fillContentChunkMatches(mts, ms, numContextLines, language, debug)
 	}
 
 	return result
 }
 
-func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
+func (p *contentProvider) fillContentMatches(mts matchTreeScorer, ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
 	var result []LineMatch
 	for len(ms) > 0 {
 		m := ms[0]
@@ -271,7 +271,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 			finalMatch.After = p.newlines().getLines(data, num+1, num+1+numContextLines)
 		}
 
-		score, debugScore, symbolInfo := p.candidateMatchScore(lineCands, language, debug)
+		score, debugScore, symbolInfo := p.candidateMatchScore(mts, lineCands, language, debug)
 		finalMatch.Score = score
 		finalMatch.DebugScore = debugScore
 
@@ -292,7 +292,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 	return result
 }
 
-func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
+func (p *contentProvider) fillContentChunkMatches(mts matchTreeScorer, ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
 	newlines := p.newlines()
 	data := p.data(false)
 
@@ -310,7 +310,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 	chunks := chunkCandidates(ms, newlines, numContextLines)
 	chunkMatches := make([]ChunkMatch, 0, len(chunks))
 	for _, chunk := range chunks {
-		score, debugScore, symbolInfo := p.candidateMatchScore(chunk.candidates, language, debug)
+		score, debugScore, symbolInfo := p.candidateMatchScore(mts, chunk.candidates, language, debug)
 
 		ranges := make([]Range, 0, len(chunk.candidates))
 		for _, cm := range chunk.candidates {
@@ -533,6 +533,10 @@ const (
 
 	// Used for ordering line and chunk matches within a file.
 	scoreLineOrderFactor = 1.0
+
+	scoreQueryContentAtomsCountFactor  = 1500.0
+	scoreQueryContentAtomsRunFactor    = 1500.0
+	scoreQueryFilenameAtomsCountFactor = 1500.0
 )
 
 // findSection checks whether a section defined by offset and size lies within
@@ -583,7 +587,7 @@ func (p *contentProvider) findSymbol(cm *candidateMatch) (DocumentSection, *Symb
 	return sec, si, true
 }
 
-func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language string, debug bool) (float64, string, []*Symbol) {
+func (p *contentProvider) candidateMatchScore(mts matchTreeScorer, ms []*candidateMatch, language string, debug bool) (float64, string, []*Symbol) {
 	type debugScore struct {
 		what  string
 		score float64
@@ -664,6 +668,12 @@ func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language str
 			maxScore.score = score.score
 			maxScore.what = score.what
 		}
+	}
+
+	mtsScore, mtsWhat := mts.score(ms, debug)
+	maxScore.score += mtsScore
+	if debug {
+		maxScore.what += mtsWhat
 	}
 
 	if debug {

@@ -3,39 +3,39 @@ query: (and substr:"bytes" substr:"buffer")
 targetRank: 1
 
 **github.com/golang/go/src/bytes/buffer.go**
-20:type Buffer struct {
 54:func (b *Buffer) Bytes() []byte { return b.buf[b.off:] }
+20:type Buffer struct {
 5:package bytes
 hidden 126 more line matches
 
-github.com/golang/go/src/cmd/internal/edit/edit.go
-14:type Buffer struct {
-68:func (b *Buffer) Bytes() []byte {
-41:func NewBuffer(data []byte) *Buffer {
-hidden 13 more line matches
+github.com/golang/go/src/bytes/buffer_test.go
+76:func fillBytes(t *testing.T, testname string, buf *Buffer, s string, n int, fub []byte) string {
+92:func TestNewBuffer(t *testing.T) {
+477:func TestReadBytes(t *testing.T) {
+hidden 113 more line matches
 
-github.com/golang/go/src/hash/crc32/crc32_ppc64le.s
-122:	SLD     $2,R8           // convert index-> bytes
-59:	MOVWZ	0(R5),R8	// 0-3 bytes of p ?Endian?
-60:	MOVWZ	4(R5),R9	// 4-7 bytes of p
-hidden 35 more line matches
+github.com/sourcegraph/sourcegraph/client/browser/src/types/webextension-polyfill/index.d.ts
+1708:        bytes?: ArrayBuffer
+501:        bytesReceived: number
+502:        totalBytes: number
+hidden 9 more line matches
 
-github.com/golang/go/src/fmt/print.go
-101:type buffer []byte
-509:func (p *pp) fmtBytes(v []byte, verb rune, typeString string) {
-17:// Strings for use with buffer.WriteString.
-hidden 28 more line matches
+github.com/sourcegraph/sourcegraph/lib/output/block.go
+49:	buffer bytes.Buffer
+41:	for _, line := range bytes.Split(bytes.TrimRight(b.writer.buffer.Bytes(), "\n"), []byte("\n")) {
+4:	"bytes"
+hidden 2 more line matches
 
-github.com/golang/go/src/bufio/scan.go
-106:func (s *Scanner) Bytes() []byte {
-267:func (s *Scanner) Buffer(buf []byte, max int) {
-289:func ScanBytes(data []byte, atEOF bool) (advance int, token []byte, err error) {
-hidden 26 more line matches
+github.com/golang/go/src/compress/flate/huffman_bit_writer.go
+82:	bytes           [bufferSize]byte
+166:func (w *huffmanBitWriter) writeBytes(bytes []byte) {
+29:	bufferFlushSize = 240
+hidden 63 more line matches
 
-github.com/golang/go/src/os/exec/exec.go
-1134:func (w *prefixSuffixSaver) Bytes() []byte {
-94:	"bytes"
-396:			if i := bytes.Index(stack, []byte("\nos/exec.Command(")); i >= 0 {
+github.com/golang/go/src/encoding/json/decode_test.go
+1784:	Buffer bytes.Buffer
+1777:	PBuffer *bytes.Buffer // has methods, just not relevant ones
+1379:	ByteSlice   []byte
 hidden 17 more line matches
 
 hidden 494 more file matches

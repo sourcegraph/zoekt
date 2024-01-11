@@ -27,6 +27,10 @@ type candidateMatch struct {
 	substrBytes   []byte
 	substrLowered []byte
 
+	// queryAtoms is a bitmask for which atoms in the query this candidate came
+	// from.
+	queryAtoms uint64
+
 	file      uint32
 	symbolIdx uint32
 

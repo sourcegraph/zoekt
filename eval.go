@@ -336,7 +336,7 @@ nextFileMatch:
 		// non-overlapping. gatherMatches respects this invariant and all later
 		// transformations respect this.
 		shouldMergeMatches := !opts.ChunkMatches
-		finalCands := gatherMatches(mt, known, shouldMergeMatches)
+		matchTreeScorer, finalCands := gatherMatches(mt, known, shouldMergeMatches)
 
 		if len(finalCands) == 0 {
 			nm := d.fileName(nextDoc)
@@ -354,9 +354,9 @@ nextFileMatch:
 		}
 
 		if opts.ChunkMatches {
-			fileMatch.ChunkMatches = cp.fillChunkMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+			fileMatch.ChunkMatches = cp.fillChunkMatches(matchTreeScorer, finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
 		} else {
-			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+			fileMatch.LineMatches = cp.fillMatches(matchTreeScorer, finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
 		}
 
 		if opts.UseKeywordScoring {
@@ -548,20 +548,22 @@ func (m sortByOffsetSlice) Less(i, j int) bool {
 // If `merge` is set, overlapping and adjacent matches will be merged
 // into a single match. Otherwise, overlapping matches will be removed,
 // but adjacent matches will remain.
-func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candidateMatch {
+func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) (matchTreeScorer, []*candidateMatch) {
+	var mts matchTreeScorer
 	var cands []*candidateMatch
 	visitMatches(mt, known, func(mt matchTree) {
 		if smt, ok := mt.(*substrMatchTree); ok {
-			cands = append(cands, smt.current...)
+			cands = append(cands, mts.setQueryAtoms(smt.current, smt.fileName)...)
 		}
 		if rmt, ok := mt.(*regexpMatchTree); ok {
-			cands = append(cands, rmt.found...)
+			cands = append(cands, mts.setQueryAtoms(rmt.found, rmt.fileName)...)
 		}
 		if rmt, ok := mt.(*wordMatchTree); ok {
-			cands = append(cands, rmt.found...)
+			cands = append(cands, mts.setQueryAtoms(rmt.found, rmt.fileName)...)
 		}
 		if smt, ok := mt.(*symbolRegexpMatchTree); ok {
-			cands = append(cands, smt.found...)
+			fileName := false
+			cands = append(cands, mts.setQueryAtoms(smt.found, fileName)...)
 		}
 	})
 
@@ -597,6 +599,7 @@ func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candid
 			if lastEnd >= c.byteOffset {
 				if end > lastEnd {
 					last.byteMatchSz = end - last.byteOffset
+					last.queryAtoms = last.queryAtoms | c.queryAtoms
 				}
 				continue
 			}
@@ -623,7 +626,7 @@ func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candid
 		}
 	}
 
-	return res
+	return mts, res
 }
 
 func (d *indexData) branchIndex(docID uint32) int {

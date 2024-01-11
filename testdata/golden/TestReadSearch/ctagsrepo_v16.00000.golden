@@ -16,7 +16,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 501,
+            "Score": 3501,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -29,7 +29,7 @@
           }
         ],
         "Checksum": "n9fUYqacPXg=",
-        "Score": 510
+        "Score": 3510
       }
     ],
     [
@@ -46,7 +46,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 501,
+            "Score": 3501,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -59,7 +59,7 @@
           }
         ],
         "Checksum": "n9fUYqacPXg=",
-        "Score": 510
+        "Score": 3510
       }
     ],
     [
@@ -76,7 +76,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 8001,
+            "Score": 11001,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -94,7 +94,7 @@
           }
         ],
         "Checksum": "n9fUYqacPXg=",
-        "Score": 8010
+        "Score": 11010
       }
     ],
     [
@@ -111,7 +111,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 6051,
+            "Score": 9051,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -129,7 +129,7 @@
           }
         ],
         "Checksum": "n9fUYqacPXg=",
-        "Score": 6060
+        "Score": 9060
       }
     ]
   ]

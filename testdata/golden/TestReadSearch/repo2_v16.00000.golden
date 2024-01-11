@@ -16,7 +16,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 501,
+            "Score": 3501,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -29,7 +29,7 @@
           }
         ],
         "Checksum": "Ju1TnQKZ6mE=",
-        "Score": 510
+        "Score": 3510
       }
     ],
     [
@@ -46,7 +46,7 @@
             "Before": null,
             "After": null,
             "FileName": false,
-            "Score": 501,
+            "Score": 3501,
             "DebugScore": "",
             "LineFragments": [
               {
@@ -59,7 +59,7 @@
           }
         ],
         "Checksum": "Ju1TnQKZ6mE=",
-        "Score": 510
+        "Score": 3510
       }
     ],
     null,

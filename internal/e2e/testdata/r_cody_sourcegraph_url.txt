@@ -1,6 +1,12 @@
 queryString: r:cody sourcegraph url
 query: (and repo:cody substr:"sourcegraph" substr:"url")
-targetRank: 1
+targetRank: 2
+
+github.com/sourcegraph/cody/e2e/src/sourcegraph-api.ts
+41:    const sourcegraphApiUrl = `${sourcegraphEndpoint}/.api/graphql`
+3:const SOURCEGRAPH_GRAPHQL_SEARCH_QUERY = `
+40:    const sourcegraphEndpoint = process.env.SRC_ENDPOINT ?? ''
+hidden 5 more line matches
 
 **github.com/sourcegraph/cody/lib/shared/src/sourcegraph-api/graphql/client.ts**
 611:        const url = buildGraphQLUrl({ request: query, baseUrl: this.config.serverEndpoint })
@@ -8,22 +14,17 @@ targetRank: 1
 641:        const url = 'http://localhost:49300/.api/testLogging'
 hidden 51 more line matches
 
-github.com/sourcegraph/cody/vscode/src/completions/client.ts
-85:        const url = getCodeCompletionsEndpoint()
-1:import { FeatureFlag, featureFlagProvider } from '@sourcegraph/cody-shared/src/experimentation/FeatureFlagProvider'
-5:} from '@sourcegraph/cody-shared/src/sourcegraph-api/completions/client'
+github.com/sourcegraph/cody/lib/shared/src/sourcegraph-api/graphql/url.ts
+7:    baseUrl: string
+12:export const buildGraphQLUrl = ({ request, baseUrl }: BuildGraphQLUrlOptions): string => {
+5:interface BuildGraphQLUrlOptions {
+hidden 3 more line matches
+
+github.com/sourcegraph/cody/lib/shared/src/sourcegraph-api/environments.ts
+1:export const DOTCOM_URL = new URL('https://sourcegraph.com')
+2:export const INTERNAL_S2_URL = new URL('https://sourcegraph.sourcegraph.com/')
+3:export const LOCAL_APP_URL = new URL('http://localhost:3080')
 hidden 6 more line matches
-
-github.com/sourcegraph/cody/vscode/scripts/download-wasm-modules.ts
-83:    for (const url of urls) {
-93:function getFilePathFromURL(url: string): string {
-20:const urls = [
-hidden 21 more line matches
-
-github.com/sourcegraph/cody/slack/src/services/local-vector-store.ts
-18:    const { content, url } = codyNotice
-9:        owner: 'sourcegraph',
-24:            fileName: url,
 
 github.com/sourcegraph/cody/lib/shared/src/sourcegraph-api/completions/client.ts
 23:export abstract class SourcegraphCompletionsClient {
