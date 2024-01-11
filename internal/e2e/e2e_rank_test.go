@@ -61,6 +61,10 @@ func TestRanking(t *testing.T) {
 		// cody
 		q("generate unit test", "github.com/sourcegraph/cody/lib/shared/src/chat/recipes/generate-test.ts"),
 		q("r:cody sourcegraph url", "github.com/sourcegraph/cody/lib/shared/src/sourcegraph-api/graphql/client.ts"),
+
+		// exact phrases
+		q("assets are not configured for this binary", "github.com/sourcegraph/sourcegraph/ui/assets/assets.go"),
+		q("sourcegraph/server docker image build", "github.com/sourcegraph/sourcegraph/dev/tools.go"),
 	}
 
 	var indexDir string
