@@ -20,21 +20,25 @@ import (
 )
 
 // candidateMatch is a candidate match for a substring.
+//
+// Note: a lot of these can be in memory, so think about fieldalignment when
+// modify the fields of this structure.
 type candidateMatch struct {
-	caseSensitive bool
-	fileName      bool
-	symbol        bool
-	symbolIdx     uint32
-
 	substrBytes   []byte
 	substrLowered []byte
 
-	file uint32
+	file      uint32
+	symbolIdx uint32
 
 	// Offsets are relative to the start of the filename or file contents.
 	runeOffset  uint32
 	byteOffset  uint32
 	byteMatchSz uint32
+
+	// bools at end for struct field alignment
+	caseSensitive bool
+	fileName      bool
+	symbol        bool
 }
 
 // Matches content against the substring, and populates byteMatchSz on success

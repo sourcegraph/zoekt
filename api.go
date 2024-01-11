@@ -34,41 +34,11 @@ const interfaceBytes uint64 = 16
 
 // FileMatch contains all the matches within a file.
 type FileMatch struct {
-	// Ranking; the higher, the better.
-	Score float64 // TODO - hide this field?
-
-	// For debugging. Needs DebugScore set, but public so tests in
-	// other packages can print some diagnostics.
-	Debug string
-
 	FileName string
 
 	// Repository is the globally unique name of the repo of the
 	// match
 	Repository string
-	Branches   []string
-
-	// One of LineMatches or ChunkMatches will be returned depending on whether
-	// the SearchOptions.ChunkMatches is set.
-	LineMatches  []LineMatch
-	ChunkMatches []ChunkMatch
-
-	// RepositoryID is a Sourcegraph extension. This is the ID of Repository in
-	// Sourcegraph.
-	RepositoryID uint32
-
-	// RepositoryPriority is a Sourcegraph extension. It is used by Sourcegraph to
-	// order results from different repositories relative to each other.
-	RepositoryPriority float64
-
-	// Only set if requested
-	Content []byte
-
-	// Checksum of the content.
-	Checksum []byte
-
-	// Detected language of the result.
-	Language string
 
 	// SubRepositoryName is the globally unique name of the repo,
 	// if it came from a subrepository
@@ -80,6 +50,37 @@ type FileMatch struct {
 
 	// Commit SHA1 (hex) of the (sub)repo holding the file.
 	Version string
+
+	// Detected language of the result.
+	Language string
+
+	// For debugging. Needs DebugScore set, but public so tests in
+	// other packages can print some diagnostics.
+	Debug string
+
+	Branches []string
+
+	// One of LineMatches or ChunkMatches will be returned depending on whether
+	// the SearchOptions.ChunkMatches is set.
+	LineMatches  []LineMatch
+	ChunkMatches []ChunkMatch
+
+	// Only set if requested
+	Content []byte
+
+	// Checksum of the content.
+	Checksum []byte
+
+	// Ranking; the higher, the better.
+	Score float64 // TODO - hide this field?
+
+	// RepositoryPriority is a Sourcegraph extension. It is used by Sourcegraph to
+	// order results from different repositories relative to each other.
+	RepositoryPriority float64
+
+	// RepositoryID is a Sourcegraph extension. This is the ID of Repository in
+	// Sourcegraph.
+	RepositoryID uint32
 }
 
 func (m *FileMatch) sizeBytes() (sz uint64) {
@@ -134,16 +135,10 @@ func (m *FileMatch) sizeBytes() (sz uint64) {
 // ChunkMatch is a set of non-overlapping matches within a contiguous range of
 // lines in the file.
 type ChunkMatch struct {
+	DebugScore string
+
 	// Content is a contiguous range of complete lines that fully contains Ranges.
 	Content []byte
-	// ContentStart is the location (inclusive) of the beginning of content
-	// relative to the beginning of the file. It will always be at the
-	// beginning of a line (Column will always be 1).
-	ContentStart Location
-
-	// FileName indicates whether this match is a match on the file name, in
-	// which case Content will contain the file name.
-	FileName bool
 
 	// Ranges is a set of matching ranges within this chunk. Each range is relative
 	// to the beginning of the file (not the beginning of Content).
@@ -153,8 +148,16 @@ type ChunkMatch struct {
 	// its length will equal that of Ranges. Any of its elements may be nil.
 	SymbolInfo []*Symbol
 
-	Score      float64
-	DebugScore string
+	// FileName indicates whether this match is a match on the file name, in
+	// which case Content will contain the file name.
+	FileName bool
+
+	// ContentStart is the location (inclusive) of the beginning of content
+	// relative to the beginning of the file. It will always be at the
+	// beginning of a line (Column will always be 1).
+	ContentStart Location
+
+	Score float64
 }
 
 func (cm *ChunkMatch) sizeBytes() (sz uint64) {
