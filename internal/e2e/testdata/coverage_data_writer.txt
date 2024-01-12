@@ -1,0 +1,41 @@
+queryString: coverage data writer
+query: (and substr:"coverage" substr:"data" substr:"writer")
+targetRank: 13
+
+github.com/golang/go/src/internal/coverage/stringtab/stringtab.go
+19:type Writer struct {
+27:func (stw *Writer) InitWriter() {
+9:	"internal/coverage/slicereader"
+hidden 16 more line matches
+
+github.com/golang/go/src/cmd/cover/func.go
+149:func (f *FuncExtent) coverage(profile *cover.Profile) (num, den int64) {
+30:// funcOutput takes two file names as arguments, a coverage profile to read as input and an output
+32:// as output the coverage data broken down by function, like this:
+hidden 8 more line matches
+
+github.com/golang/go/src/cmd/cover/html.go
+199:	Coverage float64
+170:type templateData struct {
+21:// htmlOutput reads the profile data from profile and generates an HTML
+hidden 18 more line matches
+
+github.com/golang/go/src/internal/fuzz/fuzz.go
+474:	Data []byte
+487:func corpusEntryData(ce CorpusEntry) ([]byte, error) {
+908:func (c *coordinator) updateCoverage(newCoverage []byte) int {
+hidden 91 more line matches
+
+github.com/golang/go/src/testing/fuzz.go
+93:	Data       []byte
+205:// modify the underlying data of the arguments provided by the fuzzing engine.
+275:	run := func(captureOut io.Writer, e corpusEntry) (ok bool) {
+hidden 7 more line matches
+
+github.com/golang/go/src/cmd/vendor/golang.org/x/sys/unix/ztypes_linux.go
+227:	Data         [7]byte
+449:	Data [8]uint32
+2384:	Data    *byte
+hidden 85 more line matches
+
+hidden 35 more file matches
