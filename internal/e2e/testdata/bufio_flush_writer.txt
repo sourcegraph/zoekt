@@ -1,0 +1,41 @@
+queryString: bufio flush writer
+query: (and substr:"bufio" substr:"flush" substr:"writer")
+targetRank: 25
+
+github.com/golang/go/src/image/gif/writer.go
+43:type writer interface {
+77:func (b blockWriter) Flush() error {
+123:func (e *encoder) flush() {
+hidden 28 more line matches
+
+github.com/golang/go/src/image/jpeg/writer.go
+211:type writer interface {
+231:func (e *encoder) flush() {
+212:	Flush() error
+hidden 11 more line matches
+
+github.com/golang/go/src/compress/lzw/writer.go
+15:type writer interface {
+36:type Writer struct {
+17:	Flush() error
+hidden 36 more line matches
+
+github.com/golang/go/src/bufio/bufio.go
+579:type Writer struct {
+635:func (b *Writer) Flush() error {
+836:	*Writer
+hidden 72 more line matches
+
+github.com/golang/go/src/archive/zip/writer.go
+24:type Writer struct {
+61:func (w *Writer) Flush() error {
+607:	io.Writer
+hidden 55 more line matches
+
+github.com/golang/go/src/encoding/csv/writer.go
+30:type Writer struct {
+123:func (w *Writer) Flush() {
+37:func NewWriter(w io.Writer) *Writer {
+hidden 25 more line matches
+
+hidden 77 more file matches
