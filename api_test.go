@@ -17,6 +17,7 @@ package zoekt // import "github.com/sourcegraph/zoekt"
 import (
 	"bytes"
 	"encoding/gob"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -134,5 +135,33 @@ func TestSizeBytesChunkMatches(t *testing.T) {
 	var wantBytes uint64 = 208
 	if cm.sizeBytes() != wantBytes {
 		t.Fatalf("want %d, got %d", wantBytes, cm.sizeBytes())
+	}
+}
+
+func TestMatchSize(t *testing.T) {
+	cases := []struct {
+		v    any
+		size int
+	}{{
+		v:    FileMatch{},
+		size: 256,
+	}, {
+		v:    ChunkMatch{},
+		size: 112,
+	}, {
+		v:    candidateMatch{},
+		size: 72,
+	}, {
+		v:    candidateChunk{},
+		size: 40,
+	}}
+	for _, c := range cases {
+		got := reflect.TypeOf(c.v).Size()
+		if int(got) != c.size {
+			t.Errorf(`sizeof struct %T has changed from %d to %d.
+These are match structs that occur a lot in memory, so we optimize size.
+When changing, please ensure there isn't unnecessary padding via the
+tool fieldalignment then update this test.`, c.v, c.size, got)
+		}
 	}
 }
