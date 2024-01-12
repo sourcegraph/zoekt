@@ -369,11 +369,11 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 }
 
 type candidateChunk struct {
+	candidates []*candidateMatch
 	firstLine  uint32 // 1-based, inclusive
 	lastLine   uint32 // 1-based, inclusive
 	minOffset  uint32 // 0-based, inclusive
 	maxOffset  uint32 // 0-based, exclusive
-	candidates []*candidateMatch
 }
 
 // chunkCandidates groups a set of sorted, non-overlapping candidate matches by line number. Adjacent
@@ -566,8 +566,8 @@ func findSection(secs []DocumentSection, off, sz uint32) (int, bool) {
 
 func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch, language string, debug bool) (float64, string) {
 	type debugScore struct {
-		score float64
 		what  string
+		score float64
 	}
 
 	score := &debugScore{}
@@ -654,8 +654,8 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 
 func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, language string, debug bool) (float64, string) {
 	type debugScore struct {
-		score float64
 		what  string
+		score float64
 	}
 
 	score := &debugScore{}

@@ -35,10 +35,10 @@ type hitIterator interface {
 
 // distanceHitIterator looks for hits at a fixed distance apart.
 type distanceHitIterator struct {
-	started  bool
-	distance uint32
 	i1       hitIterator
 	i2       hitIterator
+	distance uint32
+	started  bool
 }
 
 func (i *distanceHitIterator) String() string {
