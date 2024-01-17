@@ -32,10 +32,10 @@ github.com/sourcegraph/sourcegraph/cmd/gitserver/server/server.go
 741:func (s *Server) serverContext() (context.Context, context.CancelFunc) {
 hidden 166 more line matches
 
-github.com/golang/go/src/cmd/go/internal/vcweb/vcstest/vcstest.go
-32:type Server struct {
-42:func NewServer() (srv *Server, err error) {
-7:package vcstest
-hidden 31 more line matches
+github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/main.go
+150:type Server struct {
+1232:func startServer(conf rootConfig) error {
+1309:func newServer(conf rootConfig) (*Server, error) {
+hidden 52 more line matches
 
 hidden 494 more file matches
