@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sourcegraph/zoekt/query"
@@ -945,8 +946,71 @@ type SearchOptions struct {
 	SpanContext map[string]string
 }
 
+// String returns a succinct representation of the options. This is meant for
+// human consumption in logs and traces.
+//
+// Note: some tracing systems have limits on length of values, so we take care
+// to try and make this small, and include the important information near the
+// front incase of truncation.
 func (s *SearchOptions) String() string {
-	return fmt.Sprintf("%#v", s)
+	var b strings.Builder
+
+	add := func(name, value string) {
+		b.WriteString(name)
+		b.WriteByte('=')
+		b.WriteString(value)
+		b.WriteByte(' ')
+	}
+	addInt := func(name string, value int) {
+		if value != 0 {
+			add(name, strconv.Itoa(value))
+		}
+	}
+	addDuration := func(name string, value time.Duration) {
+		if value != 0 {
+			add(name, value.String())
+		}
+	}
+	addBool := func(name string, value bool) {
+		if !value {
+			return
+		}
+		b.WriteString(name)
+		b.WriteByte(' ')
+	}
+
+	b.WriteString("zoekt.SearchOptions{ ")
+
+	addInt("ShardMaxMatchCount", s.ShardMaxMatchCount)
+	addInt("TotalMaxMatchCount", s.TotalMaxMatchCount)
+	addInt("ShardRepoMaxMatchCount", s.ShardRepoMaxMatchCount)
+	addInt("ShardMaxImportantMatch", s.ShardMaxImportantMatch)
+	addInt("TotalMaxImportantMatch", s.TotalMaxImportantMatch)
+	addInt("MaxDocDisplayCount", s.MaxDocDisplayCount)
+	addInt("MaxMatchDisplayCount", s.MaxMatchDisplayCount)
+	addInt("NumContextLines", s.NumContextLines)
+
+	addDuration("MaxWallTime", s.MaxWallTime)
+	addDuration("FlushWallTime", s.FlushWallTime)
+
+	if s.DocumentRanksWeight > 0 {
+		add("DocumentRanksWeight", strconv.FormatFloat(s.DocumentRanksWeight, 'g', -1, 64))
+	}
+
+	addBool("EstimateDocCount", s.EstimateDocCount)
+	addBool("Whole", s.Whole)
+	addBool("ChunkMatches", s.ChunkMatches)
+	addBool("UseDocumentRanks", s.UseDocumentRanks)
+	addBool("UseKeywordScoring", s.UseKeywordScoring)
+	addBool("Trace", s.Trace)
+	addBool("DebugScore", s.DebugScore)
+
+	for k, v := range s.SpanContext {
+		add("SpanContext."+k, strconv.Quote(v))
+	}
+
+	b.WriteByte('}')
+	return b.String()
 }
 
 // Sender is the interface that wraps the basic Send method.
