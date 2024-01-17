@@ -219,15 +219,15 @@ func TestSearchOptions_String(t *testing.T) {
 	}{{
 		// Empty
 		Opts: SearchOptions{},
-		Want: "&zoekt.SearchOptions{EstimateDocCount:false, Whole:false, ShardMaxMatchCount:0, TotalMaxMatchCount:0, ShardRepoMaxMatchCount:0, ShardMaxImportantMatch:0, TotalMaxImportantMatch:0, MaxWallTime:0, FlushWallTime:0, MaxDocDisplayCount:0, MaxMatchDisplayCount:0, NumContextLines:0, ChunkMatches:false, UseDocumentRanks:false, DocumentRanksWeight:0, UseKeywordScoring:false, Trace:false, DebugScore:false, SpanContext:map[string]string(nil)}",
+		Want: "zoekt.SearchOptions{ }",
 	}, {
 		// healthz options
 		Opts: SearchOptions{ShardMaxMatchCount: 1, TotalMaxMatchCount: 1, MaxDocDisplayCount: 1},
-		Want: "&zoekt.SearchOptions{EstimateDocCount:false, Whole:false, ShardMaxMatchCount:1, TotalMaxMatchCount:1, ShardRepoMaxMatchCount:0, ShardMaxImportantMatch:0, TotalMaxImportantMatch:0, MaxWallTime:0, FlushWallTime:0, MaxDocDisplayCount:1, MaxMatchDisplayCount:0, NumContextLines:0, ChunkMatches:false, UseDocumentRanks:false, DocumentRanksWeight:0, UseKeywordScoring:false, Trace:false, DebugScore:false, SpanContext:map[string]string(nil)}",
+		Want: "zoekt.SearchOptions{ ShardMaxMatchCount=1 TotalMaxMatchCount=1 MaxDocDisplayCount=1 }",
 	}, {
 		// zoekt-webserver defaults
 		Opts: webDefaults,
-		Want: "&zoekt.SearchOptions{EstimateDocCount:false, Whole:false, ShardMaxMatchCount:100000, TotalMaxMatchCount:1000000, ShardRepoMaxMatchCount:0, ShardMaxImportantMatch:0, TotalMaxImportantMatch:0, MaxWallTime:10000000000, FlushWallTime:0, MaxDocDisplayCount:0, MaxMatchDisplayCount:0, NumContextLines:0, ChunkMatches:false, UseDocumentRanks:false, DocumentRanksWeight:0, UseKeywordScoring:false, Trace:false, DebugScore:false, SpanContext:map[string]string(nil)}",
+		Want: "zoekt.SearchOptions{ ShardMaxMatchCount=100000 TotalMaxMatchCount=1000000 MaxWallTime=10s }",
 	}}
 
 	for _, tc := range cases {
