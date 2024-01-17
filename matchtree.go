@@ -642,6 +642,8 @@ func (t *andLineMatchTree) matches(cp *contentProvider, cost int, known map[matc
 		}
 	}
 
+	newlines := cp.newlines()
+
 	type lineRange struct {
 		start int
 		end   int
@@ -649,7 +651,7 @@ func (t *andLineMatchTree) matches(cp *contentProvider, cost int, known map[matc
 	lines := make([]lineRange, 0, len(t.children[fewestChildren].(*substrMatchTree).current))
 	prev := -1
 	for _, candidate := range t.children[fewestChildren].(*substrMatchTree).current {
-		line, byteStart, byteEnd := cp.newlines().atOffset(candidate.byteOffset)
+		line, byteStart, byteEnd := newlines.atOffset(candidate.byteOffset)
 		if line == prev {
 			continue
 		}

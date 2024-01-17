@@ -216,10 +216,11 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 }
 
 func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
+	newlines := p.newlines()
 	var result []LineMatch
 	for len(ms) > 0 {
 		m := ms[0]
-		num, lineStart, lineEnd := p.newlines().atOffset(m.byteOffset)
+		num, lineStart, lineEnd := newlines.atOffset(m.byteOffset)
 
 		var lineCands []*candidateMatch
 
@@ -267,8 +268,8 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 		finalMatch.Line = data[lineStart:lineEnd]
 
 		if numContextLines > 0 {
-			finalMatch.Before = p.newlines().getLines(data, num-numContextLines, num)
-			finalMatch.After = p.newlines().getLines(data, num+1, num+1+numContextLines)
+			finalMatch.Before = newlines.getLines(data, num-numContextLines, num)
+			finalMatch.After = newlines.getLines(data, num+1, num+1+numContextLines)
 		}
 
 		for _, m := range lineCands {
@@ -455,6 +456,12 @@ type newlines struct {
 	// on this struct so we can safely know the length of the last line
 	// in the file since not all files end in a newline.
 	fileSize uint32
+
+	// PERF: These store the last computed value for atOffset. This is valuable
+	// since we often repeatedly look up these values for items on the same
+	// line.
+	lastLineNumber             int
+	lastLineStart, lastLineEnd uint32
 }
 
 // atOffset returns the line containing the offset. If the offset lands on
@@ -462,20 +469,29 @@ type newlines struct {
 // by its linenumber (base-1, byte index of line start, byte index of
 // line end). The line end is the index of a newline, or the filesize
 // (if matching the last line of the file.)
-func (nls newlines) atOffset(offset uint32) (lineNumber, lineStart, lineEnd int) {
+func (nls *newlines) atOffset(offset uint32) (lineNumber, lineStart, lineEnd int) {
+	// Use cache if we are on the same line as the last call
+	if offset >= nls.lastLineStart && offset < nls.lastLineEnd {
+		return nls.lastLineNumber, int(nls.lastLineStart), int(nls.lastLineEnd)
+	}
+
 	idx := sort.Search(len(nls.locs), func(n int) bool {
 		return nls.locs[n] >= offset
 	})
 
-	start, end := nls.lineBounds(idx + 1)
-	return idx + 1, int(start), int(end)
+	number := idx + 1
+	start, end := nls.lineBounds(number)
+
+	nls.lastLineNumber, nls.lastLineStart, nls.lastLineEnd = number, start, end
+
+	return number, int(start), int(end)
 }
 
 // lineBounds returns the byte offsets of the start and end of the 1-based
 // lineNumber. The end offset is exclusive and will not contain the line-ending
 // newline. If the line number is out of range of the lines in the file, start
 // and end will be clamped to [0,fileSize].
-func (nls newlines) lineBounds(lineNumber int) (start, end uint32) {
+func (nls *newlines) lineBounds(lineNumber int) (start, end uint32) {
 	// nls.locs[0] + 1 is the start of the 2nd line of data.
 	startIdx := lineNumber - 2
 	endIdx := lineNumber - 1
@@ -501,7 +517,7 @@ func (nls newlines) lineBounds(lineNumber int) (start, end uint32) {
 
 // getLines returns a slice of data containing the lines [low, high).
 // low is 1-based and inclusive. high is 1-based and exclusive.
-func (nls newlines) getLines(data []byte, low, high int) []byte {
+func (nls *newlines) getLines(data []byte, low, high int) []byte {
 	if low >= high {
 		return nil
 	}
