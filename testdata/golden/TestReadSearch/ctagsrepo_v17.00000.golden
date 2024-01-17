@@ -4,11 +4,9 @@
   "FileMatches": [
     [
       {
-        "Score": 510,
-        "Debug": "",
         "FileName": "main.go",
         "Repository": "repo",
-        "Branches": null,
+        "Language": "go",
         "LineMatches": [
           {
             "Line": "ZnVuYyBtYWluKCkgew==",
@@ -30,24 +28,15 @@
             ]
           }
         ],
-        "ChunkMatches": null,
-        "RepositoryID": 0,
-        "RepositoryPriority": 0,
-        "Content": null,
         "Checksum": "n9fUYqacPXg=",
-        "Language": "go",
-        "SubRepositoryName": "",
-        "SubRepositoryPath": "",
-        "Version": ""
+        "Score": 510
       }
     ],
     [
       {
-        "Score": 510,
-        "Debug": "",
         "FileName": "main.go",
         "Repository": "repo",
-        "Branches": null,
+        "Language": "go",
         "LineMatches": [
           {
             "Line": "cGFja2FnZSBtYWlu",
@@ -69,24 +58,15 @@
             ]
           }
         ],
-        "ChunkMatches": null,
-        "RepositoryID": 0,
-        "RepositoryPriority": 0,
-        "Content": null,
         "Checksum": "n9fUYqacPXg=",
-        "Language": "go",
-        "SubRepositoryName": "",
-        "SubRepositoryPath": "",
-        "Version": ""
+        "Score": 510
       }
     ],
     [
       {
-        "Score": 8010,
-        "Debug": "",
         "FileName": "main.go",
         "Repository": "repo",
-        "Branches": null,
+        "Language": "go",
         "LineMatches": [
           {
             "Line": "CW51bSAgICAgPSA1",
@@ -113,24 +93,15 @@
             ]
           }
         ],
-        "ChunkMatches": null,
-        "RepositoryID": 0,
-        "RepositoryPriority": 0,
-        "Content": null,
         "Checksum": "n9fUYqacPXg=",
-        "Language": "go",
-        "SubRepositoryName": "",
-        "SubRepositoryPath": "",
-        "Version": ""
+        "Score": 8010
       }
     ],
     [
       {
-        "Score": 6060,
-        "Debug": "",
         "FileName": "main.go",
         "Repository": "repo",
-        "Branches": null,
+        "Language": "go",
         "LineMatches": [
           {
             "Line": "CW1lc3NhZ2UgPSAiaGVsbG8i",
@@ -157,15 +128,8 @@
             ]
           }
         ],
-        "ChunkMatches": null,
-        "RepositoryID": 0,
-        "RepositoryPriority": 0,
-        "Content": null,
         "Checksum": "n9fUYqacPXg=",
-        "Language": "go",
-        "SubRepositoryName": "",
-        "SubRepositoryPath": "",
-        "Version": ""
+        "Score": 6060
       }
     ]
   ]
