@@ -160,7 +160,7 @@ func TestSearch_ShardRepoMaxMatchCountOpt(t *testing.T) {
 
 	t.Run("stats", func(t *testing.T) {
 		got, want := sr.Stats, Stats{
-			ContentBytesLoaded: 2,
+			ContentBytesLoaded: 0,
 			FileCount:          2,
 			FilesConsidered:    2,
 			FilesSkipped:       2,
