@@ -38,4 +38,4 @@ github.com/golang/go/src/cmd/link/internal/loader/loader.go
 228:	generatedSyms        Bitmap // symbols that generate their content, indexed by ext sym idx
 hidden 50 more line matches
 
-hidden 244 more file matches
+hidden 245 more file matches
