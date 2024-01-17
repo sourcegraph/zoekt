@@ -21,11 +21,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/grafana/regexp"
 )
 
 /*
-BenchmarkMinimalRepoListEncodings/slice-8         	    570	  2145665 ns/op	   753790 bytes	   3981 B/op	      0 allocs/op
-BenchmarkMinimalRepoListEncodings/map-8           	    360	  3337522 ns/op	   740778 bytes	 377777 B/op	  13002 allocs/op
+BenchmarkMinimalRepoListEncodings/slice-8								570		2145665 ns/op		 753790 bytes		 3981 B/op				0 allocs/op
+BenchmarkMinimalRepoListEncodings/map-8									360		3337522 ns/op		 740778 bytes	 377777 B/op		13002 allocs/op
 */
 func BenchmarkMinimalRepoListEncodings(b *testing.B) {
 	size := uint32(13000) // 2021-06-24 rough estimate of number of repos on a replica.
@@ -162,6 +164,76 @@ func TestMatchSize(t *testing.T) {
 These are match structs that occur a lot in memory, so we optimize size.
 When changing, please ensure there isn't unnecessary padding via the
 tool fieldalignment then update this test.`, c.v, c.size, got)
+		}
+	}
+}
+
+func TestSearchOptions_String(t *testing.T) {
+	// To make sure we don't forget to update the string implementation we use
+	// reflection to generate a SearchOptions with every field being non
+	// default. We then check that the field name is present in the output.
+	opts := SearchOptions{}
+	var fieldNames []string
+	rv := reflect.ValueOf(&opts).Elem()
+	for i := 0; i < rv.NumField(); i++ {
+		f := rv.Field(i)
+		name := rv.Type().Field(i).Name
+		fieldNames = append(fieldNames, name)
+		switch f.Kind() {
+		case reflect.Bool:
+			f.SetBool(true)
+		case reflect.Int:
+			f.SetInt(1)
+		case reflect.Int64:
+			f.SetInt(1)
+		case reflect.Float64:
+			f.SetFloat(1)
+		case reflect.Map:
+			// Only map is SpanContext
+			f.Set(reflect.ValueOf(map[string]string{"key": "value"}))
+		default:
+			t.Fatalf("add support for %s field (%s)", f.Kind(), name)
+		}
+	}
+
+	s := opts.String()
+	for _, name := range fieldNames {
+		found, err := regexp.MatchString("\\b"+regexp.QuoteMeta(name)+"\\b", s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !found {
+			t.Errorf("could not find field %q in string output of SearchOptions:\n%s", name, s)
+		}
+	}
+
+	webDefaults := SearchOptions{
+		MaxWallTime: 10 * time.Second,
+	}
+	webDefaults.SetDefaults()
+
+	// Now we hand craft a few corner and common cases
+	cases := []struct {
+		Opts SearchOptions
+		Want string
+	}{{
+		// Empty
+		Opts: SearchOptions{},
+		Want: "&zoekt.SearchOptions{EstimateDocCount:false, Whole:false, ShardMaxMatchCount:0, TotalMaxMatchCount:0, ShardRepoMaxMatchCount:0, ShardMaxImportantMatch:0, TotalMaxImportantMatch:0, MaxWallTime:0, FlushWallTime:0, MaxDocDisplayCount:0, MaxMatchDisplayCount:0, NumContextLines:0, ChunkMatches:false, UseDocumentRanks:false, DocumentRanksWeight:0, UseKeywordScoring:false, Trace:false, DebugScore:false, SpanContext:map[string]string(nil)}",
+	}, {
+		// healthz options
+		Opts: SearchOptions{ShardMaxMatchCount: 1, TotalMaxMatchCount: 1, MaxDocDisplayCount: 1},
+		Want: "&zoekt.SearchOptions{EstimateDocCount:false, Whole:false, ShardMaxMatchCount:1, TotalMaxMatchCount:1, ShardRepoMaxMatchCount:0, ShardMaxImportantMatch:0, TotalMaxImportantMatch:0, MaxWallTime:0, FlushWallTime:0, MaxDocDisplayCount:1, MaxMatchDisplayCount:0, NumContextLines:0, ChunkMatches:false, UseDocumentRanks:false, DocumentRanksWeight:0, UseKeywordScoring:false, Trace:false, DebugScore:false, SpanContext:map[string]string(nil)}",
+	}, {
+		// zoekt-webserver defaults
+		Opts: webDefaults,
+		Want: "&zoekt.SearchOptions{EstimateDocCount:false, Whole:false, ShardMaxMatchCount:100000, TotalMaxMatchCount:1000000, ShardRepoMaxMatchCount:0, ShardMaxImportantMatch:0, TotalMaxImportantMatch:0, MaxWallTime:10000000000, FlushWallTime:0, MaxDocDisplayCount:0, MaxMatchDisplayCount:0, NumContextLines:0, ChunkMatches:false, UseDocumentRanks:false, DocumentRanksWeight:0, UseKeywordScoring:false, Trace:false, DebugScore:false, SpanContext:map[string]string(nil)}",
+	}}
+
+	for _, tc := range cases {
+		got := tc.Opts.String()
+		if got != tc.Want {
+			t.Errorf("unexpected String for %#v:\ngot:  %s\nwant: %s", tc.Opts, got, tc.Want)
 		}
 	}
 }
