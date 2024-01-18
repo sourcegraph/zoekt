@@ -4,11 +4,9 @@
   "FileMatches": [
     [
       {
-        "Score": 510,
-        "Debug": "",
         "FileName": "main.go",
         "Repository": "repo17",
-        "Branches": null,
+        "Language": "Go",
         "LineMatches": [
           {
             "Line": "ZnVuYyBtYWluKCkgew==",
@@ -30,24 +28,15 @@
             ]
           }
         ],
-        "ChunkMatches": null,
-        "RepositoryID": 0,
-        "RepositoryPriority": 0,
-        "Content": null,
         "Checksum": "n9fUYqacPXg=",
-        "Language": "Go",
-        "SubRepositoryName": "",
-        "SubRepositoryPath": "",
-        "Version": ""
+        "Score": 510
       }
     ],
     [
       {
-        "Score": 510,
-        "Debug": "",
         "FileName": "main.go",
         "Repository": "repo17",
-        "Branches": null,
+        "Language": "Go",
         "LineMatches": [
           {
             "Line": "cGFja2FnZSBtYWlu",
@@ -69,15 +58,8 @@
             ]
           }
         ],
-        "ChunkMatches": null,
-        "RepositoryID": 0,
-        "RepositoryPriority": 0,
-        "Content": null,
         "Checksum": "n9fUYqacPXg=",
-        "Language": "Go",
-        "SubRepositoryName": "",
-        "SubRepositoryPath": "",
-        "Version": ""
+        "Score": 510
       }
     ],
     null,

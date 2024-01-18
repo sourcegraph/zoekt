@@ -43,45 +43,45 @@ type FileMatch struct {
 
 	// SubRepositoryName is the globally unique name of the repo,
 	// if it came from a subrepository
-	SubRepositoryName string
+	SubRepositoryName string `json:",omitempty"`
 
 	// SubRepositoryPath holds the prefix where the subrepository
 	// was mounted.
-	SubRepositoryPath string
+	SubRepositoryPath string `json:",omitempty"`
 
 	// Commit SHA1 (hex) of the (sub)repo holding the file.
-	Version string
+	Version string `json:",omitempty"`
 
 	// Detected language of the result.
 	Language string
 
 	// For debugging. Needs DebugScore set, but public so tests in
 	// other packages can print some diagnostics.
-	Debug string
+	Debug string `json:",omitempty"`
 
-	Branches []string
+	Branches []string `json:",omitempty"`
 
 	// One of LineMatches or ChunkMatches will be returned depending on whether
 	// the SearchOptions.ChunkMatches is set.
-	LineMatches  []LineMatch
-	ChunkMatches []ChunkMatch
+	LineMatches  []LineMatch  `json:",omitempty"`
+	ChunkMatches []ChunkMatch `json:",omitempty"`
 
 	// Only set if requested
-	Content []byte
+	Content []byte `json:",omitempty"`
 
 	// Checksum of the content.
 	Checksum []byte
 
 	// Ranking; the higher, the better.
-	Score float64 // TODO - hide this field?
+	Score float64 `json:",omitempty"`
 
 	// RepositoryPriority is a Sourcegraph extension. It is used by Sourcegraph to
 	// order results from different repositories relative to each other.
-	RepositoryPriority float64
+	RepositoryPriority float64 `json:",omitempty"`
 
 	// RepositoryID is a Sourcegraph extension. This is the ID of Repository in
 	// Sourcegraph.
-	RepositoryID uint32
+	RepositoryID uint32 `json:",omitempty"`
 }
 
 func (m *FileMatch) sizeBytes() (sz uint64) {
