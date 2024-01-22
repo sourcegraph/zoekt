@@ -140,10 +140,15 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
 	var result []LineMatch
 	if ms[0].fileName {
+		score, debugScore, _ := p.candidateMatchScore(ms, language, debug)
+
 		// There is only "line" in a filename.
 		res := LineMatch{
 			Line:     p.id.fileName(p.idx),
 			FileName: true,
+
+			Score:      score,
+			DebugScore: debugScore,
 		}
 
 		for _, m := range ms {
@@ -157,12 +162,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 		}
 	} else {
 		ms = breakMatchesOnNewlines(ms, p.data(false))
-		result = p.fillContentMatches(ms, numContextLines)
-	}
-
-	sects := p.docSections()
-	for i, m := range result {
-		result[i].Score, result[i].DebugScore = p.matchScore(sects, &m, language, debug)
+		result = p.fillContentMatches(ms, numContextLines, language, debug)
 	}
 
 	return result
@@ -179,6 +179,8 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 	if ms[0].fileName {
 		// If the first match is a filename match, there will only be
 		// one match and the matched content will be the filename.
+
+		score, debugScore, _ := p.candidateMatchScore(ms, language, debug)
 
 		fileName := p.id.fileName(p.idx)
 		ranges := make([]Range, 0, len(ms))
@@ -202,20 +204,18 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 			ContentStart: Location{ByteOffset: 0, LineNumber: 1, Column: 1},
 			Ranges:       ranges,
 			FileName:     true,
+
+			Score:      score,
+			DebugScore: debugScore,
 		}}
 	} else {
-		result = p.fillContentChunkMatches(ms, numContextLines)
-	}
-
-	sects := p.docSections()
-	for i, m := range result {
-		result[i].Score, result[i].DebugScore = p.chunkMatchScore(sects, &m, language, debug)
+		result = p.fillContentChunkMatches(ms, numContextLines, language, debug)
 	}
 
 	return result
 }
 
-func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int) []LineMatch {
+func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
 	var result []LineMatch
 	for len(ms) > 0 {
 		m := ms[0]
@@ -271,19 +271,18 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 			finalMatch.After = p.newlines().getLines(data, num+1, num+1+numContextLines)
 		}
 
-		for _, m := range lineCands {
+		score, debugScore, symbolInfo := p.candidateMatchScore(lineCands, language, debug)
+		finalMatch.Score = score
+		finalMatch.DebugScore = debugScore
+
+		for i, m := range lineCands {
 			fragment := LineFragmentMatch{
 				Offset:      m.byteOffset,
 				LineOffset:  int(m.byteOffset) - lineStart,
 				MatchLength: int(m.byteMatchSz),
 			}
-			if m.symbol {
-				start := p.id.fileEndSymbol[p.idx]
-				fragment.SymbolInfo = p.id.symbols.data(start + m.symbolIdx)
-				if fragment.SymbolInfo != nil {
-					sec := p.docSections()[m.symbolIdx]
-					fragment.SymbolInfo.Sym = string(data[sec.Start:sec.End])
-				}
+			if i < len(symbolInfo) && symbolInfo[i] != nil {
+				fragment.SymbolInfo = symbolInfo[i]
 			}
 
 			finalMatch.LineFragments = append(finalMatch.LineFragments, fragment)
@@ -293,7 +292,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 	return result
 }
 
-func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int) []ChunkMatch {
+func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
 	newlines := p.newlines()
 	data := p.data(false)
 
@@ -311,9 +310,10 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 	chunks := chunkCandidates(ms, newlines, numContextLines)
 	chunkMatches := make([]ChunkMatch, 0, len(chunks))
 	for _, chunk := range chunks {
+		score, debugScore, symbolInfo := p.candidateMatchScore(chunk.candidates, language, debug)
+
 		ranges := make([]Range, 0, len(chunk.candidates))
-		var symbolInfo []*Symbol
-		for i, cm := range chunk.candidates {
+		for _, cm := range chunk.candidates {
 			startOffset := cm.byteOffset
 			endOffset := cm.byteOffset + cm.byteMatchSz
 			startLine, startLineOffset, _ := newlines.atOffset(startOffset)
@@ -331,19 +331,6 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 					Column:     columnHelper.get(endLineOffset, endOffset),
 				},
 			})
-
-			if cm.symbol {
-				if symbolInfo == nil {
-					symbolInfo = make([]*Symbol, len(chunk.candidates))
-				}
-				start := p.id.fileEndSymbol[p.idx]
-				si := p.id.symbols.data(start + cm.symbolIdx)
-				if si != nil {
-					sec := p.docSections()[cm.symbolIdx]
-					si.Sym = string(data[sec.Start:sec.End])
-				}
-				symbolInfo[i] = si
-			}
 		}
 
 		firstLineNumber := int(chunk.firstLine) - numContextLines
@@ -362,6 +349,8 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 			FileName:   false,
 			Ranges:     ranges,
 			SymbolInfo: symbolInfo,
+			Score:      score,
+			DebugScore: debugScore,
 		})
 	}
 	return chunkMatches
@@ -548,7 +537,7 @@ const (
 
 // findSection checks whether a section defined by offset and size lies within
 // one of the sections in secs.
-func findSection(secs []DocumentSection, off, sz uint32) (int, bool) {
+func findSection(secs []DocumentSection, off, sz uint32) (uint32, bool) {
 	j := sort.Search(len(secs), func(i int) bool {
 		return secs[i].End >= off+sz
 	})
@@ -558,12 +547,43 @@ func findSection(secs []DocumentSection, off, sz uint32) (int, bool) {
 	}
 
 	if secs[j].Start <= off && off+sz <= secs[j].End {
-		return j, true
+		return uint32(j), true
 	}
 	return 0, false
 }
 
-func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch, language string, debug bool) (float64, string) {
+func (p *contentProvider) findSymbol(cm *candidateMatch) (DocumentSection, *Symbol, bool) {
+	if cm.fileName {
+		return DocumentSection{}, nil, false
+	}
+
+	secs := p.docSections()
+
+	secIdx, ok := cm.symbolIdx, cm.symbol
+	if !ok {
+		// Not from a symbol matchtree. Lets see if it intersects with a symbol.
+		secIdx, ok = findSection(secs, cm.byteOffset, cm.byteMatchSz)
+	}
+	if !ok {
+		return DocumentSection{}, nil, false
+	}
+
+	sec := secs[secIdx]
+
+	// Now lets hydrate in the SymbolInfo. We do not hydrate in SymbolInfo.Sym
+	// since some callsites do not need it stored, and that incurs an extra
+	// copy.
+	//
+	// 2024-01-08 we are refactoring this and the code path indicates this can
+	// fail, so callers need to handle nil symbol. However, it would be
+	// surprising that we have a matching section but not symbol data.
+	start := p.id.fileEndSymbol[p.idx]
+	si := p.id.symbols.data(start + secIdx)
+
+	return sec, si, true
+}
+
+func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language string, debug bool) (float64, string, []*Symbol) {
 	type debugScore struct {
 		what  string
 		score float64
@@ -579,16 +599,15 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 		score.score += s
 	}
 
-	data := p.data(m.FileName)
 	filename := p.data(true)
+	var symbolInfo []*Symbol
 
-	for i, r := range m.Ranges {
-		// calculate the start and end offset relative to the start of the content
-		relStartOffset := int(r.Start.ByteOffset - m.ContentStart.ByteOffset)
-		relEndOffset := int(r.End.ByteOffset - m.ContentStart.ByteOffset)
+	for i, m := range ms {
+		data := p.data(m.fileName)
 
-		startBoundary := relStartOffset < len(m.Content) && (relStartOffset == 0 || byteClass(m.Content[relStartOffset-1]) != byteClass(m.Content[relStartOffset]))
-		endBoundary := relEndOffset > 0 && (relEndOffset == len(m.Content) || byteClass(m.Content[relEndOffset-1]) != byteClass(m.Content[relEndOffset]))
+		endOffset := m.byteOffset + m.byteMatchSz
+		startBoundary := m.byteOffset < uint32(len(data)) && (m.byteOffset == 0 || byteClass(data[m.byteOffset-1]) != byteClass(data[m.byteOffset]))
+		endBoundary := endOffset > 0 && (endOffset == uint32(len(data)) || byteClass(data[endOffset-1]) != byteClass(data[endOffset]))
 
 		score.score = 0
 		score.what = ""
@@ -599,21 +618,20 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 			addScore("PartialWordMatch", scorePartialWordMatch)
 		}
 
-		if m.FileName {
-			sep := bytes.LastIndexByte(m.Content, '/')
-			startMatch := relStartOffset == sep+1
-			endMatch := relEndOffset == len(m.Content)
+		if m.fileName {
+			sep := bytes.LastIndexByte(data, '/')
+			startMatch := int(m.byteOffset) == sep+1
+			endMatch := endOffset == uint32(len(data))
 			if startMatch && endMatch {
 				addScore("Base", scoreBase)
 			} else if startMatch || endMatch {
 				addScore("EdgeBase", (scoreBase+scorePartialBase)/2)
-			} else if sep < relStartOffset {
+			} else if sep < int(m.byteOffset) {
 				addScore("InnerBase", scorePartialBase)
 			}
-		} else if secIdx, ok := findSection(secs, uint32(r.Start.ByteOffset), uint32(r.End.ByteOffset-r.Start.ByteOffset)); ok {
-			sec := secs[secIdx]
-			startMatch := sec.Start == uint32(r.Start.ByteOffset)
-			endMatch := sec.End == uint32(r.End.ByteOffset)
+		} else if sec, si, ok := p.findSymbol(m); ok {
+			startMatch := sec.Start == m.byteOffset
+			endMatch := sec.End == endOffset
 			if startMatch && endMatch {
 				addScore("Symbol", scoreSymbol)
 			} else if startMatch || endMatch {
@@ -622,19 +640,23 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 				addScore("InnerSymbol", scorePartialSymbol)
 			}
 
-			var si *Symbol
-			if m.SymbolInfo != nil {
-				si = m.SymbolInfo[i]
-			}
-			if si == nil {
-				// for non-symbol queries, we need to hydrate in SymbolInfo.
-				start := p.id.fileEndSymbol[p.idx]
-				si = p.id.symbols.data(start + uint32(secIdx))
-			}
+			// Score based on symbol data
 			if si != nil {
 				symbolKind := ctags.ParseSymbolKind(si.Kind)
 				sym := sectionSlice(data, sec)
+
 				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, symbolKind))
+
+				// This is from a symbol tree, so we need to store the symbol
+				// information.
+				if m.symbol {
+					if symbolInfo == nil {
+						symbolInfo = make([]*Symbol, len(ms))
+					}
+					// findSymbols does not hydrate in Sym. So we need to store it.
+					si.Sym = string(sym)
+					symbolInfo[i] = si
+				}
 			}
 		}
 
@@ -648,7 +670,7 @@ func (p *contentProvider) chunkMatchScore(secs []DocumentSection, m *ChunkMatch,
 		maxScore.what = fmt.Sprintf("score:%.2f <- %s", maxScore.score, strings.TrimSuffix(maxScore.what, ", "))
 	}
 
-	return maxScore.score, maxScore.what
+	return maxScore.score, maxScore.what, symbolInfo
 }
 
 func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, language string, debug bool) (float64, string) {

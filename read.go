@@ -532,7 +532,15 @@ func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]Document
 		return nil, 0, err
 	}
 
-	return unmarshalDocSections(blob, buf), sec.sz, nil
+	ds := unmarshalDocSections(blob, buf)
+
+	// can be nil if buf is nil and there are no doc sections. However, we rely
+	// on it being non-nil to cache the read.
+	if ds == nil {
+		ds = make([]DocumentSection, 0)
+	}
+
+	return ds, sec.sz, nil
 }
 
 func (d *indexData) readRanks(toc *indexTOC) error {
