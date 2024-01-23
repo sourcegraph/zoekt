@@ -1,6 +1,18 @@
 queryString: bufio flush writer
 query: (and substr:"bufio" substr:"flush" substr:"writer")
-targetRank: 10
+targetRank: 1
+
+**github.com/golang/go/src/net/http/transfer.go**
+1113:type bufioFlushWriter struct{ w io.Writer }
+59:type transferWriter struct {
+76:func newTransferWriter(r any) (t *transferWriter, err error) {
+hidden 36 more line matches
+
+github.com/golang/go/src/net/http/server.go
+818:func bufioWriterPool(size int) *sync.Pool {
+856:func putBufioWriter(bw *bufio.Writer) {
+807:	bufioWriter2kPool sync.Pool
+hidden 156 more line matches
 
 github.com/golang/go/src/bufio/bufio.go
 635:func (b *Writer) Flush() error {
@@ -8,34 +20,22 @@ github.com/golang/go/src/bufio/bufio.go
 836:	*Writer
 hidden 72 more line matches
 
-github.com/golang/go/src/image/gif/writer.go
-77:func (b blockWriter) Flush() error {
-43:type writer interface {
-123:func (e *encoder) flush() {
-hidden 28 more line matches
+github.com/golang/go/src/bufio/bufio_test.go
+1988:func BenchmarkWriterFlush(b *testing.B) {
+1716:	io.Writer
+1415:type readFromWriter struct {
+hidden 148 more line matches
 
-github.com/golang/go/src/archive/zip/writer.go
-61:func (w *Writer) Flush() error {
-24:type Writer struct {
-607:	io.Writer
-hidden 55 more line matches
-
-github.com/golang/go/src/encoding/csv/writer.go
-123:func (w *Writer) Flush() {
-30:type Writer struct {
-37:func NewWriter(w io.Writer) *Writer {
+github.com/golang/go/src/net/http/internal/chunked.go
+239:type FlushAfterChunkWriter struct {
+240:	*bufio.Writer
+196:type chunkedWriter struct {
 hidden 25 more line matches
 
-github.com/sourcegraph/sourcegraph/lib/codeintel/lsif/protocol/writer/writer.go
-69:func (jw *jsonWriter) Flush() error {
-26:	bufferedWriter *bufio.Writer
-20:	Flush() error
-hidden 18 more line matches
-
-github.com/golang/go/src/image/jpeg/writer.go
-211:type writer interface {
-231:func (e *encoder) flush() {
-212:	Flush() error
-hidden 11 more line matches
+github.com/golang/go/src/net/http/h2_bundle.go
+10319:type http2flushFrameWriter struct{}
+3594:func (w *http2bufferedWriter) Flush() error {
+6643:func (w *http2responseWriter) Flush() {
+hidden 258 more line matches
 
 hidden 78 more file matches

@@ -1,12 +1,6 @@
 queryString: bufio buffer
 query: (and substr:"bufio" substr:"buffer")
-targetRank: 2
-
-github.com/golang/go/src/bytes/buffer.go
-20:type Buffer struct {
-60:func (b *Buffer) AvailableBuffer() []byte { return b.buf[len(b.buf):] }
-472:func NewBuffer(buf []byte) *Buffer { return &Buffer{buf: buf} }
-hidden 108 more line matches
+targetRank: 1
 
 **github.com/golang/go/src/bufio/scan.go**
 267:func (s *Scanner) Buffer(buf []byte, max int) {
@@ -17,8 +11,14 @@ hidden 21 more line matches
 github.com/golang/go/src/bufio/bufio.go
 8:package bufio
 665:func (b *Writer) AvailableBuffer() []byte {
-25:	ErrBufferFull        = errors.New("bufio: buffer full")
+338:func (b *Reader) Buffered() int { return b.w - b.r }
 hidden 89 more line matches
+
+github.com/golang/go/src/net/http/server.go
+818:func bufioWriterPool(size int) *sync.Pool {
+338:const bufferBeforeChunkingSize = 2048
+806:	bufioReaderPool   sync.Pool
+hidden 64 more line matches
 
 github.com/golang/go/src/bufio/scan_test.go
 526:func TestHugeBuffer(t *testing.T) {

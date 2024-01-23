@@ -8,12 +8,6 @@ github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/repository_metada
 254:		require.Equal(t, err, &rbac.ErrNotAuthorized{Permission: string(rbac.RepoMetadataWritePermission)})
 hidden 25 more line matches
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/repository_metadata.go
-54:func (r *schemaResolver) AddRepoMetadata(ctx context.Context, args struct {
-95:func (r *schemaResolver) UpdateRepoMetadata(ctx context.Context, args struct {
-134:func (r *schemaResolver) DeleteRepoMetadata(ctx context.Context, args struct {
-hidden 30 more line matches
-
 github.com/sourcegraph/sourcegraph/doc/admin/repo/metadata.md
 1:# Custom repository metadata
 18:## Adding metadata
@@ -26,9 +20,15 @@ github.com/sourcegraph/sourcegraph/client/web/src/repo/tree/TreePageContent.tsx
 213:    const [enableRepositoryMetadata] = useFeatureFlag('repository-metadata', true)
 hidden 46 more line matches
 
+github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/repository_metadata.go
+54:func (r *schemaResolver) AddRepoMetadata(ctx context.Context, args struct {
+95:func (r *schemaResolver) UpdateRepoMetadata(ctx context.Context, args struct {
+134:func (r *schemaResolver) DeleteRepoMetadata(ctx context.Context, args struct {
+hidden 30 more line matches
+
 github.com/sourcegraph/sourcegraph/client/web/src/repo/repoContainerRoutes.tsx
 3:import { canWriteRepoMetadata } from '../util/rbac'
 24:const RepositoryMetadataPage = lazyComponent(() => import('./RepoMetadataPage'), 'RepoMetadataPage')
-70:        render: context => <RepositoryMetadataPage {...context} />,
+69:        condition: ({ authenticatedUser }) => canWriteRepoMetadata(authenticatedUser),
 hidden 19 more line matches
 

@@ -8,34 +8,34 @@ targetRank: 1
 37:	r := &CoverageDataWriter{
 hidden 41 more line matches
 
-github.com/golang/go/src/internal/coverage/stringtab/stringtab.go
-19:type Writer struct {
-27:func (stw *Writer) InitWriter() {
-15:// for use in emitting and reading/decoding coverage meta-data and
-hidden 16 more line matches
-
 github.com/golang/go/src/runtime/coverage/emit.go
-447:func writeMetaData(w io.Writer, metalist []rtcov.CovMetaBlob, cmode coverage.CounterMode, gran coverage.CounterGranularity, finalHash [16]byte) error {
 341:func (s *emitState) emitCounterDataToWriter(w io.Writer) error {
+447:func writeMetaData(w io.Writer, metalist []rtcov.CovMetaBlob, cmode coverage.CounterMode, gran coverage.CounterGranularity, finalHash [16]byte) error {
 5:package coverage
 hidden 125 more line matches
 
-github.com/golang/go/src/cmd/link/internal/ld/data.go
-1522:	data [sym.SXREF][]loader.Sym
-1524:	dataMaxAlign [sym.SXREF]int32
-1196:func addstrdata(arch *sys.Arch, l *loader.Loader, name, value string) {
-hidden 334 more line matches
+github.com/golang/go/src/internal/fuzz/fuzz.go
+515:	coverageData []byte
+530:	coverageData []byte
+474:	Data []byte
+hidden 91 more line matches
 
-github.com/golang/go/src/internal/coverage/encodemeta/encode.go
-24:type CoverageMetaDataBuilder struct {
-36:func NewCoverageMetaDataBuilder(pkgpath string, pkgname string, modulepath string) (*CoverageMetaDataBuilder, error) {
-40:	x := &CoverageMetaDataBuilder{
-hidden 23 more line matches
+github.com/golang/go/src/runtime/coverage/emitdata_test.go
+5:package coverage
+102:func upmergeCoverData(t *testing.T, gocoverdir string, mode string) {
+268:func testEmitToWriter(t *testing.T, harnessPath string, dir string) {
+hidden 65 more line matches
 
 github.com/golang/go/src/internal/coverage/encodemeta/encodefile.go
 23:type CoverageMetaFileWriter struct {
 31:func NewCoverageMetaFileWriter(mfname string, w io.Writer) *CoverageMetaFileWriter {
 32:	r := &CoverageMetaFileWriter{
 hidden 14 more line matches
+
+github.com/golang/go/src/internal/fuzz/worker.go
+549:	CoverageData []byte
+576:	CoverageData []byte
+590:	CoverageData []byte
+hidden 60 more line matches
 
 hidden 35 more file matches

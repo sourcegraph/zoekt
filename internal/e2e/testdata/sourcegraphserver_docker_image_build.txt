@@ -2,23 +2,23 @@ queryString: sourcegraph/server docker image build
 query: (and substr:"sourcegraph/server" substr:"docker" substr:"image" substr:"build")
 targetRank: 12
 
-github.com/sourcegraph/sourcegraph/dev/sg/internal/images/images.go
-458:	Build       int
-545:const dockerImageTagsURL = "https://index.docker.io/v2/%s/tags/list"
-234:type ImageReference struct {
-hidden 118 more line matches
-
 github.com/sourcegraph/sourcegraph/internal/updatecheck/handler.go
 40:	latestReleaseDockerServerImageBuild = newPingResponse("5.1.8")
 45:	latestReleaseKubernetesBuild = newPingResponse("5.1.8")
 50:	latestReleaseDockerComposeOrPureDocker = newPingResponse("5.1.8")
 hidden 19 more line matches
 
-github.com/sourcegraph/sourcegraph/doc/admin/deploy/docker-single-container/index.md
-1:# Docker Single Container Deployment
-294:### Insiders build
-238:### File system performance on Docker for Mac
-hidden 52 more line matches
+github.com/sourcegraph/sourcegraph/dev/sg/internal/images/images.go
+545:const dockerImageTagsURL = "https://index.docker.io/v2/%s/tags/list"
+458:	Build       int
+234:type ImageReference struct {
+hidden 118 more line matches
+
+github.com/sourcegraph/sourcegraph/doc/dev/background-information/sg/reference.md
+251:### sg ci build
+1221:### sg wolfi image
+451:### sg lint dockerfiles
+hidden 107 more line matches
 
 github.com/sourcegraph/sourcegraph/doc/admin/external_services/postgres.md
 41:### sourcegraph/server
@@ -26,11 +26,11 @@ github.com/sourcegraph/sourcegraph/doc/admin/external_services/postgres.md
 53:### Docker Compose
 hidden 19 more line matches
 
-github.com/sourcegraph/sourcegraph/dev/sg/internal/images/images_test.go
-1:package images
-102:			"index.docker.io/sourcegraph/server:3.36.2@sha256:07d7407fdc656d7513aa54cdffeeecb33aa4e284eea2fd82e27342411430e5f2",
-112:			"index.docker.io/sourcegraph/server:3.36.2",
-hidden 16 more line matches
+github.com/sourcegraph/sourcegraph/doc/admin/deploy/docker-single-container/index.md
+1:# Docker Single Container Deployment
+294:### Insiders build
+238:### File system performance on Docker for Mac
+hidden 52 more line matches
 
 github.com/sourcegraph/sourcegraph/internal/conf/deploy/deploytype.go
 66:func IsDeployTypePureDocker(deployType string) bool {

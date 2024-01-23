@@ -1,18 +1,12 @@
 queryString: graphql type User
 query: (and substr:"graphql" substr:"type" case_substr:"User")
-targetRank: 2
+targetRank: 21
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/apitest/types.go
-47:type User struct {
-9:	Typename    string `json:"__typename"`
-32:	Typename    string `json:"__typename"`
-hidden 11 more line matches
-
-**github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/schema.graphql**
-6376:type User implements Node & SettingsSubject & Namespace {
-3862:        type: GitRefType
-5037:    type: GitRefType!
-hidden 460 more line matches
+github.com/sourcegraph/sourcegraph/internal/extsvc/github/v4.go
+331:const graphqlErrTypeNotFound = "NOT_FOUND"
+319:	Type      string `json:"type"`
+317:type graphqlError struct {
+hidden 68 more line matches
 
 github.com/sourcegraph/sourcegraph/internal/types/types.go
 850:type User struct {
@@ -20,22 +14,28 @@ github.com/sourcegraph/sourcegraph/internal/types/types.go
 1766:	Type       string
 hidden 234 more line matches
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/internal/batches/resolvers/apitest/types.go
-52:type User struct {
-364:	User  *User
-393:	Type       string
-hidden 68 more line matches
+github.com/sourcegraph/sourcegraph/client/web/src/integration/search.test.ts
+96:const commonSearchGraphQLResultsWithUser: Partial<WebGraphQlOperations & SharedGraphQlOperations> = {
+60:    { type: 'done', data: {} },
+98:    UserAreaUserProfile: () => ({
+hidden 101 more line matches
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/user.go
-239:	User        graphql.ID
-643:	User  graphql.ID
-681:	User  graphql.ID
-hidden 166 more line matches
+github.com/sourcegraph/sourcegraph/internal/database/permission_sync_jobs.go
+29:	PermissionsSyncSearchTypeUser PermissionsSyncSearchType = "USER"
+26:type PermissionsSyncSearchType string
+46:func (s PermissionsSyncJobState) ToGraphQL() string { return strings.ToUpper(string(s)) }
+hidden 97 more line matches
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/rbac.go
-49:	User   *graphql.ID
-56:	User *graphql.ID
-65:	User  graphql.ID
-hidden 24 more line matches
+github.com/sourcegraph/sourcegraph/schema/schema.go
+54:	Type            string `json:"type"`
+78:	GraphQL bool `json:"graphQL"`
+218:	Type          string  `json:"type"`
+hidden 355 more line matches
+
+github.com/sourcegraph/sourcegraph/cmd/frontend/internal/app/jscontext/jscontext.go
+83:	GraphQLTypename string `json:"__typename"`
+88:	GraphQLTypename string     `json:"__typename"`
+94:	GraphQLTypename string       `json:"__typename"`
+hidden 76 more line matches
 
 hidden 494 more file matches
