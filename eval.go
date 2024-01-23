@@ -354,7 +354,9 @@ nextFileMatch:
 		}
 
 		if opts.ChunkMatches {
-			fileMatch.ChunkMatches = cp.fillChunkMatches(matchTreeScorer, finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+			var docScore float64
+			fileMatch.ChunkMatches, docScore = cp.fillChunkMatches(matchTreeScorer, finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+			fileMatch.addScore("doc-score", docScore, -1, opts.DebugScore)
 		} else {
 			fileMatch.LineMatches = cp.fillMatches(matchTreeScorer, finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
 		}

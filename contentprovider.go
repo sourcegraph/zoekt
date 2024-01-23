@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"math/bits"
 	"path"
 	"sort"
 	"strings"
@@ -147,7 +148,7 @@ func (p *contentProvider) fillMatches(mts matchTreeScorer, ms []*candidateMatch,
 			Line:     p.id.fileName(p.idx),
 			FileName: true,
 
-			Score:      score,
+			Score:      scoreVecToFloat(score),
 			DebugScore: debugScore,
 		}
 
@@ -174,13 +175,15 @@ func (p *contentProvider) fillMatches(mts matchTreeScorer, ms []*candidateMatch,
 //
 // Note: the byte slices may be backed by mmapped data, so before being
 // returned by the API it needs to be copied.
-func (p *contentProvider) fillChunkMatches(mts matchTreeScorer, ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
+func (p *contentProvider) fillChunkMatches(mts matchTreeScorer, ms []*candidateMatch, numContextLines int, language string, debug bool) ([]ChunkMatch, float64) {
 	var result []ChunkMatch
+	var docScore float64
 	if ms[0].fileName {
 		// If the first match is a filename match, there will only be
 		// one match and the matched content will be the filename.
 
 		score, debugScore, _ := p.candidateMatchScore(mts, ms, language, debug)
+		docScore = scoreVecToFloat(score)
 
 		fileName := p.id.fileName(p.idx)
 		ranges := make([]Range, 0, len(ms))
@@ -205,14 +208,14 @@ func (p *contentProvider) fillChunkMatches(mts matchTreeScorer, ms []*candidateM
 			Ranges:       ranges,
 			FileName:     true,
 
-			Score:      score,
+			Score:      docScore,
 			DebugScore: debugScore,
 		}}
 	} else {
-		result = p.fillContentChunkMatches(mts, ms, numContextLines, language, debug)
+		result, docScore = p.fillContentChunkMatches(mts, ms, numContextLines, language, debug)
 	}
 
-	return result
+	return result, docScore
 }
 
 func (p *contentProvider) fillContentMatches(mts matchTreeScorer, ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
@@ -272,7 +275,7 @@ func (p *contentProvider) fillContentMatches(mts matchTreeScorer, ms []*candidat
 		}
 
 		score, debugScore, symbolInfo := p.candidateMatchScore(mts, lineCands, language, debug)
-		finalMatch.Score = score
+		finalMatch.Score = scoreVecToFloat(score)
 		finalMatch.DebugScore = debugScore
 
 		for i, m := range lineCands {
@@ -292,9 +295,10 @@ func (p *contentProvider) fillContentMatches(mts matchTreeScorer, ms []*candidat
 	return result
 }
 
-func (p *contentProvider) fillContentChunkMatches(mts matchTreeScorer, ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
+func (p *contentProvider) fillContentChunkMatches(mts matchTreeScorer, ms []*candidateMatch, numContextLines int, language string, debug bool) ([]ChunkMatch, float64) {
 	newlines := p.newlines()
 	data := p.data(false)
+	var docScoreVec []float64
 
 	// columnHelper prevents O(len(ms) * len(data)) lookups for all columns.
 	// However, it depends on ms being sorted by byteOffset and non-overlapping.
@@ -311,6 +315,16 @@ func (p *contentProvider) fillContentChunkMatches(mts matchTreeScorer, ms []*can
 	chunkMatches := make([]ChunkMatch, 0, len(chunks))
 	for _, chunk := range chunks {
 		score, debugScore, symbolInfo := p.candidateMatchScore(mts, chunk.candidates, language, debug)
+
+		if docScoreVec == nil {
+			docScoreVec = score
+		} else {
+			for i, f := range score {
+				if docScoreVec[i] < f {
+					docScoreVec[i] = f
+				}
+			}
+		}
 
 		ranges := make([]Range, 0, len(chunk.candidates))
 		for _, cm := range chunk.candidates {
@@ -349,11 +363,12 @@ func (p *contentProvider) fillContentChunkMatches(mts matchTreeScorer, ms []*can
 			FileName:   false,
 			Ranges:     ranges,
 			SymbolInfo: symbolInfo,
-			Score:      score,
+			Score:      scoreVecToFloat(score),
 			DebugScore: debugScore,
 		})
 	}
-	return chunkMatches
+
+	return chunkMatches, scoreVecToFloat(docScoreVec)
 }
 
 type candidateChunk struct {
@@ -587,14 +602,18 @@ func (p *contentProvider) findSymbol(cm *candidateMatch) (DocumentSection, *Symb
 	return sec, si, true
 }
 
-func (p *contentProvider) candidateMatchScore(mts matchTreeScorer, ms []*candidateMatch, language string, debug bool) (float64, string, []*Symbol) {
+func (p *contentProvider) candidateMatchScore(mts matchTreeScorer, ms []*candidateMatch, language string, debug bool) ([]float64, string, []*Symbol) {
 	type debugScore struct {
 		what  string
 		score float64
 	}
 
 	score := &debugScore{}
-	maxScore := &debugScore{}
+	maxScore := make([]debugScore, mts.contentAtomLen+mts.filenameAtomLen)
+
+	if len(maxScore) == 0 {
+		return []float64{}, "no query atoms", nil
+	}
 
 	addScore := func(what string, s float64) {
 		if s != 0 && debug {
@@ -664,23 +683,36 @@ func (p *contentProvider) candidateMatchScore(mts matchTreeScorer, ms []*candida
 			}
 		}
 
-		if score.score > maxScore.score {
-			maxScore.score = score.score
-			maxScore.what = score.what
+		scoreIdx := bits.TrailingZeros64(m.queryAtoms)
+		if scoreIdx > len(maxScore) {
+			scoreIdx = len(maxScore) - 1
+		}
+		if score.score > maxScore[scoreIdx].score {
+			maxScore[scoreIdx].score = score.score
+			maxScore[scoreIdx].what = score.what
 		}
 	}
 
-	mtsScore, mtsWhat := mts.score(ms, debug)
-	maxScore.score += mtsScore
-	if debug {
-		maxScore.what += mtsWhat
+	//mtsScore, mtsWhat := mts.score(ms, debug)
+	//maxScore.score += mtsScore
+	//if debug {
+	//	maxScore.what += mtsWhat
+	//}
+
+	scoreVec := make([]float64, len(maxScore))
+	what := ""
+	for i, s := range maxScore {
+		scoreVec[i] = s.score
+		if debug {
+			what = fmt.Sprintf("%s{%d score:%.2f <- %s}, ", what, i, s.score, strings.TrimSuffix(s.what, ", "))
+		}
 	}
 
 	if debug {
-		maxScore.what = fmt.Sprintf("score:%.2f <- %s", maxScore.score, strings.TrimSuffix(maxScore.what, ", "))
+		what = strings.TrimSuffix(what, ", ")
 	}
 
-	return maxScore.score, maxScore.what, symbolInfo
+	return scoreVec, what, symbolInfo
 }
 
 func (p *contentProvider) matchScore(secs []DocumentSection, m *LineMatch, language string, debug bool) (float64, string) {

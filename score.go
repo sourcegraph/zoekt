@@ -116,3 +116,11 @@ func (mts *matchTreeScorer) score(ms []*candidateMatch, debug bool) (score float
 
 	return scoreFilename + scoreCount + scoreRun, what
 }
+
+func scoreVecToFloat(score []float64) float64 {
+	var total float64
+	for _, f := range score {
+		total += f
+	}
+	return total
+}
