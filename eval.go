@@ -537,6 +537,10 @@ type sortByOffsetSlice []*candidateMatch
 func (m sortByOffsetSlice) Len() int      { return len(m) }
 func (m sortByOffsetSlice) Swap(i, j int) { m[i], m[j] = m[j], m[i] }
 func (m sortByOffsetSlice) Less(i, j int) bool {
+	if m[i].byteOffset == m[j].byteOffset { // tie break if same offset
+		// Prefer longer candidates if starting at same position
+		return m[i].byteMatchSz > m[j].byteMatchSz
+	}
 	return m[i].byteOffset < m[j].byteOffset
 }
 
