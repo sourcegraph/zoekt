@@ -8,24 +8,6 @@ targetRank: 1
 76:func newTransferWriter(r any) (t *transferWriter, err error) {
 hidden 36 more line matches
 
-github.com/golang/go/src/net/http/server.go
-818:func bufioWriterPool(size int) *sync.Pool {
-856:func putBufioWriter(bw *bufio.Writer) {
-807:	bufioWriter2kPool sync.Pool
-hidden 156 more line matches
-
-github.com/golang/go/src/bufio/bufio.go
-635:func (b *Writer) Flush() error {
-579:type Writer struct {
-836:	*Writer
-hidden 72 more line matches
-
-github.com/golang/go/src/bufio/bufio_test.go
-1988:func BenchmarkWriterFlush(b *testing.B) {
-1716:	io.Writer
-1415:type readFromWriter struct {
-hidden 148 more line matches
-
 github.com/golang/go/src/net/http/internal/chunked.go
 239:type FlushAfterChunkWriter struct {
 240:	*bufio.Writer
@@ -37,5 +19,23 @@ github.com/golang/go/src/net/http/h2_bundle.go
 3594:func (w *http2bufferedWriter) Flush() error {
 6643:func (w *http2responseWriter) Flush() {
 hidden 258 more line matches
+
+github.com/golang/go/src/net/http/server.go
+818:func bufioWriterPool(size int) *sync.Pool {
+856:func putBufioWriter(bw *bufio.Writer) {
+807:	bufioWriter2kPool sync.Pool
+hidden 156 more line matches
+
+github.com/golang/go/src/bufio/bufio_test.go
+1988:func BenchmarkWriterFlush(b *testing.B) {
+1716:	io.Writer
+1415:type readFromWriter struct {
+hidden 148 more line matches
+
+github.com/golang/go/src/compress/gzip/gzip_test.go
+165:func TestWriterFlush(t *testing.T) {
+240:type limitedWriter struct {
+225:func TestWriterReset(t *testing.T) {
+hidden 20 more line matches
 
 hidden 78 more file matches

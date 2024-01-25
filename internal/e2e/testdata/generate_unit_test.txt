@@ -14,11 +14,17 @@ hidden 12 more line matches
 16:    public title = 'Generate Unit Test'
 hidden 3 more line matches
 
-github.com/golang/go/src/cmd/link/internal/loader/loader.go
-79:	unit         *sym.CompilationUnit
-1544:func (l *Loader) SymUnit(i Sym) *sym.CompilationUnit {
-228:	generatedSyms        Bitmap // symbols that generate their content, indexed by ext sym idx
-hidden 50 more line matches
+github.com/golang/go/src/debug/dwarf/entry_test.go
+284:func TestUnitIteration(t *testing.T) {
+15:func TestSplit(t *testing.T) {
+48:func TestReaderSeek(t *testing.T) {
+hidden 60 more line matches
+
+github.com/sourcegraph/sourcegraph/internal/license/license_test.go
+75:func TestGenerateParseSignedKey(t *testing.T) {
+11:func TestParseTagsInput(t *testing.T) {
+32:func TestInfo_EncodeDecode(t *testing.T) {
+hidden 21 more line matches
 
 github.com/sourcegraph/sourcegraph/docker-images/syntax-highlighter/crates/sg-syntax/src/sg_sciptect.rs
 559:    fn test_generates_empty_file() {
@@ -26,16 +32,10 @@ github.com/sourcegraph/sourcegraph/docker-images/syntax-highlighter/crates/sg-sy
 530:mod test {
 hidden 14 more line matches
 
-github.com/sourcegraph/sourcegraph/internal/oobmigration/migrations/insights/backfillv2/migrator_test.go
-202:type testCase struct {
-260:func TestBackfillV2Migrator(t *testing.T) {
-459:func TestBackfillV2MigratorNoInsights(t *testing.T) {
-hidden 23 more line matches
-
-github.com/golang/go/src/cmd/vendor/golang.org/x/sys/unix/zerrors_linux.go
-213:	AUDIT_BIT_TEST                              = 0x48000000
-1034:	ETHTOOL_TEST                                = 0x1a
-1350:	F_TEST                                      = 0x3
-hidden 10 more line matches
+github.com/sourcegraph/sourcegraph/doc/dev/background-information/web/web_app.md
+127:### Unit tests
+123:## Tests
+135:### E2E tests
+hidden 12 more line matches
 
 hidden 245 more file matches

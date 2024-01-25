@@ -1,24 +1,12 @@
 queryString: graphql type User
 query: (and substr:"graphql" substr:"type" case_substr:"User")
-targetRank: 21
+targetRank: 8
 
-github.com/sourcegraph/sourcegraph/internal/extsvc/github/v4.go
-331:const graphqlErrTypeNotFound = "NOT_FOUND"
-319:	Type      string `json:"type"`
-317:type graphqlError struct {
-hidden 68 more line matches
-
-github.com/sourcegraph/sourcegraph/internal/types/types.go
-850:type User struct {
-1372:	Type               *SearchCountStatistics
-1766:	Type       string
-hidden 234 more line matches
-
-github.com/sourcegraph/sourcegraph/client/web/src/integration/search.test.ts
-96:const commonSearchGraphQLResultsWithUser: Partial<WebGraphQlOperations & SharedGraphQlOperations> = {
-60:    { type: 'done', data: {} },
-98:    UserAreaUserProfile: () => ({
-hidden 101 more line matches
+github.com/sourcegraph/sourcegraph/client/web/src/site-admin/UserManagement/components/UsersList.tsx
+608:export interface UseUserListActionReturnType {
+55:export type SiteUser = UsersManagementUsersListResult['site']['users']['nodes'][0]
+44:    type UsersManagementUsersListResult,
+hidden 55 more line matches
 
 github.com/sourcegraph/sourcegraph/internal/database/permission_sync_jobs.go
 29:	PermissionsSyncSearchTypeUser PermissionsSyncSearchType = "USER"
@@ -26,11 +14,23 @@ github.com/sourcegraph/sourcegraph/internal/database/permission_sync_jobs.go
 46:func (s PermissionsSyncJobState) ToGraphQL() string { return strings.ToUpper(string(s)) }
 hidden 97 more line matches
 
-github.com/sourcegraph/sourcegraph/schema/schema.go
-54:	Type            string `json:"type"`
-78:	GraphQL bool `json:"graphQL"`
-218:	Type          string  `json:"type"`
-hidden 355 more line matches
+github.com/sourcegraph/sourcegraph/client/web/src/integration/search.test.ts
+96:const commonSearchGraphQLResultsWithUser: Partial<WebGraphQlOperations & SharedGraphQlOperations> = {
+60:    { type: 'done', data: {} },
+98:    UserAreaUserProfile: () => ({
+hidden 101 more line matches
+
+github.com/sourcegraph/sourcegraph/cmd/frontend/internal/codemonitors/resolvers/resolvers_test.go
+276:func graphqlUserID(id int32) graphql.ID {
+403:func queryByUser(ctx context.Context, t *testing.T, schema *graphql.Schema, r *Resolver, user1 *types.User, user2 *types.User) {
+545:const queryByUserFmtStr = `
+hidden 146 more line matches
+
+github.com/sourcegraph/sourcegraph/internal/extsvc/github/v4.go
+331:const graphqlErrTypeNotFound = "NOT_FOUND"
+319:	Type      string `json:"type"`
+317:type graphqlError struct {
+hidden 68 more line matches
 
 github.com/sourcegraph/sourcegraph/cmd/frontend/internal/app/jscontext/jscontext.go
 83:	GraphQLTypename string `json:"__typename"`

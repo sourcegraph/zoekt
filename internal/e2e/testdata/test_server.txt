@@ -1,6 +1,6 @@
 queryString: test server
 query: (and substr:"test" substr:"server")
-targetRank: 72
+targetRank: 76
 
 github.com/golang/go/src/cmd/vendor/golang.org/x/mod/sumdb/test.go
 26:type TestServer struct {
@@ -8,11 +8,11 @@ github.com/golang/go/src/cmd/vendor/golang.org/x/mod/sumdb/test.go
 37:type testHashes []tlog.Hash
 hidden 10 more line matches
 
-github.com/sourcegraph/sourcegraph/cmd/gitserver/server/server_test.go
-270:func TestServer_handleP4Exec(t *testing.T) {
-670:func makeTestServer(ctx context.Context, t *testing.T, repoDir, remote string, db database.DB) *Server {
-54:type Test struct {
-hidden 273 more line matches
+github.com/golang/go/src/crypto/tls/handshake_server_test.go
+544:type serverTest struct {
+788:func TestHandshakeServerRSARC4(t *testing.T) {
+798:func TestHandshakeServerRSA3DES(t *testing.T) {
+hidden 543 more line matches
 
 github.com/sourcegraph/sourcegraph/client/jetbrains/src/test/kotlin/com/sourcegraph/cody/config/SourcegraphServerPathTest.kt
 7:class SourcegraphServerPathTest {
@@ -20,22 +20,22 @@ github.com/sourcegraph/sourcegraph/client/jetbrains/src/test/kotlin/com/sourcegr
 27:    val serverPath = SourcegraphServerPath.from(url, "")
 hidden 19 more line matches
 
-github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server/server_test.go
-29:func TestClientServer(t *testing.T) {
-1:package server
-238:type mockSearchStreamServer struct {
-hidden 26 more line matches
-
-github.com/golang/go/src/crypto/tls/handshake_server_test.go
-544:type serverTest struct {
-788:func TestHandshakeServerRSARC4(t *testing.T) {
-798:func TestHandshakeServerRSA3DES(t *testing.T) {
-hidden 543 more line matches
-
 github.com/golang/go/src/net/http/serve_test.go
 1673:type serverExpectTest struct {
 1420:func TestTLSServer(t *testing.T) { run(t, testTLSServer, []testMode{https1Mode, http2Mode}) }
 1421:func testTLSServer(t *testing.T, mode testMode) {
 hidden 907 more line matches
+
+github.com/golang/go/src/net/server_test.go
+127:func TestUnixAndUnixpacketServer(t *testing.T) {
+316:func TestUnixgramServer(t *testing.T) {
+55:func TestTCPServer(t *testing.T) {
+hidden 49 more line matches
+
+github.com/golang/go/src/net/http/clientserver_test.go
+673:func TestTrailersClientToServer(t *testing.T) { run(t, testTrailersClientToServer) }
+674:func testTrailersClientToServer(t *testing.T, mode testMode) {
+95:type clientServerTest struct {
+hidden 244 more line matches
 
 hidden 494 more file matches

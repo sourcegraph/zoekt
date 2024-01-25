@@ -1,6 +1,12 @@
 queryString: bufio buffer
 query: (and substr:"bufio" substr:"buffer")
-targetRank: 1
+targetRank: 2
+
+github.com/golang/go/src/bytes/buffer.go
+20:type Buffer struct {
+60:func (b *Buffer) AvailableBuffer() []byte { return b.buf[len(b.buf):] }
+472:func NewBuffer(buf []byte) *Buffer { return &Buffer{buf: buf} }
+hidden 108 more line matches
 
 **github.com/golang/go/src/bufio/scan.go**
 267:func (s *Scanner) Buffer(buf []byte, max int) {
@@ -14,28 +20,22 @@ github.com/golang/go/src/bufio/bufio.go
 338:func (b *Reader) Buffered() int { return b.w - b.r }
 hidden 89 more line matches
 
-github.com/golang/go/src/net/http/server.go
-818:func bufioWriterPool(size int) *sync.Pool {
-338:const bufferBeforeChunkingSize = 2048
-806:	bufioReaderPool   sync.Pool
-hidden 64 more line matches
-
-github.com/golang/go/src/bufio/scan_test.go
-526:func TestHugeBuffer(t *testing.T) {
-5:package bufio_test
-8:	. "bufio"
-hidden 9 more line matches
-
-github.com/golang/go/src/bufio/bufio_test.go
-1020:func TestReadEmptyBuffer(t *testing.T) {
-5:package bufio_test
-826:func TestBufferFull(t *testing.T) {
-hidden 83 more line matches
-
-github.com/golang/go/src/bufio/example_test.go
-23:func ExampleWriter_AvailableBuffer() {
-5:package bufio_test
+github.com/golang/go/src/cmd/doc/pkg.go
+59:	bytes.Buffer
+56:type pkgBuffer struct {
 8:	"bufio"
-hidden 12 more line matches
+hidden 8 more line matches
+
+github.com/golang/go/src/net/http/h2_bundle.go
+3716:type http2pipeBuffer interface {
+1086:type http2dataBuffer struct {
+3724:func (p *http2pipe) setBuffer(b http2pipeBuffer) {
+hidden 116 more line matches
+
+github.com/golang/go/src/image/png/writer.go
+36:type EncoderBuffer encoder
+24:	BufferPool EncoderBufferPool
+30:type EncoderBufferPool interface {
+hidden 18 more line matches
 
 hidden 113 more file matches

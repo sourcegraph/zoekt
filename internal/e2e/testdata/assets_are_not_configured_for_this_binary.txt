@@ -1,6 +1,12 @@
 queryString: assets are not configured for this binary
 query: (and substr:"assets" substr:"are" substr:"not" substr:"configured" substr:"for" substr:"this" substr:"binary")
-targetRank: 3
+targetRank: 1
+
+**github.com/sourcegraph/sourcegraph/ui/assets/assets.go**
+33:func (p FailingAssetsProvider) Assets() http.FileSystem {
+14:	Assets() http.FileSystem
+1:package assets
+hidden 12 more line matches
 
 github.com/sourcegraph/sourcegraph/schema/schema.go
 492:type BrandAssets struct {
@@ -13,12 +19,6 @@ github.com/sourcegraph/sourcegraph/doc/admin/executors/deploy_executors.md
 194:### Configuring the auth config for use in executors
 216:### Adding certificates to a binary deployment
 hidden 47 more line matches
-
-**github.com/sourcegraph/sourcegraph/ui/assets/assets.go**
-33:func (p FailingAssetsProvider) Assets() http.FileSystem {
-14:	Assets() http.FileSystem
-1:package assets
-hidden 12 more line matches
 
 github.com/sourcegraph/sourcegraph/doc/getting-started/github-vs-sourcegraph.md
 8:## Which is best for you?

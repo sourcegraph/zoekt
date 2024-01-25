@@ -1,30 +1,6 @@
 queryString: bytes buffer
 query: (and substr:"bytes" substr:"buffer")
-targetRank: 1
-
-**github.com/golang/go/src/bytes/buffer.go**
-54:func (b *Buffer) Bytes() []byte { return b.buf[b.off:] }
-20:type Buffer struct {
-5:package bytes
-hidden 126 more line matches
-
-github.com/golang/go/src/cmd/internal/edit/edit.go
-68:func (b *Buffer) Bytes() []byte {
-14:type Buffer struct {
-41:func NewBuffer(data []byte) *Buffer {
-hidden 13 more line matches
-
-github.com/golang/go/src/bytes/example_test.go
-34:func ExampleBuffer_Bytes() {
-18:func ExampleBuffer() {
-41:func ExampleBuffer_AvailableBuffer() {
-hidden 135 more line matches
-
-github.com/golang/go/src/bufio/scan.go
-106:func (s *Scanner) Bytes() []byte {
-267:func (s *Scanner) Buffer(buf []byte, max int) {
-289:func ScanBytes(data []byte, atEOF bool) (advance int, token []byte, err error) {
-hidden 26 more line matches
+targetRank: 4
 
 github.com/golang/go/src/net/http/clientserver_test.go
 1310:type lockedBytesBuffer struct {
@@ -32,10 +8,34 @@ github.com/golang/go/src/net/http/clientserver_test.go
 1252:	var errorLog lockedBytesBuffer
 hidden 8 more line matches
 
+github.com/golang/go/src/bytes/example_test.go
+34:func ExampleBuffer_Bytes() {
+18:func ExampleBuffer() {
+41:func ExampleBuffer_AvailableBuffer() {
+hidden 135 more line matches
+
+github.com/sourcegraph/sourcegraph/client/browser/src/types/webextension-polyfill/index.d.ts
+1708:        bytes?: ArrayBuffer
+501:        bytesReceived: number
+502:        totalBytes: number
+hidden 9 more line matches
+
+**github.com/golang/go/src/bytes/buffer.go**
+54:func (b *Buffer) Bytes() []byte { return b.buf[b.off:] }
+20:type Buffer struct {
+5:package bytes
+hidden 126 more line matches
+
 github.com/golang/go/src/encoding/gob/decode.go
 74:func (d *decBuffer) Bytes() []byte {
 79:func (d *decBuffer) SetBytes(data []byte) {
 40:type decBuffer struct {
 hidden 39 more line matches
+
+github.com/golang/go/src/encoding/gob/encode.go
+67:func (e *encBuffer) Bytes() []byte {
+37:type encBuffer struct {
+42:var encBufferPool = sync.Pool{
+hidden 26 more line matches
 
 hidden 494 more file matches

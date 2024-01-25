@@ -14,28 +14,28 @@ github.com/sourcegraph/sourcegraph/dev/sg/internal/images/images.go
 234:type ImageReference struct {
 hidden 118 more line matches
 
-github.com/sourcegraph/sourcegraph/doc/dev/background-information/sg/reference.md
-251:### sg ci build
-1221:### sg wolfi image
-451:### sg lint dockerfiles
-hidden 107 more line matches
-
 github.com/sourcegraph/sourcegraph/doc/admin/external_services/postgres.md
 41:### sourcegraph/server
 192:### sourcegraph/server
 53:### Docker Compose
 hidden 19 more line matches
 
-github.com/sourcegraph/sourcegraph/doc/admin/deploy/docker-single-container/index.md
-1:# Docker Single Container Deployment
-294:### Insiders build
-238:### File system performance on Docker for Mac
-hidden 52 more line matches
-
 github.com/sourcegraph/sourcegraph/internal/conf/deploy/deploytype.go
 66:func IsDeployTypePureDocker(deployType string) bool {
 12:	SingleDocker  = "docker-container"
 13:	DockerCompose = "docker-compose"
 hidden 19 more line matches
+
+github.com/sourcegraph/sourcegraph/schema/schema.go
+2621:	ExecutorsBatcheshelperImage string `json:"executors.batcheshelperImage,omitempty"`
+2627:	ExecutorsLsifGoImage string `json:"executors.lsifGoImage,omitempty"`
+2631:	ExecutorsSrcCLIImage string `json:"executors.srcCLIImage,omitempty"`
+hidden 22 more line matches
+
+github.com/sourcegraph/sourcegraph/doc/admin/deploy/docker-single-container/index.md
+1:# Docker Single Container Deployment
+294:### Insiders build
+238:### File system performance on Docker for Mac
+hidden 52 more line matches
 
 hidden 15 more file matches
