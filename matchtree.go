@@ -170,6 +170,11 @@ type fileNameMatchTree struct {
 	child matchTree
 }
 
+type boostMatchTree struct {
+	child matchTree
+	boost float64
+}
+
 // Don't visit this subtree for collecting matches.
 type noVisitMatchTree struct {
 	matchTree
@@ -392,6 +397,10 @@ func (t *fileNameMatchTree) prepare(doc uint32) {
 	t.child.prepare(doc)
 }
 
+func (t *boostMatchTree) prepare(doc uint32) {
+	t.child.prepare(doc)
+}
+
 func (t *substrMatchTree) prepare(nextDoc uint32) {
 	t.matchIterator.prepare(nextDoc)
 	t.current = t.matchIterator.candidates()
@@ -455,6 +464,10 @@ func (t *fileNameMatchTree) nextDoc() uint32 {
 	return t.child.nextDoc()
 }
 
+func (t *boostMatchTree) nextDoc() uint32 {
+	return t.child.nextDoc()
+}
+
 func (t *branchQueryMatchTree) nextDoc() uint32 {
 	var start uint32
 	if t.firstDone {
@@ -515,6 +528,10 @@ func (t *fileNameMatchTree) String() string {
 	return fmt.Sprintf("f(%v)", t.child)
 }
 
+func (t *boostMatchTree) String() string {
+	return fmt.Sprintf("boost(%f, %v)", t.boost, t.child)
+}
+
 func (t *substrMatchTree) String() string {
 	f := ""
 	if t.fileName {
@@ -556,6 +573,8 @@ func visitMatchTree(t matchTree, f func(matchTree)) {
 		visitMatchTree(s.child, f)
 	case *fileNameMatchTree:
 		visitMatchTree(s.child, f)
+	case *boostMatchTree:
+		visitMatchTree(s.child, f)
 	case *symbolSubstrMatchTree:
 		visitMatchTree(s.substrMatchTree, f)
 	case *symbolRegexpMatchTree:
@@ -575,33 +594,41 @@ func updateMatchTreeStats(mt matchTree, stats *Stats) {
 	})
 }
 
+func visitMatchAtoms(t matchTree, known map[matchTree]bool, f func(matchTree)) {
+	visitMatches(t, known, 1, func(mt matchTree, _ float64) {
+		f(mt)
+	})
+}
+
 // visitMatches visits all atoms which can contribute matches. Note: This
 // skips noVisitMatchTree.
-func visitMatches(t matchTree, known map[matchTree]bool, f func(matchTree)) {
+func visitMatches(t matchTree, known map[matchTree]bool, weight float64, f func(matchTree, float64)) {
 	switch s := t.(type) {
 	case *andMatchTree:
 		for _, ch := range s.children {
 			if known[ch] {
-				visitMatches(ch, known, f)
+				visitMatches(ch, known, weight, f)
 			}
 		}
 	case *andLineMatchTree:
-		visitMatches(&s.andMatchTree, known, f)
+		visitMatches(&s.andMatchTree, known, weight, f)
 	case *orMatchTree:
 		for _, ch := range s.children {
 			if known[ch] {
-				visitMatches(ch, known, f)
+				visitMatches(ch, known, weight, f)
 			}
 		}
+	case *boostMatchTree:
+		visitMatches(s.child, known, weight*s.boost, f)
 	case *symbolSubstrMatchTree:
-		visitMatches(s.substrMatchTree, known, f)
+		visitMatches(s.substrMatchTree, known, weight, f)
 	case *notMatchTree:
 	case *noVisitMatchTree:
 		// don't collect into negative trees.
 	case *fileNameMatchTree:
 		// We will just gather the filename if we do not visit this tree.
 	default:
-		f(s)
+		f(s, weight)
 	}
 }
 
@@ -876,6 +903,10 @@ func (t *fileNameMatchTree) matches(cp *contentProvider, cost int, known map[mat
 	return evalMatchTree(cp, cost, known, t.child)
 }
 
+func (t *boostMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) matchesState {
+	return evalMatchTree(cp, cost, known, t.child)
+}
+
 func (t *substrMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) matchesState {
 	if t.contEvaluated {
 		return matchesStateForSlice(t.current)
@@ -995,6 +1026,17 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 
 		return &fileNameMatchTree{
 			child: ct,
+		}, nil
+
+	case *query.Boost:
+		ct, err := d.newMatchTree(s.Child, opt)
+		if err != nil {
+			return nil, err
+		}
+
+		return &boostMatchTree{
+			child: ct,
+			boost: s.Boost,
 		}, nil
 
 	case *query.Substring:
@@ -1287,6 +1329,8 @@ func pruneMatchTree(mt matchTree) (matchTree, error) {
 			return nil, nil
 		}
 	case *fileNameMatchTree:
+		mt.child, err = pruneMatchTree(mt.child)
+	case *boostMatchTree:
 		mt.child, err = pruneMatchTree(mt.child)
 	case *andLineMatchTree:
 		child, err := pruneMatchTree(&mt.andMatchTree)

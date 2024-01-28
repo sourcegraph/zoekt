@@ -1,6 +1,11 @@
 queryString: sourcegraph/server docker image build
 query: (and substr:"sourcegraph/server" substr:"docker" substr:"image" substr:"build")
-targetRank: 14
+targetRank: 1
+
+**github.com/sourcegraph/sourcegraph/dev/tools.go**
+7:	// zoekt-* used in sourcegraph/server docker image build
+1://go:build tools
+2:// +build tools
 
 github.com/sourcegraph/sourcegraph/dev/sg/internal/images/images.go
 458:	Build       int
@@ -31,11 +36,5 @@ github.com/sourcegraph/sourcegraph/internal/updatecheck/handler.go
 45:	latestReleaseKubernetesBuild = newPingResponse("5.1.8")
 50:	latestReleaseDockerComposeOrPureDocker = newPingResponse("5.1.8")
 hidden 19 more line matches
-
-github.com/sourcegraph/sourcegraph/doc/admin/deploy/docker-single-container/index.md
-1:# Docker Single Container Deployment
-294:### Insiders build
-238:### File system performance on Docker for Mac
-hidden 52 more line matches
 
 hidden 15 more file matches

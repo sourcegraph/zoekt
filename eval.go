@@ -420,7 +420,7 @@ nextFileMatch:
 // whether there's an exact match on a symbol, the number of query clauses that matched, etc.
 func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, known map[matchTree]bool, opts *SearchOptions) {
 	atomMatchCount := 0
-	visitMatches(mt, known, func(mt matchTree) {
+	visitMatchAtoms(mt, known, func(mt matchTree) {
 		atomMatchCount++
 	})
 
@@ -544,6 +544,15 @@ func (m sortByOffsetSlice) Less(i, j int) bool {
 	return m[i].byteOffset < m[j].byteOffset
 }
 
+// setScoreWeight is a helper used by gatherMatches to set the weight based on
+// the score weight of the matchTree.
+func setScoreWeight(scoreWeight float64, cm []*candidateMatch) []*candidateMatch {
+	for _, m := range cm {
+		m.scoreWeight = scoreWeight
+	}
+	return cm
+}
+
 // Gather matches from this document. This never returns a mixture of
 // filename/content matches: if there are content matches, all
 // filename matches are trimmed from the result. The matches are
@@ -554,18 +563,18 @@ func (m sortByOffsetSlice) Less(i, j int) bool {
 // but adjacent matches will remain.
 func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candidateMatch {
 	var cands []*candidateMatch
-	visitMatches(mt, known, func(mt matchTree) {
+	visitMatches(mt, known, 1, func(mt matchTree, scoreWeight float64) {
 		if smt, ok := mt.(*substrMatchTree); ok {
-			cands = append(cands, smt.current...)
+			cands = append(cands, setScoreWeight(scoreWeight, smt.current)...)
 		}
 		if rmt, ok := mt.(*regexpMatchTree); ok {
-			cands = append(cands, rmt.found...)
+			cands = append(cands, setScoreWeight(scoreWeight, rmt.found)...)
 		}
 		if rmt, ok := mt.(*wordMatchTree); ok {
-			cands = append(cands, rmt.found...)
+			cands = append(cands, setScoreWeight(scoreWeight, rmt.found)...)
 		}
 		if smt, ok := mt.(*symbolRegexpMatchTree); ok {
-			cands = append(cands, smt.found...)
+			cands = append(cands, setScoreWeight(scoreWeight, smt.found)...)
 		}
 	})
 
@@ -590,6 +599,7 @@ func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candid
 		// are non-overlapping.
 		sort.Sort((sortByOffsetSlice)(cands))
 		res = cands[:0]
+		mergeRun := 1
 		for i, c := range cands {
 			if i == 0 {
 				res = append(res, c)
@@ -599,10 +609,23 @@ func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candid
 			lastEnd := last.byteOffset + last.byteMatchSz
 			end := c.byteOffset + c.byteMatchSz
 			if lastEnd >= c.byteOffset {
+				mergeRun++
+
+				// Average out the score across the merged candidates. Only do it if
+				// we are boosting to avoid floating point funkiness in the normal
+				// case.
+				if !(epsilonEqualsOne(last.scoreWeight) && epsilonEqualsOne(c.scoreWeight)) {
+					last.scoreWeight = ((last.scoreWeight * float64(mergeRun-1)) + c.scoreWeight) / float64(mergeRun)
+				}
+
+				// latest candidate goes further, update our end
 				if end > lastEnd {
 					last.byteMatchSz = end - last.byteOffset
 				}
+
 				continue
+			} else {
+				mergeRun = 1
 			}
 
 			res = append(res, c)
@@ -649,7 +672,7 @@ func (d *indexData) branchIndex(docID uint32) int {
 // returns all branches containing docID.
 func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTree]bool) []string {
 	var mask uint64
-	visitMatches(mt, known, func(mt matchTree) {
+	visitMatchAtoms(mt, known, func(mt matchTree) {
 		bq, ok := mt.(*branchQueryMatchTree)
 		if !ok {
 			return

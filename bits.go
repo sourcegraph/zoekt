@@ -16,6 +16,7 @@ package zoekt
 
 import (
 	"encoding/binary"
+	"math"
 	"sort"
 	"unicode"
 	"unicode/utf8"
@@ -390,4 +391,8 @@ func (m runeOffsetMap) lookup(runeOffset uint32) (uint32, uint32) {
 
 func (m runeOffsetMap) sizeBytes() int {
 	return 8 * len(m)
+}
+
+func epsilonEqualsOne(scoreWeight float64) bool {
+	return scoreWeight == 1 || math.Abs(scoreWeight-1.0) < 1e-9
 }

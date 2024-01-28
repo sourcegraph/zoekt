@@ -1,6 +1,30 @@
 queryString: generate unit test
 query: (and substr:"generate" substr:"unit" substr:"test")
-targetRank: 11
+targetRank: 1
+
+**github.com/sourcegraph/cody/lib/shared/src/chat/recipes/generate-test.ts**
+16:    public title = 'Generate Unit Test'
+14:export class GenerateTest implements Recipe {
+15:    public id: RecipeID = 'generate-unit-test'
+hidden 3 more line matches
+
+github.com/sourcegraph/sourcegraph/client/jetbrains/README.md
+40:- Generate unit test
+41:- Generate docstring
+61:Cody is powered by Sourcegraph’s code graph and uses context of your codebase to extend its capabilities. By using context from entire repositories, Cody is able to give more accurate answers and generate idiomatic code.
+hidden 7 more line matches
+
+github.com/sourcegraph/cody/vscode/CHANGELOG.md
+298:- The `/test` (Generate Unit Test) command was updated to use file dependencies and test examples when fetching context, in order to produce better results. To use this command, select code in your editor and run the `/test` command. It is recommended to set up test files before running the command to get optimal results. [pull/683](https://github.com/sourcegraph/cody/pull/683) [pull/602](https://github.com/sourcegraph/cody/pull/602)
+218:- The `Generate Unit Tests` command has been improved with an enhanced context fetching process that produces test results with better quality. [pull/907](https://github.com/sourcegraph/cody/pull/907)
+264:- The `Generate Unit Tests` command has been improved with an enhanced context fetching process that produces test results with better quality. [pull/907](https://github.com/sourcegraph/cody/pull/907)
+hidden 17 more line matches
+
+github.com/sourcegraph/sourcegraph/doc/cody/overview/install-jetbrains.md
+158:- Generate unit test
+138:Log in to your Sourcegraph instance and go to `settings` / `access token` (`https://<your-instance>.sourcegraph.com/users/<your-instance>/settings/tokens`). From here, generate a new access token.
+159:- Generate docstring
+hidden 3 more line matches
 
 github.com/sourcegraph/sourcegraph/cmd/frontend/internal/insights/resolvers/insight_series_resolver.go
 300:func (j *seriesResolverGenerator) Generate(ctx context.Context, series types.InsightViewSeries, baseResolver baseInsightResolver, filters types.InsightViewFilters, options types.SeriesDisplayOptions) ([]graphqlbackend.InsightSeriesResolver, error) {
@@ -13,29 +37,5 @@ github.com/golang/go/src/cmd/vendor/github.com/google/pprof/internal/report/repo
 187:func (rpt *Report) selectOutputUnit(g *graph.Graph) {
 75:	SampleUnit        string // Unit for the sample data from the profile.
 hidden 48 more line matches
-
-github.com/sourcegraph/sourcegraph/internal/codeintel/autoindexing/internal/inference/lua/test.lua
-9:  generate = function(_, paths)
-6:  patterns = { pattern.new_path_basename "sg-test" },
-8:  -- Invoked as part of unit tests for the autoindexing service
-hidden 1 more line matches
-
-github.com/golang/go/src/cmd/internal/testdir/testdir_test.go
-273:type test struct {
-74:func Test(t *testing.T) {
-263:type testCommon struct {
-hidden 120 more line matches
-
-github.com/golang/go/src/cmd/vendor/github.com/google/pprof/profile/profile.go
-65:	Unit string // seconds, nanoseconds, bytes, etc
-77:	NumUnit  map[string][]string
-68:	unitX int64
-hidden 44 more line matches
-
-github.com/golang/go/src/cmd/link/internal/loader/loader.go
-79:	unit         *sym.CompilationUnit
-1544:func (l *Loader) SymUnit(i Sym) *sym.CompilationUnit {
-228:	generatedSyms        Bitmap // symbols that generate their content, indexed by ext sym idx
-hidden 50 more line matches
 
 hidden 245 more file matches
