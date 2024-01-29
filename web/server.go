@@ -241,6 +241,13 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 		return nil, err
 	}
 
+	// Experimental: The query string and boost exact phrases of it.
+	if phraseBoost, err := strconv.ParseFloat(qvals.Get("phrase-boost"), 64); err == nil {
+		q = query.ExpirementalPhraseBoost(q, queryStr, query.ExperimentalPhraseBoostOptions{
+			Boost: phraseBoost,
+		})
+	}
+
 	repoOnly := true
 	query.VisitAtoms(q, func(q query.Q) {
 		_, ok := q.(*query.Repo)

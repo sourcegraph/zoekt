@@ -152,7 +152,7 @@ func TestMatchSize(t *testing.T) {
 		size: 112,
 	}, {
 		v:    candidateMatch{},
-		size: 72,
+		size: 80,
 	}, {
 		v:    candidateChunk{},
 		size: 40,

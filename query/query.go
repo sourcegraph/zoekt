@@ -386,6 +386,19 @@ func (q *Type) String() string {
 	}
 }
 
+// Boost scales the contribution to score of descendents.
+type Boost struct {
+	Child Q
+	// Boost will multiply the score of its descendents. Values less than 1 will
+	// give less importance while values greater than 1 will give more
+	// importance.
+	Boost float64
+}
+
+func (q *Boost) String() string {
+	return fmt.Sprintf("(boost %0.2f %s)", q.Boost, q.Child)
+}
+
 // Substring is the most basic query: a query for a substring.
 type Substring struct {
 	Pattern       string
@@ -609,6 +622,9 @@ func flatten(q Q) (Q, bool) {
 	case *Type:
 		child, changed := flatten(s.Child)
 		return &Type{Child: child, Type: s.Type}, changed
+	case *Boost:
+		child, changed := flatten(s.Child)
+		return &Boost{Child: child, Boost: s.Boost}, changed
 	default:
 		return q, false
 	}
@@ -680,6 +696,12 @@ func evalConstants(q Q) Q {
 			return ch
 		}
 		return &Type{Child: ch, Type: s.Type}
+	case *Boost:
+		ch := evalConstants(s.Child)
+		if _, ok := ch.(*Const); ok {
+			return ch
+		}
+		return &Boost{Boost: s.Boost, Child: ch}
 	case *Substring:
 		if len(s.Pattern) == 0 {
 			return &Const{true}
@@ -728,6 +750,8 @@ func Map(q Q, f func(q Q) Q) Q {
 		q = &Not{Child: Map(s.Child, f)}
 	case *Type:
 		q = &Type{Type: s.Type, Child: Map(s.Child, f)}
+	case *Boost:
+		q = &Boost{Boost: s.Boost, Child: Map(s.Child, f)}
 	}
 	return f(q)
 }
@@ -768,6 +792,7 @@ func VisitAtoms(q Q, v func(q Q)) {
 		case *Or:
 		case *Not:
 		case *Type:
+		case *Boost:
 		default:
 			v(iQ)
 		}

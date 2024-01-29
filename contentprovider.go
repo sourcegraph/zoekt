@@ -660,6 +660,14 @@ func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language str
 			}
 		}
 
+		// scoreWeight != 1 means it affects score
+		if !epsilonEqualsOne(m.scoreWeight) {
+			score.score = score.score * m.scoreWeight
+			if debug {
+				score.what += fmt.Sprintf("boost:%.2f, ", m.scoreWeight)
+			}
+		}
+
 		if score.score > maxScore.score {
 			maxScore.score = score.score
 			maxScore.what = score.what

@@ -3,9 +3,9 @@ query: (and substr:"assets" substr:"are" substr:"not" substr:"configured" substr
 targetRank: 1
 
 **github.com/sourcegraph/sourcegraph/ui/assets/assets.go**
+30:	return nil, errors.New("assets are not configured for this binary, please see ui/assets")
+34:	panic("assets are not configured for this binary, please see ui/assets")
 33:func (p FailingAssetsProvider) Assets() http.FileSystem {
-14:	Assets() http.FileSystem
-1:package assets
 hidden 12 more line matches
 
 github.com/sourcegraph/sourcegraph/schema/schema.go

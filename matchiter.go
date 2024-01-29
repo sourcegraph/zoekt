@@ -27,6 +27,8 @@ type candidateMatch struct {
 	substrBytes   []byte
 	substrLowered []byte
 
+	scoreWeight float64
+
 	file      uint32
 	symbolIdx uint32
 
