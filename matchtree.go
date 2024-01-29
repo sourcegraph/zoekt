@@ -1332,6 +1332,12 @@ func pruneMatchTree(mt matchTree) (matchTree, error) {
 		mt.child, err = pruneMatchTree(mt.child)
 	case *boostMatchTree:
 		mt.child, err = pruneMatchTree(mt.child)
+		if err != nil {
+			return nil, err
+		}
+		if mt.child == nil {
+			return nil, nil
+		}
 	case *andLineMatchTree:
 		child, err := pruneMatchTree(&mt.andMatchTree)
 		if err != nil {
