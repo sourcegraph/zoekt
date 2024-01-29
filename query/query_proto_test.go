@@ -73,6 +73,20 @@ func TestQueryRoundtrip(t *testing.T) {
 		&Not{
 			Child: &Language{Language: "go"},
 		},
+		&Boost{
+			Child: &Or{
+				Children: []Q{
+					&And{
+						Children: []Q{
+							&Substring{Pattern: "foo"},
+							&Substring{Pattern: "bar"},
+						},
+					},
+					&Substring{Pattern: "foo bar"},
+				},
+			},
+			Boost: 20,
+		},
 	}
 
 	for _, q := range testCases {

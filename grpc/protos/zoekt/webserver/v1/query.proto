@@ -23,6 +23,7 @@ message Q {
     Or or = 15;
     Not not = 16;
     Branch branch = 17;
+    Boost boost = 18;
   }
 }
 
@@ -140,4 +141,10 @@ message Branch {
   string pattern = 1;
   // exact is true if we want to Pattern to equal branch.
   bool exact = 2;
+}
+
+// Boost multiplies the score of its child by the boost factor.
+message Boost {
+  Q child = 1;
+  double boost = 2;
 }
