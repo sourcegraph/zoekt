@@ -529,19 +529,19 @@ func TestFileRank(t *testing.T) {
 		name: "skipped docs",
 		docs: []*zoekt.Document{
 			{
-				Name: "binary_file",
+				Name:       "binary_file",
 				SkipReason: "binary file",
 			},
 			{
-				Name: "some_test.go",
+				Name:    "some_test.go",
 				Content: []byte("bla"),
 			},
 			{
-				Name: "large_file.go",
+				Name:       "large_file.go",
 				SkipReason: "too large",
 			},
 			{
-				Name: "file.go",
+				Name:    "file.go",
 				Content: []byte("blabla"),
 			},
 		},

@@ -521,8 +521,8 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 
 		Error: o.Error,
 
-		LanguageMap: languageMap,
-		ShardConcurrency:    o.ShardConcurrency,
+		LanguageMap:      languageMap,
+		ShardConcurrency: o.ShardConcurrency,
 	}
 }
 

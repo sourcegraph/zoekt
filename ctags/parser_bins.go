@@ -113,4 +113,3 @@ func checkBinary(typ CTagsParserType, bin string) error {
 
 	return nil
 }
-

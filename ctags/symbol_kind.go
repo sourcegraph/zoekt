@@ -107,4 +107,3 @@ func ParseSymbolKind(kind string) SymbolKind {
 		return Other
 	}
 }
-
