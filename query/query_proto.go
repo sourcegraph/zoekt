@@ -6,6 +6,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/grafana/regexp"
+
 	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 )
 
@@ -45,6 +46,8 @@ func QToProto(q Q) *proto.Q {
 		return &proto.Q{Query: &proto.Q_Not{Not: v.ToProto()}}
 	case *Branch:
 		return &proto.Q{Query: &proto.Q_Branch{Branch: v.ToProto()}}
+	case *Boost:
+		return &proto.Q{Query: &proto.Q_Boost{Boost: v.ToProto()}}
 	default:
 		// The following nodes do not have a proto representation:
 		// - GobCache: only needed for Gob encoding
@@ -89,6 +92,8 @@ func QFromProto(p *proto.Q) (Q, error) {
 		return NotFromProto(v.Not)
 	case *proto.Q_Branch:
 		return BranchFromProto(v.Branch), nil
+	case *proto.Q_Boost:
+		return BoostFromProto(v.Boost)
 	default:
 		panic(fmt.Sprintf("unknown query node %T", p.Query))
 	}
@@ -357,6 +362,24 @@ func (q *Or) ToProto() *proto.Or {
 	}
 	return &proto.Or{
 		Children: children,
+	}
+}
+
+func BoostFromProto(p *proto.Boost) (*Boost, error) {
+	child, err := QFromProto(p.GetChild())
+	if err != nil {
+		return nil, err
+	}
+	return &Boost{
+		Child: child,
+		Boost: p.GetBoost(),
+	}, nil
+}
+
+func (q *Boost) ToProto() *proto.Boost {
+	return &proto.Boost{
+		Child: QToProto(q.Child),
+		Boost: q.Boost,
 	}
 }
 
