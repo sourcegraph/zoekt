@@ -44,7 +44,7 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.StreamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
-	var stats *zoekt.Stats
+	var stats zoekt.Stats
 	defer func() {
 		tr.LazyPrintf("stats: %+v", stats)
 		if err != nil {
@@ -59,15 +59,10 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		return err
 	}
 
-	if opts.Trace {
-		stats = &zoekt.Stats{}
-		return s.Streamer.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
-			stats.Add(event.Stats)
-			sender.Send(event)
-		}))
-	}
-
-	return s.Streamer.StreamSearch(ctx, q, opts, sender)
+	return s.Streamer.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+		stats.Add(event.Stats)
+		sender.Send(event)
+	}))
 }
 
 func (s *typeRepoSearcher) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
