@@ -247,7 +247,7 @@ type Builder struct {
 	todo         []*zoekt.Document
 	docChecker   zoekt.DocChecker
 	size         int
-	
+
 	parserBins ctags.ParserBinMap
 	building   sync.WaitGroup
 

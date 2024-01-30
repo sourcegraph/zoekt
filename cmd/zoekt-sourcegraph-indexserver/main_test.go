@@ -63,8 +63,8 @@ func TestServer_parallelism(t *testing.T) {
 		name             string
 		cpuCount         int
 		indexConcurrency int
-		options IndexOptions
-		want    int
+		options          IndexOptions
+		want             int
 	}{
 		{
 			name:             "CPU count divides evenly",
@@ -82,7 +82,7 @@ func TestServer_parallelism(t *testing.T) {
 			name:             "index option overrides server flag",
 			cpuCount:         2,
 			indexConcurrency: 1,
-			options: IndexOptions {
+			options: IndexOptions{
 				ShardConcurrency: 1,
 			},
 			want: 1,
@@ -91,7 +91,7 @@ func TestServer_parallelism(t *testing.T) {
 			name:             "ignore invalid index option",
 			cpuCount:         8,
 			indexConcurrency: 2,
-			options: IndexOptions {
+			options: IndexOptions{
 				ShardConcurrency: -1,
 			},
 			want: 4,
@@ -99,7 +99,7 @@ func TestServer_parallelism(t *testing.T) {
 	}
 
 	for _, tt := range cases {
-		t.Run(tt.name,  func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			s := &Server{
 				Sourcegraph:      newSourcegraphClient(root, "", WithBatchSize(0)),
 				IndexDir:         "/testdata/index",
@@ -109,7 +109,7 @@ func TestServer_parallelism(t *testing.T) {
 
 			maxProcs := 16
 			got := s.parallelism(tt.options, maxProcs)
-			if tt.want != got{
+			if tt.want != got {
 				t.Errorf("mismatch, want: %d, got: %d", tt.want, got)
 			}
 		})
@@ -122,7 +122,7 @@ func TestServer_parallelism(t *testing.T) {
 			IndexConcurrency: 1,
 		}
 
-		got := s.indexArgs(IndexOptions {
+		got := s.indexArgs(IndexOptions{
 			ShardConcurrency: 2048, // Some number that's way too high
 		})
 
@@ -440,7 +440,7 @@ func TestGetBoolFromEnvironmentVariables(t *testing.T) {
 				_ = os.Unsetenv(v)
 			}
 
-			for k, _ := range tc.envVarsToSet {
+			for k := range tc.envVarsToSet {
 				_ = os.Unsetenv(k)
 			}
 

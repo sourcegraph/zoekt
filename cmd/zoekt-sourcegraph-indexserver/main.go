@@ -644,9 +644,9 @@ func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 	parallelism := s.parallelism(opts, runtime.GOMAXPROCS(0))
 	return &indexArgs{
 		IndexOptions: opts,
-		IndexDir:    s.IndexDir,
-		Parallelism: parallelism,
-		Incremental: true,
+		IndexDir:     s.IndexDir,
+		Parallelism:  parallelism,
+		Incremental:  true,
 
 		// 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
 		FileLimit: 1 << 20,
@@ -665,7 +665,7 @@ func (s *Server) parallelism(opts IndexOptions, maxProcs int) int {
 	}
 
 	// In case this was accidentally misconfigured, we cap the threads at 4 times the available CPUs
-	if parallelism > 4 * maxProcs {
+	if parallelism > 4*maxProcs {
 		parallelism = 4 * maxProcs
 	}
 
