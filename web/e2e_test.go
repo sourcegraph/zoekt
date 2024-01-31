@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/rpc"
@@ -136,6 +137,9 @@ func TestBasic(t *testing.T) {
 		},
 		"/search?q=magic": {
 			`value=magic`,
+		},
+		"/search?q=foo+type:file": {
+			`value=foo`,
 		},
 		"/robots.txt": {
 			"disallow: /search",

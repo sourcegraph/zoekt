@@ -1330,6 +1330,12 @@ func pruneMatchTree(mt matchTree) (matchTree, error) {
 		}
 	case *fileNameMatchTree:
 		mt.child, err = pruneMatchTree(mt.child)
+		if err != nil {
+			return nil, err
+		}
+		if mt.child == nil {
+			return nil, nil
+		}
 	case *boostMatchTree:
 		mt.child, err = pruneMatchTree(mt.child)
 		if err != nil {
