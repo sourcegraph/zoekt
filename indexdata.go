@@ -21,10 +21,10 @@ import (
 	"hash/crc64"
 	"log"
 	"math/bits"
+	"slices"
 	"unicode/utf8"
 
 	"github.com/sourcegraph/zoekt/query"
-	"golang.org/x/exp/slices"
 )
 
 // indexData holds the pattern-independent data that we have to have
@@ -410,9 +410,7 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 
 	// PERF: Sort to increase the chances adjacent checks are in the same btree
 	// bucket (which can cause disk IO).
-	slices.SortFunc(ngramOffs, func(a, b runeNgramOff) bool {
-		return a.ngram < b.ngram
-	})
+	slices.SortFunc(ngramOffs, runeNgramOff.Compare)
 	frequencies := make([]uint32, 0, len(ngramOffs))
 	ngramLookups := 0
 	ngrams := d.ngrams(query.FileName)
