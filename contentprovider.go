@@ -19,13 +19,13 @@ import (
 	"fmt"
 	"log"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/sourcegraph/zoekt/ctags"
-	"golang.org/x/exp/slices"
 )
 
 var _ = log.Println

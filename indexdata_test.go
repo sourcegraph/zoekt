@@ -3,10 +3,9 @@ package zoekt
 import (
 	"math/rand"
 	"reflect"
+	"slices"
 	"testing"
 	"testing/quick"
-
-	"golang.org/x/exp/slices"
 )
 
 const exampleQuery = "const data: Event = { ...JSON.parse(message.data), type: message.event }"
@@ -27,9 +26,7 @@ func genFrequencies(ngramOffs []runeNgramOff, max int) []uint32 {
 
 func BenchmarkMinFrequencyNgramOffsets(b *testing.B) {
 	ngramOffs := splitNGrams([]byte(exampleQuery))
-	slices.SortFunc(ngramOffs, func(a, b runeNgramOff) bool {
-		return a.ngram < b.ngram
-	})
+	slices.SortFunc(ngramOffs, runeNgramOff.Compare)
 	frequencies := genFrequencies(ngramOffs, 100)
 	for i := 0; i < b.N; i++ {
 		x0, x1 := minFrequencyNgramOffsets(ngramOffs, frequencies)
@@ -50,9 +47,7 @@ func TestMinFrequencyNgramOffsets(t *testing.T) {
 			return true
 		}
 
-		slices.SortFunc(ngramOffs, func(a, b runeNgramOff) bool {
-			return a.ngram < b.ngram
-		})
+		slices.SortFunc(ngramOffs, runeNgramOff.Compare)
 		frequencies := genFrequencies(ngramOffs, int(maxFreq))
 		x0, x1 := minFrequencyNgramOffsets(ngramOffs, frequencies)
 
@@ -67,8 +62,8 @@ func TestMinFrequencyNgramOffsets(t *testing.T) {
 
 		// Now we just assert that we found two items with the smallest
 		// frequencies.
-		idx0 := slices.Index[runeNgramOff](ngramOffs, x0)
-		idx1 := slices.Index[runeNgramOff](ngramOffs, x1)
+		idx0 := slices.IndexFunc(ngramOffs, func(a runeNgramOff) bool { return a == x0 })
+		idx1 := slices.IndexFunc(ngramOffs, func(a runeNgramOff) bool { return a == x1 })
 		start := []uint32{frequencies[idx0], frequencies[idx1]}
 		slices.Sort(start)
 		slices.Sort(frequencies)

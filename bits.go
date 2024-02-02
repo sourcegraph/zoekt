@@ -15,6 +15,7 @@
 package zoekt
 
 import (
+	"cmp"
 	"encoding/binary"
 	"math"
 	"sort"
@@ -110,6 +111,16 @@ type runeNgramOff struct {
 	ngram ngram
 	// index is the original index inside of the returned array of splitNGrams
 	index uint32
+}
+
+func (a runeNgramOff) Compare(b runeNgramOff) int {
+	if a.ngram == b.ngram {
+		return cmp.Compare(a.index, b.index)
+	} else if a.ngram < b.ngram {
+		return -1
+	} else {
+		return 1
+	}
 }
 
 func splitNGrams(str []byte) []runeNgramOff {
