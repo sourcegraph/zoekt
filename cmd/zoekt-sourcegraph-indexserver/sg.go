@@ -4,14 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"io"
 	"log"
 	"math/rand"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -22,11 +19,9 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/ctags"
 	"golang.org/x/net/trace"
-	"google.golang.org/grpc"
 
 	"github.com/sourcegraph/zoekt"
 )
@@ -93,47 +88,12 @@ func WithBatchSize(batchSize int) SourcegraphClientOption {
 	}
 }
 
-// WithShouldUseGRPC enables or disables the use of gRPC for communicating with Sourcegraph.
-func WithShouldUseGRPC(useGRPC bool) SourcegraphClientOption {
-	return func(c *sourcegraphClient) {
-		c.useGRPC = useGRPC
-	}
-}
-
-// WithGRPCClient sets the gRPC client to use for communicating with Sourcegraph.
-func WithGRPCClient(client proto.ZoektConfigurationServiceClient) SourcegraphClientOption {
-	return func(c *sourcegraphClient) {
-		c.grpcClient = client
-	}
-}
-
-func newSourcegraphClient(rootURL *url.URL, hostname string, opts ...SourcegraphClientOption) *sourcegraphClient {
-	httpClient := retryablehttp.NewClient()
-	httpClient.Logger = debug
-
-	// Sourcegraph might return an error message in the body if StatusCode==500. The
-	// default behavior of the go-retryablehttp restClient is to drain the body and not
-	// to propagate the error. Hence, we call ErrorPropagatedRetryPolicy instead of
-	// DefaultRetryPolicy and augment the error with the response body if possible.
-	httpClient.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
-		shouldRetry, checkErr := retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
-
-		if resp != nil && resp.StatusCode == http.StatusInternalServerError {
-			if b, e := io.ReadAll(resp.Body); e == nil {
-				checkErr = fmt.Errorf("%w: body=%q", checkErr, string(b))
-			}
-		}
-
-		return shouldRetry, checkErr
-	}
-
+func newSourcegraphClient(rootURL *url.URL, hostname string, grpcClient proto.ZoektConfigurationServiceClient, opts ...SourcegraphClientOption) *sourcegraphClient {
 	client := &sourcegraphClient{
 		Root:       rootURL,
-		restClient: httpClient,
 		Hostname:   hostname,
 		BatchSize:  0,
-		grpcClient: noopGRPCClient{},
-		useGRPC:    false, // disable gRPC by default
+		grpcClient: grpcClient,
 	}
 
 	for _, opt := range opts {
@@ -158,20 +118,8 @@ type sourcegraphClient struct {
 	// zero a value of 10000 is used.
 	BatchSize int
 
-	// restClient is used to make requests to the Sourcegraph instance. Prefer to
-	// use .doRequest() to ensure the appropriate headers are set.
-	restClient *retryablehttp.Client
-
 	// grpcClient is used to make requests to the Sourcegraph instance if gRPC is enabled.
 	grpcClient proto.ZoektConfigurationServiceClient
-
-	// configFingerprint is the last config fingerprint returned from
-	// Sourcegraph. It can be used for future calls to the configuration
-	// endpoint.
-	//
-	// configFingerprint is mutually exclusive with configFingerprintProto - this field
-	// will only be used if gRPC is disabled.
-	configFingerprint string
 
 	// configFingerprintProto is the last config fingerprint (as GRPC) returned from
 	// Sourcegraph. It can be used for future calls to the configuration
@@ -186,22 +134,11 @@ type sourcegraphClient struct {
 	// configFingerprint logic is faulty. When it is cleared out, we fallback to
 	// calculating everything.
 	configFingerprintReset time.Time
-
-	// useGRPC indicates whether we should use a gRPC client to communicate with Sourcegraph.
-	useGRPC bool
 }
 
 // GetDocumentRanks asks Sourcegraph for a mapping of file paths to rank
 // vectors.
 func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
-	if s.useGRPC {
-		return s.getDocumentRanksGRPC(ctx, repoName)
-	}
-
-	return s.getDocumentRanksREST(ctx, repoName)
-}
-
-func (s *sourcegraphClient) getDocumentRanksGRPC(ctx context.Context, repoName string) (RepoPathRanks, error) {
 	resp, err := s.grpcClient.DocumentRanks(ctx, &proto.DocumentRanksRequest{Repository: repoName})
 	if err != nil {
 		return RepoPathRanks{}, err
@@ -211,58 +148,6 @@ func (s *sourcegraphClient) getDocumentRanksGRPC(ctx context.Context, repoName s
 	out.FromProto(resp)
 
 	return out, nil
-}
-
-func (s *sourcegraphClient) getDocumentRanksREST(ctx context.Context, repoName string) (RepoPathRanks, error) {
-	u := s.Root.ResolveReference(&url.URL{
-		Path: "/.internal/ranks/" + strings.Trim(repoName, "/") + "/documents",
-	})
-
-	b, err := s.get(ctx, u)
-	if err != nil {
-		return RepoPathRanks{}, err
-	}
-
-	ranks := RepoPathRanks{}
-	err = json.Unmarshal(b, &ranks)
-	if err != nil {
-		return RepoPathRanks{}, err
-	}
-
-	return ranks, nil
-}
-
-func (s *sourcegraphClient) get(ctx context.Context, u *url.URL) ([]byte, error) {
-	req, err := retryablehttp.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := s.doRequest(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		_ = resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-		return nil, &url.Error{
-			Op:  "Get",
-			URL: u.String(),
-			Err: fmt.Errorf("%s: %s", resp.Status, string(b)),
-		}
-	}
-
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return b, nil
 }
 
 func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
@@ -288,7 +173,6 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 		s.configFingerprintReset = time.Now().Add(next)
 
 		s.configFingerprintProto = nil
-		s.configFingerprint = ""
 	}
 
 	// getIndexOptionsFunc is a function that can be used to get the index
@@ -300,56 +184,27 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 	// fail, the old fingerprint is restored.
 	type getIndexOptionsFunc func(repos ...uint32) ([]indexOptionsItem, error)
 
-	// default to REST
 	mkGetIndexOptionsFunc := func(tr trace.Trace) getIndexOptionsFunc {
-		startingFingerPrint := s.configFingerprint
-		tr.LazyPrintf("fingerprint: %s", startingFingerPrint)
+		startingFingerPrint := s.configFingerprintProto
+		tr.LazyPrintf("fingerprint: %s", startingFingerPrint.String())
 
 		first := true
 		return func(repos ...uint32) ([]indexOptionsItem, error) {
-			options, nextFingerPrint, err := s.getIndexOptionsREST(startingFingerPrint, repos...)
+			options, nextFingerPrint, err := s.getIndexOptions(ctx, startingFingerPrint, repos)
 			if err != nil {
 				first = false
-				s.configFingerprint = startingFingerPrint
+				s.configFingerprintProto = startingFingerPrint
 
 				return nil, err
 			}
 
 			if first {
 				first = false
-				s.configFingerprint = nextFingerPrint
-
-				tr.LazyPrintf("new fingerprint: %s", nextFingerPrint)
+				s.configFingerprintProto = nextFingerPrint
+				tr.LazyPrintf("new fingerprint: %s", nextFingerPrint.String())
 			}
 
 			return options, nil
-		}
-	}
-
-	// If we enabled GRPC, use our gRPC client instead.
-	if s.useGRPC {
-		mkGetIndexOptionsFunc = func(tr trace.Trace) getIndexOptionsFunc {
-			startingFingerPrint := s.configFingerprintProto
-			tr.LazyPrintf("fingerprint: %s", startingFingerPrint.String())
-
-			first := true
-			return func(repos ...uint32) ([]indexOptionsItem, error) {
-				options, nextFingerPrint, err := s.getIndexOptionsGRPC(ctx, startingFingerPrint, repos)
-				if err != nil {
-					first = false
-					s.configFingerprintProto = startingFingerPrint
-
-					return nil, err
-				}
-
-				if first {
-					first = false
-					s.configFingerprintProto = nextFingerPrint
-					tr.LazyPrintf("new fingerprint: %s", nextFingerPrint.String())
-				}
-
-				return options, nil
-			}
 		}
 	}
 
@@ -408,20 +263,8 @@ func (s *sourcegraphClient) ForceIterateIndexOptions(onSuccess func(IndexOptions
 		batchSize = 10_000
 	}
 
-	getIndexOptions := func(repos ...uint32) ([]indexOptionsItem, error) {
-		opts, _, err := s.getIndexOptionsREST("", repos...)
-		return opts, err
-	}
-
-	if s.useGRPC {
-		getIndexOptions = func(repos ...uint32) ([]indexOptionsItem, error) {
-			opts, _, err := s.getIndexOptionsGRPC(context.Background(), nil, repos)
-			return opts, err
-		}
-	}
-
 	for repos := range batched(repos, batchSize) {
-		opts, err := getIndexOptions(repos...)
+		opts, _, err := s.getIndexOptions(context.Background(), nil, repos)
 		if err != nil {
 			for _, id := range repos {
 				onError(id, err)
@@ -526,7 +369,7 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 	}
 }
 
-func (s *sourcegraphClient) getIndexOptionsGRPC(ctx context.Context, fingerprint *proto.Fingerprint, repos []uint32) ([]indexOptionsItem, *proto.Fingerprint, error) {
+func (s *sourcegraphClient) getIndexOptions(ctx context.Context, fingerprint *proto.Fingerprint, repos []uint32) ([]indexOptionsItem, *proto.Fingerprint, error) {
 	repoIDs := make([]int32, 0, len(repos))
 	for _, id := range repos {
 		repoIDs = append(repoIDs, int32(id))
@@ -555,77 +398,11 @@ func (s *sourcegraphClient) getIndexOptionsGRPC(ctx context.Context, fingerprint
 	return items, response.GetFingerprint(), nil
 }
 
-const fingerprintHeader = "X-Sourcegraph-Config-Fingerprint"
-
-func (s *sourcegraphClient) getIndexOptionsREST(fingerprint string, repos ...uint32) ([]indexOptionsItem, string, error) {
-	u := s.Root.ResolveReference(&url.URL{
-		Path: "/.internal/search/configuration",
-	})
-
-	repoIDs := make([]string, len(repos))
-	for i, id := range repos {
-		repoIDs[i] = strconv.Itoa(int(id))
-	}
-	data := url.Values{"repoID": repoIDs}
-	req, err := retryablehttp.NewRequest("POST", u.String(), []byte(data.Encode()))
-	if err != nil {
-		return nil, "", err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if fingerprint != "" {
-		req.Header.Set(fingerprintHeader, fingerprint)
-	}
-
-	resp, err := s.doRequest(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		_ = resp.Body.Close()
-		if err != nil {
-			return nil, "", err
-		}
-		return nil, "", &url.Error{
-			Op:  "Get",
-			URL: u.String(),
-			Err: fmt.Errorf("%s: %s", resp.Status, string(b)),
-		}
-	}
-
-	dec := json.NewDecoder(resp.Body)
-	var opts []indexOptionsItem
-	for {
-		var opt indexOptionsItem
-		err := dec.Decode(&opt)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, "", fmt.Errorf("error decoding body: %w", err)
-		}
-		opt.CloneURL = s.getCloneURL(opt.Name)
-		opts = append(opts, opt)
-	}
-
-	return opts, resp.Header.Get(fingerprintHeader), nil
-}
-
 func (s *sourcegraphClient) getCloneURL(name string) string {
 	return s.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", name)}).String()
 }
 
 func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
-	if s.useGRPC {
-		return s.listRepoIDsGRPC(ctx, indexed)
-	}
-
-	return s.listRepoIDsREST(ctx, indexed)
-}
-
-func (s *sourcegraphClient) listRepoIDsGRPC(ctx context.Context, indexed []uint32) ([]uint32, error) {
 	var request proto.ListRequest
 	request.Hostname = s.Hostname
 	request.IndexedIds = make([]int32, 0, len(indexed))
@@ -644,46 +421,6 @@ func (s *sourcegraphClient) listRepoIDsGRPC(ctx context.Context, indexed []uint3
 	}
 
 	return repoIDs, nil
-}
-
-func (s *sourcegraphClient) listRepoIDsREST(_ context.Context, indexed []uint32) ([]uint32, error) {
-	body, err := json.Marshal(&struct {
-		Hostname   string
-		IndexedIDs []uint32
-	}{
-		Hostname:   s.Hostname,
-		IndexedIDs: indexed,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	u := s.Root.ResolveReference(&url.URL{Path: "/.internal/repos/index"})
-	req, err := retryablehttp.NewRequest(http.MethodPost, u.String(), bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	resp, err := s.doRequest(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to list repositories: status %s", resp.Status)
-	}
-
-	var data struct {
-		RepoIDs []uint32
-	}
-	err = json.NewDecoder(resp.Body).Decode(&data)
-	if err != nil {
-		return nil, err
-	}
-
-	return data.RepoIDs, nil
 }
 
 type indexStatus struct {
@@ -753,14 +490,6 @@ func (u *updateIndexStatusRequest) FromProto(x *proto.UpdateIndexStatusRequest) 
 func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error {
 	r := updateIndexStatusRequest{Repositories: repositories}
 
-	if s.useGRPC {
-		return s.updateIndexStatusGRPC(r)
-	}
-
-	return s.updateIndexStatusREST(r)
-}
-
-func (s *sourcegraphClient) updateIndexStatusGRPC(r updateIndexStatusRequest) error {
 	request := r.ToProto()
 	_, err := s.grpcClient.UpdateIndexStatus(context.Background(), request)
 
@@ -769,43 +498,6 @@ func (s *sourcegraphClient) updateIndexStatusGRPC(r updateIndexStatusRequest) er
 	}
 
 	return nil
-}
-
-func (s *sourcegraphClient) updateIndexStatusREST(r updateIndexStatusRequest) error {
-	payload, err := json.Marshal(r)
-	if err != nil {
-		return err
-	}
-
-	u := s.Root.ResolveReference(&url.URL{Path: "/.internal/search/index-status"})
-	req, err := retryablehttp.NewRequest(http.MethodPost, u.String(), bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	resp, err := s.doRequest(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to update index status: status %s", resp.Status)
-	}
-
-	return nil
-}
-
-// doRequest executes the provided request after adding the appropriate headers
-// for interacting with a Sourcegraph instance.
-func (s *sourcegraphClient) doRequest(req *retryablehttp.Request) (*http.Response, error) {
-	// Make all requests as an internal user.
-	//
-	// Should match github.com/sourcegraph/sourcegraph/internal/actor.headerKeyActorUID
-	// and github.com/sourcegraph/sourcegraph/internal/actor.headerValueInternalActor
-	req.Header.Set("X-Sourcegraph-Actor-UID", "internal")
-	return s.restClient.Do(req)
 }
 
 type sourcegraphFake struct {
@@ -844,21 +536,6 @@ func (sf sourcegraphFake) GetDocumentRanks(ctx context.Context, repoName string)
 
 	ranks.MeanRank = sum / float64(count)
 	return ranks, nil
-}
-
-func floats64(s string) []float64 {
-	parts := strings.Split(s, ",")
-
-	var r []float64
-	for _, rank := range parts {
-		f, err := strconv.ParseFloat(rank, 64)
-		if err != nil {
-			return nil
-		}
-		r = append(r, f)
-	}
-
-	return r
 }
 
 func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
@@ -1087,7 +764,6 @@ func (s sourcegraphNop) List(ctx context.Context, indexed []uint32) (*Sourcegrap
 }
 
 func (s sourcegraphNop) ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32) {
-	return
 }
 
 func (s sourcegraphNop) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
@@ -1127,23 +803,3 @@ func (r *RepoPathRanks) ToProto() *proto.DocumentRanksResponse {
 		Paths:    paths,
 	}
 }
-
-type noopGRPCClient struct{}
-
-func (n noopGRPCClient) SearchConfiguration(ctx context.Context, in *proto.SearchConfigurationRequest, opts ...grpc.CallOption) (*proto.SearchConfigurationResponse, error) {
-	return nil, fmt.Errorf("grpc client not enabled")
-}
-
-func (n noopGRPCClient) List(ctx context.Context, in *proto.ListRequest, opts ...grpc.CallOption) (*proto.ListResponse, error) {
-	return nil, fmt.Errorf("grpc client not enabled")
-}
-
-func (n noopGRPCClient) DocumentRanks(ctx context.Context, in *proto.DocumentRanksRequest, opts ...grpc.CallOption) (*proto.DocumentRanksResponse, error) {
-	return nil, fmt.Errorf("grpc client not enabled")
-}
-
-func (n noopGRPCClient) UpdateIndexStatus(ctx context.Context, in *proto.UpdateIndexStatusRequest, opts ...grpc.CallOption) (*proto.UpdateIndexStatusResponse, error) {
-	return nil, fmt.Errorf("grpc client not enabled")
-}
-
-var _ proto.ZoektConfigurationServiceClient = noopGRPCClient{}
