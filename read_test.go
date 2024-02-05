@@ -58,7 +58,6 @@ func TestReadWrite(t *testing.T) {
 
 	var toc indexTOC
 	err = r.readTOC(&toc)
-
 	if err != nil {
 		t.Errorf("got read error %v", err)
 	}
@@ -272,7 +271,7 @@ func TestReadSearch(t *testing.T) {
 			if raw, err := json.MarshalIndent(got, "", "  "); err != nil {
 				t.Errorf("failed marshalling search results for %s during updating: %v", name, err)
 				continue
-			} else if err := os.WriteFile(golden, raw, 0644); err != nil {
+			} else if err := os.WriteFile(golden, raw, 0o644); err != nil {
 				t.Errorf("failed writing search results for %s during updating: %v", name, err)
 				continue
 			}
@@ -376,7 +375,7 @@ func TestBackwardsCompat(t *testing.T) {
 		outname := fmt.Sprintf("testdata/backcompat/new_v%d.%05d.zoekt", IndexFormatVersion, 0)
 		t.Log("writing new file", outname)
 
-		err = os.WriteFile(outname, buf.Bytes(), 0644)
+		err = os.WriteFile(outname, buf.Bytes(), 0o644)
 		if err != nil {
 			t.Fatalf("Creating output file: %v", err)
 		}
@@ -402,7 +401,6 @@ func TestBackwardsCompat(t *testing.T) {
 
 				var toc indexTOC
 				err = r.readTOC(&toc)
-
 				if err != nil {
 					t.Errorf("got read error %v", err)
 				}

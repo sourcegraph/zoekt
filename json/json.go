@@ -115,7 +115,8 @@ func jsonError(w http.ResponseWriter, statusCode int, err string) {
 func CalculateDefaultSearchLimits(ctx context.Context,
 	q query.Q,
 	searcher zoekt.Searcher,
-	opts *zoekt.SearchOptions) error {
+	opts *zoekt.SearchOptions,
+) error {
 	if opts.MaxDocDisplayCount == 0 || opts.ShardMaxMatchCount != 0 {
 		return nil
 	}
@@ -134,7 +135,6 @@ func CalculateDefaultSearchLimits(ctx context.Context,
 
 		// 10k docs, 50 maxResultDocs -> max match = (250 + 250 / 10)
 		opts.ShardMaxMatchCount = maxResultDocs*5 + (5*maxResultDocs)/(numdocs/1000)
-
 	} else {
 		// Virtually no limits for a small corpus.
 		n := numdocs + maxResultDocs*100

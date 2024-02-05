@@ -71,7 +71,7 @@ func TestBuildv16(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = os.WriteFile(wantP, data, 0644)
+		err = os.WriteFile(wantP, data, 0o644)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -798,7 +798,7 @@ func TestIsLowPriority(t *testing.T) {
 func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShards int, optFns ...func(options *Options)) []string {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Dir(indexDir), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(indexDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -897,7 +897,6 @@ func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt
 }
 
 func TestIgnoreSizeMax(t *testing.T) {
-
 	for _, test := range []struct {
 		name       string
 		largeFiles []string

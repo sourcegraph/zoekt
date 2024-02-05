@@ -134,7 +134,6 @@ func TestServer_parallelism(t *testing.T) {
 
 func TestListRepoIDs(t *testing.T) {
 	t.Run("gRPC", func(t *testing.T) {
-
 		grpcClient := &mockGRPCClient{}
 
 		clientOptions := []SourcegraphClientOption{
@@ -247,7 +246,6 @@ func TestListRepoIDs_Error_REST(t *testing.T) {
 
 	msg := "deadbeaf deadbeaf"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 		// This is how Sourcegraph returns error messages to the caller.
 		http.Error(w, msg, http.StatusInternalServerError)
 	}))

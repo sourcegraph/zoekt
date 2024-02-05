@@ -221,7 +221,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		metricFetchDuration.WithLabelValues(success, name).Observe(fetchDuration.Seconds())
 	}()
 
-	var runFetch = func(branches []zoekt.RepositoryBranch) error {
+	runFetch := func(branches []zoekt.RepositoryBranch) error {
 		// We shallow fetch each commit specified in zoekt.Branches. This requires
 		// the server to have configured both uploadpack.allowAnySHA1InWant and
 		// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
@@ -229,7 +229,8 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 			"-C", gitDir,
 			"-c", "protocol.version=2",
 			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
-			"fetch", "--depth=1", o.CloneURL}
+			"fetch", "--depth=1", o.CloneURL,
+		}
 
 		var commits []string
 		for _, b := range branches {
@@ -359,7 +360,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 				return err
 			}
 
-			if err := os.WriteFile(documentsRankFile, b, 0600); err != nil {
+			if err := os.WriteFile(documentsRankFile, b, 0o600); err != nil {
 				return fmt.Errorf("failed to write %s to disk: %w", documentsRankFile, err)
 			}
 

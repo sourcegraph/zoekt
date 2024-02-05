@@ -405,7 +405,6 @@ func RepositoryBranchFromProto(p *proto.RepositoryBranch) RepositoryBranch {
 		Name:    p.GetName(),
 		Version: p.GetVersion(),
 	}
-
 }
 
 func (r *RepositoryBranch) ToProto() *proto.RepositoryBranch {

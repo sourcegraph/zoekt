@@ -119,7 +119,6 @@ func parseExpr(in []byte) (Q, int, error) {
 		expr = &caseQ{text}
 	case tokRepo:
 		r, err := regexp.Compile(text)
-
 		if err != nil {
 			return nil, 0, err
 		}

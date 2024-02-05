@@ -118,7 +118,6 @@ func TestCallMerge(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
-
 	// A fixed set of shards gives us reliable shard sizes which makes it easy to
 	// define a cutoff with targetSizeBytes.
 	m := []string{
@@ -197,7 +196,6 @@ func TestMerge(t *testing.T) {
 			checkCount(dir, "*_v16.00000.zoekt", tc.wantSimple)
 		})
 	}
-
 }
 
 func copyTestShards(dstDir string, srcShards []string) ([]string, error) {

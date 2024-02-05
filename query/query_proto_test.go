@@ -101,7 +101,6 @@ func TestQueryRoundtrip(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func regexpMustParse(s string) *syntax.Regexp {

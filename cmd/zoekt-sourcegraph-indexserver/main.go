@@ -902,7 +902,6 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 // trigger an initial merge run. In the steady-state, merges happen rarely, even
 // on busy instances, and users can rely on automatic merging instead.
 func (s *Server) handleDebugMerge(w http.ResponseWriter, _ *http.Request) {
-
 	// A merge operation can take very long, depending on the number merges and the
 	// target size of the compound shards. We run the merge in the background and
 	// return immediately to the user.
@@ -1027,7 +1026,7 @@ func setupTmpDir(logger sglog.Logger, main bool, index string) error {
 		}
 	}
 
-	if err := os.MkdirAll(tmpRoot, 0755); err != nil {
+	if err := os.MkdirAll(tmpRoot, 0o755); err != nil {
 		return err
 	}
 
@@ -1275,7 +1274,6 @@ func startServer(conf rootConfig) error {
 		go func() {
 			debug.Printf("serving HTTP on %s", conf.listen)
 			log.Fatal(http.ListenAndServe(conf.listen, mux))
-
 		}()
 
 		// Serve mux on a unix domain socket on a best-effort-basis so that
@@ -1303,7 +1301,7 @@ func startServer(conf rootConfig) error {
 				// it.
 				//
 				// See https://github.com/golang/go/issues/11822 for more context.
-				if err := os.Chmod(socket, 0777); err != nil {
+				if err := os.Chmod(socket, 0o777); err != nil {
 					return fmt.Errorf("failed to change permission of socket %s: %w", socket, err)
 				}
 				debug.Printf("serving HTTP on %s", socket)
@@ -1362,7 +1360,7 @@ func newServer(conf rootConfig) (*Server, error) {
 	}
 
 	if _, err := os.Stat(conf.index); err != nil {
-		if err := os.MkdirAll(conf.index, 0755); err != nil {
+		if err := os.MkdirAll(conf.index, 0o755); err != nil {
 			return nil, fmt.Errorf("MkdirAll %s: %v", conf.index, err)
 		}
 	}

@@ -129,7 +129,6 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 				if diff := cmp.Diff(expectedResult.GetProgress(), receivedResponse.GetProgress(), protocmp.Transform()); diff != "" {
 					return fmt.Errorf("unexpected difference in progress (-want +got):\n%s", diff)
 				}
-
 			} else {
 				// All other responses should ensure that the progress' priority is less than the max-pending priority, to
 				// ensure that the client consumes the entire set of chunks
@@ -140,7 +139,6 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 						i, receivedResponse,
 						receivedResponse.GetProgress().GetPriority(), receivedResponse.GetProgress().GetMaxPendingPriority(),
 					)
-
 				}
 			}
 

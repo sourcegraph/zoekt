@@ -1058,7 +1058,6 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 				}
 				masks = append(masks, mask)
 			}
-
 		}
 		return &branchQueryMatchTree{
 			masks:     masks,

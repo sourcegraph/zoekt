@@ -141,7 +141,6 @@ func newSourcegraphClient(rootURL *url.URL, hostname string, opts ...Sourcegraph
 	}
 
 	return client
-
 }
 
 // sourcegraphClient contains methods which interact with the sourcegraph API.
@@ -763,7 +762,6 @@ func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error 
 func (s *sourcegraphClient) updateIndexStatusGRPC(r updateIndexStatusRequest) error {
 	request := r.ToProto()
 	_, err := s.grpcClient.UpdateIndexStatus(context.Background(), request)
-
 	if err != nil {
 		return fmt.Errorf("failed to update index status: %w", err)
 	}
@@ -924,7 +922,6 @@ func (sf sourcegraphFake) GetIndexOptions(repos ...uint32) ([]indexOptionsItem, 
 			items[idx] = indexOptionsItem{IndexOptions: opts}
 		}
 	})
-
 	if err != nil {
 		return nil, err
 	}

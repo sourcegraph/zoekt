@@ -351,7 +351,8 @@ func TestGatherBranches(t *testing.T) {
 			{"main", "v1"},
 			{"bar", "v1"},
 			{"quz", "v1"},
-		}},
+		},
+	},
 		Document{Name: "f1", Content: content, Branches: []string{"foo", "bar", "quz"}},
 		Document{Name: "f2", Content: content, Branches: []string{"foo", "foo-2"}},
 		Document{Name: "f3", Content: content, Branches: []string{"main"}})

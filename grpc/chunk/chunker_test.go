@@ -201,7 +201,6 @@ func TestChunkerE2E(t *testing.T) {
 					receivedPayloadSizeBytes, humanize.Bytes(uint64(receivedPayloadSizeBytes)),
 				)
 			}
-
 		})
 	}
 }

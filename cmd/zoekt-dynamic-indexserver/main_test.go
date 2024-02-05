@@ -13,9 +13,7 @@ import (
 	"time"
 )
 
-var (
-	cmdTimeout = 100 * time.Millisecond
-)
+var cmdTimeout = 100 * time.Millisecond
 
 func captureOutput(f func()) string {
 	var buf bytes.Buffer
@@ -91,7 +89,6 @@ func TestIndexRepository(t *testing.T) {
 	}
 
 	_, err := indexRepository(opts, req)
-
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -38,7 +38,7 @@ func TestOwner(t *testing.T) {
 	assertSuccess(bob.Check())   // bob is still the owner
 
 	// Test what happens if someone corrupts the file
-	if err := os.WriteFile(path, []byte("!corrupt"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("!corrupt"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	assertFailed(alice.Check()) // corrupt so fail

@@ -157,7 +157,6 @@ func TestIterateIndexOptions_Fingerprint(t *testing.T) {
 				}
 			})
 		}
-
 	})
 
 	t.Run("REST", func(t *testing.T) {
@@ -321,13 +320,11 @@ func TestIterateIndexOptions_Fingerprint(t *testing.T) {
 				}
 			})
 		}
-
 	})
 }
 
 func TestGetIndexOptions(t *testing.T) {
 	t.Run("gRPC", func(t *testing.T) {
-
 		type testCase struct {
 			name     string
 			response *proto.SearchConfigurationResponse
@@ -465,7 +462,6 @@ func TestGetIndexOptions(t *testing.T) {
 		// Mimic our fingerprint API, which doesn't return anything if the
 		// repo hasn't changed.
 		t.Run("unchanged", func(t *testing.T) {
-
 			called := false
 			mockClient := &mockGRPCClient{
 				mockSearchConfiguration: func(_ context.Context, _ *proto.SearchConfigurationRequest, _ ...grpc.CallOption) (*proto.SearchConfigurationResponse, error) {
@@ -506,7 +502,6 @@ func TestGetIndexOptions(t *testing.T) {
 				t.Fatalf("expected no options, got %v", gotAtLeastOneOption)
 			}
 		})
-
 	})
 	t.Run("REST", func(t *testing.T) {
 		var response []byte
@@ -834,7 +829,6 @@ func TestIndex(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-
 			var got []string
 			runCmd := func(c *exec.Cmd) error {
 				cmd := strings.Join(c.Args, " ")

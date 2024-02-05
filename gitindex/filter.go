@@ -42,7 +42,6 @@ func NewFilter(includeRegex, excludeRegex string) (*Filter, error) {
 	var err error
 	if includeRegex != "" {
 		f.inc, err = regexp.Compile(includeRegex)
-
 		if err != nil {
 			return nil, err
 		}

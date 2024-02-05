@@ -129,7 +129,6 @@ func TestQueue_Bump(t *testing.T) {
 }
 
 func TestQueue_Integration_DebugQueue(t *testing.T) {
-
 	// helper function to normalize the queue's debug output - this makes the test less brittle
 	// + makes it much less annoying to make edits to the expected output in a way that doesn't
 	// materially affect the caller

@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/sourcegraph/log/logtest"
 	"testing"
 	"time"
+
+	"github.com/sourcegraph/log/logtest"
 )
 
 func TestQueue_BackoffOnFail(t *testing.T) {

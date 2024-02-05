@@ -187,7 +187,7 @@ func assertGolden(t *testing.T, name string, got []byte) {
 
 	wantPath := filepath.Join("testdata", name+".txt")
 	if *update {
-		if err := os.WriteFile(wantPath, got, 0600); err != nil {
+		if err := os.WriteFile(wantPath, got, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -206,11 +206,13 @@ type rankingQuery struct {
 	Target string
 }
 
-var tarballCache = "/tmp/zoekt-test-ranking-tarballs-" + os.Getenv("USER")
-var shardCache = "/tmp/zoekt-test-ranking-shards-" + os.Getenv("USER")
+var (
+	tarballCache = "/tmp/zoekt-test-ranking-tarballs-" + os.Getenv("USER")
+	shardCache   = "/tmp/zoekt-test-ranking-shards-" + os.Getenv("USER")
+)
 
 func indexURL(indexDir, u string) error {
-	if err := os.MkdirAll(tarballCache, 0700); err != nil {
+	if err := os.MkdirAll(tarballCache, 0o700); err != nil {
 		return err
 	}
 
@@ -264,7 +266,7 @@ func download(url, dst string) error {
 	}
 	defer rc.Close()
 
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

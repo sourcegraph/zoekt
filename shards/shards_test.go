@@ -261,7 +261,6 @@ func TestShardedSearcher_DocumentRanking(t *testing.T) {
 		stream.SenderFunc(func(event *zoekt.SearchResult) {
 			results = append(results, event)
 		}))
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,7 +862,6 @@ func TestSendByRepository(t *testing.T) {
 	// n1, n2, n3 are the number of file matches for each of the 3 repositories in this
 	// test.
 	f := func(n1, n2, n3 uint8) bool {
-
 		sr := createMockSearchResult(n1, n2, n3, wantStats)
 
 		mock := &mockSender{}

@@ -30,7 +30,7 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) {
 	start := time.Now()
 	trashDir := filepath.Join(indexDir, ".trash")
-	if err := os.MkdirAll(trashDir, 0755); err != nil {
+	if err := os.MkdirAll(trashDir, 0o755); err != nil {
 		log.Printf("failed to create trash dir: %v", err)
 	}
 

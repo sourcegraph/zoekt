@@ -67,7 +67,7 @@ hostname=%s
 `, o.Hostname))
 
 	// Always write out since we may update the comment
-	if err := os.WriteFile(o.Path, content, 0600); err != nil {
+	if err := os.WriteFile(o.Path, content, 0o600); err != nil {
 		return fmt.Errorf("failed to write owner file %s: %w", o.Path, err)
 	}
 

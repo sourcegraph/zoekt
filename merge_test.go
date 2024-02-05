@@ -115,7 +115,7 @@ func checkSameShards(t *testing.T, shard1, shard2 string) {
 
 	if *update {
 		t.Logf("updating %s", shard1)
-		err := os.WriteFile(shard1, b2, 0600)
+		err := os.WriteFile(shard1, b2, 0o600)
 		if err != nil {
 			t.Fatal(err)
 		}

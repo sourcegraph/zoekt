@@ -23,18 +23,20 @@ func TestParseGitModules(t *testing.T) {
 	cases := []struct {
 		data string
 		want map[string]*SubmoduleEntry
-	}{{
-		`[submodule "plugins/abc"]
+	}{
+		{
+			`[submodule "plugins/abc"]
 		path = plugins/abc
 		url = ../plugins/abc
 		branch = .`,
-		map[string]*SubmoduleEntry{
-			"plugins/abc": {
-				Path:   "plugins/abc",
-				URL:    "../plugins/abc",
-				Branch: ".",
+			map[string]*SubmoduleEntry{
+				"plugins/abc": {
+					Path:   "plugins/abc",
+					URL:    "../plugins/abc",
+					Branch: ".",
+				},
 			},
-		}},
+		},
 		{
 			"\uFEFF" + `[submodule "plugins/abc"]
 			path = plugins/abc
@@ -46,7 +48,8 @@ func TestParseGitModules(t *testing.T) {
 					URL:    "../plugins/abc",
 					Branch: ".",
 				},
-			}},
+			},
+		},
 		{"", map[string]*SubmoduleEntry{}},
 	}
 

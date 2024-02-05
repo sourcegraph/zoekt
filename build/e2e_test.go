@@ -132,7 +132,7 @@ func TestBasic(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if err := os.WriteFile(p+".meta", b, 0600); err != nil {
+				if err := os.WriteFile(p+".meta", b, 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -682,7 +682,6 @@ func TestDeltaShards(t *testing.T) {
 					expectedDocuments: []zoekt.Document{barAtMain, fooAtMainAndRelease},
 				},
 				{
-
 					name:      "tombstone foo",
 					documents: nil,
 					optFn: func(t *testing.T, o *Options) {

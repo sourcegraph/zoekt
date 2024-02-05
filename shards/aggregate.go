@@ -12,13 +12,11 @@ import (
 	"github.com/sourcegraph/zoekt/stream"
 )
 
-var (
-	metricFinalAggregateSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "zoekt_final_aggregate_size",
-		Help:    "The number of file matches we aggregated before flushing",
-		Buckets: prometheus.ExponentialBuckets(1, 2, 20),
-	}, []string{"reason"})
-)
+var metricFinalAggregateSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name:    "zoekt_final_aggregate_size",
+	Help:    "The number of file matches we aggregated before flushing",
+	Buckets: prometheus.ExponentialBuckets(1, 2, 20),
+}, []string{"reason"})
 
 // collectSender is a sender that will aggregate results. Once sending is
 // done, you call Done to return the aggregated result which are ranked.

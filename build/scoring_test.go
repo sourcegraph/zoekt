@@ -467,7 +467,8 @@ func Get() {
 `),
 			query: &query.And{Children: []query.Q{
 				&query.Symbol{Expr: &query.Substring{Pattern: "http", Content: true}},
-				&query.Symbol{Expr: &query.Substring{Pattern: "Get", Content: true}}}},
+				&query.Symbol{Expr: &query.Substring{Pattern: "Get", Content: true}},
+			}},
 			language: "Go",
 			// 7000 (full base match) + 800 (Go func) + 50 (Exported Go) + 500 (word) + 200 (atom) + 10 (file order)
 			wantScore: 8560,
@@ -516,7 +517,8 @@ func checkScoring(t *testing.T, c scoreCase, parserType ctags.CTagsParserType) {
 				Name: "repo",
 			},
 			LanguageMap: ctags.LanguageMap{
-				normalizeLanguage(c.language): parserType},
+				normalizeLanguage(c.language): parserType,
+			},
 		}
 
 		epsilon := 0.01
@@ -628,7 +630,6 @@ func TestDocumentRanks(t *testing.T) {
 				DocumentRanksWeight: c.documentRanksWeight,
 				DebugScore:          true,
 			})
-
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -717,7 +718,6 @@ func TestRepoRanks(t *testing.T) {
 				UseDocumentRanks: true,
 				DebugScore:       true,
 			})
-
 			if err != nil {
 				t.Fatal(err)
 			}
