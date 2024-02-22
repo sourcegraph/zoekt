@@ -552,6 +552,35 @@ func findSection(secs []DocumentSection, off, sz uint32) (uint32, bool) {
 	return 0, false
 }
 
+// findMaxOverlappingSection returns the index of the section in secs that
+// overlaps the most with the area defined by off and sz. If no section
+// overlaps, it returns 0, false.
+//
+// The implementation assumes that secs is sorted by DocumentSection.End.
+func findMaxOverlappingSection(secs []DocumentSection, off, sz uint32) (uint32, bool) {
+	// Find the first section that overlaps.
+	j := sort.Search(len(secs), func(i int) bool { return secs[i].End > off })
+
+	if j == len(secs) {
+		return 0, false
+	}
+
+	var maxSz uint32
+	var maxIdx uint32
+	for i := j; i < len(secs); i++ {
+		if secs[i].End <= off || secs[i].Start >= off+sz {
+			// No overlap
+			break
+		}
+		overlap := min(secs[i].End, off+sz) - max(secs[i].Start, off)
+		if overlap > maxSz {
+			maxSz = overlap
+			maxIdx = uint32(i)
+		}
+	}
+	return maxIdx, maxSz > 0
+}
+
 func (p *contentProvider) findSymbol(cm *candidateMatch) (DocumentSection, *Symbol, bool) {
 	if cm.fileName {
 		return DocumentSection{}, nil, false
@@ -561,8 +590,8 @@ func (p *contentProvider) findSymbol(cm *candidateMatch) (DocumentSection, *Symb
 
 	secIdx, ok := cm.symbolIdx, cm.symbol
 	if !ok {
-		// Not from a symbol matchtree. Lets see if it intersects with a symbol.
-		secIdx, ok = findSection(secs, cm.byteOffset, cm.byteMatchSz)
+		// Not from a symbol matchTree. Let's see if it overlaps with a symbol.
+		secIdx, ok = findMaxOverlappingSection(secs, cm.byteOffset, cm.byteMatchSz)
 	}
 	if !ok {
 		return DocumentSection{}, nil, false
@@ -637,7 +666,7 @@ func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language str
 			} else if startMatch || endMatch {
 				addScore("EdgeSymbol", (scoreSymbol+scorePartialSymbol)/2)
 			} else {
-				addScore("InnerSymbol", scorePartialSymbol)
+				addScore("OverlapSymbol", scorePartialSymbol)
 			}
 
 			// Score based on symbol data

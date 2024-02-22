@@ -5,7 +5,7 @@ targetRank: 13
 github.com/golang/go/src/internal/coverage/stringtab/stringtab.go
 19:type Writer struct {
 27:func (stw *Writer) InitWriter() {
-9:	"internal/coverage/slicereader"
+70:func (stw *Writer) Write(w io.Writer) error {
 hidden 16 more line matches
 
 github.com/golang/go/src/cmd/cover/func.go

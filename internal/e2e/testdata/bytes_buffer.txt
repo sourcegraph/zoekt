@@ -14,11 +14,11 @@ github.com/golang/go/src/cmd/internal/edit/edit.go
 41:func NewBuffer(data []byte) *Buffer {
 hidden 13 more line matches
 
-github.com/golang/go/src/hash/crc32/crc32_ppc64le.s
-122:	SLD     $2,R8           // convert index-> bytes
-59:	MOVWZ	0(R5),R8	// 0-3 bytes of p ?Endian?
-60:	MOVWZ	4(R5),R9	// 4-7 bytes of p
-hidden 35 more line matches
+github.com/golang/go/misc/wasm/wasm_exec.js
+497:				const bytes = encoder.encode(str + "\0");
+48:			read(fd, buffer, offset, length, position, callback) { callback(enosys()); },
+192:				return new Uint8Array(this._inst.exports.mem.buffer, array, len);
+hidden 10 more line matches
 
 github.com/golang/go/src/fmt/print.go
 101:type buffer []byte

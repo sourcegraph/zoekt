@@ -306,8 +306,8 @@ func TestReadSearch(t *testing.T) {
 				continue
 			}
 
-			if d := cmp.Diff(res.Files, want.FileMatches[j]); d != "" {
-				t.Errorf("matches for %s on %s\n%s", q, name, d)
+			if d := cmp.Diff(want.FileMatches[j], res.Files); d != "" {
+				t.Errorf("matches for %s on %s (-want +got)\n%s", q, name, d)
 			}
 		}
 	}

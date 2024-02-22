@@ -162,6 +162,38 @@ func TestJava(t *testing.T) {
 			// 7000 (symbol) + 900 (Java enum) + 500 (word) + 300 (atom) + 10 (file order)
 			wantScore: 8710,
 		},
+		{
+			fileName: "example.java",
+			content:  exampleJava,
+			query:    &query.Substring{Content: true, Pattern: "unInnerInterface("},
+			language: "Java",
+			// 4000 (overlap Symbol) + 700 (Java method) + 50 (partial word) + 10 (file order)
+			wantScore: 4760,
+		},
+		{
+			fileName: "example.java",
+			content:  exampleJava,
+			query:    &query.Substring{Content: true, Pattern: "InnerEnum"},
+			language: "Java",
+			// 7000 (Symbol) + 900 (Java enum) + 500 (word) + 10 (file order)
+			wantScore: 8410,
+		},
+		{
+			fileName: "example.java",
+			content:  exampleJava,
+			query:    &query.Substring{Content: true, Pattern: "enum InnerEnum"},
+			language: "Java",
+			// 5500 (edge Symbol) + 900 (Java enum) + 500 (word) + 10 (file order)
+			wantScore: 6910,
+		},
+		{
+			fileName: "example.java",
+			content:  exampleJava,
+			query:    &query.Substring{Content: true, Pattern: "public enum InnerEnum {"},
+			language: "Java",
+			// 4000 (overlap Symbol) + 900 (Java enum) + 500 (word) + 10 (file order)
+			wantScore: 5410,
+		},
 	}
 
 	for _, c := range cases {

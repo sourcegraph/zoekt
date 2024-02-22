@@ -54,6 +54,7 @@ func TestRanking(t *testing.T) {
 		q("test server", "github.com/golang/go/src/net/http/httptest/server.go"),
 		q("bytes buffer", "github.com/golang/go/src/bytes/buffer.go"),
 		q("bufio buffer", "github.com/golang/go/src/bufio/scan.go"),
+		q("time compare\\(", "github.com/golang/go/src/time/time.go"),
 
 		// sourcegraph/sourcegraph
 		q("graphql type User", "github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/schema.graphql"),

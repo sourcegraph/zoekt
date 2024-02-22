@@ -407,3 +407,46 @@ func TestColumnHelper(t *testing.T) {
 		t.Fatal("unexpected value for backwards call for first column on second line", got)
 	}
 }
+
+func TestFindMaxOverlappingSection(t *testing.T) {
+	secs := []DocumentSection{
+		{Start: 0, End: 10},
+		{Start: 5, End: 15},
+		{Start: 17, End: 21},
+	}
+	// 0123456789012345678901
+	// [.........[
+	//     [..........[
+	//                  [...[
+
+	testcases := []struct {
+		name        string
+		off         uint32
+		sz          uint32
+		wantSecIx   uint32
+		wantOverlap bool
+	}{
+		{off: 1, sz: 5, wantSecIx: 0, wantOverlap: true},
+		{off: 0, sz: 10, wantSecIx: 0, wantOverlap: true},
+		{off: 3, sz: 10, wantSecIx: 1, wantOverlap: true},
+		{off: 8, sz: 4, wantSecIx: 1, wantOverlap: true},
+		{off: 12, sz: 15, wantSecIx: 2, wantOverlap: true},
+		{off: 16, sz: 10, wantSecIx: 2, wantOverlap: true},
+
+		// No overlap
+		{off: 15, sz: 2, wantOverlap: false},
+		{off: 21, sz: 1, wantOverlap: false},
+	}
+
+	for _, tt := range testcases {
+		t.Run(fmt.Sprintf("off=%d size=%d", tt.off, tt.sz), func(t *testing.T) {
+			got, haveOverlap := findMaxOverlappingSection(secs, tt.off, tt.sz)
+			if haveOverlap != tt.wantOverlap {
+				t.Fatalf("expected overlap %v, got %v", tt.wantOverlap, haveOverlap)
+			}
+			if got != tt.wantSecIx {
+				t.Fatalf("expected section %d, got %d", tt.wantSecIx, got)
+			}
+		})
+	}
+}
