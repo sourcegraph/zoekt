@@ -556,7 +556,7 @@ func findSection(secs []DocumentSection, off, sz uint32) (uint32, bool) {
 // overlaps the most with the area defined by off and sz. If no section
 // overlaps, it returns 0, false.
 //
-// The implementation assumes that secs is sorted by DocumentSection.End.
+// The implementation assumes that sections do not overlap.
 func findMaxOverlappingSection(secs []DocumentSection, off, sz uint32) (uint32, bool) {
 	// Find the first section that overlaps.
 	j := sort.Search(len(secs), func(i int) bool { return secs[i].End > off })

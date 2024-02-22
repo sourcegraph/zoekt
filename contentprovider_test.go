@@ -410,14 +410,14 @@ func TestColumnHelper(t *testing.T) {
 
 func TestFindMaxOverlappingSection(t *testing.T) {
 	secs := []DocumentSection{
-		{Start: 0, End: 10},
-		{Start: 5, End: 15},
-		{Start: 17, End: 21},
+		{Start: 0, End: 5},
+		{Start: 8, End: 19},
+		{Start: 22, End: 26},
 	}
-	// 0123456789012345678901
-	// [.........[
-	//     [..........[
-	//                  [...[
+	// 012345678901234567890123456
+	// [....[
+	//         [..........[
+	//                       [...[
 
 	testcases := []struct {
 		name        string
@@ -426,16 +426,18 @@ func TestFindMaxOverlappingSection(t *testing.T) {
 		wantSecIx   uint32
 		wantOverlap bool
 	}{
-		{off: 1, sz: 5, wantSecIx: 0, wantOverlap: true},
-		{off: 0, sz: 10, wantSecIx: 0, wantOverlap: true},
-		{off: 3, sz: 10, wantSecIx: 1, wantOverlap: true},
-		{off: 8, sz: 4, wantSecIx: 1, wantOverlap: true},
-		{off: 12, sz: 15, wantSecIx: 2, wantOverlap: true},
-		{off: 16, sz: 10, wantSecIx: 2, wantOverlap: true},
+		{off: 0, sz: 1, wantSecIx: 0, wantOverlap: true},
+		{off: 0, sz: 5, wantSecIx: 0, wantOverlap: true},
+		{off: 2, sz: 5, wantSecIx: 0, wantOverlap: true},
+		{off: 2, sz: 50, wantSecIx: 1, wantOverlap: true},
+		{off: 4, sz: 10, wantSecIx: 1, wantOverlap: true},
+		{off: 5, sz: 15, wantSecIx: 1, wantOverlap: true},
+		{off: 18, sz: 10, wantSecIx: 2, wantOverlap: true},
 
 		// No overlap
-		{off: 15, sz: 2, wantOverlap: false},
-		{off: 21, sz: 1, wantOverlap: false},
+		{off: 5, sz: 2, wantOverlap: false},
+		{off: 20, sz: 1, wantOverlap: false},
+		{off: 99, sz: 1, wantOverlap: false},
 	}
 
 	for _, tt := range testcases {
