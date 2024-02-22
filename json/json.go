@@ -68,7 +68,7 @@ func (s *jsonSearcher) jsonSearch(w http.ResponseWriter, req *http.Request) {
 		searchArgs.Opts = &zoekt.SearchOptions{}
 	}
 
-	q, err := query.Parse(searchArgs.Q)
+	q, err := query.Parse(searchArgs.Q, false)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return
@@ -160,7 +160,7 @@ func (s *jsonSearcher) jsonList(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	query, err := query.Parse(listArgs.Q)
+	query, err := query.Parse(listArgs.Q, false)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return

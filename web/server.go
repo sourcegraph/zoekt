@@ -236,7 +236,7 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 		return nil, fmt.Errorf("no query found")
 	}
 
-	q, err := query.Parse(queryStr)
+	q, err := query.Parse(queryStr, false)
 	if err != nil {
 		return nil, err
 	}

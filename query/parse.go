@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	rexp "regexp"
 	"regexp/syntax"
 
 	"github.com/go-enry/go-enry/v2"
@@ -72,10 +73,10 @@ func isSpace(c byte) bool {
 }
 
 // Parse parses a string into a query.
-func Parse(qStr string) (Q, error) {
+func Parse(qStr string, enableRegex bool) (Q, error) {
 	b := []byte(qStr)
 
-	qs, _, err := parseExprList(b)
+	qs, _, err := parseExprList(b, enableRegex)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +91,7 @@ func Parse(qStr string) (Q, error) {
 
 // parseExpr parses a single expression, returning the result, and the
 // number of bytes consumed.
-func parseExpr(in []byte) (Q, int, error) {
+func parseExpr(in []byte, enableRegex bool) (Q, int, error) {
 	b := in[:]
 	var expr Q
 	for len(b) > 0 && isSpace(b[0]) {
@@ -154,6 +155,13 @@ func parseExpr(in []byte) (Q, int, error) {
 	case tokBranch:
 		expr = &Branch{Pattern: text}
 	case tokText, tokRegex:
+		if !enableRegex {
+			for len(text) > 1 && text[0] == '(' && text[len(text)-1] == ')' {
+				text = text[1 : len(text)-1]
+			}
+
+			text = rexp.QuoteMeta(text)
+		}
 		q, err := RegexpQuery(text, false, false)
 		if err != nil {
 			return nil, 0, err
@@ -195,7 +203,7 @@ func parseExpr(in []byte) (Q, int, error) {
 		expr = nil
 
 	case tokParenOpen:
-		qs, n, err := parseExprList(b)
+		qs, n, err := parseExprList(b, enableRegex)
 		b = b[n:]
 		if err != nil {
 			return nil, 0, err
@@ -215,7 +223,7 @@ func parseExpr(in []byte) (Q, int, error) {
 			return nil, 0, err
 		}
 	case tokNegate:
-		subQ, n, err := parseExpr(b)
+		subQ, n, err := parseExpr(b, enableRegex)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -303,7 +311,7 @@ func parseOperators(in []Q) (Q, error) {
 
 // parseExprList parses a list of query expressions. It is the
 // workhorse of the Parse function.
-func parseExprList(in []byte) ([]Q, int, error) {
+func parseExprList(in []byte, enableRegex bool) ([]Q, int, error) {
 	b := in[:]
 	var qs []Q
 	for len(b) > 0 {
@@ -319,7 +327,7 @@ func parseExprList(in []byte) ([]Q, int, error) {
 			continue
 		}
 
-		q, n, err := parseExpr(b)
+		q, n, err := parseExpr(b, enableRegex)
 		if err != nil {
 			return nil, 0, err
 		}
