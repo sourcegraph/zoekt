@@ -22,6 +22,7 @@ jobs:
   fuzz-test:
     name: fuzz test
     runs-on: ubuntu-latest
+    container: alpine:edge
     steps:
       # Pinned a commit to make go version configurable.
       # This should be safe to upgrade once this commit is in a released version:
@@ -31,7 +32,7 @@ jobs:
           packages: 'github.com/sourcegraph/zoekt' # This is the package where the Protobuf round trip tests are defined
           fuzz-time: 30s
           fuzz-minimize-time: 1m
-          go-version: '1.21'
+          go-version: '1.22'
 
   shellcheck:
     name: shellcheck
