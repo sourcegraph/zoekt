@@ -25,7 +25,7 @@ jobs:
     container: alpine:edge
     steps:
       - name: add dependencies
-        run: apk add go
+        run: apk add bash go
       # Pinned a commit to make go version configurable.
       # This should be safe to upgrade once this commit is in a released version:
       # https://github.com/jidicula/go-fuzz-action/commit/23cc553941669144159507e2cccdbb4afc5b3076
