@@ -237,9 +237,9 @@ func TestSymbolMatchTree(t *testing.T) {
 		regex    string
 		regexAll bool
 	}{
-		{query: "sym:.*", regex: "(?i)(?-s:.)*", regexAll: true},
+		{query: "sym:.*", regex: "(?i)(?-s:.*)", regexAll: true},
 		{query: "sym:(ab|cd)", regex: "(?i)ab|cd"},
-		{query: "sym:b.r", regex: "(?i)b(?-s:.)r"},
+		{query: "sym:b.r", regex: "(?i)(?-s:b.r)"},
 		{query: "sym:horse", substr: "horse"},
 		{query: `sym:\bthread\b case:yes`, regex: `\bthread\b`}, // check we disable word search opt
 		{query: `sym:\bthread\b case:no`, regex: `(?i)\bthread\b`},
