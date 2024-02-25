@@ -892,12 +892,6 @@ type SearchOptions struct {
 	// be set to 1 to find all repositories containing a result.
 	ShardRepoMaxMatchCount int
 
-	// Deprecated: this field is not read anymore.
-	ShardMaxImportantMatch int
-
-	// Deprecated: this field is not read anymore.
-	TotalMaxImportantMatch int
-
 	// Abort the search after this much time has passed.
 	MaxWallTime time.Duration
 
@@ -986,8 +980,6 @@ func (s *SearchOptions) String() string {
 	addInt("ShardMaxMatchCount", s.ShardMaxMatchCount)
 	addInt("TotalMaxMatchCount", s.TotalMaxMatchCount)
 	addInt("ShardRepoMaxMatchCount", s.ShardRepoMaxMatchCount)
-	addInt("ShardMaxImportantMatch", s.ShardMaxImportantMatch)
-	addInt("TotalMaxImportantMatch", s.TotalMaxImportantMatch)
 	addInt("MaxDocDisplayCount", s.MaxDocDisplayCount)
 	addInt("MaxMatchDisplayCount", s.MaxMatchDisplayCount)
 	addInt("NumContextLines", s.NumContextLines)
