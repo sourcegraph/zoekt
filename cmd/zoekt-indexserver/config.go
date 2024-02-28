@@ -16,6 +16,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +31,8 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type ConfigEntry struct {
@@ -73,18 +76,40 @@ func randomize(entries []ConfigEntry) []ConfigEntry {
 	return shuffled
 }
 
-func isHTTP(u string) bool {
+func isHTTP(ctx context.Context, u string) bool {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("url", u),
+	}
+
+	ctx, span := tracer.Start(
+		ctx,
+		"isHTTP",
+		trace.WithAttributes(commonAttrs...))
+
+	defer span.End()
+
 	asURL, err := url.Parse(u)
 	return err == nil && (asURL.Scheme == "http" || asURL.Scheme == "https")
 }
 
-func readConfigURL(u string) ([]ConfigEntry, error) {
+func readConfigURL(ctx context.Context, u string) ([]ConfigEntry, error) {
 	var body []byte
 	var readErr error
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("url", u),
+	}
 
-	if isHTTP(u) {
+	ctx, span := tracer.Start(
+		ctx,
+		"readConfigURL",
+		trace.WithAttributes(commonAttrs...))
+
+	defer span.End()
+
+	if isHTTP(ctx, u) {
 		rep, err := http.Get(u)
 		if err != nil {
+			span.SetAttributes(attribute.Key("err").String(err.Error()))
 			return nil, err
 		}
 		defer rep.Body.Close()
@@ -105,13 +130,26 @@ func readConfigURL(u string) ([]ConfigEntry, error) {
 	return result, nil
 }
 
-func watchFile(path string) (<-chan struct{}, error) {
+func watchFile(ctx context.Context, path string) (<-chan struct{}, error) {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("path", path),
+	}
+
+	ctx, span := tracer.Start(
+		ctx,
+		"watchFile",
+		trace.WithAttributes(commonAttrs...))
+
+	defer span.End()
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
+		span.SetAttributes(attribute.Key("err").String(err.Error()))
 		return nil, err
 	}
 
 	if err := watcher.Add(filepath.Dir(path)); err != nil {
+		span.SetAttributes(attribute.Key("err").String(err.Error()))
 		return nil, err
 	}
 
@@ -136,28 +174,44 @@ func watchFile(path string) (<-chan struct{}, error) {
 	return out, nil
 }
 
-func periodicMirrorFile(repoDir string, opts *Options, pendingRepos chan<- string) {
+func periodicMirrorFile(ctx context.Context, repoDir string, opts *Options, pendingRepos chan<- string) {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("repo-dir", repoDir),
+	}
+
+	// work begins
+	ctx, span := tracer.Start(
+		ctx,
+		"periodicMirrorFile",
+		trace.WithAttributes(commonAttrs...))
+
+	// end span once done with func
+	defer span.End()
 	ticker := time.NewTicker(opts.mirrorInterval)
 
 	var watcher <-chan struct{}
-	if !isHTTP(opts.mirrorConfigFile) {
+	if !isHTTP(ctx, opts.mirrorConfigFile) {
 		var err error
-		watcher, err = watchFile(opts.mirrorConfigFile)
+
+		watcher, err = watchFile(ctx, opts.mirrorConfigFile)
 		if err != nil {
+			// add error message
+			span.SetAttributes(attribute.Key("err").String(err.Error()))
 			log.Printf("watchFile(%q): %v", opts.mirrorConfigFile, err)
 		}
 	}
 
 	var lastCfg []ConfigEntry
 	for {
-		cfg, err := readConfigURL(opts.mirrorConfigFile)
+		cfg, err := readConfigURL(ctx, opts.mirrorConfigFile)
 		if err != nil {
+			span.SetAttributes(attribute.Key("err").String(err.Error()))
 			log.Printf("readConfig(%s): %v", opts.mirrorConfigFile, err)
 		} else {
 			lastCfg = cfg
 		}
 
-		executeMirror(lastCfg, repoDir, opts.parallelListApiReqs, opts.parallelClones, pendingRepos)
+		executeMirror(ctx, lastCfg, repoDir, opts.parallelListApiReqs, opts.parallelClones, pendingRepos)
 
 		select {
 		case <-watcher:
@@ -167,39 +221,70 @@ func periodicMirrorFile(repoDir string, opts *Options, pendingRepos chan<- strin
 	}
 }
 
-func createGithubArgsMirrorAndFetchArgs(c ConfigEntry) []string {
+func createGithubArgsMirrorAndFetchArgs(ctx context.Context, c ConfigEntry) []string {
+	// work begins
+	ctx, span := tracer.Start(ctx, "createGithubArgsMirrorAndFetchArgs")
+
+	// end span once done with func
+	defer span.End()
+
 	args := make([]string, 0)
 	if c.GitHubURL != "" {
 		args = append(args, "-url", c.GitHubURL)
+		span.SetAttributes(attribute.Key("url").String(c.GitHubURL))
 	}
 	if c.GithubUser != "" {
 		args = append(args, "-user", c.GithubUser)
+		span.SetAttributes(attribute.Key("user").String(c.GithubUser))
 	} else if c.GithubOrg != "" {
 		args = append(args, "-org", c.GithubOrg)
+		span.SetAttributes(attribute.Key("org").String(c.GithubOrg))
 	}
 	if c.Name != "" {
 		args = append(args, "-name", c.Name)
+		span.SetAttributes(attribute.Key("name").String(c.Name))
 	}
 	if c.Exclude != "" {
 		args = append(args, "-exclude", c.Exclude)
+		span.SetAttributes(attribute.Key("exclude").String(c.Exclude))
 	}
 	if c.CredentialPath != "" {
 		args = append(args, "-token", c.CredentialPath)
+		span.SetAttributes(attribute.Key("token-path").String(c.CredentialPath))
 	}
+	span.SetAttributes(attribute.Key("topic").StringSlice(c.Topics))
 	for _, topic := range c.Topics {
 		args = append(args, "-topic", topic)
+
 	}
+	span.SetAttributes(attribute.Key("exclude_topic").StringSlice(c.ExcludeTopics))
 	for _, topic := range c.ExcludeTopics {
 		args = append(args, "-exclude_topic", topic)
 	}
 	if c.NoArchived {
 		args = append(args, "-no_archived")
+		span.SetAttributes(attribute.Key("no_archived").Bool(c.NoArchived))
 	}
 
 	return args
 }
 
-func executeMirror(cfg []ConfigEntry, repoDir string, parallelListApiReqs, parallelClones int, pendingRepos chan<- string) {
+func executeMirror(ctx context.Context, cfg []ConfigEntry, repoDir string, parallelListApiReqs, parallelClones int, pendingRepos chan<- string) {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("repo-dir", repoDir),
+		attribute.Int("parallelListApiReqs", parallelListApiReqs),
+		attribute.Int("parallelClones", parallelClones),
+	}
+
+	// work begins
+	ctx, span := tracer.Start(
+		ctx,
+		"executeMirror",
+		trace.WithAttributes(commonAttrs...))
+
+	// end span once done with func
+	defer span.End()
+
 	// Randomize the ordering in which we query
 	// things. This is to ensure that quota limits don't
 	// always hit the last one in the list.
@@ -209,7 +294,7 @@ func executeMirror(cfg []ConfigEntry, repoDir string, parallelListApiReqs, paral
 		if c.GitHubURL != "" || c.GithubUser != "" || c.GithubOrg != "" {
 			cmd = exec.Command("zoekt-mirror-github",
 				"-dest", repoDir, "-delete")
-			cmd.Args = append(cmd.Args, createGithubArgsMirrorAndFetchArgs(c)...)
+			cmd.Args = append(cmd.Args, createGithubArgsMirrorAndFetchArgs(ctx, c)...)
 			cmd.Args = append(cmd.Args, "--parallel_clone", strconv.Itoa(parallelClones))
 			cmd.Args = append(cmd.Args, "--max-concurrent-gh-requests", strconv.Itoa(parallelListApiReqs))
 		} else if c.GitilesURL != "" {
@@ -281,7 +366,7 @@ func executeMirror(cfg []ConfigEntry, repoDir string, parallelListApiReqs, paral
 			cmd.Args = append(cmd.Args, c.GerritApiURL)
 		}
 
-		stdout, stderr := loggedRun(cmd)
+		stdout, stderr := loggedRun(ctx, cmd)
 
 		fmt.Printf("cmd %v - logs=%s\n", cmd.Args, string(stderr))
 		// stdout contains the repos. stderr contains every other log

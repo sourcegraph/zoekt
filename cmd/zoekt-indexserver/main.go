@@ -34,6 +34,13 @@ import (
 	"time"
 
 	"github.com/xvandish/zoekt"
+	internalTracer "github.com/xvandish/zoekt/internal/tracer"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	sdkTrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 const day = time.Hour * 24
@@ -47,7 +54,27 @@ var (
 	muIndexAndDataDirs indexMutex
 )
 
-func loggedRun(cmd *exec.Cmd) (out, err []byte) {
+var tracer trace.Tracer
+
+func init() {
+	internalTracer.Init("zoekt-indexserver", zoekt.Version)
+	tracer = otel.Tracer("cmd/zoekt-indexserver")
+}
+
+func loggedRun(ctx context.Context, cmd *exec.Cmd) (out, err []byte) {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("cmd", cmd.String()),
+	}
+
+	// work begins
+	ctx, span := tracer.Start(
+		ctx,
+		"loggedRun",
+		trace.WithAttributes(commonAttrs...))
+
+	// end span once done with func
+	defer span.End()
+
 	outBuf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
 	cmd.Stdout = outBuf
@@ -55,6 +82,7 @@ func loggedRun(cmd *exec.Cmd) (out, err []byte) {
 
 	log.Printf("run %v", cmd.Args)
 	if err := cmd.Run(); err != nil {
+		span.SetAttributes(attribute.Key("err").String(err.Error()))
 		log.Printf("command %s failed: %v\nOUT: %s\nERR: %s",
 			cmd.Args, err, outBuf.String(), errBuf.String())
 	}
@@ -141,7 +169,21 @@ func (o *Options) defineFlags() {
 	flag.StringVar(&o.workingHoursZoneStr, "working_hours_zone", "America/NYC", "A time.Location string to set work location")
 }
 
-func periodicBackup(dataDir, indexDir string, opts *Options) {
+func periodicBackup(ctx context.Context, dataDir, indexDir string, opts *Options) {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("dataDir", dataDir),
+		attribute.String("indexDir", indexDir),
+	}
+
+	// work begins
+	ctx, span := tracer.Start(
+		ctx,
+		"periodicBackup",
+		trace.WithAttributes(commonAttrs...))
+
+	// end span once done with func
+	defer span.End()
+
 	t := time.NewTicker(opts.backupInterval)
 	for {
 		// lock the index and git directories from being written to
@@ -150,12 +192,14 @@ func periodicBackup(dataDir, indexDir string, opts *Options) {
 			idxSyncCmd := exec.Command("rsync", "-ruv", indexDir+"/", "zoekt-backup/indices/")
 			err := idxSyncCmd.Run()
 			if err != nil {
+				span.SetAttributes(attribute.Key("err").String(err.Error()))
 				fmt.Printf("ERROR: error backup up index shards %v\n", err)
 			}
 
 			gitSyncCmd := exec.Command("rsync", "-ruv", dataDir+"/", "zoekt-backup/repos/")
 			err = gitSyncCmd.Run()
 			if err != nil {
+				span.SetAttributes(attribute.Key("err").String(err.Error()))
 				fmt.Printf("ERROR: error backing up git repos %v\n", err)
 			}
 			fmt.Printf("finished backup\n")
@@ -166,13 +210,27 @@ func periodicBackup(dataDir, indexDir string, opts *Options) {
 
 // indexPendingRepos consumes the directories on the repos channel and
 // indexes them, sequentially.
-func indexPendingRepos(indexDir, repoDir string, opts *Options, repos <-chan string) {
+func indexPendingRepos(ctx context.Context, indexDir, repoDir string, opts *Options, repos <-chan string) {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("repoDir", repoDir),
+		attribute.String("indexDir", indexDir),
+	}
+
+	// work begins
+	ctx, span := tracer.Start(
+		ctx,
+		"indexPendingRepos",
+		trace.WithAttributes(commonAttrs...))
+
+	// end span once done with func
+	defer span.End()
+
 	// set up n listeners on the channel
 	for i := 0; i < opts.parallelIndexes; i++ {
 		go func(r <-chan string) {
 			for dir := range r {
 				ran := muIndexAndDataDirs.With(dir, func() {
-					indexPendingRepo(dir, indexDir, repoDir, opts)
+					indexPendingRepo(ctx, dir, indexDir, repoDir, opts)
 				})
 				if !ran {
 					fmt.Printf("index job for repository: %s already running\n", dir)
@@ -201,8 +259,23 @@ func indexPendingRepos(indexDir, repoDir string, opts *Options, repos <-chan str
 	}
 }
 
-func indexPendingRepo(dir, indexDir, repoDir string, opts *Options) {
-	ctx, cancel := context.WithTimeout(context.Background(), opts.indexTimeout)
+func indexPendingRepo(ctx context.Context, dir, indexDir, repoDir string, opts *Options) {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("dir", dir),
+		attribute.String("repoDir", repoDir),
+		attribute.String("indexDir", indexDir),
+	}
+
+	// work begins
+	ctx, span := tracer.Start(
+		ctx,
+		"indexPendingRepo",
+		trace.WithAttributes(commonAttrs...))
+
+	// end span once done with func
+	defer span.End()
+
+	ctx, cancel := context.WithTimeout(ctx, opts.indexTimeout)
 	defer cancel()
 	args := []string{
 		"-require_ctags",
@@ -214,13 +287,28 @@ func indexPendingRepo(dir, indexDir, repoDir string, opts *Options) {
 	args = append(args, opts.indexFlags...)
 	args = append(args, dir)
 	cmd := exec.CommandContext(ctx, "zoekt-git-index", args...)
-	loggedRun(cmd)
+	loggedRun(ctx, cmd)
 }
 
 // deleteLogs deletes old logs.
-func deleteLogs(logDir string, maxAge time.Duration) {
+func deleteLogs(ctx context.Context, logDir string, maxAge time.Duration) {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("logDir", logDir),
+		attribute.String("maxAge", maxAge.String()),
+	}
+
+	// work begins
+	ctx, span := tracer.Start(
+		ctx,
+		"deleteLogs",
+		trace.WithAttributes(commonAttrs...))
+
+	// end span once done with func
+	defer span.End()
+
 	fs, err := filepath.Glob(filepath.Join(logDir, "*"))
 	if err != nil {
+		span.SetAttributes(attribute.Key("err").String(err.Error()))
 		log.Fatalf("filepath.Glob(%s): %v", logDir, err)
 	}
 
@@ -232,30 +320,61 @@ func deleteLogs(logDir string, maxAge time.Duration) {
 	}
 }
 
-func deleteLogsLoop(logDir string, maxAge time.Duration) {
+func deleteLogsLoop(ctx context.Context, logDir string, maxAge time.Duration) {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("logDir", logDir),
+		attribute.String("maxAge", maxAge.String()),
+	}
+
+	// work begins
+	ctx, span := tracer.Start(
+		ctx,
+		"deleteLogsLoop",
+		trace.WithAttributes(commonAttrs...))
+
+	// end span once done with func
+	defer span.End()
+
 	tick := time.NewTicker(maxAge / 100)
 	for {
-		deleteLogs(logDir, maxAge)
+		deleteLogs(ctx, logDir, maxAge)
 		<-tick.C
 	}
 }
 
 // Delete the shard if its corresponding git repo can't be found.
-func deleteIfOrphan(repoDir string, fn string) error {
+func deleteIfOrphan(ctx context.Context, repoDir string, fn string) error {
+	commonAttrs := []attribute.KeyValue{
+		attribute.String("repoDir", repoDir),
+		attribute.String("fn", fn),
+	}
+
+	// work begins
+	ctx, span := tracer.Start(
+		ctx,
+		"deleteIfOrphan",
+		trace.WithAttributes(commonAttrs...))
+
+	// end span once done with func
+	defer span.End()
+
 	f, err := os.Open(fn)
 	if err != nil {
+		span.SetAttributes(attribute.Key("err").String(err.Error()))
 		return nil
 	}
 	defer f.Close()
 
 	ifile, err := zoekt.NewIndexFile(f)
 	if err != nil {
+		span.SetAttributes(attribute.Key("err").String(err.Error()))
 		return nil
 	}
 	defer ifile.Close()
 
 	repos, _, err := zoekt.ReadMetadata(ifile)
 	if err != nil {
+		span.SetAttributes(attribute.Key("err").String(err.Error()))
 		return nil
 	}
 
@@ -267,6 +386,7 @@ func deleteIfOrphan(repoDir string, fn string) error {
 
 	_, err = os.Stat(repo.Source)
 	if os.IsNotExist(err) {
+		span.SetAttributes(attribute.Key("err").String(fmt.Sprintf("deleting orphan shard %s; source %q not found Error: %s", fn, repo.Source, err.Error())))
 		log.Printf("deleting orphan shard %s; source %q not found", fn, repo.Source)
 		return os.Remove(fn)
 	}
@@ -274,18 +394,39 @@ func deleteIfOrphan(repoDir string, fn string) error {
 	return err
 }
 
-func deleteOrphanIndexes(indexDir, repoDir string, watchInterval time.Duration) {
+func deleteOrphanIndexes(ctx context.Context, indexDir, repoDir string, watchInterval time.Duration) {
 	t := time.NewTicker(watchInterval)
 
 	expr := indexDir + "/*"
 	for {
+		commonAttrs := []attribute.KeyValue{
+			attribute.String("repoDir", repoDir),
+			attribute.String("indexDir", indexDir),
+			attribute.String("watchInterval", watchInterval.String()),
+		}
+
+		// work begins
+		ctx, span := tracer.Start(
+			ctx,
+			"deleteOrphanIndexes",
+			trace.WithAttributes(commonAttrs...))
+
+		// end span once done with func
+		defer span.End()
+
+		span.SetAttributes(attribute.Key("expr").String(expr))
 		fs, err := filepath.Glob(expr)
 		if err != nil {
+			span.SetAttributes(attribute.Key("err").String(err.Error()))
 			log.Printf("Glob(%q): %v", expr, err)
 		}
 
+		span.SetAttributes(attribute.Key("files").StringSlice(fs))
+
 		for _, f := range fs {
-			if err := deleteIfOrphan(repoDir, f); err != nil {
+			span.SetAttributes(attribute.Key("file").String(f))
+			if err := deleteIfOrphan(ctx, repoDir, f); err != nil {
+				span.SetAttributes(attribute.Key("err").String(err.Error()))
 				log.Printf("deleteIfOrphan(%q): %v", f, err)
 			}
 		}
@@ -294,6 +435,26 @@ func deleteOrphanIndexes(indexDir, repoDir string, watchInterval time.Duration) 
 }
 
 func main() {
+	ctx := context.Background()
+
+	exp, err := otlptracegrpc.New(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	tracerProvider := sdkTrace.NewTracerProvider(sdkTrace.WithBatcher(exp))
+	defer func() {
+		if err := tracerProvider.Shutdown(ctx); err != nil {
+			panic(err)
+		}
+	}()
+	otel.SetTracerProvider(tracerProvider)
+
+	// work begins
+	ctx, span := tracer.Start(ctx, "main")
+	// end span once done with func
+	defer span.End()
+
 	var opts Options
 	opts.defineFlags()
 	dataDir := flag.String("data_dir",
@@ -323,33 +484,36 @@ func main() {
 		}
 
 		if err := os.MkdirAll(s, 0o755); err != nil {
+			span.SetAttributes(attribute.Key("err").String(err.Error()))
 			log.Fatalf("MkdirAll %s: %v", s, err)
 		}
 	}
 
-	cfgs, err := readConfigURL(opts.mirrorConfigFile)
+	cfgs, err := readConfigURL(ctx, opts.mirrorConfigFile)
 	if err != nil {
+		span.SetAttributes(attribute.Key("err").String(err.Error()))
 		log.Fatalf("readConfigURL(%s): %v", opts.mirrorConfigFile, err)
 	}
 
 	if opts.useSmartGHFetch {
 		for _, cfg := range cfgs {
 			if !cfg.IsGithubConfig() {
+				span.SetAttributes(attribute.Key("err").String("use_smart_gh_fetch is only valid if a config ONLY contains GitHub configs"))
 				log.Fatal("use_smart_gh_fetch is only valid if a config ONLY contains GitHub configs")
 			}
 		}
 	}
 
 	pendingRepos := make(chan string, 6000)
-	go periodicMirrorFile(repoDir, &opts, pendingRepos)
-	go deleteLogsLoop(logDir, opts.maxLogAge)
-	go deleteOrphanIndexes(*indexDir, repoDir, opts.fetchInterval)
-	go periodicBackup(repoDir, *indexDir, &opts)
-	go indexPendingRepos(*indexDir, repoDir, &opts, pendingRepos)
+	go periodicMirrorFile(ctx, repoDir, &opts, pendingRepos)
+	go deleteLogsLoop(ctx, logDir, opts.maxLogAge)
+	go deleteOrphanIndexes(ctx, *indexDir, repoDir, opts.fetchInterval)
+	go periodicBackup(ctx, repoDir, *indexDir, &opts)
+	go indexPendingRepos(ctx, *indexDir, repoDir, &opts, pendingRepos)
 
 	if opts.useSmartGHFetch {
-		periodicSmartGHFetchV2(repoDir, *indexDir, &opts, pendingRepos)
+		periodicSmartGHFetchV2(ctx, repoDir, *indexDir, &opts, pendingRepos)
 	} else {
-		periodicFetch(repoDir, *indexDir, &opts, pendingRepos)
+		periodicFetch(ctx, repoDir, *indexDir, &opts, pendingRepos)
 	}
 }
