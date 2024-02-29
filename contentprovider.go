@@ -553,32 +553,45 @@ func findSection(secs []DocumentSection, off, sz uint32) (uint32, bool) {
 }
 
 // findMaxOverlappingSection returns the index of the section in secs that
-// overlaps the most with the area defined by off and sz. If no section
-// overlaps, it returns 0, false.
+// overlaps the most with the area defined by off and sz, relative to the size
+// of the section. If no section overlaps, it returns 0, false. If multiple
+// sections overlap the same amount, the first one is returned.
 //
-// The implementation assumes that sections do not overlap.
+// The implementation assumes that sections do not overlap and are sorted by
+// DocumentSection.Start.
 func findMaxOverlappingSection(secs []DocumentSection, off, sz uint32) (uint32, bool) {
-	// Find the first section that overlaps.
+	// Find the first section that might overlap
 	j := sort.Search(len(secs), func(i int) bool { return secs[i].End > off })
 
-	if j == len(secs) {
+	if j == len(secs) || secs[j].Start >= off+sz {
+		// No overlap.
 		return 0, false
 	}
 
-	var maxSz uint32
-	var maxIdx uint32
-	for i := j; i < len(secs); i++ {
-		if secs[i].End <= off || secs[i].Start >= off+sz {
-			// No overlap
-			break
+	relOverlap := func(j int) float64 {
+		secSize := secs[j].End - secs[j].Start
+		if secSize == 0 {
+			return 0
 		}
-		overlap := min(secs[i].End, off+sz) - max(secs[i].Start, off)
-		if overlap > maxSz {
-			maxSz = overlap
-			maxIdx = uint32(i)
-		}
+		// This cannot overflow because we make sure there is overlap before calling relOverlap
+		overlap := min(secs[j].End, off+sz) - max(secs[j].Start, off)
+		return float64(overlap) / float64(secSize)
 	}
-	return maxIdx, maxSz > 0
+
+	ol1 := relOverlap(j)
+	if epsilonEqualsOne(ol1) || j == len(secs)-1 || secs[j+1].Start >= off+sz {
+		return uint32(j), ol1 > 0
+	}
+
+	// We know that [off,off+sz[ overlaps with at least 2 sections. We only have to check
+	// if the second section overlaps more than the first one, because a third
+	// section can only overlap if the overlap with the second section is complete.
+	ol2 := relOverlap(j + 1)
+	if ol2 > ol1 {
+		return uint32(j + 1), ol2 > 0
+	}
+
+	return uint32(j), ol1 > 0
 }
 
 func (p *contentProvider) findSymbol(cm *candidateMatch) (DocumentSection, *Symbol, bool) {

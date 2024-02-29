@@ -423,21 +423,29 @@ func TestFindMaxOverlappingSection(t *testing.T) {
 		name        string
 		off         uint32
 		sz          uint32
-		wantSecIx   uint32
+		wantSecIdx  uint32
 		wantOverlap bool
 	}{
-		{off: 0, sz: 1, wantSecIx: 0, wantOverlap: true},
-		{off: 0, sz: 5, wantSecIx: 0, wantOverlap: true},
-		{off: 2, sz: 5, wantSecIx: 0, wantOverlap: true},
-		{off: 2, sz: 50, wantSecIx: 1, wantOverlap: true},
-		{off: 4, sz: 10, wantSecIx: 1, wantOverlap: true},
-		{off: 5, sz: 15, wantSecIx: 1, wantOverlap: true},
-		{off: 18, sz: 10, wantSecIx: 2, wantOverlap: true},
+		{off: 0, sz: 1, wantSecIdx: 0, wantOverlap: true},
+		{off: 0, sz: 5, wantSecIdx: 0, wantOverlap: true},
+		{off: 2, sz: 5, wantSecIdx: 0, wantOverlap: true},
+		{off: 2, sz: 50, wantSecIdx: 1, wantOverlap: true},
+		{off: 4, sz: 10, wantSecIdx: 1, wantOverlap: true},
+		{off: 5, sz: 15, wantSecIdx: 1, wantOverlap: true},
+		{off: 18, sz: 10, wantSecIdx: 2, wantOverlap: true},
+
+		// Prefer full overlap, break ties by preferring the earlier section
+		{off: 10, sz: 20, wantSecIdx: 2, wantOverlap: true},
+		{off: 0, sz: 100, wantSecIdx: 0, wantOverlap: true},
+		{off: 8, sz: 100, wantSecIdx: 1, wantOverlap: true},
+		{off: 0, sz: 10, wantSecIdx: 0, wantOverlap: true},
+		{off: 16, sz: 10, wantSecIdx: 2, wantOverlap: true},
 
 		// No overlap
 		{off: 5, sz: 2, wantOverlap: false},
 		{off: 20, sz: 1, wantOverlap: false},
 		{off: 99, sz: 1, wantOverlap: false},
+		{off: 0, sz: 0, wantOverlap: false},
 	}
 
 	for _, tt := range testcases {
@@ -446,8 +454,8 @@ func TestFindMaxOverlappingSection(t *testing.T) {
 			if haveOverlap != tt.wantOverlap {
 				t.Fatalf("expected overlap %v, got %v", tt.wantOverlap, haveOverlap)
 			}
-			if got != tt.wantSecIx {
-				t.Fatalf("expected section %d, got %d", tt.wantSecIx, got)
+			if got != tt.wantSecIdx {
+				t.Fatalf("expected section %d, got %d", tt.wantSecIdx, got)
 			}
 		})
 	}
