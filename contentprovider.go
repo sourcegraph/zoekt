@@ -560,10 +560,13 @@ func findSection(secs []DocumentSection, off, sz uint32) (uint32, bool) {
 // The implementation assumes that sections do not overlap and are sorted by
 // DocumentSection.Start.
 func findMaxOverlappingSection(secs []DocumentSection, off, sz uint32) (uint32, bool) {
-	// Find the first section that might overlap
-	j := sort.Search(len(secs), func(i int) bool { return secs[i].End > off })
+	start := off
+	end := off + sz
 
-	if j == len(secs) || secs[j].Start >= off+sz {
+	// Find the first section that might overlap
+	j := sort.Search(len(secs), func(i int) bool { return secs[i].End > start })
+
+	if j == len(secs) || secs[j].Start >= end {
 		// No overlap.
 		return 0, false
 	}
@@ -574,12 +577,12 @@ func findMaxOverlappingSection(secs []DocumentSection, off, sz uint32) (uint32, 
 			return 0
 		}
 		// This cannot overflow because we make sure there is overlap before calling relOverlap
-		overlap := min(secs[j].End, off+sz) - max(secs[j].Start, off)
+		overlap := min(secs[j].End, end) - max(secs[j].Start, start)
 		return float64(overlap) / float64(secSize)
 	}
 
 	ol1 := relOverlap(j)
-	if epsilonEqualsOne(ol1) || j == len(secs)-1 || secs[j+1].Start >= off+sz {
+	if epsilonEqualsOne(ol1) || j == len(secs)-1 || secs[j+1].Start >= end {
 		return uint32(j), ol1 > 0
 	}
 
