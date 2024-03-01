@@ -407,3 +407,56 @@ func TestColumnHelper(t *testing.T) {
 		t.Fatal("unexpected value for backwards call for first column on second line", got)
 	}
 }
+
+func TestFindMaxOverlappingSection(t *testing.T) {
+	secs := []DocumentSection{
+		{Start: 0, End: 5},
+		{Start: 8, End: 19},
+		{Start: 22, End: 26},
+	}
+	// 012345678901234567890123456
+	// [....[
+	//         [..........[
+	//                       [...[
+
+	testcases := []struct {
+		name        string
+		off         uint32
+		sz          uint32
+		wantSecIdx  uint32
+		wantOverlap bool
+	}{
+		{off: 0, sz: 1, wantSecIdx: 0, wantOverlap: true},
+		{off: 0, sz: 5, wantSecIdx: 0, wantOverlap: true},
+		{off: 2, sz: 5, wantSecIdx: 0, wantOverlap: true},
+		{off: 2, sz: 50, wantSecIdx: 1, wantOverlap: true},
+		{off: 4, sz: 10, wantSecIdx: 1, wantOverlap: true},
+		{off: 5, sz: 15, wantSecIdx: 1, wantOverlap: true},
+		{off: 18, sz: 10, wantSecIdx: 2, wantOverlap: true},
+
+		// Prefer full overlap, break ties by preferring the earlier section
+		{off: 10, sz: 20, wantSecIdx: 2, wantOverlap: true},
+		{off: 0, sz: 100, wantSecIdx: 0, wantOverlap: true},
+		{off: 8, sz: 100, wantSecIdx: 1, wantOverlap: true},
+		{off: 0, sz: 10, wantSecIdx: 0, wantOverlap: true},
+		{off: 16, sz: 10, wantSecIdx: 2, wantOverlap: true},
+
+		// No overlap
+		{off: 5, sz: 2, wantOverlap: false},
+		{off: 20, sz: 1, wantOverlap: false},
+		{off: 99, sz: 1, wantOverlap: false},
+		{off: 0, sz: 0, wantOverlap: false},
+	}
+
+	for _, tt := range testcases {
+		t.Run(fmt.Sprintf("off=%d size=%d", tt.off, tt.sz), func(t *testing.T) {
+			got, haveOverlap := findMaxOverlappingSection(secs, tt.off, tt.sz)
+			if haveOverlap != tt.wantOverlap {
+				t.Fatalf("expected overlap %v, got %v", tt.wantOverlap, haveOverlap)
+			}
+			if got != tt.wantSecIdx {
+				t.Fatalf("expected section %d, got %d", tt.wantSecIdx, got)
+			}
+		})
+	}
+}
