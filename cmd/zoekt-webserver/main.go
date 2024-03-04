@@ -551,9 +551,7 @@ func (s *loggedSearcher) StreamSearch(
 	opts *zoekt.SearchOptions,
 	sender zoekt.Sender,
 ) error {
-	var (
-		stats zoekt.Stats
-	)
+	var stats zoekt.Stats
 
 	metricSearchRequestsTotal.Inc()
 	err := s.Streamer.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {

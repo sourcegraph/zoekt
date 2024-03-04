@@ -1,10 +1,11 @@
 package main
 
 import (
+	"path"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/procfs"
 	sglog "github.com/sourcegraph/log"
-	"path"
 )
 
 func mustRegisterMemoryMapMetrics(logger sglog.Logger) {

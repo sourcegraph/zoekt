@@ -67,7 +67,8 @@ func (s *compoundSection) writeMap(w *writer, m map[string]uint32) {
 }
 
 func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
-	charOffsets *simpleSection, postings *compoundSection, endRunes *simpleSection) {
+	charOffsets *simpleSection, postings *compoundSection, endRunes *simpleSection,
+) {
 	keys := make(ngramSlice, 0, len(s.postings))
 	for k := range s.postings {
 		keys = append(keys, k)

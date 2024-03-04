@@ -237,10 +237,12 @@ func (n *innerNode) maybeSplit(opts btreeOpts) (left node, right node, newKey ng
 	}
 	return &innerNode{
 			keys:     append(make([]ngram, 0, opts.v-1), n.keys[0:opts.v-1]...),
-			children: append(make([]node, 0, opts.v), n.children[:opts.v]...)},
+			children: append(make([]node, 0, opts.v), n.children[:opts.v]...),
+		},
 		&innerNode{
 			keys:     append(make([]ngram, 0, (2*opts.v)-1), n.keys[opts.v:]...),
-			children: append(make([]node, 0, 2*opts.v), n.children[opts.v:]...)},
+			children: append(make([]node, 0, 2*opts.v), n.children[opts.v:]...),
+		},
 		n.keys[opts.v-1],
 		true
 }

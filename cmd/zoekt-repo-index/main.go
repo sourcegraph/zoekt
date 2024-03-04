@@ -324,7 +324,8 @@ func getManifest(repo *git.Repository, branch, path string) (*manifest.Manifest,
 // iterateManifest constructs a complete tree from the given Manifest.
 func iterateManifest(mf *manifest.Manifest,
 	baseURL url.URL, revPrefix string,
-	cache *gitindex.RepoCache) (map[fileKey]gitindex.BlobLocation, map[string]plumbing.Hash, error) {
+	cache *gitindex.RepoCache,
+) (map[fileKey]gitindex.BlobLocation, map[string]plumbing.Hash, error) {
 	allFiles := map[fileKey]gitindex.BlobLocation{}
 	allVersions := map[string]plumbing.Hash{}
 	for _, p := range mf.Project {

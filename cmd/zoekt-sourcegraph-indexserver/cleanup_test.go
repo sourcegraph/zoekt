@@ -164,7 +164,7 @@ func TestCleanup(t *testing.T) {
 func createTestShard(t *testing.T, repo string, id uint32, path string, optFns ...func(in *zoekt.Repository)) {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	r := &zoekt.Repository{
@@ -178,7 +178,7 @@ func createTestShard(t *testing.T, repo string, id uint32, path string, optFns .
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}

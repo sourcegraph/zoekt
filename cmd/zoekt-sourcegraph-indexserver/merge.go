@@ -55,7 +55,6 @@ func (s *Server) doMerge() {
 
 // same as doMerge but with a configurable merge command.
 func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
-
 	// Guard against the user triggering competing merge jobs with the debug
 	// command.
 	if !mergeRunning.CompareAndSwap(false, true) {

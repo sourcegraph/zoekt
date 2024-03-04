@@ -562,12 +562,12 @@ func TestIndexDeltaBasic(t *testing.T) {
 
 							file := filepath.Join(repositoryDir, d.Name)
 
-							err := os.MkdirAll(filepath.Dir(file), 0755)
+							err := os.MkdirAll(filepath.Dir(file), 0o755)
 							if err != nil {
 								t.Fatalf("ensuring that folders exist for file %q: %s", file, err)
 							}
 
-							err = os.WriteFile(file, d.Content, 0644)
+							err = os.WriteFile(file, d.Content, 0o644)
 							if err != nil {
 								t.Fatalf("writing file %q: %s", d.Name, err)
 							}
@@ -753,7 +753,7 @@ func TestRepoPathRanks(t *testing.T) {
 }
 
 func runScript(t *testing.T, cwd string, script string) {
-	err := os.MkdirAll(cwd, 0755)
+	err := os.MkdirAll(cwd, 0o755)
 	if err != nil {
 		t.Fatalf("ensuring path %q exists: %s", cwd, err)
 	}

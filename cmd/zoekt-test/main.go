@@ -169,8 +169,10 @@ func compare(dir, patfile string, caseSensitive bool) error {
 	return nil
 }
 
-var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
-var cpuprofile = flag.String("cpuprofile", "", "write memory profile to `file`")
+var (
+	memprofile = flag.String("memprofile", "", "write memory profile to `file`")
+	cpuprofile = flag.String("cpuprofile", "", "write memory profile to `file`")
+)
 
 func testLoadIndexDir(indexDir string) {
 	var a, b runtime.MemStats

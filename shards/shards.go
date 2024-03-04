@@ -770,7 +770,6 @@ search:
 // We split by repository instead of by priority because it is easier to set
 // RepoURLs and LineFragments in zoekt.SearchResult.
 func sendByRepository(result *zoekt.SearchResult, opts *zoekt.SearchOptions, sender zoekt.Sender) {
-
 	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
 		zoekt.SortFiles(result.Files)
 		sender.Send(result)

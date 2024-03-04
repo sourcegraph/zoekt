@@ -163,21 +163,27 @@ func (e *encoder) EmitInt(key string, value int) {
 func (e *encoder) EmitInt32(key string, value int32) {
 	e.EmitString(key, strconv.FormatInt(int64(value), 10))
 }
+
 func (e *encoder) EmitInt64(key string, value int64) {
 	e.EmitString(key, strconv.FormatInt(value, 10))
 }
+
 func (e *encoder) EmitUint32(key string, value uint32) {
 	e.EmitString(key, strconv.FormatUint(uint64(value), 10))
 }
+
 func (e *encoder) EmitUint64(key string, value uint64) {
 	e.EmitString(key, strconv.FormatUint(value, 10))
 }
+
 func (e *encoder) EmitFloat32(key string, value float32) {
 	e.EmitString(key, strconv.FormatFloat(float64(value), 'E', -1, 64))
 }
+
 func (e *encoder) EmitFloat64(key string, value float64) {
 	e.EmitString(key, strconv.FormatFloat(value, 'E', -1, 64))
 }
+
 func (e *encoder) EmitObject(key string, value interface{}) {
 	e.EmitString(key, fmt.Sprintf("%+v", value))
 }

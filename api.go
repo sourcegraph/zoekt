@@ -27,11 +27,13 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 )
 
-const mapHeaderBytes uint64 = 48
-const sliceHeaderBytes uint64 = 24
-const stringHeaderBytes uint64 = 16
-const pointerSize uint64 = 8
-const interfaceBytes uint64 = 16
+const (
+	mapHeaderBytes    uint64 = 48
+	sliceHeaderBytes  uint64 = 24
+	stringHeaderBytes uint64 = 16
+	pointerSize       uint64 = 8
+	interfaceBytes    uint64 = 16
+)
 
 // FileMatch contains all the matches within a file.
 type FileMatch struct {
@@ -890,12 +892,6 @@ type SearchOptions struct {
 	// be set to 1 to find all repositories containing a result.
 	ShardRepoMaxMatchCount int
 
-	// Deprecated: this field is not read anymore.
-	ShardMaxImportantMatch int
-
-	// Deprecated: this field is not read anymore.
-	TotalMaxImportantMatch int
-
 	// Abort the search after this much time has passed.
 	MaxWallTime time.Duration
 
@@ -984,8 +980,6 @@ func (s *SearchOptions) String() string {
 	addInt("ShardMaxMatchCount", s.ShardMaxMatchCount)
 	addInt("TotalMaxMatchCount", s.TotalMaxMatchCount)
 	addInt("ShardRepoMaxMatchCount", s.ShardRepoMaxMatchCount)
-	addInt("ShardMaxImportantMatch", s.ShardMaxImportantMatch)
-	addInt("TotalMaxImportantMatch", s.TotalMaxImportantMatch)
 	addInt("MaxDocDisplayCount", s.MaxDocDisplayCount)
 	addInt("MaxMatchDisplayCount", s.MaxMatchDisplayCount)
 	addInt("NumContextLines", s.NumContextLines)

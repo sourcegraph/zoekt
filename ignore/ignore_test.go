@@ -18,7 +18,8 @@ func TestParseIgnoreFile(t *testing.T) {
 			ignoreFile: []byte("# ignore this \n  \n foo\n bar/"),
 			wantIgnoreList: []glob.Glob{
 				glob.MustCompile("foo**", '/'),
-				glob.MustCompile("bar/**", '/')},
+				glob.MustCompile("bar/**", '/'),
+			},
 		},
 		{
 			ignoreFile: []byte("/foo/bar \n /qux \n *.go\nfoo.go"),
@@ -26,7 +27,8 @@ func TestParseIgnoreFile(t *testing.T) {
 				glob.MustCompile("foo/bar**", '/'),
 				glob.MustCompile("qux**", '/'),
 				glob.MustCompile("*.go", '/'),
-				glob.MustCompile("foo.go", '/')},
+				glob.MustCompile("foo.go", '/'),
+			},
 		},
 	}
 

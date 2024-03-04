@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/sourcegraph/log"
 	"time"
+
+	"github.com/sourcegraph/log"
 )
 
 type backoff struct {

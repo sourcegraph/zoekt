@@ -85,7 +85,7 @@ func benchmarkEncoding(data interface{}) func(*testing.B) {
 }
 
 func TestSizeBytesSearchResult(t *testing.T) {
-	var sr = SearchResult{
+	sr := SearchResult{
 		Stats:    Stats{},    // 129 bytes
 		Progress: Progress{}, // 16 bytes
 		Files: []FileMatch{{ // 24 bytes + 460 bytes

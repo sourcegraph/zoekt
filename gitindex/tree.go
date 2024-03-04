@@ -98,7 +98,8 @@ func (rw *repoWalker) parseModuleMap(t *object.Tree) error {
 // non-nil, recurse into submodules. In addition, it returns a mapping
 // that indicates in which repo each SHA1 can be found.
 func TreeToFiles(r *git.Repository, t *object.Tree,
-	repoURL string, repoCache *RepoCache) (map[fileKey]BlobLocation, map[string]plumbing.Hash, error) {
+	repoURL string, repoCache *RepoCache,
+) (map[fileKey]BlobLocation, map[string]plumbing.Hash, error) {
 	rw := newRepoWalker(r, repoURL, repoCache)
 
 	if err := rw.parseModuleMap(t); err != nil {

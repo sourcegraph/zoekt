@@ -595,7 +595,6 @@ func TestSearchStats(t *testing.T) {
 				}
 			})
 		}
-
 	})
 }
 
@@ -977,7 +976,6 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 		if len(matches[0].LineMatches[0].Line) != 4 || len(matches[1].LineMatches[0].Line) != 4 {
 			t.Fatalf("want 4 chars in every file, got %#v", matches)
 		}
-
 	})
 
 	t.Run("ChunkMatches", func(t *testing.T) {
@@ -990,7 +988,6 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 		if len(matches[0].ChunkMatches[0].Content) != 4 || len(matches[1].ChunkMatches[0].Content) != 4 {
 			t.Fatalf("want 4 chars in every file, got %#v", matches)
 		}
-
 	})
 }
 
@@ -1228,7 +1225,6 @@ func TestBranchReport(t *testing.T) {
 			t.Fatalf("got branches %q, want %q", f.Branches, branches)
 		}
 	})
-
 }
 
 func TestBranchVersions(t *testing.T) {
@@ -3582,7 +3578,6 @@ func TestStats(t *testing.T) {
 		if diff := cmp.Diff(want, got, ignored...); diff != "" {
 			t.Fatalf("mismatch (-want +got):\n%s", diff)
 		}
-
 	})
 
 	t.Run("one simple shard", func(t *testing.T) {
@@ -3609,7 +3604,6 @@ func TestStats(t *testing.T) {
 		if diff := cmp.Diff(want, got, ignored...); diff != "" {
 			t.Fatalf("mismatch (-want +got):\n%s", diff)
 		}
-
 	})
 
 	t.Run("one compound shard", func(t *testing.T) {
@@ -3703,7 +3697,6 @@ func TestStats(t *testing.T) {
 		if diff := cmp.Diff(want, got, ignored...); diff != "" {
 			t.Fatalf("mismatch (-want +got):\n%s", diff)
 		}
-
 	})
 }
 

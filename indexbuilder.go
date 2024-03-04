@@ -397,12 +397,7 @@ func (b *IndexBuilder) addSymbols(symbols []*Symbol) {
 
 func DetermineLanguageIfUnknown(doc *Document) {
 	if doc.Language == "" {
-		c := doc.Content
-		// classifier is faster on small files without losing much accuracy
-		if len(c) > 2048 {
-			c = c[:2048]
-		}
-		doc.Language = enry.GetLanguage(doc.Name, c)
+		doc.Language = enry.GetLanguage(doc.Name, doc.Content)
 	}
 }
 

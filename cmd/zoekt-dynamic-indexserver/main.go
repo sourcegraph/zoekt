@@ -148,7 +148,6 @@ func (s *indexServer) serveIndex(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var req indexRequest
 	err := dec.Decode(&req)
-
 	if err != nil {
 		log.Printf("Error decoding index request: %v", err)
 		http.Error(w, "JSON parser error", http.StatusBadRequest)
@@ -170,7 +169,6 @@ func (s *indexServer) serveIndex(w http.ResponseWriter, r *http.Request) {
 func (s *indexServer) serveTruncate(w http.ResponseWriter, r *http.Request) {
 	route := "truncate"
 	err := emptyDirectory(s.opts.repoDir)
-
 	if err != nil {
 		err = fmt.Errorf("Failed to empty repoDir repoDir: %v with error: %v", s.opts.repoDir, err)
 
@@ -179,7 +177,6 @@ func (s *indexServer) serveTruncate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = emptyDirectory(s.opts.indexDir)
-
 	if err != nil {
 		err = fmt.Errorf("Failed to empty repoDir indexDir: %v with error: %v", s.opts.repoDir, err)
 
@@ -247,7 +244,6 @@ func (s *indexServer) startIndexingApi() {
 
 func emptyDirectory(dir string) error {
 	files, err := os.ReadDir(dir)
-
 	if err != nil {
 		return err
 	}

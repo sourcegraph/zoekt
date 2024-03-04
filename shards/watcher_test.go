@@ -188,7 +188,7 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 	for delta := -1; delta <= 1; delta++ {
 		repo := fmt.Sprintf("foo_v%d.00000.zoekt", want+delta)
 		shard := filepath.Join(dir, repo)
-		if err := os.WriteFile(shard, []byte("hello"), 0644); err != nil {
+		if err := os.WriteFile(shard, []byte("hello"), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
 	}

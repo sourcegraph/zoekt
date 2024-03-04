@@ -605,7 +605,6 @@ func TestIndex(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-
 			var got []string
 			runCmd := func(c *exec.Cmd) error {
 				cmd := strings.Join(c.Args, " ")
