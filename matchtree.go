@@ -193,6 +193,18 @@ type regexpMatchTree struct {
 	bruteForceMatchTree
 }
 
+func newRegexpMatchTree(s *query.Regexp) *regexpMatchTree {
+	prefix := ""
+	if !s.CaseSensitive {
+		prefix = "(?i)"
+	}
+
+	return &regexpMatchTree{
+		regexp:   regexp.MustCompile(prefix + s.Regexp.String()),
+		fileName: s.FileName,
+	}
+}
+
 // \bLITERAL\b
 type wordMatchTree struct {
 	word string
@@ -972,15 +984,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 			// provide something faster.
 			tr = wmt
 		} else {
-			prefix := ""
-			if !s.CaseSensitive {
-				prefix = "(?i)"
-			}
-
-			tr = &regexpMatchTree{
-				regexp:   regexp.MustCompile(prefix + s.Regexp.String()),
-				fileName: s.FileName,
-			}
+			tr = newRegexpMatchTree(s)
 		}
 
 		return &andMatchTree{
@@ -1230,15 +1234,12 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 	}
 
 	if utf8.RuneCountInString(s.Pattern) < ngramSize {
-		prefix := ""
-		if !s.CaseSensitive {
-			prefix = "(?i)"
-		}
-		t := &regexpMatchTree{
-			regexp:   regexp.MustCompile(prefix + regexp.QuoteMeta(s.Pattern)),
-			fileName: s.FileName,
-		}
-		return t, nil
+		return newRegexpMatchTree(&query.Regexp{
+			Regexp:        &syntax.Regexp{Op: syntax.OpLiteral, Rune: []rune(s.Pattern)},
+			FileName:      s.FileName,
+			Content:       s.Content,
+			CaseSensitive: s.CaseSensitive,
+		}), nil
 	}
 
 	result, err := d.iterateNgrams(s)
