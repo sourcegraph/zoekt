@@ -16,6 +16,7 @@ package zoekt
 
 import (
 	"reflect"
+	"regexp/syntax"
 	"testing"
 
 	"github.com/RoaringBitmap/roaring"
@@ -383,5 +384,40 @@ func TestRepoIDs(t *testing.T) {
 	}
 	if mt.nextDoc() != maxUInt32 {
 		t.Fatalf("expected %d document, but got at least 1 more", len(want))
+	}
+}
+
+func TestIsRegexpAll(t *testing.T) {
+	valid := []string{
+		".*",
+		"(.*)",
+		"(?-s:.*)",
+		"(?s:.*)",
+		"(?i)(?-s:.*)",
+	}
+	invalid := []string{
+		".",
+		"foo",
+		"(foo.*)",
+	}
+
+	for _, s := range valid {
+		r, err := syntax.Parse(s, syntax.Perl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !isRegexpAll(r) {
+			t.Errorf("expected %q to match all", s)
+		}
+	}
+
+	for _, s := range invalid {
+		r, err := syntax.Parse(s, syntax.Perl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if isRegexpAll(r) {
+			t.Errorf("expected %q to not match all", s)
+		}
 	}
 }
