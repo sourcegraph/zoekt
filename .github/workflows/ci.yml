@@ -8,8 +8,7 @@ name: CI
 jobs:
   test:
     runs-on: ubuntu-latest
-    # Pinned to alpine 3.19 to fix go version to 1.21. Remove this once Sourcegraph is on Go 1.22.
-    container: alpine:3.19
+    container: alpine:edge # latest go pls
     steps:
       - name: checkout
         uses: actions/checkout@v3
