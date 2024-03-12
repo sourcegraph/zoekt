@@ -1115,7 +1115,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 
 		return &symbolRegexpMatchTree{
 			regexp:    regexp,
-			all:       regexp.String() == "(?i)(?-s:.)*",
+			all:       regexp.String() == "(?i)(?-s:.*)",
 			matchTree: subMT,
 		}, nil
 
