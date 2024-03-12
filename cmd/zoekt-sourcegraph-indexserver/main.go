@@ -108,11 +108,6 @@ var (
 		Help: "Number of indexed repos by code host",
 	})
 
-	metricNumAssigned = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "index_num_assigned",
-		Help: "Number of repos assigned to this indexer by code host",
-	})
-
 	metricFailingTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "index_failing_total",
 		Help: "Counts failures to index (indexing activity, should be used with rate())",
@@ -1139,19 +1134,6 @@ func getEnvWithDefaultDuration(k string, defaultVal time.Duration) time.Duration
 	return d
 }
 
-func getEnvWithDefaultBool(k string, defaultVal bool) bool {
-	v := os.Getenv(k)
-	if v == "" {
-		return defaultVal
-	}
-
-	b, err := strconv.ParseBool(v)
-	if err != nil {
-		log.Fatalf("error parsing ENV %s to bool: %s", k, err)
-	}
-	return b
-}
-
 func getEnvWithDefaultEmptySet(k string) map[string]struct{} {
 	set := map[string]struct{}{}
 	for _, v := range strings.Split(os.Getenv(k), ",") {
@@ -1224,9 +1206,6 @@ type rootConfig struct {
 	// config values related to backoff indexing repos with one or more consecutive failures
 	backoffDuration    time.Duration
 	maxBackoffDuration time.Duration
-
-	// useGRPC is true if we should use the gRPC API to talk to Sourcegraph.
-	useGRPC bool
 }
 
 func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
@@ -1240,7 +1219,6 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.IntVar(&rc.blockProfileRate, "block_profile_rate", getEnvWithDefaultInt("BLOCK_PROFILE_RATE", -1), "Sampling rate of Go's block profiler in nanoseconds. Values <=0 disable the blocking profiler Var(default). A value of 1 includes every blocking event. See https://pkg.go.dev/runtime#SetBlockProfileRate")
 	fs.DurationVar(&rc.backoffDuration, "backoff_duration", getEnvWithDefaultDuration("BACKOFF_DURATION", 10*time.Minute), "for the given duration we backoff from enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase the duration of the delay linearly up to the maxBackoffDuration. A negative value disables indexing backoff.")
 	fs.DurationVar(&rc.maxBackoffDuration, "max_backoff_duration", getEnvWithDefaultDuration("MAX_BACKOFF_DURATION", 120*time.Minute), "the maximum duration to backoff from enqueueing a repo for indexing.  A negative value disables indexing backoff.")
-	fs.BoolVar(&rc.useGRPC, "use_grpc", mustGetBoolFromEnvironmentVariables([]string{"GRPC_ENABLED", "SG_FEATURE_FLAG_GRPC"}, true), "use the gRPC API to talk to Sourcegraph")
 
 	// flags related to shard merging
 	fs.DurationVar(&rc.vacuumInterval, "vacuum_interval", getEnvWithDefaultDuration("SRC_VACUUM_INTERVAL", 24*time.Hour), "run vacuum this often")
@@ -1406,13 +1384,12 @@ func newServer(conf rootConfig) (*Server, error) {
 		if v := os.Getenv("SRC_REPO_CONFIG_BATCH_SIZE"); v != "" {
 			batchSize, err = strconv.Atoi(v)
 			if err != nil {
-				return nil, fmt.Errorf("Invalid value for SRC_REPO_CONFIG_BATCH_SIZE, must be int")
+				return nil, fmt.Errorf("invalid value for SRC_REPO_CONFIG_BATCH_SIZE, must be int")
 			}
 		}
 
 		opts := []SourcegraphClientOption{
 			WithBatchSize(batchSize),
-			WithShouldUseGRPC(conf.useGRPC),
 		}
 
 		logger := sglog.Scoped("zoektConfigurationGRPCClient")
@@ -1421,8 +1398,7 @@ func newServer(conf rootConfig) (*Server, error) {
 			return nil, fmt.Errorf("initializing gRPC connection to %q: %w", rootURL.Host, err)
 		}
 
-		opts = append(opts, WithGRPCClient(client))
-		sg = newSourcegraphClient(rootURL, conf.hostname, opts...)
+		sg = newSourcegraphClient(rootURL, conf.hostname, client, opts...)
 
 	} else {
 		sg = sourcegraphFake{
@@ -1631,17 +1607,6 @@ func main() {
 	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
-}
-
-// mustGetBoolFromEnvironmentVariables is like getBoolFromEnvironmentVariables, but it panics
-// if any of the provided environment variables fails to parse as a boolean.
-func mustGetBoolFromEnvironmentVariables(envVarNames []string, defaultBool bool) bool {
-	value, err := getBoolFromEnvironmentVariables(envVarNames, defaultBool)
-	if err != nil {
-		panic(err)
-	}
-
-	return value
 }
 
 // getBoolFromEnvironmentVariables returns the boolean defined by the first environment
