@@ -1391,16 +1391,20 @@ func isRegexpAll(r *syntax.Regexp) bool {
 	// Note: we don't care about any flags since we are looking for .* and we
 	// don't mind if . matches all or everything but newline.
 
-	// Our main target: .*
-	if r.Op == syntax.OpStar && len(r.Sub) == 1 { // *
-		// (?s:.) or (?-s:.)
-		return r.Sub[0].Op == syntax.OpAnyChar || r.Sub[0].Op == syntax.OpAnyCharNotNL
-	}
+	// for loop is for visiting children of OpCapture/OpConcat until we hit .*
+	for {
+		// Our main target: .*
+		if r.Op == syntax.OpStar && len(r.Sub) == 1 { // *
+			// (?s:.) or (?-s:.)
+			return r.Sub[0].Op == syntax.OpAnyChar || r.Sub[0].Op == syntax.OpAnyCharNotNL
+		}
 
-	// Strip away expressions being wrapped in paranthesis
-	if (r.Op == syntax.OpCapture || r.Op == syntax.OpConcat) && len(r.Sub) == 1 {
-		return isRegexpAll(r.Sub[0])
-	}
+		// Strip away expressions being wrapped in paranthesis
+		if (r.Op == syntax.OpCapture || r.Op == syntax.OpConcat) && len(r.Sub) == 1 {
+			r = r.Sub[0]
+			continue
+		}
 
-	return false
+		return false
+	}
 }
