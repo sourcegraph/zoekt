@@ -183,6 +183,10 @@ type noVisitMatchTree struct {
 type regexpMatchTree struct {
 	regexp *regexp.Regexp
 
+	// origRegexp is the original parsed regexp from the query structure. It
+	// does not include mutations such as case sensitivity.
+	origRegexp *syntax.Regexp
+
 	fileName bool
 
 	// mutable
@@ -191,6 +195,19 @@ type regexpMatchTree struct {
 
 	// nextDoc, prepare.
 	bruteForceMatchTree
+}
+
+func newRegexpMatchTree(s *query.Regexp) *regexpMatchTree {
+	prefix := ""
+	if !s.CaseSensitive {
+		prefix = "(?i)"
+	}
+
+	return &regexpMatchTree{
+		regexp:     regexp.MustCompile(prefix + s.Regexp.String()),
+		origRegexp: s.Regexp,
+		fileName:   s.FileName,
+	}
 }
 
 // \bLITERAL\b
@@ -972,15 +989,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 			// provide something faster.
 			tr = wmt
 		} else {
-			prefix := ""
-			if !s.CaseSensitive {
-				prefix = "(?i)"
-			}
-
-			tr = &regexpMatchTree{
-				regexp:   regexp.MustCompile(prefix + s.Regexp.String()),
-				fileName: s.FileName,
-			}
+			tr = newRegexpMatchTree(s)
 		}
 
 		return &andMatchTree{
@@ -1103,19 +1112,19 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 			}, nil
 		}
 
-		var regexp *regexp.Regexp
+		var regexpMT *regexpMatchTree
 		visitMatchTree(subMT, func(mt matchTree) {
 			if t, ok := mt.(*regexpMatchTree); ok {
-				regexp = t.regexp
+				regexpMT = t
 			}
 		})
-		if regexp == nil {
+		if regexpMT == nil {
 			return nil, fmt.Errorf("found %T inside query.Symbol", subMT)
 		}
 
 		return &symbolRegexpMatchTree{
-			regexp:    regexp,
-			all:       regexp.String() == "(?i)(?-s:.*)",
+			regexp:    regexpMT.regexp,
+			all:       isRegexpAll(regexpMT.origRegexp),
 			matchTree: subMT,
 		}, nil
 
@@ -1230,15 +1239,12 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 	}
 
 	if utf8.RuneCountInString(s.Pattern) < ngramSize {
-		prefix := ""
-		if !s.CaseSensitive {
-			prefix = "(?i)"
-		}
-		t := &regexpMatchTree{
-			regexp:   regexp.MustCompile(prefix + regexp.QuoteMeta(s.Pattern)),
-			fileName: s.FileName,
-		}
-		return t, nil
+		return newRegexpMatchTree(&query.Regexp{
+			Regexp:        &syntax.Regexp{Op: syntax.OpLiteral, Rune: []rune(s.Pattern)},
+			FileName:      s.FileName,
+			Content:       s.Content,
+			CaseSensitive: s.CaseSensitive,
+		}), nil
 	}
 
 	result, err := d.iterateNgrams(s)
@@ -1374,4 +1380,31 @@ func pruneMatchTree(mt matchTree) (matchTree, error) {
 	case *wordMatchTree:
 	}
 	return mt, err
+}
+
+// isRegexpAll returns true if the query matches all possible lines.
+//
+// Note: it is possible for a funky regex to actually match all but this
+// returns false. This returns true for normal looking regexes like ".*" or
+// "(?-s:.*)".
+func isRegexpAll(r *syntax.Regexp) bool {
+	// Note: we don't care about any flags since we are looking for .* and we
+	// don't mind if . matches all or everything but newline.
+
+	// for loop is for visiting children of OpCapture/OpConcat until we hit .*
+	for {
+		// Our main target: .*
+		if r.Op == syntax.OpStar && len(r.Sub) == 1 { // *
+			// (?s:.) or (?-s:.)
+			return r.Sub[0].Op == syntax.OpAnyChar || r.Sub[0].Op == syntax.OpAnyCharNotNL
+		}
+
+		// Strip away expressions being wrapped in paranthesis
+		if (r.Op == syntax.OpCapture || r.Op == syntax.OpConcat) && len(r.Sub) == 1 {
+			r = r.Sub[0]
+			continue
+		}
+
+		return false
+	}
 }
