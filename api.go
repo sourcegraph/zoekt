@@ -656,8 +656,6 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 //
 // Note: We ignore RawConfig fields which are duplicated into Repository:
 // name and id.
-//
-// Note: URL, *Template fields are ignored. They are not used by Sourcegraph.
 func (r *Repository) MergeMutable(x *Repository) (mutated bool, err error) {
 	if r.ID != x.ID {
 		// Sourcegraph: strange behaviour may occur if ID changes but names don't.
@@ -686,6 +684,23 @@ func (r *Repository) MergeMutable(x *Repository) (mutated bool, err error) {
 			mutated = true
 			r.RawConfig[k] = v
 		}
+	}
+
+	if r.URL != x.URL {
+		mutated = true
+		r.URL = x.URL
+	}
+	if r.CommitURLTemplate != x.CommitURLTemplate {
+		mutated = true
+		r.CommitURLTemplate = x.CommitURLTemplate
+	}
+	if r.FileURLTemplate != x.FileURLTemplate {
+		mutated = true
+		r.FileURLTemplate = x.FileURLTemplate
+	}
+	if r.LineFragmentTemplate != x.LineFragmentTemplate {
+		mutated = true
+		r.LineFragmentTemplate = x.LineFragmentTemplate
 	}
 
 	return mutated, nil

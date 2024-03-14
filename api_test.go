@@ -237,3 +237,134 @@ func TestSearchOptions_String(t *testing.T) {
 		}
 	}
 }
+
+func TestRepositoryMergeMutable(t *testing.T) {
+	a := Repository{
+		ID:   0,
+		Name: "name",
+		Branches: []RepositoryBranch{
+			{
+				Name:    "branchName",
+				Version: "branchVersion",
+			},
+		},
+		RawConfig:            nil,
+		URL:                  "url",
+		CommitURLTemplate:    "commitUrlTemplate",
+		FileURLTemplate:      "fileUrlTemplate",
+		LineFragmentTemplate: "lineFragmentTemplate",
+	}
+
+	t.Run("different ID", func(t *testing.T) {
+		b := a
+		b.ID = 1
+		mutated, err := a.MergeMutable(&b)
+		if err == nil {
+			t.Fatalf("want err, got mutated=%t", mutated)
+		}
+	})
+	t.Run("different Name", func(t *testing.T) {
+		b := a
+		b.Name = "otherName"
+		mutated, err := a.MergeMutable(&b)
+		if err == nil {
+			t.Fatalf("want err, got mutated=%t", mutated)
+		}
+	})
+	t.Run("different Branches", func(t *testing.T) {
+		b := a
+		b.Branches = []RepositoryBranch{
+			{
+				Name:    "otherBranchName",
+				Version: "branchVersion",
+			},
+		}
+		mutated, err := a.MergeMutable(&b)
+		if err == nil {
+			t.Fatalf("want err, got mutated=%t", mutated)
+		}
+	})
+	t.Run("different RawConfig", func(t *testing.T) {
+		b := a
+		b.RawConfig = map[string]string{"foo": "bar"}
+		mutated, err := a.MergeMutable(&b)
+		if err != nil {
+			t.Fatalf("got err %v", err)
+		}
+		if !mutated {
+			t.Fatalf("want mutated=true, got false")
+		}
+		if !reflect.DeepEqual(a.RawConfig, b.RawConfig) {
+			t.Fatalf("got different RawConfig, %v vs %v", a.RawConfig, b.RawConfig)
+		}
+	})
+	t.Run("different URL", func(t *testing.T) {
+		b := a
+		b.URL = "otherURL"
+		mutated, err := a.MergeMutable(&b)
+		if err != nil {
+			t.Fatalf("got err %v", err)
+		}
+		if !mutated {
+			t.Fatalf("want mutated=true, got false")
+		}
+		if a.URL != b.URL {
+			t.Fatalf("got different URL, %s vs %s", a.URL, b.URL)
+		}
+	})
+	t.Run("different CommitURLTemplate", func(t *testing.T) {
+		b := a
+		b.CommitURLTemplate = "otherCommitUrlTemplate"
+		mutated, err := a.MergeMutable(&b)
+		if err != nil {
+			t.Fatalf("got err %v", err)
+		}
+		if !mutated {
+			t.Fatalf("want mutated=true, got false")
+		}
+		if a.CommitURLTemplate != b.CommitURLTemplate {
+			t.Fatalf("got different CommitURLTemplate, %s vs %s", a.CommitURLTemplate, b.CommitURLTemplate)
+		}
+	})
+	t.Run("different FileURLTemplate", func(t *testing.T) {
+		b := a
+		b.FileURLTemplate = "otherFileUrlTemplate"
+		mutated, err := a.MergeMutable(&b)
+		if err != nil {
+			t.Fatalf("got err %v", err)
+		}
+		if !mutated {
+			t.Fatalf("want mutated=true, got false")
+		}
+		if a.FileURLTemplate != b.FileURLTemplate {
+			t.Fatalf("got different FileURLTemplate, %s vs %s", a.FileURLTemplate, b.FileURLTemplate)
+		}
+	})
+	t.Run("different LineFragmentTemplate", func(t *testing.T) {
+		b := a
+		b.LineFragmentTemplate = "otherLineFragmentTemplate"
+		mutated, err := a.MergeMutable(&b)
+		if err != nil {
+			t.Fatalf("got err %v", err)
+		}
+		if !mutated {
+			t.Fatalf("want mutated=true, got false")
+		}
+		if a.LineFragmentTemplate != b.LineFragmentTemplate {
+			t.Fatalf("got different LineFragmentTemplate, %s vs %s", a.LineFragmentTemplate, b.LineFragmentTemplate)
+		}
+	})
+	t.Run("all same", func(t *testing.T) {
+		b := a
+		mutated, err := a.MergeMutable(&b)
+		if err != nil {
+			t.Fatalf("got err %v", err)
+		}
+		if mutated {
+			t.Fatalf("want mutated=false, got true")
+		}
+		if !reflect.DeepEqual(a, b) {
+			t.Fatalf("got different Repository, %v vs %v", a, b)
+		}
+	})
+}
