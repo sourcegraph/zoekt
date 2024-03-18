@@ -243,7 +243,9 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 	var result []LineMatch
 	for len(ms) > 0 {
 		m := ms[0]
-		num, lineStart, lineEnd := p.newlines().atOffset(m.byteOffset)
+		num := p.newlines().atOffset(m.byteOffset)
+		lineStart := int(p.newlines().lineStart(num))
+		lineEnd := int(p.newlines().lineEnd(num, true))
 
 		var lineCands []*candidateMatch
 
@@ -340,19 +342,24 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 		for _, cm := range chunk.candidates {
 			startOffset := cm.byteOffset
 			endOffset := cm.byteOffset + cm.byteMatchSz
-			startLine, startLineOffset, _ := newlines.atOffset(startOffset)
-			endLine, endLineOffset, _ := newlines.atOffset(endOffset)
+			startLine := newlines.atOffset(startOffset)
+			endLine := newlines.atOffset(
+				// We want the line of the last byte in the match, not the first byte outside of the match.
+				// For a zero-length match, endOffset-1 could be before match start, so fall back to the
+				// byte after the match (as we do for startLine), not before.
+				max(startOffset, endOffset-1),
+			)
 
 			ranges = append(ranges, Range{
 				Start: Location{
 					ByteOffset: startOffset,
 					LineNumber: uint32(startLine),
-					Column:     columnHelper.get(startLineOffset, startOffset),
+					Column:     columnHelper.get(int(newlines.lineStart(startLine)), startOffset),
 				},
 				End: Location{
 					ByteOffset: endOffset,
 					LineNumber: uint32(endLine),
-					Column:     columnHelper.get(endLineOffset, endOffset),
+					Column:     columnHelper.get(int(newlines.lineStart(endLine)), endOffset),
 				},
 			})
 		}
@@ -361,7 +368,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 		if firstLineNumber < 1 {
 			firstLineNumber = 1
 		}
-		firstLineStart, _ := newlines.lineBounds(firstLineNumber)
+		firstLineStart := newlines.lineStart(firstLineNumber)
 
 		chunkMatches = append(chunkMatches, ChunkMatch{
 			Content: newlines.getLines(data, firstLineNumber, int(chunk.lastLine)+numContextLines+1),
@@ -399,8 +406,8 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 	for _, m := range ms {
 		startOffset := m.byteOffset
 		endOffset := m.byteOffset + m.byteMatchSz
-		firstLine, _, _ := newlines.atOffset(startOffset)
-		lastLine, _, _ := newlines.atOffset(endOffset)
+		firstLine := newlines.atOffset(startOffset)
+		lastLine := newlines.atOffset(endOffset - 1)
 
 		if len(chunks) > 0 && int(chunks[len(chunks)-1].lastLine)+numContextLines >= firstLine-numContextLines {
 			// If a new chunk created with the current candidateMatch would
@@ -475,41 +482,52 @@ type newlines struct {
 // by its linenumber (base-1, byte index of line start, byte index of
 // line end). The line end is the index of a newline, or the filesize
 // (if matching the last line of the file.)
-func (nls newlines) atOffset(offset uint32) (lineNumber, lineStart, lineEnd int) {
+func (nls newlines) atOffset(offset uint32) (lineNumber int) {
 	idx := sort.Search(len(nls.locs), func(n int) bool {
 		return nls.locs[n] >= offset
 	})
 
-	start, end := nls.lineBounds(idx + 1)
-	return idx + 1, int(start), int(end)
+	// TODO: make sure this makes sense not including the newline
+	return idx + 1
 }
 
-// lineBounds returns the byte offsets of the start and end of the 1-based
-// lineNumber. The end offset is exclusive and will not contain the line-ending
-// newline. If the line number is out of range of the lines in the file, start
-// and end will be clamped to [0,fileSize].
-func (nls newlines) lineBounds(lineNumber int) (start, end uint32) {
+// lineStart returns the byte offset of the beginning of the given line.
+// lineNumber is 1-based. If lineNumber is out of range of the lines in the
+// file, the return value will be clamped to [0,fileSize].
+func (nls newlines) lineStart(lineNumber int) uint32 {
 	// nls.locs[0] + 1 is the start of the 2nd line of data.
 	startIdx := lineNumber - 2
-	endIdx := lineNumber - 1
 
 	if startIdx < 0 {
-		start = 0
+		return 0
 	} else if startIdx >= len(nls.locs) {
-		start = nls.fileSize
+		return nls.fileSize
 	} else {
-		start = nls.locs[startIdx] + 1
+		return nls.locs[startIdx] + 1
 	}
+}
+
+// lineEnd returns the (exclusive) byte offset pointing immediately after the
+// last byte of the line. lineNumber is 1-based. If lineNumber is out
+// of range of the lines in the file, the return value will be clamped to
+// [0,fileSize].
+//
+// If trimNewline is set, the offset exclude any line-terminating newline.
+// Note: this does _not_ trim any carriage returns and should probably not be
+// used by default. It only exists for backwards compatibility.
+func (nls newlines) lineEnd(lineNumber int, trimNewline bool) uint32 {
+	// nls.locs[0] + 1 is the start of the 2nd line of data.
+	endIdx := lineNumber - 1
 
 	if endIdx < 0 {
-		end = 0
+		return 0
 	} else if endIdx >= len(nls.locs) {
-		end = nls.fileSize
+		return nls.fileSize
+	} else if trimNewline {
+		return nls.locs[endIdx]
 	} else {
-		end = nls.locs[endIdx]
+		return nls.locs[endIdx] + 1
 	}
-
-	return start, end
 }
 
 // getLines returns a slice of data containing the lines [low, high).
@@ -519,20 +537,8 @@ func (nls newlines) getLines(data []byte, low, high int) []byte {
 		return nil
 	}
 
-	lowStart, _ := nls.lineBounds(low)
-	_, highEnd := nls.lineBounds(high - 1)
-
-	// Drop any trailing newline. Editors do not treat a trailing newline as
-	// the start of a new line, so we should not either. lineBounds clamps to
-	// len(data) when an out-of-bounds line is requested.
-	//
-	// As an example, if we request lines 1-5 from a file with contents
-	// `one\ntwo\nthree\n`, we should return `one\ntwo\nthree` because those are
-	// the three "lines" in the file, separated by newlines.
-	if highEnd == uint32(len(data)) && bytes.HasSuffix(data, []byte{'\n'}) {
-		highEnd = highEnd - 1
-		lowStart = min(lowStart, highEnd)
-	}
+	lowStart := nls.lineStart(low)
+	highEnd := nls.lineEnd(high-1, false)
 
 	return data[lowStart:highEnd]
 }

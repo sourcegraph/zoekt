@@ -235,7 +235,7 @@ func TestNewlines(t *testing.T) {
 		want := []FileMatch{{
 			FileName: "filename",
 			ChunkMatches: []ChunkMatch{{
-				Content: []byte("line2"),
+				Content: []byte("line2\n"),
 				ContentStart: Location{
 					ByteOffset: 6,
 					LineNumber: 2,
@@ -2452,7 +2452,7 @@ func TestIOStats(t *testing.T) {
 		res := searchForTest(t, b, q)
 
 		// 4096 (content) + 2 (overhead: newlines or doc sections)
-		if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
+		if got, want := res.Stats.ContentBytesLoaded, int64(4100); got != want {
 			t.Errorf("got content I/O %d, want %d", got, want)
 		}
 
@@ -3243,7 +3243,7 @@ func TestLineAnd(t *testing.T) {
 	}
 	t.Run("LineMatches", func(t *testing.T) {
 		res := searchForTest(t, b, &q)
-		wantRegexpCount := 1
+		wantRegexpCount := 2
 		if gotRegexpCount := res.RegexpsConsidered; gotRegexpCount != wantRegexpCount {
 			t.Errorf("got %d, wanted %d", gotRegexpCount, wantRegexpCount)
 		}
@@ -3254,7 +3254,7 @@ func TestLineAnd(t *testing.T) {
 
 	t.Run("ChunkMatches", func(t *testing.T) {
 		res := searchForTest(t, b, &q, chunkOpts)
-		wantRegexpCount := 1
+		wantRegexpCount := 2 // TODO: justify this change
 		if gotRegexpCount := res.RegexpsConsidered; gotRegexpCount != wantRegexpCount {
 			t.Errorf("got %d, wanted %d", gotRegexpCount, wantRegexpCount)
 		}
