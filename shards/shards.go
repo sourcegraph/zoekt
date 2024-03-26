@@ -933,7 +933,17 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		Repos:    []*zoekt.RepoListEntry{},
 	}
 
-	shards := loaded.shards
+	// PERF: Select the subset of shards that we will search over for the given
+	// query. A common List query only asks for a specific repo, so this is an
+	// important optimization.
+	tr.LazyPrintf("before selectRepoSet shards:%d", len(loaded.shards))
+	shards, r := selectRepoSet(loaded.shards, r)
+	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), r)
+
+	if len(shards) == 0 {
+		return &agg, nil
+	}
+
 	shardCount := len(shards)
 	all := make(chan shardListResult, shardCount)
 	tr.LazyPrintf("shardCount: %d", len(shards))
