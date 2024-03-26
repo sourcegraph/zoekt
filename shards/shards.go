@@ -919,7 +919,31 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	tr.LazyPrintf("acquired process")
 
 	loaded := ss.getLoaded()
-	shards := loaded.shards
+
+	// Setup what we return now, since we may short circuit if there are no
+	// shards to search.
+	stillLoadingCrashes := 0
+	if !loaded.ready {
+		// We may have missed results due to not being fully loaded.
+		stillLoadingCrashes++
+	}
+	agg := zoekt.RepoList{
+		Crashes:  stillLoadingCrashes,
+		ReposMap: zoekt.ReposMap{},
+		Repos:    []*zoekt.RepoListEntry{},
+	}
+
+	// PERF: Select the subset of shards that we will search over for the given
+	// query. A common List query only asks for a specific repo, so this is an
+	// important optimization.
+	tr.LazyPrintf("before selectRepoSet shards:%d", len(loaded.shards))
+	shards, r := selectRepoSet(loaded.shards, r)
+	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), r)
+
+	if len(shards) == 0 {
+		return &agg, nil
+	}
+
 	shardCount := len(shards)
 	all := make(chan shardListResult, shardCount)
 	tr.LazyPrintf("shardCount: %d", len(shards))
@@ -936,17 +960,6 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 				listOneShard(ctx, s, r, opts, all)
 			}
 		}()
-	}
-
-	stillLoadingCrashes := 0
-	if !loaded.ready {
-		// We may have missed results due to not being fully loaded.
-		stillLoadingCrashes++
-	}
-
-	agg := zoekt.RepoList{
-		Crashes:  stillLoadingCrashes,
-		ReposMap: zoekt.ReposMap{},
 	}
 
 	uniq := map[string]*zoekt.RepoListEntry{}
