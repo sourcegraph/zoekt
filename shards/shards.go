@@ -919,6 +919,20 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	tr.LazyPrintf("acquired process")
 
 	loaded := ss.getLoaded()
+
+	// Setup what we return now, since we may short circuit if there are no
+	// shards to search.
+	stillLoadingCrashes := 0
+	if !loaded.ready {
+		// We may have missed results due to not being fully loaded.
+		stillLoadingCrashes++
+	}
+	agg := zoekt.RepoList{
+		Crashes:  stillLoadingCrashes,
+		ReposMap: zoekt.ReposMap{},
+		Repos:    []*zoekt.RepoListEntry{},
+	}
+
 	shards := loaded.shards
 	shardCount := len(shards)
 	all := make(chan shardListResult, shardCount)
@@ -936,17 +950,6 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 				listOneShard(ctx, s, r, opts, all)
 			}
 		}()
-	}
-
-	stillLoadingCrashes := 0
-	if !loaded.ready {
-		// We may have missed results due to not being fully loaded.
-		stillLoadingCrashes++
-	}
-
-	agg := zoekt.RepoList{
-		Crashes:  stillLoadingCrashes,
-		ReposMap: zoekt.ReposMap{},
 	}
 
 	uniq := map[string]*zoekt.RepoListEntry{}
