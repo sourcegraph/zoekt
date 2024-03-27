@@ -22,6 +22,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -364,16 +365,29 @@ func (ss *shardedSearcher) Close() {
 
 func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
 	and, ok := q.(*query.And)
-	if !ok {
-		return shards, q
+	if ok {
+		return doSelectRepoSet(shards, and)
 	}
 
+	// We have queries which look like (reposet ...) and we want to do the same
+	// optimizations. To simplify we just always wrap the query in And and then
+	// on the return value call Simplify to unwrap. In particular this is
+	// important for List calls.
+	and = &query.And{Children: []query.Q{q}}
+	shards, q = doSelectRepoSet(shards, and)
+	return shards, query.Simplify(q)
+}
+
+func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, query.Q) {
 	// (and (reposet ...) (q))
 	// (and true (q)) with a filtered shards
 	// (and false) // noop
 
 	// (and (repobranches ...) (q))
 	// (and (repobranches ...) (q))
+
+	// Note: we also support (and (repo ...) (q)) even though sourcegraph does
+	// not generate those sorts of queries. This is to support manual testing.
 
 	hasReposForPredicate := func(pred func(repo *zoekt.Repository) bool) func(repos []*zoekt.Repository) (any, all bool) {
 		return func(repos []*zoekt.Repository) (any, all bool) {
@@ -401,6 +415,11 @@ func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
 			setSize = int(setQuery.Repos.GetCardinality())
 			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
 				return setQuery.Repos.Contains(repo.ID)
+			})
+		case *query.Repo:
+			setSize = 0
+			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+				return setQuery.Regexp.MatchString(repo.Name)
 			})
 		case *query.BranchesRepos:
 			for _, br := range setQuery.List {
@@ -447,6 +466,10 @@ func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
 			return filtered, and
 		}
 
+		// We don't want to mutate the original and, so we clone it before
+		// mutating it.
+		and = &query.And{Children: slices.Clone(and.Children)}
+
 		// This optimization allows us to avoid the work done by
 		// indexData.simplify for each shard.
 		//
@@ -455,11 +478,7 @@ func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
 		// shard indexData.simplify will simplify to (and true (content baz)) ->
 		// (content baz). This work can be done now once, rather than per shard.
 		switch c := c.(type) {
-		case *query.RepoSet:
-			and.Children[i] = &query.Const{Value: true}
-			return filtered, query.Simplify(and)
-
-		case *query.RepoIDs:
+		case *query.RepoSet, *query.RepoIDs, *query.Repo:
 			and.Children[i] = &query.Const{Value: true}
 			return filtered, query.Simplify(and)
 
@@ -629,10 +648,13 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 		tr.Finish()
 	}()
 
-	tr.LazyPrintf("before selectRepoSet shards:%d", len(shards))
 	// Select the subset of shards that we will search over for the given query.
-	shards, q = selectRepoSet(shards, q)
-	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), q)
+	{
+		beforeLen := len(shards)
+		beforeQ := q
+		shards, q = selectRepoSet(shards, q)
+		tr.LazyPrintf("selectRepoSet shards=%d->%d q=%s->%s", beforeLen, len(shards), beforeQ, q)
+	}
 
 	if len(shards) == 0 {
 		return func() {}, nil
@@ -888,15 +910,13 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.
 	return s.List(ctx, q, opts)
 }
 
-func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
+func (ss *shardedSearcher) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.List", "")
 	metricListRunning.Inc()
 	defer func() {
 		metricListRunning.Dec()
 		if rl != nil {
-			tr.LazyPrintf("repos size: %d", len(rl.Repos))
-			tr.LazyPrintf("reposmap size: %d", len(rl.ReposMap))
-			tr.LazyPrintf("crashes: %d", rl.Crashes)
+			tr.LazyPrintf("repos.size=%d reposmap.size=%d crashes=%d", len(rl.Repos), len(rl.ReposMap), rl.Crashes)
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
@@ -905,9 +925,9 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 		tr.Finish()
 	}()
 
-	r = query.Simplify(r)
+	q = query.Simplify(q)
 	isAll := false
-	if c, ok := r.(*query.Const); ok {
+	if c, ok := q.(*query.Const); ok {
 		isAll = c.Value
 	}
 
@@ -919,6 +939,7 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	tr.LazyPrintf("acquired process")
 
 	loaded := ss.getLoaded()
+	shards := loaded.shards
 
 	// Setup what we return now, since we may short circuit if there are no
 	// shards to search.
@@ -936,9 +957,12 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	// PERF: Select the subset of shards that we will search over for the given
 	// query. A common List query only asks for a specific repo, so this is an
 	// important optimization.
-	tr.LazyPrintf("before selectRepoSet shards:%d", len(loaded.shards))
-	shards, r := selectRepoSet(loaded.shards, r)
-	tr.LazyPrintf("after selectRepoSet shards:%d %s", len(shards), r)
+	{
+		beforeLen := len(shards)
+		beforeQ := q
+		shards, q = selectRepoSet(shards, q)
+		tr.LazyPrintf("selectRepoSet shards=%d->%d q=%s->%s", beforeLen, len(shards), beforeQ, q)
+	}
 
 	if len(shards) == 0 {
 		return &agg, nil
@@ -977,7 +1001,7 @@ func (ss *shardedSearcher) List(ctx context.Context, r query.Q, opts *zoekt.List
 	for range workers {
 		g.Go(func() error {
 			for s := range feeder {
-				result, err := listOneShard(ctx, s, r, opts)
+				result, err := listOneShard(ctx, s, q, opts)
 				if err != nil {
 					return err
 				}
