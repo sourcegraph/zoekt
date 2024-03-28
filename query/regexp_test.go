@@ -18,6 +18,8 @@ import (
 	"regexp/syntax"
 	"strings"
 	"testing"
+
+	"github.com/sourcegraph/zoekt/internal/syntaxutil"
 )
 
 var opnames = map[syntax.Op]string{
@@ -52,7 +54,7 @@ func printRegexp(t *testing.T, r *syntax.Regexp, lvl int) {
 func TestLowerRegexp(t *testing.T) {
 	in := "[a-zA-Z]fooBAR"
 	re := mustParseRE(in)
-	in = re.String()
+	in = syntaxutil.RegexpString(re)
 	got := LowerRegexp(re)
 	want := "[a-za-z]foobar"
 	if got.String() != want {
@@ -61,8 +63,8 @@ func TestLowerRegexp(t *testing.T) {
 		t.Errorf("got %s, want %s", got, want)
 	}
 
-	if re.String() != in {
-		t.Errorf("got mutated original %s want %s", re.String(), in)
+	if orig := syntaxutil.RegexpString(re); orig != in {
+		t.Errorf("got mutated original %s want %s", orig, in)
 	}
 }
 

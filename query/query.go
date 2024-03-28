@@ -29,6 +29,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/grafana/regexp"
+	"github.com/sourcegraph/zoekt/internal/syntaxutil"
 )
 
 var _ = log.Println
@@ -99,7 +100,7 @@ func (q *Regexp) String() string {
 	if q.CaseSensitive {
 		pref = "case_" + pref
 	}
-	return fmt.Sprintf("%sregex:%q", pref, q.Regexp.String())
+	return fmt.Sprintf("%sregex:%q", pref, syntaxutil.RegexpString(q.Regexp))
 }
 
 // gobRegexp wraps Regexp to make it gob-encodable/decodable. Regexp contains syntax.Regexp, which
@@ -112,7 +113,7 @@ type gobRegexp struct {
 
 // GobEncode implements gob.Encoder.
 func (q Regexp) GobEncode() ([]byte, error) {
-	gobq := gobRegexp{Regexp: q, RegexpString: q.Regexp.String()}
+	gobq := gobRegexp{Regexp: q, RegexpString: syntaxutil.RegexpString(q.Regexp)}
 	gobq.Regexp.Regexp = nil // can't be gob-encoded/decoded
 	return json.Marshal(gobq)
 }
@@ -457,7 +458,7 @@ func (q *Regexp) setCase(k string) {
 	case "no":
 		q.CaseSensitive = false
 	case "auto":
-		q.CaseSensitive = (q.Regexp.String() != LowerRegexp(q.Regexp).String())
+		q.CaseSensitive = !q.Regexp.Equal(LowerRegexp(q.Regexp))
 	}
 }
 

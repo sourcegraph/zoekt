@@ -17,6 +17,8 @@ package query
 import (
 	"log"
 	"regexp/syntax"
+
+	"github.com/sourcegraph/zoekt/internal/syntaxutil"
 )
 
 var _ = log.Println
@@ -56,7 +58,7 @@ func convertCapture(re *syntax.Regexp, flags syntax.Flags) *syntax.Regexp {
 	}
 
 	// Make a copy so in unlikely event of an error the original can be used as a fallback
-	r, err := syntax.Parse(re.String(), flags)
+	r, err := syntax.Parse(syntaxutil.RegexpString(re), flags)
 	if err != nil {
 		log.Printf("failed to copy regexp `%s`: %v", re, err)
 		return re
@@ -65,7 +67,7 @@ func convertCapture(re *syntax.Regexp, flags syntax.Flags) *syntax.Regexp {
 	r = uncapture(r)
 
 	// Parse again for new structure to take effect
-	r, err = syntax.Parse(r.String(), flags)
+	r, err = syntax.Parse(syntaxutil.RegexpString(r), flags)
 	if err != nil {
 		log.Printf("failed to parse regexp after uncapture `%s`: %v", r, err)
 		return re
