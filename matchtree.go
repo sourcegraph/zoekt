@@ -24,6 +24,7 @@ import (
 
 	"github.com/grafana/regexp"
 
+	"github.com/sourcegraph/zoekt/internal/syntaxutil"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -204,7 +205,7 @@ func newRegexpMatchTree(s *query.Regexp) *regexpMatchTree {
 	}
 
 	return &regexpMatchTree{
-		regexp:     regexp.MustCompile(prefix + s.Regexp.String()),
+		regexp:     regexp.MustCompile(prefix + syntaxutil.RegexpString(s.Regexp)),
 		origRegexp: s.Regexp,
 		fileName:   s.FileName,
 	}
