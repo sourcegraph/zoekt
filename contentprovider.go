@@ -245,7 +245,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 		m := ms[0]
 		num := p.newlines().atOffset(m.byteOffset)
 		lineStart := int(p.newlines().lineStart(num))
-		lineEnd := int(p.newlines().lineEnd(num, true))
+		lineEnd := int(p.newlines().lineEnd(num))
 
 		var lineCands []*candidateMatch
 
@@ -253,7 +253,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 
 		for len(ms) > 0 {
 			m := ms[0]
-			if int(m.byteOffset) <= lineEnd {
+			if int(m.byteOffset) < lineEnd {
 				endMatch = m.byteOffset + m.byteMatchSz
 				lineCands = append(lineCands, m)
 				ms = ms[1:]
@@ -276,7 +276,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 		// crosses a line boundary. Prevent confusion by
 		// taking lines until we pass the last match
 		for lineEnd < len(data) && endMatch > uint32(lineEnd) {
-			next := bytes.IndexByte(data[lineEnd+1:], '\n')
+			next := bytes.IndexByte(data[lineEnd:], '\n')
 			if next == -1 {
 				lineEnd = len(data)
 			} else {
@@ -511,11 +511,7 @@ func (nls newlines) lineStart(lineNumber int) uint32 {
 // last byte of the line. lineNumber is 1-based. If lineNumber is out
 // of range of the lines in the file, the return value will be clamped to
 // [0,fileSize].
-//
-// If trimNewline is set, the offset exclude any line-terminating newline.
-// Note: this does _not_ trim any carriage returns and should probably not be
-// used by default. It only exists for backwards compatibility.
-func (nls newlines) lineEnd(lineNumber int, trimNewline bool) uint32 {
+func (nls newlines) lineEnd(lineNumber int) uint32 {
 	// nls.locs[0] + 1 is the start of the 2nd line of data.
 	endIdx := lineNumber - 1
 
@@ -523,8 +519,6 @@ func (nls newlines) lineEnd(lineNumber int, trimNewline bool) uint32 {
 		return 0
 	} else if endIdx >= len(nls.locs) {
 		return nls.fileSize
-	} else if trimNewline {
-		return nls.locs[endIdx]
 	} else {
 		return nls.locs[endIdx] + 1
 	}
@@ -538,7 +532,7 @@ func (nls newlines) getLines(data []byte, low, high int) []byte {
 	}
 
 	lowStart := nls.lineStart(low)
-	highEnd := nls.lineEnd(high-1, false)
+	highEnd := nls.lineEnd(high - 1)
 
 	return data[lowStart:highEnd]
 }

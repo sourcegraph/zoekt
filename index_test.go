@@ -202,7 +202,7 @@ func (s *memSeeker) Size() (uint32, error) {
 func TestNewlines(t *testing.T) {
 	b := testIndexBuilder(t, nil,
 		Document{Name: "filename", Content: []byte("line1\nline2\nbla")})
-	// ---------------------------------------------012345-678901-234
+	// -------------------------------------------012345-678901-234
 
 	t.Run("LineMatches", func(t *testing.T) {
 		sres := searchForTest(t, b, &query.Substring{Pattern: "ne2"})
@@ -216,15 +216,15 @@ func TestNewlines(t *testing.T) {
 					LineOffset:  2,
 					MatchLength: 3,
 				}},
-				Line:       []byte("line2"),
+				Line:       []byte("line2\n"),
 				LineStart:  6,
-				LineEnd:    11,
+				LineEnd:    12,
 				LineNumber: 2,
 			}},
 		}}
 
-		if !reflect.DeepEqual(matches, want) {
-			t.Errorf("got %v, want %v", matches, want)
+		if diff := cmp.Diff(matches, want); diff != "" {
+			t.Fatal(diff)
 		}
 	})
 
@@ -269,7 +269,7 @@ func TestQueryNewlines(t *testing.T) {
 		}
 		m := matches[0]
 		if len(m.LineMatches) != 2 {
-			t.Fatalf("got %d line matches, want exactly two", len(m.LineMatches))
+			t.Fatalf("got %d line matches, want exactly two %#v", len(m.LineMatches), m.LineMatches)
 		}
 	})
 

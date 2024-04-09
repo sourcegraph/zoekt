@@ -700,7 +700,7 @@ func (t *andLineMatchTree) matches(cp *contentProvider, cost int, known map[matc
 		}
 		prev = line
 		byteStart := int(cp.newlines().lineStart(line))
-		byteEnd := int(cp.newlines().lineEnd(line, false))
+		byteEnd := int(cp.newlines().lineEnd(line))
 		lines = append(lines, lineRange{byteStart, byteEnd})
 	}
 
