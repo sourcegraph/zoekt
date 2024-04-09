@@ -407,7 +407,7 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 		startOffset := m.byteOffset
 		endOffset := m.byteOffset + m.byteMatchSz
 		firstLine := newlines.atOffset(startOffset)
-		lastLine := newlines.atOffset(endOffset - 1)
+		lastLine := newlines.atOffset(max(startOffset, endOffset-1))
 
 		if len(chunks) > 0 && int(chunks[len(chunks)-1].lastLine)+numContextLines >= firstLine-numContextLines {
 			// If a new chunk created with the current candidateMatch would
@@ -478,16 +478,11 @@ type newlines struct {
 }
 
 // atOffset returns the line containing the offset. If the offset lands on
-// the newline ending line M, we return M.  The line is characterized
-// by its linenumber (base-1, byte index of line start, byte index of
-// line end). The line end is the index of a newline, or the filesize
-// (if matching the last line of the file.)
+// the newline ending line M, we return M.
 func (nls newlines) atOffset(offset uint32) (lineNumber int) {
 	idx := sort.Search(len(nls.locs), func(n int) bool {
 		return nls.locs[n] >= offset
 	})
-
-	// TODO: make sure this makes sense not including the newline
 	return idx + 1
 }
 
