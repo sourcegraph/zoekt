@@ -526,13 +526,16 @@ func TestIndexDeltaBasic(t *testing.T) {
 			repositoryDir := t.TempDir()
 
 			// setup: initialize the repository and all of its branches
-			runScript(t, repositoryDir, "git init -b master")
-			runScript(t, repositoryDir, fmt.Sprintf("git config user.email %q", "you@example.com"))
-			runScript(t, repositoryDir, fmt.Sprintf("git config user.name %q", "Your Name"))
+			runGitScript := func(t *testing.T, dir, script string) {
+				runScript(t, dir, script, "GIT_CONFIG_GLOBAL=", "GIT_CONFIG_SYSTEM=")
+			}
+			runGitScript(t, repositoryDir, "git init -b master")
+			runGitScript(t, repositoryDir, fmt.Sprintf("git config user.email %q", "you@example.com"))
+			runGitScript(t, repositoryDir, fmt.Sprintf("git config user.name %q", "Your Name"))
 
 			for _, b := range test.branches {
-				runScript(t, repositoryDir, fmt.Sprintf("git checkout -b %q", b))
-				runScript(t, repositoryDir, fmt.Sprintf("git commit --allow-empty -m %q", "empty commit"))
+				runGitScript(t, repositoryDir, fmt.Sprintf("git checkout -b %q", b))
+				runGitScript(t, repositoryDir, fmt.Sprintf("git commit --allow-empty -m %q", "empty commit"))
 			}
 
 			for _, step := range test.steps {
@@ -542,7 +545,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 
 						hadChange := false
 
-						runScript(t, repositoryDir, fmt.Sprintf("git checkout %q", b))
+						runGitScript(t, repositoryDir, fmt.Sprintf("git checkout %q", b))
 
 						for _, d := range step.deletedDocuments[b] {
 							hadChange = true
@@ -554,7 +557,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 								t.Fatalf("deleting file %q: %s", d.Name, err)
 							}
 
-							runScript(t, repositoryDir, fmt.Sprintf("git add %q", file))
+							runGitScript(t, repositoryDir, fmt.Sprintf("git add %q", file))
 						}
 
 						for _, d := range step.addedDocuments[b] {
@@ -572,14 +575,14 @@ func TestIndexDeltaBasic(t *testing.T) {
 								t.Fatalf("writing file %q: %s", d.Name, err)
 							}
 
-							runScript(t, repositoryDir, fmt.Sprintf("git add %q", file))
+							runGitScript(t, repositoryDir, fmt.Sprintf("git add %q", file))
 						}
 
 						if !hadChange {
 							continue
 						}
 
-						runScript(t, repositoryDir, fmt.Sprintf("git commit -m %q", step.name))
+						runGitScript(t, repositoryDir, fmt.Sprintf("git commit -m %q", step.name))
 					}
 
 					// setup: prepare indexOptions with given overrides
@@ -752,7 +755,7 @@ func TestRepoPathRanks(t *testing.T) {
 	}
 }
 
-func runScript(t *testing.T, cwd string, script string) {
+func runScript(t *testing.T, cwd string, script string, env ...string) {
 	err := os.MkdirAll(cwd, 0o755)
 	if err != nil {
 		t.Fatalf("ensuring path %q exists: %s", cwd, err)
@@ -760,6 +763,7 @@ func runScript(t *testing.T, cwd string, script string) {
 
 	cmd := exec.Command("sh", "-euxc", script)
 	cmd.Dir = cwd
+	cmd.Env = env
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("execution error: %v, output %s", err, out)
