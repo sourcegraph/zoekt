@@ -114,6 +114,9 @@ func TestParseQuery(t *testing.T) {
 		{"type:file abc def", &Type{Type: TypeFileName, Child: NewAnd(&Substring{Pattern: "abc"}, &Substring{Pattern: "def"})}},
 		{"(type:repo abc) def", NewAnd(&Type{Type: TypeRepo, Child: &Substring{Pattern: "abc"}}, &Substring{Pattern: "def"})},
 
+		// own
+		{"foo own:cezary", NewAnd(&Substring{Pattern: "foo"}, &Own{SearchTerm: "cezary"})},
+
 		// errors.
 		{"--", nil},
 		{"\"abc", nil},

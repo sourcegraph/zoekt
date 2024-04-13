@@ -512,6 +512,26 @@ func (q *GobCache) String() string {
 	return fmt.Sprintf("GobCache(%s)", q.Q)
 }
 
+// Own searches ownership. The fields are mutually exclusive.
+type Own struct {
+	SearchTerm string
+	NoOwner    bool
+	AnyOwner   bool
+}
+
+func (q *Own) String() string {
+	if q.SearchTerm != "" {
+		return fmt.Sprintf("(own %q)", q.SearchTerm)
+	}
+	if q.NoOwner {
+		return "(own none)"
+	}
+	if q.AnyOwner {
+		return "(own any)"
+	}
+	return "(own malformed)"
+}
+
 // Or is matched when any of its children is matched.
 type Or struct {
 	Children []Q

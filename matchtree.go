@@ -1140,6 +1140,21 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 			},
 		}, nil
 
+	case *query.Own:
+		var compiled []func([]byte) bool
+		for _, o := range d.own {
+			compiled = append(compiled, o.CompileForAuthor(s.SearchTerm))
+		}
+
+		return &docMatchTree{
+			reason:  "Own",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				fileName := d.fileName(docID)
+				return compiled[d.repos[docID]](fileName)
+			},
+		}, nil
+
 	case *query.BranchesRepos:
 		reposBranchesWant := make([]uint64, len(d.repoMetaData))
 		for repoIdx := range d.repoMetaData {
