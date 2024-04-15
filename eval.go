@@ -309,22 +309,7 @@ nextFileMatch:
 		// non-overlapping. gatherMatches respects this invariant and all later
 		// transformations respect this.
 		shouldMergeMatches := !opts.ChunkMatches
-		finalCands := gatherMatches(mt, known, shouldMergeMatches)
-
-		if len(finalCands) == 0 {
-			nm := d.fileName(nextDoc)
-			finalCands = append(finalCands,
-				&candidateMatch{
-					caseSensitive: false,
-					fileName:      true,
-					substrBytes:   nm,
-					substrLowered: nm,
-					file:          nextDoc,
-					runeOffset:    0,
-					byteOffset:    0,
-					byteMatchSz:   uint32(len(nm)),
-				})
-		}
+		finalCands := d.gatherMatches(nextDoc, mt, known, shouldMergeMatches)
 
 		if opts.ChunkMatches {
 			fileMatch.ChunkMatches = cp.fillChunkMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
@@ -364,10 +349,6 @@ nextFileMatch:
 		res.Stats.FileCount++
 	}
 
-	// We do not sort Files here, instead we rely on the shards pkg to do file
-	// ranking. If we sorted now, we would break the assumption that results
-	// from the same repo in a shard appear next to each other.
-
 	for _, md := range d.repoMetaData {
 		r := md
 		addRepo(&res, &r)
@@ -401,27 +382,6 @@ func addRepo(res *SearchResult, repo *Repository) {
 	res.LineFragments[repo.Name] = repo.LineFragmentTemplate
 }
 
-type sortByOffsetSlice []*candidateMatch
-
-func (m sortByOffsetSlice) Len() int      { return len(m) }
-func (m sortByOffsetSlice) Swap(i, j int) { m[i], m[j] = m[j], m[i] }
-func (m sortByOffsetSlice) Less(i, j int) bool {
-	if m[i].byteOffset == m[j].byteOffset { // tie break if same offset
-		// Prefer longer candidates if starting at same position
-		return m[i].byteMatchSz > m[j].byteMatchSz
-	}
-	return m[i].byteOffset < m[j].byteOffset
-}
-
-// setScoreWeight is a helper used by gatherMatches to set the weight based on
-// the score weight of the matchTree.
-func setScoreWeight(scoreWeight float64, cm []*candidateMatch) []*candidateMatch {
-	for _, m := range cm {
-		m.scoreWeight = scoreWeight
-	}
-	return cm
-}
-
 // Gather matches from this document. This never returns a mixture of
 // filename/content matches: if there are content matches, all
 // filename matches are trimmed from the result. The matches are
@@ -430,7 +390,7 @@ func setScoreWeight(scoreWeight float64, cm []*candidateMatch) []*candidateMatch
 // If `merge` is set, overlapping and adjacent matches will be merged
 // into a single match. Otherwise, overlapping matches will be removed,
 // but adjacent matches will remain.
-func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candidateMatch {
+func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchTree]bool, merge bool) []*candidateMatch {
 	var cands []*candidateMatch
 	visitMatches(mt, known, 1, func(mt matchTree, scoreWeight float64) {
 		if smt, ok := mt.(*substrMatchTree); ok {
@@ -447,6 +407,7 @@ func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candid
 		}
 	})
 
+	// If there are content matches, trim all filename matches.
 	foundContentMatch := false
 	for _, c := range cands {
 		if !c.fileName {
@@ -462,6 +423,21 @@ func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candid
 		}
 	}
 	cands = res
+
+	// If we found no candidate matches at all, assume there must have been a match on filename.
+	if len(cands) == 0 {
+		nm := d.fileName(nextDoc)
+		return []*candidateMatch{{
+			caseSensitive: false,
+			fileName:      true,
+			substrBytes:   nm,
+			substrLowered: nm,
+			file:          nextDoc,
+			runeOffset:    0,
+			byteOffset:    0,
+			byteMatchSz:   uint32(len(nm)),
+		}}
+	}
 
 	if merge {
 		// Merge adjacent candidates. This guarantees that the matches
@@ -518,8 +494,28 @@ func gatherMatches(mt matchTree, known map[matchTree]bool, merge bool) []*candid
 			res = append(res, c)
 		}
 	}
-
 	return res
+}
+
+type sortByOffsetSlice []*candidateMatch
+
+func (m sortByOffsetSlice) Len() int      { return len(m) }
+func (m sortByOffsetSlice) Swap(i, j int) { m[i], m[j] = m[j], m[i] }
+func (m sortByOffsetSlice) Less(i, j int) bool {
+	if m[i].byteOffset == m[j].byteOffset { // tie break if same offset
+		// Prefer longer candidates if starting at same position
+		return m[i].byteMatchSz > m[j].byteMatchSz
+	}
+	return m[i].byteOffset < m[j].byteOffset
+}
+
+// setScoreWeight is a helper used by gatherMatches to set the weight based on
+// the score weight of the matchTree.
+func setScoreWeight(scoreWeight float64, cm []*candidateMatch) []*candidateMatch {
+	for _, m := range cm {
+		m.scoreWeight = scoreWeight
+	}
+	return cm
 }
 
 func (d *indexData) branchIndex(docID uint32) int {
