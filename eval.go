@@ -407,23 +407,6 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 		}
 	})
 
-	// If there are content matches, trim all filename matches.
-	foundContentMatch := false
-	for _, c := range cands {
-		if !c.fileName {
-			foundContentMatch = true
-			break
-		}
-	}
-
-	res := cands[:0]
-	for _, c := range cands {
-		if !foundContentMatch || !c.fileName {
-			res = append(res, c)
-		}
-	}
-	cands = res
-
 	// If we found no candidate matches at all, assume there must have been a match on filename.
 	if len(cands) == 0 {
 		nm := d.fileName(nextDoc)
@@ -439,6 +422,7 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 		}}
 	}
 
+	res := cands[:0]
 	if merge {
 		// Merge adjacent candidates. This guarantees that the matches
 		// are non-overlapping.
@@ -450,7 +434,15 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 				res = append(res, c)
 				continue
 			}
+
 			last := res[len(res)-1]
+
+			// Never merge filename and content matches
+			if last.fileName != c.fileName {
+				res = append(res, c)
+				continue
+			}
+
 			lastEnd := last.byteOffset + last.byteMatchSz
 			end := c.byteOffset + c.byteMatchSz
 			if lastEnd >= c.byteOffset {
@@ -485,7 +477,15 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 				res = append(res, c)
 				continue
 			}
+
 			last := res[len(res)-1]
+
+			// Never merge filename and content matches
+			if last.fileName != c.fileName {
+				res = append(res, c)
+				continue
+			}
+
 			lastEnd := last.byteOffset + last.byteMatchSz
 			if lastEnd > c.byteOffset {
 				continue
@@ -502,6 +502,11 @@ type sortByOffsetSlice []*candidateMatch
 func (m sortByOffsetSlice) Len() int      { return len(m) }
 func (m sortByOffsetSlice) Swap(i, j int) { m[i], m[j] = m[j], m[i] }
 func (m sortByOffsetSlice) Less(i, j int) bool {
+	// Sort all filename matches to the start
+	if m[i].fileName != m[j].fileName {
+		return m[i].fileName
+	}
+
 	if m[i].byteOffset == m[j].byteOffset { // tie break if same offset
 		// Prefer longer candidates if starting at same position
 		return m[i].byteMatchSz > m[j].byteMatchSz

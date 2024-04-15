@@ -137,82 +137,106 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	return byteOff
 }
 
+// fillMatches converts the internal candidateMatch slice into our API's LineMatch.
+// It only ever returns content XOR filename matches, not both. If there are any
+// content matches, these are always returned, and we omit filename matches.
+//
+// Performance invariant: ms is sorted and non-overlapping.
+//
+// Note: the byte slices may be backed by mmapped data, so before being
+// returned by the API it needs to be copied.
 func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
-	var result []LineMatch
-	if ms[0].fileName {
-		score, debugScore, _ := p.candidateMatchScore(ms, language, debug)
+	var filenameMatches []*candidateMatch
+	contentMatches := ms[:0]
 
-		// There is only "line" in a filename.
-		res := LineMatch{
-			Line:     p.id.fileName(p.idx),
-			FileName: true,
-
-			Score:      score,
-			DebugScore: debugScore,
+	for _, m := range ms {
+		if m.fileName {
+			filenameMatches = append(filenameMatches, m)
+		} else {
+			contentMatches = append(contentMatches, m)
 		}
-
-		for _, m := range ms {
-			res.LineFragments = append(res.LineFragments, LineFragmentMatch{
-				LineOffset:  int(m.byteOffset),
-				MatchLength: int(m.byteMatchSz),
-				Offset:      m.byteOffset,
-			})
-
-			result = []LineMatch{res}
-		}
-	} else {
-		ms = breakMatchesOnNewlines(ms, p.data(false))
-		result = p.fillContentMatches(ms, numContextLines, language, debug)
 	}
 
-	return result
+	// If there are any content matches, we only return these and skip filename matches.
+	if len(contentMatches) > 0 {
+		contentMatches = breakMatchesOnNewlines(contentMatches, p.data(false))
+		return p.fillContentMatches(contentMatches, numContextLines, language, debug)
+	}
+
+	// Otherwise, we return a single line containing the filematch match.
+	score, debugScore, _ := p.candidateMatchScore(filenameMatches, language, debug)
+	res := LineMatch{
+		Line:       p.id.fileName(p.idx),
+		FileName:   true,
+		Score:      score,
+		DebugScore: debugScore,
+	}
+
+	for _, m := range ms {
+		res.LineFragments = append(res.LineFragments, LineFragmentMatch{
+			LineOffset:  int(m.byteOffset),
+			MatchLength: int(m.byteMatchSz),
+			Offset:      m.byteOffset,
+		})
+	}
+
+	return []LineMatch{res}
+
 }
 
-// fillChunkMatches converts the internal candidateMatch slice into our APIs ChunkMatch.
+// fillChunkMatches converts the internal candidateMatch slice into our API's ChunkMatch.
+// It only ever returns content XOR filename matches, not both. If there are any content
+// matches, these are always returned, and we omit filename matches.
 //
 // Performance invariant: ms is sorted and non-overlapping.
 //
 // Note: the byte slices may be backed by mmapped data, so before being
 // returned by the API it needs to be copied.
 func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
-	var result []ChunkMatch
-	if ms[0].fileName {
-		// If the first match is a filename match, there will only be
-		// one match and the matched content will be the filename.
+	var filenameMatches []*candidateMatch
+	contentMatches := ms[:0]
 
-		score, debugScore, _ := p.candidateMatchScore(ms, language, debug)
-
-		fileName := p.id.fileName(p.idx)
-		ranges := make([]Range, 0, len(ms))
-		for _, m := range ms {
-			ranges = append(ranges, Range{
-				Start: Location{
-					ByteOffset: m.byteOffset,
-					LineNumber: 1,
-					Column:     uint32(utf8.RuneCount(fileName[:m.byteOffset]) + 1),
-				},
-				End: Location{
-					ByteOffset: m.byteOffset + m.byteMatchSz,
-					LineNumber: 1,
-					Column:     uint32(utf8.RuneCount(fileName[:m.byteOffset+m.byteMatchSz]) + 1),
-				},
-			})
+	for _, m := range ms {
+		if m.fileName {
+			filenameMatches = append(filenameMatches, m)
+		} else {
+			contentMatches = append(contentMatches, m)
 		}
-
-		result = []ChunkMatch{{
-			Content:      fileName,
-			ContentStart: Location{ByteOffset: 0, LineNumber: 1, Column: 1},
-			Ranges:       ranges,
-			FileName:     true,
-
-			Score:      score,
-			DebugScore: debugScore,
-		}}
-	} else {
-		result = p.fillContentChunkMatches(ms, numContextLines, language, debug)
 	}
 
-	return result
+	// If there are any content matches, we only return these and skip filename matches.
+	if len(contentMatches) > 0 {
+		return p.fillContentChunkMatches(contentMatches, numContextLines, language, debug)
+	}
+
+	// Otherwise, we return a single chunk representing the filename match.
+	score, debugScore, _ := p.candidateMatchScore(filenameMatches, language, debug)
+	fileName := p.id.fileName(p.idx)
+	ranges := make([]Range, 0, len(ms))
+	for _, m := range ms {
+		ranges = append(ranges, Range{
+			Start: Location{
+				ByteOffset: m.byteOffset,
+				LineNumber: 1,
+				Column:     uint32(utf8.RuneCount(fileName[:m.byteOffset]) + 1),
+			},
+			End: Location{
+				ByteOffset: m.byteOffset + m.byteMatchSz,
+				LineNumber: 1,
+				Column:     uint32(utf8.RuneCount(fileName[:m.byteOffset+m.byteMatchSz]) + 1),
+			},
+		})
+	}
+
+	return []ChunkMatch{{
+		Content:      fileName,
+		ContentStart: Location{ByteOffset: 0, LineNumber: 1, Column: 1},
+		Ranges:       ranges,
+		FileName:     true,
+
+		Score:      score,
+		DebugScore: debugScore,
+	}}
 }
 
 func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {

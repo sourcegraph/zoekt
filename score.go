@@ -119,6 +119,9 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 // algorithm for keyword search: https://en.wikipedia.org/wiki/Okapi_BM25. It implements all parts of the formula
 // except inverse document frequency (idf), since we don't have access to global term frequency statistics.
 //
+// Filename matches count twice as much as content matches. This mimics a common text search strategy where you
+// 'boost' matches on document titles.
+//
 // This scoring strategy ignores all other signals including document ranks. This keeps things simple for now,
 // since BM25 is not normalized and can be tricky to combine with other scoring signals.
 func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands []*candidateMatch, opts *SearchOptions) {
@@ -127,7 +130,12 @@ func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands [
 	termFreqs := map[string]int{}
 	for _, cand := range cands {
 		term := string(cand.substrLowered)
-		termFreqs[term]++
+
+		if cand.fileName {
+			termFreqs[term] += 2
+		} else {
+			termFreqs[term]++
+		}
 	}
 
 	// Compute the file length ratio. Usually the calculation would be based on terms, but using
