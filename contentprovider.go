@@ -535,23 +535,6 @@ const (
 	scoreLineOrderFactor = 1.0
 )
 
-// findSection checks whether a section defined by offset and size lies within
-// one of the sections in secs.
-func findSection(secs []DocumentSection, off, sz uint32) (uint32, bool) {
-	j := sort.Search(len(secs), func(i int) bool {
-		return secs[i].End >= off+sz
-	})
-
-	if j == len(secs) {
-		return 0, false
-	}
-
-	if secs[j].Start <= off && off+sz <= secs[j].End {
-		return uint32(j), true
-	}
-	return 0, false
-}
-
 // findMaxOverlappingSection returns the index of the section in secs that
 // overlaps the most with the area defined by off and sz, relative to the size
 // of the section. If no section overlaps, it returns 0, false. If multiple
