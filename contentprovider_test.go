@@ -137,7 +137,7 @@ func TestAtOffset(t *testing.T) {
 			if gotLineStart := nls.lineStart(gotLineNumber); gotLineStart != tt.lineStart {
 				t.Fatalf("expected line start %d, got %d", tt.lineStart, gotLineStart)
 			}
-			if gotLineEnd := nls.lineEnd(gotLineNumber); gotLineEnd != tt.lineEnd {
+			if gotLineEnd := nls.lineStart(gotLineNumber + 1); gotLineEnd != tt.lineEnd {
 				t.Fatalf("expected line end %d, got %d", tt.lineEnd, gotLineEnd)
 			}
 		})
@@ -191,7 +191,7 @@ func TestLineBounds(t *testing.T) {
 			if gotStart != tt.start {
 				t.Fatalf("expected line start %d, got %d", tt.start, gotStart)
 			}
-			gotEnd := nls.lineEnd(tt.lineNumber)
+			gotEnd := nls.lineStart(tt.lineNumber + 1)
 			if gotEnd != tt.end {
 				t.Fatalf("expected line end %d, got %d", tt.end, gotEnd)
 			}
