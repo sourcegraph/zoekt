@@ -143,6 +143,11 @@ func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands [
 	fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
 	numFiles := len(d.boundaries)
 	averageFileLength := float64(d.boundaries[numFiles-1]) / float64(numFiles)
+
+	// This is very unlikely, but explicitly guard against division by zero.
+	if averageFileLength == 0 {
+		averageFileLength++
+	}
 	L := fileLength / averageFileLength
 
 	// Use standard parameter defaults (used in Lucene and academic papers)

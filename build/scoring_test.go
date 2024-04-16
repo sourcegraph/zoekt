@@ -60,7 +60,43 @@ func TestFileNameMatch(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		checkScoring(t, c, ctags.UniversalCTags)
+		checkScoring(t, c, false, ctags.UniversalCTags)
+	}
+}
+
+func TestBM25(t *testing.T) {
+	exampleJava, err := os.ReadFile("./testdata/example.java")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []scoreCase{
+		{
+			fileName: "example.java",
+			query:    &query.Substring{Pattern: "example"},
+			content:  exampleJava,
+			language: "Java",
+			// keyword-score:1.63 (sum-tf: 6.00, length-ratio: 2.00)
+			wantScore: 1.629,
+		}, {
+			fileName: "example.java",
+			query:    &query.Substring{Pattern: "java"},
+			content:  exampleJava,
+			language: "Java",
+			// keyword-score:1.07 (sum-tf: 2.00, length-ratio: 2.00)
+			wantScore: 1.073,
+		},
+		{
+			fileName: "a/b/c/config.go",
+			query:    &query.Substring{Pattern: "config.go"},
+			language: "Go",
+			// keyword-score:1.91 (sum-tf: 2.00, length-ratio: 0.00)
+			wantScore: 1.913,
+		},
+	}
+
+	for _, c := range cases {
+		checkScoring(t, c, true, ctags.UniversalCTags)
 	}
 }
 
@@ -197,7 +233,7 @@ func TestJava(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		checkScoring(t, c, ctags.UniversalCTags)
+		checkScoring(t, c, false, ctags.UniversalCTags)
 	}
 }
 
@@ -261,7 +297,7 @@ func TestKotlin(t *testing.T) {
 	parserType := ctags.UniversalCTags
 	for _, c := range cases {
 		t.Run(c.language, func(t *testing.T) {
-			checkScoring(t, c, parserType)
+			checkScoring(t, c, false, parserType)
 		})
 	}
 }
@@ -318,7 +354,7 @@ func TestCpp(t *testing.T) {
 	parserType := ctags.UniversalCTags
 	for _, c := range cases {
 		t.Run(c.language, func(t *testing.T) {
-			checkScoring(t, c, parserType)
+			checkScoring(t, c, false, parserType)
 		})
 	}
 }
@@ -350,7 +386,7 @@ func TestPython(t *testing.T) {
 
 	for _, parserType := range []ctags.CTagsParserType{ctags.UniversalCTags, ctags.ScipCTags} {
 		for _, c := range cases {
-			checkScoring(t, c, parserType)
+			checkScoring(t, c, false, parserType)
 		}
 	}
 
@@ -364,7 +400,7 @@ func TestPython(t *testing.T) {
 		wantScore: 7860,
 	}
 
-	checkScoring(t, scipOnlyCase, ctags.ScipCTags)
+	checkScoring(t, scipOnlyCase, false, ctags.ScipCTags)
 }
 
 func TestRuby(t *testing.T) {
@@ -402,7 +438,7 @@ func TestRuby(t *testing.T) {
 
 	for _, parserType := range []ctags.CTagsParserType{ctags.UniversalCTags, ctags.ScipCTags} {
 		for _, c := range cases {
-			checkScoring(t, c, parserType)
+			checkScoring(t, c, false, parserType)
 		}
 	}
 }
@@ -450,7 +486,7 @@ func TestScala(t *testing.T) {
 
 	parserType := ctags.UniversalCTags
 	for _, c := range cases {
-		checkScoring(t, c, parserType)
+		checkScoring(t, c, false, parserType)
 	}
 }
 
@@ -509,7 +545,7 @@ func Get() {
 
 	for _, parserType := range []ctags.CTagsParserType{ctags.UniversalCTags, ctags.ScipCTags} {
 		for _, c := range cases {
-			checkScoring(t, c, parserType)
+			checkScoring(t, c, false, parserType)
 		}
 	}
 }
@@ -532,7 +568,7 @@ func skipIfCTagsUnavailable(t *testing.T, parserType ctags.CTagsParserType) {
 	}
 }
 
-func checkScoring(t *testing.T, c scoreCase, parserType ctags.CTagsParserType) {
+func checkScoring(t *testing.T, c scoreCase, keywordScoring bool, parserType ctags.CTagsParserType) {
 	skipIfCTagsUnavailable(t, parserType)
 
 	name := c.language
@@ -572,7 +608,7 @@ func checkScoring(t *testing.T, c scoreCase, parserType ctags.CTagsParserType) {
 		}
 		defer ss.Close()
 
-		srs, err := ss.Search(context.Background(), c.query, &zoekt.SearchOptions{DebugScore: true})
+		srs, err := ss.Search(context.Background(), c.query, &zoekt.SearchOptions{UseKeywordScoring: keywordScoring, DebugScore: true})
 		if err != nil {
 			t.Fatal(err)
 		}
