@@ -21,7 +21,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"flag"
 	"fmt"
 	"html/template"
 	"io"
@@ -42,6 +41,7 @@ import (
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/sourcegraph/mountinfo"
 	zoektgrpc "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server"
+	"github.com/sourcegraph/zoekt/cmd/zoekt-webserver/webserver"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
@@ -51,7 +51,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/debugserver"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tracer"
@@ -135,35 +134,15 @@ func writeTemplates(dir string) error {
 }
 
 func main() {
-	logDir := flag.String("log_dir", "", "log to this directory rather than stderr.")
-	logRefresh := flag.Duration("log_refresh", 24*time.Hour, "if using --log_dir, start writing a new file this often.")
+	options := webserver.ParseFlags()
 
-	listen := flag.String("listen", ":6070", "listen on this address.")
-	index := flag.String("index", build.DefaultDir, "set index directory to use")
-	html := flag.Bool("html", true, "enable HTML interface")
-	enableRPC := flag.Bool("rpc", false, "enable go/net RPC")
-	enableIndexserverProxy := flag.Bool("indexserver_proxy", false, "proxy requests with URLs matching the path /indexserver/ to <index>/indexserver.sock")
-	print := flag.Bool("print", false, "enable local result URLs")
-	enablePprof := flag.Bool("pprof", false, "set to enable remote profiling.")
-	sslCert := flag.String("ssl_cert", "", "set path to SSL .pem holding certificate.")
-	sslKey := flag.String("ssl_key", "", "set path to SSL .pem holding key.")
-	hostCustomization := flag.String(
-		"host_customization", "",
-		"specify host customization, as HOST1=QUERY,HOST2=QUERY")
-
-	templateDir := flag.String("template_dir", "", "set directory from which to load custom .html.tpl template files")
-	dumpTemplates := flag.Bool("dump_templates", false, "dump templates into --template_dir and exit.")
-	version := flag.Bool("version", false, "Print version number")
-
-	flag.Parse()
-
-	if *version {
+	if options.Version {
 		fmt.Printf("zoekt-webserver version %q\n", zoekt.Version)
 		os.Exit(0)
 	}
 
-	if *dumpTemplates {
-		if err := writeTemplates(*templateDir); err != nil {
+	if options.DumpTemplates {
+		if err := writeTemplates(options.TemplateDir); err != nil {
 			log.Fatal(err)
 		}
 		os.Exit(0)
@@ -180,38 +159,38 @@ func main() {
 	tracer.Init(resource)
 	profiler.Init("zoekt-webserver", zoekt.Version, -1)
 
-	if *logDir != "" {
-		if fi, err := os.Lstat(*logDir); err != nil || !fi.IsDir() {
-			log.Fatalf("%s is not a directory", *logDir)
+	if options.LogDir != "" {
+		if fi, err := os.Lstat(options.LogDir); err != nil || !fi.IsDir() {
+			log.Fatalf("%s is not a directory", options.LogDir)
 		}
 		// We could do fdup acrobatics to also redirect
 		// stderr, but it is simpler and more portable for the
 		// caller to divert stderr output if necessary.
-		go divertLogs(*logDir, *logRefresh)
+		go divertLogs(options.LogDir, options.LogRefresh)
 	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
 
-	if err := os.MkdirAll(*index, 0o755); err != nil {
+	if err := os.MkdirAll(options.Index, 0o755); err != nil {
 		log.Fatal(err)
 	}
 
-	mustRegisterDiskMonitor(*index)
+	mustRegisterDiskMonitor(options.Index)
 
 	metricsLogger := sglog.Scoped("metricsRegistration")
 
 	mustRegisterMemoryMapMetrics(metricsLogger)
 
 	opts := mountinfo.CollectorOpts{Namespace: "zoekt_webserver"}
-	c := mountinfo.NewCollector(metricsLogger, opts, map[string]string{"indexDir": *index})
+	c := mountinfo.NewCollector(metricsLogger, opts, map[string]string{"indexDir": options.Index})
 
 	prometheus.DefaultRegisterer.MustRegister(c)
 
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the
 	// order of minutes.
-	searcher, err := shards.NewDirectorySearcherFast(*index)
+	searcher, err := shards.NewDirectorySearcherFast(options.Index)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -227,19 +206,19 @@ func main() {
 		Version:  zoekt.Version,
 	}
 
-	if *templateDir != "" {
-		if err := loadTemplates(s.Top, *templateDir); err != nil {
+	if options.TemplateDir != "" {
+		if err := loadTemplates(s.Top, options.TemplateDir); err != nil {
 			log.Fatalf("loadTemplates: %v", err)
 		}
 	}
 
-	s.Print = *print
-	s.HTML = *html
-	s.RPC = *enableRPC
+	s.Print = options.Print
+	s.HTML = options.HTML
+	s.RPC = options.EnableRPC
 
-	if *hostCustomization != "" {
+	if options.HostCustomization != "" {
 		s.HostCustomQueries = map[string]string{}
-		for _, h := range strings.SplitN(*hostCustomization, ",", -1) {
+		for _, h := range strings.SplitN(options.HostCustomization, ",", -1) {
 			if len(h) == 0 {
 				continue
 			}
@@ -257,10 +236,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	debugserver.AddHandlers(serveMux, *enablePprof)
+	debugserver.AddHandlers(serveMux, options.EnablePprof)
 
-	if *enableIndexserverProxy {
-		socket := filepath.Join(*index, "indexserver.sock")
+	if options.EnableIndexserverProxy {
+		socket := filepath.Join(options.Index, "indexserver.sock")
 		sglog.Scoped("server").Info("adding reverse proxy", sglog.String("socket", socket))
 		addProxyHandler(serveMux, socket)
 	}
@@ -281,9 +260,9 @@ func main() {
 		log.Printf("custom ZOEKT_WATCHDOG_ERRORS=%d", watchdogErrCount)
 	}
 
-	watchdogAddr := "http://" + *listen
-	if *sslCert != "" || *sslKey != "" {
-		watchdogAddr = "https://" + *listen
+	watchdogAddr := "http://" + options.Listen
+	if options.SslCert != "" || options.SslKey != "" {
+		watchdogAddr = "https://" + options.Listen
 	}
 	watchdogAddr += "/healthz"
 
@@ -301,15 +280,15 @@ func main() {
 	handler = multiplexGRPC(grpcServer, handler)
 
 	srv := &http.Server{
-		Addr:    *listen,
+		Addr:    options.Listen,
 		Handler: handler,
 	}
 
 	go func() {
-		sglog.Scoped("server").Info("starting server", sglog.Stringp("address", listen))
+		sglog.Scoped("server").Info("starting server", sglog.Stringp("address", &options.Listen))
 		var err error
-		if *sslCert != "" || *sslKey != "" {
-			err = srv.ListenAndServeTLS(*sslCert, *sslKey)
+		if options.SslCert != "" || options.SslKey != "" {
+			err = srv.ListenAndServeTLS(options.SslCert, options.SslKey)
 		} else {
 			err = srv.ListenAndServe()
 		}
