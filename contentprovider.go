@@ -347,7 +347,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 				// We want the line of the last byte in the match, not the first byte outside of the match.
 				// For a zero-length match, endOffset-1 could be before match start, so fall back to the
 				// byte after the match (as we do for startLine), not before.
-				max(startOffset, endOffset-1),
+				max(startOffset, max(endOffset, 1)-1 /* prevent underflow */),
 			)
 
 			ranges = append(ranges, Range{
