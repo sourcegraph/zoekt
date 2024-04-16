@@ -311,7 +311,7 @@ func marshalMatches(w io.Writer, rq rankingQuery, q query.Q, files []zoekt.FileM
 		chunks, hidden := splitAtIndex(f.ChunkMatches, chunkMatchesPerFile)
 
 		for _, m := range chunks {
-			_, _ = fmt.Fprintf(w, "%d:%s%s", m.ContentStart.LineNumber, string(m.Content), addTabIfNonEmpty(m.DebugScore))
+			_, _ = fmt.Fprintf(w, "%d:%s%s\n", m.ContentStart.LineNumber, strings.TrimRight(string(m.Content), "\n"), addTabIfNonEmpty(m.DebugScore))
 		}
 
 		if len(hidden) > 0 {
