@@ -421,32 +421,30 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 		}}
 	}
 
+	sort.Sort((sortByOffsetSlice)(cands))
 	res := cands[:0]
-	if merge {
-		// Merge adjacent candidates. This guarantees that the matches
-		// are non-overlapping.
-		sort.Sort((sortByOffsetSlice)(cands))
-		res = cands[:0]
-		mergeRun := 1
-		for i, c := range cands {
-			if i == 0 {
-				res = append(res, c)
-				continue
-			}
+	mergeRun := 1
+	for i, c := range cands {
+		if i == 0 {
+			res = append(res, c)
+			continue
+		}
 
-			last := res[len(res)-1]
+		last := res[len(res)-1]
 
-			// Never merge filename and content matches
-			if last.fileName != c.fileName {
-				res = append(res, c)
-				continue
-			}
+		// Never compare filename and content matches
+		if last.fileName != c.fileName {
+			res = append(res, c)
+			continue
+		}
 
+		if merge {
+			// Merge adjacent candidates. This guarantees that the matches
+			// are non-overlapping.
 			lastEnd := last.byteOffset + last.byteMatchSz
 			end := c.byteOffset + c.byteMatchSz
 			if lastEnd >= c.byteOffset {
 				mergeRun++
-
 				// Average out the score across the merged candidates. Only do it if
 				// we are boosting to avoid floating point funkiness in the normal
 				// case.
@@ -463,35 +461,16 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 			} else {
 				mergeRun = 1
 			}
-
-			res = append(res, c)
-		}
-	} else {
-		// Remove overlapping candidates. This guarantees that the matches
-		// are non-overlapping, but also preserves expected match counts.
-		sort.Sort((sortByOffsetSlice)(cands))
-		res = cands[:0]
-		for i, c := range cands {
-			if i == 0 {
-				res = append(res, c)
-				continue
-			}
-
-			last := res[len(res)-1]
-
-			// Never merge filename and content matches
-			if last.fileName != c.fileName {
-				res = append(res, c)
-				continue
-			}
-
+		} else {
+			// Remove overlapping candidates. This guarantees that the matches
+			// are non-overlapping, but also preserves expected match counts.
 			lastEnd := last.byteOffset + last.byteMatchSz
 			if lastEnd > c.byteOffset {
 				continue
 			}
-
-			res = append(res, c)
 		}
+
+		res = append(res, c)
 	}
 	return res
 }
