@@ -382,10 +382,9 @@ func addRepo(res *SearchResult, repo *Repository) {
 	res.LineFragments[repo.Name] = repo.LineFragmentTemplate
 }
 
-// Gather matches from this document. This never returns a mixture of
-// filename/content matches: if there are content matches, all
-// filename matches are trimmed from the result. The matches are
-// returned in document order and are non-overlapping.
+// Gather matches from this document. The matches are returned in document
+// order and are non-overlapping. All filename and content matches are
+// returned, with filename matches first.
 //
 // If `merge` is set, overlapping and adjacent matches will be merged
 // into a single match. Otherwise, overlapping matches will be removed,
@@ -407,23 +406,6 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 		}
 	})
 
-	// If there are content matches, trim all filename matches.
-	foundContentMatch := false
-	for _, c := range cands {
-		if !c.fileName {
-			foundContentMatch = true
-			break
-		}
-	}
-
-	res := cands[:0]
-	for _, c := range cands {
-		if !foundContentMatch || !c.fileName {
-			res = append(res, c)
-		}
-	}
-	cands = res
-
 	// If we found no candidate matches at all, assume there must have been a match on filename.
 	if len(cands) == 0 {
 		nm := d.fileName(nextDoc)
@@ -439,23 +421,30 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 		}}
 	}
 
-	if merge {
-		// Merge adjacent candidates. This guarantees that the matches
-		// are non-overlapping.
-		sort.Sort((sortByOffsetSlice)(cands))
-		res = cands[:0]
-		mergeRun := 1
-		for i, c := range cands {
-			if i == 0 {
-				res = append(res, c)
-				continue
-			}
-			last := res[len(res)-1]
+	sort.Sort((sortByOffsetSlice)(cands))
+	res := cands[:0]
+	mergeRun := 1
+	for i, c := range cands {
+		if i == 0 {
+			res = append(res, c)
+			continue
+		}
+
+		last := res[len(res)-1]
+
+		// Never compare filename and content matches
+		if last.fileName != c.fileName {
+			res = append(res, c)
+			continue
+		}
+
+		if merge {
+			// Merge adjacent candidates. This guarantees that the matches
+			// are non-overlapping.
 			lastEnd := last.byteOffset + last.byteMatchSz
 			end := c.byteOffset + c.byteMatchSz
 			if lastEnd >= c.byteOffset {
 				mergeRun++
-
 				// Average out the score across the merged candidates. Only do it if
 				// we are boosting to avoid floating point funkiness in the normal
 				// case.
@@ -472,27 +461,16 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 			} else {
 				mergeRun = 1
 			}
-
-			res = append(res, c)
-		}
-	} else {
-		// Remove overlapping candidates. This guarantees that the matches
-		// are non-overlapping, but also preserves expected match counts.
-		sort.Sort((sortByOffsetSlice)(cands))
-		res = cands[:0]
-		for i, c := range cands {
-			if i == 0 {
-				res = append(res, c)
-				continue
-			}
-			last := res[len(res)-1]
+		} else {
+			// Remove overlapping candidates. This guarantees that the matches
+			// are non-overlapping, but also preserves expected match counts.
 			lastEnd := last.byteOffset + last.byteMatchSz
 			if lastEnd > c.byteOffset {
 				continue
 			}
-
-			res = append(res, c)
 		}
+
+		res = append(res, c)
 	}
 	return res
 }
@@ -502,6 +480,11 @@ type sortByOffsetSlice []*candidateMatch
 func (m sortByOffsetSlice) Len() int      { return len(m) }
 func (m sortByOffsetSlice) Swap(i, j int) { m[i], m[j] = m[j], m[i] }
 func (m sortByOffsetSlice) Less(i, j int) bool {
+	// Sort all filename matches to the start
+	if m[i].fileName != m[j].fileName {
+		return m[i].fileName
+	}
+
 	if m[i].byteOffset == m[j].byteOffset { // tie break if same offset
 		// Prefer longer candidates if starting at same position
 		return m[i].byteMatchSz > m[j].byteMatchSz
