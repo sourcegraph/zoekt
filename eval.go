@@ -382,10 +382,9 @@ func addRepo(res *SearchResult, repo *Repository) {
 	res.LineFragments[repo.Name] = repo.LineFragmentTemplate
 }
 
-// Gather matches from this document. This never returns a mixture of
-// filename/content matches: if there are content matches, all
-// filename matches are trimmed from the result. The matches are
-// returned in document order and are non-overlapping.
+// Gather matches from this document. The matches are returned in document
+// order and are non-overlapping. All filename and content matches are
+// returned, with filename matches first.
 //
 // If `merge` is set, overlapping and adjacent matches will be merged
 // into a single match. Otherwise, overlapping matches will be removed,
