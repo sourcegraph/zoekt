@@ -1,4 +1,4 @@
-FROM alpine:3.18
+FROM alpine:3.19
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
     apk add --no-cache ca-certificates bind-tools tini 'git>=2.38.5-r0' jansson && \

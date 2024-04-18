@@ -1,4 +1,4 @@
-FROM golang:1.21.4-alpine3.18 AS builder
+FROM 1.22.2-alpine3.19 AS builder
 
 RUN apk add --no-cache ca-certificates
 
@@ -13,7 +13,7 @@ COPY . ./
 ARG VERSION
 RUN go install -ldflags "-X github.com/sourcegraph/zoekt.Version=$VERSION" ./cmd/...
 
-FROM rust:alpine3.18 AS rust-builder
+FROM rust:alpine3.19 AS rust-builder
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
     apk add --no-cache git wget musl-dev>=1.1.24-r10 build-base
@@ -27,7 +27,7 @@ RUN cd sourcegraph/docker-images/syntax-highlighter && /sourcegraph/cmd/symbols/
 
 RUN cargo install --path sourcegraph/docker-images/syntax-highlighter --root /syntect_server --bin scip-ctags
 
-FROM alpine:3.18 AS zoekt
+FROM alpine:3.19 AS zoekt
 
 RUN apk update --no-cache && apk upgrade --no-cache && \
     apk add --no-cache git ca-certificates bind-tools tini jansson wget
