@@ -11,7 +11,6 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/stream"
 )
 
 func NewServer(s zoekt.Streamer) *Server {
@@ -48,7 +47,7 @@ func (s *Server) StreamSearch(req *proto.StreamSearchRequest, ss proto.Webserver
 	}
 
 	sender := gRPCChunkSender(ss)
-	sampler := stream.NewSamplingSender(sender)
+	sampler := newSamplingSender(sender)
 
 	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(request.GetOpts()), sampler)
 	if err == nil {
@@ -125,5 +124,5 @@ func gRPCChunkSender(ss proto.WebserverService_StreamSearchServer) zoekt.Sender 
 		_ = chunk.SendAll(sendFunc, result.GetFiles()...)
 	}
 
-	return stream.SenderFunc(f)
+	return zoekt.SenderFunc(f)
 }

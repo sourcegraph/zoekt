@@ -15,8 +15,6 @@
 package query
 
 import (
-	"bytes"
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -25,7 +23,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/grafana/regexp"
@@ -37,17 +34,6 @@ var _ = log.Println
 // Q is a representation for a possibly hierarchical search query.
 type Q interface {
 	String() string
-}
-
-// RPCUnwrap processes q to remove RPC specific elements from q. This is
-// needed because gob isn't flexible enough for us. This should be called by
-// RPC servers at the client/server boundary so that q works with the rest of
-// zoekt.
-func RPCUnwrap(q Q) Q {
-	if cache, ok := q.(*GobCache); ok {
-		return cache.Q
-	}
-	return q
 }
 
 // RawConfig filters repositories based on their encoded RawConfig map.
@@ -460,56 +446,6 @@ func (q *Regexp) setCase(k string) {
 	case "auto":
 		q.CaseSensitive = !q.Regexp.Equal(LowerRegexp(q.Regexp))
 	}
-}
-
-// GobCache exists so we only pay the cost of marshalling a query once when we
-// aggregate it out over all the replicas.
-//
-// Our query and eval layer do not support GobCache. Instead, at the gob
-// boundaries (RPC and Streaming) we check if the Q is a GobCache and unwrap
-// it.
-//
-// "I wish we could get rid of this code soon enough" - tomas
-type GobCache struct {
-	Q
-
-	once sync.Once
-	data []byte
-	err  error
-}
-
-// GobEncode implements gob.Encoder.
-func (q *GobCache) GobEncode() ([]byte, error) {
-	q.once.Do(func() {
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		q.err = enc.Encode(&gobWrapper{
-			WrappedQ: q.Q,
-		})
-		q.data = buf.Bytes()
-	})
-	return q.data, q.err
-}
-
-// GobDecode implements gob.Decoder.
-func (q *GobCache) GobDecode(data []byte) error {
-	dec := gob.NewDecoder(bytes.NewBuffer(data))
-	var w gobWrapper
-	err := dec.Decode(&w)
-	if err != nil {
-		return err
-	}
-	q.Q = w.WrappedQ
-	return nil
-}
-
-// gobWrapper is needed so the gob decoder works.
-type gobWrapper struct {
-	WrappedQ Q
-}
-
-func (q *GobCache) String() string {
-	return fmt.Sprintf("GobCache(%s)", q.Q)
 }
 
 // Or is matched when any of its children is matched.

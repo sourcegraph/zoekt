@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/stream"
 )
 
 var metricFinalAggregateSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -138,7 +137,7 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 		stopCollectingAndFlush(zoekt.FlushReasonFinalFlush)
 	}
 
-	return stream.SenderFunc(func(event *zoekt.SearchResult) {
+	return zoekt.SenderFunc(func(event *zoekt.SearchResult) {
 		mu.Lock()
 		if collectSender != nil {
 			collectSender.Send(event)
@@ -152,7 +151,7 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 // limitSender wraps a sender and calls cancel once the truncator has finished
 // truncating.
 func limitSender(cancel context.CancelFunc, sender zoekt.Sender, truncator zoekt.DisplayTruncator) zoekt.Sender {
-	return stream.SenderFunc(func(result *zoekt.SearchResult) {
+	return zoekt.SenderFunc(func(result *zoekt.SearchResult) {
 		var hasMore bool
 		result.Files, hasMore = truncator(result.Files)
 		if !hasMore {
@@ -163,7 +162,7 @@ func limitSender(cancel context.CancelFunc, sender zoekt.Sender, truncator zoekt
 }
 
 func copyFileSender(sender zoekt.Sender) zoekt.Sender {
-	return stream.SenderFunc(func(result *zoekt.SearchResult) {
+	return zoekt.SenderFunc(func(result *zoekt.SearchResult) {
 		copyFiles(result)
 		sender.Send(result)
 	})
