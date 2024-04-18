@@ -201,8 +201,8 @@ func (s *memSeeker) Size() (uint32, error) {
 
 func TestNewlines(t *testing.T) {
 	b := testIndexBuilder(t, nil,
+		// -----------------------------------------012345-678901-234
 		Document{Name: "filename", Content: []byte("line1\nline2\nbla")})
-	// -------------------------------------------012345-678901-234
 
 	t.Run("LineMatches", func(t *testing.T) {
 		sres := searchForTest(t, b, &query.Substring{Pattern: "ne2"})

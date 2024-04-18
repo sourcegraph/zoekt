@@ -342,13 +342,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 		for _, cm := range chunk.candidates {
 			startOffset := cm.byteOffset
 			endOffset := cm.byteOffset + cm.byteMatchSz
-			startLine := newlines.atOffset(startOffset)
-			endLine := newlines.atOffset(
-				// We want the line of the last byte in the match, not the first byte outside of the match.
-				// For a zero-length match, endOffset-1 could be before match start, so fall back to the
-				// byte after the match (as we do for startLine), not before.
-				max(startOffset, max(endOffset, 1)-1 /* prevent underflow */),
-			)
+			startLine, endLine := newlines.offsetRangeToLineRange(startOffset, endOffset)
 
 			ranges = append(ranges, Range{
 				Start: Location{
@@ -406,8 +400,7 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 	for _, m := range ms {
 		startOffset := m.byteOffset
 		endOffset := m.byteOffset + m.byteMatchSz
-		firstLine := newlines.atOffset(startOffset)
-		lastLine := newlines.atOffset(max(startOffset, endOffset-1))
+		firstLine, lastLine := newlines.offsetRangeToLineRange(startOffset, endOffset)
 
 		if len(chunks) > 0 && int(chunks[len(chunks)-1].lastLine)+numContextLines >= firstLine-numContextLines {
 			// If a new chunk created with the current candidateMatch would
@@ -500,6 +493,17 @@ func (nls newlines) lineStart(lineNumber int) uint32 {
 	} else {
 		return nls.locs[startIdx] + 1
 	}
+}
+
+// offsetRangeToLineRange returns range of lines that fully contains the given byte range.
+// The inputs are 0-based byte offsets into the file representing the (exclusive) range [startOffset, endOffset).
+// The return values are 1-based line numbers representing the (inclusive) range [startLine, endLine].
+func (nls newlines) offsetRangeToLineRange(startOffset, endOffset uint32) (startLine, endLine int) {
+	startLine = nls.atOffset(startOffset)
+	endLine = nls.atOffset(
+		max(startOffset, max(endOffset, 1)-1), // clamp endOffset and prevent underflow
+	)
+	return startLine, endLine
 }
 
 // getLines returns a slice of data containing the lines [low, high).
