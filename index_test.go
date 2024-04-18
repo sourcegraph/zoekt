@@ -3243,7 +3243,7 @@ func TestLineAnd(t *testing.T) {
 	}
 	t.Run("LineMatches", func(t *testing.T) {
 		res := searchForTest(t, b, &q)
-		wantRegexpCount := 2
+		wantRegexpCount := 1
 		if gotRegexpCount := res.RegexpsConsidered; gotRegexpCount != wantRegexpCount {
 			t.Errorf("got %d, wanted %d", gotRegexpCount, wantRegexpCount)
 		}
@@ -3254,7 +3254,7 @@ func TestLineAnd(t *testing.T) {
 
 	t.Run("ChunkMatches", func(t *testing.T) {
 		res := searchForTest(t, b, &q, chunkOpts)
-		wantRegexpCount := 2 // TODO: justify this change
+		wantRegexpCount := 1
 		if gotRegexpCount := res.RegexpsConsidered; gotRegexpCount != wantRegexpCount {
 			t.Errorf("got %d, wanted %d", gotRegexpCount, wantRegexpCount)
 		}

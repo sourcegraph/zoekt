@@ -726,12 +726,12 @@ nextLine:
 					children[j] = children[j][1:]
 					continue nextCandidate
 				}
-				if bo <= lines[i].end {
+				if bo < lines[i].end {
 					hits++
 					continue nextChild
 				}
-				// move the `lines` iterator forward until bo <= line.end
-				for i < len(lines) && bo > lines[i].end {
+				// move the `lines` iterator forward until bo < line.end
+				for i < len(lines) && bo >= lines[i].end {
 					i++
 				}
 				i--
