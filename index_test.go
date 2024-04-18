@@ -201,8 +201,8 @@ func (s *memSeeker) Size() (uint32, error) {
 
 func TestNewlines(t *testing.T) {
 	b := testIndexBuilder(t, nil,
+		// -----------------------------------------012345-678901-234
 		Document{Name: "filename", Content: []byte("line1\nline2\nbla")})
-	// ---------------------------------------------012345-678901-234
 
 	t.Run("LineMatches", func(t *testing.T) {
 		sres := searchForTest(t, b, &query.Substring{Pattern: "ne2"})
@@ -216,15 +216,15 @@ func TestNewlines(t *testing.T) {
 					LineOffset:  2,
 					MatchLength: 3,
 				}},
-				Line:       []byte("line2"),
+				Line:       []byte("line2\n"),
 				LineStart:  6,
-				LineEnd:    11,
+				LineEnd:    12,
 				LineNumber: 2,
 			}},
 		}}
 
-		if !reflect.DeepEqual(matches, want) {
-			t.Errorf("got %v, want %v", matches, want)
+		if diff := cmp.Diff(matches, want); diff != "" {
+			t.Fatal(diff)
 		}
 	})
 
@@ -235,7 +235,7 @@ func TestNewlines(t *testing.T) {
 		want := []FileMatch{{
 			FileName: "filename",
 			ChunkMatches: []ChunkMatch{{
-				Content: []byte("line2"),
+				Content: []byte("line2\n"),
 				ContentStart: Location{
 					ByteOffset: 6,
 					LineNumber: 2,
@@ -269,7 +269,7 @@ func TestQueryNewlines(t *testing.T) {
 		}
 		m := matches[0]
 		if len(m.LineMatches) != 2 {
-			t.Fatalf("got %d line matches, want exactly two", len(m.LineMatches))
+			t.Fatalf("got %d line matches, want exactly two %#v", len(m.LineMatches), m.LineMatches)
 		}
 	})
 
@@ -2452,7 +2452,7 @@ func TestIOStats(t *testing.T) {
 		res := searchForTest(t, b, q)
 
 		// 4096 (content) + 2 (overhead: newlines or doc sections)
-		if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
+		if got, want := res.Stats.ContentBytesLoaded, int64(4100); got != want {
 			t.Errorf("got content I/O %d, want %d", got, want)
 		}
 

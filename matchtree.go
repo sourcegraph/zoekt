@@ -694,11 +694,13 @@ func (t *andLineMatchTree) matches(cp *contentProvider, cost int, known map[matc
 	lines := make([]lineRange, 0, len(t.children[fewestChildren].(*substrMatchTree).current))
 	prev := -1
 	for _, candidate := range t.children[fewestChildren].(*substrMatchTree).current {
-		line, byteStart, byteEnd := cp.newlines().atOffset(candidate.byteOffset)
+		line := cp.newlines().atOffset(candidate.byteOffset)
 		if line == prev {
 			continue
 		}
 		prev = line
+		byteStart := int(cp.newlines().lineStart(line))
+		byteEnd := int(cp.newlines().lineStart(line + 1))
 		lines = append(lines, lineRange{byteStart, byteEnd})
 	}
 
@@ -724,12 +726,12 @@ nextLine:
 					children[j] = children[j][1:]
 					continue nextCandidate
 				}
-				if bo <= lines[i].end {
+				if bo < lines[i].end {
 					hits++
 					continue nextChild
 				}
-				// move the `lines` iterator forward until bo <= line.end
-				for i < len(lines) && bo > lines[i].end {
+				// move the `lines` iterator forward until bo < line.end
+				for i < len(lines) && bo >= lines[i].end {
 					i++
 				}
 				i--

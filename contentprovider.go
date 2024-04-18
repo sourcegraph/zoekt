@@ -243,7 +243,9 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 	var result []LineMatch
 	for len(ms) > 0 {
 		m := ms[0]
-		num, lineStart, lineEnd := p.newlines().atOffset(m.byteOffset)
+		num := p.newlines().atOffset(m.byteOffset)
+		lineStart := int(p.newlines().lineStart(num))
+		nextLineStart := int(p.newlines().lineStart(num + 1))
 
 		var lineCands []*candidateMatch
 
@@ -251,7 +253,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 
 		for len(ms) > 0 {
 			m := ms[0]
-			if int(m.byteOffset) <= lineEnd {
+			if int(m.byteOffset) < nextLineStart {
 				endMatch = m.byteOffset + m.byteMatchSz
 				lineCands = append(lineCands, m)
 				ms = ms[1:]
@@ -264,7 +266,7 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 			log.Panicf(
 				"%s %v infinite loop: num %d start,end %d,%d, offset %d",
 				p.id.fileName(p.idx), p.id.metaData,
-				num, lineStart, lineEnd,
+				num, lineStart, nextLineStart,
 				m.byteOffset)
 		}
 
@@ -273,22 +275,22 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 		// Due to merging matches, we may have a match that
 		// crosses a line boundary. Prevent confusion by
 		// taking lines until we pass the last match
-		for lineEnd < len(data) && endMatch > uint32(lineEnd) {
-			next := bytes.IndexByte(data[lineEnd+1:], '\n')
+		for nextLineStart < len(data) && endMatch > uint32(nextLineStart) {
+			next := bytes.IndexByte(data[nextLineStart:], '\n')
 			if next == -1 {
-				lineEnd = len(data)
+				nextLineStart = len(data)
 			} else {
 				// TODO(hanwen): test that checks "+1" part here.
-				lineEnd += next + 1
+				nextLineStart += next + 1
 			}
 		}
 
 		finalMatch := LineMatch{
 			LineStart:  lineStart,
-			LineEnd:    lineEnd,
+			LineEnd:    nextLineStart,
 			LineNumber: num,
 		}
-		finalMatch.Line = data[lineStart:lineEnd]
+		finalMatch.Line = data[lineStart:nextLineStart]
 
 		if numContextLines > 0 {
 			finalMatch.Before = p.newlines().getLines(data, num-numContextLines, num)
@@ -340,19 +342,18 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 		for _, cm := range chunk.candidates {
 			startOffset := cm.byteOffset
 			endOffset := cm.byteOffset + cm.byteMatchSz
-			startLine, startLineOffset, _ := newlines.atOffset(startOffset)
-			endLine, endLineOffset, _ := newlines.atOffset(endOffset)
+			startLine, endLine := newlines.offsetRangeToLineRange(startOffset, endOffset)
 
 			ranges = append(ranges, Range{
 				Start: Location{
 					ByteOffset: startOffset,
 					LineNumber: uint32(startLine),
-					Column:     columnHelper.get(startLineOffset, startOffset),
+					Column:     columnHelper.get(int(newlines.lineStart(startLine)), startOffset),
 				},
 				End: Location{
 					ByteOffset: endOffset,
 					LineNumber: uint32(endLine),
-					Column:     columnHelper.get(endLineOffset, endOffset),
+					Column:     columnHelper.get(int(newlines.lineStart(endLine)), endOffset),
 				},
 			})
 		}
@@ -361,7 +362,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 		if firstLineNumber < 1 {
 			firstLineNumber = 1
 		}
-		firstLineStart, _ := newlines.lineBounds(firstLineNumber)
+		firstLineStart := newlines.lineStart(firstLineNumber)
 
 		chunkMatches = append(chunkMatches, ChunkMatch{
 			Content: newlines.getLines(data, firstLineNumber, int(chunk.lastLine)+numContextLines+1),
@@ -399,8 +400,7 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines in
 	for _, m := range ms {
 		startOffset := m.byteOffset
 		endOffset := m.byteOffset + m.byteMatchSz
-		firstLine, _, _ := newlines.atOffset(startOffset)
-		lastLine, _, _ := newlines.atOffset(endOffset)
+		firstLine, lastLine := newlines.offsetRangeToLineRange(startOffset, endOffset)
 
 		if len(chunks) > 0 && int(chunks[len(chunks)-1].lastLine)+numContextLines >= firstLine-numContextLines {
 			// If a new chunk created with the current candidateMatch would
@@ -471,45 +471,39 @@ type newlines struct {
 }
 
 // atOffset returns the line containing the offset. If the offset lands on
-// the newline ending line M, we return M.  The line is characterized
-// by its linenumber (base-1, byte index of line start, byte index of
-// line end). The line end is the index of a newline, or the filesize
-// (if matching the last line of the file.)
-func (nls newlines) atOffset(offset uint32) (lineNumber, lineStart, lineEnd int) {
+// the newline ending line M, we return M.
+func (nls newlines) atOffset(offset uint32) (lineNumber int) {
 	idx := sort.Search(len(nls.locs), func(n int) bool {
 		return nls.locs[n] >= offset
 	})
-
-	start, end := nls.lineBounds(idx + 1)
-	return idx + 1, int(start), int(end)
+	return idx + 1
 }
 
-// lineBounds returns the byte offsets of the start and end of the 1-based
-// lineNumber. The end offset is exclusive and will not contain the line-ending
-// newline. If the line number is out of range of the lines in the file, start
-// and end will be clamped to [0,fileSize].
-func (nls newlines) lineBounds(lineNumber int) (start, end uint32) {
+// lineStart returns the byte offset of the beginning of the given line.
+// lineNumber is 1-based. If lineNumber is out of range of the lines in the
+// file, the return value will be clamped to [0,fileSize].
+func (nls newlines) lineStart(lineNumber int) uint32 {
 	// nls.locs[0] + 1 is the start of the 2nd line of data.
 	startIdx := lineNumber - 2
-	endIdx := lineNumber - 1
 
 	if startIdx < 0 {
-		start = 0
+		return 0
 	} else if startIdx >= len(nls.locs) {
-		start = nls.fileSize
+		return nls.fileSize
 	} else {
-		start = nls.locs[startIdx] + 1
+		return nls.locs[startIdx] + 1
 	}
+}
 
-	if endIdx < 0 {
-		end = 0
-	} else if endIdx >= len(nls.locs) {
-		end = nls.fileSize
-	} else {
-		end = nls.locs[endIdx]
-	}
-
-	return start, end
+// offsetRangeToLineRange returns range of lines that fully contains the given byte range.
+// The inputs are 0-based byte offsets into the file representing the (exclusive) range [startOffset, endOffset).
+// The return values are 1-based line numbers representing the (inclusive) range [startLine, endLine].
+func (nls newlines) offsetRangeToLineRange(startOffset, endOffset uint32) (startLine, endLine int) {
+	startLine = nls.atOffset(startOffset)
+	endLine = nls.atOffset(
+		max(startOffset, max(endOffset, 1)-1), // clamp endOffset and prevent underflow
+	)
+	return startLine, endLine
 }
 
 // getLines returns a slice of data containing the lines [low, high).
@@ -519,22 +513,7 @@ func (nls newlines) getLines(data []byte, low, high int) []byte {
 		return nil
 	}
 
-	lowStart, _ := nls.lineBounds(low)
-	_, highEnd := nls.lineBounds(high - 1)
-
-	// Drop any trailing newline. Editors do not treat a trailing newline as
-	// the start of a new line, so we should not either. lineBounds clamps to
-	// len(data) when an out-of-bounds line is requested.
-	//
-	// As an example, if we request lines 1-5 from a file with contents
-	// `one\ntwo\nthree\n`, we should return `one\ntwo\nthree` because those are
-	// the three "lines" in the file, separated by newlines.
-	if highEnd == uint32(len(data)) && bytes.HasSuffix(data, []byte{'\n'}) {
-		highEnd = highEnd - 1
-		lowStart = min(lowStart, highEnd)
-	}
-
-	return data[lowStart:highEnd]
+	return data[nls.lineStart(low):nls.lineStart(high)]
 }
 
 const (

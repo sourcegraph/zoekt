@@ -73,6 +73,9 @@ var Funcmap = template.FuncMap{
 		}
 		return fmt.Sprintf("%s...(%d bytes skipped)...", post[:limit], len(post)-limit)
 	},
+	"TrimTrailingNewline": func(s string) string {
+		return strings.TrimSuffix(s, "\n")
+	},
 }
 
 const defaultNumResults = 50

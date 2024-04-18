@@ -141,6 +141,7 @@ type ChunkMatch struct {
 	DebugScore string
 
 	// Content is a contiguous range of complete lines that fully contains Ranges.
+	// Lines will always include their terminating newline (if it exists).
 	Content []byte
 
 	// Ranges is a set of matching ranges within this chunk. Each range is relative
@@ -224,8 +225,12 @@ func (l *Location) sizeBytes() uint64 {
 // LineMatch holds the matches within a single line in a file.
 type LineMatch struct {
 	// The line in which a match was found.
-	Line       []byte
-	LineStart  int
+	Line []byte
+	// The byte offset of the first byte of the line.
+	LineStart int
+	// The byte offset of the first byte past the end of the line.
+	// This is usually the byte after the terminating newline, but can also be
+	// the end of the file if there is no terminating newline
 	LineEnd    int
 	LineNumber int
 
