@@ -50,7 +50,6 @@ func QToProto(q Q) *proto.Q {
 		return &proto.Q{Query: &proto.Q_Boost{Boost: v.ToProto()}}
 	default:
 		// The following nodes do not have a proto representation:
-		// - GobCache: only needed for Gob encoding
 		// - caseQ: only used internally, not by the RPC layer
 		panic(fmt.Sprintf("unknown query node %T", v))
 	}

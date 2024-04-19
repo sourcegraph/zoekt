@@ -37,7 +37,6 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/stream"
 )
 
 type crashSearcher struct{}
@@ -258,7 +257,7 @@ func TestShardedSearcher_DocumentRanking(t *testing.T) {
 	}
 
 	err := ss.StreamSearch(context.Background(), &query.Substring{Pattern: "foo"}, opts,
-		stream.SenderFunc(func(event *zoekt.SearchResult) {
+		zoekt.SenderFunc(func(event *zoekt.SearchResult) {
 			results = append(results, event)
 		}))
 	if err != nil {
@@ -1129,7 +1128,7 @@ func testShardedStreamSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, us
 	ss.replace(map[string]zoekt.Searcher{"r1": searcher})
 
 	var files []zoekt.FileMatch
-	sender := stream.SenderFunc(func(result *zoekt.SearchResult) {
+	sender := zoekt.SenderFunc(func(result *zoekt.SearchResult) {
 		files = append(files, result.Files...)
 	})
 

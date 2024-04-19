@@ -1032,6 +1032,15 @@ type Sender interface {
 	Send(*SearchResult)
 }
 
+// SenderFunc is an adapter to allow the use of ordinary functions as Sender.
+// If f is a function with the appropriate signature, SenderFunc(f) is a Sender
+// that calls f.
+type SenderFunc func(result *SearchResult)
+
+func (f SenderFunc) Send(result *SearchResult) {
+	f(result)
+}
+
 // Streamer adds the method StreamSearch to the Searcher interface.
 type Streamer interface {
 	Searcher

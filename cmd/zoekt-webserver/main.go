@@ -57,7 +57,6 @@ import (
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/shards"
-	"github.com/sourcegraph/zoekt/stream"
 	"github.com/sourcegraph/zoekt/trace"
 	"github.com/sourcegraph/zoekt/web"
 
@@ -554,7 +553,7 @@ func (s *loggedSearcher) StreamSearch(
 	var stats zoekt.Stats
 
 	metricSearchRequestsTotal.Inc()
-	err := s.Streamer.StreamSearch(ctx, q, opts, stream.SenderFunc(func(event *zoekt.SearchResult) {
+	err := s.Streamer.StreamSearch(ctx, q, opts, zoekt.SenderFunc(func(event *zoekt.SearchResult) {
 		stats.Add(event.Stats)
 		sender.Send(event)
 	}))
