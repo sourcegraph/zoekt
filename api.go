@@ -1032,15 +1032,8 @@ type SearchOptions struct {
 	// When enabled, all other scoring signals are ignored, including document ranks.
 	UseBM25Scoring bool
 
-	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
-	// a command-line flag
-	Trace bool
-
 	// If set, the search results will contain debug information for scoring.
 	DebugScore bool
-
-	// SpanContext is the opentracing span context, if it exists, from the zoekt client
-	SpanContext map[string]string
 }
 
 func (o *SearchOptions) SetDefaults() {
@@ -1104,12 +1097,7 @@ func (s *SearchOptions) String() string {
 	addBool("Whole", s.Whole)
 	addBool("ChunkMatches", s.ChunkMatches)
 	addBool("UseBM25Scoring", s.UseBM25Scoring)
-	addBool("Trace", s.Trace)
 	addBool("DebugScore", s.DebugScore)
-
-	for k, v := range s.SpanContext {
-		add("SpanContext."+k, strconv.Quote(v))
-	}
 
 	b.WriteByte('}')
 	return b.String()

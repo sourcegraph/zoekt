@@ -183,9 +183,6 @@ func TestSearchOptions_String(t *testing.T) {
 			f.SetInt(1)
 		case reflect.Float64:
 			f.SetFloat(1)
-		case reflect.Map:
-			// Only map is SpanContext
-			f.Set(reflect.ValueOf(map[string]string{"key": "value"}))
 		default:
 			t.Fatalf("add support for %s field (%s)", f.Kind(), name)
 		}

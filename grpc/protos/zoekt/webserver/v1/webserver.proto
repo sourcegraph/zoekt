@@ -44,7 +44,8 @@ message StreamSearchResponse {
 }
 
 message SearchOptions {
-  reserved 11, 12;
+  reserved 11, 12, 13;
+  reserved "trace";
 
   // Return an upper-bound estimate of eligible documents in
   // stats.ShardFilesConsidered.
@@ -104,10 +105,6 @@ message SearchOptions {
   // If true, ChunkMatches will be returned in each FileMatch rather than LineMatches
   // EXPERIMENTAL: the behavior of this flag may be changed in future versions.
   bool chunk_matches = 10;
-
-  // Trace turns on opentracing for this request if true and if the Jaeger address was provided as
-  // a command-line flag
-  bool trace = 13;
 
   // If set, the search results will contain debug information for scoring.
   bool debug_score = 14;
