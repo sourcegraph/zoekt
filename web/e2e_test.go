@@ -961,63 +961,6 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
-func TestRPC(t *testing.T) {
-	t.Skip("TODO grpc and jsonrpc")
-
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
-		Name:                 "name",
-		URL:                  "repo-url",
-		CommitURLTemplate:    "{{.Version}}",
-		FileURLTemplate:      "file-url",
-		LineFragmentTemplate: "#line",
-		Branches:             []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
-	})
-	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
-	}
-	if err := b.Add(zoekt.Document{
-		Name:    "f2",
-		Content: []byte("to carry water in the no later bla"),
-		// --------------0123456789012345678901234567890123
-		// --------------0         1         2         3
-		Branches: []string{"master"},
-	}); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-
-	s := searcherForTest(t, b)
-	srv := Server{
-		Searcher: s,
-		RPC:      true,
-		Top:      Top,
-	}
-
-	mux, err := NewMux(&srv)
-	if err != nil {
-		t.Fatalf("NewMux: %v", err)
-	}
-
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-
-	//endpoint := ts.Listener.Addr().String()
-
-	client := zoekt.Searcher(nil) // TODO grpc and jsonrpc
-
-	ctx := context.Background()
-	q := &query.Substring{Pattern: "water"}
-	opts := &zoekt.SearchOptions{ChunkMatches: true}
-	opts.SetDefaults()
-	results, err := client.Search(ctx, q, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assertResults(t, results.Files, "f2: to carry water in the no later bla")
-
-	// TODO List, StreamSearch
-}
-
 func assertResults(t *testing.T, files []zoekt.FileMatch, want string) {
 	t.Helper()
 
