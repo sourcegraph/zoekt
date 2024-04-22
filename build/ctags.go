@@ -19,18 +19,30 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ctags"
 )
 
-// Make sure all names are lowercase here, since they are normalized
-var enryLanguageMappings = map[string]string{
-	"c#": "c_sharp",
-}
+var (
+	metricCTagsFailingTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "index_ctags_failing_total",
+		Help: "Counts the total times ctags failed to parse a file.",
+	}, []string{
+		"fatal", // true|false
+	})
+
+	// Make sure all names are lowercase here, since they are normalized
+	enryLanguageMappings = map[string]string{
+		"c#": "c_sharp",
+	}
+)
 
 func normalizeLanguage(filetype string) string {
 	normalized := strings.ToLower(filetype)
@@ -72,8 +84,22 @@ func parseSymbols(todo []*zoekt.Document, languageMap ctags.LanguageMap, parserB
 		monitor.EndParsing(es)
 
 		if err != nil {
-			return err
+			var parseError *ctags.ParseError
+			if p, ok := err.(*ctags.ParseError); ok {
+				parseError = p
+			}
+
+			var fatal = parseError == nil || parseError.Fatal
+			metricCTagsFailingTotal.WithLabelValues(strconv.FormatBool(fatal)).Inc()
+
+			// Fail hard unless the error is a non-fatal parse error.
+			if fatal {
+				return err
+			} else {
+				log.Printf("ctags parsing failed (parserType: %s, file: %s): %v", ctags.ParserToString(parserType), doc.Name, err)
+			}
 		}
+
 		if len(es) == 0 {
 			continue
 		}

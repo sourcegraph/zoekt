@@ -19,7 +19,6 @@ require (
 	github.com/grafana/regexp v0.0.0-20221123153739-15dc172cd2db
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.0-rc.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0
-	github.com/keegancsmith/rpc v1.3.0
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/peterbourgon/ff/v3 v3.3.2
@@ -28,7 +27,7 @@ require (
 	github.com/prometheus/procfs v0.11.0
 	github.com/rs/xid v1.5.0
 	github.com/shirou/gopsutil/v3 v3.23.5
-	github.com/sourcegraph/go-ctags v0.0.0-20240325032535-71f1ec6e46e4
+	github.com/sourcegraph/go-ctags v0.0.0-20240422165719-1efa35c17c5f
 	github.com/sourcegraph/log v0.0.0-20231018134238-fbadff7458bb
 	github.com/sourcegraph/mountinfo v0.0.0-20240201124957-b314c0befab1
 	github.com/stretchr/testify v1.8.4

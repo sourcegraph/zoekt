@@ -253,6 +253,37 @@ func TestOverlaps(t *testing.T) {
 	}
 }
 
+func TestParseError(t *testing.T) {
+	ctagsCommand := checkCTags()
+	if ctagsCommand == "" {
+		t.Skip("universal-ctags not available")
+	}
+
+	file, err := os.ReadFile("./testdata/utf16_example.java")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bins, err := ctags.NewParserBinMap(ctagsCommand, "", ctags.LanguageMap{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	docs := []*zoekt.Document{{
+		Name: "utf16_example.java", Content: file, Language: "java",
+	}}
+
+	// Check that we don't return the error, since it's a non-fatal parse error
+	err = parseSymbols(docs, ctags.LanguageMap{}, bins)
+	if err != nil {
+		t.Fatalf("unexpected error returned: %v", err)
+	}
+
+	if len(docs[0].Symbols) != 0 {
+		t.Fatalf("unexpected symbols returned: %v", docs[0].Symbols)
+	}
+}
+
 func BenchmarkTagsToSections(b *testing.B) {
 	requireCTags(b)
 

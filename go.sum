@@ -207,8 +207,6 @@ github.com/ianlancetaylor/demangle v0.0.0-20210905161508-09a460cdf81d/go.mod h1:
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 h1:BQSFePA1RWJOlocH6Fxy8MmwDt+yVQYULKfN0RoTN8A=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99/go.mod h1:1lJo3i6rXxKeerYnT8Nvf0QmHCRC1n8sfWVwXF2Frvo=
 github.com/jung-kurt/gofpdf v1.0.3-0.20190309125859-24315acbbda5/go.mod h1:7Id9E/uU8ce6rXgefFLlgrJj/GYY22cpxn+r32jIOes=
-github.com/keegancsmith/rpc v1.3.0 h1:wGWOpjcNrZaY8GDYZJfvyxmlLljm3YQWF+p918DXtDk=
-github.com/keegancsmith/rpc v1.3.0/go.mod h1:6O2xnOGjPyvIPbvp0MdrOe5r6cu1GZ4JoTzpzDhWeo0=
 github.com/kevinburke/ssh_config v1.2.0 h1:x584FjTGwHzMwvHx18PXxbBVzfnxogHaAReU4gf13a4=
 github.com/kevinburke/ssh_config v1.2.0/go.mod h1:CT57kijsi8u/K/BOFA39wgDQJ9CxiF4nAY/ojJ6r6mM=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
@@ -291,8 +289,8 @@ github.com/shoenig/test v0.6.4/go.mod h1:byHiCGXqrVaflBLAMq/srcZIHynQPQgeyvkvXnj
 github.com/sirupsen/logrus v1.7.0/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/skeema/knownhosts v1.2.1 h1:SHWdIUa82uGZz+F+47k8SY4QhhI291cXCpopT1lK2AQ=
 github.com/skeema/knownhosts v1.2.1/go.mod h1:xYbVRSPxqBZFrdmDyMmsOs+uX1UZC3nTN3ThzgDxUwo=
-github.com/sourcegraph/go-ctags v0.0.0-20240325032535-71f1ec6e46e4 h1:jppwnpC+DT9tIiRbw21lD0drA9Jqu4X47iA4gTk4w8M=
-github.com/sourcegraph/go-ctags v0.0.0-20240325032535-71f1ec6e46e4/go.mod h1:Or1cqbhDzkbH+hlwv5iW7uCTPEMKH9u/mTUh7otRQHY=
+github.com/sourcegraph/go-ctags v0.0.0-20240422165719-1efa35c17c5f h1:t08dW5/fbRIWD9gMl+y+uYhZJsQMKr24TdWdAy1dAXM=
+github.com/sourcegraph/go-ctags v0.0.0-20240422165719-1efa35c17c5f/go.mod h1:Or1cqbhDzkbH+hlwv5iW7uCTPEMKH9u/mTUh7otRQHY=
 github.com/sourcegraph/log v0.0.0-20231018134238-fbadff7458bb h1:tHKdC+bXxxGJ0cy/R06kg6Z0zqwVGOWMx8uWsIwsaoY=
 github.com/sourcegraph/log v0.0.0-20231018134238-fbadff7458bb/go.mod h1:IDp09QkoqS8Z3CyN2RW6vXjgABkNpDbyjLIHNQwQ8P8=
 github.com/sourcegraph/mountinfo v0.0.0-20240201124957-b314c0befab1 h1:nBb4Cp27e5UH4Imc53cDcI+6WT6Hm5NR0TIguAqbjUI=

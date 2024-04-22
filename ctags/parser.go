@@ -24,6 +24,7 @@ import (
 )
 
 type Entry = goctags.Entry
+type ParseError = goctags.ParseError
 
 // CTagsParser wraps go-ctags and delegates to the right process (like universal-ctags or scip-ctags).
 // It is only safe for single-threaded use. This wrapper also enforces a timeout on parsing a single
@@ -86,7 +87,6 @@ func (lp *CTagsParser) newParserProcess(typ CTagsParserType) (goctags.Parser, er
 	opts := goctags.Options{Bin: bin}
 	parserType := ParserToString(typ)
 	if debug {
-		opts.Info = log.New(os.Stderr, "CTAGS ("+parserType+") INF: ", log.LstdFlags)
 		opts.Debug = log.New(os.Stderr, "CTAGS ("+parserType+") DBG: ", log.LstdFlags)
 	}
 	return goctags.New(opts)
