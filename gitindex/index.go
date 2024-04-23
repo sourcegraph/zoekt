@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -111,6 +112,11 @@ func FindGitRepos(dir string) ([]string, error) {
 // setTemplates fills in URL templates for known git hosting
 // sites.
 func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
+	if u.Scheme == "ssh+git" {
+		u.Scheme = "https"
+		u.User = nil
+	}
+
 	repo.URL = u.String()
 	switch typ {
 	case "gitiles":
@@ -192,6 +198,8 @@ func configLookupRemoteURL(cfg *config.Config, key string) string {
 	return rc.URLs[0]
 }
 
+var sshRelativeURLRegexp = regexp.MustCompile(`^([^@]+)@([^:]+):(.*)$`)
+
 func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	repo, err := git.PlainOpen(repoDir)
 	if err != nil {
@@ -228,6 +236,14 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 		if remoteURL == "" {
 			return nil
 		}
+		if sm := sshRelativeURLRegexp.FindStringSubmatch(remoteURL); sm != nil {
+			user := sm[1]
+			host := sm[2]
+			path := sm[3]
+
+			remoteURL = fmt.Sprintf("ssh+git://%s@%s/%s", user, host, path)
+		}
+
 		u, err := url.Parse(remoteURL)
 		if err != nil {
 			return err

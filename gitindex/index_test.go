@@ -768,3 +768,19 @@ func runScript(t *testing.T, cwd string, script string) {
 		t.Fatalf("execution error: %v, output %s", err, out)
 	}
 }
+
+func TestSetTemplate(t *testing.T) {
+	repositoryDir := t.TempDir()
+
+	// setup: initialize the repository and all of its branches
+	runScript(t, repositoryDir, "git init -b master")
+	runScript(t, repositoryDir, "git config remote.origin.url git@github.com:sourcegraph/zoekt.git")
+	desc := zoekt.Repository{}
+	if err := setTemplatesFromConfig(&desc, repositoryDir); err != nil {
+		t.Fatalf("setTemplatesFromConfig: %v", err)
+	}
+
+	if got, want := desc.FileURLTemplate, "https://github.com/sourcegraph/zoekt/blob/{{.Version}}/{{.Path}}"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
