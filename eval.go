@@ -641,7 +641,8 @@ func (d *indexData) regexpToMatchTreeRecursive(r *syntax.Regexp, minTextSize int
 	case syntax.OpLiteral:
 		s := string(r.Rune)
 		if len(s) >= minTextSize {
-			mt, err := d.newSubstringMatchTree(&query.Substring{Pattern: s, FileName: fileName, CaseSensitive: caseSensitive})
+			ignoreCase := !caseSensitive || r.Flags&syntax.FoldCase != 0
+			mt, err := d.newSubstringMatchTree(&query.Substring{Pattern: s, FileName: fileName, CaseSensitive: !ignoreCase})
 			return mt, true, !strings.Contains(s, "\n"), err
 		}
 	case syntax.OpCapture:
