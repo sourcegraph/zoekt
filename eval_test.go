@@ -59,57 +59,62 @@ func printRegexp(t *testing.T, r *syntax.Regexp, lvl int) {
 	}
 }
 
-func substrMT(pattern string) matchTree {
+func substrMT(pattern string, caseSensitive bool) matchTree {
 	d := &indexData{}
 	mt, _ := d.newSubstringMatchTree(&query.Substring{
-		Pattern: pattern,
+		Pattern:       pattern,
+		CaseSensitive: caseSensitive,
 	})
 	return mt
 }
 
 func TestRegexpParse(t *testing.T) {
 	type testcase struct {
-		in           string
-		query        matchTree
-		isEquivalent bool
+		in            string
+		query         matchTree
+		isEquivalent  bool
+		caseSensitive bool
 	}
 
 	cases := []testcase{
-		{"(foo|)bar", substrMT("bar"), false},
-		{"(foo|)", &bruteForceMatchTree{}, false},
+		{"(foo|)bar", substrMT("bar", false), false, false},
+		{"(foo|)", &bruteForceMatchTree{}, false, false},
 		{"(foo|bar)baz.*bla", &andMatchTree{[]matchTree{
 			&orMatchTree{[]matchTree{
-				substrMT("foo"),
-				substrMT("bar"),
+				substrMT("foo", false),
+				substrMT("bar", false),
 			}},
-			substrMT("baz"),
-			substrMT("bla"),
-		}}, false},
+			substrMT("baz", false),
+			substrMT("bla", false),
+		}}, false, false},
 		{
 			"^[a-z](People)+barrabas$",
 			&andMatchTree{[]matchTree{
-				substrMT("People"),
-				substrMT("barrabas"),
-			}}, false,
+				substrMT("People", false),
+				substrMT("barrabas", false),
+			}}, false, false,
 		},
-		{"foo", substrMT("foo"), true},
-		{"^foo", substrMT("foo"), false},
-		{"(foo) (bar)", &andMatchTree{[]matchTree{substrMT("foo"), substrMT("bar")}}, false},
+		{"foo", substrMT("foo", false), true, false},
+		{"foo", substrMT("foo", true), true, true},
+		{"(?i)foo", substrMT("FOO", false), true, false},
+		{"(?i)foo", substrMT("FOO", false), true, true},
+		{"^foo", substrMT("foo", false), false, false},
+		{"(foo) (bar)", &andMatchTree{[]matchTree{substrMT("foo", false), substrMT("bar", false)}}, false, false},
 		{"(thread|needle|haystack)", &orMatchTree{[]matchTree{
-			substrMT("thread"),
-			substrMT("needle"),
-			substrMT("haystack"),
-		}}, true},
+			substrMT("thread", false),
+			substrMT("needle", false),
+			substrMT("haystack", false),
+		}}, true, false},
 		{"(foo)(?-s:.)*?(bar)", &andLineMatchTree{andMatchTree{[]matchTree{
-			substrMT("foo"),
-			substrMT("bar"),
-		}}}, false},
+			substrMT("foo", false),
+			substrMT("bar", false),
+		}}}, false, false},
 		{"(foo)(?-s:.)*?[[:space:]](?-s:.)*?(bar)", &andMatchTree{[]matchTree{
-			substrMT("foo"),
-			substrMT("bar"),
-		}}, false},
-		{"(foo){2,}", substrMT("foo"), false},
-		{"(...)(...)", &bruteForceMatchTree{}, false},
+			substrMT("foo", false),
+			substrMT("bar", false),
+		}}, false, false},
+		{"(foo){2,}", substrMT("foo", false), false, false},
+		{"(...)(...)", &bruteForceMatchTree{}, false, false},
 	}
 
 	for _, c := range cases {
@@ -120,7 +125,8 @@ func TestRegexpParse(t *testing.T) {
 		}
 		d := indexData{}
 		q := query.Regexp{
-			Regexp: r,
+			Regexp:        r,
+			CaseSensitive: c.caseSensitive,
 		}
 		gotQuery, isEq, _, _ := d.regexpToMatchTreeRecursive(q.Regexp, 3, q.FileName, q.CaseSensitive)
 		if !reflect.DeepEqual(c.query, gotQuery) {
