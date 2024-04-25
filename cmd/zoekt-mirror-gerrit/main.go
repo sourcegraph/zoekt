@@ -120,10 +120,17 @@ func main() {
 		log.Fatalf("GetServerInfo: %v", err)
 	}
 
+	gitCredentialConfig := map[string]string{}
 	var projectURL string
 	for _, s := range []string{"http", "anonymous http"} {
 		if schemeInfo, ok := info.Download.Schemes[s]; ok {
 			projectURL = schemeInfo.URL
+			if s == "http" && schemeInfo.IsAuthRequired {
+				gitCredentialConfig = configureGitCredential(rootURL, projectURL, *dest)
+
+				// remove "/a/" prefix needed for API call with basic auth but not with git command → cleaner repo name
+				projectURL = strings.Replace(projectURL, "/a/${project}", "/${project}", 1)
+			}
 			break
 		}
 	}
@@ -165,9 +172,13 @@ func main() {
 		config := map[string]string{
 			"zoekt.name":           name,
 			"zoekt.gerrit-project": k,
-			"zoekt.gerrit-host":    rootURL.String(),
+			"zoekt.gerrit-host":    anonymousURL(rootURL),
 			"zoekt.archived":       marshalBool(v.State == "READ_ONLY"),
 			"zoekt.public":         marshalBool(v.State != "HIDDEN"),
+		}
+
+		for key, value := range gitCredentialConfig {
+			config[key] = value
 		}
 
 		for _, wl := range v.WebLinks {
@@ -223,4 +234,42 @@ func marshalBool(b bool) string {
 		return "1"
 	}
 	return "0"
+}
+
+func configureGitCredential(rootURL *url.URL, projectURL string, dest string) map[string]string {
+	// Abs path so that we can put it in each git repo config
+	repoDir := filepath.Join(dest, rootURL.Host)
+	gitCredentialStore, err := filepath.Abs(filepath.Join(repoDir, "credentials-store"))
+	if err != nil {
+		log.Fatalf("Absolute dest: %v", err)
+	}
+
+	// credentialValue format: scheme://login:pass@host
+	// XXX: call git credential helper commands
+	cloneURL, err := url.Parse(projectURL)
+	if err != nil {
+		log.Fatalf("url.Parse(): %v", err)
+	}
+	cloneURL.Path = ""
+	cloneURL.User = rootURL.User
+	credentialValue := cloneURL.String()
+
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		log.Fatalf("MkdirAll %s: %v", repoDir, err)
+	}
+	if err := os.WriteFile(gitCredentialStore, []byte(credentialValue), 0644); err != nil {
+		log.Fatalf("WriteFile credentials: %v", err)
+	}
+
+	return map[string]string{
+		"credential.helper": fmt.Sprintf("store --file=%s", gitCredentialStore),
+	}
+}
+
+func anonymousURL(URL *url.URL) string {
+	anonymousURL := *URL
+	if _, has := URL.User.Password(); has {
+		anonymousURL.User = nil
+	}
+	return (&anonymousURL).String()
 }
