@@ -73,9 +73,40 @@ func newLoggingClient() *http.Client {
 	}
 }
 
+type RepoFormatEnum string
+
+const (
+	WithServerHost    RepoFormatEnum = "WithServerHost"
+	WithoutServerHost RepoFormatEnum = "WithoutServerHost"
+)
+
+// Implementing flag.Value interface
+type RepoFormatEnumValue struct {
+	value *RepoFormatEnum
+}
+
+func (l *RepoFormatEnumValue) String() string {
+	return string(*l.value)
+}
+
+func (l *RepoFormatEnumValue) Set(s string) error {
+	switch s {
+	case string(WithServerHost):
+		*l.value = WithServerHost
+		return nil
+	case string(WithoutServerHost):
+		*l.value = WithoutServerHost
+		return nil
+	}
+	return fmt.Errorf("invalid RepoFormatEnum '%s'", s)
+}
+
 func main() {
 	dest := flag.String("dest", "", "destination directory")
 	namePattern := flag.String("name", "", "only clone repos whose name matches the regexp.")
+	// Default value for
+	repoFormat := WithServerHost
+	flag.Var(&RepoFormatEnumValue{&repoFormat}, "repo-name-format", "the format of the local repo name in zoekt (WithServerHost or WithoutServerHost)")
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	deleteRepos := flag.Bool("delete", false, "delete missing repos")
 	httpCrendentialsPath := flag.String("http-credentials", "", "path to a file containing http credentials stored like 'user:password'.")
@@ -162,8 +193,15 @@ func main() {
 		}
 
 		name := filepath.Join(cloneURL.Host, cloneURL.Path)
+		var zoektName string
+		switch repoFormat {
+		case WithServerHost:
+			zoektName = name
+		case WithoutServerHost:
+			zoektName = k
+		}
 		config := map[string]string{
-			"zoekt.name":           name,
+			"zoekt.name":           zoektName,
 			"zoekt.gerrit-project": k,
 			"zoekt.gerrit-host":    rootURL.String(),
 			"zoekt.archived":       marshalBool(v.State == "READ_ONLY"),
