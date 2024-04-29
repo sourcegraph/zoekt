@@ -59,11 +59,20 @@ func printRegexp(t *testing.T, r *syntax.Regexp, lvl int) {
 	}
 }
 
-func substrMT(pattern string, caseSensitive bool) matchTree {
+func caseSensitiveSubstrMT(pattern string) matchTree {
 	d := &indexData{}
 	mt, _ := d.newSubstringMatchTree(&query.Substring{
 		Pattern:       pattern,
-		CaseSensitive: caseSensitive,
+		CaseSensitive: true,
+	})
+	return mt
+}
+
+func substrMT(pattern string) matchTree {
+	d := &indexData{}
+	mt, _ := d.newSubstringMatchTree(&query.Substring{
+		Pattern:       pattern,
+		CaseSensitive: false,
 	})
 	return mt
 }
@@ -77,43 +86,43 @@ func TestRegexpParse(t *testing.T) {
 	}
 
 	cases := []testcase{
-		{"(foo|)bar", substrMT("bar", false), false, false},
+		{"(foo|)bar", substrMT("bar"), false, false},
 		{"(foo|)", &bruteForceMatchTree{}, false, false},
 		{"(foo|bar)baz.*bla", &andMatchTree{[]matchTree{
 			&orMatchTree{[]matchTree{
-				substrMT("foo", false),
-				substrMT("bar", false),
+				substrMT("foo"),
+				substrMT("bar"),
 			}},
-			substrMT("baz", false),
-			substrMT("bla", false),
+			substrMT("baz"),
+			substrMT("bla"),
 		}}, false, false},
 		{
 			"^[a-z](People)+barrabas$",
 			&andMatchTree{[]matchTree{
-				substrMT("People", false),
-				substrMT("barrabas", false),
+				substrMT("People"),
+				substrMT("barrabas"),
 			}}, false, false,
 		},
-		{"foo", substrMT("foo", false), true, false},
-		{"foo", substrMT("foo", true), true, true},
-		{"(?i)foo", substrMT("FOO", false), true, false},
-		{"(?i)foo", substrMT("FOO", false), true, true},
-		{"^foo", substrMT("foo", false), false, false},
-		{"(foo) (bar)", &andMatchTree{[]matchTree{substrMT("foo", false), substrMT("bar", false)}}, false, false},
+		{"foo", substrMT("foo"), true, false},
+		{"foo", caseSensitiveSubstrMT("foo"), true, true},
+		{"(?i)foo", substrMT("FOO"), true, false},
+		{"(?i)foo", substrMT("FOO"), true, true},
+		{"^foo", substrMT("foo"), false, false},
+		{"(foo) (bar)", &andMatchTree{[]matchTree{substrMT("foo"), substrMT("bar")}}, false, false},
 		{"(thread|needle|haystack)", &orMatchTree{[]matchTree{
-			substrMT("thread", false),
-			substrMT("needle", false),
-			substrMT("haystack", false),
+			substrMT("thread"),
+			substrMT("needle"),
+			substrMT("haystack"),
 		}}, true, false},
 		{"(foo)(?-s:.)*?(bar)", &andLineMatchTree{andMatchTree{[]matchTree{
-			substrMT("foo", false),
-			substrMT("bar", false),
+			substrMT("foo"),
+			substrMT("bar"),
 		}}}, false, false},
 		{"(foo)(?-s:.)*?[[:space:]](?-s:.)*?(bar)", &andMatchTree{[]matchTree{
-			substrMT("foo", false),
-			substrMT("bar", false),
+			substrMT("foo"),
+			substrMT("bar"),
 		}}, false, false},
-		{"(foo){2,}", substrMT("foo", false), false, false},
+		{"(foo){2,}", substrMT("foo"), false, false},
 		{"(...)(...)", &bruteForceMatchTree{}, false, false},
 	}
 
