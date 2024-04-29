@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -73,40 +74,22 @@ func newLoggingClient() *http.Client {
 	}
 }
 
-type RepoFormatEnum string
+const qualifiedRepoNameFormat = "qualified"
+const projectRepoNameFormat = "project"
 
-const (
-	WithServerHost    RepoFormatEnum = "WithServerHost"
-	WithoutServerHost RepoFormatEnum = "WithoutServerHost"
-)
+var validRepoNameFormat = []string{qualifiedRepoNameFormat, projectRepoNameFormat}
 
-// Implementing flag.Value interface
-type RepoFormatEnumValue struct {
-	value *RepoFormatEnum
-}
-
-func (l *RepoFormatEnumValue) String() string {
-	return string(*l.value)
-}
-
-func (l *RepoFormatEnumValue) Set(s string) error {
-	switch s {
-	case string(WithServerHost):
-		*l.value = WithServerHost
-		return nil
-	case string(WithoutServerHost):
-		*l.value = WithoutServerHost
-		return nil
+func validateRepoNameFormat(s string) {
+	if !slices.Contains(validRepoNameFormat, s) {
+		log.Fatal(fmt.Sprintf("repo-name-format must be one of %s", strings.Join(validRepoNameFormat, ", ")))
 	}
-	return fmt.Errorf("invalid RepoFormatEnum '%s'", s)
 }
 
 func main() {
+
 	dest := flag.String("dest", "", "destination directory")
 	namePattern := flag.String("name", "", "only clone repos whose name matches the regexp.")
-	// Default value for
-	repoFormat := WithServerHost
-	flag.Var(&RepoFormatEnumValue{&repoFormat}, "repo-name-format", "the format of the local repo name in zoekt (WithServerHost or WithoutServerHost)")
+	repoNameFormat := flag.String("repo-name-format", qualifiedRepoNameFormat, fmt.Sprintf("the format of the local repo name in zoekt (valid values: %s)", strings.Join(validRepoNameFormat, ", ")))
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	deleteRepos := flag.Bool("delete", false, "delete missing repos")
 	httpCrendentialsPath := flag.String("http-credentials", "", "path to a file containing http credentials stored like 'user:password'.")
@@ -116,6 +99,7 @@ func main() {
 	if len(flag.Args()) < 1 {
 		log.Fatal("must provide URL argument.")
 	}
+	validateRepoNameFormat(*repoNameFormat)
 
 	rootURL, err := url.Parse(flag.Arg(0))
 	if err != nil {
@@ -194,10 +178,10 @@ func main() {
 
 		name := filepath.Join(cloneURL.Host, cloneURL.Path)
 		var zoektName string
-		switch repoFormat {
-		case WithServerHost:
+		switch *repoNameFormat {
+		case qualifiedRepoNameFormat:
 			zoektName = name
-		case WithoutServerHost:
+		case projectRepoNameFormat:
 			zoektName = k
 		}
 		config := map[string]string{
