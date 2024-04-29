@@ -266,10 +266,8 @@ func configureGitCredential(rootURL *url.URL, projectURL string, dest string) ma
 	}
 }
 
-func anonymousURL(URL *url.URL) string {
-	anonymousURL := *URL
-	if _, has := URL.User.Password(); has {
-		anonymousURL.User = nil
-	}
-	return (&anonymousURL).String()
+func anonymousURL(u *url.URL) string {
+	anon := *u
+	anon.User = nil
+	return anon.String()
 }
