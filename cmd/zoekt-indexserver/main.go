@@ -129,7 +129,7 @@ func periodicFetch(repoDir, indexDir string, opts *Options, pendingRepos chan<- 
 // fetchGitRepo runs git-fetch, and returns true if there was an
 // update.
 func fetchGitRepo(dir string) bool {
-	cmd := exec.Command("git", "--git-dir", dir, "fetch", "origin")
+	cmd := exec.Command("git", "--git-dir", dir, "fetch", "origin", "--prune")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
