@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -73,9 +74,22 @@ func newLoggingClient() *http.Client {
 	}
 }
 
+const qualifiedRepoNameFormat = "qualified"
+const projectRepoNameFormat = "project"
+
+var validRepoNameFormat = []string{qualifiedRepoNameFormat, projectRepoNameFormat}
+
+func validateRepoNameFormat(s string) {
+	if !slices.Contains(validRepoNameFormat, s) {
+		log.Fatal(fmt.Sprintf("repo-name-format must be one of %s", strings.Join(validRepoNameFormat, ", ")))
+	}
+}
+
 func main() {
+
 	dest := flag.String("dest", "", "destination directory")
 	namePattern := flag.String("name", "", "only clone repos whose name matches the regexp.")
+	repoNameFormat := flag.String("repo-name-format", qualifiedRepoNameFormat, fmt.Sprintf("the format of the local repo name in zoekt (valid values: %s)", strings.Join(validRepoNameFormat, ", ")))
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	deleteRepos := flag.Bool("delete", false, "delete missing repos")
 	httpCrendentialsPath := flag.String("http-credentials", "", "path to a file containing http credentials stored like 'user:password'.")
@@ -85,6 +99,7 @@ func main() {
 	if len(flag.Args()) < 1 {
 		log.Fatal("must provide URL argument.")
 	}
+	validateRepoNameFormat(*repoNameFormat)
 
 	rootURL, err := url.Parse(flag.Arg(0))
 	if err != nil {
@@ -162,8 +177,15 @@ func main() {
 		}
 
 		name := filepath.Join(cloneURL.Host, cloneURL.Path)
+		var zoektName string
+		switch *repoNameFormat {
+		case qualifiedRepoNameFormat:
+			zoektName = name
+		case projectRepoNameFormat:
+			zoektName = k
+		}
 		config := map[string]string{
-			"zoekt.name":           name,
+			"zoekt.name":           zoektName,
 			"zoekt.gerrit-project": k,
 			"zoekt.gerrit-host":    rootURL.String(),
 			"zoekt.archived":       marshalBool(v.State == "READ_ONLY"),
