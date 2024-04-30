@@ -50,6 +50,7 @@ type ConfigEntry struct {
 	ExcludeTopics          []string
 	Active                 bool
 	NoArchived             bool
+	RepoNameFormat         string
 }
 
 func randomize(entries []ConfigEntry) []ConfigEntry {
@@ -258,6 +259,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			}
 			if c.Active {
 				cmd.Args = append(cmd.Args, "-active")
+			}
+			if c.RepoNameFormat != "" {
+				cmd.Args = append(cmd.Args, "-repo-name-format", c.RepoNameFormat)
 			}
 			cmd.Args = append(cmd.Args, c.GerritApiURL)
 		} else {
