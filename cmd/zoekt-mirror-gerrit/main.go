@@ -139,6 +139,11 @@ func main() {
 	for _, s := range []string{"http", "anonymous http"} {
 		if schemeInfo, ok := info.Download.Schemes[s]; ok {
 			projectURL = schemeInfo.URL
+			if s == "http" && schemeInfo.IsAuthRequired {
+				projectURL = addPassword(projectURL, rootURL.User)
+				// remove "/a/" prefix needed for API call with basic auth but not with git command → cleaner repo name
+				projectURL = strings.Replace(projectURL, "/a/${project}", "/${project}", 1)
+			}
 			break
 		}
 	}
@@ -187,7 +192,7 @@ func main() {
 		config := map[string]string{
 			"zoekt.name":           zoektName,
 			"zoekt.gerrit-project": k,
-			"zoekt.gerrit-host":    rootURL.String(),
+			"zoekt.gerrit-host":    anonymousURL(rootURL),
 			"zoekt.archived":       marshalBool(v.State == "READ_ONLY"),
 			"zoekt.public":         marshalBool(v.State != "HIDDEN"),
 		}
@@ -245,4 +250,16 @@ func marshalBool(b bool) string {
 		return "1"
 	}
 	return "0"
+}
+
+func anonymousURL(u *url.URL) string {
+	anon := *u
+	anon.User = nil
+	return anon.String()
+}
+
+func addPassword(u string, user *url.Userinfo) string {
+	password, _ := user.Password()
+	username := user.Username()
+	return strings.Replace(u, fmt.Sprintf("://%s@", username), fmt.Sprintf("://%s:%s@", username, password), 1)
 }
