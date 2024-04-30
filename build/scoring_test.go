@@ -77,8 +77,8 @@ func TestBM25(t *testing.T) {
 			query:    &query.Substring{Pattern: "example"},
 			content:  exampleJava,
 			language: "Java",
-			// keyword-score:1.63 (sum-tf: 6.00, length-ratio: 2.00)
-			wantScore: 1.63,
+			// keyword-score:1.69 (sum-tf: 7.00, length-ratio: 2.00)
+			wantScore: 1.69,
 		}, {
 			// Matches only on content
 			fileName: "example.java",
