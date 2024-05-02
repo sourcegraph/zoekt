@@ -38,9 +38,10 @@ type candidateMatch struct {
 	byteMatchSz uint32
 
 	// bools at end for struct field alignment
-	caseSensitive bool
-	fileName      bool
-	symbol        bool
+	caseSensitive  bool
+	fileName       bool
+	fromSymbolTree bool
+	matchesSymbol  bool
 }
 
 // Matches content against the substring, and populates byteMatchSz on success

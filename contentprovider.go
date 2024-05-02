@@ -590,7 +590,7 @@ func (p *contentProvider) findSymbol(cm *candidateMatch) (DocumentSection, *Symb
 
 	secs := p.docSections()
 
-	secIdx, ok := cm.symbolIdx, cm.symbol
+	secIdx, ok := cm.symbolIdx, cm.fromSymbolTree
 	if !ok {
 		// Not from a symbol matchTree. Let's see if it overlaps with a symbol.
 		secIdx, ok = findMaxOverlappingSection(secs, cm.byteOffset, cm.byteMatchSz)
@@ -661,6 +661,7 @@ func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language str
 				addScore("InnerBase", scorePartialBase)
 			}
 		} else if sec, si, ok := p.findSymbol(m); ok {
+			m.matchesSymbol = true // used in BM25 scoring
 			startMatch := sec.Start == m.byteOffset
 			endMatch := sec.End == endOffset
 			if startMatch && endMatch {
@@ -680,7 +681,7 @@ func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language str
 
 				// This is from a symbol tree, so we need to store the symbol
 				// information.
-				if m.symbol {
+				if m.fromSymbolTree {
 					if symbolInfo == nil {
 						symbolInfo = make([]*Symbol, len(ms))
 					}

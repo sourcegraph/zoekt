@@ -133,6 +133,8 @@ func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands [
 
 		if cand.fileName {
 			termFreqs[term] += 2
+		} else if cand.matchesSymbol {
+			termFreqs[term] += 5
 		} else {
 			termFreqs[term]++
 		}

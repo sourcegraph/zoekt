@@ -291,10 +291,10 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 		}
 
 		cm := &candidateMatch{
-			byteOffset:  sec.Start + uint32(idx[0]),
-			byteMatchSz: uint32(idx[1] - idx[0]),
-			symbol:      true,
-			symbolIdx:   uint32(i),
+			byteOffset:     sec.Start + uint32(idx[0]),
+			byteMatchSz:    uint32(idx[1] - idx[0]),
+			fromSymbolTree: true,
+			symbolIdx:      uint32(i),
 		}
 		found = append(found, cm)
 	}
@@ -361,7 +361,7 @@ func (t *symbolSubstrMatchTree) prepare(doc uint32) {
 		}
 
 		if end <= sections[secIdx].End {
-			t.current[0].symbol = true
+			t.current[0].fromSymbolTree = true
 			t.current[0].symbolIdx = uint32(secIdx)
 			trimmed = append(trimmed, t.current[0])
 		}
