@@ -64,6 +64,10 @@ func CloneRepo(destDir, name, cloneURL string, settings map[string]string) (stri
 		if err := updateZoektGitConfig(repoDest, settings); err != nil {
 			return "", fmt.Errorf("failed to update repository settings: %w", err)
 		}
+		// Ensure origin fetch URL is in sync
+		if e := exec.Command("git", "-C", repoDest, "config", "remote.origin.url", cloneURL).Run(); e != nil {
+			return "", fmt.Errorf("failed to update repository remote url: %w", err)
+		}
 		return "", nil
 	}
 
