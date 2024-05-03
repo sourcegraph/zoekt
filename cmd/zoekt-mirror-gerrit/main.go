@@ -31,6 +31,8 @@ import (
 	"strings"
 
 	gerrit "github.com/andygrunwald/go-gerrit"
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/sourcegraph/zoekt/gitindex"
 )
 
@@ -92,6 +94,7 @@ func main() {
 	repoNameFormat := flag.String("repo-name-format", qualifiedRepoNameFormat, fmt.Sprintf("the format of the local repo name in zoekt (valid values: %s)", strings.Join(validRepoNameFormat, ", ")))
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	deleteRepos := flag.Bool("delete", false, "delete missing repos")
+	fetchMetaConfig := flag.Bool("fetch-meta-config", false, "fetch gerrit meta/config branch")
 	httpCrendentialsPath := flag.String("http-credentials", "", "path to a file containing http credentials stored like 'user:password'.")
 	active := flag.Bool("active", false, "mirror only active projects")
 	flag.Parse()
@@ -216,6 +219,11 @@ func main() {
 		} else {
 			fmt.Println(dest)
 		}
+		if *fetchMetaConfig {
+			if err := addMetaConfigFetch(filepath.Join(*dest, name+".git")); err != nil {
+				log.Fatalf("addMetaConfigFetch: %v", err)
+			}
+		}
 	}
 	if *deleteRepos {
 		if err := deleteStaleRepos(*dest, filter, projects, projectURL); err != nil {
@@ -262,4 +270,29 @@ func addPassword(u string, user *url.Userinfo) string {
 	password, _ := user.Password()
 	username := user.Username()
 	return strings.Replace(u, fmt.Sprintf("://%s@", username), fmt.Sprintf("://%s:%s@", username, password), 1)
+}
+
+func addMetaConfigFetch(repoDir string) error {
+	repo, err := git.PlainOpen(repoDir)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := repo.Config()
+	if err != nil {
+		return err
+	}
+
+	rm := cfg.Remotes["origin"]
+	if rm != nil {
+		configRefSpec := config.RefSpec("+refs/meta/config:refs/heads/meta/config")
+		if !slices.Contains(rm.Fetch, configRefSpec) {
+			rm.Fetch = append(rm.Fetch, configRefSpec)
+		}
+	}
+	if err := repo.Storer.SetConfig(cfg); err != nil {
+		return err
+	}
+
+	return nil
 }
