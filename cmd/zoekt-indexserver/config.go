@@ -51,6 +51,7 @@ type ConfigEntry struct {
 	Active                 bool
 	NoArchived             bool
 	GerritFetchMetaConfig  bool
+  GerritRepoNameFormat   string
 }
 
 func randomize(entries []ConfigEntry) []ConfigEntry {
@@ -260,8 +261,11 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			if c.Active {
 				cmd.Args = append(cmd.Args, "-active")
 			}
-			if c.GerritFetchMetaConfig {
+      if c.GerritFetchMetaConfig {
 				cmd.Args = append(cmd.Args, "-fetch-meta-config")
+      }
+			if c.GerritRepoNameFormat != "" {
+				cmd.Args = append(cmd.Args, "-repo-name-format", c.GerritRepoNameFormat)
 			}
 			cmd.Args = append(cmd.Args, c.GerritApiURL)
 		} else {
