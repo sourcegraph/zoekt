@@ -285,7 +285,7 @@ func addMetaConfigFetch(repoDir string) error {
 
 	rm := cfg.Remotes["origin"]
 	if rm != nil {
-		configRefSpec := config.RefSpec("+refs/meta/config:refs/heads/meta/config")
+		configRefSpec := config.RefSpec("+refs/meta/config:refs/heads/meta-config")
 		if !slices.Contains(rm.Fetch, configRefSpec) {
 			rm.Fetch = append(rm.Fetch, configRefSpec)
 		}
