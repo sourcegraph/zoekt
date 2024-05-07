@@ -1087,7 +1087,7 @@ func TestAtomCountScore(t *testing.T) {
 	}
 }
 
-func TestUseKeywordScoring(t *testing.T) {
+func TestUseBM25Scoring(t *testing.T) {
 	b := testIndexBuilder(t,
 		&zoekt.Repository{},
 		zoekt.Document{Name: "f1", Content: []byte("one two two three")},
@@ -1103,7 +1103,7 @@ func TestUseKeywordScoring(t *testing.T) {
 		&query.Substring{Pattern: "three"})
 
 	opts := zoekt.SearchOptions{
-		UseKeywordScoring: true,
+		UseBM25Scoring: true,
 	}
 
 	results, err := ss.Search(context.Background(), q, &opts)

@@ -77,7 +77,7 @@ func TestBM25(t *testing.T) {
 			query:    &query.Substring{Pattern: "example"},
 			content:  exampleJava,
 			language: "Java",
-			// keyword-score:1.69 (sum-tf: 7.00, length-ratio: 2.00)
+			// bm25-score:1.69 (sum-tf: 7.00, length-ratio: 2.00)
 			wantScore: 1.69,
 		}, {
 			// Matches only on content
@@ -89,7 +89,7 @@ func TestBM25(t *testing.T) {
 			}},
 			content:  exampleJava,
 			language: "Java",
-			// keyword-score:5.75 (sum-tf: 56.00, length-ratio: 2.00)
+			// bm25-score:5.75 (sum-tf: 56.00, length-ratio: 2.00)
 			wantScore: 5.75,
 		},
 		{
@@ -98,7 +98,7 @@ func TestBM25(t *testing.T) {
 			query:    &query.Substring{Pattern: "java"},
 			content:  exampleJava,
 			language: "Java",
-			// keyword-score:1.07 (sum-tf: 2.00, length-ratio: 2.00)
+			// bm25-score:1.07 (sum-tf: 2.00, length-ratio: 2.00)
 			wantScore: 1.07,
 		},
 		{
@@ -106,7 +106,7 @@ func TestBM25(t *testing.T) {
 			fileName: "a/b/c/config.go",
 			query:    &query.Substring{Pattern: "config.go"},
 			language: "Go",
-			// keyword-score:1.91 (sum-tf: 2.00, length-ratio: 0.00)
+			// bm25-score:1.91 (sum-tf: 2.00, length-ratio: 0.00)
 			wantScore: 1.91,
 		},
 	}
@@ -584,7 +584,7 @@ func skipIfCTagsUnavailable(t *testing.T, parserType ctags.CTagsParserType) {
 	}
 }
 
-func checkScoring(t *testing.T, c scoreCase, keywordScoring bool, parserType ctags.CTagsParserType) {
+func checkScoring(t *testing.T, c scoreCase, useBM25 bool, parserType ctags.CTagsParserType) {
 	skipIfCTagsUnavailable(t, parserType)
 
 	name := c.language
@@ -625,9 +625,9 @@ func checkScoring(t *testing.T, c scoreCase, keywordScoring bool, parserType cta
 		defer ss.Close()
 
 		srs, err := ss.Search(context.Background(), c.query, &zoekt.SearchOptions{
-			UseKeywordScoring: keywordScoring,
-			ChunkMatches:      true,
-			DebugScore:        true})
+			UseBM25Scoring: useBM25,
+			ChunkMatches:   true,
+			DebugScore:     true})
 		if err != nil {
 			t.Fatal(err)
 		}
