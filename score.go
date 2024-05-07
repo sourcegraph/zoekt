@@ -39,9 +39,9 @@ func (m *FileMatch) addScore(what string, computed float64, raw float64, debugSc
 	m.Score += computed
 }
 
-func (m *FileMatch) addKeywordScore(score float64, sumTf float64, L float64, debugScore bool) {
+func (m *FileMatch) addBM25Score(score float64, sumTf float64, L float64, debugScore bool) {
 	if debugScore {
-		m.Debug += fmt.Sprintf("keyword-score:%.2f (sum-tf: %.2f, length-ratio: %.2f)", score, sumTf, L)
+		m.Debug += fmt.Sprintf("bm25-score:%.2f (sum-tf: %.2f, length-ratio: %.2f)", score, sumTf, L)
 	}
 	m.Score += score
 }
@@ -116,7 +116,7 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 }
 
 // scoreFileUsingBM25 computes a score for the file match using an approximation to BM25, the most common scoring
-// algorithm for keyword search: https://en.wikipedia.org/wiki/Okapi_BM25. It implements all parts of the formula
+// algorithm for text search: https://en.wikipedia.org/wiki/Okapi_BM25. It implements all parts of the formula
 // except inverse document frequency (idf), since we don't have access to global term frequency statistics.
 //
 // Filename matches count twice as much as content matches. This mimics a common text search strategy where you
@@ -160,5 +160,5 @@ func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands [
 		score += ((k + 1.0) * tf) / (k*(1.0-b+b*L) + tf)
 	}
 
-	fileMatch.addKeywordScore(score, sumTf, L, opts.DebugScore)
+	fileMatch.addBM25Score(score, sumTf, L, opts.DebugScore)
 }

@@ -317,7 +317,7 @@ nextFileMatch:
 			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
 		}
 
-		if opts.UseKeywordScoring {
+		if opts.UseBM25Scoring {
 			d.scoreFileUsingBM25(&fileMatch, nextDoc, finalCands, opts)
 		} else {
 			// Use the standard, non-experimental scoring method by default

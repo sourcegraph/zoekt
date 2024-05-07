@@ -107,10 +107,10 @@ message SearchOptions {
   // If set, the search results will contain debug information for scoring.
   bool debug_score = 14;
 
-  // EXPERIMENTAL. If true, use keyword-style scoring instead of the default scoring formula.
+  // EXPERIMENTAL. If true, use text search scoring instead of the default scoring formula.
   // Currently, this treats each match in a file as a term and computes an approximation to BM25.
   // When enabled, all other scoring signals are ignored, including document ranks.
-  bool use_keyword_scoring = 15;
+  bool use_bm25_scoring = 15;
 }
 
 message ListRequest {

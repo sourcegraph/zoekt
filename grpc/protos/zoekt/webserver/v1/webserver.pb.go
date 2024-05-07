@@ -388,10 +388,10 @@ type SearchOptions struct {
 	Trace bool `protobuf:"varint,13,opt,name=trace,proto3" json:"trace,omitempty"`
 	// If set, the search results will contain debug information for scoring.
 	DebugScore bool `protobuf:"varint,14,opt,name=debug_score,json=debugScore,proto3" json:"debug_score,omitempty"`
-	// EXPERIMENTAL. If true, use keyword-style scoring instead of the default scoring formula.
+	// EXPERIMENTAL. If true, use text search scoring instead of the default scoring formula.
 	// Currently, this treats each match in a file as a term and computes an approximation to BM25.
 	// When enabled, all other scoring signals are ignored, including document ranks.
-	UseKeywordScoring bool `protobuf:"varint,15,opt,name=use_keyword_scoring,json=useKeywordScoring,proto3" json:"use_keyword_scoring,omitempty"`
+	UseBM25Scoring bool `protobuf:"varint,15,opt,name=use_bm25_scoring,json=useBM25Scoring,proto3" json:"use_bm25_scoring,omitempty"`
 }
 
 func (x *SearchOptions) Reset() {
@@ -531,9 +531,9 @@ func (x *SearchOptions) GetDebugScore() bool {
 	return false
 }
 
-func (x *SearchOptions) GetUseKeywordScoring() bool {
+func (x *SearchOptions) GetUseBM25Scoring() bool {
 	if x != nil {
-		return x.UseKeywordScoring
+		return x.UseBM25Scoring
 	}
 	return false
 }

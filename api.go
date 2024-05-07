@@ -946,10 +946,10 @@ type SearchOptions struct {
 	// will be used. This option is temporary and is only exposed for testing/ tuning purposes.
 	DocumentRanksWeight float64
 
-	// EXPERIMENTAL. If true, use keyword-style scoring instead of the default scoring formula.
-	// Currently, this treats each match in a file as a term and computes an approximation to BM25.
-	// When enabled, all other scoring signals are ignored, including document ranks.
-	UseKeywordScoring bool
+	// EXPERIMENTAL. If true, use text-search style scoring instead of the default scoring formula.
+	// The scoring algorithm treats each match in a file as a term and computes an approximation to
+	// BM25. When enabled, all other scoring signals are ignored, including document ranks.
+	UseBM25Scoring bool
 
 	// Trace turns on opentracing for this request if true and if the Jaeger address was provided as
 	// a command-line flag
@@ -1015,7 +1015,7 @@ func (s *SearchOptions) String() string {
 	addBool("Whole", s.Whole)
 	addBool("ChunkMatches", s.ChunkMatches)
 	addBool("UseDocumentRanks", s.UseDocumentRanks)
-	addBool("UseKeywordScoring", s.UseKeywordScoring)
+	addBool("UseBM25Scoring", s.UseBM25Scoring)
 	addBool("Trace", s.Trace)
 	addBool("DebugScore", s.DebugScore)
 
