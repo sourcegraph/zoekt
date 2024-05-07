@@ -334,9 +334,6 @@ func TestProtoRoundtrip(t *testing.T) {
 
 	t.Run("SearchOptions", func(t *testing.T) {
 		f := func(f1 *SearchOptions) bool {
-			if f1 != nil {
-				f1.SpanContext = nil
-			}
 			p1 := f1.ToProto()
 			f2 := SearchOptionsFromProto(p1)
 			if diff := cmp.Diff(f1, f2); diff != "" {
