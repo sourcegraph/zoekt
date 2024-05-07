@@ -700,7 +700,7 @@ func SearchOptionsFromProto(p *proto.SearchOptions) *SearchOptions {
 		DocumentRanksWeight:    p.GetDocumentRanksWeight(),
 		Trace:                  p.GetTrace(),
 		DebugScore:             p.GetDebugScore(),
-		UseBM25Scoring:         p.GetUseBM25Scoring(),
+		UseBM25Scoring:         p.GetUseBm25Scoring(),
 	}
 }
 
@@ -725,6 +725,6 @@ func (s *SearchOptions) ToProto() *proto.SearchOptions {
 		DocumentRanksWeight:    s.DocumentRanksWeight,
 		Trace:                  s.Trace,
 		DebugScore:             s.DebugScore,
-		UseBM25Scoring:         s.UseBM25Scoring,
+		UseBm25Scoring:         s.UseBM25Scoring,
 	}
 }
