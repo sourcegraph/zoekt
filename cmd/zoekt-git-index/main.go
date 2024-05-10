@@ -122,7 +122,7 @@ func run() int {
 			DeltaShardNumberFallbackThreshold: *deltaShardNumberFallbackThreshold,
 		}
 
-		if err := gitindex.IndexGitRepo(gitOpts); err != nil {
+		if _, err := gitindex.IndexGitRepo(gitOpts); err != nil {
 			log.Printf("indexGitRepo(%s, delta=%t): %v", dir, gitOpts.BuildOptions.IsDelta, err)
 			exitStatus = 1
 		}
