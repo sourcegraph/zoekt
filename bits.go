@@ -110,7 +110,7 @@ func (n ngram) String() string {
 type runeNgramOff struct {
 	ngram ngram
 	// index is the original index inside of the returned array of splitNGrams
-	index uint32
+	index int
 }
 
 func (a runeNgramOff) Compare(b runeNgramOff) int {
@@ -149,7 +149,7 @@ func splitNGrams(str []byte) []runeNgramOff {
 		ng := runesToNGram(runeGram)
 		result = append(result, runeNgramOff{
 			ngram: ng,
-			index: uint32(len(result)),
+			index: len(result),
 		})
 	}
 	return result
