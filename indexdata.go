@@ -320,26 +320,9 @@ func (d *indexData) memoryUse() int {
 	return sz
 }
 
-const maxUInt32 = 0xffffffff
-
-func min2Index(xs []uint32) (idx0, idx1 int) {
-	min0, min1 := uint32(maxUInt32), uint32(maxUInt32)
-	for i, x := range xs {
-		if x <= min0 {
-			idx0, idx1 = i, idx0
-			min0, min1 = x, min0
-		} else if x <= min1 {
-			idx1 = i
-			min1 = x
-		}
-	}
-	return
-}
-
 // findSelectiveNgrams returns two ngrams to pass to the distance iterator, chosen to
-// produce a small file intersection. It finds the two lowest frequency ngrams, making
-// sure to maximize the distance between them in case of ties. It avoids overlapping
-// trigrams to keep their intersection as small as possible.
+// produce a small file intersection. It finds the two lowest frequency ngrams, but avoids
+// overlapping trigrams to keep their intersection as small as possible.
 //
 // Invariant: first will always have a smaller index than last.
 func findSelectiveNgrams(ngramOffs []runeNgramOff, indexMap []int, frequencies []uint32) (first, last runeNgramOff) {
@@ -361,27 +344,24 @@ func findSelectiveNgrams(ngramOffs []runeNgramOff, indexMap []int, frequencies [
 	return
 }
 
+const maxUInt32 = 0xffffffff
+
 func minFrequencyNgramOffsets(ngramOffs []runeNgramOff, frequencies []uint32) (first, last runeNgramOff) {
-	firstI, lastI := min2Index(frequencies)
-	// If the frequencies are equal lets maximise distance in the query
-	// string. This optimization normally triggers for long repeated trigrams
-	// in a string, eg a query like "AAAAA..."
-	if frequencies[firstI] == frequencies[lastI] {
-		for i, freq := range frequencies {
-			if freq != frequencies[firstI] {
-				continue
-			}
-			if ngramOffs[i].index < ngramOffs[firstI].index {
-				firstI = i
-			}
-			if ngramOffs[i].index > ngramOffs[lastI].index {
-				lastI = i
-			}
+	// Find the two lowest frequency ngrams.
+	idx0, idx1 := 0, 0
+	min0, min1 := uint32(maxUInt32), uint32(maxUInt32)
+	for i, x := range frequencies {
+		if x <= min0 {
+			idx0, idx1 = i, idx0
+			min0, min1 = x, min0
+		} else if x <= min1 {
+			idx1 = i
+			min1 = x
 		}
 	}
 
-	first = ngramOffs[firstI]
-	last = ngramOffs[lastI]
+	first = ngramOffs[idx0]
+	last = ngramOffs[idx1]
 
 	// Ensure first appears before last as a helpful invariant.
 	if first.index > last.index {
