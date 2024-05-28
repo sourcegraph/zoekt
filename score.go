@@ -132,7 +132,7 @@ func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands [
 		term := string(cand.substrLowered)
 
 		if cand.fileName {
-			termFreqs[term] += 2
+			termFreqs[term] += 5
 		} else {
 			termFreqs[term]++
 		}
