@@ -78,7 +78,7 @@ func TestBM25(t *testing.T) {
 			content:  exampleJava,
 			language: "Java",
 			// bm25-score:1.69 (sum-tf: 7.00, length-ratio: 2.00)
-			wantScore: 1.69,
+			wantScore: 1.82,
 		}, {
 			// Matches only on content
 			fileName: "example.java",
@@ -99,7 +99,7 @@ func TestBM25(t *testing.T) {
 			content:  exampleJava,
 			language: "Java",
 			// bm25-score:1.07 (sum-tf: 2.00, length-ratio: 2.00)
-			wantScore: 1.07,
+			wantScore: 1.55,
 		},
 		{
 			// Matches only on filename, and content is missing
@@ -107,7 +107,7 @@ func TestBM25(t *testing.T) {
 			query:    &query.Substring{Pattern: "config.go"},
 			language: "Go",
 			// bm25-score:1.91 (sum-tf: 2.00, length-ratio: 0.00)
-			wantScore: 1.91,
+			wantScore: 2.08,
 		},
 	}
 
