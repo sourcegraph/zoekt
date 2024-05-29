@@ -56,7 +56,7 @@ func TestIndexEmptyRepo(t *testing.T) {
 		},
 	}
 
-	if err := IndexGitRepo(opts); err != nil {
+	if _, err := IndexGitRepo(opts); err != nil {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 }
@@ -619,7 +619,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					}
 
 					// run test
-					err := indexGitRepo(options, gitIndexConfig{
+					_, err := indexGitRepo(options, gitIndexConfig{
 						prepareDeltaBuild:  prepareDeltaSpy,
 						prepareNormalBuild: prepareNormalSpy,
 					})

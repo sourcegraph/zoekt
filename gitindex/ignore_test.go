@@ -73,7 +73,7 @@ func TestIgnore(t *testing.T) {
 		Submodules:   true,
 		Incremental:  true,
 	}
-	if err := IndexGitRepo(opts); err != nil {
+	if _, err := IndexGitRepo(opts); err != nil {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
