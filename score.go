@@ -39,13 +39,6 @@ func (m *FileMatch) addScore(what string, computed float64, raw float64, debugSc
 	m.Score += computed
 }
 
-func (m *FileMatch) addBM25Score(score float64, sumTf float64, L float64, debugScore bool) {
-	if debugScore {
-		m.Debug += fmt.Sprintf("bm25-score:%.2f (sum-tf: %.2f, length-ratio: %.2f)", score, sumTf, L)
-	}
-	m.Score += score
-}
-
 // scoreFile computes a score for the file match using various scoring signals, like
 // whether there's an exact match on a symbol, the number of query clauses that matched, etc.
 func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, known map[matchTree]bool, opts *SearchOptions) {
@@ -115,16 +108,20 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	}
 }
 
-// scoreFileUsingBM25 computes a score for the file match using an approximation to BM25, the most common scoring
-// algorithm for text search: https://en.wikipedia.org/wiki/Okapi_BM25. It implements all parts of the formula
-// except inverse document frequency (idf), since we don't have access to global term frequency statistics.
+// calculateTermFrequencyScore computes the TF score per term for the file match
+// according to BM25, the most common scoring algorithm for text search:
+// https://en.wikipedia.org/wiki/Okapi_BM25. We defer the calculation of the
+// full bm25 score to after we have finished searching the shard, because we can
+// only calculate the inverse document frequency (idf) after we have seen all
+// documents.
 //
-// Filename matches count twice as much as content matches. This mimics a common text search strategy where you
-// 'boost' matches on document titles.
+// Filename matches count more than content matches. This mimics a common text
+// search strategy where you 'boost' matches on document titles.
 //
-// This scoring strategy ignores all other signals including document ranks. This keeps things simple for now,
-// since BM25 is not normalized and can be tricky to combine with other scoring signals.
-func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands []*candidateMatch, opts *SearchOptions) {
+// This scoring strategy ignores all other signals including document ranks.
+// This keeps things simple for now, since BM25 is not normalized and can be
+// tricky to combine with other scoring signals.
+func (d *indexData) calculateTermFrequencyScore(fileMatch *FileMatch, doc uint32, cands []*candidateMatch, df termDocumentFrequency, opts *SearchOptions) termFrequencyScore {
 	// Treat each candidate match as a term and compute the frequencies. For now, ignore case
 	// sensitivity and treat filenames and symbols the same as content.
 	termFreqs := map[string]int{}
@@ -153,12 +150,56 @@ func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands [
 	// Use standard parameter defaults (used in Lucene and academic papers)
 	k, b := 1.2, 0.75
 	sumTf := 0.0 // Just for debugging
-	score := 0.0
-	for _, freq := range termFreqs {
+
+	tfs := make(termFrequencyScore)
+
+	for term, freq := range termFreqs {
 		tf := float64(freq)
 		sumTf += tf
-		score += ((k + 1.0) * tf) / (k*(1.0-b+b*L) + tf)
+
+		// Invariant: the keys of df are the union of the keys of tfs over all files.
+		df[term] += 1
+		tfs[term] = ((k + 1.0) * tf) / (k*(1.0-b+b*L) + tf)
 	}
 
-	fileMatch.addBM25Score(score, sumTf, L, opts.DebugScore)
+	if opts.DebugScore {
+		fileMatch.Debug = fmt.Sprintf("sum-termFrequencyScore: %.2f, length-ratio: %.2f", sumTf, L)
+	}
+
+	return tfs
+}
+
+// idf computes the inverse document frequency for a term. nq is the number of
+// documents that contain the term and documentCount is the total number of
+// documents in the corpus.
+func idf(nq, documentCount int) float64 {
+	return math.Log(1.0 + ((float64(documentCount) - float64(nq) + 0.5) / (float64(nq) + 0.5)))
+}
+
+// termDocumentFrequency is a map "term" -> "number of documents that contain the term"
+type termDocumentFrequency map[string]int
+
+// termFrequencyScore is a map "term" -> "term frequency score"
+type termFrequencyScore map[string]float64
+
+// fileMatchesWithScores is a helper type that is used to store the file matches
+// along with internal scoring information.
+type fileMatchesWithScores struct {
+	fileMatches []FileMatch
+	tfs         []termFrequencyScore
+}
+
+func (m *fileMatchesWithScores) addFileMatch(fm FileMatch, tfs termFrequencyScore) {
+	m.fileMatches = append(m.fileMatches, fm)
+	m.tfs = append(m.tfs, tfs)
+}
+
+func (m *fileMatchesWithScores) scoreFilesUsingBM25(df termDocumentFrequency, documentCount int) {
+	for i := range m.fileMatches {
+		score := 0.0
+		for term, tfScore := range m.tfs[i] {
+			score += idf(df[term], documentCount) * tfScore
+		}
+		m.fileMatches[i].Score = score
+	}
 }
