@@ -363,7 +363,7 @@ nextFileMatch:
 	// df correctly reflects the document frequencies. This is true, for example, if
 	// all terms in the query are ORed together.
 	if opts.UseBM25Scoring {
-		resFiles.scoreFilesUsingBM25(df, len(d.boundaries))
+		resFiles.scoreFilesUsingBM25(df, int(d.numDocs()))
 	}
 
 	res.Files = resFiles.fileMatches

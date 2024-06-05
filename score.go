@@ -138,8 +138,7 @@ func (d *indexData) calculateTermFrequencyScore(fileMatch *FileMatch, doc uint32
 	// Compute the file length ratio. Usually the calculation would be based on terms, but using
 	// bytes should work fine, as we're just computing a ratio.
 	fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
-	numFiles := len(d.boundaries)
-	averageFileLength := float64(d.boundaries[numFiles-1]) / float64(numFiles)
+	averageFileLength := float64(d.boundaries[d.numDocs()]) / float64(d.numDocs())
 
 	// This is very unlikely, but explicitly guard against division by zero.
 	if averageFileLength == 0 {

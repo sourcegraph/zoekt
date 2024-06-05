@@ -77,8 +77,8 @@ func TestBM25(t *testing.T) {
 			query:    &query.Substring{Pattern: "example"},
 			content:  exampleJava,
 			language: "Java",
-			// bm25-score:1.26 <- sum-termFrequencyScore: 10.00, length-ratio: 2.00
-			wantScore: 1.26,
+			// bm25-score: 0.57 <- sum-termFrequencyScore: 10.00, length-ratio: 1.00
+			wantScore: 0.57,
 		}, {
 			// Matches only on content
 			fileName: "example.java",
@@ -89,8 +89,8 @@ func TestBM25(t *testing.T) {
 			}},
 			content:  exampleJava,
 			language: "Java",
-			// bm25-score:3.99 <- sum-termFrequencyScore: 56.00, length-ratio: 2.00
-			wantScore: 3.99,
+			// bm25-score: 1.75 <- sum-termFrequencyScore: 56.00, length-ratio: 1.00
+			wantScore: 1.75,
 		},
 		{
 			// Matches only on filename
@@ -98,16 +98,16 @@ func TestBM25(t *testing.T) {
 			query:    &query.Substring{Pattern: "java"},
 			content:  exampleJava,
 			language: "Java",
-			// bm25-score:1.07 <- sum-termFrequencyScore: 5.00, length-ratio: 2.00
-			wantScore: 1.07,
+			// bm25-score: 0.51 <- sum-termFrequencyScore: 5.00, length-ratio: 1.00
+			wantScore: 0.51,
 		},
 		{
 			// Matches only on filename, and content is missing
 			fileName: "a/b/c/config.go",
 			query:    &query.Substring{Pattern: "config.go"},
 			language: "Go",
-			// bm25-score:1.44 <- sum-termFrequencyScore: 5.00, length-ratio: 0.00
-			wantScore: 1.44,
+			// bm25-score: 0.60 <- sum-termFrequencyScore: 5.00, length-ratio: 0.00
+			wantScore: 0.60,
 		},
 	}
 
