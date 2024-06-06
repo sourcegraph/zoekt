@@ -200,8 +200,8 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) 
 	// document frequency per term
 	df := make(termDocumentFrequency)
 
-	// term frequency scores per document
-	var tfs termFrequencyScore
+	// term frequency per document
+	var tf termFrequencies
 
 	// used to track intermediate scores for BM25 scoring.
 	resFiles := fileMatchesWithScores{}
@@ -328,10 +328,10 @@ nextFileMatch:
 
 		if opts.UseBM25Scoring {
 			// For BM25 scoring, the calculation of the score is split in two parts. Here we
-			// calculate the term frequency scores for the current document. Since we don't
-			// store document frequencies in the index, we have to defer the calculation of
-			// IDF and the final BM25 score to after the whole shard has been processed.
-			tfs = d.calculateTermFrequencyScore(&fileMatch, nextDoc, finalCands, df, opts)
+			// calculate the term frequencies for the current document. Since we don't store
+			// document frequencies in the index, we have to defer the calculation of the
+			// final BM25 score to after the whole shard has been processed.
+			tf = d.calculateTermFrequency(nextDoc, finalCands, df)
 		} else {
 			// Use the standard, non-experimental scoring method by default
 			d.scoreFile(&fileMatch, nextDoc, mt, known, opts)
@@ -352,7 +352,7 @@ nextFileMatch:
 		repoMatchCount += len(fileMatch.LineMatches)
 		repoMatchCount += matchedChunkRanges
 
-		resFiles.addFileMatch(fileMatch, tfs)
+		resFiles.addFileMatch(fileMatch, tf)
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
 		res.Stats.MatchCount += matchedChunkRanges
 		res.Stats.FileCount++
@@ -363,20 +363,10 @@ nextFileMatch:
 	// df correctly reflects the document frequencies. This is true, for example, if
 	// all terms in the query are ORed together.
 	if opts.UseBM25Scoring {
-		resFiles.scoreFilesUsingBM25(df, int(d.numDocs()))
+		d.scoreFilesUsingBM25(&resFiles, df, opts)
 	}
 
 	res.Files = resFiles.fileMatches
-
-	if opts.DebugScore {
-		prefix := "score"
-		if opts.UseBM25Scoring {
-			prefix = "bm25-score"
-		}
-		for i, fileMatch := range res.Files {
-			res.Files[i].Debug = fmt.Sprintf("%s: %.2f <- %s", prefix, fileMatch.Score, fileMatch.Debug)
-		}
-	}
 
 	for _, md := range d.repoMetaData {
 		r := md

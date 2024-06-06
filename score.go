@@ -104,7 +104,7 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank)/maxUInt16)
 
 	if opts.DebugScore {
-		fileMatch.Debug = strings.TrimSuffix(fileMatch.Debug, ", ")
+		fileMatch.Debug = fmt.Sprintf("score: %.2f <- %s", fileMatch.Score, strings.TrimSuffix(fileMatch.Debug, ", "))
 	}
 }
 
@@ -121,12 +121,16 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 // This scoring strategy ignores all other signals including document ranks.
 // This keeps things simple for now, since BM25 is not normalized and can be
 // tricky to combine with other scoring signals.
-func (d *indexData) calculateTermFrequencyScore(fileMatch *FileMatch, doc uint32, cands []*candidateMatch, df termDocumentFrequency, opts *SearchOptions) termFrequencyScore {
+func (d *indexData) calculateTermFrequency(doc uint32, cands []*candidateMatch, df termDocumentFrequency) termFrequencies {
 	// Treat each candidate match as a term and compute the frequencies. For now, ignore case
 	// sensitivity and treat filenames and symbols the same as content.
 	termFreqs := map[string]int{}
 	for _, cand := range cands {
 		term := string(cand.substrLowered)
+
+		if _, ok := termFreqs[term]; !ok {
+			df[term] += 1
+		}
 
 		if cand.fileName {
 			termFreqs[term] += 5
@@ -135,37 +139,11 @@ func (d *indexData) calculateTermFrequencyScore(fileMatch *FileMatch, doc uint32
 		}
 	}
 
-	// Compute the file length ratio. Usually the calculation would be based on terms, but using
-	// bytes should work fine, as we're just computing a ratio.
-	fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
-	averageFileLength := float64(d.boundaries[d.numDocs()]) / float64(d.numDocs())
-
-	// This is very unlikely, but explicitly guard against division by zero.
-	if averageFileLength == 0 {
-		averageFileLength++
-	}
-	L := fileLength / averageFileLength
-
-	// Use standard parameter defaults (used in Lucene and academic papers)
-	k, b := 1.2, 0.75
-	sumTf := 0.0 // Just for debugging
-
-	tfs := make(termFrequencyScore)
-
-	for term, freq := range termFreqs {
-		tf := float64(freq)
-		sumTf += tf
-
-		// Invariant: the keys of df are the union of the keys of tfs over all files.
-		df[term] += 1
-		tfs[term] = ((k + 1.0) * tf) / (k*(1.0-b+b*L) + tf)
+	return termFrequencies{
+		doc:       doc,
+		termFreqs: termFreqs,
 	}
 
-	if opts.DebugScore {
-		fileMatch.Debug = fmt.Sprintf("sum-termFrequencyScore: %.2f, length-ratio: %.2f", sumTf, L)
-	}
-
-	return tfs
 }
 
 // idf computes the inverse document frequency for a term. nq is the number of
@@ -178,27 +156,54 @@ func idf(nq, documentCount int) float64 {
 // termDocumentFrequency is a map "term" -> "number of documents that contain the term"
 type termDocumentFrequency map[string]int
 
-// termFrequencyScore is a map "term" -> "term frequency score"
-type termFrequencyScore map[string]float64
+type termFrequencies struct {
+	doc       uint32
+	termFreqs map[string]int
+}
 
 // fileMatchesWithScores is a helper type that is used to store the file matches
 // along with internal scoring information.
 type fileMatchesWithScores struct {
 	fileMatches []FileMatch
-	tfs         []termFrequencyScore
+	tf          []termFrequencies
 }
 
-func (m *fileMatchesWithScores) addFileMatch(fm FileMatch, tfs termFrequencyScore) {
+func (m *fileMatchesWithScores) addFileMatch(fm FileMatch, tf termFrequencies) {
 	m.fileMatches = append(m.fileMatches, fm)
-	m.tfs = append(m.tfs, tfs)
+	m.tf = append(m.tf, tf)
 }
 
-func (m *fileMatchesWithScores) scoreFilesUsingBM25(df termDocumentFrequency, documentCount int) {
+func (d *indexData) scoreFilesUsingBM25(m *fileMatchesWithScores, df termDocumentFrequency, opts *SearchOptions) {
+	// Use standard parameter defaults (used in Lucene and academic papers)
+	k, b := 1.2, 0.75
+
+	averageFileLength := float64(d.boundaries[d.numDocs()]) / float64(d.numDocs())
+	// This is very unlikely, but explicitly guard against division by zero.
+	if averageFileLength == 0 {
+		averageFileLength++
+	}
+
 	for i := range m.fileMatches {
 		score := 0.0
-		for term, tfScore := range m.tfs[i] {
-			score += idf(df[term], documentCount) * tfScore
+
+		// Compute the file length ratio. Usually the calculation would be based on terms, but using
+		// bytes should work fine, as we're just computing a ratio.
+		doc := m.tf[i].doc
+		fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
+
+		L := fileLength / averageFileLength
+
+		sumTF := 0 // Just for debugging
+		for term, f := range m.tf[i].termFreqs {
+			sumTF += f
+			tfScore := ((k + 1.0) * float64(f)) / (k*(1.0-b+b*L) + float64(f))
+			score += idf(df[term], int(d.numDocs())) * tfScore
 		}
+
 		m.fileMatches[i].Score = score
+
+		if opts.DebugScore {
+			m.fileMatches[i].Debug = fmt.Sprintf("bm25-score: %.2f <- sum-termFrequencies: %d, length-ratio: %.2f", score, sumTF, L)
+		}
 	}
 }
