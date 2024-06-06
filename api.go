@@ -84,6 +84,12 @@ type FileMatch struct {
 	// RepositoryID is a Sourcegraph extension. This is the ID of Repository in
 	// Sourcegraph.
 	RepositoryID uint32 `json:",omitempty"`
+
+	doc uint32
+
+	// termFrequencies is a map from term to term frequency. We use this to
+	// calculate the BM25 score of a file match.
+	termFrequencies map[string]int
 }
 
 func (m *FileMatch) sizeBytes() (sz uint64) {

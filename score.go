@@ -108,20 +108,11 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	}
 }
 
-// calculateTermFrequencyScore computes the TF score per term for the file match
-// according to BM25, the most common scoring algorithm for text search:
-// https://en.wikipedia.org/wiki/Okapi_BM25. We defer the calculation of the
-// full bm25 score to after we have finished searching the shard, because we can
-// only calculate the inverse document frequency (idf) after we have seen all
-// documents.
+// calculateTermFrequency computes the term frequency for the file match.
 //
 // Filename matches count more than content matches. This mimics a common text
 // search strategy where you 'boost' matches on document titles.
-//
-// This scoring strategy ignores all other signals including document ranks.
-// This keeps things simple for now, since BM25 is not normalized and can be
-// tricky to combine with other scoring signals.
-func (d *indexData) calculateTermFrequency(doc uint32, cands []*candidateMatch, df termDocumentFrequency) termFrequencies {
+func calculateTermFrequency(fileMatch *FileMatch, cands []*candidateMatch, df termDocumentFrequency) {
 	// Treat each candidate match as a term and compute the frequencies. For now, ignore case
 	// sensitivity and treat filenames and symbols the same as content.
 	termFreqs := map[string]int{}
@@ -139,11 +130,7 @@ func (d *indexData) calculateTermFrequency(doc uint32, cands []*candidateMatch, 
 		}
 	}
 
-	return termFrequencies{
-		doc:       doc,
-		termFreqs: termFreqs,
-	}
-
+	fileMatch.termFrequencies = termFreqs
 }
 
 // idf computes the inverse document frequency for a term. nq is the number of
@@ -156,24 +143,13 @@ func idf(nq, documentCount int) float64 {
 // termDocumentFrequency is a map "term" -> "number of documents that contain the term"
 type termDocumentFrequency map[string]int
 
-type termFrequencies struct {
-	doc       uint32
-	termFreqs map[string]int
-}
-
-// fileMatchesWithScores is a helper type that is used to store the file matches
-// along with internal scoring information.
-type fileMatchesWithScores struct {
-	fileMatches []FileMatch
-	tf          []termFrequencies
-}
-
-func (m *fileMatchesWithScores) addFileMatch(fm FileMatch, tf termFrequencies) {
-	m.fileMatches = append(m.fileMatches, fm)
-	m.tf = append(m.tf, tf)
-}
-
-func (d *indexData) scoreFilesUsingBM25(m *fileMatchesWithScores, df termDocumentFrequency, opts *SearchOptions) {
+// scoreFilesUsingBM25 computes the score according to BM25, the most common
+// scoring algorithm for text search: https://en.wikipedia.org/wiki/Okapi_BM25.
+//
+// This scoring strategy ignores all other signals including document ranks.
+// This keeps things simple for now, since BM25 is not normalized and can be
+// tricky to combine with other scoring signals.
+func (d *indexData) scoreFilesUsingBM25(fileMatches []FileMatch, df termDocumentFrequency, opts *SearchOptions) {
 	// Use standard parameter defaults (used in Lucene and academic papers)
 	k, b := 1.2, 0.75
 
@@ -183,27 +159,27 @@ func (d *indexData) scoreFilesUsingBM25(m *fileMatchesWithScores, df termDocumen
 		averageFileLength++
 	}
 
-	for i := range m.fileMatches {
+	for i := range fileMatches {
 		score := 0.0
 
 		// Compute the file length ratio. Usually the calculation would be based on terms, but using
 		// bytes should work fine, as we're just computing a ratio.
-		doc := m.tf[i].doc
+		doc := fileMatches[i].doc
 		fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
 
 		L := fileLength / averageFileLength
 
 		sumTF := 0 // Just for debugging
-		for term, f := range m.tf[i].termFreqs {
+		for term, f := range fileMatches[i].termFrequencies {
 			sumTF += f
 			tfScore := ((k + 1.0) * float64(f)) / (k*(1.0-b+b*L) + float64(f))
 			score += idf(df[term], int(d.numDocs())) * tfScore
 		}
 
-		m.fileMatches[i].Score = score
+		fileMatches[i].Score = score
 
 		if opts.DebugScore {
-			m.fileMatches[i].Debug = fmt.Sprintf("bm25-score: %.2f <- sum-termFrequencies: %d, length-ratio: %.2f", score, sumTF, L)
+			fileMatches[i].Debug = fmt.Sprintf("bm25-score: %.2f <- sum-termFrequencies: %d, length-ratio: %.2f", score, sumTF, L)
 		}
 	}
 }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"go.uber.org/atomic"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -20,6 +19,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+
+	"github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/mockSearcher"
@@ -108,11 +109,11 @@ func TestClientServer(t *testing.T) {
 }
 
 func TestFuzzGRPCChunkSender(t *testing.T) {
-	validateResult := func(input zoekt.SearchResult) error {
+	validateResult := func(input *zoekt.SearchResult) error {
 		clientStream, serverStream := newPairedSearchStream(t)
 		sender := gRPCChunkSender(serverStream)
 
-		sender.Send(&input)
+		sender.Send(input)
 
 		allResponses := readAllStream(t, clientStream)
 		if len(allResponses) == 0 {
@@ -185,7 +186,7 @@ func TestFuzzGRPCChunkSender(t *testing.T) {
 	}
 
 	var lastErr error
-	if err := quick.Check(func(r zoekt.SearchResult) bool {
+	if err := quick.Check(func(r *zoekt.SearchResult) bool {
 		lastErr = validateResult(r)
 
 		return lastErr == nil

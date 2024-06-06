@@ -27,18 +27,23 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	webproto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"google.golang.org/protobuf/proto"
+
+	webproto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 
 	fuzz "github.com/AdaLogics/go-fuzz-headers"
 )
 
 func TestProtoRoundtrip(t *testing.T) {
 	t.Run("FileMatch", func(t *testing.T) {
-		f := func(f1 FileMatch) bool {
+		f := func(f1 *FileMatch) bool {
 			p1 := f1.ToProto()
 			f2 := FileMatchFromProto(p1)
-			return reflect.DeepEqual(f1, f2)
+			if diff := cmp.Diff(f1, &f2, cmpopts.IgnoreUnexported(FileMatch{})); diff != "" {
+				fmt.Printf("got diff: %s", diff)
+				return false
+			}
+			return true
 		}
 		if err := quick.Check(f, nil); err != nil {
 			t.Fatal(err)
@@ -396,12 +401,6 @@ func (RepoListField) Generate(rng *rand.Rand, _ int) reflect.Value {
 	} else {
 		return reflect.ValueOf(RepoListField(RepoListFieldReposMap))
 	}
-}
-
-func gen[T any](sample T, r *rand.Rand) T {
-	var t T
-	v, _ := quick.Value(reflect.TypeOf(t), r)
-	return v.Interface().(T)
 }
 
 // This is a real search result that is intended to be a reasonable representative

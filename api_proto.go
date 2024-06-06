@@ -17,10 +17,12 @@ package zoekt // import "github.com/sourcegraph/zoekt"
 import (
 	"math/rand"
 	"reflect"
+	"testing/quick"
 
-	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 )
 
 func FileMatchFromProto(p *proto.FileMatch) FileMatch {
@@ -81,6 +83,28 @@ func (m *FileMatch) ToProto() *proto.FileMatch {
 		SubRepositoryPath:  m.SubRepositoryPath,
 		Version:            m.Version,
 	}
+}
+
+func (*FileMatch) Generate(rng *rand.Rand, _ int) reflect.Value {
+	var f FileMatch
+	v := &FileMatch{
+		FileName:           gen(f.FileName, rng),
+		Repository:         gen(f.Repository, rng),
+		SubRepositoryName:  gen(f.SubRepositoryName, rng),
+		SubRepositoryPath:  gen(f.SubRepositoryPath, rng),
+		Version:            gen(f.Version, rng),
+		Language:           gen(f.Language, rng),
+		Debug:              gen(f.Debug, rng),
+		Branches:           gen(f.Branches, rng),
+		LineMatches:        gen(f.LineMatches, rng),
+		ChunkMatches:       gen(f.ChunkMatches, rng),
+		Content:            gen(f.Content, rng),
+		Checksum:           gen(f.Checksum, rng),
+		Score:              gen(f.Score, rng),
+		RepositoryPriority: gen(f.RepositoryPriority, rng),
+		RepositoryID:       gen(f.RepositoryID, rng),
+	}
+	return reflect.ValueOf(v)
 }
 
 func ChunkMatchFromProto(p *proto.ChunkMatch) ChunkMatch {
@@ -398,6 +422,20 @@ func (sr *SearchResult) ToStreamProto() *proto.StreamSearchResponse {
 	}
 
 	return &proto.StreamSearchResponse{ResponseChunk: sr.ToProto()}
+}
+
+func (*SearchResult) Generate(rng *rand.Rand, _ int) reflect.Value {
+	fm := &FileMatch{}
+
+	var s SearchResult
+	v := &SearchResult{
+		Stats:         gen(s.Stats, rng),
+		Progress:      gen(s.Progress, rng),
+		Files:         []FileMatch{*gen(fm, rng)},
+		RepoURLs:      gen(s.RepoURLs, rng),
+		LineFragments: gen(s.LineFragments, rng),
+	}
+	return reflect.ValueOf(v)
 }
 
 func RepositoryBranchFromProto(p *proto.RepositoryBranch) RepositoryBranch {
@@ -727,4 +765,10 @@ func (s *SearchOptions) ToProto() *proto.SearchOptions {
 		DebugScore:             s.DebugScore,
 		UseBm25Scoring:         s.UseBM25Scoring,
 	}
+}
+
+func gen[T any](sample T, r *rand.Rand) T {
+	var t T
+	v, _ := quick.Value(reflect.TypeOf(t), r)
+	return v.Interface().(T)
 }

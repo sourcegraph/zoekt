@@ -306,7 +306,7 @@ func TestReadSearch(t *testing.T) {
 				continue
 			}
 
-			if d := cmp.Diff(want.FileMatches[j], res.Files); d != "" {
+			if d := cmp.Diff(want.FileMatches[j], res.Files, cmpopts.IgnoreUnexported(FileMatch{})); d != "" {
 				t.Errorf("matches for %s on %s (-want +got)\n%s", q, name, d)
 			}
 		}
