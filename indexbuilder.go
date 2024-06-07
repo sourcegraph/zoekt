@@ -27,7 +27,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/go-enry/go-enry/v2"
+	"github.com/sourcegraph/zoekt/internal/languages"
 )
 
 var _ = log.Println
@@ -397,7 +397,7 @@ func (b *IndexBuilder) addSymbols(symbols []*Symbol) {
 
 func DetermineLanguageIfUnknown(doc *Document) {
 	if doc.Language == "" {
-		doc.Language = enry.GetLanguage(doc.Name, doc.Content)
+		doc.Language = languages.GetLanguage(doc.Name, doc.Content)
 	}
 }
 
