@@ -37,14 +37,14 @@ func TestCalculateTermFrequency(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			fm := FileMatch{}
 			df := make(termDocumentFrequency)
-			calculateTermFrequency(&fm, c.cands, df)
+			tf := calculateTermFrequency(c.cands, df)
 
 			if !maps.Equal(df, c.wantDF) {
 				t.Errorf("got %v, want %v", df, c.wantDF)
 			}
 
-			if !maps.Equal(fm.termFrequencies, c.wantTermFrequencies) {
-				t.Errorf("got %v, want %v", fm.termFrequencies, c.wantTermFrequencies)
+			if !maps.Equal(tf, c.wantTermFrequencies) {
+				t.Errorf("got %v, want %v", fm, c.wantTermFrequencies)
 			}
 		})
 	}

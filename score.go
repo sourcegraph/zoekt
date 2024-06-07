@@ -112,7 +112,7 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 //
 // Filename matches count more than content matches. This mimics a common text
 // search strategy where you 'boost' matches on document titles.
-func calculateTermFrequency(fileMatch *FileMatch, cands []*candidateMatch, df termDocumentFrequency) {
+func calculateTermFrequency(cands []*candidateMatch, df termDocumentFrequency) map[string]int {
 	// Treat each candidate match as a term and compute the frequencies. For now, ignore case
 	// sensitivity and treat filenames and symbols the same as content.
 	termFreqs := map[string]int{}
@@ -129,7 +129,7 @@ func calculateTermFrequency(fileMatch *FileMatch, cands []*candidateMatch, df te
 		df[term] += 1
 	}
 
-	fileMatch.termFrequencies = termFreqs
+	return termFreqs
 }
 
 // idf computes the inverse document frequency for a term. nq is the number of
@@ -142,13 +142,19 @@ func idf(nq, documentCount int) float64 {
 // termDocumentFrequency is a map "term" -> "number of documents that contain the term"
 type termDocumentFrequency map[string]int
 
+// termFrequency stores the term frequencies for doc.
+type termFrequency struct {
+	doc uint32
+	tf  map[string]int
+}
+
 // scoreFilesUsingBM25 computes the score according to BM25, the most common
 // scoring algorithm for text search: https://en.wikipedia.org/wiki/Okapi_BM25.
 //
 // This scoring strategy ignores all other signals including document ranks.
 // This keeps things simple for now, since BM25 is not normalized and can be
 // tricky to combine with other scoring signals.
-func (d *indexData) scoreFilesUsingBM25(fileMatches []FileMatch, df termDocumentFrequency, opts *SearchOptions) {
+func (d *indexData) scoreFilesUsingBM25(fileMatches []FileMatch, tfs []termFrequency, df termDocumentFrequency, opts *SearchOptions) {
 	// Use standard parameter defaults (used in Lucene and academic papers)
 	k, b := 1.2, 0.75
 
@@ -158,18 +164,18 @@ func (d *indexData) scoreFilesUsingBM25(fileMatches []FileMatch, df termDocument
 		averageFileLength++
 	}
 
-	for i := range fileMatches {
+	for i := range tfs {
 		score := 0.0
 
 		// Compute the file length ratio. Usually the calculation would be based on terms, but using
 		// bytes should work fine, as we're just computing a ratio.
-		doc := fileMatches[i].doc
+		doc := tfs[i].doc
 		fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
 
 		L := fileLength / averageFileLength
 
 		sumTF := 0 // Just for debugging
-		for term, f := range fileMatches[i].termFrequencies {
+		for term, f := range tfs[i].tf {
 			sumTF += f
 			tfScore := ((k + 1.0) * float64(f)) / (k*(1.0-b+b*L) + float64(f))
 			score += idf(df[term], int(d.numDocs())) * tfScore
