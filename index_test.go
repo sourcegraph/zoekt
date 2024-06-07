@@ -223,7 +223,7 @@ func TestNewlines(t *testing.T) {
 			}},
 		}}
 
-		if diff := cmp.Diff(matches, want, cmpopts.IgnoreUnexported(FileMatch{})); diff != "" {
+		if diff := cmp.Diff(matches, want); diff != "" {
 			t.Fatal(diff)
 		}
 	})
@@ -248,7 +248,7 @@ func TestNewlines(t *testing.T) {
 			}},
 		}}
 
-		if diff := cmp.Diff(want, matches, cmpopts.IgnoreUnexported(FileMatch{})); diff != "" {
+		if diff := cmp.Diff(want, matches); diff != "" {
 			t.Fatal(diff)
 		}
 	})

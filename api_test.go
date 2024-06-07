@@ -146,7 +146,7 @@ func TestMatchSize(t *testing.T) {
 		size int
 	}{{
 		v:    FileMatch{},
-		size: 264,
+		size: 256,
 	}, {
 		v:    ChunkMatch{},
 		size: 112,
