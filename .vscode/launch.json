@@ -11,7 +11,7 @@
       "mode": "auto",
       "program": "cmd/zoekt-git-index",
       "cwd": "${workspaceFolder}",
-      "args": ["${input:path}"]
+      "args": ["-index", "${input:indexPath}", "${input:path}"]
     },
     {
       "name": "Webserver",
