@@ -1,14 +1,46 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Attach to Process (from list)",
-            "type": "go",
-            "request": "attach",
-            "mode": "local"
-          },
-    ]
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Index folder",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "cmd/zoekt-git-index",
+      "cwd": "${workspaceFolder}",
+      "args": ["-index", "${input:indexPath}", "${input:path}"]
+    },
+    {
+      "name": "Webserver",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "cmd/zoekt-webserver",
+      "cwd": "${workspaceFolder}", 
+      "args": ["-index", "${input:indexPath}"]
+    },
+    {
+      "name": "Attach to Process (from list)",
+      "type": "go",
+      "request": "attach",
+      "mode": "local"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "path",
+      "description": "Please enter the path to the project to index",
+      "default": "",
+      "type": "promptString"
+    },
+    {
+      "id": "indexPath",
+      "description": "Enter the path where indexes are stored",
+      "default": "${userHome}/.zoekt",
+      "type": "promptString"
+    }
+  ]
 }
