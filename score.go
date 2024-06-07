@@ -118,16 +118,15 @@ func calculateTermFrequency(fileMatch *FileMatch, cands []*candidateMatch, df te
 	termFreqs := map[string]int{}
 	for _, cand := range cands {
 		term := string(cand.substrLowered)
-
-		if _, ok := termFreqs[term]; !ok {
-			df[term] += 1
-		}
-
 		if cand.fileName {
 			termFreqs[term] += 5
 		} else {
 			termFreqs[term]++
 		}
+	}
+
+	for term := range termFreqs {
+		df[term] += 1
 	}
 
 	fileMatch.termFrequencies = termFreqs
