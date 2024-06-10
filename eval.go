@@ -351,11 +351,13 @@ nextFileMatch:
 		repoMatchCount += len(fileMatch.LineMatches)
 		repoMatchCount += matchedChunkRanges
 
-		// Invariant: tfs[i] belongs to res.Files[i]
-		tfs = append(tfs, termFrequency{
-			doc: nextDoc,
-			tf:  tf,
-		})
+		if opts.UseBM25Scoring {
+			// Invariant: tfs[i] belongs to res.Files[i]
+			tfs = append(tfs, termFrequency{
+				doc: nextDoc,
+				tf:  tf,
+			})
+		}
 		res.Files = append(res.Files, fileMatch)
 
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
