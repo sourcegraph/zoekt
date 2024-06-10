@@ -3,7 +3,9 @@
 // and sometimes programming languages may not be supported by Linguist
 // or may take a while to get merged in and make it into go-enry. This wrapper
 // gives us flexibility to support languages in those cases. We list additional languages
-// in this file and remove them once they make it into Linguist and go-enry
+// in this file and remove them once they make it into Linguist and go-enry.
+// This logic is similar to what we have in the sourcegraph/sourcegraph repo, in the future
+// we plan to refactor both into a common library to share between the two repos.
 package languages
 
 import (
