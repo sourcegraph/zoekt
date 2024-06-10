@@ -39,13 +39,6 @@ func (m *FileMatch) addScore(what string, computed float64, raw float64, debugSc
 	m.Score += computed
 }
 
-func (m *FileMatch) addBM25Score(score float64, sumTf float64, L float64, debugScore bool) {
-	if debugScore {
-		m.Debug += fmt.Sprintf("bm25-score:%.2f (sum-tf: %.2f, length-ratio: %.2f)", score, sumTf, L)
-	}
-	m.Score += score
-}
-
 // scoreFile computes a score for the file match using various scoring signals, like
 // whether there's an exact match on a symbol, the number of query clauses that matched, etc.
 func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, known map[matchTree]bool, opts *SearchOptions) {
@@ -111,26 +104,20 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank)/maxUInt16)
 
 	if opts.DebugScore {
-		fileMatch.Debug = strings.TrimSuffix(fileMatch.Debug, ", ")
+		fileMatch.Debug = fmt.Sprintf("score: %.2f <- %s", fileMatch.Score, strings.TrimSuffix(fileMatch.Debug, ", "))
 	}
 }
 
-// scoreFileUsingBM25 computes a score for the file match using an approximation to BM25, the most common scoring
-// algorithm for text search: https://en.wikipedia.org/wiki/Okapi_BM25. It implements all parts of the formula
-// except inverse document frequency (idf), since we don't have access to global term frequency statistics.
+// calculateTermFrequency computes the term frequency for the file match.
 //
-// Filename matches count twice as much as content matches. This mimics a common text search strategy where you
-// 'boost' matches on document titles.
-//
-// This scoring strategy ignores all other signals including document ranks. This keeps things simple for now,
-// since BM25 is not normalized and can be tricky to combine with other scoring signals.
-func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands []*candidateMatch, opts *SearchOptions) {
+// Filename matches count more than content matches. This mimics a common text
+// search strategy where you 'boost' matches on document titles.
+func calculateTermFrequency(cands []*candidateMatch, df termDocumentFrequency) map[string]int {
 	// Treat each candidate match as a term and compute the frequencies. For now, ignore case
 	// sensitivity and treat filenames and symbols the same as content.
 	termFreqs := map[string]int{}
 	for _, cand := range cands {
 		term := string(cand.substrLowered)
-
 		if cand.fileName {
 			termFreqs[term] += 5
 		} else {
@@ -138,27 +125,66 @@ func (d *indexData) scoreFileUsingBM25(fileMatch *FileMatch, doc uint32, cands [
 		}
 	}
 
-	// Compute the file length ratio. Usually the calculation would be based on terms, but using
-	// bytes should work fine, as we're just computing a ratio.
-	fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
-	numFiles := len(d.boundaries)
-	averageFileLength := float64(d.boundaries[numFiles-1]) / float64(numFiles)
+	for term := range termFreqs {
+		df[term] += 1
+	}
 
+	return termFreqs
+}
+
+// idf computes the inverse document frequency for a term. nq is the number of
+// documents that contain the term and documentCount is the total number of
+// documents in the corpus.
+func idf(nq, documentCount int) float64 {
+	return math.Log(1.0 + ((float64(documentCount) - float64(nq) + 0.5) / (float64(nq) + 0.5)))
+}
+
+// termDocumentFrequency is a map "term" -> "number of documents that contain the term"
+type termDocumentFrequency map[string]int
+
+// termFrequency stores the term frequencies for doc.
+type termFrequency struct {
+	doc uint32
+	tf  map[string]int
+}
+
+// scoreFilesUsingBM25 computes the score according to BM25, the most common
+// scoring algorithm for text search: https://en.wikipedia.org/wiki/Okapi_BM25.
+//
+// This scoring strategy ignores all other signals including document ranks.
+// This keeps things simple for now, since BM25 is not normalized and can be
+// tricky to combine with other scoring signals.
+func (d *indexData) scoreFilesUsingBM25(fileMatches []FileMatch, tfs []termFrequency, df termDocumentFrequency, opts *SearchOptions) {
+	// Use standard parameter defaults (used in Lucene and academic papers)
+	k, b := 1.2, 0.75
+
+	averageFileLength := float64(d.boundaries[d.numDocs()]) / float64(d.numDocs())
 	// This is very unlikely, but explicitly guard against division by zero.
 	if averageFileLength == 0 {
 		averageFileLength++
 	}
-	L := fileLength / averageFileLength
 
-	// Use standard parameter defaults (used in Lucene and academic papers)
-	k, b := 1.2, 0.75
-	sumTf := 0.0 // Just for debugging
-	score := 0.0
-	for _, freq := range termFreqs {
-		tf := float64(freq)
-		sumTf += tf
-		score += ((k + 1.0) * tf) / (k*(1.0-b+b*L) + tf)
+	for i := range tfs {
+		score := 0.0
+
+		// Compute the file length ratio. Usually the calculation would be based on terms, but using
+		// bytes should work fine, as we're just computing a ratio.
+		doc := tfs[i].doc
+		fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
+
+		L := fileLength / averageFileLength
+
+		sumTF := 0 // Just for debugging
+		for term, f := range tfs[i].tf {
+			sumTF += f
+			tfScore := ((k + 1.0) * float64(f)) / (k*(1.0-b+b*L) + float64(f))
+			score += idf(df[term], int(d.numDocs())) * tfScore
+		}
+
+		fileMatches[i].Score = score
+
+		if opts.DebugScore {
+			fileMatches[i].Debug = fmt.Sprintf("bm25-score: %.2f <- sum-termFrequencies: %d, length-ratio: %.2f", score, sumTF, L)
+		}
 	}
-
-	fileMatch.addBM25Score(score, sumTf, L, opts.DebugScore)
 }
