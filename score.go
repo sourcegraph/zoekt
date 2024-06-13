@@ -108,18 +108,32 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	}
 }
 
+func isAtRoot(path string) bool {
+	return strings.IndexRune(path, '/') == -1
+}
+
 // calculateTermFrequency computes the term frequency for the file match.
 //
 // Filename matches count more than content matches. This mimics a common text
 // search strategy where you 'boost' matches on document titles.
-func calculateTermFrequency(cands []*candidateMatch, df termDocumentFrequency) map[string]int {
+func calculateTermFrequency(fm *FileMatch, cands []*candidateMatch, df termDocumentFrequency) map[string]int {
 	// Treat each candidate match as a term and compute the frequencies. For now, ignore case
 	// sensitivity and treat filenames and symbols the same as content.
 	termFreqs := map[string]int{}
+
+	boostFileName := 2
+
+	var evaluated bool
 	for _, cand := range cands {
 		term := string(cand.substrLowered)
 		if cand.fileName {
-			termFreqs[term] += 5
+			if !evaluated {
+				if isAtRoot(fm.FileName) {
+					boostFileName = 5
+				}
+				evaluated = true
+			}
+			termFreqs[term] += boostFileName
 		} else {
 			termFreqs[term]++
 		}
@@ -155,8 +169,18 @@ type termFrequency struct {
 // This keeps things simple for now, since BM25 is not normalized and can be
 // tricky to combine with other scoring signals.
 func (d *indexData) scoreFilesUsingBM25(fileMatches []FileMatch, tfs []termFrequency, df termDocumentFrequency, opts *SearchOptions) {
-	// Use standard parameter defaults (used in Lucene and academic papers)
-	k, b := 1.2, 0.75
+	// k determines how quickly the TF score saturates with increasing term
+	// frequencies and b ∈ [0,1] determines how much the score is down-weighted for
+	// longer documents.
+	//
+	// The standard parameter values, used in Lucene and academic papers, are k=1.2
+	// and b=0.75. However, there is some evidence that other values might work
+	// better depending on the characteristics of the corpus.
+	//
+	// In our experiments we found that smaller values of b work well for our use
+	// case. This means we don't penalize long files as much. b=0.3 is at the lower
+	// end of the spectrum of values that are reported in the literature.
+	k, b := 1.2, 0.3
 
 	averageFileLength := float64(d.boundaries[d.numDocs()]) / float64(d.numDocs())
 	// This is very unlikely, but explicitly guard against division by zero.

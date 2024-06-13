@@ -106,8 +106,8 @@ func TestBM25(t *testing.T) {
 			fileName: "a/b/c/config.go",
 			query:    &query.Substring{Pattern: "config.go"},
 			language: "Go",
-			// bm25-score: 0.60 <- sum-termFrequencyScore: 5.00, length-ratio: 0.00
-			wantScore: 0.60,
+			// bm25-score: 0.45 <- sum-termFrequencyScore: 2.00, length-ratio: 0.00
+			wantScore: 0.45,
 		},
 	}
 
