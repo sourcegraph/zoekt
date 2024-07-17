@@ -26,7 +26,9 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/tenant"
 )
 
 type shardLoader interface {
@@ -117,7 +119,7 @@ func versionFromPath(path string) (string, int) {
 }
 
 func (s *DirectoryWatcher) scan() error {
-	fs, err := filepath.Glob(filepath.Join(s.dir, "*.zoekt"))
+	fs, err := filepath.Glob(filepath.Join(s.dir, tenant.IndexDirPrefix+"*/*.zoekt"))
 	if err != nil {
 		return err
 	}
@@ -207,8 +209,10 @@ func (s *DirectoryWatcher) watch() error {
 	if err != nil {
 		return err
 	}
-	if err := watcher.Add(s.dir); err != nil {
-		return err
+	for _, tenantDir := range tenant.ListTenantDirs(s.dir) {
+		if err := watcher.Add(tenantDir); err != nil {
+			return err
+		}
 	}
 
 	// intermediate signal channel so if there are multiple watcher.Events we

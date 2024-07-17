@@ -53,6 +53,7 @@ import (
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"github.com/sourcegraph/zoekt/internal/profiler"
+	"github.com/sourcegraph/zoekt/tenant"
 )
 
 var (
@@ -294,24 +295,6 @@ func (sb *synchronizedBuffer) String() string {
 // running. This is to make it possible to experiment with the content of the
 // IndexDir without the indexserver writing to it.
 const pauseFileName = "PAUSE"
-const tenantIndexDirPrefix = "tenant_"
-
-func listTenantDirs(path string) []string {
-	var dir []string
-
-	files, err := os.ReadDir(path)
-	if err != nil {
-		log.Printf("listTenantDirs: error reading dir: %s", err)
-		return nil
-	}
-
-	for _, file := range files {
-		if file.IsDir() && strings.HasPrefix(file.Name(), tenantIndexDirPrefix) {
-			dir = append(dir, filepath.Join(path, file.Name()))
-		}
-	}
-	return dir
-}
 
 // Run the sync loop. This blocks forever.
 func (s *Server) Run() {
@@ -348,7 +331,7 @@ func (s *Server) Run() {
 			go func() {
 				defer close(cleanupDone)
 				s.muIndexDir.Global(func() {
-					tenantIndexDirs := listTenantDirs(s.IndexDir)
+					tenantIndexDirs := tenant.ListTenantDirs(s.IndexDir)
 					for _, tenantIndexDir := range tenantIndexDirs {
 						// get all dirs within s.IndexDir and loop over those
 						cleanup(tenantIndexDir, repos.IDs, time.Now(), s.shardMerging)
@@ -663,7 +646,7 @@ func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 	parallelism := s.parallelism(opts, runtime.GOMAXPROCS(0))
 	return &indexArgs{
 		IndexOptions: opts,
-		IndexDir:     filepath.Join(s.IndexDir, tenantIndexDirPrefix+strconv.Itoa(opts.Tenant.ID())),
+		IndexDir:     filepath.Join(s.IndexDir, tenant.IndexDirPrefix+strconv.Itoa(opts.Tenant.ID())),
 		Parallelism:  parallelism,
 		Incremental:  true,
 
@@ -1012,7 +995,7 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 func listIndexed(indexDir string) []uint32 {
 	var repoIDs []uint32
 
-	tenantDirs := listTenantDirs(indexDir)
+	tenantDirs := tenant.ListTenantDirs(indexDir)
 	for _, tenantDir := range tenantDirs {
 		index := getShards(tenantDir)
 		for id := range index {
