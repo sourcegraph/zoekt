@@ -19,11 +19,12 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
-	"github.com/sourcegraph/zoekt/ctags"
 	"golang.org/x/net/trace"
 
 	"github.com/sourcegraph/zoekt"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/tenant"
 )
 
 // SourcegraphListResult is the return value of Sourcegraph.List. It is its
@@ -305,6 +306,8 @@ func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
 	}
 
 	item.IndexOptions = IndexOptions{
+		Tenant: tenant.FromProto(x),
+
 		RepoID:     uint32(x.GetRepoId()),
 		LargeFiles: x.GetLargeFiles(),
 		Symbols:    x.GetSymbols(),
@@ -347,6 +350,8 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 	}
 
 	return &proto.ZoektIndexOptions{
+		TenantId: int64(o.Tenant.ID()),
+
 		RepoId:     int32(o.RepoID),
 		LargeFiles: o.LargeFiles,
 		Symbols:    o.Symbols,

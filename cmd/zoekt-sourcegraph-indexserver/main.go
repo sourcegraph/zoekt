@@ -294,6 +294,24 @@ func (sb *synchronizedBuffer) String() string {
 // running. This is to make it possible to experiment with the content of the
 // IndexDir without the indexserver writing to it.
 const pauseFileName = "PAUSE"
+const tenantIndexDirPrefix = "tenant_"
+
+func listTenantDirs(path string) []string {
+	var dir []string
+
+	files, err := os.ReadDir(path)
+	if err != nil {
+		log.Printf("listTenantDirs: error reading dir: %s", err)
+		return nil
+	}
+
+	for _, file := range files {
+		if file.IsDir() && strings.HasPrefix(file.Name(), tenantIndexDirPrefix) {
+			dir = append(dir, filepath.Join(path, file.Name()))
+		}
+	}
+	return dir
+}
 
 // Run the sync loop. This blocks forever.
 func (s *Server) Run() {
@@ -330,7 +348,11 @@ func (s *Server) Run() {
 			go func() {
 				defer close(cleanupDone)
 				s.muIndexDir.Global(func() {
-					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
+					tenantIndexDirs := listTenantDirs(s.IndexDir)
+					for _, tenantIndexDir := range tenantIndexDirs {
+						// get all dirs within s.IndexDir and loop over those
+						cleanup(tenantIndexDir, repos.IDs, time.Now(), s.shardMerging)
+					}
 				})
 			}()
 
@@ -430,6 +452,7 @@ func (s *Server) processQueue() {
 					branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
 				}
 				s.logger.Info("updated index",
+					sglog.Int("tenant_id", opts.Tenant.ID()),
 					sglog.String("repo", args.Name),
 					sglog.Uint32("id", args.RepoID),
 					sglog.Strings("branches", branches),
@@ -593,6 +616,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 	if err := updateIndexStatusOnSourcegraph(c, args, s.Sourcegraph); err != nil {
 		s.logger.Error("failed to update index status",
+			sglog.Int("tenant_id", args.Tenant.ID()),
 			sglog.String("repo", args.Name),
 			sglog.Uint32("id", args.RepoID),
 			sglogBranches("branches", args.Branches),
@@ -639,7 +663,7 @@ func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 	parallelism := s.parallelism(opts, runtime.GOMAXPROCS(0))
 	return &indexArgs{
 		IndexOptions: opts,
-		IndexDir:     s.IndexDir,
+		IndexDir:     filepath.Join(s.IndexDir, tenantIndexDirPrefix+strconv.Itoa(opts.Tenant.ID())),
 		Parallelism:  parallelism,
 		Incremental:  true,
 
@@ -986,15 +1010,22 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 }
 
 func listIndexed(indexDir string) []uint32 {
-	index := getShards(indexDir)
-	metricNumIndexed.Set(float64(len(index)))
-	repoIDs := make([]uint32, 0, len(index))
-	for id := range index {
-		repoIDs = append(repoIDs, id)
+	var repoIDs []uint32
+
+	tenantDirs := listTenantDirs(indexDir)
+	for _, tenantDir := range tenantDirs {
+		index := getShards(tenantDir)
+		for id := range index {
+			repoIDs = append(repoIDs, id)
+		}
 	}
+
 	sort.Slice(repoIDs, func(i, j int) bool {
 		return repoIDs[i] < repoIDs[j]
 	})
+
+	metricNumIndexed.Set(float64(len(repoIDs)))
+
 	return repoIDs
 }
 

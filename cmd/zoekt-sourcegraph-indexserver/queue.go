@@ -120,6 +120,7 @@ func (q *Queue) Len() int {
 // AddOrUpdate sets which opts to index next. If opts.RepoID is already in the
 // queue, it is updated.
 func (q *Queue) AddOrUpdate(opts IndexOptions) {
+	fmt.Printf("AddOrUpdate tenant:%d repo-id:%d name:%s", opts.Tenant.ID(), opts.RepoID, opts.Name)
 	q.mu.Lock()
 	item := q.getOrAdd(opts.RepoID)
 	if !reflect.DeepEqual(item.opts, opts) {

@@ -21,6 +21,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/tenant"
 
 	sglog "github.com/sourcegraph/log"
 )
@@ -73,6 +74,8 @@ type IndexOptions struct {
 	// The number of threads to use for indexing shards. Defaults to the number of available
 	// CPUs. If the server flag -cpu_fraction is set, then this value overrides it.
 	ShardConcurrency int32
+
+	Tenant tenant.Tenant
 }
 
 // indexArgs represents the arguments we pass to zoekt-git-index
@@ -229,6 +232,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 			"-C", gitDir,
 			"-c", "protocol.version=2",
 			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
+			"-c", "http.extraHeader=X-Sourcegraph-Tenant-ID: " + strconv.Itoa(o.Tenant.ID()),
 			"fetch", "--depth=1", o.CloneURL,
 		}
 
@@ -298,6 +302,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 	}
 
 	logger.Debug("successfully fetched git data",
+		sglog.Int("tenant_id", o.Tenant.ID()),
 		sglog.String("repo", o.Name),
 		sglog.Uint32("id", o.RepoID),
 		sglog.Int("commits_count", successfullyFetchedCommitsCount),
@@ -407,6 +412,8 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		}
 		args = append(args, "-language_map", strings.Join(languageMap, ","))
 	}
+
+	args = append(args, "-tenant_id", strconv.Itoa(o.Tenant.ID()))
 
 	args = append(args, buildOptions.Args()...)
 	args = append(args, gitDir)
