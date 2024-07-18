@@ -1,6 +1,7 @@
 package tenant
 
 import (
+	"context"
 	"log"
 	"os"
 	"path/filepath"
@@ -41,4 +42,26 @@ func ListTenantDirs(path string) []string {
 		}
 	}
 	return dir
+}
+
+type contextKey int
+
+const tenantKey contextKey = iota
+
+// FromContext returns the tenant from a given context.
+func FromContext(ctx context.Context) *Tenant {
+	tnt, ok := ctx.Value(tenantKey).(*Tenant)
+	if !ok || tnt == nil {
+		return &Tenant{}
+	}
+	return tnt
+}
+
+// withTenant returns a new context for the given tenant.
+func withTenant(ctx context.Context, tntID int) context.Context {
+	return context.WithValue(ctx, tenantKey, &Tenant{_id: tntID})
+}
+
+func WithDefaultTenant(ctx context.Context) context.Context {
+	return withTenant(ctx, 2)
 }

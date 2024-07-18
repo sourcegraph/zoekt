@@ -31,9 +31,11 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
+
 	"github.com/sourcegraph/zoekt"
 	zjson "github.com/sourcegraph/zoekt/json"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/tenant"
 )
 
 var Funcmap = template.FuncMap{
@@ -186,7 +188,9 @@ func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
 	q := &query.Const{Value: true}
 	opts := &zoekt.SearchOptions{ShardMaxMatchCount: 1, TotalMaxMatchCount: 1, MaxDocDisplayCount: 1}
 
-	result, err := s.Searcher.Search(r.Context(), q, opts)
+	// TODO(stefan) which tenant should we use for the health check? Maybe 0 and it's ok we never return an error.
+	ctx := tenant.WithDefaultTenant(r.Context())
+	result, err := s.Searcher.Search(ctx, q, opts)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("not ready: %v", err), http.StatusInternalServerError)
 		return

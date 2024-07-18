@@ -18,8 +18,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 	"regexp/syntax"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +29,7 @@ import (
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/tenant"
 )
 
 // simplifyMultiRepo takes a query and a predicate. It returns Const(true) if all
@@ -131,8 +134,33 @@ func (o *SearchOptions) SetDefaults() {
 	}
 }
 
+func (d *indexData) matchTenant(ctx context.Context) bool {
+	t := tenant.FromContext(ctx)
+	// TODO (stefan) check for 0 value tenant
+	if t == nil {
+		return false
+	}
+
+	// Get the directory of the file path
+	dir := filepath.Dir(d.file.Name())
+
+	// Get the base of the directory, which is the lowest-level folder
+	lowestLevelFolder := filepath.Base(dir)
+
+	// Compare the lowest-level folder with the provided string
+	b := strings.EqualFold(lowestLevelFolder, tenant.IndexDirPrefix+strconv.Itoa(t.ID()))
+	if !b {
+		log.Printf("indexData.matchTenant: mismatched tenant ID: %d, lowestLevelFolder: %s", t.ID(), lowestLevelFolder)
+	}
+	return b
+}
+
 func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) (sr *SearchResult, err error) {
 	timer := newTimer()
+
+	if !d.matchTenant(ctx) {
+		fmt.Println("DEBUG: query without proper tenant:", q.String())
+	}
 
 	copyOpts := *opts
 	opts = &copyOpts

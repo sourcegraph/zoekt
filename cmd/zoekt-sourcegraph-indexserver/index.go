@@ -413,8 +413,6 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		args = append(args, "-language_map", strings.Join(languageMap, ","))
 	}
 
-	args = append(args, "-tenant_id", strconv.Itoa(o.Tenant.ID()))
-
 	args = append(args, buildOptions.Args()...)
 	args = append(args, gitDir)
 
