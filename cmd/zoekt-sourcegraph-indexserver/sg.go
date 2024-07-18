@@ -76,7 +76,7 @@ type Sourcegraph interface {
 
 	// UpdateIndexStatus sends a request to Sourcegraph to confirm that the
 	// given repositories have been indexed.
-	UpdateIndexStatus(repositories []indexStatus) error
+	UpdateIndexStatus(ctx context.Context, repositories []indexStatus) error
 }
 
 type SourcegraphClientOption func(*sourcegraphClient)
@@ -491,11 +491,11 @@ func (u *updateIndexStatusRequest) FromProto(x *proto.UpdateIndexStatusRequest) 
 
 // UpdateIndexStatus sends a request to Sourcegraph to confirm that the given
 // repositories have been indexed.
-func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error {
+func (s *sourcegraphClient) UpdateIndexStatus(ctx context.Context, repositories []indexStatus) error {
 	r := updateIndexStatusRequest{Repositories: repositories}
 
 	request := r.ToProto()
-	_, err := s.grpcClient.UpdateIndexStatus(context.Background(), request)
+	_, err := s.grpcClient.UpdateIndexStatus(ctx, request)
 	if err != nil {
 		return fmt.Errorf("failed to update index status: %w", err)
 	}
@@ -748,7 +748,7 @@ func (sf sourcegraphFake) visitRepos(visit func(name string)) error {
 	})
 }
 
-func (s sourcegraphFake) UpdateIndexStatus(repositories []indexStatus) error {
+func (s sourcegraphFake) UpdateIndexStatus(ctx context.Context, repositories []indexStatus) error {
 	// noop
 	return nil
 }
@@ -772,7 +772,7 @@ func (s sourcegraphNop) GetDocumentRanks(ctx context.Context, repoName string) (
 	return RepoPathRanks{}, nil
 }
 
-func (s sourcegraphNop) UpdateIndexStatus(repositories []indexStatus) error {
+func (s sourcegraphNop) UpdateIndexStatus(ctx context.Context, repositories []indexStatus) error {
 	return nil
 }
 

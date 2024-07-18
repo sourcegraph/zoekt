@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"container/heap"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	sglog "github.com/sourcegraph/log"
+
+	"github.com/sourcegraph/zoekt/tenant"
 )
 
 type queueItem struct {
@@ -84,11 +87,12 @@ func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l sglog.Logger)
 
 // Pop returns the opts of the next repo to index. If the queue is empty ok is
 // false.
-func (q *Queue) Pop() (opts IndexOptions, ok bool) {
+func (q *Queue) Pop() (opts IndexOptions, ctx context.Context, ok bool) {
+	ctx = context.Background()
 	q.mu.Lock()
 	if len(q.pq) == 0 {
 		q.mu.Unlock()
-		return IndexOptions{}, false
+		return IndexOptions{}, ctx, false
 	}
 
 	item := heap.Pop(&q.pq).(*queueItem)
@@ -102,11 +106,13 @@ func (q *Queue) Pop() (opts IndexOptions, ok bool) {
 
 	q.mu.Unlock()
 
+	ctx = tenant.Inject(ctx, opts.Tenant)
+
 	name := repoNameForMetric(opts.Name)
 	age := time.Since(dateAdded)
 	metricQueueAge.WithLabelValues(name).Observe(age.Seconds())
 
-	return opts, true
+	return opts, ctx, true
 }
 
 // Len returns the number of items in the queue.

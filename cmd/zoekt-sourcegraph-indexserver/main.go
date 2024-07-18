@@ -52,6 +52,7 @@ import (
 	"github.com/sourcegraph/zoekt/debugserver"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
+	"github.com/sourcegraph/zoekt/grpc/propagator"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/tenant"
 )
@@ -405,7 +406,7 @@ func (s *Server) processQueue() {
 			continue
 		}
 
-		opts, ok := s.queue.Pop()
+		opts, ctx, ok := s.queue.Pop()
 		if !ok {
 			time.Sleep(time.Second)
 			continue
@@ -418,7 +419,7 @@ func (s *Server) processQueue() {
 			// recording time taken while merging/cleanup runs.
 			start := time.Now()
 
-			state, err := s.Index(args)
+			state, err := s.Index(ctx, args)
 
 			elapsed := time.Since(start)
 
@@ -517,7 +518,7 @@ func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 }
 
 // Index starts an index job for repo name at commit.
-func (s *Server) Index(args *indexArgs) (state indexState, err error) {
+func (s *Server) Index(ctx context.Context, args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
 
 	defer func() {
@@ -597,7 +598,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		return indexStateFail, err
 	}
 
-	if err := updateIndexStatusOnSourcegraph(c, args, s.Sourcegraph); err != nil {
+	if err := updateIndexStatusOnSourcegraph(ctx, c, args, s.Sourcegraph); err != nil {
 		s.logger.Error("failed to update index status",
 			sglog.Int("tenant_id", args.Tenant.ID()),
 			sglog.String("repo", args.Name),
@@ -612,7 +613,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 // updateIndexStatusOnSourcegraph pushes the current state to sourcegraph so
 // it can update the zoekt_repos table.
-func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Sourcegraph) error {
+func updateIndexStatusOnSourcegraph(ctx context.Context, c gitIndexConfig, args *indexArgs, sg Sourcegraph) error {
 	// We need to read from disk for IndexTime.
 	_, metadata, ok, err := c.findRepositoryMetadata(args)
 	if err != nil {
@@ -627,7 +628,7 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 		Branches:      args.Branches,
 		IndexTimeUnix: metadata.IndexTime.Unix(),
 	}}
-	if err := sg.UpdateIndexStatus(status); err != nil {
+	if err := sg.UpdateIndexStatus(ctx, status); err != nil {
 		return fmt.Errorf("failed to update sourcegraph with status: %w", err)
 	}
 
@@ -981,7 +982,8 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 
 	var state indexState
 	ran := s.muIndexDir.With(opts.Name, func() {
-		state, err = s.Index(args)
+		// TODO(stefan) Fix this. Can we have a proper context with tenant here?
+		state, err = s.Index(context.Background(), args)
 	})
 	if !ran {
 		return fmt.Sprintf("index job for repository already running: %s", args), nil
@@ -1505,6 +1507,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainStreamInterceptor(
+			propagator.StreamClientPropagator(tenant.TenantPropagator{}),
 			metrics.StreamClientInterceptor(),
 			messagesize.StreamClientInterceptor,
 			internalActorStreamInterceptor(),
@@ -1513,6 +1516,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 			retry.StreamClientInterceptor(retryOpts...),
 		),
 		grpc.WithChainUnaryInterceptor(
+			propagator.UnaryClientPropagator(tenant.TenantPropagator{}),
 			metrics.UnaryClientInterceptor(),
 			messagesize.UnaryClientInterceptor,
 			internalActorUnaryInterceptor(),

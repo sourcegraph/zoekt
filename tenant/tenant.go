@@ -27,6 +27,10 @@ func FromProto(x *proto.ZoektIndexOptions) Tenant {
 	}
 }
 
+func Inject(ctx context.Context, tnt Tenant) context.Context {
+	return context.WithValue(ctx, tenantKey, &tnt)
+}
+
 func ListTenantDirs(path string) []string {
 	var dir []string
 
