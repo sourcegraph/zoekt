@@ -21,7 +21,9 @@ import (
 	"hash/crc64"
 	"log"
 	"math/bits"
+	"os"
 	"slices"
+	"strconv"
 	"unicode/utf8"
 
 	"github.com/sourcegraph/zoekt/query"
@@ -401,11 +403,37 @@ func (r *ngramIterationResults) candidates() []*candidateMatch {
 	return cs
 }
 
+// experimentIterateNgramLookupLimit when non-zero will only lookup this many
+// ngrams from a query string. Note: that if case-insensitive, this only
+// limits the input. So we will still lookup the case folding.
+//
+// This experiment is targetting looking up large snippets. If it is
+// successful, we will likely hardcode the value we use in production.
+//
+// Future note: if we find cases where this works badly, we can consider only
+// searching a random subset of the query string to avoid bad strings.
+var experimentIterateNgramLookupLimit = getEnvInt("SRC_EXPERIMENT_ITERATE_NGRAM_LOOKUP_LIMIT")
+
+func getEnvInt(k string) int {
+	v, _ := strconv.Atoi(os.Getenv(k))
+	if v != 0 {
+		log.Printf("%s = %d\n", k, v)
+	}
+	return v
+}
+
 func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResults, error) {
 	str := query.Pattern
 
 	// Find the 2 least common ngrams from the string.
-	ngramOffs := splitNGrams([]byte(query.Pattern))
+	var ngramOffs []runeNgramOff
+	if ngramLimit := experimentIterateNgramLookupLimit; ngramLimit > 0 {
+		// Note: we can't just do str = str[:ngramLimit] due to utf-8 and str
+		// length is asked later on for other optimizations.
+		ngramOffs = splitNGramsLimit([]byte(str), ngramLimit)
+	} else {
+		ngramOffs = splitNGrams([]byte(str))
+	}
 
 	// protect against accidental searching of empty strings
 	if len(ngramOffs) == 0 {
