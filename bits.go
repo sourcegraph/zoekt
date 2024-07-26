@@ -124,6 +124,11 @@ func (a runeNgramOff) Compare(b runeNgramOff) int {
 }
 
 func splitNGrams(str []byte) []runeNgramOff {
+	// len(maxNgrams) >= the number of ngrams in str => no limit
+	return splitNGramsLimit(str, len(str))
+}
+
+func splitNGramsLimit(str []byte, maxNgrams int) []runeNgramOff {
 	var runeGram [3]rune
 	var off [3]uint32
 	var runeCount int
@@ -131,7 +136,7 @@ func splitNGrams(str []byte) []runeNgramOff {
 	result := make([]runeNgramOff, 0, len(str))
 	var i uint32
 
-	for len(str) > 0 {
+	for len(str) > 0 && len(result) < maxNgrams {
 		r, sz := utf8.DecodeRune(str)
 		str = str[sz:]
 		runeGram[0] = runeGram[1]
