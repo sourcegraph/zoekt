@@ -311,6 +311,7 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 		Last: LastInput{
 			Query:     queryStr,
 			Num:       num,
+			Ctx:       numCtxLines,
 			AutoFocus: true,
 		},
 		Stats:       result.Stats,
