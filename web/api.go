@@ -28,6 +28,7 @@ type ApiSearchResult struct {
 type LastInput struct {
 	Query string
 	Num   int
+	Ctx   int
 
 	// If set, focus on the search box.
 	AutoFocus bool
