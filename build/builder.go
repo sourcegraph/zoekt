@@ -116,6 +116,10 @@ type Options struct {
 	changedOrRemovedFiles []string
 
 	LanguageMap ctags.LanguageMap
+
+	// ShardMerging is true if builder should respect compound shards. This is a
+	// Sourcegraph specific option.
+	ShardMerging bool
 }
 
 // HashOptions contains only the options in Options that upon modification leads to IndexState of IndexStateMismatch during the next index building.
@@ -194,6 +198,7 @@ func (o *Options) Flags(fs *flag.FlagSet) {
 
 	// Sourcegraph specific
 	fs.BoolVar(&o.DisableCTags, "disable_ctags", x.DisableCTags, "If set, ctags will not be called.")
+	fs.BoolVar(&o.ShardMerging, "shard_merging", x.ShardMerging, "If set, builder will respect compound shards.")
 }
 
 // Args generates command line arguments for o. It is the "inverse" of Flags.
@@ -231,6 +236,10 @@ func (o *Options) Args() []string {
 	// Sourcegraph specific
 	if o.DisableCTags {
 		args = append(args, "-disable_ctags")
+	}
+
+	if o.ShardMerging {
+		args = append(args, "-shard_merging")
 	}
 
 	return args
@@ -774,7 +783,7 @@ func (b *Builder) Finish() error {
 
 	for p := range toDelete {
 		// Don't delete compound shards, set tombstones instead.
-		if zoekt.ShardMergingEnabled() && strings.HasPrefix(filepath.Base(p), "compound-") {
+		if b.opts.ShardMerging && strings.HasPrefix(filepath.Base(p), "compound-") {
 			if !strings.HasSuffix(p, ".zoekt") {
 				continue
 			}

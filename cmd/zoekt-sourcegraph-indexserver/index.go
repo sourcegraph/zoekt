@@ -98,6 +98,9 @@ type indexArgs struct {
 	// DeltaShardNumberFallbackThreshold is an upper limit on the number of preexisting shards that can exist
 	// before attempting a delta build.
 	DeltaShardNumberFallbackThreshold uint64
+
+	// ShardMerging is true if we want zoekt-git-index to respect compound shards.
+	ShardMerging bool
 }
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
@@ -131,6 +134,8 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		DocumentRanksVersion: o.DocumentRanksVersion,
 
 		LanguageMap: o.LanguageMap,
+
+		ShardMerging: o.ShardMerging,
 	}
 }
 
