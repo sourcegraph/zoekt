@@ -16,7 +16,7 @@ import (
 )
 
 var unsupportedByLinguistAliasMap = map[string]string{
-	// Extensions for the Apex programming languages
+	// Extensions for the Apex programming language
 	// See https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/apex_dev_guide.htm
 	"apex": "Apex",
 	// Pkl Configuration Language (https://pkl-lang.org/)
