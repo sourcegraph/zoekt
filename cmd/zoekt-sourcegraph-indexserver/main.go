@@ -1216,7 +1216,6 @@ type rootConfig struct {
 	targetSize          int64
 	minSize             int64
 	minAgeDays          int
-	maxPriority         float64
 
 	// config values related to backoff indexing repos with one or more consecutive failures
 	backoffDuration    time.Duration
@@ -1242,7 +1241,6 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.Int64Var(&rc.targetSize, "merge_target_size", getEnvWithDefaultInt64("SRC_MERGE_TARGET_SIZE", 2000), "the target size of compound shards in MiB")
 	fs.Int64Var(&rc.minSize, "merge_min_size", getEnvWithDefaultInt64("SRC_MERGE_MIN_SIZE", 1800), "the minimum size of a compound shard in MiB")
 	fs.IntVar(&rc.minAgeDays, "merge_min_age", getEnvWithDefaultInt("SRC_MERGE_MIN_AGE", 7), "the time since the last commit in days. Shards with newer commits are excluded from merging.")
-	fs.Float64Var(&rc.maxPriority, "merge_max_priority", getEnvWithDefaultFloat64("SRC_MERGE_MAX_PRIORITY", math.MaxFloat64), "the maximum priority a shard can have to be considered for merging.")
 }
 
 func startServer(conf rootConfig) error {
@@ -1455,7 +1453,6 @@ func newServer(conf rootConfig) (*Server, error) {
 			targetSizeBytes: conf.targetSize * 1024 * 1024,
 			minSizeBytes:    conf.minSize * 1024 * 1024,
 			minAgeDays:      conf.minAgeDays,
-			maxPriority:     conf.maxPriority,
 		},
 		timeout: indexingTimeout,
 	}, err
