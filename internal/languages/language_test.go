@@ -39,6 +39,12 @@ func TestGetLanguageByAlias(t *testing.T) {
 			want:   "Magik",
 			wantOk: true,
 		},
+		{
+			name:   "apex example unsupported by linguist alias",
+			alias:  "apex",
+			want:   "Apex",
+			wantOk: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -77,10 +83,16 @@ func TestGetLanguage(t *testing.T) {
 			want:     "Go",
 		},
 		{
-			name:     "unsupported by linguist extension",
+			name:     "magik: unsupported by linguist extension",
 			filename: "file.magik",
 			content:  []byte(""),
 			want:     "Magik",
+		},
+		{
+			name:     "apex: unsupported by linguist extension",
+			filename: "file.apxc",
+			content:  []byte(""),
+			want:     "Apex",
 		},
 	}
 

@@ -16,6 +16,9 @@ import (
 )
 
 var unsupportedByLinguistAliasMap = map[string]string{
+	// Extensions that are for the Apex programming languages
+	// See https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/apex_dev_guide.htm
+	"apex": "Apex",
 	// Pkl Configuration Language (https://pkl-lang.org/)
 	// Add to linguist on 6/7/24
 	// can remove once go-enry package updates
@@ -26,6 +29,11 @@ var unsupportedByLinguistAliasMap = map[string]string{
 }
 
 var unsupportedByLinguistExtensionToNameMap = map[string]string{
+	".apex":    "Apex",
+	".apxt":    "Apex",
+	".apxc":    "Apex",
+	".cls":     "Apex",
+	".trigger": "Apex",
 	// Pkl Configuration Language (https://pkl-lang.org/)
 	".pkl": "Pkl",
 	// Magik Language
