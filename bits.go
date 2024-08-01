@@ -18,8 +18,6 @@ import (
 	"cmp"
 	"encoding/binary"
 	"math"
-	"math/rand/v2"
-	"slices"
 	"sort"
 	"unicode"
 	"unicode/utf8"
@@ -126,11 +124,6 @@ func (a runeNgramOff) Compare(b runeNgramOff) int {
 }
 
 func splitNGrams(str []byte) []runeNgramOff {
-	// len(maxNgrams) >= the number of ngrams in str => no limit
-	return splitNGramsLimit(str, len(str))
-}
-
-func splitNGramsLimit(str []byte, maxNgrams int) []runeNgramOff {
 	var runeGram [3]rune
 	var off [3]uint32
 	var runeCount int
@@ -158,21 +151,6 @@ func splitNGramsLimit(str []byte, maxNgrams int) []runeNgramOff {
 			ngram: ng,
 			index: len(result),
 		})
-	}
-
-	// We return a random subset of size maxNgrams. This is to prevent the start
-	// of the string biasing ngram selection.
-	if maxNgrams < len(result) {
-		//  Deterministic seed for tests. Additionally makes comparing repeated
-		//  queries performance easier.
-		r := rand.New(rand.NewPCG(uint64(maxNgrams), 0))
-
-		// Pick random subset via a shuffle
-		r.Shuffle(maxNgrams, func(i, j int) { result[i], result[j] = result[j], result[i] })
-		result = result[:maxNgrams]
-
-		// Caller expects ngrams in order of appearance.
-		slices.SortFunc(result, runeNgramOff.Compare)
 	}
 
 	return result
