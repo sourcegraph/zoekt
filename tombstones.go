@@ -5,15 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 )
-
-// ShardMergingEnabled returns true if SRC_ENABLE_SHARD_MERGING is set to true.
-func ShardMergingEnabled() bool {
-	t := os.Getenv("SRC_ENABLE_SHARD_MERGING")
-	enabled, _ := strconv.ParseBool(t)
-	return enabled
-}
 
 var mockRepos []*Repository
 
