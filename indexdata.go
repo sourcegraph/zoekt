@@ -320,11 +320,37 @@ func (d *indexData) memoryUse() int {
 	return sz
 }
 
+// findSelectiveNgrams returns two ngrams to pass to the distance iterator, chosen to
+// produce a small file intersection. It finds the two lowest frequency ngrams, but avoids
+// overlapping trigrams to keep their intersection as small as possible.
+//
+// Invariant: first will always have a smaller index than last.
+func findSelectiveNgrams(ngramOffs []runeNgramOff, indexMap []int, frequencies []uint32) (first, last runeNgramOff) {
+	first, last = minFrequencyNgramOffsets(ngramOffs, frequencies)
+
+	// If the trigrams are overlapping, then try to shift one to reduce overlap.
+	// This is guaranteed to produce a smaller intersection.
+	if last.index-first.index < ngramSize {
+		newFirstIndex := max(last.index-ngramSize, 0)
+		if newFirstIndex != first.index {
+			first = ngramOffs[indexMap[newFirstIndex]]
+		}
+
+		newLastIndex := min(first.index+ngramSize, len(ngramOffs)-1)
+		if newLastIndex != last.index {
+			last = ngramOffs[indexMap[newLastIndex]]
+		}
+	}
+	return
+}
+
 const maxUInt32 = 0xffffffff
 
-func min2Index(xs []uint32) (idx0, idx1 int) {
+func minFrequencyNgramOffsets(ngramOffs []runeNgramOff, frequencies []uint32) (first, last runeNgramOff) {
+	// Find the two lowest frequency ngrams.
+	idx0, idx1 := 0, 0
 	min0, min1 := uint32(maxUInt32), uint32(maxUInt32)
-	for i, x := range xs {
+	for i, x := range frequencies {
 		if x <= min0 {
 			idx0, idx1 = i, idx0
 			min0, min1 = x, min0
@@ -333,37 +359,15 @@ func min2Index(xs []uint32) (idx0, idx1 int) {
 			min1 = x
 		}
 	}
-	return
-}
 
-// minFrequencyNgramOffsets returns the two lowest frequency ngrams to pass to
-// the distance iterator. If they have the same frequency, we maximise the
-// distance between them. first will always have a smaller index than last.
-func minFrequencyNgramOffsets(ngramOffs []runeNgramOff, frequencies []uint32) (first, last runeNgramOff) {
-	firstI, lastI := min2Index(frequencies)
-	// If the frequencies are equal lets maximise distance in the query
-	// string. This optimization normally triggers for long repeated trigrams
-	// in a string, eg a query like "AAAAA..."
-	if frequencies[firstI] == frequencies[lastI] {
-		for i, freq := range frequencies {
-			if freq != frequencies[firstI] {
-				continue
-			}
-			if ngramOffs[i].index < ngramOffs[firstI].index {
-				firstI = i
-			}
-			if ngramOffs[i].index > ngramOffs[lastI].index {
-				lastI = i
-			}
-		}
-	}
-	first = ngramOffs[firstI]
-	last = ngramOffs[lastI]
-	// Ensure first appears before last to make distance logic below clean.
+	first = ngramOffs[idx0]
+	last = ngramOffs[idx1]
+
+	// Ensure first appears before last as a helpful invariant.
 	if first.index > last.index {
 		last, first = first, last
 	}
-	return first, last
+	return
 }
 
 func (data *indexData) ngrams(filename bool) btreeIndex {
@@ -401,7 +405,7 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 	str := query.Pattern
 
 	// Find the 2 least common ngrams from the string.
-	ngramOffs := splitNGrams([]byte(query.Pattern))
+	ngramOffs := splitNGrams([]byte(str))
 
 	// protect against accidental searching of empty strings
 	if len(ngramOffs) == 0 {
@@ -412,9 +416,10 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 	// bucket (which can cause disk IO).
 	slices.SortFunc(ngramOffs, runeNgramOff.Compare)
 	frequencies := make([]uint32, 0, len(ngramOffs))
+	indexMap := make([]int, len(ngramOffs))
 	ngramLookups := 0
 	ngrams := d.ngrams(query.FileName)
-	for _, o := range ngramOffs {
+	for i, o := range ngramOffs {
 		var freq uint32
 		if query.CaseSensitive {
 			freq = ngrams.Get(o.ngram).sz
@@ -438,15 +443,14 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 		}
 
 		frequencies = append(frequencies, freq)
+		indexMap[o.index] = i
 	}
 
-	// first and last are now the smallest trigram posting lists to iterate
-	// through.
-	first, last := minFrequencyNgramOffsets(ngramOffs, frequencies)
+	first, last := findSelectiveNgrams(ngramOffs, indexMap, frequencies)
 
 	iter := &ngramDocIterator{
-		leftPad:      first.index,
-		rightPad:     uint32(utf8.RuneCountInString(str)) - first.index,
+		leftPad:      uint32(first.index),
+		rightPad:     uint32(utf8.RuneCountInString(str) - first.index),
 		ngramLookups: ngramLookups,
 	}
 	if query.FileName {
@@ -456,7 +460,7 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 	}
 
 	if first != last {
-		runeDist := last.index - first.index
+		runeDist := uint32(last.index - first.index)
 		i, err := d.newDistanceTrigramIter(first.ngram, last.ngram, runeDist, query.CaseSensitive, query.FileName)
 		if err != nil {
 			return nil, err

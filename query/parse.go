@@ -20,8 +20,8 @@ import (
 	"log"
 	"regexp/syntax"
 
-	"github.com/go-enry/go-enry/v2"
 	"github.com/grafana/regexp"
+	"github.com/sourcegraph/zoekt/internal/languages"
 )
 
 var _ = log.Printf
@@ -172,7 +172,7 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		expr = q
 	case tokLang:
-		canonical, ok := enry.GetLanguageByAlias(text)
+		canonical, ok := languages.GetLanguageByAlias(text)
 		if !ok {
 			expr = &Const{false}
 		} else {

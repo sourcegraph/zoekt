@@ -441,7 +441,7 @@ func TestSearchStats(t *testing.T) {
 			Want: Stats{
 				FilesLoaded:        1,
 				ContentBytesLoaded: 22,
-				IndexBytesLoaded:   8,
+				IndexBytesLoaded:   10,
 				NgramMatches:       3, // we look at doc 1, because it's max(0,1) due to AND
 				NgramLookups:       104,
 				MatchCount:         2,
@@ -556,7 +556,7 @@ func TestSearchStats(t *testing.T) {
 			}},
 			Want: Stats{
 				ContentBytesLoaded: 33, // we still have to run regex since "app" matches two documents
-				IndexBytesLoaded:   8,
+				IndexBytesLoaded:   10,
 				FilesConsidered:    2, // important that we don't check 3 to ensure we are using the index
 				FilesLoaded:        2,
 				MatchCount:         0, // even though there is a match it doesn't align with a symbol
@@ -3449,6 +3449,7 @@ func TestSearchTypeLanguage(t *testing.T) {
 		Document{Name: "apex.cls", Content: []byte("public class Car extends Vehicle {")},
 		Document{Name: "tex.cls", Content: []byte(`\DeclareOption*{`)},
 		Document{Name: "hello.h", Content: []byte(`#include <stdio.h>`)},
+		Document{Name: "be.magik", Content: []byte(`_package unicorn`)},
 	)
 
 	t.Log(b.languageMap)
@@ -3485,6 +3486,9 @@ func TestSearchTypeLanguage(t *testing.T) {
 
 		res = searchForTest(t, b, &query.Language{Language: "C"})
 		wantSingleMatch(res, "hello.h")
+
+		res = searchForTest(t, b, &query.Language{Language: "Magik"})
+		wantSingleMatch(res, "be.magik")
 
 		// test fallback language search by pretending it's an older index version
 		res = searchForTest(t, b, &query.Language{Language: "C++"})

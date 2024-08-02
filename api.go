@@ -946,10 +946,16 @@ type SearchOptions struct {
 	// will be used. This option is temporary and is only exposed for testing/ tuning purposes.
 	DocumentRanksWeight float64
 
-	// EXPERIMENTAL. If true, use keyword-style scoring instead of the default scoring formula.
-	// Currently, this treats each match in a file as a term and computes an approximation to BM25.
+	// EXPERIMENTAL. If true, use text-search style scoring instead of the default
+	// scoring formula. The scoring algorithm treats each match in a file as a term
+	// and computes an approximation to BM25.
+	//
+	// The calculation of IDF assumes that Zoekt visits all documents containing any
+	// of the query terms during evaluation. This is true, for example, if all query
+	// terms are ORed together.
+	//
 	// When enabled, all other scoring signals are ignored, including document ranks.
-	UseKeywordScoring bool
+	UseBM25Scoring bool
 
 	// If set, the search results will contain debug information for scoring.
 	DebugScore bool
@@ -1008,7 +1014,7 @@ func (s *SearchOptions) String() string {
 	addBool("Whole", s.Whole)
 	addBool("ChunkMatches", s.ChunkMatches)
 	addBool("UseDocumentRanks", s.UseDocumentRanks)
-	addBool("UseKeywordScoring", s.UseKeywordScoring)
+	addBool("UseBM25Scoring", s.UseBM25Scoring)
 	addBool("DebugScore", s.DebugScore)
 
 	b.WriteByte('}')

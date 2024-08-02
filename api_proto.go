@@ -699,7 +699,7 @@ func SearchOptionsFromProto(p *proto.SearchOptions) *SearchOptions {
 		UseDocumentRanks:       p.GetUseDocumentRanks(),
 		DocumentRanksWeight:    p.GetDocumentRanksWeight(),
 		DebugScore:             p.GetDebugScore(),
-		UseKeywordScoring:      p.GetUseKeywordScoring(),
+		UseBM25Scoring:         p.GetUseBm25Scoring(),
 	}
 }
 
@@ -723,6 +723,6 @@ func (s *SearchOptions) ToProto() *proto.SearchOptions {
 		UseDocumentRanks:       s.UseDocumentRanks,
 		DocumentRanksWeight:    s.DocumentRanksWeight,
 		DebugScore:             s.DebugScore,
-		UseKeywordScoring:      s.UseKeywordScoring,
+		UseBm25Scoring:         s.UseBM25Scoring,
 	}
 }

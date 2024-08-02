@@ -147,7 +147,7 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 // returned by the API it needs to be copied.
 func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []LineMatch {
 	var filenameMatches []*candidateMatch
-	contentMatches := ms[:0]
+	contentMatches := make([]*candidateMatch, 0, len(ms))
 
 	for _, m := range ms {
 		if m.fileName {
@@ -194,7 +194,7 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 // returned by the API it needs to be copied.
 func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines int, language string, debug bool) []ChunkMatch {
 	var filenameMatches []*candidateMatch
-	contentMatches := ms[:0]
+	contentMatches := make([]*candidateMatch, 0, len(ms))
 
 	for _, m := range ms {
 		if m.fileName {
