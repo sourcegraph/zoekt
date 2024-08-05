@@ -119,10 +119,6 @@ func TestRanking(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			// q is marshalled as part of the test, so avoid our rewrites for
-			// ranking.
-			qSearch := query.ExpirementalPhraseBoost(q, rq.Query, query.ExperimentalPhraseBoostOptions{})
-
 			sOpts := zoekt.SearchOptions{
 				// Use the same options sourcegraph has by default
 				ChunkMatches:       true,
@@ -133,7 +129,7 @@ func TestRanking(t *testing.T) {
 
 				DebugScore: *debugScore,
 			}
-			result, err := ss.Search(context.Background(), qSearch, &sOpts)
+			result, err := ss.Search(context.Background(), q, &sOpts)
 			if err != nil {
 				t.Fatal(err)
 			}
