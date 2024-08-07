@@ -14,7 +14,6 @@ RUN mkdir -p ${DATA_DIR}
 
 COPY --from=zoekt \
     /usr/local/bin/universal-* \
-    /usr/local/bin/scip-ctags \
     /usr/local/bin/zoekt-sourcegraph-indexserver \
     /usr/local/bin/zoekt-archive-index \
     /usr/local/bin/zoekt-git-index \
