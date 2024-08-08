@@ -38,8 +38,6 @@ type queueItem struct {
 	// dateAddedToQueue is the time when this indexing job was added to the queue. If this item is no longer
 	// in the heap (i.e. it has been processed already), this value is nonsensical.
 	dateAddedToQueue time.Time
-	// backoff will handle backing off of future indexing requests for a duration of time based on previous failures
-	backoff backoff
 }
 
 // Queue is a priority queue which returns the next repo to index. It is safe
@@ -57,19 +55,11 @@ type Queue struct {
 	newQueueItem func(uint32) *queueItem
 }
 
-func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l sglog.Logger) *Queue {
-	if backoffDuration < 0 || maxBackoffDuration < 0 {
-		backoffDuration = 0
-		maxBackoffDuration = 0
-	}
+func NewQueue(l sglog.Logger) *Queue {
 	newQueueItem := func(repoID uint32) *queueItem {
 		return &queueItem{
 			repoID:  repoID,
 			heapIdx: -1,
-			backoff: backoff{
-				backoffDuration: backoffDuration,
-				maxBackoff:      maxBackoffDuration,
-			},
 		}
 	}
 
@@ -127,15 +117,13 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 		item.opts = opts
 	}
 	if item.heapIdx < 0 {
-		if item.backoff.Allow(time.Now()) {
-			q.seq++
-			item.seq = q.seq
-			item.dateAddedToQueue = time.Now()
+		q.seq++
+		item.seq = q.seq
+		item.dateAddedToQueue = time.Now()
 
-			heap.Push(&q.pq, item)
-			metricQueueLen.Set(float64(len(q.pq)))
-			metricQueueCap.Set(float64(len(q.items)))
-		}
+		heap.Push(&q.pq, item)
+		metricQueueLen.Set(float64(len(q.pq)))
+		metricQueueCap.Set(float64(len(q.items)))
 	} else {
 		heap.Fix(&q.pq, item.heapIdx)
 	}
@@ -159,15 +147,13 @@ func (q *Queue) Bump(ids []uint32) []uint32 {
 		if !ok {
 			missing = append(missing, id)
 		} else if item.heapIdx < 0 {
-			if item.backoff.Allow(time.Now()) {
-				q.seq++
-				item.seq = q.seq
-				item.dateAddedToQueue = time.Now()
+			q.seq++
+			item.seq = q.seq
+			item.dateAddedToQueue = time.Now()
 
-				heap.Push(&q.pq, item)
-				metricQueueLen.Set(float64(len(q.pq)))
-				metricQueueCap.Set(float64(len(q.items)))
-			}
+			heap.Push(&q.pq, item)
+			metricQueueLen.Set(float64(len(q.pq)))
+			metricQueueCap.Set(float64(len(q.items)))
 		}
 	}
 
@@ -284,15 +270,11 @@ func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	item.indexState = state
 	if state != indexStateFail {
 		item.indexed = reflect.DeepEqual(opts, item.opts)
-		item.backoff.Reset()
-
 		if item.heapIdx >= 0 {
 			// We only update the position in the queue, never add it.
 			heap.Fix(&q.pq, item.heapIdx)
 		}
 	} else {
-		item.backoff.Fail(time.Now(), q.logger, item.opts)
-
 		if item.heapIdx >= 0 {
 			// Remove from queue
 			heap.Remove(&q.pq, item.heapIdx)
