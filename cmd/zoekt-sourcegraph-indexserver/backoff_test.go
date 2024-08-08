@@ -24,7 +24,7 @@ func TestQueue_BackoffOnFail(t *testing.T) {
 
 	// item is disallowed from being pushed to heap during backoff period
 	if item, ok := queue.Pop(); ok {
-		qi := queue.items[item.RepoID]
+		qi := queue.items[item.Opts.RepoID]
 		if qi.backoff.backoffUntil.Before(bumpTime) {
 			t.Errorf("backoffDuration already passed before first attempt to push item to heap in Bump(). Increase backoffDuration for the Queue. backoffDuration: %s. maxBackoffDuration: %s.",
 				backoffDuration, maxBackoffDuration)

@@ -31,21 +31,27 @@ func TestQueue(t *testing.T) {
 	// Ensure we process all the even commits first, then odd.
 	want := 0
 	for {
-		opts, ok := queue.Pop()
+		item, ok := queue.Pop()
 		if !ok {
 			break
 		}
-		got, _ := strconv.Atoi(opts.Branches[0].Version)
+		got, _ := strconv.Atoi(item.Opts.Branches[0].Version)
 		if got != want {
-			t.Fatalf("got %v, want %v", opts, want)
+			t.Fatalf("got %v, want %v", got, want)
 		}
 		want += 2
 		if want == 100 {
 			// We now switch to processing the odd numbers
 			want = 1
 		}
+
+		// sanity check the date added
+		if item.DateAddedToQueue.Unix() <= 0 {
+			t.Fatalf("invalid DateAddedToQueue %v", item.DateAddedToQueue)
+		}
+
 		// update current, shouldn't put the job in the queue
-		queue.SetIndexed(opts, indexStateSuccess)
+		queue.SetIndexed(item.Opts, indexStateSuccess)
 	}
 	if want != 101 {
 		t.Fatalf("only popped %d items", want)
@@ -64,15 +70,15 @@ func TestQueueFIFO(t *testing.T) {
 
 	want := 0
 	for {
-		opts, ok := queue.Pop()
+		item, ok := queue.Pop()
 		if !ok {
 			break
 		}
-		got, _ := strconv.Atoi(opts.Branches[0].Version)
+		got, _ := strconv.Atoi(item.Opts.Branches[0].Version)
 		if got != want {
-			t.Fatalf("got %v, want %v", opts, want)
+			t.Fatalf("got %v, want %v", item, want)
 		}
-		queue.SetIndexed(opts, indexStateSuccess)
+		queue.SetIndexed(item.Opts, indexStateSuccess)
 		want++
 	}
 	if want != 100 {
@@ -88,9 +94,9 @@ func TestQueue_MaybeRemoveMissing(t *testing.T) {
 	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
 	queue.MaybeRemoveMissing([]uint32{2})
 
-	opts, _ := queue.Pop()
-	if opts.Name != "bar" {
-		t.Fatalf("queue should only contain bar, pop returned %v", opts.Name)
+	item, _ := queue.Pop()
+	if item.Opts.Name != "bar" {
+		t.Fatalf("queue should only contain bar, pop returned %v", item.Opts.Name)
 	}
 	_, ok := queue.Pop()
 	if ok {
@@ -116,11 +122,11 @@ func TestQueue_Bump(t *testing.T) {
 	want := []IndexOptions{{RepoID: 2, Name: "bar"}}
 	var got []IndexOptions
 	for {
-		opts, ok := queue.Pop()
+		item, ok := queue.Pop()
 		if !ok {
 			break
 		}
-		got = append(got, opts)
+		got = append(got, item.Opts)
 	}
 
 	if d := cmp.Diff(want, got); d != "" {
