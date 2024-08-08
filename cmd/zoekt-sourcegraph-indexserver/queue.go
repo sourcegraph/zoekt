@@ -82,17 +82,22 @@ func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l sglog.Logger)
 	return q
 }
 
-// Pop returns the opts of the next repo to index. If the queue is empty ok is
-// false.
-func (q *Queue) Pop() (opts IndexOptions, ok bool) {
+type QueueItem struct {
+	// Opts are the options to use when indexing the repo.
+	Opts IndexOptions
+	// DateAddedToQueue is the time when this indexing job was added to the queue, used for telemetry.
+	DateAddedToQueue time.Time
+}
+
+// Pop returns options and metadata for the next repo to index. If the queue is empty ok is false.
+func (q *Queue) Pop() (result QueueItem, ok bool) {
 	q.mu.Lock()
 	if len(q.pq) == 0 {
 		q.mu.Unlock()
-		return IndexOptions{}, false
+		return QueueItem{}, false
 	}
 
 	item := heap.Pop(&q.pq).(*queueItem)
-	opts = item.opts
 
 	metricQueueLen.Set(float64(len(q.pq)))
 	metricQueueCap.Set(float64(len(q.items)))
@@ -102,11 +107,11 @@ func (q *Queue) Pop() (opts IndexOptions, ok bool) {
 
 	q.mu.Unlock()
 
-	name := repoNameForMetric(opts.Name)
+	name := repoNameForMetric(item.opts.Name)
 	age := time.Since(dateAdded)
 	metricQueueAge.WithLabelValues(name).Observe(age.Seconds())
 
-	return opts, true
+	return QueueItem{item.opts, dateAdded}, true
 }
 
 // Len returns the number of items in the queue.

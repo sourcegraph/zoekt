@@ -89,6 +89,30 @@ var (
 		"name",  // name of the repository that was indexed
 	})
 
+	metricIndexingDelay = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "index_indexing_delay_seconds",
+		Help: "A histogram of durations from when an index job is added to the queue, to the time it completes.",
+		Buckets: []float64{
+			60,     // 1m
+			300,    // 5m
+			1200,   // 20m
+			2400,   // 40m
+			3600,   // 1h
+			10800,  // 3h
+			18000,  // 5h
+			36000,  // 10h
+			43200,  // 12h
+			54000,  // 15h
+			72000,  // 20h
+			86400,  // 24h
+			108000, // 30h
+			126000, // 35h
+			172800, // 48h
+		}}, []string{
+		"state", // state is an indexState
+		"name",  // the name of the repository that was indexed
+	})
+
 	metricFetchDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "index_fetch_seconds",
 		Help:    "A histogram of latencies for fetching a repository.",
@@ -400,12 +424,13 @@ func (s *Server) processQueue() {
 			continue
 		}
 
-		opts, ok := s.queue.Pop()
+		item, ok := s.queue.Pop()
 		if !ok {
 			time.Sleep(time.Second)
 			continue
 		}
 
+		opts := item.Opts
 		args := s.indexArgs(opts)
 
 		ran := s.muIndexDir.With(opts.Name, func() {
@@ -416,8 +441,10 @@ func (s *Server) processQueue() {
 			state, err := s.Index(args)
 
 			elapsed := time.Since(start)
-
 			metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
+
+			indexDelay := time.Since(item.DateAddedToQueue)
+			metricIndexingDelay.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(indexDelay.Seconds())
 
 			if err != nil {
 				log.Printf("error indexing %s: %s", args.String(), err)
@@ -434,6 +461,7 @@ func (s *Server) processQueue() {
 					sglog.Uint32("id", args.RepoID),
 					sglog.Strings("branches", branches),
 					sglog.Duration("duration", elapsed),
+					sglog.Duration("index_delay", indexDelay),
 				)
 			case indexStateSuccessMeta:
 				log.Printf("updated meta %s in %v", args.String(), elapsed)
