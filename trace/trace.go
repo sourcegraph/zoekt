@@ -25,13 +25,13 @@ type Tracer struct {
 }
 
 func New(ctx context.Context, family, title string) (*Trace, context.Context) {
-	tr := Tracer{Tracer: GetOpenTracer(ctx, nil)}
+	tr := Tracer{Tracer: opentracing.GlobalTracer()}
 	return tr.New(ctx, family, title)
 }
 
 // New returns a new Trace with the specified family and title.
 func (t Tracer) New(ctx context.Context, family, title string) (*Trace, context.Context) {
-	span, ctx := StartSpanFromContextWithTracer(
+	span, ctx := opentracing.StartSpanFromContextWithTracer(
 		ctx,
 		t.Tracer,
 		family,

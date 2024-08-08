@@ -698,7 +698,6 @@ func SearchOptionsFromProto(p *proto.SearchOptions) *SearchOptions {
 		ChunkMatches:           p.GetChunkMatches(),
 		UseDocumentRanks:       p.GetUseDocumentRanks(),
 		DocumentRanksWeight:    p.GetDocumentRanksWeight(),
-		Trace:                  p.GetTrace(),
 		DebugScore:             p.GetDebugScore(),
 		UseBM25Scoring:         p.GetUseBm25Scoring(),
 	}
@@ -723,7 +722,6 @@ func (s *SearchOptions) ToProto() *proto.SearchOptions {
 		ChunkMatches:           s.ChunkMatches,
 		UseDocumentRanks:       s.UseDocumentRanks,
 		DocumentRanksWeight:    s.DocumentRanksWeight,
-		Trace:                  s.Trace,
 		DebugScore:             s.DebugScore,
 		UseBm25Scoring:         s.UseBM25Scoring,
 	}

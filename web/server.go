@@ -174,7 +174,7 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 		mux.HandleFunc("/print", s.servePrint)
 	}
 	if s.RPC {
-		mux.Handle("/api/", http.StripPrefix("/api", zjson.JSONServer(traceAwareSearcher{s.Searcher})))
+		mux.Handle("/api/", http.StripPrefix("/api", zjson.JSONServer(s.Searcher)))
 	}
 
 	mux.HandleFunc("/healthz", s.serveHealthz)
