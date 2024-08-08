@@ -42,6 +42,9 @@ func TestMinFrequencyNgramOffsets(t *testing.T) {
 	// worse, so what we do instead is just validate that what we get back is
 	// acceptable.
 	if err := quick.Check(func(s string, maxFreq uint16) bool {
+		// Ensure maximum frequency is nonzero so that random sampling will work
+		maxFreq = max(maxFreq, 1)
+
 		ngramOffs := splitNGrams([]byte(s))
 		if len(ngramOffs) == 0 {
 			return true
@@ -75,6 +78,9 @@ func TestMinFrequencyNgramOffsets(t *testing.T) {
 
 func TestFindSelectiveNGrams(t *testing.T) {
 	if err := quick.Check(func(s string, maxFreq uint16) bool {
+		// Ensure maximum frequency is nonzero so that random sampling will work
+		maxFreq = max(maxFreq, 1)
+
 		ngramOffs := splitNGrams([]byte(s))
 		if len(ngramOffs) == 0 {
 			return true
