@@ -461,7 +461,7 @@ func (s *Server) processQueue() {
 					sglog.Uint32("id", args.RepoID),
 					sglog.Strings("branches", branches),
 					sglog.Duration("duration", elapsed),
-					sglog.Duration("index delay", indexDelay),
+					sglog.Duration("index_delay", indexDelay),
 				)
 			case indexStateSuccessMeta:
 				log.Printf("updated meta %s in %v", args.String(), elapsed)
