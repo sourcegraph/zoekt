@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/sourcegraph/log/logtest"
@@ -16,8 +15,7 @@ import (
 )
 
 func TestQueue(t *testing.T) {
-	backoffDuration := 1 * time.Millisecond
-	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
+	queue := NewQueue(logtest.Scoped(t))
 
 	for i := 0; i < 100; i++ {
 		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
@@ -55,8 +53,7 @@ func TestQueue(t *testing.T) {
 func TestQueueFIFO(t *testing.T) {
 	// Tests that the queue fallbacks to FIFO if everything has the same
 	// priority
-	backoffDuration := 1 * time.Millisecond
-	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
+	queue := NewQueue(logtest.Scoped(t))
 
 	for i := 0; i < 100; i++ {
 		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
@@ -81,8 +78,7 @@ func TestQueueFIFO(t *testing.T) {
 }
 
 func TestQueue_MaybeRemoveMissing(t *testing.T) {
-	backoffDuration := 1 * time.Millisecond
-	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
+	queue := NewQueue(logtest.Scoped(t))
 
 	queue.AddOrUpdate(IndexOptions{RepoID: 1, Name: "foo"})
 	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
@@ -99,8 +95,7 @@ func TestQueue_MaybeRemoveMissing(t *testing.T) {
 }
 
 func TestQueue_Bump(t *testing.T) {
-	backoffDuration := 1 * time.Millisecond
-	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
+	queue := NewQueue(logtest.Scoped(t))
 
 	queue.AddOrUpdate(IndexOptions{RepoID: 1, Name: "foo"})
 	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
@@ -163,8 +158,7 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 		return strings.Join(outputLines, "\n")
 	}
 
-	backoffDuration := 1 * time.Millisecond
-	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
+	queue := NewQueue(logtest.Scoped(t))
 
 	// setup: add two repositories to the queue and pop one of them
 	poppedRepository := mkHEADIndexOptions(0, "popped")
@@ -213,5 +207,10 @@ func mkHEADIndexOptions(id int, version string) IndexOptions {
 		RepoID:   uint32(id),
 		Name:     fmt.Sprintf("item-%d", id),
 		Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: version}},
+	}
+}
+
+func emptyQueue(q *Queue) {
+	for ok := true; ok; _, ok = q.Pop() {
 	}
 }
