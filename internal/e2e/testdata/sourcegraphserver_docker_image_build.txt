@@ -2,37 +2,37 @@ queryString: sourcegraph/server docker image build
 query: (and substr:"sourcegraph/server" substr:"docker" substr:"image" substr:"build")
 targetRank: 14
 
-github.com/sourcegraph/sourcegraph/dev/sg/internal/images/images.go
+github.com/sourcegraph/sourcegraph-public-snapshot/dev/sg/internal/images/images.go
 458:	Build       int
 234:type ImageReference struct {
 352:type ErrNoImage struct {
 hidden 118 more line matches
 
-github.com/sourcegraph/sourcegraph/doc/admin/external_services/postgres.md
+github.com/sourcegraph/sourcegraph-public-snapshot/doc/admin/external_services/postgres.md
 41:### sourcegraph/server
 192:### sourcegraph/server
 53:### Docker Compose
 hidden 19 more line matches
 
-github.com/sourcegraph/sourcegraph/internal/conf/deploy/deploytype.go
+github.com/sourcegraph/sourcegraph-public-snapshot/internal/conf/deploy/deploytype.go
 66:func IsDeployTypePureDocker(deployType string) bool {
 12:	SingleDocker  = "docker-container"
 13:	DockerCompose = "docker-compose"
 hidden 19 more line matches
 
-github.com/sourcegraph/sourcegraph/schema/schema.go
+github.com/sourcegraph/sourcegraph-public-snapshot/schema/schema.go
 2621:	ExecutorsBatcheshelperImage string `json:"executors.batcheshelperImage,omitempty"`
 2627:	ExecutorsLsifGoImage string `json:"executors.lsifGoImage,omitempty"`
 2631:	ExecutorsSrcCLIImage string `json:"executors.srcCLIImage,omitempty"`
 hidden 22 more line matches
 
-github.com/sourcegraph/sourcegraph/internal/updatecheck/handler.go
+github.com/sourcegraph/sourcegraph-public-snapshot/internal/updatecheck/handler.go
 40:	latestReleaseDockerServerImageBuild = newPingResponse("5.1.8")
 45:	latestReleaseKubernetesBuild = newPingResponse("5.1.8")
 50:	latestReleaseDockerComposeOrPureDocker = newPingResponse("5.1.8")
 hidden 19 more line matches
 
-github.com/sourcegraph/sourcegraph/doc/admin/deploy/docker-single-container/index.md
+github.com/sourcegraph/sourcegraph-public-snapshot/doc/admin/deploy/docker-single-container/index.md
 1:# Docker Single Container Deployment
 294:### Insiders build
 238:### File system performance on Docker for Mac

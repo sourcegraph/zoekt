@@ -2,31 +2,31 @@ queryString: Repository metadata Write rbac
 query: (and case_substr:"Repository" substr:"metadata" case_substr:"Write" substr:"rbac")
 targetRank: -1
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/repository_metadata.go
+github.com/sourcegraph/sourcegraph-public-snapshot/cmd/frontend/graphqlbackend/repository_metadata.go
 54:func (r *schemaResolver) AddRepoMetadata(ctx context.Context, args struct {
 95:func (r *schemaResolver) UpdateRepoMetadata(ctx context.Context, args struct {
 134:func (r *schemaResolver) DeleteRepoMetadata(ctx context.Context, args struct {
 hidden 30 more line matches
 
-github.com/sourcegraph/sourcegraph/client/web/src/repo/tree/TreePageContent.tsx
+github.com/sourcegraph/sourcegraph-public-snapshot/client/web/src/repo/tree/TreePageContent.tsx
 666:interface RepositoryContributorNodeProps extends QuerySpec {
 10:import { RepoMetadata } from '@sourcegraph/branded'
 16:import { RepositoryType, SearchPatternType, type TreeFields } from '@sourcegraph/shared/src/graphql-operations'
 hidden 46 more line matches
 
-github.com/sourcegraph/sourcegraph/doc/admin/repo/metadata.md
+github.com/sourcegraph/sourcegraph-public-snapshot/doc/admin/repo/metadata.md
 1:# Custom repository metadata
 18:## Adding metadata
 8:### Repository owners
 hidden 14 more line matches
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/repository_metadata_test.go
+github.com/sourcegraph/sourcegraph-public-snapshot/cmd/frontend/graphqlbackend/repository_metadata_test.go
 26:func TestRepositoryMetadata(t *testing.T) {
 17:	"github.com/sourcegraph/sourcegraph/internal/rbac"
 23:	rtypes "github.com/sourcegraph/sourcegraph/internal/rbac/types"
 hidden 25 more line matches
 
-github.com/sourcegraph/sourcegraph/client/web/src/repo/repoContainerRoutes.tsx
+github.com/sourcegraph/sourcegraph-public-snapshot/client/web/src/repo/repoContainerRoutes.tsx
 3:import { canWriteRepoMetadata } from '../util/rbac'
 5:import { RepositoryChangelistPage } from './commit/RepositoryCommitPage'
 9:const RepositoryCommitPage = lazyComponent(() => import('./commit/RepositoryCommitPage'), 'RepositoryCommitPage')

@@ -26,7 +26,7 @@ github.com/golang/go/src/net/http/server.go
 2925:type serverHandler struct {
 hidden 180 more line matches
 
-github.com/sourcegraph/sourcegraph/cmd/gitserver/server/server.go
+github.com/sourcegraph/sourcegraph-public-snapshot/cmd/gitserver/server/server.go
 132:type Server struct {
 2:package server
 741:func (s *Server) serverContext() (context.Context, context.CancelFunc) {

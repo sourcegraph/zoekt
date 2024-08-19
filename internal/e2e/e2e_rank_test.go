@@ -39,7 +39,7 @@ func TestRanking(t *testing.T) {
 	requireCTags(t)
 
 	archiveURLs := []string{
-		"https://github.com/sourcegraph/sourcegraph/tree/v5.2.2",
+		"https://github.com/sourcegraph/sourcegraph-public-snapshot/tree/v5.2.2",
 		"https://github.com/golang/go/tree/go1.21.4",
 		"https://github.com/sourcegraph/cody/tree/vscode-v0.14.5",
 		// The commit before ranking e2e tests were added to avoid matching
@@ -57,10 +57,10 @@ func TestRanking(t *testing.T) {
 		q("time compare\\(", "github.com/golang/go/src/time/time.go"),
 
 		// sourcegraph/sourcegraph
-		q("graphql type User", "github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend/schema.graphql"),
-		q("Get database/user", "github.com/sourcegraph/sourcegraph/internal/database/users.go"),
-		q("InternalDoer", "github.com/sourcegraph/sourcegraph/internal/httpcli/client.go"),
-		q("Repository metadata Write rbac", "github.com/sourcegraph/sourcegraph/internal/rbac/constants.go"), // unsure if this is the best doc?
+		q("graphql type User", "github.com/sourcegraph/sourcegraph-public-snapshot/cmd/frontend/graphqlbackend/schema.graphql"),
+		q("Get database/user", "github.com/sourcegraph/sourcegraph-public-snapshot/internal/database/users.go"),
+		q("InternalDoer", "github.com/sourcegraph/sourcegraph-public-snapshot/internal/httpcli/client.go"),
+		q("Repository metadata Write rbac", "github.com/sourcegraph/sourcegraph-public-snapshot/internal/rbac/constants.go"), // unsure if this is the best doc?
 
 		// cody
 		q("generate unit test", "github.com/sourcegraph/cody/lib/shared/src/chat/recipes/generate-test.ts"),
@@ -70,8 +70,8 @@ func TestRanking(t *testing.T) {
 		q("zoekt searcher", "github.com/sourcegraph/zoekt/api.go"),
 
 		// exact phrases
-		q("assets are not configured for this binary", "github.com/sourcegraph/sourcegraph/ui/assets/assets.go"),
-		q("sourcegraph/server docker image build", "github.com/sourcegraph/sourcegraph/dev/tools.go"),
+		q("assets are not configured for this binary", "github.com/sourcegraph/sourcegraph-public-snapshot/ui/assets/assets.go"),
+		q("sourcegraph/server docker image build", "github.com/sourcegraph/sourcegraph-public-snapshot/dev/tools.go"),
 
 		// symbols split up
 		q("bufio flush writer", "github.com/golang/go/src/net/http/transfer.go"),                        // bufioFlushWriter

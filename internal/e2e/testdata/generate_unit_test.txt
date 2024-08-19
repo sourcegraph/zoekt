@@ -2,7 +2,7 @@ queryString: generate unit test
 query: (and substr:"generate" substr:"unit" substr:"test")
 targetRank: 11
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/internal/insights/resolvers/insight_series_resolver.go
+github.com/sourcegraph/sourcegraph-public-snapshot/cmd/frontend/internal/insights/resolvers/insight_series_resolver.go
 300:func (j *seriesResolverGenerator) Generate(ctx context.Context, series types.InsightViewSeries, baseResolver baseInsightResolver, filters types.InsightViewFilters, options types.SeriesDisplayOptions) ([]graphqlbackend.InsightSeriesResolver, error) {
 275:	Generate(ctx context.Context, series types.InsightViewSeries, baseResolver baseInsightResolver, filters types.InsightViewFilters, options types.SeriesDisplayOptions) ([]graphqlbackend.InsightSeriesResolver, error)
 286:	generateResolver resolverGenerator
@@ -14,7 +14,7 @@ github.com/golang/go/src/cmd/vendor/github.com/google/pprof/internal/report/repo
 75:	SampleUnit        string // Unit for the sample data from the profile.
 hidden 48 more line matches
 
-github.com/sourcegraph/sourcegraph/internal/codeintel/autoindexing/internal/inference/lua/test.lua
+github.com/sourcegraph/sourcegraph-public-snapshot/internal/codeintel/autoindexing/internal/inference/lua/test.lua
 9:  generate = function(_, paths)
 6:  patterns = { pattern.new_path_basename "sg-test" },
 8:  -- Invoked as part of unit tests for the autoindexing service

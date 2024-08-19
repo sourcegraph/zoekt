@@ -2,25 +2,25 @@ queryString: InternalDoer
 query: case_substr:"InternalDoer"
 targetRank: 1
 
-**github.com/sourcegraph/sourcegraph/internal/httpcli/client.go**
+**github.com/sourcegraph/sourcegraph-public-snapshot/internal/httpcli/client.go**
 217:var InternalDoer, _ = InternalClientFactory.Doer()
 215:// InternalDoer is a shared client for internal communication. This is a
 
-github.com/sourcegraph/sourcegraph/internal/api/internalapi/client.go
+github.com/sourcegraph/sourcegraph-public-snapshot/internal/api/internalapi/client.go
 144:	resp, err := httpcli.InternalDoer.Do(req.WithContext(ctx))
 
-github.com/sourcegraph/sourcegraph/enterprise/cmd/embeddings/qa/context_data.tsv
+github.com/sourcegraph/sourcegraph-public-snapshot/enterprise/cmd/embeddings/qa/context_data.tsv
 3:In the sourcegraph repository, what does InternalDoer do?	internal/httpcli/client.go
 4:In my codebase, what does InternalDoer do?	internal/httpcli/client.go
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/internal/app/badge.go
+github.com/sourcegraph/sourcegraph-public-snapshot/cmd/frontend/internal/app/badge.go
 23:	totalRefs, err := backend.CountGoImporters(r.Context(), httpcli.InternalDoer, routevar.ToRepo(mux.Vars(r)))
 
-github.com/sourcegraph/sourcegraph/internal/batches/webhooks/webhooks.go
+github.com/sourcegraph/sourcegraph-public-snapshot/internal/batches/webhooks/webhooks.go
 67:	Enqueue(ctx, logger, db, eventType, marshalBatchChange, id, httpcli.InternalDoer)
 74:	Enqueue(ctx, logger, db, eventType, marshalChangeset, id, httpcli.InternalDoer)
 
-github.com/sourcegraph/sourcegraph/cmd/frontend/internal/app/resolvers/app.go
+github.com/sourcegraph/sourcegraph-public-snapshot/cmd/frontend/internal/app/resolvers/app.go
 53:		doer:      httpcli.InternalDoer,
 354:	cli := httpcli.InternalDoer
 424:	cli := httpcli.InternalDoer
