@@ -90,25 +90,10 @@ var (
 	})
 
 	metricIndexingDelay = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "index_indexing_delay_seconds",
-		Help: "A histogram of durations from when an index job is added to the queue, to the time it completes.",
-		Buckets: []float64{
-			60,     // 1m
-			300,    // 5m
-			1200,   // 20m
-			2400,   // 40m
-			3600,   // 1h
-			10800,  // 3h
-			18000,  // 5h
-			36000,  // 10h
-			43200,  // 12h
-			54000,  // 15h
-			72000,  // 20h
-			86400,  // 24h
-			108000, // 30h
-			126000, // 35h
-			172800, // 48h
-		}}, []string{
+		Name:    "index_indexing_delay_seconds",
+		Help:    "A histogram of durations from when an index job is added to the queue, to the time it completes.",
+		Buckets: prometheus.ExponentialBuckets(60, 2, 12), // 1m -> ~3 days
+	}, []string{
 		"state", // state is an indexState
 		"name",  // the name of the repository that was indexed
 	})
