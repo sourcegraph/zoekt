@@ -73,13 +73,13 @@ func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l sglog.Logger)
 		}
 	}
 
-	q := &Queue{
-		newQueueItem: newQueueItem,
+	return &Queue{
+		items:        map[uint32]*queueItem{},
+		pq:           make(pqueue, 0),
+		seq:          0,
 		logger:       l.Scoped("queue"),
+		newQueueItem: newQueueItem,
 	}
-
-	q.init()
-	return q
 }
 
 type QueueItem struct {
@@ -153,10 +153,6 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 func (q *Queue) Bump(ids []uint32) []uint32 {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-
-	if q.items == nil {
-		q.init()
-	}
 
 	var missing []uint32
 	for _, id := range ids {
@@ -364,10 +360,6 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) []uint32 {
 //
 // Note: getOrAdd requires that q.mu is held.
 func (q *Queue) getOrAdd(repoID uint32) *queueItem {
-	if q.items == nil {
-		q.init()
-	}
-
 	item, ok := q.items[repoID]
 	if !ok {
 		item = q.newQueueItem(repoID)
@@ -382,11 +374,6 @@ func (q *Queue) getOrAdd(repoID uint32) *queueItem {
 // Note: get requires that q.mu is held.
 func (q *Queue) get(repoID uint32) *queueItem {
 	return q.items[repoID]
-}
-
-func (q *Queue) init() {
-	q.items = map[uint32]*queueItem{}
-	q.pq = make(pqueue, 0)
 }
 
 // pqueue implements a priority queue via the interface for container/heap
