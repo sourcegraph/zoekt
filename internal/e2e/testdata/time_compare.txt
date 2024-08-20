@@ -8,12 +8,12 @@ targetRank: 1
 271:func (t Time) Compare(u Time) int {
 hidden 250 more line matches
 
-github.com/sourcegraph/sourcegraph/internal/api/api.go
+github.com/sourcegraph/sourcegraph-public-snapshot/internal/api/api.go
 127:func (r ExternalRepoSpec) Compare(s ExternalRepoSpec) int {
 7:	"time"
 170:	CreatedAt    time.Time       // the date when this settings value was created
 
-github.com/sourcegraph/sourcegraph/client/shared/src/codeintel/scip.ts
+github.com/sourcegraph/sourcegraph-public-snapshot/client/shared/src/codeintel/scip.ts
 117:    public compare(other: Range): number {
 53:        return this.compare(other) < 0
 56:        return this.compare(other) <= 0

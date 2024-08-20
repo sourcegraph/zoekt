@@ -14,19 +14,19 @@ github.com/sourcegraph/zoekt/rpc/internal/srv/srv.go
 37:func (s *Searcher) Search(ctx context.Context, args *SearchArgs, reply *SearchReply) error {
 hidden 9 more line matches
 
-github.com/sourcegraph/sourcegraph/doc/admin/observability/dashboards.md
+github.com/sourcegraph/sourcegraph-public-snapshot/doc/admin/observability/dashboards.md
 16264:## Searcher
 19728:## Zoekt
 16371:### Searcher: Cache store
 hidden 713 more line matches
 
-github.com/sourcegraph/sourcegraph/monitoring/definitions/searcher.go
+github.com/sourcegraph/sourcegraph-public-snapshot/monitoring/definitions/searcher.go
 12:func Searcher() *monitoring.Dashboard {
 14:		containerName   = "searcher"
 15:		grpcServiceName = "searcher.v1.SearcherService"
 hidden 31 more line matches
 
-github.com/sourcegraph/sourcegraph/internal/search/job/job.go
+github.com/sourcegraph/sourcegraph-public-snapshot/internal/search/job/job.go
 73:	Zoekt                       zoekt.Streamer
 74:	SearcherURLs                *endpoint.Map
 75:	SearcherGRPCConnectionCache *defaults.ConnectionCache
