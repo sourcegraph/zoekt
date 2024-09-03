@@ -185,13 +185,11 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 	if c.runCmd == nil {
 		return errors.New("runCmd in provided configuration was nil - a function must be provided")
 	}
-	runCmd := c.runCmd
 
 	if c.findRepositoryMetadata == nil {
 		return errors.New("findRepositoryMetadata in provided configuration was nil - a function must be provided")
 	}
 
-	buildOptions := o.BuildOptions()
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
@@ -201,6 +199,25 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 	}
 	defer os.RemoveAll(gitDir) // best-effort cleanup
 
+	err = fetchRepo(ctx, gitDir, o, c, logger)
+	if err != nil {
+		return err
+	}
+
+	err = setZoektConfig(ctx, gitDir, o, c)
+	if err != nil {
+		return err
+	}
+
+	err = indexRepo(ctx, gitDir, sourcegraph, o, c, logger)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfig, logger sglog.Logger) error {
 	// Create a repo to fetch into
 	cmd := exec.CommandContext(ctx, "git",
 		// use a random default branch. This is so that HEAD isn't a symref to a
@@ -212,7 +229,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		"--bare",
 		gitDir)
 	cmd.Stdin = &bytes.Buffer{}
-	if err := runCmd(cmd); err != nil {
+	if err := c.runCmd(cmd); err != nil {
 		return err
 	}
 
@@ -234,8 +251,15 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 			"-C", gitDir,
 			"-c", "protocol.version=2",
 			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
-			"fetch", "--depth=1", o.CloneURL,
+			"fetch", "--depth=1", "--no-tags",
 		}
+
+		// If there are no exceptions to MaxFileSize (1MB), we can avoid fetching these large files.
+		if len(o.LargeFiles) == 0 {
+			fetchArgs = append(fetchArgs, "--filter=blob:limit=1m")
+		}
+
+		fetchArgs = append(fetchArgs, o.CloneURL)
 
 		var commits []string
 		for _, b := range branches {
@@ -248,7 +272,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		cmd.Stdin = &bytes.Buffer{}
 
 		start := time.Now()
-		err := runCmd(cmd)
+		err := c.runCmd(cmd)
 		fetchDuration += time.Since(start)
 
 		if err != nil {
@@ -286,8 +310,8 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 	if o.UseDelta {
 		err := fetchPriorAndLatestCommits()
 		if err != nil {
-			name := buildOptions.RepositoryDescription.Name
-			id := buildOptions.RepositoryDescription.ID
+			name := o.BuildOptions().RepositoryDescription.Name
+			id := o.BuildOptions().RepositoryDescription.ID
 
 			log.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch both latest and prior commits: %s", name, id, err)
 			err = fetchOnlyLatestCommits()
@@ -302,26 +326,29 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		}
 	}
 
-	logger.Debug("successfully fetched git data",
-		sglog.String("repo", o.Name),
-		sglog.Uint32("id", o.RepoID),
-		sglog.Int("commits_count", successfullyFetchedCommitsCount),
-		sglog.Duration("duration", fetchDuration),
-	)
-
 	// We then create the relevant refs for each fetched commit.
 	for _, b := range o.Branches {
 		ref := b.Name
 		if ref != "HEAD" {
 			ref = "refs/heads/" + ref
 		}
-		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "update-ref", ref, b.Version)
+		cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "update-ref", ref, b.Version)
 		cmd.Stdin = &bytes.Buffer{}
-		if err := runCmd(cmd); err != nil {
+		if err := c.runCmd(cmd); err != nil {
 			return fmt.Errorf("failed update-ref %s to %s: %w", ref, b.Version, err)
 		}
 	}
 
+	logger.Debug("successfully fetched git data",
+		sglog.String("repo", o.Name),
+		sglog.Uint32("id", o.RepoID),
+		sglog.Int("commits_count", successfullyFetchedCommitsCount),
+		sglog.Duration("duration", fetchDuration),
+	)
+	return nil
+}
+
+func setZoektConfig(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfig) error {
 	// create git configuration with options
 	type configKV struct{ Key, Value string }
 	config := []configKV{{
@@ -329,7 +356,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		Key:   "name",
 		Value: o.Name,
 	}}
-	for k, v := range buildOptions.RepositoryDescription.RawConfig {
+	for k, v := range o.BuildOptions().RepositoryDescription.RawConfig {
 		config = append(config, configKV{Key: k, Value: v})
 	}
 	sort.Slice(config, func(i, j int) bool {
@@ -338,13 +365,16 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 
 	// write git configuration to repo
 	for _, kv := range config {
-		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt."+kv.Key, kv.Value)
+		cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "config", "zoekt."+kv.Key, kv.Value)
 		cmd.Stdin = &bytes.Buffer{}
-		if err := runCmd(cmd); err != nil {
+		if err := c.runCmd(cmd); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
+func indexRepo(ctx context.Context, gitDir string, sourcegraph Sourcegraph, o *indexArgs, c gitIndexConfig, logger sglog.Logger) error {
 	args := []string{
 		"-submodules=false",
 	}
@@ -413,15 +443,14 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		args = append(args, "-language_map", strings.Join(languageMap, ","))
 	}
 
-	args = append(args, buildOptions.Args()...)
+	args = append(args, o.BuildOptions().Args()...)
 	args = append(args, gitDir)
 
-	cmd = exec.CommandContext(ctx, "zoekt-git-index", args...)
+	cmd := exec.CommandContext(ctx, "zoekt-git-index", args...)
 	cmd.Stdin = &bytes.Buffer{}
-	if err := runCmd(cmd); err != nil {
+	if err := c.runCmd(cmd); err != nil {
 		return err
 	}
-
 	return nil
 }
 
