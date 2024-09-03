@@ -3,9 +3,9 @@
 # This script installs universal-ctags within an alpine container.
 
 # Commit hash of github.com/universal-ctags/ctags.
-# Last bumped 2023-10-24.
-CTAGS_VERSION=v6.0.0
-CTAGS_ARCHIVE_TOP_LEVEL_DIR=ctags-6.0.0
+# Last bumped 2024-09-02.
+CTAGS_VERSION=v6.1.0
+CTAGS_ARCHIVE_TOP_LEVEL_DIR=ctags-6.1.0
 # When using commits you can rely on
 # CTAGS_ARCHIVE_TOP_LEVEL_DIR=ctags-$CTAGS_VERSION
 
