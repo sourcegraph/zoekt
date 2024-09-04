@@ -526,6 +526,7 @@ func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 // Index starts an index job for repo name at commit.
 func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
+	tr.SetMaxEvents(30) // Ensure we capture all indexing events
 
 	defer func() {
 		if err != nil {
