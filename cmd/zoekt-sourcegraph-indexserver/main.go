@@ -136,6 +136,10 @@ var (
 	clientMetrics     *grpcprom.ClientMetrics
 )
 
+// 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
+// NOTE: if you change this, you must also update gitIndex to use the same value when fetching the repo.
+const MaxFileSize = 1 << 20
+
 // set of repositories that we want to capture separate indexing metrics for
 var reposWithSeparateIndexingMetrics = make(map[string]struct{})
 
@@ -656,10 +660,7 @@ func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 		IndexDir:     s.IndexDir,
 		Parallelism:  parallelism,
 		Incremental:  true,
-
-		// 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
-		FileLimit: 1 << 20,
-
+		FileLimit:    MaxFileSize,
 		ShardMerging: s.shardMerging,
 	}
 }
@@ -754,7 +755,7 @@ var rootTmpl = template.Must(template.New("name").Parse(`
             <a href="?show_repos=false">hide repos</a><br />
             <table style="margin-top: 20px">
                 <th style="text-align:left">Name</th>
-                <th style="text-align:left">ID</th>
+                <th style="text-align:left">ID (click to reindex)</th>
                 {{range .Repos}}
                     <tr>
                         <td>{{.Name}}</td>

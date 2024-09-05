@@ -887,18 +887,19 @@ func createDocument(key fileKey,
 	opts build.Options,
 ) (zoekt.Document, error) {
 	blob, err := repos[key].Repo.BlobObject(key.ID)
+
+	// We filter out large documents when fetching the repo. So if an object is too large, it will not be found.
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		return skippedLargeDoc(key, branchMap, opts), nil
+	}
+
 	if err != nil {
 		return zoekt.Document{}, err
 	}
 
 	keyFullPath := key.FullPath()
 	if blob.Size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(keyFullPath) {
-		return zoekt.Document{
-			SkipReason:        fmt.Sprintf("file size %d exceeds maximum size %d", blob.Size, opts.SizeMax),
-			Name:              key.FullPath(),
-			Branches:          branchMap[key],
-			SubRepositoryPath: key.SubRepoPath,
-		}, nil
+		return skippedLargeDoc(key, branchMap, opts), nil
 	}
 
 	contents, err := blobContents(blob)
@@ -920,6 +921,15 @@ func createDocument(key fileKey,
 		Branches:          branchMap[key],
 		Ranks:             pathRanks,
 	}, nil
+}
+
+func skippedLargeDoc(key fileKey, branchMap map[fileKey][]string, opts build.Options) zoekt.Document {
+	return zoekt.Document{
+		SkipReason:        fmt.Sprintf("file size exceeds maximum size %d", opts.SizeMax),
+		Name:              key.FullPath(),
+		Branches:          branchMap[key],
+		SubRepositoryPath: key.SubRepoPath,
+	}
 }
 
 func blobContents(blob *object.Blob) ([]byte, error) {
