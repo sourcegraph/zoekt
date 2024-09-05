@@ -132,8 +132,21 @@ var (
 		Help: "Counts the number of repos we stopped tracking.",
 	})
 
-	clientMetricsOnce sync.Once
-	clientMetrics     *grpcprom.ClientMetrics
+	// clientMetricsOnce returns a singleton instance of the client metrics
+	// that are shared across all gRPC clients that this process creates.
+	//
+	// This function panics if the metrics cannot be registered with the default
+	// Prometheus registry.
+	clientMetricsOnce = sync.OnceValue(func() *grpcprom.ClientMetrics {
+		clientMetrics := grpcprom.NewClientMetrics(
+			grpcprom.WithClientCounterOptions(),
+			grpcprom.WithClientHandlingTimeHistogram(), // record the overall request latency for a gRPC request
+			grpcprom.WithClientStreamRecvHistogram(),   // record how long it takes for a client to receive a message during a streaming RPC
+			grpcprom.WithClientStreamSendHistogram(),   // record how long it takes for a client to send a message during a streaming RPC
+		)
+		prometheus.DefaultRegisterer.MustRegister(clientMetrics)
+		return clientMetrics
+	})
 )
 
 // 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
@@ -1505,7 +1518,7 @@ func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
 const defaultGRPCMessageReceiveSizeBytes = 90 * 1024 * 1024 // 90 MB
 
 func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.DialOption) (proto.ZoektConfigurationServiceClient, error) {
-	metrics := mustGetClientMetrics()
+	metrics := clientMetricsOnce()
 
 	// If the service seems to be unavailable, this
 	// will retry after [1s, 2s, 4s, 8s, 16s] with a jitterFraction of .1
@@ -1557,26 +1570,6 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 
 	client := proto.NewZoektConfigurationServiceClient(cc)
 	return client, nil
-}
-
-// mustGetClientMetrics returns a singleton instance of the client metrics
-// that are shared across all gRPC clients that this process creates.
-//
-// This function panics if the metrics cannot be registered with the default
-// Prometheus registry.
-func mustGetClientMetrics() *grpcprom.ClientMetrics {
-	clientMetricsOnce.Do(func() {
-		clientMetrics = grpcprom.NewClientMetrics(
-			grpcprom.WithClientCounterOptions(),
-			grpcprom.WithClientHandlingTimeHistogram(), // record the overall request latency for a gRPC request
-			grpcprom.WithClientStreamRecvHistogram(),   // record how long it takes for a client to receive a message during a streaming RPC
-			grpcprom.WithClientStreamSendHistogram(),   // record how long it takes for a client to send a message during a streaming RPC
-		)
-
-		prometheus.DefaultRegisterer.MustRegister(clientMetrics)
-	})
-
-	return clientMetrics
 }
 
 // addDefaultPort adds a default port to a URL if one is not specified.
