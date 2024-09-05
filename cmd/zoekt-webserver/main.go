@@ -293,10 +293,7 @@ func main() {
 	}
 
 	logger := sglog.Scoped("ZoektWebserverGRPCServer")
-
-	streamer := web.NewTraceAwareSearcher(s.Searcher)
-	grpcServer := newGRPCServer(logger, streamer)
-
+	grpcServer := newGRPCServer(logger, s.Searcher)
 	handler = multiplexGRPC(grpcServer, handler)
 
 	srv := &http.Server{
@@ -638,7 +635,7 @@ func traceContext(ctx context.Context) sglog.TraceContext {
 	return sglog.TraceContext{}
 }
 
-func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts ...grpc.ServerOption) *grpc.Server {
+func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer) *grpc.Server {
 	metrics := mustGetServerMetrics()
 
 	opts := []grpc.ServerOption{
@@ -655,8 +652,6 @@ func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts 
 			internalerrs.LoggingUnaryServerInterceptor(logger),
 		),
 	}
-
-	opts = append(opts, additionalOpts...)
 
 	// Ensure that the message size options are set last, so they override any other
 	// server-specific options that tweak the message size.
