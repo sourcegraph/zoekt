@@ -22,6 +22,8 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/profiler"
 	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/sourcegraph/zoekt/cmd"
@@ -70,6 +72,7 @@ func run() int {
 		}
 		*repoCacheDir = dir
 	}
+
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
 	opts.DocumentRanksPath = *offlineRanking
@@ -107,6 +110,7 @@ func run() int {
 		opts.LanguageMap[m[0]] = ctags.StringToParser(m[1])
 	}
 
+	profiler.InitLightweight("zoekt-git-index", zoekt.Version)
 	exitStatus := 0
 	for dir, name := range gitRepos {
 		opts.RepositoryDescription.Name = name
