@@ -562,7 +562,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	names = uniq(names)
 
 	log.Printf("attempting to index %d total files", totalFiles)
-	for _, name := range names {
+	for idx, name := range names {
 		keys := fileKeys[name]
 
 		for _, key := range keys {
@@ -574,9 +574,12 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 			if err := builder.Add(doc); err != nil {
 				return false, fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
 			}
+
+			if idx%10_000 == 0 {
+				builder.CheckMemoryUsage()
+			}
 		}
 	}
-
 	return true, builder.Finish()
 }
 
