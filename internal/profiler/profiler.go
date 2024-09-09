@@ -22,17 +22,3 @@ func Init(svcName string) {
 		}
 	}
 }
-
-// InitLightweight starts the supported profilers IFF the environment variable is set.
-// Compared to Init, it disables mutex profiling and forced GC to reduce its overhead.
-func InitLightweight(svcName string) {
-	if os.Getenv("GOOGLE_CLOUD_PROFILER_ENABLED") != "" {
-		err := profiler.Start(profiler.Config{
-			Service:        svcName,
-			ServiceVersion: zoekt.Version,
-		})
-		if err != nil {
-			log.Printf("could not initialize profiler: %s", err.Error())
-		}
-	}
-}

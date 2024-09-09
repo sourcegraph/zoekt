@@ -109,7 +109,7 @@ func run() int {
 		opts.LanguageMap[m[0]] = ctags.StringToParser(m[1])
 	}
 
-	profiler.InitLightweight("zoekt-git-index")
+	profiler.Init("zoekt-git-index")
 	exitStatus := 0
 	for dir, name := range gitRepos {
 		opts.RepositoryDescription.Name = name
