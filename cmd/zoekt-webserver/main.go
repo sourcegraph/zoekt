@@ -177,7 +177,7 @@ func main() {
 	liblog := sglog.Init(resource)
 	defer liblog.Sync()
 	tracer.Init(resource)
-	profiler.Init("zoekt-webserver", zoekt.Version)
+	profiler.Init("zoekt-webserver")
 
 	if *logDir != "" {
 		if fi, err := os.Lstat(*logDir); err != nil || !fi.IsDir() {
