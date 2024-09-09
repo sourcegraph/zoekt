@@ -1277,7 +1277,7 @@ func startServer(conf rootConfig) error {
 		return err
 	}
 
-	profiler.Init("zoekt-sourcegraph-indexserver", zoekt.Version, conf.blockProfileRate)
+	profiler.Init("zoekt-sourcegraph-indexserver")
 	setCompoundShardCounter(s.IndexDir)
 
 	if conf.listen != "" {

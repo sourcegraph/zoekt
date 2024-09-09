@@ -5,14 +5,15 @@ import (
 	"os"
 
 	"cloud.google.com/go/profiler"
+	"github.com/sourcegraph/zoekt"
 )
 
 // Init starts the supported profilers IFF the environment variable is set.
-func Init(svcName, version string, blockProfileRate int) {
+func Init(svcName string) {
 	if os.Getenv("GOOGLE_CLOUD_PROFILER_ENABLED") != "" {
 		err := profiler.Start(profiler.Config{
 			Service:        svcName,
-			ServiceVersion: version,
+			ServiceVersion: zoekt.Version,
 			MutexProfiling: true,
 			AllocForceGC:   true,
 		})
