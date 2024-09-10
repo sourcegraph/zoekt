@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -128,12 +129,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	client, err := gerrit.NewClient(rootURL.String(), newLoggingClient())
+	ctx := context.Background()
+
+	client, err := gerrit.NewClient(ctx, rootURL.String(), newLoggingClient())
 	if err != nil {
 		log.Fatalf("NewClient(%s): %v", rootURL, err)
 	}
 
-	info, _, err := client.Config.GetServerInfo()
+	info, _, err := client.Config.GetServerInfo(ctx)
 	if err != nil {
 		log.Fatalf("GetServerInfo: %v", err)
 	}
@@ -157,7 +160,7 @@ func main() {
 	projects := make(map[string]gerrit.ProjectInfo)
 	skip := 0
 	for {
-		page, _, err := client.Projects.ListProjects(&gerrit.ProjectOptions{Skip: strconv.Itoa(skip)})
+		page, _, err := client.Projects.ListProjects(ctx, &gerrit.ProjectOptions{Skip: strconv.Itoa(skip)})
 		if err != nil {
 			log.Fatalf("ListProjects: %v", err)
 		}
