@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/crc64"
-	"log"
 	"os"
 	"sort"
 
@@ -126,28 +125,12 @@ func (r *reader) readTOC(toc *indexTOC) error {
 				return err
 			}
 			sec := secs[tag]
-			if sec != nil && sec.kind() == sectionKind(kind) {
-				// happy path
-				if err := sec.read(r); err != nil {
-					return err
-				}
-				continue
+			if sec == nil || sec.kind() != sectionKind(kind) {
+				return fmt.Errorf("encountered malformed undex section. tag: %s, kind: %d", tag, sectionKind(kind))
 			}
-			// error case: skip over unknown section
-			if sec == nil {
-				log.Printf("file %s TOC has unknown section %q", r.r.Name(), tag)
-			} else {
-				return fmt.Errorf("file %s TOC section %q expects kind %d, got kind %d", r.r.Name(), tag,
-					kind, sec.kind())
-			}
-			if kind == 0 {
-				if err := (&simpleSection{}).read(r); err != nil {
-					return err
-				}
-			} else if kind == 1 {
-				if err := (&compoundSection{}).read(r); err != nil {
-					return err
-				}
+			
+			if err := sec.read(r); err != nil {
+				return err
 			}
 		}
 	} else {
