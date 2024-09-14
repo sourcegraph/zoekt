@@ -32,7 +32,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -466,4 +465,33 @@ func TestEncodeRanks(t *testing.T) {
 
 		return true
 	}, nil)
+}
+
+func BenchmarkReadMetadata(b *testing.B) {
+	file, err := os.Open("testdata/benchmark/zoekt_v16.00000.zoekt")
+	if err != nil {
+		b.Fatalf("Failed to open test file: %v", err)
+	}
+	defer file.Close()
+
+	indexFile, err := NewIndexFile(file)
+	if err != nil {
+		b.Fatalf("could not open index: %v", err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		repos, metadata, err := ReadMetadata(indexFile)
+		if err != nil {
+			b.Fatalf("ReadMetadata failed: %v", err)
+		}
+		if len(repos) != 1 {
+			b.Fatalf("expected 1 repository")
+		}
+		if metadata == nil {
+			b.Fatalf("expected non-nil metadata")
+		}
+	}
 }
