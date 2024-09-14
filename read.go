@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/crc64"
+	"log"
 	"os"
 	"sort"
 
@@ -125,12 +126,29 @@ func (r *reader) readTOC(toc *indexTOC) error {
 				return err
 			}
 			sec := secs[tag]
-			if sec == nil || sec.kind() != sectionKind(kind) {
-				return fmt.Errorf("encountered malformed index section. tag: %s, kind: %d", tag, sectionKind(kind))
-			}
 
-			if err := sec.read(r); err != nil {
-				return err
+			if sec != nil && sec.kind() == sectionKind(kind) {
+				if err := sec.read(r); err != nil {
+					return err
+				}
+			} else {
+				// If we don't recognize the section, we may be reading a newer index than the current version. Skip over it.
+				log.Printf("encountered malformed index section (%s), skipping over it", tag)
+				var dummySection section
+				switch sectionKind(kind) {
+				case sectionKindSimple:
+					dummySection = &simpleSection{}
+				case sectionKindCompound:
+					dummySection = &compoundSection{}
+				case sectionKindCompoundLazy:
+					dummySection = &lazyCompoundSection{}
+				default:
+					return fmt.Errorf("unknown section kind %d", kind)
+				}
+
+				if err := dummySection.read(r); err != nil {
+					return err
+				}
 			}
 		}
 	} else {
