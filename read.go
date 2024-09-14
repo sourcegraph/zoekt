@@ -126,9 +126,9 @@ func (r *reader) readTOC(toc *indexTOC) error {
 			}
 			sec := secs[tag]
 			if sec == nil || sec.kind() != sectionKind(kind) {
-				return fmt.Errorf("encountered malformed undex section. tag: %s, kind: %d", tag, sectionKind(kind))
+				return fmt.Errorf("encountered malformed index section. tag: %s, kind: %d", tag, sectionKind(kind))
 			}
-			
+
 			if err := sec.read(r); err != nil {
 				return err
 			}
