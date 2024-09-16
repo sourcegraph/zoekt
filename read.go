@@ -130,12 +130,12 @@ func (r *reader) readTOC(toc *indexTOC) error {
 			if sec == nil || sec.kind() != sectionKind(kind) {
 				// If we don't recognize the section, we may be reading a newer index than the current version. Use
 				// a "dummy section" struct to skip over it.
-				log.Printf("encountered malformed index section (%s), skipping over it", tag)
+				log.Printf("encountered unrecognized index section (%s), skipping over it", tag)
 				switch sectionKind(kind) {
 				case sectionKindSimple:
 					sec = &simpleSection{}
 				case sectionKindCompound:
-					sec = &compoundSection{}
+					sec = &lazyCompoundSection{}
 				case sectionKindCompoundLazy:
 					sec = &lazyCompoundSection{}
 				default:
