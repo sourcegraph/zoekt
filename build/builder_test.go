@@ -764,8 +764,7 @@ func TestFindRepositoryMetadata(t *testing.T) {
 func TestIsLowPriority(t *testing.T) {
 	cases := []string{
 		"builder_test.go",
-		"TestQuery.java",
-		"test/mocks.go",
+		"test/TestQuery.java",
 		"search/vendor/thirdparty.cc",
 		"search/node_modules/search/index.js",
 		"search.min.js",
@@ -774,7 +773,7 @@ func TestIsLowPriority(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt, func(t *testing.T) {
-			if !IsLowPriority(tt) {
+			if !IsLowPriority(tt, nil) {
 				t.Errorf("expected file '%s' to be low priority", tt)
 			}
 		})
@@ -788,7 +787,7 @@ func TestIsLowPriority(t *testing.T) {
 
 	for _, tt := range negativeCases {
 		t.Run(tt, func(t *testing.T) {
-			if IsLowPriority(tt) {
+			if IsLowPriority(tt, nil) {
 				t.Errorf("did not expect file '%s' to be low priority", tt)
 			}
 		})

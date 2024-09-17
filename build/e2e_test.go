@@ -502,7 +502,7 @@ func TestFileRank(t *testing.T) {
 		name: "test",
 		docs: []*zoekt.Document{
 			{
-				Name:    "test",
+				Name:    "foo_test.go",
 				Content: []byte("bla"),
 			},
 			{
