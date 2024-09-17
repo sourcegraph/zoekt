@@ -46,7 +46,7 @@ func main() {
 	isMember := flag.Bool("membership", false, "only mirror repos this user is a member of ")
 	isPublic := flag.Bool("public", false, "only mirror public repos")
 	deleteRepos := flag.Bool("delete", false, "delete missing repos")
-	excludeUserRepos := flag.Bool("exclude-user", false, "exclude user repos")
+	excludeUserRepos := flag.Bool("exclude_user", false, "exclude user repos")
 	namePattern := flag.String("name", "", "only clone repos whose name matches the given regexp.")
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	flag.Parse()
