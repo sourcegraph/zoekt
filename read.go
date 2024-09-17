@@ -125,29 +125,26 @@ func (r *reader) readTOC(toc *indexTOC) error {
 			if err != nil {
 				return err
 			}
+
 			sec := secs[tag]
-			if sec != nil && sec.kind() == sectionKind(kind) {
-				// happy path
-				if err := sec.read(r); err != nil {
-					return err
+			if sec == nil || sec.kind() != sectionKind(kind) {
+				// If we don't recognize the section, we may be reading a newer index than the current version. Use
+				// a "dummy section" struct to skip over it.
+				log.Printf("encountered unrecognized index section (%s), skipping over it", tag)
+				switch sectionKind(kind) {
+				case sectionKindSimple:
+					sec = &simpleSection{}
+				case sectionKindCompound:
+					sec = &lazyCompoundSection{}
+				case sectionKindCompoundLazy:
+					sec = &lazyCompoundSection{}
+				default:
+					return fmt.Errorf("unknown section kind %d", kind)
 				}
-				continue
 			}
-			// error case: skip over unknown section
-			if sec == nil {
-				log.Printf("file %s TOC has unknown section %q", r.r.Name(), tag)
-			} else {
-				return fmt.Errorf("file %s TOC section %q expects kind %d, got kind %d", r.r.Name(), tag,
-					kind, sec.kind())
-			}
-			if kind == 0 {
-				if err := (&simpleSection{}).read(r); err != nil {
-					return err
-				}
-			} else if kind == 1 {
-				if err := (&compoundSection{}).read(r); err != nil {
-					return err
-				}
+
+			if err := sec.read(r); err != nil {
+				return err
 			}
 		}
 	} else {
