@@ -127,8 +127,12 @@ func (s *simpleSection) end(w *writer) {
 // section is a range of bytes in the index file.
 type section interface {
 	read(*reader) error
+	// skip advances over the data in the section without reading it.
+	// NOTE: the section will not contain valid data after this call, and it should not be used.
+	skip(*reader) error
 	write(*writer)
-	kind() sectionKind // simple or complex, used in serialization
+	// kind encodes whether the section is simple or compound, and is used in serialization
+	kind() sectionKind
 }
 
 type sectionKind int
@@ -156,10 +160,17 @@ func (s *simpleSection) read(r *reader) error {
 		return err
 	}
 	s.sz, err = r.U32()
+	return err
+}
+
+func (s *simpleSection) skip(r *reader) error {
+	var err error
+	_, err = r.U32()
 	if err != nil {
 		return err
 	}
-	return nil
+	_, err = r.U32()
+	return err
 }
 
 func (s *simpleSection) write(w *writer) {
@@ -212,6 +223,18 @@ func (s *compoundSection) read(r *reader) error {
 	}
 	var err error
 	s.offsets, err = readSectionU32(r.r, s.index)
+	return err
+}
+
+func (s *compoundSection) skip(r *reader) error {
+	if err := s.data.skip(r); err != nil {
+		return err
+	}
+	if err := s.index.read(r); err != nil {
+		return err
+	}
+
+	_, err := r.r.Read(s.index.off, s.index.sz)
 	return err
 }
 
