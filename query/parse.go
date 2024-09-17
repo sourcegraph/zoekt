@@ -172,7 +172,7 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		expr = q
 	case tokLang:
-		canonical, ok := languages.GetLanguageByAlias(text)
+		canonical, ok := languages.GetLanguageByNameOrAlias(text)
 		if !ok {
 			expr = &Const{false}
 		} else {
