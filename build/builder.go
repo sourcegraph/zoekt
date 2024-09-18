@@ -37,7 +37,7 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar"
-	"github.com/grafana/regexp"
+	"github.com/go-enry/go-enry/v2"
 	"github.com/rs/xid"
 
 	"github.com/sourcegraph/zoekt"
@@ -901,18 +901,8 @@ func squashRange(j int) float64 {
 //
 // These 'priority' criteria affects how documents are ordered within a shard. It's
 // also used to help guess a file's rank when we're missing ranking information.
-func IsLowPriority(file string) bool {
-	return testRe.MatchString(file) || isGenerated(file) || isVendored(file)
-}
-
-var testRe = regexp.MustCompile("[Tt]est")
-
-func isGenerated(file string) bool {
-	return strings.HasSuffix(file, "min.js") || strings.HasSuffix(file, "js.map")
-}
-
-func isVendored(file string) bool {
-	return strings.Contains(file, "vendor/") || strings.Contains(file, "node_modules/")
+func IsLowPriority(path string, content []byte) bool {
+	return enry.IsTest(path) || enry.IsVendor(path) || enry.IsGenerated(path, content)
 }
 
 type rankedDoc struct {
@@ -931,17 +921,17 @@ func rank(d *zoekt.Document, origIdx int) []float64 {
 	}
 
 	generated := 0.0
-	if isGenerated(d.Name) {
+	if enry.IsGenerated(d.Name, d.Content) {
 		generated = 1.0
 	}
 
 	vendor := 0.0
-	if isVendored(d.Name) {
+	if enry.IsVendor(d.Name) {
 		vendor = 1.0
 	}
 
 	test := 0.0
-	if testRe.MatchString(d.Name) {
+	if enry.IsTest(d.Name) {
 		test = 1.0
 	}
 

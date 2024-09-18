@@ -744,7 +744,7 @@ func TestRepoPathRanks(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			got := pathRanks.rank(tt.path)
+			got := pathRanks.rank(tt.path, nil)
 			if got != tt.rank {
 				t.Errorf("expected file '%s' to have rank %f, but got %f", tt.path, tt.rank, got)
 			}

@@ -589,10 +589,10 @@ type repoPathRanks struct {
 //   - If we have a concrete rank for this file, always use it
 //   - If there's no rank, and it's a low priority file like a test, then use rank 0
 //   - Otherwise use the mean rank of this repository, to avoid giving it a big disadvantage
-func (r repoPathRanks) rank(path string) float64 {
+func (r repoPathRanks) rank(path string, content []byte) float64 {
 	if rank, ok := r.Paths[path]; ok {
 		return rank
-	} else if build.IsLowPriority(path) {
+	} else if build.IsLowPriority(path, content) {
 		return 0.0
 	} else {
 		return r.MeanRank
@@ -910,7 +910,7 @@ func createDocument(key fileKey,
 	var pathRanks []float64
 	if len(ranks.Paths) > 0 {
 		// If the repository has ranking data, then store the file's rank.
-		pathRank := ranks.rank(keyFullPath)
+		pathRank := ranks.rank(keyFullPath, contents)
 		pathRanks = []float64{pathRank}
 	}
 

@@ -32,10 +32,10 @@ github.com/sourcegraph/sourcegraph-public-snapshot/cmd/gitserver/server/server.g
 741:func (s *Server) serverContext() (context.Context, context.CancelFunc) {
 hidden 166 more line matches
 
-github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/main.go
-150:type Server struct {
-1232:func startServer(conf rootConfig) error {
-1309:func newServer(conf rootConfig) (*Server, error) {
-hidden 52 more line matches
+github.com/sourcegraph/sourcegraph-public-snapshot/cmd/frontend/graphqlbackend/testing.go
+46:type Test struct {
+79:func RunTest(t *testing.T, test *Test) {
+58:func RunTests(t *testing.T, tests []*Test) {
+hidden 27 more line matches
 
 hidden 494 more file matches

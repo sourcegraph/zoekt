@@ -14,6 +14,12 @@ github.com/golang/go/src/cmd/cover/func.go
 32:// as output the coverage data broken down by function, like this:
 hidden 8 more line matches
 
+github.com/golang/go/src/testing/fuzz.go
+93:	Data       []byte
+205:// modify the underlying data of the arguments provided by the fuzzing engine.
+275:	run := func(captureOut io.Writer, e corpusEntry) (ok bool) {
+hidden 7 more line matches
+
 github.com/golang/go/src/cmd/cover/html.go
 199:	Coverage float64
 170:type templateData struct {
@@ -25,12 +31,6 @@ github.com/golang/go/src/internal/fuzz/fuzz.go
 487:func corpusEntryData(ce CorpusEntry) ([]byte, error) {
 908:func (c *coordinator) updateCoverage(newCoverage []byte) int {
 hidden 91 more line matches
-
-github.com/golang/go/src/testing/fuzz.go
-93:	Data       []byte
-205:// modify the underlying data of the arguments provided by the fuzzing engine.
-275:	run := func(captureOut io.Writer, e corpusEntry) (ok bool) {
-hidden 7 more line matches
 
 github.com/golang/go/src/cmd/vendor/golang.org/x/sys/unix/ztypes_linux.go
 227:	Data         [7]byte
