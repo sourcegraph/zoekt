@@ -635,13 +635,29 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		r.ID = uint32(id)
 	}
 
-	// Sourcegraph indexserver doesn't set repo.Rank, so we set it here based on the
-	// latest commit date. Setting it on read instead of during indexing allows us
-	// to avoid a complete reindex.
-	if r.Rank == 0 {
-		// We use the number of months since 1970 as a simple measure of repo freshness
-		// It has the nice property of being stable across re-indexes and restarts.
+	// Sourcegraph indexserver doesn't set repo.Rank, so we set it here. Setting it
+	// on read instead of during indexing allows us to avoid a complete reindex.
+	//
+	// Prefer "latest_commit_date" over "priority" for ranking. We keep priority for
+	// backwards compatibility.
+	if _, ok := repo.RawConfig["latest_commit_date"]; ok {
+		// We use the number of months since 1970 as a simple measure of repo freshness.
+		// It is monotonically increasing and stable across re-indexes and restarts.
 		r.Rank = monthsSince1970(repo.LatestCommitDate)
+	} else if v, ok := repo.RawConfig["priority"]; ok {
+		r.priority, err = strconv.ParseFloat(v, 64)
+		if err != nil {
+			r.priority = 0
+		}
+
+		// Sourcegraph indexserver doesn't set repo.Rank, so we set it here
+		// based on priority. Setting it on read instead of during indexing
+		// allows us to avoid a complete reindex.
+		if r.Rank == 0 && r.priority > 0 {
+			// Normalize the repo score within [0, 1), with the midpoint at 5,000. This means popular
+			// repos (roughly ones with over 5,000 stars) see diminishing returns from more stars.
+			r.Rank = uint16(r.priority / (5000.0 + r.priority) * maxUInt16)
+		}
 	}
 
 	return nil
