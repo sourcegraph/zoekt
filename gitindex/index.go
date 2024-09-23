@@ -31,7 +31,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
@@ -43,32 +42,6 @@ import (
 
 	git "github.com/go-git/go-git/v5"
 )
-
-// RepoModTime returns the time of last fetch of a git repository.
-func RepoModTime(dir string) (time.Time, error) {
-	var last time.Time
-	refDir := filepath.Join(dir, "refs")
-	if _, err := os.Lstat(refDir); err == nil {
-		if err := filepath.Walk(refDir,
-			func(_ string, fi os.FileInfo, _ error) error {
-				if !fi.IsDir() && last.Before(fi.ModTime()) {
-					last = fi.ModTime()
-				}
-				return nil
-			}); err != nil {
-			return last, err
-		}
-	}
-
-	// git gc compresses refs into the following file:
-	for _, fn := range []string{"info/refs", "packed-refs"} {
-		if fi, err := os.Lstat(filepath.Join(dir, fn)); err == nil && !fi.IsDir() && last.Before(fi.ModTime()) {
-			last = fi.ModTime()
-		}
-	}
-
-	return last, nil
-}
 
 // FindGitRepos finds directories holding git repositories below the
 // given directory. It will find both bare and the ".git" dirs in
