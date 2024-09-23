@@ -329,6 +329,22 @@ func TestSimplifyRepoRegexp(t *testing.T) {
 	}
 }
 
+func TestSimplifyRcRawConfig(t *testing.T) {
+	d := compoundReposShard(t, "foo", "bar")
+	var all = query.RcOnlyPrivate | query.RcNoForks | query.RcNoArchived
+
+	got := d.simplify(all)
+	if d := cmp.Diff(&query.Const{Value: true}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+
+	var none = query.RcOnlyPublic | query.RcNoForks | query.RcNoArchived
+	got = d.simplify(none)
+	if d := cmp.Diff(&query.Const{Value: false}, got); d != "" {
+		t.Fatalf("-want, +got:\n%s", d)
+	}
+}
+
 func TestSimplifyBranchesRepos(t *testing.T) {
 	d := compoundReposShard(t, "foo", "bar")
 
