@@ -635,22 +635,27 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		r.ID = uint32(id)
 	}
 
-	if v, ok := repo.RawConfig["priority"]; ok {
-		r.priority, err = strconv.ParseFloat(v, 64)
-		if err != nil {
-			r.priority = 0
-		}
-
-		// Sourcegraph indexserver doesn't set repo.Rank, so we set it here
-		// based on priority. Setting it on read instead of during indexing
-		// allows us to avoid a complete reindex.
-		if r.Rank == 0 && r.priority > 0 {
-			// Normalize the repo score within [0, 1), with the midpoint at 5,000. This means popular
-			// repos (roughly ones with over 5,000 stars) see diminishing returns from more stars.
-			r.Rank = uint16(r.priority / (5000.0 + r.priority) * maxUInt16)
-		}
+	// Sourcegraph indexserver doesn't set repo.Rank, so we set it here based on the
+	// latest commit date. Setting it on read instead of during indexing allows us
+	// to avoid a complete reindex.
+	if r.Rank == 0 {
+		// We use the number of months since 1970 as a simple measure of repo freshness
+		// It has the nice property of being stable across re-indexes and restarts.
+		r.Rank = monthsSince1970(repo.LatestCommitDate)
 	}
+
 	return nil
+}
+
+// monthsSince1970 returns the number of months since 1970. Its upper bound is
+// maxUInt16 which is reached in the year 7431.
+func monthsSince1970(t time.Time) uint16 {
+	base := time.Unix(0, 0)
+	if t.Before(base) {
+		return 0
+	}
+	months := int(t.Year()-1970)*12 + int(t.Month()-1)
+	return uint16(min(months, maxUInt16))
 }
 
 // MergeMutable will merge x into r. mutated will be true if it made any

@@ -368,3 +368,29 @@ func TestRepositoryMergeMutable(t *testing.T) {
 		}
 	})
 }
+
+func TestMonthsSince1970(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    time.Time
+		expected uint16
+	}{
+		{"Before 1970", time.Date(1950, 12, 31, 0, 0, 0, 0, time.UTC), 0},
+		{"Unix 0", time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), 0},
+		{"Feb 1970", time.Date(1970, 2, 1, 0, 0, 0, 0, time.UTC), 1},
+		{"Year 1989", time.Date(1989, 12, 13, 0, 0, 0, 0, time.UTC), 239},
+		{"Sep 2024", time.Date(2024, 9, 20, 0, 0, 0, 0, time.UTC), 656},
+		{"Oct 2024", time.Date(2024, 10, 20, 0, 0, 0, 0, time.UTC), 657},
+		{"Apr 7431", time.Date(7431, 4, 1, 0, 0, 0, 0, time.UTC), 65535},
+		{"9999", time.Date(9999, 0, 0, 0, 0, 0, 0, time.UTC), 65535},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := monthsSince1970(tt.input)
+			if result != tt.expected {
+				t.Errorf("expected %d, got %d", tt.expected, result)
+			}
+		})
+	}
+}

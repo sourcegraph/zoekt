@@ -21,7 +21,10 @@ import (
 	"strings"
 )
 
-const maxUInt16 = 0xffff
+const (
+	maxUInt16   = 0xffff
+	ScoreOffset = 10_000_000
+)
 
 // addScore increments the score of the FileMatch by the computed score. If
 // debugScore is true, it also adds a debug string to the FileMatch. If raw is
@@ -99,12 +102,24 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 		}
 	}
 
+	// Add tiebreakers
+	//
+	// We multiply the score with an offset to have 5 digits for the repo rank and 2
+	// digits (plus decimals) for the doc order to function as tiebreakers.
+	fileMatch.Score = math.Trunc(fileMatch.Score) * ScoreOffset
+
 	md := d.repoMetaData[d.repos[doc]]
+	// digits 3-7 are the repo rank, this gives us increments of 1 per month.
+	addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank))
+	// digits 1-2 and the decimals are the doc order.
 	addScore("doc-order", scoreFileOrderFactor*(1.0-float64(doc)/float64(len(d.boundaries))))
-	addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank)/maxUInt16)
 
 	if opts.DebugScore {
-		fileMatch.Debug = fmt.Sprintf("score: %.2f <- %s", fileMatch.Score, strings.TrimSuffix(fileMatch.Debug, ", "))
+		// To make the debug output easier to read, we split the score into the query
+		// dependent score and the tiebreaker
+		score := math.Trunc(fileMatch.Score / ScoreOffset)
+		tiebreaker := fileMatch.Score - score*ScoreOffset
+		fileMatch.Debug = fmt.Sprintf("score: %d (%.2f) <- %s", int(score), tiebreaker, strings.TrimSuffix(fileMatch.Debug, ", "))
 	}
 }
 

@@ -531,8 +531,8 @@ const (
 	// File-only scoring signals. For now these are also bounded ~9000 to give them
 	// equal weight with the query-dependent signals.
 	scoreFileRankFactor  = 9000.0
+	scoreRepoRankFactor  = 100.0
 	scoreFileOrderFactor = 10.0
-	scoreRepoRankFactor  = 20.0
 
 	// Used for ordering line and chunk matches within a file.
 	scoreLineOrderFactor = 1.0
