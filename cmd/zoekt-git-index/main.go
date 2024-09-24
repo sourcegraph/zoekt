@@ -22,6 +22,7 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"github.com/dustin/go-humanize"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"go.uber.org/automaxprocs/maxprocs"
 
@@ -31,8 +32,6 @@ import (
 )
 
 func run() int {
-	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
-
 	allowMissing := flag.Bool("allow_missing_branches", false, "allow missing branches.")
 	submodules := flag.Bool("submodules", true, "if set to false, do not recurse into submodules")
 	branchesStr := flag.String("branches", "HEAD", "git branches to index.")
@@ -47,13 +46,16 @@ func run() int {
 	offlineRanking := flag.String("offline_ranking", "", "the name of the file that contains the ranking info.")
 	offlineRankingVersion := flag.String("offline_ranking_version", "", "a version string identifying the contents in offline_ranking.")
 	languageMap := flag.String("language_map", "", "a mapping between a language and its ctags processor (a:0,b:3).")
+
+	cpuProfile := flag.String("cpuprofile", "", "write cpu profile to `file`")
+
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
 
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
+	if *cpuProfile != "" {
+		f, err := os.Create(*cpuProfile)
 		if err != nil {
 			log.Fatal("could not create CPU profile: ", err)
 		}
@@ -107,6 +109,15 @@ func run() int {
 			continue
 		}
 		opts.LanguageMap[m[0]] = ctags.StringToParser(m[1])
+	}
+
+	if heapProfileTrigger := os.Getenv("ZOEKT_HEAP_PROFILE_TRIGGER"); heapProfileTrigger != "" {
+		trigger, err := humanize.ParseBytes(heapProfileTrigger)
+		if err != nil {
+			log.Printf("invalid value for ZOEKT_HEAP_PROFILE_TRIGGER: %v", err)
+		} else {
+			opts.HeapProfileTriggerBytes = trigger
+		}
 	}
 
 	profiler.Init("zoekt-git-index")

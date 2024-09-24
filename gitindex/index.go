@@ -514,6 +514,9 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		return false, fmt.Errorf("build.NewBuilder: %w", err)
 	}
 
+	// Preparing the build can consume substantial memory, so check usage before starting to index.
+	builder.CheckMemoryUsage()
+
 	var ranks repoPathRanks
 	var meanRank float64
 	if opts.BuildOptions.DocumentRanksPath != "" {
@@ -562,7 +565,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	names = uniq(names)
 
 	log.Printf("attempting to index %d total files", totalFiles)
-	for _, name := range names {
+	for idx, name := range names {
 		keys := fileKeys[name]
 
 		for _, key := range keys {
@@ -574,9 +577,12 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 			if err := builder.Add(doc); err != nil {
 				return false, fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
 			}
+
+			if idx%10_000 == 0 {
+				builder.CheckMemoryUsage()
+			}
 		}
 	}
-
 	return true, builder.Finish()
 }
 
