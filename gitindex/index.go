@@ -514,6 +514,9 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		return false, fmt.Errorf("build.NewBuilder: %w", err)
 	}
 
+	// Preparing the build can consume substantial memory, so check usage before starting to index.
+	builder.CheckMemoryUsage()
+
 	var ranks repoPathRanks
 	var meanRank float64
 	if opts.BuildOptions.DocumentRanksPath != "" {
