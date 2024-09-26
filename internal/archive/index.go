@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
@@ -113,13 +114,21 @@ func Index(opts Options, bopts build.Options) error {
 	defer a.Close()
 
 	bopts.RepositoryDescription.Source = opts.Archive
-	builder, err := build.NewBuilder(bopts)
-	if err != nil {
-		return err
-	}
+	var builder *build.Builder
 
+	once := sync.Once{}
+	var onceErr error
 	add := func(f *File) error {
 		defer f.Close()
+
+		once.Do(func() {
+			// We use the ModTime of the first file as a proxy for the latest commit date.
+			bopts.RepositoryDescription.LatestCommitDate = f.ModTime
+			builder, onceErr = build.NewBuilder(bopts)
+		})
+		if onceErr != nil {
+			return onceErr
+		}
 
 		contents, err := io.ReadAll(f)
 		if err != nil {

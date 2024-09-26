@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 type Archive interface {
@@ -20,8 +21,9 @@ type Archive interface {
 
 type File struct {
 	io.ReadCloser
-	Name string
-	Size int64
+	Name    string
+	Size    int64
+	ModTime time.Time
 }
 
 type tarArchive struct {
@@ -45,6 +47,7 @@ func (a *tarArchive) Next() (*File, error) {
 			ReadCloser: io.NopCloser(a.tr),
 			Name:       hdr.Name,
 			Size:       hdr.Size,
+			ModTime:    hdr.ModTime,
 		}, nil
 	}
 }
@@ -71,6 +74,7 @@ func (a *zipArchive) Next() (*File, error) {
 		ReadCloser: r,
 		Name:       f.Name,
 		Size:       int64(f.UncompressedSize64),
+		ModTime:    f.Modified,
 	}, nil
 }
 
