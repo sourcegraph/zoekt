@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/internal/archive"
@@ -39,12 +40,13 @@ func TestRanking(t *testing.T) {
 	requireCTags(t)
 
 	archiveURLs := []string{
-		"https://github.com/sourcegraph/sourcegraph-public-snapshot/tree/v5.2.2",
-		"https://github.com/golang/go/tree/go1.21.4",
-		"https://github.com/sourcegraph/cody/tree/vscode-v0.14.5",
+		"https://github.com/sourcegraph/sourcegraph-public-snapshot/tree/v5.2.2", // Nov 1 2023
+		"https://github.com/golang/go/tree/go1.21.4",                             // Nov 7 2023
+		"https://github.com/sourcegraph/cody/tree/vscode-v0.14.5",                // Nov 8 2023
 		// The commit before ranking e2e tests were added to avoid matching
 		// content inside our golden files.
-		"https://github.com/sourcegraph/zoekt/commit/ef907c2371176aa3f97713d5bf182983ef090c6a",
+		"https://github.com/sourcegraph/zoekt/commit/ef907c2371176aa3f97713d5bf182983ef090c6a", // Nov 17 2023
+		"https://github.com/sourcegraph/conc/tree/5f936abd7ae87036af1f75c95fb9d0daaf00116b",    // Jan 21 2024
 	}
 	q := func(query, target string) rankingQuery {
 		return rankingQuery{Query: query, Target: target}
@@ -76,6 +78,9 @@ func TestRanking(t *testing.T) {
 		// symbols split up
 		q("bufio flush writer", "github.com/golang/go/src/net/http/transfer.go"),                        // bufioFlushWriter
 		q("coverage data writer", "github.com/golang/go/src/internal/coverage/encodecounter/encode.go"), // CoverageDataWriter
+
+		// sourcegraph/conc vs golang/go
+		q("WaitGroup", "github.com/sourcegraph/conc/waitgroup.go"),
 	}
 
 	var indexDir string
