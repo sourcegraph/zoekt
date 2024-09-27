@@ -11,8 +11,12 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
@@ -28,11 +32,18 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+var modTime = time.Date(2024, 9, 26, 0, 0, 0, 0, time.UTC)
+
 func writeArchive(w io.Writer, format string, files map[string]string) (err error) {
 	if format == "zip" {
 		zw := zip.NewWriter(w)
 		for name, body := range files {
-			f, err := zw.Create(name)
+			header := &zip.FileHeader{
+				Name:     name,
+				Method:   zip.Deflate,
+				Modified: modTime,
+			}
+			f, err := zw.CreateHeader(header)
 			if err != nil {
 				return err
 			}
@@ -63,9 +74,10 @@ func writeArchive(w io.Writer, format string, files map[string]string) (err erro
 
 	for name, body := range files {
 		hdr := &tar.Header{
-			Name: name,
-			Mode: 0o600,
-			Size: int64(len(body)),
+			Name:    name,
+			Mode:    0o600,
+			Size:    int64(len(body)),
+			ModTime: modTime,
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
@@ -188,4 +200,62 @@ func testIndexIncrementally(t *testing.T, format string) {
 			t.Errorf("got %v, want %d files.", result.Files, wantNumFiles)
 		}
 	}
+}
+
+// TestLatestCommitDate tests that the latest commit date is set correctly if
+// the mod time of the files has been set during the archive creation.
+func TestLatestCommitDate(t *testing.T) {
+	for _, format := range []string{"tar", "tgz", "zip"} {
+		t.Run(format, func(t *testing.T) {
+			testLatestCommitDate(t, format)
+		})
+	}
+}
+
+func testLatestCommitDate(t *testing.T, format string) {
+	// Create an archive
+	archive, err := os.CreateTemp("", "TestLatestCommitDate")
+	require.NoError(t, err)
+	defer os.Remove(archive.Name())
+
+	fileSize := 10
+	files := map[string]string{}
+	for i := 0; i < 4; i++ {
+		s := fmt.Sprintf("%d", i)
+		files["F"+s] = strings.Repeat("a", fileSize)
+		files["!F"+s] = strings.Repeat("a", fileSize)
+	}
+
+	err = writeArchive(archive, format, files)
+	if err != nil {
+		t.Fatalf("unable to create archive %v", err)
+	}
+	archive.Close()
+
+	// Index
+	indexDir := t.TempDir()
+	bopts := build.Options{
+		IndexDir: indexDir,
+	}
+	opts := Options{
+		Archive: archive.Name(),
+		Name:    "repo",
+		Branch:  "master",
+		Commit:  "cccccccccccccccccccccccccccccccccccccccc",
+	}
+
+	err = Index(opts, bopts)
+	require.NoError(t, err)
+
+	// Read the metadata of the index we just created and check the latest commit date.
+	f, err := os.Open(indexDir)
+	require.NoError(t, err)
+
+	indexFiles, err := f.Readdirnames(1)
+	require.Len(t, indexFiles, 1)
+
+	repos, _, err := zoekt.ReadMetadataPath(filepath.Join(indexDir, indexFiles[0]))
+	require.NoError(t, err)
+	require.Len(t, repos, 1)
+	require.True(t, repos[0].LatestCommitDate.Equal(modTime))
 }
