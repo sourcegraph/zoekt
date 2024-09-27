@@ -35,7 +35,7 @@ type repoWalker struct {
 	repo *git.Repository
 
 	repoURL *url.URL
-	tree    map[fileKey]BlobLocation
+	tree    map[fileKey]BlobRepo
 
 	// Path => SubmoduleEntry
 	submodules map[string]*SubmoduleEntry
@@ -65,7 +65,7 @@ func newRepoWalker(r *git.Repository, repoURL string, repoCache *RepoCache) *rep
 	return &repoWalker{
 		repo:            r,
 		repoURL:         u,
-		tree:            map[fileKey]BlobLocation{},
+		tree:            map[fileKey]BlobRepo{},
 		repoCache:       repoCache,
 		subRepoVersions: map[string]plumbing.Hash{},
 	}
@@ -97,9 +97,7 @@ func (rw *repoWalker) parseModuleMap(t *object.Tree) error {
 // TreeToFiles fetches the blob SHA1s for a tree. If repoCache is
 // non-nil, recurse into submodules. In addition, it returns a mapping
 // that indicates in which repo each SHA1 can be found.
-func TreeToFiles(r *git.Repository, t *object.Tree,
-	repoURL string, repoCache *RepoCache,
-) (map[fileKey]BlobLocation, map[string]plumbing.Hash, error) {
+func TreeToFiles(r *git.Repository, t *object.Tree, repoURL string, repoCache *RepoCache) (map[fileKey]BlobRepo, map[string]plumbing.Hash, error) {
 	rw := newRepoWalker(r, repoURL, repoCache)
 
 	if err := rw.parseModuleMap(t); err != nil {
@@ -184,12 +182,9 @@ func (r *repoWalker) handleEntry(p string, e *object.TreeEntry) error {
 		return nil
 	}
 
-	r.tree[fileKey{
-		Path: p,
-		ID:   e.Hash,
-	}] = BlobLocation{
-		Repo: r.repo,
-		URL:  r.repoURL,
+	r.tree[fileKey{Path: p, ID: e.Hash}] = BlobRepo{
+		GitRepo: r.repo,
+		URL:     r.repoURL,
 	}
 	return nil
 }
@@ -206,14 +201,21 @@ func (k *fileKey) FullPath() string {
 	return filepath.Join(k.SubRepoPath, k.Path)
 }
 
-// BlobLocation holds data where a blob can be found.
-type BlobLocation struct {
-	Repo *git.Repository
-	URL  *url.URL
+// BlobIndexInfo contains information about the blob that's needed for indexing.
+type BlobIndexInfo struct {
+	Repo BlobRepo
+	// Branches is the list of branches that contain the blob.
+	Branches []string
 }
 
-func (l *BlobLocation) Blob(id *plumbing.Hash) ([]byte, error) {
-	blob, err := l.Repo.BlobObject(*id)
+// BlobRepo holds the repo where the blob can be found.
+type BlobRepo struct {
+	GitRepo *git.Repository
+	URL     *url.URL
+}
+
+func (l *BlobRepo) Blob(id *plumbing.Hash) ([]byte, error) {
+	blob, err := l.GitRepo.BlobObject(*id)
 	if err != nil {
 		return nil, err
 	}
