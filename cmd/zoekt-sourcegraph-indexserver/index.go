@@ -116,11 +116,12 @@ func (o *indexArgs) BuildOptions() *build.Options {
 			Name:     o.Name,
 			Branches: o.Branches,
 			RawConfig: map[string]string{
-				"repoid":             strconv.Itoa(int(o.IndexOptions.RepoID)),
-				"priority":           strconv.FormatFloat(o.Priority, 'g', -1, 64),
-				"public":             marshalBool(o.Public),
-				"fork":               marshalBool(o.Fork),
-				"archived":           marshalBool(o.Archived),
+				"repoid":   strconv.Itoa(int(o.IndexOptions.RepoID)),
+				"priority": strconv.FormatFloat(o.Priority, 'g', -1, 64),
+				"public":   marshalBool(o.Public),
+				"fork":     marshalBool(o.Fork),
+				"archived": marshalBool(o.Archived),
+				// Calculate repo rank based on the latest commit date.
 				"latest_commit_date": "1",
 			},
 		},
