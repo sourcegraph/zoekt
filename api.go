@@ -654,8 +654,9 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		// based on priority. Setting it on read instead of during indexing
 		// allows us to avoid a complete reindex.
 		if r.Rank == 0 && r.priority > 0 {
-			// Normalize the repo score within [0, 1), with the midpoint at 5,000. This means popular
-			// repos (roughly ones with over 5,000 stars) see diminishing returns from more stars.
+			// Normalize the repo score within [0, maxUint16), with the midpoint at 5,000.
+			// This means popular repos (roughly ones with over 5,000 stars) see diminishing
+			// returns from more stars.
 			r.Rank = uint16(r.priority / (5000.0 + r.priority) * maxUInt16)
 		}
 	}
@@ -663,8 +664,9 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// monthsSince1970 returns the number of months since 1970. Its upper bound is
-// maxUInt16 which is reached in the year 7431.
+// monthsSince1970 returns the number of months since 1970. It returns values in
+// the range [0, maxUInt16]. The upper bound is reached in the year 7431, the
+// lower bound for all dates before 1970.
 func monthsSince1970(t time.Time) uint16 {
 	base := time.Unix(0, 0)
 	if t.Before(base) {

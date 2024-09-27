@@ -104,14 +104,19 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 
 	// Add tiebreakers
 	//
-	// We multiply the score with an offset to have 5 digits for the repo rank and 2
-	// digits (plus decimals) for the doc order to function as tiebreakers.
+	// ScoreOffset shifts the score 7 digits to the left.
 	fileMatch.Score = math.Trunc(fileMatch.Score) * ScoreOffset
 
 	md := d.repoMetaData[d.repos[doc]]
-	// digits 3-7 are the repo rank, this gives us increments of 1 per month.
+
+	// md.Rank lies in the range [0, 65535]. Hence, we have to allocate 5 digits for
+	// the rank. The scoreRepoRankFactor shifts the rank score 2 digits to the left,
+	// reserving digits 3-7 for the repo rank.
 	addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank))
-	// digits 1-2 and the decimals are the doc order.
+
+	// digits 1-2 and the decimals are reserved for the doc order. Doc order
+	// (without the scaling factor) lies in the range [0, 1]. The upper bound is
+	// achieved for matches in the first document of a shard.
 	addScore("doc-order", scoreFileOrderFactor*(1.0-float64(doc)/float64(len(d.boundaries))))
 
 	if opts.DebugScore {
