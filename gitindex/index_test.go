@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"testing"
 
@@ -607,13 +608,13 @@ func TestIndexDeltaBasic(t *testing.T) {
 					// setup: prepare spy versions of prepare delta / normal build so that we can observe
 					// whether they were called appropriately
 					deltaBuildCalled := false
-					prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+					prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobIndexInfo, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
 						deltaBuildCalled = true
 						return prepareDeltaBuild(options, repository)
 					}
 
 					normalBuildCalled := false
-					prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchMap map[fileKey][]string, branchVersions map[string]map[string]plumbing.Hash, err error) {
+					prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobIndexInfo, branchVersions map[string]map[string]plumbing.Hash, err error) {
 						normalBuildCalled = true
 						return prepareNormalBuild(options, repository)
 					}
@@ -782,5 +783,45 @@ func TestSetTemplate(t *testing.T) {
 
 	if got, want := desc.FileURLTemplate, "https://github.com/sourcegraph/zoekt/blob/{{.Version}}/{{.Path}}"; got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func BenchmarkPrepareNormalBuild(b *testing.B) {
+	// NOTE: To run the benchmark, download a large repo (like github.com/chromium/chromium/) and change this to its path.
+	repoDir := "/path/to/your/repo"
+	repo, err := git.PlainOpen(repoDir)
+	if err != nil {
+		b.Fatalf("Failed to open test repository: %v", err)
+	}
+
+	opts := Options{
+		RepoDir:      repoDir,
+		Submodules:   false,
+		BranchPrefix: "refs/heads/",
+		Branches:     []string{"main"},
+		BuildOptions: build.Options{
+			RepositoryDescription: zoekt.Repository{
+				Name: "test-repo",
+				URL:  "https://github.com/example/test-repo",
+			},
+		},
+	}
+
+	b.ReportAllocs()
+
+	repos, branchVersions, err := prepareNormalBuild(opts, repo)
+	if err != nil {
+		b.Fatalf("prepareNormalBuild failed: %v", err)
+	}
+
+	runtime.GC()
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	b.ReportMetric(float64(m.HeapInuse), "heap-used-bytes")
+	b.ReportMetric(float64(m.HeapInuse), "heap-allocated-bytes")
+
+	if len(repos) == 0 || len(branchVersions) == 0 {
+		b.Fatalf("Unexpected empty results")
 	}
 }

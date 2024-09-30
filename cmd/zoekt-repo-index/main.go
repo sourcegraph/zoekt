@@ -180,7 +180,7 @@ func main() {
 		}
 	}
 
-	perBranch := map[string]map[fileKey]gitindex.BlobLocation{}
+	perBranch := map[string]map[fileKey]gitindex.BlobRepo{}
 	opts.SubRepositories = map[string]*zoekt.Repository{}
 
 	// branch => repo => version
@@ -193,7 +193,7 @@ func main() {
 		}
 
 		perBranch[br.branch] = files
-		for key, loc := range files {
+		for key, repo := range files {
 			_, ok := opts.SubRepositories[key.SubRepoPath]
 			if ok {
 				// This can be incorrect: if the layout of manifests
@@ -204,8 +204,8 @@ func main() {
 			}
 
 			desc := &zoekt.Repository{}
-			if err := gitindex.SetTemplatesFromOrigin(desc, loc.URL); err != nil {
-				log.Fatalf("SetTemplatesFromOrigin(%s): %v", loc.URL, err)
+			if err := gitindex.SetTemplatesFromOrigin(desc, repo.URL); err != nil {
+				log.Fatalf("SetTemplatesFromOrigin(%s): %v", repo.URL, err)
 			}
 
 			opts.SubRepositories[key.SubRepoPath] = desc
@@ -325,8 +325,8 @@ func getManifest(repo *git.Repository, branch, path string) (*manifest.Manifest,
 func iterateManifest(mf *manifest.Manifest,
 	baseURL url.URL, revPrefix string,
 	cache *gitindex.RepoCache,
-) (map[fileKey]gitindex.BlobLocation, map[string]plumbing.Hash, error) {
-	allFiles := map[fileKey]gitindex.BlobLocation{}
+) (map[fileKey]gitindex.BlobRepo, map[string]plumbing.Hash, error) {
+	allFiles := map[fileKey]gitindex.BlobRepo{}
 	allVersions := map[string]plumbing.Hash{}
 	for _, p := range mf.Project {
 		rev := mf.ProjectRevision(&p)
