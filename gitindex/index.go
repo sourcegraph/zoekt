@@ -426,7 +426,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	}
 
 	// branch => (path, sha1) => repo.
-	var repos map[fileKey]BlobIndexInfo
+	var repos map[fileKey]BlobLocation
 
 	// Branch => Repo => SHA1
 	var branchVersions map[string]map[string]plumbing.Hash
@@ -452,7 +452,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		}
 	}
 
-	reposByPath := map[string]BlobIndexInfo{}
+	reposByPath := map[string]BlobLocation{}
 	for key, info := range repos {
 		reposByPath[key.SubRepoPath] = info
 	}
@@ -461,9 +461,9 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	for path, info := range reposByPath {
 		tpl := opts.BuildOptions.RepositoryDescription
 		if path != "" {
-			tpl = zoekt.Repository{URL: info.Repo.URL.String()}
-			if err := SetTemplatesFromOrigin(&tpl, info.Repo.URL); err != nil {
-				log.Printf("setTemplatesFromOrigin(%s, %s): %s", path, info.Repo.URL, err)
+			tpl = zoekt.Repository{URL: info.URL.String()}
+			if err := SetTemplatesFromOrigin(&tpl, info.URL); err != nil {
+				log.Printf("setTemplatesFromOrigin(%s, %s): %s", path, info.URL, err)
 			}
 		}
 		opts.BuildOptions.SubRepositories[path] = &tpl
@@ -592,11 +592,11 @@ func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 
 // prepareDeltaBuildFunc is a function that calculates the necessary metadata for preparing
 // a build.Builder instance for generating a delta build.
-type prepareDeltaBuildFunc func(options Options, repository *git.Repository) (repos map[fileKey]BlobIndexInfo, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error)
+type prepareDeltaBuildFunc func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error)
 
 // prepareNormalBuildFunc is a function that calculates the necessary metadata for preparing
 // a build.Builder instance for generating a normal build.
-type prepareNormalBuildFunc func(options Options, repository *git.Repository) (repos map[fileKey]BlobIndexInfo, branchVersions map[string]map[string]plumbing.Hash, err error)
+type prepareNormalBuildFunc func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error)
 
 type gitIndexConfig struct {
 	// prepareDeltaBuild, if not nil, is the function that is used to calculate the metadata that will be used to
@@ -612,7 +612,7 @@ type gitIndexConfig struct {
 	prepareNormalBuild prepareNormalBuildFunc
 }
 
-func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobIndexInfo, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
 	if options.Submodules {
 		return nil, nil, nil, fmt.Errorf("delta builds currently don't support submodule indexing")
 	}
@@ -670,7 +670,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	}
 
 	// branch => (path, sha1) => repo.
-	repos = map[fileKey]BlobIndexInfo{}
+	repos = map[fileKey]BlobLocation{}
 
 	// branch name -> git worktree at most current commit
 	branchToCurrentTree := make(map[string]*object.Tree, len(options.Branches))
@@ -696,12 +696,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	}
 
 	// TODO: Support repository submodules for delta builds
-	// For this prototype, we are ignoring repository submodules, which means that we can use the same
-	// blob location for all files
-	hackSharedBlobLocation := BlobRepo{
-		GitRepo: repository,
-		URL:     u,
-	}
+
 	// loop over all branches, calculate the diff between our
 	// last indexed commit and the current commit, and add files mentioned in the diff
 	for _, branch := range existingRepository.Branches {
@@ -742,8 +737,9 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 					existing.Branches = append(existing.Branches, branch.Name)
 					repos[file] = existing
 				} else {
-					repos[file] = BlobIndexInfo{
-						Repo:     hackSharedBlobLocation,
+					repos[file] = BlobLocation{
+						GitRepo:  repository,
+						URL:      u,
 						Branches: []string{branch.Name},
 					}
 				}
@@ -780,8 +776,9 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 					existing.Branches = append(existing.Branches, b)
 					repos[file] = existing
 				} else {
-					repos[file] = BlobIndexInfo{
-						Repo:     hackSharedBlobLocation,
+					repos[file] = BlobLocation{
+						GitRepo:  repository,
+						URL:      u,
 						Branches: []string{b},
 					}
 				}
@@ -806,14 +803,11 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	return repos, nil, changedOrDeletedPaths, nil
 }
 
-func prepareNormalBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobIndexInfo, branchVersions map[string]map[string]plumbing.Hash, err error) {
+func prepareNormalBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
 	var repoCache *RepoCache
 	if options.Submodules {
 		repoCache = NewRepoCache(options.RepoCacheDir)
 	}
-
-	// branch => (path, sha1) => metadata.
-	repos = map[fileKey]BlobIndexInfo{}
 
 	// Branch => Repo => SHA1
 	branchVersions = map[string]map[string]plumbing.Hash{}
@@ -823,6 +817,7 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 		return nil, nil, fmt.Errorf("expandBranches: %w", err)
 	}
 
+	rw := NewRepoWalker(repository, options.BuildOptions.RepositoryDescription.URL, repoCache)
 	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)
 		if err != nil {
@@ -843,35 +838,23 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 			return nil, nil, fmt.Errorf("newIgnoreMatcher: %w", err)
 		}
 
-		files, subVersions, err := TreeToFiles(repository, tree, options.BuildOptions.RepositoryDescription.URL, repoCache)
+		subVersions, err := rw.CollectFiles(tree, b, ig)
 		if err != nil {
-			return nil, nil, fmt.Errorf("TreeToFiles: %w", err)
-		}
-		for k, v := range files {
-			if ig.Match(k.Path) {
-				continue
-			}
-
-			if existing, ok := repos[k]; ok {
-				existing.Branches = append(existing.Branches, b)
-				repos[k] = existing
-			} else {
-				repos[k] = BlobIndexInfo{Repo: v, Branches: []string{b}}
-			}
+			return nil, nil, fmt.Errorf("CollectFiles: %w", err)
 		}
 
 		branchVersions[b] = subVersions
 	}
 
-	return repos, branchVersions, nil
+	return rw.Files, branchVersions, nil
 }
 
 func createDocument(key fileKey,
-	repos map[fileKey]BlobIndexInfo,
+	repos map[fileKey]BlobLocation,
 	ranks repoPathRanks,
 	opts build.Options,
 ) (zoekt.Document, error) {
-	repo := repos[key].Repo
+	repo := repos[key]
 	blob, err := repo.GitRepo.BlobObject(key.ID)
 	branches := repos[key].Branches
 

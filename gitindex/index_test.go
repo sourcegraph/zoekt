@@ -608,13 +608,13 @@ func TestIndexDeltaBasic(t *testing.T) {
 					// setup: prepare spy versions of prepare delta / normal build so that we can observe
 					// whether they were called appropriately
 					deltaBuildCalled := false
-					prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobIndexInfo, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+					prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
 						deltaBuildCalled = true
 						return prepareDeltaBuild(options, repository)
 					}
 
 					normalBuildCalled := false
-					prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobIndexInfo, branchVersions map[string]map[string]plumbing.Hash, err error) {
+					prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
 						normalBuildCalled = true
 						return prepareNormalBuild(options, repository)
 					}
