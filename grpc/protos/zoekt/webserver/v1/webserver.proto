@@ -44,7 +44,6 @@ message StreamSearchResponse {
 }
 
 message SearchOptions {
-  reserved 11, 12;
   // Return an upper-bound estimate of eligible documents in
   // stats.ShardFilesConsidered.
   bool estimate_doc_count = 1;
@@ -91,6 +90,10 @@ message SearchOptions {
   // If true, ChunkMatches will be returned in each FileMatch rather than LineMatches
   // EXPERIMENTAL: the behavior of this flag may be changed in future versions.
   bool chunk_matches = 10;
+
+  bool use_document_ranks = 11 [deprecated = true];
+
+  double document_ranks_weight = 12 [deprecated = true];
 
   // Trace turns on opentracing for this request if true and if the Jaeger address was provided as
   // a command-line flag

@@ -71,8 +71,6 @@ message LanguageMapping {
 //
 // See getIndexOptions in the zoekt codebase. We only specify a subset of the fields.
 message ZoektIndexOptions {
-  reserved 10;
-
   // name is the repository name.
   string name = 1;
 
@@ -103,6 +101,8 @@ message ZoektIndexOptions {
   // priority indicates the ranking of the repository in the search results,
   // higher first.
   double priority = 9;
+
+  string document_ranks_version = 10 [deprecated = true];
 
   // error, if non-empty, indicates that the request failed for the repo.
   string error = 11;
