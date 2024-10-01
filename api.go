@@ -960,15 +960,6 @@ type SearchOptions struct {
 	// EXPERIMENTAL: the behavior of this flag may be changed in future versions.
 	ChunkMatches bool
 
-	// EXPERIMENTAL. If true, document ranks are used as additional input for
-	// sorting matches.
-	UseDocumentRanks bool
-
-	// EXPERIMENTAL. When UseDocumentRanks is enabled, this can be optionally set to adjust
-	// their weight in the file match score. If the value is <= 0.0, the default weight value
-	// will be used. This option is temporary and is only exposed for testing/ tuning purposes.
-	DocumentRanksWeight float64
-
 	// EXPERIMENTAL. If true, use text-search style scoring instead of the default
 	// scoring formula. The scoring algorithm treats each match in a file as a term
 	// and computes an approximation to BM25.
@@ -1036,14 +1027,9 @@ func (s *SearchOptions) String() string {
 	addDuration("MaxWallTime", s.MaxWallTime)
 	addDuration("FlushWallTime", s.FlushWallTime)
 
-	if s.DocumentRanksWeight > 0 {
-		add("DocumentRanksWeight", strconv.FormatFloat(s.DocumentRanksWeight, 'g', -1, 64))
-	}
-
 	addBool("EstimateDocCount", s.EstimateDocCount)
 	addBool("Whole", s.Whole)
 	addBool("ChunkMatches", s.ChunkMatches)
-	addBool("UseDocumentRanks", s.UseDocumentRanks)
 	addBool("UseBM25Scoring", s.UseBM25Scoring)
 	addBool("Trace", s.Trace)
 	addBool("DebugScore", s.DebugScore)

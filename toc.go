@@ -182,12 +182,11 @@ func (t *indexTOC) sectionsTaggedList() []taggedSection {
 		{"runeDocSections", &t.runeDocSections},
 		{"repos", &t.repos},
 
-		// We no longer write bloom sections, but we still return them here to
-		// avoid warnings about unknown sections.
+		// We no longer write these sections, but we still return them here to avoid
+		// warnings about unknown sections.
 		{"nameBloom", &unusedSimple},
 		{"contentBloom", &unusedSimple},
-
-		{"ranks", &t.ranks},
+		{"ranks", &unusedSimple},
 	}
 }
 

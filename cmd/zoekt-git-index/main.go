@@ -23,12 +23,12 @@ import (
 	"strings"
 
 	"github.com/dustin/go-humanize"
-	"github.com/sourcegraph/zoekt/internal/profiler"
 	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/sourcegraph/zoekt/cmd"
 	"github.com/sourcegraph/zoekt/ctags"
 	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/internal/profiler"
 )
 
 func run() int {
@@ -43,8 +43,6 @@ func run() int {
 		"It also affects name if the indexed repository is under this directory.")
 	isDelta := flag.Bool("delta", false, "whether we should use delta build")
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
-	offlineRanking := flag.String("offline_ranking", "", "the name of the file that contains the ranking info.")
-	offlineRankingVersion := flag.String("offline_ranking_version", "", "a version string identifying the contents in offline_ranking.")
 	languageMap := flag.String("language_map", "", "a mapping between a language and its ctags processor (a:0,b:3).")
 
 	cpuProfile := flag.String("cpuprofile", "", "write cpu profile to `file`")
@@ -76,8 +74,6 @@ func run() int {
 
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
-	opts.DocumentRanksPath = *offlineRanking
-	opts.DocumentRanksVersion = *offlineRankingVersion
 
 	var branches []string
 	if *branchesStr != "" {
