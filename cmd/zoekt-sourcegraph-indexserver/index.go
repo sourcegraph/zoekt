@@ -122,7 +122,7 @@ func (o *indexArgs) BuildOptions() *build.Options {
 				"fork":     marshalBool(o.Fork),
 				"archived": marshalBool(o.Archived),
 				// Calculate repo rank based on the latest commit date.
-				"latest_commit_date": "1",
+				"latestCommitDate": "1",
 			},
 		},
 		IndexDir:         o.IndexDir,

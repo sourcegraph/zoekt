@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sourcegraph/log/logtest"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -494,7 +495,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.latest_commit_date 1",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.latestCommitDate 1",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
@@ -517,7 +518,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.latest_commit_date 1",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.latestCommitDate 1",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
@@ -549,7 +550,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.latest_commit_date 1",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.latestCommitDate 1",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
@@ -597,7 +598,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/release 12345678",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.latest_commit_date 1",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.latestCommitDate 1",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
@@ -685,3 +686,30 @@ func (m *mockGRPCClient) UpdateIndexStatus(ctx context.Context, in *proto.Update
 }
 
 var _ proto.ZoektConfigurationServiceClient = &mockGRPCClient{}
+
+// Tests whether we can set git config values without error.
+func TestSetZoektConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	// init git dir
+	script := `mkdir repo
+cd repo
+git init -b main
+`
+	cmd := exec.Command("/bin/sh", "-euxc", script)
+	cmd.Dir = dir
+	_, err := cmd.CombinedOutput()
+	require.NoError(t, err)
+
+	var out []byte
+	c := gitIndexConfig{
+		runCmd: func(cmd *exec.Cmd) error {
+			var err error
+			out, err = cmd.CombinedOutput()
+			return err
+		},
+	}
+
+	err = setZoektConfig(context.Background(), filepath.Join(dir, "repo"), &indexArgs{}, c)
+	require.NoError(t, err, string(out))
+}
