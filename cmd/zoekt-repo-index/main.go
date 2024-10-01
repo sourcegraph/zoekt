@@ -43,6 +43,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/ignore"
 	"go.uber.org/automaxprocs/maxprocs"
 
 	git "github.com/go-git/go-git/v5"
@@ -180,7 +181,7 @@ func main() {
 		}
 	}
 
-	perBranch := map[string]map[fileKey]gitindex.BlobRepo{}
+	perBranch := map[string]map[fileKey]gitindex.BlobLocation{}
 	opts.SubRepositories = map[string]*zoekt.Repository{}
 
 	// branch => repo => version
@@ -325,8 +326,8 @@ func getManifest(repo *git.Repository, branch, path string) (*manifest.Manifest,
 func iterateManifest(mf *manifest.Manifest,
 	baseURL url.URL, revPrefix string,
 	cache *gitindex.RepoCache,
-) (map[fileKey]gitindex.BlobRepo, map[string]plumbing.Hash, error) {
-	allFiles := map[fileKey]gitindex.BlobRepo{}
+) (map[fileKey]gitindex.BlobLocation, map[string]plumbing.Hash, error) {
+	allFiles := map[fileKey]gitindex.BlobLocation{}
 	allVersions := map[string]plumbing.Hash{}
 	for _, p := range mf.Project {
 		rev := mf.ProjectRevision(&p)
@@ -359,12 +360,13 @@ func iterateManifest(mf *manifest.Manifest,
 			return nil, nil, err
 		}
 
-		files, versions, err := gitindex.TreeToFiles(topRepo, tree, projURL.String(), cache)
+		rw := gitindex.NewRepoWalker(topRepo, projURL.String(), cache)
+		subVersions, err := rw.CollectFiles(tree, rev, &ignore.Matcher{})
 		if err != nil {
 			return nil, nil, err
 		}
 
-		for key, repo := range files {
+		for key, repo := range rw.Files {
 			allFiles[fileKey{
 				SubRepoPath: filepath.Join(p.GetPath(), key.SubRepoPath),
 				Path:        key.Path,
@@ -372,7 +374,7 @@ func iterateManifest(mf *manifest.Manifest,
 			}] = repo
 		}
 
-		for path, version := range versions {
+		for path, version := range subVersions {
 			allVersions[filepath.Join(p.GetPath(), path)] = version
 		}
 	}

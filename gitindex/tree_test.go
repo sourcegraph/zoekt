@@ -29,6 +29,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
+	"github.com/sourcegraph/zoekt/ignore"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
@@ -139,7 +140,7 @@ func TestFindGitRepos(t *testing.T) {
 	}
 }
 
-func TestTreeToFiles(t *testing.T) {
+func TestCollectFiles(t *testing.T) {
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -168,9 +169,10 @@ func TestTreeToFiles(t *testing.T) {
 		t.Fatalf("AsTree: %v", err)
 	}
 
-	files, versions, err := TreeToFiles(repo, tree, aURL.String(), cache)
+	rw := NewRepoWalker(repo, aURL.String(), cache)
+	versions, err := rw.CollectFiles(tree, "main", &ignore.Matcher{})
 	if err != nil {
-		t.Fatalf("TreeToFiles: %v", err)
+		t.Fatalf("CollectFiles: %v", err)
 	}
 
 	bnameHash := versions["bname"]
@@ -181,7 +183,7 @@ func TestTreeToFiles(t *testing.T) {
 	}
 
 	var paths []string
-	for k := range files {
+	for k := range rw.Files {
 		paths = append(paths, k.FullPath())
 	}
 	sort.Strings(paths)
