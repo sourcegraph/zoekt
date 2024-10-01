@@ -361,7 +361,7 @@ func iterateManifest(mf *manifest.Manifest,
 		}
 
 		rw := gitindex.NewRepoWalker(topRepo, projURL.String(), cache)
-		versions, err := rw.CollectFiles(tree, rev, &ignore.Matcher{})
+		subVersions, err := rw.CollectFiles(tree, rev, &ignore.Matcher{})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -374,7 +374,7 @@ func iterateManifest(mf *manifest.Manifest,
 			}] = repo
 		}
 
-		for path, version := range versions {
+		for path, version := range subVersions {
 			allVersions[filepath.Join(p.GetPath(), path)] = version
 		}
 	}
