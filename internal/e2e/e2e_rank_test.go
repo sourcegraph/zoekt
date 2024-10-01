@@ -254,7 +254,7 @@ func indexURL(indexDir, u string) error {
 		RepositoryDescription: zoekt.Repository{
 			// Use the latest commit date to calculate the repo rank when loading the shard.
 			// This is the same setting we use in production.
-			RawConfig: map[string]string{"latest_commit_date": "1"},
+			RawConfig: map[string]string{"latestCommitDate": "1"},
 		},
 	})
 	if err != nil {
