@@ -188,9 +188,6 @@ type IndexBuilder struct {
 	// docID => repoID
 	repos []uint16
 
-	// Experimental: docID => rank vec
-	ranks [][]float64
-
 	contentPostings *postingsBuilder
 	namePostings    *postingsBuilder
 
@@ -306,15 +303,6 @@ type Document struct {
 	// Document sections for symbols. Offsets should use bytes.
 	Symbols         []DocumentSection
 	SymbolsMetaData []*Symbol
-
-	// Ranks is a vector of ranks for a document as provided by a DocumentRanksFile
-	// file in the git repo.
-	//
-	// Two documents can be ordered by comparing the components of their rank
-	// vectors. Bigger entries are better, as are longer vectors.
-	//
-	// This field is experimental and may change at any time without warning.
-	Ranks []float64
 }
 
 type symbolSlice struct {
@@ -472,10 +460,6 @@ func (b *IndexBuilder) Add(doc Document) error {
 
 	b.subRepos = append(b.subRepos, subRepoIdx)
 	b.repos = append(b.repos, uint16(repoIdx))
-
-	// doc.Ranks might be nil. In case we don't use offline ranking, doc.Ranks is
-	// always nil.
-	b.ranks = append(b.ranks, doc.Ranks)
 
 	hasher.Write(doc.Content)
 

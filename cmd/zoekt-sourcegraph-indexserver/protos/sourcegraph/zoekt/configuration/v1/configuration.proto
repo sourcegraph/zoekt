@@ -13,9 +13,6 @@ service ZoektConfigurationService {
   // List returns the list of repositories that the client should index.
   rpc List(ListRequest) returns (ListResponse) {}
 
-  // DocumentRanks returns the rank vectors for all documents in the specified repository.
-  rpc DocumentRanks(DocumentRanksRequest) returns (DocumentRanksResponse) {}
-
   // UpdateIndexStatus informs the server that the caller has indexed the specified repositories
   // at the specified commits.
   rpc UpdateIndexStatus(UpdateIndexStatusRequest) returns (UpdateIndexStatusResponse) {}
@@ -74,6 +71,8 @@ message LanguageMapping {
 //
 // See getIndexOptions in the zoekt codebase. We only specify a subset of the fields.
 message ZoektIndexOptions {
+  reserved 10;
+
   // name is the repository name.
   string name = 1;
 
@@ -104,10 +103,6 @@ message ZoektIndexOptions {
   // priority indicates the ranking of the repository in the search results,
   // higher first.
   double priority = 9;
-
-  // document_ranks_version when non-empty will lead to indexing using offline
-  // ranking. When the string changes, this will also causes us to re-index with new ranks.
-  string document_ranks_version = 10;
 
   // error, if non-empty, indicates that the request failed for the repo.
   string error = 11;
@@ -141,24 +136,6 @@ message ListRequest {
 message ListResponse {
   // repo_ids is the list of repository IDs that the client should index.
   repeated int32 repo_ids = 1;
-}
-
-// DocumentRanksRequest is the request to the DocumentRanks RPC.
-message DocumentRanksRequest {
-  // repository is the repository name.
-  string repository = 1;
-}
-
-// DocumentRanksResponse is the response from the DocumentRanks RPC.
-message DocumentRanksResponse {
-  // Paths is a map from path name to the normalized number of references for
-  // a symbol defined in that path for a particular repository. Normalized counts
-  // equal log_2({number of references to file} + 1), where references are considered
-  // over all repositories.
-  map<string, double> paths = 1;
-
-  // mean_rank is the mean rank of all documents in the repository.
-  double mean_rank = 2;
 }
 
 // UpdateIndexStatusRequest is the request to the UpdateIndexStatus RPC.

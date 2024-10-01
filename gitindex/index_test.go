@@ -29,6 +29,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ignore"
@@ -691,63 +692,6 @@ func TestIndexDeltaBasic(t *testing.T) {
 						t.Errorf("diff in received documents (-want +got):%s\n:", diff)
 					}
 				})
-			}
-		})
-	}
-}
-
-func TestRepoPathRanks(t *testing.T) {
-	pathRanks := repoPathRanks{
-		Paths: map[string]float64{
-			"search.go":              10.23,
-			"internal/index.go":      5.5,
-			"internal/scratch.go":    0.0,
-			"backend/search_test.go": 2.1,
-		},
-		MeanRank: 3.3,
-	}
-	cases := []struct {
-		name string
-		path string
-		rank float64
-	}{
-		{
-			name: "rank for standard file",
-			path: "search.go",
-			rank: 10.23,
-		},
-		{
-			name: "file with rank 0",
-			path: "internal/scratch.go",
-			rank: 0.0,
-		},
-		{
-			name: "rank for test file",
-			path: "backend/search_test.go",
-			rank: 2.1,
-		},
-		{
-			name: "file with missing rank",
-			path: "internal/docs.md",
-			rank: 3.3,
-		},
-		{
-			name: "test file with missing rank",
-			path: "backend/index_test.go",
-			rank: 0.0,
-		},
-		{
-			name: "third-party file with missing rank",
-			path: "node_modules/search/index.js",
-			rank: 0.0,
-		},
-	}
-
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			got := pathRanks.rank(tt.path, nil)
-			if got != tt.rank {
-				t.Errorf("expected file '%s' to have rank %f, but got %f", tt.path, tt.rank, got)
 			}
 		})
 	}

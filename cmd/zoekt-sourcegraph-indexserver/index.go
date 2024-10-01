@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -52,11 +51,6 @@ type IndexOptions struct {
 
 	// Priority indicates ranking in results, higher first.
 	Priority float64
-
-	// DocumentRanksVersion when non-empty will lead to indexing using offline
-	// ranking. When the string changes this will also cause us to re-index with
-	// new ranks.
-	DocumentRanksVersion string
 
 	// Public is true if the repository is public.
 	Public bool
@@ -132,8 +126,6 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		CTagsMustSucceed: o.Symbols,
 		DisableCTags:     !o.Symbols,
 		IsDelta:          o.UseDelta,
-
-		DocumentRanksVersion: o.DocumentRanksVersion,
 
 		LanguageMap: o.LanguageMap,
 
@@ -379,44 +371,6 @@ func setZoektConfig(ctx context.Context, gitDir string, o *indexArgs, c gitIndex
 func indexRepo(ctx context.Context, gitDir string, sourcegraph Sourcegraph, o *indexArgs, c gitIndexConfig, logger sglog.Logger) error {
 	args := []string{
 		"-submodules=false",
-	}
-
-	if o.DocumentRanksVersion != "" {
-		// We store the document ranks as JSON in gitDir and tell zoekt-git-index where
-		// to find the file.
-		documentsRankFile := filepath.Join(gitDir, "documents.rank")
-
-		saveDocumentRanks := func() error {
-			r, err := sourcegraph.GetDocumentRanks(context.Background(), o.Name)
-			if err != nil {
-				return fmt.Errorf("GetDocumentRanks: %w", err)
-			}
-
-			b, err := json.Marshal(r)
-			if err != nil {
-				return err
-			}
-
-			if err := os.WriteFile(documentsRankFile, b, 0o600); err != nil {
-				return fmt.Errorf("failed to write %s to disk: %w", documentsRankFile, err)
-			}
-
-			return nil
-		}
-
-		if err := saveDocumentRanks(); err != nil {
-			// log and fall back to online ranking
-			logger.Warn(
-				"error saving document ranks. Falling back to online ranking",
-				sglog.Error(err),
-				sglog.String("repo", o.Name),
-				sglog.Uint32("id", o.RepoID),
-			)
-		} else {
-			args = append(args,
-				"-offline_ranking", documentsRankFile,
-				"-offline_ranking_version", o.DocumentRanksVersion)
-		}
 	}
 
 	// Even though we check for incremental in this process, we still pass it

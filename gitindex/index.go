@@ -18,7 +18,6 @@ package gitindex
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -487,33 +486,8 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	// Preparing the build can consume substantial memory, so check usage before starting to index.
 	builder.CheckMemoryUsage()
 
-	var ranks repoPathRanks
-	var meanRank float64
-	if opts.BuildOptions.DocumentRanksPath != "" {
-		data, err := os.ReadFile(opts.BuildOptions.DocumentRanksPath)
-		if err != nil {
-			return false, err
-		}
-
-		err = json.Unmarshal(data, &ranks)
-		if err != nil {
-			return false, err
-		}
-
-		// Compute the mean rank for this repository. Note: we overwrite the rank
-		// mean that's stored in the document ranks file, since that currently
-		// represents a global mean rank across repos, which is not what we want.
-		numRanks := len(ranks.Paths)
-		if numRanks > 0 {
-			for _, rank := range ranks.Paths {
-				meanRank += rank
-			}
-			ranks.MeanRank = meanRank / float64(numRanks)
-		}
-	}
-
 	// we don't need to check error, since we either already have an error, or
-	// we returning the first call to builder.Finish.
+	// we return the first call to builder.Finish.
 	defer builder.Finish() // nolint:errcheck
 
 	for _, f := range changedOrRemovedFiles {
@@ -539,7 +513,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		keys := fileKeys[name]
 
 		for _, key := range keys {
-			doc, err := createDocument(key, repos, ranks, opts.BuildOptions)
+			doc, err := createDocument(key, repos, opts.BuildOptions)
 			if err != nil {
 				return false, err
 			}
@@ -554,25 +528,6 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		}
 	}
 	return true, builder.Finish()
-}
-
-type repoPathRanks struct {
-	MeanRank float64            `json:"mean_reference_count"`
-	Paths    map[string]float64 `json:"paths"`
-}
-
-// rank returns the rank for a given path. It uses these rules:
-//   - If we have a concrete rank for this file, always use it
-//   - If there's no rank, and it's a low priority file like a test, then use rank 0
-//   - Otherwise use the mean rank of this repository, to avoid giving it a big disadvantage
-func (r repoPathRanks) rank(path string, content []byte) float64 {
-	if rank, ok := r.Paths[path]; ok {
-		return rank
-	} else if build.IsLowPriority(path, content) {
-		return 0.0
-	} else {
-		return r.MeanRank
-	}
 }
 
 func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
@@ -868,7 +823,6 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 
 func createDocument(key fileKey,
 	repos map[fileKey]BlobIndexInfo,
-	ranks repoPathRanks,
 	opts build.Options,
 ) (zoekt.Document, error) {
 	repo := repos[key].Repo
@@ -894,19 +848,11 @@ func createDocument(key fileKey,
 		return zoekt.Document{}, err
 	}
 
-	var pathRanks []float64
-	if len(ranks.Paths) > 0 {
-		// If the repository has ranking data, then store the file's rank.
-		pathRank := ranks.rank(keyFullPath, contents)
-		pathRanks = []float64{pathRank}
-	}
-
 	return zoekt.Document{
 		SubRepositoryPath: key.SubRepoPath,
 		Name:              keyFullPath,
 		Content:           contents,
 		Branches:          branches,
-		Ranks:             pathRanks,
 	}, nil
 }
 

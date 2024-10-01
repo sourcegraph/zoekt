@@ -84,24 +84,6 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	// the matches.
 	addScore("fragment", maxFileScore)
 
-	if opts.UseDocumentRanks && len(d.ranks) > int(doc) {
-		weight := scoreFileRankFactor
-		if opts.DocumentRanksWeight > 0.0 {
-			weight = opts.DocumentRanksWeight
-		}
-
-		ranks := d.ranks[doc]
-		// The ranks slice always contains one entry representing the file rank (unless it's empty since the
-		// file doesn't have a rank). This is left over from when documents could have multiple rank signals,
-		// and we plan to clean this up.
-		if len(ranks) > 0 {
-			// The file rank represents a log (base 2) count. The log ranks should be bounded at 32, but we
-			// cap it just in case to ensure it falls in the range [0, 1].
-			normalized := math.Min(1.0, ranks[0]/32.0)
-			addScore("file-rank", weight*normalized)
-		}
-	}
-
 	// Add tiebreakers
 	//
 	// ScoreOffset shifts the score 7 digits to the left.
