@@ -14,11 +14,12 @@ import (
 	"time"
 
 	"github.com/sourcegraph/log/logtest"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
-	"github.com/sourcegraph/zoekt/ctags"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/ctags"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -493,6 +494,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.latest_commit_date 1",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
@@ -515,6 +517,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.latest_commit_date 1",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
@@ -546,6 +549,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.latest_commit_date 1",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
@@ -593,6 +597,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/release 12345678",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.latest_commit_date 1",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",

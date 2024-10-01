@@ -40,22 +40,22 @@ func TestFileNameMatch(t *testing.T) {
 			fileName: "a/b/c/config.go",
 			query:    &query.Substring{FileName: true, Pattern: "config"},
 			language: "Go",
-			// 5500 (partial base at boundary) + 500 (word) + 10 (file order)
-			wantScore: 6010,
+			// 5500 (partial base at boundary) + 500 (word)
+			wantScore: 6000,
 		},
 		{
 			fileName: "a/b/c/config.go",
 			query:    &query.Substring{FileName: true, Pattern: "config.go"},
 			language: "Go",
-			// 7000 (full base match) + 500 (word) + 10 (file order)
-			wantScore: 7510,
+			// 7000 (full base match) + 500 (word)
+			wantScore: 7500,
 		},
 		{
 			fileName: "a/config/c/d.go",
 			query:    &query.Substring{FileName: true, Pattern: "config"},
 			language: "Go",
-			// 500 (word) + 10 (file order)
-			wantScore: 510,
+			// 500 (word)
+			wantScore: 500,
 		},
 	}
 
@@ -128,56 +128,56 @@ func TestJava(t *testing.T) {
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "nerClass"},
 			language: "Java",
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 50 (partial word) + 10 (file order)
-			wantScore: 6560,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 50 (partial word)
+			wantScore: 6550,
 		},
 		{
 			fileName: "example.java",
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "StaticClass"},
 			language: "Java",
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word) + 10 (file order)
-			wantScore: 7010,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word)
+			wantScore: 7000,
 		},
 		{
 			fileName: "example.java",
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "innerEnum"},
 			language: "Java",
-			// 7000 (symbol) + 900 (Java enum) + 500 (word) + 10 (file order)
-			wantScore: 8410,
+			// 7000 (symbol) + 900 (Java enum) + 500 (word)
+			wantScore: 8400,
 		},
 		{
 			fileName: "example.java",
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "innerInterface"},
 			language: "Java",
-			// 7000 (symbol) + 800 (Java interface) + 500 (word) + 10 (file order)
-			wantScore: 8310,
+			// 7000 (symbol) + 800 (Java interface) + 500 (word)
+			wantScore: 8300,
 		},
 		{
 			fileName: "example.java",
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "innerMethod"},
 			language: "Java",
-			// 7000 (symbol) + 700 (Java method) + 500 (word) + 10 (file order)
-			wantScore: 8210,
+			// 7000 (symbol) + 700 (Java method) + 500 (word)
+			wantScore: 8200,
 		},
 		{
 			fileName: "example.java",
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "field"},
 			language: "Java",
-			// 7000 (symbol) + 600 (Java field) + 500 (word) + 10 (file order)
-			wantScore: 8110,
+			// 7000 (symbol) + 600 (Java field) + 500 (word)
+			wantScore: 8100,
 		},
 		{
 			fileName: "example.java",
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "B"},
 			language: "Java",
-			// 7000 (symbol) + 500 (Java enum constant) + 500 (word) + 10 (file order)
-			wantScore: 8010,
+			// 7000 (symbol) + 500 (Java enum constant) + 500 (word)
+			wantScore: 8000,
 		},
 		// 2 Atoms (1x content and 1x filename)
 		{
@@ -185,8 +185,8 @@ func TestJava(t *testing.T) {
 			content:  exampleJava,
 			query:    &query.Substring{Pattern: "example"}, // matches filename and a Java field
 			language: "Java",
-			// 5500 (edge symbol) + 600 (Java field) + 500 (word) + 200 (atom) + 10 (file order)
-			wantScore: 6810,
+			// 5500 (edge symbol) + 600 (Java field) + 500 (word) + 200 (atom)
+			wantScore: 6800,
 		},
 		// 3 Atoms (2x content, 1x filename)
 		{
@@ -197,8 +197,8 @@ func TestJava(t *testing.T) {
 				&query.Substring{Content: true, Pattern: "runInnerInterface"}, // matches a Java method
 			}},
 			language: "Java",
-			// 7000 (symbol) + 700 (Java method) + 500 (word) + 266.67 (atom) + 10 (file order)
-			wantScore: 8476.667,
+			// 7000 (symbol) + 700 (Java method) + 500 (word) + 266.67 (atom)
+			wantScore: 8466,
 		},
 		// 4 Atoms (4x content)
 		{
@@ -211,40 +211,40 @@ func TestJava(t *testing.T) {
 				&query.Substring{Content: true, Pattern: "app"},
 			}},
 			language: "Java",
-			// 7000 (symbol) + 900 (Java enum) + 500 (word) + 300 (atom) + 10 (file order)
-			wantScore: 8710,
+			// 7000 (symbol) + 900 (Java enum) + 500 (word) + 300 (atom)
+			wantScore: 8700,
 		},
 		{
 			fileName: "example.java",
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "unInnerInterface("},
 			language: "Java",
-			// 4000 (overlap Symbol) + 700 (Java method) + 50 (partial word) + 10 (file order)
-			wantScore: 4760,
+			// 4000 (overlap Symbol) + 700 (Java method) + 50 (partial word)
+			wantScore: 4750,
 		},
 		{
 			fileName: "example.java",
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "InnerEnum"},
 			language: "Java",
-			// 7000 (Symbol) + 900 (Java enum) + 500 (word) + 10 (file order)
-			wantScore: 8410,
+			// 7000 (Symbol) + 900 (Java enum) + 500 (word)
+			wantScore: 8400,
 		},
 		{
 			fileName: "example.java",
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "enum InnerEnum"},
 			language: "Java",
-			// 5500 (edge Symbol) + 900 (Java enum) + 500 (word) + 10 (file order)
-			wantScore: 6910,
+			// 5500 (edge Symbol) + 900 (Java enum) + 500 (word)
+			wantScore: 6900,
 		},
 		{
 			fileName: "example.java",
 			content:  exampleJava,
 			query:    &query.Substring{Content: true, Pattern: "public enum InnerEnum {"},
 			language: "Java",
-			// 4000 (overlap Symbol) + 900 (Java enum) + 500 (word) + 10 (file order)
-			wantScore: 5410,
+			// 4000 (overlap Symbol) + 900 (Java enum) + 500 (word)
+			wantScore: 5400,
 		},
 	}
 
@@ -265,48 +265,48 @@ func TestKotlin(t *testing.T) {
 			content:  exampleKotlin,
 			query:    &query.Substring{Content: true, Pattern: "oxyPreloader"},
 			language: "Kotlin",
-			// 5500 (partial symbol at boundary) + 1000 (Kotlin class) + 50 (partial word) + 10 (file order)
-			wantScore: 6560,
+			// 5500 (partial symbol at boundary) + 1000 (Kotlin class) + 50 (partial word)
+			wantScore: 6550,
 		},
 		{
 			fileName: "example.kt",
 			content:  exampleKotlin,
 			query:    &query.Substring{Content: true, Pattern: "ViewMetadata"},
 			language: "Kotlin",
-			// 7000 (symbol) + 900 (Kotlin interface) + 500 (word) + 10 (file order)
-			wantScore: 8410,
+			// 7000 (symbol) + 900 (Kotlin interface) + 500 (word)
+			wantScore: 8400,
 		},
 		{
 			fileName: "example.kt",
 			content:  exampleKotlin,
 			query:    &query.Substring{Content: true, Pattern: "onScrolled"},
 			language: "Kotlin",
-			// 7000 (symbol) + 800 (Kotlin method) + 500 (word) + 10 (file order)
-			wantScore: 8310,
+			// 7000 (symbol) + 800 (Kotlin method) + 500 (word)
+			wantScore: 8300,
 		},
 		{
 			fileName: "example.kt",
 			content:  exampleKotlin,
 			query:    &query.Substring{Content: true, Pattern: "PreloadErrorHandler"},
 			language: "Kotlin",
-			// 7000 (symbol) + 700 (Kotlin typealias) + 500 (word) + 10 (file order)
-			wantScore: 8210,
+			// 7000 (symbol) + 700 (Kotlin typealias) + 500 (word)
+			wantScore: 8200,
 		},
 		{
 			fileName: "example.kt",
 			content:  exampleKotlin,
 			query:    &query.Substring{Content: true, Pattern: "FLING_THRESHOLD_PX"},
 			language: "Kotlin",
-			// 7000 (symbol) + 600 (Kotlin constant) + 500 (word) + 10 (file order)
-			wantScore: 8110,
+			// 7000 (symbol) + 600 (Kotlin constant) + 500 (word)
+			wantScore: 8100,
 		},
 		{
 			fileName: "example.kt",
 			content:  exampleKotlin,
 			query:    &query.Substring{Content: true, Pattern: "scrollState"},
 			language: "Kotlin",
-			// 7000 (symbol) + 500 (Kotlin variable) + 500 (word) + 10 (file order)
-			wantScore: 8010,
+			// 7000 (symbol) + 500 (Kotlin variable) + 500 (word)
+			wantScore: 8000,
 		},
 	}
 
@@ -330,40 +330,40 @@ func TestCpp(t *testing.T) {
 			content:  exampleCpp,
 			query:    &query.Substring{Content: true, Pattern: "FooClass"},
 			language: "C++",
-			// 7000 (Symbol) + 1000 (C++ class) + 500 (full word) + 10 (file order)
-			wantScore: 8510,
+			// 7000 (Symbol) + 1000 (C++ class) + 500 (full word)
+			wantScore: 8500,
 		},
 		{
 			fileName: "example.cc",
 			content:  exampleCpp,
 			query:    &query.Substring{Content: true, Pattern: "NestedEnum"},
 			language: "C++",
-			// 7000 (Symbol) + 900 (C++ enum) + 500 (full word) + 10 (file order)
-			wantScore: 8410,
+			// 7000 (Symbol) + 900 (C++ enum) + 500 (full word)
+			wantScore: 8400,
 		},
 		{
 			fileName: "example.cc",
 			content:  exampleCpp,
 			query:    &query.Substring{Content: true, Pattern: "main"},
 			language: "C++",
-			// 7000 (Symbol) + 800 (C++ function) + 500 (full word) + 10 (file order)
-			wantScore: 8310,
+			// 7000 (Symbol) + 800 (C++ function) + 500 (full word)
+			wantScore: 8300,
 		},
 		{
 			fileName: "example.cc",
 			content:  exampleCpp,
 			query:    &query.Substring{Content: true, Pattern: "FooStruct"},
 			language: "C++",
-			// 7000 (Symbol) + 700 (C++ struct) + 500 (full word) + 10 (file order)
-			wantScore: 8210,
+			// 7000 (Symbol) + 700 (C++ struct) + 500 (full word)
+			wantScore: 8200,
 		},
 		{
 			fileName: "example.cc",
 			content:  exampleCpp,
 			query:    &query.Substring{Content: true, Pattern: "TheUnion"},
 			language: "C++",
-			// 7000 (Symbol) + 600 (C++ union) + 500 (full word) + 10 (file order)
-			wantScore: 8110,
+			// 7000 (Symbol) + 600 (C++ union) + 500 (full word)
+			wantScore: 8100,
 		},
 	}
 
@@ -387,16 +387,16 @@ func TestPython(t *testing.T) {
 			content:  examplePython,
 			query:    &query.Substring{Content: true, Pattern: "C1"},
 			language: "Python",
-			// 7000 (symbol) + 1000 (Python class) + 500 (word) + 10 (file order)
-			wantScore: 8510,
+			// 7000 (symbol) + 1000 (Python class) + 500 (word)
+			wantScore: 8500,
 		},
 		{
 			fileName: "example.py",
 			content:  examplePython,
 			query:    &query.Substring{Content: true, Pattern: "g"},
 			language: "Python",
-			// 7000 (symbol) + 800 (Python function) + 500 (word) + 10 (file order)
-			wantScore: 8310,
+			// 7000 (symbol) + 800 (Python function) + 500 (word)
+			wantScore: 8300,
 		},
 	}
 
@@ -412,8 +412,8 @@ func TestPython(t *testing.T) {
 		content:  examplePython,
 		query:    &query.Substring{Content: true, Pattern: "__init__"},
 		language: "Python",
-		// 7000 (symbol) + 800 (Python method) + 50 (partial word) + 10 (file order)
-		wantScore: 7860,
+		// 7000 (symbol) + 800 (Python method) + 50 (partial word)
+		wantScore: 7850,
 	}
 
 	checkScoring(t, scipOnlyCase, false, ctags.ScipCTags)
@@ -431,24 +431,24 @@ func TestRuby(t *testing.T) {
 			content:  exampleRuby,
 			query:    &query.Substring{Content: true, Pattern: "Parental"},
 			language: "Ruby",
-			// 7000 (symbol) + 1000 (Ruby class) + 500 (word) + 10 (file order)
-			wantScore: 8510,
+			// 7000 (symbol) + 1000 (Ruby class) + 500 (word)
+			wantScore: 8500,
 		},
 		{
 			fileName: "example.rb",
 			content:  exampleRuby,
 			query:    &query.Substring{Content: true, Pattern: "parental_func"},
 			language: "Ruby",
-			// 7000 (symbol) + 900 (Ruby method) + 500 (word) + 10 (file order)
-			wantScore: 8410,
+			// 7000 (symbol) + 900 (Ruby method) + 500 (word)
+			wantScore: 8400,
 		},
 		{
 			fileName: "example.rb",
 			content:  exampleRuby,
 			query:    &query.Substring{Content: true, Pattern: "MyModule"},
 			language: "Ruby",
-			// 7000 (symbol) + 500 (Ruby module) + 500 (word) + 10 (file order)
-			wantScore: 8210,
+			// 7000 (symbol) + 500 (Ruby module) + 500 (word)
+			wantScore: 8200,
 		},
 	}
 
@@ -471,32 +471,32 @@ func TestScala(t *testing.T) {
 			content:  exampleScala,
 			query:    &query.Substring{Content: true, Pattern: "SymbolIndexBucket"},
 			language: "Scala",
-			// 7000 (symbol) + 1000 (Scala class) + 500 (word) + 10 (file order)
-			wantScore: 8510,
+			// 7000 (symbol) + 1000 (Scala class) + 500 (word)
+			wantScore: 8500,
 		},
 		{
 			fileName: "example.scala",
 			content:  exampleScala,
 			query:    &query.Substring{Content: true, Pattern: "stdLibPatches"},
 			language: "Scala",
-			// 7000 (symbol) + 800 (Scala object) + 500 (word) + 10 (file order)
-			wantScore: 8310,
+			// 7000 (symbol) + 800 (Scala object) + 500 (word)
+			wantScore: 8300,
 		},
 		{
 			fileName: "example.scala",
 			content:  exampleScala,
 			query:    &query.Substring{Content: true, Pattern: "close"},
 			language: "Scala",
-			// 7000 (symbol) + 700 (Scala method) + 500 (word) + 10 (file order)
-			wantScore: 8210,
+			// 7000 (symbol) + 700 (Scala method) + 500 (word)
+			wantScore: 8200,
 		},
 		{
 			fileName: "example.scala",
 			content:  exampleScala,
 			query:    &query.Substring{Content: true, Pattern: "javaSymbol"},
 			language: "Scala",
-			// 7000 (symbol) + 500 (Scala method) + 500 (word) + 10 (file order)
-			wantScore: 8010,
+			// 7000 (symbol) + 500 (Scala method) + 500 (word)
+			wantScore: 8000,
 		},
 	}
 
@@ -516,8 +516,8 @@ type aInterface interface {}
 `),
 			query:    &query.Substring{Content: true, Pattern: "aInterface"},
 			language: "Go",
-			// 7000 (full base match) + 1000 (Go interface) + 500 (word) + 10 (file order)
-			wantScore: 8510,
+			// 7000 (full base match) + 1000 (Go interface) + 500 (word)
+			wantScore: 8500,
 		},
 		{
 			fileName: "src/net/http/client.go",
@@ -527,8 +527,8 @@ type aStruct struct {}
 `),
 			query:    &query.Substring{Content: true, Pattern: "aStruct"},
 			language: "Go",
-			// 7000 (full base match) + 900 (Go struct) + 500 (word) + 10 (file order)
-			wantScore: 8410,
+			// 7000 (full base match) + 900 (Go struct) + 500 (word)
+			wantScore: 8400,
 		},
 		{
 			fileName: "src/net/http/client.go",
@@ -538,8 +538,8 @@ func aFunc() bool {}
 `),
 			query:    &query.Substring{Content: true, Pattern: "aFunc"},
 			language: "Go",
-			// 7000 (full base match) + 800 (Go function) + 500 (word) + 10 (file order)
-			wantScore: 8310,
+			// 7000 (full base match) + 800 (Go function) + 500 (word)
+			wantScore: 8300,
 		},
 		{
 			fileName: "src/net/http/client.go",
@@ -554,8 +554,8 @@ func Get() {
 				&query.Symbol{Expr: &query.Substring{Pattern: "Get", Content: true}},
 			}},
 			language: "Go",
-			// 7000 (full base match) + 800 (Go func) + 50 (Exported Go) + 500 (word) + 200 (atom) + 10 (file order)
-			wantScore: 8560,
+			// 7000 (full base match) + 800 (Go func) + 50 (Exported Go) + 500 (word) + 200 (atom)
+			wantScore: 8550,
 		},
 	}
 
@@ -636,7 +636,7 @@ func checkScoring(t *testing.T, c scoreCase, useBM25 bool, parserType ctags.CTag
 			t.Fatalf("file matches: want %d, got %d", want, got)
 		}
 
-		if got := srs.Files[0].Score; math.Abs(got-c.wantScore) > epsilon {
+		if got := withoutTiebreaker(srs.Files[0].Score, useBM25); math.Abs(got-c.wantScore) > epsilon {
 			t.Fatalf("score: want %f, got %f\ndebug: %s\ndebugscore: %s", c.wantScore, got, srs.Files[0].Debug, srs.Files[0].ChunkMatches[0].DebugScore)
 		}
 
@@ -644,6 +644,14 @@ func checkScoring(t *testing.T, c scoreCase, useBM25 bool, parserType ctags.CTag
 			t.Fatalf("want %s, got %s", c.language, got)
 		}
 	})
+}
+
+// helper to remove the tiebreaker from the score for easier comparison
+func withoutTiebreaker(fullScore float64, useBM25 bool) float64 {
+	if useBM25 {
+		return fullScore
+	}
+	return math.Trunc(fullScore / zoekt.ScoreOffset)
 }
 
 func TestDocumentRanks(t *testing.T) {
@@ -672,21 +680,21 @@ func TestDocumentRanks(t *testing.T) {
 	}{
 		{
 			name: "score with no document ranks",
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order)
-			wantScore: 7010.00,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match)
+			wantScore: 7000.00,
 		},
 		{
 			name:         "score with document ranks",
 			documentRank: 0.8,
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 225 (file rank) + 10 (file order)
-			wantScore: 7235.00,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 225 (file rank)
+			wantScore: 7225.00,
 		},
 		{
 			name:                "score with custom document ranks weight",
 			documentRank:        0.8,
 			documentRanksWeight: 1000.0,
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 25.00 (file rank) + 10 (file order)
-			wantScore: 7035.00,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 25.00 (file rank)
+			wantScore: 7025.00,
 		},
 	}
 
@@ -725,7 +733,7 @@ func TestDocumentRanks(t *testing.T) {
 				t.Fatalf("file matches: want %d, got %d", want, got)
 			}
 
-			if got := srs.Files[0].Score; got != c.wantScore {
+			if got := withoutTiebreaker(srs.Files[0].Score, false); got != c.wantScore {
 				t.Fatalf("score: want %f, got %f\ndebug: %s\ndebugscore: %s", c.wantScore, got, srs.Files[0].Debug, srs.Files[0].LineMatches[0].DebugScore)
 			}
 		})
@@ -758,19 +766,19 @@ func TestRepoRanks(t *testing.T) {
 		{
 			name: "no shard rank",
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order)
-			wantScore: 7010.00,
+			wantScore: 7000_00000_10.00,
 		},
 		{
 			name:     "medium shard rank",
 			repoRank: 30000,
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order) + 9.16 (repo rank)
-			wantScore: 7019.16,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 30000 (repo rank) + 10 (file order)
+			wantScore: 7000_30000_10.00,
 		},
 		{
 			name:     "high shard rank",
 			repoRank: 60000,
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 10 (file order) + 18.31 (repo rank)
-			wantScore: 7028.31,
+			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 60000 (repo rank) + 10 (file order)
+			wantScore: 7000_60000_10.00,
 		},
 	}
 

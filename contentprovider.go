@@ -530,12 +530,17 @@ const (
 
 	// File-only scoring signals. For now these are also bounded ~9000 to give them
 	// equal weight with the query-dependent signals.
-	scoreFileRankFactor  = 9000.0
-	scoreFileOrderFactor = 10.0
-	scoreRepoRankFactor  = 20.0
+	scoreFileRankFactor = 9000.0
 
 	// Used for ordering line and chunk matches within a file.
 	scoreLineOrderFactor = 1.0
+
+	// Used for tiebreakers. The scores are not combined with the main score, but
+	// are used to break ties between matches with the same score. The factors are
+	// chosen to separate the tiebreakers from the main score and from each other.
+	// If you make changes here, make sure to update indexData.scoreFile too.
+	scoreRepoRankFactor  = 100.0
+	scoreFileOrderFactor = 10.0
 )
 
 // findMaxOverlappingSection returns the index of the section in secs that

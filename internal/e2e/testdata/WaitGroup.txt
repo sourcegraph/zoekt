@@ -1,18 +1,18 @@
 queryString: WaitGroup
 query: case_substr:"WaitGroup"
-targetRank: 2
-
-github.com/golang/go/src/sync/waitgroup.go
-23:type WaitGroup struct {
-91:func (wg *WaitGroup) Wait() {
-13:// A WaitGroup waits for a collection of goroutines to finish.
-hidden 13 more line matches
+targetRank: 1
 
 **github.com/sourcegraph/conc/waitgroup.go**
 22:type WaitGroup struct {
 10:func NewWaitGroup() *WaitGroup {
 38:func (h *WaitGroup) Wait() {
 hidden 10 more line matches
+
+github.com/golang/go/src/sync/waitgroup.go
+23:type WaitGroup struct {
+91:func (wg *WaitGroup) Wait() {
+13:// A WaitGroup waits for a collection of goroutines to finish.
+hidden 13 more line matches
 
 github.com/golang/go/test/fixedbugs/issue19467.dir/mysync.go
 9:type WaitGroup struct {
@@ -25,16 +25,16 @@ github.com/golang/go/test/fixedbugs/issue44370.dir/a.go
 7:// A StoppableWaitGroup waits for a collection of goroutines to finish.
 hidden 3 more line matches
 
-github.com/golang/go/src/sync/example_test.go
-20:func ExampleWaitGroup() {
-19:// using a WaitGroup to block until all the fetches are complete.
-21:	var wg sync.WaitGroup
-hidden 1 more line matches
-
 github.com/sourcegraph/conc/waitgroup_test.go
 13:func ExampleWaitGroup() {
 42:func TestWaitGroup(t *testing.T) {
 29:func ExampleWaitGroup_WaitAndRecover() {
 hidden 12 more line matches
+
+github.com/golang/go/src/sync/example_test.go
+20:func ExampleWaitGroup() {
+19:// using a WaitGroup to block until all the fetches are complete.
+21:	var wg sync.WaitGroup
+hidden 1 more line matches
 
 hidden 227 more file matches
