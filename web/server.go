@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	texttemplate "text/template"
 	"time"
 
 	"github.com/grafana/regexp"
@@ -116,8 +117,9 @@ type Server struct {
 
 	startTime time.Time
 
-	templateMu    sync.Mutex
-	templateCache map[string]*template.Template
+	templateMu        sync.Mutex
+	templateCache     map[string]*template.Template
+	textTemplateCache map[string]*texttemplate.Template
 
 	lastStatsMu sync.Mutex
 	lastStats   *zoekt.RepoStats
@@ -134,10 +136,27 @@ func (s *Server) getTemplate(str string) *template.Template {
 
 	t, err := template.New("cache").Parse(str)
 	if err != nil {
-		log.Printf("template parse error: %v", err)
+		log.Printf("html template parse error: %v", err)
 		t = template.Must(template.New("empty").Parse(""))
 	}
 	s.templateCache[str] = t
+	return t
+}
+
+func (s *Server) getTextTemplate(str string) *texttemplate.Template {
+	s.templateMu.Lock()
+	defer s.templateMu.Unlock()
+	t := s.textTemplateCache[str]
+	if t != nil {
+		return t
+	}
+
+	t, err := zoekt.ParseTemplate(str)
+	if err != nil {
+		log.Printf("text template parse error: %v", err)
+		t = texttemplate.Must(texttemplate.New("empty").Parse(""))
+	}
+	s.textTemplateCache[str] = t
 	return t
 }
 
@@ -162,6 +181,7 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 	}
 
 	s.templateCache = map[string]*template.Template{}
+	s.textTemplateCache = map[string]*texttemplate.Template{}
 	s.startTime = time.Now()
 
 	mux := http.NewServeMux()
@@ -510,7 +530,7 @@ func (s *Server) serveListReposErr(q query.Q, qStr string, r *http.Request) (*Re
 	}
 
 	for _, r := range repos.Repos {
-		t := s.getTemplate(r.Repository.CommitURLTemplate)
+		t := s.getTextTemplate(r.Repository.CommitURLTemplate)
 
 		repo := Repository{
 			Name:       r.Repository.Name,

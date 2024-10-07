@@ -90,22 +90,38 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 		u.User = nil
 	}
 
+	// helper to generate u.JoinPath as a template
+	varVersion := ".Version"
+	varPath := ".Path"
+	urlJoinPath := func(elem ...string) string {
+		elem = append([]string{u.String()}, elem...)
+		var parts []string
+		for _, e := range elem {
+			if e == varVersion || e == varPath {
+				parts = append(parts, e)
+			} else {
+				parts = append(parts, strconv.Quote(e))
+			}
+		}
+		return fmt.Sprintf("{{URLJoinPath %s}}", strings.Join(parts, " "))
+	}
+
 	repo.URL = u.String()
 	switch typ {
 	case "gitiles":
 		// eg. https://gerrit.googlesource.com/gitiles/+/master/tools/run_dev.sh#20
-		repo.CommitURLTemplate = u.String() + "/+/{{.Version}}"
-		repo.FileURLTemplate = u.String() + "/+/{{.Version}}/{{.Path}}"
+		repo.CommitURLTemplate = urlJoinPath("+", varVersion)
+		repo.FileURLTemplate = urlJoinPath("+", varVersion, varPath)
 		repo.LineFragmentTemplate = "#{{.LineNumber}}"
 	case "github":
 		// eg. https://github.com/hanwen/go-fuse/blob/notify/genversion.sh#L10
-		repo.CommitURLTemplate = u.String() + "/commit/{{.Version}}"
-		repo.FileURLTemplate = u.String() + "/blob/{{.Version}}/{{.Path}}"
+		repo.CommitURLTemplate = urlJoinPath("commit", varVersion)
+		repo.FileURLTemplate = urlJoinPath("blob", varVersion, varPath)
 		repo.LineFragmentTemplate = "#L{{.LineNumber}}"
 	case "cgit":
 		// http://git.savannah.gnu.org/cgit/lilypond.git/tree/elisp/lilypond-mode.el?h=dev/philh&id=b2ca0fefe3018477aaca23b6f672c7199ba5238e#n100
-		repo.CommitURLTemplate = u.String() + "/commit/?id={{.Version}}"
-		repo.FileURLTemplate = u.String() + "/tree/{{.Path}}/?id={{.Version}}"
+		repo.CommitURLTemplate = urlJoinPath("commit") + "/?id={{.Version}}"
+		repo.FileURLTemplate = urlJoinPath("tree", varPath) + "/?id={{.Version}}"
 		repo.LineFragmentTemplate = "#n{{.LineNumber}}"
 	case "gitweb":
 		// https://gerrit.libreoffice.org/gitweb?p=online.git;a=blob;f=Makefile.am;h=cfcfd7c36fbae10e269653dc57a9b68c92d4c10b;hb=848145503bf7b98ce4a4aa0a858a0d71dd0dbb26#l10
@@ -115,29 +131,29 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 	case "source.bazel.build":
 		// https://source.bazel.build/bazel/+/57bc201346e61c62a921c1cbf32ad24f185c10c9
 		// https://source.bazel.build/bazel/+/57bc201346e61c62a921c1cbf32ad24f185c10c9:tools/cpp/BUILD.empty;l=10
-		repo.CommitURLTemplate = u.String() + "/+/{{.Version}}"
-		repo.FileURLTemplate = u.String() + "/+/{{.Version}}:{{.Path}}"
+		repo.CommitURLTemplate = u.String() + "/%2B/{{.Version}}"
+		repo.FileURLTemplate = u.String() + "/%2B/{{.Version}}:{{.Path}}"
 		repo.LineFragmentTemplate = ";l={{.LineNumber}}"
 	case "bitbucket-server":
 		// https://<bitbucketserver-host>/projects/<project>/repos/<repo>/commits/5be7ca73b898bf17a08e607918accfdeafe1e0bc
 		// https://<bitbucketserver-host>/projects/<project>/repos/<repo>/browse/<file>?at=5be7ca73b898bf17a08e607918accfdeafe1e0bc
-		repo.CommitURLTemplate = u.String() + "/commits/{{.Version}}"
-		repo.FileURLTemplate = u.String() + "/{{.Path}}?at={{.Version}}"
+		repo.CommitURLTemplate = urlJoinPath("commits", varVersion)
+		repo.FileURLTemplate = urlJoinPath(varPath) + "?at={{.Version}}"
 		repo.LineFragmentTemplate = "#{{.LineNumber}}"
 	case "gitlab":
 		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/commit/b152c864303dae0e55377a1e2c53c9592380ffed
 		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/blob/aad04155b3f6fc50ede88aedaee7fc624d481149/files/gitlab-config-template/gitlab.rb.template
-		repo.CommitURLTemplate = u.String() + "/-/commit/{{.Version}}"
-		repo.FileURLTemplate = u.String() + "/-/blob/{{.Version}}/{{.Path}}"
+		repo.CommitURLTemplate = urlJoinPath("-/commit", varVersion)
+		repo.FileURLTemplate = urlJoinPath("-/blob", varVersion, varPath)
 		repo.LineFragmentTemplate = "#L{{.LineNumber}}"
 	case "gitea":
-		repo.CommitURLTemplate = u.String() + "/commit/{{.Version}}"
+		repo.CommitURLTemplate = urlJoinPath("commit", varVersion)
 		// NOTE The `display=source` query parameter is required to disable file rendering.
 		// Since line numbers are disabled in rendered files, you wouldn't be able to jump to
 		// a line without `display=source`. This is supported since gitea 1.17.0.
 		// When /src/{{.Version}} is used it will redirect to /src/commit/{{.Version}},
 		// but the query  parameters are obmitted.
-		repo.FileURLTemplate = u.String() + "/src/commit/{{.Version}}/{{.Path}}?display=source"
+		repo.FileURLTemplate = urlJoinPath("src/commit", varVersion, varPath) + "?display=source"
 		repo.LineFragmentTemplate = "#L{{.LineNumber}}"
 	default:
 		return fmt.Errorf("URL scheme type %q unknown", typ)

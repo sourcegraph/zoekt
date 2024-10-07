@@ -19,11 +19,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc64"
-	"html/template"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"text/template"
 	"time"
 	"unicode/utf8"
 
@@ -216,11 +218,41 @@ type IndexBuilder struct {
 
 func (d *Repository) verify() error {
 	for _, t := range []string{d.FileURLTemplate, d.LineFragmentTemplate, d.CommitURLTemplate} {
-		if _, err := template.New("").Parse(t); err != nil {
+		if _, err := ParseTemplate(t); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func urlJoinPath(base string, elem ...string) string {
+	// golangs html/template always escapes "+" appearing in an HTML attribute
+	// [1]. We may even want to treat more characters, differently but this
+	// atleast makes it possible to visit URLs like [2].
+	//
+	// We only do this to elem since base will normally be a hardcoded string.
+	//
+	// [1]: https://sourcegraph.com/github.com/golang/go@go1.23.2/-/blob/src/html/template/html.go?L71-80
+	// [2]: https://github.com/apple/swift-system/blob/main/Sources/System/Util+StringArray.swift
+	elem = append([]string{}, elem...) // copy to mutate
+	for i := range elem {
+		elem[i] = strings.ReplaceAll(elem[i], "+", "%2B")
+	}
+	u, err := url.JoinPath(base, elem...)
+	if err != nil {
+		return "#!error: " + err.Error()
+	}
+	return u
+}
+
+// ParseTemplate will parse the templates for FileURLTemplate,
+// LineFragmentTemplate and CommitURLTemplate.
+//
+// It makes available the extra function UrlJoinPath.
+func ParseTemplate(text string) (*template.Template, error) {
+	return template.New("").Funcs(template.FuncMap{
+		"URLJoinPath": urlJoinPath,
+	}).Parse(text)
 }
 
 // ContentSize returns the number of content bytes so far ingested.
