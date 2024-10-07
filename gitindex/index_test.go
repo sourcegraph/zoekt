@@ -18,11 +18,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -770,7 +772,7 @@ func runScript(t *testing.T, cwd string, script string) {
 	}
 }
 
-func TestSetTemplate(t *testing.T) {
+func TestSetTemplates_e2e(t *testing.T) {
 	repositoryDir := t.TempDir()
 
 	// setup: initialize the repository and all of its branches
@@ -781,8 +783,97 @@ func TestSetTemplate(t *testing.T) {
 		t.Fatalf("setTemplatesFromConfig: %v", err)
 	}
 
-	if got, want := desc.FileURLTemplate, "https://github.com/sourcegraph/zoekt/blob/{{.Version}}/{{.Path}}"; got != want {
+	if got, want := desc.FileURLTemplate, `{{URLJoinPath "https://github.com/sourcegraph/zoekt" "blob" .Version .Path}}`; got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSetTemplates(t *testing.T) {
+	base := "https://example.com/repo/name"
+	version := "VERSION"
+	path := "dir/name.txt"
+	lineNumber := 10
+	cases := []struct {
+		typ    string
+		commit string
+		file   string
+		line   string
+	}{{
+		typ:    "gitiles",
+		commit: "https://example.com/repo/name/%2B/VERSION",
+		file:   "https://example.com/repo/name/%2B/VERSION/dir/name.txt",
+		line:   "#10",
+	}, {
+		typ:    "github",
+		commit: "https://example.com/repo/name/commit/VERSION",
+		file:   "https://example.com/repo/name/blob/VERSION/dir/name.txt",
+		line:   "#L10",
+	}, {
+		typ:    "cgit",
+		commit: "https://example.com/repo/name/commit/?id=VERSION",
+		file:   "https://example.com/repo/name/tree/dir/name.txt/?id=VERSION",
+		line:   "#n10",
+	}, {
+		typ:    "gitweb",
+		commit: "https://example.com/repo/name;a=commit;h=VERSION",
+		file:   "https://example.com/repo/name;a=blob;f=dir/name.txt;hb=VERSION",
+		line:   "#l10",
+	}, {
+		typ:    "source.bazel.build",
+		commit: "https://example.com/repo/name/%2B/VERSION",
+		file:   "https://example.com/repo/name/%2B/VERSION:dir/name.txt",
+		line:   ";l=10",
+	}, {
+		typ:    "bitbucket-server",
+		commit: "https://example.com/repo/name/commits/VERSION",
+		file:   "https://example.com/repo/name/dir/name.txt?at=VERSION",
+		line:   "#10",
+	}, {
+		typ:    "gitlab",
+		commit: "https://example.com/repo/name/-/commit/VERSION",
+		file:   "https://example.com/repo/name/-/blob/VERSION/dir/name.txt",
+		line:   "#L10",
+	}, {
+		typ:    "gitea",
+		commit: "https://example.com/repo/name/commit/VERSION",
+		file:   "https://example.com/repo/name/src/commit/VERSION/dir/name.txt?display=source",
+		line:   "#L10",
+	}}
+
+	for _, tc := range cases {
+		t.Run(tc.typ, func(t *testing.T) {
+			assertOutput := func(templateText string, want string) {
+				t.Helper()
+
+				tt, err := zoekt.ParseTemplate(templateText)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				var sb strings.Builder
+				err = tt.Execute(&sb, map[string]any{
+					"Version":    version,
+					"Path":       path,
+					"LineNumber": lineNumber,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := sb.String(); got != want {
+					t.Fatalf("want: %q\ngot:  %q", want, got)
+				}
+			}
+
+			var repo zoekt.Repository
+			u, _ := url.Parse(base)
+			err := setTemplates(&repo, u, tc.typ)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertOutput(repo.CommitURLTemplate, tc.commit)
+			assertOutput(repo.FileURLTemplate, tc.file)
+			assertOutput(repo.LineFragmentTemplate, tc.line)
+		})
 	}
 }
 

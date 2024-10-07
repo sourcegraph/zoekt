@@ -16,11 +16,11 @@ package web
 
 import (
 	"bytes"
-	"html/template"
 	"log"
 	"net/url"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/sourcegraph/zoekt"
 )
@@ -33,12 +33,12 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 	if !localPrint {
 		for repo, str := range result.RepoURLs {
 			if str != "" {
-				templateMap[repo] = s.getTemplate(str)
+				templateMap[repo] = s.getTextTemplate(str)
 			}
 		}
 		for repo, str := range result.LineFragments {
 			if str != "" {
-				fragmentMap[repo] = s.getTemplate(str)
+				fragmentMap[repo] = s.getTextTemplate(str)
 			}
 		}
 	}

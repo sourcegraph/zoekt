@@ -86,16 +86,17 @@ func TestBasic(t *testing.T) {
 	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
 		Name:                 "name",
 		URL:                  "repo-url",
-		CommitURLTemplate:    "{{.Version}}",
-		FileURLTemplate:      "file-url",
-		LineFragmentTemplate: "#line",
+		CommitURLTemplate:    `{{ URLJoinPath "https://github.com/org/repo/commit/" .Version}}`,
+		FileURLTemplate:      `{{ URLJoinPath "https://github.com/org/repo/blob/" .Version .Path}}`,
+		LineFragmentTemplate: "#L{{.LineNumber}}",
 		Branches:             []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
 	if err := b.Add(zoekt.Document{
-		Name:    "f2",
+		// use a name which requires correct escaping. https://github.com/sourcegraph/zoekt/issues/807
+		Name:    "foo/bar+baz",
 		Content: []byte("to carry water in the no later bla"),
 		// --------------0123456789012345678901234567890123
 		// --------------0         1         2         3
@@ -123,7 +124,7 @@ func TestBasic(t *testing.T) {
 	for req, needles := range map[string][]string{
 		"/": {"from 1 repositories"},
 		"/search?q=water": {
-			"href=\"file-url#line",
+			`href="https://github.com/org/repo/blob/1234/foo/bar%2Bbaz"`,
 			"carry <b>water</b>",
 		},
 		"/search?q=r:": {
@@ -131,7 +132,7 @@ func TestBasic(t *testing.T) {
 			"Found 1 repositories",
 			nowStr,
 			"repo-url\">name",
-			"1 files (36B)",
+			"1 files (45B)",
 		},
 		"/search?q=magic": {
 			`value=magic`,
