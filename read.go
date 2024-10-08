@@ -152,24 +152,6 @@ func (r *reader) readTOCSections(toc *indexTOC, tags []string) error {
 				}
 			}
 		}
-	} else {
-		// TODO: Remove this branch when ReaderMinFeatureVersion >= 10
-
-		secs := toc.sections()
-
-		if len(secs) != int(sectionCount) {
-			secs = toc.sectionsNext()
-		}
-
-		if len(secs) != int(sectionCount) {
-			return fmt.Errorf("section count mismatch: got %d want %d", sectionCount, len(secs))
-		}
-
-		for _, s := range secs {
-			if err := s.read(r); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }

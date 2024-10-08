@@ -63,7 +63,7 @@ const WriteMinFeatureVersion = 10
 
 // ReadMinFeatureVersion constrains backwards compatibility by refusing to
 // load a file with a FeatureVersion below it.
-const ReadMinFeatureVersion = 8
+const ReadMinFeatureVersion = 10
 
 // 17: compound shard (multi repo)
 const NextIndexFormatVersion = 17
