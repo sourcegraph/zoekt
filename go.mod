@@ -53,6 +53,7 @@ require (
 	golang.org/x/sys v0.25.0
 	google.golang.org/grpc v1.66.1
 	google.golang.org/protobuf v1.34.2
+	pgregory.net/rapid v1.1.0
 )
 
 require (
