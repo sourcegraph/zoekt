@@ -45,9 +45,7 @@ func (f *topicsFlag) Set(value string) error {
 }
 
 type reposFilters struct {
-	topics        []string
-	excludeTopics []string
-	noArchived    *bool
+	noArchived *bool
 }
 
 func main() {
@@ -91,7 +89,6 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-
 		clientOptions = append(clientOptions, gitea.SetToken(string(content)))
 	}
 	client, err := gitea.NewClient(*giteaURL, clientOptions...)
@@ -100,16 +97,17 @@ func main() {
 	}
 
 	reposFilters := reposFilters{
-		topics:        topics,
-		excludeTopics: excludeTopics,
-		noArchived:    noArchived,
+		noArchived: noArchived,
 	}
 	var repos []*gitea.Repository
-	if *org != "" {
+	switch {
+	case *org != "":
+		log.Printf("fetch repos for org: %s", *org)
 		repos, err = getOrgRepos(client, *org, reposFilters)
-	} else if *user != "" {
+	case *user != "":
+		log.Printf("fetch repos for user: %s", *user)
 		repos, err = getUserRepos(client, *user, reposFilters)
-	} else {
+	default:
 		log.Printf("no user or org specified, cloning all repos.")
 		repos, err = getUserRepos(client, "", reposFilters)
 	}
@@ -119,11 +117,12 @@ func main() {
 	}
 
 	if !*forks {
-		trimmed := repos[:0]
+		trimmed := []*gitea.Repository{}
 		for _, r := range repos {
-			if !r.Fork {
-				trimmed = append(trimmed, r)
+			if r.Fork {
+				continue
 			}
+			trimmed = append(trimmed, r)
 		}
 		repos = trimmed
 	}
@@ -134,11 +133,13 @@ func main() {
 	}
 
 	{
-		trimmed := repos[:0]
+		trimmed := []*gitea.Repository{}
 		for _, r := range repos {
-			if filter.Include(r.Name) {
-				trimmed = append(trimmed, r)
+			if !filter.Include(r.Name) {
+				log.Println(r.Name)
+				continue
 			}
+			trimmed = append(trimmed, r)
 		}
 		repos = trimmed
 	}
@@ -182,29 +183,12 @@ func deleteStaleRepos(destDir string, filter *gitindex.Filter, repos []*gitea.Re
 	return nil
 }
 
-func hasIntersection(s1, s2 []string) bool {
-	hash := make(map[string]bool)
-	for _, e := range s1 {
-		hash[e] = true
-	}
-	for _, e := range s2 {
-		if hash[e] {
-			return true
-		}
-	}
-	return false
-}
-
-func filterRepositories(repos []*gitea.Repository, include []string, exclude []string, noArchived bool) (filteredRepos []*gitea.Repository) {
+func filterRepositories(repos []*gitea.Repository, noArchived bool) (filteredRepos []*gitea.Repository) {
 	for _, repo := range repos {
 		if noArchived && repo.Archived {
 			continue
 		}
-		// FIXME: Gitea needs to have topics returned from API for this to work
-		// if (len(include) == 0 || hasIntersection(include, repo.Topics)) &&
-		// 	!hasIntersection(exclude, repo.Topics) {
-		// 	filteredRepos = append(filteredRepos, repo)
-		// }
+		filteredRepos = append(filteredRepos, repo)
 	}
 	return
 }
@@ -230,7 +214,7 @@ func getOrgRepos(client *gitea.Client, org string, reposFilters reposFilters) ([
 		}
 
 		searchOptions.Page = resp.NextPage
-		repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived)
+		repos = filterRepositories(repos, *reposFilters.noArchived)
 		allRepos = append(allRepos, repos...)
 		if resp.NextPage == 0 {
 			break
@@ -255,19 +239,14 @@ func getUserRepos(client *gitea.Client, user string, reposFilters reposFilters) 
 		if len(repos) == 0 {
 			break
 		}
-
-		searchOptions.Page = resp.NextPage
-		repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived)
+		repos = filterRepositories(repos, *reposFilters.noArchived)
 		allRepos = append(allRepos, repos...)
+		searchOptions.Page = resp.NextPage
 		if resp.NextPage == 0 {
 			break
 		}
 	}
 	return allRepos, nil
-}
-
-func itoa(p int) string {
-	return strconv.Itoa(p)
 }
 
 func cloneRepos(destDir string, repos []*gitea.Repository) error {
@@ -276,16 +255,17 @@ func cloneRepos(destDir string, repos []*gitea.Repository) error {
 		if err != nil {
 			return err
 		}
+		log.Printf("cloning %s", r.HTMLURL)
 
 		config := map[string]string{
 			"zoekt.web-url-type": "gitea",
 			"zoekt.web-url":      r.HTMLURL,
 			"zoekt.name":         filepath.Join(host.Hostname(), r.FullName),
 
-			"zoekt.gitea-stars":       itoa(r.Stars),
-			"zoekt.gitea-watchers":    itoa(r.Watchers),
-			"zoekt.gitea-subscribers": itoa(r.Watchers), // FIXME: Get repo subscribers from API
-			"zoekt.gitea-forks":       itoa(r.Forks),
+			"zoekt.gitea-stars":       strconv.Itoa(r.Stars),
+			"zoekt.gitea-watchers":    strconv.Itoa(r.Watchers),
+			"zoekt.gitea-subscribers": strconv.Itoa(r.Watchers), // FIXME: Get repo subscribers from API
+			"zoekt.gitea-forks":       strconv.Itoa(r.Forks),
 
 			"zoekt.archived": marshalBool(r.Archived),
 			"zoekt.fork":     marshalBool(r.Fork),
