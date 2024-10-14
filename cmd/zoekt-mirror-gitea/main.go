@@ -52,7 +52,7 @@ type reposFilters struct {
 
 func main() {
 	dest := flag.String("dest", "", "destination directory")
-	giteaURL := flag.String("url", "", "Gitea url. If not set gitea.com will be used as the host.")
+	giteaURL := flag.String("url", "https://gitea.com/", "Gitea url. If not set gitea.com will be used as the host.")
 	org := flag.String("org", "", "organization to mirror")
 	user := flag.String("user", "", "user to mirror")
 	token := flag.String("token",
@@ -80,9 +80,6 @@ func main() {
 	var host string
 	var client *gitea.Client
 	clientOptions := []gitea.ClientOption{}
-	if *giteaURL != "" {
-		*giteaURL = "https://gitea.com/"
-	}
 
 	destDir := filepath.Join(*dest, host)
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
@@ -124,7 +121,7 @@ func main() {
 	if !*forks {
 		trimmed := repos[:0]
 		for _, r := range repos {
-			if r.Fork == nil || !*r.Fork {
+			if !r.Fork {
 				trimmed = append(trimmed, r)
 			}
 		}
@@ -139,7 +136,7 @@ func main() {
 	{
 		trimmed := repos[:0]
 		for _, r := range repos {
-			if filter.Include(*r.Name) {
+			if filter.Include(r.Name) {
 				trimmed = append(trimmed, r)
 			}
 		}
@@ -200,10 +197,10 @@ func hasIntersection(s1, s2 []string) bool {
 
 func filterRepositories(repos []*gitea.Repository, include []string, exclude []string, noArchived bool) (filteredRepos []*gitea.Repository) {
 	for _, repo := range repos {
-		if noArchived && *&repo.Archived {
+		if noArchived && repo.Archived {
 			continue
 		}
-		// FIXME: get topics from repos
+		// FIXME: Gitea needs to have topics returned from API for this to work
 		// if (len(include) == 0 || hasIntersection(include, repo.Topics)) &&
 		// 	!hasIntersection(exclude, repo.Topics) {
 		// 	filteredRepos = append(filteredRepos, repo)
