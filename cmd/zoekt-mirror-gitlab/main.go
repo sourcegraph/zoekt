@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sourcegraph/zoekt/gitindex"
 	gitlab "github.com/xanzy/go-gitlab"
@@ -49,6 +50,7 @@ func main() {
 	excludeUserRepos := flag.Bool("exclude_user", false, "exclude user repos")
 	namePattern := flag.String("name", "", "only clone repos whose name matches the given regexp.")
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
+	lastActivityAfter := flag.String("last_activity_after", "", "only mirror repos that have been active since this date (format: 2006-01-02).")
 	flag.Parse()
 
 	if *dest == "" {
@@ -88,6 +90,14 @@ func main() {
 	}
 	if *isPublic {
 		opt.Visibility = gitlab.Visibility(gitlab.PublicVisibility)
+	}
+
+	if *lastActivityAfter != "" {
+		targetDate, err := time.Parse("2006-01-02", *lastActivityAfter)
+		if err != nil {
+			log.Fatal(err)
+		}
+		opt.LastActivityAfter = gitlab.Time(targetDate)
 	}
 
 	var gitlabProjects []*gitlab.Project
