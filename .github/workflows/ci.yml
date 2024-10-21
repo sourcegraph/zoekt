@@ -13,6 +13,9 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3
 
+      - name: add dependencies
+        run: apk add go git tar
+
       - name: Cache ctags
         uses: actions/cache@v3
         with:
@@ -28,9 +31,6 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-
-      - name: add dependencies
-        run: apk add go git tar
 
       - name: install ctags
         run: |
