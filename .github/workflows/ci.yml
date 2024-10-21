@@ -12,10 +12,32 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v3
+
+      - name: Cache ctags
+        uses: actions/cache@v3
+        with:
+          path: /usr/local/bin/universal-ctags
+          key: ${{ runner.os }}-ctags-${{ hashFiles('install-ctags-alpine.sh') }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
       - name: add dependencies
         run: apk add go git
+
       - name: install ctags
-        run: ./install-ctags-alpine.sh
+        run: |
+          if [ ! -f /usr/local/bin/universal-ctags ]; then
+            ./install-ctags-alpine.sh
+          fi
+
       - name: test
         run: go test ./...
 
