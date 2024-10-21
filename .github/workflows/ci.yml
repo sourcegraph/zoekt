@@ -30,7 +30,7 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: add dependencies
-        run: apk add go git
+        run: apk add go git tar
 
       - name: install ctags
         run: |
