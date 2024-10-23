@@ -92,7 +92,7 @@ var (
 	metricIndexingDelay = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "index_indexing_delay_seconds",
 		Help:    "A histogram of durations from when an index job is added to the queue, to the time it completes.",
-		Buckets: prometheus.ExponentialBuckets(60, 2, 12), // 1m -> ~3 days
+		Buckets: prometheus.ExponentialBuckets(60, 2, 14), // 1 minute -> 5.5 days
 	}, []string{
 		"state", // state is an indexState
 		"name",  // the name of the repository that was indexed
