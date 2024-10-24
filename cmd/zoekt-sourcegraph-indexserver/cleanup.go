@@ -409,7 +409,7 @@ func (s *Server) vacuum() {
 		path := filepath.Join(s.IndexDir, fn)
 		info, err := os.Stat(path)
 		if err != nil {
-			debug.Printf("vacuum stat failed: %v", err)
+			log.Printf("vacuum stat failed: %v", err)
 			continue
 		}
 
@@ -422,7 +422,7 @@ func (s *Server) vacuum() {
 			})
 
 			if err != nil {
-				debug.Printf("failed to explode compound shard %s: %s", path, string(b))
+				log.Printf("failed to explode compound shard %s: %s", path, string(b))
 			}
 			continue
 		}
@@ -432,7 +432,7 @@ func (s *Server) vacuum() {
 		})
 
 		if err != nil {
-			debug.Printf("error while removing tombstones in %s: %s", fn, err)
+			log.Printf("error while removing tombstones in %s: %s", fn, err)
 		}
 	}
 }
