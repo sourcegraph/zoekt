@@ -100,13 +100,14 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 
 			err := cmd.Run()
 
-			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
+			durationSeconds := time.Since(start).Seconds()
+			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(durationSeconds)
 			if err != nil {
-				log.Printf("error merging shards: stdout=%s, stderr=%s, err=%s", stdoutBuf.String(), stderrBuf.String(), err)
+				log.Printf("error merging shards: stdout=%s, stderr=%s, durationSeconds=%.2f err=%s", stdoutBuf.String(), stderrBuf.String(), durationSeconds, err)
 				return
 			}
 
-			log.Printf("finished merging: shard=%s durationSeconds=%.2f", stdoutBuf.String(), time.Since(start).Seconds())
+			log.Printf("finished merging: shard=%s durationSeconds=%.2f", stdoutBuf.String(), durationSeconds)
 
 			next = true
 		})
