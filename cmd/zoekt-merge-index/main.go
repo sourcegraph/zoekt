@@ -11,18 +11,20 @@ import (
 	"github.com/sourcegraph/zoekt"
 )
 
-func merge(dstDir string, names []string) error {
+// merge merges the input shards into a compound shard in dstDir. It returns the
+// full path to the compound shard. The input shards are removed on success.
+func merge(dstDir string, names []string) (string, error) {
 	var files []zoekt.IndexFile
 	for _, fn := range names {
 		f, err := os.Open(fn)
 		if err != nil {
-			return err
+			return "", nil
 		}
 		defer f.Close()
 
 		indexFile, err := zoekt.NewIndexFile(f)
 		if err != nil {
-			return err
+			return "", err
 		}
 		defer indexFile.Close()
 
@@ -31,18 +33,18 @@ func merge(dstDir string, names []string) error {
 
 	tmpName, dstName, err := zoekt.Merge(dstDir, files...)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Delete input shards.
 	for _, name := range names {
 		paths, err := zoekt.IndexFilePaths(name)
 		if err != nil {
-			return fmt.Errorf("zoekt-merge-index: %w", err)
+			return "", fmt.Errorf("zoekt-merge-index: %w", err)
 		}
 		for _, p := range paths {
 			if err := os.Remove(p); err != nil {
-				return fmt.Errorf("zoekt-merge-index: failed to remove simple shard: %w", err)
+				return "", fmt.Errorf("zoekt-merge-index: failed to remove simple shard: %w", err)
 			}
 		}
 	}
@@ -50,12 +52,13 @@ func merge(dstDir string, names []string) error {
 	// We only rename the compound shard if all simple shards could be deleted in the
 	// previous step. This guarantees we won't have duplicate indexes.
 	if err := os.Rename(tmpName, dstName); err != nil {
-		return fmt.Errorf("zoekt-merge-index: failed to rename compound shard: %w", err)
+		return "", fmt.Errorf("zoekt-merge-index: failed to rename compound shard: %w", err)
 	}
-	return nil
+
+	return dstName, nil
 }
 
-func mergeCmd(paths []string) error {
+func mergeCmd(paths []string) (string, error) {
 	if paths[0] == "-" {
 		paths = []string{}
 		scanner := bufio.NewScanner(os.Stdin)
@@ -63,7 +66,7 @@ func mergeCmd(paths []string) error {
 			paths = append(paths, strings.TrimSpace(scanner.Text()))
 		}
 		if err := scanner.Err(); err != nil {
-			return err
+			return "", err
 		}
 		log.Printf("merging %d paths from stdin", len(paths))
 	}
@@ -129,9 +132,11 @@ func explodeCmd(path string) error {
 func main() {
 	switch subCommand := os.Args[1]; subCommand {
 	case "merge":
-		if err := mergeCmd(os.Args[2:]); err != nil {
+		compoundShardPath, err := mergeCmd(os.Args[2:])
+		if err != nil {
 			log.Fatal(err)
 		}
+		fmt.Println(compoundShardPath)
 	case "explode":
 		if err := explodeCmd(os.Args[2]); err != nil {
 			log.Fatal(err)

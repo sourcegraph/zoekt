@@ -422,8 +422,9 @@ func (s *Server) vacuum() {
 			})
 
 			if err != nil {
-				log.Printf("failed to explode compound shard %s: %s", path, string(b))
+				log.Printf("failed to explode compound shard: shard=%s out=%s err=%s", path, string(b), err)
 			}
+			log.Printf("exploded compound shard: shard=%s", path)
 			continue
 		}
 
@@ -432,7 +433,7 @@ func (s *Server) vacuum() {
 		})
 
 		if err != nil {
-			log.Printf("error while removing tombstones in %s: %s", fn, err)
+			log.Printf("error while removing tombstones in %s: %s", path, err)
 		}
 	}
 }

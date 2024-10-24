@@ -8,6 +8,8 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/shards"
@@ -15,97 +17,71 @@ import (
 
 func TestMerge(t *testing.T) {
 	v16Shards, err := filepath.Glob("../../testdata/shards/*_v16.*.zoekt")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	sort.Strings(v16Shards)
 
 	testShards, err := copyTestShards(t.TempDir(), v16Shards)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Log(testShards)
 
 	dir := t.TempDir()
-	err = merge(dir, testShards)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cs, err := merge(dir, testShards)
+	require.NoError(t, err)
+	// The name of the compound shard is based on the merged repos, so it should be
+	// stable
+	require.Equal(t, filepath.Base(cs), "compound-ea9613e2ffba7d7361856aebfca75fb714856509_v17.00000.zoekt")
 
 	ss, err := shards.NewDirectorySearcher(dir)
-	if err != nil {
-		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
-	}
+	require.NoError(t, err)
 	defer ss.Close()
 
 	q, err := query.Parse("hello")
-	if err != nil {
-		t.Fatalf("Parse(hello): %v", err)
-	}
+	require.NoError(t, err)
 
 	var sOpts zoekt.SearchOptions
 	ctx := context.Background()
 	result, err := ss.Search(ctx, q, &sOpts)
-	if err != nil {
-		t.Fatalf("Search(%v): %v", q, err)
-	}
+	require.NoError(t, err)
 
 	// we are merging the same shard twice, so we expect the same file twice.
-	if len(result.Files) != 2 {
-		t.Errorf("got %v, want 2 files.", result.Files)
-	}
+	require.Len(t, result.Files, 2)
 }
 
 // Merge 2 simple shards and then explode them.
 func TestExplode(t *testing.T) {
 	v16Shards, err := filepath.Glob("../../testdata/shards/repo*_v16.*.zoekt")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	sort.Strings(v16Shards)
 
 	testShards, err := copyTestShards(t.TempDir(), v16Shards)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Log(testShards)
 
 	dir := t.TempDir()
-	err = merge(dir, testShards)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, err = merge(dir, testShards)
+	require.NoError(t, err)
 
 	cs, err := filepath.Glob(filepath.Join(dir, "compound-*.zoekt"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	err = explode(dir, cs[0])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	cs, err = filepath.Glob(filepath.Join(dir, "compound-*.zoekt"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if len(cs) != 0 {
 		t.Fatalf("explode should have deleted the compound shard if it returned without error")
 	}
 
 	exploded, err := filepath.Glob(filepath.Join(dir, "*.zoekt"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if len(exploded) != len(testShards) {
 		t.Fatalf("the number of simple shards before %d and after %d should be the same", len(testShards), len(exploded))
 	}
 
 	ss, err := shards.NewDirectorySearcher(dir)
-	if err != nil {
-		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
-	}
+	require.NoError(t, err)
 	defer ss.Close()
 
 	var sOpts zoekt.SearchOptions
@@ -132,16 +108,10 @@ func TestExplode(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.searchLiteral, func(t *testing.T) {
 			q, err := query.Parse(c.searchLiteral)
-			if err != nil {
-				t.Fatalf("Parse(%s): %v", c.searchLiteral, err)
-			}
+			require.NoError(t, err)
 			result, err := ss.Search(ctx, q, &sOpts)
-			if err != nil {
-				t.Fatalf("Search(%v): %v", q, err)
-			}
-			if got := len(result.Files); got != c.wantResults {
-				t.Fatalf("wanted %d results, got %d", c.wantResults, got)
-			}
+			require.NoError(t, err)
+			require.Len(t, result.Files, c.wantResults)
 		})
 	}
 }

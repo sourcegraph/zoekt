@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"log"
 	"os"
 	"os/exec"
@@ -88,13 +89,24 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 			}
 
 			start := time.Now()
-			out, err := mergeCmd(paths...).CombinedOutput()
+
+			cmd := mergeCmd(paths...)
+
+			// zoekt-merge-index writes the full path of the new compound shard to stdout.
+			stdoutBuf := &bytes.Buffer{}
+			stderrBuf := &bytes.Buffer{}
+			cmd.Stdout = stdoutBuf
+			cmd.Stderr = stderrBuf
+
+			err := cmd.Run()
 
 			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
 			if err != nil {
-				log.Printf("mergeCmd: out=%s, err=%s", out, err)
+				log.Printf("error merging shards: stdout=%s, stderr=%s, err=%s", stdoutBuf.String(), stderrBuf.String(), err)
 				return
 			}
+
+			log.Printf("finished merging: shard=%s durationSeconds=%.2f", stdoutBuf.String(), time.Since(start).Seconds())
 
 			next = true
 		})
