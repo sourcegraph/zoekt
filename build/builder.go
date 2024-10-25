@@ -119,7 +119,9 @@ type Options struct {
 	// Sourcegraph specific option.
 	ShardMerging bool
 
-	// HeapProfileTriggerBytes is the heap usage in bytes that will trigger a memory profile. If 0, no memory profile will be triggered.
+	// HeapProfileTriggerBytes is the heap allocation in bytes that will trigger a memory profile. If 0, no memory profile
+	// will be triggered. Note this trigger looks at total heap allocation (which includes both inuse and garbage objects).
+	//
 	// Profiles will be written to files named `index-memory.prof.n` in the index directory. No more than 10 files are written.
 	//
 	// Note: heap checking is "best effort", and it's possible for the process to OOM without triggering the heap profile.
@@ -1023,7 +1025,7 @@ func (b *Builder) CheckMemoryUsage() {
 	if m.HeapAlloc > b.opts.HeapProfileTriggerBytes && b.heapProfileMu.TryLock() {
 		defer b.heapProfileMu.Unlock()
 
-		log.Printf("writing memory profile, heap usage: %s", humanize.Bytes(m.HeapAlloc))
+		log.Printf("writing memory profile, allocated heap: %s", humanize.Bytes(m.HeapAlloc))
 		name := filepath.Join(b.opts.IndexDir, fmt.Sprintf("indexmemory.prof.%d", b.heapProfileNum))
 		f, err := os.Create(name)
 		if err != nil {
