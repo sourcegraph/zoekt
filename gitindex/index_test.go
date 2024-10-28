@@ -17,6 +17,7 @@ package gitindex
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -62,6 +63,83 @@ func TestIndexEmptyRepo(t *testing.T) {
 	if _, err := IndexGitRepo(opts); err != nil {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
+}
+
+func TestIndexNonexistentRepo(t *testing.T) {
+	dir := t.TempDir()
+	desc := zoekt.Repository{
+		Name: "nonexistent",
+	}
+	opts := Options{
+		RepoDir:  "does/not/exist",
+		Branches: []string{"main"},
+		BuildOptions: build.Options{
+			RepositoryDescription: desc,
+			IndexDir:              dir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err == nil {
+		t.Fatal("expected error, got none")
+	} else if !errors.Is(err, git.ErrRepositoryNotExists) {
+		t.Fatalf("expected git.ErrRepositoryNotExists, got %v", err)
+	}
+}
+
+func TestIndexTinyRepo(t *testing.T) {
+	// Create a repo with one file in it.
+	dir := t.TempDir()
+	executeCommand(t, dir, exec.Command("git", "init", "-b", "main", "repo"))
+	executeCommand(t, dir, exec.Command("git", "config", "--global", "user.name", "Thomas"))
+	executeCommand(t, dir, exec.Command("git", "config", "--global", "user.email", "thomas@google.com"))
+
+	if err := os.WriteFile(filepath.Join(dir, "repo", "file1.go"), []byte("package main\n\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	repoDir := filepath.Join(dir, "repo")
+	executeCommand(t, repoDir, exec.Command("git", "add", "."))
+	executeCommand(t, repoDir, exec.Command("git", "commit", "-m", "initial commit"))
+
+	// Test that indexing accepts both the repo directory, and the .git subdirectory.
+	for _, testDir := range []string{"repo", "repo/.git"} {
+		opts := Options{
+			RepoDir:  filepath.Join(dir, testDir),
+			Branches: []string{"main"},
+			BuildOptions: build.Options{
+				RepositoryDescription: zoekt.Repository{Name: "repo"},
+				IndexDir:              dir,
+			},
+		}
+
+		if _, err := IndexGitRepo(opts); err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+
+		searcher, err := shards.NewDirectorySearcher(dir)
+		if err != nil {
+			t.Fatal("NewDirectorySearcher", err)
+		}
+
+		results, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{})
+		searcher.Close()
+
+		if err != nil {
+			t.Fatal("search failed", err)
+		}
+
+		if len(results.Files) != 1 {
+			t.Fatalf("got search result %v, want 1 file", results.Files)
+		}
+	}
+}
+
+func executeCommand(t *testing.T, dir string, cmd *exec.Cmd) *exec.Cmd {
+	cmd.Dir = dir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("cmd.Run: %v", err)
+	}
+	return cmd
 }
 
 func TestIndexDeltaBasic(t *testing.T) {
