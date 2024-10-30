@@ -32,6 +32,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ignore"
@@ -404,9 +407,23 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	}
 
 	opts.BuildOptions.RepositoryDescription.Source = opts.RepoDir
-	repo, err := git.PlainOpen(opts.RepoDir)
-	if err != nil {
-		return false, fmt.Errorf("git.PlainOpen: %w", err)
+
+	var repo *git.Repository
+
+	// TODO: remove this feature flag once we test this on a large-scale instance.
+	optimizeRepoOpen := os.Getenv("ZOEKT_ENABLE_GOGIT_OPTIMIZATION")
+	if b, err := strconv.ParseBool(optimizeRepoOpen); b && err == nil {
+		var repoCloser io.Closer
+		repo, repoCloser, err = openRepo(opts.RepoDir)
+		if err != nil {
+			return false, fmt.Errorf("openRepo: %w", err)
+		}
+		defer repoCloser.Close()
+	} else {
+		repo, err = git.PlainOpen(opts.RepoDir)
+		if err != nil {
+			return false, fmt.Errorf("git.PlainOpen: %w", err)
+		}
 	}
 
 	if err := setTemplatesFromConfig(&opts.BuildOptions.RepositoryDescription, opts.RepoDir); err != nil {
@@ -570,6 +587,37 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		}
 	}
 	return true, builder.Finish()
+}
+
+// openRepo opens a git repository in a way that's optimized for indexing.
+//
+// It copies the relevant logic from git.PlainOpen, and enables the filesystem KeepDescriptors option. This
+// caches the packfile handles, preventing the packfile from being opened then closed on every object access.
+func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
+	fs := osfs.New(repoDir)
+
+	// Check if the root directory exists.
+	if _, err := fs.Stat(""); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, git.ErrRepositoryNotExists
+		}
+		return nil, nil, err
+	}
+
+	// If there's a .git directory, use that as the new root.
+	if fi, err := fs.Stat(git.GitDirName); err == nil && fi.IsDir() {
+		if fs, err = fs.Chroot(git.GitDirName); err != nil {
+			return nil, nil, fmt.Errorf("fs.Chroot: %w", err)
+		}
+	}
+
+	s := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{
+		KeepDescriptors: true,
+	})
+
+	// Because we're keeping descriptors open, we need to close the storage object when we're done.
+	repo, err := git.Open(s, fs)
+	return repo, s, err
 }
 
 type repoPathRanks struct {
