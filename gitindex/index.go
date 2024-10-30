@@ -605,7 +605,7 @@ func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	}
 
 	// If there's a .git directory, use that as the new root.
-	if _, err := fs.Stat(git.GitDirName); err == nil {
+	if fi, err := fs.Stat(git.GitDirName); err == nil && fi.IsDir() {
 		if fs, err = fs.Chroot(git.GitDirName); err != nil {
 			return nil, nil, fmt.Errorf("fs.Chroot: %w", err)
 		}
