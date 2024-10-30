@@ -591,8 +591,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 
 // openRepo opens a git repository in a way that's optimized for indexing.
 //
-// It copies the relevant logic from git.PlainOpen, and enables the filesystem KeepDescriptors option. This
-// caches the packfile handles, preventing the packfile from being opened then closed on every object access.
+// It copies the relevant logic from git.PlainOpen, and tweaks certain filesystem options.
 func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	fs := osfs.New(repoDir)
 
@@ -612,7 +611,12 @@ func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	}
 
 	s := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{
+		// Cache the packfile handles, preventing the packfile from being opened then closed on every object access
 		KeepDescriptors: true,
+		// Disable caching for most objects, by setting the threshold to 1 byte. This avoids allocating a bunch of
+		// in-memory objects that are unlikely to be reused, since we only read each file once. Note: go-git still
+		// proactively caches objects under 16KB (see smallObjectThreshold in packfile logic).
+		LargeObjectThreshold: 1,
 	})
 
 	// Because we're keeping descriptors open, we need to close the storage object when we're done.
