@@ -649,7 +649,6 @@ var splitargs = cmpopts.AcyclicTransformer("splitargs", func(cmd string) []strin
 type mockGRPCClient struct {
 	mockSearchConfiguration func(context.Context, *proto.SearchConfigurationRequest, ...grpc.CallOption) (*proto.SearchConfigurationResponse, error)
 	mockList                func(context.Context, *proto.ListRequest, ...grpc.CallOption) (*proto.ListResponse, error)
-	mockDocumentRanks       func(context.Context, *proto.DocumentRanksRequest, ...grpc.CallOption) (*proto.DocumentRanksResponse, error)
 	mockUpdateIndexStatus   func(context.Context, *proto.UpdateIndexStatusRequest, ...grpc.CallOption) (*proto.UpdateIndexStatusResponse, error)
 }
 
@@ -667,14 +666,6 @@ func (m *mockGRPCClient) List(ctx context.Context, in *proto.ListRequest, opts .
 	}
 
 	return nil, fmt.Errorf("mock RPC List not implemented")
-}
-
-func (m *mockGRPCClient) DocumentRanks(ctx context.Context, in *proto.DocumentRanksRequest, opts ...grpc.CallOption) (*proto.DocumentRanksResponse, error) {
-	if m.mockDocumentRanks != nil {
-		return m.mockDocumentRanks(ctx, in, opts...)
-	}
-
-	return nil, fmt.Errorf("mock RPC DocumentRanks not implemented")
 }
 
 func (m *mockGRPCClient) UpdateIndexStatus(ctx context.Context, in *proto.UpdateIndexStatusRequest, opts ...grpc.CallOption) (*proto.UpdateIndexStatusResponse, error) {

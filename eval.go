@@ -386,11 +386,6 @@ nextFileMatch:
 	// Update stats based on work done during document search.
 	updateMatchTreeStats(mt, &res.Stats)
 
-	// If document ranking is enabled, then we can rank and truncate the files to save memory.
-	if opts.UseDocumentRanks {
-		res.Files = SortAndTruncateFiles(res.Files, opts)
-	}
-
 	res.Stats.MatchTreeSearch = timer.Elapsed()
 
 	return &res, nil

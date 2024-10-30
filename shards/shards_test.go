@@ -252,8 +252,7 @@ func TestShardedSearcher_DocumentRanking(t *testing.T) {
 	// Run a stream search and gather the results
 	var results []*zoekt.SearchResult
 	opts := &zoekt.SearchOptions{
-		UseDocumentRanks: true,
-		FlushWallTime:    100 * time.Millisecond,
+		FlushWallTime: 100 * time.Millisecond,
 	}
 
 	err := ss.StreamSearch(context.Background(), &query.Substring{Pattern: "foo"}, opts,
@@ -1134,7 +1133,6 @@ func testShardedStreamSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, us
 
 	opts := zoekt.SearchOptions{}
 	if useDocumentRanks {
-		opts.UseDocumentRanks = true
 		opts.FlushWallTime = 10 * time.Millisecond
 	}
 	if err := ss.StreamSearch(context.Background(), q, &opts, sender); err != nil {
@@ -1150,7 +1148,6 @@ func testShardedSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocum
 
 	opts := zoekt.SearchOptions{}
 	if useDocumentRanks {
-		opts.UseDocumentRanks = true
 		opts.FlushWallTime = 50 * time.Millisecond
 	}
 	sres, _ := ss.Search(context.Background(), q, &opts)

@@ -15,10 +15,7 @@
 package zoekt
 
 import (
-	"bytes"
 	"encoding/binary"
-	"encoding/gob"
-	"fmt"
 	"io"
 	"log"
 )
@@ -72,48 +69,6 @@ func (w *writer) String(s string) {
 	b := []byte(s)
 	w.Varint(uint32(len(b)))
 	w.Write(b)
-}
-
-func encodeRanks(w io.Writer, ranks [][]float64) error {
-	hasRank := false
-	for _, r := range ranks {
-		if len(r) > 0 {
-			hasRank = true
-			break
-		}
-	}
-
-	if !hasRank {
-		return nil
-	}
-
-	// We use the first byte to announce the encoding. This way we can easily change the
-	// encoding without loosing backward compatability.
-	_, err := w.Write([]byte{0}) // 0 = gob-encoding
-	if err != nil {
-		return err
-	}
-
-	return gob.NewEncoder(w).Encode(ranks)
-}
-
-func decodeRanks(blob []byte, ranks *[][]float64) error {
-	if len(blob) == 0 {
-		return nil
-	}
-
-	switch encoding := blob[0]; encoding {
-	case 0: // gob-encoding
-		dec := gob.NewDecoder(bytes.NewReader(blob[1:]))
-		err := dec.Decode(ranks)
-		if err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unknown encoding for ranks: %d\n", encoding)
-	}
-
-	return nil
 }
 
 func (s *simpleSection) start(w *writer) {

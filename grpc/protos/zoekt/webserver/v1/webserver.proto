@@ -44,6 +44,8 @@ message StreamSearchResponse {
 }
 
 message SearchOptions {
+  reserved 11, 12;
+
   // Return an upper-bound estimate of eligible documents in
   // stats.ShardFilesConsidered.
   bool estimate_doc_count = 1;
@@ -90,15 +92,6 @@ message SearchOptions {
   // If true, ChunkMatches will be returned in each FileMatch rather than LineMatches
   // EXPERIMENTAL: the behavior of this flag may be changed in future versions.
   bool chunk_matches = 10;
-
-  // EXPERIMENTAL. If true, document ranks are used as additional input for
-  // sorting matches.
-  bool use_document_ranks = 11;
-
-  // EXPERIMENTAL. When UseDocumentRanks is enabled, this can be optionally set to adjust
-  // their weight in the file match score. If the value is <= 0.0, the default weight value
-  // will be used. This option is temporary and is only exposed for testing/ tuning purposes.
-  double document_ranks_weight = 12;
 
   // Trace turns on opentracing for this request if true and if the Jaeger address was provided as
   // a command-line flag
