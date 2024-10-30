@@ -90,14 +90,14 @@ func TestIndexTinyRepo(t *testing.T) {
 	// Create a repo with one file in it.
 	dir := t.TempDir()
 	executeCommand(t, dir, exec.Command("git", "init", "-b", "main", "repo"))
-	executeCommand(t, dir, exec.Command("git", "config", "--global", "user.name", "Thomas"))
-	executeCommand(t, dir, exec.Command("git", "config", "--global", "user.email", "thomas@google.com"))
-
-	if err := os.WriteFile(filepath.Join(dir, "repo", "file1.go"), []byte("package main\n\nfunc main() {}\n"), 0644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
 
 	repoDir := filepath.Join(dir, "repo")
+	executeCommand(t, repoDir, exec.Command("git", "config", "user.name", "Thomas"))
+	executeCommand(t, repoDir, exec.Command("git", "config", "user.email", "thomas@google.com"))
+
+	if err := os.WriteFile(filepath.Join(repoDir, "file1.go"), []byte("package main\n\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	executeCommand(t, repoDir, exec.Command("git", "add", "."))
 	executeCommand(t, repoDir, exec.Command("git", "commit", "-m", "initial commit"))
 
