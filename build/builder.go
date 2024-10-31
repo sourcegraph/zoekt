@@ -99,15 +99,6 @@ type Options struct {
 	// last run.
 	IsDelta bool
 
-	// DocumentRanksPath is the path to the file with document ranks. If empty,
-	// ranks will be computed on-the-fly.
-	DocumentRanksPath string
-
-	// DocumentRanksVersion is a string which when changed will cause us to
-	// reindex a shard. This field is used so that when the contents of
-	// DocumentRanksPath changes, we can reindex.
-	DocumentRanksVersion string
-
 	// changedOrRemovedFiles is a list of file paths that have been changed or removed
 	// since the last indexing job for this repository. These files will be tombstoned
 	// in the older shards for this repository.
@@ -135,20 +126,15 @@ type HashOptions struct {
 	ctagsPath        string
 	cTagsMustSucceed bool
 	largeFiles       []string
-
-	// documentRankVersion is an experimental field which will change when the
-	// DocumentRanksPath content changes. If empty we ignore it.
-	documentRankVersion string
 }
 
 func (o *Options) HashOptions() HashOptions {
 	return HashOptions{
-		sizeMax:             o.SizeMax,
-		disableCTags:        o.DisableCTags,
-		ctagsPath:           o.CTagsPath,
-		cTagsMustSucceed:    o.CTagsMustSucceed,
-		largeFiles:          o.LargeFiles,
-		documentRankVersion: o.DocumentRanksVersion,
+		sizeMax:          o.SizeMax,
+		disableCTags:     o.DisableCTags,
+		ctagsPath:        o.CTagsPath,
+		cTagsMustSucceed: o.CTagsMustSucceed,
+		largeFiles:       o.LargeFiles,
 	}
 }
 
@@ -161,11 +147,6 @@ func (o *Options) GetHash() string {
 	hasher.Write([]byte(fmt.Sprintf("%d", h.sizeMax)))
 	hasher.Write([]byte(fmt.Sprintf("%q", h.largeFiles)))
 	hasher.Write([]byte(fmt.Sprintf("%t", h.disableCTags)))
-
-	if h.documentRankVersion != "" {
-		hasher.Write([]byte{0})
-		io.WriteString(hasher, h.documentRankVersion)
-	}
 
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }

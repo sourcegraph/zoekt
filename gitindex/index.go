@@ -18,7 +18,6 @@ package gitindex
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -520,31 +519,6 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	// Preparing the build can consume substantial memory, so check usage before starting to index.
 	builder.CheckMemoryUsage()
 
-	var ranks repoPathRanks
-	var meanRank float64
-	if opts.BuildOptions.DocumentRanksPath != "" {
-		data, err := os.ReadFile(opts.BuildOptions.DocumentRanksPath)
-		if err != nil {
-			return false, err
-		}
-
-		err = json.Unmarshal(data, &ranks)
-		if err != nil {
-			return false, err
-		}
-
-		// Compute the mean rank for this repository. Note: we overwrite the rank
-		// mean that's stored in the document ranks file, since that currently
-		// represents a global mean rank across repos, which is not what we want.
-		numRanks := len(ranks.Paths)
-		if numRanks > 0 {
-			for _, rank := range ranks.Paths {
-				meanRank += rank
-			}
-			ranks.MeanRank = meanRank / float64(numRanks)
-		}
-	}
-
 	// we don't need to check error, since we either already have an error, or
 	// we returning the first call to builder.Finish.
 	defer builder.Finish() // nolint:errcheck
@@ -572,7 +546,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		keys := fileKeys[name]
 
 		for _, key := range keys {
-			doc, err := createDocument(key, repos, ranks, opts.BuildOptions)
+			doc, err := createDocument(key, repos, opts.BuildOptions)
 			if err != nil {
 				return false, err
 			}
@@ -915,7 +889,6 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 
 func createDocument(key fileKey,
 	repos map[fileKey]BlobLocation,
-	ranks repoPathRanks,
 	opts build.Options,
 ) (zoekt.Document, error) {
 	repo := repos[key]
@@ -941,19 +914,11 @@ func createDocument(key fileKey,
 		return zoekt.Document{}, err
 	}
 
-	var pathRanks []float64
-	if len(ranks.Paths) > 0 {
-		// If the repository has ranking data, then store the file's rank.
-		pathRank := ranks.rank(keyFullPath, contents)
-		pathRanks = []float64{pathRank}
-	}
-
 	return zoekt.Document{
 		SubRepositoryPath: key.SubRepoPath,
 		Name:              keyFullPath,
 		Content:           contents,
 		Branches:          branches,
-		Ranks:             pathRanks,
 	}, nil
 }
 

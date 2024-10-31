@@ -654,92 +654,6 @@ func withoutTiebreaker(fullScore float64, useBM25 bool) float64 {
 	return math.Trunc(fullScore / zoekt.ScoreOffset)
 }
 
-func TestDocumentRanks(t *testing.T) {
-	requireCTags(t)
-	dir := t.TempDir()
-
-	opts := Options{
-		IndexDir: dir,
-		RepositoryDescription: zoekt.Repository{
-			Name: "repo",
-		},
-		DocumentRanksVersion: "ranking",
-	}
-
-	searchQuery := &query.Substring{Content: true, Pattern: "Inner"}
-	exampleJava, err := os.ReadFile("./testdata/example.java")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cases := []struct {
-		name                string
-		documentRank        float64
-		documentRanksWeight float64
-		wantScore           float64
-	}{
-		{
-			name: "score with no document ranks",
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match)
-			wantScore: 7000.00,
-		},
-		{
-			name:         "score with document ranks",
-			documentRank: 0.8,
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 225 (file rank)
-			wantScore: 7225.00,
-		},
-		{
-			name:                "score with custom document ranks weight",
-			documentRank:        0.8,
-			documentRanksWeight: 1000.0,
-			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word match) + 25.00 (file rank)
-			wantScore: 7025.00,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			b, err := NewBuilder(opts)
-			if err != nil {
-				t.Fatalf("NewBuilder: %v", err)
-			}
-
-			err = b.Add(zoekt.Document{Name: "example.java", Content: exampleJava, Ranks: []float64{c.documentRank}})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if err := b.Finish(); err != nil {
-				t.Fatalf("Finish: %v", err)
-			}
-
-			ss, err := shards.NewDirectorySearcher(dir)
-			if err != nil {
-				t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
-			}
-			defer ss.Close()
-
-			srs, err := ss.Search(context.Background(), searchQuery, &zoekt.SearchOptions{
-				UseDocumentRanks:    true,
-				DocumentRanksWeight: c.documentRanksWeight,
-				DebugScore:          true,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if got, want := len(srs.Files), 1; got != want {
-				t.Fatalf("file matches: want %d, got %d", want, got)
-			}
-
-			if got := withoutTiebreaker(srs.Files[0].Score, false); got != c.wantScore {
-				t.Fatalf("score: want %f, got %f\ndebug: %s\ndebugscore: %s", c.wantScore, got, srs.Files[0].Debug, srs.Files[0].LineMatches[0].DebugScore)
-			}
-		})
-	}
-}
-
 func TestRepoRanks(t *testing.T) {
 	requireCTags(t)
 	dir := t.TempDir()
@@ -749,7 +663,6 @@ func TestRepoRanks(t *testing.T) {
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo",
 		},
-		DocumentRanksVersion: "ranking",
 	}
 
 	searchQuery := &query.Substring{Content: true, Pattern: "Inner"}
@@ -810,8 +723,7 @@ func TestRepoRanks(t *testing.T) {
 			defer ss.Close()
 
 			srs, err := ss.Search(context.Background(), searchQuery, &zoekt.SearchOptions{
-				UseDocumentRanks: true,
-				DebugScore:       true,
+				DebugScore: true,
 			})
 			if err != nil {
 				t.Fatal(err)
