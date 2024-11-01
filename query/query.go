@@ -651,6 +651,17 @@ func evalConstants(q Q) Q {
 		if s.Pattern == "" {
 			return &Const{true}
 		}
+	case *BranchesRepos:
+		for _, br := range s.List {
+			if !br.Repos.IsEmpty() {
+				return q
+			}
+		}
+		return &Const{false}
+	case *RepoIDs:
+		if s.Repos.IsEmpty() {
+			return &Const{false}
+		}
 	case *RepoSet:
 		if len(s.Set) == 0 {
 			return &Const{false}
