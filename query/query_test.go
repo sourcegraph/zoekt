@@ -76,6 +76,20 @@ func TestSimplify(t *testing.T) {
 				&Substring{Pattern: "byte"},
 				&Not{&Substring{Pattern: "byte"}}),
 		},
+		{
+			in: NewAnd(
+				NewSingleBranchesRepos("HEAD"), // Empty list matches nothing
+				&Not{&Type{Type: TypeRepo, Child: &Substring{Pattern: "hi"}}}),
+			want: &Const{false},
+		},
+		{
+			in: NewAnd(
+				NewSingleBranchesRepos("HEAD", 1),
+				&Not{&Type{Type: TypeRepo, Child: &Substring{Pattern: "hi"}}}),
+			want: NewAnd(
+				NewSingleBranchesRepos("HEAD", 1),
+				&Not{&Type{Type: TypeRepo, Child: &Substring{Pattern: "hi"}}}),
+		},
 	}
 
 	for _, c := range cases {
