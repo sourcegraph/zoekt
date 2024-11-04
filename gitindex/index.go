@@ -408,21 +408,20 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	opts.BuildOptions.RepositoryDescription.Source = opts.RepoDir
 
 	var repo *git.Repository
-
 	// TODO: remove this feature flag once we test this on a large-scale instance.
-	optimizeRepoOpen := os.Getenv("ZOEKT_ENABLE_GOGIT_OPTIMIZATION")
-	if b, err := strconv.ParseBool(optimizeRepoOpen); b && err == nil {
+	legacyRepoOpen := os.Getenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION")
+	if b, err := strconv.ParseBool(legacyRepoOpen); b && err == nil {
+		repo, err = git.PlainOpen(opts.RepoDir)
+		if err != nil {
+			return false, fmt.Errorf("git.PlainOpen: %w", err)
+		}
+	} else {
 		var repoCloser io.Closer
 		repo, repoCloser, err = openRepo(opts.RepoDir)
 		if err != nil {
 			return false, fmt.Errorf("openRepo: %w", err)
 		}
 		defer repoCloser.Close()
-	} else {
-		repo, err = git.PlainOpen(opts.RepoDir)
-		if err != nil {
-			return false, fmt.Errorf("git.PlainOpen: %w", err)
-		}
 	}
 
 	if err := setTemplatesFromConfig(&opts.BuildOptions.RepositoryDescription, opts.RepoDir); err != nil {
