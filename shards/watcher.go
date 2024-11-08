@@ -26,7 +26,9 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 type shardLoader interface {
@@ -119,7 +121,11 @@ func versionFromPath(path string) (string, int) {
 func (s *DirectoryWatcher) scan() error {
 	// NOTE: if you change which file extensions are read, please update the
 	// watch implementation.
-	fs, err := filepath.Glob(filepath.Join(s.dir, "*.zoekt"))
+	pattern := "*.zoekt"
+	if tenant.EnforceTenant() {
+		pattern = filepath.Join(tenant.TenantsDir, "*/*.zoekt")
+	}
+	fs, err := filepath.Glob(filepath.Join(s.dir, pattern))
 	if err != nil {
 		return err
 	}
@@ -204,13 +210,45 @@ func humanTruncateList(paths []string, max int) string {
 	return b.String()
 }
 
+func addOrRemove(have, want []string) (toAdd []string, toRemove []string) {
+	mapHave := make(map[string]struct{})
+	mapWant := make(map[string]struct{})
+
+	for _, item := range have {
+		mapHave[item] = struct{}{}
+	}
+
+	for _, item := range want {
+		mapWant[item] = struct{}{}
+	}
+
+	// Find items that are only in have
+	for _, item := range have {
+		if _, ok := mapWant[item]; !ok {
+			toRemove = append(toRemove, item)
+		}
+	}
+
+	// Find items that are only in want
+	for _, item := range want {
+		if _, ok := mapHave[item]; !ok {
+			toAdd = append(toAdd, item)
+		}
+	}
+
+	return toAdd, toRemove
+}
+
 func (s *DirectoryWatcher) watch() error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
 	}
-	if err := watcher.Add(s.dir); err != nil {
-		return err
+
+	for _, d := range tenant.ListIndexDirs(s.dir) {
+		if err := watcher.Add(d); err != nil {
+			return err
+		}
 	}
 
 	// intermediate signal channel so if there are multiple watcher.Events we
@@ -237,8 +275,20 @@ func (s *DirectoryWatcher) watch() error {
 				}
 
 			case <-ticker.C:
-				// Periodically just double check the disk
+				// Periodically just double-check the disk
 				notify()
+
+				toAdd, toRemove := addOrRemove(watcher.WatchList(), tenant.ListIndexDirs(s.dir))
+				for _, a := range toAdd {
+					if err := watcher.Add(a); err != nil {
+						log.Printf("watcher.Add(%s): %s", a, err)
+					}
+				}
+				for _, d := range toRemove {
+					if err := watcher.Remove(d); err != nil {
+						log.Printf("watcher.Remove(%s): %s", d, err)
+					}
+				}
 
 			case err := <-watcher.Errors:
 				// Ignore ErrEventOverflow since we rely on the presence of events so

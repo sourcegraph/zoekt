@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/sourcegraph/zoekt"
 )
 
@@ -235,4 +237,68 @@ func TestHumanTruncateList(t *testing.T) {
 	assert(3, "1, 2, 3... 1 more")
 	assert(4, "1, 2, 3, 4")
 	assert(5, "1, 2, 3, 4")
+}
+
+func TestAddOrRemove(t *testing.T) {
+	tests := []struct {
+		name             string
+		have, want       []string
+		expectedToAdd    []string
+		expectedToRemove []string
+	}{
+		{
+			name:             "No changes",
+			have:             []string{"a", "b", "c"},
+			want:             []string{"a", "b", "c"},
+			expectedToAdd:    nil,
+			expectedToRemove: nil,
+		},
+		{
+			name:             "Add items",
+			have:             []string{"a"},
+			want:             []string{"a", "b", "c"},
+			expectedToAdd:    []string{"b", "c"},
+			expectedToRemove: nil,
+		},
+		{
+			name:             "Remove items",
+			have:             []string{"a", "b", "c"},
+			want:             []string{"a"},
+			expectedToAdd:    nil,
+			expectedToRemove: []string{"b", "c"},
+		},
+		{
+			name:             "Add and remove items",
+			have:             []string{"a", "b"},
+			want:             []string{"b", "c"},
+			expectedToAdd:    []string{"c"},
+			expectedToRemove: []string{"a"},
+		},
+		{
+			name:             "Empty have, add all want items",
+			have:             nil,
+			want:             []string{"a", "b", "c"},
+			expectedToAdd:    []string{"a", "b", "c"},
+			expectedToRemove: nil,
+		},
+		{
+			name:             "Empty want, remove all have items",
+			have:             []string{"a", "b", "c"},
+			want:             nil,
+			expectedToAdd:    nil,
+			expectedToRemove: []string{"a", "b", "c"},
+		},
+		{
+			name: "Empty want, empty have",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			toAdd, toRemove := addOrRemove(tt.have, tt.want)
+
+			require.Equal(t, tt.expectedToAdd, toAdd)
+			require.Equal(t, tt.expectedToRemove, toRemove)
+		})
+	}
 }
