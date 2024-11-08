@@ -45,7 +45,7 @@ func TestServer_defaultArgs(t *testing.T) {
 		Incremental: true,
 		FileLimit:   1 << 20,
 	}
-	got := s.indexArgs(IndexOptions{Name: "testName"})
+	_, got := s.indexArgs(IndexOptions{Name: "testName"})
 	if !cmp.Equal(got, want) {
 		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}
@@ -120,7 +120,7 @@ func TestServer_parallelism(t *testing.T) {
 			IndexConcurrency: 1,
 		}
 
-		got := s.indexArgs(IndexOptions{
+		_, got := s.indexArgs(IndexOptions{
 			ShardConcurrency: 2048, // Some number that's way too high
 		})
 
@@ -164,7 +164,7 @@ func TestListRepoIDs(t *testing.T) {
 			t.Errorf("hostname mismatch (-want +got):\n%s", diff)
 		}
 
-		return &proto.ListResponse{RepoIds: []int32{1, 2, 3}}, nil
+		return &proto.ListResponse{TenantIdReposMap: map[int64]*proto.RepoIdList{1: {Ids: []uint32{1, 2, 3}}}}, nil
 	}
 
 	ctx := context.Background()

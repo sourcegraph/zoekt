@@ -114,6 +114,9 @@ message ZoektIndexOptions {
 
   // the number of threads to use for indexing shards.
   int32 shard_concurrency = 13;
+
+  // tenant_id is the Sourcegraph tenant ID.
+  int64 tenant_id = 14;
 }
 
 // ZoektRepositoryBranch describes an indexed branch of a repository.
@@ -136,8 +139,15 @@ message ListRequest {
 
 // ListResponse is the response from the List RPC.
 message ListResponse {
-  // repo_ids is the list of repository IDs that the client should index.
-  repeated int32 repo_ids = 1;
+  reserved 1;
+
+  // tenant_id_repos_map is a map of tenant IDs to the list of repository IDs that client should index.
+  map<int64, RepoIdList> tenant_id_repos_map = 2;
+}
+
+// RepoIdList represents a list of repository IDs.
+message RepoIdList {
+  repeated uint32 ids = 1;
 }
 
 // UpdateIndexStatusRequest is the request to the UpdateIndexStatus RPC.

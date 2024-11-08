@@ -20,6 +20,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 
 	sglog "github.com/sourcegraph/log"
 )
@@ -67,6 +68,9 @@ type IndexOptions struct {
 	// The number of threads to use for indexing shards. Defaults to the number of available
 	// CPUs. If the server flag -cpu_fraction is set, then this value overrides it.
 	ShardConcurrency int32
+
+	// The Sourcegraph tenant
+	TenantId int
 }
 
 // indexArgs represents the arguments we pass to zoekt-git-index
@@ -169,7 +173,7 @@ type gitIndexConfig struct {
 	timeout time.Duration
 }
 
-func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
+func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
 	logger := l.Scoped("gitIndex")
 
 	if len(o.Branches) == 0 {
@@ -184,7 +188,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		return errors.New("findRepositoryMetadata in provided configuration was nil - a function must be provided")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	gitDir, err := tmpGitDir(o.Name)
@@ -245,6 +249,7 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 			"-C", gitDir,
 			"-c", "protocol.version=2",
 			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
+			"-c", "http.extraHeader=" + tenant.HttpExtraHeader(ctx),
 			"fetch", "--depth=1", "--no-tags",
 		}
 

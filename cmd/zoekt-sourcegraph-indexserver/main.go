@@ -52,7 +52,9 @@ import (
 	"github.com/sourcegraph/zoekt/debugserver"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
+	"github.com/sourcegraph/zoekt/grpc/propagator"
 	"github.com/sourcegraph/zoekt/internal/profiler"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 var (
@@ -355,9 +357,11 @@ func (s *Server) Run() {
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
-				s.muIndexDir.Global(func() {
-					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
-				})
+				for _, indexDir := range tenant.ListIndexDirs(s.IndexDir) {
+					s.muIndexDir.Global(func() {
+						cleanup(indexDir, repos.IDs, time.Now(), s.shardMerging)
+					})
+				}
 			}()
 
 			repos.IterateIndexOptions(s.queue.AddOrUpdate)
@@ -433,14 +437,14 @@ func (s *Server) processQueue() {
 		}
 
 		opts := item.Opts
-		args := s.indexArgs(opts)
+		ctx, args := s.indexArgs(opts)
 
 		ran := s.muIndexDir.With(opts.Name, func() {
 			// only record time taken once we hold the lock. This avoids us
 			// recording time taken while merging/cleanup runs.
 			start := time.Now()
 
-			state, err := s.Index(args)
+			state, err := s.Index(ctx, args)
 
 			elapsed := time.Since(start)
 			metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
@@ -541,7 +545,7 @@ func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 }
 
 // Index starts an index job for repo name at commit.
-func (s *Server) Index(args *indexArgs) (state indexState, err error) {
+func (s *Server) Index(ctx context.Context, args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
 	tr.SetMaxEvents(30) // Ensure we capture all indexing events
 
@@ -617,12 +621,12 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		timeout: s.timeout,
 	}
 
-	err = gitIndex(c, args, s.Sourcegraph, s.logger)
+	err = gitIndex(ctx, c, args, s.Sourcegraph, s.logger)
 	if err != nil {
 		return indexStateFail, err
 	}
 
-	if err := updateIndexStatusOnSourcegraph(c, args, s.Sourcegraph); err != nil {
+	if err := updateIndexStatusOnSourcegraph(ctx, c, args, s.Sourcegraph); err != nil {
 		s.logger.Error("failed to update index status",
 			sglog.String("repo", args.Name),
 			sglog.Uint32("id", args.RepoID),
@@ -636,7 +640,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 
 // updateIndexStatusOnSourcegraph pushes the current state to sourcegraph so
 // it can update the zoekt_repos table.
-func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Sourcegraph) error {
+func updateIndexStatusOnSourcegraph(ctx context.Context, c gitIndexConfig, args *indexArgs, sg Sourcegraph) error {
 	// We need to read from disk for IndexTime.
 	_, metadata, ok, err := c.findRepositoryMetadata(args)
 	if err != nil {
@@ -651,7 +655,8 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 		Branches:      args.Branches,
 		IndexTimeUnix: metadata.IndexTime.Unix(),
 	}}
-	if err := sg.UpdateIndexStatus(status); err != nil {
+
+	if err := sg.UpdateIndexStatus(ctx, status); err != nil {
 		return fmt.Errorf("failed to update sourcegraph with status: %w", err)
 	}
 
@@ -666,11 +671,14 @@ func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
 	return sglog.Strings(key, ss)
 }
 
-func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
+func (s *Server) indexArgs(opts IndexOptions) (context.Context, *indexArgs) {
 	parallelism := s.parallelism(opts, runtime.GOMAXPROCS(0))
-	return &indexArgs{
+
+	ctx, indexDir := tenant.ContextIndexDir(opts.TenantId, s.IndexDir)
+
+	return ctx, &indexArgs{
 		IndexOptions: opts,
-		IndexDir:     s.IndexDir,
+		IndexDir:     indexDir,
 		Parallelism:  parallelism,
 		Incremental:  true,
 		FileLimit:    MaxFileSize,
@@ -999,12 +1007,12 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 		return fmt.Sprintf("Indexing %d failed: %v", id, err), err
 	}
 
-	args := s.indexArgs(opts)
+	ctx, args := s.indexArgs(opts)
 	args.Incremental = false // force re-index
 
 	var state indexState
 	ran := s.muIndexDir.With(opts.Name, func() {
-		state, err = s.Index(args)
+		state, err = s.Index(ctx, args)
 	})
 	if !ran {
 		return fmt.Sprintf("index job for repository already running: %s", args), nil
@@ -1016,12 +1024,17 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 }
 
 func listIndexed(indexDir string) []uint32 {
-	index := getShards(indexDir)
-	metricNumIndexed.Set(float64(len(index)))
-	repoIDs := make([]uint32, 0, len(index))
-	for id := range index {
-		repoIDs = append(repoIDs, id)
+	var repoIDs []uint32
+	numIndexed := 0
+	for _, dir := range tenant.ListIndexDirs(indexDir) {
+		index := getShards(dir)
+		numIndexed += len(index)
+		for id := range index {
+			repoIDs = append(repoIDs, id)
+		}
 	}
+	metricNumIndexed.Set(float64(numIndexed))
+
 	sort.Slice(repoIDs, func(i, j int) bool {
 		return repoIDs[i] < repoIDs[j]
 	})
@@ -1197,7 +1210,12 @@ func joinStringSet(set map[string]struct{}, sep string) string {
 }
 
 func setCompoundShardCounter(indexDir string) {
-	fns, err := filepath.Glob(filepath.Join(indexDir, "compound-*.zoekt"))
+	pattern := "compound-*shards"
+	if tenant.EnforceTenant() {
+		pattern = filepath.Join(tenant.TenantsDir, "*", pattern)
+	}
+
+	fns, err := filepath.Glob(filepath.Join(indexDir, pattern))
 	if err != nil {
 		log.Printf("setCompoundShardCounter: %s\n", err)
 		return
@@ -1279,7 +1297,6 @@ func startServer(conf rootConfig) error {
 	setCompoundShardCounter(s.IndexDir)
 
 	if conf.listen != "" {
-
 		mux := http.NewServeMux()
 		debugserver.AddHandlers(mux, true, []debugserver.DebugPage{
 			{Href: "debug/indexed", Text: "Indexed", Description: "list of all indexed repositories"},
@@ -1526,6 +1543,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainStreamInterceptor(
+			propagator.StreamClientPropagator(tenant.Propagator{}),
 			metrics.StreamClientInterceptor(),
 			messagesize.StreamClientInterceptor,
 			internalActorStreamInterceptor(),
@@ -1534,6 +1552,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 			retry.StreamClientInterceptor(retryOpts...),
 		),
 		grpc.WithChainUnaryInterceptor(
+			propagator.UnaryClientPropagator(tenant.Propagator{}),
 			metrics.UnaryClientInterceptor(),
 			messagesize.UnaryClientInterceptor,
 			internalActorUnaryInterceptor(),
