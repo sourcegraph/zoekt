@@ -204,7 +204,8 @@ func compoundReposShard(t *testing.T, names ...string) *indexData {
 
 	b := testIndexBuilderCompound(t, repos, docs)
 	s := searcherForTest(t, b)
-	return s.(*indexData)
+
+	return s.(*tenantAwareSearcher).d
 }
 
 func TestSimplifyRepoSet(t *testing.T) {
@@ -388,7 +389,7 @@ func TestGatherBranches(t *testing.T) {
 		Document{Name: "f2", Content: content, Branches: []string{"foo", "foo-2"}},
 		Document{Name: "f3", Content: content, Branches: []string{"main"}})
 
-	d := searcherForTest(t, b).(*indexData)
+	d := searcherForTest(t, b).(*tenantAwareSearcher).d
 
 	sr, err := d.Search(
 		context.Background(),

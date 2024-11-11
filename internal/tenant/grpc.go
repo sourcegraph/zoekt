@@ -2,10 +2,14 @@ package tenant
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
+	"github.com/sourcegraph/zoekt/grpc/propagator"
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
 )
 
@@ -22,6 +26,8 @@ const (
 // the HTTP middleware in this package, and should work exactly the same.
 type Propagator struct{}
 
+var _ propagator.Propagator = &Propagator{}
+
 func (Propagator) FromContext(ctx context.Context) metadata.MD {
 	md := make(metadata.MD)
 	tenant, err := tenanttype.FromContext(ctx)
@@ -33,21 +39,21 @@ func (Propagator) FromContext(ctx context.Context) metadata.MD {
 	return md
 }
 
-func (Propagator) InjectContext(ctx context.Context, md metadata.MD) context.Context {
-	var idStr string
+func (Propagator) InjectContext(ctx context.Context, md metadata.MD) (context.Context, error) {
+	var raw string
 	if vals := md.Get(headerKeyTenantID); len(vals) > 0 {
-		idStr = vals[0]
+		raw = vals[0]
 	}
-	switch idStr {
-	case headerValueNoTenant:
+	switch raw {
+	case "", headerValueNoTenant:
 		// Nothing to do, empty tenant.
-		return ctx
+		return ctx, nil
 	default:
-		id, err := strconv.Atoi(idStr)
+		tenant, err := tenanttype.Unmarshal(raw)
 		if err != nil {
-			// If the tenant is invalid, ignore the error and return the original context
-			return ctx
+			// The tenant value is invalid.
+			return ctx, status.New(codes.InvalidArgument, fmt.Errorf("bad tenant value in metadata: %w", err).Error()).Err()
 		}
-		return tenanttype.WithTenant(ctx, id)
+		return tenanttype.WithTenant(ctx, tenant), nil
 	}
 }

@@ -59,7 +59,7 @@ func TestIterateIndexOptions_Fingerprint(t *testing.T) {
 
 	grpcClient := &mockGRPCClient{
 		mockList: func(_ context.Context, in *proto.ListRequest, opts ...grpc.CallOption) (*proto.ListResponse, error) {
-			return &proto.ListResponse{TenantIdReposMap: map[int64]*proto.RepoIdList{1: {Ids: []uint32{1, 2, 3}}}}, nil
+			return &proto.ListResponse{TenantIdReposMap: map[int64]*proto.RepoIdList{1: {Ids: []int32{1, 2, 3}}}}, nil
 		},
 	}
 

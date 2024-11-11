@@ -27,8 +27,8 @@ func TestNewTenantRepoIdIterator_EnforceTenantTrue(t *testing.T) {
 
 	response := &proto.ListResponse{
 		TenantIdReposMap: map[int64]*proto.RepoIdList{
-			1: {Ids: []uint32{101, 102, 103}},
-			2: {Ids: []uint32{201, 202}},
+			1: {Ids: []int32{101, 102, 103}},
+			2: {Ids: []int32{201, 202}},
 		},
 	}
 
@@ -39,11 +39,12 @@ func TestNewTenantRepoIdIterator_EnforceTenantTrue(t *testing.T) {
 	expectedIds := [][]uint32{{101, 102, 103}, {201, 202}}
 
 	idx := 0
-	iterator(func(yieldCtx context.Context, ids []uint32) bool {
-		tenant, err := tenanttype.FromContext(yieldCtx)
+	iterator(func(ds *ContextRepoIDs, err error) bool {
+		require.NoError(t, err)
+		tenant, err := tenanttype.FromContext(ds.Ctx)
 		require.NoError(t, err)
 		require.Equal(t, expectedTenants[idx], tenant.ID())
-		require.Equal(t, expectedIds[idx], ids)
+		require.Equal(t, expectedIds[idx], ds.RepoIDs)
 
 		idx++
 		return true

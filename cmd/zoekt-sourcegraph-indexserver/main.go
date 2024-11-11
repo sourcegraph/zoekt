@@ -437,7 +437,11 @@ func (s *Server) processQueue() {
 		}
 
 		opts := item.Opts
-		ctx, args := s.indexArgs(opts)
+		ctx, args, err := s.indexArgs(opts)
+		if err != nil {
+			log.Printf("error getting index args: %s", err)
+			continue
+		}
 
 		ran := s.muIndexDir.With(opts.Name, func() {
 			// only record time taken once we hold the lock. This avoids us
@@ -671,10 +675,13 @@ func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
 	return sglog.Strings(key, ss)
 }
 
-func (s *Server) indexArgs(opts IndexOptions) (context.Context, *indexArgs) {
+func (s *Server) indexArgs(opts IndexOptions) (context.Context, *indexArgs, error) {
 	parallelism := s.parallelism(opts, runtime.GOMAXPROCS(0))
 
-	ctx, indexDir := tenant.ContextIndexDir(opts.TenantID, s.IndexDir)
+	ctx, indexDir, err := tenant.ContextIndexDir(opts.TenantID, s.IndexDir)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return ctx, &indexArgs{
 		IndexOptions: opts,
@@ -683,7 +690,7 @@ func (s *Server) indexArgs(opts IndexOptions) (context.Context, *indexArgs) {
 		Incremental:  true,
 		FileLimit:    MaxFileSize,
 		ShardMerging: s.shardMerging,
-	}
+	}, nil
 }
 
 // parallelism consults both the server flags and index options to determine the number
@@ -1007,7 +1014,10 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 		return fmt.Sprintf("Indexing %d failed: %v", id, err), err
 	}
 
-	ctx, args := s.indexArgs(opts)
+	ctx, args, err := s.indexArgs(opts)
+	if err != nil {
+		return fmt.Sprintf("Indexing %d failed: %v", id, err), err
+	}
 	args.Incremental = false // force re-index
 
 	var state indexState

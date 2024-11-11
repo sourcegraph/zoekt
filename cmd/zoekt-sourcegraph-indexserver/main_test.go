@@ -45,7 +45,7 @@ func TestServer_defaultArgs(t *testing.T) {
 		Incremental: true,
 		FileLimit:   1 << 20,
 	}
-	_, got := s.indexArgs(IndexOptions{Name: "testName"})
+	_, got, _ := s.indexArgs(IndexOptions{Name: "testName"})
 	if !cmp.Equal(got, want) {
 		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}
@@ -120,7 +120,7 @@ func TestServer_parallelism(t *testing.T) {
 			IndexConcurrency: 1,
 		}
 
-		_, got := s.indexArgs(IndexOptions{
+		_, got, _ := s.indexArgs(IndexOptions{
 			ShardConcurrency: 2048, // Some number that's way too high
 		})
 
@@ -164,7 +164,70 @@ func TestListRepoIDs(t *testing.T) {
 			t.Errorf("hostname mismatch (-want +got):\n%s", diff)
 		}
 
-		return &proto.ListResponse{TenantIdReposMap: map[int64]*proto.RepoIdList{1: {Ids: []uint32{1, 2, 3}}}}, nil
+		return &proto.ListResponse{TenantIdReposMap: map[int64]*proto.RepoIdList{1: {Ids: []int32{1, 2, 3}}}}, nil
+	}
+
+	ctx := context.Background()
+	got, err := s.List(ctx, []uint32{1, 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !listCalled {
+		t.Fatalf("List was not called")
+	}
+
+	receivedRepoIDs := got.IDs
+	sort.Slice(receivedRepoIDs, func(i, j int) bool {
+		return receivedRepoIDs[i] < receivedRepoIDs[j]
+	})
+
+	expectedRepoIDs := []uint32{1, 2, 3}
+	sort.Slice(expectedRepoIDs, func(i, j int) bool {
+		return expectedRepoIDs[i] < expectedRepoIDs[j]
+	})
+
+	if diff := cmp.Diff(expectedRepoIDs, receivedRepoIDs); diff != "" {
+		t.Errorf("mismatch in list of all repoIDs (-want +got):\n%s", diff)
+	}
+}
+
+// Test backwards compatibility with old Sourcegraph instances that return a list of repoIDs
+func TestListRepoIDs_old(t *testing.T) {
+	grpcClient := &mockGRPCClient{}
+
+	clientOptions := []SourcegraphClientOption{
+		WithBatchSize(0),
+	}
+
+	testURL := url.URL{Scheme: "http", Host: "does.not.matter"}
+	testHostname := "test-hostname"
+	s := newSourcegraphClient(&testURL, testHostname, grpcClient, clientOptions...)
+
+	listCalled := false
+	grpcClient.mockList = func(ctx context.Context, in *proto.ListRequest, opts ...grpc.CallOption) (*proto.ListResponse, error) {
+		listCalled = true
+
+		gotRepoIDs := in.GetIndexedIds()
+		sort.Slice(gotRepoIDs, func(i, j int) bool {
+			return gotRepoIDs[i] < gotRepoIDs[j]
+		})
+
+		wantRepoIDs := []int32{1, 3}
+		sort.Slice(wantRepoIDs, func(i, j int) bool {
+			return wantRepoIDs[i] < wantRepoIDs[j]
+		})
+
+		if diff := cmp.Diff(wantRepoIDs, gotRepoIDs); diff != "" {
+			t.Errorf("indexed repoIDs mismatch (-want +got):\n%s", diff)
+		}
+
+		hostname := in.GetHostname()
+		if diff := cmp.Diff(testHostname, hostname); diff != "" {
+			t.Errorf("hostname mismatch (-want +got):\n%s", diff)
+		}
+
+		return &proto.ListResponse{RepoIds: []int32{1, 2, 3}}, nil
 	}
 
 	ctx := context.Background()

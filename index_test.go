@@ -3557,7 +3557,7 @@ func TestStats(t *testing.T) {
 
 	repoListEntries := func(b *IndexBuilder) []RepoListEntry {
 		searcher := searcherForTest(t, b)
-		indexdata := searcher.(*indexData)
+		indexdata := searcher.(*tenantAwareSearcher).d
 		return indexdata.repoListEntry
 	}
 

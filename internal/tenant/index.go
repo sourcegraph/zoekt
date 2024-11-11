@@ -13,12 +13,24 @@ import (
 )
 
 // ContextIndexDir returns a context and index dir for the given tenant ID.
-func ContextIndexDir(tenantID int, repoDir string) (context.Context, string) {
+//
+// 🚨 SECURITY: Do not use this function anywhere else than in
+// sourcegraph-indexserver to derive a context and index directory from
+// IndexOptions.
+func ContextIndexDir(tenantID int, repoDir string) (context.Context, string, error) {
 	if !EnforceTenant() {
 		// Default to tenant 1 if enforcement is disabled.
-		return tenanttype.WithTenant(context.Background(), 1), repoDir
+		tnt, err := tenanttype.FromID(1)
+		if err != nil {
+			return nil, "", err
+		}
+		return tenanttype.WithTenant(context.Background(), tnt), repoDir, nil
 	}
-	return tenanttype.WithTenant(context.Background(), tenantID), filepath.Join(repoDir, TenantsDir, strconv.Itoa(tenantID))
+	tnt, err := tenanttype.FromID(tenantID)
+	if err != nil {
+		return nil, "", err
+	}
+	return tenanttype.WithTenant(context.Background(), tnt), filepath.Join(repoDir, TenantsDir, strconv.Itoa(tenantID)), nil
 }
 
 // HttpExtraHeader returns header we send to gitserver given a tenant context.
@@ -56,22 +68,39 @@ func ListIndexDirs(indexDir string) []string {
 	return dirs
 }
 
-func NewTenantRepoIdIterator(ctx context.Context, response *proto.ListResponse) iter.Seq2[context.Context, []uint32] {
-	if !EnforceTenant() {
-		// yield the original context and all repo ids of the first tenant. The
-		// assumption is that Sourcegraph sends all repos assigned to tenant 1 if tenant
-		// enforcement is disabled.
-		return func(yield func(ctx context.Context, ids []uint32) bool) {
-			for _, v := range response.TenantIdReposMap {
-				yield(ctx, v.Ids)
+type ContextRepoIDs struct {
+	Ctx     context.Context
+	RepoIDs []uint32
+}
+
+func toUint32(s []int32) []uint32 {
+	u := make([]uint32, len(s))
+	for i, v := range s {
+		u[i] = uint32(v)
+	}
+	return u
+}
+
+func NewTenantRepoIdIterator(ctx context.Context, response *proto.ListResponse) iter.Seq2[*ContextRepoIDs, error] {
+	// Guarantee backwards compatibility with Sourcegraph. During rollout, old
+	// instances of Sourcegraph may still respond with RepoIds, in which case we
+	// assume they belong to tenant 1.
+	if len(response.RepoIds) != 0 {
+		return func(yield func(*ContextRepoIDs, error) bool) {
+			if !yield(&ContextRepoIDs{ctx, toUint32(response.RepoIds)}, nil) {
 				return
 			}
 		}
 	}
 
-	return func(yield func(ctx context.Context, ids []uint32) bool) {
+	return func(yield func(*ContextRepoIDs, error) bool) {
 		for tenantID, v := range response.TenantIdReposMap {
-			if !yield(tenanttype.WithTenant(ctx, int(tenantID)), v.Ids) {
+			tnt, err := tenanttype.FromID(int(tenantID))
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			if !yield(&ContextRepoIDs{tenanttype.WithTenant(ctx, tnt), toUint32(v.Ids)}, nil) {
 				return
 			}
 		}

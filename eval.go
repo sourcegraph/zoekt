@@ -26,7 +26,6 @@ import (
 	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/grafana/regexp"
 
-	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -135,17 +134,13 @@ func (o *SearchOptions) SetDefaults() {
 }
 
 func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) (sr *SearchResult, err error) {
-	var res SearchResult
-	if !tenant.IsTenantPath(ctx, d.file.Name()) {
-		return &res, nil
-	}
-
 	timer := newTimer()
 
 	copyOpts := *opts
 	opts = &copyOpts
 	opts.SetDefaults()
 
+	var res SearchResult
 	if len(d.fileNameIndex) == 0 {
 		return &res, nil
 	}

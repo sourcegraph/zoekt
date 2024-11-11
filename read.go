@@ -573,7 +573,7 @@ func NewSearcher(r IndexFile) (Searcher, error) {
 		return nil, err
 	}
 	indexData.file = r
-	return indexData, nil
+	return &tenantAwareSearcher{d: indexData}, nil
 }
 
 // ReadMetadata returns the metadata of index shard without reading

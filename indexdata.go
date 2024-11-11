@@ -287,7 +287,11 @@ func (d *indexData) calculateNewLinesStats(start, end uint32) (count, defaultCou
 }
 
 func (d *indexData) String() string {
-	return fmt.Sprintf("shard(%s)", d.file.Name())
+	return fmt.Sprintf("shard(%s)", d.IndexFilePath())
+}
+
+func (d *indexData) IndexFilePath() string {
+	return d.file.Name()
 }
 
 // calculates an approximate size of indexData in memory in bytes.

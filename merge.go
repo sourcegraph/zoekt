@@ -22,7 +22,7 @@ func Merge(dstDir string, files ...IndexFile) (tmpName, dstName string, _ error)
 		if err != nil {
 			return "", "", err
 		}
-		ds = append(ds, searcher.(*indexData))
+		ds = append(ds, searcher.(*tenantAwareSearcher).d)
 	}
 
 	ib, err := merge(ds...)
@@ -149,7 +149,7 @@ func explode(dstDir string, f IndexFile, ibFuncs ...indexBuilderFunc) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	d := searcher.(*indexData)
+	d := searcher.(*tenantAwareSearcher).d
 
 	shardNames := make(map[string]string, len(d.repoMetaData))
 

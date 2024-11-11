@@ -246,10 +246,11 @@ func TestReadSearch(t *testing.T) {
 			t.Fatalf("error loading shard %s %v", name, err)
 		}
 
-		index, ok := shard.(*indexData)
+		s, ok := shard.(*tenantAwareSearcher)
 		if !ok {
-			t.Fatalf("expected *indexData for %s", name)
+			t.Fatalf("expected *tenantAwareSearcher for %s", name)
 		}
+		index := s.d
 
 		golden := "testdata/golden/TestReadSearch/" + name + ".golden"
 

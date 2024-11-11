@@ -3,6 +3,7 @@ package tenanttype
 import (
 	"context"
 	"fmt"
+	"strconv"
 )
 
 type Tenant struct {
@@ -19,8 +20,8 @@ type contextKey int
 const tenantKey contextKey = iota
 
 // WithTenant returns a new context for the given tenant.
-func WithTenant(ctx context.Context, tntID int) context.Context {
-	return context.WithValue(ctx, tenantKey, &Tenant{_id: tntID})
+func WithTenant(ctx context.Context, tenant *Tenant) context.Context {
+	return context.WithValue(ctx, tenantKey, tenant)
 }
 
 var ErrNoTenantInContext = fmt.Errorf("no tenant in context")
@@ -31,4 +32,23 @@ func FromContext(ctx context.Context) (*Tenant, error) {
 		return nil, ErrNoTenantInContext
 	}
 	return tnt, nil
+}
+
+func Unmarshal(s string) (*Tenant, error) {
+	id, err := strconv.Atoi(s)
+	if err != nil {
+		return nil, fmt.Errorf("bad tenant value: %q: %w", s, err)
+	}
+	return FromID(id)
+}
+
+func Marshal(t *Tenant) string {
+	return strconv.Itoa(t._id)
+}
+
+func FromID(id int) (*Tenant, error) {
+	if id < 1 {
+		return nil, fmt.Errorf("invalid tenant id: %d", id)
+	}
+	return &Tenant{_id: id}, nil
 }

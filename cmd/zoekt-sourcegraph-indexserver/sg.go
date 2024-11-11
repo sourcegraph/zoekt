@@ -132,7 +132,7 @@ type sourcegraphClient struct {
 }
 
 func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
-	reposIter, repos, err := s.listRepoIDs(ctx, indexed)
+	tenantIter, repos, err := s.listRepoIDs(ctx, indexed)
 	if err != nil {
 		return nil, fmt.Errorf("listRepoIDs: %w", err)
 	}
@@ -203,11 +203,17 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 
 		// This does not scale well for large numbers of tenants with small numbers of
 		// repos. We will send a lot more requests to Sourcegraph than before.
-		for ctx, repos := range reposIter {
+		for tnt, err := range tenantIter {
+			if err != nil {
+				tr.LazyPrintf("failed fetching repo IDs: %v", err)
+				tr.SetError()
+				log.Printf("failed fetching repo IDs: %v", err)
+				continue
+			}
 			// We ask the frontend to get index options in batches.
-			for batch := range batched(repos, batchSize) {
+			for batch := range batched(tnt.RepoIDs, batchSize) {
 				start := time.Now()
-				options, err := getIndexOptions(ctx, batch...)
+				options, err := getIndexOptions(tnt.Ctx, batch...)
 				duration := time.Since(start)
 
 				if err != nil {
@@ -389,7 +395,7 @@ func (s *sourcegraphClient) getCloneURL(name string) string {
 	return s.Root.ResolveReference(&url.URL{Path: path.Join("/.internal/git", name)}).String()
 }
 
-func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) (iter.Seq2[context.Context, []uint32], []uint32, error) {
+func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) (iter.Seq2[*tenant.ContextRepoIDs, error], []uint32, error) {
 	var request proto.ListRequest
 	request.Hostname = s.Hostname
 	request.IndexedIds = make([]int32, 0, len(indexed))
@@ -402,12 +408,22 @@ func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) (
 		return nil, nil, err
 	}
 
-	var repos []uint32
-	for _, v := range response.TenantIdReposMap {
-		repos = append(repos, v.Ids...)
+	var repoIDs []uint32
+	if len(response.RepoIds) > 0 {
+		// Guarantee backwards compatibility with Sourcegraph.
+		repoIDs = make([]uint32, 0, len(response.RepoIds))
+		for _, id := range response.RepoIds {
+			repoIDs = append(repoIDs, uint32(id))
+		}
+	} else {
+		for _, v := range response.TenantIdReposMap {
+			for _, id := range v.Ids {
+				repoIDs = append(repoIDs, uint32(id))
+			}
+		}
 	}
 
-	return tenant.NewTenantRepoIdIterator(ctx, response), repos, nil
+	return tenant.NewTenantRepoIdIterator(ctx, response), repoIDs, nil
 }
 
 type indexStatus struct {

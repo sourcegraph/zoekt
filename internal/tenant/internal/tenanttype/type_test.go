@@ -10,7 +10,7 @@ import (
 func TestTenantRoundtrip(t *testing.T) {
 	ctx := context.Background()
 	tenantID := 42
-	ctxWithTenant := WithTenant(ctx, tenantID)
+	ctxWithTenant := WithTenant(ctx, &Tenant{tenantID})
 	tenant, err := FromContext(ctxWithTenant)
 	require.NoError(t, err)
 	require.Equal(t, tenantID, tenant.ID())

@@ -268,6 +268,7 @@ func main() {
 	}
 
 	handler := trace.Middleware(serveMux)
+	handler = tenant.InternalHTTPMiddleware(handler)
 
 	// Sourcegraph: We use environment variables to configure watchdog since
 	// they are more convenient than flags in containerized environments.
@@ -451,9 +452,12 @@ func watchdogOnce(ctx context.Context, client *http.Client, addr string) error {
 }
 
 func watchdog(dt time.Duration, maxErrCount int, addr string) {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	tr := &tenant.InternalHTTPTransport{
+		RoundTripper: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
 	}
+
 	client := &http.Client{
 		Transport: tr,
 	}
@@ -461,7 +465,7 @@ func watchdog(dt time.Duration, maxErrCount int, addr string) {
 
 	errCount := 0
 	for range tick.C {
-		err := watchdogOnce(context.Background(), client, addr)
+		err := watchdogOnce(tenant.WatchdogContext, client, addr)
 		if err != nil {
 			errCount++
 			metricWatchdogErrors.Set(float64(errCount))
