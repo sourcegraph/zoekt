@@ -42,12 +42,12 @@ func ListIndexDirs(indexDir string) []string {
 	}
 
 	var dirs []string
-	files, err := os.ReadDir(filepath.Join(indexDir, TenantsDir))
+	fds, err := os.ReadDir(filepath.Join(indexDir, TenantsDir))
 	if err != nil {
 		log.Printf("listTenantDirs: error reading dir: %s", err)
 		return nil
 	}
-	for _, file := range files {
+	for _, file := range fds {
 		if !file.IsDir() {
 			continue
 		}
