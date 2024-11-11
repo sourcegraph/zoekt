@@ -221,7 +221,6 @@ func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*Source
 
 				metricResolveRevisionDuration.WithLabelValues("true").Observe(duration.Seconds())
 
-				fmt.Printf("resolved %d index options in %v\n", len(options), duration)
 				for _, o := range options {
 					metricGetIndexOptions.Inc()
 
@@ -309,7 +308,7 @@ func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
 		LanguageMap:      languageMap,
 		ShardConcurrency: x.GetShardConcurrency(),
 
-		TenantId: int(x.TenantId),
+		TenantID: int(x.TenantId),
 	}
 
 	item.Error = x.GetError()
@@ -353,7 +352,7 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 		LanguageMap:      languageMap,
 		ShardConcurrency: o.ShardConcurrency,
 
-		TenantId: int64(o.TenantId),
+		TenantId: int64(o.TenantID),
 	}
 }
 

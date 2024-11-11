@@ -70,7 +70,7 @@ type IndexOptions struct {
 	ShardConcurrency int32
 
 	// The Sourcegraph tenant
-	TenantId int
+	TenantID int
 }
 
 // indexArgs represents the arguments we pass to zoekt-git-index

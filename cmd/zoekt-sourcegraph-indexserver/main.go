@@ -674,7 +674,7 @@ func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
 func (s *Server) indexArgs(opts IndexOptions) (context.Context, *indexArgs) {
 	parallelism := s.parallelism(opts, runtime.GOMAXPROCS(0))
 
-	ctx, indexDir := tenant.ContextIndexDir(opts.TenantId, s.IndexDir)
+	ctx, indexDir := tenant.ContextIndexDir(opts.TenantID, s.IndexDir)
 
 	return ctx, &indexArgs{
 		IndexOptions: opts,
