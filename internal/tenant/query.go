@@ -9,8 +9,8 @@ import (
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
 )
 
-// Match returns true if the path is a subdirectory of tenant's index directory.
-func Match(ctx context.Context, path string) bool {
+// IsTenantPath returns true if the path is a subdirectory of tenant's index directory.
+func IsTenantPath(ctx context.Context, path string) bool {
 	if !EnforceTenant() {
 		return true
 	}

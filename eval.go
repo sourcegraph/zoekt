@@ -136,7 +136,7 @@ func (o *SearchOptions) SetDefaults() {
 
 func (d *indexData) Search(ctx context.Context, q query.Q, opts *SearchOptions) (sr *SearchResult, err error) {
 	var res SearchResult
-	if !tenant.Match(ctx, d.file.Name()) {
+	if !tenant.IsTenantPath(ctx, d.file.Name()) {
 		return &res, nil
 	}
 
