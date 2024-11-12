@@ -28,6 +28,8 @@ func IsTenantPath(ctx context.Context, path string) (bool, error) {
 	return true, nil
 }
 
+// WatchdogContext is a context for the watchdog. Don't use this context for
+// anything else.
 var WatchdogContext = tenanttype.WithTenant(context.Background(), mustTenantFromID(1))
 
 // mustTenantFromID is a test helper which panics if the ID is invalid.

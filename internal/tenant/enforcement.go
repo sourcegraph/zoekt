@@ -3,23 +3,19 @@ package tenant
 import (
 	"os"
 
-	"go.uber.org/atomic"
+	"github.com/sourcegraph/zoekt/internal/tenant/internal/enforcement"
 )
 
-const TenantsDir = "tenants"
-
 func init() {
-	enforcement, ok := os.LookupEnv("SRC_TENANT_ENFORCEMENT_MODE")
+	v, ok := os.LookupEnv("SRC_TENANT_ENFORCEMENT_MODE")
 	if !ok {
-		enforcement = "disabled"
+		v = "disabled"
 	}
-	enforcementMode.Store(enforcement)
+	enforcement.EnforcementMode.Store(v)
 }
 
-var enforcementMode atomic.String
-
 func EnforceTenant() bool {
-	switch enforcementMode.Load() {
+	switch enforcement.EnforcementMode.Load() {
 	case "strict":
 		return true
 	default:

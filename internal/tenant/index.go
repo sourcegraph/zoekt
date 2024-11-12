@@ -12,6 +12,8 @@ import (
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
 )
 
+const TenantsDir = "tenants"
+
 // ContextIndexDir returns a context and index dir for the given tenant ID.
 //
 // 🚨 SECURITY: Do not use this function anywhere else than in

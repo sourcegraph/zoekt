@@ -13,15 +13,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/log/logtest"
 	"github.com/xeipuuv/gojsonschema"
 	"google.golang.org/grpc"
 
-	"github.com/google/go-cmp/cmp"
-
 	"github.com/sourcegraph/zoekt"
 	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
 )
 
 func TestServer_defaultArgs(t *testing.T) {
@@ -49,6 +49,42 @@ func TestServer_defaultArgs(t *testing.T) {
 	if !cmp.Equal(got, want) {
 		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}
+}
+
+func TestServer_tenant(t *testing.T) {
+	tenanttest.MockEnforce(t)
+
+	root, err := url.Parse("http://api.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{
+		Sourcegraph:      newSourcegraphClient(root, "", nil, WithBatchSize(0)),
+		IndexDir:         "/testdata/index",
+		CPUCount:         6,
+		IndexConcurrency: 1,
+	}
+
+	tenantID := 42
+	haveIndexOptions := IndexOptions{
+		Name:     "testName",
+		TenantID: tenantID,
+	}
+
+	want := &indexArgs{
+		IndexOptions: haveIndexOptions,
+		IndexDir:     fmt.Sprintf("/testdata/index/tenants/%d", tenantID),
+		Parallelism:  6,
+		Incremental:  true,
+		FileLimit:    1 << 20,
+	}
+	ctx, got, _ := s.indexArgs(haveIndexOptions)
+	if !cmp.Equal(got, want) {
+		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+
+	tenanttest.TenantEqualsID(t, ctx, 42)
 }
 
 func TestServer_parallelism(t *testing.T) {

@@ -8,22 +8,11 @@ import (
 
 	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
+	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
 )
 
-func mockEnforce(t *testing.T) {
-	// prevent parallel tests from interfering with each other
-	t.Setenv("mockEnforce", "true")
-
-	old := enforcementMode.Load()
-	t.Cleanup(func() {
-		enforcementMode.Store(old)
-	})
-
-	enforcementMode.Store("strict")
-}
-
 func TestNewTenantRepoIdIterator_EnforceTenantTrue(t *testing.T) {
-	mockEnforce(t)
+	tenanttest.MockEnforce(t)
 
 	response := &proto.ListResponse{
 		TenantIdReposMap: map[int64]*proto.RepoIdList{
