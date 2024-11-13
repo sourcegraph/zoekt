@@ -117,6 +117,9 @@ type Options struct {
 	//
 	// Note: heap checking is "best effort", and it's possible for the process to OOM without triggering the heap profile.
 	HeapProfileTriggerBytes uint64
+
+	// UseSourcegraphIDForName is true if we want to use the Sourcegraph ID as prefix for the shard name.
+	UseSourcegraphIDForName bool
 }
 
 // HashOptions contains only the options in Options that upon modification leads to IndexState of IndexStateMismatch during the next index building.
@@ -337,12 +340,18 @@ func (o *Options) shardName(n int) string {
 }
 
 func (o *Options) shardNameVersion(version, n int) string {
-	abs := url.QueryEscape(o.RepositoryDescription.Name)
-	if len(abs) > 200 {
-		abs = abs[:200] + hashString(abs)[:8]
+	var prefix string
+	if o.UseSourcegraphIDForName {
+		prefix = fmt.Sprintf("%d", o.RepositoryDescription.ID)
+	} else {
+		prefix = url.QueryEscape(o.RepositoryDescription.Name)
 	}
-	return filepath.Join(o.IndexDir,
-		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, version, n))
+	if len(prefix) > 200 {
+		prefix = prefix[:200] + hashString(prefix)[:8]
+	}
+	shardName := filepath.Join(o.IndexDir,
+		fmt.Sprintf("%s_v%d.%05d.zoekt", prefix, version, n))
+	return shardName
 }
 
 type IndexState string
