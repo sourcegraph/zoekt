@@ -114,6 +114,9 @@ message ZoektIndexOptions {
 
   // the number of threads to use for indexing shards.
   int32 shard_concurrency = 13;
+
+  // tenant_id is the tenant ID of the repository.
+  int64 tenant_id = 14;
 }
 
 // ZoektRepositoryBranch describes an indexed branch of a repository.

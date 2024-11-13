@@ -67,6 +67,9 @@ type IndexOptions struct {
 	// The number of threads to use for indexing shards. Defaults to the number of available
 	// CPUs. If the server flag -cpu_fraction is set, then this value overrides it.
 	ShardConcurrency int32
+
+	// TenantID is the tenant ID for the repository.
+	TenantID int
 }
 
 // indexArgs represents the arguments we pass to zoekt-git-index
@@ -100,12 +103,20 @@ type indexArgs struct {
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
 func (o *indexArgs) BuildOptions() *build.Options {
+
+	// Default to tenant 1 if no tenant is set.
+	tenantID := o.TenantID
+	if o.TenantID < 1 {
+		tenantID = 1
+	}
+
 	return &build.Options{
 		// It is important that this RepositoryDescription exactly matches what
 		// the indexer we call will produce. This is to ensure that
 		// IncrementalSkipIndexing and IndexState can correctly calculate if
 		// nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
+			TenantID: o.TenantID,
 			ID:       uint32(o.IndexOptions.RepoID),
 			Name:     o.Name,
 			Branches: o.Branches,
@@ -117,6 +128,7 @@ func (o *indexArgs) BuildOptions() *build.Options {
 				"archived": marshalBool(o.Archived),
 				// Calculate repo rank based on the latest commit date.
 				"latestCommitDate": "1",
+				"tenantid":         strconv.Itoa(tenantID),
 			},
 		},
 		IndexDir:         o.IndexDir,
