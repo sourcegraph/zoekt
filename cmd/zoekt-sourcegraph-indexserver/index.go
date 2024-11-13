@@ -20,6 +20,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 
 	sglog "github.com/sourcegraph/log"
 )
@@ -262,6 +263,7 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 			"-C", gitDir,
 			"-c", "protocol.version=2",
 			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
+			"-c", "http.extraHeader=" + tenant.HttpExtraHeader(o.TenantID),
 			"fetch", "--depth=1", "--no-tags",
 		}
 

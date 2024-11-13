@@ -26,6 +26,7 @@ import (
 	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/grafana/regexp"
 
+	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -225,6 +226,11 @@ nextFileMatch:
 
 			// Skip tombstoned repositories
 			if repoMetadata.Tombstone {
+				continue
+			}
+
+			// Skip documents that don't belong to the tenant
+			if !tenant.EqualsID(ctx, repoMetadata.TenantID) {
 				continue
 			}
 
@@ -613,6 +619,10 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 
 	for i := range d.repoListEntry {
 		if d.repoMetaData[i].Tombstone {
+			continue
+		}
+		// Skip documents that don't belong to the tenant
+		if !tenant.EqualsID(ctx, d.repoMetaData[i].TenantID) {
 			continue
 		}
 		rle := &d.repoListEntry[i]
