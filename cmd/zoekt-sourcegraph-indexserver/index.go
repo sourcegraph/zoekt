@@ -17,12 +17,11 @@ import (
 	"strings"
 	"time"
 
+	sglog "github.com/sourcegraph/log"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ctags"
-	"github.com/sourcegraph/zoekt/internal/tenant"
-
-	sglog "github.com/sourcegraph/log"
 )
 
 const defaultIndexingTimeout = 1*time.Hour + 30*time.Minute
@@ -100,18 +99,16 @@ type indexArgs struct {
 	// ShardMerging is true if we want zoekt-git-index to respect compound shards.
 	ShardMerging bool
 
-	// UseSourcegraphIDForName is true if we want to use the Sourcegraph ID as prefix for the shard name.
-	UseSourcegraphIDForName bool
+	// IdBasedNames is true if we want to use ID-based names as prefix for the shard name.
+	IdBasedNames bool
 }
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
 func (o *indexArgs) BuildOptions() *build.Options {
-
-	// Default to tenant 1 if no tenant is set.
-	tenantID := o.TenantID
-	if o.TenantID < 1 {
-		tenantID = 1
+	shardPrefix := ""
+	if o.IdBasedNames {
+		shardPrefix = fmt.Sprintf("%09d_%09d", o.TenantID, o.IndexOptions.RepoID)
 	}
 
 	return &build.Options{
@@ -132,7 +129,7 @@ func (o *indexArgs) BuildOptions() *build.Options {
 				"archived": marshalBool(o.Archived),
 				// Calculate repo rank based on the latest commit date.
 				"latestCommitDate": "1",
-				"tenantid":         strconv.Itoa(tenantID),
+				"tenantID":         strconv.Itoa(o.TenantID),
 			},
 		},
 		IndexDir:         o.IndexDir,
@@ -147,7 +144,7 @@ func (o *indexArgs) BuildOptions() *build.Options {
 
 		ShardMerging: o.ShardMerging,
 
-		UseSourcegraphIDForName: o.UseSourcegraphIDForName,
+		ShardPrefix: shardPrefix,
 	}
 }
 
@@ -263,7 +260,7 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 			"-C", gitDir,
 			"-c", "protocol.version=2",
 			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
-			"-c", "http.extraHeader=" + tenant.HttpExtraHeader(o.TenantID),
+			"-c", "http.extraHeader=X-Sourcegraph-Tenant-ID: " + strconv.Itoa(o.TenantID),
 			"fetch", "--depth=1", "--no-tags",
 		}
 
@@ -408,10 +405,6 @@ func indexRepo(ctx context.Context, gitDir string, sourcegraph Sourcegraph, o *i
 	if o.UseDelta {
 		args = append(args, "-delta")
 		args = append(args, "-delta_threshold", strconv.FormatUint(o.DeltaShardNumberFallbackThreshold, 10))
-	}
-
-	if o.UseSourcegraphIDForName {
-		args = append(args, "-use_sourcegraph_id_for_name")
 	}
 
 	if len(o.LanguageMap) > 0 {

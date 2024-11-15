@@ -487,11 +487,12 @@ func TestIndex(t *testing.T) {
 				Name:     "test/repo",
 				CloneURL: "http://api.test/.internal/git/test/repo",
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
+				TenantID: 42,
 			},
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 1 fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 42 fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
@@ -500,7 +501,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantid 1",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 42",
 			"zoekt-git-index -submodules=false -branches HEAD -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}, {
@@ -511,6 +512,7 @@ func TestIndex(t *testing.T) {
 				CloneURL: "http://api.test/.internal/git/test/repo",
 				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
 				RepoID:   123,
+				TenantID: 1,
 			},
 		},
 		want: []string{
@@ -524,7 +526,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 123",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantid 1",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
 			"zoekt-git-index -submodules=false -branches HEAD -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}, {
@@ -543,6 +545,7 @@ func TestIndex(t *testing.T) {
 					{Name: "HEAD", Version: "deadbeef"},
 					{Name: "dev", Version: "feebdaed"}, // ignored for archive
 				},
+				TenantID: 1,
 			},
 		},
 		want: []string{
@@ -557,7 +560,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantid 1",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
 			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev " +
 				"-file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
@@ -581,6 +584,7 @@ func TestIndex(t *testing.T) {
 					{Name: "dev", Version: "feebdaed"},
 					{Name: "release", Version: "12345678"},
 				},
+				TenantID: 1,
 			},
 			DeltaShardNumberFallbackThreshold: 22,
 		},
@@ -606,7 +610,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantid 1",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
 			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev,release " +
 				"-delta -delta_threshold 22 -file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",

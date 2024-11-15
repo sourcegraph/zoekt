@@ -53,6 +53,7 @@ import (
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"github.com/sourcegraph/zoekt/internal/profiler"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 var (
@@ -213,7 +214,7 @@ type Server struct {
 	// timeout defines how long the index server waits before killing an indexing job.
 	timeout time.Duration
 
-	useSourcegraphIDForName bool
+	idBasedNames bool
 }
 
 var debug = log.New(io.Discard, "", log.LstdFlags)
@@ -559,6 +560,11 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		tr.Finish()
 	}()
 
+	// Sourcegraph should always provide a tenant ID.
+	if args.TenantID < 1 {
+		return indexStateFail, tenant.ErrMissingTenant
+	}
+
 	tr.LazyPrintf("branches: %v", args.Branches)
 
 	if len(args.Branches) == 0 {
@@ -673,13 +679,13 @@ func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 	parallelism := s.parallelism(opts, runtime.GOMAXPROCS(0))
 	return &indexArgs{
-		IndexOptions:            opts,
-		IndexDir:                s.IndexDir,
-		Parallelism:             parallelism,
-		Incremental:             true,
-		FileLimit:               MaxFileSize,
-		ShardMerging:            s.shardMerging,
-		UseSourcegraphIDForName: s.useSourcegraphIDForName,
+		IndexOptions: opts,
+		IndexDir:     s.IndexDir,
+		Parallelism:  parallelism,
+		Incremental:  true,
+		FileLimit:    MaxFileSize,
+		ShardMerging: s.shardMerging,
+		IdBasedNames: s.idBasedNames,
 	}
 }
 
@@ -1253,7 +1259,7 @@ type rootConfig struct {
 	backoffDuration    time.Duration
 	maxBackoffDuration time.Duration
 
-	useSourcegraphIDForName bool
+	idBasedNames bool
 }
 
 func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
@@ -1266,7 +1272,7 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.Float64Var(&rc.cpuFraction, "cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
 	fs.DurationVar(&rc.backoffDuration, "backoff_duration", getEnvWithDefaultDuration("BACKOFF_DURATION", 10*time.Minute), "for the given duration we backoff from enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase the duration of the delay linearly up to the maxBackoffDuration. A negative value disables indexing backoff.")
 	fs.DurationVar(&rc.maxBackoffDuration, "max_backoff_duration", getEnvWithDefaultDuration("MAX_BACKOFF_DURATION", 120*time.Minute), "the maximum duration to backoff from enqueueing a repo for indexing.  A negative value disables indexing backoff.")
-	fs.BoolVar(&rc.useSourcegraphIDForName, "use_sourcegraph_id_for_name", getEnvWithDefaultBool("SRC_USE_SOURCEGRAPH_ID_FOR_NAME", false), "use the Sourcegraph ID as the name for index shards.")
+	fs.BoolVar(&rc.idBasedNames, "id_based_names", getEnvWithDefaultBool("ID_BASED_NAMES", false), "use id-based prefixes for shards.")
 
 	// flags related to shard merging
 	fs.BoolVar(&rc.disableShardMerging, "shard_merging", getEnvWithDefaultBool("SRC_DISABLE_SHARD_MERGING", false), "disable shard merging")
@@ -1473,7 +1479,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		CPUCount:                          cpuCount,
 		queue:                             *q,
 		shardMerging:                      !conf.disableShardMerging,
-		useSourcegraphIDForName:           conf.useSourcegraphIDForName,
+		idBasedNames:                      conf.idBasedNames,
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
 		deltaShardNumberFallbackThreshold: deltaShardNumberFallbackThreshold,
 		repositoriesSkipSymbolsCalculationAllowList: reposShouldSkipSymbolsCalculation,

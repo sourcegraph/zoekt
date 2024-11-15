@@ -11,13 +11,13 @@ func TestTenantRoundtrip(t *testing.T) {
 	ctx := context.Background()
 	tenantID := 42
 	ctxWithTenant := WithTenant(ctx, &Tenant{tenantID})
-	tenant, err := FromContext(ctxWithTenant)
-	require.NoError(t, err)
+	tenant, ok := GetTenant(ctxWithTenant)
+	require.True(t, ok)
 	require.Equal(t, tenantID, tenant.ID())
 }
 
 func TestFromContextWithoutTenant(t *testing.T) {
 	ctx := context.Background()
-	_, err := FromContext(ctx)
-	require.Equal(t, ErrNoTenantInContext, err)
+	_, ok := GetTenant(ctx)
+	require.False(t, ok)
 }

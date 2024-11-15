@@ -638,7 +638,7 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		r.ID = uint32(id)
 	}
 
-	if v, ok := repo.RawConfig["tenantid"]; ok {
+	if v, ok := repo.RawConfig["tenantID"]; ok {
 		id, _ := strconv.ParseInt(v, 10, 64)
 		r.TenantID = int(id)
 	}

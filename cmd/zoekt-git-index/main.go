@@ -48,8 +48,6 @@ func run() int {
 
 	cpuProfile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 
-	useSourcegraphIDForName := flag.Bool("use_sourcegraph_id_for_name", false, "use the Sourcegraph ID for the shard name")
-
 	flag.Parse()
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
@@ -77,7 +75,6 @@ func run() int {
 
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
-	opts.UseSourcegraphIDForName = *useSourcegraphIDForName
 
 	var branches []string
 	if *branchesStr != "" {

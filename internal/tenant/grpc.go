@@ -34,8 +34,8 @@ var _ propagator.Propagator = &Propagator{}
 
 func (Propagator) FromContext(ctx context.Context) metadata.MD {
 	md := make(metadata.MD)
-	tenant, err := tenanttype.FromContext(ctx)
-	if err != nil {
+	tenant, ok := tenanttype.GetTenant(ctx)
+	if !ok {
 		md.Append(headerKeyTenantID, headerValueNoTenant)
 	} else {
 		md.Append(headerKeyTenantID, strconv.Itoa(tenant.ID()))
@@ -65,7 +65,7 @@ func (Propagator) InjectContext(ctx context.Context, md metadata.MD) (context.Co
 // UnaryServerInterceptor is a grpc.UnaryServerInterceptor that injects the tenant ID
 // from the context into pprof labels.
 func UnaryServerInterceptor(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (response any, err error) {
-	if tnt, err := tenanttype.FromContext(ctx); err == nil {
+	if tnt, ok := tenanttype.GetTenant(ctx); ok {
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, pprof.Labels("tenant", tenanttype.Marshal(tnt)))
 		pprof.SetGoroutineLabels(ctx)
@@ -77,7 +77,7 @@ func UnaryServerInterceptor(ctx context.Context, req any, _ *grpc.UnaryServerInf
 // StreamServerInterceptor is a grpc.StreamServerInterceptor that injects the tenant ID
 // from the context into pprof labels.
 func StreamServerInterceptor(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	if tnt, err := tenanttype.FromContext(ss.Context()); err == nil {
+	if tnt, ok := tenanttype.GetTenant(ss.Context()); ok {
 		ctx := ss.Context()
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, pprof.Labels("tenant", tenanttype.Marshal(tnt)))

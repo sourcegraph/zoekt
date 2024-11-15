@@ -118,8 +118,8 @@ type Options struct {
 	// Note: heap checking is "best effort", and it's possible for the process to OOM without triggering the heap profile.
 	HeapProfileTriggerBytes uint64
 
-	// UseSourcegraphIDForName is true if we want to use the Sourcegraph ID as prefix for the shard name.
-	UseSourcegraphIDForName bool
+	// ShardPrefix is the prefix of the shard. If empty, the repository name is used.
+	ShardPrefix string
 }
 
 // HashOptions contains only the options in Options that upon modification leads to IndexState of IndexStateMismatch during the next index building.
@@ -184,6 +184,7 @@ func (o *Options) Flags(fs *flag.FlagSet) {
 	fs.StringVar(&o.IndexDir, "index", x.IndexDir, "directory for search indices")
 	fs.BoolVar(&o.CTagsMustSucceed, "require_ctags", x.CTagsMustSucceed, "If set, ctags calls must succeed.")
 	fs.Var(largeFilesFlag{o}, "large_file", "A glob pattern where matching files are to be index regardless of their size. You can add multiple patterns by setting this more than once.")
+	fs.StringVar(&o.ShardPrefix, "shard_prefix", x.ShardPrefix, "the prefix of the shard. If empty, the repository name is used.")
 
 	// Sourcegraph specific
 	fs.BoolVar(&o.DisableCTags, "disable_ctags", x.DisableCTags, "If set, ctags will not be called.")
@@ -229,6 +230,10 @@ func (o *Options) Args() []string {
 
 	if o.ShardMerging {
 		args = append(args, "-shard_merging")
+	}
+
+	if o.ShardPrefix != "" {
+		args = append(args, "-shard_prefix", o.ShardPrefix)
 	}
 
 	return args
@@ -341,8 +346,8 @@ func (o *Options) shardName(n int) string {
 
 func (o *Options) shardNameVersion(version, n int) string {
 	var prefix string
-	if o.UseSourcegraphIDForName {
-		prefix = fmt.Sprintf("%d", o.RepositoryDescription.ID)
+	if o.ShardPrefix != "" {
+		prefix = o.ShardPrefix
 	} else {
 		prefix = url.QueryEscape(o.RepositoryDescription.Name)
 	}
