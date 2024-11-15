@@ -213,6 +213,9 @@ message Repository {
   // file_tombstones is a set of file paths that should be ignored across all branches
   // in this shard.
   repeated string file_tombstones = 17;
+
+  // tenant_id is the tenant ID of the repository.
+  int64 tenant_id = 18;
 }
 
 message IndexMetadata {
