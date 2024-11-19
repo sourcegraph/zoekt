@@ -345,12 +345,7 @@ func (o *Options) shardName(n int) string {
 }
 
 func (o *Options) shardNameVersion(version, n int) string {
-	var prefix string
-	if o.ShardPrefix != "" {
-		prefix = o.ShardPrefix
-	} else {
-		prefix = url.QueryEscape(o.RepositoryDescription.Name)
-	}
+	prefix := url.QueryEscape(cmp.Or(o.ShardPrefix, o.RepositoryDescription.Name))
 	if len(prefix) > 200 {
 		prefix = prefix[:200] + hashString(prefix)[:8]
 	}
