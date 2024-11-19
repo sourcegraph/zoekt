@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 // Merge files into a compound shard in dstDir. Merge returns tmpName and a
@@ -160,7 +162,15 @@ func explode(dstDir string, f IndexFile, ibFuncs ...indexBuilderFunc) (map[strin
 		for _, ibFunc := range ibFuncs {
 			ibFunc(ib)
 		}
-		fn := filepath.Join(dstDir, shardName(ib.repoList[0].Name, ib.indexFormatVersion, 0))
+
+		prefix := ""
+		if tenant.EnforceTenant() {
+			prefix = tenant.SrcPrefix(ib.repoList[0].TenantID, ib.repoList[0].ID)
+		} else {
+			prefix = ib.repoList[0].Name
+		}
+
+		fn := filepath.Join(dstDir, shardName(prefix, ib.indexFormatVersion, 0))
 		fnTmp := fn + ".tmp"
 		shardNames[fnTmp] = fn
 		return builderWriteAll(fnTmp, ib)
@@ -256,8 +266,8 @@ func hashString(s string) string {
 }
 
 // copied from builder package to avoid circular imports.
-func shardName(name string, version, n int) string {
-	abs := url.QueryEscape(name)
+func shardName(prefix string, version, n int) string {
+	abs := url.QueryEscape(prefix)
 	if len(abs) > 200 {
 		abs = abs[:200] + hashString(abs)[:8]
 	}

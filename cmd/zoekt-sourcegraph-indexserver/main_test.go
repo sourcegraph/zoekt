@@ -15,6 +15,7 @@ import (
 
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/log/logtest"
+	"github.com/stretchr/testify/require"
 	"github.com/xeipuuv/gojsonschema"
 	"google.golang.org/grpc"
 
@@ -22,6 +23,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 func TestServer_defaultArgs(t *testing.T) {
@@ -49,6 +51,12 @@ func TestServer_defaultArgs(t *testing.T) {
 	if !cmp.Equal(got, want) {
 		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}
+}
+
+func TestIndexNoTenant(t *testing.T) {
+	s := &Server{}
+	_, err := s.Index(&indexArgs{})
+	require.ErrorIs(t, err, tenant.ErrMissingTenant)
 }
 
 func TestServer_parallelism(t *testing.T) {

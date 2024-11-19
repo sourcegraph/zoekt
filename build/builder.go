@@ -17,6 +17,7 @@
 package build
 
 import (
+	"cmp"
 	"crypto/sha1"
 	"flag"
 	"fmt"
@@ -117,6 +118,9 @@ type Options struct {
 	//
 	// Note: heap checking is "best effort", and it's possible for the process to OOM without triggering the heap profile.
 	HeapProfileTriggerBytes uint64
+
+	// ShardPrefix is the prefix of the shard. It defaults to the repository name.
+	ShardPrefix string
 }
 
 // HashOptions contains only the options in Options that upon modification leads to IndexState of IndexStateMismatch during the next index building.
@@ -181,6 +185,7 @@ func (o *Options) Flags(fs *flag.FlagSet) {
 	fs.StringVar(&o.IndexDir, "index", x.IndexDir, "directory for search indices")
 	fs.BoolVar(&o.CTagsMustSucceed, "require_ctags", x.CTagsMustSucceed, "If set, ctags calls must succeed.")
 	fs.Var(largeFilesFlag{o}, "large_file", "A glob pattern where matching files are to be index regardless of their size. You can add multiple patterns by setting this more than once.")
+	fs.StringVar(&o.ShardPrefix, "shard_prefix", x.ShardPrefix, "the prefix of the shard. Defaults to repository name")
 
 	// Sourcegraph specific
 	fs.BoolVar(&o.DisableCTags, "disable_ctags", x.DisableCTags, "If set, ctags will not be called.")
@@ -226,6 +231,10 @@ func (o *Options) Args() []string {
 
 	if o.ShardMerging {
 		args = append(args, "-shard_merging")
+	}
+
+	if o.ShardPrefix != "" {
+		args = append(args, "-shard_prefix", o.ShardPrefix)
 	}
 
 	return args
@@ -337,12 +346,13 @@ func (o *Options) shardName(n int) string {
 }
 
 func (o *Options) shardNameVersion(version, n int) string {
-	abs := url.QueryEscape(o.RepositoryDescription.Name)
-	if len(abs) > 200 {
-		abs = abs[:200] + hashString(abs)[:8]
+	prefix := url.QueryEscape(cmp.Or(o.ShardPrefix, o.RepositoryDescription.Name))
+	if len(prefix) > 200 {
+		prefix = prefix[:200] + hashString(prefix)[:8]
 	}
-	return filepath.Join(o.IndexDir,
-		fmt.Sprintf("%s_v%d.%05d.zoekt", abs, version, n))
+	shardName := filepath.Join(o.IndexDir,
+		fmt.Sprintf("%s_v%d.%05d.zoekt", prefix, version, n))
+	return shardName
 }
 
 type IndexState string

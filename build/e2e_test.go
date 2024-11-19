@@ -25,6 +25,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +33,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
+	"github.com/stretchr/testify/require"
+
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/shards"
 )
@@ -151,6 +156,138 @@ func TestBasic(t *testing.T) {
 			}
 		})
 	})
+}
+
+func TestSearchTenant(t *testing.T) {
+	tenanttest.MockEnforce(t)
+
+	dir := t.TempDir()
+
+	ctx1 := tenanttest.NewTestContext()
+	tnt1, err := tenant.FromContext(ctx1)
+	require.NoError(t, err)
+
+	opts := Options{
+		IndexDir: dir,
+		ShardMax: 1024,
+		RepositoryDescription: zoekt.Repository{
+			Name:      "repo",
+			RawConfig: map[string]string{"tenantID": strconv.Itoa(tnt1.ID())},
+		},
+		Parallelism: 2,
+		SizeMax:     1 << 20,
+	}
+
+	b, err := NewBuilder(opts)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+
+	for i := 0; i < 4; i++ {
+		s := fmt.Sprintf("%d", i)
+		if err := b.AddFile("F"+s, []byte(strings.Repeat(s, 1000))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := b.Finish(); err != nil {
+		t.Errorf("Finish: %v", err)
+	}
+
+	fs, _ := filepath.Glob(dir + "/*.zoekt")
+	if len(fs) <= 1 {
+		t.Fatalf("want multiple shards, got %v", fs)
+	}
+
+	_, md0, err := zoekt.ReadMetadataPath(fs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fs[1:] {
+		_, md, err := zoekt.ReadMetadataPath(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if md.IndexTime != md0.IndexTime {
+			t.Fatalf("wanted identical time stamps but got %v!=%v", md.IndexTime, md0.IndexTime)
+		}
+		if md.ID != md0.ID {
+			t.Fatalf("wanted identical IDs but got %s!=%s", md.ID, md0.ID)
+		}
+	}
+
+	ss, err := shards.NewDirectorySearcher(dir)
+	if err != nil {
+		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
+	}
+	defer ss.Close()
+
+	q, err := query.Parse("111")
+	if err != nil {
+		t.Fatalf("Parse(111): %v", err)
+	}
+
+	var sOpts zoekt.SearchOptions
+
+	// Tenant 1 has access to the repo
+	result, err := ss.Search(ctx1, q, &sOpts)
+	require.NoError(t, err)
+	require.Len(t, result.Files, 1)
+
+	// Tenant 2 does not have access to the repo
+	ctx2 := tenanttest.NewTestContext()
+	result, err = ss.Search(ctx2, q, &sOpts)
+	require.NoError(t, err)
+	require.Len(t, result.Files, 0)
+}
+
+func TestListTenant(t *testing.T) {
+	tenanttest.MockEnforce(t)
+
+	dir := t.TempDir()
+
+	ctx1 := tenanttest.NewTestContext()
+	tnt1, err := tenant.FromContext(ctx1)
+	require.NoError(t, err)
+
+	opts := Options{
+		IndexDir: dir,
+		RepositoryDescription: zoekt.Repository{
+			Name:      "repo",
+			RawConfig: map[string]string{"tenantID": strconv.Itoa(tnt1.ID())},
+		},
+	}
+	opts.SetDefaults()
+
+	b, err := NewBuilder(opts)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+	if err := b.Finish(); err != nil {
+		t.Errorf("Finish: %v", err)
+	}
+
+	fs, _ := filepath.Glob(dir + "/*.zoekt")
+	if len(fs) != 1 {
+		t.Fatalf("want a shard, got %v", fs)
+	}
+
+	ss, err := shards.NewDirectorySearcher(dir)
+	if err != nil {
+		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
+	}
+	defer ss.Close()
+
+	// Tenant 1 has access to the repo
+	result, err := ss.List(ctx1, &query.Const{Value: true}, nil)
+	require.NoError(t, err)
+	require.Len(t, result.Repos, 1)
+
+	// Tenant 2 does not have access to the repo
+	ctx2 := tenanttest.NewTestContext()
+	result, err = ss.List(ctx2, &query.Const{Value: true}, nil)
+	require.NoError(t, err)
+	require.Len(t, result.Repos, 0)
 }
 
 // retryTest will retry f until min(t.Deadline(), time.Minute). It returns

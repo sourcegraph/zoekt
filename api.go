@@ -553,6 +553,9 @@ func (r RepositoryBranch) String() string {
 
 // Repository holds repository metadata.
 type Repository struct {
+	// Sourcegraph's tenant ID
+	TenantID int
+
 	// Sourcegraph's repository ID
 	ID uint32
 
@@ -633,6 +636,11 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 	if v, ok := repo.RawConfig["repoid"]; ok {
 		id, _ := strconv.ParseUint(v, 10, 32)
 		r.ID = uint32(id)
+	}
+
+	if v, ok := repo.RawConfig["tenantID"]; ok {
+		id, _ := strconv.ParseInt(v, 10, 64)
+		r.TenantID = int(id)
 	}
 
 	// Sourcegraph indexserver doesn't set repo.Rank, so we set it here. Setting it

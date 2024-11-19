@@ -433,6 +433,7 @@ func RepositoryFromProto(p *proto.Repository) Repository {
 	}
 
 	return Repository{
+		TenantID:             int(p.GetTenantId()),
 		ID:                   p.GetId(),
 		Name:                 p.GetName(),
 		URL:                  p.GetUrl(),
@@ -474,6 +475,7 @@ func (r *Repository) ToProto() *proto.Repository {
 	}
 
 	return &proto.Repository{
+		TenantId:             int64(r.TenantID),
 		Id:                   r.ID,
 		Name:                 r.Name,
 		Url:                  r.URL,

@@ -17,11 +17,12 @@ import (
 	"strings"
 	"time"
 
+	sglog "github.com/sourcegraph/log"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ctags"
-
-	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 const defaultIndexingTimeout = 1*time.Hour + 30*time.Minute
@@ -67,6 +68,9 @@ type IndexOptions struct {
 	// The number of threads to use for indexing shards. Defaults to the number of available
 	// CPUs. If the server flag -cpu_fraction is set, then this value overrides it.
 	ShardConcurrency int32
+
+	// TenantID is the tenant ID for the repository.
+	TenantID int
 }
 
 // indexArgs represents the arguments we pass to zoekt-git-index
@@ -100,12 +104,18 @@ type indexArgs struct {
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
 func (o *indexArgs) BuildOptions() *build.Options {
+	shardPrefix := ""
+	if tenant.EnforceTenant() {
+		shardPrefix = tenant.SrcPrefix(o.TenantID, o.RepoID)
+	}
+
 	return &build.Options{
 		// It is important that this RepositoryDescription exactly matches what
 		// the indexer we call will produce. This is to ensure that
 		// IncrementalSkipIndexing and IndexState can correctly calculate if
 		// nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
+			TenantID: o.TenantID,
 			ID:       uint32(o.IndexOptions.RepoID),
 			Name:     o.Name,
 			Branches: o.Branches,
@@ -117,6 +127,7 @@ func (o *indexArgs) BuildOptions() *build.Options {
 				"archived": marshalBool(o.Archived),
 				// Calculate repo rank based on the latest commit date.
 				"latestCommitDate": "1",
+				"tenantID":         strconv.Itoa(o.TenantID),
 			},
 		},
 		IndexDir:         o.IndexDir,
@@ -130,6 +141,8 @@ func (o *indexArgs) BuildOptions() *build.Options {
 		LanguageMap: o.LanguageMap,
 
 		ShardMerging: o.ShardMerging,
+
+		ShardPrefix: shardPrefix,
 	}
 }
 
@@ -245,6 +258,7 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 			"-C", gitDir,
 			"-c", "protocol.version=2",
 			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
+			"-c", "http.extraHeader=X-Sourcegraph-Tenant-ID: " + strconv.Itoa(o.TenantID),
 			"fetch", "--depth=1", "--no-tags",
 		}
 

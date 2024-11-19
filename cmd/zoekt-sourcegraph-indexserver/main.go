@@ -53,6 +53,7 @@ import (
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"github.com/sourcegraph/zoekt/internal/profiler"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 var (
@@ -459,6 +460,7 @@ func (s *Server) processQueue() {
 					branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
 				}
 				s.logger.Info("updated index",
+					sglog.Int("tenant", args.TenantID),
 					sglog.String("repo", args.Name),
 					sglog.Uint32("id", args.RepoID),
 					sglog.Strings("branches", branches),
@@ -556,6 +558,11 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		tr.Finish()
 	}()
 
+	// Sourcegraph should always provide a tenant ID.
+	if args.TenantID < 1 {
+		return indexStateFail, tenant.ErrMissingTenant
+	}
+
 	tr.LazyPrintf("branches: %v", args.Branches)
 
 	if len(args.Branches) == 0 {
@@ -592,6 +599,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		case build.IndexStateMeta:
 			log.Printf("updating index.meta %s", args.String())
 
+			// TODO(stefan) handle mergeMeta for tenant id.
 			if err := mergeMeta(bo); err != nil {
 				log.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
 			} else {

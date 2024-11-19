@@ -300,6 +300,8 @@ func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
 
 		LanguageMap:      languageMap,
 		ShardConcurrency: x.GetShardConcurrency(),
+
+		TenantID: int(x.TenantId),
 	}
 
 	item.Error = x.GetError()
@@ -342,6 +344,8 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 
 		LanguageMap:      languageMap,
 		ShardConcurrency: o.ShardConcurrency,
+
+		TenantId: int64(o.TenantID),
 	}
 }
 
