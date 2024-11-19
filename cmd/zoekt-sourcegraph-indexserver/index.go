@@ -22,6 +22,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 const defaultIndexingTimeout = 1*time.Hour + 30*time.Minute
@@ -98,16 +99,13 @@ type indexArgs struct {
 
 	// ShardMerging is true if we want zoekt-git-index to respect compound shards.
 	ShardMerging bool
-
-	// IdBasedNames is true if we want to use ID-based names as prefix for the shard name.
-	IdBasedNames bool
 }
 
 // BuildOptions returns a build.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
 func (o *indexArgs) BuildOptions() *build.Options {
 	shardPrefix := ""
-	if o.IdBasedNames {
+	if tenant.EnforceTenant() {
 		shardPrefix = fmt.Sprintf("%09d_%09d", o.TenantID, o.IndexOptions.RepoID)
 	}
 
