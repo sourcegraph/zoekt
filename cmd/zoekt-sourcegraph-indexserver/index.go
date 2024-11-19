@@ -106,7 +106,7 @@ type indexArgs struct {
 func (o *indexArgs) BuildOptions() *build.Options {
 	shardPrefix := ""
 	if tenant.EnforceTenant() {
-		shardPrefix = fmt.Sprintf("%09d_%09d", o.TenantID, o.IndexOptions.RepoID)
+		shardPrefix = tenant.SrcPrefix(o.TenantID, o.RepoID)
 	}
 
 	return &build.Options{
