@@ -158,7 +158,7 @@ func TestBasic(t *testing.T) {
 	})
 }
 
-func TestBasicTenant(t *testing.T) {
+func TestSearchTenant(t *testing.T) {
 	tenanttest.MockEnforce(t)
 
 	dir := t.TempDir()
@@ -228,6 +228,7 @@ func TestBasicTenant(t *testing.T) {
 	}
 
 	var sOpts zoekt.SearchOptions
+
 	// Tenant 1 has access to the repo
 	result, err := ss.Search(ctx1, q, &sOpts)
 	require.NoError(t, err)
@@ -238,6 +239,55 @@ func TestBasicTenant(t *testing.T) {
 	result, err = ss.Search(ctx2, q, &sOpts)
 	require.NoError(t, err)
 	require.Len(t, result.Files, 0)
+}
+
+func TestListTenant(t *testing.T) {
+	tenanttest.MockEnforce(t)
+
+	dir := t.TempDir()
+
+	ctx1 := tenanttest.NewTestContext()
+	tnt1, err := tenant.FromContext(ctx1)
+	require.NoError(t, err)
+
+	opts := Options{
+		IndexDir: dir,
+		RepositoryDescription: zoekt.Repository{
+			Name:      "repo",
+			RawConfig: map[string]string{"tenantID": strconv.Itoa(tnt1.ID())},
+		},
+	}
+	opts.SetDefaults()
+
+	b, err := NewBuilder(opts)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+	if err := b.Finish(); err != nil {
+		t.Errorf("Finish: %v", err)
+	}
+
+	fs, _ := filepath.Glob(dir + "/*.zoekt")
+	if len(fs) != 1 {
+		t.Fatalf("want a shard, got %v", fs)
+	}
+
+	ss, err := shards.NewDirectorySearcher(dir)
+	if err != nil {
+		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
+	}
+	defer ss.Close()
+
+	// Tenant 1 has access to the repo
+	result, err := ss.List(ctx1, &query.Const{Value: true}, nil)
+	require.NoError(t, err)
+	require.Len(t, result.Repos, 1)
+
+	// Tenant 2 does not have access to the repo
+	ctx2 := tenanttest.NewTestContext()
+	result, err = ss.List(ctx2, &query.Const{Value: true}, nil)
+	require.NoError(t, err)
+	require.Len(t, result.Repos, 0)
 }
 
 // retryTest will retry f until min(t.Deadline(), time.Minute). It returns

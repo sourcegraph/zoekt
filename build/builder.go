@@ -17,6 +17,7 @@
 package build
 
 import (
+	"cmp"
 	"crypto/sha1"
 	"flag"
 	"fmt"

@@ -1272,7 +1272,7 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.Float64Var(&rc.cpuFraction, "cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
 	fs.DurationVar(&rc.backoffDuration, "backoff_duration", getEnvWithDefaultDuration("BACKOFF_DURATION", 10*time.Minute), "for the given duration we backoff from enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase the duration of the delay linearly up to the maxBackoffDuration. A negative value disables indexing backoff.")
 	fs.DurationVar(&rc.maxBackoffDuration, "max_backoff_duration", getEnvWithDefaultDuration("MAX_BACKOFF_DURATION", 120*time.Minute), "the maximum duration to backoff from enqueueing a repo for indexing.  A negative value disables indexing backoff.")
-	fs.BoolVar(&rc.idBasedNames, "id_based_names", getEnvWithDefaultBool("ID_BASED_NAMES", false), "use id-based prefixes for shards.")
+	fs.BoolVar(&rc.idBasedNames, "id_based_names", getEnvWithDefaultBool("SRC_prefix", false), "use id-based prefixes for shards.")
 
 	// flags related to shard merging
 	fs.BoolVar(&rc.disableShardMerging, "shard_merging", getEnvWithDefaultBool("SRC_DISABLE_SHARD_MERGING", false), "disable shard merging")
