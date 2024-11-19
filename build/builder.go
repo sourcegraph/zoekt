@@ -119,7 +119,7 @@ type Options struct {
 	// Note: heap checking is "best effort", and it's possible for the process to OOM without triggering the heap profile.
 	HeapProfileTriggerBytes uint64
 
-	// ShardPrefix is the prefix of the shard. If empty, the repository name is used.
+	// ShardPrefix is the prefix of the shard. It defaults to the repository name.
 	ShardPrefix string
 }
 
