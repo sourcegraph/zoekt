@@ -229,7 +229,8 @@ nextFileMatch:
 				continue
 			}
 
-			// Skip documents that don't belong to the tenant
+			// 🚨 SECURITY: Skip documents that don't belong to the tenant. This check is
+			// necessary to prevent leaking data across tenants.
 			if !tenant.EqualsID(ctx, repoMetadata.TenantID) {
 				continue
 			}
@@ -621,7 +622,8 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 		if d.repoMetaData[i].Tombstone {
 			continue
 		}
-		// Skip documents that don't belong to the tenant
+		// 🚨 SECURITY: Skip documents that don't belong to the tenant. This check is
+		// necessary to prevent leaking data across tenants.
 		if !tenant.EqualsID(ctx, d.repoMetaData[i].TenantID) {
 			continue
 		}
