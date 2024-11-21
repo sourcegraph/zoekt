@@ -180,6 +180,8 @@ type rankedShard struct {
 	// We have out of band ranking on compound shards which can change even if
 	// the shard file does not. So we compute a rank in getShards. We store
 	// repos here to avoid the cost of List in the search request path.
+	//
+	// repos is nil only if that call failed.
 	repos []*zoekt.Repository
 }
 
@@ -447,7 +449,13 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 		filteredAll := true
 
 		for _, s := range shards {
-			if any, all := hasRepos(s.repos); any {
+			if s.repos == nil {
+				// repos is nil if we failed to List the shard. This shouldn't
+				// happen, but if it does we don't know what is in it and must search
+				// it without simplifying the query.
+				filtered = append(filtered, s)
+				filteredAll = false
+			} else if any, all := hasRepos(s.repos); any {
 				filtered = append(filtered, s)
 				filteredAll = filteredAll && all
 			}
@@ -1066,9 +1074,7 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 	q := query.Const{Value: true}
 	result, err := s.List(context.Background(), &q, nil)
 	if err != nil {
-		return &rankedShard{Searcher: s}
-	}
-	if len(result.Repos) == 0 {
+		log.Printf("mkRankedShard(%s): failed to cache repository list: %v", s, err)
 		return &rankedShard{Searcher: s}
 	}
 
