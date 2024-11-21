@@ -2,12 +2,17 @@ package tenant
 
 import (
 	"context"
+
+	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
 )
 
-// EqualsID returns true if the tenant ID in the context matches the
+// HasAccess returns true if the tenant ID in the context matches the
 // given ID. If tenant enforcement is disabled, it always returns true.
-func EqualsID(ctx context.Context, id int) bool {
+func HasAccess(ctx context.Context, id int) bool {
 	if !EnforceTenant() {
+		return true
+	}
+	if systemtenant.Is(ctx) {
 		return true
 	}
 	t, err := FromContext(ctx)

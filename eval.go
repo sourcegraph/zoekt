@@ -231,7 +231,7 @@ nextFileMatch:
 
 			// 🚨 SECURITY: Skip documents that don't belong to the tenant. This check is
 			// necessary to prevent leaking data across tenants.
-			if !tenant.EqualsID(ctx, repoMetadata.TenantID) {
+			if !tenant.HasAccess(ctx, repoMetadata.TenantID) {
 				continue
 			}
 
@@ -624,7 +624,7 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *ListOptions) (rl 
 		}
 		// 🚨 SECURITY: Skip documents that don't belong to the tenant. This check is
 		// necessary to prevent leaking data across tenants.
-		if !tenant.EqualsID(ctx, d.repoMetaData[i].TenantID) {
+		if !tenant.HasAccess(ctx, d.repoMetaData[i].TenantID) {
 			continue
 		}
 		rle := &d.repoListEntry[i]
