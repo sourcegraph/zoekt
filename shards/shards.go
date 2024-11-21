@@ -1065,11 +1065,7 @@ func (s *shardedSearcher) getLoaded() loaded {
 
 func mkRankedShard(s zoekt.Searcher) *rankedShard {
 	q := query.Const{Value: true}
-	ctx, err := systemtenant.With(context.Background())
-	if err != nil {
-		return &rankedShard{Searcher: s}
-	}
-	result, err := s.List(ctx, &q, nil)
+	result, err := s.List(systemtenant.Ctx, &q, nil)
 	if err != nil {
 		return &rankedShard{Searcher: s}
 	}
