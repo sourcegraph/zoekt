@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"runtime/pprof"
-	"strconv"
 	"sync"
 
 	"go.uber.org/atomic"
 
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/enforcement"
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
+	"github.com/sourcegraph/zoekt/trace"
 )
 
 var ErrMissingTenant = fmt.Errorf("missing tenant")
@@ -23,9 +23,9 @@ func FromContext(ctx context.Context) (*tenanttype.Tenant, error) {
 	return tnt, nil
 }
 
-// IDToString is a helper function that returns a printable string of the tenant
-// ID in the context. This is useful for logging.
-func IDToString(ctx context.Context) string {
+// Log logs the tenant ID to the trace. If tenant logging is enabled, it also
+// logs a stack trace to a pprof profile.
+func Log(ctx context.Context, tr *trace.Trace) {
 	tnt, ok := tenanttype.GetTenant(ctx)
 	if !ok {
 		if profile := pprofMissingTenant(); profile != nil {
@@ -35,9 +35,10 @@ func IDToString(ctx context.Context) string {
 			// skip stack for Add and this function (2).
 			profile.Add(eventValue, 2)
 		}
-		return "missing"
+		tr.LazyPrintf("tenant: missing")
+		return
 	}
-	return strconv.Itoa(tnt.ID())
+	tr.LazyPrintf("tenant: %d", tnt.ID())
 }
 
 var pprofUniqID atomic.Int64

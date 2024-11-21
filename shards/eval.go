@@ -21,7 +21,7 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
 	if tenant.EnforceTenant() {
-		tr.LazyPrintf("tenant: %s", tenant.IDToString(ctx))
+		tenant.Log(ctx, tr)
 	}
 	defer func() {
 		if sr != nil {
@@ -48,7 +48,7 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
 	if tenant.EnforceTenant() {
-		tr.LazyPrintf("tenant: %s", tenant.IDToString(ctx))
+		tenant.Log(ctx, tr)
 	}
 	var stats zoekt.Stats
 	defer func() {
@@ -76,7 +76,7 @@ func (s *typeRepoSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %s", opts)
 	if tenant.EnforceTenant() {
-		tr.LazyPrintf("tenant: %s", tenant.IDToString(ctx))
+		tenant.Log(ctx, tr)
 	}
 	defer func() {
 		if rl != nil {
