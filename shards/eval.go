@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/trace"
 )
@@ -19,6 +20,9 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.Search", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
+	if tenant.EnforceTenant() {
+		tr.LazyPrintf("tenant: %s", tenant.IDToString(ctx))
+	}
 	defer func() {
 		if sr != nil {
 			tr.LazyPrintf("num files: %d", len(sr.Files))
@@ -43,6 +47,9 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.StreamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
+	if tenant.EnforceTenant() {
+		tr.LazyPrintf("tenant: %s", tenant.IDToString(ctx))
+	}
 	var stats zoekt.Stats
 	defer func() {
 		tr.LazyPrintf("stats: %+v", stats)
@@ -68,6 +75,9 @@ func (s *typeRepoSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.List", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %s", opts)
+	if tenant.EnforceTenant() {
+		tr.LazyPrintf("tenant: %s", tenant.IDToString(ctx))
+	}
 	defer func() {
 		if rl != nil {
 			tr.LazyPrintf("repos size: %d", len(rl.Repos))
