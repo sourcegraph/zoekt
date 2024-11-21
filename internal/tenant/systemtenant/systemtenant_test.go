@@ -11,5 +11,5 @@ func TestSystemtenantRoundtrip(t *testing.T) {
 	if Is(context.Background()) {
 		t.Fatal()
 	}
-	require.True(t, Is(Ctx))
+	require.True(t, Is(UnsafeCtx))
 }
