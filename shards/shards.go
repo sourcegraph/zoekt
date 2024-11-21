@@ -35,6 +35,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/trace"
 )
@@ -1064,7 +1065,11 @@ func (s *shardedSearcher) getLoaded() loaded {
 
 func mkRankedShard(s zoekt.Searcher) *rankedShard {
 	q := query.Const{Value: true}
-	result, err := s.List(context.Background(), &q, nil)
+	ctx, err := systemtenant.With(context.Background())
+	if err != nil {
+		return &rankedShard{Searcher: s}
+	}
+	result, err := s.List(ctx, &q, nil)
 	if err != nil {
 		return &rankedShard{Searcher: s}
 	}
