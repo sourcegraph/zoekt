@@ -35,7 +35,7 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		tr.Finish()
 	}()
 
-	q, err = s.eval(ctx, q)
+	q, err = s.eval(ctx, tr, q)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		tr.Finish()
 	}()
 
-	q, err = s.eval(ctx, q)
+	q, err = s.eval(ctx, tr, q)
 	if err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (s *typeRepoSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 		tr.Finish()
 	}()
 
-	q, err = s.eval(ctx, q)
+	q, err = s.eval(ctx, tr, q)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (s *typeRepoSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 	return s.Streamer.List(ctx, q, opts)
 }
 
-func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error) {
+func (s *typeRepoSearcher) eval(ctx context.Context, tr *trace.Trace, q query.Q) (query.Q, error) {
 	var err error
 	q = query.Map(q, func(q query.Q) query.Q {
 		if err != nil {
@@ -112,6 +112,8 @@ func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error)
 			return q
 		}
 
+		tr.LazyPrintf("evaluating sub-expression %s", rq)
+
 		var rl *zoekt.RepoList
 		rl, err = s.Streamer.List(ctx, rq.Child, nil)
 		if err != nil {
@@ -122,6 +124,9 @@ func (s *typeRepoSearcher) eval(ctx context.Context, q query.Q) (query.Q, error)
 		for _, r := range rl.Repos {
 			rs.Set[r.Repository.Name] = true
 		}
+
+		tr.LazyPrintf("replaced sub-expression with %s", rs)
+
 		return rs
 	})
 	return q, err
