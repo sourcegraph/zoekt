@@ -177,6 +177,10 @@ func main() {
 	}
 	pat := flag.Arg(0)
 
+	if !*verbose {
+		log.SetOutput(io.Discard)
+	}
+
 	var searcher zoekt.Searcher
 	var err error
 	if *shard != "" {
