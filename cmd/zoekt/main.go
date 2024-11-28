@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -44,7 +45,8 @@ func displayMatches(files []zoekt.FileMatch, pat string, withRepo bool, list boo
 		}
 
 		for _, m := range f.LineMatches {
-			fmt.Printf("%s%s:%d:%s%s\n", r, f.FileName, m.LineNumber, m.Line, addTabIfNonEmpty(f.Debug))
+			l := bytes.TrimSuffix(m.Line, []byte{'\n'})
+			fmt.Printf("%s%s:%d:%s%s\n", r, f.FileName, m.LineNumber, l, addTabIfNonEmpty(f.Debug))
 		}
 	}
 }
