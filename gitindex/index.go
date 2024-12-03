@@ -17,6 +17,7 @@ package gitindex
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -408,9 +409,10 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	opts.BuildOptions.RepositoryDescription.Source = opts.RepoDir
 
 	var repo *git.Repository
-	// TODO: remove this feature flag once we test this on a large-scale instance.
-	legacyRepoOpen := os.Getenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION")
-	if b, err := strconv.ParseBool(legacyRepoOpen); b && err == nil {
+	// TODO: this now defaults to on since we found a bug in it. Once we have
+	// fixed openRepo default to false.
+	legacyRepoOpen := cmp.Or(os.Getenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION"), "true")
+	if b, err := strconv.ParseBool(legacyRepoOpen); b || err != nil {
 		repo, err = git.PlainOpen(opts.RepoDir)
 		if err != nil {
 			return false, fmt.Errorf("git.PlainOpen: %w", err)
