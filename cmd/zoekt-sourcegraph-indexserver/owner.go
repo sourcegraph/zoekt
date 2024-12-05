@@ -53,7 +53,7 @@ func (o *ownerChecker) Init() error {
 	if err := o.Check(); errors.Is(err, fs.ErrNotExist) {
 		// do nothing, first run so we just write out the file
 	} else if errors.As(err, &ownerErr) {
-		debug.Printf("WARN: detected a change in ownership at startup. You can ignore this if you only have one zoekt replica: %s", err)
+		debugLog.Printf("WARN: detected a change in ownership at startup. You can ignore this if you only have one zoekt replica: %s", err)
 	} else if err != nil {
 		return err
 	}

@@ -205,6 +205,9 @@ func TestMain(m *testing.M) {
 	level := sglog.LevelInfo
 	if !testing.Verbose() {
 		log.SetOutput(io.Discard)
+		debugLog.SetOutput(io.Discard)
+		infoLog.SetOutput(io.Discard)
+		errorLog.SetOutput(io.Discard)
 		level = sglog.LevelNone
 	}
 

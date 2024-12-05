@@ -6,7 +6,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"strconv"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
@@ -35,7 +34,7 @@ func debugIndex() *ffcli.Command {
 				return err
 			}
 			msg, err := s.forceIndex(uint32(id))
-			log.Println(msg)
+			infoLog.Println(msg)
 			if err != nil {
 				return err
 			}

@@ -303,13 +303,13 @@ func (tl *loader) load(keys ...string) {
 		tl.ss.replace(chunk)
 	}
 
-	log.Printf("loading %d shard(s): %s", len(keys), humanTruncateList(keys, 5))
+	log.Printf("[INFO] loading %d shard(s): %s", len(keys), humanTruncateList(keys, 5))
 
 	lastProgress := time.Now()
 	for i, key := range keys {
 		// If taking a while to start-up occasionally give a progress message
 		if time.Since(lastProgress) > 5*time.Second {
-			log.Printf("still need to load %d shards...", len(keys)-i)
+			log.Printf("[INFO] still need to load %d shards...", len(keys)-i)
 			lastProgress = time.Now()
 
 			publishLoaded()
@@ -325,7 +325,7 @@ func (tl *loader) load(keys ...string) {
 			shard, err := loadShard(key)
 			if err != nil {
 				metricShardsLoadFailedTotal.Inc()
-				log.Printf("reloading: %s, err %v ", key, err)
+				log.Printf("[ERROR] reloading: %s, err %v ", key, err)
 				return
 			}
 			metricShardsLoadedTotal.Inc()
@@ -896,7 +896,7 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 	defer func() {
 		metricSearchShardRunning.Dec()
 		if e := recover(); e != nil {
-			log.Printf("crashed shard: %s: %#v, %s", s, e, debug.Stack())
+			log.Printf("[ERROR] crashed shard: %s: %#v, %s", s, e, debug.Stack())
 
 			if sr == nil {
 				sr = &zoekt.SearchResult{}
@@ -918,7 +918,7 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.
 	defer func() {
 		metricListShardRunning.Dec()
 		if r := recover(); r != nil {
-			log.Printf("crashed shard: %s: %s, %s", s.String(), r, debug.Stack())
+			log.Printf("[ERROR] crashed shard: %s: %s, %s", s.String(), r, debug.Stack())
 			sink <- shardListResult{
 				&zoekt.RepoList{Crashes: 1}, nil,
 			}
@@ -1088,7 +1088,7 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 	// rankedShard.repos being set.
 	result, err := s.List(systemtenant.UnsafeCtx, &q, nil)
 	if err != nil {
-		log.Printf("mkRankedShard(%s): failed to cache repository list: %v", s, err)
+		log.Printf("[ERROR] mkRankedShard(%s): failed to cache repository list: %v", s, err)
 		return &rankedShard{Searcher: s}
 	}
 
