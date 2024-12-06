@@ -11,3 +11,4 @@ bazel-bin
 bazel-out
 bazel-testlogs
 bazel-zoekt
+test.txt
