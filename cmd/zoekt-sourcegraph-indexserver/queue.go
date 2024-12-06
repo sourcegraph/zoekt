@@ -316,7 +316,7 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) []uint32 {
 
 	// heuristically skip expensive work
 	if sameSize {
-		debug.Printf("skipping MaybeRemoveMissing due to same size: %d", len(ids))
+		debugLog.Printf("skipping MaybeRemoveMissing due to same size: %d", len(ids))
 		return nil
 	}
 

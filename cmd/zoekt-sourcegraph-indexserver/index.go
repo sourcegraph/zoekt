@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -321,7 +320,7 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 			name := o.BuildOptions().RepositoryDescription.Name
 			id := o.BuildOptions().RepositoryDescription.ID
 
-			log.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch both latest and prior commits: %s", name, id, err)
+			errorLog.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch both latest and prior commits: %s", name, id, err)
 			err = fetchOnlyLatestCommits()
 			if err != nil {
 				return err

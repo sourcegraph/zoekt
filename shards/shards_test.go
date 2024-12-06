@@ -17,8 +17,10 @@ package shards
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -38,6 +40,14 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 )
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if !testing.Verbose() {
+		log.SetOutput(io.Discard)
+	}
+	os.Exit(m.Run())
+}
 
 type crashSearcher struct{}
 
@@ -59,8 +69,10 @@ func (s *crashSearcher) String() string { return "crashSearcher" }
 
 func TestCrashResilience(t *testing.T) {
 	out := &bytes.Buffer{}
+	oldOut := log.Writer()
 	log.SetOutput(out)
-	defer log.SetOutput(os.Stderr)
+	defer log.SetOutput(oldOut)
+
 	ss := newShardedSearcher(2)
 	ss.ranked.Store([]*rankedShard{{Searcher: &crashSearcher{}}})
 
