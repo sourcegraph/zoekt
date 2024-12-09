@@ -29,6 +29,9 @@ const (
 	skipLogging contextKey = iota
 )
 
+// WithSkipMissingLogging skips logging when the tenant ID is missing. We use
+// this, for example in the health check handler, when we know that the tenant
+// ID is not needed.
 func WithSkipMissingLogging(ctx context.Context) context.Context {
 	return context.WithValue(ctx, skipLogging, skipLogging)
 }
