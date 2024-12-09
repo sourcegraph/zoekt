@@ -23,17 +23,32 @@ func FromContext(ctx context.Context) (*tenanttype.Tenant, error) {
 	return tnt, nil
 }
 
+type contextKey int
+
+const (
+	skipLogging contextKey = iota
+)
+
+// WithSkipMissingLogging skips logging when the tenant ID is missing. We use
+// this, for example in the health check handler, when we know that the tenant
+// ID is not needed.
+func WithSkipMissingLogging(ctx context.Context) context.Context {
+	return context.WithValue(ctx, skipLogging, skipLogging)
+}
+
 // Log logs the tenant ID to the trace. If tenant logging is enabled, it also
 // logs a stack trace to a pprof profile.
 func Log(ctx context.Context, tr *trace.Trace) {
 	tnt, ok := tenanttype.GetTenant(ctx)
 	if !ok {
 		if profile := pprofMissingTenant(); profile != nil {
-			// We want to track every stack trace, so need a unique value for the event
-			eventValue := pprofUniqID.Add(1)
+			if _, ok := ctx.Value(skipLogging).(contextKey); !ok {
+				// We want to track every stack trace, so need a unique value for the event
+				eventValue := pprofUniqID.Add(1)
 
-			// skip stack for Add and this function (2).
-			profile.Add(eventValue, 2)
+				// skip stack for Add and this function (2).
+				profile.Add(eventValue, 2)
+			}
 		}
 		tr.LazyPrintf("tenant: missing")
 		return
