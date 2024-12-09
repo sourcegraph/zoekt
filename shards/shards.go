@@ -935,7 +935,7 @@ func (ss *shardedSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 	defer func() {
 		metricListRunning.Dec()
 		if rl != nil {
-			tr.LazyPrintf("repos.size=%d reposmap.size=%d crashes=%d", len(rl.Repos), len(rl.ReposMap), rl.Crashes)
+			tr.LazyPrintf("repos.size=%d reposmap.size=%d crashes=%d stats=%+v", len(rl.Repos), len(rl.ReposMap), rl.Crashes, rl.Stats)
 		}
 		if err != nil {
 			tr.LazyPrintf("error: %v", err)
