@@ -77,8 +77,8 @@ func TestBM25(t *testing.T) {
 			query:    &query.Substring{Pattern: "example"},
 			content:  exampleJava,
 			language: "Java",
-			// bm25-score: 0.57 <- sum-termFrequencyScore: 10.00, length-ratio: 1.00
-			wantScore: 0.57,
+			// bm25-score: 0.58 <- sum-termFrequencyScore: 14.00, length-ratio: 1.00
+			wantScore: 0.58,
 		}, {
 			// Matches only on content
 			fileName: "example.java",
@@ -89,8 +89,8 @@ func TestBM25(t *testing.T) {
 			}},
 			content:  exampleJava,
 			language: "Java",
-			// bm25-score: 1.75 <- sum-termFrequencyScore: 56.00, length-ratio: 1.00
-			wantScore: 1.75,
+			// bm25-score: 1.81 <- sum-termFrequencyScore: 116.00, length-ratio: 1.00
+			wantScore: 1.81,
 		},
 		{
 			// Matches only on filename

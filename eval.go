@@ -339,7 +339,7 @@ nextFileMatch:
 			// document frequencies. Since we don't store document frequencies in the index,
 			// we have to defer the calculation of the final BM25 score to after the whole
 			// shard has been processed.
-			tf = calculateTermFrequency(finalCands, df)
+			tf = cp.calculateTermFrequency(finalCands, df)
 		} else {
 			// Use the standard, non-experimental scoring method by default
 			d.scoreFile(&fileMatch, nextDoc, mt, known, opts)

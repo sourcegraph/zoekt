@@ -110,30 +110,6 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	}
 }
 
-// calculateTermFrequency computes the term frequency for the file match.
-//
-// Filename matches count more than content matches. This mimics a common text
-// search strategy where you 'boost' matches on document titles.
-func calculateTermFrequency(cands []*candidateMatch, df termDocumentFrequency) map[string]int {
-	// Treat each candidate match as a term and compute the frequencies. For now, ignore case
-	// sensitivity and treat filenames and symbols the same as content.
-	termFreqs := map[string]int{}
-	for _, cand := range cands {
-		term := string(cand.substrLowered)
-		if cand.fileName {
-			termFreqs[term] += 5
-		} else {
-			termFreqs[term]++
-		}
-	}
-
-	for term := range termFreqs {
-		df[term] += 1
-	}
-
-	return termFreqs
-}
-
 // idf computes the inverse document frequency for a term. nq is the number of
 // documents that contain the term and documentCount is the total number of
 // documents in the corpus.

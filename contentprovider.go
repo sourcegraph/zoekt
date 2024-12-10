@@ -588,6 +588,22 @@ func findMaxOverlappingSection(secs []DocumentSection, off, sz uint32) (uint32, 
 	return uint32(j), ol1 > 0
 }
 
+func (p *contentProvider) matchesSymbol(cm *candidateMatch) bool {
+	if cm.fileName {
+		return false
+	}
+
+	// Check if this candidate came from a symbol matchTree
+	if cm.symbol {
+		return true
+	}
+
+	// Check if it overlaps with a symbol.
+	secs := p.docSections()
+	_, ok := findMaxOverlappingSection(secs, cm.byteOffset, cm.byteMatchSz)
+	return ok
+}
+
 func (p *contentProvider) findSymbol(cm *candidateMatch) (DocumentSection, *Symbol, bool) {
 	if cm.fileName {
 		return DocumentSection{}, nil, false
@@ -617,6 +633,29 @@ func (p *contentProvider) findSymbol(cm *candidateMatch) (DocumentSection, *Symb
 	si := p.id.symbols.data(start + secIdx)
 
 	return sec, si, true
+}
+
+// calculateTermFrequency computes the term frequency for the file match.
+// Notes:
+// * Filename matches count more than content matches. This mimics a common text search strategy to 'boost' matches on document titles.
+// * Symbol matches also count more than content matches, to reward matches on symbol definitions.
+func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch, df termDocumentFrequency) map[string]int {
+	// Treat each candidate match as a term and compute the frequencies. For now, ignore case
+	// sensitivity and treat filenames and symbols the same as content.
+	termFreqs := map[string]int{}
+	for _, m := range cands {
+		term := string(m.substrLowered)
+		if m.fileName || p.matchesSymbol(m) {
+			termFreqs[term] += 5
+		} else {
+			termFreqs[term]++
+		}
+	}
+
+	for term := range termFreqs {
+		df[term] += 1
+	}
+	return termFreqs
 }
 
 func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language string, debug bool) (float64, string, []*Symbol) {
