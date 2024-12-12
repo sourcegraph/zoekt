@@ -32,7 +32,9 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
+
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
 	zjson "github.com/sourcegraph/zoekt/json"
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -206,7 +208,10 @@ func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
 	q := &query.Const{Value: true}
 	opts := &zoekt.SearchOptions{ShardMaxMatchCount: 1, TotalMaxMatchCount: 1, MaxDocDisplayCount: 1}
 
-	result, err := s.Searcher.Search(r.Context(), q, opts)
+	// We need to use WithUnsafeContext here because we want to perform a full
+	// search returning results. The result of this search is not used for anything
+	// other than determining if the server is healthy.
+	result, err := s.Searcher.Search(systemtenant.WithUnsafeContext(r.Context()), q, opts)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("not ready: %v", err), http.StatusInternalServerError)
 		return
