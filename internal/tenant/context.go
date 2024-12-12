@@ -10,6 +10,7 @@ import (
 
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/enforcement"
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
+	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
 	"github.com/sourcegraph/zoekt/trace"
 )
 
@@ -26,6 +27,10 @@ func FromContext(ctx context.Context) (*tenanttype.Tenant, error) {
 // Log logs the tenant ID to the trace. If tenant logging is enabled, it also
 // logs a stack trace to a pprof profile.
 func Log(ctx context.Context, tr *trace.Trace) {
+	if systemtenant.Is(ctx) {
+		tr.LazyPrintf("tenant: system")
+		return
+	}
 	tnt, ok := tenanttype.GetTenant(ctx)
 	if !ok {
 		if profile := pprofMissingTenant(); profile != nil {

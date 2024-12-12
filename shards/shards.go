@@ -1083,10 +1083,10 @@ func (s *shardedSearcher) getLoaded() loaded {
 
 func mkRankedShard(s zoekt.Searcher) *rankedShard {
 	q := query.Const{Value: true}
-	// We need to use UnsafeCtx here, otherwise we cannot return a proper
+	// We need to use WithUnsafeContext here, otherwise we cannot return a proper
 	// rankedShard. On the user request path we use selectRepoSet which relies on
 	// rankedShard.repos being set.
-	result, err := s.List(systemtenant.UnsafeCtx, &q, nil)
+	result, err := s.List(systemtenant.WithUnsafeContext(context.Background()), &q, nil)
 	if err != nil {
 		log.Printf("[ERROR] mkRankedShard(%s): failed to cache repository list: %v", s, err)
 		return &rankedShard{Searcher: s}

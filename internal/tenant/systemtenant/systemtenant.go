@@ -10,9 +10,11 @@ type contextKey int
 
 const systemTenantKey contextKey = iota
 
-// UnsafeCtx is a context that allows queries across all tenants. Don't use this
-// for user requests.
-var UnsafeCtx = context.WithValue(context.Background(), systemTenantKey, systemTenantKey)
+// WithUnsafeContext taints the context to allow queries across all tenants.
+// Never use this for user requests.
+func WithUnsafeContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, systemTenantKey, systemTenantKey)
+}
 
 // Is returns true if the context has been marked to allow queries across all
 // tenants.
