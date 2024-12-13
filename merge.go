@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -170,10 +169,10 @@ func explode(dstDir string, f IndexFile, ibFuncs ...indexBuilderFunc) (map[strin
 			prefix = ib.repoList[0].Name
 		}
 
-		fn := filepath.Join(dstDir, shardName(prefix, ib.indexFormatVersion, 0))
-		fnTmp := fn + ".tmp"
-		shardNames[fnTmp] = fn
-		return builderWriteAll(fnTmp, ib)
+		shardName := ShardName(dstDir, prefix, ib.indexFormatVersion, 0)
+		shardNameTmp := shardName + ".tmp"
+		shardNames[shardNameTmp] = shardName
+		return builderWriteAll(shardNameTmp, ib)
 	}
 
 	var ib *IndexBuilder
@@ -263,13 +262,4 @@ func hashString(s string) string {
 	h := sha1.New()
 	_, _ = io.WriteString(h, s)
 	return fmt.Sprintf("%x", h.Sum(nil))
-}
-
-// copied from builder package to avoid circular imports.
-func shardName(prefix string, version, n int) string {
-	abs := url.QueryEscape(prefix)
-	if len(abs) > 200 {
-		abs = abs[:200] + hashString(abs)[:8]
-	}
-	return fmt.Sprintf("%s_v%d.%05d.zoekt", abs, version, n)
 }

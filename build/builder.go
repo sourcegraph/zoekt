@@ -21,7 +21,6 @@ import (
 	"crypto/sha1"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/url"
 	"os"
@@ -334,12 +333,6 @@ func (o *Options) SetDefaults() {
 	}
 }
 
-func hashString(s string) string {
-	h := sha1.New()
-	_, _ = io.WriteString(h, s)
-	return fmt.Sprintf("%x", h.Sum(nil))
-}
-
 // ShardName returns the name the given index shard.
 func (o *Options) shardName(n int) string {
 	return o.shardNameVersion(zoekt.IndexFormatVersion, n)
@@ -347,12 +340,7 @@ func (o *Options) shardName(n int) string {
 
 func (o *Options) shardNameVersion(version, n int) string {
 	prefix := url.QueryEscape(cmp.Or(o.ShardPrefix, o.RepositoryDescription.Name))
-	if len(prefix) > 200 {
-		prefix = prefix[:200] + hashString(prefix)[:8]
-	}
-	shardName := filepath.Join(o.IndexDir,
-		fmt.Sprintf("%s_v%d.%05d.zoekt", prefix, version, n))
-	return shardName
+	return zoekt.ShardName(o.IndexDir, prefix, version, n)
 }
 
 type IndexState string
