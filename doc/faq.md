@@ -84,7 +84,7 @@ supported by all projects.
 
 ## What about the search on `github.com`?
 
-Github's search has great coverage, but unfortunately, its search
+GitHub's search has great coverage, but unfortunately, its search
 functionality doesn't support arbitrary substrings. For example, a
 query [for part of my
 surname](https://github.com/search?utf8=%E2%9C%93&q=nienhuy&type=Code)
