@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,7 +22,7 @@ func TestCleanup(t *testing.T) {
 		return shard{
 			RepoID:        fakeID(name),
 			RepoName:      name,
-			Path:          fmt.Sprintf("%s_v%d.%05d.zoekt", url.QueryEscape(name), 15, n),
+			Path:          zoekt.ShardName("", name, 15, n),
 			ModTime:       mtime,
 			RepoTombstone: false,
 		}

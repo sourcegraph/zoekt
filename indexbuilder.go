@@ -583,3 +583,13 @@ func (t *DocChecker) clearTrigrams(maxTrigramCount int) {
 		delete(t.trigrams, key)
 	}
 }
+
+// ShardName returns the name of the shard for the given prefix, version, and
+// shard number.
+func ShardName(indexDir string, prefix string, version, n int) string {
+	prefix = url.QueryEscape(prefix)
+	if len(prefix) > 200 {
+		prefix = prefix[:200] + hashString(prefix)[:8]
+	}
+	return filepath.Join(indexDir, fmt.Sprintf("%s_v%d.%05d.zoekt", prefix, version, n))
+}

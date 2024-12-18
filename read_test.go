@@ -370,10 +370,10 @@ func TestBackwardsCompat(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		outname := fmt.Sprintf("testdata/backcompat/new_v%d.%05d.zoekt", IndexFormatVersion, 0)
-		t.Log("writing new file", outname)
+		outName := ShardName("testdata/backcompat", "new", IndexFormatVersion, 0)
+		t.Log("writing new file", outName)
 
-		err = os.WriteFile(outname, buf.Bytes(), 0o644)
+		err = os.WriteFile(outName, buf.Bytes(), 0o644)
 		if err != nil {
 			t.Fatalf("Creating output file: %v", err)
 		}
