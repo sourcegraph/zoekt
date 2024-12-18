@@ -339,8 +339,7 @@ func (o *Options) shardName(n int) string {
 }
 
 func (o *Options) shardNameVersion(version, n int) string {
-	prefix := url.QueryEscape(cmp.Or(o.ShardPrefix, o.RepositoryDescription.Name))
-	return zoekt.ShardName(o.IndexDir, prefix, version, n)
+	return zoekt.ShardName(o.IndexDir, cmp.Or(o.ShardPrefix, o.RepositoryDescription.Name), version, n)
 }
 
 type IndexState string
