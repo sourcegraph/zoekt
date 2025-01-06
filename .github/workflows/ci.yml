@@ -56,7 +56,7 @@ jobs:
           packages: 'github.com/sourcegraph/zoekt' # This is the package where the Protobuf round trip tests are defined
           fuzz-time: 30s
           fuzz-minimize-time: 1m
-          go-version: '1.22'
+          go-version: '1.23'
 
   shellcheck:
     name: shellcheck
