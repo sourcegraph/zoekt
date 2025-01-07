@@ -214,7 +214,7 @@ type IndexBuilder struct {
 }
 
 func (d *Repository) verify() error {
-	for _, t := range []string{d.FileURLTemplate, d.LineFragmentTemplate, d.CommitURLTemplate} {
+	for _, t := range []string{d.FileURLTemplate, d.FileEditURLTemplate, d.LineFragmentTemplate, d.CommitURLTemplate} {
 		if _, err := ParseTemplate(t); err != nil {
 			return err
 		}

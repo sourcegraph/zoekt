@@ -113,11 +113,13 @@ func TestSizeBytesSearchResult(t *testing.T) {
 			SubRepositoryPath:  "",  // 16 bytes
 			Version:            "",  // 16 bytes
 		}},
-		RepoURLs:      nil, // 48 bytes
-		LineFragments: nil, // 48 bytes
+		RepoURLs:       nil, // 48 bytes
+		RepoEditURLs:   nil, // 48 bytes
+		RepoBrowseURLs: nil, // 48 bytes
+		LineFragments:  nil, // 48 bytes
 	}
 
-	var wantBytes uint64 = 725
+	var wantBytes uint64 = 821
 	if sr.SizeBytes() != wantBytes {
 		t.Fatalf("want %d, got %d", wantBytes, sr.SizeBytes())
 	}

@@ -29,11 +29,23 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 	var fmatches []*FileMatch
 
 	templateMap := map[string]*template.Template{}
+	editTemplateMap := map[string]*template.Template{}
+	browseMap := map[string]string{}
 	fragmentMap := map[string]*template.Template{}
 	if !localPrint {
 		for repo, str := range result.RepoURLs {
 			if str != "" {
 				templateMap[repo] = s.getTextTemplate(str)
+			}
+		}
+		for repo, str := range result.RepoEditURLs {
+			if str != "" {
+				editTemplateMap[repo] = s.getTextTemplate(str)
+			}
+		}
+		for repo, str := range result.RepoBrowseURLs {
+			if str != "" {
+				browseMap[repo] = str
 			}
 		}
 		for repo, str := range result.LineFragments {

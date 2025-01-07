@@ -36,8 +36,10 @@ func newCollectSender(opts *zoekt.SearchOptions) *collectSender {
 func (c *collectSender) Send(r *zoekt.SearchResult) {
 	if c.aggregate == nil {
 		c.aggregate = &zoekt.SearchResult{
-			RepoURLs:      map[string]string{},
-			LineFragments: map[string]string{},
+			RepoURLs:       map[string]string{},
+			RepoEditURLs:   map[string]string{},
+			RepoBrowseURLs: map[string]string{},
+			LineFragments:  map[string]string{},
 		}
 	}
 
@@ -50,6 +52,12 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 
 		for k, v := range r.RepoURLs {
 			c.aggregate.RepoURLs[k] = v
+		}
+		for k, v := range r.RepoEditURLs {
+			c.aggregate.RepoEditURLs[k] = v
+		}
+		for k, v := range r.RepoBrowseURLs {
+			c.aggregate.RepoBrowseURLs[k] = v
 		}
 		for k, v := range r.LineFragments {
 			c.aggregate.LineFragments[k] = v

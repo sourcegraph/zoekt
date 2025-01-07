@@ -96,11 +96,12 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 	// helper to generate u.JoinPath as a template
 	varVersion := ".Version"
 	varPath := ".Path"
+	varBranch := ".Branch"
 	urlJoinPath := func(elem ...string) string {
 		elem = append([]string{u.String()}, elem...)
 		var parts []string
 		for _, e := range elem {
-			if e == varVersion || e == varPath {
+			if e == varVersion || e == varPath || e == varBranch {
 				parts = append(parts, e)
 			} else {
 				parts = append(parts, strconv.Quote(e))
@@ -120,6 +121,7 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 		// eg. https://github.com/hanwen/go-fuse/blob/notify/genversion.sh#L10
 		repo.CommitURLTemplate = urlJoinPath("commit", varVersion)
 		repo.FileURLTemplate = urlJoinPath("blob", varVersion, varPath)
+		repo.FileEditURLTemplate = urlJoinPath("edit", varBranch, varPath)
 		repo.LineFragmentTemplate = "#L{{.LineNumber}}"
 	case "cgit":
 		// http://git.savannah.gnu.org/cgit/lilypond.git/tree/elisp/lilypond-mode.el?h=dev/philh&id=b2ca0fefe3018477aaca23b6f672c7199ba5238e#n100
@@ -142,12 +144,14 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 		// https://<bitbucketserver-host>/projects/<project>/repos/<repo>/browse/<file>?at=5be7ca73b898bf17a08e607918accfdeafe1e0bc
 		repo.CommitURLTemplate = urlJoinPath("commits", varVersion)
 		repo.FileURLTemplate = urlJoinPath(varPath) + "?at={{.Version}}"
+		repo.FileEditURLTemplate = urlJoinPath(varPath) + "?at={{.Branch}}&mode=edit"
 		repo.LineFragmentTemplate = "#{{.LineNumber}}"
 	case "gitlab":
 		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/commit/b152c864303dae0e55377a1e2c53c9592380ffed
 		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/blob/aad04155b3f6fc50ede88aedaee7fc624d481149/files/gitlab-config-template/gitlab.rb.template
 		repo.CommitURLTemplate = urlJoinPath("-/commit", varVersion)
 		repo.FileURLTemplate = urlJoinPath("-/blob", varVersion, varPath)
+		repo.FileEditURLTemplate = urlJoinPath("-/edit", varBranch, varPath)
 		repo.LineFragmentTemplate = "#L{{.LineNumber}}"
 	case "gitea":
 		repo.CommitURLTemplate = urlJoinPath("commit", varVersion)
@@ -157,6 +161,7 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 		// When /src/{{.Version}} is used it will redirect to /src/commit/{{.Version}},
 		// but the query  parameters are obmitted.
 		repo.FileURLTemplate = urlJoinPath("src/commit", varVersion, varPath) + "?display=source"
+		repo.FileEditURLTemplate = urlJoinPath("_edit", varBranch, varPath)
 		repo.LineFragmentTemplate = "#L{{.LineNumber}}"
 	default:
 		return fmt.Errorf("URL scheme type %q unknown", typ)

@@ -505,6 +505,12 @@ type SearchResult struct {
 	// RepoURLs holds a repo => template string map.
 	RepoURLs map[string]string
 
+	// RepoEditURLs holds a repo => template string map, for editing.
+	RepoEditURLs map[string]string
+
+	// RepoBrowseURLs holds a repo => string map, for browsing the repo.
+	RepoBrowseURLs map[string]string
+
 	// FragmentNames holds a repo => template string map, for
 	// the line number fragment.
 	LineFragments map[string]string
@@ -526,6 +532,20 @@ func (sr *SearchResult) SizeBytes() (sz uint64) {
 	// RepoURLs
 	sz += mapHeaderBytes
 	for k, v := range sr.RepoURLs {
+		sz += stringHeaderBytes + uint64(len(k))
+		sz += stringHeaderBytes + uint64(len(v))
+	}
+
+	// RepoEditURLs
+	sz += mapHeaderBytes
+	for k, v := range sr.RepoEditURLs {
+		sz += stringHeaderBytes + uint64(len(k))
+		sz += stringHeaderBytes + uint64(len(v))
+	}
+
+	// RepoBrowseURLs
+	sz += mapHeaderBytes
+	for k, v := range sr.RepoBrowseURLs {
 		sz += stringHeaderBytes + uint64(len(k))
 		sz += stringHeaderBytes + uint64(len(v))
 	}
@@ -583,6 +603,10 @@ type Repository struct {
 	// The repository URL for getting to a file.  Has access to
 	// {{.Version}}, {{.Path}}
 	FileURLTemplate string
+
+	// The repository URL for editing a file. Has access to
+	// {{.Branch}}, {{.Path}}
+	FileEditURLTemplate string
 
 	// The URL fragment to add to a file URL for line numbers. has
 	// access to {{.LineNumber}}. The fragment should include the
@@ -733,6 +757,10 @@ func (r *Repository) MergeMutable(x *Repository) (mutated bool, err error) {
 	if r.FileURLTemplate != x.FileURLTemplate {
 		mutated = true
 		r.FileURLTemplate = x.FileURLTemplate
+	}
+	if r.FileEditURLTemplate != x.FileEditURLTemplate {
+		mutated = true
+		r.FileEditURLTemplate = x.FileEditURLTemplate
 	}
 	if r.LineFragmentTemplate != x.LineFragmentTemplate {
 		mutated = true

@@ -137,15 +137,19 @@ func TestProtoRoundtrip(t *testing.T) {
 		t.Run("unary", func(t *testing.T) {
 			f := func(f1 *SearchResult) bool {
 				var repoURLs map[string]string
+				var repoEditURLs map[string]string
+				var repoBrowseURLs map[string]string
 				var lineFragments map[string]string
 
 				if f1 != nil {
 					repoURLs = f1.RepoURLs
+					repoEditURLs = f1.RepoEditURLs
+					repoBrowseURLs = f1.RepoBrowseURLs
 					lineFragments = f1.LineFragments
 				}
 
 				p1 := f1.ToProto()
-				f2 := SearchResultFromProto(p1, repoURLs, lineFragments)
+				f2 := SearchResultFromProto(p1, repoURLs, repoEditURLs, repoBrowseURLs, lineFragments)
 
 				return reflect.DeepEqual(f1, f2)
 			}
@@ -157,15 +161,19 @@ func TestProtoRoundtrip(t *testing.T) {
 		t.Run("stream", func(t *testing.T) {
 			f := func(f1 *SearchResult) bool {
 				var repoURLs map[string]string
+				var repoEditURLs map[string]string
+				var repoBrowseURLs map[string]string
 				var lineFragments map[string]string
 
 				if f1 != nil {
 					repoURLs = f1.RepoURLs
+					repoEditURLs = f1.RepoEditURLs
+					repoBrowseURLs = f1.RepoBrowseURLs
 					lineFragments = f1.LineFragments
 				}
 
 				p1 := f1.ToStreamProto()
-				f2 := SearchResultFromStreamProto(p1, repoURLs, lineFragments)
+				f2 := SearchResultFromStreamProto(p1, repoURLs, repoEditURLs, repoBrowseURLs, lineFragments)
 
 				return reflect.DeepEqual(f1, f2)
 			}
@@ -242,6 +250,7 @@ func TestProtoRoundtrip(t *testing.T) {
 				},
 				CommitURLTemplate:    "committemplate",
 				FileURLTemplate:      "fileurltemplate",
+				FileEditURLTemplate:  "fileedittemplate",
 				LineFragmentTemplate: "linefragmenttemplate",
 				priority:             10,
 				RawConfig: map[string]string{
@@ -377,6 +386,7 @@ func (*Repository) Generate(rng *rand.Rand, _ int) reflect.Value {
 		SubRepoMap:           map[string]*Repository{},
 		CommitURLTemplate:    gen(r.CommitURLTemplate, rng),
 		FileURLTemplate:      gen(r.FileURLTemplate, rng),
+		FileEditURLTemplate:  gen(r.FileEditURLTemplate, rng),
 		LineFragmentTemplate: gen(r.LineFragmentTemplate, rng),
 		priority:             gen(r.priority, rng),
 		RawConfig:            gen(r.RawConfig, rng),
@@ -423,7 +433,7 @@ var (
 	}()
 
 	// The non-proto struct representation of the search result
-	exampleSearchResultGo = SearchResultFromProto(exampleSearchResultProto, nil, nil)
+	exampleSearchResultGo = SearchResultFromProto(exampleSearchResultProto, nil, nil, nil, nil)
 )
 
 func BenchmarkGobRoundtrip(b *testing.B) {

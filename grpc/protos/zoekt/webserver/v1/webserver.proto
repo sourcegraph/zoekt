@@ -24,8 +24,8 @@ message SearchRequest {
 }
 
 message SearchResponse {
-  reserved 4, 5;
-  reserved "repo_urls", "line_fragments";
+  reserved 4, 5, 6, 7;
+  reserved "repo_urls", "line_fragments", "repo_edit_urls", "repo_browse_urls";
 
   Stats stats = 1;
   Progress progress = 2;
@@ -216,6 +216,10 @@ message Repository {
 
   // tenant_id is the tenant ID of the repository.
   int64 tenant_id = 18;
+
+  // The repository URL for editing a file.  Has access to
+  // {{.Version}}, {{.Path}}, {{.Branch}}
+  string file_edit_url_template = 19;
 }
 
 message IndexMetadata {
