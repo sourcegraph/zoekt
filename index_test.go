@@ -38,6 +38,7 @@ func clearScores(r *SearchResult) {
 		}
 		for j := range r.Files[i].ChunkMatches {
 			r.Files[i].ChunkMatches[j].Score = 0.0
+			r.Files[i].ChunkMatches[j].BestLineMatch = 0
 		}
 		r.Files[i].Checksum = nil
 		r.Files[i].Debug = ""

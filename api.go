@@ -161,7 +161,13 @@ type ChunkMatch struct {
 	// beginning of a line (Column will always be 1).
 	ContentStart Location
 
+	// Score is the overall relevance score of this chunk.
 	Score float64
+
+	// BestLineMatch is the line number of the highest-scoring line match in this chunk.
+	// The line number represents the index in the full file, and is 1-based. If FileName: true,
+	// this number will be 0.
+	BestLineMatch uint32
 }
 
 func (cm *ChunkMatch) sizeBytes() (sz uint64) {

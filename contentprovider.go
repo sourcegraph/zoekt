@@ -164,12 +164,12 @@ func (p *contentProvider) fillMatches(ms []*candidateMatch, numContextLines int,
 	}
 
 	// Otherwise, we return a single line containing the filematch match.
-	score, debugScore, _ := p.candidateMatchScore(filenameMatches, language, debug)
+	bestMatch, _ := p.candidateMatchScore(filenameMatches, language, debug)
 	res := LineMatch{
 		Line:       p.id.fileName(p.idx),
 		FileName:   true,
-		Score:      score,
-		DebugScore: debugScore,
+		Score:      bestMatch.score,
+		DebugScore: bestMatch.debugScore,
 	}
 
 	for _, m := range ms {
@@ -210,7 +210,7 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 	}
 
 	// Otherwise, we return a single chunk representing the filename match.
-	score, debugScore, _ := p.candidateMatchScore(filenameMatches, language, debug)
+	bestMatch, _ := p.candidateMatchScore(filenameMatches, language, debug)
 	fileName := p.id.fileName(p.idx)
 	ranges := make([]Range, 0, len(ms))
 	for _, m := range ms {
@@ -233,9 +233,8 @@ func (p *contentProvider) fillChunkMatches(ms []*candidateMatch, numContextLines
 		ContentStart: Location{ByteOffset: 0, LineNumber: 1, Column: 1},
 		Ranges:       ranges,
 		FileName:     true,
-
-		Score:      score,
-		DebugScore: debugScore,
+		Score:        bestMatch.score,
+		DebugScore:   bestMatch.debugScore,
 	}}
 }
 
@@ -297,9 +296,9 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 			finalMatch.After = p.newlines().getLines(data, num+1, num+1+numContextLines)
 		}
 
-		score, debugScore, symbolInfo := p.candidateMatchScore(lineCands, language, debug)
-		finalMatch.Score = score
-		finalMatch.DebugScore = debugScore
+		bestMatch, symbolInfo := p.candidateMatchScore(lineCands, language, debug)
+		finalMatch.Score = bestMatch.score
+		finalMatch.DebugScore = bestMatch.debugScore
 
 		for i, m := range lineCands {
 			fragment := LineFragmentMatch{
@@ -336,7 +335,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 	chunks := chunkCandidates(ms, newlines, numContextLines)
 	chunkMatches := make([]ChunkMatch, 0, len(chunks))
 	for _, chunk := range chunks {
-		score, debugScore, symbolInfo := p.candidateMatchScore(chunk.candidates, language, debug)
+		bestMatch, symbolInfo := p.candidateMatchScore(chunk.candidates, language, debug)
 
 		ranges := make([]Range, 0, len(chunk.candidates))
 		for _, cm := range chunk.candidates {
@@ -364,6 +363,14 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 		}
 		firstLineStart := newlines.lineStart(firstLineNumber)
 
+		bestLineMatch := 0
+		if bestMatch.match != nil {
+			bestLineMatch = newlines.atOffset(bestMatch.match.byteOffset)
+			if debug {
+				bestMatch.debugScore = fmt.Sprintf("%s, (line: %d)", bestMatch.debugScore, bestLineMatch)
+			}
+		}
+
 		chunkMatches = append(chunkMatches, ChunkMatch{
 			Content: newlines.getLines(data, firstLineNumber, int(chunk.lastLine)+numContextLines+1),
 			ContentStart: Location{
@@ -371,11 +378,12 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 				LineNumber: uint32(firstLineNumber),
 				Column:     1,
 			},
-			FileName:   false,
-			Ranges:     ranges,
-			SymbolInfo: symbolInfo,
-			Score:      score,
-			DebugScore: debugScore,
+			FileName:      false,
+			Ranges:        ranges,
+			SymbolInfo:    symbolInfo,
+			BestLineMatch: uint32(bestLineMatch),
+			Score:         bestMatch.score,
+			DebugScore:    bestMatch.debugScore,
 		})
 	}
 	return chunkMatches
@@ -658,25 +666,30 @@ func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch, df ter
 	return termFreqs
 }
 
-func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language string, debug bool) (float64, string, []*Symbol) {
-	type debugScore struct {
-		what  string
-		score float64
-	}
+// scoredMatch holds the score information for a candidate match.
+type scoredMatch struct {
+	score      float64
+	debugScore string
+	match      *candidateMatch
+}
 
-	score := &debugScore{}
-	maxScore := &debugScore{}
+// candidateMatchScore scores all candidate matches and returns the best-scoring match plus its score information.
+// Invariant: there should be at least one input candidate, len(ms) > 0.
+func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language string, debug bool) (scoredMatch, []*Symbol) {
+	score := 0.0
+	what := ""
 
-	addScore := func(what string, s float64) {
+	addScore := func(w string, s float64) {
 		if s != 0 && debug {
-			score.what += fmt.Sprintf("%s:%.2f, ", what, s)
+			what += fmt.Sprintf("%s:%.2f, ", w, s)
 		}
-		score.score += s
+		score += s
 	}
 
 	filename := p.data(true)
 	var symbolInfo []*Symbol
 
+	var bestMatch scoredMatch
 	for i, m := range ms {
 		data := p.data(m.fileName)
 
@@ -684,8 +697,8 @@ func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language str
 		startBoundary := m.byteOffset < uint32(len(data)) && (m.byteOffset == 0 || byteClass(data[m.byteOffset-1]) != byteClass(data[m.byteOffset]))
 		endBoundary := endOffset > 0 && (endOffset == uint32(len(data)) || byteClass(data[endOffset-1]) != byteClass(data[endOffset]))
 
-		score.score = 0
-		score.what = ""
+		score = 0
+		what = ""
 
 		if startBoundary && endBoundary {
 			addScore("WordMatch", scoreWordMatch)
@@ -737,23 +750,24 @@ func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language str
 
 		// scoreWeight != 1 means it affects score
 		if !epsilonEqualsOne(m.scoreWeight) {
-			score.score = score.score * m.scoreWeight
+			score = score * m.scoreWeight
 			if debug {
-				score.what += fmt.Sprintf("boost:%.2f, ", m.scoreWeight)
+				what += fmt.Sprintf("boost:%.2f, ", m.scoreWeight)
 			}
 		}
 
-		if score.score > maxScore.score {
-			maxScore.score = score.score
-			maxScore.what = score.what
+		if score > bestMatch.score {
+			bestMatch.score = score
+			bestMatch.debugScore = what
+			bestMatch.match = m
 		}
 	}
 
 	if debug {
-		maxScore.what = fmt.Sprintf("score:%.2f <- %s", maxScore.score, strings.TrimSuffix(maxScore.what, ", "))
+		bestMatch.debugScore = fmt.Sprintf("score:%.2f <- %s", bestMatch.score, strings.TrimSuffix(bestMatch.debugScore, ", "))
 	}
 
-	return maxScore.score, maxScore.what, symbolInfo
+	return bestMatch, symbolInfo
 }
 
 // sectionSlice will return data[sec.Start:sec.End] but will clip Start and

@@ -27,11 +27,12 @@ import (
 )
 
 type scoreCase struct {
-	fileName  string
-	content   []byte
-	query     query.Q
-	language  string
-	wantScore float64
+	fileName          string
+	content           []byte
+	query             query.Q
+	language          string
+	wantScore         float64
+	wantBestLineMatch uint32
 }
 
 func TestFileNameMatch(t *testing.T) {
@@ -79,6 +80,8 @@ func TestBM25(t *testing.T) {
 			language: "Java",
 			// bm25-score: 0.58 <- sum-termFrequencyScore: 14.00, length-ratio: 1.00
 			wantScore: 0.58,
+			// line 5:    private final int exampleField;
+			wantBestLineMatch: 5,
 		}, {
 			// Matches only on content
 			fileName: "example.java",
@@ -91,6 +94,8 @@ func TestBM25(t *testing.T) {
 			language: "Java",
 			// bm25-score: 1.81 <- sum-termFrequencyScore: 116.00, length-ratio: 1.00
 			wantScore: 1.81,
+			// line 3: public class InnerClasses {
+			wantBestLineMatch: 3,
 		},
 		{
 			// Matches only on filename
@@ -130,6 +135,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 50 (partial word)
 			wantScore: 6550,
+			// line 37: public class InnerClass implements InnerInterface<Integer, Integer> {
+			wantBestLineMatch: 37,
 		},
 		{
 			fileName: "example.java",
@@ -138,6 +145,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 5500 (partial symbol at boundary) + 1000 (Java class) + 500 (word)
 			wantScore: 7000,
+			// line 32:   public static class InnerStaticClass {
+			wantBestLineMatch: 32,
 		},
 		{
 			fileName: "example.java",
@@ -146,6 +155,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 7000 (symbol) + 900 (Java enum) + 500 (word)
 			wantScore: 8400,
+			// line 16:   public enum InnerEnum {
+			wantBestLineMatch: 16,
 		},
 		{
 			fileName: "example.java",
@@ -154,6 +165,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 7000 (symbol) + 800 (Java interface) + 500 (word)
 			wantScore: 8300,
+			// line 22:     public interface InnerInterface<A, B> {
+			wantBestLineMatch: 22,
 		},
 		{
 			fileName: "example.java",
@@ -162,6 +175,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 7000 (symbol) + 700 (Java method) + 500 (word)
 			wantScore: 8200,
+			// line 44:     public void innerMethod() {
+			wantBestLineMatch: 44,
 		},
 		{
 			fileName: "example.java",
@@ -170,6 +185,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 7000 (symbol) + 600 (Java field) + 500 (word)
 			wantScore: 8100,
+			// line 38:     private final int field;
+			wantBestLineMatch: 38,
 		},
 		{
 			fileName: "example.java",
@@ -178,6 +195,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 7000 (symbol) + 500 (Java enum constant) + 500 (word)
 			wantScore: 8000,
+			// line 18:     B,
+			wantBestLineMatch: 18,
 		},
 		// 2 Atoms (1x content and 1x filename)
 		{
@@ -187,6 +206,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 5500 (edge symbol) + 600 (Java field) + 500 (word) + 200 (atom)
 			wantScore: 6800,
+			// line 5:   private final int exampleField;
+			wantBestLineMatch: 5,
 		},
 		// 3 Atoms (2x content, 1x filename)
 		{
@@ -199,6 +220,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 7000 (symbol) + 700 (Java method) + 500 (word) + 266.67 (atom)
 			wantScore: 8466,
+			// line 54:   private static <A, B> B runInnerInterface(InnerInterface<A, B> fn, A a) {
+			wantBestLineMatch: 54,
 		},
 		// 4 Atoms (4x content)
 		{
@@ -213,6 +236,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 7000 (symbol) + 900 (Java enum) + 500 (word) + 300 (atom)
 			wantScore: 8700,
+			// line 16:   public enum InnerEnum {
+			wantBestLineMatch: 16,
 		},
 		{
 			fileName: "example.java",
@@ -221,6 +246,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 4000 (overlap Symbol) + 700 (Java method) + 50 (partial word)
 			wantScore: 4750,
+			// line 54:   private static <A, B> B runInnerInterface(InnerInterface<A, B> fn, A a) {
+			wantBestLineMatch: 54,
 		},
 		{
 			fileName: "example.java",
@@ -229,6 +256,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 7000 (Symbol) + 900 (Java enum) + 500 (word)
 			wantScore: 8400,
+			// line 16:   public enum InnerEnum {
+			wantBestLineMatch: 16,
 		},
 		{
 			fileName: "example.java",
@@ -237,6 +266,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 5500 (edge Symbol) + 900 (Java enum) + 500 (word)
 			wantScore: 6900,
+			// line 16:   public enum InnerEnum {
+			wantBestLineMatch: 16,
 		},
 		{
 			fileName: "example.java",
@@ -245,6 +276,8 @@ func TestJava(t *testing.T) {
 			language: "Java",
 			// 4000 (overlap Symbol) + 900 (Java enum) + 500 (word)
 			wantScore: 5400,
+			// line 16:   public enum InnerEnum {
+			wantBestLineMatch: 16,
 		},
 	}
 
@@ -638,6 +671,16 @@ func checkScoring(t *testing.T, c scoreCase, useBM25 bool, parserType ctags.CTag
 
 		if got := withoutTiebreaker(srs.Files[0].Score, useBM25); math.Abs(got-c.wantScore) > epsilon {
 			t.Fatalf("score: want %f, got %f\ndebug: %s\ndebugscore: %s", c.wantScore, got, srs.Files[0].Debug, srs.Files[0].ChunkMatches[0].DebugScore)
+		}
+
+		if c.wantBestLineMatch != 0 {
+			if len(srs.Files[0].ChunkMatches) == 0 {
+				t.Fatalf("want BestLineMatch %d, but no chunk matches were returned", c.wantBestLineMatch)
+			}
+			chunkMatch := srs.Files[0].ChunkMatches[0]
+			if chunkMatch.BestLineMatch != c.wantBestLineMatch {
+				t.Fatalf("want BestLineMatch %d, got %d", c.wantBestLineMatch, chunkMatch.BestLineMatch)
+			}
 		}
 
 		if got := srs.Files[0].Language; got != c.language {

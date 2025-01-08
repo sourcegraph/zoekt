@@ -485,6 +485,7 @@ message ChunkMatch {
 
   double score = 6;
   string debug_score = 7;
+  uint32 best_line_match = 8;
 }
 
 message Range {

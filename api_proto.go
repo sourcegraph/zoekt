@@ -96,13 +96,14 @@ func ChunkMatchFromProto(p *proto.ChunkMatch) ChunkMatch {
 	}
 
 	return ChunkMatch{
-		Content:      p.GetContent(),
-		ContentStart: LocationFromProto(p.GetContentStart()),
-		FileName:     p.GetFileName(),
-		Ranges:       ranges,
-		SymbolInfo:   symbols,
-		Score:        p.GetScore(),
-		DebugScore:   p.GetDebugScore(),
+		Content:       p.GetContent(),
+		ContentStart:  LocationFromProto(p.GetContentStart()),
+		FileName:      p.GetFileName(),
+		Ranges:        ranges,
+		SymbolInfo:    symbols,
+		Score:         p.GetScore(),
+		BestLineMatch: p.GetBestLineMatch(),
+		DebugScore:    p.GetDebugScore(),
 	}
 }
 
@@ -118,13 +119,14 @@ func (cm *ChunkMatch) ToProto() *proto.ChunkMatch {
 	}
 
 	return &proto.ChunkMatch{
-		Content:      cm.Content,
-		ContentStart: cm.ContentStart.ToProto(),
-		FileName:     cm.FileName,
-		Ranges:       ranges,
-		SymbolInfo:   symbolInfo,
-		Score:        cm.Score,
-		DebugScore:   cm.DebugScore,
+		Content:       cm.Content,
+		ContentStart:  cm.ContentStart.ToProto(),
+		FileName:      cm.FileName,
+		Ranges:        ranges,
+		SymbolInfo:    symbolInfo,
+		Score:         cm.Score,
+		BestLineMatch: cm.BestLineMatch,
+		DebugScore:    cm.DebugScore,
 	}
 }
 
