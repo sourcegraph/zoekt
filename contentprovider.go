@@ -366,6 +366,9 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 		bestLineMatch := 0
 		if bestMatch.match != nil {
 			bestLineMatch = newlines.atOffset(bestMatch.match.byteOffset)
+			if debug {
+				bestMatch.debugScore = fmt.Sprintf("%s, (line: %d)", bestMatch.debugScore, bestLineMatch)
+			}
 		}
 
 		chunkMatches = append(chunkMatches, ChunkMatch{
@@ -663,7 +666,7 @@ func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch, df ter
 	return termFreqs
 }
 
-// scoredMatch holds the best-scoring candidate match, along with its score information.
+// scoredMatch holds the score information for a candidate match.
 type scoredMatch struct {
 	score      float64
 	debugScore string
@@ -671,6 +674,7 @@ type scoredMatch struct {
 }
 
 // candidateMatchScore scores all candidate matches and returns the best-scoring match plus its score information.
+// Invariant: there should be at least one input candidate, len(ms) > 0.
 func (p *contentProvider) candidateMatchScore(ms []*candidateMatch, language string, debug bool) (scoredMatch, []*Symbol) {
 	score := 0.0
 	what := ""
