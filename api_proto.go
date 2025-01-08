@@ -346,15 +346,15 @@ func (p *Progress) ToProto() *proto.Progress {
 	}
 }
 
-func SearchResultFromStreamProto(p *proto.StreamSearchResponse, repoURLs, lineFragments map[string]string) *SearchResult {
+func SearchResultFromStreamProto(p *proto.StreamSearchResponse, repoURLs, repoEditURLs, repoBrowseURLs, lineFragments map[string]string) *SearchResult {
 	if p == nil {
 		return nil
 	}
 
-	return SearchResultFromProto(p.GetResponseChunk(), repoURLs, lineFragments)
+	return SearchResultFromProto(p.GetResponseChunk(), repoURLs, repoEditURLs, repoBrowseURLs, lineFragments)
 }
 
-func SearchResultFromProto(p *proto.SearchResponse, repoURLs, lineFragments map[string]string) *SearchResult {
+func SearchResultFromProto(p *proto.SearchResponse, repoURLs, repoEditURLs, repoBrowseURLs, lineFragments map[string]string) *SearchResult {
 	if p == nil {
 		return nil
 	}
@@ -370,8 +370,10 @@ func SearchResultFromProto(p *proto.SearchResponse, repoURLs, lineFragments map[
 
 		Files: files,
 
-		RepoURLs:      repoURLs,
-		LineFragments: lineFragments,
+		RepoURLs:       repoURLs,
+		RepoEditURLs:   repoEditURLs,
+		RepoBrowseURLs: repoBrowseURLs,
+		LineFragments:  lineFragments,
 	}
 }
 
@@ -442,6 +444,7 @@ func RepositoryFromProto(p *proto.Repository) Repository {
 		SubRepoMap:           subRepoMap,
 		CommitURLTemplate:    p.GetCommitUrlTemplate(),
 		FileURLTemplate:      p.GetFileUrlTemplate(),
+		FileEditURLTemplate:  p.GetFileEditUrlTemplate(),
 		LineFragmentTemplate: p.GetLineFragmentTemplate(),
 		priority:             p.GetPriority(),
 		RawConfig:            p.GetRawConfig(),
@@ -484,6 +487,7 @@ func (r *Repository) ToProto() *proto.Repository {
 		SubRepoMap:           subRepoMap,
 		CommitUrlTemplate:    r.CommitURLTemplate,
 		FileUrlTemplate:      r.FileURLTemplate,
+		FileEditUrlTemplate:  r.FileEditURLTemplate,
 		LineFragmentTemplate: r.LineFragmentTemplate,
 		Priority:             r.priority,
 		RawConfig:            r.RawConfig,

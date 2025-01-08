@@ -553,8 +553,10 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	aggregate, ok := collectSender.Done()
 	if !ok {
 		aggregate = &zoekt.SearchResult{
-			RepoURLs:      map[string]string{},
-			LineFragments: map[string]string{},
+			RepoURLs:       map[string]string{},
+			RepoEditURLs:   map[string]string{},
+			RepoBrowseURLs: map[string]string{},
+			LineFragments:  map[string]string{},
 		}
 	}
 
@@ -825,9 +827,11 @@ func sendByRepository(result *zoekt.SearchResult, opts *zoekt.SearchOptions, sen
 				Priority:           result.Files[a].RepositoryPriority,
 				MaxPendingPriority: result.MaxPendingPriority,
 			},
-			Files:         result.Files[a:b],
-			RepoURLs:      map[string]string{repoName: result.RepoURLs[repoName]},
-			LineFragments: map[string]string{repoName: result.LineFragments[repoName]},
+			Files:          result.Files[a:b],
+			RepoURLs:       map[string]string{repoName: result.RepoURLs[repoName]},
+			RepoEditURLs:   map[string]string{repoName: result.RepoEditURLs[repoName]},
+			RepoBrowseURLs: map[string]string{repoName: result.RepoBrowseURLs[repoName]},
+			LineFragments:  map[string]string{repoName: result.LineFragments[repoName]},
 		})
 	}
 

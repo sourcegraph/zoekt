@@ -404,6 +404,16 @@ func addRepo(res *SearchResult, repo *Repository) {
 	}
 	res.RepoURLs[repo.Name] = repo.FileURLTemplate
 
+	if res.RepoEditURLs == nil {
+		res.RepoEditURLs = map[string]string{}
+	}
+	res.RepoEditURLs[repo.Name] = repo.FileEditURLTemplate
+
+	if res.RepoBrowseURLs == nil {
+		res.RepoBrowseURLs = map[string]string{}
+	}
+	res.RepoBrowseURLs[repo.Name] = repo.URL
+
 	if res.LineFragments == nil {
 		res.LineFragments = map[string]string{}
 	}
