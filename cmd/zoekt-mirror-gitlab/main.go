@@ -51,6 +51,8 @@ func main() {
 	namePattern := flag.String("name", "", "only clone repos whose name matches the given regexp.")
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	lastActivityAfter := flag.String("last_activity_after", "", "only mirror repos that have been active since this date (format: 2006-01-02).")
+	noArchived := flag.Bool("no_archived", false, "mirror only projects that are not archived")
+
 	flag.Parse()
 
 	if *dest == "" {
@@ -98,6 +100,10 @@ func main() {
 			log.Fatal(err)
 		}
 		opt.LastActivityAfter = gitlab.Time(targetDate)
+	}
+
+	if *noArchived {
+		opt.Archived = gitlab.Bool(false)
 	}
 
 	var gitlabProjects []*gitlab.Project
