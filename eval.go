@@ -327,9 +327,9 @@ nextFileMatch:
 		finalCands := d.gatherMatches(nextDoc, mt, known, shouldMergeMatches)
 
 		if opts.ChunkMatches {
-			fileMatch.ChunkMatches = cp.fillChunkMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+			fileMatch.ChunkMatches = cp.fillChunkMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts)
 		} else {
-			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts.DebugScore)
+			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts)
 		}
 
 		var tf map[string]int

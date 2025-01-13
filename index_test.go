@@ -45,17 +45,17 @@ func clearScores(r *SearchResult) {
 	}
 }
 
-func testIndexBuilder(t *testing.T, repo *Repository, docs ...Document) *IndexBuilder {
-	t.Helper()
+func testIndexBuilder(tb testing.TB, repo *Repository, docs ...Document) *IndexBuilder {
+	tb.Helper()
 
 	b, err := NewIndexBuilder(repo)
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		tb.Fatalf("NewIndexBuilder: %v", err)
 	}
 
 	for i, d := range docs {
 		if err := b.Add(d); err != nil {
-			t.Fatalf("Add %d: %v", i, err)
+			tb.Fatalf("Add %d: %v", i, err)
 		}
 	}
 
@@ -303,7 +303,7 @@ func searchForTest(t *testing.T, b *IndexBuilder, q query.Q, o ...SearchOptions)
 	return res
 }
 
-func searcherForTest(t *testing.T, b *IndexBuilder) Searcher {
+func searcherForTest(t testing.TB, b *IndexBuilder) Searcher {
 	var buf bytes.Buffer
 	if err := b.Write(&buf); err != nil {
 		t.Fatal(err)
@@ -375,13 +375,16 @@ func TestCaseFold(t *testing.T) {
 func wordsAsSymbols(doc Document) Document {
 	re := regexp.MustCompile(`\b\w{2,}\b`)
 	var symbols []DocumentSection
+	var symbolsMetadata []*Symbol
 	for _, match := range re.FindAllIndex(doc.Content, -1) {
 		symbols = append(symbols, DocumentSection{
 			Start: uint32(match[0]),
 			End:   uint32(match[1]),
 		})
+		symbolsMetadata = append(symbolsMetadata, &Symbol{Kind: "method"})
 	}
 	doc.Symbols = symbols
+	doc.SymbolsMetaData = symbolsMetadata
 	return doc
 }
 
@@ -988,6 +991,88 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 		}
 		if len(matches[0].ChunkMatches[0].Content) != 4 || len(matches[1].ChunkMatches[0].Content) != 4 {
 			t.Fatalf("want 4 chars in every file, got %#v", matches)
+		}
+	})
+}
+
+func TestSearchBM25MatchScores(t *testing.T) {
+	ctx := context.Background()
+	searcher := searcherForTest(t, testIndexBuilder(t, nil,
+		Document{Name: "f1", Content: []byte("one two three\naaaaaaaaaa\nbbbbbbbb\none two two")},
+		Document{Name: "f2", Content: []byte("four five six\naaaaaaaaaa\nbbbbbbbb\nfour five five\nsix six")},
+		wordsAsSymbols(Document{Name: "f3", Content: []byte("public static void main")}),
+	))
+
+	t.Run("LineMatches", func(t *testing.T) {
+		q := &query.Substring{Pattern: "two"}
+		sres, err := searcher.Search(ctx, q, &SearchOptions{UseBM25Scoring: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		matches := sres.Files
+		if len(matches) != 1 {
+			t.Fatalf("want 1 file match, got %d", len(matches))
+		}
+
+		if len(matches[0].LineMatches) != 2 {
+			t.Fatalf("want 2 chunk matches, got %d", len(matches[0].ChunkMatches))
+		}
+
+		if matches[0].LineMatches[0].LineNumber != 4 {
+			t.Fatalf("want best-scoring line to be line 4, got %d", matches[0].LineMatches[0].LineNumber)
+		}
+	})
+
+	t.Run("ChunkMatches", func(t *testing.T) {
+		q := &query.Substring{Pattern: "five"}
+		sres, err := searcher.Search(ctx, q, &SearchOptions{UseBM25Scoring: true, ChunkMatches: true, NumContextLines: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		matches := sres.Files
+		if len(matches) != 1 {
+			t.Fatalf("want 1 file match, got %d", len(matches))
+		}
+
+		if len(matches[0].ChunkMatches) != 2 {
+			t.Fatalf("want 2 chunk matches, got %d", len(matches[0].ChunkMatches))
+		}
+
+		if matches[0].ChunkMatches[0].BestLineMatch != 4 {
+			t.Fatalf("want best-scoring line to be line 4, got %d", matches[0].ChunkMatches[0].BestLineMatch)
+		}
+	})
+
+	t.Run("ChunkMatches with symbols", func(t *testing.T) {
+		q := &query.Or{
+			Children: []query.Q{
+				&query.Symbol{Expr: &query.Substring{Pattern: "main"}},
+				&query.Substring{Pattern: "five"},
+			},
+		}
+
+		sres, err := searcher.Search(ctx, q, &SearchOptions{UseBM25Scoring: true, ChunkMatches: true, NumContextLines: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		matches := sres.Files
+		if len(matches) != 2 {
+			t.Fatalf("want 2 file match, got %d", len(matches))
+		}
+
+		foundSymbolInfo := false
+		for _, m := range matches {
+			for _, cm := range m.ChunkMatches {
+				if len(cm.SymbolInfo) > 0 {
+					foundSymbolInfo = true
+				}
+			}
+		}
+
+		if !foundSymbolInfo {
+			t.Fatalf("want symbol info, got none")
 		}
 	})
 }
@@ -2453,7 +2538,7 @@ func TestIOStats(t *testing.T) {
 		res := searchForTest(t, b, q)
 
 		// 4096 (content) + 2 (overhead: newlines or doc sections)
-		if got, want := res.Stats.ContentBytesLoaded, int64(4100); got != want {
+		if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
 			t.Errorf("got content I/O %d, want %d", got, want)
 		}
 
@@ -2467,6 +2552,38 @@ func TestIOStats(t *testing.T) {
 	t.Run("ChunkMatches", func(t *testing.T) {
 		q := &query.Substring{Pattern: "abc", CaseSensitive: true, Content: true}
 		res := searchForTest(t, b, q, chunkOpts)
+
+		// 4096 (content) + 2 (overhead: newlines or doc sections)
+		if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
+			t.Errorf("got content I/O %d, want %d", got, want)
+		}
+
+		// 1024 entries, each 4 bytes apart. 4 fits into single byte
+		// delta encoded.
+		if got, want := res.Stats.IndexBytesLoaded, int64(1024); got != want {
+			t.Errorf("got index I/O %d, want %d", got, want)
+		}
+	})
+
+	t.Run("LineMatches with BM25", func(t *testing.T) {
+		q := &query.Substring{Pattern: "abc", CaseSensitive: true, Content: true}
+		res := searchForTest(t, b, q, SearchOptions{UseBM25Scoring: true})
+
+		// 4096 (content) + 2 (overhead: newlines or doc sections)
+		if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
+			t.Errorf("got content I/O %d, want %d", got, want)
+		}
+
+		// 1024 entries, each 4 bytes apart. 4 fits into single byte
+		// delta encoded.
+		if got, want := res.Stats.IndexBytesLoaded, int64(1024); got != want {
+			t.Errorf("got index I/O %d, want %d", got, want)
+		}
+	})
+
+	t.Run("ChunkMatches with BM25", func(t *testing.T) {
+		q := &query.Substring{Pattern: "abc", CaseSensitive: true, Content: true}
+		res := searchForTest(t, b, q, SearchOptions{UseBM25Scoring: true, ChunkMatches: true})
 
 		// 4096 (content) + 2 (overhead: newlines or doc sections)
 		if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
@@ -3778,6 +3895,43 @@ func TestWordSearch(t *testing.T) {
 
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Fatal(diff)
+		}
+	})
+}
+
+// Simple benchmark focused on chunk match scoring. It creates a single file that will have a 1000-line chunk match.
+// The benchmark time is expected to be strongly correlated with time spent assembling and scoring this chunk.
+func BenchmarkScoreChunkMatches(b *testing.B) {
+	ctx := context.Background()
+	var builder strings.Builder
+	for i := 0; i < 1000; i++ {
+		builder.WriteString(fmt.Sprintf("line-%d one one one two two two three three three four four four five five\n", i))
+	}
+
+	searcher := searcherForTest(b, testIndexBuilder(b, nil,
+		Document{Name: "f1", Content: []byte(builder.String())},
+	))
+
+	q := &query.Or{
+		Children: []query.Q{
+			&query.Substring{Pattern: "f"},
+			&query.Substring{Pattern: "t"},
+		}}
+
+	b.Run("score large ChunkMatch", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			sres, err := searcher.Search(ctx, q, &SearchOptions{ChunkMatches: true, NumContextLines: 1})
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			matches := sres.Files
+			if len(matches) == 0 {
+				b.Fatalf("want file match, got none")
+			}
 		}
 	})
 }

@@ -533,7 +533,14 @@ func (d *indexData) readNewlines(i uint32, buf []uint32) ([]uint32, uint32, erro
 		return nil, 0, err
 	}
 
-	return fromSizedDeltas(blob, buf), sec.sz, nil
+	nl := fromSizedDeltas(blob, buf)
+
+	// can be nil if buf is nil and there are no doc sections. However, we rely
+	// on it being non-nil to cache the read.
+	if nl == nil {
+		nl = make([]uint32, 0)
+	}
+	return nl, sec.sz, nil
 }
 
 func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]DocumentSection, uint32, error) {
