@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 )
 
 // We compare 2 simple shards before and after the transformation
@@ -123,4 +124,45 @@ func checkSameShards(t *testing.T, shard1, shard2 string) {
 	}
 
 	t.Fatalf("-%s\n+%s:\n%s", shard1, shard2, d)
+}
+
+func TestRepoOrder(t *testing.T) {
+	idNames := []struct {
+		id   uint32
+		name string
+	}{
+		{3, "foo"},
+		{1, "bar"},
+		{4, "baz"},
+		{2, "bas"},
+	}
+
+	ds := make([]*indexData, 0, len(idNames))
+	for _, repo := range idNames {
+		ib := newIndexBuilder()
+		ib.indexFormatVersion = NextIndexFormatVersion
+
+		err := ib.setRepository(&Repository{Name: repo.name, ID: repo.id})
+		require.NoError(t, err)
+
+		// Add some documents to the index.
+		for _, doc := range []Document{
+			{Name: repo.name + ".txt", Content: []byte(repo.name + " content")},
+			{Name: repo.name + ".2.txt", Content: []byte(repo.name + " content 2")},
+		} {
+			err := ib.Add(doc)
+			require.NoError(t, err)
+		}
+
+		d := searcherForTest(t, ib)
+		ds = append(ds, d.(*indexData))
+	}
+
+	ib, err := merge(ds...)
+	require.NoError(t, err)
+
+	require.Len(t, ib.repoList, len(idNames))
+	for i := 1; i < len(ib.repoList); i++ {
+		require.Less(t, ib.repoList[i-1].ID, ib.repoList[i].ID)
+	}
 }

@@ -93,9 +93,19 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 	if len(ds) == 0 {
 		return nil, fmt.Errorf("need 1 or more indexData to merge")
 	}
-
+	// We sort shards in compound shards by repository ID so that we can use binary
+	// search instead of looping through the entire list of repos when calling
+	// `build.findShard`.
+	//
+	// We have seen that for very large compound shards (5k+ repos) it can take a
+	// long time to find a specific repo which can slow down initial indexing even
+	// for no-op indexes after a restart of indexserver.
+	//
+	// The sort order will impact ranking of non-bm25 search, because doc-order acts
+	// as a tie-breaker. However, the actual impact is very small, because
+	// "LastCommitDate" is a stronger signal.
 	sort.Slice(ds, func(i, j int) bool {
-		return ds[i].repoMetaData[0].priority > ds[j].repoMetaData[0].priority
+		return ds[i].repoMetaData[0].ID < ds[j].repoMetaData[0].ID
 	})
 
 	ib := newIndexBuilder()
