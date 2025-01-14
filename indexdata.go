@@ -76,7 +76,12 @@ type indexData struct {
 	// name => mask (power of 2)
 	branchIDs []map[string]uint
 
-	metaData     IndexMetadata
+	metaData IndexMetadata
+
+	// Repository metadata for all repositories contained in this shard.
+	//
+	// Invariant: Repositories in repoMetaData are sorted by ID in increasing order,
+	// see zoekt.merge.
 	repoMetaData []Repository
 
 	subRepos     []uint32
