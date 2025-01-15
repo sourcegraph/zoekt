@@ -15,31 +15,251 @@
 package zoekt
 
 import (
+	"bytes"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
+
+	"github.com/sourcegraph/zoekt/ctags"
 )
 
 const (
-	maxUInt16   = 0xffff
 	ScoreOffset = 10_000_000
 )
 
-// addScore increments the score of the FileMatch by the computed score. If
-// debugScore is true, it also adds a debug string to the FileMatch. If raw is
-// -1, it is ignored. Otherwise, it is added to the debug string.
-func (m *FileMatch) addScore(what string, computed float64, raw float64, debugScore bool) {
-	if computed != 0 && debugScore {
-		var b strings.Builder
-		fmt.Fprintf(&b, "%s", what)
-		if raw != -1 {
-			fmt.Fprintf(&b, "(%s)", strconv.FormatFloat(raw, 'f', -1, 64))
+type chunkScore struct {
+	score      float64
+	debugScore string
+	bestLine   int
+}
+
+// scoreChunk calculates the score for each line in the chunk based on its candidate matches, and returns the score of
+// the best-scoring line, along with its line number.
+// Invariant: there should be at least one input candidate, len(ms) > 0.
+func (p *contentProvider) scoreChunk(ms []*candidateMatch, language string, opts *SearchOptions) (chunkScore, []*Symbol) {
+	nl := p.newlines()
+
+	var bestScore lineScore
+	bestLine := 0
+	var symbolInfo []*Symbol
+
+	start := 0
+	currentLine := -1
+	for i, m := range ms {
+		lineNumber := -1
+		if !m.fileName {
+			lineNumber = nl.atOffset(m.byteOffset)
 		}
-		fmt.Fprintf(&b, ":%.2f, ", computed)
-		m.Debug += b.String()
+
+		// If this match represents a new line, then score the previous line and update 'start'.
+		if i != 0 && lineNumber != currentLine {
+			score, si := p.scoreLine(ms[start:i], language, currentLine, opts)
+			symbolInfo = append(symbolInfo, si...)
+			if score.score > bestScore.score {
+				bestScore = score
+				bestLine = currentLine
+			}
+			start = i
+		}
+		currentLine = lineNumber
 	}
-	m.Score += computed
+
+	// Make sure to score the last line
+	line, si := p.scoreLine(ms[start:], language, currentLine, opts)
+	symbolInfo = append(symbolInfo, si...)
+	if line.score > bestScore.score {
+		bestScore = line
+		bestLine = currentLine
+	}
+
+	cs := chunkScore{
+		score:    bestScore.score,
+		bestLine: bestLine,
+	}
+	if opts.DebugScore {
+		cs.debugScore = fmt.Sprintf("%s, (line: %d)", bestScore.debugScore, bestLine)
+	}
+	return cs, symbolInfo
+}
+
+type lineScore struct {
+	score      float64
+	debugScore string
+}
+
+// scoreLine calculates a score for the line based on its candidate matches.
+// Invariants:
+// - All candidate matches are assumed to come from the same line in the content.
+// - If this line represents a filename, then lineNumber must be -1.
+// - There should be at least one input candidate, len(ms) > 0.
+func (p *contentProvider) scoreLine(ms []*candidateMatch, language string, lineNumber int, opts *SearchOptions) (lineScore, []*Symbol) {
+	if opts.UseBM25Scoring {
+		score, symbolInfo := p.scoreLineBM25(ms, lineNumber)
+		ls := lineScore{score: score}
+		if opts.DebugScore {
+			ls.debugScore = fmt.Sprintf("tfScore:%.2f, ", score)
+		}
+		return ls, symbolInfo
+	}
+
+	score := 0.0
+	what := ""
+	addScore := func(w string, s float64) {
+		if s != 0 && opts.DebugScore {
+			what += fmt.Sprintf("%s:%.2f, ", w, s)
+		}
+		score += s
+	}
+
+	filename := p.data(true)
+	var symbolInfo []*Symbol
+
+	var bestScore lineScore
+	for i, m := range ms {
+		data := p.data(m.fileName)
+
+		endOffset := m.byteOffset + m.byteMatchSz
+		startBoundary := m.byteOffset < uint32(len(data)) && (m.byteOffset == 0 || byteClass(data[m.byteOffset-1]) != byteClass(data[m.byteOffset]))
+		endBoundary := endOffset > 0 && (endOffset == uint32(len(data)) || byteClass(data[endOffset-1]) != byteClass(data[endOffset]))
+
+		score = 0
+		what = ""
+
+		if startBoundary && endBoundary {
+			addScore("WordMatch", scoreWordMatch)
+		} else if startBoundary || endBoundary {
+			addScore("PartialWordMatch", scorePartialWordMatch)
+		}
+
+		if m.fileName {
+			sep := bytes.LastIndexByte(data, '/')
+			startMatch := int(m.byteOffset) == sep+1
+			endMatch := endOffset == uint32(len(data))
+			if startMatch && endMatch {
+				addScore("Base", scoreBase)
+			} else if startMatch || endMatch {
+				addScore("EdgeBase", (scoreBase+scorePartialBase)/2)
+			} else if sep < int(m.byteOffset) {
+				addScore("InnerBase", scorePartialBase)
+			}
+		} else if sec, si, ok := p.findSymbol(m); ok {
+			startMatch := sec.Start == m.byteOffset
+			endMatch := sec.End == endOffset
+			if startMatch && endMatch {
+				addScore("Symbol", scoreSymbol)
+			} else if startMatch || endMatch {
+				addScore("EdgeSymbol", (scoreSymbol+scorePartialSymbol)/2)
+			} else {
+				addScore("OverlapSymbol", scorePartialSymbol)
+			}
+
+			// Score based on symbol data
+			if si != nil {
+				symbolKind := ctags.ParseSymbolKind(si.Kind)
+				sym := sectionSlice(data, sec)
+
+				addScore(fmt.Sprintf("kind:%s:%s", language, si.Kind), scoreSymbolKind(language, filename, sym, symbolKind))
+
+				// This is from a symbol tree, so we need to store the symbol
+				// information.
+				if m.symbol {
+					if symbolInfo == nil {
+						symbolInfo = make([]*Symbol, len(ms))
+					}
+					// findSymbols does not hydrate in Sym. So we need to store it.
+					si.Sym = string(sym)
+					symbolInfo[i] = si
+				}
+			}
+		}
+
+		// scoreWeight != 1 means it affects score
+		if !epsilonEqualsOne(m.scoreWeight) {
+			score = score * m.scoreWeight
+			if opts.DebugScore {
+				what += fmt.Sprintf("boost:%.2f, ", m.scoreWeight)
+			}
+		}
+
+		if score > bestScore.score {
+			bestScore.score = score
+			bestScore.debugScore = what
+		}
+	}
+
+	if opts.DebugScore {
+		bestScore.debugScore = fmt.Sprintf("score:%.2f <- %s", bestScore.score, strings.TrimSuffix(bestScore.debugScore, ", "))
+	}
+
+	return bestScore, symbolInfo
+}
+
+// scoreLineBM25 computes the score of a line according to BM25, the most common scoring algorithm for text search:
+// https://en.wikipedia.org/wiki/Okapi_BM25. Compared to the standard scoreLine algorithm, this score rewards multiple
+// term matches on a line.
+// Notes:
+// - This BM25 calculation skips inverse document frequency (idf) to keep the implementation simple.
+// - It uses the same calculateTermFrequency method as BM25 file scoring, which boosts filename and symbol matches.
+func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (float64, []*Symbol) {
+	// If this is a filename, then don't compute BM25. The score would not be comparable to line scores.
+	if lineNumber < 0 {
+		return 0, nil
+	}
+
+	// Use standard parameter defaults used in Lucene (https://lucene.apache.org/core/10_1_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)
+	k, b := 1.2, 0.75
+
+	// Calculate the length ratio of this line. As a heuristic, we assume an average line length of 100 characters.
+	// Usually the calculation would be based on terms, but using bytes should work fine, as we're just computing a ratio.
+	nl := p.newlines()
+	lineLength := nl.lineStart(lineNumber+1) - nl.lineStart(lineNumber)
+	L := float64(lineLength) / 100.0
+
+	score := 0.0
+	tfs := p.calculateTermFrequency(ms, termDocumentFrequency{})
+	for _, f := range tfs {
+		score += ((k + 1.0) * float64(f)) / (k*(1.0-b+b*L) + float64(f))
+	}
+
+	// Check if any match comes from a symbol match tree, and if so hydrate in symbol information
+	var symbolInfo []*Symbol
+	for _, m := range ms {
+		if m.symbol {
+			if sec, si, ok := p.findSymbol(m); ok && si != nil {
+				// findSymbols does not hydrate in Sym. So we need to store it.
+				sym := sectionSlice(p.data(false), sec)
+				si.Sym = string(sym)
+				symbolInfo = append(symbolInfo, si)
+			}
+		}
+	}
+	return score, symbolInfo
+}
+
+// termDocumentFrequency is a map "term" -> "number of documents that contain the term"
+type termDocumentFrequency map[string]int
+
+// calculateTermFrequency computes the term frequency for the file match.
+// Notes:
+// - Filename matches count more than content matches. This mimics a common text search strategy to 'boost' matches on document titles.
+// - Symbol matches also count more than content matches, to reward matches on symbol definitions.
+func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch, df termDocumentFrequency) map[string]int {
+	// Treat each candidate match as a term and compute the frequencies. For now, ignore case sensitivity and
+	// ignore whether the match is a word boundary.
+	termFreqs := map[string]int{}
+	for _, m := range cands {
+		term := string(m.substrLowered)
+		if m.fileName || p.matchesSymbol(m) {
+			termFreqs[term] += 5
+		} else {
+			termFreqs[term]++
+		}
+	}
+
+	for term := range termFreqs {
+		df[term] += 1
+	}
+	return termFreqs
 }
 
 // scoreFile computes a score for the file match using various scoring signals, like
@@ -110,30 +330,20 @@ func (d *indexData) scoreFile(fileMatch *FileMatch, doc uint32, mt matchTree, kn
 	}
 }
 
-// idf computes the inverse document frequency for a term. nq is the number of
-// documents that contain the term and documentCount is the total number of
-// documents in the corpus.
-func idf(nq, documentCount int) float64 {
-	return math.Log(1.0 + ((float64(documentCount) - float64(nq) + 0.5) / (float64(nq) + 0.5)))
-}
-
-// termDocumentFrequency is a map "term" -> "number of documents that contain the term"
-type termDocumentFrequency map[string]int
-
 // termFrequency stores the term frequencies for doc.
 type termFrequency struct {
 	doc uint32
 	tf  map[string]int
 }
 
-// scoreFilesUsingBM25 computes the score according to BM25, the most common
-// scoring algorithm for text search: https://en.wikipedia.org/wiki/Okapi_BM25.
+// scoreFilesUsingBM25 computes the score according to BM25, the most common scoring algorithm for text search:
+// https://en.wikipedia.org/wiki/Okapi_BM25.
 //
-// This scoring strategy ignores all other signals including document ranks.
-// This keeps things simple for now, since BM25 is not normalized and can be
-// tricky to combine with other scoring signals.
+// Unlike standard file scoring, this scoring strategy ignores all other signals including document ranks. This keeps
+// things simple for now, since BM25 is not normalized and can be  tricky to combine with other scoring signals. It also
+// ignores the individual LineMatch and ChunkMatch scores, instead calculating a score over all matches in the file.
 func (d *indexData) scoreFilesUsingBM25(fileMatches []FileMatch, tfs []termFrequency, df termDocumentFrequency, opts *SearchOptions) {
-	// Use standard parameter defaults (used in Lucene and academic papers)
+	// Use standard parameter defaults used in Lucene (https://lucene.apache.org/core/10_1_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)
 	k, b := 1.2, 0.75
 
 	averageFileLength := float64(d.boundaries[d.numDocs()]) / float64(d.numDocs())
@@ -165,4 +375,11 @@ func (d *indexData) scoreFilesUsingBM25(fileMatches []FileMatch, tfs []termFrequ
 			fileMatches[i].Debug = fmt.Sprintf("bm25-score: %.2f <- sum-termFrequencies: %d, length-ratio: %.2f", score, sumTF, L)
 		}
 	}
+}
+
+// idf computes the inverse document frequency for a term. nq is the number of
+// documents that contain the term and documentCount is the total number of
+// documents in the corpus.
+func idf(nq, documentCount int) float64 {
+	return math.Log(1.0 + ((float64(documentCount) - float64(nq) + 0.5) / (float64(nq) + 0.5)))
 }

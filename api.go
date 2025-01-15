@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -133,6 +134,22 @@ func (m *FileMatch) sizeBytes() (sz uint64) {
 	sz += sliceHeaderBytes + uint64(len(m.Checksum))
 
 	return
+}
+
+// addScore increments the score of the FileMatch by the computed score. If
+// debugScore is true, it also adds a debug string to the FileMatch. If raw is
+// -1, it is ignored. Otherwise, it is added to the debug string.
+func (m *FileMatch) addScore(what string, computed float64, raw float64, debugScore bool) {
+	if computed != 0 && debugScore {
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s", what)
+		if raw != -1 {
+			fmt.Fprintf(&b, "(%s)", strconv.FormatFloat(raw, 'f', -1, 64))
+		}
+		fmt.Fprintf(&b, ":%.2f, ", computed)
+		m.Debug += b.String()
+	}
+	m.Score += computed
 }
 
 // ChunkMatch is a set of non-overlapping matches within a contiguous range of
@@ -671,7 +688,7 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 			// Normalize the repo score within [0, maxUint16), with the midpoint at 5,000.
 			// This means popular repos (roughly ones with over 5,000 stars) see diminishing
 			// returns from more stars.
-			r.Rank = uint16(r.priority / (5000.0 + r.priority) * maxUInt16)
+			r.Rank = uint16(r.priority / (5000.0 + r.priority) * math.MaxUint16)
 		}
 	}
 
@@ -687,7 +704,7 @@ func monthsSince1970(t time.Time) uint16 {
 		return 0
 	}
 	months := int(t.Year()-1970)*12 + int(t.Month()-1)
-	return uint16(min(months, maxUInt16))
+	return uint16(min(months, math.MaxUint16))
 }
 
 // MergeMutable will merge x into r. mutated will be true if it made any
@@ -976,7 +993,8 @@ type SearchOptions struct {
 
 	// EXPERIMENTAL. If true, use text-search style scoring instead of the default
 	// scoring formula. The scoring algorithm treats each match in a file as a term
-	// and computes an approximation to BM25.
+	// and computes an approximation to BM25. When enabled, BM25 scoring is used for
+	// the overall FileMatch score, as well as individual LineMatch and ChunkMatch scores.
 	//
 	// The calculation of IDF assumes that Zoekt visits all documents containing any
 	// of the query terms during evaluation. This is true, for example, if all query

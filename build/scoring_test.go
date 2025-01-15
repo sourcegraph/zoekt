@@ -94,8 +94,21 @@ func TestBM25(t *testing.T) {
 			language: "Java",
 			// bm25-score: 1.81 <- sum-termFrequencyScore: 116.00, length-ratio: 1.00
 			wantScore: 1.81,
-			// line 3: public class InnerClasses {
-			wantBestLineMatch: 3,
+			// line 54: private static <A, B> B runInnerInterface(InnerInterface<A, B> fn, A a) {
+			wantBestLineMatch: 54,
+		}, {
+			// Another content-only match
+			fileName: "example.java",
+			query: &query.And{Children: []query.Q{
+				&query.Substring{Pattern: "system"},
+				&query.Substring{Pattern: "time"},
+			}},
+			content:  exampleJava,
+			language: "Java",
+			// bm25-score: 0.96 <- sum-termFrequencies: 12, length-ratio: 1.00
+			wantScore: 0.96,
+			// line 59: if (System.nanoTime() > System.currentTimeMillis()) {
+			wantBestLineMatch: 59,
 		},
 		{
 			// Matches only on filename
