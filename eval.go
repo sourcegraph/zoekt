@@ -323,8 +323,7 @@ nextFileMatch:
 		// Important invariant for performance: finalCands is sorted by offset and
 		// non-overlapping. gatherMatches respects this invariant and all later
 		// transformations respect this.
-		shouldMergeMatches := !opts.ChunkMatches
-		finalCands := d.gatherMatches(nextDoc, mt, known, shouldMergeMatches)
+		finalCands := d.gatherMatches(nextDoc, mt, known)
 
 		if opts.ChunkMatches {
 			fileMatch.ChunkMatches = cp.fillChunkMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts)
@@ -417,7 +416,7 @@ func addRepo(res *SearchResult, repo *Repository) {
 // If `merge` is set, overlapping and adjacent matches will be merged
 // into a single match. Otherwise, overlapping matches will be removed,
 // but adjacent matches will remain.
-func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchTree]bool, merge bool) []*candidateMatch {
+func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchTree]bool) []*candidateMatch {
 	var cands []*candidateMatch
 	visitMatches(mt, known, 1, func(mt matchTree, scoreWeight float64) {
 		if smt, ok := mt.(*substrMatchTree); ok {
@@ -449,9 +448,10 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 		}}
 	}
 
+	// Remove overlapping candidates. This guarantees that the matches
+	// are non-overlapping, but also preserves expected match counts.
 	sort.Sort((sortByOffsetSlice)(cands))
 	res := cands[:0]
-	mergeRun := 1
 	for i, c := range cands {
 		if i == 0 {
 			res = append(res, c)
@@ -466,39 +466,12 @@ func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchT
 			continue
 		}
 
-		if merge {
-			// Merge adjacent candidates. This guarantees that the matches
-			// are non-overlapping.
-			lastEnd := last.byteOffset + last.byteMatchSz
-			end := c.byteOffset + c.byteMatchSz
-			if lastEnd >= c.byteOffset {
-				mergeRun++
-				// Average out the score across the merged candidates. Only do it if
-				// we are boosting to avoid floating point funkiness in the normal
-				// case.
-				if !(epsilonEqualsOne(last.scoreWeight) && epsilonEqualsOne(c.scoreWeight)) {
-					last.scoreWeight = ((last.scoreWeight * float64(mergeRun-1)) + c.scoreWeight) / float64(mergeRun)
-				}
-
-				// latest candidate goes further, update our end
-				if end > lastEnd {
-					last.byteMatchSz = end - last.byteOffset
-				}
-
-				continue
-			} else {
-				mergeRun = 1
-			}
-		} else {
-			// Remove overlapping candidates. This guarantees that the matches
-			// are non-overlapping, but also preserves expected match counts.
-			lastEnd := last.byteOffset + last.byteMatchSz
-			if lastEnd > c.byteOffset {
-				continue
-			}
+		// Only add the match if its range doesn't overlap
+		lastEnd := last.byteOffset + last.byteMatchSz
+		if lastEnd <= c.byteOffset {
+			res = append(res, c)
+			continue
 		}
-
-		res = append(res, c)
 	}
 	return res
 }
