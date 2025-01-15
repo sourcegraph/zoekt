@@ -1556,25 +1556,73 @@ func TestRepoName(t *testing.T) {
 }
 
 func TestMergeMatches(t *testing.T) {
-	content := []byte("blablabla")
-	b := testIndexBuilder(t, nil,
-		Document{Name: "f1", Content: content})
-
-	t.Run("LineMatches", func(t *testing.T) {
+	t.Run("LineMatches, adjacent matches", func(t *testing.T) {
+		b := testIndexBuilder(t, nil,
+			Document{Name: "f1", Content: []byte("blablabla")})
 		sres := searchForTest(t, b,
 			&query.Substring{Pattern: "bla"})
+
 		if len(sres.Files) != 1 || len(sres.Files[0].LineMatches) != 1 {
 			t.Fatalf("got %v, want 1 match", sres.Files)
 		}
+
+		if len(sres.Files[0].LineMatches[0].LineFragments) != 3 {
+			t.Fatalf("got %v, want 3 fragments", sres.Files[0].LineMatches[0].LineFragments)
+		}
 	})
 
-	t.Run("ChunkMatches", func(t *testing.T) {
+	t.Run("LineMatches, overlapping matches", func(t *testing.T) {
+		b := testIndexBuilder(t, nil,
+			Document{Name: "f1", Content: []byte("hellogoodbye")})
+		sres := searchForTest(t, b,
+			&query.And{Children: []query.Q{
+				&query.Substring{Pattern: "hello"},
+				&query.Substring{Pattern: "logood"},
+			}})
+
+		if len(sres.Files) != 1 || len(sres.Files[0].LineMatches) != 1 {
+			t.Fatalf("got %v, want 1 match", sres.Files)
+		}
+
+		lineFragments := sres.Files[0].LineMatches[0].LineFragments
+		if len(lineFragments) != 1 || lineFragments[0].MatchLength != len("hello") {
+			t.Fatalf("got %v, want single line fragment 'hello'", lineFragments)
+		}
+	})
+
+	t.Run("ChunkMatches, no overlap", func(t *testing.T) {
+		b := testIndexBuilder(t, nil,
+			Document{Name: "f1", Content: []byte("blablabla")})
+
 		sres := searchForTest(t, b,
 			&query.Substring{Pattern: "bla"},
 			chunkOpts,
 		)
 		if len(sres.Files) != 1 || len(sres.Files[0].ChunkMatches) != 1 {
 			t.Fatalf("got %v, want 1 match", sres.Files)
+		}
+
+		if len(sres.Files[0].ChunkMatches[0].Ranges) != 3 {
+			t.Fatalf("got %v, want 3 ranges", sres.Files[0].ChunkMatches[0].Ranges)
+		}
+	})
+
+	t.Run("ChunkMatches, overlapping matches", func(t *testing.T) {
+		b := testIndexBuilder(t, nil,
+			Document{Name: "f1", Content: []byte("hellogoodbye")})
+		sres := searchForTest(t, b,
+			&query.And{Children: []query.Q{
+				&query.Substring{Pattern: "hello"},
+				&query.Substring{Pattern: "logood"},
+			}}, chunkOpts)
+
+		if len(sres.Files) != 1 || len(sres.Files[0].ChunkMatches) != 1 {
+			t.Fatalf("got %v, want 1 chunk match", sres.Files)
+		}
+
+		ranges := sres.Files[0].ChunkMatches[0].Ranges
+		if len(ranges) != 1 || ranges[0].Start.ByteOffset != 0 || ranges[0].End.ByteOffset != 5 {
+			t.Fatalf("got %v, want single chunk range 'hello'", ranges)
 		}
 	})
 }
