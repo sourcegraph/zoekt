@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -33,7 +34,6 @@ const (
 	stringHeaderBytes uint64 = 16
 	pointerSize       uint64 = 8
 	interfaceBytes    uint64 = 16
-	maxUInt16                = 0xffff
 )
 
 // FileMatch contains all the matches within a file.
@@ -688,7 +688,7 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 			// Normalize the repo score within [0, maxUint16), with the midpoint at 5,000.
 			// This means popular repos (roughly ones with over 5,000 stars) see diminishing
 			// returns from more stars.
-			r.Rank = uint16(r.priority / (5000.0 + r.priority) * maxUInt16)
+			r.Rank = uint16(r.priority / (5000.0 + r.priority) * math.MaxUint16)
 		}
 	}
 
@@ -704,7 +704,7 @@ func monthsSince1970(t time.Time) uint16 {
 		return 0
 	}
 	months := int(t.Year()-1970)*12 + int(t.Month()-1)
-	return uint16(min(months, maxUInt16))
+	return uint16(min(months, math.MaxUint16))
 }
 
 // MergeMutable will merge x into r. mutated will be true if it made any

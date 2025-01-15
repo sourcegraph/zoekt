@@ -114,7 +114,7 @@ func (p *contentProvider) scoreLine(ms []*candidateMatch, language string, lineN
 	filename := p.data(true)
 	var symbolInfo []*Symbol
 
-	var bestLine lineScore
+	var bestScore lineScore
 	for i, m := range ms {
 		data := p.data(m.fileName)
 
@@ -181,17 +181,17 @@ func (p *contentProvider) scoreLine(ms []*candidateMatch, language string, lineN
 			}
 		}
 
-		if score > bestLine.score {
-			bestLine.score = score
-			bestLine.debugScore = what
+		if score > bestScore.score {
+			bestScore.score = score
+			bestScore.debugScore = what
 		}
 	}
 
 	if opts.DebugScore {
-		bestLine.debugScore = fmt.Sprintf("score:%.2f <- %s", bestLine.score, strings.TrimSuffix(bestLine.debugScore, ", "))
+		bestScore.debugScore = fmt.Sprintf("score:%.2f <- %s", bestScore.score, strings.TrimSuffix(bestScore.debugScore, ", "))
 	}
 
-	return bestLine, symbolInfo
+	return bestScore, symbolInfo
 }
 
 // scoreLineBM25 computes the score of a line according to BM25, the most common scoring algorithm for text search:
@@ -211,9 +211,8 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 
 	// Calculate the length ratio of this line. As a heuristic, we assume an average line length of 100 characters.
 	// Usually the calculation would be based on terms, but using bytes should work fine, as we're just computing a ratio.
-	data := p.data(false)
 	nl := p.newlines()
-	lineLength := len(nl.getLines(data, lineNumber, lineNumber+1))
+	lineLength := nl.lineStart(lineNumber+1) - nl.lineStart(lineNumber)
 	L := float64(lineLength) / 100.0
 
 	score := 0.0
@@ -228,7 +227,7 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 		if m.symbol {
 			if sec, si, ok := p.findSymbol(m); ok && si != nil {
 				// findSymbols does not hydrate in Sym. So we need to store it.
-				sym := sectionSlice(data, sec)
+				sym := sectionSlice(p.data(false), sec)
 				si.Sym = string(sym)
 				symbolInfo = append(symbolInfo, si)
 			}
