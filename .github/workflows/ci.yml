@@ -48,10 +48,7 @@ jobs:
     steps:
       - name: add dependencies
         run: apk add bash go
-      # Pinned a commit to make go version configurable.
-      # This should be safe to upgrade once this commit is in a released version:
-      # https://github.com/jidicula/go-fuzz-action/commit/23cc553941669144159507e2cccdbb4afc5b3076
-      - uses: jidicula/go-fuzz-action@0206b61afc603b665297621fa5e691b1447a5e57
+      - uses: jidicula/go-fuzz-action@2d8b802597c47a79764d83dabc27fb672f2fb8d9
         with:
           packages: 'github.com/sourcegraph/zoekt' # This is the package where the Protobuf round trip tests are defined
           fuzz-time: 30s
