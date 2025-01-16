@@ -1215,7 +1215,6 @@ func setShardsCounter(indexDir string) {
 		return
 	}
 	metricNumberShards.Set(float64(len(fns)))
-	fmt.Printf("SHARDS COUNTER: %d\n", len(fns))
 
 	compoundFns := make([]string, 0, len(fns))
 	for _, fn := range fns {
