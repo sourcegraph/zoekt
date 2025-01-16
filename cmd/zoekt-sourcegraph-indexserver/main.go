@@ -376,7 +376,7 @@ func (s *Server) Run() {
 			missing := s.queue.Bump(repos.IDs)
 			s.Sourcegraph.ForceIterateIndexOptions(s.queue.AddOrUpdate, func(uint32, error) {}, missing...)
 
-			setCompoundShardCounter(s.IndexDir)
+			setShardsCounter(s.IndexDir)
 
 			<-cleanupDone
 		}
@@ -1208,11 +1208,19 @@ func joinStringSet(set map[string]struct{}, sep string) string {
 	return strings.Join(xs, sep)
 }
 
-func setCompoundShardCounter(indexDir string) {
-	fns, err := filepath.Glob(filepath.Join(indexDir, "compound-*.zoekt"))
+func setShardsCounter(indexDir string) {
+	fns, err := filepath.Glob(filepath.Join(indexDir, "*.zoekt"))
 	if err != nil {
-		errorLog.Printf("setCompoundShardCounter: %s\n", err)
+		errorLog.Printf("setShardsCounter: %s\n", err)
 		return
+	}
+	metricNumberShards.Set(float64(len(fns)))
+
+	compoundFns := make([]string, 0, len(fns))
+	for _, fn := range fns {
+		if strings.HasPrefix(filepath.Base(fn), "compound-") {
+			compoundFns = append(compoundFns, fn)
+		}
 	}
 	metricNumberCompoundShards.Set(float64(len(fns)))
 }
@@ -1288,7 +1296,7 @@ func startServer(conf rootConfig) error {
 	}
 
 	profiler.Init("zoekt-sourcegraph-indexserver")
-	setCompoundShardCounter(s.IndexDir)
+	setShardsCounter(s.IndexDir)
 
 	if conf.listen != "" {
 

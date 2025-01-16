@@ -379,6 +379,11 @@ var metricVacuumRunning = promauto.NewGauge(prometheus.GaugeOpts{
 	Help: "Set to 1 if indexserver's vacuum job is running.",
 })
 
+var metricNumberShards = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "index_number_shards",
+	Help: "The number of total shards.",
+})
+
 var metricNumberCompoundShards = promauto.NewGauge(prometheus.GaugeOpts{
 	Name: "index_number_compound_shards",
 	Help: "The number of compound shards.",
