@@ -46,7 +46,7 @@ func run() int {
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
 	languageMap := flag.String("language_map", "", "a mapping between a language and its ctags processor (a:0,b:3).")
 
-	cpuProfile := flag.String("cpuprofile", "", "write cpu profile to `file`")
+	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to `file`")
 
 	flag.Parse()
 
