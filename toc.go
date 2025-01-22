@@ -96,7 +96,8 @@ type indexTOC struct {
 	contentChecksums simpleSection
 	runeDocSections  simpleSection
 
-	repos simpleSection
+	repos          simpleSection
+	reposIDsBitmap simpleSection
 
 	ranks simpleSection
 }
@@ -187,6 +188,8 @@ func (t *indexTOC) sectionsTaggedList() []taggedSection {
 		{"nameBloom", &unusedSimple},
 		{"contentBloom", &unusedSimple},
 		{"ranks", &unusedSimple},
+
+		{"reposIDsBitmap", &t.reposIDsBitmap},
 	}
 }
 
