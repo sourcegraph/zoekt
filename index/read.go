@@ -24,6 +24,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/rs/xid"
 	"github.com/sourcegraph/zoekt"
 )
@@ -647,6 +648,54 @@ func IndexFilePaths(p string) ([]string, error) {
 		}
 	}
 	return exist, nil
+}
+
+// MaybeContainRepo returns true if the shard at path p could contain repoID.
+// This only returns false if we are certain it does not. You need to double
+// check if it returns true.
+//
+// This function is a performance optimization mainly intended to be used by
+// builder (see findShard) to avoid unmarshalling large metadata files for
+// compound shards. It is best-effort, so if encounters any error returns true
+// (ie indicating you need to do more checks).
+func MaybeContainRepo(p string, repoID uint32) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return true
+	}
+	defer f.Close()
+
+	inf, err := NewIndexFile(f)
+	if err != nil {
+		return true
+	}
+	defer inf.Close()
+
+	rd := &reader{r: inf}
+	var toc indexTOC
+	err = rd.readTOCSections(&toc, []string{"reposIDsBitmap"})
+	if err != nil {
+		return true
+	}
+
+	// shard does not yet contains reposIDsBitmap so we can't tell if it
+	// contains repo.
+	if toc.reposIDsBitmap.sz == 0 {
+		return true
+	}
+
+	blob, err := inf.Read(toc.reposIDsBitmap.off, toc.reposIDsBitmap.sz)
+	if err != nil {
+		return true
+	}
+
+	var rb roaring.Bitmap
+	_, err = rb.FromUnsafeBytes(blob)
+	if err != nil {
+		return true
+	}
+
+	return rb.Contains(repoID)
 }
 
 func loadIndexData(r IndexFile) (*indexData, error) {
