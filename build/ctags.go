@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/internal/ctags"
 )
 
 // Make sure all names are lowercase here, since they are normalized

@@ -36,8 +36,8 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
+	"github.com/sourcegraph/zoekt/internal/trace"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/trace"
 )
 
 var (

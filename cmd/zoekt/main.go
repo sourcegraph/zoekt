@@ -29,8 +29,8 @@ import (
 
 	"github.com/felixge/fgprof"
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
 )
 
 func displayMatches(files []zoekt.FileMatch, pat string, withRepo bool, list bool) {

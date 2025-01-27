@@ -33,8 +33,8 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
 )
 
 func readTree(dir string) (map[string][]byte, error) {

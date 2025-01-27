@@ -17,10 +17,10 @@ import (
 	"time"
 
 	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/zoekt/internal/ctags"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
-	"github.com/sourcegraph/zoekt/ctags"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 

@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
 )
 
 func TestMain(m *testing.M) {

@@ -42,8 +42,8 @@ import (
 	"github.com/google/slothfs/manifest"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
-	"github.com/sourcegraph/zoekt/gitindex"
 	"github.com/sourcegraph/zoekt/ignore"
+	"github.com/sourcegraph/zoekt/internal/gitindex"
 	"go.uber.org/automaxprocs/maxprocs"
 
 	git "github.com/go-git/go-git/v5"

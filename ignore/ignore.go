@@ -1,4 +1,4 @@
-// package ignore provides helpers to support ignore-files similar to .gitignore
+// Package ignore provides helpers to support ignore-files similar to .gitignore
 package ignore
 
 import (

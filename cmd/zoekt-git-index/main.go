@@ -23,13 +23,13 @@ import (
 	"strings"
 
 	"github.com/dustin/go-humanize"
+	"github.com/sourcegraph/zoekt/internal/ctags"
 	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/sourcegraph/zoekt/internal/profiler"
 
 	"github.com/sourcegraph/zoekt/cmd"
-	"github.com/sourcegraph/zoekt/ctags"
-	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/internal/gitindex"
 )
 
 func run() int {

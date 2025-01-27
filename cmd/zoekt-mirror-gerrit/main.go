@@ -34,7 +34,7 @@ import (
 	gerrit "github.com/andygrunwald/go-gerrit"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
-	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/internal/gitindex"
 )
 
 type loggingRT struct {
