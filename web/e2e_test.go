@@ -127,6 +127,10 @@ func TestBasic(t *testing.T) {
 			`href="https://github.com/org/repo/blob/1234/foo/bar%2Bbaz"`,
 			"carry <b>water</b>",
 		},
+		"/search?q=water.in": {
+			"href=\"file-url#line",
+			"carry <b>water in</b>",
+		},
 		"/search?q=r:": {
 			"1234\">master",
 			"Found 1 repositories",
