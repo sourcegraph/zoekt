@@ -29,11 +29,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
-	"github.com/sourcegraph/zoekt/ignore"
-	"github.com/sourcegraph/zoekt/internal/shards"
-
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/ignore"
+	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
 )
 

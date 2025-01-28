@@ -14,14 +14,13 @@ import (
 	"time"
 
 	"github.com/sourcegraph/log/logtest"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/internal/ctags"
+	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
-
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
-	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"

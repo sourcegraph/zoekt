@@ -40,9 +40,8 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/go-enry/go-enry/v2"
 	"github.com/rs/xid"
-	"github.com/sourcegraph/zoekt/internal/ctags"
-
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/ctags"
 )
 
 var DefaultDir = filepath.Join(os.Getenv("HOME"), ".zoekt")
