@@ -23,6 +23,8 @@ import (
 	"io"
 	"sort"
 	"time"
+
+	"github.com/RoaringBitmap/roaring"
 )
 
 func (w *writer) writeTOC(toc *indexTOC) {
@@ -64,6 +66,12 @@ func (s *compoundSection) writeMap(w *writer, m map[string]uint32) {
 		return m[string(keys[i].data)] < m[string(keys[j].data)]
 	})
 	s.writeStrings(w, keys)
+}
+
+func writeUint32Bitmap(w *writer, dat []uint32) {
+	rb := roaring.BitmapOf(dat...)
+	rb.RunOptimize()
+	rb.WriteTo(w)
 }
 
 func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
@@ -167,6 +175,12 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 		toc.repos.start(w)
 		w.Write(toSizedDeltas16(b.repos))
 		toc.repos.end(w)
+	}
+
+	if repoIDs, ok := b.repoIDs(); ok && next {
+		toc.reposIDsBitmap.start(w)
+		writeUint32Bitmap(w, repoIDs)
+		toc.reposIDsBitmap.end(w)
 	}
 
 	indexTime := b.IndexTime
