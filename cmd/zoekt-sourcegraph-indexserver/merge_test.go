@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 func TestHasMultipleShards(t *testing.T) {
@@ -48,12 +48,12 @@ func TestDoNotDeleteSingleShards(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create a test shard.
-	opts := build.Options{
+	opts := index.Options{
 		IndexDir:              dir,
 		RepositoryDescription: zoekt.Repository{Name: "test-repo"},
 	}
 	opts.SetDefaults()
-	b, err := build.NewBuilder(opts)
+	b, err := index.NewBuilder(opts)
 	if err != nil {
 		t.Fatalf("NewBuilder: %v", err)
 	}

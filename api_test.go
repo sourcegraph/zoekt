@@ -150,12 +150,6 @@ func TestMatchSize(t *testing.T) {
 	}, {
 		v:    ChunkMatch{},
 		size: 120,
-	}, {
-		v:    candidateMatch{},
-		size: 80,
-	}, {
-		v:    candidateChunk{},
-		size: 40,
 	}}
 	for _, c := range cases {
 		got := reflect.TypeOf(c.v).Size()

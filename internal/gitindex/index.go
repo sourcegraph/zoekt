@@ -33,15 +33,14 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
-	"github.com/sourcegraph/zoekt/ignore"
-
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/ignore"
+	"github.com/sourcegraph/zoekt/index"
 
 	git "github.com/go-git/go-git/v5"
 )
@@ -313,7 +312,7 @@ type Options struct {
 	RepoCacheDir string
 
 	// Indexing options.
-	BuildOptions build.Options
+	BuildOptions index.Options
 
 	// Prefix of the branch to index, e.g. `remotes/origin`.
 	BranchPrefix string
@@ -512,7 +511,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		}
 	}
 
-	builder, err := build.NewBuilder(opts.BuildOptions)
+	builder, err := index.NewBuilder(opts.BuildOptions)
 	if err != nil {
 		return false, fmt.Errorf("build.NewBuilder: %w", err)
 	}
@@ -611,7 +610,7 @@ type repoPathRanks struct {
 func (r repoPathRanks) rank(path string, content []byte) float64 {
 	if rank, ok := r.Paths[path]; ok {
 		return rank
-	} else if build.IsLowPriority(path, content) {
+	} else if index.IsLowPriority(path, content) {
 		return 0.0
 	} else {
 		return r.MeanRank
@@ -689,7 +688,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	// If it isn't consistent, that we can't proceed with a delta build (and the caller should fall back to a
 	// normal one).
 
-	if !build.BranchNamesEqual(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches) {
+	if !index.BranchNamesEqual(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches) {
 		var existingBranchNames []string
 		for _, b := range existingRepository.Branches {
 			existingBranchNames = append(existingBranchNames, b.Name)
@@ -707,7 +706,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	}
 
 	// Check if the build options hash does not match the repository metadata's hash
-	// If it does not match then one or more index options has changed and will require a normal build instead of a delta build
+	// If it does not index then one or more index options has changed and will require a normal build instead of a delta build
 	if options.BuildOptions.GetHash() != existingRepository.IndexOptions {
 		return nil, nil, nil, fmt.Errorf("one or more index options previously stored for repository %s (ID: %d) does not match the index options for this requested build; These index option updates are incompatible with delta build. new index options: %+v", existingRepository.Name, existingRepository.ID, options.BuildOptions.HashOptions())
 	}
@@ -894,8 +893,8 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 
 func createDocument(key fileKey,
 	repos map[fileKey]BlobLocation,
-	opts build.Options,
-) (zoekt.Document, error) {
+	opts index.Options,
+) (index.Document, error) {
 	repo := repos[key]
 	blob, err := repo.GitRepo.BlobObject(key.ID)
 	branches := repos[key].Branches
@@ -906,7 +905,7 @@ func createDocument(key fileKey,
 	}
 
 	if err != nil {
-		return zoekt.Document{}, err
+		return index.Document{}, err
 	}
 
 	keyFullPath := key.FullPath()
@@ -916,10 +915,10 @@ func createDocument(key fileKey,
 
 	contents, err := blobContents(blob)
 	if err != nil {
-		return zoekt.Document{}, err
+		return index.Document{}, err
 	}
 
-	return zoekt.Document{
+	return index.Document{
 		SubRepositoryPath: key.SubRepoPath,
 		Name:              keyFullPath,
 		Content:           contents,
@@ -927,8 +926,8 @@ func createDocument(key fileKey,
 	}, nil
 }
 
-func skippedLargeDoc(key fileKey, branches []string, opts build.Options) zoekt.Document {
-	return zoekt.Document{
+func skippedLargeDoc(key fileKey, branches []string, opts index.Options) index.Document {
+	return index.Document{
 		SkipReason:        fmt.Sprintf("file size exceeds maximum size %d", opts.SizeMax),
 		Name:              key.FullPath(),
 		Branches:          branches,

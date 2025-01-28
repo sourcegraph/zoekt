@@ -33,7 +33,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/gitindex"
 )
 
@@ -206,13 +206,13 @@ func deleteIfOrphan(repoDir string, fn string) error {
 	}
 	defer f.Close()
 
-	ifile, err := zoekt.NewIndexFile(f)
+	ifile, err := index.NewIndexFile(f)
 	if err != nil {
 		return nil
 	}
 	defer ifile.Close()
 
-	repos, _, err := zoekt.ReadMetadata(ifile)
+	repos, _, err := index.ReadMetadata(ifile)
 	if err != nil {
 		return nil
 	}

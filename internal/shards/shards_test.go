@@ -36,6 +36,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
+	"github.com/sourcegraph/zoekt/index"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
@@ -199,7 +200,7 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 	ss := newShardedSearcher(1)
 
 	var nextShardNum int
-	addShard := func(repo string, priority float64, docs ...zoekt.Document) {
+	addShard := func(repo string, priority float64, docs ...index.Document) {
 		r := &zoekt.Repository{ID: hash(repo), Name: repo}
 		r.RawConfig = map[string]string{
 			"public":   "1",
@@ -213,10 +214,10 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 		nextShardNum++
 	}
 
-	addShard("weekend-project", 20, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
-	addShard("moderately-popular", 500, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
-	addShard("weekend-project-2", 20, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
-	addShard("super-star", 5000, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})
+	addShard("weekend-project", 20, index.Document{Name: "f2", Content: []byte("foo bas")})
+	addShard("moderately-popular", 500, index.Document{Name: "f3", Content: []byte("foo bar")})
+	addShard("weekend-project-2", 20, index.Document{Name: "f2", Content: []byte("foo bas")})
+	addShard("super-star", 5000, index.Document{Name: "f1", Content: []byte("foo bar bas")})
 
 	want := []string{
 		"super-star",
@@ -241,7 +242,7 @@ func TestShardedSearcher_DocumentRanking(t *testing.T) {
 	ss := newShardedSearcher(1)
 
 	var nextShardNum int
-	addShard := func(repo string, rank uint16, docs ...zoekt.Document) {
+	addShard := func(repo string, rank uint16, docs ...index.Document) {
 		r := &zoekt.Repository{ID: hash(repo), Name: repo}
 		r.RawConfig = map[string]string{
 			"public": "1",
@@ -255,11 +256,11 @@ func TestShardedSearcher_DocumentRanking(t *testing.T) {
 		nextShardNum++
 	}
 
-	addShard("old-project", 1, zoekt.Document{Name: "f1", Content: []byte("foobar")})
-	addShard("recent", 2, zoekt.Document{Name: "f2", Content: []byte("foobaz")})
-	addShard("old-project-2", 1, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
-	addShard("new", 3, zoekt.Document{Name: "f4", Content: []byte("foo baz")},
-		zoekt.Document{Name: "f5", Content: []byte("fooooo")})
+	addShard("old-project", 1, index.Document{Name: "f1", Content: []byte("foobar")})
+	addShard("recent", 2, index.Document{Name: "f2", Content: []byte("foobaz")})
+	addShard("old-project-2", 1, index.Document{Name: "f3", Content: []byte("foo bar")})
+	addShard("new", 3, index.Document{Name: "f4", Content: []byte("foo baz")},
+		index.Document{Name: "f5", Content: []byte("fooooo")})
 
 	// Run a stream search and gather the results
 	var results []*zoekt.SearchResult
@@ -409,7 +410,7 @@ func (s *memSeeker) Size() (uint32, error) {
 }
 
 func TestUnloadIndex(t *testing.T) {
-	b := testIndexBuilder(t, nil, zoekt.Document{
+	b := testIndexBuilder(t, nil, index.Document{
 		Name:    "filename",
 		Content: []byte("needle needle needle"),
 	})
@@ -420,7 +421,7 @@ func TestUnloadIndex(t *testing.T) {
 	}
 	indexBytes := buf.Bytes()
 	indexFile := &memSeeker{indexBytes}
-	searcher, err := zoekt.NewSearcher(indexFile)
+	searcher, err := index.NewSearcher(indexFile)
 	if err != nil {
 		t.Fatalf("NewSearcher: %v", err)
 	}
@@ -471,7 +472,7 @@ func TestShardedSearcher_List(t *testing.T) {
 		},
 	}
 
-	doc := zoekt.Document{
+	doc := index.Document{
 		Name:     "foo.go",
 		Content:  []byte("bar\nbaz"),
 		Branches: []string{"main", "dev"},
@@ -608,8 +609,8 @@ func TestShardedSearcher_List(t *testing.T) {
 	}
 }
 
-func testIndexBuilder(t testing.TB, repo *zoekt.Repository, docs ...zoekt.Document) *zoekt.IndexBuilder {
-	b, err := zoekt.NewIndexBuilder(repo)
+func testIndexBuilder(t testing.TB, repo *zoekt.Repository, docs ...index.Document) *index.IndexBuilder {
+	b, err := index.NewIndexBuilder(repo)
 	if err != nil {
 		t.Fatalf("NewIndexBuilder: %v", err)
 	}
@@ -622,14 +623,14 @@ func testIndexBuilder(t testing.TB, repo *zoekt.Repository, docs ...zoekt.Docume
 	return b
 }
 
-func searcherForTest(t testing.TB, b *zoekt.IndexBuilder) zoekt.Searcher {
+func searcherForTest(t testing.TB, b *index.IndexBuilder) zoekt.Searcher {
 	var buf bytes.Buffer
 	if err := b.Write(&buf); err != nil {
 		t.Fatal(err)
 	}
 	f := &memSeeker{buf.Bytes()}
 
-	searcher, err := zoekt.NewSearcher(f)
+	searcher, err := index.NewSearcher(f)
 	if err != nil {
 		t.Fatalf("NewSearcher: %v", err)
 	}
@@ -650,7 +651,7 @@ func reposForTest(n int) (result []*zoekt.Repository) {
 func testSearcherForRepo(b testing.TB, r *zoekt.Repository, numFiles int) zoekt.Searcher {
 	builder := testIndexBuilder(b, r)
 
-	if err := builder.Add(zoekt.Document{
+	if err := builder.Add(index.Document{
 		Name:    fmt.Sprintf("%s/filename-%d.go", r.Name, 0),
 		Content: []byte("needle needle needle haystack"),
 	}); err != nil {
@@ -658,7 +659,7 @@ func testSearcherForRepo(b testing.TB, r *zoekt.Repository, numFiles int) zoekt.
 	}
 
 	for i := 1; i < numFiles; i++ {
-		if err := builder.Add(zoekt.Document{
+		if err := builder.Add(index.Document{
 			Name:    fmt.Sprintf("%s/filename-%d.go", r.Name, i),
 			Content: []byte("haystack haystack haystack"),
 		}); err != nil {
@@ -754,7 +755,7 @@ func TestRawQuerySearch(t *testing.T) {
 	ss := newShardedSearcher(1)
 
 	var nextShardNum int
-	addShard := func(repo string, rawConfig map[string]string, docs ...zoekt.Document) {
+	addShard := func(repo string, rawConfig map[string]string, docs ...index.Document) {
 		r := &zoekt.Repository{Name: repo}
 		r.RawConfig = rawConfig
 		b := testIndexBuilder(t, r, docs...)
@@ -762,9 +763,9 @@ func TestRawQuerySearch(t *testing.T) {
 		ss.replace(map[string]zoekt.Searcher{fmt.Sprintf("key-%d", nextShardNum): shard})
 		nextShardNum++
 	}
-	addShard("public", map[string]string{"public": "1"}, zoekt.Document{Name: "f1", Content: []byte("foo bar bas")})
-	addShard("private_archived", map[string]string{"archived": "1"}, zoekt.Document{Name: "f2", Content: []byte("foo bas")})
-	addShard("public_fork", map[string]string{"public": "1", "fork": "1"}, zoekt.Document{Name: "f3", Content: []byte("foo bar")})
+	addShard("public", map[string]string{"public": "1"}, index.Document{Name: "f1", Content: []byte("foo bar bas")})
+	addShard("private_archived", map[string]string{"archived": "1"}, index.Document{Name: "f2", Content: []byte("foo bas")})
+	addShard("public_fork", map[string]string{"public": "1", "fork": "1"}, index.Document{Name: "f3", Content: []byte("foo bar")})
 
 	cases := []struct {
 		pattern   string
@@ -979,7 +980,7 @@ func mkSearchResult(n int, repoID uint32) *zoekt.SearchResult {
 func TestFileBasedSearch(t *testing.T) {
 	cases := []struct {
 		name              string
-		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch
+		testShardedSearch func(t *testing.T, q query.Q, ib *index.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch
 	}{
 		{"Search", testShardedSearch},
 		{"StreamSearch", testShardedStreamSearch},
@@ -990,8 +991,8 @@ func TestFileBasedSearch(t *testing.T) {
 	c2 := []byte("In Dutch, ananas means pineapple")
 	// -----------0123456789012345678901234567890123456789
 	b := testIndexBuilder(t, nil,
-		zoekt.Document{Name: "f1", Content: c1},
-		zoekt.Document{Name: "f2", Content: c2},
+		index.Document{Name: "f1", Content: c1},
+		index.Document{Name: "f2", Content: c2},
 	)
 
 	for _, tt := range cases {
@@ -1019,17 +1020,17 @@ func TestFileBasedSearch(t *testing.T) {
 func TestWordBoundaryRanking(t *testing.T) {
 	cases := []struct {
 		name              string
-		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch
+		testShardedSearch func(t *testing.T, q query.Q, ib *index.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch
 	}{
 		{"Search", testShardedSearch},
 		{"StreamSearch", testShardedStreamSearch},
 	}
 
 	b := testIndexBuilder(t, nil,
-		zoekt.Document{Name: "f1", Content: []byte("xbytex xbytex")},
-		zoekt.Document{Name: "f2", Content: []byte("xbytex\nbytex\nbyte bla")},
+		index.Document{Name: "f1", Content: []byte("xbytex xbytex")},
+		index.Document{Name: "f2", Content: []byte("xbytex\nbytex\nbyte bla")},
 		// -----------------------------------------0123456 789012 34567890
-		zoekt.Document{Name: "f3", Content: []byte("xbytex ybytex")})
+		index.Document{Name: "f3", Content: []byte("xbytex ybytex")})
 
 	for _, tt := range cases {
 		for _, useDocumentRanks := range []bool{false, true} {
@@ -1059,7 +1060,7 @@ func TestWordBoundaryRanking(t *testing.T) {
 func TestAtomCountScore(t *testing.T) {
 	cases := []struct {
 		name              string
-		testShardedSearch func(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch
+		testShardedSearch func(t *testing.T, q query.Q, ib *index.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch
 	}{
 		{"Search", testShardedSearch},
 		{"StreamSearch", testShardedStreamSearch},
@@ -1072,9 +1073,9 @@ func TestAtomCountScore(t *testing.T) {
 				{Name: "needle", Version: "v2"},
 			},
 		},
-		zoekt.Document{Name: "f1", Content: []byte("needle the bla"), Branches: []string{"branches"}},
-		zoekt.Document{Name: "needle-file-branch", Content: []byte("needle content"), Branches: []string{"needle"}},
-		zoekt.Document{Name: "needle-file", Content: []byte("needle content"), Branches: []string{"branches"}})
+		index.Document{Name: "f1", Content: []byte("needle the bla"), Branches: []string{"branches"}},
+		index.Document{Name: "needle-file-branch", Content: []byte("needle content"), Branches: []string{"needle"}},
+		index.Document{Name: "needle-file", Content: []byte("needle content"), Branches: []string{"branches"}})
 
 	for _, tt := range cases {
 		for _, useDocumentRanks := range []bool{false, true} {
@@ -1101,9 +1102,9 @@ func TestAtomCountScore(t *testing.T) {
 func TestUseBM25Scoring(t *testing.T) {
 	b := testIndexBuilder(t,
 		&zoekt.Repository{},
-		zoekt.Document{Name: "f1", Content: []byte("one two two three")},
-		zoekt.Document{Name: "f2", Content: []byte("one two one two")},
-		zoekt.Document{Name: "f3", Content: []byte("one three three three")})
+		index.Document{Name: "f1", Content: []byte("one two two three")},
+		index.Document{Name: "f2", Content: []byte("one two one two")},
+		index.Document{Name: "f3", Content: []byte("one three three three")})
 
 	ss := newShardedSearcher(1)
 	searcher := searcherForTest(t, b)
@@ -1133,7 +1134,7 @@ func TestUseBM25Scoring(t *testing.T) {
 	}
 }
 
-func testShardedStreamSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch {
+func testShardedStreamSearch(t *testing.T, q query.Q, ib *index.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch {
 	ss := newShardedSearcher(1)
 	searcher := searcherForTest(t, ib)
 	ss.replace(map[string]zoekt.Searcher{"r1": searcher})
@@ -1153,7 +1154,7 @@ func testShardedStreamSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, us
 	return files
 }
 
-func testShardedSearch(t *testing.T, q query.Q, ib *zoekt.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch {
+func testShardedSearch(t *testing.T, q query.Q, ib *index.IndexBuilder, useDocumentRanks bool) []zoekt.FileMatch {
 	ss := newShardedSearcher(1)
 	searcher := searcherForTest(t, ib)
 	ss.replace(map[string]zoekt.Searcher{"r1": searcher})

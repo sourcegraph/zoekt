@@ -23,9 +23,8 @@ import (
 	"runtime/pprof"
 	"strings"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/cmd"
+	"github.com/sourcegraph/zoekt/index"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 
@@ -103,14 +102,14 @@ func main() {
 	}
 }
 
-func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error {
+func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error {
 	dir, err := filepath.Abs(filepath.Clean(arg))
 	if err != nil {
 		return err
 	}
 
 	opts.RepositoryDescription.Name = filepath.Base(dir)
-	builder, err := build.NewBuilder(opts)
+	builder, err := index.NewBuilder(opts)
 	if err != nil {
 		return err
 	}
@@ -135,7 +134,7 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error 
 	for f := range comm {
 		displayName := strings.TrimPrefix(f.name, dir+"/")
 		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
-			if err := builder.Add(zoekt.Document{
+			if err := builder.Add(index.Document{
 				Name:       displayName,
 				SkipReason: fmt.Sprintf("document size %d larger than limit %d", f.size, opts.SizeMax),
 			}); err != nil {

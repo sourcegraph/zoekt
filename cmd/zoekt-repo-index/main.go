@@ -41,8 +41,8 @@ import (
 
 	"github.com/google/slothfs/manifest"
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ignore"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/gitindex"
 	"go.uber.org/automaxprocs/maxprocs"
 
@@ -127,7 +127,7 @@ func main() {
 	revPrefix := flag.String("rev_prefix", "refs/remotes/origin/", "prefix for references")
 	baseURLStr := flag.String("base_url", "", "base url to interpret repository names")
 	repoCacheDir := flag.String("repo_cache", "", "root for repository cache")
-	indexDir := flag.String("index", build.DefaultDir, "index directory for *.zoekt files")
+	indexDir := flag.String("index", index.DefaultDir, "index directory for *.zoekt files")
 	manifestRepoURL := flag.String("manifest_repo_url", "", "set a URL for a git repository holding manifest XML file. Provide the BRANCH:XML-FILE as further command-line arguments")
 	manifestRevPrefix := flag.String("manifest_rev_prefix", "refs/remotes/origin/", "prefixes for branches in manifest repository")
 	repoName := flag.String("name", "", "set repository name")
@@ -150,7 +150,7 @@ func main() {
 		*repoName = filepath.Join(u.Host, u.Path)
 	}
 
-	opts := build.Options{
+	opts := index.Options{
 		Parallelism: *parallelism,
 		SizeMax:     *sizeMax,
 		ShardMax:    *shardLimit,
@@ -258,7 +258,7 @@ func main() {
 		return
 	}
 
-	builder, err := build.NewBuilder(opts)
+	builder, err := index.NewBuilder(opts)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		doc := zoekt.Document{
+		doc := index.Document{
 			Name:              k.FullPath(),
 			Content:           data,
 			SubRepositoryPath: k.SubRepoPath,

@@ -32,8 +32,10 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
-	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 	zjson "github.com/sourcegraph/zoekt/internal/json"
+
+	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -152,7 +154,7 @@ func (s *Server) getTextTemplate(str string) *texttemplate.Template {
 		return t
 	}
 
-	t, err := zoekt.ParseTemplate(str)
+	t, err := index.ParseTemplate(str)
 	if err != nil {
 		log.Printf("text template parse error: %v", err)
 		t = texttemplate.Must(texttemplate.New("empty").Parse(""))

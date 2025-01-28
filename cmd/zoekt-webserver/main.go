@@ -41,21 +41,8 @@ import (
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/sourcegraph/mountinfo"
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
-	zoektgrpc "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server"
-	"github.com/sourcegraph/zoekt/grpc/internalerrs"
-	"github.com/sourcegraph/zoekt/grpc/messagesize"
-	"github.com/sourcegraph/zoekt/grpc/propagator"
-	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"github.com/sourcegraph/zoekt/internal/debugserver"
-	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/shards"
-	"github.com/sourcegraph/zoekt/internal/tenant"
-	"github.com/sourcegraph/zoekt/internal/trace"
-	"github.com/sourcegraph/zoekt/internal/tracer"
-	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/web"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -66,6 +53,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/shirou/gopsutil/v3/disk"
 	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/zoekt"
+	zoektgrpc "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server"
+	"github.com/sourcegraph/zoekt/grpc/internalerrs"
+	"github.com/sourcegraph/zoekt/grpc/messagesize"
+	"github.com/sourcegraph/zoekt/grpc/propagator"
+	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
+	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/profiler"
+	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/internal/trace"
+	"github.com/sourcegraph/zoekt/internal/tracer"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/web"
 	"github.com/uber/jaeger-client-go"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/automaxprocs/maxprocs"
@@ -139,7 +139,7 @@ func main() {
 	logRefresh := flag.Duration("log_refresh", 24*time.Hour, "if using --log_dir, start writing a new file this often.")
 
 	listen := flag.String("listen", ":6070", "listen on this address.")
-	index := flag.String("index", build.DefaultDir, "set index directory to use")
+	indexDir := flag.String("index", index.DefaultDir, "set index directory to use")
 	html := flag.Bool("html", true, "enable HTML interface")
 	enableRPC := flag.Bool("rpc", false, "enable go/net RPC")
 	enableIndexserverProxy := flag.Bool("indexserver_proxy", false, "proxy requests with URLs matching the path /indexserver/ to <index>/indexserver.sock")
@@ -158,7 +158,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Printf("zoekt-webserver version %q\n", zoekt.Version)
+		fmt.Printf("zoekt-webserver version %q\n", index.Version)
 		os.Exit(0)
 	}
 
@@ -171,8 +171,8 @@ func main() {
 
 	resource := sglog.Resource{
 		Name:       "zoekt-webserver",
-		Version:    zoekt.Version,
-		InstanceID: zoekt.HostnameBestEffort(),
+		Version:    index.Version,
+		InstanceID: index.HostnameBestEffort(),
 	}
 
 	liblog := sglog.Init(resource)
@@ -193,25 +193,25 @@ func main() {
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
 
-	if err := os.MkdirAll(*index, 0o755); err != nil {
+	if err := os.MkdirAll(*indexDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
 
-	mustRegisterDiskMonitor(*index)
+	mustRegisterDiskMonitor(*indexDir)
 
 	metricsLogger := sglog.Scoped("metricsRegistration")
 
 	mustRegisterMemoryMapMetrics(metricsLogger)
 
 	opts := mountinfo.CollectorOpts{Namespace: "zoekt_webserver"}
-	c := mountinfo.NewCollector(metricsLogger, opts, map[string]string{"indexDir": *index})
+	c := mountinfo.NewCollector(metricsLogger, opts, map[string]string{"indexDir": *indexDir})
 
 	prometheus.DefaultRegisterer.MustRegister(c)
 
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the
 	// order of minutes.
-	searcher, err := shards.NewDirectorySearcherFast(*index)
+	searcher, err := shards.NewDirectorySearcherFast(*indexDir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func main() {
 	s := &web.Server{
 		Searcher: searcher,
 		Top:      web.Top,
-		Version:  zoekt.Version,
+		Version:  index.Version,
 	}
 
 	if *templateDir != "" {
@@ -260,7 +260,7 @@ func main() {
 	debugserver.AddHandlers(serveMux, *enablePprof)
 
 	if *enableIndexserverProxy {
-		socket := filepath.Join(*index, "indexserver.sock")
+		socket := filepath.Join(*indexDir, "indexserver.sock")
 		sglog.Scoped("server").Info("adding reverse proxy", sglog.String("socket", socket))
 		addProxyHandler(serveMux, socket)
 	}

@@ -29,6 +29,7 @@ import (
 
 	"github.com/felixge/fgprof"
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -64,19 +65,19 @@ func loadShard(fn string, verbose bool) (zoekt.Searcher, error) {
 		return nil, err
 	}
 
-	iFile, err := zoekt.NewIndexFile(f)
+	iFile, err := index.NewIndexFile(f)
 	if err != nil {
 		return nil, err
 	}
 
-	s, err := zoekt.NewSearcher(iFile)
+	s, err := index.NewSearcher(iFile)
 	if err != nil {
 		iFile.Close()
 		return nil, fmt.Errorf("NewSearcher(%s): %v", fn, err)
 	}
 
 	if verbose {
-		repo, index, err := zoekt.ReadMetadata(iFile)
+		repo, index, err := index.ReadMetadata(iFile)
 		if err != nil {
 			iFile.Close()
 			return nil, fmt.Errorf("ReadMetadata(%s): %v", fn, err)

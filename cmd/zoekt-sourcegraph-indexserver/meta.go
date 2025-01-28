@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 // mergeMeta updates the .meta files for the shards on disk for o.
@@ -16,10 +16,10 @@ import (
 // failure. This means you might have an inconsistent state on disk if an
 // error is returned. It is recommended to fallback to re-indexing in that
 // case.
-func mergeMeta(o *build.Options) error {
+func mergeMeta(o *index.Options) error {
 	todo := map[string]string{}
 	for _, fn := range o.FindAllShards() {
-		repos, md, err := zoekt.ReadMetadataPath(fn)
+		repos, md, err := index.ReadMetadataPath(fn)
 		if err != nil {
 			return err
 		}

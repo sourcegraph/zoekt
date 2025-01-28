@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/stretchr/testify/require"
@@ -160,7 +160,7 @@ func testIndexIncrementally(t *testing.T, format string) {
 	for _, test := range tests {
 		largeFiles, wantNumFiles := test.largeFiles, test.wantNumFiles
 
-		bopts := build.Options{
+		bopts := index.Options{
 			SizeMax:    fileSize - 1,
 			IndexDir:   indexDir,
 			LargeFiles: largeFiles,
@@ -233,7 +233,7 @@ func testLatestCommitDate(t *testing.T, format string) {
 
 	// Index
 	indexDir := t.TempDir()
-	bopts := build.Options{
+	bopts := index.Options{
 		IndexDir: indexDir,
 	}
 	opts := Options{
@@ -253,7 +253,7 @@ func testLatestCommitDate(t *testing.T, format string) {
 	indexFiles, err := f.Readdirnames(1)
 	require.Len(t, indexFiles, 1)
 
-	repos, _, err := zoekt.ReadMetadataPath(filepath.Join(indexDir, indexFiles[0]))
+	repos, _, err := index.ReadMetadataPath(filepath.Join(indexDir, indexFiles[0]))
 	require.NoError(t, err)
 	require.Len(t, repos, 1)
 	require.True(t, repos[0].LatestCommitDate.Equal(modTime))

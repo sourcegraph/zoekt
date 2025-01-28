@@ -11,9 +11,8 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/sourcegraph/zoekt/index"
 	"go.uber.org/atomic"
-
-	"github.com/sourcegraph/zoekt"
 )
 
 var metricShardMergingRunning = promauto.NewGauge(prometheus.GaugeOpts{
@@ -203,7 +202,7 @@ func isExcluded(path string, fi os.FileInfo, opts mergeOpts) bool {
 		return true
 	}
 
-	repos, _, err := zoekt.ReadMetadataPath(path)
+	repos, _, err := index.ReadMetadataPath(path)
 	if err != nil {
 		debugLog.Printf("failed to load metadata for %s\n", fi.Name())
 		return true

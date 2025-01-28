@@ -18,7 +18,7 @@ import (
 
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 )
@@ -99,15 +99,15 @@ type indexArgs struct {
 	ShardMerging bool
 }
 
-// BuildOptions returns a build.Options represented by indexArgs. Note: it
+// BuildOptions returns a index.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
-func (o *indexArgs) BuildOptions() *build.Options {
+func (o *indexArgs) BuildOptions() *index.Options {
 	shardPrefix := ""
 	if tenant.EnforceTenant() {
 		shardPrefix = tenant.SrcPrefix(o.TenantID, o.RepoID)
 	}
 
-	return &build.Options{
+	return &index.Options{
 		// It is important that this RepositoryDescription exactly matches what
 		// the indexer we call will produce. This is to ensure that
 		// IncrementalSkipIndexing and IndexState can correctly calculate if

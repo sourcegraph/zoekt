@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 type loggingLoader struct {
@@ -182,7 +182,7 @@ func TestDirWatcherLoadLatest(t *testing.T) {
 	// 	t.Fatalf("got %v, want 'empty'", err)
 	// }
 
-	want := zoekt.NextIndexFormatVersion
+	want := index.NextIndexFormatVersion
 	shardLatest := filepath.Join(dir, fmt.Sprintf("foo_v%d.00000.zoekt", want))
 
 	for delta := -1; delta <= 1; delta++ {

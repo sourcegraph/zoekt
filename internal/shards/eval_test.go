@@ -6,23 +6,24 @@ import (
 	"testing"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/query"
 )
 
 func TestSearchTypeRepo(t *testing.T) {
 	ss := newShardedSearcher(2)
 	nextShardNum := 1
-	addShard := func(docs ...zoekt.Document) {
+	addShard := func(docs ...index.Document) {
 		b := testIndexBuilder(t, &zoekt.Repository{ID: 1, Name: "reponame"}, docs...)
 		shard := searcherForTest(t, b)
 		ss.replace(map[string]zoekt.Searcher{fmt.Sprintf("key-%d", nextShardNum): shard})
 		nextShardNum++
 	}
 	addShard(
-		zoekt.Document{Name: "f1", Content: []byte("bla the needle")},
-		zoekt.Document{Name: "f2", Content: []byte("another file another needle")})
+		index.Document{Name: "f1", Content: []byte("bla the needle")},
+		index.Document{Name: "f2", Content: []byte("another file another needle")})
 	addShard(
-		zoekt.Document{Name: "f3", Content: []byte("another shard")})
+		index.Document{Name: "f3", Content: []byte("another shard")})
 
 	searcher := &typeRepoSearcher{ss}
 	search := func(q query.Q, o ...zoekt.SearchOptions) *zoekt.SearchResult {
@@ -96,7 +97,7 @@ func TestSearchTypeRepo(t *testing.T) {
 		t.Fatalf("got %v, want 0 matches", len(res.Files))
 	}
 
-	// no match by path
+	// no index by path
 	res = search(query.NewAnd(
 		&query.Type{
 			Type:  query.TypeRepo,

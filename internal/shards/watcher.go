@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 type shardLoader interface {
@@ -130,7 +130,7 @@ func (s *DirectoryWatcher) scan() error {
 
 		// In the case of downgrades, avoid reading
 		// newer index formats.
-		if version > zoekt.IndexFormatVersion && version > zoekt.NextIndexFormatVersion {
+		if version > index.IndexFormatVersion && version > index.NextIndexFormatVersion {
 			continue
 		}
 

@@ -32,7 +32,7 @@ import (
 	"time"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -72,7 +72,7 @@ func compare(dir, patfile string, caseSensitive bool) error {
 	}
 	defer os.RemoveAll(indexDir)
 
-	var opts build.Options
+	var opts index.Options
 	opts.SetDefaults()
 	opts.IndexDir = indexDir
 
@@ -84,7 +84,7 @@ func compare(dir, patfile string, caseSensitive bool) error {
 		return fmt.Errorf("no contents")
 	}
 
-	builder, err := build.NewBuilder(opts)
+	builder, err := index.NewBuilder(opts)
 	if err != nil {
 		return err
 	}
