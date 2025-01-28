@@ -15,12 +15,11 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/internal/archive"
+	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
 )
 
 var update = flag.Bool("update", false, "update golden file")

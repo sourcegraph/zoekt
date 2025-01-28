@@ -20,7 +20,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/internal/ctags"
 )
 
 const (

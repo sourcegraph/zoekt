@@ -30,7 +30,7 @@ import (
 
 	"code.gitea.io/sdk/gitea"
 
-	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/internal/gitindex"
 )
 
 type topicsFlag []string

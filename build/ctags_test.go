@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/internal/ctags"
 )
 
 func TestTagsToSections(t *testing.T) {

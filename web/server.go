@@ -32,10 +32,9 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
-
 	"github.com/sourcegraph/zoekt"
+	zjson "github.com/sourcegraph/zoekt/internal/json"
 	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
-	zjson "github.com/sourcegraph/zoekt/json"
 	"github.com/sourcegraph/zoekt/query"
 )
 

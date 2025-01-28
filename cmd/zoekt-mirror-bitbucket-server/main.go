@@ -30,7 +30,7 @@ import (
 
 	bitbucketv1 "github.com/gfleury/go-bitbucket-v1"
 
-	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/internal/gitindex"
 )
 
 func main() {

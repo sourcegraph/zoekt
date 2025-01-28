@@ -8,11 +8,10 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMerge(t *testing.T) {

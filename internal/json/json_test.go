@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/sourcegraph/zoekt"
+	zjson "github.com/sourcegraph/zoekt/internal/json"
 	"github.com/sourcegraph/zoekt/internal/mockSearcher"
-	zjson "github.com/sourcegraph/zoekt/json"
 	"github.com/sourcegraph/zoekt/query"
 )
 

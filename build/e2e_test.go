@@ -33,13 +33,12 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
-	"github.com/stretchr/testify/require"
-
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBasic(t *testing.T) {
