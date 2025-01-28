@@ -10,9 +10,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This binary fetches all repos of a project, and of a specific type, in case
-// these are specified, and clones them. By default it fetches and clones all
-// existing repos.
+// Command zoekt-mirror-bitbucket-server fetches all repos of a bitbucket project,
+// optionally of a specific type, and clones them.
 package main
 
 import (

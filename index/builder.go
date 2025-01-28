@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// package build implements a more convenient interface for building
-// zoekt indices.
+// Package index contains logic for building Zoekt indexes. NOTE: this package is not considered
+// part of the public API, and it is not recommended to rely on it in external code.
 package index
 
 import (

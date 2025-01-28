@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// zoekt-repo-index indexes a repo-based repository. The constituent git
+// Command zoekt-repo-index indexes repository that uses the Android 'repo'
+// tool (https://android.googlesource.com/tools/repo). The constituent git
 // repositories should already have been downloaded to the --repo_cache
-// directory, eg.
+// directory, for example:
 //
 // go install github.com/sourcegraph/zoekt/cmd/zoekt-repo-index &&
 //

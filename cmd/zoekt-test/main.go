@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// zoekt-test compares the search engine results with raw substring search
+// Command zoekt-test compares the zoekt results with raw substring search.
 package main
 
 import (
