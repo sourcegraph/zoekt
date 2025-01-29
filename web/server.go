@@ -613,6 +613,12 @@ func (s *Server) servePrintErr(w http.ResponseWriter, r *http.Request) error {
 
 	f := result.Files[0]
 
+	if qvals.Get("format") == "raw" {
+		w.Header().Add("Content-Type", "text/plain")
+		_, _ = w.Write(f.Content)
+		return nil
+	}
+
 	byteLines := bytes.Split(f.Content, []byte{'\n'})
 	strLines := make([]string, 0, len(byteLines))
 	for _, l := range byteLines {
