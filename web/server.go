@@ -614,7 +614,8 @@ func (s *Server) servePrintErr(w http.ResponseWriter, r *http.Request) error {
 	f := result.Files[0]
 
 	if qvals.Get("format") == "raw" {
-		w.Header().Add("Content-Type", "text/plain")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		_, _ = w.Write(f.Content)
 		return nil
 	}
