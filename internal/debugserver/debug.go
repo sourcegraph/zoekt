@@ -9,9 +9,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sourcegraph/zoekt/index"
 	"golang.org/x/net/trace"
-
-	"github.com/sourcegraph/zoekt"
 )
 
 var registerOnce sync.Once
@@ -87,5 +86,5 @@ func AddHandlers(mux *http.ServeMux, enablePprof bool, p ...DebugPage) {
 func register() {
 	promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "zoekt_version",
-	}, []string{"version"}).WithLabelValues(zoekt.Version).Set(1)
+	}, []string{"version"}).WithLabelValues(index.Version).Set(1)
 }

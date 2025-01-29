@@ -33,8 +33,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ignore"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -54,7 +54,7 @@ func TestIndexEmptyRepo(t *testing.T) {
 	}
 	opts := Options{
 		RepoDir: filepath.Join(dir, "repo", ".git"),
-		BuildOptions: build.Options{
+		BuildOptions: index.Options{
 			RepositoryDescription: desc,
 			IndexDir:              dir,
 		},
@@ -73,7 +73,7 @@ func TestIndexNonexistentRepo(t *testing.T) {
 	opts := Options{
 		RepoDir:  "does/not/exist",
 		Branches: []string{"main"},
-		BuildOptions: build.Options{
+		BuildOptions: index.Options{
 			RepositoryDescription: desc,
 			IndexDir:              dir,
 		},
@@ -92,8 +92,8 @@ func TestIndexTinyRepo(t *testing.T) {
 	executeCommand(t, dir, exec.Command("git", "init", "-b", "main", "repo"))
 
 	repoDir := filepath.Join(dir, "repo")
-	executeCommand(t, repoDir, exec.Command("git", "config", "user.name", "Thomas"))
-	executeCommand(t, repoDir, exec.Command("git", "config", "user.email", "thomas@google.com"))
+	executeCommand(t, repoDir, exec.Command("git", "config", "--local", "user.name", "Thomas"))
+	executeCommand(t, repoDir, exec.Command("git", "config", "--local", "user.email", "thomas@google.com"))
 
 	if err := os.WriteFile(filepath.Join(repoDir, "file1.go"), []byte("package main\n\nfunc main() {}\n"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -106,7 +106,7 @@ func TestIndexTinyRepo(t *testing.T) {
 		opts := Options{
 			RepoDir:  filepath.Join(dir, testDir),
 			Branches: []string{"main"},
-			BuildOptions: build.Options{
+			BuildOptions: index.Options{
 				RepositoryDescription: zoekt.Repository{Name: "repo"},
 				IndexDir:              dir,
 			},
@@ -143,7 +143,7 @@ func executeCommand(t *testing.T, dir string, cmd *exec.Cmd) *exec.Cmd {
 }
 
 func TestIndexDeltaBasic(t *testing.T) {
-	type branchToDocumentMap map[string][]zoekt.Document
+	type branchToDocumentMap map[string][]index.Document
 
 	type step struct {
 		name             string
@@ -152,25 +152,25 @@ func TestIndexDeltaBasic(t *testing.T) {
 		optFn            func(t *testing.T, options *Options)
 
 		expectedFallbackToNormalBuild bool
-		expectedDocuments             []zoekt.Document
+		expectedDocuments             []index.Document
 	}
 
-	helloWorld := zoekt.Document{Name: "hello_world.txt", Content: []byte("hello")}
+	helloWorld := index.Document{Name: "hello_world.txt", Content: []byte("hello")}
 
-	fruitV1 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("strawberry")}
-	fruitV1InFolder := zoekt.Document{Name: "the_best/best_fruit.txt", Content: fruitV1.Content}
-	fruitV1WithNewName := zoekt.Document{Name: "new_fruit.txt", Content: fruitV1.Content}
+	fruitV1 := index.Document{Name: "best_fruit.txt", Content: []byte("strawberry")}
+	fruitV1InFolder := index.Document{Name: "the_best/best_fruit.txt", Content: fruitV1.Content}
+	fruitV1WithNewName := index.Document{Name: "new_fruit.txt", Content: fruitV1.Content}
 
-	fruitV2 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("grapes")}
-	fruitV2InFolder := zoekt.Document{Name: "the_best/best_fruit.txt", Content: fruitV2.Content}
+	fruitV2 := index.Document{Name: "best_fruit.txt", Content: []byte("grapes")}
+	fruitV2InFolder := index.Document{Name: "the_best/best_fruit.txt", Content: fruitV2.Content}
 
-	fruitV3 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("oranges")}
-	fruitV4 := zoekt.Document{Name: "best_fruit.txt", Content: []byte("apples")}
+	fruitV3 := index.Document{Name: "best_fruit.txt", Content: []byte("oranges")}
+	fruitV4 := index.Document{Name: "best_fruit.txt", Content: []byte("apples")}
 
-	foo := zoekt.Document{Name: "foo.txt", Content: []byte("bar")}
+	foo := index.Document{Name: "foo.txt", Content: []byte("bar")}
 
-	emptySourcegraphIgnore := zoekt.Document{Name: ignore.IgnoreFile}
-	sourcegraphIgnoreWithContent := zoekt.Document{Name: ignore.IgnoreFile, Content: []byte("good_content.txt")}
+	emptySourcegraphIgnore := index.Document{Name: ignore.IgnoreFile}
+	sourcegraphIgnoreWithContent := index.Document{Name: ignore.IgnoreFile, Content: []byte("good_content.txt")}
 
 	for _, test := range []struct {
 		name     string
@@ -184,21 +184,21 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{helloWorld, fruitV1},
+						"main": []index.Document{helloWorld, fruitV1},
 					},
 
-					expectedDocuments: []zoekt.Document{helloWorld, fruitV1},
+					expectedDocuments: []index.Document{helloWorld, fruitV1},
 				},
 				{
 					name: "add newer version of fruits",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV2},
+						"main": []index.Document{fruitV2},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{helloWorld, fruitV2},
+					expectedDocuments: []index.Document{helloWorld, fruitV2},
 				},
 			},
 		},
@@ -209,21 +209,21 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{foo, fruitV1InFolder},
+						"main": []index.Document{foo, fruitV1InFolder},
 					},
 
-					expectedDocuments: []zoekt.Document{foo, fruitV1InFolder},
+					expectedDocuments: []index.Document{foo, fruitV1InFolder},
 				},
 				{
 					name: "add newer version of fruits inside folder",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV2InFolder},
+						"main": []index.Document{fruitV2InFolder},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{foo, fruitV2InFolder},
+					expectedDocuments: []index.Document{foo, fruitV2InFolder},
 				},
 			},
 		},
@@ -234,21 +234,21 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{helloWorld, fruitV1},
+						"main": []index.Document{helloWorld, fruitV1},
 					},
 
-					expectedDocuments: []zoekt.Document{helloWorld, fruitV1},
+					expectedDocuments: []index.Document{helloWorld, fruitV1},
 				},
 				{
 					name: "add new file - foo",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{foo},
+						"main": []index.Document{foo},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{helloWorld, fruitV1, foo},
+					expectedDocuments: []index.Document{helloWorld, fruitV1, foo},
 				},
 			},
 		},
@@ -259,23 +259,23 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{helloWorld, fruitV1, foo},
+						"main": []index.Document{helloWorld, fruitV1, foo},
 					},
 
-					expectedDocuments: []zoekt.Document{helloWorld, fruitV1, foo},
+					expectedDocuments: []index.Document{helloWorld, fruitV1, foo},
 				},
 				{
 					name:           "delete foo file",
 					addedDocuments: nil,
 					deletedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{foo},
+						"main": []index.Document{foo},
 					},
 
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{helloWorld, fruitV1},
+					expectedDocuments: []index.Document{helloWorld, fruitV1},
 				},
 			},
 		},
@@ -286,27 +286,27 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main":    []zoekt.Document{fruitV1},
-						"release": []zoekt.Document{fruitV2},
-						"dev":     []zoekt.Document{fruitV3},
+						"main":    []index.Document{fruitV1},
+						"release": []index.Document{fruitV2},
+						"dev":     []index.Document{fruitV3},
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV1, fruitV2, fruitV3},
+					expectedDocuments: []index.Document{fruitV1, fruitV2, fruitV3},
 				},
 				{
 					name: "replace fruits v3 with v4 on 'dev', delete fruits on 'main'",
 					addedDocuments: branchToDocumentMap{
-						"dev": []zoekt.Document{fruitV4},
+						"dev": []index.Document{fruitV4},
 					},
 					deletedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV1},
+						"main": []index.Document{fruitV1},
 					},
 
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV2, fruitV4},
+					expectedDocuments: []index.Document{fruitV2, fruitV4},
 				},
 			},
 		},
@@ -317,25 +317,25 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main":    []zoekt.Document{fruitV1},
-						"release": []zoekt.Document{fruitV2},
+						"main":    []index.Document{fruitV1},
+						"release": []index.Document{fruitV2},
 					},
-					expectedDocuments: []zoekt.Document{fruitV1, fruitV2},
+					expectedDocuments: []index.Document{fruitV1, fruitV2},
 				},
 				{
 					name: "rename fruits file on 'main' + ensure that unmodified fruits file on 'release' is still searchable",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV1WithNewName},
+						"main": []index.Document{fruitV1WithNewName},
 					},
 					deletedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV1},
+						"main": []index.Document{fruitV1},
 					},
 
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV1WithNewName, fruitV2},
+					expectedDocuments: []index.Document{fruitV1WithNewName, fruitV2},
 				},
 			},
 		},
@@ -346,23 +346,23 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV1},
-						"dev":  []zoekt.Document{fruitV2},
+						"main": []index.Document{fruitV1},
+						"dev":  []index.Document{fruitV2},
 					},
-					expectedDocuments: []zoekt.Document{fruitV1, fruitV2},
+					expectedDocuments: []index.Document{fruitV1, fruitV2},
 				},
 				{
 					name: "switch main to dev's older version of fruits + bump dev's fruits to new version",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV2},
-						"dev":  []zoekt.Document{fruitV3},
+						"main": []index.Document{fruitV2},
+						"dev":  []index.Document{fruitV3},
 					},
 
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV2, fruitV3},
+					expectedDocuments: []index.Document{fruitV2, fruitV3},
 				},
 			},
 		},
@@ -373,10 +373,10 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV1, foo},
-						"dev":  []zoekt.Document{helloWorld},
+						"main": []index.Document{fruitV1, foo},
+						"dev":  []index.Document{helloWorld},
 					},
-					expectedDocuments: []zoekt.Document{fruitV1, foo, helloWorld},
+					expectedDocuments: []index.Document{fruitV1, foo, helloWorld},
 				},
 				{
 					name: "first no-op (normal build -> delta build)",
@@ -384,7 +384,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV1, foo, helloWorld},
+					expectedDocuments: []index.Document{fruitV1, foo, helloWorld},
 				},
 				{
 					name: "second no-op (delta build -> delta build)",
@@ -392,7 +392,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV1, foo, helloWorld},
+					expectedDocuments: []index.Document{fruitV1, foo, helloWorld},
 				},
 			},
 		},
@@ -403,14 +403,14 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "attempt delta build on a repository that hasn't been indexed yet",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{helloWorld},
+						"main": []index.Document{helloWorld},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
 					expectedFallbackToNormalBuild: true,
-					expectedDocuments:             []zoekt.Document{helloWorld},
+					expectedDocuments:             []index.Document{helloWorld},
 				},
 			},
 		},
@@ -421,17 +421,17 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main":    []zoekt.Document{fruitV1},
-						"release": []zoekt.Document{fruitV2},
-						"dev":     []zoekt.Document{fruitV3},
+						"main":    []index.Document{fruitV1},
+						"release": []index.Document{fruitV2},
+						"dev":     []index.Document{fruitV3},
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV1, fruitV2, fruitV3},
+					expectedDocuments: []index.Document{fruitV1, fruitV2, fruitV3},
 				},
 				{
 					name: "try delta build after dropping 'main' branch from index ",
 					addedDocuments: branchToDocumentMap{
-						"release": []zoekt.Document{fruitV4},
+						"release": []index.Document{fruitV4},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.Branches = []string{"HEAD", "release", "dev"} // a bit of a hack to override it this way, but it gets the job done
@@ -439,7 +439,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					},
 
 					expectedFallbackToNormalBuild: true,
-					expectedDocuments:             []zoekt.Document{fruitV3, fruitV4},
+					expectedDocuments:             []index.Document{fruitV3, fruitV4},
 				},
 			},
 		},
@@ -450,15 +450,15 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV1},
+						"main": []index.Document{fruitV1},
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV1},
+					expectedDocuments: []index.Document{fruitV1},
 				},
 				{
 					name: "try delta build after updating Disable CTags index option",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV2},
+						"main": []index.Document{fruitV2},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
@@ -466,12 +466,12 @@ func TestIndexDeltaBasic(t *testing.T) {
 					},
 
 					expectedFallbackToNormalBuild: true,
-					expectedDocuments:             []zoekt.Document{fruitV2},
+					expectedDocuments:             []index.Document{fruitV2},
 				},
 				{
 					name: "try delta build after reverting Disable CTags index option",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV3},
+						"main": []index.Document{fruitV3},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
@@ -479,7 +479,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					},
 
 					expectedFallbackToNormalBuild: true,
-					expectedDocuments:             []zoekt.Document{fruitV3},
+					expectedDocuments:             []index.Document{fruitV3},
 				},
 			},
 		},
@@ -490,15 +490,15 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV1},
+						"main": []index.Document{fruitV1},
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV1},
+					expectedDocuments: []index.Document{fruitV1},
 				},
 				{
 					name: "try delta build after updating Disable CTags index option",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV2},
+						"main": []index.Document{fruitV2},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
@@ -506,19 +506,19 @@ func TestIndexDeltaBasic(t *testing.T) {
 					},
 
 					expectedFallbackToNormalBuild: true,
-					expectedDocuments:             []zoekt.Document{fruitV2},
+					expectedDocuments:             []index.Document{fruitV2},
 				},
 				{
 					name: "try another delta build while CTags is still disabled",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV3},
+						"main": []index.Document{fruitV3},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 						o.BuildOptions.DisableCTags = true
 					},
 
-					expectedDocuments: []zoekt.Document{fruitV3},
+					expectedDocuments: []index.Document{fruitV3},
 				},
 			},
 		},
@@ -529,22 +529,22 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{emptySourcegraphIgnore},
+						"main": []index.Document{emptySourcegraphIgnore},
 					},
 
-					expectedDocuments: []zoekt.Document{emptySourcegraphIgnore},
+					expectedDocuments: []index.Document{emptySourcegraphIgnore},
 				},
 				{
 					name: "attempt delta build after modifying ignore file",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{sourcegraphIgnoreWithContent},
+						"main": []index.Document{sourcegraphIgnoreWithContent},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
 					expectedFallbackToNormalBuild: true,
-					expectedDocuments:             []zoekt.Document{sourcegraphIgnoreWithContent},
+					expectedDocuments:             []index.Document{sourcegraphIgnoreWithContent},
 				},
 			},
 		},
@@ -555,37 +555,37 @@ func TestIndexDeltaBasic(t *testing.T) {
 				{
 					name: "setup: first shard",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{foo},
+						"main": []index.Document{foo},
 					},
 
-					expectedDocuments: []zoekt.Document{foo},
+					expectedDocuments: []index.Document{foo},
 				},
 				{
 					name: "setup: second shard (delta)",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV1},
+						"main": []index.Document{fruitV1},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{foo, fruitV1},
+					expectedDocuments: []index.Document{foo, fruitV1},
 				},
 				{
 					name: "setup: third shard (delta)",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{helloWorld},
+						"main": []index.Document{helloWorld},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.BuildOptions.IsDelta = true
 					},
 
-					expectedDocuments: []zoekt.Document{foo, fruitV1, helloWorld},
+					expectedDocuments: []index.Document{foo, fruitV1, helloWorld},
 				},
 				{
 					name: "attempt another delta build after we already blew past the shard threshold",
 					addedDocuments: branchToDocumentMap{
-						"main": []zoekt.Document{fruitV2InFolder},
+						"main": []index.Document{fruitV2InFolder},
 					},
 					optFn: func(t *testing.T, o *Options) {
 						o.DeltaShardNumberFallbackThreshold = 2
@@ -593,7 +593,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					},
 
 					expectedFallbackToNormalBuild: true,
-					expectedDocuments:             []zoekt.Document{foo, fruitV1, helloWorld, fruitV2InFolder},
+					expectedDocuments:             []index.Document{foo, fruitV1, helloWorld, fruitV2InFolder},
 				},
 			},
 		},
@@ -664,7 +664,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					}
 
 					// setup: prepare indexOptions with given overrides
-					buildOptions := build.Options{
+					buildOptions := index.Options{
 						IndexDir: indexDir,
 						RepositoryDescription: zoekt.Repository{
 							Name: "repository",
@@ -736,15 +736,15 @@ func TestIndexDeltaBasic(t *testing.T) {
 						t.Fatalf("Search: %s", err)
 					}
 
-					var receivedDocuments []zoekt.Document
+					var receivedDocuments []index.Document
 					for _, f := range result.Files {
-						receivedDocuments = append(receivedDocuments, zoekt.Document{
+						receivedDocuments = append(receivedDocuments, index.Document{
 							Name:    f.FileName,
 							Content: f.Content,
 						})
 					}
 
-					for _, docs := range [][]zoekt.Document{step.expectedDocuments, receivedDocuments} {
+					for _, docs := range [][]index.Document{step.expectedDocuments, receivedDocuments} {
 						sort.Slice(docs, func(i, j int) bool {
 							a, b := docs[i], docs[j]
 
@@ -763,7 +763,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					}
 
 					compareOptions := []cmp.Option{
-						cmpopts.IgnoreFields(zoekt.Document{}, "Branches"),
+						cmpopts.IgnoreFields(index.Document{}, "Branches"),
 						cmpopts.EquateEmpty(),
 					}
 
@@ -923,7 +923,7 @@ func TestSetTemplates(t *testing.T) {
 			assertOutput := func(templateText string, want string) {
 				t.Helper()
 
-				tt, err := zoekt.ParseTemplate(templateText)
+				tt, err := index.ParseTemplate(templateText)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -968,7 +968,7 @@ func BenchmarkPrepareNormalBuild(b *testing.B) {
 		Submodules:   false,
 		BranchPrefix: "refs/heads/",
 		Branches:     []string{"main"},
-		BuildOptions: build.Options{
+		BuildOptions: index.Options{
 			RepositoryDescription: zoekt.Repository{
 				Name: "test-repo",
 				URL:  "https://github.com/example/test-repo",

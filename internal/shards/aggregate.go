@@ -7,8 +7,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 var metricFinalAggregateSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -46,7 +46,7 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 	if len(r.Files) > 0 {
 		c.aggregate.Files = append(c.aggregate.Files, r.Files...)
 
-		c.aggregate.Files = zoekt.SortAndTruncateFiles(c.aggregate.Files, c.opts)
+		c.aggregate.Files = index.SortAndTruncateFiles(c.aggregate.Files, c.opts)
 
 		for k, v := range r.RepoURLs {
 			c.aggregate.RepoURLs[k] = v
@@ -150,7 +150,7 @@ func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoek
 
 // limitSender wraps a sender and calls cancel once the truncator has finished
 // truncating.
-func limitSender(cancel context.CancelFunc, sender zoekt.Sender, truncator zoekt.DisplayTruncator) zoekt.Sender {
+func limitSender(cancel context.CancelFunc, sender zoekt.Sender, truncator index.DisplayTruncator) zoekt.Sender {
 	return zoekt.SenderFunc(func(result *zoekt.SearchResult) {
 		var hasMore bool
 		result.Files, hasMore = truncator(result.Files)

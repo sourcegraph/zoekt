@@ -39,13 +39,14 @@ import (
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/mountinfo"
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
 	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/debugserver"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tenant"
+
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
@@ -110,7 +111,7 @@ var (
 	metricIndexIncrementalIndexState = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "index_incremental_index_state",
 		Help: "A count of the state on disk vs what we want to build. See zoekt/build.IndexState.",
-	}, []string{"state"}) // state is build.IndexState
+	}, []string{"state"}) // state is index.IndexState
 
 	metricNumIndexed = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "index_num_indexed",
@@ -595,11 +596,11 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		metricIndexIncrementalIndexState.WithLabelValues(string(incrementalState)).Inc()
 
 		switch incrementalState {
-		case build.IndexStateEqual:
+		case index.IndexStateEqual:
 			debugLog.Printf("%s index already up to date. Shard=%s", args.String(), fn)
 			return indexStateNoop, nil
 
-		case build.IndexStateMeta:
+		case index.IndexStateMeta:
 			infoLog.Printf("updating index.meta %s", args.String())
 
 			// TODO(stefan) handle mergeMeta for tenant id.
@@ -609,7 +610,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 				return indexStateSuccessMeta, nil
 			}
 
-		case build.IndexStateCorrupt:
+		case index.IndexStateCorrupt:
 			infoLog.Printf("falling back to full update: corrupt index: %s", args.String())
 		}
 	}
@@ -723,7 +724,7 @@ func createEmptyShard(args *indexArgs) error {
 		return nil
 	}
 
-	builder, err := build.NewBuilder(*bo)
+	builder, err := index.NewBuilder(*bo)
 	if err != nil {
 		return err
 	}
@@ -1070,7 +1071,7 @@ func setupTmpDir(logger sglog.Logger, main bool, index string) error {
 }
 
 func printMetaData(fn string) error {
-	repo, indexMeta, err := zoekt.ReadMetadataPath(fn)
+	repo, indexMeta, err := index.ReadMetadataPath(fn)
 	if err != nil {
 		return err
 	}
@@ -1093,12 +1094,12 @@ func printShardStats(fn string) error {
 		return err
 	}
 
-	iFile, err := zoekt.NewIndexFile(f)
+	iFile, err := index.NewIndexFile(f)
 	if err != nil {
 		return err
 	}
 
-	return zoekt.PrintNgramStats(iFile)
+	return index.PrintNgramStats(iFile)
 }
 
 func srcLogLevelIsDebug() bool {
@@ -1272,9 +1273,9 @@ func (rc *rootConfig) registerRootFlags(fs *flag.FlagSet) {
 	fs.StringVar(&rc.root, "sourcegraph_url", os.Getenv("SRC_FRONTEND_INTERNAL"), "http://sourcegraph-frontend-internal or http://localhost:3090. If a path to a directory, we fake the Sourcegraph API and index all repos rooted under path.")
 	fs.DurationVar(&rc.interval, "interval", time.Minute, "sync with sourcegraph this often")
 	fs.Int64Var(&rc.indexConcurrency, "index_concurrency", getEnvWithDefaultInt64("SRC_INDEX_CONCURRENCY", 1), "the number of repos to index concurrently")
-	fs.StringVar(&rc.index, "index", getEnvWithDefaultString("DATA_DIR", build.DefaultDir), "set index directory to use")
+	fs.StringVar(&rc.index, "index", getEnvWithDefaultString("DATA_DIR", index.DefaultDir), "set index directory to use")
 	fs.StringVar(&rc.listen, "listen", ":6072", "listen on this address.")
-	fs.StringVar(&rc.hostname, "hostname", zoekt.HostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
+	fs.StringVar(&rc.hostname, "hostname", index.HostnameBestEffort(), "the name we advertise to Sourcegraph when asking for the list of repositories to index. Can also be set via the NODE_NAME environment variable.")
 	fs.Float64Var(&rc.cpuFraction, "cpu_fraction", 1.0, "use this fraction of the cores for indexing.")
 	fs.DurationVar(&rc.backoffDuration, "backoff_duration", getEnvWithDefaultDuration("BACKOFF_DURATION", 10*time.Minute), "for the given duration we backoff from enqueue operations for a repository that's failed its previous indexing attempt. Consecutive failures increase the duration of the delay linearly up to the maxBackoffDuration. A negative value disables indexing backoff.")
 	fs.DurationVar(&rc.maxBackoffDuration, "max_backoff_duration", getEnvWithDefaultDuration("MAX_BACKOFF_DURATION", 120*time.Minute), "the maximum duration to backoff from enqueueing a repo for indexing.  A negative value disables indexing backoff.")
@@ -1633,8 +1634,8 @@ func cloneURL(u *url.URL) *url.URL {
 func main() {
 	liblog := sglog.Init(sglog.Resource{
 		Name:       "zoekt-indexserver",
-		Version:    zoekt.Version,
-		InstanceID: zoekt.HostnameBestEffort(),
+		Version:    index.Version,
+		InstanceID: index.HostnameBestEffort(),
 	})
 	defer liblog.Sync()
 

@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/archive"
 	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
@@ -247,7 +247,7 @@ func indexURL(indexDir, u string) error {
 	//	languageMap[lang] = ctags.ScipCTags
 	// }
 
-	err := archive.Index(opts, build.Options{
+	err := archive.Index(opts, index.Options{
 		IndexDir:         indexDir,
 		CTagsMustSucceed: true,
 		RepositoryDescription: zoekt.Repository{
@@ -369,4 +369,16 @@ func requireCTags(tb testing.TB) {
 	} else {
 		tb.Skip("universal-ctags is missing")
 	}
+}
+
+func checkScipCTags() string {
+	if ctags := os.Getenv("SCIP_CTAGS_COMMAND"); ctags != "" {
+		return ctags
+	}
+
+	if ctags, err := exec.LookPath("scip-ctags"); err == nil {
+		return ctags
+	}
+
+	return ""
 }

@@ -30,8 +30,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
 	"github.com/sourcegraph/zoekt/ignore"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -202,7 +202,7 @@ func TestSubmoduleIndex(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 	}
 	opts := Options{
@@ -306,7 +306,7 @@ func TestSearchSymlinkByContent(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 	}
 	opts := Options{
@@ -363,7 +363,7 @@ func TestAllowMissingBranch(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 	}
 
@@ -429,7 +429,7 @@ func TestBranchWildcard(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo",
@@ -475,7 +475,7 @@ func TestSkipSubmodules(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "gerrit.googlesource.com/adir",
@@ -507,7 +507,7 @@ func TestFullAndShortRefNames(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo",
@@ -560,7 +560,7 @@ func TestLatestCommit(t *testing.T) {
 		t.Fatalf("createMultibranchRepo: %v", err)
 	}
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo",

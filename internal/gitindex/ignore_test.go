@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -56,7 +56,7 @@ func TestIgnore(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo",

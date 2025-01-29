@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sourcegraph/zoekt/index"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -623,7 +624,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	// For streaming, the wrapping has to happen in the inverted order.
 	sender = copyFileSender(sender)
 
-	if truncator, hasLimits := zoekt.NewDisplayTruncator(opts); hasLimits {
+	if truncator, hasLimits := index.NewDisplayTruncator(opts); hasLimits {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithCancel(ctx)
 		defer cancel()
@@ -806,19 +807,19 @@ search:
 
 // sendByRepository splits a zoekt.SearchResult by repository and calls
 // sender.Send for each batch. Ranking in Sourcegraph expects zoekt.SearchResult
-// to contain results with the same zoekt.SearchResult.Priority only.
+// to contain results with the same zoekt.SearchResult.priority only.
 //
 // We split by repository instead of by priority because it is easier to set
 // RepoURLs and LineFragments in zoekt.SearchResult.
 func sendByRepository(result *zoekt.SearchResult, opts *zoekt.SearchOptions, sender zoekt.Sender) {
 	if len(result.RepoURLs) <= 1 || len(result.Files) == 0 {
-		zoekt.SortFiles(result.Files)
+		index.SortFiles(result.Files)
 		sender.Send(result)
 		return
 	}
 
 	send := func(repoName string, a, b int, stats zoekt.Stats) {
-		zoekt.SortFiles(result.Files[a:b])
+		index.SortFiles(result.Files[a:b])
 		sender.Send(&zoekt.SearchResult{
 			Stats: stats,
 			Progress: zoekt.Progress{
@@ -1203,11 +1204,11 @@ func loadShard(fn string) (zoekt.Searcher, error) {
 		return nil, err
 	}
 
-	iFile, err := zoekt.NewIndexFile(f)
+	iFile, err := index.NewIndexFile(f)
 	if err != nil {
 		return nil, err
 	}
-	s, err := zoekt.NewSearcher(iFile)
+	s, err := index.NewSearcher(iFile)
 	if err != nil {
 		iFile.Close()
 		return nil, fmt.Errorf("NewSearcher(%s): %v", fn, err)

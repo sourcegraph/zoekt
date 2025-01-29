@@ -33,7 +33,6 @@ const (
 	sliceHeaderBytes  uint64 = 24
 	stringHeaderBytes uint64 = 16
 	pointerSize       uint64 = 8
-	interfaceBytes    uint64 = 16
 )
 
 // FileMatch contains all the matches within a file.
@@ -136,10 +135,10 @@ func (m *FileMatch) sizeBytes() (sz uint64) {
 	return
 }
 
-// addScore increments the score of the FileMatch by the computed score. If
+// AddScore increments the score of the FileMatch by the computed score. If
 // debugScore is true, it also adds a debug string to the FileMatch. If raw is
 // -1, it is ignored. Otherwise, it is added to the debug string.
-func (m *FileMatch) addScore(what string, computed float64, raw float64, debugScore bool) {
+func (m *FileMatch) AddScore(what string, computed float64, raw float64, debugScore bool) {
 	if computed != 0 && debugScore {
 		var b strings.Builder
 		fmt.Fprintf(&b, "%s", what)
@@ -695,6 +694,10 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (r *Repository) GetPriority() float64 {
+	return r.priority
+}
+
 // monthsSince1970 returns the number of months since 1970. It returns values in
 // the range [0, maxUInt16]. The upper bound is reached in the year 7431, the
 // lower bound for all dates before 1970.
@@ -1012,6 +1015,17 @@ type SearchOptions struct {
 
 	// SpanContext is the opentracing span context, if it exists, from the zoekt client
 	SpanContext map[string]string
+}
+
+func (o *SearchOptions) SetDefaults() {
+	if o.ShardMaxMatchCount == 0 {
+		// We cap the total number of matches, so overly broad
+		// searches don't crash the machine.
+		o.ShardMaxMatchCount = 100000
+	}
+	if o.TotalMaxMatchCount == 0 {
+		o.TotalMaxMatchCount = 10 * o.ShardMaxMatchCount
+	}
 }
 
 // String returns a succinct representation of the options. This is meant for

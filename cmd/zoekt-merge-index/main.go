@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 // merge merges the input shards into a compound shard in dstDir. It returns the
 // full path to the compound shard. The input shards are removed on success.
 func merge(dstDir string, names []string) (string, error) {
-	var files []zoekt.IndexFile
+	var files []index.IndexFile
 	for _, fn := range names {
 		f, err := os.Open(fn)
 		if err != nil {
@@ -22,7 +22,7 @@ func merge(dstDir string, names []string) (string, error) {
 		}
 		defer f.Close()
 
-		indexFile, err := zoekt.NewIndexFile(f)
+		indexFile, err := index.NewIndexFile(f)
 		if err != nil {
 			return "", err
 		}
@@ -31,14 +31,14 @@ func merge(dstDir string, names []string) (string, error) {
 		files = append(files, indexFile)
 	}
 
-	tmpName, dstName, err := zoekt.Merge(dstDir, files...)
+	tmpName, dstName, err := index.Merge(dstDir, files...)
 	if err != nil {
 		return "", err
 	}
 
 	// Delete input shards.
 	for _, name := range names {
-		paths, err := zoekt.IndexFilePaths(name)
+		paths, err := index.IndexFilePaths(name)
 		if err != nil {
 			return "", fmt.Errorf("zoekt-merge-index: %w", err)
 		}
@@ -83,13 +83,13 @@ func explode(dstDir string, inputShard string) error {
 	}
 	defer f.Close()
 
-	indexFile, err := zoekt.NewIndexFile(f)
+	indexFile, err := index.NewIndexFile(f)
 	if err != nil {
 		return err
 	}
 	defer indexFile.Close()
 
-	exploded, err := zoekt.Explode(dstDir, indexFile)
+	exploded, err := index.Explode(dstDir, indexFile)
 	defer func() {
 		// best effort removal of tmp files. If os.Remove fails, indexserver will delete
 		// the leftover tmp files during the next cleanup.
@@ -104,7 +104,7 @@ func explode(dstDir string, inputShard string) error {
 	// remove the input shard first to avoid duplicate indexes. In the worst case,
 	// the process is interrupted just after we delete the compound shard, in which
 	// case we have to reindex the lost repos.
-	paths, err := zoekt.IndexFilePaths(inputShard)
+	paths, err := index.IndexFilePaths(inputShard)
 	if err != nil {
 		return err
 	}

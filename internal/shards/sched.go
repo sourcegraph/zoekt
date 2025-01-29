@@ -340,7 +340,7 @@ func parseTuneables(v string) map[string]int {
 //   - batch timedout
 //   - released
 //
-// We have separate gauges and counters for exclusive processes which match
+// We have separate gauges and counters for exclusive processes which index
 // what we track for normal processes:
 //
 //   - exclusive queued

@@ -14,7 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 func TestCleanup(t *testing.T) {
@@ -22,7 +22,7 @@ func TestCleanup(t *testing.T) {
 		return shard{
 			RepoID:        fakeID(name),
 			RepoName:      name,
-			Path:          zoekt.ShardName("", name, 15, n),
+			Path:          index.ShardName("", name, 15, n),
 			ModTime:       mtime,
 			RepoTombstone: false,
 		}
@@ -37,7 +37,7 @@ func TestCleanup(t *testing.T) {
 			if filepath.Ext(path) != ".zoekt" {
 				continue
 			}
-			repos, _, _ := zoekt.ReadMetadataPathAlive(path)
+			repos, _, _ := index.ReadMetadataPathAlive(path)
 			fi, _ := os.Stat(path)
 			for _, repo := range repos {
 				shards = append(shards, shard{
@@ -173,7 +173,7 @@ func createTestShard(t *testing.T, repo string, id uint32, path string, optFns .
 	for _, optFn := range optFns {
 		optFn(r)
 	}
-	b, err := zoekt.NewIndexBuilder(r)
+	b, err := index.NewIndexBuilder(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestVacuum(t *testing.T) {
 	tmpDir := t.TempDir()
 	fn := createCompoundShard(t, tmpDir, []uint32{1, 2, 3, 4})
 
-	err := zoekt.SetTombstone(fn, 2)
+	err := index.SetTombstone(fn, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestVacuum(t *testing.T) {
 		t.Fatalf("expected 1 shard, but instead got %d", len(shards))
 	}
 
-	repos, _, err := zoekt.ReadMetadataPath(shards[0])
+	repos, _, err := index.ReadMetadataPath(shards[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,13 +286,13 @@ func TestGetTombstonedRepos(t *testing.T) {
 	dir := t.TempDir()
 	var repoID uint32 = 2
 	csOld := createCompoundShard(t, dir, []uint32{1, 2, 3, 4}, setLastCommitDate(time.Now().Add(-1*time.Hour)))
-	if err := zoekt.SetTombstone(csOld, repoID); err != nil {
+	if err := index.SetTombstone(csOld, repoID); err != nil {
 		t.Fatal(err)
 	}
 
 	now := time.Now()
 	csNew := createCompoundShard(t, dir, []uint32{5, 2, 6, 7}, setLastCommitDate(now))
-	if err := zoekt.SetTombstone(csNew, repoID); err != nil {
+	if err := index.SetTombstone(csNew, repoID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -380,7 +380,7 @@ func TestCleanupCompoundShards(t *testing.T) {
 
 	setTombstone := func(shardPath string, repoID uint32) {
 		t.Helper()
-		if err := zoekt.SetTombstone(shardPath, repoID); err != nil {
+		if err := index.SetTombstone(shardPath, repoID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -473,12 +473,12 @@ func createCompoundShard(t *testing.T, dir string, ids []uint32, optFns ...func(
 			optsFn(&repo)
 		}
 
-		opts := build.Options{
+		opts := index.Options{
 			IndexDir:              dir,
 			RepositoryDescription: repo,
 		}
 		opts.SetDefaults()
-		b, err := build.NewBuilder(opts)
+		b, err := index.NewBuilder(opts)
 		if err != nil {
 			t.Fatalf("NewBuilder: %v", err)
 		}
@@ -517,12 +517,12 @@ func mergeHelper(t *testing.T, fn string) error {
 	}
 	defer f.Close()
 
-	indexFile, err := zoekt.NewIndexFile(f)
+	indexFile, err := index.NewIndexFile(f)
 	if err != nil {
 		return fmt.Errorf("zoekt.NewIndexFile: %s ", err)
 	}
 	defer indexFile.Close()
 
-	_, _, err = zoekt.Merge(filepath.Dir(fn), indexFile)
+	_, _, err = index.Merge(filepath.Dir(fn), indexFile)
 	return err
 }
