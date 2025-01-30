@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Command zoekt-git-index indexes a single git repository. It works directly with git
+// repositories and supports git-specific features like branches and submodules.
 package main
 
 import (

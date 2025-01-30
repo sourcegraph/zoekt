@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The 'zoekt' command supports searching over an index directory or shard.
 package main
 
 import (

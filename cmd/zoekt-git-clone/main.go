@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This binary fetches all repos of a user or organization and clones
+// Command zoekt-git-clone fetches all repos of a user or organization and clones
 // them.  It is strongly recommended to get a personal API token from
 // https://github.com/settings/tokens, save the token in a file, and
 // point the --token option to it.

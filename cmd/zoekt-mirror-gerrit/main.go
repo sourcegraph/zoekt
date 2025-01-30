@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This binary fetches all repos of a Gerrit host.
-
+// Command zoekt-mirror-gerrit fetches all repos of a Gerrit host.
 package main
 
 import (

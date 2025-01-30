@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This program manages a zoekt dynamic indexing deployment:
+// Command zoekt-dynamic-indexserver starts a server to manage dynamic indexing. In contrast to
+// zoekt-indexserver, it's designed for a "push-based" indexing model. The server
 // * listens to indexing commands
 // * reindexes specified repositories
-
 package main
 
 import (

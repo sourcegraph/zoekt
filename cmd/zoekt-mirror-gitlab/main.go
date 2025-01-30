@@ -10,13 +10,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This binary fetches all repos for a user from gitlab.
+// Command zoekt-mirror-gitlab fetches all repos for a user from gitlab.
 //
 // It is recommended to use a gitlab personal access token:
 // https://docs.gitlab.com/ce/user/profile/personal_access_tokens.html. This
 // token should be stored in a file and the --token option should be used.
 // In addition, the token should be present in the ~/.netrc of the user running
-// the mirror command. For example, the ~/.netrc may look like:
+// Command mirror. For example, the ~/.netrc may look like:
 //
 //	machine gitlab.com
 //	login oauth

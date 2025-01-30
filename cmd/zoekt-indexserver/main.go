@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This program manages a zoekt indexing deployment:
-// * recycling logs
-// * periodically fetching new data.
-// * periodically reindexing all git repos.
-
+// Command zoekt-indexserver starts a service that periodically reindexes repositories. It follows
+// a "pull-based" design, where it reaches out to code hosts to fetch new data.
 package main
 
 import (
