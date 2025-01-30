@@ -6,9 +6,8 @@
 Zoekt is a text search engine intended for use with source
 code. (Pronunciation: roughly as you would pronounce "zooked" in English)
 
-**Note:** This is a [Sourcegraph](https://github.com/sourcegraph/zoekt) fork
-of the original repository [github.com/google/zoekt](https://github.com/google/zoekt).
-It is now the maintained source for Zoekt.
+**Note:** This is the maintained source for Zoekt since 2017, when it was forked from the
+original repository [github.com/google/zoekt](https://github.com/google/zoekt).
 
 ## Background
 
