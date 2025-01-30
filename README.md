@@ -24,43 +24,43 @@ The two main ways to use the project are
 
 For more details on Zoekt's design, see the [docs directory](doc/).
 
-# Usage
+## Usage
 
-## Installation
+### Installation
 
     go get github.com/sourcegraph/zoekt/
 
 **Note**: It is also recommended to install [Universal ctags](https://github.com/universal-ctags/ctags), as symbol
 information is a key signal in ranking search results. See [ctags.md](doc/ctags.md) for more information.
 
-## Command-based usage
+### Command-based usage
 
 Zoekt supports indexing and searching repositories on the command line. This is most helpful
 for simple local usage, or for testing and development.
 
-### Indexing a local git repo
+#### Indexing a local git repo
 
     go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index
     $GOPATH/bin/zoekt-git-index -index ~/.zoekt /path/to/repo
 
-### Indexing a local directory (not git-specific)
+#### Indexing a local directory (not git-specific)
 
     go install github.com/sourcegraph/zoekt/cmd/zoekt-index
     $GOPATH/bin/zoekt-index -index ~/.zoekt /path/to/repo
 
-### Searching an index
+#### Searching an index
 
     go install github.com/sourcegraph/zoekt/cmd/zoekt
     $GOPATH/bin/zoekt 'hello'
     $GOPATH/bin/zoekt 'hello file:README'
 
-## Zoekt services
+### Zoekt services
 
 Zoekt also contains an index server and web server to support larger-scale indexing and searching
 of remote repositories. The index server can be configured to periodically fetch and reindex repositories
 from a code host. The webserver can be configured to serve search results through a web UI or API.
 
-### Indexing a GitHub organization
+#### Indexing a GitHub organization
     
     go install github.com/sourcegraph/zoekt/cmd/zoekt-indexserver
 
@@ -73,7 +73,7 @@ This will fetch all repos under 'github.com/apache', then index the repositories
 periodically fetching and indexing new data, and cleaning up logfiles. See [config.go](cmd/zoekt-indexserver/config.go)
 for more details on this configuration.
 
-### Starting the web server
+#### Starting the web server
 
     go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver
     $GOPATH/bin/zoekt-webserver -index ~/.zoekt/
@@ -85,7 +85,7 @@ If you start the web server with `-rpc`, it exposes a [simple JSON search API](d
 
 Finally, the web server exposes a gRPC API that supports [structured query objects](query/query.go) and advanced search options.
 
-# Acknowledgements
+## Acknowledgements
 
 Thanks to Han-Wen Nienhuys for creating Zoekt. Thanks to Alexander Neubeck for
 coming up with this idea, and helping Han-Wen Nienhuys flesh it out.
