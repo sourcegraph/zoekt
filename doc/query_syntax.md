@@ -2,6 +2,8 @@
 
 This guide explains the Zoekt query language, used for searching text within Git repositories. Zoekt queries allow combining multiple filters and expressions using logical operators, negations, and grouping. Here's how to craft queries effectively.
 
+For a brief overview of Zoekt's query syntax, see [these great docs from neogrok](https://neogrok-demo-web.fly.dev/syntax).
+
 ---
 
 ## Syntax Overview
