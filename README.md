@@ -3,148 +3,89 @@
 
     ("seek, and ye shall eat spinach" - My primary school teacher)
 
-This is a fast text search engine, intended for use with source
+Zoekt is a text search engine intended for use with source
 code. (Pronunciation: roughly as you would pronounce "zooked" in English)
 
 **Note:** This is a [Sourcegraph](https://github.com/sourcegraph/zoekt) fork
-of [github.com/google/zoekt](https://github.com/google/zoekt). It is now the
-main maintained source of Zoekt.
+of the original repository [github.com/google/zoekt](https://github.com/google/zoekt).
+It is now the maintained source for Zoekt.
 
-# INSTRUCTIONS
+## Background
 
-## Downloading
+Zoekt supports fast substring and regexp matching on source code, with a rich query language
+that includes boolean operators (and, or, not). It can search individual repositories, and search
+across many repositories in a large codebase. Zoekt ranks search results using a combination of code-related signals
+like whether the match is on a symbol. Because of its general design based on trigram indexing and syntactic
+parsing, it works well for a variety of programming languages.
+
+The two main ways to use the project are
+* Through individual commands, to index repositories and perform searches through Zoekt's [query language](doc/query_syntax.md)
+* Or, through the indexserver and webserver, which support syncing repositories from a code host and searching them through a web UI or API
+
+For more details on Zoekt's design, see the [docs directory](doc/).
+
+# Usage
+
+## Installation
 
     go get github.com/sourcegraph/zoekt/
 
-## Indexing
+**Note**: It is also recommended to install [Universal ctags](https://github.com/universal-ctags/ctags), as symbol
+information is a key signal in ranking search results. See [ctags.md](doc/ctags.md) for more information.
 
-### Directory
+## Command-based usage
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-index
-    $GOPATH/bin/zoekt-index .
+Zoekt supports indexing and searching repositories on the command line. This is most helpful
+for simple local usage, or for testing and development.
 
-### Git repository
+### Indexing a local git repo
 
     go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index
-    $GOPATH/bin/zoekt-git-index -branches master,stable-1.4 -prefix origin/ .
+    $GOPATH/bin/zoekt-git-index -index ~/.zoekt /path/to/repo
 
-### Repo repositories
+### Indexing a local directory (not git-specific)
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-{repo-index,mirror-gitiles}
-    zoekt-mirror-gitiles -dest ~/repos/ https://gfiber.googlesource.com
-    zoekt-repo-index \
-        -name gfiber \
-        -base_url https://gfiber.googlesource.com/ \
-        -manifest_repo ~/repos/gfiber.googlesource.com/manifests.git \
-        -repo_cache ~/repos \
-        -manifest_rev_prefix=refs/heads/ --rev_prefix= \
-        master:default_unrestricted.xml
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-index
+    $GOPATH/bin/zoekt-index -index ~/.zoekt /path/to/repo
 
-## Searching
-
-### Web interface
-
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver
-    $GOPATH/bin/zoekt-webserver -listen :6070
-
-### JSON API
-
-You can retrieve search results as JSON by sending a GET request to zoekt-webserver.
-
-    curl --get \
-        --url "http://localhost:6070/search" \
-        --data-urlencode "q=ngram f:READ" \
-        --data-urlencode "num=50" \
-        --data-urlencode "format=json"
-
-The response data is a JSON object. You can refer to [web.ApiSearchResult](https://sourcegraph.com/github.com/sourcegraph/zoekt@6b1df4f8a3d7b34f13ba0cafd8e1a9b3fc728cf0/-/blob/web/api.go?L23:6&subtree=true) to learn about the structure of the object.
-
-### CLI
+### Searching an index
 
     go install github.com/sourcegraph/zoekt/cmd/zoekt
-    $GOPATH/bin/zoekt 'ngram f:READ'
+    $GOPATH/bin/zoekt 'hello'
+    $GOPATH/bin/zoekt 'hello file:README'
 
-## Installation
-A more organized installation on a Linux server should use a systemd unit file,
-eg.
+## Zoekt services
 
-    [Unit]
-    Description=zoekt webserver
+Zoekt also contains an index server and web server to support larger-scale indexing and searching
+of remote repositories. The index server can be configured to periodically fetch and reindex repositories
+from a code host. The webserver can be configured to serve search results through a web UI or API.
 
-    [Service]
-    ExecStart=/zoekt/bin/zoekt-webserver -index /zoekt/index -listen :443  --ssl_cert /zoekt/etc/cert.pem   --ssl_key /zoekt/etc/key.pem
-    Restart=always
-
-    [Install]
-    WantedBy=default.target
-
-
-# SEARCH SERVICE
-
-Zoekt comes with a small service management program:
-
+### Indexing a GitHub organization
+    
     go install github.com/sourcegraph/zoekt/cmd/zoekt-indexserver
 
-    cat << EOF > config.json
-    [{"GithubUser": "username"},
-     {"GithubOrg": "org"},
-     {"GitilesURL": "https://gerrit.googlesource.com", "Name": "zoekt" }
-    ]
-    EOF
+    echo YOUR_GITHUB_TOKEN_HERE > token.txt
+    echo '[{"GitHubOrg": "apache", "CredentialPath": "token.txt"}]' > config.json
 
-    $GOPATH/bin/zoekt-indexserver -mirror_config config.json
+    $GOPATH/bin/zoekt-indexserver -mirror_config config.json -data_dir ~/.zoekt/ 
 
-This will mirror all repos under 'github.com/username', 'github.com/org', as
-well as the 'zoekt' repository. It will index the repositories.
+This will fetch all repos under 'github.com/apache', then index the repositories. The indexserver takes care of
+periodically fetching and indexing new data, and cleaning up logfiles. See [config.go](cmd/zoekt-indexserver/config.go)
+for more details on this configuration.
 
-It takes care of fetching and indexing new data and cleaning up logfiles.
+### Starting the web server
 
-The webserver can be started from a standard service management framework, such
-as systemd.
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver
+    $GOPATH/bin/zoekt-webserver -index ~/.zoekt/
 
+This will start a web server with a simple search UI at http://localhost:6070. See the [uuery syntax docs](doc/query_syntax.md)
+for more details on the query language.
 
-# SYMBOL SEARCH
+If you start the web server with `-rpc`, it exposes a [simple JSON search API](doc/json-api.md) at `http://localhost:6070/search/api/search.
 
-It is recommended to install [Universal
-ctags](https://github.com/universal-ctags/ctags) to improve
-ranking. See [here](doc/ctags.md) for more information.
+Finally, the web server exposes a gRPC API that supports [structured query objects](query/query.go) and advanced search options.
 
-
-# ACKNOWLEDGEMENTS
+# Acknowledgements
 
 Thanks to Han-Wen Nienhuys for creating Zoekt. Thanks to Alexander Neubeck for
 coming up with this idea, and helping Han-Wen Nienhuys flesh it out.
-
-
-# FORK DETAILS
-
-Originally this fork contained some changes that do not make sense to upstream
-and or have not yet been upstreamed. However, this is now the defacto source
-for Zoekt. This section will remain for historical reasons and contains
-outdated information. It can be removed once the dust settles on moving from
-google/zoekt to sourcegraph/zoekt. Differences:
-
-- [zoekt-sourcegraph-indexserver](cmd/zoekt-sourcegraph-indexserver/main.go)
-  is a Sourcegraph specific command which indexes all enabled repositories on
-  Sourcegraph, as well as keeping the indexes up to date.
-- We have exposed the API via
-  [keegancsmith/rpc](https://github.com/keegancsmith/rpc) (a fork of `net/rpc`
-  which supports cancellation).
-- Query primitive `BranchesRepos` to efficiently specify a set of repositories to
-  search.
-- Allow empty shard directories on startup. Needed when starting a fresh
-  instance which hasn't indexed anything yet.
-- We can return symbol/ctag data in results. Additionally we can run symbol regex queries.
-- We search shards in order of repo name and ignore shard ranking.
-- Other minor changes.
-
-Assuming you have the gerrit upstream configured, a useful way to see what we
-changed is:
-
-``` shellsession
-$ git diff gerrit/master -- ':(exclude)vendor/' ':(exclude)Gopkg*'
-```
-
-# DISCLAIMER
-
-This is not an official Google product
