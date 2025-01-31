@@ -55,7 +55,7 @@ func (s *memSeeker) Name() string {
 	return "memSeeker"
 }
 
-func searcherForTest(t *testing.T, b *index.IndexBuilder) zoekt.Streamer {
+func searcherForTest(t *testing.T, b *index.ShardBuilder) zoekt.Streamer {
 	var buf bytes.Buffer
 	if err := b.Write(&buf); err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 }
 
 func TestBasic(t *testing.T) {
-	b, err := index.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:                 "name",
 		URL:                  "repo-url",
 		CommitURLTemplate:    `{{ URLJoinPath "https://github.com/org/repo/commit/" .Version}}`,
@@ -93,7 +93,7 @@ func TestBasic(t *testing.T) {
 		Branches:             []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 	if err := b.Add(index.Document{
 		// use a name which requires correct escaping. https://github.com/sourcegraph/zoekt/issues/807
@@ -150,7 +150,7 @@ func TestBasic(t *testing.T) {
 }
 
 func TestPrint(t *testing.T) {
-	b, err := index.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:                 "name",
 		URL:                  "repo-url",
 		CommitURLTemplate:    "{{.Version}}",
@@ -159,7 +159,7 @@ func TestPrint(t *testing.T) {
 		Branches:             []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 	if err := b.Add(index.Document{
 		Name:     "f2",
@@ -203,13 +203,13 @@ func TestPrint(t *testing.T) {
 }
 
 func TestPrintDefault(t *testing.T) {
-	b, err := index.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:     "name",
 		URL:      "repo-url",
 		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 	if err := b.Add(index.Document{
 		Name:     "f2",
@@ -273,13 +273,13 @@ type Expectation struct {
 }
 
 func TestFormatJson(t *testing.T) {
-	b, err := index.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:     "name",
 		URL:      "repo-url",
 		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 	if err := b.Add(index.Document{
 		Name:     "f2",
@@ -328,13 +328,13 @@ func TestFormatJson(t *testing.T) {
 }
 
 func TestContextLines(t *testing.T) {
-	b, err := index.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:     "name",
 		URL:      "repo-url",
 		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 	if err := b.Add(index.Document{
 		Name:     "f2",
@@ -652,13 +652,13 @@ func checkResultMatches(t *testing.T, ts *httptest.Server, req string, expected 
 }
 
 func TestContextLinesMustBeValid(t *testing.T) {
-	b, err := index.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:     "name",
 		URL:      "repo-url",
 		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 	if err := b.Add(index.Document{
 		Name:     "f2",
@@ -747,11 +747,11 @@ func TestCrash(t *testing.T) {
 }
 
 func TestHostCustomization(t *testing.T) {
-	b, err := index.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name: "name",
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 	if err := b.Add(index.Document{
 		Name:    "file",
@@ -799,11 +799,11 @@ func TestHostCustomization(t *testing.T) {
 }
 
 func TestDupResult(t *testing.T) {
-	b, err := index.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name: "name",
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 
 	for i := 0; i < 2; i++ {
@@ -849,11 +849,11 @@ func TestDupResult(t *testing.T) {
 }
 
 func TestTruncateLine(t *testing.T) {
-	b, err := index.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name: "name",
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 
 	largePadding := bytes.Repeat([]byte{'a'}, 100*1000) // 100kb
@@ -905,11 +905,11 @@ func TestTruncateLine(t *testing.T) {
 }
 
 func TestHealthz(t *testing.T) {
-	b, err := index.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name: "name",
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 
 	for i := 0; i < 2; i++ {

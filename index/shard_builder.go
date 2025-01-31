@@ -163,8 +163,8 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 	return &dest, runeSecs, nil
 }
 
-// IndexBuilder builds a single index shard.
-type IndexBuilder struct {
+// ShardBuilder builds a single index shard.
+type ShardBuilder struct {
 	// The version we will write to disk. Sourcegraph Specific. This is to
 	// enable feature flagging new format versions.
 	indexFormatVersion int
@@ -254,21 +254,21 @@ func ParseTemplate(text string) (*template.Template, error) {
 }
 
 // ContentSize returns the number of content bytes so far ingested.
-func (b *IndexBuilder) ContentSize() uint32 {
+func (b *ShardBuilder) ContentSize() uint32 {
 	// Add the name too so we don't skip building index if we have
 	// lots of empty files.
 	return b.contentPostings.endByte + b.namePostings.endByte
 }
 
 // NumFiles returns the number of files added to this builder
-func (b *IndexBuilder) NumFiles() int {
+func (b *ShardBuilder) NumFiles() int {
 	return len(b.contentStrings)
 }
 
-// NewIndexBuilder creates a fresh IndexBuilder. The passed in
+// NewShardBuilder creates a fresh ShardBuilder. The passed in
 // Repository contains repo metadata, and may be set to nil.
-func NewIndexBuilder(r *zoekt.Repository) (*IndexBuilder, error) {
-	b := newIndexBuilder()
+func NewShardBuilder(r *zoekt.Repository) (*ShardBuilder, error) {
+	b := newShardBuilder()
 
 	if r == nil {
 		r = &zoekt.Repository{}
@@ -279,8 +279,8 @@ func NewIndexBuilder(r *zoekt.Repository) (*IndexBuilder, error) {
 	return b, nil
 }
 
-func newIndexBuilder() *IndexBuilder {
-	return &IndexBuilder{
+func newShardBuilder() *ShardBuilder {
+	return &ShardBuilder{
 		indexFormatVersion: IndexFormatVersion,
 		featureVersion:     FeatureVersion,
 
@@ -293,7 +293,7 @@ func newIndexBuilder() *IndexBuilder {
 	}
 }
 
-func (b *IndexBuilder) setRepository(desc *zoekt.Repository) error {
+func (b *ShardBuilder) setRepository(desc *zoekt.Repository) error {
 	if err := verify(desc); err != nil {
 		return err
 	}
@@ -334,11 +334,11 @@ func (s symbolSlice) Less(i, j int) bool {
 }
 
 // AddFile is a convenience wrapper for Add
-func (b *IndexBuilder) AddFile(name string, content []byte) error {
+func (b *ShardBuilder) AddFile(name string, content []byte) error {
 	return b.Add(Document{Name: name, Content: content})
 }
 
-func (b *IndexBuilder) populateSubRepoIndices() error {
+func (b *ShardBuilder) populateSubRepoIndices() error {
 	if len(b.subRepoIndices) == len(b.repoList) {
 		return nil
 	}
@@ -365,7 +365,7 @@ func mkSubRepoIndices(repo zoekt.Repository) map[string]uint32 {
 
 const notIndexedMarker = "NOT-INDEXED: "
 
-func (b *IndexBuilder) symbolID(sym string) uint32 {
+func (b *ShardBuilder) symbolID(sym string) uint32 {
 	if _, ok := b.symIndex[sym]; !ok {
 		b.symIndex[sym] = b.symID
 		b.symID++
@@ -373,7 +373,7 @@ func (b *IndexBuilder) symbolID(sym string) uint32 {
 	return b.symIndex[sym]
 }
 
-func (b *IndexBuilder) symbolKindID(t string) uint32 {
+func (b *ShardBuilder) symbolKindID(t string) uint32 {
 	if _, ok := b.symKindIndex[t]; !ok {
 		b.symKindIndex[t] = b.symKindID
 		b.symKindID++
@@ -381,7 +381,7 @@ func (b *IndexBuilder) symbolKindID(t string) uint32 {
 	return b.symKindIndex[t]
 }
 
-func (b *IndexBuilder) addSymbols(symbols []*zoekt.Symbol) {
+func (b *ShardBuilder) addSymbols(symbols []*zoekt.Symbol) {
 	for _, sym := range symbols {
 		b.symMetaData = append(b.symMetaData,
 			// This field was removed due to redundancy. To avoid
@@ -402,7 +402,7 @@ func DetermineLanguageIfUnknown(doc *Document) {
 }
 
 // Add a file which only occurs in certain branches.
-func (b *IndexBuilder) Add(doc Document) error {
+func (b *ShardBuilder) Add(doc Document) error {
 	hasher := crc64.New(crc64.MakeTable(crc64.ISO))
 
 	if idx := bytes.IndexByte(doc.Content, 0); idx >= 0 {
@@ -497,7 +497,7 @@ func (b *IndexBuilder) Add(doc Document) error {
 	return nil
 }
 
-func (b *IndexBuilder) branchMask(br string) uint64 {
+func (b *ShardBuilder) branchMask(br string) uint64 {
 	for i, b := range b.repoList[len(b.repoList)-1].Branches {
 		if b.Name == br {
 			return uint64(1) << uint(i)

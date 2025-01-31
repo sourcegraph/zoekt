@@ -202,7 +202,7 @@ func compoundReposShard(t *testing.T, names ...string) *indexData {
 		docs = append(docs, ds)
 	}
 
-	b := testIndexBuilderCompound(t, repos, docs)
+	b := testShardBuilderCompound(t, repos, docs)
 	s := searcherForTest(t, b)
 	return s.(*indexData)
 }
@@ -375,7 +375,7 @@ func hash(name string) uint32 {
 
 func TestGatherBranches(t *testing.T) {
 	content := []byte("dummy")
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Branches: []zoekt.RepositoryBranch{
 			{"foo", "v1"},
 			{"foo-2", "v1"},

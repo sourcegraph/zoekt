@@ -45,12 +45,12 @@ func clearScores(r *zoekt.SearchResult) {
 	}
 }
 
-func testIndexBuilder(tb testing.TB, repo *zoekt.Repository, docs ...Document) *IndexBuilder {
+func testShardBuilder(tb testing.TB, repo *zoekt.Repository, docs ...Document) *ShardBuilder {
 	tb.Helper()
 
-	b, err := NewIndexBuilder(repo)
+	b, err := NewShardBuilder(repo)
 	if err != nil {
-		tb.Fatalf("NewIndexBuilder: %v", err)
+		tb.Fatalf("NewShardBuilder: %v", err)
 	}
 
 	for i, d := range docs {
@@ -62,14 +62,14 @@ func testIndexBuilder(tb testing.TB, repo *zoekt.Repository, docs ...Document) *
 	return b
 }
 
-func testIndexBuilderCompound(t *testing.T, repos []*zoekt.Repository, docs [][]Document) *IndexBuilder {
+func testShardBuilderCompound(t *testing.T, repos []*zoekt.Repository, docs [][]Document) *ShardBuilder {
 	t.Helper()
 
-	b := newIndexBuilder()
+	b := newShardBuilder()
 	b.indexFormatVersion = NextIndexFormatVersion
 
 	if len(repos) != len(docs) {
-		t.Fatalf("testIndexBuilderCompound: repos must be the same length as docs, got: len(repos)=%d len(docs)=%d", len(repos), len(docs))
+		t.Fatalf("testShardBuilderCompound: repos must be the same length as docs, got: len(repos)=%d len(docs)=%d", len(repos), len(docs))
 	}
 
 	for i, repo := range repos {
@@ -87,7 +87,7 @@ func testIndexBuilderCompound(t *testing.T, repos []*zoekt.Repository, docs [][]
 }
 
 func TestBoundary(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("x the")},
 		Document{Name: "f1", Content: []byte("reader")})
 	res := searchForTest(t, b, &query.Substring{Pattern: "there"})
@@ -97,9 +97,9 @@ func TestBoundary(t *testing.T) {
 }
 
 func TestDocSectionInvalid(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewShardBuilder(nil)
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 	doc := Document{
 		Name:    "f1",
@@ -123,7 +123,7 @@ func TestDocSectionInvalid(t *testing.T) {
 }
 
 func TestBasic(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f2",
 			Content: []byte("to carry water in the no later bla"),
@@ -166,7 +166,7 @@ func TestBasic(t *testing.T) {
 }
 
 func TestEmptyIndex(t *testing.T) {
-	b := testIndexBuilder(t, nil)
+	b := testShardBuilder(t, nil)
 	searcher := searcherForTest(t, b)
 
 	var opts zoekt.SearchOptions
@@ -201,7 +201,7 @@ func (s *memSeeker) Size() (uint32, error) {
 }
 
 func TestNewlines(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		// -----------------------------------------012345-678901-234
 		Document{Name: "filename", Content: []byte("line1\nline2\nbla")})
 
@@ -259,7 +259,7 @@ func TestNewlines(t *testing.T) {
 // single lines.
 func TestQueryNewlines(t *testing.T) {
 	text := "line1\nline2\nbla"
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "filename", Content: []byte(text)})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -289,7 +289,7 @@ func TestQueryNewlines(t *testing.T) {
 
 var chunkOpts = zoekt.SearchOptions{ChunkMatches: true}
 
-func searchForTest(t *testing.T, b *IndexBuilder, q query.Q, o ...zoekt.SearchOptions) *zoekt.SearchResult {
+func searchForTest(t *testing.T, b *ShardBuilder, q query.Q, o ...zoekt.SearchOptions) *zoekt.SearchResult {
 	searcher := searcherForTest(t, b)
 	var opts zoekt.SearchOptions
 	if len(o) > 0 {
@@ -303,7 +303,7 @@ func searchForTest(t *testing.T, b *IndexBuilder, q query.Q, o ...zoekt.SearchOp
 	return res
 }
 
-func searcherForTest(t testing.TB, b *IndexBuilder) zoekt.Searcher {
+func searcherForTest(t testing.TB, b *ShardBuilder) zoekt.Searcher {
 	var buf bytes.Buffer
 	if err := b.Write(&buf); err != nil {
 		t.Fatal(err)
@@ -319,7 +319,7 @@ func searcherForTest(t testing.TB, b *IndexBuilder) zoekt.Searcher {
 }
 
 func TestCaseFold(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("I love BaNaNAS.")},
 		// -----------------------------------012345678901234
 	)
@@ -390,7 +390,7 @@ func wordsAsSymbols(doc Document) Document {
 
 func TestSearchStats(t *testing.T) {
 	ctx := context.Background()
-	searcher := searcherForTest(t, testIndexBuilder(t, nil,
+	searcher := searcherForTest(t, testShardBuilder(t, nil,
 		wordsAsSymbols(Document{Name: "f1", Content: []byte("x banana y")}),
 		wordsAsSymbols(Document{Name: "f2", Content: []byte("x apple y")}),
 		wordsAsSymbols(Document{Name: "f3", Content: []byte("x banana apple y")}),
@@ -603,7 +603,7 @@ func TestSearchStats(t *testing.T) {
 }
 
 func TestAndNegateSearch(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("x banana y")},
 		// -----------------------------------0123456789
 		Document{Name: "f4", Content: []byte("x banana apple y")})
@@ -658,7 +658,7 @@ func TestAndNegateSearch(t *testing.T) {
 }
 
 func TestNegativeMatchesOnlyShortcut(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("x banana y")},
 		Document{Name: "f2", Content: []byte("x appelmoes y")},
 		Document{Name: "f3", Content: []byte("x appelmoes y")},
@@ -694,7 +694,7 @@ func TestNegativeMatchesOnlyShortcut(t *testing.T) {
 }
 
 func TestFileSearch(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "banzana", Content: []byte("x orange y")},
 		// -------------0123456
 		Document{Name: "banana", Content: []byte("x apple y")},
@@ -781,7 +781,7 @@ func TestFileSearch(t *testing.T) {
 }
 
 func TestFileCase(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "BANANA", Content: []byte("x orange y")})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -810,7 +810,7 @@ func TestFileCase(t *testing.T) {
 }
 
 func TestFileRegexpSearchBruteForce(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "banzana", Content: []byte("x orange y")},
 		Document{Name: "banana", Content: []byte("x apple y")},
 	)
@@ -839,7 +839,7 @@ func TestFileRegexpSearchBruteForce(t *testing.T) {
 }
 
 func TestFileRegexpSearchShortString(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "banana.py", Content: []byte("x orange y")})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -868,7 +868,7 @@ func TestFileRegexpSearchShortString(t *testing.T) {
 }
 
 func TestFileSubstringSearchBruteForce(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "BANZANA", Content: []byte("x orange y")},
 		Document{Name: "banana", Content: []byte("x apple y")})
 
@@ -893,7 +893,7 @@ func TestFileSubstringSearchBruteForce(t *testing.T) {
 }
 
 func TestFileSubstringSearchBruteForceEnd(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "BANZANA", Content: []byte("x orange y")},
 		Document{Name: "bananaq", Content: []byte("x apple y")})
 
@@ -917,7 +917,7 @@ func TestFileSubstringSearchBruteForceEnd(t *testing.T) {
 }
 
 func TestSearchMatchAll(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "banzana", Content: []byte("x orange y")},
 		Document{Name: "banana", Content: []byte("x apple y")})
 
@@ -939,7 +939,7 @@ func TestSearchMatchAll(t *testing.T) {
 }
 
 func TestSearchNewline(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "banzana", Content: []byte("abcd\ndefg")})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -966,7 +966,7 @@ func TestSearchNewline(t *testing.T) {
 }
 
 func TestSearchMatchAllRegexp(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "banzana", Content: []byte("abcd")},
 		Document{Name: "banana", Content: []byte("pqrs")})
 
@@ -997,7 +997,7 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 
 func TestSearchBM25MatchScores(t *testing.T) {
 	ctx := context.Background()
-	searcher := searcherForTest(t, testIndexBuilder(t, nil,
+	searcher := searcherForTest(t, testShardBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("one two three\naaaaaaaaaa\nbbbbbbbb\none two two")},
 		Document{Name: "f2", Content: []byte("four five six\naaaaaaaaaa\nbbbbbbbb\nfour five five\nsix six")},
 		wordsAsSymbols(Document{Name: "f3", Content: []byte("public static void main")}),
@@ -1078,7 +1078,7 @@ func TestSearchBM25MatchScores(t *testing.T) {
 }
 
 func TestFileRestriction(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "banana1", Content: []byte("x orange y")},
 		Document{Name: "banana2", Content: []byte("x apple y")},
 		Document{Name: "orange", Content: []byte("x apple z")})
@@ -1131,7 +1131,7 @@ func TestFileRestriction(t *testing.T) {
 }
 
 func TestFileNameBoundary(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "banana2", Content: []byte("x apple y")},
 		Document{Name: "helpers.go", Content: []byte("x apple y")},
 		Document{Name: "foo", Content: []byte("x apple y")})
@@ -1167,7 +1167,7 @@ func TestDocumentOrder(t *testing.T) {
 		docs = append(docs, Document{Name: fmt.Sprintf("f%d", i), Content: []byte("needle")})
 	}
 
-	b := testIndexBuilder(t, nil, docs...)
+	b := testShardBuilder(t, nil, docs...)
 
 	t.Run("LineMatches", func(t *testing.T) {
 		sres := searchForTest(t, b, query.NewAnd(
@@ -1205,7 +1205,7 @@ func TestDocumentOrder(t *testing.T) {
 }
 
 func TestBranchMask(t *testing.T) {
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Branches: []zoekt.RepositoryBranch{
 			{"master", "v-master"},
 			{"stable", "v-stable"},
@@ -1265,18 +1265,18 @@ func TestBranchLimit(t *testing.T) {
 				s, "v-" + s,
 			})
 		}
-		_, err := NewIndexBuilder(r)
+		_, err := NewShardBuilder(r)
 		if limit == 64 && err != nil {
-			t.Fatalf("NewIndexBuilder: %v", err)
+			t.Fatalf("NewShardBuilder: %v", err)
 		} else if limit == 65 && err == nil {
-			t.Fatalf("NewIndexBuilder succeeded")
+			t.Fatalf("NewShardBuilder succeeded")
 		}
 	}
 }
 
 func TestBranchReport(t *testing.T) {
 	branches := []string{"stable", "master"}
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Branches: []zoekt.RepositoryBranch{
 			{"stable", "vs"},
 			{"master", "vm"},
@@ -1314,7 +1314,7 @@ func TestBranchReport(t *testing.T) {
 }
 
 func TestBranchVersions(t *testing.T) {
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Branches: []zoekt.RepositoryBranch{
 			{"stable", "v-stable"},
 			{"master", "v-master"},
@@ -1363,7 +1363,7 @@ func TestRegexp(t *testing.T) {
 	content := []byte("needle the bla")
 	// ----------------01234567890123
 
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -1428,7 +1428,7 @@ func TestRegexpFile(t *testing.T) {
 	content := []byte("needle the bla")
 
 	name := "let's play: find the mussel"
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: name, Content: content},
 		Document{Name: "play.txt", Content: content})
 
@@ -1469,7 +1469,7 @@ func TestRegexpOrder(t *testing.T) {
 	content := []byte("bla the needle")
 	// ----------------01234567890123
 
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -1499,7 +1499,7 @@ func TestRepoName(t *testing.T) {
 	content := []byte("bla the needle")
 	// ----------------01234567890123
 
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "bla"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "bla"},
 		Document{Name: "f1", Content: content})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -1557,7 +1557,7 @@ func TestRepoName(t *testing.T) {
 
 func TestMergeMatches(t *testing.T) {
 	t.Run("LineMatches, adjacent matches", func(t *testing.T) {
-		b := testIndexBuilder(t, nil,
+		b := testShardBuilder(t, nil,
 			Document{Name: "f1", Content: []byte("blablabla")})
 		sres := searchForTest(t, b,
 			&query.Substring{Pattern: "bla"})
@@ -1572,7 +1572,7 @@ func TestMergeMatches(t *testing.T) {
 	})
 
 	t.Run("LineMatches, overlapping matches", func(t *testing.T) {
-		b := testIndexBuilder(t, nil,
+		b := testShardBuilder(t, nil,
 			Document{Name: "f1", Content: []byte("hellogoodbye")})
 		sres := searchForTest(t, b,
 			&query.And{Children: []query.Q{
@@ -1591,7 +1591,7 @@ func TestMergeMatches(t *testing.T) {
 	})
 
 	t.Run("ChunkMatches, no overlap", func(t *testing.T) {
-		b := testIndexBuilder(t, nil,
+		b := testShardBuilder(t, nil,
 			Document{Name: "f1", Content: []byte("blablabla")})
 
 		sres := searchForTest(t, b,
@@ -1608,7 +1608,7 @@ func TestMergeMatches(t *testing.T) {
 	})
 
 	t.Run("ChunkMatches, overlapping matches", func(t *testing.T) {
-		b := testIndexBuilder(t, nil,
+		b := testShardBuilder(t, nil,
 			Document{Name: "f1", Content: []byte("hellogoodbye")})
 		sres := searchForTest(t, b,
 			&query.And{Children: []query.Q{
@@ -1629,7 +1629,7 @@ func TestMergeMatches(t *testing.T) {
 
 func TestRepoURL(t *testing.T) {
 	content := []byte("blablabla")
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Name:                 "name",
 		URL:                  "URL",
 		CommitURLTemplate:    "commit",
@@ -1649,7 +1649,7 @@ func TestRepoURL(t *testing.T) {
 
 func TestRegexpCaseSensitive(t *testing.T) {
 	content := []byte("bla\nfunc unmarshalGitiles\n")
-	b := testIndexBuilder(t, nil, Document{
+	b := testShardBuilder(t, nil, Document{
 		Name:    "f1",
 		Content: content,
 	})
@@ -1684,7 +1684,7 @@ func TestRegexpCaseSensitive(t *testing.T) {
 func TestRegexpCaseFolding(t *testing.T) {
 	content := []byte("bla\nfunc unmarshalGitiles\n")
 
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 	res := searchForTest(t, b,
 		&query.Regexp{
@@ -1699,7 +1699,7 @@ func TestRegexpCaseFolding(t *testing.T) {
 
 func TestCaseRegexp(t *testing.T) {
 	content := []byte("BLABLABLA")
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -1731,7 +1731,7 @@ func TestCaseRegexp(t *testing.T) {
 
 func TestNegativeRegexp(t *testing.T) {
 	content := []byte("BLABLABLA needle bla")
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -1776,7 +1776,7 @@ func TestSymbolRank(t *testing.T) {
 
 	content := []byte("func bla() blubxxxxx")
 	// ----------------01234567890123456789
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -1827,7 +1827,7 @@ func TestSymbolRankRegexpUTF8(t *testing.T) {
 	content := []byte(prefix +
 		"func bla() blub")
 	// ------012345678901234
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -1875,7 +1875,7 @@ func TestPartialSymbolRank(t *testing.T) {
 	content := []byte("func bla() blub")
 	// ----------------012345678901234
 
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -1922,7 +1922,7 @@ func TestPartialSymbolRank(t *testing.T) {
 func TestNegativeRepo(t *testing.T) {
 	content := []byte("bla the needle")
 	// ----------------01234567890123
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Name: "bla",
 	}, Document{Name: "f1", Content: content})
 
@@ -1960,7 +1960,7 @@ func TestListRepos(t *testing.T) {
 			Name:     "reponame",
 			Branches: []zoekt.RepositoryBranch{{Name: "main"}, {Name: "dev"}},
 		}
-		b := testIndexBuilder(t, repo,
+		b := testShardBuilder(t, repo,
 			Document{Name: "f1", Content: content, Branches: []string{"main", "dev"}},
 			Document{Name: "f2", Content: content, Branches: []string{"main"}},
 			Document{Name: "f2", Content: content, Branches: []string{"dev"}},
@@ -2036,7 +2036,7 @@ func TestListRepos(t *testing.T) {
 			Branches:  []zoekt.RepositoryBranch{{Name: "main"}, {Name: "dev"}},
 			RawConfig: map[string]string{"repoid": "1234"},
 		}
-		b := testIndexBuilder(t, repo,
+		b := testShardBuilder(t, repo,
 			Document{Name: "f1", Content: content, Branches: []string{"main", "dev"}},
 			Document{Name: "f2", Content: content, Branches: []string{"main"}},
 			Document{Name: "f2", Content: content, Branches: []string{"dev"}},
@@ -2090,7 +2090,7 @@ func TestListRepos(t *testing.T) {
 func TestListReposByContent(t *testing.T) {
 	content := []byte("bla the needle")
 
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Name: "reponame",
 	},
 		Document{Name: "f1", Content: content},
@@ -2121,7 +2121,7 @@ func TestListReposByContent(t *testing.T) {
 func TestMetadata(t *testing.T) {
 	content := []byte("bla the needle")
 
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Name: "reponame",
 	}, Document{Name: "f1", Content: content},
 		Document{Name: "f2", Content: content})
@@ -2143,7 +2143,7 @@ func TestMetadata(t *testing.T) {
 }
 
 func TestOr(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("needle")},
 		Document{Name: "f2", Content: []byte("banana")})
 	t.Run("LineMatches", func(t *testing.T) {
@@ -2170,7 +2170,7 @@ func TestOr(t *testing.T) {
 func TestFrequency(t *testing.T) {
 	content := []byte("sla _Py_HashDouble(double v sla las las shd dot dot")
 
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -2199,7 +2199,7 @@ func TestMatchNewline(t *testing.T) {
 
 	content := []byte("pqr\nalex")
 
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -2234,7 +2234,7 @@ func TestSubRepo(t *testing.T) {
 
 	content := []byte("pqr\nalex")
 
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		SubRepoMap: subRepos,
 	}, Document{
 		Name:              "sub/f1",
@@ -2258,7 +2258,7 @@ func TestSubRepo(t *testing.T) {
 }
 
 func TestSearchEither(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("bla needle bla")},
 		Document{Name: "needle-file-branch", Content: []byte("bla content")})
 
@@ -2299,7 +2299,7 @@ func TestUnicodeExactMatch(t *testing.T) {
 	needle := "néédlÉ"
 	content := []byte("blá blá " + needle + " blâ")
 
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -2320,7 +2320,7 @@ func TestUnicodeCoverContent(t *testing.T) {
 	needle := "néédlÉ"
 	content := []byte("blá blá " + needle + " blâ")
 
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -2361,7 +2361,7 @@ func TestUnicodeNonCoverContent(t *testing.T) {
 	needle := "nééáádlÉ"
 	content := []byte("blá blá " + needle + " blâ")
 
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: content})
 
 	t.Run("LineMatches", func(t *testing.T) {
@@ -2401,7 +2401,7 @@ func TestUnicodeVariableLength(t *testing.T) {
 		" ee" + string([]rune{upper}) + "ee")
 
 	t.Run("LineMatches", func(t *testing.T) {
-		b := testIndexBuilder(t, nil,
+		b := testShardBuilder(t, nil,
 			Document{Name: "f1", Content: []byte(corpus)})
 
 		res := searchForTest(t, b, &query.Substring{Pattern: needle, Content: true})
@@ -2411,7 +2411,7 @@ func TestUnicodeVariableLength(t *testing.T) {
 	})
 
 	t.Run("ChunkMatches", func(t *testing.T) {
-		b := testIndexBuilder(t, nil,
+		b := testShardBuilder(t, nil,
 			Document{Name: "f1", Content: []byte(corpus)})
 
 		res := searchForTest(t, b, &query.Substring{Pattern: needle, Content: true}, chunkOpts)
@@ -2424,7 +2424,7 @@ func TestUnicodeVariableLength(t *testing.T) {
 func TestUnicodeFileStartOffsets(t *testing.T) {
 	unicode := "世界"
 	wat := "waaaaaat"
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: []byte(unicode),
@@ -2447,7 +2447,7 @@ func TestLongFileUTF8(t *testing.T) {
 	// 6 bytes.
 	unicode := "世界"
 	content := []byte(strings.Repeat(unicode, 100) + needle)
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: []byte(strings.Repeat("a", 50)),
@@ -2476,7 +2476,7 @@ func TestLongFileUTF8(t *testing.T) {
 
 func TestEstimateDocCount(t *testing.T) {
 	content := []byte("bla needle bla")
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{Name: "f1", Content: content},
 		Document{Name: "f2", Content: content},
 	)
@@ -2531,7 +2531,7 @@ func TestUTF8CorrectCorpus(t *testing.T) {
 
 	// 6 bytes.
 	unicode := "世界"
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: []byte(strings.Repeat(unicode, 100)),
@@ -2559,7 +2559,7 @@ func TestUTF8CorrectCorpus(t *testing.T) {
 }
 
 func TestBuilderStats(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: []byte(strings.Repeat("abcd", 1024)),
@@ -2575,7 +2575,7 @@ func TestBuilderStats(t *testing.T) {
 }
 
 func TestIOStats(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: []byte(strings.Repeat("abcd", 1024)),
@@ -2647,7 +2647,7 @@ func TestIOStats(t *testing.T) {
 }
 
 func TestStartLineAnchor(t *testing.T) {
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name: "f1",
 			Content: []byte(
@@ -2708,7 +2708,7 @@ func TestAndOrUnicode(t *testing.T) {
 		query.NewOr(query.NewAnd(&query.Repo{Regexp: regexp.MustCompile("name")},
 			query.NewOr(&query.Branch{Pattern: "master"}))))
 
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Name:     "name",
 		Branches: []zoekt.RepositoryBranch{{"master", "master-version"}},
 	}, Document{
@@ -2735,7 +2735,7 @@ func TestAndOrUnicode(t *testing.T) {
 
 func TestAndShort(t *testing.T) {
 	content := []byte("bla needle at orange bla")
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{Name: "f1", Content: content},
 		Document{Name: "f2", Content: []byte("xx at xx")},
 		Document{Name: "f3", Content: []byte("yy orange xx")},
@@ -2761,7 +2761,7 @@ func TestAndShort(t *testing.T) {
 
 func TestNoCollectRegexpSubstring(t *testing.T) {
 	content := []byte("bla final bla\nfoo final, foo")
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{Name: "f1", Content: content},
 	)
 
@@ -2801,7 +2801,7 @@ func printLineMatches(ms []zoekt.LineMatch) string {
 
 func TestLang(t *testing.T) {
 	content := []byte("bla needle bla")
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{Name: "f1", Content: content},
 		Document{Name: "f2", Language: "java", Content: content},
 		Document{Name: "f3", Language: "cpp", Content: content},
@@ -2835,7 +2835,7 @@ func TestLang(t *testing.T) {
 
 func TestLangShortcut(t *testing.T) {
 	content := []byte("bla needle bla")
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{Name: "f2", Language: "java", Content: content},
 		Document{Name: "f3", Language: "cpp", Content: content},
 	)
@@ -2866,7 +2866,7 @@ func TestLangShortcut(t *testing.T) {
 
 func TestNoTextMatchAtoms(t *testing.T) {
 	content := []byte("bla needle bla")
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{Name: "f1", Content: content},
 		Document{Name: "f2", Language: "java", Content: content},
 		Document{Name: "f3", Language: "cpp", Content: content},
@@ -2889,7 +2889,7 @@ func TestNoTextMatchAtoms(t *testing.T) {
 
 func TestNoPositiveAtoms(t *testing.T) {
 	content := []byte("bla needle bla")
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{Name: "f1", Content: content},
 		Document{Name: "f2", Content: content},
 	)
@@ -2915,7 +2915,7 @@ func TestSymbolBoundaryStart(t *testing.T) {
 	content := []byte("start\nbla bla\nend")
 	// ----------------012345-67890123-456
 
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -2952,7 +2952,7 @@ func TestSymbolBoundaryEnd(t *testing.T) {
 	content := []byte("start\nbla bla\nend")
 	// ----------------012345-67890123-456
 
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -2989,7 +2989,7 @@ func TestSymbolSubstring(t *testing.T) {
 	content := []byte("bla\nsymblabla\nbla")
 	// ----------------0123-4567890123-456
 
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -3026,7 +3026,7 @@ func TestSymbolSubstringExact(t *testing.T) {
 	content := []byte("bla\nsym\nbla\nsym\nasymb")
 	// ----------------0123-4567-890123456-78901
 
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -3063,7 +3063,7 @@ func TestSymbolRegexpExact(t *testing.T) {
 	content := []byte("blah\nbla\nbl")
 	// ----------------01234-5678-90
 
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -3100,7 +3100,7 @@ func TestSymbolRegexpPartial(t *testing.T) {
 	content := []byte("abcdef")
 	// ----------------012345
 
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -3155,7 +3155,7 @@ func TestSymbolRegexpAll(t *testing.T) {
 		},
 	}
 
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"}, docs...)
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"}, docs...)
 	q := &query.Symbol{
 		Expr: &query.Regexp{Regexp: mustParseRE(".*")},
 	}
@@ -3204,7 +3204,7 @@ func TestHitIterTerminate(t *testing.T) {
 	// will advance the compressedPostingIterator to beyond the
 	// end.
 	content := []byte("abc bcdbcd cdecde abcabc def efg")
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -3222,7 +3222,7 @@ func TestHitIterTerminate(t *testing.T) {
 
 func TestDistanceHitIterBailLast(t *testing.T) {
 	content := []byte("AST AST AST UASH")
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -3245,9 +3245,9 @@ func TestDistanceHitIterBailLast(t *testing.T) {
 
 func TestDocumentSectionRuneBoundary(t *testing.T) {
 	content := string([]rune{kelvinCodePoint, kelvinCodePoint, kelvinCodePoint})
-	b, err := NewIndexBuilder(nil)
+	b, err := NewShardBuilder(nil)
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 
 	for i, sec := range []DocumentSection{
@@ -3266,7 +3266,7 @@ func TestDocumentSectionRuneBoundary(t *testing.T) {
 
 func TestUnicodeQuery(t *testing.T) {
 	content := string([]rune{kelvinCodePoint, kelvinCodePoint, kelvinCodePoint})
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: []byte(content),
@@ -3324,9 +3324,9 @@ func TestSkipInvalidContent(t *testing.T) {
 		"abc def \x00 abc",
 	} {
 
-		b, err := NewIndexBuilder(nil)
+		b, err := NewShardBuilder(nil)
 		if err != nil {
-			t.Fatalf("NewIndexBuilder: %v", err)
+			t.Fatalf("NewShardBuilder: %v", err)
 		}
 
 		if err := b.Add(Document{
@@ -3395,7 +3395,7 @@ func TestDocChecker(t *testing.T) {
 }
 
 func TestLineAnd(t *testing.T) {
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{Name: "f1", Content: []byte("apple\nbanana\napple banana chocolate apple pudding banana\ngrape")},
 		Document{Name: "f2", Content: []byte("apple orange\nbanana")},
 		Document{Name: "f3", Content: []byte("banana grape")},
@@ -3431,7 +3431,7 @@ func TestLineAnd(t *testing.T) {
 }
 
 func TestLineAndFileName(t *testing.T) {
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{Name: "f1", Content: []byte("apple banana\ngrape")},
 		Document{Name: "f2", Content: []byte("apple banana\norange")},
 		Document{Name: "apple banana", Content: []byte("banana grape")},
@@ -3467,7 +3467,7 @@ func TestLineAndFileName(t *testing.T) {
 }
 
 func TestMultiLineRegex(t *testing.T) {
-	b := testIndexBuilder(t, &zoekt.Repository{Name: "reponame"},
+	b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
 		Document{Name: "f1", Content: []byte("apple banana\ngrape")},
 		Document{Name: "f2", Content: []byte("apple orange")},
 		Document{Name: "f3", Content: []byte("grape apple")},
@@ -3511,7 +3511,7 @@ func TestMultiLineRegex(t *testing.T) {
 }
 
 func TestSearchTypeFileName(t *testing.T) {
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Name: "reponame",
 	},
 		Document{Name: "f1", Content: []byte("bla the needle")},
@@ -3609,7 +3609,7 @@ func TestSearchTypeFileName(t *testing.T) {
 }
 
 func TestSearchTypeLanguage(t *testing.T) {
-	b := testIndexBuilder(t, &zoekt.Repository{
+	b := testShardBuilder(t, &zoekt.Repository{
 		Name: "reponame",
 	},
 		Document{Name: "apex.cls", Content: []byte("public class Car extends Vehicle {")},
@@ -3721,14 +3721,14 @@ func TestStats(t *testing.T) {
 		cmpopts.IgnoreFields(zoekt.RepoStats{}, "IndexBytes"),
 	}
 
-	repoListEntries := func(b *IndexBuilder) []zoekt.RepoListEntry {
+	repoListEntries := func(b *ShardBuilder) []zoekt.RepoListEntry {
 		searcher := searcherForTest(t, b)
 		indexdata := searcher.(*indexData)
 		return indexdata.repoListEntry
 	}
 
 	t.Run("one empty repo", func(t *testing.T) {
-		b := testIndexBuilder(t, nil)
+		b := testShardBuilder(t, nil)
 		got := repoListEntries(b)
 		want := []zoekt.RepoListEntry{
 			{
@@ -3751,7 +3751,7 @@ func TestStats(t *testing.T) {
 	})
 
 	t.Run("one simple shard", func(t *testing.T) {
-		b := testIndexBuilder(t, nil,
+		b := testShardBuilder(t, nil,
 			Document{Name: "doc 0", Content: []byte("content 0")},
 			Document{Name: "doc 1", Content: []byte("content 1")},
 		)
@@ -3777,7 +3777,7 @@ func TestStats(t *testing.T) {
 	})
 
 	t.Run("one compound shard", func(t *testing.T) {
-		b := testIndexBuilderCompound(t,
+		b := testShardBuilderCompound(t,
 			[]*zoekt.Repository{
 				{Name: "repo 0"},
 				{Name: "repo 1"},
@@ -3827,7 +3827,7 @@ func TestStats(t *testing.T) {
 	})
 
 	t.Run("compound shard with empty repos", func(t *testing.T) {
-		b := testIndexBuilderCompound(t,
+		b := testShardBuilderCompound(t,
 			[]*zoekt.Repository{
 				{Name: "repo 0"},
 				{Name: "repo 1"},
@@ -3875,7 +3875,7 @@ func TestWordSearch(t *testing.T) {
 	content := []byte("needle the bla")
 	// ----------------01234567890123
 
-	b := testIndexBuilder(t, nil,
+	b := testShardBuilder(t, nil,
 		Document{
 			Name:    "f1",
 			Content: content,
@@ -3956,7 +3956,7 @@ func BenchmarkScoreChunkMatches(b *testing.B) {
 		builder.WriteString(fmt.Sprintf("line-%d one one one two two two three three three four four four five five\n", i))
 	}
 
-	searcher := searcherForTest(b, testIndexBuilder(b, nil,
+	searcher := searcherForTest(b, testShardBuilder(b, nil,
 		Document{Name: "f1", Content: []byte(builder.String())},
 	))
 

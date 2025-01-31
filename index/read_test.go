@@ -34,9 +34,9 @@ import (
 )
 
 func TestReadWrite(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewShardBuilder(nil)
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 
 	if err := b.AddFile("filename", []byte("abcde")); err != nil {
@@ -79,9 +79,9 @@ func TestReadWrite(t *testing.T) {
 }
 
 func TestReadWriteNames(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewShardBuilder(nil)
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 
 	if err := b.AddFile("abCd", []byte("")); err != nil {
@@ -123,9 +123,9 @@ func TestReadWriteNames(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
-	b, err := NewIndexBuilder(nil)
+	b, err := NewShardBuilder(nil)
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 
 	if err := b.AddFile("file_name", []byte("aaa bbbaaa")); err != nil {
@@ -353,9 +353,9 @@ func TestEncodeRawConfig(t *testing.T) {
 
 func TestBackwardsCompat(t *testing.T) {
 	if *update {
-		b, err := NewIndexBuilder(nil)
+		b, err := NewShardBuilder(nil)
 		if err != nil {
-			t.Fatalf("NewIndexBuilder: %v", err)
+			t.Fatalf("NewShardBuilder: %v", err)
 		}
 
 		if err := b.AddFile("filename", []byte("abcde")); err != nil {

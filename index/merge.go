@@ -51,7 +51,7 @@ func Merge(dstDir string, files ...IndexFile) (tmpName, dstName string, _ error)
 	return tmpName, dstName, nil
 }
 
-func builderWriteAll(fn string, ib *IndexBuilder) error {
+func builderWriteAll(fn string, ib *ShardBuilder) error {
 	dir := filepath.Dir(fn)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -90,7 +90,7 @@ func builderWriteAll(fn string, ib *IndexBuilder) error {
 	return nil
 }
 
-func merge(ds ...*indexData) (*IndexBuilder, error) {
+func merge(ds ...*indexData) (*ShardBuilder, error) {
 	if len(ds) == 0 {
 		return nil, fmt.Errorf("need 1 or more indexData to merge")
 	}
@@ -99,8 +99,8 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 		return ds[i].repoMetaData[0].GetPriority() > ds[j].repoMetaData[0].GetPriority()
 	})
 
-	ib := newIndexBuilder()
-	ib.indexFormatVersion = NextIndexFormatVersion
+	sb := newShardBuilder()
+	sb.indexFormatVersion = NextIndexFormatVersion
 
 	for _, d := range ds {
 		lastRepoID := -1
@@ -120,18 +120,18 @@ func merge(ds ...*indexData) (*IndexBuilder, error) {
 				// TODO we are losing empty repos on merging since we only get here if
 				// there is an associated document.
 
-				if err := ib.setRepository(&d.repoMetaData[repoID]); err != nil {
+				if err := sb.setRepository(&d.repoMetaData[repoID]); err != nil {
 					return nil, err
 				}
 			}
 
-			if err := addDocument(d, ib, repoID, docID); err != nil {
+			if err := addDocument(d, sb, repoID, docID); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	return ib, nil
+	return sb, nil
 }
 
 // Explode takes an IndexFile f and creates 1 simple shard per repository
@@ -142,11 +142,11 @@ func Explode(dstDir string, f IndexFile) (map[string]string, error) {
 	return explode(dstDir, f)
 }
 
-type indexBuilderFunc func(ib *IndexBuilder)
+type shardBuilderFunc func(ib *ShardBuilder)
 
 // explode offers a richer signature compared to Explode for testing. You
 // probably want to call Explode instead.
-func explode(dstDir string, f IndexFile, ibFuncs ...indexBuilderFunc) (map[string]string, error) {
+func explode(dstDir string, f IndexFile, ibFuncs ...shardBuilderFunc) (map[string]string, error) {
 	searcher, err := NewSearcher(f)
 	if err != nil {
 		return nil, err
@@ -155,9 +155,9 @@ func explode(dstDir string, f IndexFile, ibFuncs ...indexBuilderFunc) (map[strin
 
 	shardNames := make(map[string]string, len(d.repoMetaData))
 
-	writeShard := func(ib *IndexBuilder) error {
+	writeShard := func(ib *ShardBuilder) error {
 		if len(ib.repoList) != 1 {
-			return fmt.Errorf("expected ib to contain exactly 1 repository")
+			return fmt.Errorf("expected sb to contain exactly 1 repository")
 		}
 		for _, ibFunc := range ibFuncs {
 			ibFunc(ib)
@@ -176,7 +176,7 @@ func explode(dstDir string, f IndexFile, ibFuncs ...indexBuilderFunc) (map[strin
 		return builderWriteAll(shardNameTmp, ib)
 	}
 
-	var ib *IndexBuilder
+	var sb *ShardBuilder
 	lastRepoID := -1
 	for docID := uint32(0); int(docID) < len(d.fileBranchMasks); docID++ {
 		repoID := int(d.repos[docID])
@@ -191,27 +191,27 @@ func explode(dstDir string, f IndexFile, ibFuncs ...indexBuilderFunc) (map[strin
 			}
 			lastRepoID = repoID
 
-			if ib != nil {
-				if err := writeShard(ib); err != nil {
+			if sb != nil {
+				if err := writeShard(sb); err != nil {
 					return shardNames, err
 				}
 			}
 
-			ib = newIndexBuilder()
-			ib.indexFormatVersion = IndexFormatVersion
-			if err := ib.setRepository(&d.repoMetaData[repoID]); err != nil {
+			sb = newShardBuilder()
+			sb.indexFormatVersion = IndexFormatVersion
+			if err := sb.setRepository(&d.repoMetaData[repoID]); err != nil {
 				return shardNames, err
 			}
 		}
 
-		err := addDocument(d, ib, repoID, docID)
+		err := addDocument(d, sb, repoID, docID)
 		if err != nil {
 			return shardNames, err
 		}
 	}
 
-	if ib != nil {
-		if err := writeShard(ib); err != nil {
+	if sb != nil {
+		if err := writeShard(sb); err != nil {
 			return shardNames, err
 		}
 	}
@@ -219,7 +219,7 @@ func explode(dstDir string, f IndexFile, ibFuncs ...indexBuilderFunc) (map[strin
 	return shardNames, nil
 }
 
-func addDocument(d *indexData, ib *IndexBuilder, repoID int, docID uint32) error {
+func addDocument(d *indexData, ib *ShardBuilder, repoID int, docID uint32) error {
 	doc := Document{
 		Name: string(d.fileName(docID)),
 		// Content set below since it can return an error
