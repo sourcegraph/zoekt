@@ -173,7 +173,7 @@ func createTestShard(t *testing.T, repo string, id uint32, path string, optFns .
 	for _, optFn := range optFns {
 		optFn(r)
 	}
-	b, err := index.NewIndexBuilder(r)
+	b, err := index.NewShardBuilder(r)
 	if err != nil {
 		t.Fatal(err)
 	}

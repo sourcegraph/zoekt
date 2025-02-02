@@ -100,7 +100,7 @@ func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 	endRunes.end(w)
 }
 
-func (b *IndexBuilder) Write(out io.Writer) error {
+func (b *ShardBuilder) Write(out io.Writer) error {
 	next := b.indexFormatVersion == NextIndexFormatVersion
 
 	buffered := bufio.NewWriterSize(out, 1<<20)
@@ -211,7 +211,7 @@ func (b *IndexBuilder) Write(out io.Writer) error {
 	return w.err
 }
 
-func (b *IndexBuilder) writeJSON(data interface{}, sec *simpleSection, w *writer) error {
+func (b *ShardBuilder) writeJSON(data interface{}, sec *simpleSection, w *writer) error {
 	blob, err := json.Marshal(data)
 	if err != nil {
 		return err

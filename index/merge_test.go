@@ -73,7 +73,7 @@ func TestExplode(t *testing.T) {
 	}
 	defer indexFile.Close()
 
-	overwriteIndexTimeAndID := func(ib *IndexBuilder) {
+	overwriteIndexTimeAndID := func(ib *ShardBuilder) {
 		ib.ID = m[ib.repoList[0].Name].ID
 		ib.IndexTime = m[ib.repoList[0].Name].IndexTime
 	}

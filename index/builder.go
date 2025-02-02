@@ -1020,13 +1020,13 @@ func (b *Builder) CheckMemoryUsage() {
 	}
 }
 
-func (b *Builder) newShardBuilder() (*IndexBuilder, error) {
+func (b *Builder) newShardBuilder() (*ShardBuilder, error) {
 	desc := b.opts.RepositoryDescription
 	desc.HasSymbols = !b.opts.DisableCTags && b.opts.CTagsPath != ""
 	desc.SubRepoMap = b.opts.SubRepositories
 	desc.IndexOptions = b.opts.GetHash()
 
-	shardBuilder, err := NewIndexBuilder(&desc)
+	shardBuilder, err := NewShardBuilder(&desc)
 	if err != nil {
 		return nil, err
 	}
@@ -1035,7 +1035,7 @@ func (b *Builder) newShardBuilder() (*IndexBuilder, error) {
 	return shardBuilder, nil
 }
 
-func (b *Builder) writeShard(fn string, ib *IndexBuilder) (*finishedShard, error) {
+func (b *Builder) writeShard(fn string, ib *ShardBuilder) (*finishedShard, error) {
 	dir := filepath.Dir(fn)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
