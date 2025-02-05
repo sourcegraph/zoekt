@@ -412,11 +412,8 @@ func (b *ShardBuilder) Add(doc Document) error {
 
 	if len(doc.Content) > MaxFileSize {
 		doc.SkipReason = fmt.Sprintf("file size %d exceeds maximum size %d", len(doc.Content), MaxFileSize)
-	}
-
-	if idx := bytes.IndexByte(doc.Content, 0); idx >= 0 {
+	} else if idx := bytes.IndexByte(doc.Content, 0); idx >= 0 {
 		doc.SkipReason = fmt.Sprintf("binary content at byte offset %d", idx)
-		doc.Language = "binary"
 	}
 
 	if doc.SkipReason != "" {
