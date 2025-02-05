@@ -47,3 +47,49 @@ func TestShardName(t *testing.T) {
 		})
 	}
 }
+
+func TestDetermineLanguageIfUnknown(t *testing.T) {
+	tests := []struct {
+		name        string
+		doc         Document
+		wantLang    string
+		skipContent bool
+	}{
+		{
+			name: "already has language",
+			doc: Document{
+				Name:     "test.java",
+				Language: "Go",
+				Content:  []byte("package main"),
+			},
+			wantLang: "Go",
+		},
+		{
+			name: "skipped file",
+			doc: Document{
+				Name:       "large.js",
+				SkipReason: "too large",
+				Content:    []byte(notIndexedMarker + "too large"),
+			},
+			wantLang: "JavaScript",
+		},
+		{
+			name: "skipped file with unknown extension",
+			doc: Document{
+				Name:       "deadb33f",
+				SkipReason: "binary",
+				Content:    []byte(notIndexedMarker + "binary"),
+			},
+			wantLang: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			DetermineLanguageIfUnknown(&tt.doc)
+			if tt.doc.Language != tt.wantLang {
+				t.Errorf("DetermineLanguageIfUnknown() got language = %v, want %v", tt.doc.Language, tt.wantLang)
+			}
+		})
+	}
+}
