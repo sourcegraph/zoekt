@@ -37,6 +37,11 @@ var _ = log.Println
 
 const ngramSize = 3
 
+// MaxFileSize 1 MB; match https://sourcegraph.sgdev.org/github.com/sourcegraph/sourcegraph/-/blob/cmd/symbols/internal/symbols/search.go#L22
+// NOTE: if you change this, you must also update gitIndex to use the same value when fetching the repo.
+// Change here as well, if you're changing the value https://sourcegraph.com/github.com/sourcegraph/zoekt/-/blob/cmd/zoekt-sourcegraph-indexserver/main.go?L167-169
+const MaxFileSize = 1 << 20
+
 type searchableString struct {
 	data []byte
 }
@@ -405,18 +410,16 @@ func DetermineLanguageIfUnknown(doc *Document) {
 func (b *ShardBuilder) Add(doc Document) error {
 	hasher := crc64.New(crc64.MakeTable(crc64.ISO))
 
-	if idx := bytes.IndexByte(doc.Content, 0); idx >= 0 {
+	if len(doc.Content) > MaxFileSize {
+		doc.SkipReason = fmt.Sprintf("file size %d exceeds maximum size %d", len(doc.Content), MaxFileSize)
+	} else if idx := bytes.IndexByte(doc.Content, 0); idx >= 0 {
 		doc.SkipReason = fmt.Sprintf("binary content at byte offset %d", idx)
-		doc.Language = "binary"
 	}
 
 	if doc.SkipReason != "" {
 		doc.Content = []byte(notIndexedMarker + doc.SkipReason)
 		doc.Symbols = nil
 		doc.SymbolsMetaData = nil
-		if doc.Language == "" {
-			doc.Language = "skipped"
-		}
 	}
 
 	DetermineLanguageIfUnknown(&doc)
