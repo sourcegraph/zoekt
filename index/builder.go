@@ -40,6 +40,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/go-enry/go-enry/v2"
 	"github.com/rs/xid"
+	"golang.org/x/sys/unix"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/ctags"
@@ -1090,9 +1091,6 @@ func (e *deltaIndexOptionsMismatchError) Error() string {
 	return fmt.Sprintf("one or more index options for shard %q do not match Builder's index options. These index option updates are incompatible with delta build. New index options: %+v", e.shardName, e.newOptions)
 }
 
-// umask holds the Umask of the current process
-var umask os.FileMode
-
 // Document holds a document (file) to index.
 type Document struct {
 	Name              string
@@ -1112,4 +1110,12 @@ type Document struct {
 
 type DocumentSection struct {
 	Start, End uint32
+}
+
+// umask holds the Umask of the current process
+var umask os.FileMode
+
+func init() {
+	umask = os.FileMode(unix.Umask(0))
+	unix.Umask(int(umask))
 }

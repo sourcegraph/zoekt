@@ -8,6 +8,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
+	"golang.org/x/sys/unix"
 )
 
 // mergeMeta updates the .meta files for the shards on disk for o.
@@ -110,3 +111,8 @@ func jsonMarshalTmpFile(v interface{}, p string) (_ string, err error) {
 
 // respect process umask. build does this.
 var umask os.FileMode
+
+func init() {
+	umask = os.FileMode(unix.Umask(0))
+	unix.Umask(int(umask))
+}
