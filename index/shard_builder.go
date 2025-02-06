@@ -396,7 +396,16 @@ func (b *ShardBuilder) addSymbols(symbols []*zoekt.Symbol) {
 }
 
 func DetermineLanguageIfUnknown(doc *Document) {
-	if doc.Language == "" {
+	if doc.Language != "" {
+		return
+	}
+
+	if doc.SkipReason != "" {
+		// If this document has been skipped, it's likely very large, or it's a non-code file like binary.
+		// In this case, we just guess the language based on file name to avoid examining the contents.
+		// Note: passing nil content is allowed by the go-enry contract (the underlying library we use here).
+		doc.Language = languages.GetLanguage(doc.Name, nil)
+	} else {
 		doc.Language = languages.GetLanguage(doc.Name, doc.Content)
 	}
 }
@@ -407,16 +416,12 @@ func (b *ShardBuilder) Add(doc Document) error {
 
 	if idx := bytes.IndexByte(doc.Content, 0); idx >= 0 {
 		doc.SkipReason = fmt.Sprintf("binary content at byte offset %d", idx)
-		doc.Language = "binary"
 	}
 
 	if doc.SkipReason != "" {
 		doc.Content = []byte(notIndexedMarker + doc.SkipReason)
 		doc.Symbols = nil
 		doc.SymbolsMetaData = nil
-		if doc.Language == "" {
-			doc.Language = "skipped"
-		}
 	}
 
 	DetermineLanguageIfUnknown(&doc)
