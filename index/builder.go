@@ -609,7 +609,6 @@ func (b *Builder) Add(doc Document) error {
 		doc.SkipReason = fmt.Sprintf("document size %d larger than limit %d", len(doc.Content), b.opts.SizeMax)
 	} else if err := b.docChecker.Check(doc.Content, b.opts.TrigramMax, allowLargeFile); err != nil {
 		doc.SkipReason = err.Error()
-		doc.Language = "binary"
 	}
 
 	b.todo = append(b.todo, &doc)
