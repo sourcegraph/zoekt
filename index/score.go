@@ -217,9 +217,9 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 	L := float64(lineLength) / 100.0
 
 	score := 0.0
-	tfs := p.calculateTermFrequency(ms, termDocumentFrequency{})
+	tfs := p.calculateTermFrequency(ms)
 	for _, f := range tfs {
-		score += ((k + 1.0) * float64(f)) / (k*(1.0-b+b*L) + float64(f))
+		score += tfScore(k, b, L, f)
 	}
 
 	// Check if any index comes from a symbol match tree, and if so hydrate in symbol information
@@ -237,14 +237,21 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 	return score, symbolInfo
 }
 
-// termDocumentFrequency is a map "term" -> "number of documents that contain the term"
-type termDocumentFrequency map[string]int
+// tfScore is the term frequency score for BM25. The full BM25 formula would
+// include an inverse document frequency (idf) term, but this implementation
+// treats it as constant. IDF is usually computed at index time, but we don't
+// have that information in Zoekt, and it is not trivial to compute because we
+// don't have the concept of terms in our index. In our evaluation, we found
+// that idf did not have a significant impact on the ranking.
+func tfScore(k float64, b float64, L float64, f int) float64 {
+	return ((k + 1.0) * float64(f)) / (k*(1.0-b+b*L) + float64(f))
+}
 
 // calculateTermFrequency computes the term frequency for the file match.
 // Notes:
 // - Filename matches count more than content matches. This mimics a common text search strategy to 'boost' matches on document titles.
 // - Symbol matches also count more than content matches, to reward matches on symbol definitions.
-func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch, df termDocumentFrequency) map[string]int {
+func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch) map[string]int {
 	// Treat each candidate match as a term and compute the frequencies. For now, ignore case sensitivity and
 	// ignore whether the index is a word boundary.
 	termFreqs := map[string]int{}
@@ -257,9 +264,6 @@ func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch, df ter
 		}
 	}
 
-	for term := range termFreqs {
-		df[term] += 1
-	}
 	return termFreqs
 }
 
@@ -331,19 +335,13 @@ func (d *indexData) scoreFile(fileMatch *zoekt.FileMatch, doc uint32, mt matchTr
 	}
 }
 
-// termFrequency stores the term frequencies for doc.
-type termFrequency struct {
-	doc uint32
-	tf  map[string]int
-}
-
 // scoreFilesUsingBM25 computes the score according to BM25, the most common scoring algorithm for text search:
 // https://en.wikipedia.org/wiki/Okapi_BM25.
 //
 // Unlike standard file scoring, this scoring strategy ignores all other signals including document ranks. This keeps
 // things simple for now, since BM25 is not normalized and can be  tricky to combine with other scoring signals. It also
 // ignores the individual LineMatch and ChunkMatch scores, instead calculating a score over all matches in the file.
-func (d *indexData) scoreFilesUsingBM25(fileMatches []zoekt.FileMatch, tfs []termFrequency, df termDocumentFrequency, opts *zoekt.SearchOptions) {
+func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, tf map[string]int, opts *zoekt.SearchOptions) {
 	// Use standard parameter defaults used in Lucene (https://lucene.apache.org/core/10_1_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)
 	k, b := 1.2, 0.75
 
@@ -353,34 +351,22 @@ func (d *indexData) scoreFilesUsingBM25(fileMatches []zoekt.FileMatch, tfs []ter
 		averageFileLength++
 	}
 
-	for i := range tfs {
-		score := 0.0
+	// Compute the file length ratio. Usually the calculation would be based on terms, but using
+	// bytes should work fine, as we're just computing a ratio.
+	fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
 
-		// Compute the file length ratio. Usually the calculation would be based on terms, but using
-		// bytes should work fine, as we're just computing a ratio.
-		doc := tfs[i].doc
-		fileLength := float64(d.boundaries[doc+1] - d.boundaries[doc])
+	L := fileLength / averageFileLength
 
-		L := fileLength / averageFileLength
-
-		sumTF := 0 // Just for debugging
-		for term, f := range tfs[i].tf {
-			sumTF += f
-			tfScore := ((k + 1.0) * float64(f)) / (k*(1.0-b+b*L) + float64(f))
-			score += idf(df[term], int(d.numDocs())) * tfScore
-		}
-
-		fileMatches[i].Score = score
-
-		if opts.DebugScore {
-			fileMatches[i].Debug = fmt.Sprintf("bm25-score: %.2f <- sum-termFrequencies: %d, length-ratio: %.2f", score, sumTF, L)
-		}
+	score := 0.0
+	sumTF := 0 // Just for debugging
+	for _, f := range tf {
+		sumTF += f
+		score += tfScore(k, b, L, f)
 	}
-}
 
-// idf computes the inverse document frequency for a term. nq is the number of
-// documents that contain the term and documentCount is the total number of
-// documents in the corpus.
-func idf(nq, documentCount int) float64 {
-	return math.Log(1.0 + ((float64(documentCount) - float64(nq) + 0.5) / (float64(nq) + 0.5)))
+	fileMatch.Score = score
+
+	if opts.DebugScore {
+		fileMatch.Debug = fmt.Sprintf("bm25-score: %.2f <- sum-termFrequencies: %d, length-ratio: %.2f", score, sumTF, L)
+	}
 }
