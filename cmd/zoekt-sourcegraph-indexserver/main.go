@@ -1235,7 +1235,7 @@ func setShardsCounter(indexDir string) {
 			compoundFns = append(compoundFns, fn)
 		}
 	}
-	metricNumberCompoundShards.Set(float64(len(fns)))
+	metricNumberCompoundShards.Set(float64(len(compoundFns)))
 }
 
 func rootCmd() *ffcli.Command {
