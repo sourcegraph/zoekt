@@ -237,12 +237,7 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 	return score, symbolInfo
 }
 
-// tfScore is the term frequency score for BM25. The full BM25 formula would
-// include an inverse document frequency (idf) term, but this implementation
-// treats it as constant. IDF is usually computed at index time, but we don't
-// have that information in Zoekt, and it is not trivial to compute because we
-// don't have the concept of terms in our index. In our evaluation, we found
-// that idf did not have a significant impact on the ranking.
+// tfScore is the term frequency score for BM25.
 func tfScore(k float64, b float64, L float64, f int) float64 {
 	return ((k + 1.0) * float64(f)) / (k*(1.0-b+b*L) + float64(f))
 }
@@ -336,10 +331,13 @@ func (d *indexData) scoreFile(fileMatch *zoekt.FileMatch, doc uint32, mt matchTr
 }
 
 // scoreFilesUsingBM25 computes the score according to BM25, the most common scoring algorithm for text search:
-// https://en.wikipedia.org/wiki/Okapi_BM25.
+// https://en.wikipedia.org/wiki/Okapi_BM25. Note that we treat the inverse document frequency (idf) as constant. This
+// is supported by our evaluations which showed that for keyword style queries, idf can down-weight the score of some
+// keywords too much, leading to a worse ranking. The intuition is that each keyword is important independently of how
+// frequent it appears in the corpus.
 //
 // Unlike standard file scoring, this scoring strategy ignores all other signals including document ranks. This keeps
-// things simple for now, since BM25 is not normalized and can be  tricky to combine with other scoring signals. It also
+// things simple for now, since BM25 is not normalized and can be tricky to combine with other scoring signals. It also
 // ignores the individual LineMatch and ChunkMatch scores, instead calculating a score over all matches in the file.
 func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, tf map[string]int, opts *zoekt.SearchOptions) {
 	// Use standard parameter defaults used in Lucene (https://lucene.apache.org/core/10_1_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)
