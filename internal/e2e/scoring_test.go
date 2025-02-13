@@ -79,8 +79,8 @@ func TestBM25(t *testing.T) {
 			query:    &query.Substring{Pattern: "example"},
 			content:  exampleJava,
 			language: "Java",
-			// bm25-score: 0.58 <- sum-termFrequencyScore: 14.00, length-ratio: 1.00
-			wantScore: 0.58,
+			// sum-termFrequencyScore: 14.00, length-ratio: 1.00
+			wantScore: 2.02,
 			// line 5:    private final int exampleField;
 			wantBestLineMatch: 5,
 		}, {
@@ -93,8 +93,8 @@ func TestBM25(t *testing.T) {
 			}},
 			content:  exampleJava,
 			language: "Java",
-			// bm25-score: 1.81 <- sum-termFrequencyScore: 116.00, length-ratio: 1.00
-			wantScore: 1.81,
+			// sum-termFrequencyScore: 116.00, length-ratio: 1.00
+			wantScore: 6.30,
 			// line 54: private static <A, B> B runInnerInterface(InnerInterface<A, B> fn, A a) {
 			wantBestLineMatch: 54,
 		}, {
@@ -106,8 +106,8 @@ func TestBM25(t *testing.T) {
 			}},
 			content:  exampleJava,
 			language: "Java",
-			// bm25-score: 0.96 <- sum-termFrequencies: 12, length-ratio: 1.00
-			wantScore: 0.96,
+			// sum-termFrequencies: 12, length-ratio: 1.00
+			wantScore: 3.33,
 			// line 59: if (System.nanoTime() > System.currentTimeMillis()) {
 			wantBestLineMatch: 59,
 		},
@@ -117,16 +117,16 @@ func TestBM25(t *testing.T) {
 			query:    &query.Substring{Pattern: "java"},
 			content:  exampleJava,
 			language: "Java",
-			// bm25-score: 0.51 <- sum-termFrequencyScore: 5.00, length-ratio: 1.00
-			wantScore: 0.51,
+			// sum-termFrequencyScore: 5.00, length-ratio: 1.00
+			wantScore: 1.77,
 		},
 		{
 			// Matches only on filename, and content is missing
 			fileName: "a/b/c/config.go",
 			query:    &query.Substring{Pattern: "config.go"},
 			language: "Go",
-			// bm25-score: 0.60 <- sum-termFrequencyScore: 5.00, length-ratio: 0.00
-			wantScore: 0.60,
+			// sum-termFrequencyScore: 5.00, length-ratio: 0.00
+			wantScore: 2.07,
 		},
 	}
 

@@ -25,6 +25,7 @@ import (
 
 	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/grafana/regexp"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/sourcegraph/zoekt/query"
@@ -189,12 +190,6 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOpt
 	docCount := uint32(len(d.fileBranchMasks))
 	lastDoc := int(-1)
 
-	// document frequency per term
-	df := make(termDocumentFrequency)
-
-	// term frequency per file index
-	var tfs []termFrequency
-
 nextFileMatch:
 	for {
 		canceled := false
@@ -320,14 +315,9 @@ nextFileMatch:
 			fileMatch.LineMatches = cp.fillMatches(finalCands, opts.NumContextLines, fileMatch.Language, opts)
 		}
 
-		var tf map[string]int
 		if opts.UseBM25Scoring {
-			// For BM25 scoring, the calculation of the score is split in two parts. Here we
-			// calculate the term frequencies for the current document and update the
-			// document frequencies. Since we don't store document frequencies in the index,
-			// we have to defer the calculation of the final BM25 score to after the whole
-			// shard has been processed.
-			tf = cp.calculateTermFrequency(finalCands, df)
+			tf := cp.calculateTermFrequency(finalCands)
+			d.scoreFilesUsingBM25(&fileMatch, nextDoc, tf, opts)
 		} else {
 			// Use the standard, non-experimental scoring method by default
 			d.scoreFile(&fileMatch, nextDoc, mt, known, opts)
@@ -348,26 +338,11 @@ nextFileMatch:
 		repoMatchCount += len(fileMatch.LineMatches)
 		repoMatchCount += matchedChunkRanges
 
-		if opts.UseBM25Scoring {
-			// Invariant: tfs[i] belongs to res.Files[i]
-			tfs = append(tfs, termFrequency{
-				doc: nextDoc,
-				tf:  tf,
-			})
-		}
 		res.Files = append(res.Files, fileMatch)
 
 		res.Stats.MatchCount += len(fileMatch.LineMatches)
 		res.Stats.MatchCount += matchedChunkRanges
 		res.Stats.FileCount++
-	}
-
-	// Calculate BM25 score for all file matches in the shard. We assume that we
-	// have seen all documents containing any of the terms in the query so that df
-	// correctly reflects the document frequencies. This is true, for example, if
-	// all terms in the query are ORed together.
-	if opts.UseBM25Scoring {
-		d.scoreFilesUsingBM25(res.Files, tfs, df, opts)
 	}
 
 	for _, md := range d.repoMetaData {
