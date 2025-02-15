@@ -1,4 +1,8 @@
-{ pkgs }:
+{ pkgs ? import <nixpkgs> {
+  overlays = [
+    (import ./ctag-overlay.nix)
+  ];
+}}:
 let
   # pkgs.universal-ctags installs the binary as "ctags", not "universal-ctags"
   # like zoekt expects.
