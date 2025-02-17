@@ -312,7 +312,7 @@ func (d *indexData) scoreFile(fileMatch *zoekt.FileMatch, doc uint32, mt matchTr
 
 	if opts.DebugScore {
 		// We log the score components individually for better readability.
-		fileMatch.Debug = fmt.Sprintf("score: %d (tiebreaker: [%d, %.2f]) <- %s", int(fileMatch.Score), repoRank, docOrderScore, strings.TrimSuffix(fileMatch.Debug, ", "))
+		fileMatch.Debug = fmt.Sprintf("score: %d (repo-rank: %d, file-rank: %.2f) <- %s", int(fileMatch.Score), repoRank, docOrderScore, strings.TrimSuffix(fileMatch.Debug, ", "))
 	}
 
 	fileMatch.Score = ScoreOffset*fileMatch.Score + scoreRepoRankFactor*float64(repoRank) + scoreFileOrderFactor*docOrderScore
@@ -369,6 +369,6 @@ func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, 
 
 	if opts.DebugScore {
 		// To make the debug output easier to read, we split the score into the query dependent score and the tiebreaker
-		fileMatch.Debug = fmt.Sprintf("bm25-score: %.2f (tiebreaker: [%d, %.2f]) <- sum-termFrequencies: %d, length-ratio: %.2f, ", score, md.Rank, fileOrderScore, sumTF, L)
+		fileMatch.Debug = fmt.Sprintf("bm25-score: %.2f (repo-rank: %d, file-rank: %.2f) <- sum-termFrequencies: %d, length-ratio: %.2f", score, md.Rank, fileOrderScore, sumTF, L)
 	}
 }
