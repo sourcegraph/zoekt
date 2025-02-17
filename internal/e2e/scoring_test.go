@@ -704,7 +704,8 @@ func checkScoring(t *testing.T, c scoreCase, useBM25 bool, parserType ctags.CTag
 // helper to remove the tiebreaker from the score for easier comparison
 func withoutTiebreaker(fullScore float64, useBM25 bool) float64 {
 	if useBM25 {
-		return fullScore
+		// Shift by ScoreOffsetBM25 and truncate to 2 decimal places
+		return math.Trunc((fullScore/index.ScoreOffsetBM25)*100) / 100
 	}
 	return math.Trunc(fullScore / index.ScoreOffset)
 }

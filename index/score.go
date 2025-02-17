@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	ScoreOffset = 10_000_000
+	ScoreOffset     = 10_000_000
+	ScoreOffsetBM25 = 1_000_000_000
 )
 
 type chunkScore struct {
@@ -299,35 +300,22 @@ func (d *indexData) scoreFile(fileMatch *zoekt.FileMatch, doc uint32, mt matchTr
 		fileMatch.ChunkMatches[i].Score += scoreLineOrderFactor * (1.0 - (float64(i) / float64(len(fileMatch.ChunkMatches))))
 	}
 
-	// Maintain ordering of input files. This
-	// strictly dominates the in-file ordering of
-	// the matches.
+	// Maintain ordering of input files. This strictly dominates the in-file ordering of the matches.
 	addScore("fragment", maxFileScore)
 
+	// Truncate score to avoid overlap with the tiebreakers.
+	fileMatch.Score = math.Trunc(fileMatch.Score)
+
 	// Add tiebreakers
-	//
-	// ScoreOffset shifts the score 7 digits to the left.
-	fileMatch.Score = math.Trunc(fileMatch.Score) * ScoreOffset
-
-	md := d.repoMetaData[d.repos[doc]]
-
-	// md.Rank lies in the range [0, 65535]. Hence, we have to allocate 5 digits for
-	// the rank. The scoreRepoRankFactor shifts the rank score 2 digits to the left,
-	// reserving digits 3-7 for the repo rank.
-	addScore("repo-rank", scoreRepoRankFactor*float64(md.Rank))
-
-	// digits 1-2 and the decimals are reserved for the doc order. Doc order
-	// (without the scaling factor) lies in the range [0, 1]. The upper bound is
-	// achieved for matches in the first document of a shard.
-	addScore("doc-order", scoreFileOrderFactor*(1.0-float64(doc)/float64(len(d.boundaries))))
+	repoRank := d.repoMetaData[d.repos[doc]].Rank                  // [0, 65535]
+	docOrderScore := 1.0 - float64(doc)/float64(len(d.boundaries)) // [0, 1]
 
 	if opts.DebugScore {
-		// To make the debug output easier to read, we split the score into the query
-		// dependent score and the tiebreaker
-		score := math.Trunc(fileMatch.Score / ScoreOffset)
-		tiebreaker := fileMatch.Score - score*ScoreOffset
-		fileMatch.Debug = fmt.Sprintf("score: %d (%.2f) <- %s", int(score), tiebreaker, strings.TrimSuffix(fileMatch.Debug, ", "))
+		// We log the score components individually for better readability.
+		fileMatch.Debug = fmt.Sprintf("score: %d (repo-rank: %d, file-rank: %.2f) <- %s", int(fileMatch.Score), repoRank, docOrderScore, strings.TrimSuffix(fileMatch.Debug, ", "))
 	}
+
+	fileMatch.Score = ScoreOffset*fileMatch.Score + scoreRepoRankFactor*float64(repoRank) + scoreFileOrderFactor*docOrderScore
 }
 
 // scoreFilesUsingBM25 computes the score according to BM25, the most common scoring algorithm for text search:
@@ -361,10 +349,26 @@ func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, 
 		sumTF += f
 		score += tfScore(k, b, L, f)
 	}
+	// 2 digits of precision
+	score = math.Trunc(score*100) / 100
 
-	fileMatch.Score = score
+	md := d.repoMetaData[d.repos[doc]]
+	fileOrderScore := 1.0 - float64(doc)/float64(len(d.boundaries))
+
+	// Offset score by 9 digits and add the tiebreaker.
+	//
+	// Example: For a BM25 score of 1.23, a repo rank of 456789 and a file order score of 0.12, we have a final score of
+	// 12345678901.2
+	// ^^^
+	// bm25
+	//    ^^^^^^
+	//	  repo rank
+	//          ^^^^
+	//          doc order
+	fileMatch.Score = score*ScoreOffsetBM25 + scoreRepoRankFactor*float64(md.Rank) + scoreFileOrderFactor*fileOrderScore
 
 	if opts.DebugScore {
-		fileMatch.Debug = fmt.Sprintf("bm25-score: %.2f <- sum-termFrequencies: %d, length-ratio: %.2f", score, sumTF, L)
+		// To make the debug output easier to read, we split the score into the query dependent score and the tiebreaker
+		fileMatch.Debug = fmt.Sprintf("bm25-score: %.2f (repo-rank: %d, file-rank: %.2f) <- sum-termFrequencies: %d, length-ratio: %.2f", score, md.Rank, fileOrderScore, sumTF, L)
 	}
 }
