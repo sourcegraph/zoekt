@@ -182,14 +182,13 @@ func (t *indexTOC) sectionsTaggedList() []taggedSection {
 		{"languages", &t.languages},
 		{"runeDocSections", &t.runeDocSections},
 		{"repos", &t.repos},
+		{"reposIDsBitmap", &t.reposIDsBitmap},
 
 		// We no longer write these sections, but we still return them here to avoid
 		// warnings about unknown sections.
 		{"nameBloom", &unusedSimple},
 		{"contentBloom", &unusedSimple},
 		{"ranks", &unusedSimple},
-
-		{"reposIDsBitmap", &t.reposIDsBitmap},
 	}
 }
 

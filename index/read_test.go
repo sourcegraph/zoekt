@@ -29,6 +29,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 )

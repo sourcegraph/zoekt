@@ -467,31 +467,18 @@ func (o *Options) findShard() string {
 	}
 
 	// Brute force finding the shard in compound shards. We should only hit this
-	// code path for repositories that are not already existing or are in
-	// compound shards.
+	// code path for repositories that don't exist yet or are in compound shards.
+	return o.findCompoundShard()
+}
+
+func (o *Options) findCompoundShard() string {
 	compoundShards, err := filepath.Glob(path.Join(o.IndexDir, "compound-*.zoekt"))
 	if err != nil {
 		return ""
 	}
 	for _, fn := range compoundShards {
-		// PERF: ReadMetadataPathAlive can be relatively slow on instances with
-		// thousands of tiny repos in compound shards. This is a much faster check
-		// to see if we need to do more work to check.
-		//
-		// If we are still seeing performance issues, we should consider adding
-		// some sort of global oracle here to avoid filepath.Glob and checking
-		// each compound shard.
-		if !MaybeContainRepo(fn, o.RepositoryDescription.ID) {
-			continue
-		}
-		repos, _, err := ReadMetadataPathAlive(fn)
-		if err != nil {
-			continue
-		}
-		for _, repo := range repos {
-			if repo.ID == o.RepositoryDescription.ID {
-				return fn
-			}
+		if containsRepo(fn, o.RepositoryDescription.ID) {
+			return fn
 		}
 	}
 
