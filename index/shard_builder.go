@@ -511,6 +511,23 @@ func (b *ShardBuilder) branchMask(br string) uint64 {
 	return 0
 }
 
+// repoIDs returns a list of sourcegraph IDs for the indexed repos. If the ID
+// is missing or there are no repos, this returns false.
+func (b *ShardBuilder) repoIDs() ([]uint32, bool) {
+	if len(b.repoList) == 0 {
+		return nil, false
+	}
+
+	ids := make([]uint32, 0, len(b.repoList))
+	for _, repo := range b.repoList {
+		if repo.ID == 0 {
+			return nil, false
+		}
+		ids = append(ids, repo.ID)
+	}
+	return ids, true
+}
+
 type DocChecker struct {
 	// A map to count the unique trigrams in a doc. Reused across docs to cut down on allocations.
 	trigrams map[ngram]struct{}
