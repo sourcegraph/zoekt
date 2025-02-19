@@ -16,6 +16,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/require"
+
 	"github.com/sourcegraph/zoekt"
 )
 
@@ -288,6 +291,80 @@ func TestPartialSuccess(t *testing.T) {
 	}
 }
 
+// Tests that we skip looping over repos in compound shards when we know that
+// the repository we are looking for is not in the shard.
+func TestSkipCompoundShards(t *testing.T) {
+	metricCompoundShardLookups.Reset()
+
+	compoundShards := [][]zoekt.Repository{
+		{
+			{Name: "repoA", ID: 1},
+			{Name: "repoB", ID: 2},
+			{Name: "repoC", ID: 3},
+		},
+		{
+			{Name: "repoD", ID: 4},
+			{Name: "repoE", ID: 5},
+			{Name: "repoF", ID: 6},
+			{Name: "repoF", ID: 7},
+			{Name: "repoF", ID: 8},
+		},
+	}
+	var lookForRepoID uint32 = 99
+	wantSkippedCount := 2
+
+	indexDir := t.TempDir()
+	for _, repositoryGroup := range compoundShards {
+		createTestCompoundShard(t, indexDir, repositoryGroup)
+	}
+	o := &Options{
+		IndexDir:              indexDir,
+		RepositoryDescription: zoekt.Repository{ID: lookForRepoID},
+	}
+
+	shard := o.findCompoundShard()
+	require.Empty(t, shard)
+
+	// Check if the "skipped" counter was incremented
+	skippedCount := int(testutil.ToFloat64(metricCompoundShardLookups.WithLabelValues("skipped")))
+	require.Equal(t, wantSkippedCount, skippedCount)
+}
+
+// With optimization
+// BenchmarkFindCompoundShard-16    	   33505	     36016 ns/op
+//
+// Without optimization
+// BenchmarkFindCompoundShard-16    	      76	  15568589 ns/op
+func BenchmarkFindCompoundShard(b *testing.B) {
+	// Generate a large compound shard
+	const numRepos = 5000
+	repositories := make([]zoekt.Repository, numRepos)
+	for i := 0; i < numRepos; i++ {
+		repositories[i] = zoekt.Repository{
+			Name: fmt.Sprintf("repo%d", i+1),
+			ID:   uint32(i + 1),
+		}
+	}
+	indexDir := b.TempDir()
+	createTestCompoundShard(b, indexDir, repositories)
+
+	// pick id that is not in the shard
+	var searchRepoID uint32 = numRepos + 1
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		o := &Options{
+			IndexDir:              indexDir,
+			RepositoryDescription: zoekt.Repository{ID: searchRepoID},
+		}
+
+		shard := o.findCompoundShard()
+		if shard != "" {
+			b.Fatal("expected empty result")
+		}
+	}
+}
+
 func TestOptions_FindAllShards(t *testing.T) {
 	type simpleShard struct {
 		Repository zoekt.Repository
@@ -361,17 +438,17 @@ func TestOptions_FindAllShards(t *testing.T) {
 			compoundShards: [][]zoekt.Repository{
 				{
 					{Name: "repoA", ID: 1},
-					{Name: "sameName", ID: 2},
-					{Name: "sameName", ID: 3},
+					{Name: "repoB", ID: 2},
+					{Name: "repoC", ID: 3},
 				},
 				{
-					{Name: "repoB", ID: 4},
-					{Name: "sameName", ID: 5},
-					{Name: "sameName", ID: 6},
+					{Name: "repoD", ID: 4},
+					{Name: "repoE", ID: 5},
+					{Name: "repoF", ID: 6},
 				},
 			},
 			expectedShardCount: 1,
-			expectedRepository: zoekt.Repository{Name: "sameName", ID: 5},
+			expectedRepository: zoekt.Repository{Name: "something-else", ID: 5},
 		},
 	}
 	for _, tt := range tests {
@@ -840,7 +917,7 @@ func TestIsLowPriority(t *testing.T) {
 	}
 }
 
-func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShards int, optFns ...func(options *Options)) []string {
+func createTestShard(t testing.TB, indexDir string, r zoekt.Repository, numShards int, optFns ...func(options *Options)) []string {
 	t.Helper()
 
 	if err := os.MkdirAll(filepath.Dir(indexDir), 0o700); err != nil {
@@ -891,7 +968,7 @@ func createTestShard(t *testing.T, indexDir string, r zoekt.Repository, numShard
 	return o.FindAllShards()
 }
 
-func createTestCompoundShard(t *testing.T, indexDir string, repositories []zoekt.Repository, optFns ...func(options *Options)) {
+func createTestCompoundShard(t testing.TB, indexDir string, repositories []zoekt.Repository, optFns ...func(options *Options)) {
 	t.Helper()
 
 	var shardNames []string

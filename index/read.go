@@ -24,7 +24,11 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/RoaringBitmap/roaring"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/xid"
+
 	"github.com/sourcegraph/zoekt"
 )
 
@@ -647,6 +651,102 @@ func IndexFilePaths(p string) ([]string, error) {
 		}
 	}
 	return exist, nil
+}
+
+// maybeContainsRepo is a performance optimization mainly intended to be used by
+// containsRepo to avoid unmarshalling large metadata files for compound shards.
+// It is best-effort, so if it encounters any error returns true (ie indicating
+// you need to do more checks).
+func maybeContainsRepo(inf IndexFile, repoID uint32) bool {
+	rd := &reader{r: inf}
+	var toc indexTOC
+	err := rd.readTOCSections(&toc, []string{"reposIDsBitmap"})
+	if err != nil {
+		return true
+	}
+
+	// shard does not yet contain reposIDsBitmap so we can't tell if it contains
+	// repo.
+	if toc.reposIDsBitmap.sz == 0 {
+		return true
+	}
+
+	blob, err := inf.Read(toc.reposIDsBitmap.off, toc.reposIDsBitmap.sz)
+	if err != nil {
+		return true
+	}
+
+	var rb roaring.Bitmap
+	_, err = rb.FromUnsafeBytes(blob)
+	if err != nil {
+		return true
+	}
+
+	return rb.Contains(repoID)
+}
+
+var metricCompoundShardLookups = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "zoekt_compound_shard_lookups",
+	Help: "Number of compound shard lookups and how much work was done.",
+}, []string{"state"})
+
+// containsRepo returns true if the shard at path contains a repo with id. The
+// function returns false if the shard does not contain the repo or if it
+// encounters an error.
+func containsRepo(p string, id uint32) bool {
+	var err error
+	earlyReturn := false
+
+	defer func() {
+		if err != nil {
+			metricCompoundShardLookups.WithLabelValues("error").Inc()
+			return
+		}
+		if earlyReturn {
+			metricCompoundShardLookups.WithLabelValues("skipped").Inc()
+			return
+		}
+		metricCompoundShardLookups.WithLabelValues("full_lookup").Inc()
+	}()
+
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	inf, err := NewIndexFile(f)
+	if err != nil {
+		return false
+	}
+	defer inf.Close()
+
+	// PERF: Looping over repos can be relatively slow on instances with thousands
+	// of tiny repos in compound shards. This is a much faster check to see if we
+	// need to do more work.
+	//
+	// If we are still seeing performance issues, we should consider adding
+	// some sort of global oracle here to avoid filepath.Glob and checking
+	// each compound shard.
+	if !maybeContainsRepo(inf, id) {
+		earlyReturn = true
+		return false
+	}
+
+	repos, _, err := ReadMetadata(inf)
+	if err != nil {
+		return false
+	}
+	for _, repo := range repos {
+		if repo.Tombstone {
+			continue
+		}
+		if repo.ID == id {
+			return true
+		}
+	}
+
+	return false
 }
 
 func loadIndexData(r IndexFile) (*indexData, error) {

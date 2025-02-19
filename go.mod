@@ -61,6 +61,7 @@ require (
 	github.com/davidmz/go-pageant v1.0.2 // indirect
 	github.com/go-fed/httpsig v1.1.0 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 )
 

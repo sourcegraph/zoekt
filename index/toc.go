@@ -96,7 +96,8 @@ type indexTOC struct {
 	contentChecksums simpleSection
 	runeDocSections  simpleSection
 
-	repos simpleSection
+	repos          simpleSection
+	reposIDsBitmap simpleSection
 
 	ranks simpleSection
 }
@@ -181,6 +182,7 @@ func (t *indexTOC) sectionsTaggedList() []taggedSection {
 		{"languages", &t.languages},
 		{"runeDocSections", &t.runeDocSections},
 		{"repos", &t.repos},
+		{"reposIDsBitmap", &t.reposIDsBitmap},
 
 		// We no longer write these sections, but we still return them here to avoid
 		// warnings about unknown sections.
