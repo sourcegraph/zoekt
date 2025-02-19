@@ -123,8 +123,8 @@ func TestBM25(t *testing.T) {
 			}},
 			content:  exampleJava,
 			language: "Java",
-			// sum-termFrequencies: 44, length-ratio: 1.00
-			wantScore: 7.81,
+			// sum-termFrequencies: sum-termFrequencies: 40, length-ratio: 1.00
+			wantScore: 140.80,
 			// public String apply(String s) {
 			wantBestLineMatch: 81,
 		},

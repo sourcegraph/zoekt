@@ -316,8 +316,7 @@ nextFileMatch:
 		}
 
 		if opts.UseBM25Scoring {
-			tf := cp.calculateTermFrequency(finalCands)
-			d.scoreFilesUsingBM25(&fileMatch, nextDoc, tf, opts)
+			d.scoreFilesUsingBM25(&fileMatch, nextDoc, finalCands, cp, opts)
 		} else {
 			// Use the standard, non-experimental scoring method by default
 			d.scoreFile(&fileMatch, nextDoc, mt, known, opts)
