@@ -653,14 +653,10 @@ func IndexFilePaths(p string) ([]string, error) {
 	return exist, nil
 }
 
-// MaybeContainRepo returns true if the shard at path p could contain repoID.
-// This only returns false if we are certain it does not. You need to
-// double-check if it returns true.
-//
-// This function is a performance optimization mainly intended to be used by
-// builder (see findShard) to avoid unmarshalling large metadata files for
-// compound shards. It is best-effort, so if encounters any error returns true
-// (ie indicating you need to do more checks).
+// maybeContainsRepo is a performance optimization mainly intended to be used by
+// containsRepo to avoid unmarshalling large metadata files for compound shards.
+// It is best-effort, so if it encounters any error returns true (ie indicating
+// you need to do more checks).
 func maybeContainsRepo(inf IndexFile, repoID uint32) bool {
 	rd := &reader{r: inf}
 	var toc indexTOC
@@ -694,6 +690,9 @@ var metricCompoundShardLookups = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help: "Number of compound shard lookups and how much work was done.",
 }, []string{"state"})
 
+// containsRepo returns true if the shard at path contains a repo with ID. The
+// function returns false if the shard does not contain the repo or if it
+// encounters an error.
 func containsRepo(p string, id uint32) bool {
 	var err error
 	earlyReturn := false
