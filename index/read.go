@@ -690,7 +690,7 @@ var metricCompoundShardLookups = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help: "Number of compound shard lookups and how much work was done.",
 }, []string{"state"})
 
-// containsRepo returns true if the shard at path contains a repo with ID. The
+// containsRepo returns true if the shard at path contains a repo with id. The
 // function returns false if the shard does not contain the repo or if it
 // encounters an error.
 func containsRepo(p string, id uint32) bool {
