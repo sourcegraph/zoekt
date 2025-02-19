@@ -223,9 +223,18 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 		score += tfScore(k, b, L, f)
 	}
 
-	// Check if any index comes from a symbol match tree, and if so hydrate in symbol information
 	var symbolInfo []*zoekt.Symbol
 	for _, m := range ms {
+		// In addition to boosting the term frequency, we adjust the final score to
+		// ensure that exact phrases matches get a high line score. This is necessary,
+		// because phrases are often the only match on a line and a term's contribution
+		// is limited by (k+1) and quickly saturates with increasing frequency.
+		if !epsilonEqualsOne(m.scoreWeight) {
+			score = score * m.scoreWeight
+		}
+
+		// Check if any index comes from a symbol match tree, and if so hydrate in
+		// symbol information
 		if m.symbol {
 			if sec, si, ok := p.findSymbol(m); ok && si != nil {
 				// findSymbols does not hydrate in Sym. So we need to store it.
@@ -253,7 +262,11 @@ func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch) map[st
 	termFreqs := map[string]int{}
 	for _, m := range cands {
 		term := string(m.substrLowered)
-		if m.fileName || p.matchesSymbol(m) {
+		// Boost
+		// - filename matches
+		// - symbol matches
+		// - matches with a non-default score weight, like phrases
+		if m.fileName || p.matchesSymbol(m) || !epsilonEqualsOne(m.scoreWeight) {
 			termFreqs[term] += 5
 		} else {
 			termFreqs[term]++

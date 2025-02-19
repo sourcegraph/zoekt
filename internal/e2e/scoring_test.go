@@ -110,6 +110,23 @@ func TestBM25(t *testing.T) {
 			wantScore: 3.33,
 			// line 59: if (System.nanoTime() > System.currentTimeMillis()) {
 			wantBestLineMatch: 59,
+		}, {
+			// phrase boosting
+			fileName: "example.java",
+			query: &query.Or{Children: []query.Q{
+				&query.Boost{Child: &query.Substring{Pattern: "public string apply"}, Boost: 20},
+				&query.And{Children: []query.Q{
+					&query.Substring{Pattern: "public"},
+					&query.Substring{Pattern: "string"},
+					&query.Substring{Pattern: "apply"},
+				}},
+			}},
+			content:  exampleJava,
+			language: "Java",
+			// sum-termFrequencies: 12, length-ratio: 1.00
+			wantScore: 7.81,
+			// public String apply(String s) {
+			wantBestLineMatch: 81,
 		},
 		{
 			// Matches only on filename
