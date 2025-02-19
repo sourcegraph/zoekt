@@ -224,13 +224,14 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 	}
 
 	var symbolInfo []*zoekt.Symbol
+	maxScoreWeight := 1.0
 	for _, m := range ms {
 		// In addition to boosting the term frequency, we adjust the final score to
 		// ensure that exact phrase matches get a high line score. Thissymotion-prefix)g is necessary,
 		// because phrases are often the only match on a line and a term's contribution
 		// is limited by (k+1) and quickly saturates with term increasing frequency.
-		if !epsilonEqualsOne(m.scoreWeight) {
-			score = score * m.scoreWeight
+		if m.scoreWeight > maxScoreWeight {
+			maxScoreWeight = m.scoreWeight
 		}
 
 		// Check if any index comes from a symbol match tree, and if so hydrate in
@@ -243,6 +244,10 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 				symbolInfo = append(symbolInfo, si)
 			}
 		}
+	}
+
+	if !epsilonEqualsOne(maxScoreWeight) {
+		score = score * maxScoreWeight
 	}
 	return score, symbolInfo
 }
@@ -262,11 +267,7 @@ func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch) map[st
 	termFreqs := map[string]int{}
 	for _, m := range cands {
 		term := string(m.substrLowered)
-		// Boost
-		// - filename matches
-		// - symbol matches
-		// - matches with a non-default score weight, like phrases
-		if m.fileName || p.matchesSymbol(m) || !epsilonEqualsOne(m.scoreWeight) {
+		if m.fileName || p.matchesSymbol(m) {
 			termFreqs[term] += 5
 		} else {
 			termFreqs[term]++
@@ -340,7 +341,7 @@ func (d *indexData) scoreFile(fileMatch *zoekt.FileMatch, doc uint32, mt matchTr
 // Unlike standard file scoring, this scoring strategy ignores all other signals including document ranks. This keeps
 // things simple for now, since BM25 is not normalized and can be tricky to combine with other scoring signals. It also
 // ignores the individual LineMatch and ChunkMatch scores, instead calculating a score over all matches in the file.
-func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, tf map[string]int, opts *zoekt.SearchOptions) {
+func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, tf map[string]int, scoreWeight float64, opts *zoekt.SearchOptions) {
 	// Use standard parameter defaults used in Lucene (https://lucene.apache.org/core/10_1_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)
 	k, b := 1.2, 0.75
 
@@ -362,6 +363,11 @@ func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, 
 		sumTF += f
 		score += tfScore(k, b, L, f)
 	}
+
+	if !epsilonEqualsOne(scoreWeight) {
+		score *= scoreWeight
+	}
+
 	// 2 digits of precision
 	score = math.Trunc(score*100) / 100
 

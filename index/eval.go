@@ -317,7 +317,13 @@ nextFileMatch:
 
 		if opts.UseBM25Scoring {
 			tf := cp.calculateTermFrequency(finalCands)
-			d.scoreFilesUsingBM25(&fileMatch, nextDoc, tf, opts)
+			maxScoreWeight := 1.0
+			for _, cand := range finalCands {
+				if cand.scoreWeight > maxScoreWeight {
+					maxScoreWeight = cand.scoreWeight
+				}
+			}
+			d.scoreFilesUsingBM25(&fileMatch, nextDoc, tf, maxScoreWeight, opts)
 		} else {
 			// Use the standard, non-experimental scoring method by default
 			d.scoreFile(&fileMatch, nextDoc, mt, known, opts)
