@@ -360,7 +360,7 @@ func BenchmarkFindCompoundShard(b *testing.B) {
 
 		shard := o.findCompoundShard()
 		if shard != "" {
-			b.Fatal("expected emtpy result")
+			b.Fatal("expected empty result")
 		}
 	}
 }
