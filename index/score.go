@@ -226,9 +226,9 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 	var symbolInfo []*zoekt.Symbol
 	for _, m := range ms {
 		// In addition to boosting the term frequency, we adjust the final score to
-		// ensure that exact phrases matches get a high line score. This is necessary,
+		// ensure that exact phrase matches get a high line score. Thissymotion-prefix)g is necessary,
 		// because phrases are often the only match on a line and a term's contribution
-		// is limited by (k+1) and quickly saturates with increasing frequency.
+		// is limited by (k+1) and quickly saturates with term increasing frequency.
 		if !epsilonEqualsOne(m.scoreWeight) {
 			score = score * m.scoreWeight
 		}
