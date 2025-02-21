@@ -223,8 +223,7 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 		score += tfScore(k, b, L, f)
 	}
 
-	// Check if any index comes from a symbol match tree, and if so hydrate in
-	// symbol information
+	// Check if any index comes from a symbol match tree, and if so hydrate in symbol information
 	var symbolInfo []*zoekt.Symbol
 	for _, m := range ms {
 		if m.symbol {
