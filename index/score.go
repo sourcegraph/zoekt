@@ -235,6 +235,8 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 			}
 		}
 	}
+
+	score = boostScore(score, ms)
 	return score, symbolInfo
 }
 
@@ -261,6 +263,25 @@ func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch) map[st
 	}
 
 	return termFreqs
+}
+
+// boostScore finds whether any of the matches are part of a boosted match tree, then applies
+// the boost to the final score. This follows precedent in other search engines like Lucene, where
+// boosts multiply an entire query clause's final score.
+//
+// As a heuristic, we use the maximum boost across matches to avoid applying the same boost multiple times.
+func boostScore(score float64, ms []*candidateMatch) float64 {
+	maxScoreWeight := 1.0
+	for _, m := range ms {
+		if m.scoreWeight > maxScoreWeight {
+			maxScoreWeight = m.scoreWeight
+		}
+	}
+
+	if !epsilonEqualsOne(maxScoreWeight) {
+		score = score * maxScoreWeight
+	}
+	return score
 }
 
 // scoreFile computes a score for the file match using various scoring signals, like
@@ -324,10 +345,11 @@ func (d *indexData) scoreFile(fileMatch *zoekt.FileMatch, doc uint32, mt matchTr
 // keywords too much, leading to a worse ranking. The intuition is that each keyword is important independently of how
 // frequent it appears in the corpus.
 //
-// Unlike standard file scoring, this scoring strategy ignores all other signals including document ranks. This keeps
-// things simple for now, since BM25 is not normalized and can be tricky to combine with other scoring signals. It also
-// ignores the individual LineMatch and ChunkMatch scores, instead calculating a score over all matches in the file.
-func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, tf map[string]int, opts *zoekt.SearchOptions) {
+// Unlike standard file scoring, this scoring strategy ignores the individual LineMatch and ChunkMatch scores, instead
+// calculating a score over all matches in the file.
+func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, cands []*candidateMatch, cp *contentProvider, opts *zoekt.SearchOptions) {
+	tf := cp.calculateTermFrequency(cands)
+
 	// Use standard parameter defaults used in Lucene (https://lucene.apache.org/core/10_1_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)
 	k, b := 1.2, 0.75
 
@@ -343,12 +365,16 @@ func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, 
 
 	L := fileLength / averageFileLength
 
-	score := 0.0
+	bm25Score := 0.0
 	sumTF := 0 // Just for debugging
 	for _, f := range tf {
 		sumTF += f
-		score += tfScore(k, b, L, f)
+		bm25Score += tfScore(k, b, L, f)
 	}
+
+	score := boostScore(bm25Score, cands)
+	boosted := score != bm25Score
+
 	// 2 digits of precision
 	score = math.Trunc(score*100) / 100
 
@@ -370,5 +396,8 @@ func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, 
 	if opts.DebugScore {
 		// To make the debug output easier to read, we split the score into the query dependent score and the tiebreaker
 		fileMatch.Debug = fmt.Sprintf("bm25-score: %.2f (repo-rank: %d, file-rank: %.2f) <- sum-termFrequencies: %d, length-ratio: %.2f", score, md.Rank, fileOrderScore, sumTF, L)
+		if boosted {
+			fileMatch.Debug += fmt.Sprintf(" (boosted)")
+		}
 	}
 }
