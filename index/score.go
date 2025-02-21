@@ -175,6 +175,14 @@ func (p *contentProvider) scoreLine(ms []*candidateMatch, language string, lineN
 			}
 		}
 
+		// scoreWeight != 1 means it affects score
+		if !epsilonEqualsOne(m.scoreWeight) {
+			score = score * m.scoreWeight
+			if opts.DebugScore {
+				what += fmt.Sprintf("boost:%.2f, ", m.scoreWeight)
+			}
+		}
+
 		if score > bestScore.score {
 			bestScore.score = score
 			bestScore.debugScore = what
@@ -185,7 +193,6 @@ func (p *contentProvider) scoreLine(ms []*candidateMatch, language string, lineN
 		bestScore.debugScore = fmt.Sprintf("score:%.2f <- %s", bestScore.score, strings.TrimSuffix(bestScore.debugScore, ", "))
 	}
 
-	bestScore.score = boostScore(bestScore.score, ms)
 	return bestScore, symbolInfo
 }
 
@@ -216,10 +223,10 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 		score += tfScore(k, b, L, f)
 	}
 
+	// Check if any index comes from a symbol match tree, and if so hydrate in
+	// symbol information
 	var symbolInfo []*zoekt.Symbol
 	for _, m := range ms {
-		// Check if any index comes from a symbol match tree, and if so hydrate in
-		// symbol information
 		if m.symbol {
 			if sec, si, ok := p.findSymbol(m); ok && si != nil {
 				// findSymbols does not hydrate in Sym. So we need to store it.
@@ -368,7 +375,9 @@ func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, 
 
 	score := boostScore(bm25Score, cands)
 	boosted := score != bm25Score
-	score = math.Trunc(score*100) / 100 // 2 digits of precision
+
+	// 2 digits of precision
+	score = math.Trunc(score*100) / 100
 
 	md := d.repoMetaData[d.repos[doc]]
 	fileOrderScore := 1.0 - float64(doc)/float64(len(d.boundaries))
