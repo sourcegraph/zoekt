@@ -690,10 +690,7 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 
 	// We set the number of workers to GOMAXPROCS, or the number of shards,
 	// whichever is smaller.
-	workers := runtime.GOMAXPROCS(0)
-	if workers > len(shards) {
-		workers = len(shards)
-	}
+	workers := min(runtime.GOMAXPROCS(0), len(shards))
 
 	type result struct {
 		priority float64
@@ -716,7 +713,7 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 	// Note: Making "search" a buffered channel has the effect of limiting the number of parallel shard searches.
 	// Since searching is mostly CPU bound, limiting parallel shard searches also reduces the peak working set.
 	wg.Add(workers)
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
 			for s := range search {
@@ -996,7 +993,7 @@ func (ss *shardedSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 	}
 	close(feeder)
 
-	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+	for range runtime.GOMAXPROCS(0) {
 		go func() {
 			for s := range feeder {
 				listOneShard(ctx, s, q, opts, all)

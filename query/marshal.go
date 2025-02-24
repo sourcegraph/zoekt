@@ -8,6 +8,8 @@ import (
 	"io"
 	"unsafe"
 
+	"slices"
+
 	"github.com/RoaringBitmap/roaring"
 )
 
@@ -75,7 +77,7 @@ func branchesReposDecode(b []byte) ([]BranchRepos, error) {
 	l := r.uvarint() // Length
 	brs := make([]BranchRepos, l)
 
-	for i := 0; i < l; i++ {
+	for i := range l {
 		brs[i].Branch = r.str()
 		brs[i].Repos = r.bitmap()
 	}
@@ -157,7 +159,7 @@ func stringSetEncode(set map[string]struct{}) ([]byte, error) {
 func stringSetDecode(b []byte) (map[string]struct{}, error) {
 	// binaryReader returns strings pointing into b to avoid allocations. We
 	// don't own b, so we create a copy of it.
-	r := binaryReader{b: append([]byte{}, b...)}
+	r := binaryReader{b: slices.Clone(b)}
 
 	// Version
 	if v := r.byt(); v != 1 {
@@ -168,7 +170,7 @@ func stringSetDecode(b []byte) (map[string]struct{}, error) {
 	l := r.uvarint()
 	set := make(map[string]struct{}, l)
 
-	for i := 0; i < l; i++ {
+	for range l {
 		set[r.str()] = struct{}{}
 	}
 

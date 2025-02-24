@@ -433,7 +433,7 @@ func BenchmarkGobRoundtrip(b *testing.B) {
 				var buf bytes.Buffer
 				enc := gob.NewEncoder(&buf)
 
-				for i := 0; i < count; i++ {
+				for range count {
 					err := enc.Encode(exampleSearchResultGo)
 					if err != nil {
 						panic(err)
@@ -442,7 +442,7 @@ func BenchmarkGobRoundtrip(b *testing.B) {
 				}
 
 				dec := gob.NewDecoder(&buf)
-				for i := 0; i < count; i++ {
+				for range count {
 					var res SearchResult
 					err := dec.Decode(&res)
 					if err != nil {
@@ -459,7 +459,7 @@ func BenchmarkProtoRoundtrip(b *testing.B) {
 		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				buffers := make([][]byte, 0, count)
-				for i := 0; i < count; i++ {
+				for range count {
 					buf, err := proto.Marshal(exampleSearchResultProto)
 					if err != nil {
 						b.Fatal(err)

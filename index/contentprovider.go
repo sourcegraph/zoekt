@@ -355,10 +355,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 			})
 		}
 
-		firstLineNumber := int(chunk.firstLine) - numContextLines
-		if firstLineNumber < 1 {
-			firstLineNumber = 1
-		}
+		firstLineNumber := max(int(chunk.firstLine)-numContextLines, 1)
 		firstLineStart := newlines.lineStart(firstLineNumber)
 
 		chunkScore, symbolInfo := p.scoreChunk(chunk.candidates, language, opts)

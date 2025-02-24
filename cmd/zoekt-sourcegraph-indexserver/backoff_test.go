@@ -95,7 +95,7 @@ func TestQueue_ResetFailuresCount(t *testing.T) {
 	emptyQueue(queue)
 
 	// consecutive failures will push backoff until to a further out time
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		queue.SetIndexed(opts, indexStateFail)
 	}
 
@@ -134,7 +134,7 @@ func TestQueue_MaxBackoffDuration(t *testing.T) {
 	emptyQueue(queue)
 
 	// consecutive failures increase duration up to a maximum
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		queue.SetIndexed(opts, indexStateFail)
 	}
 
@@ -309,7 +309,7 @@ func TestBackoff_IncrementConsecutiveFailures(t *testing.T) {
 	now := time.Now()
 	expectedFailuresCount := 0
 
-	for i := 0; i < failedCount; i++ {
+	for i := range failedCount {
 		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
 		expectedFailuresCount++
 		assertFailuresCount(t, expectedFailuresCount, backoff)
@@ -332,7 +332,7 @@ func TestBackoff_MaximumConsecutiveFailures(t *testing.T) {
 	expectedFailuresCount := 0
 
 	// consecutive failures count increments per failure
-	for i := 0; i < maximumCount; i++ {
+	for i := range maximumCount {
 		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
 		expectedFailuresCount++
 		assertFailuresCount(t, expectedFailuresCount, backoff)
@@ -356,7 +356,7 @@ func TestBackoff_ResetConsecutiveFailures(t *testing.T) {
 		maxBackoff:      maxBackoffDuration,
 	}
 
-	for i := 0; i < failedCount; i++ {
+	for i := range failedCount {
 		now := time.Now()
 
 		// fail j consecutive times

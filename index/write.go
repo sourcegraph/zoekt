@@ -229,7 +229,7 @@ func (b *ShardBuilder) Write(out io.Writer) error {
 	return w.err
 }
 
-func (b *ShardBuilder) writeJSON(data interface{}, sec *simpleSection, w *writer) error {
+func (b *ShardBuilder) writeJSON(data any, sec *simpleSection, w *writer) error {
 	blob, err := json.Marshal(data)
 	if err != nil {
 		return err

@@ -1057,7 +1057,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 	case *query.Branch:
 		masks := make([]uint64, 0, len(d.repoMetaData))
 		if s.Pattern == "HEAD" {
-			for i := 0; i < len(d.repoMetaData); i++ {
+			for range d.repoMetaData {
 				masks = append(masks, 1)
 			}
 		} else {

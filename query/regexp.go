@@ -18,6 +18,8 @@ import (
 	"log"
 	"regexp/syntax"
 
+	"slices"
+
 	"github.com/sourcegraph/zoekt/internal/syntaxutil"
 )
 
@@ -81,13 +83,7 @@ func hasCapture(r *syntax.Regexp) bool {
 		return true
 	}
 
-	for _, s := range r.Sub {
-		if hasCapture(s) {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(r.Sub, hasCapture)
 }
 
 func uncapture(r *syntax.Regexp) *syntax.Regexp {

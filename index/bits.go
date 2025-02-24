@@ -29,7 +29,7 @@ func generateCaseNgrams(g ngram) []ngram {
 	variants := make([]ngram, 0, 8)
 	cur := asRunes
 	for {
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			next := unicode.SimpleFold(cur[i])
 			cur[i] = next
 			if next != asRunes[i] {

@@ -159,7 +159,7 @@ func TestOrderByShard(t *testing.T) {
 	ss := newShardedSearcher(1)
 
 	n := 10 * runtime.GOMAXPROCS(0)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ss.replace(map[string]zoekt.Searcher{
 			fmt.Sprintf("shard%d", i): &rankSearcher{rank: uint16(i)},
 		})
@@ -287,7 +287,7 @@ func TestShardedSearcher_DocumentRanking(t *testing.T) {
 
 	files := results[1].Files
 	got := make([]string, len(files))
-	for i := 0; i < len(files); i++ {
+	for i := range files {
 		got[i] = files[i].FileName
 	}
 
@@ -306,7 +306,7 @@ func TestFilteringShardsByRepoSetOrBranchesReposOrRepoIDs(t *testing.T) {
 	repoSetNames := []string{}
 	repoIDs := []uint32{}
 	n := 10 * runtime.GOMAXPROCS(0)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		shardName := fmt.Sprintf("shard%d", i)
 		repoName := fmt.Sprintf("%s-repository%.3d", namePrefix[i%3], i)
 		repoID := hash(repoName)
@@ -639,7 +639,7 @@ func searcherForTest(t testing.TB, b *index.ShardBuilder) zoekt.Searcher {
 }
 
 func reposForTest(n int) (result []*zoekt.Repository) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		result = append(result, &zoekt.Repository{
 			ID:   uint32(i + 1),
 			Name: fmt.Sprintf("test-repository-%d", i),
@@ -970,7 +970,7 @@ func mkSearchResult(n int, repoID uint32) *zoekt.SearchResult {
 		return &zoekt.SearchResult{}
 	}
 	fm := make([]zoekt.FileMatch, 0, n)
-	for i := 0; i < n; i++ {
+	for range n {
 		fm = append(fm, zoekt.FileMatch{Repository: fmt.Sprintf("repo%d", repoID), RepositoryID: repoID})
 	}
 
