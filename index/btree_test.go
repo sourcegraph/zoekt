@@ -136,7 +136,7 @@ func TestGetBucket(t *testing.T) {
 				bucketSize: bucketSize,
 				v:          2,
 			})
-			for i := 0; i < tt.nNgrams; i++ {
+			for i := range tt.nNgrams {
 				bt.insert(ngram(i + 1))
 			}
 			bt.freeze()

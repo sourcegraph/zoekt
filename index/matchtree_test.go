@@ -297,7 +297,7 @@ func TestRepoSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []uint32{2, 4, 5}
-	for i := 0; i < len(want); i++ {
+	for i := range want {
 		nextDoc := mt.nextDoc()
 		if nextDoc != want[i] {
 			t.Fatalf("want %d, got %d", want[i], nextDoc)
@@ -320,7 +320,7 @@ func TestRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []uint32{2, 4}
-	for i := 0; i < len(want); i++ {
+	for i := range want {
 		nextDoc := mt.nextDoc()
 		if nextDoc != want[i] {
 			t.Fatalf("want %d, got %d", want[i], nextDoc)
@@ -352,7 +352,7 @@ func TestBranchesRepos(t *testing.T) {
 	}
 
 	want := []uint32{3, 5}
-	for i := 0; i < len(want); i++ {
+	for i := range want {
 		nextDoc := mt.nextDoc()
 		if nextDoc != want[i] {
 			t.Fatalf("want %d, got %d", want[i], nextDoc)
@@ -376,7 +376,7 @@ func TestRepoIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []uint32{2, 4, 5}
-	for i := 0; i < len(want); i++ {
+	for i := range want {
 		nextDoc := mt.nextDoc()
 		if nextDoc != want[i] {
 			t.Fatalf("want %d, got %d", want[i], nextDoc)

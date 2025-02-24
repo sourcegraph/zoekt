@@ -317,7 +317,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 	}{
 		{
 			name: "invoker successful - observe request size",
-			invoker: func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+			invoker: func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 				return nil
 			},
 
@@ -328,7 +328,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 
 		{
 			name: "invoker error - observe a zero-sized response",
-			invoker: func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+			invoker: func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 				return sentinelError
 			},
 
@@ -356,7 +356,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 			var actualRequest any
 
 			invokerCalled := false
-			invoker := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+			invoker := func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 				invokerCalled = true
 
 				actualRequest = req

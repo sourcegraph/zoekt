@@ -60,7 +60,7 @@ func setTombstone(shardPath string, repoID uint32, tombstone bool) error {
 // The caller is responsible for renaming the temporary file to the final file path, or removing
 // the temporary file if it is no longer needed.
 // TODO: Should we stick this in a util package?
-func JsonMarshalRepoMetaTemp(shardPath string, repositoryMetadata interface{}) (tempPath, finalPath string, err error) {
+func JsonMarshalRepoMetaTemp(shardPath string, repositoryMetadata any) (tempPath, finalPath string, err error) {
 	finalPath = shardPath + ".meta"
 
 	b, err := json.Marshal(repositoryMetadata)

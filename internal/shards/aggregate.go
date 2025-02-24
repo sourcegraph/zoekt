@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"maps"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/sourcegraph/zoekt"
@@ -48,12 +50,8 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 
 		c.aggregate.Files = index.SortAndTruncateFiles(c.aggregate.Files, c.opts)
 
-		for k, v := range r.RepoURLs {
-			c.aggregate.RepoURLs[k] = v
-		}
-		for k, v := range r.LineFragments {
-			c.aggregate.LineFragments[k] = v
-		}
+		maps.Copy(c.aggregate.RepoURLs, r.RepoURLs)
+		maps.Copy(c.aggregate.LineFragments, r.LineFragments)
 	}
 
 	// The priority of our aggregate is the largest priority we collect.

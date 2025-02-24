@@ -57,7 +57,7 @@ type Trace struct {
 // LazyPrintf evaluates its arguments with fmt.Sprintf each time the
 // /debug/requests page is rendered. Any memory referenced by a will be
 // pinned until the trace is finished and later discarded.
-func (t *Trace) LazyPrintf(format string, a ...interface{}) {
+func (t *Trace) LazyPrintf(format string, a ...any) {
 	t.span.LogFields(Printf("log", format, a...))
 	t.trace.LazyPrintf(format, a...)
 }
@@ -94,7 +94,7 @@ func (t *Trace) Finish() {
 // Printf is an opentracing log.Field which is a LazyLogger. So the format
 // string will only be evaluated if the trace is collected. In the case of
 // net/trace, it will only be evaluated on page load.
-func Printf(key, f string, args ...interface{}) log.Field {
+func Printf(key, f string, args ...any) log.Field {
 	return log.Lazy(func(fv log.Encoder) {
 		fv.EmitString(key, fmt.Sprintf(f, args...))
 	})
@@ -184,7 +184,7 @@ func (e *encoder) EmitFloat64(key string, value float64) {
 	e.EmitString(key, strconv.FormatFloat(value, 'E', -1, 64))
 }
 
-func (e *encoder) EmitObject(key string, value interface{}) {
+func (e *encoder) EmitObject(key string, value any) {
 	e.EmitString(key, fmt.Sprintf("%+v", value))
 }
 

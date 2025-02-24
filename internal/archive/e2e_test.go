@@ -117,7 +117,7 @@ func testIndexIncrementally(t *testing.T, format string) {
 	fileSize := 1000
 
 	files := map[string]string{}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		s := fmt.Sprintf("%d", i)
 		files["F"+s] = strings.Repeat("a", fileSize)
 		files["!F"+s] = strings.Repeat("a", fileSize)
@@ -219,7 +219,7 @@ func testLatestCommitDate(t *testing.T, format string) {
 
 	fileSize := 10
 	files := map[string]string{}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		s := fmt.Sprintf("%d", i)
 		files["F"+s] = strings.Repeat("a", fileSize)
 		files["!F"+s] = strings.Repeat("a", fileSize)

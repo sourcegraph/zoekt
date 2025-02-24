@@ -138,7 +138,7 @@ func TestMultiScheduler(t *testing.T) {
 	}()
 
 	// Fill up interactive queue
-	for i := 0; i < capacity; i++ {
+	for range capacity {
 		addProc()
 	}
 
