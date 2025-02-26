@@ -625,7 +625,7 @@ func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts 
 
 	opts := []grpc.ServerOption{
 		grpc.ChainStreamInterceptor(
-			propagator.StreamServerPropagator(tenant.Propagator{}),
+			propagator.StreamServerPropagator(tenant.NewPropagator()),
 			tenant.StreamServerInterceptor,
 			otelgrpc.StreamServerInterceptor(),
 			metrics.StreamServerInterceptor(),
@@ -633,7 +633,7 @@ func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts 
 			internalerrs.LoggingStreamServerInterceptor(logger),
 		),
 		grpc.ChainUnaryInterceptor(
-			propagator.UnaryServerPropagator(tenant.Propagator{}),
+			propagator.UnaryServerPropagator(tenant.NewPropagator()),
 			tenant.UnaryServerInterceptor,
 			otelgrpc.UnaryServerInterceptor(),
 			metrics.UnaryServerInterceptor(),

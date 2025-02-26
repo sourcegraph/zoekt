@@ -13,11 +13,16 @@ import (
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 
+	"github.com/sourcegraph/log"
 	"github.com/sourcegraph/zoekt/grpc/propagator"
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
+	"github.com/sourcegraph/zoekt/internal/tokensvc"
 )
 
 const (
+	// headerKeyTenanToken is the header key for the signed tenant ID.
+	headerKeyTenantToken = "X-Sourcegraph-Tenant-Token"
+
 	// headerKeyTenantID is the header key for the tenant ID.
 	headerKeyTenantID = "X-Sourcegraph-Tenant-ID"
 
@@ -25,35 +30,82 @@ const (
 	headerValueNoTenant = "none"
 )
 
+type TenantToken struct {
+	TenantID string `json:"tenantID"`
+}
+
 // Propagator implements the propagator.Propagator interface
 // for propagating tenants across RPC calls. This is modeled directly on
 // the HTTP middleware in this package, and should work exactly the same.
-type Propagator struct{}
+type Propagator struct {
+	tokenGenerator tokensvc.TokenGenerator
+	tokenValidator tokensvc.TokenValidator
+	subject        string
+}
 
-var _ propagator.Propagator = &Propagator{}
+var _ propagator.Propagator
 
-func (Propagator) FromContext(ctx context.Context) metadata.MD {
+func NewPropagator() *Propagator {
+	subject := "zoekt"
+	return &Propagator{
+		tokenGenerator: tokensvc.NewTokenGenerator(),
+		tokenValidator: tokensvc.NewTokenValidator(subject),
+		subject:        subject,
+	}
+}
+
+func (p Propagator) FromContext(ctx context.Context) metadata.MD {
 	md := make(metadata.MD)
+
+	tokenData := TenantToken{}
+
 	tenant, ok := tenanttype.GetTenant(ctx)
 	if !ok {
 		md.Append(headerKeyTenantID, headerValueNoTenant)
 	} else {
 		md.Append(headerKeyTenantID, strconv.Itoa(tenant.ID()))
 	}
+
+	token, err := p.tokenGenerator.SignData(p.subject, tokenData, "tenant")
+	if err != nil {
+		log.Error(err)
+	}
+
+	md.Append(headerKeyTenantToken, token)
 	return md
 }
 
-func (Propagator) InjectContext(ctx context.Context, md metadata.MD) (context.Context, error) {
-	var raw string
-	if vals := md.Get(headerKeyTenantID); len(vals) > 0 {
-		raw = vals[0]
+func (p Propagator) InjectContext(ctx context.Context, md metadata.MD) (context.Context, error) {
+	var token string
+	if vals := md.Get(headerKeyTenantToken); len(vals) > 0 {
+		token = vals[0]
 	}
-	switch raw {
+
+	tenantID := ""
+	if token != "" {
+		tokenData, err := p.tokenValidator.ValidateAndParseToken(token)
+		if err != nil {
+			return ctx, status.New(codes.Unauthenticated, fmt.Errorf("invalid tenant token: %v", err).Error()).Err()
+		}
+
+		tenantToken := TenantToken{}
+		if err := tokenData.Get("tenant", &tenantToken); err != nil {
+			return ctx, status.New(codes.Unauthenticated, fmt.Errorf("invalid tenant data: %v", err).Error()).Err()
+		}
+
+		tenantID = tenantToken.TenantID
+	}
+
+	if vals := md.Get(headerKeyTenantID); len(vals) > 0 {
+		tenantID = vals[0]
+	}
+
+	switch tenantID {
 	case "", headerValueNoTenant:
 		// Nothing to do, empty tenant.
 		return ctx, nil
 	default:
-		tenant, err := tenanttype.Unmarshal(raw)
+		tenant, err := tenanttype.Unmarshal(tenantID)
 		if err != nil {
 			// The tenant value is invalid.
 			return ctx, status.New(codes.InvalidArgument, fmt.Errorf("bad tenant value in metadata: %w", err).Error()).Err()

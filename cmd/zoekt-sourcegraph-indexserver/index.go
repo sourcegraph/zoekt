@@ -21,6 +21,7 @@ import (
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/internal/tokensvc"
 )
 
 const defaultIndexingTimeout = 1*time.Hour + 30*time.Minute
@@ -249,14 +250,27 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 	}()
 
 	runFetch := func(branches []zoekt.RepositoryBranch) error {
+		tokenGenerator := tokensvc.NewTokenGenerator()
+		actorToken, err := tokenGenerator.SignData("frontend-internal",
+			ActorData{UID: "internal"}, "actor")
+		if err != nil {
+			return fmt.Errorf("could not generate actor token: %v", err)
+		}
+
+		tenantToken, err := tokenGenerator.SignData("frontend-internal",
+			tenant.TenantToken{TenantID: strconv.Itoa(o.TenantID)}, "tenant")
+		if err != nil {
+			return fmt.Errorf("could not generate tenant token: %v", err)
+		}
+
 		// We shallow fetch each commit specified in zoekt.Branches. This requires
 		// the server to have configured both uploadpack.allowAnySHA1InWant and
 		// uploadpack.allowFilter. (See gitservice.go in the Sourcegraph repository)
 		fetchArgs := []string{
 			"-C", gitDir,
 			"-c", "protocol.version=2",
-			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
-			"-c", "http.extraHeader=X-Sourcegraph-Tenant-ID: " + strconv.Itoa(o.TenantID),
+			"-c", "http.extraHeader=X-Sourcegraph-Actor-Token: " + actorToken,
+			"-c", "http.extraHeader=X-Sourcegraph-Tenant-Token: " + tenantToken,
 			"fetch", "--depth=1", "--no-tags",
 		}
 
@@ -278,7 +292,7 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 		cmd.Stdin = &bytes.Buffer{}
 
 		start := time.Now()
-		err := c.runCmd(cmd)
+		err = c.runCmd(cmd)
 		fetchDuration += time.Since(start)
 
 		if err != nil {

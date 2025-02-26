@@ -59,6 +59,7 @@ import (
 	"github.com/sourcegraph/zoekt/internal/debugserver"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/internal/tokensvc"
 
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/net/trace"
@@ -179,6 +180,15 @@ const (
 	indexStateNoop        indexState = "noop"         // We didn't need to update index
 	indexStateEmpty       indexState = "empty"        // index is empty (empty repo)
 )
+
+const (
+	actorTokenHeader = "X-Sourcegraph-Actor-Token"
+	actorUIDHeader   = "X-Sourcegraph-Actor-UID"
+)
+
+type ActorData struct {
+	UID string `json:"uid,omitempty"`
+}
 
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
 // exists to conveniently use all the options passed in via func main.
@@ -1462,7 +1472,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		}
 
 		logger := sglog.Scoped("zoektConfigurationGRPCClient")
-		client, err := dialGRPCClient(rootURL.Host, logger)
+		client, err := dialGRPCClient(rootURL.Host, logger, "frontend-internal")
 		if err != nil {
 			return nil, fmt.Errorf("initializing gRPC connection to %q: %w", rootURL.Host, err)
 		}
@@ -1526,16 +1536,28 @@ func newServer(conf rootConfig) (*Server, error) {
 //go:embed default_grpc_service_configuration.json
 var defaultGRPCServiceConfigurationJSON string
 
-func internalActorUnaryInterceptor() grpc.UnaryClientInterceptor {
+func internalActorUnaryInterceptor(tokenGenerator tokensvc.TokenGenerator) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		ctx = metadata.AppendToOutgoingContext(ctx, "X-Sourcegraph-Actor-UID", "internal")
+		token, err := tokenGenerator.SignData("frontend-internal", ActorData{UID: "internal"}, "actor")
+		header := actorTokenHeader
+		if err != nil {
+			header = actorUIDHeader
+			token = "internal"
+		}
+		ctx = metadata.AppendToOutgoingContext(ctx, header, token)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 }
 
-func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
+func internalActorStreamInterceptor(tokenGenerator tokensvc.TokenGenerator) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		ctx = metadata.AppendToOutgoingContext(ctx, "X-Sourcegraph-Actor-UID", "internal")
+		token, err := tokenGenerator.SignData("frontend-internal", ActorData{UID: "internal"}, "actor")
+		header := actorTokenHeader
+		if err != nil {
+			header = actorUIDHeader
+			token = "internal"
+		}
+		ctx = metadata.AppendToOutgoingContext(ctx, header, token)
 		return streamer(ctx, desc, cc, method, opts...)
 	}
 }
@@ -1544,7 +1566,7 @@ func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
 // This can be overridden by providing custom Server/Dial options.
 const defaultGRPCMessageReceiveSizeBytes = 90 * 1024 * 1024 // 90 MB
 
-func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.DialOption) (proto.ZoektConfigurationServiceClient, error) {
+func dialGRPCClient(addr string, logger sglog.Logger, subject string, additionalOpts ...grpc.DialOption) (proto.ZoektConfigurationServiceClient, error) {
 	metrics := clientMetricsOnce()
 
 	// If the service seems to be unavailable, this
@@ -1556,12 +1578,14 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 		retry.WithCodes(codes.Unavailable),
 	}
 
+	actorTokenGenerator := tokensvc.NewTokenGenerator()
+
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainStreamInterceptor(
 			metrics.StreamClientInterceptor(),
 			messagesize.StreamClientInterceptor,
-			internalActorStreamInterceptor(),
+			internalActorStreamInterceptor(actorTokenGenerator),
 			internalerrs.LoggingStreamClientInterceptor(logger),
 			internalerrs.PrometheusStreamClientInterceptor,
 			retry.StreamClientInterceptor(retryOpts...),
@@ -1569,7 +1593,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 		grpc.WithChainUnaryInterceptor(
 			metrics.UnaryClientInterceptor(),
 			messagesize.UnaryClientInterceptor,
-			internalActorUnaryInterceptor(),
+			internalActorUnaryInterceptor(actorTokenGenerator),
 			internalerrs.LoggingUnaryClientInterceptor(logger),
 			internalerrs.PrometheusUnaryClientInterceptor,
 			retry.UnaryClientInterceptor(retryOpts...),

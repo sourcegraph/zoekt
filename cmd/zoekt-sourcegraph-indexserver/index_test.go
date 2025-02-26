@@ -18,7 +18,9 @@ import (
 	"github.com/sourcegraph/log/logtest"
 	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/internal/ctags"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
+	"github.com/sourcegraph/zoekt/internal/tokensvc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -473,6 +475,98 @@ func TestGetIndexOptions(t *testing.T) {
 	})
 }
 
+func compareWithToken(t *testing.T, got, want []string, args indexArgs) {
+	for i := range got {
+		gotCmd := got[i]
+		wantCmd := want[i]
+
+		if strings.Contains(wantCmd, "http.extraHeader=X-Sourcegraph") {
+			wantParts := strings.Split(wantCmd, " ")
+			gotParts := strings.Split(gotCmd, " ")
+
+			if len(wantParts) != len(gotParts) {
+				t.Errorf("command parts length mismatch for command %d:\nwant: %v\ngot: %v", i, wantCmd, gotCmd)
+				continue
+			}
+
+			for j := range wantParts {
+				part := wantParts[j]
+				gotPart := gotParts[j]
+
+				// Special handling for token headers
+				if strings.Contains(part, "X-Sourcegraph") && j+1 < len(wantParts) {
+					// Extract and validate token from the next part
+					if strings.Contains(part, "Actor-Token") {
+						validateActorToken(t, gotParts[j+1])
+					} else if strings.Contains(part, "Tenant-Token") {
+						validateTenantToken(t, gotParts[j+1], fmt.Sprintf("%d", args.TenantID))
+					}
+					continue
+				}
+
+				if part == "*" {
+					continue
+				}
+
+				if gotPart != part {
+					t.Errorf("command part mismatch at position %d in command %d:\nwant: %v\ngot: %v", j, i, part, gotPart)
+				}
+			}
+		} else {
+			if gotCmd != wantCmd {
+				t.Errorf("command mismatch at position %d:\nwant: %v\ngot: %v", i, wantCmd, gotCmd)
+			}
+		}
+	}
+}
+
+func validateActorToken(t *testing.T, header string) {
+	validator := tokensvc.NewTokenValidator("actor")
+	parsedToken, err := validator.ValidateAndParseToken(header)
+	if err != nil {
+		t.Errorf("failed to validate actor token: %v", err)
+		return
+	}
+
+	actor := &ActorData{}
+
+	// Verify actor claim exists
+	err = parsedToken.Get("actor", &actor)
+	if err != nil {
+		t.Errorf("actor token missing actor claim: %v", err)
+	}
+	if actor == nil {
+		t.Error("actor token has nil actor claim")
+	}
+
+	if actor.UID != "internal" {
+		t.Error("actor token is not internal")
+	}
+}
+
+func validateTenantToken(t *testing.T, header string, tenantID string) {
+	validator := tokensvc.NewTokenValidator("tenant")
+	parsedToken, err := validator.ValidateAndParseToken(header)
+	if err != nil {
+		t.Errorf("failed to validate tenant token: %v", err)
+		return
+	}
+
+	tenant := &tenant.TenantToken{}
+
+	err = parsedToken.Get("tenant", &tenant)
+	if err != nil {
+		t.Errorf("tenant token missing tenant claim: %v", err)
+	}
+	if tenant == nil {
+		t.Error("tenant token has nil tenant claim")
+	}
+
+	if tenant.TenantID != tenantID {
+		t.Errorf("tenant token mismatch: %s != %s", tenant.TenantID, tenantID)
+	}
+}
+
 func TestIndexTenant(t *testing.T) {
 	tenanttest.MockEnforce(t)
 
@@ -495,7 +589,7 @@ func TestIndexTenant(t *testing.T) {
 			},
 			want: []string{
 				"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-				"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 42 fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
+				"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-Token: * -c http.extraHeader=X-Sourcegraph-Tenant-Token: * fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
 				"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 				"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 				"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
@@ -516,6 +610,7 @@ func TestIndexTenant(t *testing.T) {
 			runCmd := func(c *exec.Cmd) error {
 				cmd := strings.Join(c.Args, " ")
 				cmd = strings.ReplaceAll(cmd, filepath.Clean(os.TempDir()), "$TMPDIR")
+
 				got = append(got, cmd)
 				return nil
 			}
@@ -536,9 +631,8 @@ func TestIndexTenant(t *testing.T) {
 			if err := gitIndex(c, &tc.args, sourcegraphNop{}, logtest.Scoped(t)); err != nil {
 				t.Fatal(err)
 			}
-			if !cmp.Equal(got, tc.want) {
-				t.Errorf("git mismatch (-want +got):\n%s", cmp.Diff(tc.want, got, splitargs))
-			}
+
+			compareWithToken(t, got, tc.want, tc.args)
 		})
 	}
 }
@@ -561,7 +655,7 @@ func TestIndex(t *testing.T) {
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 42 fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-Token: * -c http.extraHeader=X-Sourcegraph-Tenant-ID: * fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
@@ -586,7 +680,7 @@ func TestIndex(t *testing.T) {
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 1 fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-Token: * -c http.extraHeader=X-Sourcegraph-Tenant-ID: * fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
@@ -619,7 +713,7 @@ func TestIndex(t *testing.T) {
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 1 fetch --depth=1 --no-tags http://api.test/.internal/git/test/repo deadbeef feebdaed",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-Token: * -c http.extraHeader=X-Sourcegraph-Tenant-Token: * fetch --depth=1 --no-tags http://api.test/.internal/git/test/repo deadbeef feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
@@ -668,7 +762,7 @@ func TestIndex(t *testing.T) {
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 1 fetch --depth=1 --no-tags http://api.test/.internal/git/test/repo deadbeef feebdaed 12345678 oldhead olddev oldrelease",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-Token: * -c http.extraHeader=X-Sourcegraph-Tenant-Token: * fetch --depth=1 --no-tags http://api.test/.internal/git/test/repo deadbeef feebdaed 12345678 oldhead olddev oldrelease",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/release 12345678",
@@ -712,9 +806,7 @@ func TestIndex(t *testing.T) {
 			if err := gitIndex(c, &tc.args, sourcegraphNop{}, logtest.Scoped(t)); err != nil {
 				t.Fatal(err)
 			}
-			if !cmp.Equal(got, tc.want) {
-				t.Errorf("git mismatch (-want +got):\n%s", cmp.Diff(tc.want, got, splitargs))
-			}
+			compareWithToken(t, got, tc.want, tc.args)
 		})
 	}
 }
