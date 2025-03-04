@@ -1325,7 +1325,6 @@ func startServer(conf rootConfig) error {
 		}...)
 		s.addDebugHandlers(mux)
 
-		// Use multiplexer for HTTP and GRPC
 		go func() {
 			debugLog.Printf("serving HTTP on %s", conf.listen)
 			logger := sglog.Scoped("indexserver")
