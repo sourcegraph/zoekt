@@ -52,7 +52,9 @@ import (
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/mountinfo"
 	"github.com/sourcegraph/zoekt"
+	grpcserver "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/server"
 	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"github.com/sourcegraph/zoekt/index"
@@ -1322,8 +1324,11 @@ func startServer(conf rootConfig) error {
 		}...)
 		s.addDebugHandlers(mux)
 
+		// Use multiplexer for HTTP and GRPC
 		go func() {
 			debugLog.Printf("serving HTTP on %s", conf.listen)
+			logger := sglog.Scoped("indexserver")
+			mux := grpcutil.MultiplexGRPC(grpcserver.NewServer(logger), mux)
 			log.Fatal(http.ListenAndServe(conf.listen, mux))
 		}()
 
