@@ -53,7 +53,7 @@ import (
 	"github.com/sourcegraph/mountinfo"
 
 	"github.com/sourcegraph/zoekt"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	grpcserver "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/server"
 	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
@@ -1549,7 +1549,7 @@ func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
 // This can be overridden by providing custom Server/Dial options.
 const defaultGRPCMessageReceiveSizeBytes = 90 * 1024 * 1024 // 90 MB
 
-func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.DialOption) (proto.ZoektConfigurationServiceClient, error) {
+func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.DialOption) (configv1.ZoektConfigurationServiceClient, error) {
 	metrics := clientMetricsOnce()
 
 	// If the service seems to be unavailable, this
@@ -1600,7 +1600,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 		return nil, fmt.Errorf("dialing %q: %w", addr, err)
 	}
 
-	client := proto.NewZoektConfigurationServiceClient(cc)
+	client := configv1.NewZoektConfigurationServiceClient(cc)
 	return client, nil
 }
 

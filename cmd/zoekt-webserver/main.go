@@ -36,31 +36,31 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sourcegraph/mountinfo"
-	"github.com/sourcegraph/zoekt/internal/debugserver"
-	"github.com/sourcegraph/zoekt/internal/shards"
-	"golang.org/x/sys/unix"
-	"google.golang.org/grpc"
-
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/shirou/gopsutil/v3/disk"
 	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/mountinfo"
+	"github.com/uber/jaeger-client-go"
+	oteltrace "go.opentelemetry.io/otel/trace"
+	"go.uber.org/automaxprocs/maxprocs"
+	"golang.org/x/sys/unix"
+	"google.golang.org/grpc"
+
 	"github.com/sourcegraph/zoekt"
-	zoektgrpc "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server"
+	grpcserver "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server"
 	"github.com/sourcegraph/zoekt/grpc/defaults"
 	"github.com/sourcegraph/zoekt/grpc/grpcutil"
-	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
+	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/debugserver"
 	"github.com/sourcegraph/zoekt/internal/profiler"
+	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/internal/trace"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/web"
-	"github.com/uber/jaeger-client-go"
-	oteltrace "go.opentelemetry.io/otel/trace"
-	"go.uber.org/automaxprocs/maxprocs"
 )
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
@@ -597,7 +597,7 @@ func traceContext(ctx context.Context) sglog.TraceContext {
 
 func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts ...grpc.ServerOption) *grpc.Server {
 	s := defaults.NewServer(logger, additionalOpts...)
-	proto.RegisterWebserverServiceServer(s, zoektgrpc.NewServer(streamer))
+	webserverv1.RegisterWebserverServiceServer(s, grpcserver.NewServer(streamer))
 
 	return s
 }

@@ -8,16 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp/cmpopts"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
-
-	newspb "github.com/sourcegraph/zoekt/grpc/testprotos/news/v1"
-
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	newsv1 "github.com/sourcegraph/zoekt/grpc/testprotos/news/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestCallBackClientStream(t *testing.T) {
@@ -97,7 +95,7 @@ func TestRequestSavingClientStream_InitialRequest(t *testing.T) {
 	}
 
 	// Setup: create a sample proto.Message for the request
-	request := &newspb.BinaryAttachment{
+	request := &newsv1.BinaryAttachment{
 		Name: "sample_request",
 		Data: []byte("sample data"),
 	}
@@ -111,7 +109,7 @@ func TestRequestSavingClientStream_InitialRequest(t *testing.T) {
 	}
 
 	// Check: assert InitialRequest returns the request
-	if diff := cmp.Diff(request, *stream.InitialRequest(), cmpopts.IgnoreUnexported(newspb.BinaryAttachment{})); diff != "" {
+	if diff := cmp.Diff(request, *stream.InitialRequest(), cmpopts.IgnoreUnexported(newsv1.BinaryAttachment{})); diff != "" {
 		t.Fatalf("InitialRequest() (-want +got):\n%s", diff)
 	}
 }
@@ -208,7 +206,7 @@ func TestRequestSavingServerStream_InitialRequest(t *testing.T) {
 	}
 
 	// Setup: create a sample proto.Message for the request
-	request := &newspb.BinaryAttachment{
+	request := &newsv1.BinaryAttachment{
 		Name: "sample_request",
 		Data: []byte("sample data"),
 	}
@@ -222,7 +220,7 @@ func TestRequestSavingServerStream_InitialRequest(t *testing.T) {
 	}
 
 	// Check: assert InitialRequest returns the request
-	if diff := cmp.Diff(request, *stream.InitialRequest(), cmpopts.IgnoreUnexported(newspb.BinaryAttachment{})); diff != "" {
+	if diff := cmp.Diff(request, *stream.InitialRequest(), cmpopts.IgnoreUnexported(newsv1.BinaryAttachment{})); diff != "" {
 		t.Fatalf("InitialRequest() (-want +got):\n%s", diff)
 	}
 }
@@ -369,12 +367,12 @@ func TestGRPCUnexpectedContentTypeChecker(t *testing.T) {
 
 func TestFindNonUTF8StringFields(t *testing.T) {
 	// Create instances of the BinaryAttachment and KeyValueAttachment messages
-	invalidBinaryAttachment := &newspb.BinaryAttachment{
+	invalidBinaryAttachment := &newsv1.BinaryAttachment{
 		Name: "inval\x80id_binary",
 		Data: []byte("sample data"),
 	}
 
-	invalidKeyValueAttachment := &newspb.KeyValueAttachment{
+	invalidKeyValueAttachment := &newsv1.KeyValueAttachment{
 		Name: "inval\x80id_key_value",
 		Data: map[string]string{
 			"key1": "value1",
@@ -383,15 +381,15 @@ func TestFindNonUTF8StringFields(t *testing.T) {
 	}
 
 	// Create a sample Article message with invalid UTF-8 strings
-	article := &newspb.Article{
+	article := &newsv1.Article{
 		Author:  "inval\x80id_author",
 		Date:    &timestamppb.Timestamp{Seconds: 1234567890},
 		Title:   "valid_title",
 		Content: "valid_content",
-		Status:  newspb.Article_STATUS_PUBLISHED,
-		Attachments: []*newspb.Attachment{
-			{Contents: &newspb.Attachment_BinaryAttachment{BinaryAttachment: invalidBinaryAttachment}},
-			{Contents: &newspb.Attachment_KeyValueAttachment{KeyValueAttachment: invalidKeyValueAttachment}},
+		Status:  newsv1.Article_STATUS_PUBLISHED,
+		Attachments: []*newsv1.Attachment{
+			{Contents: &newsv1.Attachment_BinaryAttachment{BinaryAttachment: invalidBinaryAttachment}},
+			{Contents: &newsv1.Attachment_KeyValueAttachment{KeyValueAttachment: invalidKeyValueAttachment}},
 		},
 	}
 
