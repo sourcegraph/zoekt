@@ -34,16 +34,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/sourcegraph/mountinfo"
 	"github.com/sourcegraph/zoekt/internal/debugserver"
 	"github.com/sourcegraph/zoekt/internal/shards"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
@@ -54,13 +49,11 @@ import (
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/zoekt"
 	zoektgrpc "github.com/sourcegraph/zoekt/cmd/zoekt-webserver/grpc/server"
-	"github.com/sourcegraph/zoekt/grpc/internalerrs"
-	"github.com/sourcegraph/zoekt/grpc/messagesize"
-	"github.com/sourcegraph/zoekt/grpc/propagator"
+	"github.com/sourcegraph/zoekt/grpc/defaults"
+	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/profiler"
-	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/sourcegraph/zoekt/internal/trace"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
@@ -297,7 +290,7 @@ func main() {
 	streamer := web.NewTraceAwareSearcher(s.Searcher)
 	grpcServer := newGRPCServer(logger, streamer)
 
-	handler = multiplexGRPC(grpcServer, handler)
+	handler = grpcutil.MultiplexGRPC(grpcServer, handler)
 
 	srv := &http.Server{
 		Addr:    *listen,
@@ -331,24 +324,6 @@ func main() {
 			log.Fatalf("http.Server.Shutdown: %v", err)
 		}
 	}
-}
-
-// multiplexGRPC takes a gRPC server and a plain HTTP handler and multiplexes the
-// request handling. Any requests that declare themselves as gRPC requests are routed
-// to the gRPC server, all others are routed to the httpHandler.
-func multiplexGRPC(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
-	newHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
-			grpcServer.ServeHTTP(w, r)
-		} else {
-			httpHandler.ServeHTTP(w, r)
-		}
-	})
-
-	// Until we enable TLS, we need to fall back to the h2c protocol, which is
-	// basically HTTP2 without TLS. The standard library does not implement the
-	// h2s protocol, so this hijacks h2s requests and handles them correctly.
-	return h2c.NewHandler(newHandler, &http2.Server{})
 }
 
 // addProxyHandler adds a handler to "mux" that proxies all requests with base
@@ -621,37 +596,7 @@ func traceContext(ctx context.Context) sglog.TraceContext {
 }
 
 func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts ...grpc.ServerOption) *grpc.Server {
-	metrics := serverMetricsOnce()
-
-	opts := []grpc.ServerOption{
-		grpc.ChainStreamInterceptor(
-			propagator.StreamServerPropagator(tenant.Propagator{}),
-			tenant.StreamServerInterceptor,
-			otelgrpc.StreamServerInterceptor(),
-			metrics.StreamServerInterceptor(),
-			messagesize.StreamServerInterceptor,
-			internalerrs.LoggingStreamServerInterceptor(logger),
-		),
-		grpc.ChainUnaryInterceptor(
-			propagator.UnaryServerPropagator(tenant.Propagator{}),
-			tenant.UnaryServerInterceptor,
-			otelgrpc.UnaryServerInterceptor(),
-			metrics.UnaryServerInterceptor(),
-			messagesize.UnaryServerInterceptor,
-			internalerrs.LoggingUnaryServerInterceptor(logger),
-		),
-	}
-
-	opts = append(opts, additionalOpts...)
-
-	// Ensure that the message size options are set last, so they override any other
-	// server-specific options that tweak the message size.
-	//
-	// The message size options are only provided if the environment variable is set. These options serve as an escape hatch, so they
-	// take precedence over everything else with a uniform size setting that's easy to reason about.
-	opts = append(opts, messagesize.MustGetServerMessageSizeFromEnv()...)
-
-	s := grpc.NewServer(opts...)
+	s := defaults.NewServer(logger, additionalOpts...)
 	proto.RegisterWebserverServiceServer(s, zoektgrpc.NewServer(streamer))
 
 	return s
@@ -673,19 +618,5 @@ var (
 	metricSearchRequestsTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "zoekt_search_requests_total",
 		Help: "The total number of search requests that zoekt received",
-	})
-
-	// serviceMetricsOnce returns a singleton instance of the server metrics
-	// that are shared across all gRPC servers that this process creates.
-	//
-	// This function panics if the metrics cannot be registered with the default
-	// Prometheus registry.
-	serverMetricsOnce = sync.OnceValue(func() *grpcprom.ServerMetrics {
-		serverMetrics := grpcprom.NewServerMetrics(
-			grpcprom.WithServerCounterOptions(),
-			grpcprom.WithServerHandlingTimeHistogram(), // record the overall response latency for a gRPC request)
-		)
-		prometheus.DefaultRegisterer.MustRegister(serverMetrics)
-		return serverMetrics
 	})
 )
