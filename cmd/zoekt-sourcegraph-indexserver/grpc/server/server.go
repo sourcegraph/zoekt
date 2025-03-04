@@ -4,9 +4,10 @@ import (
 	"context"
 
 	sglog "github.com/sourcegraph/log"
-	v1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/zoekt/indexserver/v1"
-	"github.com/sourcegraph/zoekt/grpc/defaults"
 	"google.golang.org/grpc"
+
+	v1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/zoekt/indexserver/v1"
+	"github.com/sourcegraph/zoekt/grpc/defaults"
 )
 
 type Server struct {

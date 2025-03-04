@@ -51,9 +51,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/mountinfo"
+
 	"github.com/sourcegraph/zoekt"
+	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	grpcserver "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/server"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"

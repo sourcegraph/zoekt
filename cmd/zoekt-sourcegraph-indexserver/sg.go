@@ -18,11 +18,12 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/sourcegraph/zoekt/internal/ctags"
 	"golang.org/x/net/trace"
 
+	"github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/internal/ctags"
+
 	"github.com/sourcegraph/zoekt"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
 )
 
 // SourcegraphListResult is the return value of Sourcegraph.List. It is its
@@ -82,7 +83,7 @@ func WithBatchSize(batchSize int) SourcegraphClientOption {
 	}
 }
 
-func newSourcegraphClient(rootURL *url.URL, hostname string, grpcClient proto.ZoektConfigurationServiceClient, opts ...SourcegraphClientOption) *sourcegraphClient {
+func newSourcegraphClient(rootURL *url.URL, hostname string, grpcClient v1.ZoektConfigurationServiceClient, opts ...SourcegraphClientOption) *sourcegraphClient {
 	client := &sourcegraphClient{
 		Root:       rootURL,
 		Hostname:   hostname,
@@ -112,7 +113,7 @@ type sourcegraphClient struct {
 	BatchSize int
 
 	// grpcClient is used to make requests to the Sourcegraph instance if gRPC is enabled.
-	grpcClient proto.ZoektConfigurationServiceClient
+	grpcClient v1.ZoektConfigurationServiceClient
 
 	// configFingerprintProto is the last config fingerprint (as GRPC) returned from
 	// Sourcegraph. It can be used for future calls to the configuration
@@ -120,7 +121,7 @@ type sourcegraphClient struct {
 	//
 	// configFingerprintProto is mutually exclusive with configFingerprint - this field
 	// will only be used if gRPC is enabled.
-	configFingerprintProto *proto.Fingerprint
+	configFingerprintProto *v1.Fingerprint
 
 	// configFingerprintReset tracks when we should zero out the
 	// configFingerprint. We want to periodically do this just in case our
@@ -268,7 +269,7 @@ type indexOptionsItem struct {
 	Error string
 }
 
-func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
+func (o *indexOptionsItem) FromProto(x *v1.ZoektIndexOptions) {
 	branches := make([]zoekt.RepositoryBranch, 0, len(x.Branches))
 	for _, b := range x.GetBranches() {
 		branches = append(branches, zoekt.RepositoryBranch{
@@ -308,25 +309,25 @@ func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
 	*o = item
 }
 
-func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
-	branches := make([]*proto.ZoektRepositoryBranch, 0, len(o.Branches))
+func (o *indexOptionsItem) ToProto() *v1.ZoektIndexOptions {
+	branches := make([]*v1.ZoektRepositoryBranch, 0, len(o.Branches))
 	for _, b := range o.Branches {
-		branches = append(branches, &proto.ZoektRepositoryBranch{
+		branches = append(branches, &v1.ZoektRepositoryBranch{
 			Name:    b.Name,
 			Version: b.Version,
 		})
 	}
 
-	languageMap := make([]*proto.LanguageMapping, 0, len(o.LanguageMap))
+	languageMap := make([]*v1.LanguageMapping, 0, len(o.LanguageMap))
 
 	for lang, parser := range o.LanguageMap {
-		languageMap = append(languageMap, &proto.LanguageMapping{
+		languageMap = append(languageMap, &v1.LanguageMapping{
 			Language: lang,
-			Ctags:    proto.CTagsParserType(parser),
+			Ctags:    v1.CTagsParserType(parser),
 		})
 	}
 
-	return &proto.ZoektIndexOptions{
+	return &v1.ZoektIndexOptions{
 		RepoId:     int32(o.RepoID),
 		LargeFiles: o.LargeFiles,
 		Symbols:    o.Symbols,
@@ -348,13 +349,13 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 	}
 }
 
-func (s *sourcegraphClient) getIndexOptions(ctx context.Context, fingerprint *proto.Fingerprint, repos []uint32) ([]indexOptionsItem, *proto.Fingerprint, error) {
+func (s *sourcegraphClient) getIndexOptions(ctx context.Context, fingerprint *v1.Fingerprint, repos []uint32) ([]indexOptionsItem, *v1.Fingerprint, error) {
 	repoIDs := make([]int32, 0, len(repos))
 	for _, id := range repos {
 		repoIDs = append(repoIDs, int32(id))
 	}
 
-	req := proto.SearchConfigurationRequest{
+	req := v1.SearchConfigurationRequest{
 		RepoIds:     repoIDs,
 		Fingerprint: fingerprint,
 	}
@@ -382,7 +383,7 @@ func (s *sourcegraphClient) getCloneURL(name string) string {
 }
 
 func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
-	var request proto.ListRequest
+	var request v1.ListRequest
 	request.Hostname = s.Hostname
 	request.IndexedIds = make([]int32, 0, len(indexed))
 	for _, id := range indexed {
@@ -412,32 +413,32 @@ type updateIndexStatusRequest struct {
 	Repositories []indexStatus
 }
 
-func (u *updateIndexStatusRequest) ToProto() *proto.UpdateIndexStatusRequest {
-	repositories := make([]*proto.UpdateIndexStatusRequest_Repository, 0, len(u.Repositories))
+func (u *updateIndexStatusRequest) ToProto() *v1.UpdateIndexStatusRequest {
+	repositories := make([]*v1.UpdateIndexStatusRequest_Repository, 0, len(u.Repositories))
 
 	for _, repo := range u.Repositories {
-		branches := make([]*proto.ZoektRepositoryBranch, 0, len(repo.Branches))
+		branches := make([]*v1.ZoektRepositoryBranch, 0, len(repo.Branches))
 
 		for _, branch := range repo.Branches {
-			branches = append(branches, &proto.ZoektRepositoryBranch{
+			branches = append(branches, &v1.ZoektRepositoryBranch{
 				Name:    branch.Name,
 				Version: branch.Version,
 			})
 		}
 
-		repositories = append(repositories, &proto.UpdateIndexStatusRequest_Repository{
+		repositories = append(repositories, &v1.UpdateIndexStatusRequest_Repository{
 			RepoId:        repo.RepoID,
 			Branches:      branches,
 			IndexTimeUnix: repo.IndexTimeUnix,
 		})
 	}
 
-	return &proto.UpdateIndexStatusRequest{
+	return &v1.UpdateIndexStatusRequest{
 		Repositories: repositories,
 	}
 }
 
-func (u *updateIndexStatusRequest) FromProto(x *proto.UpdateIndexStatusRequest) {
+func (u *updateIndexStatusRequest) FromProto(x *v1.UpdateIndexStatusRequest) {
 	protoRepositories := x.GetRepositories()
 	repositories := make([]indexStatus, 0, len(protoRepositories))
 

@@ -16,50 +16,51 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/sourcegraph/log/logtest"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
-	"github.com/sourcegraph/zoekt/internal/ctags"
-	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/internal/ctags"
+	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
+
 	"github.com/sourcegraph/zoekt"
 )
 
 func TestIterateIndexOptions_Fingerprint(t *testing.T) {
-	fingerprintV0 := &proto.Fingerprint{
+	fingerprintV0 := &v1.Fingerprint{
 		Identifier:  100,
 		GeneratedAt: timestamppb.New(time.Unix(100, 0)),
 	}
 
-	fingerprintV1 := &proto.Fingerprint{
+	fingerprintV1 := &v1.Fingerprint{
 		Identifier:  101,
 		GeneratedAt: timestamppb.New(time.Unix(101, 0)),
 	}
 
-	fingerprintV2 := &proto.Fingerprint{
+	fingerprintV2 := &v1.Fingerprint{
 		Identifier:  102,
 		GeneratedAt: timestamppb.New(time.Unix(102, 0)),
 	}
 
-	mkSearchConfigurationResponse := func(fingerprint *proto.Fingerprint, repoIDs ...int32) *proto.SearchConfigurationResponse {
-		repositories := make([]*proto.ZoektIndexOptions, 0, len(repoIDs))
+	mkSearchConfigurationResponse := func(fingerprint *v1.Fingerprint, repoIDs ...int32) *v1.SearchConfigurationResponse {
+		repositories := make([]*v1.ZoektIndexOptions, 0, len(repoIDs))
 		for _, repoID := range repoIDs {
-			repositories = append(repositories, &proto.ZoektIndexOptions{
+			repositories = append(repositories, &v1.ZoektIndexOptions{
 				RepoId: repoID,
 			})
 		}
 
-		return &proto.SearchConfigurationResponse{
+		return &v1.SearchConfigurationResponse{
 			UpdatedOptions: repositories,
 			Fingerprint:    fingerprint,
 		}
 	}
 
 	grpcClient := &mockGRPCClient{
-		mockList: func(_ context.Context, in *proto.ListRequest, opts ...grpc.CallOption) (*proto.ListResponse, error) {
-			return &proto.ListResponse{
+		mockList: func(_ context.Context, in *v1.ListRequest, opts ...grpc.CallOption) (*v1.ListResponse, error) {
+			return &v1.ListResponse{
 				RepoIds: []int32{1, 2, 3},
 			}, nil
 		},
@@ -75,8 +76,8 @@ func TestIterateIndexOptions_Fingerprint(t *testing.T) {
 	type step struct {
 		name string
 
-		wantFingerprint     *proto.Fingerprint
-		returnFingerprint   *proto.Fingerprint
+		wantFingerprint     *v1.Fingerprint
+		returnFingerprint   *v1.Fingerprint
 		returnErr           error
 		skipCheckingRepoIDs bool
 	}
@@ -108,7 +109,7 @@ func TestIterateIndexOptions_Fingerprint(t *testing.T) {
 	} {
 		t.Run(step.name, func(t *testing.T) {
 			called := false
-			grpcClient.mockSearchConfiguration = func(_ context.Context, in *proto.SearchConfigurationRequest, opts ...grpc.CallOption) (*proto.SearchConfigurationResponse, error) {
+			grpcClient.mockSearchConfiguration = func(_ context.Context, in *v1.SearchConfigurationRequest, opts ...grpc.CallOption) (*v1.SearchConfigurationResponse, error) {
 				called = true
 
 				diff := cmp.Diff(step.wantFingerprint, in.GetFingerprint(), protocmp.Transform())
@@ -157,7 +158,7 @@ func TestGetIndexOptions(t *testing.T) {
 
 	type testCase struct {
 		name     string
-		response *proto.SearchConfigurationResponse
+		response *v1.SearchConfigurationResponse
 		want     *IndexOptions
 		wantErr  string
 	}
@@ -165,8 +166,8 @@ func TestGetIndexOptions(t *testing.T) {
 	for _, tc := range []testCase{
 		{
 			name: "symbols, large files",
-			response: &proto.SearchConfigurationResponse{
-				UpdatedOptions: []*proto.ZoektIndexOptions{
+			response: &v1.SearchConfigurationResponse{
+				UpdatedOptions: []*v1.ZoektIndexOptions{
 					{
 						Symbols:    true,
 						LargeFiles: []string{"foo", "bar"},
@@ -180,8 +181,8 @@ func TestGetIndexOptions(t *testing.T) {
 		},
 		{
 			name: "no symbols , large files",
-			response: &proto.SearchConfigurationResponse{
-				UpdatedOptions: []*proto.ZoektIndexOptions{
+			response: &v1.SearchConfigurationResponse{
+				UpdatedOptions: []*v1.ZoektIndexOptions{
 					{
 						Symbols:    true,
 						LargeFiles: []string{"foo", "bar"},
@@ -202,8 +203,8 @@ func TestGetIndexOptions(t *testing.T) {
 
 		{
 			name: "symbols",
-			response: &proto.SearchConfigurationResponse{
-				UpdatedOptions: []*proto.ZoektIndexOptions{
+			response: &v1.SearchConfigurationResponse{
+				UpdatedOptions: []*v1.ZoektIndexOptions{
 					{
 						Symbols: true,
 					},
@@ -215,8 +216,8 @@ func TestGetIndexOptions(t *testing.T) {
 		},
 		{
 			name: "repoID",
-			response: &proto.SearchConfigurationResponse{
-				UpdatedOptions: []*proto.ZoektIndexOptions{
+			response: &v1.SearchConfigurationResponse{
+				UpdatedOptions: []*v1.ZoektIndexOptions{
 					{
 						RepoId: 123,
 					},
@@ -228,8 +229,8 @@ func TestGetIndexOptions(t *testing.T) {
 		},
 		{
 			name: "error",
-			response: &proto.SearchConfigurationResponse{
-				UpdatedOptions: []*proto.ZoektIndexOptions{
+			response: &v1.SearchConfigurationResponse{
+				UpdatedOptions: []*v1.ZoektIndexOptions{
 					{
 						Error: "boom",
 					},
@@ -241,7 +242,7 @@ func TestGetIndexOptions(t *testing.T) {
 	} {
 		called := false
 		mockClient := &mockGRPCClient{
-			mockSearchConfiguration: func(_ context.Context, _ *proto.SearchConfigurationRequest, _ ...grpc.CallOption) (*proto.SearchConfigurationResponse, error) {
+			mockSearchConfiguration: func(_ context.Context, _ *v1.SearchConfigurationRequest, _ ...grpc.CallOption) (*v1.SearchConfigurationResponse, error) {
 				called = true
 				return tc.response, nil
 			},
@@ -294,7 +295,7 @@ func TestGetIndexOptions(t *testing.T) {
 
 		called := false
 		mockClient := &mockGRPCClient{
-			mockSearchConfiguration: func(_ context.Context, _ *proto.SearchConfigurationRequest, _ ...grpc.CallOption) (*proto.SearchConfigurationResponse, error) {
+			mockSearchConfiguration: func(_ context.Context, _ *v1.SearchConfigurationRequest, _ ...grpc.CallOption) (*v1.SearchConfigurationResponse, error) {
 				called = true
 				return nil, nil
 			},
@@ -332,9 +333,9 @@ func TestGetIndexOptions(t *testing.T) {
 		}
 	})
 
-	var response *proto.SearchConfigurationResponse
+	var response *v1.SearchConfigurationResponse
 	mockClient := &mockGRPCClient{
-		mockSearchConfiguration: func(_ context.Context, req *proto.SearchConfigurationRequest, _ ...grpc.CallOption) (*proto.SearchConfigurationResponse, error) {
+		mockSearchConfiguration: func(_ context.Context, req *v1.SearchConfigurationRequest, _ ...grpc.CallOption) (*v1.SearchConfigurationResponse, error) {
 			if len(req.GetRepoIds()) == 0 || req.GetRepoIds()[0] != 123 {
 				return nil, errors.New("invalid repo id")
 			}
@@ -345,12 +346,12 @@ func TestGetIndexOptions(t *testing.T) {
 	sg := newSourcegraphClient(&url.URL{Path: "/"}, "", mockClient, WithBatchSize(0))
 
 	cases := []struct {
-		Response *proto.SearchConfigurationResponse
+		Response *v1.SearchConfigurationResponse
 		*IndexOptions
 	}{
 		{
-			Response: &proto.SearchConfigurationResponse{
-				UpdatedOptions: []*proto.ZoektIndexOptions{
+			Response: &v1.SearchConfigurationResponse{
+				UpdatedOptions: []*v1.ZoektIndexOptions{
 					{
 						Symbols:    true,
 						LargeFiles: []string{"foo", "bar"},
@@ -366,8 +367,8 @@ func TestGetIndexOptions(t *testing.T) {
 		},
 
 		{
-			Response: &proto.SearchConfigurationResponse{
-				UpdatedOptions: []*proto.ZoektIndexOptions{
+			Response: &v1.SearchConfigurationResponse{
+				UpdatedOptions: []*v1.ZoektIndexOptions{
 					{
 						Symbols:    false,
 						LargeFiles: []string{"foo", "bar"},
@@ -382,12 +383,12 @@ func TestGetIndexOptions(t *testing.T) {
 		},
 
 		{
-			Response: &proto.SearchConfigurationResponse{},
+			Response: &v1.SearchConfigurationResponse{},
 		},
 
 		{
-			Response: &proto.SearchConfigurationResponse{
-				UpdatedOptions: []*proto.ZoektIndexOptions{
+			Response: &v1.SearchConfigurationResponse{
+				UpdatedOptions: []*v1.ZoektIndexOptions{
 					{
 						Symbols: true,
 					},
@@ -401,8 +402,8 @@ func TestGetIndexOptions(t *testing.T) {
 		},
 
 		{
-			Response: &proto.SearchConfigurationResponse{
-				UpdatedOptions: []*proto.ZoektIndexOptions{
+			Response: &v1.SearchConfigurationResponse{
+				UpdatedOptions: []*v1.ZoektIndexOptions{
 					{
 						RepoId: 123,
 					},
@@ -416,8 +417,8 @@ func TestGetIndexOptions(t *testing.T) {
 		},
 
 		{
-			Response: &proto.SearchConfigurationResponse{
-				UpdatedOptions: []*proto.ZoektIndexOptions{
+			Response: &v1.SearchConfigurationResponse{
+				UpdatedOptions: []*v1.ZoektIndexOptions{
 					{
 						Error: "boom",
 					},
@@ -454,7 +455,7 @@ func TestGetIndexOptions(t *testing.T) {
 	// Special case our fingerprint API which doesn't return anything if the
 	// repo hasn't changed.
 	t.Run("unchanged", func(t *testing.T) {
-		response = &proto.SearchConfigurationResponse{}
+		response = &v1.SearchConfigurationResponse{}
 
 		got := false
 		var err error
@@ -724,12 +725,12 @@ var splitargs = cmpopts.AcyclicTransformer("splitargs", func(cmd string) []strin
 })
 
 type mockGRPCClient struct {
-	mockSearchConfiguration func(context.Context, *proto.SearchConfigurationRequest, ...grpc.CallOption) (*proto.SearchConfigurationResponse, error)
-	mockList                func(context.Context, *proto.ListRequest, ...grpc.CallOption) (*proto.ListResponse, error)
-	mockUpdateIndexStatus   func(context.Context, *proto.UpdateIndexStatusRequest, ...grpc.CallOption) (*proto.UpdateIndexStatusResponse, error)
+	mockSearchConfiguration func(context.Context, *v1.SearchConfigurationRequest, ...grpc.CallOption) (*v1.SearchConfigurationResponse, error)
+	mockList                func(context.Context, *v1.ListRequest, ...grpc.CallOption) (*v1.ListResponse, error)
+	mockUpdateIndexStatus   func(context.Context, *v1.UpdateIndexStatusRequest, ...grpc.CallOption) (*v1.UpdateIndexStatusResponse, error)
 }
 
-func (m *mockGRPCClient) SearchConfiguration(ctx context.Context, in *proto.SearchConfigurationRequest, opts ...grpc.CallOption) (*proto.SearchConfigurationResponse, error) {
+func (m *mockGRPCClient) SearchConfiguration(ctx context.Context, in *v1.SearchConfigurationRequest, opts ...grpc.CallOption) (*v1.SearchConfigurationResponse, error) {
 	if m.mockSearchConfiguration != nil {
 		return m.mockSearchConfiguration(ctx, in, opts...)
 	}
@@ -737,7 +738,7 @@ func (m *mockGRPCClient) SearchConfiguration(ctx context.Context, in *proto.Sear
 	return nil, fmt.Errorf("mock RPC SearchConfiguration not implemented")
 }
 
-func (m *mockGRPCClient) List(ctx context.Context, in *proto.ListRequest, opts ...grpc.CallOption) (*proto.ListResponse, error) {
+func (m *mockGRPCClient) List(ctx context.Context, in *v1.ListRequest, opts ...grpc.CallOption) (*v1.ListResponse, error) {
 	if m.mockList != nil {
 		return m.mockList(ctx, in, opts...)
 	}
@@ -745,7 +746,7 @@ func (m *mockGRPCClient) List(ctx context.Context, in *proto.ListRequest, opts .
 	return nil, fmt.Errorf("mock RPC List not implemented")
 }
 
-func (m *mockGRPCClient) UpdateIndexStatus(ctx context.Context, in *proto.UpdateIndexStatusRequest, opts ...grpc.CallOption) (*proto.UpdateIndexStatusResponse, error) {
+func (m *mockGRPCClient) UpdateIndexStatus(ctx context.Context, in *v1.UpdateIndexStatusRequest, opts ...grpc.CallOption) (*v1.UpdateIndexStatusResponse, error) {
 	if m.mockUpdateIndexStatus != nil {
 		return m.mockUpdateIndexStatus(ctx, in, opts...)
 	}
@@ -753,7 +754,7 @@ func (m *mockGRPCClient) UpdateIndexStatus(ctx context.Context, in *proto.Update
 	return nil, fmt.Errorf("mock RPC UpdateIndexStatus not implemented")
 }
 
-var _ proto.ZoektConfigurationServiceClient = &mockGRPCClient{}
+var _ v1.ZoektConfigurationServiceClient = &mockGRPCClient{}
 
 // Tests whether we can set git config values without error.
 func TestSetZoektConfig(t *testing.T) {
