@@ -598,25 +598,6 @@ func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	return repo, s, err
 }
 
-type repoPathRanks struct {
-	MeanRank float64            `json:"mean_reference_count"`
-	Paths    map[string]float64 `json:"paths"`
-}
-
-// rank returns the rank for a given path. It uses these rules:
-//   - If we have a concrete rank for this file, always use it
-//   - If there's no rank, and it's a low priority file like a test, then use rank 0
-//   - Otherwise use the mean rank of this repository, to avoid giving it a big disadvantage
-func (r repoPathRanks) rank(path string, content []byte) float64 {
-	if rank, ok := r.Paths[path]; ok {
-		return rank
-	} else if index.IsLowPriority(path, content) {
-		return 0.0
-	} else {
-		return r.MeanRank
-	}
-}
-
 func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 	ignoreFile, err := tree.File(ignore.IgnoreFile)
 	if err == object.ErrFileNotFound {
