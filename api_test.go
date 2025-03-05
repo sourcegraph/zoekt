@@ -63,7 +63,7 @@ func BenchmarkMinimalRepoListEncodings(b *testing.B) {
 	b.Run("map", benchmarkEncoding(mapData))
 }
 
-func benchmarkEncoding(data interface{}) func(*testing.B) {
+func benchmarkEncoding(data any) func(*testing.B) {
 	return func(b *testing.B) {
 		b.Helper()
 
@@ -169,7 +169,7 @@ func TestSearchOptions_String(t *testing.T) {
 	opts := SearchOptions{}
 	var fieldNames []string
 	rv := reflect.ValueOf(&opts).Elem()
-	for i := 0; i < rv.NumField(); i++ {
+	for i := range rv.NumField() {
 		f := rv.Field(i)
 		name := rv.Type().Field(i).Name
 		fieldNames = append(fieldNames, name)

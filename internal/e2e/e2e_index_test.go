@@ -59,7 +59,7 @@ func TestBasicIndexing(t *testing.T) {
 		t.Fatalf("NewBuilder: %v", err)
 	}
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		s := fmt.Sprintf("%d", i)
 		if err := b.AddFile("F"+s, []byte(strings.Repeat(s, 1000))); err != nil {
 			t.Fatal(err)
@@ -121,7 +121,7 @@ func TestBasicIndexing(t *testing.T) {
 	t.Run("meta file", func(t *testing.T) {
 		// use retryTest to allow for the directory watcher to notice the meta
 		// file
-		retryTest(t, func(fatalf func(format string, args ...interface{})) {
+		retryTest(t, func(fatalf func(format string, args ...any)) {
 			// Add a .meta file for each shard with repo.Name set to
 			// "repo-mutated". We do this inside retry helper since we have noticed
 			// some flakiness on github CI.
@@ -182,7 +182,7 @@ func TestSearchTenant(t *testing.T) {
 		t.Fatalf("NewBuilder: %v", err)
 	}
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		s := fmt.Sprintf("%d", i)
 		if err := b.AddFile("F"+s, []byte(strings.Repeat(s, 1000))); err != nil {
 			t.Fatal(err)
@@ -291,7 +291,7 @@ func TestListTenant(t *testing.T) {
 
 // retryTest will retry f until min(t.Deadline(), time.Minute). It returns
 // once f doesn't call fatalf.
-func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface{}))) {
+func retryTest(t *testing.T, f func(fatalf func(format string, args ...any))) {
 	t.Helper()
 
 	sleep := 10 * time.Millisecond
@@ -306,7 +306,7 @@ func retryTest(t *testing.T, f func(fatalf func(format string, args ...interface
 		go func() {
 			defer close(done)
 
-			f(func(format string, args ...interface{}) {
+			f(func(format string, args ...any) {
 				runtime.Goexit()
 			})
 
@@ -348,7 +348,7 @@ func TestLargeFileOption(t *testing.T) {
 		t.Fatalf("NewBuilder: %v", err)
 	}
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		s := fmt.Sprintf("%d", i)
 		if err := b.AddFile("F"+s, []byte(strings.Repeat("a", sizeMax+1))); err != nil {
 			t.Fatal(err)
@@ -493,7 +493,7 @@ func TestDeleteOldShards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBuilder: %v", err)
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		s := fmt.Sprintf("%d\n", i)
 		if err := b.AddFile("F"+s, []byte(strings.Repeat(s, 1024/2))); err != nil {
 			t.Errorf("AddFile: %v", err)
@@ -524,7 +524,7 @@ func TestDeleteOldShards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBuilder: %v", err)
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		s := fmt.Sprintf("%d\n", i)
 		if err := b.AddFile("F"+s, []byte(strings.Repeat(s, 1024/2))); err != nil {
 			t.Fatal(err)
@@ -749,7 +749,7 @@ func TestDeltaShards(t *testing.T) {
 				}
 
 				// Call b.Finish() multiple times to ensure that it is idempotent
-				for i := 0; i < 3; i++ {
+				for i := range 3 {
 
 					err = b.Finish()
 					if err != nil {

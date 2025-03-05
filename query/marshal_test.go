@@ -163,21 +163,21 @@ func TestFileNameSet_Marshal(t *testing.T) {
 
 func genFileNameSet(size int) *FileNameSet {
 	set := make(map[string]struct{}, size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		set[genName(i)] = struct{}{}
 	}
 	return &FileNameSet{Set: set}
 }
 
 // Generating 5.5M repos slows down the benchmark setup time, so we cache things.
-var genCache = map[string]interface{}{}
+var genCache = map[string]any{}
 
 func genRepoBranches(n int) map[string][]string {
 	repoBranches := map[string][]string{}
 	orgIndex := 0
 	repoIndex := 0
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		org := genName(orgIndex)
 		name := "github.com/" + org + "/" + genName(orgIndex*2+repoIndex)
 		repoBranches[name] = []string{"HEAD"}

@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
+	v1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"go.uber.org/atomic"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"

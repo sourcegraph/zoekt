@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +22,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"slices"
 
 	"github.com/sourcegraph/zoekt"
 )
@@ -137,14 +138,10 @@ func TestIterateIndexOptions_Fingerprint(t *testing.T) {
 				return
 			}
 
-			sort.Slice(iteratedIDs, func(i, j int) bool {
-				return iteratedIDs[i] < iteratedIDs[j]
-			})
+			slices.Sort(iteratedIDs)
 
 			expectedIDs := []uint32{1, 2, 3}
-			sort.Slice(expectedIDs, func(i, j int) bool {
-				return expectedIDs[i] < expectedIDs[j]
-			})
+			slices.Sort(expectedIDs)
 
 			if diff := cmp.Diff(expectedIDs, iteratedIDs); diff != "" {
 				t.Fatalf("unexpected repo ids (-want +got):\n%s", diff)

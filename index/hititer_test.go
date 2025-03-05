@@ -18,9 +18,10 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
-	"sort"
 	"testing"
 	"testing/quick"
+
+	"slices"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/sourcegraph/zoekt"
@@ -33,7 +34,7 @@ func TestCompressedPostingIterator_limit(t *testing.T) {
 		}
 
 		nums = sortedUnique(nums)
-		sort.Slice(limits, func(i, j int) bool { return limits[i] < limits[j] })
+		slices.Sort(limits)
 
 		want := doHitIterator(&inMemoryIterator{postings: nums}, limits)
 
@@ -82,7 +83,7 @@ func benchmarkCompressedPostingIterator(b *testing.B, size, limitsSize int) {
 	limits := genUints32(limitsSize)
 
 	nums = sortedUnique(nums)
-	sort.Slice(limits, func(i, j int) bool { return limits[i] < limits[j] })
+	slices.Sort(limits)
 
 	ng := stringToNGram("abc")
 	deltas := toDeltas(nums)

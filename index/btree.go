@@ -427,7 +427,7 @@ func (b btreeIndex) DumpMap() map[ngram]simpleSection {
 			bucket, _ := b.file.Read(off, sz)
 
 			// decode all ngrams in the bucket and fill map
-			for i := 0; i < len(bucket)/ngramEncoding; i++ {
+			for i := range len(bucket) / ngramEncoding {
 				gram := ngram(binary.BigEndian.Uint64(bucket[i*8:]))
 				m[gram] = b.getPostingList(int(n.postingIndexOffset) + i)
 			}
