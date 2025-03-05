@@ -51,8 +51,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/mountinfo"
+
 	"github.com/sourcegraph/zoekt"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	indexserverv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/zoekt/indexserver/v1"
+	"github.com/sourcegraph/zoekt/grpc/defaults"
+	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"github.com/sourcegraph/zoekt/index"
@@ -226,6 +230,8 @@ type Server struct {
 
 	// timeout defines how long the index server waits before killing an indexing job.
 	timeout time.Duration
+
+	indexserverv1.UnimplementedSourcegraphIndexserverServiceServer
 }
 
 var (
@@ -1040,6 +1046,13 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 	return fmt.Sprintf("Indexed %s with state %s", args.String(), state), nil
 }
 
+// DeleteAllData deletes all shards in the index and trash belonging to the
+// tenant associated with the request. This is stubbed out for now.
+func (s *Server) DeleteAllData(_ context.Context, _ *indexserverv1.DeleteAllDataRequest) (*indexserverv1.DeleteAllDataResponse, error) {
+	s.logger.Warn("DeleteAllData")
+	return &indexserverv1.DeleteAllDataResponse{}, nil
+}
+
 func listIndexed(indexDir string) []uint32 {
 	index := getShards(indexDir)
 	metricNumIndexed.Set(float64(len(index)))
@@ -1324,6 +1337,7 @@ func startServer(conf rootConfig) error {
 
 		go func() {
 			debugLog.Printf("serving HTTP on %s", conf.listen)
+			mux := grpcutil.MultiplexGRPC(newGRPCServer(sglog.Scoped("indexserver"), s), mux)
 			log.Fatal(http.ListenAndServe(conf.listen, mux))
 		}()
 
@@ -1513,6 +1527,12 @@ func newServer(conf rootConfig) (*Server, error) {
 	}, err
 }
 
+func newGRPCServer(logger sglog.Logger, s *Server, additionalOpts ...grpc.ServerOption) *grpc.Server {
+	grpcServer := defaults.NewServer(logger, additionalOpts...)
+	indexserverv1.RegisterSourcegraphIndexserverServiceServer(grpcServer, s)
+	return grpcServer
+}
+
 // defaultGRPCServiceConfigurationJSON is the default gRPC service configuration
 // for the indexed-search-configuration gRPC service.
 //
@@ -1544,7 +1564,7 @@ func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
 // This can be overridden by providing custom Server/Dial options.
 const defaultGRPCMessageReceiveSizeBytes = 90 * 1024 * 1024 // 90 MB
 
-func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.DialOption) (proto.ZoektConfigurationServiceClient, error) {
+func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.DialOption) (configv1.ZoektConfigurationServiceClient, error) {
 	metrics := clientMetricsOnce()
 
 	// If the service seems to be unavailable, this
@@ -1595,7 +1615,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 		return nil, fmt.Errorf("dialing %q: %w", addr, err)
 	}
 
-	client := proto.NewZoektConfigurationServiceClient(cc)
+	client := configv1.NewZoektConfigurationServiceClient(cc)
 	return client, nil
 }
 

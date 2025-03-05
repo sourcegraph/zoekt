@@ -25,12 +25,12 @@ import (
 	"testing/quick"
 	"time"
 
+	fuzz "github.com/AdaLogics/go-fuzz-headers"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	webproto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"google.golang.org/protobuf/proto"
 
-	fuzz "github.com/AdaLogics/go-fuzz-headers"
+	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 )
 
 func TestProtoRoundtrip(t *testing.T) {
@@ -413,8 +413,8 @@ var (
 	exampleSearchResultBytes []byte
 
 	// The proto struct representation of the search result
-	exampleSearchResultProto = func() *webproto.SearchResponse {
-		sr := new(webproto.SearchResponse)
+	exampleSearchResultProto = func() *webserverv1.SearchResponse {
+		sr := new(webserverv1.SearchResponse)
 		err := proto.Unmarshal(exampleSearchResultBytes, sr)
 		if err != nil {
 			panic(err)
@@ -468,7 +468,7 @@ func BenchmarkProtoRoundtrip(b *testing.B) {
 				}
 
 				for _, buf := range buffers {
-					res := new(webproto.SearchResponse)
+					res := new(webserverv1.SearchResponse)
 					err := proto.Unmarshal(buf, res)
 					if err != nil {
 						b.Fatal(err)
