@@ -65,6 +65,7 @@ import (
 	"github.com/sourcegraph/zoekt/internal/tenant"
 
 	"go.uber.org/automaxprocs/maxprocs"
+	"go.uber.org/multierr"
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -1046,11 +1047,27 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 	return fmt.Sprintf("Indexed %s with state %s", args.String(), state), nil
 }
 
-// DeleteAllData deletes all shards in the index and trash belonging to the
-// tenant associated with the request. This is stubbed out for now.
-func (s *Server) DeleteAllData(_ context.Context, _ *indexserverv1.DeleteAllDataRequest) (*indexserverv1.DeleteAllDataResponse, error) {
-	s.logger.Warn("DeleteAllData")
-	return &indexserverv1.DeleteAllDataResponse{}, nil
+// DeleteAllData deletes all shards in the index and trash dir belonging to the
+// tenant associated with the request. The delete is best-effort and will return
+// an error if there is no tenant in the context.
+func (s *Server) DeleteAllData(ctx context.Context, _ *indexserverv1.DeleteAllDataRequest) (*indexserverv1.DeleteAllDataResponse, error) {
+	tnt, err := tenant.FromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.logger.Warn("DeleteAllData", sglog.Int("tenant_id", tnt.ID()))
+
+	var merr error
+	s.muIndexDir.Global(func() {
+		if err := purgeTenantShards(ctx, s.IndexDir); err != nil {
+			merr = multierr.Append(merr, err)
+		}
+		if err := purgeTenantShards(ctx, filepath.Join(s.IndexDir, ".trash")); err != nil {
+			merr = multierr.Append(merr, err)
+		}
+	})
+
+	return &indexserverv1.DeleteAllDataResponse{}, merr
 }
 
 func listIndexed(indexDir string) []uint32 {
