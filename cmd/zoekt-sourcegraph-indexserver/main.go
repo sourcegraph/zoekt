@@ -54,7 +54,8 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
-	grpcserver "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/server"
+	indexserverv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/zoekt/indexserver/v1"
+	"github.com/sourcegraph/zoekt/grpc/defaults"
 	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
@@ -229,6 +230,8 @@ type Server struct {
 
 	// timeout defines how long the index server waits before killing an indexing job.
 	timeout time.Duration
+
+	indexserverv1.UnimplementedSourcegraphIndexserverServiceServer
 }
 
 var (
@@ -1043,6 +1046,13 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 	return fmt.Sprintf("Indexed %s with state %s", args.String(), state), nil
 }
 
+// DeleteAllData deletes all shards in the index and trash belonging to the
+// tenant associated with the request. This is stubbed out for now.
+func (s *Server) DeleteAllData(_ context.Context, _ *indexserverv1.DeleteAllDataRequest) (*indexserverv1.DeleteAllDataResponse, error) {
+	s.logger.Warn("DeleteAllData")
+	return &indexserverv1.DeleteAllDataResponse{}, nil
+}
+
 func listIndexed(indexDir string) []uint32 {
 	index := getShards(indexDir)
 	metricNumIndexed.Set(float64(len(index)))
@@ -1327,8 +1337,7 @@ func startServer(conf rootConfig) error {
 
 		go func() {
 			debugLog.Printf("serving HTTP on %s", conf.listen)
-			logger := sglog.Scoped("indexserver")
-			mux := grpcutil.MultiplexGRPC(grpcserver.NewServer(logger), mux)
+			mux := grpcutil.MultiplexGRPC(newGRPCServer(sglog.Scoped("indexserver"), s), mux)
 			log.Fatal(http.ListenAndServe(conf.listen, mux))
 		}()
 
@@ -1516,6 +1525,12 @@ func newServer(conf rootConfig) (*Server, error) {
 		},
 		timeout: indexingTimeout,
 	}, err
+}
+
+func newGRPCServer(logger sglog.Logger, s *Server, additionalOpts ...grpc.ServerOption) *grpc.Server {
+	grpcServer := defaults.NewServer(logger, additionalOpts...)
+	indexserverv1.RegisterSourcegraphIndexserverServiceServer(grpcServer, s)
+	return grpcServer
 }
 
 // defaultGRPCServiceConfigurationJSON is the default gRPC service configuration
