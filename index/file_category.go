@@ -13,6 +13,8 @@ import (
 type FileCategory byte
 
 const (
+	// FileCategoryMissing is a sentinel value that indicates we never computed the file category during indexing
+	// (which means we're reading from an old index version). This value can never be written to the index.
 	FileCategoryMissing FileCategory = iota
 	FileCategoryDefault
 	FileCategoryTest
@@ -21,29 +23,34 @@ const (
 	FileCategoryConfig
 	FileCategoryDotFile
 	FileCategoryDocumentation
-	// FileCategoryMissing is a sentinel value that indicates we never computed the file category during indexing
-	// (which means we're reading from an old index version). This value can never be written to the index.
 )
 
-func DetermineFileCategory(name string, content []byte) FileCategory {
-	// Note: the order of these checks is important.
-	// - IsDotFile must come before IsVendor
-	if enry.IsTest(name) {
-		return FileCategoryTest
-	} else if enry.IsDotFile(name) {
-		return FileCategoryDotFile
-	} else if enry.IsVendor(name) {
-		return FileCategoryVendored
-	} else if enry.IsGenerated(name, content) {
-		return FileCategoryGenerated
-	} else if enry.IsConfiguration(name) {
-		return FileCategoryConfig
-	} else if enry.IsDotFile(name) {
-		return FileCategoryDotFile
-	} else if enry.IsDocumentation(name) {
-		return FileCategoryDocumentation
+func DetermineFileCategory(doc *Document) {
+	name := doc.Name
+	content := doc.Content
+
+	// If this document has been skipped, it's likely very large. In this case, we just guess the category based
+	// on the filename to avoid examining the contents. Note: passing nil content is allowed by the go-enry contract.
+	if doc.SkipReason != "" {
+		content = nil
 	}
-	return FileCategoryDefault
+
+	category := FileCategoryDefault
+	if enry.IsTest(name) {
+		category = FileCategoryTest
+	} else if enry.IsDotFile(name) {
+		category = FileCategoryDotFile
+	} else if enry.IsVendor(name) {
+		category = FileCategoryVendored
+	} else if enry.IsGenerated(name, content) {
+		category = FileCategoryGenerated
+	} else if enry.IsConfiguration(name) {
+		category = FileCategoryConfig
+	} else if enry.IsDocumentation(name) {
+		category = FileCategoryDocumentation
+	}
+
+	doc.Category = category
 }
 
 // lowPriority returns true if this file category is considered 'low priority'. This is used
