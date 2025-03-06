@@ -145,6 +145,21 @@ func TestBM25(t *testing.T) {
 			// sum-termFrequencyScore: 5.00, length-ratio: 0.00
 			wantScore: 2.07,
 		},
+		{
+			fileName: "example.py",
+			query:    &query.Substring{Pattern: "example"},
+			language: "Python",
+			// sum-termFrequencyScore: 5.00, length-ratio: 0.00
+			wantScore: 2.07,
+		},
+		{
+			// Match on test should be scored lower than regular files
+			fileName: "test_example.py",
+			query:    &query.Substring{Pattern: "example"},
+			language: "Python",
+			// sum-termFrequencyScore: 1.0, length-ratio: 0.00
+			wantScore: 1.69,
+		},
 	}
 
 	for _, c := range cases {

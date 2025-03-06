@@ -206,6 +206,8 @@ type ShardBuilder struct {
 	// language codes, uint16 encoded as little-endian
 	languages []uint8
 
+	categories []byte
+
 	// IndexTime will be used as the time if non-zero. Otherwise
 	// time.Now(). This is useful for doing reproducible builds in tests.
 	IndexTime time.Time
@@ -414,6 +416,9 @@ func DetermineLanguageIfUnknown(doc *Document) {
 func (b *ShardBuilder) Add(doc Document) error {
 	hasher := crc64.New(crc64.MakeTable(crc64.ISO))
 
+	DetermineLanguageIfUnknown(&doc)
+	doc.Category = DetermineFileCategory(doc.Name, doc.Content)
+
 	if idx := bytes.IndexByte(doc.Content, 0); idx >= 0 {
 		doc.SkipReason = fmt.Sprintf("binary content at byte offset %d", idx)
 	}
@@ -423,8 +428,6 @@ func (b *ShardBuilder) Add(doc Document) error {
 		doc.Symbols = nil
 		doc.SymbolsMetaData = nil
 	}
-
-	DetermineLanguageIfUnknown(&doc)
 
 	sort.Sort(symbolSlice{doc.Symbols, doc.SymbolsMetaData})
 	var last DocumentSection
@@ -498,6 +501,12 @@ func (b *ShardBuilder) Add(doc Document) error {
 		b.languageMap[doc.Language] = langCode
 	}
 	b.languages = append(b.languages, uint8(langCode), uint8(langCode>>8))
+
+	category, err := doc.Category.encode()
+	if err != nil {
+		return err
+	}
+	b.categories = append(b.categories, category)
 
 	return nil
 }

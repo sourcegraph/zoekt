@@ -316,7 +316,7 @@ nextFileMatch:
 		}
 
 		if opts.UseBM25Scoring {
-			d.scoreFilesUsingBM25(&fileMatch, nextDoc, finalCands, cp, opts)
+			d.scoreFileBM25(&fileMatch, nextDoc, finalCands, cp, opts)
 		} else {
 			// Use the standard, non-experimental scoring method by default
 			d.scoreFile(&fileMatch, nextDoc, mt, known, opts)

@@ -20,13 +20,13 @@ import (
 	"math"
 	"strings"
 
+	"github.com/go-enry/go-enry/v2"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 )
 
 const (
-	ScoreOffset     = 10_000_000
-	ScoreOffsetBM25 = 1_000_000_000
+	ScoreOffset = 10_000_000
 )
 
 type chunkScore struct {
@@ -245,10 +245,14 @@ func tfScore(k float64, b float64, L float64, f int) float64 {
 	return ((k + 1.0) * float64(f)) / (k*(1.0-b+b*L) + float64(f))
 }
 
+const importantTermBoost = 5
+const lowPriorityFilePenalty = 5
+
 // calculateTermFrequency computes the term frequency for the file match.
 // Notes:
 // - Filename matches count more than content matches. This mimics a common text search strategy to 'boost' matches on document titles.
 // - Symbol matches also count more than content matches, to reward matches on symbol definitions.
+// - "Low priority" files like tests, generated files, etc. have their term frequency down-weighted, to prioritize matches from 'regular' files
 func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch, lowPriority bool) map[string]int {
 	// Treat each candidate match as a term and compute the frequencies. For now, ignore case sensitivity and
 	// ignore whether the index is a word boundary.
@@ -256,17 +260,17 @@ func (p *contentProvider) calculateTermFrequency(cands []*candidateMatch, lowPri
 	for _, m := range cands {
 		term := string(m.substrLowered)
 		if m.fileName || p.matchesSymbol(m) {
-			termFreqs[term] += 5
+			termFreqs[term] += importantTermBoost
 		} else {
 			termFreqs[term]++
 		}
 	}
 
-	// If a file is a test, generated, etc., then cut its term frequency in half (rounded up). The BM25F interpretation
+	// If a file is a test, generated, etc., then down-weight its term frequency. The BM25F interpretation
 	// is that this data lives in a separate 'field' that is half the priority of regular content.
 	if lowPriority {
 		for term := range termFreqs {
-			termFreqs[term] = termFreqs[term]/2 + 1
+			termFreqs[term] = termFreqs[term] / lowPriorityFilePenalty
 		}
 	}
 
@@ -347,7 +351,7 @@ func (d *indexData) scoreFile(fileMatch *zoekt.FileMatch, doc uint32, mt matchTr
 	fileMatch.Score = ScoreOffset*fileMatch.Score + scoreRepoRankFactor*float64(repoRank) + scoreFileOrderFactor*docOrderScore
 }
 
-// scoreFilesUsingBM25 computes the score according to BM25, the most common scoring algorithm for text search:
+// scoreFileBM25 computes the score according to BM25, the most common scoring algorithm for text search:
 // https://en.wikipedia.org/wiki/Okapi_BM25. Note that we treat the inverse document frequency (idf) as constant. This
 // is supported by our evaluations which showed that for keyword style queries, idf can down-weight the score of some
 // keywords too much, leading to a worse ranking. The intuition is that each keyword is important independently of how
@@ -355,9 +359,8 @@ func (d *indexData) scoreFile(fileMatch *zoekt.FileMatch, doc uint32, mt matchTr
 //
 // Unlike standard file scoring, this scoring strategy ignores the individual LineMatch and ChunkMatch scores, instead
 // calculating a score over all matches in the file.
-func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, cands []*candidateMatch, cp *contentProvider, opts *zoekt.SearchOptions) {
-	// TODO(jtibs): fix this, maybe we shouldn't reload the whole file here
-	lowPriority := IsLowPriority(fileMatch.FileName, cp.data(false))
+func (d *indexData) scoreFileBM25(fileMatch *zoekt.FileMatch, doc uint32, cands []*candidateMatch, cp *contentProvider, opts *zoekt.SearchOptions) {
+	lowPriority := d.isLowPriority(fileMatch, doc)
 	tf := cp.calculateTermFrequency(cands, lowPriority)
 
 	// Use standard parameter defaults used in Lucene (https://lucene.apache.org/core/10_1_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)
@@ -392,5 +395,17 @@ func (d *indexData) scoreFilesUsingBM25(fileMatch *zoekt.FileMatch, doc uint32, 
 		if boosted {
 			fileMatch.Debug += fmt.Sprintf(" (boosted)")
 		}
+	}
+}
+
+func (d *indexData) isLowPriority(fileMatch *zoekt.FileMatch, doc uint32) bool {
+	category := d.getCategory(doc)
+	if category != FileCategoryMissing {
+		return category.lowPriority()
+	} else {
+		// The category may be missing from older index versions. In this case,
+		// perform a cheap, best-effort check against the filename.
+		path := fileMatch.FileName
+		return enry.IsTest(path) || enry.IsVendor(path)
 	}
 }
