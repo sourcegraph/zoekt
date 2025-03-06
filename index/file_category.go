@@ -22,16 +22,22 @@ const (
 	FileCategoryGenerated
 	FileCategoryConfig
 	FileCategoryDotFile
+	FileCategoryBinary
 	FileCategoryDocumentation
 )
 
 func DetermineFileCategory(doc *Document) {
+	if doc.SkipReason == SkipReasonBinary {
+		doc.Category = FileCategoryBinary
+		return
+	}
+
 	name := doc.Name
 	content := doc.Content
 
-	// If this document has been skipped, it's likely very large. In this case, we just guess the category based
-	// on the filename to avoid examining the contents. Note: passing nil content is allowed by the go-enry contract.
-	if doc.SkipReason != "" {
+	// If this document was skipped because it was too large, just guess the category based on the filename to avoid
+	// examining the contents. Note: passing nil content is allowed by the go-enry contract.
+	if doc.SkipReason == SkipReasonTooLarge || doc.SkipReason == SkipReasonBinary {
 		content = nil
 	}
 
@@ -56,7 +62,7 @@ func DetermineFileCategory(doc *Document) {
 // lowPriority returns true if this file category is considered 'low priority'. This is used
 // in search scoring to down-weight matches in these files.
 func (c FileCategory) lowPriority() bool {
-	return c == FileCategoryTest || c == FileCategoryVendored || c == FileCategoryGenerated
+	return c == FileCategoryTest || c == FileCategoryVendored || c == FileCategoryGenerated || c == FileCategoryBinary
 }
 
 func (c FileCategory) encode() (byte, error) {
@@ -77,6 +83,8 @@ func (c FileCategory) encode() (byte, error) {
 		return 6, nil
 	case FileCategoryDocumentation:
 		return 7, nil
+	case FileCategoryBinary:
+		return 8, nil
 	default:
 		return 0, errors.New("unrecognized file category")
 	}
@@ -98,6 +106,8 @@ func decodeCategory(c byte) (FileCategory, error) {
 		return FileCategoryDotFile, nil
 	case 7:
 		return FileCategoryDocumentation, nil
+	case 8:
+		return FileCategoryBinary, nil
 	default:
 		return FileCategoryMissing, errors.New("unrecognized file category")
 	}

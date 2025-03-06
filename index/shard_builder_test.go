@@ -68,7 +68,7 @@ func TestDetermineLanguageIfUnknown(t *testing.T) {
 			name: "skipped file",
 			doc: Document{
 				Name:       "large.js",
-				SkipReason: "too large",
+				SkipReason: SkipReasonTooLarge,
 				Content:    []byte(notIndexedMarker + "too large"),
 			},
 			wantLang: "JavaScript",
@@ -77,7 +77,7 @@ func TestDetermineLanguageIfUnknown(t *testing.T) {
 			name: "skipped file with unknown extension",
 			doc: Document{
 				Name:       "deadb33f",
-				SkipReason: "binary",
+				SkipReason: SkipReasonBinary,
 				Content:    []byte(notIndexedMarker + "binary"),
 			},
 			wantLang: "",

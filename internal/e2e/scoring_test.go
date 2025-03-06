@@ -72,6 +72,11 @@ func TestBM25(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	exampleBin, err := os.ReadFile("./examples/example.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	cases := []scoreCase{
 		{
 			// Matches on both filename and content
@@ -153,12 +158,21 @@ func TestBM25(t *testing.T) {
 			wantScore: 2.07,
 		},
 		{
-			// Match on test should be scored lower than regular files
+			// Match on test should be downweighted
 			fileName: "test_example.py",
 			query:    &query.Substring{Pattern: "example"},
 			language: "Python",
-			// sum-termFrequencyScore: 1.0, length-ratio: 0.00
+			// sum-termFrequencyScore: 1.00, length-ratio: 0.00
 			wantScore: 1.69,
+		},
+		{
+			// Match on binary should be downweighted
+			fileName: "example.bin",
+			query:    &query.Substring{Pattern: "example"},
+			language: "",
+			content:  exampleBin,
+			// sum-termFrequencyScore: 1.00, length-ratio: 1.00
+			wantScore: 1.00,
 		},
 	}
 

@@ -402,7 +402,7 @@ func DetermineLanguageIfUnknown(doc *Document) {
 		return
 	}
 
-	if doc.SkipReason != "" {
+	if doc.SkipReason != SkipReasonNone {
 		// If this document has been skipped, it's likely very large, or it's a non-code file like binary.
 		// In this case, we just guess the language based on file name to avoid examining the contents.
 		// Note: passing nil content is allowed by the go-enry contract (the underlying library we use here).
@@ -414,14 +414,12 @@ func DetermineLanguageIfUnknown(doc *Document) {
 
 // Add a file which only occurs in certain branches.
 func (b *ShardBuilder) Add(doc Document) error {
-	hasher := crc64.New(crc64.MakeTable(crc64.ISO))
-
-	if idx := bytes.IndexByte(doc.Content, 0); idx >= 0 {
-		doc.SkipReason = fmt.Sprintf("binary content at byte offset %d", idx)
+	if index := bytes.IndexByte(doc.Content, 0); index > 0 {
+		doc.SkipReason = SkipReasonBinary
 	}
 
-	if doc.SkipReason != "" {
-		doc.Content = []byte(notIndexedMarker + doc.SkipReason)
+	if doc.SkipReason != SkipReasonNone {
+		doc.Content = []byte(notIndexedMarker + doc.SkipReason.explanation())
 		doc.Symbols = nil
 		doc.SymbolsMetaData = nil
 	}
@@ -481,6 +479,7 @@ func (b *ShardBuilder) Add(doc Document) error {
 	b.subRepos = append(b.subRepos, subRepoIdx)
 	b.repos = append(b.repos, uint16(repoIdx))
 
+	hasher := crc64.New(crc64.MakeTable(crc64.ISO))
 	hasher.Write(doc.Content)
 
 	b.contentStrings = append(b.contentStrings, docStr)
@@ -543,23 +542,23 @@ type DocChecker struct {
 }
 
 // Check returns a reason why the given contents are probably not source texts.
-func (t *DocChecker) Check(content []byte, maxTrigramCount int, allowLargeFile bool) error {
+func (t *DocChecker) Check(content []byte, maxTrigramCount int, allowLargeFile bool) SkipReason {
 	if len(content) == 0 {
-		return nil
+		return SkipReasonNone
 	}
 
 	if len(content) < ngramSize {
-		return fmt.Errorf("file size smaller than %d", ngramSize)
+		return SkipReasonTooSmall
 	}
 
 	if index := bytes.IndexByte(content, 0); index > 0 {
-		return fmt.Errorf("binary data at byte offset %d", index)
+		return SkipReasonBinary
 	}
 
 	// PERF: we only need to do the trigram check if the upperbound on content is greater than
 	// our threshold. Also skip the trigram check if the file is explicitly marked as allowed.
 	if trigramsUpperBound := len(content) - ngramSize + 1; trigramsUpperBound <= maxTrigramCount || allowLargeFile {
-		return nil
+		return SkipReasonNone
 	}
 
 	var cur [3]rune
@@ -580,10 +579,10 @@ func (t *DocChecker) Check(content []byte, maxTrigramCount int, allowLargeFile b
 		t.trigrams[runesToNGram(cur)] = struct{}{}
 		if len(t.trigrams) > maxTrigramCount {
 			// probably not text.
-			return fmt.Errorf("number of trigrams exceeds %d", maxTrigramCount)
+			return SkipReasonTooManyTrigrams
 		}
 	}
-	return nil
+	return SkipReasonNone
 }
 
 func (t *DocChecker) clearTrigrams(maxTrigramCount int) {
