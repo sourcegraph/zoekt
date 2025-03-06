@@ -204,22 +204,6 @@ func (r *indexData) readSectionBlob(sec simpleSection) ([]byte, error) {
 	return r.file.Read(sec.off, sec.sz)
 }
 
-func readSectionU16(f IndexFile, sec simpleSection) ([]uint16, error) {
-	if sec.sz%4 != 0 {
-		return nil, fmt.Errorf("barf: section size %% 4 != 0: sz %d ", sec.sz)
-	}
-	blob, err := f.Read(sec.off, sec.sz)
-	if err != nil {
-		return nil, err
-	}
-	arr := make([]uint16, 0, len(blob)/4)
-	for len(blob) > 0 {
-		arr = append(arr, binary.BigEndian.Uint16(blob))
-		blob = blob[4:]
-	}
-	return arr, nil
-}
-
 func readSectionU32(f IndexFile, sec simpleSection) ([]uint32, error) {
 	if sec.sz%4 != 0 {
 		return nil, fmt.Errorf("barf: section size %% 4 != 0: sz %d ", sec.sz)
