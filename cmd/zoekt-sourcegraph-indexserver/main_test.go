@@ -22,7 +22,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/sourcegraph/zoekt"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
@@ -150,7 +150,7 @@ func TestListRepoIDs(t *testing.T) {
 	s := newSourcegraphClient(&testURL, testHostname, grpcClient, clientOptions...)
 
 	listCalled := false
-	grpcClient.mockList = func(ctx context.Context, in *proto.ListRequest, opts ...grpc.CallOption) (*proto.ListResponse, error) {
+	grpcClient.mockList = func(ctx context.Context, in *configv1.ListRequest, opts ...grpc.CallOption) (*configv1.ListResponse, error) {
 		listCalled = true
 
 		gotRepoIDs := in.GetIndexedIds()
@@ -172,7 +172,7 @@ func TestListRepoIDs(t *testing.T) {
 			t.Errorf("hostname mismatch (-want +got):\n%s", diff)
 		}
 
-		return &proto.ListResponse{RepoIds: []int32{1, 2, 3}}, nil
+		return &configv1.ListResponse{RepoIds: []int32{1, 2, 3}}, nil
 	}
 
 	ctx := context.Background()

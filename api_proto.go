@@ -21,10 +21,10 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	proto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
+	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 )
 
-func FileMatchFromProto(p *proto.FileMatch) FileMatch {
+func FileMatchFromProto(p *webserverv1.FileMatch) FileMatch {
 	lineMatches := make([]LineMatch, len(p.GetLineMatches()))
 	for i, lineMatch := range p.GetLineMatches() {
 		lineMatches[i] = LineMatchFromProto(lineMatch)
@@ -54,18 +54,18 @@ func FileMatchFromProto(p *proto.FileMatch) FileMatch {
 	}
 }
 
-func (m *FileMatch) ToProto() *proto.FileMatch {
-	lineMatches := make([]*proto.LineMatch, len(m.LineMatches))
+func (m *FileMatch) ToProto() *webserverv1.FileMatch {
+	lineMatches := make([]*webserverv1.LineMatch, len(m.LineMatches))
 	for i, lm := range m.LineMatches {
 		lineMatches[i] = lm.ToProto()
 	}
 
-	chunkMatches := make([]*proto.ChunkMatch, len(m.ChunkMatches))
+	chunkMatches := make([]*webserverv1.ChunkMatch, len(m.ChunkMatches))
 	for i, cm := range m.ChunkMatches {
 		chunkMatches[i] = cm.ToProto()
 	}
 
-	return &proto.FileMatch{
+	return &webserverv1.FileMatch{
 		Score:              m.Score,
 		Debug:              m.Debug,
 		FileName:           []byte(m.FileName),
@@ -84,7 +84,7 @@ func (m *FileMatch) ToProto() *proto.FileMatch {
 	}
 }
 
-func ChunkMatchFromProto(p *proto.ChunkMatch) ChunkMatch {
+func ChunkMatchFromProto(p *webserverv1.ChunkMatch) ChunkMatch {
 	ranges := make([]Range, len(p.GetRanges()))
 	for i, r := range p.GetRanges() {
 		ranges[i] = RangeFromProto(r)
@@ -107,18 +107,18 @@ func ChunkMatchFromProto(p *proto.ChunkMatch) ChunkMatch {
 	}
 }
 
-func (cm *ChunkMatch) ToProto() *proto.ChunkMatch {
-	ranges := make([]*proto.Range, len(cm.Ranges))
+func (cm *ChunkMatch) ToProto() *webserverv1.ChunkMatch {
+	ranges := make([]*webserverv1.Range, len(cm.Ranges))
 	for i, r := range cm.Ranges {
 		ranges[i] = r.ToProto()
 	}
 
-	symbolInfo := make([]*proto.SymbolInfo, len(cm.SymbolInfo))
+	symbolInfo := make([]*webserverv1.SymbolInfo, len(cm.SymbolInfo))
 	for i, si := range cm.SymbolInfo {
 		symbolInfo[i] = si.ToProto()
 	}
 
-	return &proto.ChunkMatch{
+	return &webserverv1.ChunkMatch{
 		Content:       cm.Content,
 		ContentStart:  cm.ContentStart.ToProto(),
 		FileName:      cm.FileName,
@@ -130,21 +130,21 @@ func (cm *ChunkMatch) ToProto() *proto.ChunkMatch {
 	}
 }
 
-func RangeFromProto(p *proto.Range) Range {
+func RangeFromProto(p *webserverv1.Range) Range {
 	return Range{
 		Start: LocationFromProto(p.GetStart()),
 		End:   LocationFromProto(p.GetEnd()),
 	}
 }
 
-func (r *Range) ToProto() *proto.Range {
-	return &proto.Range{
+func (r *Range) ToProto() *webserverv1.Range {
+	return &webserverv1.Range{
 		Start: r.Start.ToProto(),
 		End:   r.End.ToProto(),
 	}
 }
 
-func LocationFromProto(p *proto.Location) Location {
+func LocationFromProto(p *webserverv1.Location) Location {
 	return Location{
 		ByteOffset: p.GetByteOffset(),
 		LineNumber: p.GetLineNumber(),
@@ -152,15 +152,15 @@ func LocationFromProto(p *proto.Location) Location {
 	}
 }
 
-func (l *Location) ToProto() *proto.Location {
-	return &proto.Location{
+func (l *Location) ToProto() *webserverv1.Location {
+	return &webserverv1.Location{
 		ByteOffset: l.ByteOffset,
 		LineNumber: l.LineNumber,
 		Column:     l.Column,
 	}
 }
 
-func LineMatchFromProto(p *proto.LineMatch) LineMatch {
+func LineMatchFromProto(p *webserverv1.LineMatch) LineMatch {
 	lineFragments := make([]LineFragmentMatch, len(p.GetLineFragments()))
 	for i, lineFragment := range p.GetLineFragments() {
 		lineFragments[i] = LineFragmentMatchFromProto(lineFragment)
@@ -180,13 +180,13 @@ func LineMatchFromProto(p *proto.LineMatch) LineMatch {
 	}
 }
 
-func (lm *LineMatch) ToProto() *proto.LineMatch {
-	fragments := make([]*proto.LineFragmentMatch, len(lm.LineFragments))
+func (lm *LineMatch) ToProto() *webserverv1.LineMatch {
+	fragments := make([]*webserverv1.LineFragmentMatch, len(lm.LineFragments))
 	for i, fragment := range lm.LineFragments {
 		fragments[i] = fragment.ToProto()
 	}
 
-	return &proto.LineMatch{
+	return &webserverv1.LineMatch{
 		Line:          lm.Line,
 		LineStart:     int64(lm.LineStart),
 		LineEnd:       int64(lm.LineEnd),
@@ -200,7 +200,7 @@ func (lm *LineMatch) ToProto() *proto.LineMatch {
 	}
 }
 
-func SymbolFromProto(p *proto.SymbolInfo) *Symbol {
+func SymbolFromProto(p *webserverv1.SymbolInfo) *Symbol {
 	if p == nil {
 		return nil
 	}
@@ -213,12 +213,12 @@ func SymbolFromProto(p *proto.SymbolInfo) *Symbol {
 	}
 }
 
-func (s *Symbol) ToProto() *proto.SymbolInfo {
+func (s *Symbol) ToProto() *webserverv1.SymbolInfo {
 	if s == nil {
 		return nil
 	}
 
-	return &proto.SymbolInfo{
+	return &webserverv1.SymbolInfo{
 		Sym:        s.Sym,
 		Kind:       s.Kind,
 		Parent:     s.Parent,
@@ -226,7 +226,7 @@ func (s *Symbol) ToProto() *proto.SymbolInfo {
 	}
 }
 
-func LineFragmentMatchFromProto(p *proto.LineFragmentMatch) LineFragmentMatch {
+func LineFragmentMatchFromProto(p *webserverv1.LineFragmentMatch) LineFragmentMatch {
 	return LineFragmentMatch{
 		LineOffset:  int(p.GetLineOffset()),
 		Offset:      p.GetOffset(),
@@ -235,8 +235,8 @@ func LineFragmentMatchFromProto(p *proto.LineFragmentMatch) LineFragmentMatch {
 	}
 }
 
-func (lfm *LineFragmentMatch) ToProto() *proto.LineFragmentMatch {
-	return &proto.LineFragmentMatch{
+func (lfm *LineFragmentMatch) ToProto() *webserverv1.LineFragmentMatch {
+	return &webserverv1.LineFragmentMatch{
 		LineOffset:  int64(lfm.LineOffset),
 		Offset:      lfm.Offset,
 		MatchLength: int64(lfm.MatchLength),
@@ -244,29 +244,29 @@ func (lfm *LineFragmentMatch) ToProto() *proto.LineFragmentMatch {
 	}
 }
 
-func FlushReasonFromProto(p proto.FlushReason) FlushReason {
+func FlushReasonFromProto(p webserverv1.FlushReason) FlushReason {
 	switch p {
-	case proto.FlushReason_FLUSH_REASON_TIMER_EXPIRED:
+	case webserverv1.FlushReason_FLUSH_REASON_TIMER_EXPIRED:
 		return FlushReasonTimerExpired
-	case proto.FlushReason_FLUSH_REASON_FINAL_FLUSH:
+	case webserverv1.FlushReason_FLUSH_REASON_FINAL_FLUSH:
 		return FlushReasonFinalFlush
-	case proto.FlushReason_FLUSH_REASON_MAX_SIZE:
+	case webserverv1.FlushReason_FLUSH_REASON_MAX_SIZE:
 		return FlushReasonMaxSize
 	default:
 		return FlushReason(0)
 	}
 }
 
-func (fr FlushReason) ToProto() proto.FlushReason {
+func (fr FlushReason) ToProto() webserverv1.FlushReason {
 	switch fr {
 	case FlushReasonTimerExpired:
-		return proto.FlushReason_FLUSH_REASON_TIMER_EXPIRED
+		return webserverv1.FlushReason_FLUSH_REASON_TIMER_EXPIRED
 	case FlushReasonFinalFlush:
-		return proto.FlushReason_FLUSH_REASON_FINAL_FLUSH
+		return webserverv1.FlushReason_FLUSH_REASON_FINAL_FLUSH
 	case FlushReasonMaxSize:
-		return proto.FlushReason_FLUSH_REASON_MAX_SIZE
+		return webserverv1.FlushReason_FLUSH_REASON_MAX_SIZE
 	default:
-		return proto.FlushReason_FLUSH_REASON_UNKNOWN_UNSPECIFIED
+		return webserverv1.FlushReason_FLUSH_REASON_UNKNOWN_UNSPECIFIED
 	}
 }
 
@@ -284,7 +284,7 @@ func (fr FlushReason) Generate(rand *rand.Rand, size int) reflect.Value {
 	}
 }
 
-func StatsFromProto(p *proto.Stats) Stats {
+func StatsFromProto(p *webserverv1.Stats) Stats {
 	return Stats{
 		ContentBytesLoaded:    p.GetContentBytesLoaded(),
 		IndexBytesLoaded:      p.GetIndexBytesLoaded(),
@@ -309,8 +309,8 @@ func StatsFromProto(p *proto.Stats) Stats {
 	}
 }
 
-func (s *Stats) ToProto() *proto.Stats {
-	return &proto.Stats{
+func (s *Stats) ToProto() *webserverv1.Stats {
+	return &webserverv1.Stats{
 		ContentBytesLoaded:    s.ContentBytesLoaded,
 		IndexBytesLoaded:      s.IndexBytesLoaded,
 		Crashes:               int64(s.Crashes),
@@ -334,21 +334,21 @@ func (s *Stats) ToProto() *proto.Stats {
 	}
 }
 
-func ProgressFromProto(p *proto.Progress) Progress {
+func ProgressFromProto(p *webserverv1.Progress) Progress {
 	return Progress{
 		Priority:           p.GetPriority(),
 		MaxPendingPriority: p.GetMaxPendingPriority(),
 	}
 }
 
-func (p *Progress) ToProto() *proto.Progress {
-	return &proto.Progress{
+func (p *Progress) ToProto() *webserverv1.Progress {
+	return &webserverv1.Progress{
 		Priority:           p.Priority,
 		MaxPendingPriority: p.MaxPendingPriority,
 	}
 }
 
-func SearchResultFromStreamProto(p *proto.StreamSearchResponse, repoURLs, lineFragments map[string]string) *SearchResult {
+func SearchResultFromStreamProto(p *webserverv1.StreamSearchResponse, repoURLs, lineFragments map[string]string) *SearchResult {
 	if p == nil {
 		return nil
 	}
@@ -356,7 +356,7 @@ func SearchResultFromStreamProto(p *proto.StreamSearchResponse, repoURLs, lineFr
 	return SearchResultFromProto(p.GetResponseChunk(), repoURLs, lineFragments)
 }
 
-func SearchResultFromProto(p *proto.SearchResponse, repoURLs, lineFragments map[string]string) *SearchResult {
+func SearchResultFromProto(p *webserverv1.SearchResponse, repoURLs, lineFragments map[string]string) *SearchResult {
 	if p == nil {
 		return nil
 	}
@@ -377,17 +377,17 @@ func SearchResultFromProto(p *proto.SearchResponse, repoURLs, lineFragments map[
 	}
 }
 
-func (sr *SearchResult) ToProto() *proto.SearchResponse {
+func (sr *SearchResult) ToProto() *webserverv1.SearchResponse {
 	if sr == nil {
 		return nil
 	}
 
-	files := make([]*proto.FileMatch, len(sr.Files))
+	files := make([]*webserverv1.FileMatch, len(sr.Files))
 	for i, file := range sr.Files {
 		files[i] = file.ToProto()
 	}
 
-	return &proto.SearchResponse{
+	return &webserverv1.SearchResponse{
 		Stats:    sr.Stats.ToProto(),
 		Progress: sr.Progress.ToProto(),
 
@@ -395,29 +395,29 @@ func (sr *SearchResult) ToProto() *proto.SearchResponse {
 	}
 }
 
-func (sr *SearchResult) ToStreamProto() *proto.StreamSearchResponse {
+func (sr *SearchResult) ToStreamProto() *webserverv1.StreamSearchResponse {
 	if sr == nil {
 		return nil
 	}
 
-	return &proto.StreamSearchResponse{ResponseChunk: sr.ToProto()}
+	return &webserverv1.StreamSearchResponse{ResponseChunk: sr.ToProto()}
 }
 
-func RepositoryBranchFromProto(p *proto.RepositoryBranch) RepositoryBranch {
+func RepositoryBranchFromProto(p *webserverv1.RepositoryBranch) RepositoryBranch {
 	return RepositoryBranch{
 		Name:    p.GetName(),
 		Version: p.GetVersion(),
 	}
 }
 
-func (r *RepositoryBranch) ToProto() *proto.RepositoryBranch {
-	return &proto.RepositoryBranch{
+func (r *RepositoryBranch) ToProto() *webserverv1.RepositoryBranch {
+	return &webserverv1.RepositoryBranch{
 		Name:    r.Name,
 		Version: r.Version,
 	}
 }
 
-func RepositoryFromProto(p *proto.Repository) Repository {
+func RepositoryFromProto(p *webserverv1.Repository) Repository {
 	branches := make([]RepositoryBranch, len(p.GetBranches()))
 	for i, branch := range p.GetBranches() {
 		branches[i] = RepositoryBranchFromProto(branch)
@@ -456,17 +456,17 @@ func RepositoryFromProto(p *proto.Repository) Repository {
 	}
 }
 
-func (r *Repository) ToProto() *proto.Repository {
+func (r *Repository) ToProto() *webserverv1.Repository {
 	if r == nil {
 		return nil
 	}
 
-	branches := make([]*proto.RepositoryBranch, len(r.Branches))
+	branches := make([]*webserverv1.RepositoryBranch, len(r.Branches))
 	for i, branch := range r.Branches {
 		branches[i] = branch.ToProto()
 	}
 
-	subRepoMap := make(map[string]*proto.Repository, len(r.SubRepoMap))
+	subRepoMap := make(map[string]*webserverv1.Repository, len(r.SubRepoMap))
 	for name, repo := range r.SubRepoMap {
 		subRepoMap[name] = repo.ToProto()
 	}
@@ -476,7 +476,7 @@ func (r *Repository) ToProto() *proto.Repository {
 		fileTombstones = append(fileTombstones, file)
 	}
 
-	return &proto.Repository{
+	return &webserverv1.Repository{
 		TenantId:             int64(r.TenantID),
 		Id:                   r.ID,
 		Name:                 r.Name,
@@ -498,7 +498,7 @@ func (r *Repository) ToProto() *proto.Repository {
 	}
 }
 
-func IndexMetadataFromProto(p *proto.IndexMetadata) IndexMetadata {
+func IndexMetadataFromProto(p *webserverv1.IndexMetadata) IndexMetadata {
 	languageMap := make(map[string]uint16, len(p.GetLanguageMap()))
 	for language, id := range p.GetLanguageMap() {
 		languageMap[language] = uint16(id)
@@ -516,7 +516,7 @@ func IndexMetadataFromProto(p *proto.IndexMetadata) IndexMetadata {
 	}
 }
 
-func (m *IndexMetadata) ToProto() *proto.IndexMetadata {
+func (m *IndexMetadata) ToProto() *webserverv1.IndexMetadata {
 	if m == nil {
 		return nil
 	}
@@ -526,7 +526,7 @@ func (m *IndexMetadata) ToProto() *proto.IndexMetadata {
 		languageMap[language] = uint32(id)
 	}
 
-	return &proto.IndexMetadata{
+	return &webserverv1.IndexMetadata{
 		IndexFormatVersion:    int64(m.IndexFormatVersion),
 		IndexFeatureVersion:   int64(m.IndexFeatureVersion),
 		IndexMinReaderVersion: int64(m.IndexMinReaderVersion),
@@ -538,7 +538,7 @@ func (m *IndexMetadata) ToProto() *proto.IndexMetadata {
 	}
 }
 
-func RepoStatsFromProto(p *proto.RepoStats) RepoStats {
+func RepoStatsFromProto(p *webserverv1.RepoStats) RepoStats {
 	return RepoStats{
 		Repos:                      int(p.GetRepos()),
 		Shards:                     int(p.GetShards()),
@@ -551,8 +551,8 @@ func RepoStatsFromProto(p *proto.RepoStats) RepoStats {
 	}
 }
 
-func (s *RepoStats) ToProto() *proto.RepoStats {
-	return &proto.RepoStats{
+func (s *RepoStats) ToProto() *webserverv1.RepoStats {
+	return &webserverv1.RepoStats{
 		Repos:                      int64(s.Repos),
 		Shards:                     int64(s.Shards),
 		Documents:                  int64(s.Documents),
@@ -564,7 +564,7 @@ func (s *RepoStats) ToProto() *proto.RepoStats {
 	}
 }
 
-func RepoListEntryFromProto(p *proto.RepoListEntry) *RepoListEntry {
+func RepoListEntryFromProto(p *webserverv1.RepoListEntry) *RepoListEntry {
 	if p == nil {
 		return nil
 	}
@@ -576,19 +576,19 @@ func RepoListEntryFromProto(p *proto.RepoListEntry) *RepoListEntry {
 	}
 }
 
-func (r *RepoListEntry) ToProto() *proto.RepoListEntry {
+func (r *RepoListEntry) ToProto() *webserverv1.RepoListEntry {
 	if r == nil {
 		return nil
 	}
 
-	return &proto.RepoListEntry{
+	return &webserverv1.RepoListEntry{
 		Repository:    r.Repository.ToProto(),
 		IndexMetadata: r.IndexMetadata.ToProto(),
 		Stats:         r.Stats.ToProto(),
 	}
 }
 
-func MinimalRepoListEntryFromProto(p *proto.MinimalRepoListEntry) MinimalRepoListEntry {
+func MinimalRepoListEntryFromProto(p *webserverv1.MinimalRepoListEntry) MinimalRepoListEntry {
 	branches := make([]RepositoryBranch, len(p.GetBranches()))
 	for i, branch := range p.GetBranches() {
 		branches[i] = RepositoryBranchFromProto(branch)
@@ -601,19 +601,19 @@ func MinimalRepoListEntryFromProto(p *proto.MinimalRepoListEntry) MinimalRepoLis
 	}
 }
 
-func (m *MinimalRepoListEntry) ToProto() *proto.MinimalRepoListEntry {
-	branches := make([]*proto.RepositoryBranch, len(m.Branches))
+func (m *MinimalRepoListEntry) ToProto() *webserverv1.MinimalRepoListEntry {
+	branches := make([]*webserverv1.RepositoryBranch, len(m.Branches))
 	for i, branch := range m.Branches {
 		branches[i] = branch.ToProto()
 	}
-	return &proto.MinimalRepoListEntry{
+	return &webserverv1.MinimalRepoListEntry{
 		HasSymbols:    m.HasSymbols,
 		Branches:      branches,
 		IndexTimeUnix: m.IndexTimeUnix,
 	}
 }
 
-func RepoListFromProto(p *proto.ListResponse) *RepoList {
+func RepoListFromProto(p *webserverv1.ListResponse) *RepoList {
 	repos := make([]*RepoListEntry, len(p.GetRepos()))
 	for i, repo := range p.GetRepos() {
 		repos[i] = RepoListEntryFromProto(repo)
@@ -632,18 +632,18 @@ func RepoListFromProto(p *proto.ListResponse) *RepoList {
 	}
 }
 
-func (r *RepoList) ToProto() *proto.ListResponse {
-	repos := make([]*proto.RepoListEntry, len(r.Repos))
+func (r *RepoList) ToProto() *webserverv1.ListResponse {
+	repos := make([]*webserverv1.RepoListEntry, len(r.Repos))
 	for i, repo := range r.Repos {
 		repos[i] = repo.ToProto()
 	}
 
-	reposMap := make(map[uint32]*proto.MinimalRepoListEntry, len(r.ReposMap))
+	reposMap := make(map[uint32]*webserverv1.MinimalRepoListEntry, len(r.ReposMap))
 	for id, repo := range r.ReposMap {
 		reposMap[id] = repo.ToProto()
 	}
 
-	return &proto.ListResponse{
+	return &webserverv1.ListResponse{
 		Repos:    repos,
 		ReposMap: reposMap,
 		Crashes:  int64(r.Crashes),
@@ -651,32 +651,32 @@ func (r *RepoList) ToProto() *proto.ListResponse {
 	}
 }
 
-func (l *ListOptions) ToProto() *proto.ListOptions {
+func (l *ListOptions) ToProto() *webserverv1.ListOptions {
 	if l == nil {
 		return nil
 	}
-	var field proto.ListOptions_RepoListField
+	var field webserverv1.ListOptions_RepoListField
 	switch l.Field {
 	case RepoListFieldRepos:
-		field = proto.ListOptions_REPO_LIST_FIELD_REPOS
+		field = webserverv1.ListOptions_REPO_LIST_FIELD_REPOS
 	case RepoListFieldReposMap:
-		field = proto.ListOptions_REPO_LIST_FIELD_REPOS_MAP
+		field = webserverv1.ListOptions_REPO_LIST_FIELD_REPOS_MAP
 	}
 
-	return &proto.ListOptions{
+	return &webserverv1.ListOptions{
 		Field: field,
 	}
 }
 
-func ListOptionsFromProto(p *proto.ListOptions) *ListOptions {
+func ListOptionsFromProto(p *webserverv1.ListOptions) *ListOptions {
 	if p == nil {
 		return nil
 	}
 	var field RepoListField
 	switch p.GetField() {
-	case proto.ListOptions_REPO_LIST_FIELD_REPOS:
+	case webserverv1.ListOptions_REPO_LIST_FIELD_REPOS:
 		field = RepoListFieldRepos
-	case proto.ListOptions_REPO_LIST_FIELD_REPOS_MAP:
+	case webserverv1.ListOptions_REPO_LIST_FIELD_REPOS_MAP:
 		field = RepoListFieldReposMap
 	}
 	return &ListOptions{
@@ -684,7 +684,7 @@ func ListOptionsFromProto(p *proto.ListOptions) *ListOptions {
 	}
 }
 
-func SearchOptionsFromProto(p *proto.SearchOptions) *SearchOptions {
+func SearchOptionsFromProto(p *webserverv1.SearchOptions) *SearchOptions {
 	if p == nil {
 		return nil
 	}
@@ -707,12 +707,12 @@ func SearchOptionsFromProto(p *proto.SearchOptions) *SearchOptions {
 	}
 }
 
-func (s *SearchOptions) ToProto() *proto.SearchOptions {
+func (s *SearchOptions) ToProto() *webserverv1.SearchOptions {
 	if s == nil {
 		return nil
 	}
 
-	return &proto.SearchOptions{
+	return &webserverv1.SearchOptions{
 		EstimateDocCount:       s.EstimateDocCount,
 		Whole:                  s.Whole,
 		ShardMaxMatchCount:     int64(s.ShardMaxMatchCount),
