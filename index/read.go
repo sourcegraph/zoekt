@@ -316,6 +316,11 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
+	d.categories, err = d.readSectionBlob(toc.categories)
+	if err != nil {
+		return nil, err
+	}
+
 	d.contentNgrams, err = d.newBtreeIndex(toc.ngramText, toc.postings)
 	if err != nil {
 		return nil, err

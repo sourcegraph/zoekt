@@ -92,6 +92,9 @@ type indexData struct {
 	// inverse of LanguageMap in metaData
 	languageMap map[uint16]string
 
+	// file categories for all the files.
+	categories []byte
+
 	repoListEntry []zoekt.RepoListEntry
 
 	// repository indexes for all the files
@@ -170,6 +173,18 @@ func (d *indexData) getLanguage(idx uint32) uint16 {
 	}
 	// newer zoekt files have 16-bit language entries
 	return uint16(d.languages[idx*2]) | uint16(d.languages[idx*2+1])<<8
+}
+
+func (d *indexData) getCategory(idx uint32) FileCategory {
+	if len(d.categories) == 0 {
+		// This means we're reading an older index, so return 'missing'
+		return FileCategoryMissing
+	}
+	category, err := decodeCategory(d.categories[idx])
+	if err != nil {
+		return FileCategoryMissing
+	}
+	return category
 }
 
 // calculates stats for files in the range [start, end).

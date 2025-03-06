@@ -854,16 +854,6 @@ func squashRange(j int) float64 {
 	return x / (1 + x)
 }
 
-// IsLowPriority takes a file name and makes an educated guess about its priority
-// in search results. A file is considered low priority if it looks like a test,
-// vendored, or generated file.
-//
-// These 'priority' criteria affects how documents are ordered within a shard. It's
-// also used to help guess a file's rank when we're missing ranking information.
-func IsLowPriority(path string, content []byte) bool {
-	return enry.IsTest(path) || enry.IsVendor(path) || enry.IsGenerated(path, content)
-}
-
 type rankedDoc struct {
 	*Document
 	rank []float64
@@ -1091,6 +1081,7 @@ type Document struct {
 	Branches          []string
 	SubRepositoryPath string
 	Language          string
+	Category          FileCategory
 
 	// If set, something is wrong with the file contents, and this
 	// is the reason it wasn't indexed.

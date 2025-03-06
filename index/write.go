@@ -169,6 +169,10 @@ func (b *ShardBuilder) Write(out io.Writer) error {
 	w.Write(b.languages)
 	toc.languages.end(w)
 
+	toc.categories.start(w)
+	w.Write(b.categories)
+	toc.categories.end(w)
+
 	toc.runeDocSections.start(w)
 	w.Write(marshalDocSections(b.runeDocSections))
 	toc.runeDocSections.end(w)

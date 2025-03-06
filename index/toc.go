@@ -78,6 +78,7 @@ type indexTOC struct {
 	runeOffsets  simpleSection
 	fileEndRunes simpleSection
 	languages    simpleSection
+	categories   simpleSection
 
 	fileEndSymbol  simpleSection
 	symbolMap      lazyCompoundSection
@@ -180,6 +181,7 @@ func (t *indexTOC) sectionsTaggedList() []taggedSection {
 		{"nameEndRunes", &t.nameEndRunes},
 		{"contentChecksums", &t.contentChecksums},
 		{"languages", &t.languages},
+		{"categories", &t.categories},
 		{"runeDocSections", &t.runeDocSections},
 		{"repos", &t.repos},
 		{"reposIDsBitmap", &t.reposIDsBitmap},
