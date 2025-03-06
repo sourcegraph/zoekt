@@ -12,9 +12,9 @@ import (
 	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
-// purgeTenantShards removes all shards from dir on a best-effort basis.  It
-// returns an error if there is no tenant in the context or if it encounters an
-// error while removing a shard.
+// purgeTenantShards removes all simple shards from dir on a best-effort basis.
+// It returns an error if there is no tenant in the context or if it encounters
+// an error while removing a shard.
 func purgeTenantShards(ctx context.Context, dir string) error {
 	tnt, err := tenant.FromContext(ctx)
 	if err != nil {
@@ -44,8 +44,7 @@ func purgeTenantShards(ctx context.Context, dir string) error {
 			continue
 		}
 
-		// Skip compound shards. We assume shard merging is disabled for
-		// multi-tenant instances.
+		// Skip compound shards.
 		if strings.HasPrefix(filepath.Base(path), "compound-") {
 			continue
 		}

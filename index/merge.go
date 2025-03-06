@@ -134,18 +134,64 @@ func merge(ds ...*indexData) (*ShardBuilder, error) {
 	return sb, nil
 }
 
-// Explode takes an IndexFile f and creates 1 simple shard per repository
-// contained in f. Explode returns a map of tmpName -> dstName. It is the
-// responsibility of the caller to rename the temporary shard(s) and delete the
-// input shard.
-func Explode(dstDir string, f IndexFile) (map[string]string, error) {
-	return explode(dstDir, f)
+// Explode takes an input shard and creates 1 simple shard per repository. It is
+// a wrapper around explode that takes care of removing the input shard and
+// renaming the temporary shards.
+func Explode(dstDir string, inputShard string) error {
+	f, err := os.Open(inputShard)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	indexFile, err := NewIndexFile(f)
+	if err != nil {
+		return err
+	}
+	defer indexFile.Close()
+
+	exploded, err := explode(dstDir, indexFile)
+	defer func() {
+		// best effort removal of tmp files. If os.Remove fails, indexserver will delete
+		// the leftover tmp files during the next cleanup.
+		for tmpFn := range exploded {
+			os.Remove(tmpFn)
+		}
+	}()
+	if err != nil {
+		return fmt.Errorf("zoekt.Explode: %w", err)
+	}
+
+	// remove the input shard first to avoid duplicate indexes. In the worst case,
+	// the process is interrupted just after we delete the compound shard, in which
+	// case we have to reindex the lost repos.
+	paths, err := IndexFilePaths(inputShard)
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		err = os.Remove(path)
+		if err != nil {
+			return err
+		}
+	}
+
+	// best effort rename shards.
+	for tmpFn, dstFn := range exploded {
+		if err := os.Rename(tmpFn, dstFn); err != nil {
+			log.Printf("explode: rename failed: %s", err)
+		}
+	}
+
+	return nil
 }
 
 type shardBuilderFunc func(ib *ShardBuilder)
 
-// explode offers a richer signature compared to Explode for testing. You
-// probably want to call Explode instead.
+// explode takes an IndexFile f and creates 1 simple shard per repository
+// contained in f. explode returns a map of tmpName -> dstName. It is the
+// responsibility of the caller to rename the temporary shard(s) and delete the
+// input shard.
 func explode(dstDir string, f IndexFile, ibFuncs ...shardBuilderFunc) (map[string]string, error) {
 	searcher, err := NewSearcher(f)
 	if err != nil {
