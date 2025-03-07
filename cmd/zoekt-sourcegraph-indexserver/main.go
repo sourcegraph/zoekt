@@ -1074,6 +1074,7 @@ func (s *Server) DeleteAllData(ctx context.Context, _ *indexserverv1.DeleteAllDa
 
 			err := cmd.Run()
 			if err != nil {
+				errorLog.Printf("explode failed: %v (stderr: %s)", err, stderrBuf.String())
 				return err
 			}
 
