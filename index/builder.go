@@ -601,17 +601,17 @@ func (b *Builder) Add(doc Document) error {
 		// we pass through a part of the source tree with binary/large
 		// files, the corresponding shard would be mostly empty, so
 		// insert a reason here too.
-		doc.SkipReason = fmt.Sprintf("document size %d larger than limit %d", len(doc.Content), b.opts.SizeMax)
-	} else if err := b.docChecker.Check(doc.Content, b.opts.TrigramMax, allowLargeFile); err != nil {
-		doc.SkipReason = err.Error()
+		doc.SkipReason = SkipReasonTooLarge
+	} else if skip := b.docChecker.Check(doc.Content, b.opts.TrigramMax, allowLargeFile); skip != SkipReasonNone {
+		doc.SkipReason = skip
 	}
 
 	b.todo = append(b.todo, &doc)
 
-	if doc.SkipReason == "" {
+	if doc.SkipReason == SkipReasonNone {
 		b.size += len(doc.Name) + len(doc.Content)
 	} else {
-		b.size += len(doc.Name) + len(doc.SkipReason)
+		b.size += len(doc.Name)
 		// Drop the content if we are skipping the document. Skipped content is not counted towards the
 		// shard size limit, so otherwise we might buffer too much data in memory before flushing.
 		doc.Content = nil
@@ -865,7 +865,7 @@ type rankedDoc struct {
 // have a higher chance of being searched before limits kick in.
 func rank(d *Document, origIdx int) []float64 {
 	skipped := 0.0
-	if d.SkipReason != "" {
+	if d.SkipReason != SkipReasonNone {
 		skipped = 1.0
 	}
 
@@ -1072,28 +1072,6 @@ type deltaIndexOptionsMismatchError struct {
 
 func (e *deltaIndexOptionsMismatchError) Error() string {
 	return fmt.Sprintf("one or more index options for shard %q do not match Builder's index options. These index option updates are incompatible with delta build. New index options: %+v", e.shardName, e.newOptions)
-}
-
-// Document holds a document (file) to index.
-type Document struct {
-	Name              string
-	Content           []byte
-	Branches          []string
-	SubRepositoryPath string
-	Language          string
-	Category          FileCategory
-
-	// If set, something is wrong with the file contents, and this
-	// is the reason it wasn't indexed.
-	SkipReason string
-
-	// Document sections for symbols. Offsets should use bytes.
-	Symbols         []DocumentSection
-	SymbolsMetaData []*zoekt.Symbol
-}
-
-type DocumentSection struct {
-	Start, End uint32
 }
 
 // umask holds the Umask of the current process

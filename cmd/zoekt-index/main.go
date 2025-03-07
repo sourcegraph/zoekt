@@ -137,7 +137,7 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
 			if err := builder.Add(index.Document{
 				Name:       displayName,
-				SkipReason: fmt.Sprintf("document size %d larger than limit %d", f.size, opts.SizeMax),
+				SkipReason: index.SkipReasonTooLarge,
 			}); err != nil {
 				return err
 			}

@@ -882,7 +882,7 @@ func createDocument(key fileKey,
 
 	// We filter out large documents when fetching the repo. So if an object is too large, it will not be found.
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		return skippedLargeDoc(key, branches, opts), nil
+		return skippedLargeDoc(key, branches), nil
 	}
 
 	if err != nil {
@@ -891,7 +891,7 @@ func createDocument(key fileKey,
 
 	keyFullPath := key.FullPath()
 	if blob.Size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(keyFullPath) {
-		return skippedLargeDoc(key, branches, opts), nil
+		return skippedLargeDoc(key, branches), nil
 	}
 
 	contents, err := blobContents(blob)
@@ -907,9 +907,9 @@ func createDocument(key fileKey,
 	}, nil
 }
 
-func skippedLargeDoc(key fileKey, branches []string, opts index.Options) index.Document {
+func skippedLargeDoc(key fileKey, branches []string) index.Document {
 	return index.Document{
-		SkipReason:        fmt.Sprintf("file size exceeds maximum size %d", opts.SizeMax),
+		SkipReason:        index.SkipReasonTooLarge,
 		Name:              key.FullPath(),
 		Branches:          branches,
 		SubRepositoryPath: key.SubRepoPath,

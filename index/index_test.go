@@ -2403,7 +2403,7 @@ func TestUnicodeVariableLength(t *testing.T) {
 
 	t.Run("LineMatches", func(t *testing.T) {
 		b := testShardBuilder(t, nil,
-			Document{Name: "f1", Content: []byte(corpus)})
+			Document{Name: "f1", Content: corpus})
 
 		res := searchForTest(t, b, &query.Substring{Pattern: needle, Content: true})
 		if len(res.Files) != 1 {
@@ -2413,7 +2413,7 @@ func TestUnicodeVariableLength(t *testing.T) {
 
 	t.Run("ChunkMatches", func(t *testing.T) {
 		b := testShardBuilder(t, nil,
-			Document{Name: "f1", Content: []byte(corpus)})
+			Document{Name: "f1", Content: corpus})
 
 		res := searchForTest(t, b, &query.Substring{Pattern: needle, Content: true}, chunkOpts)
 		if len(res.Files) != 1 {
@@ -3191,7 +3191,7 @@ func TestSymbolRegexpAll(t *testing.T) {
 			}
 
 			for j, sec := range want.Symbols {
-				if sec.Start != uint32(got[j].Start.ByteOffset) {
+				if sec.Start != got[j].Start.ByteOffset {
 					t.Fatalf("got offset %d, want %d in doc %s", got[j].Start.ByteOffset, sec.Start, want.Name)
 				}
 			}
@@ -3372,24 +3372,24 @@ func TestDocChecker(t *testing.T) {
 
 	// Test valid and invalid text
 	for _, text := range []string{"", "simple ascii", "símplé unicödé", "\uFEFFwith utf8 'bom'", "with \uFFFD unicode replacement char"} {
-		if err := docChecker.Check([]byte(text), 20000, false); err != nil {
-			t.Errorf("Check(%q): %v", text, err)
+		if skip := docChecker.Check([]byte(text), 20000, false); skip != SkipReasonNone {
+			t.Errorf("Check(%q): %v", text, skip)
 		}
 	}
 	for _, text := range []string{"zero\x00byte", "xx", "0123456789abcdefghi"} {
-		if err := docChecker.Check([]byte(text), 15, false); err == nil {
+		if skip := docChecker.Check([]byte(text), 15, false); skip == SkipReasonNone {
 			t.Errorf("Check(%q) succeeded", text)
 		}
 	}
 
 	// Test valid and invalid text with an allowed large file
 	for _, text := range []string{"0123456789abcdefghi", "qwertyuiopasdfghjklzxcvbnm"} {
-		if err := docChecker.Check([]byte(text), 15, true); err != nil {
-			t.Errorf("Check(%q): %v", text, err)
+		if skip := docChecker.Check([]byte(text), 15, true); skip != SkipReasonNone {
+			t.Errorf("Check(%q): %v", text, skip)
 		}
 	}
 	for _, text := range []string{"zero\x00byte", "xx"} {
-		if err := docChecker.Check([]byte(text), 15, true); err == nil {
+		if skip := docChecker.Check([]byte(text), 15, true); skip == SkipReasonNone {
 			t.Errorf("Check(%q) succeeded", text)
 		}
 	}

@@ -246,7 +246,7 @@ func TestDontCountContentOfSkippedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(b.todo) != 1 || b.todo[0].SkipReason == "" {
+	if len(b.todo) != 1 || b.todo[0].SkipReason == SkipReasonNone {
 		t.Fatalf("document should have been skipped")
 	}
 	if b.todo[0].Content != nil {
@@ -1143,7 +1143,7 @@ func TestFileRank(t *testing.T) {
 		docs: []*Document{
 			{
 				Name:       "binary_file",
-				SkipReason: "binary file",
+				SkipReason: SkipReasonBinary,
 			},
 			{
 				Name:    "some_test.go",
@@ -1151,7 +1151,7 @@ func TestFileRank(t *testing.T) {
 			},
 			{
 				Name:       "large_file.go",
-				SkipReason: "too large",
+				SkipReason: SkipReasonTooLarge,
 			},
 			{
 				Name:    "file.go",
