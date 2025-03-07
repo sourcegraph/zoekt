@@ -65,6 +65,7 @@ import (
 	"github.com/sourcegraph/zoekt/internal/tenant"
 
 	"go.uber.org/automaxprocs/maxprocs"
+	"go.uber.org/multierr"
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -1046,11 +1047,55 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 	return fmt.Sprintf("Indexed %s with state %s", args.String(), state), nil
 }
 
-// DeleteAllData deletes all shards in the index and trash belonging to the
-// tenant associated with the request. This is stubbed out for now.
-func (s *Server) DeleteAllData(_ context.Context, _ *indexserverv1.DeleteAllDataRequest) (*indexserverv1.DeleteAllDataResponse, error) {
-	s.logger.Warn("DeleteAllData")
-	return &indexserverv1.DeleteAllDataResponse{}, nil
+// DeleteAllData deletes all shards in the index and trash dir belonging to the
+// tenant associated with the request. The deletion is best-effort, which means
+// we will delete as much as possible. If no error is returned, the caller can
+// be certain that all data has been deleted.
+func (s *Server) DeleteAllData(ctx context.Context, _ *indexserverv1.DeleteAllDataRequest) (*indexserverv1.DeleteAllDataResponse, error) {
+	tnt, err := tenant.FromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.logger.Warn("DeleteAllData", sglog.Int("tenant_id", tnt.ID()))
+
+	var merr error
+	s.muIndexDir.Global(func() {
+		// First, explode all compound shards that have repos from the tenant in
+		// question. Because we hold the global lock, we can be sure that no new
+		// merges start while we do this.
+		if err := s.explodeTenantCompoundShards(ctx, func(path string) error {
+			// We call explode in a separate process to protect indexserver.
+			cmd := defaultExplodeCmd(path)
+
+			stdoutBuf := &bytes.Buffer{}
+			stderrBuf := &bytes.Buffer{}
+			cmd.Stdout = stdoutBuf
+			cmd.Stderr = stderrBuf
+
+			err := cmd.Run()
+			if err != nil {
+				errorLog.Printf("explode failed: %v (stderr: %s)", err, stderrBuf.String())
+				return err
+			}
+
+			infoLog.Printf("exploded shard: %s", stdoutBuf.String())
+
+			return nil
+		}); err != nil {
+			merr = multierr.Append(merr, err)
+		}
+
+		// Invariant: all shards from the tenant are simple shards.
+
+		if err := purgeTenantShards(ctx, s.IndexDir); err != nil {
+			merr = multierr.Append(merr, err)
+		}
+		if err := purgeTenantShards(ctx, filepath.Join(s.IndexDir, ".trash")); err != nil {
+			merr = multierr.Append(merr, err)
+		}
+	})
+
+	return &indexserverv1.DeleteAllDataResponse{}, merr
 }
 
 func listIndexed(indexDir string) []uint32 {

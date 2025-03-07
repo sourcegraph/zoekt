@@ -8,10 +8,12 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMerge(t *testing.T) {
@@ -62,7 +64,7 @@ func TestExplode(t *testing.T) {
 
 	cs, err := filepath.Glob(filepath.Join(dir, "compound-*.zoekt"))
 	require.NoError(t, err)
-	err = explode(dir, cs[0])
+	err = index.Explode(dir, cs[0])
 	require.NoError(t, err)
 
 	cs, err = filepath.Glob(filepath.Join(dir, "compound-*.zoekt"))

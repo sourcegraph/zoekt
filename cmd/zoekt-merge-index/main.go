@@ -87,59 +87,8 @@ func mergeCmd(paths []string) (string, error) {
 	return merge(filepath.Dir(paths[0]), paths)
 }
 
-// explode splits the input shard into individual shards and places them in dstDir.
-// Temporary files created in the process are removed on a best effort basis.
-func explode(dstDir string, inputShard string) error {
-	f, err := os.Open(inputShard)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	indexFile, err := index.NewIndexFile(f)
-	if err != nil {
-		return err
-	}
-	defer indexFile.Close()
-
-	exploded, err := index.Explode(dstDir, indexFile)
-	defer func() {
-		// best effort removal of tmp files. If os.Remove fails, indexserver will delete
-		// the leftover tmp files during the next cleanup.
-		for tmpFn := range exploded {
-			os.Remove(tmpFn)
-		}
-	}()
-	if err != nil {
-		return fmt.Errorf("zoekt.Explode: %w", err)
-	}
-
-	// remove the input shard first to avoid duplicate indexes. In the worst case,
-	// the process is interrupted just after we delete the compound shard, in which
-	// case we have to reindex the lost repos.
-	paths, err := index.IndexFilePaths(inputShard)
-	if err != nil {
-		return err
-	}
-	for _, path := range paths {
-		err = os.Remove(path)
-		if err != nil {
-			return err
-		}
-	}
-
-	// best effort rename shards.
-	for tmpFn, dstFn := range exploded {
-		if err := os.Rename(tmpFn, dstFn); err != nil {
-			log.Printf("explode: rename failed: %s", err)
-		}
-	}
-
-	return nil
-}
-
 func explodeCmd(path string) error {
-	return explode(filepath.Dir(path), path)
+	return index.Explode(filepath.Dir(path), path)
 }
 
 func main() {
