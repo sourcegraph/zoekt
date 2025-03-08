@@ -1,0 +1,30 @@
+name: ensure zoekt builds on debian
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: debian-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install go
+        run: |
+          wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
+          sudo mkdir -p /usr/local/go1.23.4
+          sudo tar -C /usr/local/go1.23.4 -xzf go1.23.4.linux-amd64.tar.gz
+          export PATH=/usr/local/go1.23.4/go/bin:$PATH
+          export PATH=/usr/local/go1.23.4/go/bin:$PATH
+          export GOROOT=/usr/local/go1.23.4/go/
+          export GOBIN=/usr/local/go1.23.4/go/bin/
+          export GOPROXY=direct
+          export GOPATH="$HOME/go"
+
+      - name: run zoekt
+        run: |
+          go run cmd/zoekt/main.go
