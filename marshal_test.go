@@ -74,7 +74,7 @@ func TestRepoList_Marshal(t *testing.T) {
 func genRepoList(size int) *RepoList {
 	m := make(ReposMap, size)
 	indexTime := time.Now().Unix()
-	for i := 0; i < size; i++ {
+	for i := range size {
 		m[uint32(i)] = MinimalRepoListEntry{
 			HasSymbols:    true,
 			IndexTimeUnix: indexTime,

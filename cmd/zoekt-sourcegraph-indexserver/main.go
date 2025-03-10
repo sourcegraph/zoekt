@@ -64,6 +64,8 @@ import (
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 
+	"slices"
+
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/multierr"
 	"golang.org/x/net/trace"
@@ -418,7 +420,7 @@ func (s *Server) Run() {
 		}
 	}()
 
-	for i := 0; i < s.IndexConcurrency; i++ {
+	for range s.IndexConcurrency {
 		go s.processQueue()
 	}
 
@@ -433,7 +435,7 @@ func formatListUint32(v []uint32, m int) string {
 	}
 
 	sb := strings.Builder{}
-	for i := 0; i < m; i++ {
+	for i := range m {
 		fmt.Fprintf(&sb, "%d, ", v[i])
 	}
 
@@ -1105,9 +1107,7 @@ func listIndexed(indexDir string) []uint32 {
 	for id := range index {
 		repoIDs = append(repoIDs, id)
 	}
-	sort.Slice(repoIDs, func(i, j int) bool {
-		return repoIDs[i] < repoIDs[j]
-	})
+	slices.Sort(repoIDs)
 	return repoIDs
 }
 
@@ -1535,10 +1535,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		}
 	}
 
-	cpuCount := int(math.Round(float64(runtime.GOMAXPROCS(0)) * (conf.cpuFraction)))
-	if cpuCount < 1 {
-		cpuCount = 1
-	}
+	cpuCount := max(int(math.Round(float64(runtime.GOMAXPROCS(0))*(conf.cpuFraction))), 1)
 
 	if conf.indexConcurrency < 1 {
 		conf.indexConcurrency = 1
@@ -1592,7 +1589,7 @@ func newGRPCServer(logger sglog.Logger, s *Server, additionalOpts ...grpc.Server
 var defaultGRPCServiceConfigurationJSON string
 
 func internalActorUnaryInterceptor() grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		ctx = metadata.AppendToOutgoingContext(ctx, "X-Sourcegraph-Actor-UID", "internal")
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}

@@ -19,7 +19,7 @@ func TestQueue(t *testing.T) {
 	backoffDuration := 1 * time.Millisecond
 	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
 	}
 
@@ -64,7 +64,7 @@ func TestQueueFIFO(t *testing.T) {
 	backoffDuration := 1 * time.Millisecond
 	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
 	}
 

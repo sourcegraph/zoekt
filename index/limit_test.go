@@ -81,7 +81,7 @@ func TestLimitMatches(t *testing.T) {
 						Start: zoekt.Location{LineNumber: uint32(lineNumber + (2 * i) + 1)},
 						End:   zoekt.Location{LineNumber: uint32(lineNumber + (2 * i) + 2)},
 					})
-					cm.Content = append(cm.Content, []byte(fmt.Sprintf("range%dStart\nrange%dEnd\n", i, i))...)
+					cm.Content = append(cm.Content, fmt.Appendf(nil, "range%dStart\nrange%dEnd\n", i, i)...)
 				}
 				// 1 line of context. Content in zoekt notably just does not
 				// contain a trailing newline.

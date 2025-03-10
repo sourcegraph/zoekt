@@ -19,10 +19,11 @@ import (
 	"log"
 	"math/rand"
 	"reflect"
-	"sort"
 	"strconv"
 	"testing"
 	"testing/quick"
+
+	"slices"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -197,7 +198,7 @@ func sortedUnique(nums []uint32) []uint32 {
 	if len(nums) == 0 {
 		return nums
 	}
-	sort.Slice(nums, func(i, j int) bool { return nums[i] < nums[j] })
+	slices.Sort(nums)
 	filtered := nums[:1]
 	for _, n := range nums[1:] {
 		if filtered[len(filtered)-1] != n {
@@ -295,7 +296,7 @@ func BenchmarkUnmarshalDocSections(b *testing.B) {
 	for size := 10; size <= 10000; size *= 10 {
 		ds := make([]DocumentSection, 0, size)
 		var last uint32
-		for i := 0; i < size; i++ {
+		for range size {
 			var d DocumentSection
 			last += 1 + uint32(rng.Int31n(200))
 			d.Start = last

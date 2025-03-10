@@ -274,7 +274,7 @@ func TestPartialSuccess(t *testing.T) {
 		t.Fatalf("NewBuilder: %v", err)
 	}
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		nm := fmt.Sprintf("F%d", i)
 		_ = b.AddFile(nm, []byte(strings.Repeat("01234567\n", 128)))
 	}
@@ -339,7 +339,7 @@ func BenchmarkFindCompoundShard(b *testing.B) {
 	// Generate a large compound shard
 	const numRepos = 5000
 	repositories := make([]zoekt.Repository, numRepos)
-	for i := 0; i < numRepos; i++ {
+	for i := range numRepos {
 		repositories[i] = zoekt.Repository{
 			Name: fmt.Sprintf("repo%d", i+1),
 			ID:   uint32(i + 1),
@@ -901,7 +901,7 @@ func createTestShard(t testing.TB, indexDir string, r zoekt.Repository, numShard
 		numShards = 1
 	}
 
-	for i := 0; i < numShards; i++ {
+	for i := range numShards {
 		// Create entries (file + contents) that are ~100 bytes each.
 		// This (along with our shardMax setting of 75 bytes) means that each shard
 		// will contain at most one of these.

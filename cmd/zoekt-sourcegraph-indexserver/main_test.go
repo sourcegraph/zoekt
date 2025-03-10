@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -20,6 +19,8 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/google/go-cmp/cmp"
+
+	"slices"
 
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
@@ -154,14 +155,10 @@ func TestListRepoIDs(t *testing.T) {
 		listCalled = true
 
 		gotRepoIDs := in.GetIndexedIds()
-		sort.Slice(gotRepoIDs, func(i, j int) bool {
-			return gotRepoIDs[i] < gotRepoIDs[j]
-		})
+		slices.Sort(gotRepoIDs)
 
 		wantRepoIDs := []int32{1, 3}
-		sort.Slice(wantRepoIDs, func(i, j int) bool {
-			return wantRepoIDs[i] < wantRepoIDs[j]
-		})
+		slices.Sort(wantRepoIDs)
 
 		if diff := cmp.Diff(wantRepoIDs, gotRepoIDs); diff != "" {
 			t.Errorf("indexed repoIDs mismatch (-want +got):\n%s", diff)
@@ -186,14 +183,10 @@ func TestListRepoIDs(t *testing.T) {
 	}
 
 	receivedRepoIDs := got.IDs
-	sort.Slice(receivedRepoIDs, func(i, j int) bool {
-		return receivedRepoIDs[i] < receivedRepoIDs[j]
-	})
+	slices.Sort(receivedRepoIDs)
 
 	expectedRepoIDs := []uint32{1, 2, 3}
-	sort.Slice(expectedRepoIDs, func(i, j int) bool {
-		return expectedRepoIDs[i] < expectedRepoIDs[j]
-	})
+	slices.Sort(expectedRepoIDs)
 
 	if diff := cmp.Diff(expectedRepoIDs, receivedRepoIDs); diff != "" {
 		t.Errorf("mismatch in list of all repoIDs (-want +got):\n%s", diff)

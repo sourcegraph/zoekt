@@ -27,7 +27,7 @@ type Propagator interface {
 // should be configured with an interceptor that uses the same propagator.
 func StreamServerPropagator(prop Propagator) grpc.StreamServerInterceptor {
 	return func(
-		srv interface{},
+		srv any,
 		ss grpc.ServerStream,
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,
@@ -52,10 +52,10 @@ func StreamServerPropagator(prop Propagator) grpc.StreamServerInterceptor {
 func UnaryServerPropagator(prop Propagator) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (resp interface{}, err error) {
+	) (resp any, err error) {
 		md, ok := metadata.FromIncomingContext(ctx)
 		if ok {
 			ctx, err = prop.InjectContext(ctx, md)

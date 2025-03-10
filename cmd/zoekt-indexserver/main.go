@@ -68,10 +68,7 @@ func (o *Options) validate() {
 		log.Fatal("cpu_fraction must be between 0.0 and 1.0")
 	}
 
-	o.cpuCount = int(math.Trunc(float64(runtime.GOMAXPROCS(0)) * o.cpuFraction))
-	if o.cpuCount < 1 {
-		o.cpuCount = 1
-	}
+	o.cpuCount = max(int(math.Trunc(float64(runtime.GOMAXPROCS(0))*o.cpuFraction)), 1)
 	if o.indexFlagsStr != "" {
 		o.indexFlags = strings.Split(o.indexFlagsStr, " ")
 	}

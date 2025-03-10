@@ -389,14 +389,14 @@ func (pq pqueue) Swap(i, j int) {
 	pq[j].heapIdx = j
 }
 
-func (pq *pqueue) Push(x interface{}) {
+func (pq *pqueue) Push(x any) {
 	n := len(*pq)
 	item := x.(*queueItem)
 	item.heapIdx = n
 	*pq = append(*pq, item)
 }
 
-func (pq *pqueue) Pop() interface{} {
+func (pq *pqueue) Pop() any {
 	old := *pq
 	n := len(old)
 	item := old[n-1]

@@ -42,6 +42,8 @@ import (
 	"github.com/rs/xid"
 	"golang.org/x/sys/unix"
 
+	"maps"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 )
@@ -147,10 +149,10 @@ func (o *Options) GetHash() string {
 	hasher := sha1.New()
 
 	hasher.Write([]byte(h.ctagsPath))
-	hasher.Write([]byte(fmt.Sprintf("%t", h.cTagsMustSucceed)))
-	hasher.Write([]byte(fmt.Sprintf("%d", h.sizeMax)))
-	hasher.Write([]byte(fmt.Sprintf("%q", h.largeFiles)))
-	hasher.Write([]byte(fmt.Sprintf("%t", h.disableCTags)))
+	hasher.Write(fmt.Appendf(nil, "%t", h.cTagsMustSucceed))
+	hasher.Write(fmt.Appendf(nil, "%d", h.sizeMax))
+	hasher.Write(fmt.Appendf(nil, "%q", h.largeFiles))
+	hasher.Write(fmt.Appendf(nil, "%t", h.disableCTags))
 
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
@@ -658,9 +660,7 @@ func (b *Builder) Finish() error {
 
 	// map of temporary -> final names for all updated shards + shard metadata files
 	artifactPaths := make(map[string]string)
-	for tmp, final := range b.finishedShards {
-		artifactPaths[tmp] = final
-	}
+	maps.Copy(artifactPaths, b.finishedShards)
 
 	oldShards := b.opts.FindAllShards()
 

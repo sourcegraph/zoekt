@@ -1164,7 +1164,7 @@ func TestFileNameBoundary(t *testing.T) {
 
 func TestDocumentOrder(t *testing.T) {
 	var docs []Document
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		docs = append(docs, Document{Name: fmt.Sprintf("f%d", i), Content: []byte("needle")})
 	}
 
@@ -1260,7 +1260,7 @@ func TestBranchMask(t *testing.T) {
 func TestBranchLimit(t *testing.T) {
 	for limit := 64; limit <= 65; limit++ {
 		r := &zoekt.Repository{}
-		for i := 0; i < limit; i++ {
+		for i := range limit {
 			s := fmt.Sprintf("b%d", i)
 			r.Branches = append(r.Branches, zoekt.RepositoryBranch{
 				s, "v-" + s,
@@ -3953,7 +3953,7 @@ func TestWordSearch(t *testing.T) {
 func BenchmarkScoreChunkMatches(b *testing.B) {
 	ctx := context.Background()
 	var builder strings.Builder
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		builder.WriteString(fmt.Sprintf("line-%d one one one two two two three three three four four four five five\n", i))
 	}
 

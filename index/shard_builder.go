@@ -29,6 +29,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"slices"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/languages"
 )
@@ -234,7 +236,7 @@ func urlJoinPath(base string, elem ...string) string {
 	//
 	// [1]: https://sourcegraph.com/github.com/golang/go@go1.23.2/-/blob/src/html/template/html.go?L71-80
 	// [2]: https://github.com/apple/swift-system/blob/main/Sources/System/Util+StringArray.swift
-	elem = append([]string{}, elem...) // copy to mutate
+	elem = slices.Clone(elem) // copy to mutate
 	for i := range elem {
 		elem[i] = strings.ReplaceAll(elem[i], "+", "%2B")
 	}

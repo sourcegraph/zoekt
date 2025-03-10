@@ -236,7 +236,7 @@ func readSectionU64(f IndexFile, sec simpleSection) ([]uint64, error) {
 	return arr, nil
 }
 
-func (r *reader) readJSON(data interface{}, sec simpleSection) error {
+func (r *reader) readJSON(data any, sec simpleSection) error {
 	blob, err := r.r.Read(sec.off, sec.sz)
 	if err != nil {
 		return err
@@ -383,7 +383,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d.fileNameRuneOffsets = makeRuneOffsetMap(fileNameRuneOffsets)
 
 	d.subRepoPaths = make([][]string, 0, len(d.repoMetaData))
-	for i := 0; i < len(d.repoMetaData); i++ {
+	for i := range d.repoMetaData {
 		keys := make([]string, 0, len(d.repoMetaData[i].SubRepoMap)+1)
 		keys = append(keys, "")
 		for k := range d.repoMetaData[i].SubRepoMap {
