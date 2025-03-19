@@ -498,7 +498,7 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 	}
 
 	var branches []string
-	id := uint32(1)
+	id := uint64(1)
 	branchNames := d.branchNames[d.repos[docID]]
 	for mask != 0 {
 		if mask&0x1 != 0 {

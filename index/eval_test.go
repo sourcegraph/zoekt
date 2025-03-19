@@ -19,6 +19,7 @@ import (
 	"hash/fnv"
 	"reflect"
 	"regexp/syntax"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -409,6 +410,50 @@ func TestGatherBranches(t *testing.T) {
 
 	if len(sr.Files) != 2 {
 		t.Fatalf("len(sr.Files): want %d, got %d", 2, len(sr.Files))
+	}
+
+	for _, f := range sr.Files {
+		if d := cmp.Diff(want[f.FileName], f.Branches); d != "" {
+			t.Fatalf("-want,+got:\n%s", d)
+		}
+	}
+}
+
+func TestGatherBranchesMany(t *testing.T) {
+	content := []byte("dummy")
+	manyBranchNames := []string{}
+	manyBranches := []zoekt.RepositoryBranch{}
+	for i := range 64 {
+		branchName := "branch-" + strconv.Itoa(i)
+		manyBranchNames = append(manyBranchNames, branchName)
+		manyBranches = append(manyBranches, zoekt.RepositoryBranch{
+			Name:    branchName,
+			Version: "v1"})
+	}
+	b := testShardBuilder(t, &zoekt.Repository{
+		Branches: manyBranches,
+	}, Document{Name: "f1", Content: content, Branches: manyBranchNames})
+
+	d := searcherForTest(t, b).(*indexData)
+
+	sr, err := d.Search(
+		context.Background(),
+		&query.Substring{
+			Pattern:       "dummy",
+			CaseSensitive: false,
+		},
+		&zoekt.SearchOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string][]string{
+		"f1": manyBranchNames,
+	}
+
+	if len(sr.Files) != 1 {
+		t.Fatalf("len(sr.Files): want %d, got %d", 1, len(sr.Files))
 	}
 
 	for _, f := range sr.Files {
