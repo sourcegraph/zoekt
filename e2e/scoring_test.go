@@ -22,8 +22,8 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/ctags"
-	"github.com/sourcegraph/zoekt/internal/shards"
+	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/shards"
 	"github.com/sourcegraph/zoekt/query"
 )
 

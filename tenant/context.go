@@ -8,10 +8,10 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/sourcegraph/zoekt/internal/tenant/internal/enforcement"
-	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
-	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
-	"github.com/sourcegraph/zoekt/internal/trace"
+	"github.com/sourcegraph/zoekt/tenant/internal/enforcement"
+	"github.com/sourcegraph/zoekt/tenant/internal/tenanttype"
+	"github.com/sourcegraph/zoekt/tenant/systemtenant"
+	"github.com/sourcegraph/zoekt/trace"
 )
 
 var ErrMissingTenant = fmt.Errorf("missing tenant")

@@ -22,7 +22,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
-	"github.com/sourcegraph/zoekt/internal/mockSearcher"
+	"github.com/sourcegraph/zoekt/mockSearcher"
 	"github.com/sourcegraph/zoekt/query"
 )
 

@@ -24,8 +24,8 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
-	"github.com/sourcegraph/zoekt/internal/ctags"
-	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
+	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/tenant/tenanttest"
 )
 
 func TestIterateIndexOptions_Fingerprint(t *testing.T) {

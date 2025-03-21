@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sourcegraph/zoekt/internal/gitindex"
+	"github.com/sourcegraph/zoekt/gitindex"
 	gitlab "github.com/xanzy/go-gitlab"
 )
 

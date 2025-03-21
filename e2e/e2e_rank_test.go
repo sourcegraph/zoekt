@@ -17,8 +17,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/archive"
-	"github.com/sourcegraph/zoekt/internal/shards"
+	"github.com/sourcegraph/zoekt/archive"
+	"github.com/sourcegraph/zoekt/shards"
 	"github.com/sourcegraph/zoekt/query"
 )
 

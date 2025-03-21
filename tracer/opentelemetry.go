@@ -21,7 +21,7 @@ import (
 	oteltracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 
-	"github.com/sourcegraph/zoekt/internal/otlpenv"
+	"github.com/sourcegraph/zoekt/otlpenv"
 )
 
 // configureOpenTelemetry creates an opentracing.Tracer that exports all OpenTracing traces

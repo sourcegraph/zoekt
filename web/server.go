@@ -33,10 +33,10 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/sourcegraph/zoekt/index"
-	zjson "github.com/sourcegraph/zoekt/internal/json"
+	zjson "github.com/sourcegraph/zoekt/json"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
+	"github.com/sourcegraph/zoekt/tenant/systemtenant"
 	"github.com/sourcegraph/zoekt/query"
 )
 

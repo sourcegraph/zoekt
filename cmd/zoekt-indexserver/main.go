@@ -31,7 +31,7 @@ import (
 	"time"
 
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/gitindex"
+	"github.com/sourcegraph/zoekt/gitindex"
 )
 
 const day = time.Hour * 24

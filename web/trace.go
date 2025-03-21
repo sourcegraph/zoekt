@@ -5,7 +5,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/trace"
+	"github.com/sourcegraph/zoekt/trace"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -15,7 +15,7 @@ func NewTraceAwareSearcher(s zoekt.Streamer) zoekt.Streamer {
 
 // traceAwareSearcher wraps a zoekt.Searcher instance so that the tracing context item is set in the
 // context. This context item toggles on trace collection via the
-// github.com/sourcegraph/zoekt/internal/trace/ot package.
+// github.com/sourcegraph/zoekt/trace/ot package.
 type traceAwareSearcher struct {
 	Searcher zoekt.Streamer
 }

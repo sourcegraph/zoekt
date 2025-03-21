@@ -13,7 +13,7 @@ import (
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"github.com/sourcegraph/zoekt/grpc/propagator"
-	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/tenant"
 )
 
 func NewServer(logger sglog.Logger, additionalOpts ...grpc.ServerOption) *grpc.Server {

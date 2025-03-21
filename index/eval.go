@@ -27,7 +27,7 @@ import (
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/tenant"
 	"github.com/sourcegraph/zoekt/query"
 )
 

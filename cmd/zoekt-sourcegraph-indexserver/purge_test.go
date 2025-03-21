@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
+	"github.com/sourcegraph/zoekt/tenant/tenanttest"
 	"github.com/stretchr/testify/require"
 )
 

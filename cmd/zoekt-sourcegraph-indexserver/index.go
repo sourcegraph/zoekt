@@ -19,8 +19,8 @@ import (
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/ctags"
-	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/ctags"
+	"github.com/sourcegraph/zoekt/tenant"
 )
 
 const defaultIndexingTimeout = 1*time.Hour + 30*time.Minute
