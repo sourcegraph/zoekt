@@ -24,7 +24,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/syntaxutil"
+	"github.com/sourcegraph/zoekt/syntaxutil"
 	"github.com/sourcegraph/zoekt/query"
 )
 

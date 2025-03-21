@@ -32,7 +32,7 @@ import (
 	"slices"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/languages"
+	"github.com/sourcegraph/zoekt/languages"
 )
 
 var _ = log.Println

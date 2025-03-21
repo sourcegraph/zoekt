@@ -26,7 +26,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/grafana/regexp"
-	"github.com/sourcegraph/zoekt/internal/syntaxutil"
+	"github.com/sourcegraph/zoekt/syntaxutil"
 )
 
 var _ = log.Println

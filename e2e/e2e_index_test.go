@@ -34,9 +34,9 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/shards"
-	"github.com/sourcegraph/zoekt/internal/tenant"
-	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
+	"github.com/sourcegraph/zoekt/shards"
+	"github.com/sourcegraph/zoekt/tenant"
+	"github.com/sourcegraph/zoekt/tenant/tenanttest"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/stretchr/testify/require"
 )

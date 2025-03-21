@@ -6,8 +6,8 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/sourcegraph/zoekt/internal/tenant/internal/enforcement"
-	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
+	"github.com/sourcegraph/zoekt/tenant/internal/enforcement"
+	"github.com/sourcegraph/zoekt/tenant/internal/tenanttype"
 )
 
 func MockEnforce(t *testing.T) {

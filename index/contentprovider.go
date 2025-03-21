@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/ctags"
+	"github.com/sourcegraph/zoekt/ctags"
 )
 
 var _ = log.Println

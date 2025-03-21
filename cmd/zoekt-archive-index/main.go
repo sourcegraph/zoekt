@@ -14,7 +14,7 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/sourcegraph/zoekt/cmd"
-	"github.com/sourcegraph/zoekt/internal/archive"
+	"github.com/sourcegraph/zoekt/archive"
 )
 
 func main() {

@@ -60,9 +60,9 @@ import (
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/debugserver"
-	"github.com/sourcegraph/zoekt/internal/profiler"
-	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/debugserver"
+	"github.com/sourcegraph/zoekt/profiler"
+	"github.com/sourcegraph/zoekt/tenant"
 
 	"slices"
 

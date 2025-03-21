@@ -11,7 +11,7 @@ import (
 	"sort"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/tenant"
 )
 
 // Merge files into a compound shard in dstDir. Merge returns tmpName and a

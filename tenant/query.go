@@ -3,7 +3,7 @@ package tenant
 import (
 	"context"
 
-	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
+	"github.com/sourcegraph/zoekt/tenant/systemtenant"
 )
 
 // HasAccess returns true if the tenant ID in the context matches the

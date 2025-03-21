@@ -21,7 +21,7 @@ import (
 	"regexp/syntax"
 
 	"github.com/grafana/regexp"
-	"github.com/sourcegraph/zoekt/internal/languages"
+	"github.com/sourcegraph/zoekt/languages"
 )
 
 var _ = log.Printf

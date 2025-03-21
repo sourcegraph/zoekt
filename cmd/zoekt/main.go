@@ -31,7 +31,7 @@ import (
 	"github.com/felixge/fgprof"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/shards"
+	"github.com/sourcegraph/zoekt/shards"
 	"github.com/sourcegraph/zoekt/query"
 )
 

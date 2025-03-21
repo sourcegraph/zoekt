@@ -14,7 +14,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
+	"github.com/sourcegraph/zoekt/tenant/tenanttest"
 )
 
 func TestHasMultipleShards(t *testing.T) {
