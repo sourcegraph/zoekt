@@ -1,11 +1,10 @@
-package shards
+package search
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"time"
-
-	"maps"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"

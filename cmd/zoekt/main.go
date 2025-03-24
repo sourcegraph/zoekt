@@ -31,8 +31,8 @@ import (
 	"github.com/felixge/fgprof"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 func displayMatches(files []zoekt.FileMatch, pat string, withRepo bool, list bool) {
@@ -191,7 +191,7 @@ func main() {
 	if *shard != "" {
 		searcher, err = loadShard(*shard, *verbose)
 	} else {
-		searcher, err = shards.NewDirectorySearcher(*index)
+		searcher, err = search.NewDirectorySearcher(*index)
 	}
 
 	if err != nil {

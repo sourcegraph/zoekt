@@ -1,4 +1,4 @@
-package shards
+package search
 
 import (
 	"context"

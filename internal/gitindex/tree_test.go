@@ -32,8 +32,8 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 func createSubmoduleRepo(dir string) error {
@@ -218,7 +218,7 @@ func TestSubmoduleIndex(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}
@@ -322,7 +322,7 @@ func TestSearchSymlinkByContent(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}
@@ -449,7 +449,7 @@ func TestBranchWildcard(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}
@@ -528,7 +528,7 @@ func TestFullAndShortRefNames(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}
@@ -578,7 +578,7 @@ func TestLatestCommit(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}

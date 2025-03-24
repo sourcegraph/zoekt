@@ -35,8 +35,8 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 func TestIndexEmptyRepo(t *testing.T) {
@@ -116,7 +116,7 @@ func TestIndexTinyRepo(t *testing.T) {
 			t.Fatalf("unexpected error %v", err)
 		}
 
-		searcher, err := shards.NewDirectorySearcher(dir)
+		searcher, err := search.NewDirectorySearcher(dir)
 		if err != nil {
 			t.Fatal("NewDirectorySearcher", err)
 		}
@@ -724,7 +724,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					//
 					// then, compare returned set of documents with the expected set for the step and see if they agree
 
-					ss, err := shards.NewDirectorySearcher(indexDir)
+					ss, err := search.NewDirectorySearcher(indexDir)
 					if err != nil {
 						t.Fatalf("NewDirectorySearcher(%s): %s", indexDir, err)
 					}

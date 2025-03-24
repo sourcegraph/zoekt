@@ -23,8 +23,8 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/ctags"
-	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 type scoreCase struct {
@@ -709,7 +709,7 @@ func checkScoring(t *testing.T, c scoreCase, useBM25 bool, parserType ctags.CTag
 			t.Fatalf("Finish: %v", err)
 		}
 
-		ss, err := shards.NewDirectorySearcher(dir)
+		ss, err := search.NewDirectorySearcher(dir)
 		if err != nil {
 			t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
 		}
@@ -818,7 +818,7 @@ func TestRepoRanks(t *testing.T) {
 				t.Fatalf("Finish: %v", err)
 			}
 
-			ss, err := shards.NewDirectorySearcher(dir)
+			ss, err := search.NewDirectorySearcher(dir)
 			if err != nil {
 				t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
 			}

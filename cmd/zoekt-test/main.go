@@ -33,8 +33,8 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 func readTree(dir string) (map[string][]byte, error) {
@@ -107,7 +107,7 @@ func compare(dir, patfile string, caseSensitive bool) error {
 	if err != nil {
 		return err
 	}
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func testLoadIndexDir(indexDir string) {
 	runtime.GC()
 	runtime.ReadMemStats(&a)
 	start := time.Now()
-	s, err := shards.NewDirectorySearcher(indexDir)
+	s, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		return
 	}
