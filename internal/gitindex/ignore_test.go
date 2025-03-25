@@ -11,8 +11,8 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 func createSourcegraphignoreRepo(dir string) error {
@@ -76,7 +76,7 @@ func TestIgnore(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}

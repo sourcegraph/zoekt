@@ -18,8 +18,8 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/archive"
-	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 var update = flag.Bool("update", false, "update golden file")
@@ -96,7 +96,7 @@ func TestRanking(t *testing.T) {
 		}
 	}
 
-	ss, err := shards.NewDirectorySearcher(indexDir)
+	ss, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatalf("NewDirectorySearcher(%s): %v", indexDir, err)
 	}

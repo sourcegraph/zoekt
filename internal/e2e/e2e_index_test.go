@@ -34,10 +34,10 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,7 +92,7 @@ func TestBasicIndexing(t *testing.T) {
 		}
 	}
 
-	ss, err := shards.NewDirectorySearcher(dir)
+	ss, err := search.NewDirectorySearcher(dir)
 	if err != nil {
 		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
 	}
@@ -215,7 +215,7 @@ func TestSearchTenant(t *testing.T) {
 		}
 	}
 
-	ss, err := shards.NewDirectorySearcher(dir)
+	ss, err := search.NewDirectorySearcher(dir)
 	if err != nil {
 		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
 	}
@@ -271,7 +271,7 @@ func TestListTenant(t *testing.T) {
 		t.Fatalf("want a shard, got %v", fs)
 	}
 
-	ss, err := shards.NewDirectorySearcher(dir)
+	ss, err := search.NewDirectorySearcher(dir)
 	if err != nil {
 		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
 	}
@@ -359,7 +359,7 @@ func TestLargeFileOption(t *testing.T) {
 		t.Errorf("Finish: %v", err)
 	}
 
-	ss, err := shards.NewDirectorySearcher(dir)
+	ss, err := search.NewDirectorySearcher(dir)
 	if err != nil {
 		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
 	}
@@ -406,7 +406,7 @@ func TestUpdate(t *testing.T) {
 			t.Errorf("Finish: %v", err)
 		}
 	}
-	ss, err := shards.NewDirectorySearcher(dir)
+	ss, err := search.NewDirectorySearcher(dir)
 	if err != nil {
 		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
 	}
@@ -582,7 +582,7 @@ func TestEmptyContent(t *testing.T) {
 		t.Fatalf("want a shard, got %v", fs)
 	}
 
-	ss, err := shards.NewDirectorySearcher(dir)
+	ss, err := search.NewDirectorySearcher(dir)
 	if err != nil {
 		t.Fatalf("NewDirectorySearcher(%s): %v", dir, err)
 	}
@@ -767,7 +767,7 @@ func TestDeltaShards(t *testing.T) {
 					t.Errorf("unexpected diff in index state (-want +got):\n%s", diff)
 				}
 
-				ss, err := shards.NewDirectorySearcher(indexDir)
+				ss, err := search.NewDirectorySearcher(indexDir)
 				if err != nil {
 					t.Fatalf("step %q: NewDirectorySearcher(%s): %s", step.name, indexDir, err)
 				}

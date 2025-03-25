@@ -56,10 +56,10 @@ import (
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/debugserver"
 	"github.com/sourcegraph/zoekt/internal/profiler"
-	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/internal/trace"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 	"github.com/sourcegraph/zoekt/web"
 )
 
@@ -203,7 +203,7 @@ func main() {
 	// Do not block on loading shards so we can become partially available
 	// sooner. Otherwise on large instances zoekt can be unavailable on the
 	// order of minutes.
-	searcher, err := shards.NewDirectorySearcherFast(*indexDir)
+	searcher, err := search.NewDirectorySearcherFast(*indexDir)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -18,8 +18,8 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/shards"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 	"github.com/stretchr/testify/require"
 )
 
@@ -178,7 +178,7 @@ func testIndexIncrementally(t *testing.T, format string) {
 			t.Fatalf("error creating index: %v", err)
 		}
 
-		ss, err := shards.NewDirectorySearcher(indexDir)
+		ss, err := search.NewDirectorySearcher(indexDir)
 		if err != nil {
 			t.Fatalf("NewDirectorySearcher(%s): %v", indexDir, err)
 		}
