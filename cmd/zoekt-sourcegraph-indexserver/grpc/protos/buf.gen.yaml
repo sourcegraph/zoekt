@@ -8,4 +8,4 @@ plugins:
   - plugin: buf.build/grpc/go:v1.3.0
     out: .
     opt:
-      - paths=source_relative
+      - paths=source_relative 

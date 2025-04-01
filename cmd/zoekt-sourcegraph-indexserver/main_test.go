@@ -56,7 +56,7 @@ func TestServer_defaultArgs(t *testing.T) {
 
 func TestIndexNoTenant(t *testing.T) {
 	s := &Server{}
-	_, err := s.Index(&indexArgs{})
+	_, err := s.index(&indexArgs{})
 	require.ErrorIs(t, err, tenant.ErrMissingTenant)
 }
 

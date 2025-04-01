@@ -18,6 +18,7 @@ import (
 
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/zoekt"
+	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 	"github.com/sourcegraph/zoekt/internal/tenant"
@@ -449,4 +450,39 @@ func tmpGitDir(name string) (string, error) {
 		}
 	}
 	return dir, nil
+}
+
+// FromProto converts a ZoektIndexOptions proto message into an IndexOptions struct.
+func (o *IndexOptions) FromProto(x *configv1.ZoektIndexOptions) {
+	branches := make([]zoekt.RepositoryBranch, 0, len(x.Branches))
+	for _, b := range x.GetBranches() {
+		branches = append(branches, zoekt.RepositoryBranch{
+			Name:    b.GetName(),
+			Version: b.GetVersion(),
+		})
+	}
+
+	languageMap := make(map[string]ctags.CTagsParserType)
+	for _, lang := range x.GetLanguageMap() {
+		languageMap[lang.GetLanguage()] = ctags.CTagsParserType(lang.GetCtags().Number())
+	}
+
+	*o = IndexOptions{
+		RepoID:     uint32(x.GetRepoId()),
+		LargeFiles: x.GetLargeFiles(),
+		Symbols:    x.GetSymbols(),
+		Branches:   branches,
+		Name:       x.GetName(),
+
+		Priority: x.GetPriority(),
+
+		Public:   x.GetPublic(),
+		Fork:     x.GetFork(),
+		Archived: x.GetArchived(),
+
+		LanguageMap:      languageMap,
+		ShardConcurrency: x.GetShardConcurrency(),
+
+		TenantID: int(x.TenantId),
+	}
 }

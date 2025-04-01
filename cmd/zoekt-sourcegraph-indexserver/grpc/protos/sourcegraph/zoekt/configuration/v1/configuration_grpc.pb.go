@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.3.0
 // - protoc             (unknown)
-// source: configuration.proto
+// source: sourcegraph/zoekt/configuration/v1/configuration.proto
 
 package v1
 
@@ -188,5 +188,5 @@ var ZoektConfigurationService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "configuration.proto",
+	Metadata: "sourcegraph/zoekt/configuration/v1/configuration.proto",
 }
