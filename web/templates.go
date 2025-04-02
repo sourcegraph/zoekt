@@ -34,6 +34,7 @@ var TemplateText = map[string]string{
 <style>
   #navsearchbox { width: 350px !important; }
   #maxhits { width: 100px !important; }
+  #context { width: 70px !important; }
   .label-dup {
     border-width: 1px !important;
     border-style: solid !important;
@@ -116,6 +117,10 @@ var TemplateText = map[string]string{
           <div class="input-group">
             <div class="input-group-addon">Max Results</div>
             <input class="form-control" type="number" id="maxhits" name="num" value="{{.Num}}">
+          </div>
+          <div class="input-group">
+            <div class="input-group-addon">Context Lines</div>
+            <input class="form-control" id="context" name="ctx" type="number" value="{{.Ctx}}">
           </div>
           <button class="btn btn-primary">Search</button>
           <!--Hack: we use a hidden form field to keep track of the debug flag across searches-->
@@ -245,7 +250,7 @@ document.onkeydown=function(e){
         {{if gt .LineNum 0}}
         <tr>
           <td style="background-color: rgba(238, 238, 255, 0.6);">
-            <pre class="inline-pre"><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 (TrimTrailingNewline .Post)}}{{end}} {{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</pre>
+            <pre class="inline-pre"><p style="margin: 0px;">{{.Before}}</p><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 (TrimTrailingNewline .Post)}}{{end}}<p style="margin: 0px;">{{.After}}</p>{{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</pre>
           </td>
         </tr>
         {{end}}
