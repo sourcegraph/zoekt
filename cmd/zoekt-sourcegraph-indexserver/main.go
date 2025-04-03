@@ -354,8 +354,10 @@ func (sb *synchronizedBuffer) String() string {
 // pauseFileName if present in IndexDir will stop index jobs from
 // running. This is to make it possible to experiment with the content of the
 // IndexDir without the indexserver writing to it.
-const pauseFileName = "PAUSE"
-const pauseEnvVar = "SRC_PAUSE_INDEXING"
+const (
+	pauseFileName = "PAUSE"
+	pauseEnvVar   = "SRC_PAUSE_INDEXING"
+)
 
 // isIndexingPaused checks if indexing should be paused based on either:
 // 1. The presence of a PAUSE file in the index directory
@@ -1217,9 +1219,9 @@ func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest,
 	}, nil
 }
 
+// Delete implements the gRPC method for deleting a repository. It moves the
+// simple shards to the trash dir and tombstones repos in compound shards.
 func (s *Server) Delete(ctx context.Context, req *indexserverv1.DeleteRequest) (*indexserverv1.DeleteResponse, error) {
-	// Move the simple shards to the trash dir and tombstone repos in compound
-	// shards
 	s.muIndexDir.Global(func() {
 		indexShards := getShards(s.IndexDir)
 		for _, repoID := range req.RepoIds {
