@@ -24,6 +24,8 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	indexserverv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/zoekt/indexserver/v1"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
@@ -446,5 +448,115 @@ func TestAddDefaultPort(t *testing.T) {
 				t.Errorf("addDefaultPort(%q) mismatch (-want +got):\n%s", test.input, diff)
 			}
 		})
+	}
+}
+
+func TestIndexGRPC(t *testing.T) {
+	indexDir := t.TempDir()
+
+	// Minimal server setup
+	s := &Server{
+		logger:         logtest.NoOp(t),
+		IndexDir:       indexDir,
+		rootURL:        &url.URL{Scheme: "http", Host: "example.com"},
+		indexSemaphore: make(chan struct{}, 1),
+	}
+
+	branches := []*configv1.ZoektRepositoryBranch{
+		{
+			Name:    "HEAD",
+			Version: "abc123",
+		},
+	}
+
+	req := &indexserverv1.IndexRequest{
+		Options: &configv1.ZoektIndexOptions{
+			RepoId:   42,
+			Name:     "repo",
+			TenantId: 1,
+			Branches: branches,
+		},
+	}
+
+	resp, err := s.indexGRPC(context.Background(), req, mockIndexFunc(t))
+	require.NoError(t, err)
+	require.Equal(t, &indexserverv1.IndexResponse{
+		RepoId:        42,
+		Branches:      branches,
+		IndexTimeUnix: resp.IndexTimeUnix, // Hack: this changes every time so we don't check it
+	}, resp)
+
+	require.NotZero(t, resp.IndexTimeUnix)
+}
+
+func mockIndexFunc(t *testing.T) func(args *indexArgs) (indexState, error) {
+	return func(args *indexArgs) (indexState, error) {
+		createShard(t, args.IndexDir)
+		return indexStateSuccess, nil
+	}
+}
+
+func createShard(t *testing.T, dir string) {
+	opts := index.Options{
+		IndexDir: dir,
+		RepositoryDescription: zoekt.Repository{
+			ID:   42,
+			Name: "repo",
+			Branches: []zoekt.RepositoryBranch{
+				{
+					Name:    "HEAD",
+					Version: "abc123",
+				},
+			},
+		},
+	}
+
+	b, err := index.NewBuilder(opts)
+	require.NoError(t, err)
+	require.NoError(t, b.AddFile("test.txt", []byte("hello")))
+	require.NoError(t, b.Finish())
+}
+
+func TestDelete(t *testing.T) {
+	indexDir := t.TempDir()
+	trashDir := filepath.Join(indexDir, ".trash")
+	if err := os.MkdirAll(trashDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a simple shard
+	createShard(t, indexDir)
+
+	// Verify the shard exists in index dir
+	shards := getShards(indexDir)
+	if len(shards) != 1 {
+		t.Fatalf("expected 1 shard, got %d", len(shards))
+	}
+
+	// Create server and call Delete
+	s := &Server{
+		logger:         logtest.NoOp(t),
+		IndexDir:       indexDir,
+		rootURL:        &url.URL{Scheme: "http", Host: "example.com"},
+		indexSemaphore: make(chan struct{}, 1),
+	}
+
+	req := &indexserverv1.DeleteRequest{
+		RepoIds: []uint32{42}, // matches the repo ID in createShard
+	}
+
+	_, err := s.Delete(context.Background(), req)
+	require.NoError(t, err)
+
+	// Verify shard was moved to trash
+	trashShards := getShards(trashDir)
+	if len(trashShards) != 1 {
+		t.Fatalf("expected 1 shard in trash, got %d", len(trashShards))
+	}
+
+	// Verify shard is no longer in index dir
+	shards = getShards(indexDir)
+	if len(shards) != 0 {
+		t.Fatalf("expected 0 shards in index dir, got %d", len(shards))
 	}
 }

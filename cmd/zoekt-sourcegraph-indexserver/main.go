@@ -1085,6 +1085,12 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 // - Internal: returned when indexing fails
 // - Canceled: returned when the context is canceled while waiting for an index slot
 func (s *Server) Index(ctx context.Context, req *indexserverv1.IndexRequest) (*indexserverv1.IndexResponse, error) {
+	return s.indexGRPC(ctx, req, s.index)
+}
+
+// indexGRPC takes an index func which is used for testing. For production GRPC calls, use
+// Server.Index instead
+func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest, indexFunc func(*indexArgs) (indexState, error)) (*indexserverv1.IndexResponse, error) {
 	// Validate request
 	if req.Options == nil {
 		return nil, status.Error(codes.InvalidArgument, "index options are required")
@@ -1129,7 +1135,7 @@ func (s *Server) Index(ctx context.Context, req *indexserverv1.IndexRequest) (*i
 		start := time.Now()
 
 		var state indexState
-		state, indexErr = s.index(args)
+		state, indexErr = indexFunc(args)
 		elapsed := time.Since(start)
 		metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
 
