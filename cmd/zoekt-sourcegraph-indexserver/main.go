@@ -355,10 +355,11 @@ func (sb *synchronizedBuffer) String() string {
 // running. This is to make it possible to experiment with the content of the
 // IndexDir without the indexserver writing to it.
 const pauseFileName = "PAUSE"
+const pauseEnvVar = "SRC_PAUSE_INDEXING"
 
 // isIndexingPaused checks if indexing should be paused based on either:
 // 1. The presence of a PAUSE file in the index directory
-// 2. The SRC_INDEXING_PAUSED environment variable being set to true
+// 2. The SRC_PAUSE_INDEXING environment variable being set to true
 func isIndexingPaused(indexDir string) (bool, string) {
 	// Check for PAUSE file first
 	if b, err := os.ReadFile(filepath.Join(indexDir, pauseFileName)); err == nil {
@@ -366,8 +367,8 @@ func isIndexingPaused(indexDir string) (bool, string) {
 	}
 
 	// Then check environment variable
-	if getEnvWithDefaultBool("SRC_PAUSE_INDEXING", false) {
-		return true, "indexserver paused via SRC_PAUSE_INDEXING environment variable"
+	if getEnvWithDefaultBool(pauseEnvVar, false) {
+		return true, fmt.Sprintf("indexserver paused via %s environment variable", pauseEnvVar)
 	}
 
 	return false, ""
