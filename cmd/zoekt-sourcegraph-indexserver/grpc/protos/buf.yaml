@@ -5,5 +5,3 @@ breaking:
 lint:
   use:
     - DEFAULT
-deps:
-  - buf.build/googleapis/googleapis
