@@ -545,18 +545,24 @@ func TestDelete(t *testing.T) {
 		RepoIds: []uint32{42}, // matches the repo ID in createShard
 	}
 
-	_, err := s.Delete(context.Background(), req)
+	// Test case: context is canceled
+	cancledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := s.Delete(cancledCtx, req)
+	require.Error(t, err)
+
+	shards = getShards(indexDir)
+	require.Len(t, shards, 1)
+
+	// Test case: context is not canceled
+	_, err = s.Delete(context.Background(), req)
 	require.NoError(t, err)
 
 	// Verify shard was moved to trash
 	trashShards := getShards(trashDir)
-	if len(trashShards) != 1 {
-		t.Fatalf("expected 1 shard in trash, got %d", len(trashShards))
-	}
+	require.Len(t, trashShards, 1)
 
 	// Verify shard is no longer in index dir
 	shards = getShards(indexDir)
-	if len(shards) != 0 {
-		t.Fatalf("expected 0 shards in index dir, got %d", len(shards))
-	}
+	require.Len(t, shards, 0)
 }

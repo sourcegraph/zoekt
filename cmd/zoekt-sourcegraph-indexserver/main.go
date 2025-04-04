@@ -1235,27 +1235,47 @@ func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest,
 // Delete implements the gRPC method for deleting a repository. It moves the
 // simple shards to the trash dir and tombstones repos in compound shards.
 func (s *Server) Delete(ctx context.Context, req *indexserverv1.DeleteRequest) (*indexserverv1.DeleteResponse, error) {
-	s.muIndexDir.Global(func() {
-		indexShards := getShards(s.IndexDir)
-		for _, repoID := range req.RepoIds {
-			if shards, ok := indexShards[repoID]; ok {
-				simple := shards[:0]
-				for _, shardItem := range shards {
-					if s.shardMerging && maybeSetTombstone([]shard{shardItem}, repoID) {
+	var err error
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.muIndexDir.Global(func() {
+			indexShards := getShards(s.IndexDir)
+			for _, repoID := range req.RepoIds {
+				if ctx.Err() != nil {
+					err = status.Error(codes.Canceled, "context canceled")
+					return
+				}
+
+				if shards, ok := indexShards[repoID]; ok {
+					simple := shards[:0]
+					for _, shardItem := range shards {
+						if s.shardMerging && maybeSetTombstone([]shard{shardItem}, repoID) {
+							continue
+						}
+
+						simple = append(simple, shardItem)
+					}
+
+					if len(simple) == 0 {
 						continue
 					}
 
-					simple = append(simple, shardItem)
+					moveAll(filepath.Join(s.IndexDir, ".trash"), simple)
 				}
-
-				if len(simple) == 0 {
-					continue
-				}
-
-				moveAll(filepath.Join(s.IndexDir, ".trash"), simple)
 			}
+		})
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, status.Error(codes.Canceled, "context canceled")
+	case <-done:
+		if err != nil {
+			return nil, err
 		}
-	})
+	}
 
 	return &indexserverv1.DeleteResponse{}, nil
 }
