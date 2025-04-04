@@ -1148,25 +1148,20 @@ func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest,
 			return
 		}
 
-		// If we fail reading the metadata, we will still return a success state to the caller,
-		// but the metadata will be empty.
-		if state == indexStateNoop || state == indexStateSuccessMeta || state == indexStateSuccess {
+		readMetadata := func(args *indexArgs) (*zoekt.Repository, int64, error) {
 			repo, metadata, ok, err := args.BuildOptions().FindRepositoryMetadata()
-			if err != nil {
-				errorLog.Printf("failed to read metadata for %s: %s", args.String(), err)
-				return
+			if err != nil || !ok {
+				return nil, 0, fmt.Errorf("failed to read metadata for %s: %w", args.String(), err)
 			}
-			if !ok {
-				errorLog.Printf("failed to read metadata for %s: failed to find metadata", args.String())
-				return
-			}
-
-			indexTimeUnix = metadata.IndexTime.Unix()
-			zoektRepo = repo
+			return repo, metadata.IndexTime.Unix(), nil
 		}
 
 		switch state {
 		case indexStateSuccess:
+			zoektRepo, indexTimeUnix, indexErr = readMetadata(args)
+			if indexErr != nil {
+				return
+			}
 			var branches []string
 			for _, b := range zoektRepo.Branches {
 				branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
@@ -1179,14 +1174,25 @@ func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest,
 				sglog.Duration("duration", elapsed),
 			)
 		case indexStateSuccessMeta:
+			zoektRepo, indexTimeUnix, indexErr = readMetadata(args)
+			if indexErr != nil {
+				return
+			}
 			infoLog.Printf("updated meta %s in %v", args.String(), elapsed)
 		case indexStateNoop:
+			zoektRepo, indexTimeUnix, indexErr = readMetadata(args)
+			if indexErr != nil {
+				return
+			}
+		case indexStateEmpty:
+			zoektRepo = &zoekt.Repository{
+				ID: args.RepoID,
+			}
 		case indexStateFail:
 			// This should never happen, because indexStateFail implies
 			// indexErr!=nil and we exit early, but we'll handle it gracefully
 			// just in case.
 			indexErr = status.Error(codes.Internal, "failed to index repository")
-		case indexStateEmpty:
 			// Repository exists but is empty, return OK with empty response
 		default:
 			indexErr = status.Errorf(codes.Internal, "unknown index state: %s", state)
@@ -1201,6 +1207,13 @@ func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest,
 
 	if indexErr != nil {
 		return nil, indexErr
+	}
+
+	if zoektRepo == nil {
+		// This should never happen, because zoektRepo=nil means we either
+		// failed to index or failed to read the metadata, both of which yield
+		// indexErr!=nil.
+		return nil, status.Error(codes.Internal, fmt.Sprintf("unexpected error: zoektRepo is nil for options %+v", opts))
 	}
 
 	// Convert branches to proto format
