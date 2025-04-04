@@ -1105,6 +1105,8 @@ func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest,
 		defer func() { <-s.indexSemaphore }()
 	case <-ctx.Done():
 		return nil, status.Error(codes.Canceled, "context canceled while waiting for index slot")
+	case <-time.After(s.timeout):
+		return nil, status.Error(codes.DeadlineExceeded, "timed out while waiting for index slot")
 	}
 
 	var opts IndexOptions
@@ -1237,6 +1239,8 @@ func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest,
 func (s *Server) Delete(ctx context.Context, req *indexserverv1.DeleteRequest) (*indexserverv1.DeleteResponse, error) {
 	var err error
 
+	// Run the delete operation in a goroutine to be able to respond to context
+	// cancellation while waiting for the lock
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

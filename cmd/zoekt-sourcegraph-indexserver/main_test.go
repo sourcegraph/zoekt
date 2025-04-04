@@ -9,24 +9,24 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
-
-	sglog "github.com/sourcegraph/log"
-	"github.com/sourcegraph/log/logtest"
-	"github.com/stretchr/testify/require"
-	"github.com/xeipuuv/gojsonschema"
-	"google.golang.org/grpc"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
-
-	"slices"
-
+	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/log/logtest"
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	indexserverv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/zoekt/indexserver/v1"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/stretchr/testify/require"
+	"github.com/xeipuuv/gojsonschema"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestServer_defaultArgs(t *testing.T) {
@@ -460,6 +460,7 @@ func TestIndexGRPC(t *testing.T) {
 		IndexDir:       indexDir,
 		rootURL:        &url.URL{Scheme: "http", Host: "example.com"},
 		indexSemaphore: make(chan struct{}, 1),
+		timeout:        time.Hour, // no timeout
 	}
 
 	branches := []*configv1.ZoektRepositoryBranch{
@@ -489,32 +490,27 @@ func TestIndexGRPC(t *testing.T) {
 	require.NotZero(t, resp.IndexTimeUnix)
 }
 
-func mockIndexFunc(t *testing.T) func(ctx context.Context, args *indexArgs) (indexState, error) {
-	return func(ctx context.Context, args *indexArgs) (indexState, error) {
-		createShard(t, args.IndexDir)
-		return indexStateSuccess, nil
-	}
-}
+func TestIndexGRPC_Timeout(t *testing.T) {
+	indexDir := t.TempDir()
 
-func createShard(t *testing.T, dir string) {
-	opts := index.Options{
-		IndexDir: dir,
-		RepositoryDescription: zoekt.Repository{
-			ID:   42,
-			Name: "repo",
-			Branches: []zoekt.RepositoryBranch{
-				{
-					Name:    "HEAD",
-					Version: "abc123",
-				},
-			},
+	s := &Server{
+		logger:           logtest.NoOp(t),
+		IndexDir:         indexDir,
+		IndexConcurrency: 0, // impossible to acquire index slot
+		timeout:          time.Millisecond,
+	}
+
+	req := &indexserverv1.IndexRequest{
+		Options: &configv1.ZoektIndexOptions{
+			RepoId: 42,
+			Name:   "repo",
 		},
 	}
 
-	b, err := index.NewBuilder(opts)
-	require.NoError(t, err)
-	require.NoError(t, b.AddFile("test.txt", []byte("hello")))
-	require.NoError(t, b.Finish())
+	// use context.Background() to make sure we don't return because of context cancellation
+	_, err := s.indexGRPC(context.Background(), req, mockIndexFunc(t))
+	require.Error(t, err)
+	require.Equal(t, codes.DeadlineExceeded, status.Code(err))
 }
 
 func TestDelete(t *testing.T) {
@@ -539,6 +535,7 @@ func TestDelete(t *testing.T) {
 		IndexDir:       indexDir,
 		rootURL:        &url.URL{Scheme: "http", Host: "example.com"},
 		indexSemaphore: make(chan struct{}, 1),
+		timeout:        time.Hour, // no timeout
 	}
 
 	req := &indexserverv1.DeleteRequest{
@@ -565,4 +562,32 @@ func TestDelete(t *testing.T) {
 	// Verify shard is no longer in index dir
 	shards = getShards(indexDir)
 	require.Len(t, shards, 0)
+}
+
+func mockIndexFunc(t *testing.T) func(ctx context.Context, args *indexArgs) (indexState, error) {
+	return func(ctx context.Context, args *indexArgs) (indexState, error) {
+		createShard(t, args.IndexDir)
+		return indexStateSuccess, nil
+	}
+}
+
+func createShard(t *testing.T, dir string) {
+	opts := index.Options{
+		IndexDir: dir,
+		RepositoryDescription: zoekt.Repository{
+			ID:   42,
+			Name: "repo",
+			Branches: []zoekt.RepositoryBranch{
+				{
+					Name:    "HEAD",
+					Version: "abc123",
+				},
+			},
+		},
+	}
+
+	b, err := index.NewBuilder(opts)
+	require.NoError(t, err)
+	require.NoError(t, b.AddFile("test.txt", []byte("hello")))
+	require.NoError(t, b.Finish())
 }
