@@ -33,7 +33,7 @@ func debugIndex() *ffcli.Command {
 			if err != nil {
 				return err
 			}
-			msg, err := s.forceIndex(uint32(id))
+			msg, err := s.forceIndex(ctx, uint32(id))
 			infoLog.Println(msg)
 			if err != nil {
 				return err

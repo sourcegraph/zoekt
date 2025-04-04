@@ -494,7 +494,7 @@ func (s *Server) processQueue() {
 			// recording time taken while merging/cleanup runs.
 			start := time.Now()
 
-			state, err := s.index(args)
+			state, err := s.index(context.Background(), args)
 
 			elapsed := time.Since(start)
 			metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
@@ -596,7 +596,7 @@ func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 }
 
 // Index starts an index job for repo name at commit.
-func (s *Server) index(args *indexArgs) (state indexState, err error) {
+func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
 	tr.SetMaxEvents(30) // Ensure we capture all indexing events
 
@@ -678,7 +678,7 @@ func (s *Server) index(args *indexArgs) (state indexState, err error) {
 		timeout: s.timeout,
 	}
 
-	err = gitIndex(c, args, s.Sourcegraph, s.logger)
+	err = gitIndex(ctx, c, args, s.Sourcegraph, s.logger)
 	if err != nil {
 		return indexStateFail, err
 	}
@@ -861,7 +861,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		indexMsg, _ = s.forceIndex(uint32(id))
+		indexMsg, _ = s.forceIndex(r.Context(), uint32(id))
 	}
 
 	// ?show_repos=
@@ -916,7 +916,7 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() { s.forceIndex(uint32(id)) }()
+	go func() { s.forceIndex(r.Context(), uint32(id)) }()
 
 	// 202 Accepted
 	w.WriteHeader(http.StatusAccepted)
@@ -1048,7 +1048,7 @@ func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
 
 // forceIndex will run the index job for repo name now. It will return always
 // return a string explaining what it did, even if it failed.
-func (s *Server) forceIndex(id uint32) (string, error) {
+func (s *Server) forceIndex(ctx context.Context, id uint32) (string, error) {
 	var opts IndexOptions
 	var err error
 	s.Sourcegraph.ForceIterateIndexOptions(func(o IndexOptions) {
@@ -1065,7 +1065,7 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 
 	var state indexState
 	ran := s.muIndexDir.With(opts.Name, func() {
-		state, err = s.index(args)
+		state, err = s.index(ctx, args)
 	})
 	if !ran {
 		return fmt.Sprintf("index job for repository already running: %s", args), nil
@@ -1093,7 +1093,7 @@ func (s *Server) Index(ctx context.Context, req *indexserverv1.IndexRequest) (*i
 
 // indexGRPC takes an index func which is used for testing. For production GRPC calls, use
 // Server.Index instead
-func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest, indexFunc func(*indexArgs) (indexState, error)) (*indexserverv1.IndexResponse, error) {
+func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest, indexFunc func(ctx context.Context, args *indexArgs) (indexState, error)) (*indexserverv1.IndexResponse, error) {
 	// Validate request
 	if req.Options == nil {
 		return nil, status.Error(codes.InvalidArgument, "index options are required")
@@ -1138,7 +1138,7 @@ func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest,
 		start := time.Now()
 
 		var state indexState
-		state, indexErr = indexFunc(args)
+		state, indexErr = indexFunc(ctx, args)
 		elapsed := time.Since(start)
 		metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
 

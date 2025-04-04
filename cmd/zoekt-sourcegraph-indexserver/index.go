@@ -181,7 +181,7 @@ type gitIndexConfig struct {
 	timeout time.Duration
 }
 
-func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
+func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
 	logger := l.Scoped("gitIndex")
 
 	if len(o.Branches) == 0 {
@@ -196,7 +196,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		return errors.New("findRepositoryMetadata in provided configuration was nil - a function must be provided")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	gitDir, err := tmpGitDir(o.Name)

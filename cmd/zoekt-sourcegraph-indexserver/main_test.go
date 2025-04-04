@@ -58,7 +58,7 @@ func TestServer_defaultArgs(t *testing.T) {
 
 func TestIndexNoTenant(t *testing.T) {
 	s := &Server{}
-	_, err := s.index(&indexArgs{})
+	_, err := s.index(context.Background(), &indexArgs{})
 	require.ErrorIs(t, err, tenant.ErrMissingTenant)
 }
 
@@ -489,8 +489,8 @@ func TestIndexGRPC(t *testing.T) {
 	require.NotZero(t, resp.IndexTimeUnix)
 }
 
-func mockIndexFunc(t *testing.T) func(args *indexArgs) (indexState, error) {
-	return func(args *indexArgs) (indexState, error) {
+func mockIndexFunc(t *testing.T) func(ctx context.Context, args *indexArgs) (indexState, error) {
+	return func(ctx context.Context, args *indexArgs) (indexState, error) {
 		createShard(t, args.IndexDir)
 		return indexStateSuccess, nil
 	}

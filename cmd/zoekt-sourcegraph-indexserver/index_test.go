@@ -530,7 +530,7 @@ func TestIndexTenant(t *testing.T) {
 				findRepositoryMetadata: findRepositoryMetadata,
 			}
 
-			if err := gitIndex(c, &tc.args, sourcegraphNop{}, logtest.Scoped(t)); err != nil {
+			if err := gitIndex(context.Background(), c, &tc.args, sourcegraphNop{}, logtest.Scoped(t)); err != nil {
 				t.Fatal(err)
 			}
 			if !cmp.Equal(got, tc.want) {
@@ -706,7 +706,7 @@ func TestIndex(t *testing.T) {
 				findRepositoryMetadata: findRepositoryMetadata,
 			}
 
-			if err := gitIndex(c, &tc.args, sourcegraphNop{}, logtest.Scoped(t)); err != nil {
+			if err := gitIndex(context.Background(), c, &tc.args, sourcegraphNop{}, logtest.Scoped(t)); err != nil {
 				t.Fatal(err)
 			}
 			if !cmp.Equal(got, tc.want) {
