@@ -35,8 +35,10 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,8 +66,6 @@ import (
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 
-	"slices"
-
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/multierr"
 	"golang.org/x/net/trace"
@@ -74,6 +74,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -193,13 +194,20 @@ type Server struct {
 	logger sglog.Logger
 
 	Sourcegraph Sourcegraph
-	BatchSize   int
+
+	// rootURL is the root URL of the Sourcegraph instance.
+	rootURL *url.URL
+
+	BatchSize int
 
 	// IndexDir is the index directory to use.
 	IndexDir string
 
 	// IndexConcurrency is the number of repositories we index at once.
 	IndexConcurrency int
+
+	// indexSemaphore limits the number of concurrent index operations
+	indexSemaphore chan struct{}
 
 	// Interval is how often we sync with Sourcegraph.
 	Interval time.Duration
@@ -346,7 +354,27 @@ func (sb *synchronizedBuffer) String() string {
 // pauseFileName if present in IndexDir will stop index jobs from
 // running. This is to make it possible to experiment with the content of the
 // IndexDir without the indexserver writing to it.
-const pauseFileName = "PAUSE"
+const (
+	pauseFileName = "PAUSE"
+	pauseEnvVar   = "SRC_PAUSE_INDEXING"
+)
+
+// isIndexingPaused checks if indexing should be paused based on either:
+// 1. The presence of a PAUSE file in the index directory
+// 2. The SRC_PAUSE_INDEXING environment variable being set to true
+func isIndexingPaused(indexDir string) (bool, string) {
+	// Check for PAUSE file first
+	if b, err := os.ReadFile(filepath.Join(indexDir, pauseFileName)); err == nil {
+		return true, fmt.Sprintf("indexserver manually paused via PAUSE file: %s", string(bytes.TrimSpace(b)))
+	}
+
+	// Then check environment variable
+	if getEnvWithDefaultBool(pauseEnvVar, false) {
+		return true, fmt.Sprintf("indexserver paused via %s environment variable", pauseEnvVar)
+	}
+
+	return false, ""
+}
 
 // Run the sync loop. This blocks forever.
 func (s *Server) Run() {
@@ -356,11 +384,10 @@ func (s *Server) Run() {
 	go func() {
 		// We update the list of indexed repos every Interval. To speed up manual
 		// testing we also listen for SIGUSR1 to trigger updates.
-		//
 		// "pkill -SIGUSR1 zoekt-sourcegra"
 		for range jitterTicker(s.Interval, unix.SIGUSR1) {
-			if b, err := os.ReadFile(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
-				infoLog.Printf("indexserver manually paused via PAUSE file: %s", string(bytes.TrimSpace(b)))
+			if paused, msg := isIndexingPaused(s.IndexDir); paused {
+				infoLog.Printf(msg)
 				continue
 			}
 
@@ -448,7 +475,7 @@ func formatListUint32(v []uint32, m int) string {
 
 func (s *Server) processQueue() {
 	for {
-		if _, err := os.Stat(filepath.Join(s.IndexDir, pauseFileName)); err == nil {
+		if paused, _ := isIndexingPaused(s.IndexDir); paused {
 			time.Sleep(time.Second)
 			continue
 		}
@@ -467,7 +494,7 @@ func (s *Server) processQueue() {
 			// recording time taken while merging/cleanup runs.
 			start := time.Now()
 
-			state, err := s.Index(args)
+			state, err := s.index(context.Background(), args)
 
 			elapsed := time.Since(start)
 			metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
@@ -569,7 +596,7 @@ func jitterTicker(d time.Duration, sig ...os.Signal) <-chan struct{} {
 }
 
 // Index starts an index job for repo name at commit.
-func (s *Server) Index(args *indexArgs) (state indexState, err error) {
+func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, err error) {
 	tr := trace.New("index", args.Name)
 	tr.SetMaxEvents(30) // Ensure we capture all indexing events
 
@@ -651,7 +678,7 @@ func (s *Server) Index(args *indexArgs) (state indexState, err error) {
 		timeout: s.timeout,
 	}
 
-	err = gitIndex(c, args, s.Sourcegraph, s.logger)
+	err = gitIndex(ctx, c, args, s.Sourcegraph, s.logger)
 	if err != nil {
 		return indexStateFail, err
 	}
@@ -834,7 +861,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		indexMsg, _ = s.forceIndex(uint32(id))
+		indexMsg, _ = s.forceIndex(r.Context(), uint32(id))
 	}
 
 	// ?show_repos=
@@ -889,7 +916,7 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() { s.forceIndex(uint32(id)) }()
+	go func() { s.forceIndex(r.Context(), uint32(id)) }()
 
 	// 202 Accepted
 	w.WriteHeader(http.StatusAccepted)
@@ -1021,7 +1048,7 @@ func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
 
 // forceIndex will run the index job for repo name now. It will return always
 // return a string explaining what it did, even if it failed.
-func (s *Server) forceIndex(id uint32) (string, error) {
+func (s *Server) forceIndex(ctx context.Context, id uint32) (string, error) {
 	var opts IndexOptions
 	var err error
 	s.Sourcegraph.ForceIterateIndexOptions(func(o IndexOptions) {
@@ -1038,7 +1065,7 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 
 	var state indexState
 	ran := s.muIndexDir.With(opts.Name, func() {
-		state, err = s.Index(args)
+		state, err = s.index(ctx, args)
 	})
 	if !ran {
 		return fmt.Sprintf("index job for repository already running: %s", args), nil
@@ -1047,6 +1074,232 @@ func (s *Server) forceIndex(id uint32) (string, error) {
 		return fmt.Sprintf("Indexing %s failed: %s", args.String(), err), err
 	}
 	return fmt.Sprintf("Indexed %s with state %s", args.String(), state), nil
+}
+
+// Index implements the gRPC method for indexing a repository. If the repository
+// exists in the trash, it will attempt to recover it before indexing. The
+// method returns metadata about the indexed repository including branches and
+// and the time of indexing.  The metadata might be empty if we fail to read the
+// metadata after the index or if the repository is empty.
+//
+// Possible GRPC error codes:
+// - InvalidArgument: returned when the index options are missing or invalid
+// - AlreadyExists: returned when the repository is already being indexed by another process
+// - Internal: returned when indexing fails
+// - Canceled: returned when the context is canceled while waiting for an index slot
+func (s *Server) Index(ctx context.Context, req *indexserverv1.IndexRequest) (*indexserverv1.IndexResponse, error) {
+	return s.indexGRPC(ctx, req, s.index)
+}
+
+// indexGRPC takes an index func which is used for testing. For production GRPC calls, use
+// Server.Index instead
+func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest, indexFunc func(ctx context.Context, args *indexArgs) (indexState, error)) (*indexserverv1.IndexResponse, error) {
+	// Validate request
+	if req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "index options are required")
+	}
+
+	// Try to acquire semaphore, but respect context cancellation
+	select {
+	case s.indexSemaphore <- struct{}{}:
+		defer func() { <-s.indexSemaphore }()
+	case <-ctx.Done():
+		return nil, status.Error(codes.Canceled, "context canceled while waiting for index slot")
+	case <-time.After(s.timeout):
+		return nil, status.Error(codes.DeadlineExceeded, "timed out while waiting for index slot")
+	}
+
+	var opts IndexOptions
+	opts.FromProto(req.Options)
+	opts.CloneURL = s.rootURL.ResolveReference(&url.URL{Path: path.Join("/.internal/git", req.Options.Name)}).String()
+	args := s.indexArgs(opts)
+
+	// Recover the index from the trash if possible. First we have to make sure
+	// the shard doesn't exist in the index dir, because it might potentially be
+	// overwritten if we recover a shard from the trash. If we can find a shard
+	// in the index dir, we skip recovery. In both cases we continue and let the
+	// index process figure out whether the shard is up-to-date or requires a
+	// reindex.
+	if _, _, ok, err := args.BuildOptions().FindRepositoryMetadata(); err == nil && !ok {
+		if s.recoverFromTrash(opts.RepoID) {
+			infoLog.Printf("restored repository %d from trash", opts.RepoID)
+		}
+	}
+
+	// Index the repository.
+	var indexErr error
+	var indexTimeUnix int64
+	var zoektRepo *zoekt.Repository
+
+	ran := s.muIndexDir.With(opts.Name, func() {
+		// only record time taken once we hold the lock. This avoids us
+		// recording time taken while merging/cleanup runs.
+		start := time.Now()
+
+		var state indexState
+		state, indexErr = indexFunc(ctx, args)
+		elapsed := time.Since(start)
+		metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
+
+		if indexErr != nil {
+			errorLog.Printf("error indexing %s: %s", args.String(), indexErr)
+			indexErr = status.Errorf(codes.Internal, "failed to index repository: %v", indexErr)
+			return
+		}
+
+		readMetadata := func(args *indexArgs) (*zoekt.Repository, int64, error) {
+			repo, metadata, ok, err := args.BuildOptions().FindRepositoryMetadata()
+			if err != nil || !ok {
+				return nil, 0, fmt.Errorf("failed to read metadata for %s: %w", args.String(), err)
+			}
+			return repo, metadata.IndexTime.Unix(), nil
+		}
+
+		switch state {
+		case indexStateSuccess:
+			zoektRepo, indexTimeUnix, indexErr = readMetadata(args)
+			if indexErr != nil {
+				return
+			}
+			var branches []string
+			for _, b := range zoektRepo.Branches {
+				branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
+			}
+			s.logger.Info("updated index",
+				sglog.Int("tenant", args.TenantID),
+				sglog.String("repo", args.Name),
+				sglog.Uint32("id", args.RepoID),
+				sglog.Strings("branches", branches),
+				sglog.Duration("duration", elapsed),
+			)
+		case indexStateSuccessMeta:
+			zoektRepo, indexTimeUnix, indexErr = readMetadata(args)
+			if indexErr != nil {
+				return
+			}
+			infoLog.Printf("updated meta %s in %v", args.String(), elapsed)
+		case indexStateNoop:
+			zoektRepo, indexTimeUnix, indexErr = readMetadata(args)
+			if indexErr != nil {
+				return
+			}
+		case indexStateEmpty:
+			zoektRepo = &zoekt.Repository{
+				ID: args.RepoID,
+			}
+		case indexStateFail:
+			// This should never happen, because indexStateFail implies
+			// indexErr!=nil and we exit early, but we'll handle it gracefully
+			// just in case.
+			indexErr = status.Error(codes.Internal, "failed to index repository")
+			// Repository exists but is empty, return OK with empty response
+		default:
+			indexErr = status.Errorf(codes.Internal, "unknown index state: %s", state)
+		}
+	})
+
+	if !ran {
+		// Someone else is processing the repository.
+		debugLog.Printf("index job for repository already running: %s", args)
+		return nil, status.Error(codes.AlreadyExists, "repository is already being indexed")
+	}
+
+	if indexErr != nil {
+		return nil, indexErr
+	}
+
+	if zoektRepo == nil {
+		// This should never happen, because zoektRepo=nil means we either
+		// failed to index or failed to read the metadata, both of which yield
+		// indexErr!=nil.
+		return nil, status.Error(codes.Internal, fmt.Sprintf("unexpected error: zoektRepo is nil for options %+v", opts))
+	}
+
+	// Convert branches to proto format
+	repoBranchesProto := make([]*configv1.ZoektRepositoryBranch, len(zoektRepo.Branches))
+	for i, b := range zoektRepo.Branches {
+		repoBranchesProto[i] = &configv1.ZoektRepositoryBranch{
+			Name:    b.Name,
+			Version: b.Version,
+		}
+	}
+
+	return &indexserverv1.IndexResponse{
+		RepoId:        zoektRepo.ID,
+		Branches:      repoBranchesProto,
+		IndexTimeUnix: indexTimeUnix,
+	}, nil
+}
+
+// recoverFromTrash attempts to recover an index from the trash or tombstones.
+// It returns true if the repository was recovered.
+func (s *Server) recoverFromTrash(repoID uint32) bool {
+	trashShards := getShards(filepath.Join(s.IndexDir, ".trash"))
+	if shards, ok := trashShards[repoID]; ok {
+		moveAll(s.IndexDir, shards)
+		return true
+	}
+
+	tombstones := getTombstonedRepos(s.IndexDir)
+	if tombstone, ok := tombstones[repoID]; ok {
+		if err := index.UnsetTombstone(tombstone.Path, repoID); err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Delete implements the gRPC method for deleting a repository. It moves the
+// simple shards to the trash dir and tombstones repos in compound shards.
+func (s *Server) Delete(ctx context.Context, req *indexserverv1.DeleteRequest) (*indexserverv1.DeleteResponse, error) {
+	var err error
+
+	// Run the delete operation in a goroutine to be able to respond to context
+	// cancellation while waiting for the lock.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.muIndexDir.Global(func() {
+			indexShards := getShards(s.IndexDir)
+			for _, repoID := range req.RepoIds {
+				if ctx.Err() != nil {
+					err = status.Error(codes.Canceled, "context canceled")
+					return
+				}
+
+				if shards, ok := indexShards[repoID]; ok {
+					simple := shards[:0]
+					for _, shardItem := range shards {
+						if s.shardMerging && maybeSetTombstone([]shard{shardItem}, repoID) {
+							continue
+						}
+
+						simple = append(simple, shardItem)
+					}
+
+					if len(simple) == 0 {
+						continue
+					}
+
+					moveAll(filepath.Join(s.IndexDir, ".trash"), simple)
+				}
+			}
+		})
+	}()
+
+	select {
+	case <-done:
+		if err != nil {
+			return nil, err
+		}
+	case <-ctx.Done():
+		return nil, status.Error(codes.Canceled, "context canceled")
+	case <-time.After(s.timeout):
+		return nil, status.Error(codes.DeadlineExceeded, "timed out while waiting for delete operation to complete")
+	}
+
+	return &indexserverv1.DeleteResponse{}, nil
 }
 
 // DeleteAllData deletes all shards in the index and trash dir belonging to the
@@ -1547,6 +1800,7 @@ func newServer(conf rootConfig) (*Server, error) {
 
 	return &Server{
 		logger:                            logger,
+		rootURL:                           rootURL,
 		Sourcegraph:                       sg,
 		IndexDir:                          conf.index,
 		IndexConcurrency:                  int(conf.indexConcurrency),
@@ -1565,7 +1819,8 @@ func newServer(conf rootConfig) (*Server, error) {
 			minSizeBytes:    conf.minSize * 1024 * 1024,
 			minAgeDays:      conf.minAgeDays,
 		},
-		timeout: indexingTimeout,
+		timeout:        indexingTimeout,
+		indexSemaphore: make(chan struct{}, int(conf.indexConcurrency)),
 	}, err
 }
 

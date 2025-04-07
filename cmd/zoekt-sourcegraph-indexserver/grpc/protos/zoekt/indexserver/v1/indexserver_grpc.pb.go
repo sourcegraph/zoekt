@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.3.0
 // - protoc             (unknown)
-// source: indexserver.proto
+// source: zoekt/indexserver/v1/indexserver.proto
 
 package v1
 
@@ -20,6 +20,8 @@ const _ = grpc.SupportPackageIsVersion7
 
 const (
 	SourcegraphIndexserverService_DeleteAllData_FullMethodName = "/zoekt.indexserver.v1.SourcegraphIndexserverService/DeleteAllData"
+	SourcegraphIndexserverService_Delete_FullMethodName        = "/zoekt.indexserver.v1.SourcegraphIndexserverService/Delete"
+	SourcegraphIndexserverService_Index_FullMethodName         = "/zoekt.indexserver.v1.SourcegraphIndexserverService/Index"
 )
 
 // SourcegraphIndexserverServiceClient is the client API for SourcegraphIndexserverService service.
@@ -29,6 +31,13 @@ type SourcegraphIndexserverServiceClient interface {
 	// DeleteAllData deletes all data for the tenant in the request context.
 	// This is used for pruning all data after a tenant has been deleted.
 	DeleteAllData(ctx context.Context, in *DeleteAllDataRequest, opts ...grpc.CallOption) (*DeleteAllDataResponse, error)
+	// Delete deletes the index for a specific repository.
+	// This is used when a repository needs to be reindexed from scratch or when it's deleted.
+	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
+	// Index indexes a repository with the given options and returns the repository information
+	// including the index timestamp. This information is needed by the frontend to update its state
+	// since Zoekt no longer sends status updates to Sourcegraph.
+	Index(ctx context.Context, in *IndexRequest, opts ...grpc.CallOption) (*IndexResponse, error)
 }
 
 type sourcegraphIndexserverServiceClient struct {
@@ -48,6 +57,24 @@ func (c *sourcegraphIndexserverServiceClient) DeleteAllData(ctx context.Context,
 	return out, nil
 }
 
+func (c *sourcegraphIndexserverServiceClient) Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error) {
+	out := new(DeleteResponse)
+	err := c.cc.Invoke(ctx, SourcegraphIndexserverService_Delete_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcegraphIndexserverServiceClient) Index(ctx context.Context, in *IndexRequest, opts ...grpc.CallOption) (*IndexResponse, error) {
+	out := new(IndexResponse)
+	err := c.cc.Invoke(ctx, SourcegraphIndexserverService_Index_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SourcegraphIndexserverServiceServer is the server API for SourcegraphIndexserverService service.
 // All implementations must embed UnimplementedSourcegraphIndexserverServiceServer
 // for forward compatibility
@@ -55,6 +82,13 @@ type SourcegraphIndexserverServiceServer interface {
 	// DeleteAllData deletes all data for the tenant in the request context.
 	// This is used for pruning all data after a tenant has been deleted.
 	DeleteAllData(context.Context, *DeleteAllDataRequest) (*DeleteAllDataResponse, error)
+	// Delete deletes the index for a specific repository.
+	// This is used when a repository needs to be reindexed from scratch or when it's deleted.
+	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
+	// Index indexes a repository with the given options and returns the repository information
+	// including the index timestamp. This information is needed by the frontend to update its state
+	// since Zoekt no longer sends status updates to Sourcegraph.
+	Index(context.Context, *IndexRequest) (*IndexResponse, error)
 	mustEmbedUnimplementedSourcegraphIndexserverServiceServer()
 }
 
@@ -64,6 +98,12 @@ type UnimplementedSourcegraphIndexserverServiceServer struct {
 
 func (UnimplementedSourcegraphIndexserverServiceServer) DeleteAllData(context.Context, *DeleteAllDataRequest) (*DeleteAllDataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteAllData not implemented")
+}
+func (UnimplementedSourcegraphIndexserverServiceServer) Delete(context.Context, *DeleteRequest) (*DeleteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
+}
+func (UnimplementedSourcegraphIndexserverServiceServer) Index(context.Context, *IndexRequest) (*IndexResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Index not implemented")
 }
 func (UnimplementedSourcegraphIndexserverServiceServer) mustEmbedUnimplementedSourcegraphIndexserverServiceServer() {
 }
@@ -97,6 +137,42 @@ func _SourcegraphIndexserverService_DeleteAllData_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SourcegraphIndexserverService_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcegraphIndexserverServiceServer).Delete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcegraphIndexserverService_Delete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcegraphIndexserverServiceServer).Delete(ctx, req.(*DeleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcegraphIndexserverService_Index_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IndexRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcegraphIndexserverServiceServer).Index(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcegraphIndexserverService_Index_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcegraphIndexserverServiceServer).Index(ctx, req.(*IndexRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SourcegraphIndexserverService_ServiceDesc is the grpc.ServiceDesc for SourcegraphIndexserverService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -108,7 +184,15 @@ var SourcegraphIndexserverService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "DeleteAllData",
 			Handler:    _SourcegraphIndexserverService_DeleteAllData_Handler,
 		},
+		{
+			MethodName: "Delete",
+			Handler:    _SourcegraphIndexserverService_Delete_Handler,
+		},
+		{
+			MethodName: "Index",
+			Handler:    _SourcegraphIndexserverService_Index_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "indexserver.proto",
+	Metadata: "zoekt/indexserver/v1/indexserver.proto",
 }

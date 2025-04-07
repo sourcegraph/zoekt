@@ -22,7 +22,6 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
-	"github.com/sourcegraph/zoekt/internal/ctags"
 )
 
 // SourcegraphListResult is the return value of Sourcegraph.List. It is its
@@ -269,42 +268,9 @@ type indexOptionsItem struct {
 }
 
 func (o *indexOptionsItem) FromProto(x *configv1.ZoektIndexOptions) {
-	branches := make([]zoekt.RepositoryBranch, 0, len(x.Branches))
-	for _, b := range x.GetBranches() {
-		branches = append(branches, zoekt.RepositoryBranch{
-			Name:    b.GetName(),
-			Version: b.GetVersion(),
-		})
-	}
-
 	item := indexOptionsItem{}
-	languageMap := make(map[string]ctags.CTagsParserType)
-
-	for _, lang := range x.GetLanguageMap() {
-		languageMap[lang.GetLanguage()] = ctags.CTagsParserType(lang.GetCtags().Number())
-	}
-
-	item.IndexOptions = IndexOptions{
-		RepoID:     uint32(x.GetRepoId()),
-		LargeFiles: x.GetLargeFiles(),
-		Symbols:    x.GetSymbols(),
-		Branches:   branches,
-		Name:       x.GetName(),
-
-		Priority: x.GetPriority(),
-
-		Public:   x.GetPublic(),
-		Fork:     x.GetFork(),
-		Archived: x.GetArchived(),
-
-		LanguageMap:      languageMap,
-		ShardConcurrency: x.GetShardConcurrency(),
-
-		TenantID: int(x.TenantId),
-	}
-
+	item.IndexOptions.FromProto(x)
 	item.Error = x.GetError()
-
 	*o = item
 }
 
