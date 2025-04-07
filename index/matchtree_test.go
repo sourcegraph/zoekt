@@ -15,6 +15,7 @@
 package index
 
 import (
+	"math"
 	"reflect"
 	"regexp/syntax"
 	"testing"
@@ -304,7 +305,7 @@ func TestRepoSet(t *testing.T) {
 		}
 		mt.prepare(nextDoc)
 	}
-	if mt.nextDoc() != maxUInt32 {
+	if mt.nextDoc() != math.MaxUint32 {
 		t.Fatalf("expected %d document, but got at least 1 more", len(want))
 	}
 }
@@ -327,7 +328,7 @@ func TestRepo(t *testing.T) {
 		}
 		mt.prepare(nextDoc)
 	}
-	if mt.nextDoc() != maxUInt32 {
+	if mt.nextDoc() != math.MaxUint32 {
 		t.Fatalf("expect %d documents, but got at least 1 more", len(want))
 	}
 }
@@ -360,7 +361,7 @@ func TestBranchesRepos(t *testing.T) {
 		mt.prepare(nextDoc)
 	}
 
-	if mt.nextDoc() != maxUInt32 {
+	if mt.nextDoc() != math.MaxUint32 {
 		t.Fatalf("expect %d documents, but got at least 1 more", len(want))
 	}
 }
@@ -383,7 +384,7 @@ func TestRepoIDs(t *testing.T) {
 		}
 		mt.prepare(nextDoc)
 	}
-	if mt.nextDoc() != maxUInt32 {
+	if mt.nextDoc() != math.MaxUint32 {
 		t.Fatalf("expected %d document, but got at least 1 more", len(want))
 	}
 }

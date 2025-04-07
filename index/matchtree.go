@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"math"
 	"regexp/syntax"
 	"strings"
 	"unicode/utf8"
@@ -442,7 +443,7 @@ func (t *docMatchTree) nextDoc() uint32 {
 			return i
 		}
 	}
-	return maxUInt32
+	return math.MaxUint32
 }
 
 func (t *bruteForceMatchTree) nextDoc() uint32 {
@@ -464,7 +465,7 @@ func (t *andMatchTree) nextDoc() uint32 {
 }
 
 func (t *orMatchTree) nextDoc() uint32 {
-	min := uint32(maxUInt32)
+	min := uint32(math.MaxUint32)
 	for _, c := range t.children {
 		m := c.nextDoc()
 		if m < min {
@@ -497,7 +498,7 @@ func (t *branchQueryMatchTree) nextDoc() uint32 {
 			return i
 		}
 	}
-	return maxUInt32
+	return math.MaxUint32
 }
 
 // all String methods
@@ -672,7 +673,7 @@ func (t *andLineMatchTree) matches(cp *contentProvider, cost int, known map[matc
 	// can return MatchesFound.
 
 	// find child with fewest candidates
-	min := maxUInt32
+	minCount := math.MaxInt
 	fewestChildren := 0
 	for ix, child := range t.children {
 		v, ok := child.(*substrMatchTree)
@@ -681,8 +682,8 @@ func (t *andLineMatchTree) matches(cp *contentProvider, cost int, known map[matc
 		if !ok || v.fileName {
 			return matchesFound
 		}
-		if len(v.current) < min {
-			min = len(v.current)
+		if len(v.current) < minCount {
+			minCount = len(v.current)
 			fewestChildren = ix
 		}
 	}

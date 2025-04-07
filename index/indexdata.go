@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"hash/crc64"
 	"log"
+	"math"
 	"math/bits"
 	"slices"
 	"unicode/utf8"
@@ -354,12 +355,10 @@ func findSelectiveNgrams(ngramOffs []runeNgramOff, indexMap []int, frequencies [
 	return
 }
 
-const maxUInt32 = 0xffffffff
-
 func minFrequencyNgramOffsets(ngramOffs []runeNgramOff, frequencies []uint32) (first, last runeNgramOff) {
 	// Find the two lowest frequency ngrams.
 	idx0, idx1 := 0, 0
-	min0, min1 := uint32(maxUInt32), uint32(maxUInt32)
+	min0, min1 := uint32(math.MaxUint32), uint32(math.MaxUint32)
 	for i, x := range frequencies {
 		if x <= min0 {
 			idx0, idx1 = i, idx0
