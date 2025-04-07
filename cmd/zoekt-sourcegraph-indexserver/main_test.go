@@ -591,3 +591,49 @@ func createShard(t *testing.T, dir string) {
 	require.NoError(t, b.AddFile("test.txt", []byte("hello")))
 	require.NoError(t, b.Finish())
 }
+
+func TestRecoverFromTrash(t *testing.T) {
+	dir := t.TempDir()
+	trashDir := filepath.Join(dir, ".trash")
+	require.NoError(t, os.MkdirAll(trashDir, 0o755))
+
+	// Create a simple shard in trash
+	createTestShard(t, "repo1", 1, filepath.Join(trashDir, "repo1.zoekt"))
+
+	// Create a compound shard with two repos, one of them tombstoned
+	cs := createCompoundShard(t, dir, []uint32{2, 3})
+	require.NoError(t, index.SetTombstone(cs, 2))
+
+	s := &Server{
+		IndexDir: dir,
+	}
+
+	// Test recovering from trash
+	recovered := s.recoverFromTrash(1)
+	require.True(t, recovered, "should have recovered repo1 from trash")
+
+	// Verify shard was moved from trash to index
+	indexShards := getShards(dir)
+	trashShards := getShards(trashDir)
+
+	require.Contains(t, indexShards, uint32(1), "repo1 should be in index")
+	require.NotContains(t, trashShards, uint32(1), "repo1 should not be in trash")
+
+	// Test unsetting tombstone
+	recovered = s.recoverFromTrash(2)
+	require.True(t, recovered, "should have recovered repo2 from tombstone")
+
+	// Verify tombstone was unset
+	repos, _, err := index.ReadMetadataPath(cs)
+	require.NoError(t, err)
+
+	for _, repo := range repos {
+		if repo.ID == 2 {
+			require.False(t, repo.Tombstone, "repo2 should not be tombstoned")
+		}
+	}
+
+	// Test non-existent repo
+	recovered = s.recoverFromTrash(99)
+	require.False(t, recovered, "should not have recovered non-existent repo")
+}

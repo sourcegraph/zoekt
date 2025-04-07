@@ -1117,15 +1117,12 @@ func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest,
 	// Recover the index from the trash if possible. First we have to make sure
 	// the shard doesn't exist in the index dir, because it might potentially be
 	// overwritten if we recover a shard from the trash. If we can find a shard
-	// in the index dir, we skip recovery. In both cases we continue with index
-	// and let the index process figure out whether the shard is up-to-date or
-	// requires a reindex.
+	// in the index dir, we skip recovery. In both cases we continue and let the
+	// index process figure out whether the shard is up-to-date or requires a
+	// reindex.
 	if _, _, ok, err := args.BuildOptions().FindRepositoryMetadata(); err == nil && !ok {
-		// The shard is not in the index dir. Now check the trash.
-		trashShards := getShards(filepath.Join(s.IndexDir, ".trash"))
-		if shards, ok := trashShards[opts.RepoID]; ok {
-			infoLog.Printf("restoring shards from trash for %d", opts.RepoID)
-			moveAll(s.IndexDir, shards)
+		if s.recoverFromTrash(opts.RepoID) {
+			infoLog.Printf("restored repository %d from trash", opts.RepoID)
 		}
 	}
 
@@ -1234,13 +1231,32 @@ func (s *Server) indexGRPC(ctx context.Context, req *indexserverv1.IndexRequest,
 	}, nil
 }
 
+// recoverFromTrash attempts to recover an index from the trash or tombstones.
+// It returns true if the repository was recovered.
+func (s *Server) recoverFromTrash(repoID uint32) bool {
+	trashShards := getShards(filepath.Join(s.IndexDir, ".trash"))
+	if shards, ok := trashShards[repoID]; ok {
+		moveAll(s.IndexDir, shards)
+		return true
+	}
+
+	tombstones := getTombstonedRepos(s.IndexDir)
+	if tombstone, ok := tombstones[repoID]; ok {
+		if err := index.UnsetTombstone(tombstone.Path, repoID); err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Delete implements the gRPC method for deleting a repository. It moves the
 // simple shards to the trash dir and tombstones repos in compound shards.
 func (s *Server) Delete(ctx context.Context, req *indexserverv1.DeleteRequest) (*indexserverv1.DeleteResponse, error) {
 	var err error
 
 	// Run the delete operation in a goroutine to be able to respond to context
-	// cancellation while waiting for the lock
+	// cancellation while waiting for the lock.
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -1273,12 +1289,14 @@ func (s *Server) Delete(ctx context.Context, req *indexserverv1.DeleteRequest) (
 	}()
 
 	select {
-	case <-ctx.Done():
-		return nil, status.Error(codes.Canceled, "context canceled")
 	case <-done:
 		if err != nil {
 			return nil, err
 		}
+	case <-ctx.Done():
+		return nil, status.Error(codes.Canceled, "context canceled")
+	case <-time.After(s.timeout):
+		return nil, status.Error(codes.DeadlineExceeded, "timed out while waiting for delete operation to complete")
 	}
 
 	return &indexserverv1.DeleteResponse{}, nil
