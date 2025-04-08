@@ -23,6 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -57,9 +58,7 @@ func main() {
 	githubURL := flag.String("url", "", "GitHub Enterprise url. If not set github.com will be used as the host.")
 	org := flag.String("org", "", "organization to mirror")
 	user := flag.String("user", "", "user to mirror")
-	token := flag.String("token",
-		filepath.Join(os.Getenv("HOME"), ".github-token"),
-		"file holding API token.")
+	token := flag.String("token", "", "file holding API token. If not set defaults to $HOME/.github-token if present, else uses unauthenticated GitHub client.")
 	forks := flag.Bool("forks", false, "also mirror forks.")
 	deleteRepos := flag.Bool("delete", false, "delete missing repos")
 	namePattern := flag.String("name", "", "only clone repos whose name matches the given regexp.")
@@ -82,6 +81,7 @@ func main() {
 	var host string
 	var apiBaseURL string
 	var client *github.Client
+	tc := newOAuthClient(token)
 	if *githubURL != "" {
 		rootURL, err := url.Parse(*githubURL)
 		if err != nil {
@@ -93,39 +93,16 @@ func main() {
 			log.Fatal(err)
 		}
 		apiBaseURL = rootURL.ResolveReference(apiPath).String()
-		client, err = github.NewEnterpriseClient(apiBaseURL, apiBaseURL, nil)
+		client, err = github.NewEnterpriseClient(apiBaseURL, apiBaseURL, tc)
 		if err != nil {
 			log.Fatal(err)
 		}
 	} else {
-		host = "github.com"
-		apiBaseURL = "https://github.com/"
-		client = github.NewClient(nil)
+		client = github.NewClient(tc)
 	}
 	destDir := filepath.Join(*dest, host)
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		log.Fatal(err)
-	}
-
-	if *token != "" {
-		content, err := os.ReadFile(*token)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		ts := oauth2.StaticTokenSource(
-			&oauth2.Token{
-				AccessToken: strings.TrimSpace(string(content)),
-			})
-		tc := oauth2.NewClient(context.Background(), ts)
-		if *githubURL != "" {
-			client, err = github.NewEnterpriseClient(apiBaseURL, apiBaseURL, tc)
-			if err != nil {
-				log.Fatal(err)
-			}
-		} else {
-			client = github.NewClient(tc)
-		}
 	}
 
 	reposFilters := reposFilters{
@@ -182,6 +159,32 @@ func main() {
 			log.Fatalf("deleteStaleRepos: %v", err)
 		}
 	}
+}
+
+func newOAuthClient(token *string) *http.Client {
+	var content []byte
+	var err error
+
+	if *token != "" { // user explicitly provided a token
+		content, err = os.ReadFile(*token)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		defaultToken := filepath.Join(os.Getenv("HOME"), ".github-token")
+		content, err = os.ReadFile(defaultToken)
+		if err != nil {
+			log.Printf("using unauthenticated GitHub client: no token provided and default %q cannot be read: %v\n", defaultToken, err)
+			return nil
+		}
+		log.Printf("using authenticated GitHub client: no token provided, defaulting to token in %q\n", defaultToken)
+	}
+
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{
+			AccessToken: strings.TrimSpace(string(content)),
+		})
+	return oauth2.NewClient(context.Background(), ts)
 }
 
 func deleteStaleRepos(destDir string, filter *gitindex.Filter, repos []*github.Repository, user string) error {
