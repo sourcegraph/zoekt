@@ -19,6 +19,7 @@ package index
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -62,7 +63,7 @@ func NewIndexFile(f *os.File) (IndexFile, error) {
 	}
 
 	sz := fi.Size()
-	if sz >= maxUInt32 {
+	if sz >= math.MaxUint32 {
 		return nil, fmt.Errorf("file %s too large: %d", f.Name(), sz)
 	}
 	r := &mmapedIndexFile{

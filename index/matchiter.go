@@ -17,6 +17,7 @@ package index
 import (
 	"bytes"
 	"fmt"
+	"math"
 
 	"github.com/sourcegraph/zoekt"
 )
@@ -95,7 +96,7 @@ func (t *noMatchTree) candidates() []*candidateMatch {
 }
 
 func (t *noMatchTree) nextDoc() uint32 {
-	return maxUInt32
+	return math.MaxUint32
 }
 
 func (t *noMatchTree) prepare(uint32) {}
@@ -148,7 +149,7 @@ func nextFileIndex(offset, f uint32, ends []uint32) uint32 {
 func (i *ngramDocIterator) nextDoc() uint32 {
 	i.fileIdx = nextFileIndex(i.iter.first(), i.fileIdx, i.ends)
 	if i.fileIdx >= uint32(len(i.ends)) {
-		return maxUInt32
+		return math.MaxUint32
 	}
 	return i.fileIdx
 }
@@ -190,7 +191,7 @@ func (i *ngramDocIterator) candidates() []*candidateMatch {
 	var candidates []*candidateMatch
 	for {
 		p1 := i.iter.first()
-		if p1 == maxUInt32 || p1 >= i.ends[i.fileIdx] {
+		if p1 == math.MaxUint32 || p1 >= i.ends[i.fileIdx] {
 			break
 		}
 		i.iter.next(p1)

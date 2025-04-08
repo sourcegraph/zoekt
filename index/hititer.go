@@ -17,6 +17,7 @@ package index
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 
 	"github.com/sourcegraph/zoekt"
 )
@@ -24,10 +25,10 @@ import (
 // hitIterator finds potential search matches, measured in offsets of
 // the concatenation of all documents.
 type hitIterator interface {
-	// Return the first hit, or maxUInt32 if none.
+	// Return the first hit, or math.MaxUint32 if none.
 	first() uint32
 
-	// Skip until past limit. The argument maxUInt32 should be
+	// Skip until past limit. The argument math.MaxUint32 should be
 	// treated specially.
 	next(limit uint32)
 
@@ -52,8 +53,8 @@ func (i *distanceHitIterator) findNext() {
 		var p1, p2 uint32
 		p1 = i.i1.first()
 		p2 = i.i2.first()
-		if p1 == maxUInt32 || p2 == maxUInt32 {
-			i.i1.next(maxUInt32)
+		if p1 == math.MaxUint32 || p2 == math.MaxUint32 {
+			i.i1.next(math.MaxUint32)
 			break
 		}
 
@@ -85,7 +86,7 @@ func (i *distanceHitIterator) next(limit uint32) {
 	l2 := limit + i.distance
 
 	if l2 < limit { // overflow.
-		l2 = maxUInt32
+		l2 = math.MaxUint32
 	}
 	i.i2.next(l2)
 	i.findNext()
@@ -158,14 +159,14 @@ func (i *inMemoryIterator) first() uint32 {
 	if len(i.postings) > 0 {
 		return i.postings[0]
 	}
-	return maxUInt32
+	return math.MaxUint32
 }
 
-func (i *inMemoryIterator) updateStats(s *zoekt.Stats) {
+func (i *inMemoryIterator) updateStats(_ *zoekt.Stats) {
 }
 
 func (i *inMemoryIterator) next(limit uint32) {
-	if limit == maxUInt32 {
+	if limit == math.MaxUint32 {
 		i.postings = nil
 	}
 
@@ -203,9 +204,9 @@ func (i *compressedPostingIterator) first() uint32 {
 }
 
 func (i *compressedPostingIterator) next(limit uint32) {
-	if limit == maxUInt32 {
+	if limit == math.MaxUint32 {
 		i.blob = nil
-		i._first = maxUInt32
+		i._first = math.MaxUint32
 		return
 	}
 
@@ -217,7 +218,7 @@ func (i *compressedPostingIterator) next(limit uint32) {
 	}
 
 	if i._first <= limit && len(i.blob) == 0 {
-		i._first = maxUInt32
+		i._first = math.MaxUint32
 	}
 }
 
@@ -248,7 +249,7 @@ func (i *mergingIterator) updateStats(s *zoekt.Stats) {
 }
 
 func (i *mergingIterator) first() uint32 {
-	r := uint32(maxUInt32)
+	r := uint32(math.MaxUint32)
 	for _, j := range i.iters {
 		f := j.first()
 		if f < r {

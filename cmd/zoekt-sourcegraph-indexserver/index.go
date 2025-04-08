@@ -115,7 +115,7 @@ func (o *indexArgs) BuildOptions() *index.Options {
 		// nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
 			TenantID: o.TenantID,
-			ID:       uint32(o.IndexOptions.RepoID),
+			ID:       o.IndexOptions.RepoID,
 			Name:     o.Name,
 			Branches: o.Branches,
 			RawConfig: map[string]string{

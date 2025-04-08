@@ -17,13 +17,13 @@ package index
 import (
 	"encoding/binary"
 	"log"
+	"math"
 	"math/rand"
 	"reflect"
+	"slices"
 	"strconv"
 	"testing"
 	"testing/quick"
-
-	"slices"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -99,7 +99,7 @@ func TestNextFileIndex(t *testing.T) {
 		ends         []uint32
 		want         uint32
 	}{
-		{maxUInt32, 0, []uint32{34}, 1},
+		{math.MaxUint32, 0, []uint32{34}, 1},
 		{9, 0, []uint32{34}, 0},
 		{450, 0, []uint32{100, 200, 300, 400, 500, 600}, 4},
 	} {
@@ -150,7 +150,7 @@ func TestCompressedPostingIterator(t *testing.T) {
 
 		var nums []uint32
 		i := newCompressedPostingIterator(data, stringToNGram("abc"))
-		for i.first() != maxUInt32 {
+		for i.first() != math.MaxUint32 {
 			nums = append(nums, i.first())
 			i.next(i.first())
 		}
