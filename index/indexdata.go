@@ -103,6 +103,9 @@ type indexData struct {
 
 	// rawConfigMasks contains the encoded RawConfig for each repository
 	rawConfigMasks []uint8
+
+	//topic
+	topic String
 }
 
 type symbolData struct {
@@ -186,6 +189,19 @@ func (d *indexData) getCategory(idx uint32) FileCategory {
 		return FileCategoryMissing
 	}
 	return category
+}
+
+func (d *indexData) geTopic(idx uint32) String {
+	if len(d.topic) == 0 {
+		// So return 'Error'
+		return Error
+	}
+	
+	topic, err := decodeTopic(d.topic[idx])
+	if err != nil {
+		return None
+	}
+	return topic
 }
 
 // calculates stats for files in the range [start, end).
