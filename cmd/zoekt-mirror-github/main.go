@@ -79,7 +79,6 @@ func main() {
 	}
 
 	var host string
-	var apiBaseURL string
 	var client *github.Client
 	tc := newOAuthClient(token)
 	if *githubURL != "" {
@@ -92,12 +91,13 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		apiBaseURL = rootURL.ResolveReference(apiPath).String()
+		apiBaseURL := rootURL.ResolveReference(apiPath).String()
 		client, err = github.NewEnterpriseClient(apiBaseURL, apiBaseURL, tc)
 		if err != nil {
 			log.Fatal(err)
 		}
 	} else {
+		host = "github.com"
 		client = github.NewClient(tc)
 	}
 	destDir := filepath.Join(*dest, host)
@@ -165,7 +165,7 @@ func newOAuthClient(token *string) *http.Client {
 	var content []byte
 	var err error
 
-	if *token != "" { // user explicitly provided a token
+	if *token != "" { // user explicitly provided a token which must exist
 		content, err = os.ReadFile(*token)
 		if err != nil {
 			log.Fatal(err)
@@ -173,11 +173,11 @@ func newOAuthClient(token *string) *http.Client {
 	} else {
 		defaultToken := filepath.Join(os.Getenv("HOME"), ".github-token")
 		content, err = os.ReadFile(defaultToken)
-		if err != nil {
-			log.Printf("using unauthenticated GitHub client: no token provided and default %q cannot be read: %v\n", defaultToken, err)
+		if err != nil && os.IsNotExist(err) { // use unauthenticated client
 			return nil
+		} else if err != nil {
+			log.Fatal(err)
 		}
-		log.Printf("using authenticated GitHub client: no token provided, defaulting to token in %q\n", defaultToken)
 	}
 
 	ts := oauth2.StaticTokenSource(
