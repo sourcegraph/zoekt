@@ -408,9 +408,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	opts.BuildOptions.RepositoryDescription.Source = opts.RepoDir
 
 	var repo *git.Repository
-	// TODO: this now defaults to on since we found a bug in it. Once we have
-	// fixed openRepo default to false.
-	legacyRepoOpen := cmp.Or(os.Getenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION"), "true")
+	legacyRepoOpen := cmp.Or(os.Getenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION"), "false")
 	if b, err := strconv.ParseBool(legacyRepoOpen); b || err != nil {
 		repo, err = git.PlainOpen(opts.RepoDir)
 		if err != nil {
@@ -587,10 +585,6 @@ func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	s := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{
 		// Cache the packfile handles, preventing the packfile from being opened then closed on every object access
 		KeepDescriptors: true,
-		// Disable caching for most objects, by setting the threshold to 1 byte. This avoids allocating a bunch of
-		// in-memory objects that are unlikely to be reused, since we only read each file once. Note: go-git still
-		// proactively caches objects under 16KB (see smallObjectThreshold in packfile logic).
-		LargeObjectThreshold: 1,
 	})
 
 	// Because we're keeping descriptors open, we need to close the storage object when we're done.
