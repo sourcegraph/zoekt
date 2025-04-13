@@ -40,7 +40,6 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/go-enry/go-enry/v2"
 	"github.com/rs/xid"
-	"golang.org/x/sys/unix"
 
 	"maps"
 
@@ -1076,8 +1075,3 @@ func (e *deltaIndexOptionsMismatchError) Error() string {
 
 // umask holds the Umask of the current process
 var umask os.FileMode
-
-func init() {
-	umask = os.FileMode(unix.Umask(0))
-	unix.Umask(int(umask))
-}

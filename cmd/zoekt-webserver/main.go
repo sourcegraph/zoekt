@@ -32,6 +32,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -45,7 +46,6 @@ import (
 	"github.com/uber/jaeger-client-go"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/automaxprocs/maxprocs"
-	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	"github.com/sourcegraph/zoekt"
@@ -349,8 +349,8 @@ func addProxyHandler(mux *http.ServeMux, socket string) {
 // times you will read the channel (used as buffer for signal.Notify).
 func shutdownSignalChan(maxReads int) <-chan os.Signal {
 	c := make(chan os.Signal, maxReads)
-	signal.Notify(c, os.Interrupt) // terminal C-c and goreman
-	signal.Notify(c, unix.SIGTERM) // Kubernetes
+	signal.Notify(c, os.Interrupt)     // terminal C-c and goreman
+	signal.Notify(c, PLATFORM_SIGTERM) // Kubernetes
 	return c
 }
 
@@ -459,13 +459,28 @@ Possible remediations:
 	}
 }
 
+func diskUsage(path string) (*disk.UsageStat, error) {
+	duPath := path
+	if runtime.GOOS == "windows" {
+		duPath = filepath.VolumeName(duPath)
+	}
+	usage, err := disk.Usage(duPath)
+	if err != nil {
+		return nil, fmt.Errorf("diskUsage: %w", err)
+	}
+	return usage, err
+}
+
 func mustRegisterDiskMonitor(path string) {
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "src_disk_space_available_bytes",
 		Help:        "Amount of free space disk space.",
 		ConstLabels: prometheus.Labels{"path": path},
 	}, func() float64 {
-		usage, _ := disk.Usage(path)
+		// I know there is no error handling here, and I don't like it
+		// but there was no error handling in the previous version
+		// that used Statfs, either, so I'm assuming there's no need for it
+		usage, _ := diskUsage(path)
 		return float64(usage.Free)
 	}))
 
@@ -474,7 +489,10 @@ func mustRegisterDiskMonitor(path string) {
 		Help:        "Amount of total disk space.",
 		ConstLabels: prometheus.Labels{"path": path},
 	}, func() float64 {
-		usage, _ := disk.Usage(path)
+		// I know there is no error handling here, and I don't like it
+		// but there was no error handling in the previous version
+		// that used Statfs, either, so I'm assuming there's no need for it
+		usage, _ := diskUsage(path)
 		return float64(usage.Total)
 	}))
 }
