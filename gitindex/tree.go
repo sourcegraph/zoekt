@@ -20,7 +20,6 @@ import (
 	"log"
 	"net/url"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -166,13 +165,13 @@ func (rw *RepoWalker) handleSubmodule(p string, id *plumbing.Hash, branch string
 	}
 	for k, repo := range sw.Files {
 		rw.Files[fileKey{
-			SubRepoPath: filepath.Join(p, k.SubRepoPath),
+			SubRepoPath: path.Join(p, k.SubRepoPath),
 			Path:        k.Path,
 			ID:          k.ID,
 		}] = repo
 	}
 	for k, v := range subVersions {
-		subRepoVersions[filepath.Join(p, k)] = v
+		subRepoVersions[path.Join(p, k)] = v
 	}
 	return nil
 }
@@ -222,7 +221,7 @@ type fileKey struct {
 }
 
 func (k *fileKey) FullPath() string {
-	return filepath.Join(k.SubRepoPath, k.Path)
+	return path.Join(k.SubRepoPath, k.Path)
 }
 
 // BlobLocation holds the repo where the blob can be found, plus other information

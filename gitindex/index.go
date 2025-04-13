@@ -26,6 +26,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -181,7 +182,7 @@ func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error)
 	sha1, err := repo.ResolveRevision(plumbing.Revision(ref))
 	// ref might be a branch name (e.g. "master") add branch prefix and try again.
 	if err != nil {
-		sha1, err = repo.ResolveRevision(plumbing.Revision(filepath.Join(prefix, ref)))
+		sha1, err = repo.ResolveRevision(plumbing.Revision(path.Join(prefix, ref)))
 	}
 	if err != nil {
 		return nil, err
@@ -396,7 +397,7 @@ func normalizeSubmoduleRemoteURL(cfg *config.Config) (string, error) {
 
 // SetTemplatesFromOrigin fills in templates based on the origin URL.
 func SetTemplatesFromOrigin(desc *zoekt.Repository, u *url.URL) error {
-	desc.Name = filepath.Join(u.Host, strings.TrimSuffix(u.Path, ".git"))
+	desc.Name = path.Join(u.Host, strings.TrimSuffix(u.Path, ".git"))
 
 	if strings.HasSuffix(u.Host, ".googlesource.com") {
 		return setTemplates(desc, u, "gitiles")
@@ -479,7 +480,7 @@ func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string,
 				}
 
 				name := ref.Name().Short()
-				if matched, err := filepath.Match(b, name); err != nil {
+				if matched, err := path.Match(b, name); err != nil {
 					return nil, err
 				} else if !matched {
 					continue
@@ -1192,14 +1193,14 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 
 			for k, repo := range sw {
 				rw.Files[fileKey{
-					SubRepoPath: filepath.Join(submodule.Config().Path, k.SubRepoPath),
+					SubRepoPath: path.Join(submodule.Config().Path, k.SubRepoPath),
 					Path:        k.Path,
 					ID:          k.ID,
 				}] = repo
 			}
 
 			for k, v := range subVersions {
-				branchVersions[filepath.Join(submodule.Config().Path, k)] = v
+				branchVersions[path.Join(submodule.Config().Path, k)] = v
 			}
 		}
 	}

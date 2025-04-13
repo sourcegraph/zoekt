@@ -42,6 +42,27 @@ jobs:
       - name: test
         run: go test ./...
 
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: test index
+        run: go test ./index
+
+      - name: test Git repository paths
+        run: go test ./gitindex -run '^TestFileKeyFullPathUsesRepositorySeparators$'
+
+      - name: build
+        run: go build ./cmd/zoekt-webserver ./cmd/zoekt-git-index
+
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest
@@ -99,4 +120,3 @@ jobs:
           github_token: ${{ secrets.GH_TOKEN }}
       # Check if the generated code is up-to-date
       - run: .github/workflows/buf-generate-check.sh
-
