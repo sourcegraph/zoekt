@@ -34,6 +34,7 @@ var TemplateText = map[string]string{
 <style>
   #navsearchbox { width: 350px !important; }
   #maxhits { width: 100px !important; }
+  #context { width: 70px !important; }
   .label-dup {
     border-width: 1px !important;
     border-style: solid !important;
@@ -41,6 +42,7 @@ var TemplateText = map[string]string{
     color: black;
   }
   .noselect {
+    color: #999;    
     user-select: none;
   }
   a.label-dup:hover {
@@ -116,6 +118,10 @@ var TemplateText = map[string]string{
           <div class="input-group">
             <div class="input-group-addon">Max Results</div>
             <input class="form-control" type="number" id="maxhits" name="num" value="{{.Num}}">
+          </div>
+          <div class="input-group">
+            <div class="input-group-addon">Context Lines</div>
+            <input class="form-control" id="context" name="ctx" type="number" value="{{.Ctx}}">
           </div>
           <button class="btn btn-primary">Search</button>
           <!--Hack: we use a hidden form field to keep track of the debug flag across searches-->
@@ -226,7 +232,7 @@ document.onkeydown=function(e){
     <table class="table table-hover table-condensed">
       <thead>
         <tr>
-          <th>
+          <th colspan="2">
             {{if .URL}}<a name="{{.ResultID}}" class="result"></a><a href="{{.URL}}" >{{else}}<a name="{{.ResultID}}">{{end}}
             <small>
               {{.Repo}}:{{.FileName}} {{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</a>:
@@ -244,8 +250,16 @@ document.onkeydown=function(e){
         {{range .Matches}}
         {{if gt .LineNum 0}}
         <tr>
+          <td style="width: 1%; white-space: nowrap; background-color: rgba(238, 238, 255, 0.6);">
+<pre class="inline-pre"><p style="margin: 0px;">{{$beforeLines := AddLineNumbers .Before .LineNum true}}{{range $line := $beforeLines}}<span class="noselect"><u>{{$line.LineNum}}</u>:</span>
+{{end}}<span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}:</span>
+{{$afterLines := AddLineNumbers .After .LineNum false}}{{range $line := $afterLines}}<span class="noselect"><u>{{$line.LineNum}}</u>:</span>
+{{end}}</p></pre>
+          </td>
           <td style="background-color: rgba(238, 238, 255, 0.6);">
-            <pre class="inline-pre"><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 (TrimTrailingNewline .Post)}}{{end}} {{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</pre>
+<pre class="inline-pre"><p style="margin: 0px;">{{range $line := $beforeLines}} {{$line.Content}}
+{{end}}</p> {{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 (TrimTrailingNewline .Post)}}{{end}}<p style="margin: 0px;">{{range $line := $afterLines}} {{$line.Content}}
+{{end}}</p>{{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</pre>
           </td>
         </tr>
         {{end}}
