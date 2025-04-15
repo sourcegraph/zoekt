@@ -36,14 +36,3 @@ func GetOpenTracer(ctx context.Context, tracer opentracing.Tracer) opentracing.T
 	}
 	return tracer
 }
-
-// StartSpanFromContext starts a span using the tracer returned by invoking GetOpenTracer with the
-// passed-in tracer.
-func StartSpanFromContextWithTracer(ctx context.Context, tracer opentracing.Tracer, operationName string, opts ...opentracing.StartSpanOption) (opentracing.Span, context.Context) {
-	return opentracing.StartSpanFromContextWithTracer(ctx, GetOpenTracer(ctx, tracer), operationName, opts...)
-}
-
-// StartSpanFromContext starts a span using the tracer returned by GetOpenTracer.
-func StartSpanFromContext(ctx context.Context, operationName string, opts ...opentracing.StartSpanOption) (opentracing.Span, context.Context) {
-	return StartSpanFromContextWithTracer(ctx, GetOpenTracer(ctx, nil), operationName, opts...)
-}

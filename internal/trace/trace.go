@@ -17,26 +17,14 @@ import (
 	nettrace "golang.org/x/net/trace"
 )
 
-// A Tracer for trace creation, parameterised over an
-// opentracing.Tracer. Use this if you don't want to use
-// the global tracer.
-type Tracer struct {
-	Tracer opentracing.Tracer
-}
-
 func New(ctx context.Context, family, title string) (*Trace, context.Context) {
-	tr := Tracer{Tracer: GetOpenTracer(ctx, nil)}
-	return tr.New(ctx, family, title)
-}
-
-// New returns a new Trace with the specified family and title.
-func (t Tracer) New(ctx context.Context, family, title string) (*Trace, context.Context) {
-	span, ctx := StartSpanFromContextWithTracer(
-		ctx,
-		t.Tracer,
+	tracer := GetOpenTracer(ctx, nil)
+	span, ctx := opentracing.StartSpanFromContextWithTracer(ctx,
+		tracer,
 		family,
 		opentracing.Tag{Key: "title", Value: title},
 	)
+
 	tr := nettrace.New(family, title)
 	trace := &Trace{span: span, trace: tr, family: family}
 	if parent := TraceFromContext(ctx); parent != nil {
