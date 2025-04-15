@@ -251,9 +251,9 @@ document.onkeydown=function(e){
         {{if gt .LineNum 0}}
         <tr>
           <td style="width: 1%; white-space: nowrap; background-color: rgba(238, 238, 255, 0.6);">
-<pre class="inline-pre"><p style="margin: 0px;">{{$beforeLines := addLineNumbers .Before .LineNum true}}{{range $line := $beforeLines}}<span class="noselect"><u>{{$line.LineNum}}</u>:</span>
+<pre class="inline-pre"><p style="margin: 0px;">{{$beforeLines := AddLineNumbers .Before .LineNum true}}{{range $line := $beforeLines}}<span class="noselect"><u>{{$line.LineNum}}</u>:</span>
 {{end}}<span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}:</span>
-{{$afterLines := addLineNumbers .After .LineNum false}}{{range $line := $afterLines}}<span class="noselect"><u>{{$line.LineNum}}</u>:</span>
+{{$afterLines := AddLineNumbers .After .LineNum false}}{{range $line := $afterLines}}<span class="noselect"><u>{{$line.LineNum}}</u>:</span>
 {{end}}</p></pre>
           </td>
           <td style="background-color: rgba(238, 238, 255, 0.6);">

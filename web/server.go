@@ -47,8 +47,8 @@ var Funcmap = template.FuncMap{
 	"More": func(orig int) int {
 		return orig * 3
 	},
-	"addLineNumbers": func(content string, lineNum int, isBefore bool) []lineMatch {
-		return addLineNumbers(content, lineNum, isBefore)
+	"AddLineNumbers": func(content string, lineNum int, isBefore bool) []lineMatch {
+		return AddLineNumbers(content, lineNum, isBefore)
 	},
 	"HumanUnit": func(orig int64) string {
 		b := orig
@@ -89,11 +89,11 @@ type lineMatch struct {
 	Content string
 }
 
-// addLineNumbers adds line numbers to the beginning of each line in the given content string.
+// AddLineNumbers adds line numbers to the beginning of each line in the given content string.
 // The line numbers are relative to the current line number (lineNum).
 // For 'before' content, numbers will count backwards from lineNum-1.
 // For 'after' content, numbers will count forwards from lineNum+1.
-func addLineNumbers(content string, lineNum int, isBefore bool) []lineMatch {
+func AddLineNumbers(content string, lineNum int, isBefore bool) []lineMatch {
 	if content == "" {
 		return nil
 	}

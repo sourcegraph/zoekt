@@ -87,9 +87,9 @@ func TestAddLineNumbers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := addLineNumbers(tt.content, tt.lineNum, tt.isBefore)
+			got := AddLineNumbers(tt.content, tt.lineNum, tt.isBefore)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("addLineNumbers() mismatch (-want +got):\n%s", diff)
+				t.Errorf("AddLineNumbers() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
