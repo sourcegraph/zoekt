@@ -42,6 +42,7 @@ var TemplateText = map[string]string{
     color: black;
   }
   .noselect {
+    color: #999;    
     user-select: none;
   }
   a.label-dup:hover {
@@ -250,11 +251,11 @@ document.onkeydown=function(e){
         {{if gt .LineNum 0}}
         <tr>
           <td style="background-color: rgba(238, 238, 255, 0.6);">
-            <pre class="inline-pre"><p style="margin: 0px;">{{range $line := addLineNumbers .Before .LineNum true}}<span class="noselect"><u>{{$line.LineNum}}</u>: </span>{{$line.Content}}
-{{end}}</p><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 (TrimTrailingNewline .Post)}}{{end}}<p style="margin: 0px;">{{range $line := addLineNumbers .After .LineNum false}}<span class="noselect"><u>{{$line.LineNum}}</u>: </span>{{$line.Content}}
+            <pre class="inline-pre"><p style="margin: 0px;">{{range $line := addLineNumbers .Before .LineNum true}}<span class="noselect" style="color: #999;"><u>{{$line.LineNum}}</u>: </span>{{$line.Content}}
+{{end}}</p><span class="noselect" style="color: #999;">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 (TrimTrailingNewline .Post)}}{{end}}<p style="margin: 0px;">{{range $line := addLineNumbers .After .LineNum false}}<span class="noselect" style="color: #999;"><u>{{$line.LineNum}}</u>: </span>{{$line.Content}}
 {{end}}</p>{{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</pre>
           </td>
-        </tr>
+		</tr>
         {{end}}
       </tbody>
       {{end}}
