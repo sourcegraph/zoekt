@@ -232,7 +232,7 @@ document.onkeydown=function(e){
     <table class="table table-hover table-condensed">
       <thead>
         <tr>
-          <th>
+          <th colspan="2">
             {{if .URL}}<a name="{{.ResultID}}" class="result"></a><a href="{{.URL}}" >{{else}}<a name="{{.ResultID}}">{{end}}
             <small>
               {{.Repo}}:{{.FileName}} {{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</a>:
@@ -250,9 +250,15 @@ document.onkeydown=function(e){
         {{range .Matches}}
         {{if gt .LineNum 0}}
         <tr>
+          <td style="width: 1%; white-space: nowrap; background-color: rgba(238, 238, 255, 0.6);">
+<pre class="inline-pre"><p style="margin: 0px;">{{$beforeLines := addLineNumbers .Before .LineNum true}}{{range $line := $beforeLines}}<span class="noselect"><u>{{$line.LineNum}}</u>:</span>
+{{end}}<span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}:</span>
+{{$afterLines := addLineNumbers .After .LineNum false}}{{range $line := $afterLines}}<span class="noselect"><u>{{$line.LineNum}}</u>:</span>
+{{end}}</p></pre>
+          </td>
           <td style="background-color: rgba(238, 238, 255, 0.6);">
-            <pre class="inline-pre"><p style="margin: 0px;">{{range $line := addLineNumbers .Before .LineNum true}}<span class="noselect" style="color: #999;"><u>{{$line.LineNum}}</u>: </span>{{$line.Content}}
-{{end}}</p><span class="noselect" style="color: #999;">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 (TrimTrailingNewline .Post)}}{{end}}<p style="margin: 0px;">{{range $line := addLineNumbers .After .LineNum false}}<span class="noselect" style="color: #999;"><u>{{$line.LineNum}}</u>: </span>{{$line.Content}}
+<pre class="inline-pre"><p style="margin: 0px;">{{range $line := $beforeLines}} {{$line.Content}}
+{{end}}</p> {{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 (TrimTrailingNewline .Post)}}{{end}}<p style="margin: 0px;">{{range $line := $afterLines}} {{$line.Content}}
 {{end}}</p>{{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</pre>
           </td>
 		</tr>
