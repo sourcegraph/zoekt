@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -133,9 +134,13 @@ func TestIndexTinyRepo(t *testing.T) {
 
 func executeCommand(t *testing.T, dir string, cmd *exec.Cmd) *exec.Cmd {
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_CONFIG_USER_NAME=Soren Kierkegaard",
-		"GIT_CONFIG_USER_EMAIL=soren@apache.com")
+	cmd.Env = []string{
+		"GIT_CONFIG=" + path.Join(dir, ".git", "config"),
+		"GIT_COMMITTER_NAME=Kierkegaard",
+		"GIT_COMMITTER_EMAIL=soren@apache.com",
+		"GIT_AUTHOR_NAME=Kierkegaard",
+		"GIT_AUTHOR_EMAIL=soren@apache.com",
+	}
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("cmd.Run: %v", err)
 	}
