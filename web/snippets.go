@@ -129,25 +129,8 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 				ScoreDebug: m.DebugScore,
 			}
 
-			createContextLine := func(input []byte, beforeMatch bool) (frags []ContextLine) {
-				lines := strings.Split(string(input), "\n")
-				lines = lines[:len(lines)-1]
-				for i, line := range lines {
-					lineOffset := i + 1
-					if beforeMatch {
-						lineOffset = -len(lines) + i
-					}
-					frags = append(frags, ContextLine{
-						LineNum: m.LineNumber + lineOffset,
-						Line:    line,
-					})
-				}
-				return frags
-			}
-
-			md.Before = createContextLine(m.Before, true)
-			md.After = createContextLine(m.After, false)
-
+			md.Before = string(m.Before)
+			md.After = string(m.After)
 			lastEnd := 0
 			line := m.Line
 			for i, f := range m.LineFragments {

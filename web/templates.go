@@ -66,9 +66,6 @@ var TemplateText = map[string]string{
   }
   :target { background-color: #ccf; }
   table tbody tr td { border: none !important; padding: 2px !important; }
-  .small-first-column td:nth-child(1) {
-      width: 1px;
-  }
 </style>
 </head>
   `,
@@ -231,10 +228,9 @@ document.onkeydown=function(e){
       {{else}}.{{end}}
     </h5>
     {{range .FileMatches}}
-    <table class="table table-hover table-condensed small-first-column">
+    <table class="table table-hover table-condensed">
       <thead>
         <tr>
-        <th></th>
           <th>
             {{if .URL}}<a name="{{.ResultID}}" class="result"></a><a href="{{.URL}}" >{{else}}<a name="{{.ResultID}}">{{end}}
             <small>
@@ -249,22 +245,13 @@ document.onkeydown=function(e){
         </tr>
       </thead>
       {{if not .DuplicateID}}
-      <tbody style="background-color: rgba(238, 238, 255, 0.6);">
+      <tbody>
         {{range .Matches}}
-        {{range .Before}}
+        {{if gt .LineNum 0}}
         <tr>
-          <td><span class="noselect"><u>{{.LineNum}}</u>: </span></td>
-          <td><pre class="inline-pre">{{LimitPost 200 .Line}}</pre></td>
-        </tr>
-        {{end}}
-        <tr>
-          <td><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span></td>
-          <td><pre class="inline-pre">{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 (TrimTrailingNewline .Post)}}{{end}}{{if .ScoreDebug}}<i>({{.ScoreDebug}})</i></pre>{{end}}</td>
-        </tr>
-        {{range .After}}
-        <tr>
-          <td><span class="noselect"><u>{{.LineNum}}</u>: </span></td>
-          <td><pre class="inline-pre">{{LimitPost 200 .Line}}</pre></td>
+          <td style="background-color: rgba(238, 238, 255, 0.6);">
+            <pre class="inline-pre"><p style="margin: 0px;">{{.Before}}</p><span class="noselect">{{if .URL}}<a href="{{.URL}}">{{end}}<u>{{.LineNum}}</u>{{if .URL}}</a>{{end}}: </span>{{range .Fragments}}{{LimitPre 100 .Pre}}<b>{{.Match}}</b>{{LimitPost 100 (TrimTrailingNewline .Post)}}{{end}}<p style="margin: 0px;">{{.After}}</p>{{if .ScoreDebug}}<i>({{.ScoreDebug}})</i>{{end}}</pre>
+          </td>
         </tr>
         {{end}}
       </tbody>

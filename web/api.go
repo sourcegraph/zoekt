@@ -73,8 +73,8 @@ type Match struct {
 	LineNum  int
 
 	Fragments []Fragment
-	Before    []ContextLine `json:",omitempty"`
-	After     []ContextLine `json:",omitempty"`
+	Before    string `json:",omitempty"`
+	After     string `json:",omitempty"`
 
 	// Don't expose to caller of JSON API
 	Score      float64 `json:"-"`
@@ -87,11 +87,6 @@ type Fragment struct {
 	Pre   string
 	Match string
 	Post  string
-}
-
-type ContextLine struct {
-	LineNum int
-	Line    string
 }
 
 // SearchBoxInput is provided to the SearchBox template.
