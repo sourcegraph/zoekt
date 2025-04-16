@@ -92,9 +92,6 @@ func TestIndexTinyRepo(t *testing.T) {
 	executeCommand(t, dir, exec.Command("git", "init", "-b", "main", "repo"))
 
 	repoDir := filepath.Join(dir, "repo")
-	executeCommand(t, repoDir, exec.Command("git", "config", "--local", "user.name", "Thomas"))
-	executeCommand(t, repoDir, exec.Command("git", "config", "--local", "user.email", "thomas@google.com"))
-
 	if err := os.WriteFile(filepath.Join(repoDir, "file1.go"), []byte("package main\n\nfunc main() {}\n"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -136,6 +133,14 @@ func TestIndexTinyRepo(t *testing.T) {
 
 func executeCommand(t *testing.T, dir string, cmd *exec.Cmd) *exec.Cmd {
 	cmd.Dir = dir
+	cmd.Env = []string{
+		"GIT_CONFIG_GLOBAL=",
+		"GIT_CONFIG_SYSTEM=",
+		"GIT_COMMITTER_NAME=Kierkegaard",
+		"GIT_COMMITTER_EMAIL=soren@apache.com",
+		"GIT_AUTHOR_NAME=Kierkegaard",
+		"GIT_AUTHOR_EMAIL=soren@apache.com",
+	}
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("cmd.Run: %v", err)
 	}
