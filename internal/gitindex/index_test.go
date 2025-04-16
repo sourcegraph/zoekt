@@ -22,7 +22,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -135,7 +134,8 @@ func TestIndexTinyRepo(t *testing.T) {
 func executeCommand(t *testing.T, dir string, cmd *exec.Cmd) *exec.Cmd {
 	cmd.Dir = dir
 	cmd.Env = []string{
-		"GIT_CONFIG=" + path.Join(dir, ".git", "config"),
+		"GIT_CONFIG_GLOBAL=",
+		"GIT_CONFIG_SYSTEM=",
 		"GIT_COMMITTER_NAME=Kierkegaard",
 		"GIT_COMMITTER_EMAIL=soren@apache.com",
 		"GIT_AUTHOR_NAME=Kierkegaard",
