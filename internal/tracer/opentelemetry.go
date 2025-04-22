@@ -57,7 +57,7 @@ func configureOpenTelemetry(resource sglog.Resource) (opentracing.Tracer, error)
 			semconv.ServiceNameKey.String(resource.Name),
 			semconv.ServiceInstanceIDKey.String(resource.InstanceID),
 			semconv.ServiceVersionKey.String(resource.Version))),
-		oteltracesdk.WithSampler(oteltracesdk.AlwaysSample()),
+		oteltracesdk.WithSampler(oteltracesdk.ParentBased(oteltracesdk.NeverSample())),
 		oteltracesdk.WithSpanProcessor(processor),
 	)
 
