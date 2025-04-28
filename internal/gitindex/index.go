@@ -689,10 +689,15 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	// branch => (path, sha1) => repo.
 	repos = map[fileKey]BlobLocation{}
 
-	// branch name -> git worktree at most current commit
-	branchToCurrentTree := make(map[string]*object.Tree, len(options.Branches))
+	branches, err := expandBranches(repository, options.Branches, options.BranchPrefix)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("expandBranches: %w", err)
+	}
 
-	for _, b := range options.Branches {
+	// branch name -> git worktree at most current commit
+	branchToCurrentTree := make(map[string]*object.Tree, len(branches))
+
+	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("getting last current commit for branch %q: %w", b, err)

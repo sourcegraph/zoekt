@@ -449,6 +449,31 @@ func TestIndexDeltaBasic(t *testing.T) {
 			},
 		},
 		{
+			name:     "should expand branches correctly when using wildcards in branch names",
+			branches: []string{"release/1", "release/2"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"release/1": []index.Document{fruitV1},
+						"release/2": []index.Document{fruitV2},
+					},
+
+					expectedDocuments: []index.Document{fruitV1, fruitV2},
+				},
+				{
+					name: "try delta build with wildcard in branches",
+					optFn: func(t *testing.T, o *Options) {
+						// use a wildcard here
+						o.Branches = []string{"HEAD", "release/*"}
+						o.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []index.Document{fruitV1, fruitV2},
+				},
+			},
+		},
+		{
 			name:     "should fallback to normal build if one or more index options updates requires a full build",
 			branches: []string{"main"},
 			steps: []step{
