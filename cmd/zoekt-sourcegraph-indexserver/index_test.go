@@ -25,7 +25,6 @@ import (
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/internal/ctags"
-	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
 )
 
 func TestIterateIndexOptions_Fingerprint(t *testing.T) {
@@ -470,76 +469,6 @@ func TestGetIndexOptions(t *testing.T) {
 	})
 }
 
-func TestIndexTenant(t *testing.T) {
-	tenanttest.MockEnforce(t)
-
-	cases := []struct {
-		name                   string
-		args                   indexArgs
-		mockRepositoryMetadata *zoekt.Repository
-		want                   []string
-	}{
-		{
-			name: "prefix",
-			args: indexArgs{
-				IndexOptions: IndexOptions{
-					RepoID:   13,
-					Name:     "test/repo",
-					CloneURL: "http://api.test/.internal/git/test/repo",
-					Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
-					TenantID: 42,
-				},
-			},
-			want: []string{
-				"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-				"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 42 fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
-				"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
-				"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
-				"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
-				"git -C $TMPDIR/test%2Frepo.git config zoekt.latestCommitDate 1",
-				"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
-				"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
-				"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
-				"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 13",
-				"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 42",
-				"zoekt-git-index -submodules=false -branches HEAD -disable_ctags -shard_prefix 000000042_000000013 $TMPDIR/test%2Frepo.git",
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			var got []string
-			runCmd := func(c *exec.Cmd) error {
-				cmd := strings.Join(c.Args, " ")
-				cmd = strings.ReplaceAll(cmd, filepath.Clean(os.TempDir()), "$TMPDIR")
-				got = append(got, cmd)
-				return nil
-			}
-
-			findRepositoryMetadata := func(args *indexArgs) (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error) {
-				if tc.mockRepositoryMetadata == nil {
-					return args.BuildOptions().FindRepositoryMetadata()
-				}
-
-				return tc.mockRepositoryMetadata, &zoekt.IndexMetadata{}, true, nil
-			}
-
-			c := gitIndexConfig{
-				runCmd:                 runCmd,
-				findRepositoryMetadata: findRepositoryMetadata,
-			}
-
-			if err := gitIndex(context.Background(), c, &tc.args, sourcegraphNop{}, logtest.Scoped(t)); err != nil {
-				t.Fatal(err)
-			}
-			if !cmp.Equal(got, tc.want) {
-				t.Errorf("git mismatch (-want +got):\n%s", cmp.Diff(tc.want, got, splitargs))
-			}
-		})
-	}
-}
-
 func TestIndex(t *testing.T) {
 	cases := []struct {
 		name                   string
@@ -687,6 +616,10 @@ func TestIndex(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var got []string
 			runCmd := func(c *exec.Cmd) error {
+				if c.Env != nil {
+					t.Fatal("expected nil Env for command. Tenant Enforcement relies on us inheritting the parent process environment.")
+				}
+
 				cmd := strings.Join(c.Args, " ")
 				cmd = strings.ReplaceAll(cmd, filepath.Clean(os.TempDir()), "$TMPDIR")
 				got = append(got, cmd)
