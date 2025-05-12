@@ -17,16 +17,17 @@ import (
 	"github.com/google/go-cmp/cmp"
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/log/logtest"
-	"github.com/sourcegraph/zoekt"
-	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
-	indexserverv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/zoekt/indexserver/v1"
-	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/stretchr/testify/require"
 	"github.com/xeipuuv/gojsonschema"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/sourcegraph/zoekt"
+	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	indexserverv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/zoekt/indexserver/v1"
+	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 func TestServer_defaultArgs(t *testing.T) {

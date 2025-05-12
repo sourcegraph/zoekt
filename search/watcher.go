@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
 	"github.com/sourcegraph/zoekt/index"
 )
 

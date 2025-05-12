@@ -6,6 +6,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/grafana/regexp"
+
 	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 )
 

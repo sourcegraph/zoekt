@@ -24,9 +24,10 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"go.uber.org/automaxprocs/maxprocs"
+
 	"github.com/sourcegraph/zoekt/cmd"
 	"github.com/sourcegraph/zoekt/index"
-	"go.uber.org/automaxprocs/maxprocs"
 )
 
 type fileInfo struct {

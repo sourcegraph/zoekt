@@ -21,6 +21,7 @@ import (
 	"regexp/syntax"
 
 	"github.com/grafana/regexp"
+
 	"github.com/sourcegraph/zoekt/internal/languages"
 )
 

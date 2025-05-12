@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/felixge/fgprof"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/query"

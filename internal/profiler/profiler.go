@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"cloud.google.com/go/profiler"
+
 	"github.com/sourcegraph/zoekt/index"
 )
 

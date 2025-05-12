@@ -23,12 +23,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/sourcegraph/zoekt/ignore"
 
-	"github.com/go-git/go-git/v5"
+	"github.com/sourcegraph/zoekt/ignore"
 )
 
 // RepoWalker walks one or more commit trees, collecting the files to index in its Files map.

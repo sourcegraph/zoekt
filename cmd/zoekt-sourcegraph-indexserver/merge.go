@@ -12,9 +12,10 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
+
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/tenant"
-	"go.uber.org/atomic"
 )
 
 var metricShardMergingRunning = promauto.NewGauge(prometheus.GaugeOpts{

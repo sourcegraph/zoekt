@@ -7,9 +7,10 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 )
 
 var (
