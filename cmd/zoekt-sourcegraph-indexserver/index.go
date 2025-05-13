@@ -21,7 +21,6 @@ import (
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/ctags"
-	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 const defaultIndexingTimeout = 1*time.Hour + 30*time.Minute
@@ -103,11 +102,6 @@ type indexArgs struct {
 // BuildOptions returns a index.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
 func (o *indexArgs) BuildOptions() *index.Options {
-	shardPrefix := ""
-	if tenant.EnforceTenant() {
-		shardPrefix = tenant.SrcPrefix(o.TenantID, o.RepoID)
-	}
-
 	return &index.Options{
 		// It is important that this RepositoryDescription exactly matches what
 		// the indexer we call will produce. This is to ensure that
@@ -141,7 +135,8 @@ func (o *indexArgs) BuildOptions() *index.Options {
 
 		ShardMerging: o.ShardMerging,
 
-		ShardPrefix: shardPrefix,
+		TenantID: o.TenantID,
+		RepoID:   o.RepoID,
 	}
 }
 

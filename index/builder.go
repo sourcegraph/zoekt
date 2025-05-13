@@ -17,7 +17,6 @@
 package index
 
 import (
-	"cmp"
 	"crypto/sha1"
 	"flag"
 	"fmt"
@@ -46,6 +45,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/ctags"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 var DefaultDir = filepath.Join(os.Getenv("HOME"), ".zoekt")
@@ -121,8 +121,11 @@ type Options struct {
 	// Note: heap checking is "best effort", and it's possible for the process to OOM without triggering the heap profile.
 	HeapProfileTriggerBytes uint64
 
-	// ShardPrefix is the prefix of the shard. It defaults to the repository name.
-	ShardPrefix string
+	// TenantID is the ID of the tenant this shard belongs to.
+	TenantID int
+
+	// RepoID is the ID of the repository this shard belongs to.
+	RepoID uint32
 }
 
 // HashOptions contains only the options in Options that upon modification leads to IndexState of IndexStateMismatch during the next index building.
@@ -187,7 +190,6 @@ func (o *Options) Flags(fs *flag.FlagSet) {
 	fs.StringVar(&o.IndexDir, "index", x.IndexDir, "directory for search indices")
 	fs.BoolVar(&o.CTagsMustSucceed, "require_ctags", x.CTagsMustSucceed, "If set, ctags calls must succeed.")
 	fs.Var(largeFilesFlag{o}, "large_file", "A glob pattern where matching files are to be index regardless of their size. You can add multiple patterns by setting this more than once.")
-	fs.StringVar(&o.ShardPrefix, "shard_prefix", x.ShardPrefix, "the prefix of the shard. Defaults to repository name")
 
 	// Sourcegraph specific
 	fs.BoolVar(&o.DisableCTags, "disable_ctags", x.DisableCTags, "If set, ctags will not be called.")
@@ -233,10 +235,6 @@ func (o *Options) Args() []string {
 
 	if o.ShardMerging {
 		args = append(args, "-shard_merging")
-	}
-
-	if o.ShardPrefix != "" {
-		args = append(args, "-shard_prefix", o.ShardPrefix)
 	}
 
 	return args
@@ -342,7 +340,16 @@ func (o *Options) shardName(n int) string {
 }
 
 func (o *Options) shardNameVersion(version, n int) string {
-	return ShardName(o.IndexDir, cmp.Or(o.ShardPrefix, o.RepositoryDescription.Name), version, n)
+	var prefix string
+
+	// If tenant enforcement is enabled and we have tenant/repo IDs, use those to generate the prefix
+	if o.TenantID != 0 && o.RepoID != 0 && tenant.EnforceTenant() {
+		prefix = tenant.SrcPrefix(o.TenantID, o.RepoID)
+	} else {
+		prefix = o.RepositoryDescription.Name
+	}
+
+	return ShardName(o.IndexDir, prefix, version, n)
 }
 
 type IndexState string
