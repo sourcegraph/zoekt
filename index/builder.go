@@ -46,6 +46,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/internal/workspaces"
 )
 
 var DefaultDir = filepath.Join(os.Getenv("HOME"), ".zoekt")
@@ -342,13 +343,20 @@ func (o *Options) shardName(n int) string {
 func (o *Options) shardNameVersion(version, n int) string {
 	var prefix string
 
-	// If tenant enforcement is enabled and we have tenant/repo IDs, use those to generate the prefix
-	if o.TenantID != 0 && o.RepoID != 0 && tenant.EnforceTenant() {
+	// Determine prefix based on tenant enforcement and workspaces configuration
+	enforcement := tenant.EnforceTenant()
+	workspacesEnabled := workspaces.Enabled()
+
+	// Use tenant/repo IDs to generate prefix when tenant enforcement is enabled
+	if o.TenantID != 0 && o.RepoID != 0 && enforcement {
 		prefix = tenant.SrcPrefix(o.TenantID, o.RepoID)
 	} else {
 		prefix = o.RepositoryDescription.Name
 	}
 
+	// For now, workspace layout is determined the same way as before
+	// but separated from the tenant enforcement decision.
+	// The directory used is based on the prefix.
 	return ShardName(o.IndexDir, prefix, version, n)
 }
 
