@@ -4,42 +4,26 @@ import (
 	"context"
 	"testing"
 
-	"go.uber.org/atomic"
-
+	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/enforcement"
-	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
 )
 
-func MockEnforce(t *testing.T) {
-	// prevent parallel tests from interfering with each other
-	t.Setenv("mockEnforce", "true")
-
-	old := enforcement.EnforcementMode.Load()
-	t.Cleanup(func() {
-		enforcement.EnforcementMode.Store(old)
-		ResetTestTenants()
-	})
-
-	enforcement.EnforcementMode.Store("strict")
-}
-
-// TestTenantCounter is a counter that is tracks tenants created from NewTestContext().
-var TestTenantCounter atomic.Int64
-
-func NewTestContext() context.Context {
-	return tenanttype.WithTenant(context.Background(), mustTenantFromID(int(TestTenantCounter.Inc())))
-}
-
-// ResetTestTenants resets the test tenant counter that tracks the tenants
-// created from NewTestContext().
-func ResetTestTenants() {
-	TestTenantCounter.Store(0)
-}
-
-func mustTenantFromID(id int) *tenanttype.Tenant {
-	tenant, err := tenanttype.FromID(id)
-	if err != nil {
-		panic(err)
+// MockEnforce temporarily sets the tenant enforcement mode and returns a function
+// to restore the original mode.
+func MockEnforce(mode string) func() {
+	original := enforcement.EnforcementMode.Load()
+	enforcement.EnforcementMode.Store(mode)
+	return func() {
+		enforcement.EnforcementMode.Store(original)
 	}
-	return tenant
+}
+
+// TestContext creates a new context configured with the given tenant ID.
+func TestContext(t *testing.T, tenantID uint32) context.Context {
+	return tenant.WithTenantID(context.Background(), tenantID)
+}
+
+// NewTestContext creates a new test context with the tenant ID (backward compatibility)
+func NewTestContext(tenantID uint32) context.Context {
+	return tenant.WithTenantID(context.Background(), tenantID)
 }

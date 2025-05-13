@@ -354,10 +354,16 @@ func (o *Options) shardNameVersion(version, n int) string {
 		prefix = o.RepositoryDescription.Name
 	}
 
-	// For now, workspace layout is determined the same way as before
-	// but separated from the tenant enforcement decision.
-	// The directory used is based on the prefix.
-	return ShardName(o.IndexDir, prefix, version, n)
+	// Determine the appropriate directory based on whether workspaces are enabled
+	indexDir := o.IndexDir
+	if workspacesEnabled {
+		// Use workspaces layout for the index directory
+		// This assumes the indexDir is the base directory and workspaces
+		// will have a specific subdirectory structure
+		indexDir = filepath.Join(indexDir, "workspaces")
+	}
+
+	return ShardName(indexDir, prefix, version, n)
 }
 
 type IndexState string

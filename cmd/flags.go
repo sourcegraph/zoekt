@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/sourcegraph/zoekt/index"
 )
@@ -40,5 +41,21 @@ func OptionsFromFlags() *index.Options {
 	}
 
 	opts.SetDefaults()
+	
+	// Ensure any tenant ID and repo ID from environment variables are set
+	if tenantID := os.Getenv("SRC_TENANT_ID"); tenantID != "" {
+		id, err := strconv.Atoi(tenantID)
+		if err == nil {
+			opts.TenantID = id
+		}
+	}
+	
+	if repoID := os.Getenv("SRC_REPO_ID"); repoID != "" {
+		id, err := strconv.ParseUint(repoID, 10, 32)
+		if err == nil {
+			opts.RepoID = uint32(id)
+		}
+	}
+	
 	return opts
 }
