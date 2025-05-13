@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sourcegraph/zoekt/internal/tenant"
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/enforcement"
+	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
 )
 
 // MockEnforce temporarily sets the tenant enforcement mode and returns a function
@@ -20,10 +20,15 @@ func MockEnforce(mode string) func() {
 
 // TestContext creates a new context configured with the given tenant ID.
 func TestContext(t *testing.T, tenantID uint32) context.Context {
-	return tenant.WithTenantID(context.Background(), tenantID)
+	tnt, err := tenanttype.FromID(int(tenantID))
+	if err != nil {
+		t.Fatalf("Failed to create tenant: %v", err)
+	}
+	return tenanttype.WithTenant(context.Background(), tnt)
 }
 
 // NewTestContext creates a new test context with the tenant ID (backward compatibility)
 func NewTestContext(tenantID uint32) context.Context {
-	return tenant.WithTenantID(context.Background(), tenantID)
+	tnt, _ := tenanttype.FromID(int(tenantID))
+	return tenanttype.WithTenant(context.Background(), tnt)
 }
