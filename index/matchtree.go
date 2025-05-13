@@ -1053,6 +1053,28 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 			boost: s.Boost,
 		}, nil
 
+	case *query.Meta:
+		reposWant := make([]bool, len(d.repoMetaData))
+		for repoIdx, r := range d.repoMetaData {
+			if r.Metadata != nil {
+				if val, ok := r.Metadata[s.Field]; ok && s.Value.MatchString(val) {
+					reposWant[repoIdx] = true
+				}
+			}
+		}
+
+		return &docMatchTree{
+			reason:  "Meta",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				repoIdx := d.repos[docID]
+				if int(repoIdx) >= len(reposWant) {
+					return false
+				}
+				return reposWant[repoIdx]
+			},
+		}, nil
+
 	case *query.Substring:
 		return d.newSubstringMatchTree(s)
 

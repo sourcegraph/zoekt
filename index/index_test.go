@@ -2143,6 +2143,39 @@ func TestMetadata(t *testing.T) {
 	}
 }
 
+func TestRepoWithMetadata(t *testing.T) {
+	sb := newShardBuilder()
+	sb.repoList = []zoekt.Repository{
+		{
+			Name:     "repo1",
+			Metadata: map[string]string{"language": "go", "custom_key": "value"},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := sb.Write(&buf); err != nil {
+		t.Fatalf("failed to write shard: %v", err)
+	}
+
+	// Simulate reading the shard back
+	f := &memSeeker{buf.Bytes()}
+	repoMetaData, _, err := ReadMetadata(f)
+	if err != nil {
+		t.Fatalf("failed to read metadata: %v", err)
+	}
+
+	// Verify the metadata
+	if len(repoMetaData) != 1 {
+		t.Fatalf("expected 1 repository, got %d", len(repoMetaData))
+	}
+	if got, want := repoMetaData[0].Metadata["language"], "go"; got != want {
+		t.Errorf("expected metadata 'language' to be %q, got %q", want, got)
+	}
+	if got, want := repoMetaData[0].Metadata["custom_key"], "value"; got != want {
+		t.Errorf("expected metadata 'custom_key' to be %q, got %q", want, got)
+	}
+}
+
 func TestOr(t *testing.T) {
 	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("needle")},

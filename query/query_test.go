@@ -178,3 +178,13 @@ func TestExpandFileContent(t *testing.T) {
 		})
 	}
 }
+
+func TestMetaSimplify(t *testing.T) {
+	re := regexp.MustCompile("v1")
+	q := &Meta{Field: "version", Value: re}
+
+	simplified := q.Simplify()
+	if !reflect.DeepEqual(q, simplified) {
+		t.Errorf("Meta.Simplify() = %v, want %v", simplified, q)
+	}
+}

@@ -16,6 +16,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -62,9 +63,10 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 func main() {
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to file")
 	ignoreDirs := flag.String("ignore_dirs", ".git,.hg,.svn", "comma separated list of directories to ignore.")
+	metaFile := flag.String("meta", "", "path to .meta JSON file with repository description")
 	flag.Parse()
 
-	if flag.NArg() == 0 {
+	if *metaFile == "" && flag.NArg() == 0 {
 		fmt.Fprintf(flag.CommandLine.Output(), "USAGE: %s [options] PATHS...\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(flag.CommandLine.Output(), "Options:")
 		flag.PrintDefaults()
@@ -96,6 +98,27 @@ func main() {
 			}
 		}
 	}
+
+	if *metaFile != "" {
+		// Read and parse the .meta JSON file into opts.RepositoryDescription
+		f, err := os.Open(*metaFile)
+		if err != nil {
+			log.Fatalf("failed to open .meta file %s: %v", *metaFile, err)
+		}
+		defer f.Close()
+		dec := json.NewDecoder(f)
+		if err := dec.Decode(&opts.RepositoryDescription); err != nil {
+			log.Fatalf("failed to decode .meta file %s: %v", *metaFile, err)
+		}
+		// Index all positional arguments using this metadata
+		for _, arg := range flag.Args() {
+			if err := indexArg(arg, *opts, ignoreDirMap); err != nil {
+				log.Fatal(err)
+			}
+		}
+		return
+	}
+
 	for _, arg := range flag.Args() {
 		opts.RepositoryDescription.Source = arg
 		if err := indexArg(arg, *opts, ignoreDirMap); err != nil {

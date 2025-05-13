@@ -587,6 +587,9 @@ type Repository struct {
 	// The repository URL.
 	URL string
 
+	// Additional metadata about the repository.
+	Metadata map[string]string
+
 	// The physical source where this repo came from, eg. full
 	// path to the zip filename or git repository directory. This
 	// will not be exposed in the UI, but can be used to detect

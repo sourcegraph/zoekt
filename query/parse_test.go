@@ -179,3 +179,72 @@ func TestTokenize(t *testing.T) {
 		}
 	}
 }
+
+func TestMetaQueryParsing(t *testing.T) {
+	cases := []struct {
+		input   string
+		field   string
+		pattern string
+		err     bool
+	}{
+		{
+			input:   "meta.visibility_level:20",
+			field:   "visibility_level",
+			pattern: "20",
+			err:     false,
+		},
+		{
+			input:   "meta.needle:ha.*stack",
+			field:   "needle",
+			pattern: "ha.*stack",
+			err:     false,
+		},
+		{
+			input:   "meta.public:true",
+			field:   "public",
+			pattern: "true",
+			err:     false,
+		},
+		{
+			input:   "meta.language:go",
+			field:   "language",
+			pattern: "go",
+			err:     false,
+		},
+		{
+			input:   "meta.invalid_field:(",
+			field:   "invalid_field",
+			pattern: "(",
+			err:     true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.input, func(t *testing.T) {
+			q, err := Parse(c.input)
+			if c.err {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+
+			meta, ok := q.(*Meta)
+			if !ok || meta == nil {
+				t.Errorf("expected *Meta, got %T", q)
+				return
+			}
+
+			if meta.Field != c.field {
+				t.Errorf("expected field %q, got %q", c.field, meta.Field)
+			}
+			if meta.Value == nil || meta.Value.String() != c.pattern {
+				t.Errorf("expected pattern %q, got %v", c.pattern, meta.Value)
+			}
+		})
+	}
+}
