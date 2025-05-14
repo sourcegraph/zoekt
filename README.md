@@ -78,10 +78,17 @@ for more details on this configuration.
     go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver
     $GOPATH/bin/zoekt-webserver -index ~/.zoekt/
 
-This will start a web server with a simple search UI at http://localhost:6070. See the [uuery syntax docs](doc/query_syntax.md)
-for more details on the query language.
+This will start a web server with a simple search UI at http://localhost:6070.
+See the [query syntax docs](doc/query_syntax.md) for more details on the query
+language.
 
-If you start the web server with `-rpc`, it exposes a [simple JSON search API](doc/json-api.md) at `http://localhost:6070/search/api/search.
+If you start the web server with `-rpc`, it exposes a [simple JSON search
+API](doc/json-api.md) at `http://localhost:6070/api/search`.
+
+The JSON API supports advanced features including:
+- Streaming search results (using the `FlushWallTime` option)
+- Alternative BM25 scoring (using the `UseBM25Scoring` option)
+- Context lines around matches (using the `NumContextLines` option)
 
 Finally, the web server exposes a gRPC API that supports [structured query objects](query/query.go) and advanced search options.
 

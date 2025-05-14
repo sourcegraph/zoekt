@@ -142,7 +142,8 @@ index shard are the following
    * branch masks
    * metadata (repository name, index format version, etc.)
 
-In practice, the shard size is about 3x the corpus (size).
+In practice, the shard size is about 3.5x the corpus size, composed of
+original content, posting lists, and other metadata.
 
 The format uses uint32 for all offsets, so the total size of a shard
 should be below 4G. Given the size of the posting data, this caps
@@ -178,6 +179,12 @@ ranking
 For the latter, it is necessary to find symbol definitions and other
 sections within files on indexing. Several (imperfect) programs to do
 this already exist, eg. `ctags`.
+
+Zoekt also supports an alternative BM25-based scoring algorithm that can be
+enabled with `UseBM25Scoring`. When enabled, each match in a file is treated
+as a term, and an approximation to BM25 is computed. This is useful for
+multi-term queries, better handling of term frequency, and appropriate
+document length normalization.
 
 
 Query language
