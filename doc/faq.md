@@ -111,7 +111,9 @@ rudimentary support for filtering, and there is no symbol ranking.
 
 The search server should have local SSD to store the index file (which
 is 3.5x the corpus size), and have at least 20% more RAM than the
-corpus size.
+corpus size. For optimal performance with large codebases, consider
+using machines with ample CPU cores, as search operations can be
+parallelized across shards.
 
 ## Can I index multiple branches?
 
