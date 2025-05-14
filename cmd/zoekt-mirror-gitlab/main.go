@@ -34,8 +34,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sourcegraph/zoekt/internal/gitindex"
 	gitlab "github.com/xanzy/go-gitlab"
+
+	"github.com/sourcegraph/zoekt/internal/gitindex"
 )
 
 func main() {

@@ -8,14 +8,13 @@ import (
 	"strings"
 
 	"github.com/dustin/go-humanize"
-	"github.com/sourcegraph/zoekt/grpc/grpcutil"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/proto"
-
 	"github.com/sourcegraph/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 )
 
 var (

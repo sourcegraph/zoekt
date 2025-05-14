@@ -6,9 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"golang.org/x/sys/unix"
 )
 
 // mergeMeta updates the .meta files for the shards on disk for o.

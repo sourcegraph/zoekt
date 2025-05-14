@@ -24,6 +24,7 @@ import (
 	"slices"
 
 	"github.com/google/go-cmp/cmp"
+
 	"github.com/sourcegraph/zoekt"
 )
 

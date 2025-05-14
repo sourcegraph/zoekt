@@ -40,15 +40,15 @@ import (
 	"sort"
 	"strings"
 
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/slothfs/manifest"
+	"go.uber.org/automaxprocs/maxprocs"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/gitindex"
-	"go.uber.org/automaxprocs/maxprocs"
-
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 )
 
 var _ = log.Println

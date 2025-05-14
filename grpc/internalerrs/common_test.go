@@ -10,12 +10,13 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	newsv1 "github.com/sourcegraph/zoekt/grpc/testprotos/news/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	newsv1 "github.com/sourcegraph/zoekt/grpc/testprotos/news/v1"
 )
 
 func TestCallBackClientStream(t *testing.T) {

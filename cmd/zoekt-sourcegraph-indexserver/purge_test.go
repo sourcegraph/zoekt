@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPurgeTenantShards(t *testing.T) {

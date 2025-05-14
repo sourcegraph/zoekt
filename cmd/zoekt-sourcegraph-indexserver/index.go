@@ -17,6 +17,7 @@ import (
 	"time"
 
 	sglog "github.com/sourcegraph/log"
+
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/index"
