@@ -20,6 +20,9 @@ func TestPurgeTenantShards(t *testing.T) {
 	// 4. Other tenants' shards remain untouched
 	dir := t.TempDir()
 
+	// Enable tenant enforcement for this test
+	tenanttest.MockEnforce(t)
+
 	// Create test shards for different tenants
 	tenant1Ctx := tenanttest.NewTestContext()
 	tenant2Ctx := tenanttest.NewTestContext()

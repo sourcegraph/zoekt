@@ -1,7 +1,6 @@
 package index
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -12,20 +11,15 @@ import (
 func TestShardNameWithTenantAndWorkspaces(t *testing.T) {
 	tests := []struct {
 		name              string
-		setupEnv          func()
-		cleanupEnv        func()
+		setupEnv          func(t *testing.T)
 		opts              Options
 		expectedShardName string
 	}{
 		{
 			name: "default_no_tenant_no_workspaces",
-			setupEnv: func() {
-				os.Unsetenv("SRC_TENANT_ENFORCEMENT_MODE")
-				os.Unsetenv("WORKSPACES_API_URL")
-			},
-			cleanupEnv: func() {
-				os.Unsetenv("SRC_TENANT_ENFORCEMENT_MODE")
-				os.Unsetenv("WORKSPACES_API_URL")
+			setupEnv: func(t *testing.T) {
+				tenanttest.MockNoEnforce(t)
+				t.Setenv("WORKSPACES_API_URL", "")
 			},
 			opts: Options{
 				IndexDir: "/tmp/zoekt",
@@ -39,13 +33,9 @@ func TestShardNameWithTenantAndWorkspaces(t *testing.T) {
 		},
 		{
 			name: "tenant_enforcement_enabled",
-			setupEnv: func() {
-				cleanup := tenanttest.MockEnforce("strict")
-				t.Cleanup(cleanup)
-				os.Unsetenv("WORKSPACES_API_URL")
-			},
-			cleanupEnv: func() {
-				os.Unsetenv("WORKSPACES_API_URL")
+			setupEnv: func(t *testing.T) {
+				tenanttest.MockEnforce(t)
+				t.Setenv("WORKSPACES_API_URL", "")
 			},
 			opts: Options{
 				IndexDir: "/tmp/zoekt",
@@ -59,14 +49,10 @@ func TestShardNameWithTenantAndWorkspaces(t *testing.T) {
 		},
 		{
 			name: "workspaces_enabled",
-			setupEnv: func() {
+			setupEnv: func(t *testing.T) {
 				// Make sure tenant enforcement is disabled
-				cleanup := tenanttest.MockEnforce("")
-				t.Cleanup(cleanup)
-				os.Setenv("WORKSPACES_API_URL", "http://workspaces-api")
-			},
-			cleanupEnv: func() {
-				os.Unsetenv("WORKSPACES_API_URL")
+				tenanttest.MockNoEnforce(t)
+				t.Setenv("WORKSPACES_API_URL", "http://workspaces-api")
 			},
 			opts: Options{
 				IndexDir: "/tmp/zoekt",
@@ -80,13 +66,9 @@ func TestShardNameWithTenantAndWorkspaces(t *testing.T) {
 		},
 		{
 			name: "tenant_and_workspaces_enabled",
-			setupEnv: func() {
-				cleanup := tenanttest.MockEnforce("strict")
-				t.Cleanup(cleanup)
-				os.Setenv("WORKSPACES_API_URL", "http://workspaces-api")
-			},
-			cleanupEnv: func() {
-				os.Unsetenv("WORKSPACES_API_URL")
+			setupEnv: func(t *testing.T) {
+				tenanttest.MockEnforce(t)
+				t.Setenv("WORKSPACES_API_URL", "http://workspaces-api")
 			},
 			opts: Options{
 				IndexDir: "/tmp/zoekt",
@@ -103,10 +85,7 @@ func TestShardNameWithTenantAndWorkspaces(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.setupEnv != nil {
-				tc.setupEnv()
-			}
-			if tc.cleanupEnv != nil {
-				defer tc.cleanupEnv()
+				tc.setupEnv(t)
 			}
 
 			gotShardName := tc.opts.shardName(0)
