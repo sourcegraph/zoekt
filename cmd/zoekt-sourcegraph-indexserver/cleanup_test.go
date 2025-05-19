@@ -22,7 +22,7 @@ func TestCleanup(t *testing.T) {
 		return shard{
 			RepoID:        fakeID(name),
 			RepoName:      name,
-			Path:          index.ShardName("", name, 15, n),
+			Path:          fmt.Sprintf("%s_v%d.%05d.zoekt", name, 15, n),
 			ModTime:       mtime,
 			RepoTombstone: false,
 		}

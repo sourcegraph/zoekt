@@ -40,7 +40,7 @@ func TestShardName(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			actual := ShardName(test.indexDir, test.prefix, test.version, test.shardNum)
+			actual := shardName(test.indexDir, test.prefix, test.version, test.shardNum)
 			if actual != test.expected {
 				t.Errorf("expected %q, got %q", test.expected, actual)
 			}

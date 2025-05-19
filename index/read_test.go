@@ -368,7 +368,7 @@ func TestBackwardsCompat(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		outName := ShardName("testdata/backcompat", "new", IndexFormatVersion, 0)
+		outName := shardName("testdata/backcompat", "new", IndexFormatVersion, 0)
 		t.Log("writing new file", outName)
 
 		err = os.WriteFile(outName, buf.Bytes(), 0o644)

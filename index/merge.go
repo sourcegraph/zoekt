@@ -216,7 +216,7 @@ func explode(dstDir string, f IndexFile, ibFuncs ...shardBuilderFunc) (map[strin
 			prefix = ib.repoList[0].Name
 		}
 
-		shardName := ShardName(dstDir, prefix, ib.indexFormatVersion, 0)
+		shardName := shardName(dstDir, prefix, ib.indexFormatVersion, 0)
 		shardNameTmp := shardName + ".tmp"
 		shardNames[shardNameTmp] = shardName
 		return builderWriteAll(shardNameTmp, ib)
