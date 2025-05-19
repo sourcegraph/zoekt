@@ -1165,3 +1165,36 @@ func TestFileRank(t *testing.T) {
 		})
 	}
 }
+
+func TestOptions_shardName(t *testing.T) {
+	opts := Options{
+		IndexDir: "/data",
+		RepositoryDescription: zoekt.Repository{
+			Name:     "a/b",
+			TenantID: 123,
+			ID:       456,
+		},
+	}
+
+	t.Setenv("WORKSPACES_API_URL", "")
+	if got, want := opts.shardNameVersion(16, 0), "/data/a%2Fb_v16.00000.zoekt"; got != want {
+		t.Fatalf("expected shard name to be repo name based:\ngot:  %q\nwant: %q", got, want)
+	}
+
+	t.Setenv("WORKSPACES_API_URL", "http://example.com")
+	if got, want := opts.shardNameVersion(16, 0), "/data/000000123_000000456_v16.00000.zoekt"; got != want {
+		t.Fatalf("expected shard name to be ID based:\ngot:  %q\nwant: %q", got, want)
+	}
+
+	// If something goes wrong and TenantID and RepoID is unset, we create a
+	// name which won't be visible by any tenant.
+	opts = Options{
+		IndexDir: "/data",
+		RepositoryDescription: zoekt.Repository{
+			Name: "a/b",
+		},
+	}
+	if got, want := opts.shardNameVersion(16, 0), "/data/000000000_000000000_v16.00000.zoekt"; got != want {
+		t.Fatalf("expected shard name to be with no tenant:\ngot:  %q\nwant: %q", got, want)
+	}
+}
