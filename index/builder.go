@@ -338,7 +338,7 @@ func (o *Options) shardNameVersion(version, n int) string {
 
 	// If tenant enforcement is enabled and we have tenant/repo IDs, use those to generate the prefix
 	if o.RepositoryDescription.TenantID != 0 && o.RepositoryDescription.ID != 0 && tenant.EnforceTenant() {
-		prefix = tenant.SrcPrefix(o.RepositoryDescription.TenantID, o.RepositoryDescription.ID)
+		prefix = fmt.Sprintf("%09d_%09d", o.RepositoryDescription.TenantID, o.RepositoryDescription.ID)
 	} else {
 		prefix = o.RepositoryDescription.Name
 	}
