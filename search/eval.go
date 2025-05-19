@@ -20,9 +20,7 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.Search", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
-	if tenant.EnforceTenant() {
-		tenant.Log(ctx, tr)
-	}
+	tenant.Log(ctx, tr)
 	defer func() {
 		if sr != nil {
 			tr.LazyPrintf("num files: %d", len(sr.Files))
@@ -47,9 +45,7 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.StreamSearch", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %+v", opts)
-	if tenant.EnforceTenant() {
-		tenant.Log(ctx, tr)
-	}
+	tenant.Log(ctx, tr)
 	var stats zoekt.Stats
 	defer func() {
 		tr.LazyPrintf("stats: %+v", stats)
@@ -75,9 +71,7 @@ func (s *typeRepoSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 	tr, ctx := trace.New(ctx, "typeRepoSearcher.List", "")
 	tr.LazyLog(q, true)
 	tr.LazyPrintf("opts: %s", opts)
-	if tenant.EnforceTenant() {
-		tenant.Log(ctx, tr)
-	}
+	tenant.Log(ctx, tr)
 	defer func() {
 		if rl != nil {
 			tr.LazyPrintf("repos.size=%d reposmap.size=%d crashes=%d stats=%+v", len(rl.Repos), len(rl.ReposMap), rl.Crashes, rl.Stats)
