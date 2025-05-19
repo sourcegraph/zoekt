@@ -11,7 +11,6 @@ import (
 	"sort"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 // Merge files into a compound shard in dstDir. Merge returns tmpName and a
@@ -209,14 +208,17 @@ func explode(dstDir string, f IndexFile, ibFuncs ...shardBuilderFunc) (map[strin
 			ibFunc(ib)
 		}
 
-		prefix := ""
-		if tenant.EnforceTenant() {
-			prefix = tenant.SrcPrefix(ib.repoList[0].TenantID, ib.repoList[0].ID)
-		} else {
-			prefix = ib.repoList[0].Name
+		opts := Options{
+			IndexDir:              dstDir,
+			RepositoryDescription: ib.repoList[0],
+
+			// TODO we should remove these fields from Options and just rely on them
+			// being set by RepositoryDescription.
+			TenantID: ib.repoList[0].TenantID,
+			RepoID:   ib.repoList[0].ID,
 		}
 
-		shardName := shardName(dstDir, prefix, ib.indexFormatVersion, 0)
+		shardName := opts.shardNameVersion(ib.indexFormatVersion, 0)
 		shardNameTmp := shardName + ".tmp"
 		shardNames[shardNameTmp] = shardName
 		return builderWriteAll(shardNameTmp, ib)
