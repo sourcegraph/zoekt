@@ -110,11 +110,11 @@ func (o *indexArgs) BuildOptions() *index.Options {
 		// nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
 			TenantID: o.TenantID,
-			ID:       o.IndexOptions.RepoID,
+			ID:       o.RepoID,
 			Name:     o.Name,
 			Branches: o.Branches,
 			RawConfig: map[string]string{
-				"repoid":   strconv.Itoa(int(o.IndexOptions.RepoID)),
+				"repoid":   strconv.Itoa(int(o.RepoID)),
 				"priority": strconv.FormatFloat(o.Priority, 'g', -1, 64),
 				"public":   marshalBool(o.Public),
 				"fork":     marshalBool(o.Fork),
@@ -135,9 +135,6 @@ func (o *indexArgs) BuildOptions() *index.Options {
 		LanguageMap: o.LanguageMap,
 
 		ShardMerging: o.ShardMerging,
-
-		TenantID: o.TenantID,
-		RepoID:   o.RepoID,
 	}
 }
 

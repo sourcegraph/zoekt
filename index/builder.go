@@ -120,12 +120,6 @@ type Options struct {
 	//
 	// Note: heap checking is "best effort", and it's possible for the process to OOM without triggering the heap profile.
 	HeapProfileTriggerBytes uint64
-
-	// TenantID is the ID of the tenant this shard belongs to.
-	TenantID int
-
-	// RepoID is the ID of the repository this shard belongs to.
-	RepoID uint32
 }
 
 // HashOptions contains only the options in Options that upon modification leads to IndexState of IndexStateMismatch during the next index building.
@@ -343,8 +337,8 @@ func (o *Options) shardNameVersion(version, n int) string {
 	var prefix string
 
 	// If tenant enforcement is enabled and we have tenant/repo IDs, use those to generate the prefix
-	if o.TenantID != 0 && o.RepoID != 0 && tenant.EnforceTenant() {
-		prefix = tenant.SrcPrefix(o.TenantID, o.RepoID)
+	if o.RepositoryDescription.TenantID != 0 && o.RepositoryDescription.ID != 0 && tenant.EnforceTenant() {
+		prefix = tenant.SrcPrefix(o.RepositoryDescription.TenantID, o.RepositoryDescription.ID)
 	} else {
 		prefix = o.RepositoryDescription.Name
 	}

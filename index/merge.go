@@ -211,11 +211,6 @@ func explode(dstDir string, f IndexFile, ibFuncs ...shardBuilderFunc) (map[strin
 		opts := Options{
 			IndexDir:              dstDir,
 			RepositoryDescription: ib.repoList[0],
-
-			// TODO we should remove these fields from Options and just rely on them
-			// being set by RepositoryDescription.
-			TenantID: ib.repoList[0].TenantID,
-			RepoID:   ib.repoList[0].ID,
 		}
 
 		shardName := opts.shardNameVersion(ib.indexFormatVersion, 0)
