@@ -27,6 +27,10 @@ func FromContext(ctx context.Context) (*tenanttype.Tenant, error) {
 // Log logs the tenant ID to the trace. If tenant logging is enabled, it also
 // logs a stack trace to a pprof profile.
 func Log(ctx context.Context, tr *trace.Trace) {
+	if !enforceTenant() {
+		return
+	}
+
 	if systemtenant.Is(ctx) {
 		tr.LazyPrintf("tenant: system")
 		return

@@ -9,7 +9,7 @@ import (
 // HasAccess returns true if the tenant ID in the context matches the
 // given ID. If tenant enforcement is disabled, it always returns true.
 func HasAccess(ctx context.Context, id int) bool {
-	if !EnforceTenant() {
+	if !enforceTenant() {
 		return true
 	}
 	if systemtenant.Is(ctx) {

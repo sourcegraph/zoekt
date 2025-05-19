@@ -6,7 +6,7 @@ import (
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/enforcement"
 )
 
-func EnforceTenant() bool {
+func enforceTenant() bool {
 	switch enforcement.EnforcementMode.Load() {
 	case "strict":
 		return true
