@@ -368,7 +368,13 @@ func TestBackwardsCompat(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		outName := shardName("testdata/backcompat", "new", IndexFormatVersion, 0)
+		opts := Options{
+			IndexDir: "testdata/backcompat",
+			RepositoryDescription: zoekt.Repository{
+				Name: "new",
+			},
+		}
+		outName := opts.shardName(0)
 		t.Log("writing new file", outName)
 
 		err = os.WriteFile(outName, buf.Bytes(), 0o644)
