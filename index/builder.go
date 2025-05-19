@@ -349,7 +349,7 @@ func (o *Options) shardNameVersion(version, n int) string {
 		prefix = o.RepositoryDescription.Name
 	}
 
-	return ShardName(o.IndexDir, prefix, version, n)
+	return shardName(o.IndexDir, prefix, version, n)
 }
 
 type IndexState string
