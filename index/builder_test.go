@@ -31,8 +31,9 @@ func TestBuildv16(t *testing.T) {
 	opts := Options{
 		IndexDir: dir,
 		RepositoryDescription: zoekt.Repository{
-			Name:   "repo",
-			Source: "./testdata/repo/",
+			Name:     "repo",
+			Source:   "./testdata/repo/",
+			Metadata: map[string]string{"foo": "bar"},
 		},
 		DisableCTags: true,
 	}

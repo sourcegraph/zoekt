@@ -24,6 +24,7 @@ message Q {
     Not not = 16;
     Branch branch = 17;
     Boost boost = 18;
+    Meta meta = 19;
   }
 }
 
@@ -147,4 +148,11 @@ message Branch {
 message Boost {
   Q child = 1;
   double boost = 2;
+}
+
+
+// Meta allows filtering results by repo metadata.
+message Meta {
+  string key = 1;
+  string value = 2;
 }

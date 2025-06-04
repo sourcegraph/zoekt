@@ -158,6 +158,7 @@ type Q struct {
 	//	*Q_Not
 	//	*Q_Branch
 	//	*Q_Boost
+	//	*Q_Meta
 	Query isQ_Query `protobuf_oneof:"query"`
 }
 
@@ -326,6 +327,13 @@ func (x *Q) GetBoost() *Boost {
 	return nil
 }
 
+func (x *Q) GetMeta() *Meta {
+	if x, ok := x.GetQuery().(*Q_Meta); ok {
+		return x.Meta
+	}
+	return nil
+}
+
 type isQ_Query interface {
 	isQ_Query()
 }
@@ -402,6 +410,10 @@ type Q_Boost struct {
 	Boost *Boost `protobuf:"bytes,18,opt,name=boost,proto3,oneof"`
 }
 
+type Q_Meta struct {
+	Meta *Meta `protobuf:"bytes,19,opt,name=meta,proto3,oneof"`
+}
+
 func (*Q_RawConfig) isQ_Query() {}
 
 func (*Q_Regexp) isQ_Query() {}
@@ -437,6 +449,8 @@ func (*Q_Not) isQ_Query() {}
 func (*Q_Branch) isQ_Query() {}
 
 func (*Q_Boost) isQ_Query() {}
+
+func (*Q_Meta) isQ_Query() {}
 
 // RawConfig filters repositories based on their encoded RawConfig map.
 type RawConfig struct {
@@ -1385,13 +1399,69 @@ func (x *Boost) GetBoost() float64 {
 	return 0
 }
 
+// Meta allows filtering results by repo metadata.
+type Meta struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Key   string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+}
+
+func (x *Meta) Reset() {
+	*x = Meta{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_zoekt_webserver_v1_query_proto_msgTypes[19]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Meta) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Meta) ProtoMessage() {}
+
+func (x *Meta) ProtoReflect() protoreflect.Message {
+	mi := &file_zoekt_webserver_v1_query_proto_msgTypes[19]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Meta.ProtoReflect.Descriptor instead.
+func (*Meta) Descriptor() ([]byte, []int) {
+	return file_zoekt_webserver_v1_query_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *Meta) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *Meta) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
 var File_zoekt_webserver_v1_query_proto protoreflect.FileDescriptor
 
 var file_zoekt_webserver_v1_query_proto_rawDesc = []byte{
 	0x0a, 0x1e, 0x7a, 0x6f, 0x65, 0x6b, 0x74, 0x2f, 0x77, 0x65, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65,
 	0x72, 0x2f, 0x76, 0x31, 0x2f, 0x71, 0x75, 0x65, 0x72, 0x79, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
 	0x12, 0x12, 0x7a, 0x6f, 0x65, 0x6b, 0x74, 0x2e, 0x77, 0x65, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65,
-	0x72, 0x2e, 0x76, 0x31, 0x22, 0xe2, 0x07, 0x0a, 0x01, 0x51, 0x12, 0x3e, 0x0a, 0x0a, 0x72, 0x61,
+	0x72, 0x2e, 0x76, 0x31, 0x22, 0x92, 0x08, 0x0a, 0x01, 0x51, 0x12, 0x3e, 0x0a, 0x0a, 0x72, 0x61,
 	0x77, 0x5f, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1d,
 	0x2e, 0x7a, 0x6f, 0x65, 0x6b, 0x74, 0x2e, 0x77, 0x65, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72,
 	0x2e, 0x76, 0x31, 0x2e, 0x52, 0x61, 0x77, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x48, 0x00, 0x52,
@@ -1453,6 +1523,9 @@ var file_zoekt_webserver_v1_query_proto_rawDesc = []byte{
 	0x05, 0x62, 0x6f, 0x6f, 0x73, 0x74, 0x18, 0x12, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x7a,
 	0x6f, 0x65, 0x6b, 0x74, 0x2e, 0x77, 0x65, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2e, 0x76,
 	0x31, 0x2e, 0x42, 0x6f, 0x6f, 0x73, 0x74, 0x48, 0x00, 0x52, 0x05, 0x62, 0x6f, 0x6f, 0x73, 0x74,
+	0x12, 0x2e, 0x0a, 0x04, 0x6d, 0x65, 0x74, 0x61, 0x18, 0x13, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x18,
+	0x2e, 0x7a, 0x6f, 0x65, 0x6b, 0x74, 0x2e, 0x77, 0x65, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72,
+	0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x65, 0x74, 0x61, 0x48, 0x00, 0x52, 0x04, 0x6d, 0x65, 0x74, 0x61,
 	0x42, 0x07, 0x0a, 0x05, 0x71, 0x75, 0x65, 0x72, 0x79, 0x22, 0xef, 0x01, 0x0a, 0x09, 0x52, 0x61,
 	0x77, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x12, 0x38, 0x0a, 0x05, 0x66, 0x6c, 0x61, 0x67, 0x73,
 	0x18, 0x01, 0x20, 0x03, 0x28, 0x0e, 0x32, 0x22, 0x2e, 0x7a, 0x6f, 0x65, 0x6b, 0x74, 0x2e, 0x77,
@@ -1546,7 +1619,10 @@ var file_zoekt_webserver_v1_query_proto_rawDesc = []byte{
 	0x20, 0x01, 0x28, 0x0b, 0x32, 0x15, 0x2e, 0x7a, 0x6f, 0x65, 0x6b, 0x74, 0x2e, 0x77, 0x65, 0x62,
 	0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2e, 0x76, 0x31, 0x2e, 0x51, 0x52, 0x05, 0x63, 0x68, 0x69,
 	0x6c, 0x64, 0x12, 0x14, 0x0a, 0x05, 0x62, 0x6f, 0x6f, 0x73, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28,
-	0x01, 0x52, 0x05, 0x62, 0x6f, 0x6f, 0x73, 0x74, 0x42, 0x3d, 0x5a, 0x3b, 0x67, 0x69, 0x74, 0x68,
+	0x01, 0x52, 0x05, 0x62, 0x6f, 0x6f, 0x73, 0x74, 0x22, 0x2e, 0x0a, 0x04, 0x4d, 0x65, 0x74, 0x61,
+	0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b,
+	0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x42, 0x3d, 0x5a, 0x3b, 0x67, 0x69, 0x74, 0x68,
 	0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x67, 0x72, 0x61,
 	0x70, 0x68, 0x2f, 0x7a, 0x6f, 0x65, 0x6b, 0x74, 0x2f, 0x67, 0x72, 0x70, 0x63, 0x2f, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x73, 0x2f, 0x7a, 0x6f, 0x65, 0x6b, 0x74, 0x2f, 0x77, 0x65, 0x62, 0x73, 0x65,
@@ -1566,7 +1642,7 @@ func file_zoekt_webserver_v1_query_proto_rawDescGZIP() []byte {
 }
 
 var file_zoekt_webserver_v1_query_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_zoekt_webserver_v1_query_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_zoekt_webserver_v1_query_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_zoekt_webserver_v1_query_proto_goTypes = []interface{}{
 	(RawConfig_Flag)(0),   // 0: zoekt.webserver.v1.RawConfig.Flag
 	(Type_Kind)(0),        // 1: zoekt.webserver.v1.Type.Kind
@@ -1589,7 +1665,8 @@ var file_zoekt_webserver_v1_query_proto_goTypes = []interface{}{
 	(*Not)(nil),           // 18: zoekt.webserver.v1.Not
 	(*Branch)(nil),        // 19: zoekt.webserver.v1.Branch
 	(*Boost)(nil),         // 20: zoekt.webserver.v1.Boost
-	nil,                   // 21: zoekt.webserver.v1.RepoSet.SetEntry
+	(*Meta)(nil),          // 21: zoekt.webserver.v1.Meta
+	nil,                   // 22: zoekt.webserver.v1.RepoSet.SetEntry
 }
 var file_zoekt_webserver_v1_query_proto_depIdxs = []int32{
 	3,  // 0: zoekt.webserver.v1.Q.raw_config:type_name -> zoekt.webserver.v1.RawConfig
@@ -1609,21 +1686,22 @@ var file_zoekt_webserver_v1_query_proto_depIdxs = []int32{
 	18, // 14: zoekt.webserver.v1.Q.not:type_name -> zoekt.webserver.v1.Not
 	19, // 15: zoekt.webserver.v1.Q.branch:type_name -> zoekt.webserver.v1.Branch
 	20, // 16: zoekt.webserver.v1.Q.boost:type_name -> zoekt.webserver.v1.Boost
-	0,  // 17: zoekt.webserver.v1.RawConfig.flags:type_name -> zoekt.webserver.v1.RawConfig.Flag
-	2,  // 18: zoekt.webserver.v1.Symbol.expr:type_name -> zoekt.webserver.v1.Q
-	10, // 19: zoekt.webserver.v1.BranchesRepos.list:type_name -> zoekt.webserver.v1.BranchRepos
-	21, // 20: zoekt.webserver.v1.RepoSet.set:type_name -> zoekt.webserver.v1.RepoSet.SetEntry
-	2,  // 21: zoekt.webserver.v1.Type.child:type_name -> zoekt.webserver.v1.Q
-	1,  // 22: zoekt.webserver.v1.Type.type:type_name -> zoekt.webserver.v1.Type.Kind
-	2,  // 23: zoekt.webserver.v1.And.children:type_name -> zoekt.webserver.v1.Q
-	2,  // 24: zoekt.webserver.v1.Or.children:type_name -> zoekt.webserver.v1.Q
-	2,  // 25: zoekt.webserver.v1.Not.child:type_name -> zoekt.webserver.v1.Q
-	2,  // 26: zoekt.webserver.v1.Boost.child:type_name -> zoekt.webserver.v1.Q
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	21, // 17: zoekt.webserver.v1.Q.meta:type_name -> zoekt.webserver.v1.Meta
+	0,  // 18: zoekt.webserver.v1.RawConfig.flags:type_name -> zoekt.webserver.v1.RawConfig.Flag
+	2,  // 19: zoekt.webserver.v1.Symbol.expr:type_name -> zoekt.webserver.v1.Q
+	10, // 20: zoekt.webserver.v1.BranchesRepos.list:type_name -> zoekt.webserver.v1.BranchRepos
+	22, // 21: zoekt.webserver.v1.RepoSet.set:type_name -> zoekt.webserver.v1.RepoSet.SetEntry
+	2,  // 22: zoekt.webserver.v1.Type.child:type_name -> zoekt.webserver.v1.Q
+	1,  // 23: zoekt.webserver.v1.Type.type:type_name -> zoekt.webserver.v1.Type.Kind
+	2,  // 24: zoekt.webserver.v1.And.children:type_name -> zoekt.webserver.v1.Q
+	2,  // 25: zoekt.webserver.v1.Or.children:type_name -> zoekt.webserver.v1.Q
+	2,  // 26: zoekt.webserver.v1.Not.child:type_name -> zoekt.webserver.v1.Q
+	2,  // 27: zoekt.webserver.v1.Boost.child:type_name -> zoekt.webserver.v1.Q
+	28, // [28:28] is the sub-list for method output_type
+	28, // [28:28] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_zoekt_webserver_v1_query_proto_init() }
@@ -1860,6 +1938,18 @@ func file_zoekt_webserver_v1_query_proto_init() {
 				return nil
 			}
 		}
+		file_zoekt_webserver_v1_query_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Meta); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	file_zoekt_webserver_v1_query_proto_msgTypes[0].OneofWrappers = []interface{}{
 		(*Q_RawConfig)(nil),
@@ -1880,6 +1970,7 @@ func file_zoekt_webserver_v1_query_proto_init() {
 		(*Q_Not)(nil),
 		(*Q_Branch)(nil),
 		(*Q_Boost)(nil),
+		(*Q_Meta)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1887,7 +1978,7 @@ func file_zoekt_webserver_v1_query_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_zoekt_webserver_v1_query_proto_rawDesc,
 			NumEnums:      2,
-			NumMessages:   20,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

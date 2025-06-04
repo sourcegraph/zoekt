@@ -463,3 +463,28 @@ func TestGatherBranchesMany(t *testing.T) {
 		}
 	}
 }
+
+func TestSimplifyMeta(t *testing.T) {
+	re := regexp.MustCompile("^stable$")
+	d := compoundReposShard(t, "foo", "bar")
+
+	// Inject metadata into the fake repos
+	d.repoMetaData[0].Metadata = map[string]string{"release": "stable"}
+	d.repoMetaData[1].Metadata = map[string]string{"release": "beta"}
+
+	all := &query.Meta{Field: "release", Value: regexp.MustCompile(".*")}
+	some := &query.Meta{Field: "release", Value: re}
+	none := &query.Meta{Field: "release", Value: regexp.MustCompile("^nonexistent$")}
+
+	if got := d.simplify(all); !reflect.DeepEqual(got, &query.Const{Value: true}) {
+		t.Errorf("simplify(all): got %v, want Const(true)", got)
+	}
+
+	if got := d.simplify(some); got != some {
+		t.Errorf("simplify(some): got %v, want unchanged", got)
+	}
+
+	if got := d.simplify(none); !reflect.DeepEqual(got, &query.Const{Value: false}) {
+		t.Errorf("simplify(none): got %v, want Const(false)", got)
+	}
+}

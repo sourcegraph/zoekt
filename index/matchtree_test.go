@@ -423,3 +423,42 @@ func TestIsRegexpAll(t *testing.T) {
 		}
 	}
 }
+
+func TestMetaQueryMatchTree(t *testing.T) {
+	d := &indexData{
+		repoMetaData: []zoekt.Repository{
+			{Name: "r0", Metadata: map[string]string{"license": "Apache-2.0"}},
+			{Name: "r1", Metadata: map[string]string{"license": "MIT"}},
+			{Name: "r2"}, // no metadata
+			{Name: "r3", Metadata: map[string]string{"haystack": "needle"}},
+			{Name: "r4", Metadata: map[string]string{"note": "test"}},
+		},
+		fileBranchMasks: []uint64{1, 1, 1, 1, 1}, // 5 docs
+		repos:           []uint16{0, 1, 2, 3, 4}, // map docIDs to repos
+	}
+
+	q := &query.Meta{
+		Field: "license",
+		Value: regexp.MustCompile("M.T"),
+	}
+
+	mt, err := d.newMatchTree(q, matchTreeOpt{})
+	if err != nil {
+		t.Fatalf("failed to build matchTree: %v", err)
+	}
+
+	var matched []uint32
+	for {
+		doc := mt.nextDoc()
+		if doc == math.MaxUint32 {
+			break
+		}
+		matched = append(matched, doc)
+		mt.prepare(doc)
+	}
+
+	want := []uint32{1} // only doc from r1 should match
+	if !reflect.DeepEqual(matched, want) {
+		t.Errorf("meta match failed: got %v, want %v", matched, want)
+	}
+}
