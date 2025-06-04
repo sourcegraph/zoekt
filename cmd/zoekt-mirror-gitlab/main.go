@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	gitlab "github.com/xanzy/go-gitlab"
+	gitlab "gitlab.com/gitlab-org/api/client-go"
 
 	"github.com/sourcegraph/zoekt/internal/gitindex"
 )
@@ -87,12 +87,12 @@ func main() {
 		ListOptions: gitlab.ListOptions{
 			PerPage: 100,
 		},
-		Sort:       gitlab.String("asc"),
-		OrderBy:    gitlab.String("id"),
+		Sort:       gitlab.Ptr("asc"),
+		OrderBy:    gitlab.Ptr("id"),
 		Membership: isMember,
 	}
 	if *isPublic {
-		opt.Visibility = gitlab.Visibility(gitlab.PublicVisibility)
+		opt.Visibility = gitlab.Ptr(gitlab.PublicVisibility)
 	}
 
 	if *lastActivityAfter != "" {
@@ -100,11 +100,11 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		opt.LastActivityAfter = gitlab.Time(targetDate)
+		opt.LastActivityAfter = gitlab.Ptr(targetDate)
 	}
 
 	if *noArchived {
-		opt.Archived = gitlab.Bool(false)
+		opt.Archived = gitlab.Ptr(false)
 	}
 
 	var gitlabProjects []*gitlab.Project
