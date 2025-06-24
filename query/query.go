@@ -520,11 +520,6 @@ func (m *Meta) String() string {
 	return fmt.Sprintf("meta.%s:%s", m.Field, m.Value)
 }
 
-// Simplify returns the simplified version of the Meta query.
-func (m *Meta) Simplify() Q {
-	return m
-}
-
 func queryChildren(q Q) []Q {
 	switch s := q.(type) {
 	case *And:
