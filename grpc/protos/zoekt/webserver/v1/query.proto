@@ -150,7 +150,6 @@ message Boost {
   double boost = 2;
 }
 
-
 // Meta allows filtering results by repo metadata.
 message Meta {
   string key = 1;
