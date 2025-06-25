@@ -509,6 +509,17 @@ func (q *Branch) String() string {
 	return fmt.Sprintf("branch:%q", q.Pattern)
 }
 
+// Meta represents a query for metadata fields.
+type Meta struct {
+	Field string         // The metadata field name
+	Value *regexp.Regexp // The value to match
+}
+
+// String returns a string representation of the Meta query.
+func (m *Meta) String() string {
+	return fmt.Sprintf("meta.%s:%s", m.Field, m.Value)
+}
+
 func queryChildren(q Q) []Q {
 	switch s := q.(type) {
 	case *And:

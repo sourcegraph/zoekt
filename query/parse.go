@@ -240,6 +240,22 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		// Later we will lift this into a root, like we do for caseQ
 		expr = &Type{Type: t, Child: nil}
+	case tokMeta:
+		// Split on ':' to separate field and value
+		parts := bytes.SplitN([]byte(text), []byte(":"), 2)
+		if len(parts) != 2 {
+			return nil, 0, fmt.Errorf("query: invalid meta field syntax %q", text)
+		}
+		field := string(parts[0])
+		valuePattern := string(parts[1])
+		re, err := regexp.Compile(valuePattern)
+		if err != nil {
+			return nil, 0, fmt.Errorf("query: invalid regexp in meta value: %v", err)
+		}
+		expr = &Meta{
+			Field: field,
+			Value: re,
+		}
 	}
 
 	return expr, len(in) - len(b), nil
@@ -393,6 +409,7 @@ const (
 	tokArchived   = 15
 	tokPublic     = 16
 	tokFork       = 17
+	tokMeta       = 18
 )
 
 var tokNames = map[int]string{
@@ -413,6 +430,7 @@ var tokNames = map[int]string{
 	tokLang:       "Language",
 	tokSym:        "Symbol",
 	tokType:       "Type",
+	tokMeta:       "Meta",
 }
 
 var prefixes = map[string]int{
@@ -433,6 +451,7 @@ var prefixes = map[string]int{
 	"sym:":      tokSym,
 	"t:":        tokType,
 	"type:":     tokType,
+	"meta.":     tokMeta,
 }
 
 var reservedWords = map[string]int{

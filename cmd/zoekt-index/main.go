@@ -16,6 +16,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -62,6 +63,7 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 func main() {
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to file")
 	ignoreDirs := flag.String("ignore_dirs", ".git,.hg,.svn", "comma separated list of directories to ignore.")
+	metaFile := flag.String("meta", "", "path to .meta JSON file with repository description")
 	flag.Parse()
 
 	if flag.NArg() == 0 {
@@ -96,6 +98,18 @@ func main() {
 			}
 		}
 	}
+
+	if *metaFile != "" {
+		// Read and parse the .meta JSON file into opts.RepositoryDescription
+		data, err := os.ReadFile(*metaFile)
+		if err != nil {
+			log.Fatalf("failed to read .meta file %s: %v", *metaFile, err)
+		}
+		if err := json.Unmarshal(data, &opts.RepositoryDescription); err != nil {
+			log.Fatalf("failed to decode .meta file %s: %v", *metaFile, err)
+		}
+	}
+
 	for _, arg := range flag.Args() {
 		opts.RepositoryDescription.Source = arg
 		if err := indexArg(arg, *opts, ignoreDirMap); err != nil {
