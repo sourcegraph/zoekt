@@ -50,6 +50,7 @@ type ConfigEntry struct {
 	ExcludeTopics          []string
 	Active                 bool
 	NoArchived             bool
+	KeepDeleted            bool
 	GerritFetchMetaConfig  bool
 	GerritRepoNameFormat   string
 	ExcludeUserRepos       bool
@@ -169,7 +170,7 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 		var cmd *exec.Cmd
 		if c.GitHubURL != "" || c.GithubUser != "" || c.GithubOrg != "" {
 			cmd = exec.Command("zoekt-mirror-github",
-				"-dest", repoDir, "-delete")
+				"-dest", repoDir)
 			if c.GitHubURL != "" {
 				cmd.Args = append(cmd.Args, "-url", c.GitHubURL)
 			}
@@ -196,6 +197,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			if c.NoArchived {
 				cmd.Args = append(cmd.Args, "-no_archived")
 			}
+			if !c.KeepDeleted {
+				cmd.Args = append(cmd.Args, "-delete")
+			}
 		} else if c.GitilesURL != "" {
 			cmd = exec.Command("zoekt-mirror-gitiles",
 				"-dest", repoDir, "-name", c.Name)
@@ -213,7 +217,7 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			cmd.Args = append(cmd.Args, c.CGitURL)
 		} else if c.BitBucketServerURL != "" {
 			cmd = exec.Command("zoekt-mirror-bitbucket-server",
-				"-dest", repoDir, "-url", c.BitBucketServerURL, "-delete")
+				"-dest", repoDir, "-url", c.BitBucketServerURL)
 			if c.BitBucketServerProject != "" {
 				cmd.Args = append(cmd.Args, "-project", c.BitBucketServerProject)
 			}
@@ -231,6 +235,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			}
 			if c.CredentialPath != "" {
 				cmd.Args = append(cmd.Args, "-credentials", c.CredentialPath)
+			}
+			if !c.KeepDeleted {
+				cmd.Args = append(cmd.Args, "-delete")
 			}
 		} else if c.GitLabURL != "" {
 			cmd = exec.Command("zoekt-mirror-gitlab",
@@ -253,9 +260,12 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			if c.NoArchived {
 				cmd.Args = append(cmd.Args, "-no_archived")
 			}
+			if !c.KeepDeleted {
+				cmd.Args = append(cmd.Args, "-delete")
+			}
 		} else if c.GerritApiURL != "" {
 			cmd = exec.Command("zoekt-mirror-gerrit",
-				"-dest", repoDir, "-delete")
+				"-dest", repoDir)
 			if c.CredentialPath != "" {
 				cmd.Args = append(cmd.Args, "-http-credentials", c.CredentialPath)
 			}
@@ -273,6 +283,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			}
 			if c.GerritRepoNameFormat != "" {
 				cmd.Args = append(cmd.Args, "-repo-name-format", c.GerritRepoNameFormat)
+			}
+			if !c.KeepDeleted {
+				cmd.Args = append(cmd.Args, "-delete")
 			}
 			cmd.Args = append(cmd.Args, c.GerritApiURL)
 		} else {
