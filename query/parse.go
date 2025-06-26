@@ -72,11 +72,21 @@ func isSpace(c byte) bool {
 	return c == ' ' || c == '\t'
 }
 
+//globally tracking parentheses
+var parenBalance int
+
 // Parse parses a string into a query.
 func Parse(qStr string) (Q, error) {
 	b := []byte(qStr)
+	parenBalance = 0
+	qs, _, err := parseExprList(b, &parenBalance)
 
-	qs, _, err := parseExprList(b)
+	if parenBalance < 0 {
+		return nil, fmt.Errorf("right parentheses unbalanced")
+	}
+	if parenBalance > 0 {
+		return nil, fmt.Errorf("left parentheses unbalanced")
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +101,7 @@ func Parse(qStr string) (Q, error) {
 
 // parseExpr parses a single expression, returning the result, and the
 // number of bytes consumed.
-func parseExpr(in []byte) (Q, int, error) {
+func parseExpr(in []byte, parenBalance *int) (Q, int, error) {
 	b := in[:]
 	var expr Q
 	for len(b) > 0 && isSpace(b[0]) {
@@ -196,7 +206,7 @@ func parseExpr(in []byte) (Q, int, error) {
 		expr = nil
 
 	case tokParenOpen:
-		qs, n, err := parseExprList(b)
+		qs, n, err := parseExprList(b, parenBalance)
 		b = b[n:]
 		if err != nil {
 			return nil, 0, err
@@ -216,7 +226,7 @@ func parseExpr(in []byte) (Q, int, error) {
 			return nil, 0, err
 		}
 	case tokNegate:
-		subQ, n, err := parseExpr(b)
+		subQ, n, err := parseExpr(b, parenBalance)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -320,14 +330,24 @@ func parseOperators(in []Q) (Q, error) {
 
 // parseExprList parses a list of query expressions. It is the
 // workhorse of the Parse function.
-func parseExprList(in []byte) ([]Q, int, error) {
+func parseExprList(in []byte, parenBalance *int) ([]Q, int, error) {
 	b := in[:]
 	var qs []Q
 	for len(b) > 0 {
 		for len(b) > 0 && isSpace(b[0]) {
 			b = b[1:]
 		}
+		// fmt.Println("PAREN BALANCE: ", parenBalance, string(b))
 		tok, _ := nextToken(b)
+		if tok != nil {
+			switch tok.Type {
+			case tokParenOpen:
+				(*parenBalance)++
+			case tokParenClose:
+				(*parenBalance)--
+			}
+		}
+		// fmt.Println("PAREN BALANCE AFTER: ", parenBalance, tok)
 		if tok != nil && tok.Type == tokParenClose {
 			break
 		} else if tok != nil && tok.Type == tokOr {
@@ -336,7 +356,7 @@ func parseExprList(in []byte) ([]Q, int, error) {
 			continue
 		}
 
-		q, n, err := parseExpr(b)
+		q, n, err := parseExpr(b, parenBalance)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -487,8 +507,13 @@ func (t *token) setType() {
 	}
 }
 
-// nextToken returns the next token from the given input.
 func nextToken(in []byte) (*token, error) {
+	parenBalance := 0
+	return nextTokenWithBalance(in, &parenBalance)
+}
+
+// nextToken returns the next token from the given input.
+func nextTokenWithBalance(in []byte, parenBalance *int) (*token, error) {
 	left := in[:]
 	parenCount := 0
 	var cur token
@@ -511,10 +536,12 @@ loop:
 		c := left[0]
 		switch c {
 		case '(':
+			(*parenBalance)++
 			parenCount++
 			cur.Text = append(cur.Text, c)
 			left = left[1:]
 		case ')':
+			(*parenBalance)--
 			if parenCount == 0 {
 				if len(cur.Text) == 0 {
 					cur.Text = []byte{')'}

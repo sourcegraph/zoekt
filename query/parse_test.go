@@ -125,6 +125,24 @@ func TestParseQuery(t *testing.T) {
 		{"or abc", nil},
 		{"def or or abc", nil},
 
+		{"(", nil},
+		{"((", nil},
+		{"(((", nil},
+		{")", nil},
+		{"))", nil},
+		{")))", nil},
+		{"foo)", nil},
+		{"foo))", nil},
+		{"foo)))", nil},
+		{"(foo", nil},
+		{"((foo", nil},
+		{"(((foo", nil},
+		{"(foo))", nil},
+		{"(((foo))", nil},
+		{"((())", nil},
+		{"(( ) a", nil},
+		{"()()()()(()))", nil},
+
 		{"", &Const{Value: true}},
 	} {
 		got, err := Parse(c.in)
