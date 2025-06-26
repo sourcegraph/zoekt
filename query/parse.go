@@ -72,7 +72,7 @@ func isSpace(c byte) bool {
 	return c == ' ' || c == '\t'
 }
 
-//globally tracking parentheses
+// globally tracking parentheses
 var parenBalance int
 
 // Parse parses a string into a query.
@@ -507,13 +507,8 @@ func (t *token) setType() {
 	}
 }
 
-func nextToken(in []byte) (*token, error) {
-	parenBalance := 0
-	return nextTokenWithBalance(in, &parenBalance)
-}
-
 // nextToken returns the next token from the given input.
-func nextTokenWithBalance(in []byte, parenBalance *int) (*token, error) {
+func nextToken(in []byte) (*token, error) {
 	left := in[:]
 	parenCount := 0
 	var cur token
@@ -536,12 +531,10 @@ loop:
 		c := left[0]
 		switch c {
 		case '(':
-			(*parenBalance)++
 			parenCount++
 			cur.Text = append(cur.Text, c)
 			left = left[1:]
 		case ')':
-			(*parenBalance)--
 			if parenCount == 0 {
 				if len(cur.Text) == 0 {
 					cur.Text = []byte{')'}
