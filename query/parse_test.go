@@ -124,6 +124,25 @@ func TestParseQuery(t *testing.T) {
 		{"abc or", nil},
 		{"or abc", nil},
 		{"def or or abc", nil},
+		
+		// unbalanced parentheses
+		{"(", nil},
+		{"((", nil},
+		{"(((", nil},
+		{")", nil},
+		{"))", nil},
+		{")))", nil},
+		{"foo)", nil},
+		{"foo))", nil},
+		{"foo)))", nil},
+		{"(foo", nil},
+		{"((foo", nil},
+		{"(((foo", nil},
+		{"(foo))", nil},
+		{"(((foo))", nil},
+		{"((())", nil},
+		{"(( ) a", nil},
+		{"()()()()(()))", nil},
 
 		{"", &Const{Value: true}},
 	} {

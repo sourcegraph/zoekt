@@ -75,10 +75,18 @@ func isSpace(c byte) bool {
 // Parse parses a string into a query.
 func Parse(qStr string) (Q, error) {
 	b := []byte(qStr)
+	parenBalance := 0
+	qs, _, err := parseExprList(b, &parenBalance)
 
-	qs, _, err := parseExprList(b)
 	if err != nil {
 		return nil, err
+	}
+
+	if parenBalance < 0 {
+		return nil, fmt.Errorf("right parentheses unbalanced")
+	}
+	if parenBalance > 0 {
+		return nil, fmt.Errorf("left parentheses unbalanced")
 	}
 
 	q, err := parseOperators(qs)
@@ -91,7 +99,7 @@ func Parse(qStr string) (Q, error) {
 
 // parseExpr parses a single expression, returning the result, and the
 // number of bytes consumed.
-func parseExpr(in []byte) (Q, int, error) {
+func parseExpr(in []byte, parenBalance *int) (Q, int, error) {
 	b := in[:]
 	var expr Q
 	for len(b) > 0 && isSpace(b[0]) {
@@ -196,7 +204,7 @@ func parseExpr(in []byte) (Q, int, error) {
 		expr = nil
 
 	case tokParenOpen:
-		qs, n, err := parseExprList(b)
+		qs, n, err := parseExprList(b, parenBalance)
 		b = b[n:]
 		if err != nil {
 			return nil, 0, err
@@ -216,7 +224,7 @@ func parseExpr(in []byte) (Q, int, error) {
 			return nil, 0, err
 		}
 	case tokNegate:
-		subQ, n, err := parseExpr(b)
+		subQ, n, err := parseExpr(b, parenBalance)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -320,7 +328,7 @@ func parseOperators(in []Q) (Q, error) {
 
 // parseExprList parses a list of query expressions. It is the
 // workhorse of the Parse function.
-func parseExprList(in []byte) ([]Q, int, error) {
+func parseExprList(in []byte, parenBalance *int) ([]Q, int, error) {
 	b := in[:]
 	var qs []Q
 	for len(b) > 0 {
@@ -328,15 +336,20 @@ func parseExprList(in []byte) ([]Q, int, error) {
 			b = b[1:]
 		}
 		tok, _ := nextToken(b)
-		if tok != nil && tok.Type == tokParenClose {
-			break
-		} else if tok != nil && tok.Type == tokOr {
-			qs = append(qs, &orOperator{})
-			b = b[len(tok.Input):]
-			continue
+		if tok != nil {
+			if tok.Type == tokParenOpen {
+				(*parenBalance)++
+			} else if tok.Type == tokParenClose {
+				(*parenBalance)--
+				break
+			} else if tok.Type == tokOr {
+				qs = append(qs, &orOperator{})
+				b = b[len(tok.Input):]
+				continue
+			}
 		}
 
-		q, n, err := parseExpr(b)
+		q, n, err := parseExpr(b, parenBalance)
 		if err != nil {
 			return nil, 0, err
 		}
