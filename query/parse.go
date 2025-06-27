@@ -76,9 +76,13 @@ func isSpace(c byte) bool {
 func Parse(qStr string) (Q, error) {
 	b := []byte(qStr)
 
-	qs, _, err := parseExprList(b)
+	qs, n, err := parseExprList(b)
 	if err != nil {
 		return nil, err
+	}
+
+	if n != len(b) {
+		return nil, fmt.Errorf("query: extra tokens found at end input: %q", b[n:])
 	}
 
 	q, err := parseOperators(qs)
