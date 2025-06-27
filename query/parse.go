@@ -72,23 +72,21 @@ func isSpace(c byte) bool {
 	return c == ' ' || c == '\t'
 }
 
-// globally tracking parentheses
-var parenBalance int
-
 // Parse parses a string into a query.
 func Parse(qStr string) (Q, error) {
 	b := []byte(qStr)
-	parenBalance = 0
+	parenBalance := 0
 	qs, _, err := parseExprList(b, &parenBalance)
+
+	if err != nil {
+		return nil, err
+	}
 
 	if parenBalance < 0 {
 		return nil, fmt.Errorf("right parentheses unbalanced")
 	}
 	if parenBalance > 0 {
 		return nil, fmt.Errorf("left parentheses unbalanced")
-	}
-	if err != nil {
-		return nil, err
 	}
 
 	q, err := parseOperators(qs)
@@ -337,23 +335,18 @@ func parseExprList(in []byte, parenBalance *int) ([]Q, int, error) {
 		for len(b) > 0 && isSpace(b[0]) {
 			b = b[1:]
 		}
-		// fmt.Println("PAREN BALANCE: ", parenBalance, string(b))
 		tok, _ := nextToken(b)
 		if tok != nil {
-			switch tok.Type {
-			case tokParenOpen:
+			if tok.Type == tokParenOpen {
 				(*parenBalance)++
-			case tokParenClose:
+			} else if tok.Type == tokParenClose {
 				(*parenBalance)--
+				break
+			} else if tok.Type == tokOr {
+				qs = append(qs, &orOperator{})
+				b = b[len(tok.Input):]
+				continue
 			}
-		}
-		// fmt.Println("PAREN BALANCE AFTER: ", parenBalance, tok)
-		if tok != nil && tok.Type == tokParenClose {
-			break
-		} else if tok != nil && tok.Type == tokOr {
-			qs = append(qs, &orOperator{})
-			b = b[len(tok.Input):]
-			continue
 		}
 
 		q, n, err := parseExpr(b, parenBalance)
