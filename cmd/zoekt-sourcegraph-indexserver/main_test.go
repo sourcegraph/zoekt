@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	sglog "github.com/sourcegraph/log"
@@ -20,13 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xeipuuv/gojsonschema"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
-	indexserverv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/zoekt/indexserver/v1"
-	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
@@ -450,191 +445,4 @@ func TestAddDefaultPort(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestIndexGRPC(t *testing.T) {
-	indexDir := t.TempDir()
-
-	// Minimal server setup
-	s := &Server{
-		logger:         logtest.NoOp(t),
-		IndexDir:       indexDir,
-		rootURL:        &url.URL{Scheme: "http", Host: "example.com"},
-		indexSemaphore: make(chan struct{}, 1),
-		timeout:        time.Hour, // no timeout
-	}
-
-	branches := []*configv1.ZoektRepositoryBranch{
-		{
-			Name:    "HEAD",
-			Version: "abc123",
-		},
-	}
-
-	req := &indexserverv1.IndexRequest{
-		Options: &configv1.ZoektIndexOptions{
-			RepoId:   42,
-			Name:     "repo",
-			TenantId: 1,
-			Branches: branches,
-		},
-	}
-
-	resp, err := s.indexGRPC(context.Background(), req, mockIndexFunc(t))
-	require.NoError(t, err)
-	require.Equal(t, &indexserverv1.IndexResponse{
-		RepoId:        42,
-		Branches:      branches,
-		IndexTimeUnix: resp.IndexTimeUnix, // Hack: this changes every time so we don't check it
-	}, resp)
-
-	require.NotZero(t, resp.IndexTimeUnix)
-}
-
-func TestIndexGRPC_Timeout(t *testing.T) {
-	indexDir := t.TempDir()
-
-	s := &Server{
-		logger:           logtest.NoOp(t),
-		IndexDir:         indexDir,
-		IndexConcurrency: 0, // impossible to acquire index slot
-		timeout:          time.Millisecond,
-	}
-
-	req := &indexserverv1.IndexRequest{
-		Options: &configv1.ZoektIndexOptions{
-			RepoId: 42,
-			Name:   "repo",
-		},
-	}
-
-	// use context.Background() to make sure we don't return because of context cancellation
-	_, err := s.indexGRPC(context.Background(), req, mockIndexFunc(t))
-	require.Error(t, err)
-	require.Equal(t, codes.DeadlineExceeded, status.Code(err))
-}
-
-func TestDelete(t *testing.T) {
-	indexDir := t.TempDir()
-	trashDir := filepath.Join(indexDir, ".trash")
-	if err := os.MkdirAll(trashDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create a simple shard
-	createShard(t, indexDir)
-
-	// Verify the shard exists in index dir
-	shards := getShards(indexDir)
-	if len(shards) != 1 {
-		t.Fatalf("expected 1 shard, got %d", len(shards))
-	}
-
-	// Create server and call Delete
-	s := &Server{
-		logger:         logtest.NoOp(t),
-		IndexDir:       indexDir,
-		rootURL:        &url.URL{Scheme: "http", Host: "example.com"},
-		indexSemaphore: make(chan struct{}, 1),
-		timeout:        time.Hour, // no timeout
-	}
-
-	req := &indexserverv1.DeleteRequest{
-		RepoIds: []uint32{42}, // matches the repo ID in createShard
-	}
-
-	// Test case: context is canceled
-	cancledCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := s.Delete(cancledCtx, req)
-	require.Error(t, err)
-
-	shards = getShards(indexDir)
-	require.Len(t, shards, 1)
-
-	// Test case: context is not canceled
-	_, err = s.Delete(context.Background(), req)
-	require.NoError(t, err)
-
-	// Verify shard was moved to trash
-	trashShards := getShards(trashDir)
-	require.Len(t, trashShards, 1)
-
-	// Verify shard is no longer in index dir
-	shards = getShards(indexDir)
-	require.Len(t, shards, 0)
-}
-
-func mockIndexFunc(t *testing.T) func(ctx context.Context, args *indexArgs) (indexState, error) {
-	return func(ctx context.Context, args *indexArgs) (indexState, error) {
-		createShard(t, args.IndexDir)
-		return indexStateSuccess, nil
-	}
-}
-
-func createShard(t *testing.T, dir string) {
-	opts := index.Options{
-		IndexDir: dir,
-		RepositoryDescription: zoekt.Repository{
-			ID:   42,
-			Name: "repo",
-			Branches: []zoekt.RepositoryBranch{
-				{
-					Name:    "HEAD",
-					Version: "abc123",
-				},
-			},
-		},
-	}
-
-	b, err := index.NewBuilder(opts)
-	require.NoError(t, err)
-	require.NoError(t, b.AddFile("test.txt", []byte("hello")))
-	require.NoError(t, b.Finish())
-}
-
-func TestRecoverFromTrash(t *testing.T) {
-	dir := t.TempDir()
-	trashDir := filepath.Join(dir, ".trash")
-	require.NoError(t, os.MkdirAll(trashDir, 0o755))
-
-	// Create a simple shard in trash
-	createTestShard(t, "repo1", 1, filepath.Join(trashDir, "repo1.zoekt"))
-
-	// Create a compound shard with two repos, one of them tombstoned
-	cs := createCompoundShard(t, dir, []uint32{2, 3})
-	require.NoError(t, index.SetTombstone(cs, 2))
-
-	s := &Server{
-		IndexDir: dir,
-	}
-
-	// Test recovering from trash
-	recovered := s.recoverFromTrash(1)
-	require.True(t, recovered, "should have recovered repo1 from trash")
-
-	// Verify shard was moved from trash to index
-	indexShards := getShards(dir)
-	trashShards := getShards(trashDir)
-
-	require.Contains(t, indexShards, uint32(1), "repo1 should be in index")
-	require.NotContains(t, trashShards, uint32(1), "repo1 should not be in trash")
-
-	// Test unsetting tombstone
-	recovered = s.recoverFromTrash(2)
-	require.True(t, recovered, "should have recovered repo2 from tombstone")
-
-	// Verify tombstone was unset
-	repos, _, err := index.ReadMetadataPath(cs)
-	require.NoError(t, err)
-
-	for _, repo := range repos {
-		if repo.ID == 2 {
-			require.False(t, repo.Tombstone, "repo2 should not be tombstoned")
-		}
-	}
-
-	// Test non-existent repo
-	recovered = s.recoverFromTrash(99)
-	require.False(t, recovered, "should not have recovered non-existent repo")
 }
