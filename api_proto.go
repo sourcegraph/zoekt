@@ -453,6 +453,7 @@ func RepositoryFromProto(p *webserverv1.Repository) Repository {
 		Tombstone:            p.GetTombstone(),
 		LatestCommitDate:     p.GetLatestCommitDate().AsTime(),
 		FileTombstones:       fileTombstones,
+		Metadata:             p.GetMetadata(),
 	}
 }
 
@@ -495,6 +496,7 @@ func (r *Repository) ToProto() *webserverv1.Repository {
 		Tombstone:            r.Tombstone,
 		LatestCommitDate:     timestamppb.New(r.LatestCommitDate),
 		FileTombstones:       fileTombstones,
+		Metadata:             r.Metadata,
 	}
 }
 
