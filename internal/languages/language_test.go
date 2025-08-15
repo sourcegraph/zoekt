@@ -1,6 +1,12 @@
 package languages
 
-import "testing"
+import (
+	_ "embed"
+	"testing"
+)
+
+//go:embed testdata/SageTreeBuilder.C
+var embeddedSageTreeBuilder []byte
 
 func TestGetLanguageByAlias(t *testing.T) {
 	tests := []struct {
@@ -94,6 +100,25 @@ func TestGetLanguage(t *testing.T) {
 			content:  []byte(""),
 			want:     "Apex",
 		},
+		{
+			name:     "C++ file with .C extension - real SageTreeBuilder.C content",
+			filename: "SageTreeBuilder.C",
+			content:  embeddedSageTreeBuilder,
+			want:     "C++",
+		},
+		{
+			name:     "C file with .C extension - should remain C",
+			filename: "test.C",
+			content: []byte(`#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    printf("Hello, World!\n");
+    return 0;
+}
+`),
+			want: "C",
+		},
 	}
 
 	for _, tt := range tests {
@@ -101,6 +126,47 @@ func TestGetLanguage(t *testing.T) {
 			got := GetLanguage(tt.filename, tt.content)
 			if got != tt.want {
 				t.Errorf("GetLanguage(%q, %q) = %q, want %q", tt.filename, tt.content, got, tt.want)
+			}
+		})
+	}
+}
+
+// Benchmarks to verify that C++ override logic has acceptable performance overhead
+func BenchmarkGetLanguage(b *testing.B) {
+	// Use embedded SageTreeBuilder.C file for benchmarking
+	sageBuildContent := embeddedSageTreeBuilder
+
+	benchmarks := []struct {
+		name     string
+		filename string
+		content  []byte
+	}{
+		{
+			name:     "C_file_no_override",
+			filename: "test.c",
+			content:  []byte("#include <stdio.h>\nint main() { return 0; }"),
+		},
+		{
+			name:     "Cpp_file_normal_extension",
+			filename: "test.cpp",
+			content:  sageBuildContent,
+		},
+		{
+			name:     "C_file_capital_C_extension_trigger_override",
+			filename: "test.C",
+			content:  []byte("#include <stdio.h>\nint main() { return 0; }"),
+		},
+		{
+			name:     "Cpp_file_capital_C_extension_with_override",
+			filename: "SageTreeBuilder.C",
+			content:  sageBuildContent,
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				GetLanguage(bm.filename, bm.content)
 			}
 		})
 	}

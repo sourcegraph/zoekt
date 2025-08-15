@@ -9,11 +9,41 @@
 package languages
 
 import (
+	"bytes"
 	"path/filepath"
 	"strings"
 
 	"github.com/go-enry/go-enry/v2"
 )
+
+// extensionsNeedingCppOverride contains file extensions that go-enry doesn't properly
+// recognize as potential C++ files, so we need to apply content-based detection
+// to override C -> C++ classification.
+var extensionsNeedingCppOverride = map[string]bool{
+	".C": true, // Capital C extension is not recognized by go-enry as C++
+}
+
+// detectCppIndicators checks for clear C++ language indicators in the first 1KB of content
+func detectCppIndicators(content []byte) bool {
+	// Only check first 1024 bytes - C++ indicators typically appear early
+	checkContent := content
+	if len(content) > 1024 {
+		checkContent = content[:1024]
+	}
+
+	// Quick checks for C++ indicators, ordered by frequency in typical C++ code
+	if bytes.Contains(checkContent, []byte("std::")) ||
+		bytes.Contains(checkContent, []byte("#include <iostream>")) ||
+		bytes.Contains(checkContent, []byte("using namespace")) ||
+		bytes.Contains(checkContent, []byte("namespace ")) ||
+		bytes.Contains(checkContent, []byte("#include <string>")) ||
+		bytes.Contains(checkContent, []byte("#include <vector>")) ||
+		bytes.Contains(checkContent, []byte("#include <boost/")) {
+		return true
+	}
+
+	return false
+}
 
 var unsupportedByLinguistAliasMap = map[string]string{
 	// Extensions for the Apex programming language
@@ -40,7 +70,7 @@ var unsupportedByLinguistExtensionToNameMap = map[string]string{
 	".magik": "Magik",
 }
 
-// getLanguagesByAlias is a replacement for enry.GetLanguagesByAlias
+// GetLanguageByAlias is a replacement for enry.GetLanguagesByAlias
 // It supports languages that are missing in linguist
 func GetLanguageByAlias(alias string) (language string, ok bool) {
 	language, ok = enry.GetLanguageByAlias(alias)
@@ -57,6 +87,12 @@ func GetLanguageByAlias(alias string) (language string, ok bool) {
 // for languages missing from linguist
 func GetLanguage(filename string, content []byte) (language string) {
 	language = enry.GetLanguage(filename, content)
+
+	// Custom logic: If enry says it's 'C' but we detect C++ indicators, override to 'C++'
+	// Only apply this for file extensions that go-enry doesn't properly handle for C++
+	if language == "C" && content != nil && extensionsNeedingCppOverride[filepath.Ext(filename)] && detectCppIndicators(content) {
+		language = "C++"
+	}
 
 	// If go-enry failed to find language, fall back on our
 	// internal check for languages missing in linguist
