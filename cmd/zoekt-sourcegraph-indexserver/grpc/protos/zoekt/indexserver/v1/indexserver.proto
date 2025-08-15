@@ -2,53 +2,16 @@ syntax = "proto3";
 
 package zoekt.indexserver.v1;
 
-import "sourcegraph/zoekt/configuration/v1/configuration.proto";
-
 option go_package = "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/zoekt/indexserver/v1";
 
 message DeleteAllDataRequest {}
 
 message DeleteAllDataResponse {}
 
-message DeleteRequest {
-  // repo_ids are the Sourcegraph repository IDs to delete.
-  repeated uint32 repo_ids = 1;
-}
-
-message DeleteResponse {}
-
-message IndexRequest {
-  sourcegraph.zoekt.configuration.v1.ZoektIndexOptions options = 1;
-}
-
-message IndexResponse {
-  // repo_id is the Sourcegraph repository ID.
-  uint32 repo_id = 1;
-
-  // branches is the list of branches that the client has indexed.
-  repeated sourcegraph.zoekt.configuration.v1.ZoektRepositoryBranch branches = 2;
-
-  // index_time_unix is the unix timestamp for when the index was created.
-  int64 index_time_unix = 3;
-}
-
 service SourcegraphIndexserverService {
   // DeleteAllData deletes all data for the tenant in the request context.
   // This is used for pruning all data after a tenant has been deleted.
   rpc DeleteAllData(DeleteAllDataRequest) returns (DeleteAllDataResponse) {
-    option idempotency_level = IDEMPOTENT;
-  }
-
-  // Delete deletes the index for a specific repository.
-  // This is used when a repository needs to be reindexed from scratch or when it's deleted.
-  rpc Delete(DeleteRequest) returns (DeleteResponse) {
-    option idempotency_level = IDEMPOTENT;
-  }
-
-  // Index indexes a repository with the given options and returns the repository information
-  // including the index timestamp. This information is needed by the frontend to update its state
-  // since Zoekt no longer sends status updates to Sourcegraph.
-  rpc Index(IndexRequest) returns (IndexResponse) {
     option idempotency_level = IDEMPOTENT;
   }
 }
