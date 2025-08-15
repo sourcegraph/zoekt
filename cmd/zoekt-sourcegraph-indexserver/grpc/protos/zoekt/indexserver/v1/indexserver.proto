@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package zoekt.indexserver.v1;
 
-import "sourcegraph/zoekt/configuration/v1/configuration.proto";
-
 option go_package = "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/zoekt/indexserver/v1";
 
 message DeleteAllDataRequest {}
