@@ -216,6 +216,9 @@ message Repository {
 
   // tenant_id is the tenant ID of the repository.
   int64 tenant_id = 18;
+
+  // Additional metadata about the repository.
+  map<string, string> metadata = 19;
 }
 
 message IndexMetadata {
