@@ -152,7 +152,6 @@ var unsupportedByEnryExtensionToNameMap = map[string]string{
 	".apex":    "Apex",
 	".apxt":    "Apex",
 	".apxc":    "Apex",
-	".cls":     "Apex",
 	".trigger": "Apex",
 	".magik":   "Magik",
 }

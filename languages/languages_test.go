@@ -71,6 +71,9 @@ fourthpower[x_] := square[square[x]]
 		{path: "file.go", content: "package main", expectedLanguages: []string{"Go"}},
 		{path: "file.magik", content: emptyContent, expectedLanguages: []string{"Magik"}},
 		{path: "file.apxc", content: emptyContent, expectedLanguages: []string{"Apex"}},
+		// Check that we classify cls files by content and not just by extension
+		{path: "tex.cls", content: `\DeclareOption*{}`, expectedLanguages: []string{"TeX", "Apex", "ObjectScript", "Visual Basic 6.0", "OpenEdge ABL", "VBA"}},
+		{path: "tex.cls", content: `public class HelloWorld {`, expectedLanguages: []string{"Apex", "Visual Basic 6.0", "TeX", "OpenEdge ABL", "ObjectScript", "VBA"}},
 	}
 
 	for _, testCase := range testCases {

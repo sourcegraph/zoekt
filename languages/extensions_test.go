@@ -15,7 +15,6 @@ var nonAmbiguousExtensionsCheck = map[string]string{
 	".apex":    "Apex",
 	".apxt":    "Apex",
 	".apxc":    "Apex",
-	".cls":     "Apex",
 	".trigger": "Apex",
 	".js":      "JavaScript",
 	// Linguist removed JSX (but not TSX) as a separate language:
