@@ -65,6 +65,12 @@ fourthpower[x_] := square[square[x]]
 			compareFirstOnly:  true,
 		},
 		{path: "SageTreeBuilder.C", content: cppCapitalExtContent, expectedLanguages: []string{"C++"}},
+		// Ported cases from internal/languages TestGetLanguage
+		{path: "", content: emptyContent, expectedLanguages: nil},
+		{path: "file.unknown", content: emptyContent, expectedLanguages: nil},
+		{path: "file.go", content: "package main", expectedLanguages: []string{"Go"}},
+		{path: "file.magik", content: emptyContent, expectedLanguages: []string{"Magik"}},
+		{path: "file.apxc", content: emptyContent, expectedLanguages: []string{"Apex"}},
 	}
 
 	for _, testCase := range testCases {
@@ -117,4 +123,59 @@ fourthpower[x_] := square[square[x]]
 			require.NotEqual(t, enry.OtherLanguage, lang)
 		}
 	})
+}
+
+func TestGetLanguageByNameOrAlias(t *testing.T) {
+	tests := []struct {
+		name   string
+		alias  string
+		want   string
+		wantOk bool
+	}{
+		{
+			name:   "empty alias",
+			alias:  "",
+			want:   "",
+			wantOk: false,
+		},
+		{
+			name:   "unknown alias",
+			alias:  "unknown",
+			want:   "",
+			wantOk: false,
+		},
+		{
+			name:   "supported alias",
+			alias:  "go",
+			want:   "Go",
+			wantOk: true,
+		},
+		{
+			name:   "unsupported by linguist alias",
+			alias:  "magik",
+			want:   "Magik",
+			wantOk: true,
+		},
+		{
+			name:   "unsupported by linguist alias normalized",
+			alias:  "mAgIk",
+			want:   "Magik",
+			wantOk: true,
+		},
+		{
+			name:   "apex example unsupported by linguist alias",
+			alias:  "apex",
+			want:   "Apex",
+			wantOk: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := GetLanguageByNameOrAlias(tt.alias)
+			if got != tt.want || ok != tt.wantOk {
+				t.Errorf("GetLanguageByNameOrAlias(%q) = %q, %t, want %q, %t", tt.alias, got, ok, tt.want, tt.wantOk)
+			}
+		})
+	}
 }

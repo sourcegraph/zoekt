@@ -102,6 +102,14 @@ func GetLanguages(path string, getContent func() ([]byte, error)) ([]string, err
 	return slices.Clone(langs), err
 }
 
+// GetLanguagesFromContent is a convenience wrapper around GetLanguages that
+// allows passing the content directly instead of a callback.
+func GetLanguagesFromContent(path string, content []byte) (langs []string) {
+	// We can ignore the error here, because the callback will never return an error
+	langs, _ = GetLanguages(path, func() ([]byte, error) { return content, nil })
+	return
+}
+
 // getLanguagesByContent is a wrapper for enry.GetLanguagesByContent.
 //
 // It applies additional heuristics for file extensions that need special handling.

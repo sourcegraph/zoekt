@@ -23,16 +23,15 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
 	"time"
 	"unicode/utf8"
 
-	"slices"
-
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/internal/languages"
+	"github.com/sourcegraph/zoekt/languages"
 )
 
 var _ = log.Println
@@ -404,13 +403,18 @@ func DetermineLanguageIfUnknown(doc *Document) {
 		return
 	}
 
-	if doc.SkipReason != SkipReasonNone {
-		// If this document has been skipped, it's likely very large, or it's a non-code file like binary.
-		// In this case, we just guess the language based on file name to avoid examining the contents.
-		// Note: passing nil content is allowed by the go-enry contract (the underlying library we use here).
-		doc.Language = languages.GetLanguage(doc.Name, nil)
-	} else {
-		doc.Language = languages.GetLanguage(doc.Name, doc.Content)
+	// If this document has been skipped (doc.SkipReason != SkipReasonNone), it's
+	// likely very large, or it's a non-code file like binary. In this case, we just
+	// guess the language based on the file name to avoid examining the contents.
+	// Note: passing nil content is allowed by the go-enry contract (the underlying
+	// library we use here).
+	var content []byte
+	if doc.SkipReason == SkipReasonNone {
+		content = doc.Content
+	}
+	langs := languages.GetLanguagesFromContent(doc.Name, content)
+	if len(langs) > 0 {
+		doc.Language = langs[0]
 	}
 }
 

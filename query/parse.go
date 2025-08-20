@@ -22,7 +22,7 @@ import (
 
 	"github.com/grafana/regexp"
 
-	"github.com/sourcegraph/zoekt/internal/languages"
+	"github.com/sourcegraph/zoekt/languages"
 )
 
 var _ = log.Printf
@@ -177,7 +177,7 @@ func parseExpr(in []byte) (Q, int, error) {
 		}
 		expr = q
 	case tokLang:
-		canonical, ok := languages.GetLanguageByAlias(text)
+		canonical, ok := languages.GetLanguageByNameOrAlias(text)
 		if !ok {
 			expr = &Const{false}
 		} else {
