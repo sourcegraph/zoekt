@@ -46,9 +46,9 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/gitindex"
 	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/internal/gitindex"
 )
 
 var _ = log.Println
