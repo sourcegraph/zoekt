@@ -1245,6 +1245,19 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 			},
 		}, nil
 
+	case *query.topic:
+		code, ok := d.metaData.LanguageMap[s.Language]
+		if !ok {
+			return &noMatchTree{Why: "topic"}, nil
+		}
+		return &docMatchTree{
+			reason:  "topic",
+			numDocs: d.numDocs(),
+			predicate: func(docID uint32) bool {
+				return d.geTopic(docID) == code //replace getLanguage by getTopic
+			},
+		}, nil
+
 	case query.RawConfig:
 		return &docMatchTree{
 			reason:  s.String(),
