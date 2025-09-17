@@ -103,7 +103,13 @@ type indexData struct {
 
 	// rawConfigMasks contains the encoded RawConfig for each repository
 	rawConfigMasks []uint8
+
+	// Cache for docMatchTree objects
+	docMatchTreeCache docMatchTreeCache
 }
+
+// docMatchTreeCache is a cache for docMatchTree objects so they don't need to be recomputed
+type docMatchTreeCache map[string]*docMatchTree
 
 type symbolData struct {
 	// symContent stores Symbol.Sym and Symbol.Parent.

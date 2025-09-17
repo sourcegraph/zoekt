@@ -372,10 +372,18 @@ func TestRepoIDs(t *testing.T) {
 		fileBranchMasks: []uint64{1, 1, 1, 1, 1, 1},
 		repos:           []uint16{0, 0, 1, 2, 3, 3},
 	}
-	mt, err := d.newMatchTree(&query.RepoIDs{Repos: roaring.BitmapOf(1, 3, 99)}, matchTreeOpt{})
+	q := &query.RepoIDs{Repos: roaring.BitmapOf(1, 3, 99)}
+	mt, err := d.newMatchTree(q, matchTreeOpt{})
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Check that the docMatchTree cache is populated correctly
+	key := queryRepoIdsCacheKey(d.repoMetaData)
+	if _, ok := d.docMatchTreeCache[key]; !ok {
+		t.Errorf("expected docMatchTreeCache to be populated for key %q", key)
+	}
+
 	want := []uint32{2, 4, 5}
 	for i := range want {
 		nextDoc := mt.nextDoc()
@@ -447,6 +455,12 @@ func TestMetaQueryMatchTree(t *testing.T) {
 		t.Fatalf("failed to build matchTree: %v", err)
 	}
 
+	// Check that the docMatchTree cache is populated correctly
+	key := queryMetaCacheKey("license", regexp.MustCompile("M.T"))
+	if _, ok := d.docMatchTreeCache[key]; !ok {
+		t.Errorf("expected docMatchTreeCache to be populated for key %q", key)
+	}
+
 	var matched []uint32
 	for {
 		doc := mt.nextDoc()
@@ -460,5 +474,54 @@ func TestMetaQueryMatchTree(t *testing.T) {
 	want := []uint32{1} // only doc from r1 should match
 	if !reflect.DeepEqual(matched, want) {
 		t.Errorf("meta match failed: got %v, want %v", matched, want)
+	}
+}
+
+func Test_queryMetaCacheKey(t *testing.T) {
+	cases := []struct {
+		field   string
+		pattern string
+		wantKey string
+	}{
+		// Generated via:
+		// echo -n 'metaField:foo.*bar' | sha256sum
+		{"metaField", "foo.*bar", "Meta:afc6e783c05767285e8657c92c6af09bd8c72d4c0cabe36614b0b2ba3b697724"},
+		// echo -n 'metaField:foo.*baz' | sha256sum
+		{"metaField", "foo.*baz", "Meta:7c5d6616ad2a00042e3ecb1d55cd4ef1907c5b3c232011e45a7f7ba7e8143b63"},
+		// echo -n 'otherField:foo.*bar' | sha256sum
+		{"otherField", "foo.*bar", "Meta:5761c1b19ae8b1c34c5933c8ddb4fe696d80918184547ad42e4953b15700f0ef"},
+	}
+	for _, tc := range cases {
+		re := regexp.MustCompile(tc.pattern)
+		key := queryMetaCacheKey(tc.field, re)
+		if key != tc.wantKey {
+			t.Errorf("unexpected key for field=%q pattern=%q: got %q, want %q", tc.field, tc.pattern, key, tc.wantKey)
+		}
+	}
+}
+
+func Test_queryRepoIdsCacheKey(t *testing.T) {
+	cases := []struct {
+		repos   []zoekt.Repository
+		wantKey string
+	}{
+		// Generated via:
+		// echo -n '123,456,' | sha256sum
+		{[]zoekt.Repository{{ID: 123}, {ID: 456}}, "RepoIDs:a160b50b57496a46824c7e22f8c7047dbbec38752fa1b066d3f50d9f33baaddc"},
+		// echo -n '456,123,' | sha256sum
+		{[]zoekt.Repository{{ID: 456}, {ID: 123}}, "RepoIDs:1d899c857ed96d50e2ad5a9f1505a4a988a69375ec142c8bd29b1aaa545facfb"},
+		// echo -n '123,456,789,' | sha256sum
+		{[]zoekt.Repository{{ID: 123}, {ID: 456}, {ID: 789}}, "RepoIDs:d2c687720e021d3c3d3b8ae461451e144148d84deca4d45d40523f8501c72c39"},
+	}
+	for _, tc := range cases {
+		key := queryRepoIdsCacheKey(tc.repos)
+		if key != tc.wantKey {
+			t.Errorf("unexpected key for repos=%v: got %q, want %q", tc.repos, key, tc.wantKey)
+		}
+		// Check determinism
+		key2 := queryRepoIdsCacheKey(tc.repos)
+		if key != key2 {
+			t.Errorf("key not deterministic for repos=%v: %q vs %q", tc.repos, key, key2)
+		}
 	}
 }
