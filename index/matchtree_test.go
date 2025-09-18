@@ -380,10 +380,9 @@ func TestRepoIDs(t *testing.T) {
 
 	// Check that the docMatchTree cache is populated correctly
 	checksum := queryRepoIdsChecksum(d.repoMetaData)
-	cacheKey := struct{ field, value string }{"RepoIDs", checksum}
-
-	if _, ok := d.docMatchTreeCache[cacheKey]; !ok {
-		t.Errorf("expected docMatchTreeCache to be populated for key %q", cacheKey)
+	cacheKeyField := "RepoIDs"
+	if _, ok := d.docMatchTreeCache.get(cacheKeyField, checksum); !ok {
+		t.Errorf("expected docMatchTreeCache to be populated for key (%q, %q)", cacheKeyField, checksum)
 	}
 
 	want := []uint32{2, 4, 5}
@@ -459,10 +458,9 @@ func TestMetaQueryMatchTree(t *testing.T) {
 
 	// Check that the docMatchTree cache is populated correctly
 	checksum := queryMetaChecksum("license", regexp.MustCompile("M.T"))
-	cacheKey := struct{ field, value string }{"Meta", checksum}
-
-	if _, ok := d.docMatchTreeCache[cacheKey]; !ok {
-		t.Errorf("expected docMatchTreeCache to be populated for key %q", cacheKey)
+	cacheKeyField := "Meta"
+	if _, ok := d.docMatchTreeCache.get(cacheKeyField, checksum); !ok {
+		t.Errorf("expected docMatchTreeCache to be populated for key (%q, %q)", cacheKeyField, checksum)
 	}
 
 	var matched []uint32

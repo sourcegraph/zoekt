@@ -974,7 +974,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 	}
 
 	if d.docMatchTreeCache == nil {
-		d.docMatchTreeCache = make(docMatchTreeCache)
+		d.docMatchTreeCache = newDocMatchTreeCache(64)
 	}
 
 	switch s := q.(type) {
@@ -1061,9 +1061,8 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 
 	case *query.Meta:
 		checksum := queryMetaChecksum(s.Field, s.Value)
-		cacheKey := struct{ field, value string }{"Meta", checksum}
-
-		if cached, ok := d.docMatchTreeCache[cacheKey]; ok {
+		cacheKeyField := "Meta"
+		if cached, ok := d.docMatchTreeCache.get(cacheKeyField, checksum); ok {
 			return cached, nil
 		}
 
@@ -1087,7 +1086,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 				return reposWant[repoIdx]
 			},
 		}
-		d.docMatchTreeCache[cacheKey] = mt
+		d.docMatchTreeCache.add(cacheKeyField, checksum, mt)
 		return mt, nil
 
 	case *query.Substring:
@@ -1217,9 +1216,8 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 
 	case *query.RepoIDs:
 		checksum := queryRepoIdsChecksum(d.repoMetaData)
-		cacheKey := struct{ field, value string }{"RepoIDs", checksum}
-
-		if cached, ok := d.docMatchTreeCache[cacheKey]; ok {
+		cacheKeyField := "RepoIDs"
+		if cached, ok := d.docMatchTreeCache.get(cacheKeyField, checksum); ok {
 			return cached, nil
 		}
 
@@ -1237,7 +1235,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 				return reposWant[d.repos[docID]]
 			},
 		}
-		d.docMatchTreeCache[cacheKey] = mt
+		d.docMatchTreeCache.add(cacheKeyField, checksum, mt)
 		return mt, nil
 
 	case *query.Repo:
