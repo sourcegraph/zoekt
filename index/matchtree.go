@@ -19,7 +19,9 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"regexp/syntax"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -974,7 +976,15 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 	}
 
 	if d.docMatchTreeCache == nil {
-		d.docMatchTreeCache = newDocMatchTreeCache(64)
+		cacheSize := 0
+		if v := os.Getenv("ZOEKT_MATCHTREE_CACHE"); v != "" {
+			var err error
+			cacheSize, err = strconv.Atoi(v)
+			if err != nil {
+				cacheSize = 0
+			}
+		}
+		d.docMatchTreeCache = newDocMatchTreeCache(cacheSize)
 	}
 
 	switch s := q.(type) {
