@@ -109,7 +109,7 @@ type indexData struct {
 }
 
 // docMatchTreeCache is a cache for docMatchTree objects so they don't need to be recomputed
-type docMatchTreeCache map[string]*docMatchTree
+type docMatchTreeCache map[struct{ field, value string }]*docMatchTree
 
 type symbolData struct {
 	// symContent stores Symbol.Sym and Symbol.Parent.

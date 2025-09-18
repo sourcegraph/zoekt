@@ -23,8 +23,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"crypto/sha256"
-
+	"github.com/cespare/xxhash/v2"
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt"
@@ -1061,7 +1060,9 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		}, nil
 
 	case *query.Meta:
-		cacheKey := queryMetaCacheKey(s.Field, s.Value)
+		checksum := queryMetaChecksum(s.Field, s.Value)
+		cacheKey := struct{ field, value string }{"Meta", checksum}
+
 		if cached, ok := d.docMatchTreeCache[cacheKey]; ok {
 			return cached, nil
 		}
@@ -1215,7 +1216,9 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		}, nil
 
 	case *query.RepoIDs:
-		cacheKey := queryRepoIdsCacheKey(d.repoMetaData)
+		checksum := queryRepoIdsChecksum(d.repoMetaData)
+		cacheKey := struct{ field, value string }{"RepoIDs", checksum}
+
 		if cached, ok := d.docMatchTreeCache[cacheKey]; ok {
 			return cached, nil
 		}
@@ -1458,17 +1461,19 @@ func isRegexpAll(r *syntax.Regexp) bool {
 	}
 }
 
-func queryMetaCacheKey(field string, value *regexp.Regexp) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s", field, value.String())))
-	return fmt.Sprintf("Meta:%x", sum[:])
+func queryMetaChecksum(field string, value *regexp.Regexp) string {
+	h := xxhash.New()
+	h.Write([]byte(field))
+	h.Write([]byte{':'})
+	h.Write([]byte(value.String()))
+	return fmt.Sprintf("%x", h.Sum64())
 }
 
-func queryRepoIdsCacheKey(repos []zoekt.Repository) string {
-	var b strings.Builder
+func queryRepoIdsChecksum(repos []zoekt.Repository) string {
+	h := xxhash.New()
 	for _, r := range repos {
-		b.WriteString(fmt.Sprint(r.ID))
-		b.WriteByte(',')
+		h.Write([]byte(fmt.Sprint(r.ID)))
+		h.Write([]byte{','})
 	}
-	sum := sha256.Sum256([]byte(b.String()))
-	return fmt.Sprintf("RepoIDs:%x", sum[:])
+	return fmt.Sprintf("%x", h.Sum64())
 }

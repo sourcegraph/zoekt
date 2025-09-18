@@ -379,9 +379,11 @@ func TestRepoIDs(t *testing.T) {
 	}
 
 	// Check that the docMatchTree cache is populated correctly
-	key := queryRepoIdsCacheKey(d.repoMetaData)
-	if _, ok := d.docMatchTreeCache[key]; !ok {
-		t.Errorf("expected docMatchTreeCache to be populated for key %q", key)
+	checksum := queryRepoIdsChecksum(d.repoMetaData)
+	cacheKey := struct{ field, value string }{"RepoIDs", checksum}
+
+	if _, ok := d.docMatchTreeCache[cacheKey]; !ok {
+		t.Errorf("expected docMatchTreeCache to be populated for key %q", cacheKey)
 	}
 
 	want := []uint32{2, 4, 5}
@@ -456,9 +458,11 @@ func TestMetaQueryMatchTree(t *testing.T) {
 	}
 
 	// Check that the docMatchTree cache is populated correctly
-	key := queryMetaCacheKey("license", regexp.MustCompile("M.T"))
-	if _, ok := d.docMatchTreeCache[key]; !ok {
-		t.Errorf("expected docMatchTreeCache to be populated for key %q", key)
+	checksum := queryMetaChecksum("license", regexp.MustCompile("M.T"))
+	cacheKey := struct{ field, value string }{"Meta", checksum}
+
+	if _, ok := d.docMatchTreeCache[cacheKey]; !ok {
+		t.Errorf("expected docMatchTreeCache to be populated for key %q", cacheKey)
 	}
 
 	var matched []uint32
@@ -483,17 +487,13 @@ func Test_queryMetaCacheKey(t *testing.T) {
 		pattern string
 		wantKey string
 	}{
-		// Generated via:
-		// echo -n 'metaField:foo.*bar' | sha256sum
-		{"metaField", "foo.*bar", "Meta:afc6e783c05767285e8657c92c6af09bd8c72d4c0cabe36614b0b2ba3b697724"},
-		// echo -n 'metaField:foo.*baz' | sha256sum
-		{"metaField", "foo.*baz", "Meta:7c5d6616ad2a00042e3ecb1d55cd4ef1907c5b3c232011e45a7f7ba7e8143b63"},
-		// echo -n 'otherField:foo.*bar' | sha256sum
-		{"otherField", "foo.*bar", "Meta:5761c1b19ae8b1c34c5933c8ddb4fe696d80918184547ad42e4953b15700f0ef"},
+		{"metaField", "foo.*bar", "24e88a5ffec04af0"},
+		{"metaField", "foo.*baz", "d8d6f6a7f0725b61"},
+		{"otherField", "foo.*bar", "c9d07e17c028364"},
 	}
 	for _, tc := range cases {
 		re := regexp.MustCompile(tc.pattern)
-		key := queryMetaCacheKey(tc.field, re)
+		key := queryMetaChecksum(tc.field, re)
 		if key != tc.wantKey {
 			t.Errorf("unexpected key for field=%q pattern=%q: got %q, want %q", tc.field, tc.pattern, key, tc.wantKey)
 		}
@@ -505,21 +505,17 @@ func Test_queryRepoIdsCacheKey(t *testing.T) {
 		repos   []zoekt.Repository
 		wantKey string
 	}{
-		// Generated via:
-		// echo -n '123,456,' | sha256sum
-		{[]zoekt.Repository{{ID: 123}, {ID: 456}}, "RepoIDs:a160b50b57496a46824c7e22f8c7047dbbec38752fa1b066d3f50d9f33baaddc"},
-		// echo -n '456,123,' | sha256sum
-		{[]zoekt.Repository{{ID: 456}, {ID: 123}}, "RepoIDs:1d899c857ed96d50e2ad5a9f1505a4a988a69375ec142c8bd29b1aaa545facfb"},
-		// echo -n '123,456,789,' | sha256sum
-		{[]zoekt.Repository{{ID: 123}, {ID: 456}, {ID: 789}}, "RepoIDs:d2c687720e021d3c3d3b8ae461451e144148d84deca4d45d40523f8501c72c39"},
+		{[]zoekt.Repository{{ID: 123}, {ID: 456}}, "949bef4eacf1f176"},
+		{[]zoekt.Repository{{ID: 456}, {ID: 123}}, "410563affd1b00fa"},
+		{[]zoekt.Repository{{ID: 123}, {ID: 456}, {ID: 789}}, "876a12b235f36aa8"},
 	}
 	for _, tc := range cases {
-		key := queryRepoIdsCacheKey(tc.repos)
+		key := queryRepoIdsChecksum(tc.repos)
 		if key != tc.wantKey {
 			t.Errorf("unexpected key for repos=%v: got %q, want %q", tc.repos, key, tc.wantKey)
 		}
 		// Check determinism
-		key2 := queryRepoIdsCacheKey(tc.repos)
+		key2 := queryRepoIdsChecksum(tc.repos)
 		if key != key2 {
 			t.Errorf("key not deterministic for repos=%v: %q vs %q", tc.repos, key, key2)
 		}
