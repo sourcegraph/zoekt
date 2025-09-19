@@ -19,9 +19,7 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"os"
 	"regexp/syntax"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -968,6 +966,9 @@ type matchTreeOpt struct {
 	// DisableWordMatchOptimization is used to disable the use of wordMatchTree.
 	// This was added since we do not support wordMatchTree with symbol search.
 	DisableWordMatchOptimization bool
+
+	// Specify max entries for the docMatchTreeCache.
+	docMatchTreeCacheSize int
 }
 
 func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error) {
@@ -976,15 +977,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 	}
 
 	if d.docMatchTreeCache == nil {
-		cacheSize := 0
-		if v := os.Getenv("ZOEKT_MATCHTREE_CACHE"); v != "" {
-			var err error
-			cacheSize, err = strconv.Atoi(v)
-			if err != nil {
-				cacheSize = 0
-			}
-		}
-		d.docMatchTreeCache = newDocMatchTreeCache(cacheSize)
+		d.docMatchTreeCache = newDocMatchTreeCache(opt.docMatchTreeCacheSize)
 	}
 
 	switch s := q.(type) {
@@ -1072,7 +1065,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 	case *query.Meta:
 		checksum := queryMetaChecksum(s.Field, s.Value)
 		cacheKeyField := "Meta"
-		if cached, ok := d.docMatchTreeCache.get(cacheKeyField, checksum); ok {
+		if cached, ok := d.docMatchTreeCache.Get(cacheKeyField, checksum); ok {
 			return cached, nil
 		}
 
@@ -1096,7 +1089,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 				return reposWant[repoIdx]
 			},
 		}
-		d.docMatchTreeCache.add(cacheKeyField, checksum, mt)
+		d.docMatchTreeCache.Add(cacheKeyField, checksum, mt)
 		return mt, nil
 
 	case *query.Substring:
@@ -1231,7 +1224,6 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 				reposWant[repoIdx] = true
 			}
 		}
-
 		return &docMatchTree{
 			reason:  "RepoIDs",
 			numDocs: d.numDocs(),

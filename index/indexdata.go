@@ -108,25 +108,6 @@ type indexData struct {
 	docMatchTreeCache *docMatchTreeCache
 }
 
-// docMatchTreeCache is an LRU cache for docMatchTree objects so they don't need to be recomputed.
-type docMatchTreeCache struct {
-	cache *LRUCache[[2]string, *docMatchTree]
-}
-
-func newDocMatchTreeCache(maxEntries int) *docMatchTreeCache {
-	return &docMatchTreeCache{
-		cache: NewLRUCache[[2]string, *docMatchTree](maxEntries),
-	}
-}
-
-func (c *docMatchTreeCache) get(field, value string) (*docMatchTree, bool) {
-	return c.cache.Get([2]string{field, value})
-}
-
-func (c *docMatchTreeCache) add(field, value string, dmt *docMatchTree) {
-	c.cache.Add([2]string{field, value}, dmt)
-}
-
 type symbolData struct {
 	// symContent stores Symbol.Sym and Symbol.Parent.
 	// TODO we don't need to store Symbol.Sym.

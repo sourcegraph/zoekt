@@ -372,8 +372,7 @@ func TestRepoIDs(t *testing.T) {
 		fileBranchMasks: []uint64{1, 1, 1, 1, 1, 1},
 		repos:           []uint16{0, 0, 1, 2, 3, 3},
 	}
-	q := &query.RepoIDs{Repos: roaring.BitmapOf(1, 3, 99)}
-	mt, err := d.newMatchTree(q, matchTreeOpt{})
+	mt, err := d.newMatchTree(&query.RepoIDs{Repos: roaring.BitmapOf(1, 3, 99)}, matchTreeOpt{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,7 +443,7 @@ func TestMetaQueryMatchTree(t *testing.T) {
 		Value: regexp.MustCompile("M.T"),
 	}
 
-	mt, err := d.newMatchTree(q, matchTreeOpt{})
+	mt, err := d.newMatchTree(q, matchTreeOpt{docMatchTreeCacheSize: 1})
 	if err != nil {
 		t.Fatalf("failed to build matchTree: %v", err)
 	}
@@ -452,7 +451,7 @@ func TestMetaQueryMatchTree(t *testing.T) {
 	// Check that the docMatchTree cache is populated correctly
 	checksum := queryMetaChecksum("license", regexp.MustCompile("M.T"))
 	cacheKeyField := "Meta"
-	if _, ok := d.docMatchTreeCache.get(cacheKeyField, checksum); !ok {
+	if _, ok := d.docMatchTreeCache.Get(cacheKeyField, checksum); !ok {
 		t.Errorf("expected docMatchTreeCache to be populated for key (%q, %q)", cacheKeyField, checksum)
 	}
 
