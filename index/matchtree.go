@@ -1479,8 +1479,9 @@ func queryMetaChecksum(field string, value *regexp.Regexp) string {
 
 func queryRepoIdsChecksum(repos []zoekt.Repository) string {
 	h := xxhash.New()
+	var idBuf [10]byte // 10 max len of uint32 string
 	for _, r := range repos {
-		h.Write([]byte(fmt.Sprint(r.ID)))
+		h.Write(strconv.AppendUint(idBuf[:0], uint64(r.ID), 10))
 		h.Write([]byte{','})
 	}
 	return fmt.Sprintf("%x", h.Sum64())
