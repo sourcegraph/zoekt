@@ -1225,12 +1225,6 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		}, nil
 
 	case *query.RepoIDs:
-		checksum := queryRepoIdsChecksum(d.repoMetaData)
-		cacheKeyField := "RepoIDs"
-		if cached, ok := d.docMatchTreeCache.get(cacheKeyField, checksum); ok {
-			return cached, nil
-		}
-
 		reposWant := make([]bool, len(d.repoMetaData))
 		for repoIdx, r := range d.repoMetaData {
 			if s.Repos.Contains(r.ID) {
@@ -1238,15 +1232,13 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 			}
 		}
 
-		mt := &docMatchTree{
+		return &docMatchTree{
 			reason:  "RepoIDs",
 			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
 				return reposWant[d.repos[docID]]
 			},
-		}
-		d.docMatchTreeCache.add(cacheKeyField, checksum, mt)
-		return mt, nil
+		}, nil
 
 	case *query.Repo:
 		reposWant := make([]bool, len(d.repoMetaData))
@@ -1474,15 +1466,5 @@ func queryMetaChecksum(field string, value *regexp.Regexp) string {
 	h.Write([]byte(field))
 	h.Write([]byte{':'})
 	h.Write([]byte(value.String()))
-	return fmt.Sprintf("%x", h.Sum64())
-}
-
-func queryRepoIdsChecksum(repos []zoekt.Repository) string {
-	h := xxhash.New()
-	var idBuf [10]byte // 10 max len of uint32 string
-	for _, r := range repos {
-		h.Write(strconv.AppendUint(idBuf[:0], uint64(r.ID), 10))
-		h.Write([]byte{','})
-	}
 	return fmt.Sprintf("%x", h.Sum64())
 }

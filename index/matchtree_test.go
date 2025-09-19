@@ -378,13 +378,6 @@ func TestRepoIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Check that the docMatchTree cache is populated correctly
-	checksum := queryRepoIdsChecksum(d.repoMetaData)
-	cacheKeyField := "RepoIDs"
-	if _, ok := d.docMatchTreeCache.get(cacheKeyField, checksum); !ok {
-		t.Errorf("expected docMatchTreeCache to be populated for key (%q, %q)", cacheKeyField, checksum)
-	}
-
 	want := []uint32{2, 4, 5}
 	for i := range want {
 		nextDoc := mt.nextDoc()
@@ -494,28 +487,6 @@ func Test_queryMetaCacheKey(t *testing.T) {
 		key := queryMetaChecksum(tc.field, re)
 		if key != tc.wantKey {
 			t.Errorf("unexpected key for field=%q pattern=%q: got %q, want %q", tc.field, tc.pattern, key, tc.wantKey)
-		}
-	}
-}
-
-func Test_queryRepoIdsCacheKey(t *testing.T) {
-	cases := []struct {
-		repos   []zoekt.Repository
-		wantKey string
-	}{
-		{[]zoekt.Repository{{ID: 123}, {ID: 456}}, "949bef4eacf1f176"},
-		{[]zoekt.Repository{{ID: 456}, {ID: 123}}, "410563affd1b00fa"},
-		{[]zoekt.Repository{{ID: 123}, {ID: 456}, {ID: 789}}, "876a12b235f36aa8"},
-	}
-	for _, tc := range cases {
-		key := queryRepoIdsChecksum(tc.repos)
-		if key != tc.wantKey {
-			t.Errorf("unexpected key for repos=%v: got %q, want %q", tc.repos, key, tc.wantKey)
-		}
-		// Check determinism
-		key2 := queryRepoIdsChecksum(tc.repos)
-		if key != key2 {
-			t.Errorf("key not deterministic for repos=%v: %q vs %q", tc.repos, key, key2)
 		}
 	}
 }
