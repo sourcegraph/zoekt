@@ -254,9 +254,12 @@ func canReadVersion(md *zoekt.IndexMetadata) bool {
 
 func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d := indexData{
-		file:              r.r,
-		branchIDs:         []map[string]uint{},
-		branchNames:       []map[uint]string{},
+		file:        r.r,
+		branchIDs:   []map[string]uint{},
+		branchNames: []map[uint]string{},
+
+		// docMatchTreeCache is disabled by default.
+		// The number of max entries can be set with environment variable ZOEKT_DOCMATCHTREE_CACHE
 		docMatchTreeCache: newDocMatchTreeCache(0),
 	}
 
