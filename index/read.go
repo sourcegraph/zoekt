@@ -254,9 +254,10 @@ func canReadVersion(md *zoekt.IndexMetadata) bool {
 
 func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d := indexData{
-		file:        r.r,
-		branchIDs:   []map[string]uint{},
-		branchNames: []map[uint]string{},
+		file:              r.r,
+		branchIDs:         []map[string]uint{},
+		branchNames:       []map[uint]string{},
+		docMatchTreeCache: newDocMatchTreeCache(0),
 	}
 
 	repos, md, err := r.parseMetadata(toc.metaData, toc.repoMetaData)

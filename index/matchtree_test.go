@@ -434,8 +434,9 @@ func TestMetaQueryMatchTree(t *testing.T) {
 			{Name: "r3", Metadata: map[string]string{"haystack": "needle"}},
 			{Name: "r4", Metadata: map[string]string{"note": "test"}},
 		},
-		fileBranchMasks: []uint64{1, 1, 1, 1, 1}, // 5 docs
-		repos:           []uint16{0, 1, 2, 3, 4}, // map docIDs to repos
+		fileBranchMasks:   []uint64{1, 1, 1, 1, 1}, // 5 docs
+		repos:             []uint16{0, 1, 2, 3, 4}, // map docIDs to repos
+		docMatchTreeCache: newDocMatchTreeCache(1), // small cache to test eviction
 	}
 
 	q := &query.Meta{
@@ -443,7 +444,7 @@ func TestMetaQueryMatchTree(t *testing.T) {
 		Value: regexp.MustCompile("M.T"),
 	}
 
-	mt, err := d.newMatchTree(q, matchTreeOpt{docMatchTreeCacheSize: 1})
+	mt, err := d.newMatchTree(q, matchTreeOpt{})
 	if err != nil {
 		t.Fatalf("failed to build matchTree: %v", err)
 	}

@@ -23,8 +23,8 @@ type docMatchTreeCacheEntry struct {
 	value *docMatchTree
 }
 
-// newDocMatchTreeCache creates a new docMatchTreeCache. The cache size can be set
-// via the ZOEKT_DOCMATCHTREE_CACHE environment variable. If unset or invalid, defaults to 0 (disabled).
+// newDocMatchTreeCache creates a new docMatchTreeCache. The cache size can be
+// overwritten via the ZOEKT_DOCMATCHTREE_CACHE environment variable.
 func newDocMatchTreeCache(cacheSize int) *docMatchTreeCache {
 	if v := os.Getenv("ZOEKT_DOCMATCHTREE_CACHE"); cacheSize == 0 && v != "" {
 		var err error

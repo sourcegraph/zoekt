@@ -966,18 +966,11 @@ type matchTreeOpt struct {
 	// DisableWordMatchOptimization is used to disable the use of wordMatchTree.
 	// This was added since we do not support wordMatchTree with symbol search.
 	DisableWordMatchOptimization bool
-
-	// Specify max entries for the docMatchTreeCache.
-	docMatchTreeCacheSize int
 }
 
 func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error) {
 	if q == nil {
 		return nil, fmt.Errorf("got nil (sub)query")
-	}
-
-	if d.docMatchTreeCache == nil {
-		d.docMatchTreeCache = newDocMatchTreeCache(opt.docMatchTreeCacheSize)
 	}
 
 	switch s := q.(type) {
