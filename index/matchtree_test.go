@@ -376,6 +376,7 @@ func TestRepoIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	want := []uint32{2, 4, 5}
 	for i := range want {
 		nextDoc := mt.nextDoc()
@@ -433,8 +434,9 @@ func TestMetaQueryMatchTree(t *testing.T) {
 			{Name: "r3", Metadata: map[string]string{"haystack": "needle"}},
 			{Name: "r4", Metadata: map[string]string{"note": "test"}},
 		},
-		fileBranchMasks: []uint64{1, 1, 1, 1, 1}, // 5 docs
-		repos:           []uint16{0, 1, 2, 3, 4}, // map docIDs to repos
+		fileBranchMasks:   []uint64{1, 1, 1, 1, 1}, // 5 docs
+		repos:             []uint16{0, 1, 2, 3, 4}, // map docIDs to repos
+		docMatchTreeCache: newDocMatchTreeCache(1), // small cache to test eviction
 	}
 
 	q := &query.Meta{
@@ -445,6 +447,13 @@ func TestMetaQueryMatchTree(t *testing.T) {
 	mt, err := d.newMatchTree(q, matchTreeOpt{})
 	if err != nil {
 		t.Fatalf("failed to build matchTree: %v", err)
+	}
+
+	// Check that the docMatchTree cache is populated correctly
+	checksum := queryMetaChecksum("license", regexp.MustCompile("M.T"))
+	cacheKeyField := "Meta"
+	if _, ok := d.docMatchTreeCache.Get(cacheKeyField, checksum); !ok {
+		t.Errorf("expected docMatchTreeCache to be populated for key (%q, %q)", cacheKeyField, checksum)
 	}
 
 	var matched []uint32
@@ -460,5 +469,24 @@ func TestMetaQueryMatchTree(t *testing.T) {
 	want := []uint32{1} // only doc from r1 should match
 	if !reflect.DeepEqual(matched, want) {
 		t.Errorf("meta match failed: got %v, want %v", matched, want)
+	}
+}
+
+func Test_queryMetaCacheKey(t *testing.T) {
+	cases := []struct {
+		field   string
+		pattern string
+		wantKey string
+	}{
+		{"metaField", "foo.*bar", "24e88a5ffec04af0"},
+		{"metaField", "foo.*baz", "d8d6f6a7f0725b61"},
+		{"otherField", "foo.*bar", "c9d07e17c028364"},
+	}
+	for _, tc := range cases {
+		re := regexp.MustCompile(tc.pattern)
+		key := queryMetaChecksum(tc.field, re)
+		if key != tc.wantKey {
+			t.Errorf("unexpected key for field=%q pattern=%q: got %q, want %q", tc.field, tc.pattern, key, tc.wantKey)
+		}
 	}
 }
