@@ -1,26 +1,21 @@
 package index
 
 import (
-	"container/list"
 	"os"
 	"strconv"
+	"sync"
 )
 
-// docMatchTreeCache is an LRU cache for docMatchTrees.
+// docMatchTreeCache is a cache for docMatchTrees with random eviction.
 type docMatchTreeCache struct {
 	maxEntries int
-	ll         *list.List
-	cache      map[docMatchTreeCacheKey]*list.Element
+	cache      map[docMatchTreeCacheKey]*docMatchTree
+	mu         sync.RWMutex
 }
 
 type docMatchTreeCacheKey struct {
 	field string
 	value string
-}
-
-type docMatchTreeCacheEntry struct {
-	key   docMatchTreeCacheKey
-	value *docMatchTree
 }
 
 // newDocMatchTreeCache creates a new docMatchTreeCache.
@@ -36,45 +31,34 @@ func newDocMatchTreeCache(cacheSize int) *docMatchTreeCache {
 	}
 	return &docMatchTreeCache{
 		maxEntries: cacheSize,
-		ll:         list.New(),
-		cache:      make(map[docMatchTreeCacheKey]*list.Element),
+		cache:      make(map[docMatchTreeCacheKey]*docMatchTree),
 	}
 }
 
 func (c *docMatchTreeCache) Get(field, value string) (*docMatchTree, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	k := docMatchTreeCacheKey{field, value}
-	if ele, ok := c.cache[k]; ok {
-		c.ll.MoveToFront(ele)
-		return ele.Value.(*docMatchTreeCacheEntry).value, true
-	}
-	return nil, false
+	mt, ok := c.cache[k]
+	return mt, ok
 }
 
 func (c *docMatchTreeCache) Add(field, value string, mt *docMatchTree) {
 	if c.maxEntries == 0 {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	k := docMatchTreeCacheKey{field, value}
-	if ele, ok := c.cache[k]; ok {
-		c.ll.MoveToFront(ele)
-		ele.Value.(*docMatchTreeCacheEntry).value = mt
-		return
-	}
-	ele := c.ll.PushFront(&docMatchTreeCacheEntry{k, mt})
-	c.cache[k] = ele
-	if c.maxEntries != 0 && c.ll.Len() > c.maxEntries {
-		c.removeOldest()
+	c.cache[k] = mt
+	if len(c.cache) > c.maxEntries {
+		c.evictRandom()
 	}
 }
 
-func (c *docMatchTreeCache) removeOldest() {
-	if ele := c.ll.Back(); ele != nil {
-		c.removeElement(ele)
+func (c *docMatchTreeCache) evictRandom() {
+	for k := range c.cache {
+		delete(c.cache, k)
+		break
 	}
-}
-
-func (c *docMatchTreeCache) removeElement(e *list.Element) {
-	c.ll.Remove(e)
-	kv := e.Value.(*docMatchTreeCacheEntry)
-	delete(c.cache, kv.key)
 }
