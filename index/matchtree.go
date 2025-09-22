@@ -23,6 +23,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt"
@@ -971,6 +972,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 	if q == nil {
 		return nil, fmt.Errorf("got nil (sub)query")
 	}
+
 	switch s := q.(type) {
 	case *query.Regexp:
 		// RegexpToMatchTreeRecursive tries to distill a matchTree that matches a
@@ -1054,6 +1056,12 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		}, nil
 
 	case *query.Meta:
+		checksum := queryMetaChecksum(s.Field, s.Value)
+		cacheKeyField := "Meta"
+		if cached, ok := d.docMatchTreeCache.Get(cacheKeyField, checksum); ok {
+			return cached, nil
+		}
+
 		reposWant := make([]bool, len(d.repoMetaData))
 		for repoIdx, r := range d.repoMetaData {
 			if r.Metadata != nil {
@@ -1063,7 +1071,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 			}
 		}
 
-		return &docMatchTree{
+		mt := &docMatchTree{
 			reason:  "Meta",
 			numDocs: d.numDocs(),
 			predicate: func(docID uint32) bool {
@@ -1073,7 +1081,9 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 				}
 				return reposWant[repoIdx]
 			},
-		}, nil
+		}
+		d.docMatchTreeCache.Add(cacheKeyField, checksum, mt)
+		return mt, nil
 
 	case *query.Substring:
 		return d.newSubstringMatchTree(s)
@@ -1434,4 +1444,12 @@ func isRegexpAll(r *syntax.Regexp) bool {
 
 		return false
 	}
+}
+
+func queryMetaChecksum(field string, value *regexp.Regexp) string {
+	h := xxhash.New()
+	h.Write([]byte(field))
+	h.Write([]byte{':'})
+	h.Write([]byte(value.String()))
+	return fmt.Sprintf("%x", h.Sum64())
 }

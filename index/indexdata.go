@@ -103,6 +103,9 @@ type indexData struct {
 
 	// rawConfigMasks contains the encoded RawConfig for each repository
 	rawConfigMasks []uint8
+
+	// Cache for docMatchTree objects
+	docMatchTreeCache *docMatchTreeCache
 }
 
 type symbolData struct {
