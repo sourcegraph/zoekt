@@ -569,6 +569,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 // It copies the relevant logic from git.PlainOpen, and tweaks certain filesystem options.
 func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	fs := osfs.New(repoDir)
+	wt := fs
 
 	// Check if the root directory exists.
 	if _, err := fs.Stat(""); err != nil {
@@ -591,7 +592,7 @@ func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	})
 
 	// Because we're keeping descriptors open, we need to close the storage object when we're done.
-	repo, err := git.Open(s, fs)
+	repo, err := git.Open(s, wt)
 	return repo, s, err
 }
 
