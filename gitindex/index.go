@@ -831,10 +831,13 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 
 func prepareNormalBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
 	var repoCache *RepoCache
-	if options.Submodules {
+	if options.Submodules && options.RepoCacheDir != "" {
 		repoCache = NewRepoCache(options.RepoCacheDir)
 	}
+	return prepareNormalBuildRecurse(options, repository, repoCache, false)
+}
 
+func prepareNormalBuildRecurse(options Options, repository *git.Repository, repoCache *RepoCache, isSubrepo bool) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
 	// Branch => Repo => SHA1
 	branchVersions = map[string]map[string]plumbing.Hash{}
 
@@ -843,7 +846,22 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 		return nil, nil, fmt.Errorf("expandBranches: %w", err)
 	}
 
-	rw := NewRepoWalker(repository, options.BuildOptions.RepositoryDescription.URL, repoCache)
+	repoURL := options.BuildOptions.RepositoryDescription.URL
+
+	if isSubrepo {
+		cfg, err := repository.Config()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to get repository config: %w", err)
+		}
+
+		u, err := normalizeSubmoduleRemoteURL(cfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to identify subrepository URL: %w", err)
+		}
+		repoURL = u.String()
+	}
+
+	rw := NewRepoWalker(repository, repoURL, repoCache)
 	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)
 		if err != nil {
@@ -870,6 +888,47 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 		}
 
 		branchVersions[b] = subVersions
+	}
+
+	// Index submodules using go-git if we didn't do so using the repo cache
+	if options.Submodules && options.RepoCacheDir == "" {
+		worktree, err := repository.Worktree()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get repository worktree: %w", err)
+		}
+
+		submodules, err := worktree.Submodules()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get submodules: %w", err)
+		}
+
+		for _, submodule := range submodules {
+			subRepository, err := submodule.Repository()
+			if err != nil {
+				log.Printf("failed to open submodule repository: %s, %s", submodule.Config().Name, err)
+				continue
+			}
+
+			sw, subVersions, err := prepareNormalBuildRecurse(options, subRepository, repoCache, true)
+			if err != nil {
+				log.Printf("failed to index submodule repository: %s, %s", submodule.Config().Name, err)
+				continue
+			}
+
+			log.Printf("adding subrepository files from: %s", submodule.Config().Name)
+
+			for k, repo := range sw {
+				rw.Files[fileKey{
+					SubRepoPath: filepath.Join(submodule.Config().Path, k.SubRepoPath),
+					Path:        k.Path,
+					ID:          k.ID,
+				}] = repo
+			}
+
+			for k, v := range subVersions {
+				branchVersions[filepath.Join(submodule.Config().Path, k)] = v
+			}
+		}
 	}
 
 	return rw.Files, branchVersions, nil
