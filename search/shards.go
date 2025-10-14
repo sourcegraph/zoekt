@@ -817,19 +817,24 @@ func sendByRepository(result *zoekt.SearchResult, opts *zoekt.SearchOptions, sen
 	send := func(repoName string, a, b int, stats zoekt.Stats) {
 		index.SortFiles(result.Files[a:b])
 
-		// Filter RepoURLs and LineFragments to only those of repoName and its subRepositories
-		repoNames := []string{repoName}
-		for _, file := range result.Files[a:b] {
-			repoNames = append(repoNames, file.SubRepositoryName)
-		}
+		filteredRepoURLs := map[string]string{repoName: result.RepoURLs[repoName]}
+		filteredLineFragments := map[string]string{repoName: result.LineFragments[repoName]}
 
-		filteredRepoURLs := make(map[string]string)
-		filteredLineFragments := make(map[string]string)
-		for _, name := range repoNames {
-			if url, ok := result.RepoURLs[name]; ok {
+		// Filter RepoURLs and LineFragments to only those of repoName and its
+		// subRepositories if there are subRepositories
+		for _, file := range result.Files[a:b] {
+			name := file.SubRepositoryName
+			if name == "" {
+				continue
+			}
+			_, repoSet := filteredRepoURLs[name]
+			url, ok := result.RepoURLs[name]
+			if !repoSet && ok {
 				filteredRepoURLs[name] = url
 			}
-			if frag, ok := result.LineFragments[name]; ok {
+			_, fragSet := filteredLineFragments[name]
+			frag, ok := result.LineFragments[name]
+			if !fragSet && ok {
 				filteredLineFragments[name] = frag
 			}
 		}
