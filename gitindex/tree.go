@@ -24,7 +24,6 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -94,39 +93,6 @@ func (rw *RepoWalker) parseModuleMap(t *object.Tree) error {
 	return nil
 }
 
-// This attempts to get a repo URL similar to the main repository template processing as in setTemplatesFromConfig()
-func normalizeSubmoduleRemoteURL(cfg *config.Config) (*url.URL, error) {
-	sec := cfg.Raw.Section("zoekt")
-	remoteURL := sec.Options.Get("web-url")
-	if remoteURL == "" {
-		// fall back to "origin" remote
-		remoteURL = configLookupRemoteURL(cfg, "origin")
-		if remoteURL == "" {
-			return nil, fmt.Errorf("no remote URL found in git config")
-		}
-	}
-
-	if sm := sshRelativeURLRegexp.FindStringSubmatch(remoteURL); sm != nil {
-		user := sm[1]
-		host := sm[2]
-		path := sm[3]
-
-		remoteURL = fmt.Sprintf("ssh+git://%s@%s/%s", user, host, path)
-	}
-
-	u, err := url.Parse(remoteURL)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse remote URL %q: %w", remoteURL, err)
-	}
-
-	if u.Scheme == "ssh+git" {
-		u.Scheme = "https"
-		u.User = nil
-	}
-
-	return u, nil
-}
-
 // CollectFiles fetches the blob SHA1s for the tree. If repoCache is
 // non-nil, recurse into submodules. In addition, it returns a mapping
 // that indicates in which repo each SHA1 can be found.
@@ -192,14 +158,6 @@ func (rw *RepoWalker) handleSubmodule(p string, id *plumbing.Hash, branch string
 	}
 
 	subRepoVersions[p] = *id
-
-	cfg, err := subRepo.Config()
-	if err == nil {
-		subRemoteURL, err := normalizeSubmoduleRemoteURL(cfg)
-		if err == nil {
-			subURL = subRemoteURL
-		}
-	}
 
 	sw := NewRepoWalker(subRepo, subURL.String(), rw.repoCache)
 	subVersions, err := sw.CollectFiles(tree, branch, ig)

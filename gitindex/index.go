@@ -221,13 +221,11 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	}
 
 	name := sec.Options.Get("name")
+	remoteURL := configLookupRemoteURL(cfg, "origin")
+
 	if name != "" {
 		desc.Name = name
-	} else {
-		remoteURL := configLookupRemoteURL(cfg, "origin")
-		if remoteURL == "" {
-			return nil
-		}
+	} else if remoteURL != "" {
 		if sm := sshRelativeURLRegexp.FindStringSubmatch(remoteURL); sm != nil {
 			user := sm[1]
 			host := sm[2]
@@ -243,6 +241,8 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 		if err := SetTemplatesFromOrigin(desc, u); err != nil {
 			return err
 		}
+	} else {
+		desc.Name = filepath.Base(repoDir)
 	}
 
 	id, _ := strconv.ParseUint(sec.Options.Get("repoid"), 10, 32)
@@ -280,6 +280,44 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	}
 
 	return nil
+}
+
+// This attempts to get a repo URL similar to the main repository template processing as in setTemplatesFromConfig()
+func normalizeSubmoduleRemoteURL(cfg *config.Config) (string, error) {
+	sec := cfg.Raw.Section("zoekt")
+	remoteURL := sec.Options.Get("web-url")
+	if remoteURL == "" {
+		// fall back to "origin" remote
+		remoteURL = configLookupRemoteURL(cfg, "origin")
+		if remoteURL == "" {
+			return "", nil
+		}
+	}
+
+	if sm := sshRelativeURLRegexp.FindStringSubmatch(remoteURL); sm != nil {
+		user := sm[1]
+		host := sm[2]
+		path := sm[3]
+
+		remoteURL = fmt.Sprintf("ssh+git://%s@%s/%s", user, host, path)
+	}
+
+	u, err := url.Parse(remoteURL)
+	if err != nil {
+		return "", fmt.Errorf("unable to parse remote URL %q: %w", remoteURL, err)
+	}
+
+	if u.Scheme == "ssh+git" {
+		u.Scheme = "https"
+		u.User = nil
+	}
+
+	// Assume we cannot build templates for this URL, leave it empty
+	if u.Scheme == "" {
+		return "", nil
+	}
+
+	return u.String(), nil
 }
 
 // SetTemplatesFromOrigin fills in templates based on the origin URL.
@@ -495,8 +533,13 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		tpl := opts.BuildOptions.RepositoryDescription
 		if path != "" {
 			tpl = zoekt.Repository{URL: info.URL.String()}
-			if err := SetTemplatesFromOrigin(&tpl, info.URL); err != nil {
-				log.Printf("setTemplatesFromOrigin(%s, %s): %s", path, info.URL, err)
+			if info.URL.String() != "" {
+				if err := SetTemplatesFromOrigin(&tpl, info.URL); err != nil {
+					log.Printf("setTemplatesFromOrigin(%s, %s): %s", path, info.URL, err)
+				}
+			}
+			if tpl.Name == "" {
+				tpl.Name = path
 			}
 		}
 		opts.BuildOptions.SubRepositories[path] = &tpl
@@ -858,7 +901,7 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to identify subrepository URL: %w", err)
 		}
-		repoURL = u.String()
+		repoURL = u
 	}
 
 	rw := NewRepoWalker(repository, repoURL, repoCache)
