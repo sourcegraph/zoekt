@@ -268,7 +268,8 @@ func TestSubmoduleIndexWithoutRepocache(t *testing.T) {
 	indexDir := t.TempDir()
 
 	buildOpts := index.Options{
-		IndexDir: indexDir,
+		RepositoryDescription: zoekt.Repository{Name: "adir"},
+		IndexDir:              indexDir,
 	}
 	opts := Options{
 		RepoDir:      filepath.Join(dir, "adir"),

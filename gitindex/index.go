@@ -221,11 +221,13 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	}
 
 	name := sec.Options.Get("name")
-	remoteURL := configLookupRemoteURL(cfg, "origin")
-
 	if name != "" {
 		desc.Name = name
-	} else if remoteURL != "" {
+	} else {
+		remoteURL := configLookupRemoteURL(cfg, "origin")
+		if remoteURL == "" {
+			return nil
+		}
 		if sm := sshRelativeURLRegexp.FindStringSubmatch(remoteURL); sm != nil {
 			user := sm[1]
 			host := sm[2]
@@ -241,8 +243,6 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 		if err := SetTemplatesFromOrigin(desc, u); err != nil {
 			return err
 		}
-	} else {
-		desc.Name = filepath.Base(repoDir)
 	}
 
 	id, _ := strconv.ParseUint(sec.Options.Get("repoid"), 10, 32)
