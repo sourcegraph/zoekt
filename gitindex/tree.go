@@ -178,9 +178,16 @@ func (rw *RepoWalker) handleSubmodule(p string, id *plumbing.Hash, branch string
 }
 
 func (rw *RepoWalker) handleEntry(p string, e *object.TreeEntry, branch string, subRepoVersions map[string]plumbing.Hash, ig *ignore.Matcher) error {
-	if e.Mode == filemode.Submodule && rw.repoCache != nil {
-		if err := rw.tryHandleSubmodule(p, &e.Hash, branch, subRepoVersions, ig); err != nil {
-			return fmt.Errorf("submodule %s: %v", p, err)
+	if e.Mode == filemode.Submodule {
+		if rw.repoCache != nil {
+			// Index the submodule using repo cache
+			if err := rw.tryHandleSubmodule(p, &e.Hash, branch, subRepoVersions, ig); err != nil {
+				return fmt.Errorf("submodule %s: %v", p, err)
+			}
+		} else {
+			// Record the commit ID for the submodule path
+			// This will be the submodule's commit hash, not the parent's
+			subRepoVersions[p] = e.Hash
 		}
 	}
 

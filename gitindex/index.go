@@ -282,6 +282,44 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	return nil
 }
 
+// This attempts to get a repo URL similar to the main repository template processing as in setTemplatesFromConfig()
+func normalizeSubmoduleRemoteURL(cfg *config.Config) (string, error) {
+	sec := cfg.Raw.Section("zoekt")
+	remoteURL := sec.Options.Get("web-url")
+	if remoteURL == "" {
+		// fall back to "origin" remote
+		remoteURL = configLookupRemoteURL(cfg, "origin")
+		if remoteURL == "" {
+			return "", nil
+		}
+	}
+
+	if sm := sshRelativeURLRegexp.FindStringSubmatch(remoteURL); sm != nil {
+		user := sm[1]
+		host := sm[2]
+		path := sm[3]
+
+		remoteURL = fmt.Sprintf("ssh+git://%s@%s/%s", user, host, path)
+	}
+
+	u, err := url.Parse(remoteURL)
+	if err != nil {
+		return "", fmt.Errorf("unable to parse remote URL %q: %w", remoteURL, err)
+	}
+
+	if u.Scheme == "ssh+git" {
+		u.Scheme = "https"
+		u.User = nil
+	}
+
+	// Assume we cannot build templates for this URL, leave it empty
+	if u.Scheme == "" {
+		return "", nil
+	}
+
+	return u.String(), nil
+}
+
 // SetTemplatesFromOrigin fills in templates based on the origin URL.
 func SetTemplatesFromOrigin(desc *zoekt.Repository, u *url.URL) error {
 	desc.Name = filepath.Join(u.Host, strings.TrimSuffix(u.Path, ".git"))
@@ -495,8 +533,13 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		tpl := opts.BuildOptions.RepositoryDescription
 		if path != "" {
 			tpl = zoekt.Repository{URL: info.URL.String()}
-			if err := SetTemplatesFromOrigin(&tpl, info.URL); err != nil {
-				log.Printf("setTemplatesFromOrigin(%s, %s): %s", path, info.URL, err)
+			if info.URL.String() != "" {
+				if err := SetTemplatesFromOrigin(&tpl, info.URL); err != nil {
+					log.Printf("setTemplatesFromOrigin(%s, %s): %s", path, info.URL, err)
+				}
+			}
+			if tpl.Name == "" {
+				tpl.Name = path
 			}
 		}
 		opts.BuildOptions.SubRepositories[path] = &tpl
@@ -569,6 +612,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 // It copies the relevant logic from git.PlainOpen, and tweaks certain filesystem options.
 func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	fs := osfs.New(repoDir)
+	wt := fs
 
 	// Check if the root directory exists.
 	if _, err := fs.Stat(""); err != nil {
@@ -591,7 +635,7 @@ func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	})
 
 	// Because we're keeping descriptors open, we need to close the storage object when we're done.
-	repo, err := git.Open(s, fs)
+	repo, err := git.Open(s, wt)
 	return repo, s, err
 }
 
@@ -830,10 +874,13 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 
 func prepareNormalBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
 	var repoCache *RepoCache
-	if options.Submodules {
+	if options.Submodules && options.RepoCacheDir != "" {
 		repoCache = NewRepoCache(options.RepoCacheDir)
 	}
+	return prepareNormalBuildRecurse(options, repository, repoCache, false)
+}
 
+func prepareNormalBuildRecurse(options Options, repository *git.Repository, repoCache *RepoCache, isSubrepo bool) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
 	// Branch => Repo => SHA1
 	branchVersions = map[string]map[string]plumbing.Hash{}
 
@@ -842,7 +889,22 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 		return nil, nil, fmt.Errorf("expandBranches: %w", err)
 	}
 
-	rw := NewRepoWalker(repository, options.BuildOptions.RepositoryDescription.URL, repoCache)
+	repoURL := options.BuildOptions.RepositoryDescription.URL
+
+	if isSubrepo {
+		cfg, err := repository.Config()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to get repository config: %w", err)
+		}
+
+		u, err := normalizeSubmoduleRemoteURL(cfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to identify subrepository URL: %w", err)
+		}
+		repoURL = u
+	}
+
+	rw := NewRepoWalker(repository, repoURL, repoCache)
 	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)
 		if err != nil {
@@ -869,6 +931,47 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 		}
 
 		branchVersions[b] = subVersions
+	}
+
+	// Index submodules using go-git if we didn't do so using the repo cache
+	if options.Submodules && options.RepoCacheDir == "" {
+		worktree, err := repository.Worktree()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get repository worktree: %w", err)
+		}
+
+		submodules, err := worktree.Submodules()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get submodules: %w", err)
+		}
+
+		for _, submodule := range submodules {
+			subRepository, err := submodule.Repository()
+			if err != nil {
+				log.Printf("failed to open submodule repository: %s, %s", submodule.Config().Name, err)
+				continue
+			}
+
+			sw, subVersions, err := prepareNormalBuildRecurse(options, subRepository, repoCache, true)
+			if err != nil {
+				log.Printf("failed to index submodule repository: %s, %s", submodule.Config().Name, err)
+				continue
+			}
+
+			log.Printf("adding subrepository files from: %s", submodule.Config().Name)
+
+			for k, repo := range sw {
+				rw.Files[fileKey{
+					SubRepoPath: filepath.Join(submodule.Config().Path, k.SubRepoPath),
+					Path:        k.Path,
+					ID:          k.ID,
+				}] = repo
+			}
+
+			for k, v := range subVersions {
+				branchVersions[filepath.Join(submodule.Config().Path, k)] = v
+			}
+		}
 	}
 
 	return rw.Files, branchVersions, nil
