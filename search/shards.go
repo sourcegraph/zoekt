@@ -436,6 +436,22 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 				}
 				return false
 			})
+		case *query.Meta:
+			// Meta queries filter repositories based on metadata fields.
+			// By checking this at the shard level, we can skip entire shards
+			// that don't contain any matching repositories, avoiding expensive
+			// I/O operations.
+			setSize = 0 // Unknown size, we'll filter based on metadata
+			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+				if repo.Metadata == nil {
+					return false
+				}
+				v, ok := repo.Metadata[setQuery.Field]
+				if !ok {
+					return false
+				}
+				return setQuery.Value.MatchString(v)
+			})
 		default:
 			continue
 		}
@@ -486,7 +502,7 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 		// shard indexData.simplify will simplify to (and true (content baz)) ->
 		// (content baz). This work can be done now once, rather than per shard.
 		switch c := c.(type) {
-		case *query.RepoSet, *query.RepoIDs, *query.Repo:
+		case *query.RepoSet, *query.RepoIDs, *query.Repo, *query.Meta:
 			and.Children[i] = &query.Const{Value: true}
 			return filtered, query.Simplify(and)
 
