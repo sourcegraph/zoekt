@@ -89,6 +89,11 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		contentStr := string(content)
+		if strings.Contains(contentStr, "\n") {
+			// The user has to pass in the token via a file, so catch this common bug.
+			log.Fatal("Invalid token - remove the EOL from the file")
+		}
 		clientOptions = append(clientOptions, gitea.SetToken(string(content)))
 	}
 	client, err := gitea.NewClient(*giteaURL, clientOptions...)

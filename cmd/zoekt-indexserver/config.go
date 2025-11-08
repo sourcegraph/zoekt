@@ -38,6 +38,9 @@ type ConfigEntry struct {
 	GitilesURL             string
 	CGitURL                string
 	BitBucketServerURL     string
+	GiteaURL               string
+	GiteaUser              string
+	GiteaOrg               string
 	DisableTLS             bool
 	CredentialPath         string
 	ProjectType            string
@@ -54,6 +57,7 @@ type ConfigEntry struct {
 	GerritFetchMetaConfig  bool
 	GerritRepoNameFormat   string
 	ExcludeUserRepos       bool
+	Forks                  bool
 }
 
 func randomize(entries []ConfigEntry) []ConfigEntry {
@@ -200,6 +204,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			if !c.KeepDeleted {
 				cmd.Args = append(cmd.Args, "-delete")
 			}
+			if c.Forks {
+				cmd.Args = append(cmd.Args, "-forks")
+			}
 		} else if c.GitilesURL != "" {
 			cmd = exec.Command("zoekt-mirror-gitiles",
 				"-dest", repoDir, "-name", c.Name)
@@ -288,6 +295,40 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 				cmd.Args = append(cmd.Args, "-delete")
 			}
 			cmd.Args = append(cmd.Args, c.GerritApiURL)
+		} else if c.GiteaURL != "" {
+			cmd = exec.Command("zoekt-mirror-gitea", "-dest", repoDir)
+			if c.GiteaURL != "" {
+				cmd.Args = append(cmd.Args, "-url", c.GiteaURL)
+			}
+			if c.GiteaUser != "" {
+				cmd.Args = append(cmd.Args, "-user", c.GiteaUser)
+			} else if c.GiteaOrg != "" {
+				cmd.Args = append(cmd.Args, "-org", c.GiteaOrg)
+			}
+			if c.Name != "" {
+				cmd.Args = append(cmd.Args, "-name", c.Name)
+			}
+			if c.Exclude != "" {
+				cmd.Args = append(cmd.Args, "-exclude", c.Exclude)
+			}
+			if c.CredentialPath != "" {
+				cmd.Args = append(cmd.Args, "-token", c.CredentialPath)
+			}
+			for _, topic := range c.Topics {
+				cmd.Args = append(cmd.Args, "-topic", topic)
+			}
+			for _, topic := range c.ExcludeTopics {
+				cmd.Args = append(cmd.Args, "-exclude_topic", topic)
+			}
+			if c.NoArchived {
+				cmd.Args = append(cmd.Args, "-no_archived")
+			}
+			if !c.KeepDeleted {
+				cmd.Args = append(cmd.Args, "-delete")
+			}
+			if c.Forks {
+				cmd.Args = append(cmd.Args, "-forks")
+			}
 		} else {
 			log.Printf("executeMirror: ignoring config, because it does not contain any valid repository definition: %v", c)
 			continue
