@@ -89,7 +89,10 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		clientOptions = append(clientOptions, gitea.SetToken(string(content)))
+		contentStr := string(content)
+		// Editors tend to insert newlines that make the token invalid, so clean it up
+		contentStr = strings.TrimSpace(contentStr)
+		clientOptions = append(clientOptions, gitea.SetToken(contentStr))
 	}
 	client, err := gitea.NewClient(*giteaURL, clientOptions...)
 	if err != nil {
