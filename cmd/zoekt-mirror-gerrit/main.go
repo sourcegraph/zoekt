@@ -147,8 +147,6 @@ func main() {
 			projectURL = schemeInfo.URL
 			if s == "http" && schemeInfo.IsAuthRequired {
 				projectURL = addPassword(projectURL, rootURL.User)
-				// remove "/a/" prefix needed for API call with basic auth but not with git command → cleaner repo name
-				projectURL = strings.Replace(projectURL, "/a/${project}", "/${project}", 1)
 			}
 			break
 		}
