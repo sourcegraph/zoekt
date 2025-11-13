@@ -58,6 +58,7 @@ type ConfigEntry struct {
 	GerritRepoNameFormat   string
 	ExcludeUserRepos       bool
 	Forks                  bool
+	NoPrivate              bool
 }
 
 func randomize(entries []ConfigEntry) []ConfigEntry {
@@ -206,6 +207,9 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 			}
 			if c.Forks {
 				cmd.Args = append(cmd.Args, "-forks")
+			}
+			if c.NoPrivate {
+				cmd.Args = append(cmd.Args, "-no_private")
 			}
 		} else if c.GitilesURL != "" {
 			cmd = exec.Command("zoekt-mirror-gitiles",
