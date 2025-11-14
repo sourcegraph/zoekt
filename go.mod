@@ -13,8 +13,8 @@ require (
 	github.com/go-enry/go-enry/v2 v2.9.1
 	github.com/go-git/go-git/v5 v5.13.1
 	github.com/gobwas/glob v0.2.3
-	github.com/google/go-cmp v0.6.0
-	github.com/google/go-github/v27 v27.0.6
+	github.com/google/go-cmp v0.7.0
+	github.com/google/go-github/v78 v78.0.0
 	github.com/google/slothfs v0.0.0-20190717100203-59c1163fd173
 	github.com/grafana/regexp v0.0.0-20240607082908-2cb410fa05da
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
@@ -145,4 +145,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-go 1.23.4
+go 1.24.0
