@@ -30,7 +30,7 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/sourcegraph/go-ctags v0.0.0-20250729094530-349a251d78d8
 	github.com/sourcegraph/log v0.0.0-20241024013702-574f7079c888
-	github.com/sourcegraph/mountinfo v0.0.0-20240201124957-b314c0befab1
+	github.com/sourcegraph/mountinfo v0.0.0-20251117172727-e9f6a87f579c
 	github.com/stretchr/testify v1.10.0
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
