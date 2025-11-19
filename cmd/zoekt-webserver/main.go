@@ -145,6 +145,7 @@ func main() {
 
 	templateDir := flag.String("template_dir", "", "set directory from which to load custom .html.tpl template files")
 	dumpTemplates := flag.Bool("dump_templates", false, "dump templates into --template_dir and exit.")
+	corsOrigin := flag.String("cors_origin", "", "allow requests from this origin. If empty, no CORS headers are set.")
 	version := flag.Bool("version", false, "Print version number")
 
 	flag.Parse()
@@ -291,6 +292,7 @@ func main() {
 	grpcServer := newGRPCServer(logger, streamer)
 
 	handler = grpcutil.MultiplexGRPC(grpcServer, handler)
+	handler = corsHandler(handler, *corsOrigin)
 
 	srv := &http.Server{
 		Addr:    *listen,
@@ -600,6 +602,33 @@ func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts 
 	webserverv1.RegisterWebserverServiceServer(s, grpcserver.NewServer(streamer))
 
 	return s
+}
+
+func corsHandler(h http.Handler, origin string) http.Handler {
+	if origin == "" {
+		return h
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") == "" {
+			h.ServeHTTP(w, r)
+			return
+		}
+
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Add("Vary", "Origin")
+
+		if r.Method == "OPTIONS" {
+			w.Header().Set("Access-Control-Max-Age", "86400")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	})
 }
 
 var (
