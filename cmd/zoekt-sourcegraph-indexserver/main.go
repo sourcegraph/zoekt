@@ -385,7 +385,7 @@ func (s *Server) Run() {
 		// "pkill -SIGUSR1 zoekt-sourcegra"
 		for range jitterTicker(s.Interval, unix.SIGUSR1) {
 			if paused, msg := isIndexingPaused(s.IndexDir); paused {
-				infoLog.Printf(msg)
+				infoLog.Printf("%s", msg)
 				continue
 			}
 

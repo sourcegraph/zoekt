@@ -190,7 +190,7 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 	// test: send a request to the queue's debug endpoint
 	response, err := http.Get(server.URL)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatalf("%s", err.Error())
 	}
 
 	defer response.Body.Close()
