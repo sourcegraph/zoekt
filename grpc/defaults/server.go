@@ -20,10 +20,10 @@ func NewServer(logger sglog.Logger, additionalOpts ...grpc.ServerOption) *grpc.S
 	metrics := serverMetricsOnce()
 
 	opts := []grpc.ServerOption{
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainStreamInterceptor(
 			propagator.StreamServerPropagator(tenant.Propagator{}),
 			tenant.StreamServerInterceptor,
-			otelgrpc.StreamServerInterceptor(),
 			metrics.StreamServerInterceptor(),
 			messagesize.StreamServerInterceptor,
 			internalerrs.LoggingStreamServerInterceptor(logger),
@@ -31,7 +31,6 @@ func NewServer(logger sglog.Logger, additionalOpts ...grpc.ServerOption) *grpc.S
 		grpc.ChainUnaryInterceptor(
 			propagator.UnaryServerPropagator(tenant.Propagator{}),
 			tenant.UnaryServerInterceptor,
-			otelgrpc.UnaryServerInterceptor(),
 			metrics.UnaryServerInterceptor(),
 			messagesize.UnaryServerInterceptor,
 			internalerrs.LoggingUnaryServerInterceptor(logger),
