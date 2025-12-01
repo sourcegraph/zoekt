@@ -18,6 +18,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -51,6 +52,13 @@ func displayMatches(files []zoekt.FileMatch, pat string, withRepo bool, list boo
 			l := bytes.TrimSuffix(m.Line, []byte{'\n'})
 			fmt.Printf("%s%s:%d:%s%s\n", r, f.FileName, m.LineNumber, l, addTabIfNonEmpty(f.Debug))
 		}
+	}
+}
+
+func displayMatchesJSONL(files []zoekt.FileMatch) {
+	encoder := json.NewEncoder(os.Stdout)
+	for _, f := range files {
+		encoder.Encode(f)
 	}
 }
 
@@ -165,6 +173,7 @@ func main() {
 	verbose := flag.Bool("v", false, "print some background data")
 	withRepo := flag.Bool("r", false, "print the repo before the file name")
 	list := flag.Bool("l", false, "print matching filenames only")
+	jsonl := flag.Bool("jsonl", false, "print results in jsonl format")
 	sym := flag.Bool("sym", false, "do experimental symbol search")
 
 	flag.Usage = func() {
@@ -229,7 +238,12 @@ func main() {
 		sres, _ = searcher.Search(context.Background(), q, &sOpts)
 	}
 
-	displayMatches(sres.Files, pat, *withRepo, *list)
+	if *jsonl {
+		displayMatchesJSONL(sres.Files)
+	} else {
+		displayMatches(sres.Files, pat, *withRepo, *list)
+	}
+
 	if *verbose {
 		log.Printf("stats: %#v", sres.Stats)
 	}
