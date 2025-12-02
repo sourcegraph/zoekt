@@ -17,6 +17,7 @@ package zoekt // import "github.com/sourcegraph/zoekt"
 import (
 	"bytes"
 	"encoding/gob"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -386,5 +387,107 @@ func TestMonthsSince1970(t *testing.T) {
 				t.Errorf("expected %d, got %d", tt.expected, result)
 			}
 		})
+	}
+}
+
+// TestRepositoryUnmarshalJSONStackOverflowFix tests that the UnmarshalJSON method
+// for Repository doesn't cause a stack overflow due to infinite recursion.
+// This test creates a scenario that would trigger the bug where the type alias
+// was incorrectly defined as a pointer type, causing recursive calls during
+// JSON unmarshaling of nested SubRepoMap structures.
+func TestRepositoryUnmarshalJSONStackOverflowFix(t *testing.T) {
+	// Create a JSON with nested SubRepoMap containing Repository objects
+	// This specifically tests the recursive scenario that causes stack overflow
+	jsonData := `{
+		"id": 12345,
+		"name": "test-repo",
+		"url": "https://example.com/test-repo",
+		"branches": [
+			{
+				"name": "main",
+				"version": "abc123"
+			}
+		],
+		"rawconfig": {
+			"repoid": "12345"
+		},
+		"subrepomap": {
+			"submodule1": {
+				"id": 11111,
+				"name": "submodule1",
+				"url": "https://example.com/submodule1",
+				"rawconfig": {
+					"repoid": "11111"
+				},
+				"subrepomap": {
+					"nested-submodule": {
+						"id": 33333,
+						"name": "nested-submodule",
+						"rawconfig": {
+							"repoid": "33333"
+						}
+					}
+				}
+			},
+			"submodule2": {
+				"id": 22222,
+				"name": "submodule2",
+				"rawconfig": {
+					"repoid": "22222"
+				}
+			}
+		}
+	}`
+
+	// Attempt to unmarshal the JSON data into a Repository struct
+	// This would previously cause a stack overflow due to incorrect type alias
+	var repo Repository
+	err := json.Unmarshal([]byte(jsonData), &repo)
+
+	// Verify that unmarshaling succeeds without stack overflow
+	if err != nil {
+		t.Fatalf("Failed to unmarshal Repository JSON: %v", err)
+	}
+
+	// Basic verification
+	if repo.ID != 12345 {
+		t.Errorf("Expected ID 12345, got %d", repo.ID)
+	}
+
+	if repo.Name != "test-repo" {
+		t.Errorf("Expected Name 'test-repo', got '%s'", repo.Name)
+	}
+
+	// Verify nested SubRepoMap handling doesn't cause stack overflow
+	if repo.SubRepoMap == nil {
+		t.Fatalf("Expected SubRepoMap to be non-nil")
+	}
+
+	if len(repo.SubRepoMap) != 2 {
+		t.Fatalf("Expected 2 subrepos in SubRepoMap, got %d", len(repo.SubRepoMap))
+	}
+
+	// Verify nested repository unmarshaling worked correctly
+	submodule1, exists := repo.SubRepoMap["submodule1"]
+	if !exists {
+		t.Fatalf("Expected submodule1 to exist in SubRepoMap")
+	}
+
+	if submodule1.ID != 11111 {
+		t.Errorf("Expected submodule1 ID 11111, got %d", submodule1.ID)
+	}
+
+	// Verify deeply nested SubRepoMap works
+	if submodule1.SubRepoMap == nil {
+		t.Fatalf("Expected submodule1 SubRepoMap to be non-nil")
+	}
+
+	nestedSubmodule, exists := submodule1.SubRepoMap["nested-submodule"]
+	if !exists {
+		t.Fatalf("Expected nested-submodule to exist")
+	}
+
+	if nestedSubmodule.ID != 33333 {
+		t.Errorf("Expected nested-submodule ID 33333, got %d", nestedSubmodule.ID)
 	}
 }
