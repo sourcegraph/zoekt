@@ -650,8 +650,8 @@ type Repository struct {
 func (r *Repository) UnmarshalJSON(data []byte) error {
 	// We define a new type so that we can use json.Unmarshal
 	// without recursing into this same method.
-	type repository *Repository
-	repo := repository(r)
+	type repository Repository
+	repo := (*repository)(r)
 
 	err := json.Unmarshal(data, repo)
 	if err != nil {
