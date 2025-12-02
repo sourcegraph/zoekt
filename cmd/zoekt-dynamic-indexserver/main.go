@@ -30,6 +30,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -72,6 +73,10 @@ func (o *Options) createMissingDirectories() {
 type indexRequest struct {
 	CloneURL string // TODO: Decide if tokens can be in the URL or if we should pass separately
 	RepoID   uint32
+}
+
+type deleteRequest struct {
+	RepoID uint32
 }
 
 // This function is declared as var so that we can stub it in test
@@ -126,6 +131,37 @@ func indexRepository(opts Options, req indexRequest) (map[string]any, error) {
 	}
 
 	return response, nil
+}
+
+func deleteRepository(opts Options, repoID uint32) error {
+	gitRepoPath := filepath.Join(opts.repoDir, fmt.Sprintf("%d.git", repoID))
+	indexShardPrefix := fmt.Sprintf("%d_", repoID)
+
+	if err := os.RemoveAll(gitRepoPath); err != nil {
+		return fmt.Errorf("failed to delete git repo: %v", err)
+	}
+
+	files, err := os.ReadDir(opts.indexDir)
+	if err != nil {
+		return fmt.Errorf("failed to read index dir: %v", err)
+	}
+
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		if !f.Type().IsRegular() {
+			continue
+		}
+		if strings.HasPrefix(f.Name(), indexShardPrefix) {
+			err := os.Remove(filepath.Join(opts.indexDir, f.Name()))
+			if err != nil {
+				log.Printf("failed to remove index shard %s: %v", f.Name(), err)
+			}
+		}
+	}
+
+	return nil
 }
 
 type indexServer struct {
@@ -193,6 +229,31 @@ func (s *indexServer) serveTruncate(w http.ResponseWriter, r *http.Request) {
 	s.incrementRequestsTotal(r.Method, route, http.StatusOK)
 }
 
+func (s *indexServer) serveDelete(w http.ResponseWriter, r *http.Request) {
+	route := "delete"
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	var req deleteRequest
+	if err := dec.Decode(&req); err != nil {
+		log.Printf("Error decoding delete request: %v", err)
+		http.Error(w, "JSON parser error", http.StatusBadRequest)
+		return
+	}
+
+	err := deleteRepository(s.opts, req.RepoID)
+	if err != nil {
+		s.respondWithError(w, r.Method, route, err)
+		return
+	}
+
+	response := map[string]any{"Success": true}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response)
+
+	s.incrementRequestsTotal(r.Method, route, http.StatusOK)
+}
+
 func (s *indexServer) respondWithError(w http.ResponseWriter, method, route string, err error) {
 	responseCode := http.StatusInternalServerError
 
@@ -236,6 +297,7 @@ func (s *indexServer) startIndexingApi() {
 	http.HandleFunc("/metrics", s.serveMetrics)
 	http.HandleFunc("/index", s.serveIndex)
 	http.HandleFunc("/truncate", s.serveTruncate)
+	http.HandleFunc("/delete", s.serveDelete)
 
 	if err := http.ListenAndServe(s.opts.listen, nil); err != nil {
 		log.Fatal(err)
