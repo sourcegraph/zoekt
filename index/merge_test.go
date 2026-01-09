@@ -14,9 +14,14 @@ import (
 // explode(merge(shard1, shard2)). We expect the input and output shards to be
 // identical.
 func TestExplode(t *testing.T) {
-	simpleShards := []string{
+	// Use v16 source files but expect v17 output after merge+explode
+	v16Shards := []string{
 		".././testdata/shards/repo_v16.00000.zoekt",
 		".././testdata/shards/repo2_v16.00000.zoekt",
+	}
+	v17Shards := []string{
+		".././testdata/shards/repo_v17.00000.zoekt",
+		".././testdata/shards/repo2_v17.00000.zoekt",
 	}
 
 	// repo name -> IndexMetadata
@@ -24,7 +29,7 @@ func TestExplode(t *testing.T) {
 
 	// merge
 	var files []IndexFile
-	for _, fn := range simpleShards {
+	for _, fn := range v16Shards {
 		f, err := os.Open(fn)
 		if err != nil {
 			t.Fatal(err)
@@ -89,7 +94,8 @@ func TestExplode(t *testing.T) {
 		}
 	}
 
-	for _, s := range simpleShards {
+	// Compare exploded v17 shards with expected v17 golden files
+	for _, s := range v17Shards {
 		checkSameShards(t, s, filepath.Join(tmpDir, filepath.Base(s)))
 	}
 }
@@ -98,13 +104,23 @@ func TestExplode(t *testing.T) {
 // small enough to be read in all at once.
 func checkSameShards(t *testing.T, shard1, shard2 string) {
 	t.Helper()
-	b1, err := os.ReadFile(shard1)
+
+	b2, err := os.ReadFile(shard2)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	b2, err := os.ReadFile(shard2)
+	b1, err := os.ReadFile(shard1)
 	if err != nil {
+		if os.IsNotExist(err) && *update {
+			// Golden file doesn't exist, create it in update mode
+			t.Logf("creating new golden file %s", shard1)
+			err := os.WriteFile(shard1, b2, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
 		t.Fatal(err)
 	}
 

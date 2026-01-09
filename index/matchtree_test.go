@@ -290,7 +290,7 @@ func TestSymbolMatchTree(t *testing.T) {
 func TestRepoSet(t *testing.T) {
 	d := &indexData{
 		repoMetaData:    []zoekt.Repository{{Name: "r0"}, {Name: "r1"}, {Name: "r2"}, {Name: "r3"}},
-		fileBranchMasks: []uint64{1, 1, 1, 1, 1, 1},
+		fileBranchMasks: [][]byte{{0x01}, {0x01}, {0x01}, {0x01}, {0x01}, {0x01}},
 		repos:           []uint16{0, 0, 1, 2, 3, 3},
 	}
 	mt, err := d.newMatchTree(&query.RepoSet{Set: map[string]bool{"r1": true, "r3": true, "r99": true}}, matchTreeOpt{})
@@ -313,7 +313,7 @@ func TestRepoSet(t *testing.T) {
 func TestRepo(t *testing.T) {
 	d := &indexData{
 		repoMetaData:    []zoekt.Repository{{Name: "foo"}, {Name: "bar"}},
-		fileBranchMasks: []uint64{1, 1, 1, 1, 1},
+		fileBranchMasks: [][]byte{{0x01}, {0x01}, {0x01}, {0x01}, {0x01}},
 		repos:           []uint16{0, 0, 1, 0, 1},
 	}
 	mt, err := d.newMatchTree(&query.Repo{Regexp: regexp.MustCompile("ar")}, matchTreeOpt{})
@@ -336,12 +336,14 @@ func TestRepo(t *testing.T) {
 func TestBranchesRepos(t *testing.T) {
 	d := &indexData{
 		repoMetaData: []zoekt.Repository{
-			{ID: hash("foo"), Name: "foo"},
-			{ID: hash("bar"), Name: "bar"},
+			{ID: hash("foo"), Name: "foo", Branches: []zoekt.RepositoryBranch{{Name: "HEAD"}}},
+			{ID: hash("bar"), Name: "bar", Branches: []zoekt.RepositoryBranch{{Name: "HEAD"}, {Name: "b1"}}},
 		},
-		fileBranchMasks: []uint64{1, 1, 1, 2, 1, 2, 1},
-		repos:           []uint16{0, 0, 1, 1, 1, 1, 1},
-		branchIDs:       []map[string]uint{{"HEAD": 1}, {"HEAD": 1, "b1": 2}},
+		fileBranchMasks: [][]byte{
+			{0x01}, {0x01}, {0x01}, {0x02}, {0x01}, {0x02}, {0x01},
+		},
+		repos:     []uint16{0, 0, 1, 1, 1, 1, 1},
+		branchIDs: []map[string]int{{"HEAD": 0}, {"HEAD": 0, "b1": 1}},
 	}
 
 	mt, err := d.newMatchTree(&query.BranchesRepos{List: []query.BranchRepos{
@@ -369,7 +371,7 @@ func TestBranchesRepos(t *testing.T) {
 func TestRepoIDs(t *testing.T) {
 	d := &indexData{
 		repoMetaData:    []zoekt.Repository{{Name: "r0", ID: 0}, {Name: "r1", ID: 1}, {Name: "r2", ID: 2}, {Name: "r3", ID: 3}},
-		fileBranchMasks: []uint64{1, 1, 1, 1, 1, 1},
+		fileBranchMasks: [][]byte{{0x01}, {0x01}, {0x01}, {0x01}, {0x01}, {0x01}},
 		repos:           []uint16{0, 0, 1, 2, 3, 3},
 	}
 	mt, err := d.newMatchTree(&query.RepoIDs{Repos: roaring.BitmapOf(1, 3, 99)}, matchTreeOpt{})
@@ -434,9 +436,9 @@ func TestMetaQueryMatchTree(t *testing.T) {
 			{Name: "r3", Metadata: map[string]string{"haystack": "needle"}},
 			{Name: "r4", Metadata: map[string]string{"note": "test"}},
 		},
-		fileBranchMasks:   []uint64{1, 1, 1, 1, 1}, // 5 docs
-		repos:             []uint16{0, 1, 2, 3, 4}, // map docIDs to repos
-		docMatchTreeCache: newDocMatchTreeCache(1), // small cache to test eviction
+		fileBranchMasks:   [][]byte{{0x01}, {0x01}, {0x01}, {0x01}, {0x01}}, // 5 docs
+		repos:             []uint16{0, 1, 2, 3, 4},                          // map docIDs to repos
+		docMatchTreeCache: newDocMatchTreeCache(1),                          // small cache to test eviction
 	}
 
 	q := &query.Meta{

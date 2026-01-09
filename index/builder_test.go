@@ -24,8 +24,8 @@ import (
 
 var update = flag.Bool("update", false, "update golden file")
 
-// ensure we don't regress on how we build v16
-func TestBuildv16(t *testing.T) {
+// ensure we don't regress on how we build v17
+func TestBuildv17(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := Options{
@@ -54,11 +54,16 @@ func TestBuildv16(t *testing.T) {
 		}
 	}
 
-	wantP := filepath.Join("../testdata/shards", "repo_v16.00000.zoekt")
+	wantP := filepath.Join("../testdata/shards", "repo_v17.00000.zoekt")
 
 	// fields indexTime and id depend on time. For this test, we copy the fields from
-	// the old shard.
-	_, wantMetadata, err := ReadMetadataPath(wantP)
+	// the golden shard if it exists, otherwise use the v16 shard for initial generation.
+	goldenPath := wantP
+	if _, err := os.Stat(goldenPath); os.IsNotExist(err) {
+		// If v17 golden file doesn't exist yet, use v16 for initial metadata
+		goldenPath = filepath.Join("../testdata/shards", "repo_v16.00000.zoekt")
+	}
+	_, wantMetadata, err := ReadMetadataPath(goldenPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +74,7 @@ func TestBuildv16(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gotP := filepath.Join(dir, "repo_v16.00000.zoekt")
+	gotP := filepath.Join(dir, "repo_v17.00000.zoekt")
 
 	if *update {
 		data, err := os.ReadFile(gotP)
@@ -176,8 +181,8 @@ func TestIncrementalSkipIndexing(t *testing.T) {
 			DisableCTags: true,
 		},
 	}, {
-		name: "v16-noop",
-		want: true,
+		name: "v17-noop",
+		want: true, // v17 format is current, can skip re-indexing
 		opts: Options{
 			RepositoryDescription: zoekt.Repository{
 				Name: "repo",
@@ -735,7 +740,7 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 			for _, s := range shards {
 				repositories, _, err := ReadMetadataPathAlive(s)
 				if err != nil {
-					t.Fatalf("reading repository metadata from shard %q", s)
+					t.Fatalf("reading repository metadata from shard %q: %v", s, err)
 				}
 
 				var foundRepository *zoekt.Repository

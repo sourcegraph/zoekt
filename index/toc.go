@@ -28,7 +28,8 @@ package index
 // 14: languages
 // 15: rune based symbol sections
 // 16: ctags metadata
-const IndexFormatVersion = 16
+// 17: compound shards (multi repo) + variable-length branch masks
+const IndexFormatVersion = 17
 
 // FeatureVersion is increased if a feature is added that requires reindexing data
 // without changing the format version
@@ -65,8 +66,8 @@ const WriteMinFeatureVersion = 10
 // load a file with a FeatureVersion below it.
 const ReadMinFeatureVersion = 8
 
-// 17: compound shard (multi repo)
-const NextIndexFormatVersion = 17
+// 18: future format (placeholder for next version)
+const NextIndexFormatVersion = 18
 
 type indexTOC struct {
 	fileContents compoundSection
@@ -85,8 +86,9 @@ type indexTOC struct {
 	symbolKindMap  compoundSection
 	symbolMetaData simpleSection
 
-	branchMasks simpleSection
-	subRepos    simpleSection
+	branchMasks       compoundSection
+	branchMasksSimple simpleSection // For backward compatibility with v16-17
+	subRepos          simpleSection
 
 	nameNgramText    simpleSection
 	namePostings     compoundSection
@@ -123,7 +125,7 @@ func (t *indexTOC) sections() []section {
 		&t.postings,
 		&t.nameNgramText,
 		&t.namePostings,
-		&t.branchMasks,
+		&t.branchMasksSimple, // Old format used simpleSection
 		&t.subRepos,
 		&t.runeOffsets,
 		&t.nameRuneOffsets,
@@ -152,6 +154,8 @@ func (t *indexTOC) sectionsTagged() map[string]section {
 	for _, ent := range t.sectionsTaggedCompatibilityList() {
 		out[ent.tag] = ent.sec
 	}
+	// Special alias for backward compatibility: allow reading old simpleSection branchMasks
+	out["branchMasks-compat-simple"] = &t.branchMasksSimple
 	return out
 }
 

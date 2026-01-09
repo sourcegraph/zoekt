@@ -130,20 +130,33 @@ func (r *reader) readTOCSections(toc *indexTOC, tags []string) error {
 			skipSection := len(tags) > 0 && !slices.Contains(tags, tag)
 			sec := secs[tag]
 			if sec == nil || sec.kind() != sectionKind(kind) {
-				// If we don't recognize the section, we may be reading a newer index than the current version. Use
-				// a "dummy section" struct to skip over it.
-				skipSection = true
-				log.Printf("encountered unrecognized index section (%s), skipping over it", tag)
+				// Special case: branchMasks changed from simpleSection (v16-17) to compoundSection (v18+)
+				// If we encounter a simple branchMasks, read it into branchMasksSimple for backward compat
+				if tag == "branchMasks" && sectionKind(kind) == sectionKindSimple {
+					if compat := secs["branchMasks-compat-simple"]; compat != nil {
+						sec = compat
+						skipSection = false
+					} else {
+						// Fallback: create a temporary simple section to read it
+						sec = &simpleSection{}
+						skipSection = false
+					}
+				} else {
+					// If we don't recognize the section, we may be reading a newer index than the current version. Use
+					// a "dummy section" struct to skip over it.
+					skipSection = true
+					log.Printf("encountered unrecognized index section (%s), skipping over it", tag)
 
-				switch sectionKind(kind) {
-				case sectionKindSimple:
-					sec = &simpleSection{}
-				case sectionKindCompound:
-					sec = &compoundSection{}
-				case sectionKindCompoundLazy:
-					sec = &lazyCompoundSection{}
-				default:
-					return fmt.Errorf("unknown section kind %d", kind)
+					switch sectionKind(kind) {
+					case sectionKindSimple:
+						sec = &simpleSection{}
+					case sectionKindCompound:
+						sec = &compoundSection{}
+					case sectionKindCompoundLazy:
+						sec = &lazyCompoundSection{}
+					default:
+						return fmt.Errorf("unknown section kind %d", kind)
+					}
 				}
 			}
 
@@ -248,15 +261,15 @@ func (r *reader) readJSON(data any, sec simpleSection) error {
 // canReadVersion returns checks if zoekt can read in md. If it can't a
 // non-nil error is returned.
 func canReadVersion(md *zoekt.IndexMetadata) bool {
-	// Backwards compatible with v16
-	return md.IndexFormatVersion == IndexFormatVersion || md.IndexFormatVersion == NextIndexFormatVersion
+	// Backwards compatible with v16 and v17
+	return md.IndexFormatVersion >= 16 && md.IndexFormatVersion <= IndexFormatVersion
 }
 
 func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	d := indexData{
 		file:        r.r,
-		branchIDs:   []map[string]uint{},
-		branchNames: []map[uint]string{},
+		branchIDs:   []map[string]int{},
+		branchNames: []map[int]string{},
 
 		// docMatchTreeCache is disabled by default.
 		// The number of max entries can be set with environment variable ZOEKT_DOCMATCHTREE_CACHE
@@ -330,9 +343,42 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	d.fileBranchMasks, err = readSectionU64(d.file, toc.branchMasks)
-	if err != nil {
-		return nil, err
+	// Read branch masks - format depends on version
+	if toc.branchMasks.data.sz > 0 {
+		// New format (v17+): variable-length byte arrays in compound section
+		branchMasksIndex := toc.branchMasks.relativeIndex()
+		numDocs := len(branchMasksIndex) - 1
+		d.fileBranchMasks = make([][]byte, numDocs)
+		for i := 0; i < numDocs; i++ {
+			maskOff := branchMasksIndex[i]
+			maskSz := branchMasksIndex[i+1] - maskOff
+			if maskSz > 0 {
+				d.fileBranchMasks[i], err = d.file.Read(toc.branchMasks.data.off+maskOff, maskSz)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				d.fileBranchMasks[i] = []byte{}
+			}
+		}
+	} else if toc.branchMasksSimple.sz > 0 {
+		// Old format (v16): uint64 array in simple section
+		// We need to convert uint64 masks to byte arrays
+		oldMasks, err := readSectionU64(d.file, toc.branchMasksSimple)
+		if err != nil {
+			return nil, err
+		}
+		d.fileBranchMasks = make([][]byte, len(oldMasks))
+		for i, mask := range oldMasks {
+			// Convert uint64 to byte array (8 bytes, little-endian to match bit positions)
+			d.fileBranchMasks[i] = make([]byte, 8)
+			for j := 0; j < 8; j++ {
+				d.fileBranchMasks[i][j] = byte(mask >> (8 * j))
+			}
+		}
+	} else {
+		// No branch masks section (shouldn't happen in valid indexes)
+		d.fileBranchMasks = [][]byte{}
 	}
 
 	d.fileNameContent, err = d.readSectionBlob(toc.fileNames.data)
@@ -348,12 +394,11 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	}
 
 	for _, md := range d.repoMetaData {
-		repoBranchIDs := make(map[string]uint, len(md.Branches))
-		repoBranchNames := make(map[uint]string, len(md.Branches))
+		repoBranchIDs := make(map[string]int, len(md.Branches))
+		repoBranchNames := make(map[int]string, len(md.Branches))
 		for j, br := range md.Branches {
-			id := uint(1) << uint(j)
-			repoBranchIDs[br.Name] = id
-			repoBranchNames[id] = br.Name
+			repoBranchIDs[br.Name] = j
+			repoBranchNames[j] = br.Name
 		}
 		d.branchIDs = append(d.branchIDs, repoBranchIDs)
 		d.branchNames = append(d.branchNames, repoBranchNames)
@@ -440,6 +485,7 @@ func (r *reader) parseMetadata(metaData simpleSection, repoMetaData simpleSectio
 		return nil, &md, fmt.Errorf("failed to read meta file: %w", err)
 	}
 
+	fromMetaFile := len(blob) > 0
 	if len(blob) == 0 {
 		blob, err = r.r.Read(repoMetaData.off, repoMetaData.sz)
 		if err != nil {
@@ -448,9 +494,24 @@ func (r *reader) parseMetadata(metaData simpleSection, repoMetaData simpleSectio
 	}
 
 	var repos []*zoekt.Repository
+	// Repository metadata format:
+	// - v16: single repository object
+	// - v17+: array of repositories (for compound shards) OR single repository (for delta .meta files)
+	//
+	// For v17+ shards with .meta files, we need to handle both array and single object formats
+	// because different code paths write different formats (mergeMeta writes array, delta builds write single object)
 	if md.IndexFormatVersion >= 17 {
+		// Try array format first
 		if err := json.Unmarshal(blob, &repos); err != nil {
-			return nil, &md, err
+			// If that fails and we're reading from .meta file, try single repository format
+			if fromMetaFile {
+				repos = make([]*zoekt.Repository, 1)
+				if err := json.Unmarshal(blob, &repos[0]); err != nil {
+					return nil, &md, err
+				}
+			} else {
+				return nil, &md, err
+			}
 		}
 	} else {
 		repos = make([]*zoekt.Repository, 1)

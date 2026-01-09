@@ -366,7 +366,10 @@ var readVersions = []struct {
 	IndexFormatVersion: IndexFormatVersion,
 	FeatureVersion:     FeatureVersion,
 }, {
-	IndexFormatVersion: NextIndexFormatVersion,
+	IndexFormatVersion: 17, // Support reading v17 compound shards
+	FeatureVersion:     FeatureVersion,
+}, {
+	IndexFormatVersion: 16, // Support reading v16 simple shards
 	FeatureVersion:     FeatureVersion,
 }}
 

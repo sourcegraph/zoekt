@@ -186,7 +186,7 @@ type ShardBuilder struct {
 
 	checksums []byte
 
-	branchMasks []uint64
+	branchMasks [][]byte
 	subRepos    []uint32
 
 	// docID => repoID
@@ -299,10 +299,6 @@ func newShardBuilder() *ShardBuilder {
 func (b *ShardBuilder) setRepository(desc *zoekt.Repository) error {
 	if err := verify(desc); err != nil {
 		return err
-	}
-
-	if len(desc.Branches) > 64 {
-		return fmt.Errorf("too many branches")
 	}
 
 	repo := *desc
@@ -469,13 +465,14 @@ func (b *ShardBuilder) Add(doc Document) error {
 		return fmt.Errorf("unknown subrepo path %q", doc.SubRepositoryPath)
 	}
 
-	var mask uint64
+	repo := &b.repoList[len(b.repoList)-1]
+	mask := newBranchMask(len(repo.Branches))
 	for _, br := range doc.Branches {
-		m := b.branchMask(br)
-		if m == 0 {
+		bit := b.branchBit(br)
+		if bit < 0 {
 			return fmt.Errorf("no branch found for %s", br)
 		}
-		mask |= m
+		setBit(mask, bit)
 	}
 
 	if repoIdx > 1<<16 {
@@ -516,13 +513,13 @@ func (b *ShardBuilder) Add(doc Document) error {
 	return nil
 }
 
-func (b *ShardBuilder) branchMask(br string) uint64 {
+func (b *ShardBuilder) branchBit(br string) int {
 	for i, b := range b.repoList[len(b.repoList)-1].Branches {
 		if b.Name == br {
-			return uint64(1) << uint(i)
+			return i
 		}
 	}
-	return 0
+	return -1
 }
 
 // repoIDs returns a list of sourcegraph IDs for the indexed repos. If the ID

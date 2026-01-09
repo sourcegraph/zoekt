@@ -42,7 +42,7 @@ func Merge(dstDir string, files ...IndexFile) (tmpName, dstName string, _ error)
 		}
 	}
 
-	dstName = filepath.Join(dstDir, fmt.Sprintf("compound-%x_v%d.%05d.zoekt", hasher.Sum(nil), NextIndexFormatVersion, 0))
+	dstName = filepath.Join(dstDir, fmt.Sprintf("compound-%x_v%d.%05d.zoekt", hasher.Sum(nil), IndexFormatVersion, 0))
 	tmpName = dstName + ".tmp"
 	if err := builderWriteAll(tmpName, ib); err != nil {
 		return "", "", err
@@ -99,7 +99,8 @@ func merge(ds ...*indexData) (*ShardBuilder, error) {
 	})
 
 	sb := newShardBuilder()
-	sb.indexFormatVersion = NextIndexFormatVersion
+	// Use current format version (17) for merged/compound shards
+	sb.indexFormatVersion = IndexFormatVersion
 
 	for _, d := range ds {
 		lastRepoID := -1
@@ -295,14 +296,9 @@ func addDocument(d *indexData, ib *ShardBuilder, repoID int, docID uint32) error
 	// calculate branches
 	{
 		mask := d.fileBranchMasks[docID]
-		id := uint32(1)
-		for mask != 0 {
-			if mask&0x1 != 0 {
-				doc.Branches = append(doc.Branches, d.branchNames[repoID][uint(id)])
-			}
-			id <<= 1
-			mask >>= 1
-		}
+		iterateBits(mask, func(bit int) {
+			doc.Branches = append(doc.Branches, d.branchNames[repoID][bit])
+		})
 	}
 	return ib.Add(doc)
 }
