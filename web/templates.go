@@ -213,7 +213,7 @@ document.onkeydown=function(e){
 <title>Results for {{.QueryStr}}</title>
 <script>
   function zoektAddQ(atom) {
-      window.location.href = "/search?q=" + escape("{{.QueryStr}}" + " " + atom) +
+      window.location.href = "/search?q=" + encodeURIComponent("{{.QueryStr}}" + " " + atom) +
 	  "&" + "num=" + {{.Last.Num}};
   }
 </script>
