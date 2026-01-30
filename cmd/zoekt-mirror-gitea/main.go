@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Command zoekt-mirror-gerrit fetches all repos of a gitea user or organization
+// Command zoekt-mirror-gitea fetches all repos of a gitea user or organization
 // and clones them. It is strongly recommended to get a personal API token from
 // https://gitea.com/user/settings/applications, save the token in a file, and point
 // the --token option to it.
