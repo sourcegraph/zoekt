@@ -59,6 +59,11 @@ type ConfigEntry struct {
 	ExcludeUserRepos       bool
 	Forks                  bool
 	Visibility             []string
+
+	// Branches is a comma-separated list of branches to index, with support
+	// for wildcards (e.g. "main,release-*"). Defaults to HEAD if unset.
+	Branches     string
+	BranchPrefix string
 }
 
 func randomize(entries []ConfigEntry) []ConfigEntry {
@@ -336,6 +341,13 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 		} else {
 			log.Printf("executeMirror: ignoring config, because it does not contain any valid repository definition: %v", c)
 			continue
+		}
+
+		if c.Branches != "" {
+			cmd.Args = append(cmd.Args, "-branches", c.Branches)
+		}
+		if c.BranchPrefix != "" {
+			cmd.Args = append(cmd.Args, "-branch-prefix", c.BranchPrefix)
 		}
 
 		stdout, _ := loggedRun(cmd)

@@ -53,6 +53,8 @@ func main() {
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	lastActivityAfter := flag.String("last_activity_after", "", "only mirror repos that have been active since this date (format: 2006-01-02).")
 	noArchived := flag.Bool("no_archived", false, "mirror only projects that are not archived")
+	branches := flag.String("branches", "", "comma-separated list of branches to index (e.g. \"main,release-*\"). Defaults to HEAD if unset.")
+	branchPrefix := flag.String("branch-prefix", "", "prefix for branch names (e.g. \"refs/tags/\" to index tags). Defaults to \"refs/heads/\".")
 
 	flag.Parse()
 
@@ -149,7 +151,7 @@ func main() {
 		}
 		gitlabProjects = trimmed
 	}
-	fetchProjects(destDir, apiToken, gitlabProjects)
+	fetchProjects(destDir, apiToken, gitlabProjects, *branches, *branchPrefix)
 
 	if *deleteRepos {
 		if err := deleteStaleProjects(*dest, filter, gitlabProjects); err != nil {
@@ -181,7 +183,7 @@ func deleteStaleProjects(destDir string, filter *gitindex.Filter, projects []*gi
 	return nil
 }
 
-func fetchProjects(destDir, token string, projects []*gitlab.Project) {
+func fetchProjects(destDir, token string, projects []*gitlab.Project, branches string, branchPrefix string) {
 	for _, p := range projects {
 		u, err := url.Parse(p.HTTPURLToRepo)
 		if err != nil {
@@ -199,6 +201,12 @@ func fetchProjects(destDir, token string, projects []*gitlab.Project) {
 			"zoekt.archived": marshalBool(p.Archived),
 			"zoekt.fork":     marshalBool(p.ForkedFromProject != nil),
 			"zoekt.public":   marshalBool(p.Visibility == gitlab.PublicVisibility),
+		}
+		if branches != "" {
+			config["zoekt.branches-to-index"] = branches
+		}
+		if branchPrefix != "" {
+			config["zoekt.branch-prefix"] = branchPrefix
 		}
 
 		cloneURL := p.HTTPURLToRepo
