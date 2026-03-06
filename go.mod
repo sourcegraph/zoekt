@@ -3,6 +3,7 @@ module github.com/sourcegraph/zoekt
 require (
 	cloud.google.com/go/profiler v0.4.2
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24
+	github.com/edsrzf/mmap-go v1.2.0
 	github.com/RoaringBitmap/roaring v1.9.4
 	github.com/andygrunwald/go-gerrit v1.0.0
 	github.com/bmatcuk/doublestar v1.3.4
