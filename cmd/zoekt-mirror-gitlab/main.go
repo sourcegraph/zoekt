@@ -193,8 +193,8 @@ func fetchProjects(destDir, token string, projects []*gitlab.Project) {
 			"zoekt.web-url":      p.WebURL,
 			"zoekt.name":         filepath.Join(u.Hostname(), p.PathWithNamespace),
 
-			"zoekt.gitlab-stars": strconv.Itoa(p.StarCount),
-			"zoekt.gitlab-forks": strconv.Itoa(p.ForksCount),
+			"zoekt.gitlab-stars": strconv.FormatInt(p.StarCount, 10),
+			"zoekt.gitlab-forks": strconv.FormatInt(p.ForksCount, 10),
 
 			"zoekt.archived": marshalBool(p.Archived),
 			"zoekt.fork":     marshalBool(p.ForkedFromProject != nil),
