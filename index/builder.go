@@ -61,6 +61,9 @@ type Options struct {
 	// IndexDir is a directory that holds *.zoekt index files.
 	IndexDir string
 
+	// ShardPrefixOverride sets the prefix for shards name
+	ShardPrefixOverride string
+
 	// SizeMax is the maximum file size
 	SizeMax int
 
@@ -182,6 +185,7 @@ func (o *Options) Flags(fs *flag.FlagSet) {
 	fs.IntVar(&o.ShardMax, "shard_limit", x.ShardMax, "maximum corpus size for a shard")
 	fs.IntVar(&o.Parallelism, "parallelism", x.Parallelism, "maximum number of parallel indexing processes.")
 	fs.StringVar(&o.IndexDir, "index", x.IndexDir, "directory for search indices")
+	fs.StringVar(&o.ShardPrefixOverride, "shard_prefix_override", x.ShardPrefixOverride, "prefix for shard name")
 	fs.BoolVar(&o.CTagsMustSucceed, "require_ctags", x.CTagsMustSucceed, "If set, ctags calls must succeed.")
 	fs.Var(largeFilesFlag{o}, "large_file", "A glob pattern where matching files are to be index regardless of their size. You can add multiple patterns by setting this more than once.")
 
@@ -212,6 +216,10 @@ func (o *Options) Args() []string {
 
 	if o.IndexDir != "" {
 		args = append(args, "-index", o.IndexDir)
+	}
+
+	if o.ShardPrefixOverride != "" {
+		args = append(args, "-shard_prefix_override", o.ShardPrefixOverride)
 	}
 
 	if o.CTagsMustSucceed {
@@ -334,14 +342,16 @@ func (o *Options) shardName(n int) string {
 }
 
 func (o *Options) shardNameVersion(version, n int) string {
-	var prefix string
+	prefix := o.ShardPrefixOverride // ShardPrefixOverride takes precedence to support custom shard naming strategies
 
-	// Sourcegraph specific: We use IDs in shard names on multi-tenant
-	// instances to prevent conflicts.
-	if tenant.UseIDBasedShardNames() {
-		prefix = fmt.Sprintf("%09d_%09d", o.RepositoryDescription.TenantID, o.RepositoryDescription.ID)
-	} else {
-		prefix = o.RepositoryDescription.Name
+	if prefix == "" {
+		// Sourcegraph specific: We use IDs in shard names on multi-tenant
+		// instances to prevent conflicts.
+		if tenant.UseIDBasedShardNames() {
+			prefix = fmt.Sprintf("%09d_%09d", o.RepositoryDescription.TenantID, o.RepositoryDescription.ID)
+		} else {
+			prefix = o.RepositoryDescription.Name
+		}
 	}
 
 	return shardName(o.IndexDir, prefix, version, n)
