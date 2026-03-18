@@ -99,9 +99,14 @@ func TestDirWatcherUnloadOnce(t *testing.T) {
 
 	dw.Stop()
 
+	// fsnotify can produce multiple events for a single write, which can lead to
+	// extra queued load notifications by the time we stop. Drain them and only
+	// assert we don't drop the same shard again.
+	for len(logger.loads) > 0 {
+		<-logger.loads
+	}
+
 	select {
-	case k := <-logger.loads:
-		t.Errorf("spurious load of %q", k)
 	case k := <-logger.drops:
 		t.Errorf("spurious drops of %q", k)
 	default:
