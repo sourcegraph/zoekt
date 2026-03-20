@@ -112,6 +112,7 @@ func TestParseQuery(t *testing.T) {
 		// type
 		{"type:repo abc", &Type{Type: TypeRepo, Child: &Substring{Pattern: "abc"}}},
 		{"type:file abc def", &Type{Type: TypeFileName, Child: NewAnd(&Substring{Pattern: "abc"}, &Substring{Pattern: "def"})}},
+		{"type:repo foo or bar", &Type{Type: TypeRepo, Child: NewOr(&Substring{Pattern: "foo"}, &Substring{Pattern: "bar"})}},
 		{"(type:repo abc) def", NewAnd(&Type{Type: TypeRepo, Child: &Substring{Pattern: "abc"}}, &Substring{Pattern: "def"})},
 
 		// errors.
@@ -124,6 +125,8 @@ func TestParseQuery(t *testing.T) {
 		{"abc or", nil},
 		{"or abc", nil},
 		{"def or or abc", nil},
+		{"type:repo or", nil},
+		{"or type:repo", nil},
 
 		// unbalanced parentheses
 		{"(", nil},
