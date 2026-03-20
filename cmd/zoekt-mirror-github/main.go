@@ -292,11 +292,10 @@ func getUserRepos(client *github.Client, user string, reposFilters reposFilters)
 	return allRepos, nil
 }
 
-func itoa(p *int) string {
-	if p != nil {
-		return strconv.Itoa(*p)
+func setOptionalIntConfig(config map[string]string, key string, value *int) {
+	if value != nil {
+		config[key] = strconv.Itoa(*value)
 	}
-	return ""
 }
 
 func cloneRepos(destDir string, repos []*github.Repository) error {
@@ -311,15 +310,15 @@ func cloneRepos(destDir string, repos []*github.Repository) error {
 			"zoekt.web-url":      *r.HTMLURL,
 			"zoekt.name":         filepath.Join(host.Hostname(), *r.FullName),
 
-			"zoekt.github-stars":       itoa(r.StargazersCount),
-			"zoekt.github-watchers":    itoa(r.WatchersCount),
-			"zoekt.github-subscribers": itoa(r.SubscribersCount),
-			"zoekt.github-forks":       itoa(r.ForksCount),
-
 			"zoekt.archived": marshalBool(r.Archived != nil && *r.Archived),
 			"zoekt.fork":     marshalBool(r.Fork != nil && *r.Fork),
 			"zoekt.public":   marshalBool(r.Private == nil || !*r.Private),
 		}
+		setOptionalIntConfig(config, "zoekt.github-stars", r.StargazersCount)
+		setOptionalIntConfig(config, "zoekt.github-watchers", r.WatchersCount)
+		setOptionalIntConfig(config, "zoekt.github-subscribers", r.SubscribersCount)
+		setOptionalIntConfig(config, "zoekt.github-forks", r.ForksCount)
+
 		dest, err := gitindex.CloneRepo(destDir, *r.FullName, *r.CloneURL, config)
 		if err != nil {
 			return err
