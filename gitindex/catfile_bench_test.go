@@ -107,10 +107,10 @@ func BenchmarkBlobRead_GoGit(b *testing.B) {
 	}
 }
 
-// BenchmarkBlobRead_CatfilePipelined measures the pipelined approach:
-// all SHAs written to stdin at once via --buffer, then all responses read.
+// BenchmarkBlobRead_CatfileReader measures the streaming catfileReader approach:
+// all SHAs written to stdin at once via --buffer, responses read one at a time.
 // This is the production path used by indexGitRepo.
-func BenchmarkBlobRead_CatfilePipelined(b *testing.B) {
+func BenchmarkBlobRead_CatfileReader(b *testing.B) {
 	repoDir := requireBenchGitRepo(b)
 	files, gitDir := collectBlobKeys(b, repoDir)
 	keys := sortedBlobKeys(files)
@@ -130,16 +130,27 @@ func BenchmarkBlobRead_CatfilePipelined(b *testing.B) {
 			var totalBytes int64
 			for b.Loop() {
 				totalBytes = 0
-				results, err := readBlobsPipelined(gitDir, subset)
+				cr, err := newCatfileReader(gitDir, subset)
 				if err != nil {
-					b.Fatalf("readBlobsPipelined: %v", err)
+					b.Fatalf("newCatfileReader: %v", err)
 				}
-				for _, r := range results {
-					if r.Err != nil {
-						b.Fatalf("blob %s: %v", r.ID, r.Err)
+				for range subset {
+					size, missing, err := cr.Next()
+					if err != nil {
+						cr.Close()
+						b.Fatalf("Next: %v", err)
 					}
-					totalBytes += int64(len(r.Content))
+					if missing {
+						continue
+					}
+					content := make([]byte, size)
+					if _, err := io.ReadFull(cr, content); err != nil {
+						cr.Close()
+						b.Fatalf("ReadFull: %v", err)
+					}
+					totalBytes += int64(len(content))
 				}
+				cr.Close()
 			}
 			b.ReportMetric(float64(totalBytes), "content-bytes/op")
 			b.ReportMetric(float64(len(subset)), "files/op")

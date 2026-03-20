@@ -1,6 +1,7 @@
 package gitindex
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,7 +60,7 @@ git commit -m "initial"
 	return repoDir, blobs
 }
 
-func TestReadBlobsPipelined(t *testing.T) {
+func TestCatfileReader(t *testing.T) {
 	repoDir, blobs := createTestRepo(t)
 
 	ids := []plumbing.Hash{
@@ -69,49 +70,118 @@ func TestReadBlobsPipelined(t *testing.T) {
 		blobs["large.bin"],
 	}
 
-	results, err := readBlobsPipelined(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids)
 	if err != nil {
-		t.Fatalf("readBlobsPipelined: %v", err)
+		t.Fatalf("newCatfileReader: %v", err)
 	}
-
-	if len(results) != 4 {
-		t.Fatalf("got %d results, want 4", len(results))
-	}
+	defer cr.Close()
 
 	// hello.txt
-	if results[0].Err != nil {
-		t.Fatalf("hello.txt err: %v", results[0].Err)
+	size, missing, err := cr.Next()
+	if err != nil {
+		t.Fatalf("Next hello.txt: %v", err)
 	}
-	if string(results[0].Content) != "hello world\n" {
-		t.Errorf("hello.txt = %q", results[0].Content)
+	if missing {
+		t.Fatal("hello.txt unexpectedly missing")
+	}
+	if size != 12 {
+		t.Errorf("hello.txt size = %d, want 12", size)
+	}
+	content := make([]byte, size)
+	if _, err := io.ReadFull(cr, content); err != nil {
+		t.Fatalf("ReadFull hello.txt: %v", err)
+	}
+	if string(content) != "hello world\n" {
+		t.Errorf("hello.txt content = %q", content)
 	}
 
 	// empty.txt
-	if results[1].Err != nil {
-		t.Fatalf("empty.txt err: %v", results[1].Err)
+	size, missing, err = cr.Next()
+	if err != nil {
+		t.Fatalf("Next empty.txt: %v", err)
 	}
-	if len(results[1].Content) != 0 {
-		t.Errorf("empty.txt len = %d, want 0", len(results[1].Content))
+	if size != 0 {
+		t.Errorf("empty.txt size = %d, want 0", size)
 	}
 
-	// binary.bin — verify exact content survived the pipeline.
-	if results[2].Err != nil {
-		t.Fatalf("binary.bin err: %v", results[2].Err)
+	// binary.bin — read content and verify binary data survives.
+	size, missing, err = cr.Next()
+	if err != nil {
+		t.Fatalf("Next binary.bin: %v", err)
 	}
-	if results[2].Content[0] != 0x00 {
-		t.Errorf("binary.bin first byte = %x, want 0x00", results[2].Content[0])
+	binContent := make([]byte, size)
+	if _, err := io.ReadFull(cr, binContent); err != nil {
+		t.Fatalf("ReadFull binary.bin: %v", err)
+	}
+	if binContent[0] != 0x00 || binContent[3] != '\n' {
+		t.Errorf("binary.bin unexpected leading bytes: %x", binContent[:5])
 	}
 
 	// large.bin
-	if results[3].Err != nil {
-		t.Fatalf("large.bin err: %v", results[3].Err)
+	size, missing, err = cr.Next()
+	if err != nil {
+		t.Fatalf("Next large.bin: %v", err)
 	}
-	if results[3].Size != 64*1024 {
-		t.Errorf("large.bin size = %d, want %d", results[3].Size, 64*1024)
+	if size != 64*1024 {
+		t.Errorf("large.bin size = %d, want %d", size, 64*1024)
+	}
+	largeContent := make([]byte, size)
+	if _, err := io.ReadFull(cr, largeContent); err != nil {
+		t.Fatalf("ReadFull large.bin: %v", err)
+	}
+
+	// EOF after all entries.
+	_, _, err = cr.Next()
+	if err != io.EOF {
+		t.Errorf("expected io.EOF after last entry, got %v", err)
 	}
 }
 
-func TestReadBlobsPipelined_WithMissing(t *testing.T) {
+func TestCatfileReader_Skip(t *testing.T) {
+	repoDir, blobs := createTestRepo(t)
+
+	ids := []plumbing.Hash{
+		blobs["hello.txt"],
+		blobs["large.bin"],
+		blobs["binary.bin"],
+	}
+
+	cr, err := newCatfileReader(repoDir, ids)
+	if err != nil {
+		t.Fatalf("newCatfileReader: %v", err)
+	}
+	defer cr.Close()
+
+	// Skip hello.txt by calling Next again without reading.
+	_, _, err = cr.Next()
+	if err != nil {
+		t.Fatalf("Next hello.txt: %v", err)
+	}
+
+	// Skip large.bin too.
+	size, _, err := cr.Next()
+	if err != nil {
+		t.Fatalf("Next large.bin: %v", err)
+	}
+	if size != 64*1024 {
+		t.Errorf("large.bin size = %d, want %d", size, 64*1024)
+	}
+
+	// Read binary.bin after skipping two entries.
+	size, _, err = cr.Next()
+	if err != nil {
+		t.Fatalf("Next binary.bin: %v", err)
+	}
+	content := make([]byte, size)
+	if _, err := io.ReadFull(cr, content); err != nil {
+		t.Fatalf("ReadFull binary.bin: %v", err)
+	}
+	if content[0] != 0x00 {
+		t.Errorf("binary.bin first byte = %x, want 0x00", content[0])
+	}
+}
+
+func TestCatfileReader_Missing(t *testing.T) {
 	repoDir, blobs := createTestRepo(t)
 
 	fakeHash := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
@@ -121,18 +191,40 @@ func TestReadBlobsPipelined_WithMissing(t *testing.T) {
 		blobs["empty.txt"],
 	}
 
-	results, err := readBlobsPipelined(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids)
 	if err != nil {
-		t.Fatalf("readBlobsPipelined: %v", err)
+		t.Fatalf("newCatfileReader: %v", err)
+	}
+	defer cr.Close()
+
+	// hello.txt — read normally.
+	size, missing, err := cr.Next()
+	if err != nil || missing {
+		t.Fatalf("Next hello.txt: err=%v missing=%v", err, missing)
+	}
+	content := make([]byte, size)
+	if _, err := io.ReadFull(cr, content); err != nil {
+		t.Fatalf("ReadFull hello.txt: %v", err)
+	}
+	if string(content) != "hello world\n" {
+		t.Errorf("hello.txt = %q", content)
 	}
 
-	if !results[1].Missing {
-		t.Errorf("expected result[1] to be missing")
+	// fakeHash — missing.
+	_, missing, err = cr.Next()
+	if err != nil {
+		t.Fatalf("Next fakeHash: %v", err)
 	}
-	if string(results[0].Content) != "hello world\n" {
-		t.Errorf("hello.txt = %q", results[0].Content)
+	if !missing {
+		t.Error("expected fakeHash to be missing")
 	}
-	if len(results[2].Content) != 0 {
-		t.Errorf("empty.txt len = %d, want 0", len(results[2].Content))
+
+	// empty.txt — still works after missing entry.
+	size, missing, err = cr.Next()
+	if err != nil || missing {
+		t.Fatalf("Next empty.txt: err=%v missing=%v", err, missing)
+	}
+	if size != 0 {
+		t.Errorf("empty.txt size = %d, want 0", size)
 	}
 }

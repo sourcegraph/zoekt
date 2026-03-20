@@ -585,80 +585,96 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	sort.Strings(names)
 	names = uniq(names)
 
-	// Build the ordered list of (name, key) pairs and collect blob SHAs for
-	// the main repo so we can read them all at once via git cat-file --batch.
-	type indexEntry struct {
-		key       fileKey
-		blobIndex int // index into blobResults, or -1 for submodule blobs
-	}
-	entries := make([]indexEntry, 0, totalFiles)
+	// Separate main-repo keys from submodule keys, collecting blob SHAs
+	// for the main repo so we can stream them via git cat-file --batch.
+	mainRepoKeys := make([]fileKey, 0, totalFiles)
 	mainRepoIDs := make([]plumbing.Hash, 0, totalFiles)
+	var submoduleKeys []fileKey
 
 	for _, name := range names {
 		for _, key := range fileKeys[name] {
 			if key.SubRepoPath == "" {
-				entries = append(entries, indexEntry{key: key, blobIndex: len(mainRepoIDs)})
+				mainRepoKeys = append(mainRepoKeys, key)
 				mainRepoIDs = append(mainRepoIDs, key.ID)
 			} else {
-				entries = append(entries, indexEntry{key: key, blobIndex: -1})
+				submoduleKeys = append(submoduleKeys, key)
 			}
 		}
 	}
 
-	// Bulk-read all main-repo blobs via pipelined cat-file --batch --buffer.
-	var blobResults []blobResult
+	log.Printf("attempting to index %d total files (%d via cat-file, %d via go-git)", totalFiles, len(mainRepoIDs), len(submoduleKeys))
+
+	// Stream main-repo blobs via pipelined cat-file --batch --buffer.
+	// Large blobs are skipped without reading content into memory.
 	if len(mainRepoIDs) > 0 {
-		var err error
-		blobResults, err = readBlobsPipelined(opts.RepoDir, mainRepoIDs)
+		cr, err := newCatfileReader(opts.RepoDir, mainRepoIDs)
 		if err != nil {
-			return false, fmt.Errorf("readBlobsPipelined: %w", err)
+			return false, fmt.Errorf("newCatfileReader: %w", err)
 		}
-	}
 
-	log.Printf("attempting to index %d total files (%d via cat-file, %d via go-git)", totalFiles, len(mainRepoIDs), totalFiles-len(mainRepoIDs))
-	for idx, entry := range entries {
-		var doc index.Document
-
-		if entry.blobIndex >= 0 {
-			// Main repo blob: use pipelined result.
-			r := blobResults[entry.blobIndex]
-			if r.Err != nil {
-				return false, fmt.Errorf("read blob %s: %w", r.ID, r.Err)
+		for idx, key := range mainRepoKeys {
+			size, missing, err := cr.Next()
+			if err != nil {
+				cr.Close()
+				return false, fmt.Errorf("cat-file next for %s: %w", key.FullPath(), err)
 			}
 
-			branches := repos[entry.key].Branches
-			if r.Missing {
-				doc = skippedLargeDoc(entry.key, branches)
+			branches := repos[key].Branches
+			var doc index.Document
+
+			if missing {
+				doc = skippedLargeDoc(key, branches)
 			} else {
-				keyFullPath := entry.key.FullPath()
-				if r.Size > int64(opts.BuildOptions.SizeMax) && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
-					doc = skippedLargeDoc(entry.key, branches)
+				keyFullPath := key.FullPath()
+				if size > int64(opts.BuildOptions.SizeMax) && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
+					// Skip without reading content into memory.
+					doc = skippedLargeDoc(key, branches)
 				} else {
+					content := make([]byte, size)
+					if _, err := io.ReadFull(cr, content); err != nil {
+						cr.Close()
+						return false, fmt.Errorf("read blob %s: %w", keyFullPath, err)
+					}
 					doc = index.Document{
-						SubRepositoryPath: entry.key.SubRepoPath,
+						SubRepositoryPath: key.SubRepoPath,
 						Name:              keyFullPath,
-						Content:           r.Content,
+						Content:           content,
 						Branches:          branches,
 					}
 				}
 			}
-		} else {
-			// Submodule blob: fall back to go-git.
-			var err error
-			doc, err = createDocument(entry.key, repos, opts.BuildOptions)
-			if err != nil {
-				return false, err
+
+			if err := builder.Add(doc); err != nil {
+				cr.Close()
+				return false, fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
+			}
+
+			if idx%10_000 == 0 {
+				builder.CheckMemoryUsage()
 			}
 		}
 
+		if err := cr.Close(); err != nil {
+			return false, fmt.Errorf("close cat-file: %w", err)
+		}
+	}
+
+	// Index submodule blobs via go-git.
+	for idx, key := range submoduleKeys {
+		doc, err := createDocument(key, repos, opts.BuildOptions)
+		if err != nil {
+			return false, err
+		}
+
 		if err := builder.Add(doc); err != nil {
-			return false, fmt.Errorf("error adding document with name %s: %w", entry.key.FullPath(), err)
+			return false, fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
 		}
 
 		if idx%10_000 == 0 {
 			builder.CheckMemoryUsage()
 		}
 	}
+
 	return true, builder.Finish()
 }
 
