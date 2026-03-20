@@ -66,7 +66,7 @@ func testShardBuilder(tb testing.TB, repo *zoekt.Repository, docs ...Document) *
 func testShardBuilderCompound(t *testing.T, repos []*zoekt.Repository, docs [][]Document) *ShardBuilder {
 	t.Helper()
 
-	b := newShardBuilder()
+	b := newShardBuilder(0)
 	b.indexFormatVersion = NextIndexFormatVersion
 
 	if len(repos) != len(docs) {
@@ -2144,7 +2144,7 @@ func TestMetadata(t *testing.T) {
 }
 
 func TestRepoWithMetadata(t *testing.T) {
-	sb := newShardBuilder()
+	sb := newShardBuilder(0)
 	sb.repoList = []zoekt.Repository{
 		{
 			Name:     "repo1",

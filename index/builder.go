@@ -990,8 +990,7 @@ func (b *Builder) buildShard(todo []*Document, nextShardNum int) (*finishedShard
 	}
 
 	result, err := b.writeShard(name, shardBuilder)
-	b.putPostingsBuilder(shardBuilder.contentPostings)
-	b.putPostingsBuilder(shardBuilder.namePostings)
+	b.returnPostingsBuilders(shardBuilder)
 	return result, err
 }
 
@@ -1034,8 +1033,17 @@ func (b *Builder) getPostingsBuilder() *postingsBuilder {
 	return newPostingsBuilder(b.opts.ShardMax)
 }
 
-func (b *Builder) putPostingsBuilder(pb *postingsBuilder) {
-	b.postingsPool.Put(pb)
+// returnPostingsBuilders returns both postings builders from sb to the
+// pool and nils the fields so any subsequent misuse crashes obviously.
+func (b *Builder) returnPostingsBuilders(sb *ShardBuilder) {
+	if sb.contentPostings != nil {
+		b.postingsPool.Put(sb.contentPostings)
+		sb.contentPostings = nil
+	}
+	if sb.namePostings != nil {
+		b.postingsPool.Put(sb.namePostings)
+		sb.namePostings = nil
+	}
 }
 
 func (b *Builder) newShardBuilder() (*ShardBuilder, error) {
@@ -1048,8 +1056,6 @@ func (b *Builder) newShardBuilder() (*ShardBuilder, error) {
 	name := b.getPostingsBuilder()
 	shardBuilder := newShardBuilderWithPostings(content, name)
 	if err := shardBuilder.setRepository(&desc); err != nil {
-		b.putPostingsBuilder(content)
-		b.putPostingsBuilder(name)
 		return nil, err
 	}
 	shardBuilder.IndexTime = b.indexTime

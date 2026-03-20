@@ -358,7 +358,7 @@ func (b *ShardBuilder) NumFiles() int {
 // NewShardBuilder creates a fresh ShardBuilder. The passed in
 // Repository contains repo metadata, and may be set to nil.
 func NewShardBuilder(r *zoekt.Repository) (*ShardBuilder, error) {
-	b := newShardBuilder()
+	b := newShardBuilder(0)
 
 	if r == nil {
 		r = &zoekt.Repository{}
@@ -371,10 +371,15 @@ func NewShardBuilder(r *zoekt.Repository) (*ShardBuilder, error) {
 
 const defaultShardMax = 100 << 20 // 100 MB, matches Options.ShardMax default
 
-func newShardBuilder() *ShardBuilder {
+// newShardBuilder creates a ShardBuilder with fresh postingsBuilders.
+// shardMax is the maximum shard content size in bytes (0 uses defaultShardMax).
+func newShardBuilder(shardMax int) *ShardBuilder {
+	if shardMax <= 0 {
+		shardMax = defaultShardMax
+	}
 	return newShardBuilderWithPostings(
-		newPostingsBuilder(defaultShardMax),
-		newPostingsBuilder(defaultShardMax),
+		newPostingsBuilder(shardMax),
+		newPostingsBuilder(shardMax),
 	)
 }
 

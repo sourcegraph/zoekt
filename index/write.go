@@ -17,10 +17,12 @@ package index
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"time"
 
@@ -96,7 +98,7 @@ func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 			all = append(all, ngramPosting{k, pl})
 		}
 	}
-	sort.Slice(all, func(i, j int) bool { return all[i].ng < all[j].ng })
+	slices.SortFunc(all, func(a, b ngramPosting) int { return cmp.Compare(a.ng, b.ng) })
 
 	ngramText.start(w)
 	for _, np := range all {
