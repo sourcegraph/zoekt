@@ -68,6 +68,43 @@ func (o *orOperator) String() string {
 	return "orOp"
 }
 
+// caseScopeQ is a parse-time wrapper used to prevent case directives from an
+// outer expression list from overriding an explicitly scoped inner `case:`.
+type caseScopeQ struct {
+	Child Q
+}
+
+func (c *caseScopeQ) String() string {
+	return c.Child.String()
+}
+
+func stripCaseScopesList(qs []Q) []Q {
+	stripped := make([]Q, len(qs))
+	for i, q := range qs {
+		stripped[i] = stripCaseScopes(q)
+	}
+	return stripped
+}
+
+func stripCaseScopes(q Q) Q {
+	switch s := q.(type) {
+	case *And:
+		return &And{Children: stripCaseScopesList(s.Children)}
+	case *Or:
+		return &Or{Children: stripCaseScopesList(s.Children)}
+	case *Not:
+		return &Not{Child: stripCaseScopes(s.Child)}
+	case *Type:
+		return &Type{Type: s.Type, Child: stripCaseScopes(s.Child)}
+	case *Boost:
+		return &Boost{Boost: s.Boost, Child: stripCaseScopes(s.Child)}
+	case *caseScopeQ:
+		return stripCaseScopes(s.Child)
+	default:
+		return q
+	}
+}
+
 func isSpace(c byte) bool {
 	return c == ' ' || c == '\t'
 }
@@ -89,6 +126,8 @@ func Parse(qStr string) (Q, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	q = stripCaseScopes(q)
 
 	return Simplify(q), nil
 }
@@ -354,12 +393,14 @@ func parseExprList(in []byte) ([]Q, int, error) {
 	}
 
 	setCase := "auto"
+	hasCaseScope := false
 	newQS := qs[:0]
 	typeT := uint8(100)
 	for _, q := range qs {
 		switch s := q.(type) {
 		case *caseQ:
 			setCase = s.Flavor
+			hasCaseScope = true
 		case *Type:
 			if s.Type < typeT {
 				typeT = s.Type
@@ -377,6 +418,19 @@ func parseExprList(in []byte) ([]Q, int, error) {
 	if typeT != 100 {
 		qs = []Q{&Type{Type: typeT, Child: NewAnd(qs...)}}
 	}
+
+	if hasCaseScope {
+		scoped := make([]Q, 0, len(qs))
+		for _, q := range qs {
+			if _, isOrOperator := q.(*orOperator); isOrOperator {
+				scoped = append(scoped, q)
+				continue
+			}
+			scoped = append(scoped, &caseScopeQ{Child: q})
+		}
+		qs = scoped
+	}
+
 	return qs, len(in) - len(b), nil
 }
 
