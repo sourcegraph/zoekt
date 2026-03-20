@@ -80,8 +80,10 @@ func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 	charOffsets *simpleSection, postings *compoundSection, endRunes *simpleSection,
 ) {
 	keys := make(ngramSlice, 0, len(s.postings))
-	for k := range s.postings {
-		keys = append(keys, k)
+	for k, pl := range s.postings {
+		if len(pl.data) > 0 {
+			keys = append(keys, k)
+		}
 	}
 	sort.Sort(keys)
 
@@ -95,7 +97,7 @@ func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 
 	postings.start(w)
 	for _, k := range keys {
-		postings.addItem(w, s.postings[k])
+		postings.addItem(w, s.postings[k].data)
 	}
 	postings.end(w)
 

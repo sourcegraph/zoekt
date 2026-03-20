@@ -59,9 +59,16 @@ func HostnameBestEffort() string {
 // Store character (unicode codepoint) offset (in bytes) this often.
 const runeOffsetFrequency = 100
 
+// postingList holds the varint-encoded delta data and last offset for a
+// single ngram. Stored by pointer in the map so appending to data does not
+// require rewriting the map entry.
+type postingList struct {
+	data    []byte
+	lastOff uint32
+}
+
 type postingsBuilder struct {
-	postings    map[ngram][]byte
-	lastOffsets map[ngram]uint32
+	postings map[ngram]*postingList
 
 	// To support UTF-8 searching, we must map back runes to byte
 	// offsets. As a first attempt, we sample regularly. The
@@ -76,12 +83,43 @@ type postingsBuilder struct {
 	endByte  uint32
 }
 
-func newPostingsBuilder() *postingsBuilder {
+// Initial capacity for each posting list's byte slice. Empirically,
+// the average posting list in a source-code corpus is ~900 bytes
+// (600 entries × 1.5 bytes/varint). Pre-allocating 1024 avoids the
+// first growth event for the majority of ngrams.
+const initialPostingCap = 1024
+
+// estimateNgrams returns a map pre-size hint derived from the maximum
+// shard content size in bytes. In practice, source code produces
+// roughly one unique trigram per 600 bytes of content.
+func estimateNgrams(shardMaxBytes int) int {
+	n := shardMaxBytes / 600
+	if n < 1024 {
+		n = 1024
+	}
+	return n
+}
+
+func newPostingsBuilder(shardMaxBytes int) *postingsBuilder {
 	return &postingsBuilder{
-		postings:     map[ngram][]byte{},
-		lastOffsets:  map[ngram]uint32{},
+		postings:     make(map[ngram]*postingList, estimateNgrams(shardMaxBytes)),
 		isPlainASCII: true,
 	}
+}
+
+// reset clears the builder for reuse. The map and its postingList
+// allocations are retained so the next shard build avoids re-allocating
+// them, cutting memclr and madvise overhead.
+func (s *postingsBuilder) reset() {
+	for _, pl := range s.postings {
+		pl.data = pl.data[:0]
+		pl.lastOff = 0
+	}
+	s.runeOffsets = s.runeOffsets[:0]
+	s.runeCount = 0
+	s.isPlainASCII = true
+	s.endRunes = s.endRunes[:0]
+	s.endByte = 0
 }
 
 // Store trigram offsets for the given UTF-8 data. The
@@ -130,12 +168,16 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 		}
 
 		ng := runesToNGram(runeGram)
-		lastOff := s.lastOffsets[ng]
 		newOff := endRune + uint32(runeIndex) - 2
 
-		m := binary.PutUvarint(buf[:], uint64(newOff-lastOff))
-		s.postings[ng] = append(s.postings[ng], buf[:m]...)
-		s.lastOffsets[ng] = newOff
+		pl := s.postings[ng]
+		if pl == nil {
+			pl = &postingList{data: make([]byte, 0, initialPostingCap)}
+			s.postings[ng] = pl
+		}
+		m := binary.PutUvarint(buf[:], uint64(newOff-pl.lastOff))
+		pl.data = append(pl.data, buf[:m]...)
+		pl.lastOff = newOff
 	}
 	s.runeCount += runeIndex
 
@@ -282,13 +324,22 @@ func NewShardBuilder(r *zoekt.Repository) (*ShardBuilder, error) {
 	return b, nil
 }
 
+const defaultShardMax = 100 << 20 // 100 MB, matches Options.ShardMax default
+
 func newShardBuilder() *ShardBuilder {
+	return newShardBuilderWithPostings(
+		newPostingsBuilder(defaultShardMax),
+		newPostingsBuilder(defaultShardMax),
+	)
+}
+
+func newShardBuilderWithPostings(content, name *postingsBuilder) *ShardBuilder {
 	return &ShardBuilder{
 		indexFormatVersion: IndexFormatVersion,
 		featureVersion:     FeatureVersion,
 
-		contentPostings: newPostingsBuilder(),
-		namePostings:    newPostingsBuilder(),
+		contentPostings: content,
+		namePostings:    name,
 		fileEndSymbol:   []uint32{0},
 		symIndex:        make(map[string]uint32),
 		symKindIndex:    make(map[string]uint32),
