@@ -67,8 +67,29 @@ type postingList struct {
 	lastOff uint32
 }
 
+// asciiNgramBits is the number of bits needed to index all ASCII trigrams.
+// ASCII runes are 0-127 (7 bits), so 3 runes = 21 bits = 2M entries.
+const asciiNgramBits = 21
+
+// asciiNgramIndex packs three ASCII bytes into a 21-bit array index.
+func asciiNgramIndex(a, b, c byte) uint32 {
+	return uint32(a)<<14 | uint32(b)<<7 | uint32(c)
+}
+
+// asciiIndexToNgram converts a 21-bit ASCII array index back to the
+// canonical ngram encoding (rune[0]<<42 | rune[1]<<21 | rune[2]).
+func asciiIndexToNgram(idx uint32) ngram {
+	r0 := uint64(idx >> 14)
+	r1 := uint64((idx >> 7) & 0x7f)
+	r2 := uint64(idx & 0x7f)
+	return ngram(r0<<42 | r1<<21 | r2)
+}
+
 type postingsBuilder struct {
-	postings map[ngram]*postingList
+	// ASCII trigrams use direct-indexed array (zero hash/probe cost).
+	// Non-ASCII trigrams fall back to the map.
+	asciiPostings [1 << asciiNgramBits]*postingList
+	postings      map[ngram]*postingList
 
 	// To support UTF-8 searching, we must map back runes to byte
 	// offsets. As a first attempt, we sample regularly. The
@@ -111,6 +132,12 @@ func newPostingsBuilder(shardMaxBytes int) *postingsBuilder {
 // allocations are retained so the next shard build avoids re-allocating
 // them, cutting memclr and madvise overhead.
 func (s *postingsBuilder) reset() {
+	for _, pl := range &s.asciiPostings {
+		if pl != nil {
+			pl.data = pl.data[:0]
+			pl.lastOff = 0
+		}
+	}
 	for _, pl := range s.postings {
 		pl.data = pl.data[:0]
 		pl.lastOff = 0
@@ -144,8 +171,14 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 
 	endRune := s.runeCount
 	for ; len(data) > 0; runeIndex++ {
-		c, sz := utf8.DecodeRune(data)
-		if sz > 1 {
+		// ASCII fast path: avoid utf8.DecodeRune call overhead.
+		// For source code, 95-99% of bytes are ASCII.
+		var c rune
+		sz := 1
+		if data[0] < utf8.RuneSelf {
+			c = rune(data[0])
+		} else {
+			c, sz = utf8.DecodeRune(data)
 			s.isPlainASCII = false
 		}
 		data = data[sz:]
@@ -167,13 +200,24 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 			continue
 		}
 
-		ng := runesToNGram(runeGram)
 		newOff := endRune + uint32(runeIndex) - 2
 
-		pl := s.postings[ng]
-		if pl == nil {
-			pl = &postingList{data: make([]byte, 0, initialPostingCap)}
-			s.postings[ng] = pl
+		// ASCII trigrams use direct-indexed array (no hash/probe).
+		var pl *postingList
+		if runeGram[0] < utf8.RuneSelf && runeGram[1] < utf8.RuneSelf && runeGram[2] < utf8.RuneSelf {
+			idx := asciiNgramIndex(byte(runeGram[0]), byte(runeGram[1]), byte(runeGram[2]))
+			pl = s.asciiPostings[idx]
+			if pl == nil {
+				pl = &postingList{data: make([]byte, 0, initialPostingCap)}
+				s.asciiPostings[idx] = pl
+			}
+		} else {
+			ng := runesToNGram(runeGram)
+			pl = s.postings[ng]
+			if pl == nil {
+				pl = &postingList{data: make([]byte, 0, initialPostingCap)}
+				s.postings[ng] = pl
+			}
 		}
 		m := binary.PutUvarint(buf[:], uint64(newOff-pl.lastOff))
 		pl.data = append(pl.data, buf[:m]...)
