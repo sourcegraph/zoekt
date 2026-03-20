@@ -60,8 +60,9 @@ func HostnameBestEffort() string {
 const runeOffsetFrequency = 100
 
 // postingList holds the varint-encoded delta data and last offset for a
-// single ngram. Stored by pointer in the map so appending to data does not
-// require rewriting the map entry.
+// single ngram. Stored by pointer in the asciiPostings array or the
+// postings map so appending to data does not require rewriting the
+// map entry or array slot.
 type postingList struct {
 	data    []byte
 	lastOff uint32
@@ -110,9 +111,9 @@ type postingsBuilder struct {
 // first growth event for the majority of ngrams.
 const initialPostingCap = 1024
 
-// estimateNgrams returns a map pre-size hint derived from the maximum
-// shard content size in bytes. In practice, source code produces
-// roughly one unique trigram per 600 bytes of content.
+// estimateNgrams returns a pre-size hint for the non-ASCII postings map,
+// derived from the maximum shard content size. Intentionally over-estimates
+// (the map only holds non-ASCII trigrams) to avoid rehashing.
 func estimateNgrams(shardMaxBytes int) int {
 	n := shardMaxBytes / 600
 	if n < 1024 {
@@ -128,9 +129,9 @@ func newPostingsBuilder(shardMaxBytes int) *postingsBuilder {
 	}
 }
 
-// reset clears the builder for reuse. The map and its postingList
-// allocations are retained so the next shard build avoids re-allocating
-// them, cutting memclr and madvise overhead.
+// reset clears the builder for reuse. The ASCII array, map, and their
+// postingList allocations are retained so the next shard build avoids
+// re-allocating them, cutting memclr and madvise overhead.
 func (s *postingsBuilder) reset() {
 	for _, pl := range &s.asciiPostings {
 		if pl != nil {
