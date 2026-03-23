@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/hybridre2"
 	"github.com/sourcegraph/zoekt/internal/syntaxutil"
 	"github.com/sourcegraph/zoekt/query"
 )
@@ -187,6 +188,11 @@ type noVisitMatchTree struct {
 type regexpMatchTree struct {
 	regexp *regexp.Regexp
 
+	// hybridRegexp is a size-aware wrapper that dispatches to go-re2 for
+	// large file content when ZOEKT_RE2_THRESHOLD_BYTES is configured.
+	// For small inputs and filename matches, regexp is used directly.
+	hybridRegexp *hybridre2.Regexp
+
 	// origRegexp is the original parsed regexp from the query structure. It
 	// does not include mutations such as case sensitivity.
 	origRegexp *syntax.Regexp
@@ -207,10 +213,19 @@ func newRegexpMatchTree(s *query.Regexp) *regexpMatchTree {
 		prefix = "(?i)"
 	}
 
+	pattern := prefix + syntaxutil.RegexpString(s.Regexp)
+
+	// hybridRegexp is only used for file content matching; skip the RE2
+	// compilation overhead for filename-only regexps.
+	var hr *hybridre2.Regexp
+	if !s.FileName {
+		hr = hybridre2.MustCompile(pattern)
+	}
 	return &regexpMatchTree{
-		regexp:     regexp.MustCompile(prefix + syntaxutil.RegexpString(s.Regexp)),
-		origRegexp: s.Regexp,
-		fileName:   s.FileName,
+		regexp:       regexp.MustCompile(pattern),
+		hybridRegexp: hr,
+		origRegexp:   s.Regexp,
+		fileName:     s.FileName,
 	}
 }
 
@@ -802,7 +817,17 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	}
 
 	cp.stats.RegexpsConsidered++
-	idxs := t.regexp.FindAllIndex(cp.data(t.fileName), -1)
+	data := cp.data(t.fileName)
+	// For file content, use hybridRegexp which dispatches to go-re2 when
+	// len(data) >= ZOEKT_RE2_THRESHOLD_BYTES. For filename matching, use
+	// grafana/regexp directly: filenames are always short, so the WASM
+	// call overhead of go-re2 outweighs any benefit.
+	var idxs [][]int
+	if t.fileName {
+		idxs = t.regexp.FindAllIndex(data, -1)
+	} else {
+		idxs = t.hybridRegexp.FindAllIndex(data, -1)
+	}
 	found := t.found[:0]
 	for _, idx := range idxs {
 		cm := &candidateMatch{
