@@ -108,6 +108,26 @@ func TestParseQuery(t *testing.T) {
 			&Substring{Pattern: "abc", CaseSensitive: true},
 			&Not{Child: &Substring{Pattern: "def", FileName: true, CaseSensitive: true}},
 		)},
+		{"(foo case:yes) bar", NewAnd(
+			&Substring{Pattern: "foo", CaseSensitive: true},
+			&Substring{Pattern: "bar"},
+		)},
+		{"(case:yes foo) bar", NewAnd(
+			&Substring{Pattern: "foo", CaseSensitive: true},
+			&Substring{Pattern: "bar"},
+		)},
+		{"(case:yes foo (bar))", NewAnd(
+			&Substring{Pattern: "foo", CaseSensitive: true},
+			&Substring{Pattern: "bar", CaseSensitive: true},
+		)},
+		{"case:auto (foo case:yes) bar", NewAnd(
+			&Substring{Pattern: "foo", CaseSensitive: true},
+			&Substring{Pattern: "bar"},
+		)},
+		{"case:yes (foo case:no) bar", NewAnd(
+			&Substring{Pattern: "foo"},
+			&Substring{Pattern: "bar", CaseSensitive: true},
+		)},
 
 		// type
 		{"type:repo abc", &Type{Type: TypeRepo, Child: &Substring{Pattern: "abc"}}},
