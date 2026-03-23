@@ -416,7 +416,11 @@ func parseExprList(in []byte) ([]Q, int, error) {
 		return q
 	})
 	if typeT != 100 {
-		qs = []Q{&Type{Type: typeT, Child: NewAnd(qs...)}}
+		typedQ, err := parseOperators(qs)
+		if err != nil {
+			return nil, 0, err
+		}
+		qs = []Q{&Type{Type: typeT, Child: typedQ}}
 	}
 
 	if hasCaseScope {

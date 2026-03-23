@@ -111,6 +111,11 @@ This returns repository names instead of file matches. Valid values include:
 - `filename` - Returns only matching filenames
 - `repo` - Returns only repository names
 
+`type:` applies to the whole expression in its current scope, including `or`
+clauses. For example, `type:repo foo or bar` is equivalent to
+`type:repo (foo or bar)`. Use parentheses to scope `type:` to only one branch,
+for example `(type:repo foo) or bar`.
+
 ---
 
 ## Special Query Values
