@@ -98,6 +98,8 @@ func main() {
 	fetchMetaConfig := flag.Bool("fetch-meta-config", false, "fetch gerrit meta/config branch")
 	httpCrendentialsPath := flag.String("http-credentials", "", "path to a file containing http credentials stored like 'user:password'.")
 	active := flag.Bool("active", false, "mirror only active projects")
+	branches := flag.String("branches", "", "comma-separated list of branches to index (e.g. \"main,release-*\"). Defaults to HEAD if unset.")
+	branchPrefix := flag.String("branch-prefix", "", "prefix for branch names (e.g. \"refs/tags/\" to index tags). Defaults to \"refs/heads/\".")
 	flag.Parse()
 
 	if len(flag.Args()) < 1 {
@@ -199,6 +201,13 @@ func main() {
 			"zoekt.gerrit-host":    anonymousURL(rootURL),
 			"zoekt.archived":       marshalBool(v.State == "READ_ONLY"),
 			"zoekt.public":         marshalBool(v.State != "HIDDEN"),
+		}
+
+		if *branches != "" {
+			config["zoekt.branches-to-index"] = *branches
+		}
+		if *branchPrefix != "" {
+			config["zoekt.branch-prefix"] = *branchPrefix
 		}
 
 		for _, wl := range v.WebLinks {

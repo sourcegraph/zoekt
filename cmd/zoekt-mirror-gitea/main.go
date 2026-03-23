@@ -65,6 +65,8 @@ func main() {
 	excludeTopics := topicsFlag{}
 	flag.Var(&excludeTopics, "exclude_topic", "don't clone repos whose have one of given topics. You can add multiple topics by setting this more than once.")
 	noArchived := flag.Bool("no_archived", false, "mirror only projects that are not archived")
+	branches := flag.String("branches", "", "comma-separated list of branches to index (e.g. \"main,release-*\"). Defaults to HEAD if unset.")
+	branchPrefix := flag.String("branch-prefix", "", "prefix for branch names (e.g. \"refs/tags/\" to index tags). Defaults to \"refs/heads/\".")
 
 	flag.Parse()
 
@@ -147,7 +149,7 @@ func main() {
 		repos = trimmed
 	}
 
-	if err := cloneRepos(destDir, repos); err != nil {
+	if err := cloneRepos(destDir, repos, *branches, *branchPrefix); err != nil {
 		log.Fatalf("cloneRepos: %v", err)
 	}
 
@@ -252,7 +254,7 @@ func getUserRepos(client *gitea.Client, user string, reposFilters reposFilters) 
 	return allRepos, nil
 }
 
-func cloneRepos(destDir string, repos []*gitea.Repository) error {
+func cloneRepos(destDir string, repos []*gitea.Repository, branches string, branchPrefix string) error {
 	for _, r := range repos {
 		host, err := url.Parse(r.HTMLURL)
 		if err != nil {
@@ -273,6 +275,12 @@ func cloneRepos(destDir string, repos []*gitea.Repository) error {
 			"zoekt.archived": marshalBool(r.Archived),
 			"zoekt.fork":     marshalBool(r.Fork),
 			"zoekt.public":   marshalBool(r.Private || r.Internal), // count internal repos as private
+		}
+		if branches != "" {
+			config["zoekt.branches-to-index"] = branches
+		}
+		if branchPrefix != "" {
+			config["zoekt.branch-prefix"] = branchPrefix
 		}
 		dest, err := gitindex.CloneRepo(destDir, r.FullName, r.CloneURL, config)
 		if err != nil {

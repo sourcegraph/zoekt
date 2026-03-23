@@ -40,6 +40,8 @@ func main() {
 	namePattern := flag.String("name", "", "only clone repos whose name matches the regexp.")
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	hostType := flag.String("type", "gitiles", "which webserver to crawl. Choices: gitiles, cgit")
+	branches := flag.String("branches", "", "comma-separated list of branches to index (e.g. \"main,release-*\"). Defaults to HEAD if unset.")
+	branchPrefix := flag.String("branch-prefix", "", "prefix for branch names (e.g. \"refs/tags/\" to index tags). Defaults to \"refs/heads/\".")
 	flag.Parse()
 
 	if len(flag.Args()) < 1 {
@@ -89,6 +91,12 @@ func main() {
 			"zoekt.web-url":      target.webURL,
 			"zoekt.web-url-type": target.webURLType,
 			"zoekt.name":         fullName,
+		}
+		if *branches != "" {
+			config["zoekt.branches-to-index"] = *branches
+		}
+		if *branchPrefix != "" {
+			config["zoekt.branch-prefix"] = *branchPrefix
 		}
 
 		dest, err := gitindex.CloneRepo(*dest, fullName, target.cloneURL, config)

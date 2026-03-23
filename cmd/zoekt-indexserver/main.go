@@ -163,6 +163,21 @@ func indexPendingRepo(dir, indexDir, repoDir string, opts *Options) {
 		"-index", indexDir,
 		"-incremental",
 	}
+
+	// Read zoekt.branches-to-index from the repo's git config. If set, pass
+	// it to zoekt-git-index as -branches along with -allow_missing_branches.
+	// The value is a comma-separated list of branch names (default: HEAD).
+	if branchOut, err := exec.Command("git", "--git-dir", dir, "config", "zoekt.branches-to-index").Output(); err == nil {
+		if branches := strings.TrimSpace(string(branchOut)); branches != "" {
+			args = append(args, "-branches", branches, "-allow_missing_branches")
+		}
+	}
+	if prefixOut, err := exec.Command("git", "--git-dir", dir, "config", "zoekt.branch-prefix").Output(); err == nil {
+		if prefix := strings.TrimSpace(string(prefixOut)); prefix != "" {
+			args = append(args, "-prefix", prefix)
+		}
+	}
+
 	args = append(args, opts.indexFlags...)
 	args = append(args, dir)
 	cmd := exec.CommandContext(ctx, "zoekt-git-index", args...)

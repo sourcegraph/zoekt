@@ -43,6 +43,8 @@ func main() {
 	excludePattern := flag.String("exclude", "", "don't mirror repos whose names match this regexp.")
 	projectType := flag.String("type", "", "only clone repos whose type matches the given string. "+
 		"Type can be either NORMAl or PERSONAL. Clones projects of both types if not set.")
+	branches := flag.String("branches", "", "comma-separated list of branches to index (e.g. \"main,release-*\"). Defaults to HEAD if unset.")
+	branchPrefix := flag.String("branch-prefix", "", "prefix for branch names (e.g. \"refs/tags/\" to index tags). Defaults to \"refs/heads/\".")
 	flag.Parse()
 
 	if *serverUrl == "" {
@@ -134,7 +136,7 @@ func main() {
 	}
 	repos = trimmed
 
-	if err := cloneRepos(destDir, rootURL.Host, repos, password); err != nil {
+	if err := cloneRepos(destDir, rootURL.Host, repos, password, *branches, *branchPrefix); err != nil {
 		log.Fatalf("cloneRepos: %v", err)
 	}
 
@@ -235,13 +237,19 @@ func getProjectRepos(client bitbucketv1.APIClient, projectName string) ([]bitbuc
 	return allRepos, nil
 }
 
-func cloneRepos(destDir string, host string, repos []bitbucketv1.Repository, password string) error {
+func cloneRepos(destDir string, host string, repos []bitbucketv1.Repository, password string, branches string, branchPrefix string) error {
 	for _, r := range repos {
 		fullName := filepath.Join(r.Project.Key, r.Slug)
 		config := map[string]string{
 			"zoekt.web-url-type": "bitbucket-server",
 			"zoekt.web-url":      r.Links.Self[0].Href,
 			"zoekt.name":         filepath.Join(host, fullName),
+		}
+		if branches != "" {
+			config["zoekt.branches-to-index"] = branches
+		}
+		if branchPrefix != "" {
+			config["zoekt.branch-prefix"] = branchPrefix
 		}
 
 		httpsCloneUrl := ""
