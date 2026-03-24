@@ -151,7 +151,7 @@ func TestGet(t *testing.T) {
 		t.Fatalf("readIndexData: %v", err)
 	}
 
-	var off uint32 = 96
+	var off uint32 = 93 // Updated for v17 format (branchMasks as compoundSection)
 
 	cases := []struct {
 		ng              string

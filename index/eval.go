@@ -477,16 +477,7 @@ func setScoreWeight(scoreWeight float64, cm []*candidateMatch) []*candidateMatch
 }
 
 func (d *indexData) branchIndex(docID uint32) int {
-	mask := d.fileBranchMasks[docID]
-	idx := 0
-	for mask != 0 {
-		if mask&0x1 != 0 {
-			return idx
-		}
-		idx++
-		mask >>= 1
-	}
-	return -1
+	return firstSetBit(d.fileBranchMasks[docID])
 }
 
 // gatherBranches returns a list of branch names taking into account any branch
@@ -494,30 +485,25 @@ func (d *indexData) branchIndex(docID uint32) int {
 // branches containing the docID and matching the branch filter. Otherwise, it
 // returns all branches containing docID.
 func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTree]bool) []string {
-	var mask uint64
+	var mask []byte
 	visitMatchAtoms(mt, known, func(mt matchTree) {
 		bq, ok := mt.(*branchQueryMatchTree)
 		if !ok {
 			return
 		}
 
-		mask = mask | bq.branchMask()
+		mask = orMask(mask, bq.branchMask())
 	})
 
-	if mask == 0 {
+	if isZero(mask) {
 		mask = d.fileBranchMasks[docID]
 	}
 
 	var branches []string
-	id := uint64(1)
 	branchNames := d.branchNames[d.repos[docID]]
-	for mask != 0 {
-		if mask&0x1 != 0 {
-			branches = append(branches, branchNames[uint(id)])
-		}
-		id <<= 1
-		mask >>= 1
-	}
+	iterateBits(mask, func(bit int) {
+		branches = append(branches, branchNames[bit])
+	})
 
 	return branches
 }

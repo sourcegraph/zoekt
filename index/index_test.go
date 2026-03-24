@@ -67,7 +67,8 @@ func testShardBuilderCompound(t *testing.T, repos []*zoekt.Repository, docs [][]
 	t.Helper()
 
 	b := newShardBuilder()
-	b.indexFormatVersion = NextIndexFormatVersion
+	// Use current version (17) which supports compound shards
+	b.indexFormatVersion = IndexFormatVersion
 
 	if len(repos) != len(docs) {
 		t.Fatalf("testShardBuilderCompound: repos must be the same length as docs, got: len(repos)=%d len(docs)=%d", len(repos), len(docs))
@@ -1258,19 +1259,18 @@ func TestBranchMask(t *testing.T) {
 }
 
 func TestBranchLimit(t *testing.T) {
-	for limit := 64; limit <= 65; limit++ {
+	// Test that we can handle more than 64 branches (the old limit)
+	for _, limit := range []int{64, 65, 100} {
 		r := &zoekt.Repository{}
-		for i := range limit {
+		for i := 0; i < limit; i++ {
 			s := fmt.Sprintf("b%d", i)
 			r.Branches = append(r.Branches, zoekt.RepositoryBranch{
 				s, "v-" + s,
 			})
 		}
 		_, err := NewShardBuilder(r)
-		if limit == 64 && err != nil {
-			t.Fatalf("NewShardBuilder: %v", err)
-		} else if limit == 65 && err == nil {
-			t.Fatalf("NewShardBuilder succeeded")
+		if err != nil {
+			t.Fatalf("NewShardBuilder with %d branches: %v", limit, err)
 		}
 	}
 }
