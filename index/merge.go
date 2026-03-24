@@ -98,7 +98,7 @@ func merge(ds ...*indexData) (*ShardBuilder, error) {
 		return ds[i].repoMetaData[0].GetPriority() > ds[j].repoMetaData[0].GetPriority()
 	})
 
-	sb := newShardBuilder()
+	sb := newShardBuilder(0)
 	sb.indexFormatVersion = NextIndexFormatVersion
 
 	for _, d := range ds {
@@ -246,7 +246,7 @@ func explode(dstDir string, f IndexFile, ibFuncs ...shardBuilderFunc) (map[strin
 				}
 			}
 
-			sb = newShardBuilder()
+			sb = newShardBuilder(0)
 			sb.indexFormatVersion = IndexFormatVersion
 			if err := sb.setRepository(&d.repoMetaData[repoID]); err != nil {
 				return shardNames, err

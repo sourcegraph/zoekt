@@ -17,10 +17,12 @@ package index
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"time"
 
@@ -79,23 +81,37 @@ func writeUint32Bitmap(w *writer, dat []uint32) {
 func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 	charOffsets *simpleSection, postings *compoundSection, endRunes *simpleSection,
 ) {
-	keys := make(ngramSlice, 0, len(s.postings))
-	for k := range s.postings {
-		keys = append(keys, k)
+	// Collect ngrams from both the ASCII direct-indexed array and the
+	// non-ASCII map, then sort by ngram value.
+	type ngramPosting struct {
+		ng ngram
+		pl *postingList
 	}
-	sort.Sort(keys)
+	all := make([]ngramPosting, 0, len(s.asciiPopulated)+len(s.postings))
+	for _, idx := range s.asciiPopulated {
+		pl := s.asciiPostings[idx]
+		if len(pl.data) > 0 {
+			all = append(all, ngramPosting{asciiIndexToNgram(idx), pl})
+		}
+	}
+	for k, pl := range s.postings {
+		if len(pl.data) > 0 {
+			all = append(all, ngramPosting{k, pl})
+		}
+	}
+	slices.SortFunc(all, func(a, b ngramPosting) int { return cmp.Compare(a.ng, b.ng) })
 
 	ngramText.start(w)
-	for _, k := range keys {
+	for _, np := range all {
 		var buf [8]byte
-		binary.BigEndian.PutUint64(buf[:], uint64(k))
+		binary.BigEndian.PutUint64(buf[:], uint64(np.ng))
 		w.Write(buf[:])
 	}
 	ngramText.end(w)
 
 	postings.start(w)
-	for _, k := range keys {
-		postings.addItem(w, s.postings[k])
+	for _, np := range all {
+		postings.addItem(w, np.pl.data)
 	}
 	postings.end(w)
 

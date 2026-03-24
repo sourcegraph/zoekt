@@ -59,9 +59,43 @@ func HostnameBestEffort() string {
 // Store character (unicode codepoint) offset (in bytes) this often.
 const runeOffsetFrequency = 100
 
+// postingList holds the varint-encoded delta data and last offset for a
+// single ngram. Stored by pointer in the asciiPostings array or the
+// postings map so appending to data does not require rewriting the
+// map entry or array slot.
+type postingList struct {
+	data    []byte
+	lastOff uint32
+}
+
+// asciiNgramBits is the number of bits needed to index all ASCII trigrams.
+// ASCII runes are 0-127 (7 bits), so 3 runes = 21 bits = 2M entries.
+const asciiNgramBits = 21
+
+// asciiNgramIndex packs three ASCII bytes into a 21-bit array index.
+func asciiNgramIndex(a, b, c byte) uint32 {
+	return uint32(a)<<14 | uint32(b)<<7 | uint32(c)
+}
+
+// asciiIndexToNgram converts a 21-bit ASCII array index back to the
+// canonical ngram encoding (rune[0]<<42 | rune[1]<<21 | rune[2]).
+func asciiIndexToNgram(idx uint32) ngram {
+	r0 := uint64(idx >> 14)
+	r1 := uint64((idx >> 7) & 0x7f)
+	r2 := uint64(idx & 0x7f)
+	return ngram(r0<<42 | r1<<21 | r2)
+}
+
 type postingsBuilder struct {
-	postings    map[ngram][]byte
-	lastOffsets map[ngram]uint32
+	// ASCII trigrams use direct-indexed array (zero hash/probe cost).
+	// Non-ASCII trigrams fall back to the map.
+	asciiPostings [1 << asciiNgramBits]*postingList
+	postings      map[ngram]*postingList
+
+	// asciiPopulated tracks which indices in asciiPostings are non-nil,
+	// so reset() and writePostings iterate only populated slots — O(n)
+	// where n is unique ASCII trigrams (~275K) instead of O(2M).
+	asciiPopulated []uint32
 
 	// To support UTF-8 searching, we must map back runes to byte
 	// offsets. As a first attempt, we sample regularly. The
@@ -76,12 +110,54 @@ type postingsBuilder struct {
 	endByte  uint32
 }
 
-func newPostingsBuilder() *postingsBuilder {
+// Initial capacity for each posting list's byte slice. On the
+// kubernetes corpus (282K unique trigrams), the median posting list is
+// 10 bytes and 78% are under 64 bytes (power-law distribution).
+// Pre-allocating 64 covers the majority without the 244 MB waste that
+// a mean-based value (1024) would cause.
+const initialPostingCap = 64
+
+// estimateNgrams returns a pre-size hint for the non-ASCII postings map,
+// derived from the maximum shard content size. Intentionally over-estimates
+// (the map only holds non-ASCII trigrams) to avoid rehashing.
+func estimateNgrams(shardMaxBytes int) int {
+	n := shardMaxBytes / 600
+	if n < 1024 {
+		n = 1024
+	}
+	return n
+}
+
+func newPostingsBuilder(shardMaxBytes int) *postingsBuilder {
 	return &postingsBuilder{
-		postings:     map[ngram][]byte{},
-		lastOffsets:  map[ngram]uint32{},
+		postings:     make(map[ngram]*postingList, estimateNgrams(shardMaxBytes)),
 		isPlainASCII: true,
 	}
+}
+
+// reset clears the builder for reuse. All postingList allocations
+// (backing arrays, map entries, ASCII array slots) are retained so the
+// next shard build avoids re-allocating them.
+// Uses asciiPopulated to reset only populated slots — O(populated)
+// instead of O(2M). Slots are kept non-nil with data truncated to
+// len 0; the hot path uses len(pl.data)==0 to re-record them in
+// asciiPopulated for the next shard.
+func (s *postingsBuilder) reset() {
+	for _, idx := range s.asciiPopulated {
+		pl := s.asciiPostings[idx]
+		pl.data = pl.data[:0]
+		pl.lastOff = 0
+	}
+	s.asciiPopulated = s.asciiPopulated[:0]
+	for _, pl := range s.postings {
+		pl.data = pl.data[:0]
+		pl.lastOff = 0
+	}
+	s.runeOffsets = s.runeOffsets[:0]
+	s.runeCount = 0
+	s.isPlainASCII = true
+	s.endRunes = s.endRunes[:0]
+	s.endByte = 0
 }
 
 // Store trigram offsets for the given UTF-8 data. The
@@ -106,8 +182,14 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 
 	endRune := s.runeCount
 	for ; len(data) > 0; runeIndex++ {
-		c, sz := utf8.DecodeRune(data)
-		if sz > 1 {
+		// ASCII fast path: avoid utf8.DecodeRune call overhead.
+		// For source code, 95-99% of bytes are ASCII.
+		var c rune
+		sz := 1
+		if data[0] < utf8.RuneSelf {
+			c = rune(data[0])
+		} else {
+			c, sz = utf8.DecodeRune(data)
 			s.isPlainASCII = false
 		}
 		data = data[sz:]
@@ -129,13 +211,33 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 			continue
 		}
 
-		ng := runesToNGram(runeGram)
-		lastOff := s.lastOffsets[ng]
 		newOff := endRune + uint32(runeIndex) - 2
 
-		m := binary.PutUvarint(buf[:], uint64(newOff-lastOff))
-		s.postings[ng] = append(s.postings[ng], buf[:m]...)
-		s.lastOffsets[ng] = newOff
+		// ASCII trigrams use direct-indexed array (no hash/probe).
+		var pl *postingList
+		if runeGram[0] < utf8.RuneSelf && runeGram[1] < utf8.RuneSelf && runeGram[2] < utf8.RuneSelf {
+			idx := asciiNgramIndex(byte(runeGram[0]), byte(runeGram[1]), byte(runeGram[2]))
+			pl = s.asciiPostings[idx]
+			if pl == nil {
+				pl = &postingList{data: make([]byte, 0, initialPostingCap)}
+				s.asciiPostings[idx] = pl
+				s.asciiPopulated = append(s.asciiPopulated, idx)
+			} else if len(pl.data) == 0 {
+				// Retained from a previous shard (pool reuse) — re-record
+				// in asciiPopulated for this shard's writePostings.
+				s.asciiPopulated = append(s.asciiPopulated, idx)
+			}
+		} else {
+			ng := runesToNGram(runeGram)
+			pl = s.postings[ng]
+			if pl == nil {
+				pl = &postingList{data: make([]byte, 0, initialPostingCap)}
+				s.postings[ng] = pl
+			}
+		}
+		m := binary.PutUvarint(buf[:], uint64(newOff-pl.lastOff))
+		pl.data = append(pl.data, buf[:m]...)
+		pl.lastOff = newOff
 	}
 	s.runeCount += runeIndex
 
@@ -271,7 +373,7 @@ func (b *ShardBuilder) NumFiles() int {
 // NewShardBuilder creates a fresh ShardBuilder. The passed in
 // Repository contains repo metadata, and may be set to nil.
 func NewShardBuilder(r *zoekt.Repository) (*ShardBuilder, error) {
-	b := newShardBuilder()
+	b := newShardBuilder(0)
 
 	if r == nil {
 		r = &zoekt.Repository{}
@@ -282,13 +384,27 @@ func NewShardBuilder(r *zoekt.Repository) (*ShardBuilder, error) {
 	return b, nil
 }
 
-func newShardBuilder() *ShardBuilder {
+const defaultShardMax = 100 << 20 // 100 MB, matches Options.ShardMax default
+
+// newShardBuilder creates a ShardBuilder with fresh postingsBuilders.
+// shardMax is the maximum shard content size in bytes (0 uses defaultShardMax).
+func newShardBuilder(shardMax int) *ShardBuilder {
+	if shardMax <= 0 {
+		shardMax = defaultShardMax
+	}
+	return newShardBuilderWithPostings(
+		newPostingsBuilder(shardMax),
+		newPostingsBuilder(shardMax),
+	)
+}
+
+func newShardBuilderWithPostings(content, name *postingsBuilder) *ShardBuilder {
 	return &ShardBuilder{
 		indexFormatVersion: IndexFormatVersion,
 		featureVersion:     FeatureVersion,
 
-		contentPostings: newPostingsBuilder(),
-		namePostings:    newPostingsBuilder(),
+		contentPostings: content,
+		namePostings:    name,
 		fileEndSymbol:   []uint32{0},
 		symIndex:        make(map[string]uint32),
 		symKindIndex:    make(map[string]uint32),

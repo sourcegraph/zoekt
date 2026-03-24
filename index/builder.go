@@ -275,6 +275,11 @@ type Builder struct {
 	id string
 
 	finishCalled bool
+
+	// postingsPool reuses postingsBuilder instances across shard builds,
+	// retaining their map and slice allocations to avoid repeated
+	// memclr/madvise overhead.
+	postingsPool sync.Pool
 }
 
 type finishedShard struct {
@@ -984,7 +989,9 @@ func (b *Builder) buildShard(todo []*Document, nextShardNum int) (*finishedShard
 		}
 	}
 
-	return b.writeShard(name, shardBuilder)
+	result, err := b.writeShard(name, shardBuilder)
+	b.returnPostingsBuilders(shardBuilder)
+	return result, err
 }
 
 // CheckMemoryUsage checks the memory usage of the process and writes a memory profile if the heap usage exceeds the
@@ -1018,14 +1025,37 @@ func (b *Builder) CheckMemoryUsage() {
 	}
 }
 
+func (b *Builder) getPostingsBuilder() *postingsBuilder {
+	if pb, ok := b.postingsPool.Get().(*postingsBuilder); ok {
+		pb.reset()
+		return pb
+	}
+	return newPostingsBuilder(b.opts.ShardMax)
+}
+
+// returnPostingsBuilders returns both postings builders from sb to the
+// pool and nils the fields so any subsequent misuse crashes obviously.
+func (b *Builder) returnPostingsBuilders(sb *ShardBuilder) {
+	if sb.contentPostings != nil {
+		b.postingsPool.Put(sb.contentPostings)
+		sb.contentPostings = nil
+	}
+	if sb.namePostings != nil {
+		b.postingsPool.Put(sb.namePostings)
+		sb.namePostings = nil
+	}
+}
+
 func (b *Builder) newShardBuilder() (*ShardBuilder, error) {
 	desc := b.opts.RepositoryDescription
 	desc.HasSymbols = !b.opts.DisableCTags && b.opts.CTagsPath != ""
 	desc.SubRepoMap = b.opts.SubRepositories
 	desc.IndexOptions = b.opts.GetHash()
 
-	shardBuilder, err := NewShardBuilder(&desc)
-	if err != nil {
+	content := b.getPostingsBuilder()
+	name := b.getPostingsBuilder()
+	shardBuilder := newShardBuilderWithPostings(content, name)
+	if err := shardBuilder.setRepository(&desc); err != nil {
 		return nil, err
 	}
 	shardBuilder.IndexTime = b.indexTime
