@@ -585,26 +585,119 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	sort.Strings(names)
 	names = uniq(names)
 
-	log.Printf("attempting to index %d total files", totalFiles)
-	for idx, name := range names {
-		keys := fileKeys[name]
+	// Separate main-repo keys from submodule keys, collecting blob SHAs
+	// for the main repo so we can stream them via git cat-file --batch.
+	// ZOEKT_DISABLE_CATFILE_BATCH=true falls back to the go-git path for
+	// all files, useful as a kill switch if the cat-file path causes issues.
+	catfileBatchDisabled := cmp.Or(os.Getenv("ZOEKT_DISABLE_CATFILE_BATCH"), "false")
+	useCatfileBatch := true
+	if disabled, _ := strconv.ParseBool(catfileBatchDisabled); disabled {
+		useCatfileBatch = false
+		log.Printf("cat-file batch disabled via ZOEKT_DISABLE_CATFILE_BATCH, using go-git")
+	}
 
-		for _, key := range keys {
-			doc, err := createDocument(key, repos, opts.BuildOptions)
-			if err != nil {
-				return false, err
-			}
+	mainRepoKeys := make([]fileKey, 0, totalFiles)
+	mainRepoIDs := make([]plumbing.Hash, 0, totalFiles)
+	var submoduleKeys []fileKey
 
-			if err := builder.Add(doc); err != nil {
-				return false, fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
-			}
-
-			if idx%10_000 == 0 {
-				builder.CheckMemoryUsage()
+	for _, name := range names {
+		for _, key := range fileKeys[name] {
+			if useCatfileBatch && key.SubRepoPath == "" {
+				mainRepoKeys = append(mainRepoKeys, key)
+				mainRepoIDs = append(mainRepoIDs, key.ID)
+			} else {
+				submoduleKeys = append(submoduleKeys, key)
 			}
 		}
 	}
+
+	log.Printf("attempting to index %d total files (%d via cat-file, %d via go-git)", totalFiles, len(mainRepoIDs), len(submoduleKeys))
+
+	// Stream main-repo blobs via pipelined cat-file --batch --buffer.
+	// Large blobs are skipped without reading content into memory.
+	if len(mainRepoIDs) > 0 {
+		cr, err := newCatfileReader(opts.RepoDir, mainRepoIDs)
+		if err != nil {
+			return false, fmt.Errorf("newCatfileReader: %w", err)
+		}
+
+		if err := indexCatfileBlobs(cr, mainRepoKeys, repos, opts, builder); err != nil {
+			return false, err
+		}
+	}
+
+	// Index submodule blobs via go-git.
+	for idx, key := range submoduleKeys {
+		doc, err := createDocument(key, repos, opts.BuildOptions)
+		if err != nil {
+			return false, err
+		}
+
+		if err := builder.Add(doc); err != nil {
+			return false, fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
+		}
+
+		if idx%10_000 == 0 {
+			builder.CheckMemoryUsage()
+		}
+	}
+
 	return true, builder.Finish()
+}
+
+// indexCatfileBlobs streams main-repo blobs from the catfileReader into the
+// builder. Large blobs are skipped without reading content into memory.
+// keys must correspond 1:1 (in order) with the ids passed to newCatfileReader.
+// The reader is always closed when this function returns.
+func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]BlobLocation, opts Options, builder *index.Builder) error {
+	defer cr.Close()
+
+	for idx, key := range keys {
+		size, missing, err := cr.Next()
+		if err != nil {
+			return fmt.Errorf("cat-file next for %s: %w", key.FullPath(), err)
+		}
+
+		branches := repos[key].Branches
+		var doc index.Document
+
+		if missing {
+			// Unexpected for local repos — may indicate corruption, shallow
+			// clone, or a race with git gc. Log a warning and skip.
+			log.Printf("warning: blob %s missing for %s", key.ID, key.FullPath())
+			doc = skippedDoc(key, branches, index.SkipReasonMissing)
+		} else {
+			keyFullPath := key.FullPath()
+			if size > opts.BuildOptions.SizeMax && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
+				// Skip without reading content into memory.
+				doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
+			} else {
+				// Pre-allocate and read the full blob content in one call.
+				// io.ReadFull is preferred over io.LimitedReader here as it
+				// avoids the intermediate allocation and the size is known.
+				content := make([]byte, size)
+				if _, err := io.ReadFull(cr, content); err != nil {
+					return fmt.Errorf("read blob %s: %w", keyFullPath, err)
+				}
+				doc = index.Document{
+					SubRepositoryPath: key.SubRepoPath,
+					Name:              keyFullPath,
+					Content:           content,
+					Branches:          branches,
+				}
+			}
+		}
+
+		if err := builder.Add(doc); err != nil {
+			return fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
+		}
+
+		if idx%10_000 == 0 {
+			builder.CheckMemoryUsage()
+		}
+	}
+
+	return nil
 }
 
 // openRepo opens a git repository in a way that's optimized for indexing.
@@ -987,7 +1080,7 @@ func createDocument(key fileKey,
 
 	// We filter out large documents when fetching the repo. So if an object is too large, it will not be found.
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		return skippedLargeDoc(key, branches), nil
+		return skippedDoc(key, branches, index.SkipReasonTooLarge), nil
 	}
 
 	if err != nil {
@@ -996,7 +1089,7 @@ func createDocument(key fileKey,
 
 	keyFullPath := key.FullPath()
 	if blob.Size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(keyFullPath) {
-		return skippedLargeDoc(key, branches), nil
+		return skippedDoc(key, branches, index.SkipReasonTooLarge), nil
 	}
 
 	contents, err := blobContents(blob)
@@ -1012,9 +1105,10 @@ func createDocument(key fileKey,
 	}, nil
 }
 
-func skippedLargeDoc(key fileKey, branches []string) index.Document {
+// skippedDoc creates a Document placeholder for a blob that was not indexed.
+func skippedDoc(key fileKey, branches []string, reason index.SkipReason) index.Document {
 	return index.Document{
-		SkipReason:        index.SkipReasonTooLarge,
+		SkipReason:        reason,
 		Name:              key.FullPath(),
 		Branches:          branches,
 		SubRepositoryPath: key.SubRepoPath,
