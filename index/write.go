@@ -87,10 +87,11 @@ func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 		ng ngram
 		pl *postingList
 	}
-	var all []ngramPosting
-	for i, pl := range &s.asciiPostings {
-		if pl != nil && len(pl.data) > 0 {
-			all = append(all, ngramPosting{asciiIndexToNgram(uint32(i)), pl})
+	all := make([]ngramPosting, 0, len(s.asciiPopulated)+len(s.postings))
+	for _, idx := range s.asciiPopulated {
+		pl := s.asciiPostings[idx]
+		if len(pl.data) > 0 {
+			all = append(all, ngramPosting{asciiIndexToNgram(idx), pl})
 		}
 	}
 	for k, pl := range s.postings {

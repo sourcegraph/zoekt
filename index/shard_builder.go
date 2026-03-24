@@ -92,6 +92,11 @@ type postingsBuilder struct {
 	asciiPostings [1 << asciiNgramBits]*postingList
 	postings      map[ngram]*postingList
 
+	// asciiPopulated tracks which indices in asciiPostings are non-nil,
+	// so reset() and writePostings iterate only populated slots — O(n)
+	// where n is unique ASCII trigrams (~275K) instead of O(2M).
+	asciiPopulated []uint32
+
 	// To support UTF-8 searching, we must map back runes to byte
 	// offsets. As a first attempt, we sample regularly. The
 	// precise offset can be found by walking from the recorded
@@ -105,11 +110,12 @@ type postingsBuilder struct {
 	endByte  uint32
 }
 
-// Initial capacity for each posting list's byte slice. Empirically,
-// the average posting list in a source-code corpus is ~900 bytes
-// (600 entries × 1.5 bytes/varint). Pre-allocating 1024 avoids the
-// first growth event for the majority of ngrams.
-const initialPostingCap = 1024
+// Initial capacity for each posting list's byte slice. On the
+// kubernetes corpus (282K unique trigrams), the median posting list is
+// 10 bytes and 78% are under 64 bytes (power-law distribution).
+// Pre-allocating 64 covers the majority without the 244 MB waste that
+// a mean-based value (1024) would cause.
+const initialPostingCap = 64
 
 // estimateNgrams returns a pre-size hint for the non-ASCII postings map,
 // derived from the maximum shard content size. Intentionally over-estimates
@@ -129,16 +135,20 @@ func newPostingsBuilder(shardMaxBytes int) *postingsBuilder {
 	}
 }
 
-// reset clears the builder for reuse. The ASCII array, map, and their
-// postingList allocations are retained so the next shard build avoids
-// re-allocating them, cutting memclr and madvise overhead.
+// reset clears the builder for reuse. All postingList allocations
+// (backing arrays, map entries, ASCII array slots) are retained so the
+// next shard build avoids re-allocating them.
+// Uses asciiPopulated to reset only populated slots — O(populated)
+// instead of O(2M). Slots are kept non-nil with data truncated to
+// len 0; the hot path uses len(pl.data)==0 to re-record them in
+// asciiPopulated for the next shard.
 func (s *postingsBuilder) reset() {
-	for _, pl := range &s.asciiPostings {
-		if pl != nil {
-			pl.data = pl.data[:0]
-			pl.lastOff = 0
-		}
+	for _, idx := range s.asciiPopulated {
+		pl := s.asciiPostings[idx]
+		pl.data = pl.data[:0]
+		pl.lastOff = 0
 	}
+	s.asciiPopulated = s.asciiPopulated[:0]
 	for _, pl := range s.postings {
 		pl.data = pl.data[:0]
 		pl.lastOff = 0
@@ -211,6 +221,11 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 			if pl == nil {
 				pl = &postingList{data: make([]byte, 0, initialPostingCap)}
 				s.asciiPostings[idx] = pl
+				s.asciiPopulated = append(s.asciiPopulated, idx)
+			} else if len(pl.data) == 0 {
+				// Retained from a previous shard (pool reuse) — re-record
+				// in asciiPopulated for this shard's writePostings.
+				s.asciiPopulated = append(s.asciiPopulated, idx)
 			}
 		} else {
 			ng := runesToNGram(runeGram)
