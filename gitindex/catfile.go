@@ -22,6 +22,8 @@ import (
 	"io"
 	"os/exec"
 	"strconv"
+	"sync"
+	"syscall"
 
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -56,7 +58,10 @@ type catfileReader struct {
 
 	// pending tracks unread content bytes + trailing LF for the current
 	// entry. Next() discards any pending bytes before reading the next header.
-	pending int64
+	pending int
+
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // newCatfileReader starts a "git cat-file --batch --buffer" process and feeds
@@ -86,6 +91,7 @@ func newCatfileReader(repoDir string, ids []plumbing.Hash) (*catfileReader, erro
 	// Writer goroutine: feed all SHAs then close stdin to trigger flush.
 	writeErr := make(chan error, 1)
 	go func() {
+		defer close(writeErr)
 		defer stdin.Close()
 		bw := bufio.NewWriterSize(stdin, 64*1024)
 		var hexBuf [41]byte
@@ -113,10 +119,10 @@ func newCatfileReader(repoDir string, ids []plumbing.Hash) (*catfileReader, erro
 //
 // After Next returns successfully with missing=false, call Read to consume the
 // blob content, or call Next again to skip it.
-func (cr *catfileReader) Next() (size int64, missing bool, err error) {
+func (cr *catfileReader) Next() (size int, missing bool, err error) {
 	// Discard unread content from the previous entry.
 	if cr.pending > 0 {
-		if _, err := cr.reader.Discard(int(cr.pending)); err != nil {
+		if _, err := cr.reader.Discard(cr.pending); err != nil {
 			return 0, false, fmt.Errorf("discard pending bytes: %w", err)
 		}
 		cr.pending = 0
@@ -140,7 +146,7 @@ func (cr *catfileReader) Next() (size int64, missing bool, err error) {
 	if lastSpace == -1 {
 		return 0, false, fmt.Errorf("unexpected header: %q", header)
 	}
-	size, err = strconv.ParseInt(string(header[lastSpace+1:]), 10, 64)
+	size, err = strconv.Atoi(string(header[lastSpace+1:]))
 	if err != nil {
 		return 0, false, fmt.Errorf("parse size from %q: %w", header, err)
 	}
@@ -170,11 +176,11 @@ func (cr *catfileReader) Read(p []byte) (int, error) {
 	}
 
 	// Limit the read to the remaining content bytes.
-	if int64(len(p)) > contentRemaining {
+	if len(p) > contentRemaining {
 		p = p[:contentRemaining]
 	}
 	n, err := cr.reader.Read(p)
-	cr.pending -= int64(n)
+	cr.pending -= n
 	if err != nil {
 		return n, err
 	}
@@ -191,10 +197,33 @@ func (cr *catfileReader) Read(p []byte) (int, error) {
 }
 
 // Close shuts down the cat-file process and waits for it to exit.
+// It is safe to call Close multiple times or concurrently.
 func (cr *catfileReader) Close() error {
-	// Drain stdout so git can flush and exit without blocking.
-	_, _ = io.Copy(io.Discard, cr.reader)
-	// Wait for writer goroutine.
-	<-cr.writeErr
-	return cr.cmd.Wait()
+	cr.closeOnce.Do(func() {
+		// Kill first to avoid blocking on drain when there are many
+		// unconsumed entries. Gitaly uses the same kill-first pattern.
+		_ = cr.cmd.Process.Kill()
+		// Drain any buffered stdout so the pipe closes cleanly.
+		// Must complete before cmd.Wait(), which closes the pipe.
+		_, _ = io.Copy(io.Discard, cr.reader)
+		// Wait for writer goroutine (unblocks via broken pipe from Kill).
+		<-cr.writeErr
+		err := cr.cmd.Wait()
+		// Suppress the expected "signal: killed" error from our own Kill().
+		if isKilledErr(err) {
+			err = nil
+		}
+		cr.closeErr = err
+	})
+	return cr.closeErr
+}
+
+// isKilledErr reports whether err is an exec.ExitError caused by SIGKILL.
+func isKilledErr(err error) bool {
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		return false
+	}
+	ws, ok := exitErr.Sys().(syscall.WaitStatus)
+	return ok && ws.Signal() == syscall.SIGKILL
 }

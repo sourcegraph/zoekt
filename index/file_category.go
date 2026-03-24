@@ -35,9 +35,10 @@ func DetermineFileCategory(doc *Document) {
 	name := doc.Name
 	content := doc.Content
 
-	// If this document was skipped because it was too large, just guess the category based on the filename to avoid
-	// examining the contents. Note: passing nil content is allowed by the go-enry contract.
-	if doc.SkipReason == SkipReasonTooLarge || doc.SkipReason == SkipReasonBinary {
+	// If this document was skipped (too large, binary, or missing from the repo),
+	// guess the category based on the filename to avoid examining the contents.
+	// Note: passing nil content is allowed by the go-enry contract.
+	if doc.SkipReason == SkipReasonTooLarge || doc.SkipReason == SkipReasonBinary || doc.SkipReason == SkipReasonMissing {
 		content = nil
 	}
 

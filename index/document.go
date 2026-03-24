@@ -26,6 +26,7 @@ const (
 	SkipReasonTooSmall
 	SkipReasonBinary
 	SkipReasonTooManyTrigrams
+	SkipReasonMissing
 )
 
 func (s SkipReason) explanation() string {
@@ -40,6 +41,8 @@ func (s SkipReason) explanation() string {
 		return "contains binary content"
 	case SkipReasonTooManyTrigrams:
 		return "contains too many trigrams"
+	case SkipReasonMissing:
+		return "object missing from repository"
 	default:
 		return "unknown skip reason"
 	}
