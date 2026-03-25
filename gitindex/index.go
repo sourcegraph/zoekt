@@ -182,6 +182,13 @@ func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error)
 	return commitObj, nil
 }
 
+func plainOpenRepo(repoDir string) (*git.Repository, error) {
+	return git.PlainOpenWithOptions(repoDir, &git.PlainOpenOptions{
+		DetectDotGit:          true,
+		EnableDotGitCommonDir: true,
+	})
+}
+
 func configLookupRemoteURL(cfg *config.Config, key string) string {
 	rc := cfg.Remotes[key]
 	if rc == nil || len(rc.URLs) == 0 {
@@ -193,7 +200,7 @@ func configLookupRemoteURL(cfg *config.Config, key string) string {
 var sshRelativeURLRegexp = regexp.MustCompile(`^([^@]+)@([^:]+):(.*)$`)
 
 func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
-	repo, err := git.PlainOpen(repoDir)
+	repo, err := plainOpenRepo(repoDir)
 	if err != nil {
 		return err
 	}
@@ -451,9 +458,9 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	var repo *git.Repository
 	legacyRepoOpen := cmp.Or(os.Getenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION"), "false")
 	if b, err := strconv.ParseBool(legacyRepoOpen); b || err != nil {
-		repo, err = git.PlainOpen(opts.RepoDir)
+		repo, err = plainOpenRepo(opts.RepoDir)
 		if err != nil {
-			return false, fmt.Errorf("git.PlainOpen: %w", err)
+			return false, fmt.Errorf("plainOpenRepo: %w", err)
 		}
 	} else {
 		var repoCloser io.Closer
