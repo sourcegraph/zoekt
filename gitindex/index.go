@@ -210,6 +210,19 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 		return err
 	}
 
+	return setTemplatesFromRepoConfig(desc, cfg)
+}
+
+func setTemplatesFromRepo(desc *zoekt.Repository, repo *git.Repository, repoDir string) error {
+	cfg, err := repo.Config()
+	if err == nil {
+		return setTemplatesFromRepoConfig(desc, cfg)
+	}
+
+	return setTemplatesFromConfig(desc, repoDir)
+}
+
+func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) error {
 	sec := cfg.Raw.Section("zoekt")
 
 	webURLStr := sec.Options.Get("web-url")
@@ -471,8 +484,8 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		defer repoCloser.Close()
 	}
 
-	if err := setTemplatesFromConfig(&opts.BuildOptions.RepositoryDescription, opts.RepoDir); err != nil {
-		log.Printf("setTemplatesFromConfig(%s): %s", opts.RepoDir, err)
+	if err := setTemplatesFromRepo(&opts.BuildOptions.RepositoryDescription, repo, opts.RepoDir); err != nil {
+		log.Printf("setTemplatesFromRepo(%s): %s", opts.RepoDir, err)
 	}
 
 	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
