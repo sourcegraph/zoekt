@@ -132,6 +132,39 @@ func TestIndexTinyRepo(t *testing.T) {
 	}
 }
 
+func TestIndexGitRepo_Worktree(t *testing.T) {
+	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	indexDir := t.TempDir()
+
+	opts := Options{
+		RepoDir:  worktreeDir,
+		Branches: []string{"HEAD"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo(worktree): %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal("search failed", err)
+	}
+
+	if len(results.Files) != 1 {
+		t.Fatalf("got search result %v, want 1 file", results.Files)
+	}
+}
+
 func executeCommand(t *testing.T, dir string, cmd *exec.Cmd) *exec.Cmd {
 	cmd.Dir = dir
 	cmd.Env = []string{
@@ -146,6 +179,26 @@ func executeCommand(t *testing.T, dir string, cmd *exec.Cmd) *exec.Cmd {
 		t.Fatalf("cmd.Run: %v", err)
 	}
 	return cmd
+}
+
+func initGitWorktree(t *testing.T, fileName, content string) (string, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	executeCommand(t, dir, exec.Command("git", "init", "-b", "main", "repo"))
+
+	repoDir := filepath.Join(dir, "repo")
+	if err := os.WriteFile(filepath.Join(repoDir, fileName), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	executeCommand(t, repoDir, exec.Command("git", "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git"))
+	executeCommand(t, repoDir, exec.Command("git", "add", "."))
+	executeCommand(t, repoDir, exec.Command("git", "commit", "-m", "initial commit"))
+
+	worktreeDir := filepath.Join(dir, "wt")
+	executeCommand(t, repoDir, exec.Command("git", "worktree", "add", "-b", "worktree-branch", worktreeDir))
+
+	return repoDir, worktreeDir
 }
 
 func TestIndexDeltaBasic(t *testing.T) {
@@ -833,6 +886,19 @@ func TestSetTemplates_e2e(t *testing.T) {
 	desc := zoekt.Repository{}
 	if err := setTemplatesFromConfig(&desc, repositoryDir); err != nil {
 		t.Fatalf("setTemplatesFromConfig: %v", err)
+	}
+
+	if got, want := desc.FileURLTemplate, `{{URLJoinPath "https://github.com/sourcegraph/zoekt" "blob" .Version .Path}}`; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSetTemplates_Worktree(t *testing.T) {
+	_, worktreeDir := initGitWorktree(t, "hello.go", "package main\n")
+	desc := zoekt.Repository{}
+
+	if err := setTemplatesFromConfig(&desc, worktreeDir); err != nil {
+		t.Fatalf("setTemplatesFromConfig(worktree): %v", err)
 	}
 
 	if got, want := desc.FileURLTemplate, `{{URLJoinPath "https://github.com/sourcegraph/zoekt" "blob" .Version .Path}}`; got != want {

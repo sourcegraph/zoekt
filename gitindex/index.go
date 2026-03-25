@@ -712,7 +712,6 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 // It copies the relevant logic from git.PlainOpen, and tweaks certain filesystem options.
 func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	fs := osfs.New(repoDir)
-	wt := fs
 
 	// Check if the root directory exists.
 	if _, err := fs.Stat(""); err != nil {
@@ -721,6 +720,27 @@ func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 		}
 		return nil, nil, err
 	}
+
+	fi, err := fs.Stat(git.GitDirName)
+	if err == nil && !fi.IsDir() {
+		return openCompatibleRepo(repoDir)
+	}
+
+	return openOptimizedRepo(repoDir)
+}
+
+func openCompatibleRepo(repoDir string) (*git.Repository, io.Closer, error) {
+	repo, err := plainOpenRepo(repoDir)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return repo, noopCloser{}, nil
+}
+
+func openOptimizedRepo(repoDir string) (*git.Repository, io.Closer, error) {
+	fs := osfs.New(repoDir)
+	wt := fs
 
 	// If there's a .git directory, use that as the new root.
 	if fi, err := fs.Stat(git.GitDirName); err == nil && fi.IsDir() {
@@ -738,6 +758,10 @@ func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	repo, err := git.Open(s, wt)
 	return repo, s, err
 }
+
+type noopCloser struct{}
+
+func (noopCloser) Close() error { return nil }
 
 func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 	ignoreFile, err := tree.File(ignore.IgnoreFile)
