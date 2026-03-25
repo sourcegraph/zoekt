@@ -182,6 +182,13 @@ func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error)
 	return commitObj, nil
 }
 
+func plainOpenRepo(repoDir string) (*git.Repository, error) {
+	return git.PlainOpenWithOptions(repoDir, &git.PlainOpenOptions{
+		DetectDotGit:          true,
+		EnableDotGitCommonDir: true,
+	})
+}
+
 func configLookupRemoteURL(cfg *config.Config, key string) string {
 	rc := cfg.Remotes[key]
 	if rc == nil || len(rc.URLs) == 0 {
@@ -193,7 +200,7 @@ func configLookupRemoteURL(cfg *config.Config, key string) string {
 var sshRelativeURLRegexp = regexp.MustCompile(`^([^@]+)@([^:]+):(.*)$`)
 
 func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
-	repo, err := git.PlainOpen(repoDir)
+	repo, err := plainOpenRepo(repoDir)
 	if err != nil {
 		return err
 	}
@@ -203,6 +210,19 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 		return err
 	}
 
+	return setTemplatesFromRepoConfig(desc, cfg)
+}
+
+func setTemplatesFromRepo(desc *zoekt.Repository, repo *git.Repository, repoDir string) error {
+	cfg, err := repo.Config()
+	if err == nil {
+		return setTemplatesFromRepoConfig(desc, cfg)
+	}
+
+	return setTemplatesFromConfig(desc, repoDir)
+}
+
+func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) error {
 	sec := cfg.Raw.Section("zoekt")
 
 	webURLStr := sec.Options.Get("web-url")
@@ -451,9 +471,9 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	var repo *git.Repository
 	legacyRepoOpen := cmp.Or(os.Getenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION"), "false")
 	if b, err := strconv.ParseBool(legacyRepoOpen); b || err != nil {
-		repo, err = git.PlainOpen(opts.RepoDir)
+		repo, err = plainOpenRepo(opts.RepoDir)
 		if err != nil {
-			return false, fmt.Errorf("git.PlainOpen: %w", err)
+			return false, fmt.Errorf("plainOpenRepo: %w", err)
 		}
 	} else {
 		var repoCloser io.Closer
@@ -464,8 +484,8 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		defer repoCloser.Close()
 	}
 
-	if err := setTemplatesFromConfig(&opts.BuildOptions.RepositoryDescription, opts.RepoDir); err != nil {
-		log.Printf("setTemplatesFromConfig(%s): %s", opts.RepoDir, err)
+	if err := setTemplatesFromRepo(&opts.BuildOptions.RepositoryDescription, repo, opts.RepoDir); err != nil {
+		log.Printf("setTemplatesFromRepo(%s): %s", opts.RepoDir, err)
 	}
 
 	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
@@ -705,7 +725,6 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 // It copies the relevant logic from git.PlainOpen, and tweaks certain filesystem options.
 func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	fs := osfs.New(repoDir)
-	wt := fs
 
 	// Check if the root directory exists.
 	if _, err := fs.Stat(""); err != nil {
@@ -714,6 +733,27 @@ func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 		}
 		return nil, nil, err
 	}
+
+	fi, err := fs.Stat(git.GitDirName)
+	if err == nil && !fi.IsDir() {
+		return openCompatibleRepo(repoDir)
+	}
+
+	return openOptimizedRepo(repoDir)
+}
+
+func openCompatibleRepo(repoDir string) (*git.Repository, io.Closer, error) {
+	repo, err := plainOpenRepo(repoDir)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return repo, noopCloser{}, nil
+}
+
+func openOptimizedRepo(repoDir string) (*git.Repository, io.Closer, error) {
+	fs := osfs.New(repoDir)
+	wt := fs
 
 	// If there's a .git directory, use that as the new root.
 	if fi, err := fs.Stat(git.GitDirName); err == nil && fi.IsDir() {
@@ -731,6 +771,10 @@ func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
 	repo, err := git.Open(s, wt)
 	return repo, s, err
 }
+
+type noopCloser struct{}
+
+func (noopCloser) Close() error { return nil }
 
 func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 	ignoreFile, err := tree.File(ignore.IgnoreFile)
