@@ -165,6 +165,36 @@ func TestIndexGitRepo_Worktree(t *testing.T) {
 	}
 }
 
+func TestCatfileFilterSpec(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts Options
+		want string
+	}{
+		{
+			name: "size max",
+			opts: Options{BuildOptions: index.Options{SizeMax: 1 << 20}},
+			want: "blob:limit=1048577",
+		},
+		{
+			name: "large file exception disables filter",
+			opts: Options{BuildOptions: index.Options{SizeMax: 1 << 20, LargeFiles: []string{"*.bin"}}},
+			want: "",
+		},
+		{
+			name: "zero size max disables filter",
+			opts: Options{BuildOptions: index.Options{SizeMax: 0}},
+			want: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := catfileFilterSpec(tc.opts); got != tc.want {
+				t.Fatalf("catfileFilterSpec() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func executeCommand(t *testing.T, dir string, cmd *exec.Cmd) *exec.Cmd {
 	cmd.Dir = dir
 	cmd.Env = []string{

@@ -636,7 +636,10 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	// Stream main-repo blobs via pipelined cat-file --batch --buffer.
 	// Large blobs are skipped without reading content into memory.
 	if len(mainRepoIDs) > 0 {
-		cr, err := newCatfileReader(opts.RepoDir, mainRepoIDs)
+		crOpts := catfileReaderOptions{
+			filterSpec: catfileFilterSpec(opts),
+		}
+		cr, err := newCatfileReader(opts.RepoDir, mainRepoIDs, crOpts)
 		if err != nil {
 			return false, fmt.Errorf("newCatfileReader: %w", err)
 		}
@@ -673,7 +676,7 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 	defer cr.Close()
 
 	for idx, key := range keys {
-		size, missing, err := cr.Next()
+		size, missing, excluded, err := cr.Next()
 		if err != nil {
 			return fmt.Errorf("cat-file next for %s: %w", key.FullPath(), err)
 		}
@@ -686,6 +689,8 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 			// clone, or a race with git gc. Log a warning and skip.
 			log.Printf("warning: blob %s missing for %s", key.ID, key.FullPath())
 			doc = skippedDoc(key, branches, index.SkipReasonMissing)
+		} else if excluded {
+			doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 		} else {
 			keyFullPath := key.FullPath()
 			if size > opts.BuildOptions.SizeMax && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
@@ -775,6 +780,21 @@ func openOptimizedRepo(repoDir string) (*git.Repository, io.Closer, error) {
 type noopCloser struct{}
 
 func (noopCloser) Close() error { return nil }
+
+func catfileFilterSpec(opts Options) string {
+	// Can't filter by size if we have large file exceptions
+	if len(opts.BuildOptions.LargeFiles) > 0 {
+		return ""
+	}
+
+	if opts.BuildOptions.SizeMax <= 0 {
+		return ""
+	}
+
+	// Git's blob:limit filter excludes blobs whose size is >= the given limit,
+	// while zoekt indexes files up to and including SizeMax bytes.
+	return fmt.Sprintf("blob:limit=%d", int64(opts.BuildOptions.SizeMax)+1)
+}
 
 func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 	ignoreFile, err := tree.File(ignore.IgnoreFile)

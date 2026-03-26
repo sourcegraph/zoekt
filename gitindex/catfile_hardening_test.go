@@ -22,13 +22,13 @@ func TestCatfileReader_DoubleClose(t *testing.T) {
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["hello.txt"]}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Consume the entry so the process can exit cleanly.
-	if _, _, err := cr.Next(); err != nil {
+	if _, _, _, err := cr.Next(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -61,13 +61,13 @@ func TestCatfileReader_ConcurrentClose(t *testing.T) {
 		blobs["binary.bin"],
 	}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Read one entry, leave two unconsumed.
-	if _, _, err := cr.Next(); err != nil {
+	if _, _, _, err := cr.Next(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -111,7 +111,7 @@ func TestCatfileReader_CloseWithoutReading(t *testing.T) {
 		blobs["empty.txt"],
 	}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,13 +168,13 @@ git commit -m "many files"
 		ids = append(ids, plumbing.NewHash(string(out[:len(out)-1])))
 	}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Read only 1 of 200 entries.
-	if _, _, err := cr.Next(); err != nil {
+	if _, _, _, err := cr.Next(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -207,7 +207,7 @@ func TestCatfileReader_ReadWithoutNext(t *testing.T) {
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["hello.txt"]}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,13 +227,13 @@ func TestCatfileReader_ReadAfterFullConsumption(t *testing.T) {
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["hello.txt"]}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
-	size, _, _ := cr.Next()
+	size, _, _, _ := cr.Next()
 	content := make([]byte, size)
 	if _, err := io.ReadFull(cr, content); err != nil {
 		t.Fatal(err)
@@ -256,13 +256,13 @@ func TestCatfileReader_SmallBufferReads(t *testing.T) {
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["hello.txt"]}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
-	size, _, _ := cr.Next()
+	size, _, _, _ := cr.Next()
 
 	var result []byte
 	buf := make([]byte, 1)
@@ -297,14 +297,14 @@ func TestCatfileReader_PartialReadThenNext(t *testing.T) {
 		blobs["binary.bin"], // variable, starts with 0x00
 	}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
 	// Read only 5 of 12 bytes from hello.txt.
-	size, _, _ := cr.Next()
+	size, _, _, _ := cr.Next()
 	if size != 12 {
 		t.Fatalf("hello.txt size = %d, want 12", size)
 	}
@@ -317,7 +317,7 @@ func TestCatfileReader_PartialReadThenNext(t *testing.T) {
 	}
 
 	// Advance — must discard remaining 7 content bytes + trailing LF.
-	size, _, err = cr.Next()
+	size, _, _, err = cr.Next()
 	if err != nil {
 		t.Fatalf("Next binary.bin after partial read: %v", err)
 	}
@@ -343,13 +343,13 @@ func TestCatfileReader_PartialReadExactlyOneByteShort(t *testing.T) {
 		blobs["binary.bin"], // starts with 0x00
 	}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
-	size, _, _ := cr.Next()
+	size, _, _, _ := cr.Next()
 	// Read exactly size-1 bytes — leaves 1 content byte + trailing LF.
 	buf := make([]byte, size-1)
 	if _, err := io.ReadFull(cr, buf); err != nil {
@@ -361,11 +361,11 @@ func TestCatfileReader_PartialReadExactlyOneByteShort(t *testing.T) {
 
 	// Advance — pending should be 2 (1 content byte + 1 LF). The
 	// Discard call must handle this exact boundary correctly.
-	size, missing, err := cr.Next()
+	size, missing, excluded, err := cr.Next()
 	if err != nil {
 		t.Fatalf("Next after size-1 partial read: %v", err)
 	}
-	if missing {
+	if missing || excluded {
 		t.Fatal("binary.bin unexpectedly missing")
 	}
 
@@ -386,13 +386,13 @@ func TestCatfileReader_PartialReadExactlyOneByteShort(t *testing.T) {
 func TestCatfileReader_EmptyIds(t *testing.T) {
 	repoDir, _ := createTestRepo(t)
 
-	cr, err := newCatfileReader(repoDir, nil)
+	cr, err := newCatfileReader(repoDir, nil, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
-	_, _, err = cr.Next()
+	_, _, _, err = cr.Next()
 	if err != io.EOF {
 		t.Fatalf("expected io.EOF for empty ids, got %v", err)
 	}
@@ -408,18 +408,18 @@ func TestCatfileReader_MultipleEmptyBlobs(t *testing.T) {
 	emptyID := blobs["empty.txt"]
 	ids := []plumbing.Hash{emptyID, emptyID, emptyID, emptyID, emptyID}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
 	for i := range ids {
-		size, missing, err := cr.Next()
+		size, missing, excluded, err := cr.Next()
 		if err != nil {
 			t.Fatalf("Next #%d: %v", i, err)
 		}
-		if missing {
+		if missing || excluded {
 			t.Fatalf("#%d unexpectedly missing", i)
 		}
 		if size != 0 {
@@ -428,7 +428,7 @@ func TestCatfileReader_MultipleEmptyBlobs(t *testing.T) {
 		// Don't read — Next should discard the trailing LF for us.
 	}
 
-	_, _, err = cr.Next()
+	_, _, _, err = cr.Next()
 	if err != io.EOF {
 		t.Fatalf("expected EOF after %d empty blobs, got %v", len(ids), err)
 	}
@@ -440,17 +440,17 @@ func TestCatfileReader_MultipleEmptyBlobs(t *testing.T) {
 func TestCatfileReader_EmptyBlobRead(t *testing.T) {
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{
-		blobs["empty.txt"],  // 0 bytes
-		blobs["hello.txt"],  // 12 bytes — sentinel
+		blobs["empty.txt"], // 0 bytes
+		blobs["hello.txt"], // 12 bytes — sentinel
 	}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
-	size, _, _ := cr.Next()
+	size, _, _, _ := cr.Next()
 	if size != 0 {
 		t.Fatalf("empty.txt size = %d", size)
 	}
@@ -464,7 +464,7 @@ func TestCatfileReader_EmptyBlobRead(t *testing.T) {
 
 	// The trailing LF must have been consumed. Verify by reading the
 	// next entry — if the LF leaked, the header parse would fail.
-	size, _, err = cr.Next()
+	size, _, _, err = cr.Next()
 	if err != nil {
 		t.Fatalf("Next hello.txt after empty blob Read: %v", err)
 	}
@@ -494,23 +494,26 @@ func TestCatfileReader_AllMissing(t *testing.T) {
 		plumbing.NewHash("2222222222222222222222222222222222222222"),
 	}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
 	for i, id := range ids {
-		_, missing, err := cr.Next()
+		_, missing, excluded, err := cr.Next()
 		if err != nil {
 			t.Fatalf("Next #%d (%s): %v", i, id, err)
+		}
+		if excluded {
+			t.Errorf("expected #%d (%s) to be missing, not excluded", i, id)
 		}
 		if !missing {
 			t.Errorf("expected #%d (%s) to be missing", i, id)
 		}
 	}
 
-	_, _, err = cr.Next()
+	_, _, _, err = cr.Next()
 	if err != io.EOF {
 		t.Fatalf("expected EOF after all missing, got %v", err)
 	}
@@ -532,22 +535,22 @@ func TestCatfileReader_AlternatingMissingPresent(t *testing.T) {
 		blobs["binary.bin"],
 	}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
 	// fake1 — missing
-	_, missing, err := cr.Next()
-	if err != nil || !missing {
-		t.Fatalf("fake1: err=%v missing=%v", err, missing)
+	_, missing, excluded, err := cr.Next()
+	if err != nil || !missing || excluded {
+		t.Fatalf("fake1: err=%v missing=%v excluded=%v", err, missing, excluded)
 	}
 
 	// hello.txt — present, read it
-	size, missing, err := cr.Next()
-	if err != nil || missing {
-		t.Fatalf("hello.txt: err=%v missing=%v", err, missing)
+	size, missing, excluded, err := cr.Next()
+	if err != nil || missing || excluded {
+		t.Fatalf("hello.txt: err=%v missing=%v excluded=%v", err, missing, excluded)
 	}
 	content := make([]byte, size)
 	if _, err := io.ReadFull(cr, content); err != nil {
@@ -558,24 +561,24 @@ func TestCatfileReader_AlternatingMissingPresent(t *testing.T) {
 	}
 
 	// fake2 — missing
-	_, missing, err = cr.Next()
-	if err != nil || !missing {
-		t.Fatalf("fake2: err=%v missing=%v", err, missing)
+	_, missing, excluded, err = cr.Next()
+	if err != nil || !missing || excluded {
+		t.Fatalf("fake2: err=%v missing=%v excluded=%v", err, missing, excluded)
 	}
 
 	// empty.txt — present, skip it
-	size, missing, err = cr.Next()
-	if err != nil || missing {
-		t.Fatalf("empty.txt: err=%v missing=%v", err, missing)
+	size, missing, excluded, err = cr.Next()
+	if err != nil || missing || excluded {
+		t.Fatalf("empty.txt: err=%v missing=%v excluded=%v", err, missing, excluded)
 	}
 	if size != 0 {
 		t.Errorf("empty.txt size = %d", size)
 	}
 
 	// binary.bin — present, read it
-	size, missing, err = cr.Next()
-	if err != nil || missing {
-		t.Fatalf("binary.bin: err=%v missing=%v", err, missing)
+	size, missing, excluded, err = cr.Next()
+	if err != nil || missing || excluded {
+		t.Fatalf("binary.bin: err=%v missing=%v excluded=%v", err, missing, excluded)
 	}
 	binContent := make([]byte, size)
 	if _, err := io.ReadFull(cr, binContent); err != nil {
@@ -585,7 +588,7 @@ func TestCatfileReader_AlternatingMissingPresent(t *testing.T) {
 		t.Errorf("binary.bin[0] = 0x%02x, want 0x00", binContent[0])
 	}
 
-	_, _, err = cr.Next()
+	_, _, _, err = cr.Next()
 	if err != io.EOF {
 		t.Fatalf("expected EOF, got %v", err)
 	}
@@ -601,26 +604,26 @@ func TestCatfileReader_MissingThenSkip(t *testing.T) {
 	fake := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	ids := []plumbing.Hash{
 		fake,
-		blobs["large.bin"],  // 64KB — skip without reading
-		blobs["hello.txt"],  // sentinel — read to verify integrity
+		blobs["large.bin"], // 64KB — skip without reading
+		blobs["hello.txt"], // sentinel — read to verify integrity
 	}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
 	// missing
-	_, missing, _ := cr.Next()
-	if !missing {
+	_, missing, excluded, _ := cr.Next()
+	if !missing || excluded {
 		t.Fatal("expected missing")
 	}
 
 	// large.bin — skip
-	size, missing, err := cr.Next()
-	if err != nil || missing {
-		t.Fatalf("large.bin: err=%v missing=%v", err, missing)
+	size, missing, excluded, err := cr.Next()
+	if err != nil || missing || excluded {
+		t.Fatalf("large.bin: err=%v missing=%v excluded=%v", err, missing, excluded)
 	}
 	if size != 64*1024 {
 		t.Fatalf("large.bin size = %d", size)
@@ -628,9 +631,9 @@ func TestCatfileReader_MissingThenSkip(t *testing.T) {
 	// deliberately don't read
 
 	// hello.txt — read after missing+skip
-	size, missing, err = cr.Next()
-	if err != nil || missing {
-		t.Fatalf("hello.txt: err=%v missing=%v", err, missing)
+	size, missing, excluded, err = cr.Next()
+	if err != nil || missing || excluded {
+		t.Fatalf("hello.txt: err=%v missing=%v excluded=%v", err, missing, excluded)
 	}
 	content := make([]byte, size)
 	if _, err := io.ReadFull(cr, content); err != nil {
@@ -649,26 +652,26 @@ func TestCatfileReader_RepeatedNextAfterEOF(t *testing.T) {
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["hello.txt"]}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
 	// Consume and skip the only entry.
-	if _, _, err := cr.Next(); err != nil {
+	if _, _, _, err := cr.Next(); err != nil {
 		t.Fatal(err)
 	}
 
 	// First EOF.
-	_, _, err = cr.Next()
+	_, _, _, err = cr.Next()
 	if err != io.EOF {
 		t.Fatalf("first post-exhaust Next: %v, want io.EOF", err)
 	}
 
 	// Second and third EOF — must be stable.
 	for i := 0; i < 2; i++ {
-		_, _, err = cr.Next()
+		_, _, _, err = cr.Next()
 		if err != io.EOF {
 			t.Fatalf("Next #%d after EOF: %v, want io.EOF", i+2, err)
 		}
@@ -684,13 +687,13 @@ func TestCatfileReader_LargeBlobBytePrecision(t *testing.T) {
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["large.bin"]}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
-	size, _, err := cr.Next()
+	size, _, _, err := cr.Next()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,13 +735,13 @@ func TestCatfileReader_LargeBlobChunkedRead(t *testing.T) {
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["large.bin"]}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
-	size, _, _ := cr.Next()
+	size, _, _, _ := cr.Next()
 	if size != 64*1024 {
 		t.Fatalf("size = %d", size)
 	}
@@ -780,18 +783,18 @@ func TestCatfileReader_DuplicateSHAs(t *testing.T) {
 	sha := blobs["hello.txt"]
 	ids := []plumbing.Hash{sha, sha, sha}
 
-	cr, err := newCatfileReader(repoDir, ids)
+	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
 
 	for i := 0; i < 3; i++ {
-		size, missing, err := cr.Next()
+		size, missing, excluded, err := cr.Next()
 		if err != nil {
 			t.Fatalf("Next #%d: %v", i, err)
 		}
-		if missing {
+		if missing || excluded {
 			t.Fatalf("#%d unexpectedly missing", i)
 		}
 		if size != 12 {
@@ -806,7 +809,7 @@ func TestCatfileReader_DuplicateSHAs(t *testing.T) {
 		}
 	}
 
-	_, _, err = cr.Next()
+	_, _, _, err = cr.Next()
 	if err != io.EOF {
 		t.Fatalf("expected EOF, got %v", err)
 	}
