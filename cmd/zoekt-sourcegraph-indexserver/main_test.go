@@ -44,7 +44,6 @@ func TestServer_defaultArgs(t *testing.T) {
 		IndexDir:    "/testdata/index",
 		Parallelism: 6,
 		Incremental: true,
-		FileLimit:   2 << 20,
 	}
 	got := s.indexArgs(IndexOptions{Name: "testName"})
 	if !cmp.Equal(got, want) {
@@ -218,7 +217,6 @@ func TestCreateEmptyShard(t *testing.T) {
 		Incremental: true,
 		IndexDir:    dir,
 		Parallelism: 1,
-		FileLimit:   1,
 	}
 
 	if err := createEmptyShard(args); err != nil {

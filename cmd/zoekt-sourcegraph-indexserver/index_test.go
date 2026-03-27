@@ -478,7 +478,6 @@ func TestIndex(t *testing.T) {
 	}{{
 		name: "minimal",
 		args: indexArgs{
-			FileLimit: MaxFileSize,
 			IndexOptions: IndexOptions{
 				Name:     "test/repo",
 				CloneURL: "http://api.test/.internal/git/test/repo",
@@ -505,7 +504,6 @@ func TestIndex(t *testing.T) {
 	}, {
 		name: "minimal-id",
 		args: indexArgs{
-			FileLimit: MaxFileSize,
 			IndexOptions: IndexOptions{
 				Name:     "test/repo",
 				CloneURL: "http://api.test/.internal/git/test/repo",
@@ -531,39 +529,11 @@ func TestIndex(t *testing.T) {
 			"zoekt-git-index -submodules=false -branches HEAD -file_limit 2097152 -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}, {
-		name: "custom-file-limit-filter",
-		args: indexArgs{
-			FileLimit: 123,
-			IndexOptions: IndexOptions{
-				Name:     "test/repo",
-				CloneURL: "http://api.test/.internal/git/test/repo",
-				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "deadbeef"}},
-				TenantID: 1,
-			},
-		},
-		want: []string{
-			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Actor-UID: internal",
-			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Tenant-ID: 1",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 --no-tags --filter=blob:limit=124 http://api.test/.internal/git/test/repo deadbeef",
-			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.latestCommitDate 1",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
-			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
-			"zoekt-git-index -submodules=false -branches HEAD -file_limit 123 -disable_ctags $TMPDIR/test%2Frepo.git",
-		},
-	}, {
 		name: "all",
 		args: indexArgs{
 			Incremental: true,
 			IndexDir:    "/data/index",
 			Parallelism: 4,
-			FileLimit:   123,
 			IndexOptions: IndexOptions{
 				Name:       "test/repo",
 				CloneURL:   "http://api.test/.internal/git/test/repo",
@@ -592,7 +562,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
 			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev " +
-				"-file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
+				"-file_limit 2097152 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
 		},
 	}, {
@@ -601,7 +571,6 @@ func TestIndex(t *testing.T) {
 			Incremental: true,
 			IndexDir:    "/data/index",
 			Parallelism: 4,
-			FileLimit:   123,
 			UseDelta:    true,
 			IndexOptions: IndexOptions{
 				RepoID:     0,
@@ -644,7 +613,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
 			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev,release " +
-				"-delta -delta_threshold 22 -file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
+				"-delta -delta_threshold 22 -file_limit 2097152 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
 		},
 	}}

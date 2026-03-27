@@ -731,7 +731,6 @@ func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
 		IndexDir:     s.IndexDir,
 		Parallelism:  parallelism,
 		Incremental:  true,
-		FileLimit:    MaxFileSize,
 		ShardMerging: s.shardMerging,
 	}
 }
