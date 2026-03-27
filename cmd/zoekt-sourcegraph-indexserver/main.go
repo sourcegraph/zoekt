@@ -169,8 +169,8 @@ var (
 	})
 )
 
-// 2 MB; match https://sourcegraph.sourcegraph.com/r/github.com/sourcegraph/sourcegraph/-/blob/cmd/searcher/internal/search/store.go?L32
-const MaxFileSize = 2 << 20
+// 1 MB; match https://sourcegraph.sourcegraph.com/r/github.com/sourcegraph/sourcegraph/-/blob/cmd/searcher/internal/search/store.go?L32
+const MaxFileSize = 1 << 20
 
 // set of repositories that we want to capture separate indexing metrics for
 var reposWithSeparateIndexingMetrics = make(map[string]struct{})
