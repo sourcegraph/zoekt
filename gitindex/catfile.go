@@ -28,6 +28,10 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
+type catfileReaderOptions struct {
+	filterSpec string
+}
+
 // catfileReader provides streaming access to git blob objects via a pipelined
 // "git cat-file --batch --buffer" process. A writer goroutine feeds all blob
 // SHAs to stdin while the caller reads responses one at a time, similar to
@@ -39,14 +43,15 @@ import (
 //
 // Usage:
 //
-//	cr, err := newCatfileReader(repoDir, ids)
+//	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 //	if err != nil { ... }
 //	defer cr.Close()
 //
 //	for {
-//	    size, missing, err := cr.Next()
+//	    size, missing, excluded, err := cr.Next()
 //	    if err == io.EOF { break }
 //	    if missing { continue }
+//	    if excluded { continue }
 //	    if size > maxSize { continue } // unread bytes auto-skipped
 //	    content := make([]byte, size)
 //	    io.ReadFull(cr, content)
@@ -66,9 +71,14 @@ type catfileReader struct {
 
 // newCatfileReader starts a "git cat-file --batch --buffer" process and feeds
 // all ids to its stdin via a background goroutine. The caller must call Close
-// when done.
-func newCatfileReader(repoDir string, ids []plumbing.Hash) (*catfileReader, error) {
-	cmd := exec.Command("git", "cat-file", "--batch", "--buffer")
+// when done. Pass a zero-value catfileReaderOptions when no options are needed.
+func newCatfileReader(repoDir string, ids []plumbing.Hash, opts catfileReaderOptions) (*catfileReader, error) {
+	args := []string{"cat-file", "--batch", "--buffer"}
+	if opts.filterSpec != "" {
+		args = append(args, "--filter="+opts.filterSpec)
+	}
+
+	cmd := exec.Command("git", args...)
 	cmd.Dir = repoDir
 
 	stdin, err := cmd.StdinPipe()
@@ -114,16 +124,17 @@ func newCatfileReader(repoDir string, ids []plumbing.Hash) (*catfileReader, erro
 }
 
 // Next advances to the next blob entry. It returns the blob's size and whether
-// it is missing. Any unread content from the previous entry is automatically
-// discarded. Returns io.EOF when all entries have been consumed.
+// it is missing or excluded by the configured filter. Any unread content from
+// the previous entry is automatically discarded. Returns io.EOF when all
+// entries have been consumed.
 //
-// After Next returns successfully with missing=false, call Read to consume the
-// blob content, or call Next again to skip it.
-func (cr *catfileReader) Next() (size int, missing bool, err error) {
+// After Next returns successfully with missing=false and excluded=false, call
+// Read to consume the blob content, or call Next again to skip it.
+func (cr *catfileReader) Next() (size int, missing bool, excluded bool, err error) {
 	// Discard unread content from the previous entry.
 	if cr.pending > 0 {
 		if _, err := cr.reader.Discard(cr.pending); err != nil {
-			return 0, false, fmt.Errorf("discard pending bytes: %w", err)
+			return 0, false, false, fmt.Errorf("discard pending bytes: %w", err)
 		}
 		cr.pending = 0
 	}
@@ -131,29 +142,33 @@ func (cr *catfileReader) Next() (size int, missing bool, err error) {
 	headerBytes, err := cr.reader.ReadBytes('\n')
 	if err != nil {
 		if err == io.EOF {
-			return 0, false, io.EOF
+			return 0, false, false, io.EOF
 		}
-		return 0, false, fmt.Errorf("read header: %w", err)
+		return 0, false, false, fmt.Errorf("read header: %w", err)
 	}
 	header := headerBytes[:len(headerBytes)-1] // trim \n
 
 	if bytes.HasSuffix(header, []byte(" missing")) {
-		return 0, true, nil
+		return 0, true, false, nil
+	}
+
+	if bytes.HasSuffix(header, []byte(" excluded")) {
+		return 0, false, true, nil
 	}
 
 	// Parse size from "<oid> <type> <size>".
 	lastSpace := bytes.LastIndexByte(header, ' ')
 	if lastSpace == -1 {
-		return 0, false, fmt.Errorf("unexpected header: %q", header)
+		return 0, false, false, fmt.Errorf("unexpected header: %q", header)
 	}
 	size, err = strconv.Atoi(string(header[lastSpace+1:]))
 	if err != nil {
-		return 0, false, fmt.Errorf("parse size from %q: %w", header, err)
+		return 0, false, false, fmt.Errorf("parse size from %q: %w", header, err)
 	}
 
 	// Track pending bytes: content + trailing LF.
 	cr.pending = size + 1
-	return size, false, nil
+	return size, false, false, nil
 }
 
 // Read reads from the current blob's content. Implements io.Reader. Returns

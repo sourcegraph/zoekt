@@ -130,17 +130,17 @@ func BenchmarkBlobRead_CatfileReader(b *testing.B) {
 			var totalBytes int64
 			for b.Loop() {
 				totalBytes = 0
-				cr, err := newCatfileReader(gitDir, subset)
+				cr, err := newCatfileReader(gitDir, subset, catfileReaderOptions{})
 				if err != nil {
 					b.Fatalf("newCatfileReader: %v", err)
 				}
 				for range subset {
-					size, missing, err := cr.Next()
+					size, missing, excluded, err := cr.Next()
 					if err != nil {
 						cr.Close()
 						b.Fatalf("Next: %v", err)
 					}
-					if missing {
+					if missing || excluded {
 						continue
 					}
 					content := make([]byte, size)
