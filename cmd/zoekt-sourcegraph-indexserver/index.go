@@ -85,9 +85,6 @@ type indexArgs struct {
 	// Parallelism is the number of shards to compute in parallel.
 	Parallelism int
 
-	// FileLimit is the maximum size of a file
-	FileLimit int
-
 	// UseDelta is true if we want to use the new delta indexer. This should
 	// only be true for repositories we explicitly enable.
 	UseDelta bool
@@ -126,7 +123,7 @@ func (o *indexArgs) BuildOptions() *index.Options {
 		},
 		IndexDir:         o.IndexDir,
 		Parallelism:      o.Parallelism,
-		SizeMax:          o.FileLimit,
+		SizeMax:          MaxFileSize,
 		LargeFiles:       o.LargeFiles,
 		CTagsMustSucceed: o.Symbols,
 		DisableCTags:     !o.Symbols,
@@ -232,6 +229,17 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 		return err
 	}
 
+	for _, header := range []string{
+		"X-Sourcegraph-Actor-UID: internal",
+		"X-Sourcegraph-Tenant-ID: " + strconv.Itoa(o.TenantID),
+	} {
+		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "--add", "http.extraHeader", header)
+		cmd.Stdin = &bytes.Buffer{}
+		if err := c.runCmd(cmd); err != nil {
+			return err
+		}
+	}
+
 	var fetchDuration time.Duration
 	successfullyFetchedCommitsCount := 0
 	allFetchesSucceeded := true
@@ -249,14 +257,13 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 		fetchArgs := []string{
 			"-C", gitDir,
 			"-c", "protocol.version=2",
-			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
-			"-c", "http.extraHeader=X-Sourcegraph-Tenant-ID: " + strconv.Itoa(o.TenantID),
 			"fetch", "--depth=1", "--no-tags",
 		}
 
-		// If there are no exceptions to MaxFileSize (1MB), we can avoid fetching these large files.
+		// Git's blob:limit filter excludes blobs whose size is >= the given limit,
+		// while zoekt indexes files up to and including FileLimit bytes.
 		if len(o.LargeFiles) == 0 {
-			fetchArgs = append(fetchArgs, "--filter=blob:limit=1m")
+			fetchArgs = append(fetchArgs, fmt.Sprintf("--filter=blob:limit=%d", int64(MaxFileSize)+1))
 		}
 
 		fetchArgs = append(fetchArgs, o.CloneURL)

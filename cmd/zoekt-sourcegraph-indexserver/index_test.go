@@ -487,7 +487,9 @@ func TestIndex(t *testing.T) {
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 42 fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Actor-UID: internal",
+			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Tenant-ID: 42",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 --no-tags --filter=blob:limit=1048577 http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
@@ -497,7 +499,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 42",
-			"zoekt-git-index -submodules=false -branches HEAD -disable_ctags $TMPDIR/test%2Frepo.git",
+			"zoekt-git-index -submodules=false -branches HEAD -file_limit 1048576 -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}, {
 		name: "minimal-id",
@@ -512,7 +514,9 @@ func TestIndex(t *testing.T) {
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 1 fetch --depth=1 --no-tags --filter=blob:limit=1m http://api.test/.internal/git/test/repo deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Actor-UID: internal",
+			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Tenant-ID: 1",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 --no-tags --filter=blob:limit=1048577 http://api.test/.internal/git/test/repo deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
@@ -522,7 +526,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 123",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
-			"zoekt-git-index -submodules=false -branches HEAD -disable_ctags $TMPDIR/test%2Frepo.git",
+			"zoekt-git-index -submodules=false -branches HEAD -file_limit 1048576 -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}, {
 		name: "all",
@@ -530,7 +534,6 @@ func TestIndex(t *testing.T) {
 			Incremental: true,
 			IndexDir:    "/data/index",
 			Parallelism: 4,
-			FileLimit:   123,
 			IndexOptions: IndexOptions{
 				Name:       "test/repo",
 				CloneURL:   "http://api.test/.internal/git/test/repo",
@@ -545,7 +548,9 @@ func TestIndex(t *testing.T) {
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 1 fetch --depth=1 --no-tags http://api.test/.internal/git/test/repo deadbeef feebdaed",
+			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Actor-UID: internal",
+			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Tenant-ID: 1",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 --no-tags http://api.test/.internal/git/test/repo deadbeef feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
@@ -557,7 +562,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
 			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev " +
-				"-file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
+				"-file_limit 1048576 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
 		},
 	}, {
@@ -566,7 +571,6 @@ func TestIndex(t *testing.T) {
 			Incremental: true,
 			IndexDir:    "/data/index",
 			Parallelism: 4,
-			FileLimit:   123,
 			UseDelta:    true,
 			IndexOptions: IndexOptions{
 				RepoID:     0,
@@ -594,7 +598,9 @@ func TestIndex(t *testing.T) {
 		},
 		want: []string{
 			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
-			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 -c http.extraHeader=X-Sourcegraph-Actor-UID: internal -c http.extraHeader=X-Sourcegraph-Tenant-ID: 1 fetch --depth=1 --no-tags http://api.test/.internal/git/test/repo deadbeef feebdaed 12345678 oldhead olddev oldrelease",
+			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Actor-UID: internal",
+			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Tenant-ID: 1",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 --no-tags http://api.test/.internal/git/test/repo deadbeef feebdaed 12345678 oldhead olddev oldrelease",
 			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/dev feebdaed",
 			"git -C $TMPDIR/test%2Frepo.git update-ref refs/heads/release 12345678",
@@ -607,7 +613,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
 			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev,release " +
-				"-delta -delta_threshold 22 -file_limit 123 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
+				"-delta -delta_threshold 22 -file_limit 1048576 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
 		},
 	}}
