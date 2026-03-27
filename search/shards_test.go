@@ -36,6 +36,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
+	sglog "github.com/sourcegraph/log"
 
 	"github.com/sourcegraph/zoekt/index"
 
@@ -74,6 +75,10 @@ func TestCrashResilience(t *testing.T) {
 	oldOut := log.Writer()
 	log.SetOutput(out)
 	defer log.SetOutput(oldOut)
+
+	oldShardRecoveryLogger := shardRecoveryLogger
+	shardRecoveryLogger = sglog.NoOp
+	defer func() { shardRecoveryLogger = oldShardRecoveryLogger }()
 
 	ss := newShardedSearcher(2)
 	ss.ranked.Store([]*rankedShard{{Searcher: &crashSearcher{}}})

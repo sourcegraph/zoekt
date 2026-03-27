@@ -30,6 +30,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	sglog "github.com/sourcegraph/log"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/semaphore"
 
@@ -41,6 +42,10 @@ import (
 )
 
 var (
+	shardRecoveryLogger = sync.OnceValue(func() sglog.Logger {
+		return sglog.Scoped("searchShards")
+	})
+
 	metricShardsLoaded = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "zoekt_shards_loaded",
 		Help: "The number of shards currently loaded",
@@ -927,12 +932,28 @@ func copyFiles(sr *zoekt.SearchResult) {
 	}
 }
 
+func logShardCrash(operation string, s zoekt.Searcher, recovered any, stack []byte) {
+	fields := []sglog.Field{
+		sglog.String("operation", operation),
+		sglog.String("shard", s.String()),
+		sglog.String("stacktrace", string(stack)),
+	}
+
+	if err, ok := recovered.(error); ok {
+		fields = append(fields, sglog.Error(err))
+	} else {
+		fields = append(fields, sglog.String("panic", fmt.Sprint(recovered)))
+	}
+
+	shardRecoveryLogger().Error("crashed shard", fields...)
+}
+
 func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
 	metricSearchShardRunning.Inc()
 	defer func() {
 		metricSearchShardRunning.Dec()
 		if e := recover(); e != nil {
-			log.Printf("[ERROR] crashed shard: %s: %#v, %s", s, e, debug.Stack())
+			logShardCrash("search", s, e, debug.Stack())
 
 			if sr == nil {
 				sr = &zoekt.SearchResult{}
@@ -954,7 +975,7 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.
 	defer func() {
 		metricListShardRunning.Dec()
 		if r := recover(); r != nil {
-			log.Printf("[ERROR] crashed shard: %s: %s, %s", s.String(), r, debug.Stack())
+			logShardCrash("list", s, r, debug.Stack())
 			sink <- shardListResult{
 				&zoekt.RepoList{Crashes: 1}, nil,
 			}
