@@ -44,7 +44,7 @@ func TestServer_defaultArgs(t *testing.T) {
 		IndexDir:    "/testdata/index",
 		Parallelism: 6,
 		Incremental: true,
-		FileLimit:   1 << 20,
+		FileLimit:   2 << 20,
 	}
 	got := s.indexArgs(IndexOptions{Name: "testName"})
 	if !cmp.Equal(got, want) {
