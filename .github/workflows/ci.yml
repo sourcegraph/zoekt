@@ -11,6 +11,7 @@ jobs:
     outputs:
       runners: ${{ steps.matrix.outputs.runners }}
       git-versions: ${{ steps.matrix.outputs.git-versions }}
+      ctags-versions: ${{ steps.matrix.outputs.ctags-versions }}
     steps:
       - name: Define matrix
         id: matrix
@@ -22,6 +23,10 @@ jobs:
           #   2.47.3 — Debian 13 (Trixie) + Alpine 3.21, ships 1:2.47.3-0+deb13u1, also failing in #1029
           #   2.53.0 — Latest stable (2026-02-02), first version with cat-file --batch --filter= (added in 2.50.0)
           echo 'git-versions=["2.34.1","2.39.5","2.47.3","2.53.0"]' >> "$GITHUB_OUTPUT"
+          # Universal-ctags versions to test against:
+          #   p5.9.20210829.0 — Ubuntu 22.04/24.04 LTS, ships 5.9.20210829.0-1 (2021-08-29 snapshot)
+          #   v6.2.1 — Latest stable, matches Homebrew and Alpine Edge
+          echo 'ctags-versions=["p5.9.20210829.0","v6.2.1"]' >> "$GITHUB_OUTPUT"
 
   build-git:
     needs: init
@@ -79,15 +84,68 @@ jobs:
           path: ~/git-install
           retention-days: 1
 
+  build-ctags:
+    needs: init
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(needs.init.outputs.runners) }}
+        ctags-version: ${{ fromJSON(needs.init.outputs.ctags-versions) }}
+    runs-on: ${{ matrix.runner }}
+    name: build-ctags (${{ matrix.runner }}, ctags ${{ matrix.ctags-version }})
+    steps:
+      - name: Cache ctags build
+        id: cache-ctags
+        uses: actions/cache@v5.0.4
+        with:
+          path: ~/ctags-install
+          key: ctags-${{ matrix.ctags-version }}-${{ matrix.runner }}
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux' && steps.cache-ctags.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make pkg-config autoconf automake libjansson-dev libyaml-dev libxml2-dev
+
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS' && steps.cache-ctags.outputs.cache-hit != 'true'
+        run: brew install autoconf automake pkg-config jansson libyaml pcre2
+
+      - name: Build universal-ctags from source
+        if: steps.cache-ctags.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL "https://github.com/universal-ctags/ctags/archive/refs/tags/${{ matrix.ctags-version }}.tar.gz" | tar xz
+          cd ctags-*/
+
+          NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+          ./autogen.sh
+          ./configure --prefix="$HOME/ctags-install" --program-prefix=universal- --enable-json
+          make -j"$NPROC"
+          make install
+
+      - name: Verify ctags build
+        run: |
+          "$HOME/ctags-install/bin/universal-ctags" --version
+          "$HOME/ctags-install/bin/universal-ctags" --version | grep -q "Universal Ctags"
+
+      - name: Upload ctags binaries
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: ctags-${{ matrix.ctags-version }}-${{ matrix.runner }}
+          path: ~/ctags-install
+          retention-days: 1
+
   test:
-    needs: [init, build-git]
+    needs: [init, build-git, build-ctags]
     strategy:
       fail-fast: false
       matrix:
         runner: ${{ fromJSON(needs.init.outputs.runners) }}
         git-version: ${{ fromJSON(needs.init.outputs.git-versions) }}
+        ctags-version: ${{ fromJSON(needs.init.outputs.ctags-versions) }}
     runs-on: ${{ matrix.runner }}
-    name: test (${{ matrix.runner }}, git ${{ matrix.git-version }})
+    name: test (${{ matrix.runner }}, git ${{ matrix.git-version }}, ctags ${{ matrix.ctags-version }})
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
@@ -108,20 +166,31 @@ jobs:
           chmod -R +x "$HOME/git-install/bin" "$HOME/git-install/libexec"
           echo "$HOME/git-install/bin" >> "$GITHUB_PATH"
 
-      - name: Install universal-ctags (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y universal-ctags
+      - name: Download ctags binaries
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: ctags-${{ matrix.ctags-version }}-${{ matrix.runner }}
+          path: ~/ctags-install
 
-      - name: Install universal-ctags (macOS)
+      - name: Add ctags to PATH
+        run: |
+          chmod -R +x "$HOME/ctags-install/bin"
+          echo "$HOME/ctags-install/bin" >> "$GITHUB_PATH"
+
+      - name: Install ctags runtime dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libjansson4 libyaml-0-2 libxml2
+
+      - name: Install ctags runtime dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install universal-ctags
+        run: brew install jansson libyaml pcre2
 
       - name: Print versions
         run: |
           go version
           git --version
           git --version | grep -q "${{ matrix.git-version }}"
-          universal-ctags --version || true
+          universal-ctags --version
 
       - name: Test
         run: go test ./...
