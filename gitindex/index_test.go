@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -851,13 +850,13 @@ func TestIndexDeltaBasic(t *testing.T) {
 			repositoryDir := t.TempDir()
 
 			// setup: initialize the repository and all of its branches
-			runScript(t, repositoryDir, "git init -b master")
-			runScript(t, repositoryDir, fmt.Sprintf("git config user.email %q", "you@example.com"))
-			runScript(t, repositoryDir, fmt.Sprintf("git config user.name %q", "Your Name"))
+			runGit(t, repositoryDir, "init", "-b", "master")
+			runGit(t, repositoryDir, "config", "user.email", "you@example.com")
+			runGit(t, repositoryDir, "config", "user.name", "Your Name")
 
 			for _, b := range test.branches {
-				runScript(t, repositoryDir, fmt.Sprintf("git checkout -b %q", b))
-				runScript(t, repositoryDir, fmt.Sprintf("git commit --allow-empty -m %q", "empty commit"))
+				runGit(t, repositoryDir, "checkout", "-b", b)
+				runGit(t, repositoryDir, "commit", "--allow-empty", "-m", "empty commit")
 			}
 
 			for _, step := range test.steps {
@@ -867,7 +866,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 
 						hadChange := false
 
-						runScript(t, repositoryDir, fmt.Sprintf("git checkout %q", b))
+						runGit(t, repositoryDir, "checkout", b)
 
 						for _, d := range step.deletedDocuments[b] {
 							hadChange = true
@@ -878,8 +877,6 @@ func TestIndexDeltaBasic(t *testing.T) {
 							if err != nil {
 								t.Fatalf("deleting file %q: %s", d.Name, err)
 							}
-
-							runScript(t, repositoryDir, fmt.Sprintf("git add %q", file))
 						}
 
 						for _, d := range step.addedDocuments[b] {
@@ -896,15 +893,14 @@ func TestIndexDeltaBasic(t *testing.T) {
 							if err != nil {
 								t.Fatalf("writing file %q: %s", d.Name, err)
 							}
-
-							runScript(t, repositoryDir, fmt.Sprintf("git add %q", file))
 						}
 
 						if !hadChange {
 							continue
 						}
 
-						runScript(t, repositoryDir, fmt.Sprintf("git commit -m %q", step.name))
+						runGit(t, repositoryDir, "add", "-A")
+						runGit(t, repositoryDir, "commit", "-m", step.name)
 					}
 
 					// setup: prepare indexOptions with given overrides
@@ -1020,7 +1016,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 	}
 }
 
-func runScript(t *testing.T, cwd string, script string) {
+func runGit(t *testing.T, cwd string, args ...string) {
 	t.Helper()
 
 	err := os.MkdirAll(cwd, 0o755)
@@ -1028,7 +1024,7 @@ func runScript(t *testing.T, cwd string, script string) {
 		t.Fatalf("ensuring path %q exists: %s", cwd, err)
 	}
 
-	cmd := exec.Command("sh", "-euxc", script)
+	cmd := exec.Command("git", args...)
 	cmd.Dir = cwd
 	cmd.Env = append([]string{"GIT_CONFIG_GLOBAL=", "GIT_CONFIG_SYSTEM="}, os.Environ()...)
 
@@ -1043,8 +1039,8 @@ func TestSetTemplates_e2e(t *testing.T) {
 	repositoryDir := t.TempDir()
 
 	// setup: initialize the repository and all of its branches
-	runScript(t, repositoryDir, "git init -b master")
-	runScript(t, repositoryDir, "git config remote.origin.url git@github.com:sourcegraph/zoekt.git")
+	runGit(t, repositoryDir, "init", "-b", "master")
+	runGit(t, repositoryDir, "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git")
 	desc := zoekt.Repository{}
 	if err := setTemplatesFromConfig(&desc, repositoryDir); err != nil {
 		t.Fatalf("setTemplatesFromConfig: %v", err)

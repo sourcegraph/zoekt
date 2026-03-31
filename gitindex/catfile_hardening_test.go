@@ -19,6 +19,8 @@ import (
 // TestCatfileReader_DoubleClose verifies that Close is idempotent.
 // Calling Close twice must not deadlock or panic.
 func TestCatfileReader_DoubleClose(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["hello.txt"]}
 
@@ -54,6 +56,8 @@ func TestCatfileReader_DoubleClose(t *testing.T) {
 // multiple goroutines simultaneously does not panic, deadlock, or
 // corrupt state.
 func TestCatfileReader_ConcurrentClose(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{
 		blobs["hello.txt"],
@@ -103,6 +107,8 @@ func TestCatfileReader_ConcurrentClose(t *testing.T) {
 // immediately after creation (without reading any entries) completes
 // without hanging.
 func TestCatfileReader_CloseWithoutReading(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{
 		blobs["hello.txt"],
@@ -135,38 +141,11 @@ func TestCatfileReader_CloseWithoutReading(t *testing.T) {
 // termination (e.g., builder.Add error) with many unconsumed blobs.
 // Close should complete promptly — not drain the entire git output.
 func TestCatfileReader_CloseBeforeExhausted_ManyBlobs(t *testing.T) {
-	// Create a repo with many non-trivial files.
-	dir := t.TempDir()
-	repoDir := filepath.Join(dir, "repo")
+	t.Parallel()
 
-	script := `
-set -e
-git init -b main repo
-cd repo
-git config user.email "test@test.com"
-git config user.name "Test"
-for i in $(seq 1 200); do
-    dd if=/dev/urandom bs=1024 count=10 of="file_$i.bin" 2>/dev/null
-done
-git add -A
-git commit -m "many files"
-`
-	cmd := exec.Command("/bin/sh", "-c", script)
-	cmd.Dir = dir
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("create test repo: %v", err)
-	}
-
-	var ids []plumbing.Hash
-	for i := 1; i <= 200; i++ {
-		name := fmt.Sprintf("file_%d.bin", i)
-		out, err := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD:"+name).Output()
-		if err != nil {
-			t.Fatalf("rev-parse %s: %v", name, err)
-		}
-		ids = append(ids, plumbing.NewHash(string(out[:len(out)-1])))
-	}
+	// Create enough blobs to make a draining Close noticeable without spending
+	// most of the test runtime on shelling out for fixture setup.
+	repoDir, ids := createManyBlobRepo(t, 128, 4<<10)
 
 	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
 	if err != nil {
@@ -199,11 +178,60 @@ git commit -m "many files"
 	}
 }
 
+func createManyBlobRepo(t *testing.T, fileCount, fileSize int) (string, []plumbing.Hash) {
+	t.Helper()
+
+	dir := t.TempDir()
+	repoDir := filepath.Join(dir, "repo")
+
+	runGit(t, dir, "init", "-b", "main", "repo")
+	runGit(t, repoDir, "config", "user.email", "test@test.com")
+	runGit(t, repoDir, "config", "user.name", "Test")
+
+	for i := 0; i < fileCount; i++ {
+		content := bytes.Repeat([]byte{byte(i)}, fileSize)
+		name := filepath.Join(repoDir, fmt.Sprintf("file_%03d.bin", i))
+		if err := os.WriteFile(name, content, 0o644); err != nil {
+			t.Fatalf("WriteFile(%q): %v", name, err)
+		}
+	}
+
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "many files")
+
+	out, err := exec.Command("git", "-C", repoDir, "ls-tree", "-r", "-z", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("git ls-tree: %v", err)
+	}
+
+	ids := make([]plumbing.Hash, 0, fileCount)
+	for _, entry := range bytes.Split(out, []byte{0}) {
+		if len(entry) == 0 {
+			continue
+		}
+
+		fields := bytes.Fields(entry)
+		if len(fields) < 3 {
+			t.Fatalf("unexpected ls-tree entry %q", entry)
+		}
+
+		ids = append(ids, plumbing.NewHash(string(fields[2])))
+	}
+
+	if len(ids) != fileCount {
+		t.Fatalf("got %d blob IDs, want %d", len(ids), fileCount)
+	}
+
+	return repoDir, ids
+}
+
 // --- Read edge-case tests ---
 
 // TestCatfileReader_ReadWithoutNext verifies that calling Read
 // before calling Next returns io.EOF, not a panic or garbage data.
 func TestCatfileReader_ReadWithoutNext(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["hello.txt"]}
 
@@ -224,6 +252,8 @@ func TestCatfileReader_ReadWithoutNext(t *testing.T) {
 // calls after a blob is fully consumed return io.EOF, not duplicate
 // data or trailing LF bytes.
 func TestCatfileReader_ReadAfterFullConsumption(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["hello.txt"]}
 
@@ -253,6 +283,8 @@ func TestCatfileReader_ReadAfterFullConsumption(t *testing.T) {
 // and verifies the entire content is reconstructed correctly without
 // any trailing LF leaking into user content.
 func TestCatfileReader_SmallBufferReads(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["hello.txt"]}
 
@@ -291,6 +323,8 @@ func TestCatfileReader_SmallBufferReads(t *testing.T) {
 // content, then advances to the next entry. Verifies that the discard
 // of pending bytes doesn't corrupt the stream.
 func TestCatfileReader_PartialReadThenNext(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{
 		blobs["hello.txt"],  // 12 bytes: "hello world\n"
@@ -337,6 +371,8 @@ func TestCatfileReader_PartialReadThenNext(t *testing.T) {
 // 1 trailing LF). This stresses the boundary between content and LF
 // in the discard path.
 func TestCatfileReader_PartialReadExactlyOneByteShort(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{
 		blobs["hello.txt"],  // 12 bytes
@@ -384,6 +420,8 @@ func TestCatfileReader_PartialReadExactlyOneByteShort(t *testing.T) {
 // TestCatfileReader_EmptyIds verifies that an empty id slice produces
 // immediate EOF without errors.
 func TestCatfileReader_EmptyIds(t *testing.T) {
+	t.Parallel()
+
 	repoDir, _ := createTestRepo(t)
 
 	cr, err := newCatfileReader(repoDir, nil, catfileReaderOptions{})
@@ -402,6 +440,8 @@ func TestCatfileReader_EmptyIds(t *testing.T) {
 // handling for size-0 blobs. Git still outputs a LF after a 0-byte
 // blob body. Repeated empty blobs test the pending=1 discard path.
 func TestCatfileReader_MultipleEmptyBlobs(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 
 	// Send the empty blob SHA 5 times — git outputs each independently.
@@ -438,6 +478,8 @@ func TestCatfileReader_MultipleEmptyBlobs(t *testing.T) {
 // through the io.Reader interface returns 0 bytes and io.EOF, and that
 // the trailing LF is consumed transparently.
 func TestCatfileReader_EmptyBlobRead(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{
 		blobs["empty.txt"], // 0 bytes
@@ -486,6 +528,8 @@ func TestCatfileReader_EmptyBlobRead(t *testing.T) {
 // missing objects is handled gracefully — no errors, no panics, just
 // missing=true for each followed by EOF.
 func TestCatfileReader_AllMissing(t *testing.T) {
+	t.Parallel()
+
 	repoDir, _ := createTestRepo(t)
 
 	ids := []plumbing.Hash{
@@ -522,6 +566,8 @@ func TestCatfileReader_AllMissing(t *testing.T) {
 // TestCatfileReader_AlternatingMissingPresent interleaves missing and
 // present objects, verifying that stream alignment is maintained.
 func TestCatfileReader_AlternatingMissingPresent(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 
 	fake1 := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
@@ -599,6 +645,8 @@ func TestCatfileReader_AlternatingMissingPresent(t *testing.T) {
 // the stream. Missing objects have no content body, so there must be
 // no stale pending bytes interfering with the next header read.
 func TestCatfileReader_MissingThenSkip(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 
 	fake := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
@@ -649,6 +697,8 @@ func TestCatfileReader_MissingThenSkip(t *testing.T) {
 // TestCatfileReader_RepeatedNextAfterEOF verifies that calling Next
 // after EOF keeps returning EOF — not a panic, not a different error.
 func TestCatfileReader_RepeatedNextAfterEOF(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["hello.txt"]}
 
@@ -684,6 +734,8 @@ func TestCatfileReader_RepeatedNextAfterEOF(t *testing.T) {
 // is read with byte-exact precision — no off-by-one from trailing LF
 // handling, no truncation, no extra bytes.
 func TestCatfileReader_LargeBlobBytePrecision(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["large.bin"]}
 
@@ -732,6 +784,8 @@ func TestCatfileReader_LargeBlobBytePrecision(t *testing.T) {
 // chunks (a prime number that doesn't align with any power-of-2 buffer)
 // to verify no byte is lost or duplicated across read boundaries.
 func TestCatfileReader_LargeBlobChunkedRead(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 	ids := []plumbing.Hash{blobs["large.bin"]}
 
@@ -778,6 +832,8 @@ func TestCatfileReader_LargeBlobChunkedRead(t *testing.T) {
 // SHA multiple times works — git cat-file --batch outputs the object
 // for each request independently.
 func TestCatfileReader_DuplicateSHAs(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 
 	sha := blobs["hello.txt"]
