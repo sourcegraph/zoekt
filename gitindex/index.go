@@ -183,6 +183,16 @@ func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error)
 }
 
 func plainOpenRepo(repoDir string) (*git.Repository, error) {
+	// Try repoDir as the repository root first so bare repositories open
+	// correctly. If repoDir itself is not a repository, fall back to searching
+	// for a .git entry to preserve compatibility with worktree paths.
+	repo, err := git.PlainOpenWithOptions(repoDir, &git.PlainOpenOptions{
+		EnableDotGitCommonDir: true,
+	})
+	if err == nil || !errors.Is(err, git.ErrRepositoryNotExists) {
+		return repo, err
+	}
+
 	return git.PlainOpenWithOptions(repoDir, &git.PlainOpenOptions{
 		DetectDotGit:          true,
 		EnableDotGitCommonDir: true,
