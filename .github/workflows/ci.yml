@@ -20,10 +20,10 @@ jobs:
           - macos-15-intel
           - macos-26-intel
         git-version:
-          - "2.34.1"
-          - "2.39.5"
-          - "2.47.3"
-          - "2.53.0"
+          - "2.34.1" # Ubuntu 22.04 LTS (Jammy) — oldest supported LTS, ships 1:2.34.1-1ubuntu1
+          - "2.39.5" # Debian 12 (Bookworm) — ships 1:2.39.5-0+deb12u3, reported failing in #1029
+          - "2.47.3" # Debian 13 (Trixie) + Alpine 3.21 — ships 1:2.47.3-0+deb13u1, also failing in #1029
+          - "2.53.0" # Latest stable (2026-02-02) — first version in matrix with cat-file --batch --filter= (added in 2.50.0)
     runs-on: ${{ matrix.runner }}
     name: build-git (${{ matrix.runner }}, git ${{ matrix.git-version }})
     steps:
@@ -88,10 +88,10 @@ jobs:
           - macos-15-intel
           - macos-26-intel
         git-version:
-          - "2.34.1"
-          - "2.39.5"
-          - "2.47.3"
-          - "2.53.0"
+          - "2.34.1" # Ubuntu 22.04 LTS (Jammy) — oldest supported LTS, ships 1:2.34.1-1ubuntu1
+          - "2.39.5" # Debian 12 (Bookworm) — ships 1:2.39.5-0+deb12u3, reported failing in #1029
+          - "2.47.3" # Debian 13 (Trixie) + Alpine 3.21 — ships 1:2.47.3-0+deb13u1, also failing in #1029
+          - "2.53.0" # Latest stable (2026-02-02) — first version in matrix with cat-file --batch --filter= (added in 2.50.0)
     runs-on: ${{ matrix.runner }}
     name: test (${{ matrix.runner }}, git ${{ matrix.git-version }})
     steps:
