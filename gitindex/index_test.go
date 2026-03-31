@@ -165,6 +165,109 @@ func TestIndexGitRepo_Worktree(t *testing.T) {
 	}
 }
 
+func TestOpenRepoVariants(t *testing.T) {
+	repoDir, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	bareDir := cloneBareRepo(t, repoDir)
+
+	paths := []struct {
+		name string
+		path string
+	}{
+		{name: "repo root", path: repoDir},
+		{name: "dot git dir", path: filepath.Join(repoDir, ".git")},
+		{name: "worktree root", path: worktreeDir},
+		{name: "bare repo root", path: bareDir},
+	}
+
+	openers := []struct {
+		name string
+		open func(t *testing.T, repoDir string) *git.Repository
+	}{
+		{
+			name: "plain",
+			open: func(t *testing.T, repoDir string) *git.Repository {
+				t.Helper()
+
+				repo, err := plainOpenRepo(repoDir)
+				if err != nil {
+					t.Fatalf("plainOpenRepo(%q): %v", repoDir, err)
+				}
+
+				return repo
+			},
+		},
+		{
+			name: "optimized",
+			open: func(t *testing.T, repoDir string) *git.Repository {
+				t.Helper()
+
+				repo, closer, err := openRepo(repoDir)
+				if err != nil {
+					t.Fatalf("openRepo(%q): %v", repoDir, err)
+				}
+				t.Cleanup(func() {
+					_ = closer.Close()
+				})
+
+				return repo
+			},
+		},
+	}
+
+	for _, opener := range openers {
+		for _, tc := range paths {
+			t.Run(opener.name+"/"+tc.name, func(t *testing.T) {
+				repo := opener.open(t, tc.path)
+
+				head, err := repo.Head()
+				if err != nil {
+					t.Fatalf("repo.Head(): %v", err)
+				}
+
+				if _, err := repo.CommitObject(head.Hash()); err != nil {
+					t.Fatalf("repo.CommitObject(%s): %v", head.Hash(), err)
+				}
+			})
+		}
+	}
+}
+
+func TestIndexGitRepo_BareRepo_LegacyRepoOpen(t *testing.T) {
+	repoDir, _ := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	bareDir := cloneBareRepo(t, repoDir)
+	indexDir := t.TempDir()
+
+	t.Setenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION", "true")
+
+	opts := Options{
+		RepoDir:  bareDir,
+		Branches: []string{"main"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo(bare, legacy open): %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal("search failed", err)
+	}
+
+	if len(results.Files) != 1 || results.Files[0].FileName != "file1.go" {
+		t.Fatalf("got search result %v, want file1.go", results.Files)
+	}
+}
+
 func TestCatfileFilterSpec(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -229,6 +332,15 @@ func initGitWorktree(t *testing.T, fileName, content string) (string, string) {
 	executeCommand(t, repoDir, exec.Command("git", "worktree", "add", "-b", "worktree-branch", worktreeDir))
 
 	return repoDir, worktreeDir
+}
+
+func cloneBareRepo(t *testing.T, repoDir string) string {
+	t.Helper()
+
+	bareDir := filepath.Join(t.TempDir(), "repo.git")
+	executeCommand(t, filepath.Dir(repoDir), exec.Command("git", "clone", "--bare", repoDir, bareDir))
+
+	return bareDir
 }
 
 func TestIndexDeltaBasic(t *testing.T) {
