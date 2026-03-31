@@ -185,8 +185,6 @@ func createManyBlobRepo(t *testing.T, fileCount, fileSize int) (string, []plumbi
 	repoDir := filepath.Join(dir, "repo")
 
 	runGit(t, dir, "init", "-b", "main", "repo")
-	runGit(t, repoDir, "config", "user.email", "test@test.com")
-	runGit(t, repoDir, "config", "user.name", "Test")
 
 	for i := 0; i < fileCount; i++ {
 		content := bytes.Repeat([]byte{byte(i)}, fileSize)
