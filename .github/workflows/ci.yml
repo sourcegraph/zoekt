@@ -45,14 +45,14 @@ jobs:
           path: ~/git-install
           key: git-${{ matrix.git-version }}-${{ matrix.runner }}
 
-      - name: Install build dependencies (Linux)
-        if: runner.os == 'Linux' && steps.cache-git.outputs.cache-hit != 'true'
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y make libssl-dev libcurl4-gnutls-dev libexpat1-dev libz-dev gettext
 
-      - name: Install build dependencies (macOS)
-        if: runner.os == 'macOS' && steps.cache-git.outputs.cache-hit != 'true'
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
         run: brew install openssl curl expat gettext
 
       - name: Build git from source
@@ -101,14 +101,14 @@ jobs:
           path: ~/ctags-install
           key: ctags-${{ matrix.ctags-version }}-${{ matrix.runner }}
 
-      - name: Install build dependencies (Linux)
-        if: runner.os == 'Linux' && steps.cache-ctags.outputs.cache-hit != 'true'
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc make pkg-config autoconf automake libjansson-dev libyaml-dev libxml2-dev
 
-      - name: Install build dependencies (macOS)
-        if: runner.os == 'macOS' && steps.cache-ctags.outputs.cache-hit != 'true'
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
         run: brew install autoconf automake pkg-config jansson libyaml pcre2
 
       - name: Build universal-ctags from source
