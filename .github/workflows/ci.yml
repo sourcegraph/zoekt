@@ -63,12 +63,6 @@ jobs:
 
           NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            BREW_PREFIX=$(brew --prefix)
-            export CFLAGS="-I${BREW_PREFIX}/opt/openssl/include -I${BREW_PREFIX}/opt/curl/include -I${BREW_PREFIX}/opt/expat/include -I${BREW_PREFIX}/opt/gettext/include"
-            export LDFLAGS="-L${BREW_PREFIX}/opt/openssl/lib -L${BREW_PREFIX}/opt/curl/lib -L${BREW_PREFIX}/opt/expat/lib -L${BREW_PREFIX}/opt/gettext/lib"
-          fi
-
           make prefix="$HOME/git-install" -j"$NPROC" all
           make prefix="$HOME/git-install" install
 
