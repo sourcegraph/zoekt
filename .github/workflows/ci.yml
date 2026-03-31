@@ -6,39 +6,130 @@ on:
   workflow_dispatch:
 name: CI
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    container: alpine:edge # latest go pls
+  build-git:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-24.04
+          - ubuntu-22.04
+          - ubuntu-24.04-arm
+          - ubuntu-22.04-arm
+          - macos-15
+          - macos-26
+          - macos-15-intel
+          - macos-26-intel
+        git-version:
+          - "2.34.1"
+          - "2.39.5"
+          - "2.47.3"
+          - "2.53.0"
+    runs-on: ${{ matrix.runner }}
+    name: build-git (${{ matrix.runner }}, git ${{ matrix.git-version }})
     steps:
-      - name: checkout
-        uses: actions/checkout@v3
-
-      - name: add dependencies
-        run: apk add go git tar
-
-      - name: Cache ctags
-        uses: actions/cache@v3
+      - name: Cache git build
+        id: cache-git
+        uses: actions/cache@v5.0.4
         with:
-          path: /usr/local/bin/universal-ctags
-          key: ${{ runner.os }}-ctags-${{ hashFiles('install-ctags-alpine.sh') }}
+          path: ~/git-install
+          key: git-${{ matrix.git-version }}-${{ matrix.runner }}
 
-      - name: Cache Go modules
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: install ctags
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux' && steps.cache-git.outputs.cache-hit != 'true'
         run: |
-          if [ ! -f /usr/local/bin/universal-ctags ]; then
-            ./install-ctags-alpine.sh
+          sudo apt-get update
+          sudo apt-get install -y make libssl-dev libcurl4-gnutls-dev libexpat1-dev libz-dev gettext
+
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS' && steps.cache-git.outputs.cache-hit != 'true'
+        run: brew install openssl curl expat
+
+      - name: Build git from source
+        if: steps.cache-git.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL "https://www.kernel.org/pub/software/scm/git/git-${{ matrix.git-version }}.tar.gz" | tar xz
+          cd "git-${{ matrix.git-version }}"
+
+          NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            BREW_PREFIX=$(brew --prefix)
+            export CFLAGS="-I${BREW_PREFIX}/opt/openssl/include -I${BREW_PREFIX}/opt/curl/include -I${BREW_PREFIX}/opt/expat/include"
+            export LDFLAGS="-L${BREW_PREFIX}/opt/openssl/lib -L${BREW_PREFIX}/opt/curl/lib -L${BREW_PREFIX}/opt/expat/lib"
           fi
 
-      - name: test
+          make prefix="$HOME/git-install" -j"$NPROC" all
+          make prefix="$HOME/git-install" install
+
+      - name: Verify git build
+        run: |
+          "$HOME/git-install/bin/git" --version
+          "$HOME/git-install/bin/git" --version | grep -q "${{ matrix.git-version }}"
+
+      - name: Upload git binaries
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: git-${{ matrix.git-version }}-${{ matrix.runner }}
+          path: ~/git-install
+          retention-days: 1
+
+  test:
+    needs: build-git
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-24.04
+          - ubuntu-22.04
+          - ubuntu-24.04-arm
+          - ubuntu-22.04-arm
+          - macos-15
+          - macos-26
+          - macos-15-intel
+          - macos-26-intel
+        git-version:
+          - "2.34.1"
+          - "2.39.5"
+          - "2.47.3"
+          - "2.53.0"
+    runs-on: ${{ matrix.runner }}
+    name: test (${{ matrix.runner }}, git ${{ matrix.git-version }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: go.mod
+
+      - name: Download git binaries
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: git-${{ matrix.git-version }}-${{ matrix.runner }}
+          path: ~/git-install
+
+      - name: Add git to PATH
+        run: |
+          chmod -R +x "$HOME/git-install/bin" "$HOME/git-install/libexec"
+          echo "$HOME/git-install/bin" >> "$GITHUB_PATH"
+
+      - name: Install universal-ctags (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y universal-ctags
+
+      - name: Install universal-ctags (macOS)
+        if: runner.os == 'macOS'
+        run: brew install universal-ctags
+
+      - name: Print versions
+        run: |
+          go version
+          git --version
+          git --version | grep -q "${{ matrix.git-version }}"
+          universal-ctags --version || true
+
+      - name: Test
         run: go test ./...
 
   fuzz-test:
