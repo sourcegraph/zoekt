@@ -932,10 +932,11 @@ func copyFiles(sr *zoekt.SearchResult) {
 	}
 }
 
-func logShardCrash(operation string, s zoekt.Searcher, recovered any, stack []byte) {
+func logShardCrash(operation string, s zoekt.Searcher, q query.Q, recovered any, stack []byte) {
 	fields := []sglog.Field{
 		sglog.String("operation", operation),
 		sglog.String("shard", s.String()),
+		sglog.String("query", q.String()),
 		sglog.String("stacktrace", string(stack)),
 	}
 
@@ -953,7 +954,7 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 	defer func() {
 		metricSearchShardRunning.Dec()
 		if e := recover(); e != nil {
-			logShardCrash("search", s, e, debug.Stack())
+			logShardCrash("search", s, q, e, debug.Stack())
 
 			if sr == nil {
 				sr = &zoekt.SearchResult{}
@@ -975,7 +976,7 @@ func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.
 	defer func() {
 		metricListShardRunning.Dec()
 		if r := recover(); r != nil {
-			logShardCrash("list", s, r, debug.Stack())
+			logShardCrash("list", s, q, r, debug.Stack())
 			sink <- shardListResult{
 				&zoekt.RepoList{Crashes: 1}, nil,
 			}
