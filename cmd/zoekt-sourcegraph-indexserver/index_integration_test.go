@@ -228,13 +228,7 @@ func startGitDaemon(t *testing.T, serveRoot string) *gitDaemon {
 
 	require.NoError(t, cmd.Start())
 	require.NoError(t, logFile.Close())
-	require.Eventually(t, func() bool {
-		contents, readErr := os.ReadFile(logPath)
-		if readErr != nil {
-			return false
-		}
-		return strings.Contains(string(contents), "Ready to rumble")
-	}, 5*time.Second, 50*time.Millisecond)
+	waitForGitDaemon(t, port, logPath)
 
 	daemon := &gitDaemon{cmd: cmd, logPath: logPath, port: port}
 	t.Cleanup(func() {
@@ -254,6 +248,30 @@ func startGitDaemon(t *testing.T, serveRoot string) *gitDaemon {
 	})
 
 	return daemon
+}
+
+func waitForGitDaemon(t *testing.T, port int, logPath string) {
+	t.Helper()
+
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	contents, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("git daemon did not start listening on %s within 5s (failed to read log: %v)", addr, err)
+	}
+
+	t.Fatalf("git daemon did not start listening on %s within 5s\n%s", addr, contents)
 }
 
 func allocatePort(t *testing.T) int {
