@@ -63,6 +63,18 @@ jobs:
 
           NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
+          # On macOS, Homebrew keg-only packages (openssl, curl, gettext) are
+          # not linked into the default search paths. Git's config.mak.uname
+          # gained Homebrew auto-detection for gettext around v2.47, but older
+          # versions in our matrix (2.34.1, 2.39.5) lack it and fail with
+          # 'libintl.h' not found. Explicit CFLAGS/LDFLAGS ensure all versions
+          # build consistently. See: git INSTALL docs, config.mak.uname.
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            BREW_PREFIX=$(brew --prefix)
+            export CFLAGS="-I${BREW_PREFIX}/opt/openssl/include -I${BREW_PREFIX}/opt/curl/include -I${BREW_PREFIX}/opt/expat/include -I${BREW_PREFIX}/opt/gettext/include"
+            export LDFLAGS="-L${BREW_PREFIX}/opt/openssl/lib -L${BREW_PREFIX}/opt/curl/lib -L${BREW_PREFIX}/opt/expat/lib -L${BREW_PREFIX}/opt/gettext/lib"
+          fi
+
           make prefix="$HOME/git-install" -j"$NPROC" all
           make prefix="$HOME/git-install" install
 
