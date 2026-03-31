@@ -61,6 +61,8 @@ git commit -m "initial"
 }
 
 func TestCatfileReader(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 
 	ids := []plumbing.Hash{
@@ -147,6 +149,8 @@ func TestCatfileReader(t *testing.T) {
 }
 
 func TestCatfileReader_Skip(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 
 	ids := []plumbing.Hash{
@@ -191,6 +195,8 @@ func TestCatfileReader_Skip(t *testing.T) {
 }
 
 func TestCatfileReader_Missing(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 
 	fakeHash := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
@@ -242,6 +248,8 @@ func TestCatfileReader_Missing(t *testing.T) {
 }
 
 func TestCatfileReader_Excluded(t *testing.T) {
+	t.Parallel()
+
 	repoDir, blobs := createTestRepo(t)
 
 	ids := []plumbing.Hash{

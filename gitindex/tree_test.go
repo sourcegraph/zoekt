@@ -106,6 +106,8 @@ EOF
 }
 
 func TestFindGitRepos(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -141,6 +143,8 @@ func TestFindGitRepos(t *testing.T) {
 }
 
 func TestCollectFiles(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -195,6 +199,8 @@ func TestCollectFiles(t *testing.T) {
 }
 
 func TestSubmoduleIndex(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -259,6 +265,8 @@ func TestSubmoduleIndex(t *testing.T) {
 }
 
 func TestSubmoduleIndexWithoutRepocache(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -363,6 +371,8 @@ EOF
 }
 
 func TestSearchSymlinkByContent(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSymlinkRepo(dir); err != nil {
@@ -420,6 +430,8 @@ func TestSearchSymlinkByContent(t *testing.T) {
 }
 
 func TestAllowMissingBranch(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -486,6 +498,8 @@ git update-ref refs/meta/config HEAD
 }
 
 func TestBranchWildcard(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createMultibranchRepo(dir); err != nil {
@@ -532,6 +546,8 @@ func TestBranchWildcard(t *testing.T) {
 }
 
 func TestSkipSubmodules(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -564,6 +580,8 @@ func TestSkipSubmodules(t *testing.T) {
 }
 
 func TestFullAndShortRefNames(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createMultibranchRepo(dir); err != nil {
@@ -609,6 +627,8 @@ func TestFullAndShortRefNames(t *testing.T) {
 }
 
 func TestUniq(t *testing.T) {
+	t.Parallel()
+
 	in := []string{"a", "b", "b", "c", "c"}
 	want := []string{"a", "b", "c"}
 	got := uniq(in)
@@ -618,6 +638,8 @@ func TestUniq(t *testing.T) {
 }
 
 func TestLatestCommit(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	indexDir := t.TempDir()
 

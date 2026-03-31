@@ -22,6 +22,8 @@ import (
 )
 
 func TestSetRemote(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	script := `mkdir orig

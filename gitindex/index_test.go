@@ -41,6 +41,8 @@ import (
 )
 
 func TestIndexEmptyRepo(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	cmd := exec.Command("git", "init", "-b", "master", "repo")
@@ -67,6 +69,8 @@ func TestIndexEmptyRepo(t *testing.T) {
 }
 
 func TestIndexNonexistentRepo(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	desc := zoekt.Repository{
 		Name: "nonexistent",
@@ -88,6 +92,8 @@ func TestIndexNonexistentRepo(t *testing.T) {
 }
 
 func TestIndexTinyRepo(t *testing.T) {
+	t.Parallel()
+
 	// Create a repo with one file in it.
 	dir := t.TempDir()
 	executeCommand(t, dir, exec.Command("git", "init", "-b", "main", "repo"))
@@ -133,6 +139,8 @@ func TestIndexTinyRepo(t *testing.T) {
 }
 
 func TestIndexGitRepo_Worktree(t *testing.T) {
+	t.Parallel()
+
 	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
 	indexDir := t.TempDir()
 
@@ -166,6 +174,8 @@ func TestIndexGitRepo_Worktree(t *testing.T) {
 }
 
 func TestOpenRepoVariants(t *testing.T) {
+	t.Parallel()
+
 	repoDir, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
 	bareDir := cloneBareRepo(t, repoDir)
 
@@ -217,6 +227,8 @@ func TestOpenRepoVariants(t *testing.T) {
 	for _, opener := range openers {
 		for _, tc := range paths {
 			t.Run(opener.name+"/"+tc.name, func(t *testing.T) {
+				t.Parallel()
+
 				repo := opener.open(t, tc.path)
 
 				head, err := repo.Head()
@@ -269,6 +281,8 @@ func TestIndexGitRepo_BareRepo_LegacyRepoOpen(t *testing.T) {
 }
 
 func TestCatfileFilterSpec(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name string
 		opts Options
@@ -291,6 +305,8 @@ func TestCatfileFilterSpec(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := catfileFilterSpec(tc.opts); got != tc.want {
 				t.Fatalf("catfileFilterSpec() = %q, want %q", got, tc.want)
 			}
@@ -344,6 +360,8 @@ func cloneBareRepo(t *testing.T, repoDir string) string {
 }
 
 func TestIndexDeltaBasic(t *testing.T) {
+	t.Parallel()
+
 	type branchToDocumentMap map[string][]index.Document
 
 	type step struct {
@@ -1020,6 +1038,8 @@ func runScript(t *testing.T, cwd string, script string) {
 }
 
 func TestSetTemplates_e2e(t *testing.T) {
+	t.Parallel()
+
 	repositoryDir := t.TempDir()
 
 	// setup: initialize the repository and all of its branches
@@ -1036,6 +1056,8 @@ func TestSetTemplates_e2e(t *testing.T) {
 }
 
 func TestSetTemplates_Worktree(t *testing.T) {
+	t.Parallel()
+
 	_, worktreeDir := initGitWorktree(t, "hello.go", "package main\n")
 	desc := zoekt.Repository{}
 
@@ -1049,6 +1071,8 @@ func TestSetTemplates_Worktree(t *testing.T) {
 }
 
 func TestSetTemplates(t *testing.T) {
+	t.Parallel()
+
 	base := "https://example.com/repo/name"
 	version := "VERSION"
 	path := "dir/name.txt"
@@ -1102,6 +1126,8 @@ func TestSetTemplates(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.typ, func(t *testing.T) {
+			t.Parallel()
+
 			assertOutput := func(templateText string, want string) {
 				t.Helper()
 
