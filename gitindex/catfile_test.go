@@ -1,10 +1,12 @@
 package gitindex
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -17,43 +19,36 @@ func createTestRepo(t *testing.T) (string, map[string]plumbing.Hash) {
 	dir := t.TempDir()
 	repoDir := filepath.Join(dir, "repo")
 
-	script := `
-set -e
-git init -b main repo
-cd repo
-git config user.email "test@test.com"
-git config user.name "Test"
+	runGit(t, dir, "init", "-b", "main", "repo")
 
-# Normal text file
-echo "hello world" > hello.txt
-
-# Empty file
-touch empty.txt
-
-# Binary file with newlines embedded
-printf '\x00\x01\x02\nhello\nworld\n\x03\x04' > binary.bin
-
-# Large-ish file (64KB of data)
-dd if=/dev/urandom bs=1024 count=64 of=large.bin 2>/dev/null
-
-git add -A
-git commit -m "initial"
-`
-	cmd := exec.Command("/bin/sh", "-c", script)
-	cmd.Dir = dir
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("create test repo: %v", err)
+	files := []struct {
+		name    string
+		content []byte
+	}{
+		{name: "hello.txt", content: []byte("hello world\n")},
+		{name: "empty.txt"},
+		{name: "binary.bin", content: []byte{0x00, 0x01, 0x02, '\n', 'h', 'e', 'l', 'l', 'o', '\n', 'w', 'o', 'r', 'l', 'd', '\n', 0x03, 0x04}},
+		{name: "large.bin", content: bytes.Repeat([]byte("0123456789abcdef"), 4096)},
 	}
+
+	for _, file := range files {
+		if err := os.WriteFile(filepath.Join(repoDir, file.name), file.content, 0o644); err != nil {
+			t.Fatalf("WriteFile(%q): %v", file.name, err)
+		}
+	}
+
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "initial")
 
 	// Get blob SHAs for each file.
 	blobs := map[string]plumbing.Hash{}
-	for _, name := range []string{"hello.txt", "empty.txt", "binary.bin", "large.bin"} {
+	for _, file := range files {
+		name := file.name
 		out, err := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD:"+name).Output()
 		if err != nil {
 			t.Fatalf("rev-parse %s: %v", name, err)
 		}
-		sha := string(out[:len(out)-1]) // trim newline
+		sha := strings.TrimSpace(string(out))
 		blobs[name] = plumbing.NewHash(sha)
 	}
 
