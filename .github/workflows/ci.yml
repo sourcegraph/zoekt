@@ -53,7 +53,7 @@ jobs:
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS' && steps.cache-git.outputs.cache-hit != 'true'
-        run: brew install openssl curl expat
+        run: brew install openssl curl expat gettext
 
       - name: Build git from source
         if: steps.cache-git.outputs.cache-hit != 'true'
@@ -65,8 +65,8 @@ jobs:
 
           if [ "$RUNNER_OS" = "macOS" ]; then
             BREW_PREFIX=$(brew --prefix)
-            export CFLAGS="-I${BREW_PREFIX}/opt/openssl/include -I${BREW_PREFIX}/opt/curl/include -I${BREW_PREFIX}/opt/expat/include"
-            export LDFLAGS="-L${BREW_PREFIX}/opt/openssl/lib -L${BREW_PREFIX}/opt/curl/lib -L${BREW_PREFIX}/opt/expat/lib"
+            export CFLAGS="-I${BREW_PREFIX}/opt/openssl/include -I${BREW_PREFIX}/opt/curl/include -I${BREW_PREFIX}/opt/expat/include -I${BREW_PREFIX}/opt/gettext/include"
+            export LDFLAGS="-L${BREW_PREFIX}/opt/openssl/lib -L${BREW_PREFIX}/opt/curl/lib -L${BREW_PREFIX}/opt/expat/lib -L${BREW_PREFIX}/opt/gettext/lib"
           fi
 
           make prefix="$HOME/git-install" -j"$NPROC" all
