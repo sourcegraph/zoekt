@@ -22,6 +22,8 @@ import (
 )
 
 func TestFetchRepoAndIndex_Integration(t *testing.T) {
+	requireGitDaemon(t)
+
 	for _, tc := range []struct {
 		name                     string
 		disableGoGitOptimization bool
@@ -120,6 +122,29 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func requireGitDaemon(t *testing.T) {
+	t.Helper()
+
+	cmd := exec.Command("git", "daemon", "-h")
+	cmd.Env = gitTestEnv()
+	output, err := cmd.CombinedOutput()
+	text := string(output)
+
+	if strings.Contains(text, "usage: git daemon") {
+		return
+	}
+
+	if strings.Contains(text, "git: 'daemon' is not a git command") {
+		t.Skipf("skipping integration test: git daemon is unavailable: %s", strings.TrimSpace(text))
+	}
+
+	if err == nil {
+		return
+	}
+
+	t.Fatalf("failed to probe git daemon availability: %v\n%s", err, text)
 }
 
 type recordingSourcegraph struct {
