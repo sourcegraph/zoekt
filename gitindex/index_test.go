@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -41,6 +40,8 @@ import (
 )
 
 func TestIndexEmptyRepo(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	cmd := exec.Command("git", "init", "-b", "master", "repo")
@@ -67,6 +68,8 @@ func TestIndexEmptyRepo(t *testing.T) {
 }
 
 func TestIndexNonexistentRepo(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	desc := zoekt.Repository{
 		Name: "nonexistent",
@@ -88,16 +91,18 @@ func TestIndexNonexistentRepo(t *testing.T) {
 }
 
 func TestIndexTinyRepo(t *testing.T) {
+	t.Parallel()
+
 	// Create a repo with one file in it.
 	dir := t.TempDir()
-	executeCommand(t, dir, exec.Command("git", "init", "-b", "main", "repo"))
+	runGit(t, dir, "init", "-b", "main", "repo")
 
 	repoDir := filepath.Join(dir, "repo")
 	if err := os.WriteFile(filepath.Join(repoDir, "file1.go"), []byte("package main\n\nfunc main() {}\n"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	executeCommand(t, repoDir, exec.Command("git", "add", "."))
-	executeCommand(t, repoDir, exec.Command("git", "commit", "-m", "initial commit"))
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "initial commit")
 
 	// Test that indexing accepts both the repo directory, and the .git subdirectory.
 	for _, testDir := range []string{"repo", "repo/.git"} {
@@ -133,6 +138,8 @@ func TestIndexTinyRepo(t *testing.T) {
 }
 
 func TestIndexGitRepo_Worktree(t *testing.T) {
+	t.Parallel()
+
 	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
 	indexDir := t.TempDir()
 
@@ -166,6 +173,8 @@ func TestIndexGitRepo_Worktree(t *testing.T) {
 }
 
 func TestOpenRepoVariants(t *testing.T) {
+	t.Parallel()
+
 	repoDir, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
 	bareDir := cloneBareRepo(t, repoDir)
 
@@ -217,6 +226,8 @@ func TestOpenRepoVariants(t *testing.T) {
 	for _, opener := range openers {
 		for _, tc := range paths {
 			t.Run(opener.name+"/"+tc.name, func(t *testing.T) {
+				t.Parallel()
+
 				repo := opener.open(t, tc.path)
 
 				head, err := repo.Head()
@@ -269,6 +280,8 @@ func TestIndexGitRepo_BareRepo_LegacyRepoOpen(t *testing.T) {
 }
 
 func TestCatfileFilterSpec(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name string
 		opts Options
@@ -291,6 +304,8 @@ func TestCatfileFilterSpec(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := catfileFilterSpec(tc.opts); got != tc.want {
 				t.Fatalf("catfileFilterSpec() = %q, want %q", got, tc.want)
 			}
@@ -298,38 +313,22 @@ func TestCatfileFilterSpec(t *testing.T) {
 	}
 }
 
-func executeCommand(t *testing.T, dir string, cmd *exec.Cmd) *exec.Cmd {
-	cmd.Dir = dir
-	cmd.Env = []string{
-		"GIT_CONFIG_GLOBAL=",
-		"GIT_CONFIG_SYSTEM=",
-		"GIT_COMMITTER_NAME=Kierkegaard",
-		"GIT_COMMITTER_EMAIL=soren@apache.com",
-		"GIT_AUTHOR_NAME=Kierkegaard",
-		"GIT_AUTHOR_EMAIL=soren@apache.com",
-	}
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("cmd.Run: %v", err)
-	}
-	return cmd
-}
-
 func initGitWorktree(t *testing.T, fileName, content string) (string, string) {
 	t.Helper()
 
 	dir := t.TempDir()
-	executeCommand(t, dir, exec.Command("git", "init", "-b", "main", "repo"))
+	runGit(t, dir, "init", "-b", "main", "repo")
 
 	repoDir := filepath.Join(dir, "repo")
 	if err := os.WriteFile(filepath.Join(repoDir, fileName), []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	executeCommand(t, repoDir, exec.Command("git", "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git"))
-	executeCommand(t, repoDir, exec.Command("git", "add", "."))
-	executeCommand(t, repoDir, exec.Command("git", "commit", "-m", "initial commit"))
+	runGit(t, repoDir, "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git")
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "initial commit")
 
 	worktreeDir := filepath.Join(dir, "wt")
-	executeCommand(t, repoDir, exec.Command("git", "worktree", "add", "-b", "worktree-branch", worktreeDir))
+	runGit(t, repoDir, "worktree", "add", "-b", "worktree-branch", worktreeDir)
 
 	return repoDir, worktreeDir
 }
@@ -338,12 +337,14 @@ func cloneBareRepo(t *testing.T, repoDir string) string {
 	t.Helper()
 
 	bareDir := filepath.Join(t.TempDir(), "repo.git")
-	executeCommand(t, filepath.Dir(repoDir), exec.Command("git", "clone", "--bare", repoDir, bareDir))
+	runGit(t, filepath.Dir(repoDir), "clone", "--bare", repoDir, bareDir)
 
 	return bareDir
 }
 
 func TestIndexDeltaBasic(t *testing.T) {
+	t.Parallel()
+
 	type branchToDocumentMap map[string][]index.Document
 
 	type step struct {
@@ -833,13 +834,11 @@ func TestIndexDeltaBasic(t *testing.T) {
 			repositoryDir := t.TempDir()
 
 			// setup: initialize the repository and all of its branches
-			runScript(t, repositoryDir, "git init -b master")
-			runScript(t, repositoryDir, fmt.Sprintf("git config user.email %q", "you@example.com"))
-			runScript(t, repositoryDir, fmt.Sprintf("git config user.name %q", "Your Name"))
+			runGit(t, repositoryDir, "init", "-b", "master")
 
 			for _, b := range test.branches {
-				runScript(t, repositoryDir, fmt.Sprintf("git checkout -b %q", b))
-				runScript(t, repositoryDir, fmt.Sprintf("git commit --allow-empty -m %q", "empty commit"))
+				runGit(t, repositoryDir, "checkout", "-b", b)
+				runGit(t, repositoryDir, "commit", "--allow-empty", "-m", "empty commit")
 			}
 
 			for _, step := range test.steps {
@@ -849,7 +848,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 
 						hadChange := false
 
-						runScript(t, repositoryDir, fmt.Sprintf("git checkout %q", b))
+						runGit(t, repositoryDir, "checkout", b)
 
 						for _, d := range step.deletedDocuments[b] {
 							hadChange = true
@@ -860,8 +859,6 @@ func TestIndexDeltaBasic(t *testing.T) {
 							if err != nil {
 								t.Fatalf("deleting file %q: %s", d.Name, err)
 							}
-
-							runScript(t, repositoryDir, fmt.Sprintf("git add %q", file))
 						}
 
 						for _, d := range step.addedDocuments[b] {
@@ -878,15 +875,14 @@ func TestIndexDeltaBasic(t *testing.T) {
 							if err != nil {
 								t.Fatalf("writing file %q: %s", d.Name, err)
 							}
-
-							runScript(t, repositoryDir, fmt.Sprintf("git add %q", file))
 						}
 
 						if !hadChange {
 							continue
 						}
 
-						runScript(t, repositoryDir, fmt.Sprintf("git commit -m %q", step.name))
+						runGit(t, repositoryDir, "add", "-A")
+						runGit(t, repositoryDir, "commit", "-m", step.name)
 					}
 
 					// setup: prepare indexOptions with given overrides
@@ -1002,7 +998,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 	}
 }
 
-func runScript(t *testing.T, cwd string, script string) {
+func runGit(t *testing.T, cwd string, args ...string) {
 	t.Helper()
 
 	err := os.MkdirAll(cwd, 0o755)
@@ -1010,9 +1006,16 @@ func runScript(t *testing.T, cwd string, script string) {
 		t.Fatalf("ensuring path %q exists: %s", cwd, err)
 	}
 
-	cmd := exec.Command("sh", "-euxc", script)
+	cmd := exec.Command("git", args...)
 	cmd.Dir = cwd
-	cmd.Env = append([]string{"GIT_CONFIG_GLOBAL=", "GIT_CONFIG_SYSTEM="}, os.Environ()...)
+	cmd.Env = append(os.Environ(),
+		"GIT_CONFIG_GLOBAL=",
+		"GIT_CONFIG_SYSTEM=",
+		"GIT_COMMITTER_NAME=Kierkegaard",
+		"GIT_COMMITTER_EMAIL=soren@apache.com",
+		"GIT_AUTHOR_NAME=Kierkegaard",
+		"GIT_AUTHOR_EMAIL=soren@apache.com",
+	)
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("execution error: %v, output %s", err, out)
@@ -1020,11 +1023,13 @@ func runScript(t *testing.T, cwd string, script string) {
 }
 
 func TestSetTemplates_e2e(t *testing.T) {
+	t.Parallel()
+
 	repositoryDir := t.TempDir()
 
 	// setup: initialize the repository and all of its branches
-	runScript(t, repositoryDir, "git init -b master")
-	runScript(t, repositoryDir, "git config remote.origin.url git@github.com:sourcegraph/zoekt.git")
+	runGit(t, repositoryDir, "init", "-b", "master")
+	runGit(t, repositoryDir, "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git")
 	desc := zoekt.Repository{}
 	if err := setTemplatesFromConfig(&desc, repositoryDir); err != nil {
 		t.Fatalf("setTemplatesFromConfig: %v", err)
@@ -1036,6 +1041,8 @@ func TestSetTemplates_e2e(t *testing.T) {
 }
 
 func TestSetTemplates_Worktree(t *testing.T) {
+	t.Parallel()
+
 	_, worktreeDir := initGitWorktree(t, "hello.go", "package main\n")
 	desc := zoekt.Repository{}
 
@@ -1049,6 +1056,8 @@ func TestSetTemplates_Worktree(t *testing.T) {
 }
 
 func TestSetTemplates(t *testing.T) {
+	t.Parallel()
+
 	base := "https://example.com/repo/name"
 	version := "VERSION"
 	path := "dir/name.txt"
@@ -1102,6 +1111,8 @@ func TestSetTemplates(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.typ, func(t *testing.T) {
+			t.Parallel()
+
 			assertOutput := func(templateText string, want string) {
 				t.Helper()
 

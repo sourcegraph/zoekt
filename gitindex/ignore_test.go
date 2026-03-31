@@ -48,6 +48,8 @@ git update-ref refs/meta/config HEAD
 }
 
 func TestIgnore(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSourcegraphignoreRepo(dir); err != nil {
