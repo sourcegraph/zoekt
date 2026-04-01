@@ -59,9 +59,17 @@ func HostnameBestEffort() string {
 // Store character (unicode codepoint) offset (in bytes) this often.
 const runeOffsetFrequency = 100
 
+// postingEntry holds the posting list data and the last offset for a single trigram.
+// By combining these into a single struct accessed via pointer, we reduce map
+// operations in the hot loop from 4 per rune (2 reads + 2 writes on two maps)
+// to 1 per rune (1 read, then modify through pointer).
+type postingEntry struct {
+	data    []byte
+	lastOff uint32
+}
+
 type postingsBuilder struct {
-	postings    map[ngram][]byte
-	lastOffsets map[ngram]uint32
+	postings map[ngram]*postingEntry
 
 	// To support UTF-8 searching, we must map back runes to byte
 	// offsets. As a first attempt, we sample regularly. The
@@ -77,9 +85,12 @@ type postingsBuilder struct {
 }
 
 func newPostingsBuilder() *postingsBuilder {
+	// Pre-allocate map with a reasonable capacity hint.
+	// A typical shard (~100MB) contains 50K-200K unique trigrams.
+	// Pre-allocating avoids repeated map growth during indexing.
+	const initialTrigramCapacity = 200_000
 	return &postingsBuilder{
-		postings:     map[ngram][]byte{},
-		lastOffsets:  map[ngram]uint32{},
+		postings:     make(map[ngram]*postingEntry, initialTrigramCapacity),
 		isPlainASCII: true,
 	}
 }
@@ -130,12 +141,20 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 		}
 
 		ng := runesToNGram(runeGram)
-		lastOff := s.lastOffsets[ng]
 		newOff := endRune + uint32(runeIndex) - 2
 
-		m := binary.PutUvarint(buf[:], uint64(newOff-lastOff))
-		s.postings[ng] = append(s.postings[ng], buf[:m]...)
-		s.lastOffsets[ng] = newOff
+		e := s.postings[ng]
+		if e == nil {
+			// Pre-allocate data slice. Most trigrams appear many times
+			// across a shard, so starting with 64 bytes avoids several
+			// small reallocations during early appends.
+			e = &postingEntry{data: make([]byte, 0, 64)}
+			s.postings[ng] = e
+		}
+
+		m := binary.PutUvarint(buf[:], uint64(newOff-e.lastOff))
+		e.data = append(e.data, buf[:m]...)
+		e.lastOff = newOff
 	}
 	s.runeCount += runeIndex
 

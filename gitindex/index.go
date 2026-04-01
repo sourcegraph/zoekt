@@ -586,23 +586,43 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	names = uniq(names)
 
 	log.Printf("attempting to index %d total files", totalFiles)
-	for idx, name := range names {
-		keys := fileKeys[name]
 
-		for _, key := range keys {
+	// Flatten keys in sorted order for pipeline processing.
+	allKeys := make([]fileKey, 0, totalFiles)
+	for _, name := range names {
+		allKeys = append(allKeys, fileKeys[name]...)
+	}
+
+	// Pre-fetch documents using a pipeline: a goroutine reads blobs
+	// ahead of the main loop, overlapping I/O with builder processing.
+	type docResult struct {
+		doc index.Document
+		key fileKey
+		err error
+	}
+	ch := make(chan docResult, 64)
+	go func() {
+		defer close(ch)
+		for _, key := range allKeys {
 			doc, err := createDocument(key, repos, opts.BuildOptions)
-			if err != nil {
-				return false, err
-			}
-
-			if err := builder.Add(doc); err != nil {
-				return false, fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
-			}
-
-			if idx%10_000 == 0 {
-				builder.CheckMemoryUsage()
-			}
+			ch <- docResult{doc: doc, key: key, err: err}
 		}
+	}()
+
+	idx := 0
+	for result := range ch {
+		if result.err != nil {
+			return false, result.err
+		}
+
+		if err := builder.Add(result.doc); err != nil {
+			return false, fmt.Errorf("error adding document with name %s: %w", result.key.FullPath(), err)
+		}
+
+		if idx%10_000 == 0 {
+			builder.CheckMemoryUsage()
+		}
+		idx++
 	}
 	return true, builder.Finish()
 }
