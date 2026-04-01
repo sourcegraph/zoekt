@@ -67,11 +67,12 @@ jobs:
           # not linked into the default search paths. Git's config.mak.uname
           # gained Homebrew auto-detection for gettext around v2.47, but older
           # versions in our matrix (2.34.1, 2.39.5) lack it and fail with
-          # 'libintl.h' not found. Explicit CFLAGS/LDFLAGS ensure all versions
-          # build consistently. See: git INSTALL docs, config.mak.uname.
+          # 'libintl.h' not found. We use CPPFLAGS/LDFLAGS (not CFLAGS) because
+          # git's Makefile overrides CFLAGS but preserves CPPFLAGS via
+          # ALL_CFLAGS = $(CPPFLAGS) $(CFLAGS).
           if [ "$RUNNER_OS" = "macOS" ]; then
             BREW_PREFIX=$(brew --prefix)
-            export CFLAGS="-I${BREW_PREFIX}/opt/openssl/include -I${BREW_PREFIX}/opt/curl/include -I${BREW_PREFIX}/opt/expat/include -I${BREW_PREFIX}/opt/gettext/include"
+            export CPPFLAGS="-I${BREW_PREFIX}/opt/openssl/include -I${BREW_PREFIX}/opt/curl/include -I${BREW_PREFIX}/opt/expat/include -I${BREW_PREFIX}/opt/gettext/include"
             export LDFLAGS="-L${BREW_PREFIX}/opt/openssl/lib -L${BREW_PREFIX}/opt/curl/lib -L${BREW_PREFIX}/opt/expat/lib -L${BREW_PREFIX}/opt/gettext/lib"
           fi
 
