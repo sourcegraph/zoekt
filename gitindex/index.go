@@ -682,8 +682,41 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 // builder. Large blobs are skipped without reading content into memory.
 // keys must correspond 1:1 (in order) with the ids passed to newCatfileReader.
 // The reader is always closed when this function returns.
+// contentSlab reduces per-file heap allocations by sub-slicing from a
+// shared buffer. Each returned slice has its capacity capped (3-index
+// slice) so appending to one file's content cannot overwrite adjacent
+// data. Files larger than the slab get their own allocation.
+type contentSlab struct {
+	buf []byte
+	cap int
+}
+
+func newContentSlab(slabCap int) contentSlab {
+	return contentSlab{
+		buf: make([]byte, 0, slabCap),
+		cap: slabCap,
+	}
+}
+
+// alloc returns a byte slice of length n. The caller must write into it
+// immediately (the bytes are uninitialized when sourced from the slab).
+func (s *contentSlab) alloc(n int) []byte {
+	if n > s.cap {
+		return make([]byte, n)
+	}
+	if len(s.buf)+n > cap(s.buf) {
+		s.buf = make([]byte, n, s.cap)
+		return s.buf[:n:n]
+	}
+	off := len(s.buf)
+	s.buf = s.buf[:off+n]
+	return s.buf[off : off+n : off+n]
+}
+
 func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]BlobLocation, opts Options, builder *index.Builder) error {
 	defer cr.Close()
+
+	slab := newContentSlab(16 << 20) // 16 MB per slab
 
 	for idx, key := range keys {
 		size, missing, excluded, err := cr.Next()
@@ -707,10 +740,7 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 				// Skip without reading content into memory.
 				doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 			} else {
-				// Pre-allocate and read the full blob content in one call.
-				// io.ReadFull is preferred over io.LimitedReader here as it
-				// avoids the intermediate allocation and the size is known.
-				content := make([]byte, size)
+				content := slab.alloc(size)
 				if _, err := io.ReadFull(cr, content); err != nil {
 					return fmt.Errorf("read blob %s: %w", keyFullPath, err)
 				}

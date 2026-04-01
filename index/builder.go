@@ -37,7 +37,6 @@ import (
 
 	"github.com/bmatcuk/doublestar"
 	"github.com/dustin/go-humanize"
-	"github.com/go-enry/go-enry/v2"
 	"github.com/rs/xid"
 	"golang.org/x/sys/unix"
 
@@ -625,6 +624,11 @@ func (b *Builder) Add(doc Document) error {
 		doc.SkipReason = skip
 	}
 
+	// Pre-compute file category while content is still available.
+	// This overlaps with catfile I/O and avoids redundant enry calls
+	// later in sortDocuments and ShardBuilder.Add.
+	DetermineFileCategory(&doc)
+
 	b.todo = append(b.todo, &doc)
 
 	if doc.SkipReason == SkipReasonNone {
@@ -888,18 +892,21 @@ func rank(d *Document, origIdx int) []float64 {
 		skipped = 1.0
 	}
 
+	// Use pre-computed Category from DetermineFileCategory instead of
+	// calling enry.IsGenerated/IsVendor/IsTest again. The category is
+	// computed before sorting in buildShard, avoiding redundant regex work.
 	generated := 0.0
-	if enry.IsGenerated(d.Name, d.Content) {
+	if d.Category == FileCategoryGenerated {
 		generated = 1.0
 	}
 
 	vendor := 0.0
-	if enry.IsVendor(d.Name) {
+	if d.Category == FileCategoryVendored {
 		vendor = 1.0
 	}
 
 	test := 0.0
-	if enry.IsTest(d.Name) {
+	if d.Category == FileCategoryTest {
 		test = 1.0
 	}
 
@@ -935,6 +942,14 @@ func rank(d *Document, origIdx int) []float64 {
 }
 
 func sortDocuments(todo []*Document) {
+	// Pre-compute file categories so rank() can use cached values
+	// instead of calling enry functions redundantly.
+	for _, t := range todo {
+		if t.Category == FileCategoryMissing {
+			DetermineFileCategory(t)
+		}
+	}
+
 	rs := make([]rankedDoc, 0, len(todo))
 	for i, t := range todo {
 		rd := rankedDoc{t, rank(t, i)}

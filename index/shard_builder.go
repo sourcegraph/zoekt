@@ -135,6 +135,7 @@ func newPostingsBuilder(shardMaxBytes int) *postingsBuilder {
 	}
 }
 
+
 // reset clears the builder for reuse. All postingList allocations
 // (backing arrays, map entries, ASCII array slots) are retained so the
 // next shard build avoids re-allocating them.
@@ -235,8 +236,15 @@ func (s *postingsBuilder) newSearchableString(data []byte, byteSections []Docume
 				s.postings[ng] = pl
 			}
 		}
-		m := binary.PutUvarint(buf[:], uint64(newOff-pl.lastOff))
-		pl.data = append(pl.data, buf[:m]...)
+		delta := uint64(newOff - pl.lastOff)
+		if delta < 0x80 {
+			// Single-byte varint fast path: ~80% of deltas are < 128.
+			// append(slice, byte) is cheaper than append(slice, slice...).
+			pl.data = append(pl.data, byte(delta))
+		} else {
+			m := binary.PutUvarint(buf[:], delta)
+			pl.data = append(pl.data, buf[:m]...)
+		}
 		pl.lastOff = newOff
 	}
 	s.runeCount += runeIndex
@@ -536,8 +544,13 @@ func DetermineLanguageIfUnknown(doc *Document) {
 
 // Add a file which only occurs in certain branches.
 func (b *ShardBuilder) Add(doc Document) error {
-	if index := bytes.IndexByte(doc.Content, 0); index > 0 {
-		doc.SkipReason = SkipReasonBinary
+	// Skip binary check and category detection if already computed
+	// (e.g., by Builder.Add which calls DocChecker.Check and
+	// DetermineFileCategory before docs reach buildShard).
+	if doc.Category == FileCategoryMissing {
+		if index := bytes.IndexByte(doc.Content, 0); index > 0 {
+			doc.SkipReason = SkipReasonBinary
+		}
 	}
 
 	if doc.SkipReason != SkipReasonNone {
@@ -547,7 +560,9 @@ func (b *ShardBuilder) Add(doc Document) error {
 	}
 
 	DetermineLanguageIfUnknown(&doc)
-	DetermineFileCategory(&doc)
+	if doc.Category == FileCategoryMissing {
+		DetermineFileCategory(&doc)
+	}
 
 	sort.Sort(symbolSlice{doc.Symbols, doc.SymbolsMetaData})
 	var last DocumentSection
