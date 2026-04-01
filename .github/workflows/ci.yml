@@ -65,19 +65,19 @@ jobs:
 
           # On macOS, Homebrew keg-only packages (openssl, curl, gettext) are
           # not linked into the default search paths. Git's config.mak.uname
-          # gained Homebrew auto-detection for gettext around v2.47, but older
-          # versions in our matrix (2.34.1, 2.39.5) lack it and fail with
-          # 'libintl.h' not found. We use CPPFLAGS/LDFLAGS (not CFLAGS) because
-          # git's Makefile overrides CFLAGS but preserves CPPFLAGS via
-          # ALL_CFLAGS = $(CPPFLAGS) $(CFLAGS).
+          # gained Homebrew auto-detection around v2.47, but older versions
+          # (2.34.1, 2.39.5) lack it. Git's Makefile overrides CFLAGS and
+          # LDFLAGS env vars, so we pass them on the make command line where
+          # they take precedence over Makefile assignments.
+          MAKE_ARGS="prefix=$HOME/git-install"
           if [ "$RUNNER_OS" = "macOS" ]; then
             BREW_PREFIX=$(brew --prefix)
-            export CPPFLAGS="-I${BREW_PREFIX}/opt/openssl/include -I${BREW_PREFIX}/opt/curl/include -I${BREW_PREFIX}/opt/expat/include -I${BREW_PREFIX}/opt/gettext/include"
-            export LDFLAGS="-L${BREW_PREFIX}/opt/openssl/lib -L${BREW_PREFIX}/opt/curl/lib -L${BREW_PREFIX}/opt/expat/lib -L${BREW_PREFIX}/opt/gettext/lib"
+            MAKE_ARGS="$MAKE_ARGS CPPFLAGS=-I${BREW_PREFIX}/opt/openssl/include\ -I${BREW_PREFIX}/opt/curl/include\ -I${BREW_PREFIX}/opt/expat/include\ -I${BREW_PREFIX}/opt/gettext/include"
+            MAKE_ARGS="$MAKE_ARGS LDFLAGS=-L${BREW_PREFIX}/opt/openssl/lib\ -L${BREW_PREFIX}/opt/curl/lib\ -L${BREW_PREFIX}/opt/expat/lib\ -L${BREW_PREFIX}/opt/gettext/lib"
           fi
 
-          make prefix="$HOME/git-install" -j"$NPROC" all
-          make prefix="$HOME/git-install" install
+          make $MAKE_ARGS -j"$NPROC" all
+          make $MAKE_ARGS install
 
       - name: Verify git build
         run: |
