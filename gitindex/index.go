@@ -619,7 +619,11 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	// for the main repo so we can stream them via git cat-file --batch.
 	// ZOEKT_DISABLE_CATFILE_BATCH=true falls back to the go-git path for
 	// all files, useful as a kill switch if the cat-file path causes issues.
-	catfileBatchDisabled := cmp.Or(os.Getenv("ZOEKT_DISABLE_CATFILE_BATCH"), "false")
+	//
+	// 2026-04-02(keegan) we are regularly seeing git growing to over 9GB in
+	// memory usage in our production cluster. Disabling by default until the
+	// issue is resolved.
+	catfileBatchDisabled := cmp.Or(os.Getenv("ZOEKT_DISABLE_CATFILE_BATCH"), "true")
 	useCatfileBatch := true
 	if disabled, _ := strconv.ParseBool(catfileBatchDisabled); disabled {
 		useCatfileBatch = false
