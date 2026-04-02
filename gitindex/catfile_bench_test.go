@@ -107,9 +107,10 @@ func BenchmarkBlobRead_GoGit(b *testing.B) {
 	}
 }
 
-// BenchmarkBlobRead_CatfileReader measures the streaming catfileReader approach:
-// all SHAs written to stdin at once via --buffer, responses read one at a time.
-// This is the production path used by indexGitRepo.
+// BenchmarkBlobRead_CatfileReader measures the streaming catfileReader
+// approach: all SHAs written to stdin at once via --buffer, responses read one
+// at a time. It compares the legacy ordered stream with the production
+// unordered mode used by indexGitRepo.
 func BenchmarkBlobRead_CatfileReader(b *testing.B) {
 	repoDir := requireBenchGitRepo(b)
 	files, gitDir := collectBlobKeys(b, repoDir)
@@ -125,35 +126,43 @@ func BenchmarkBlobRead_CatfileReader(b *testing.B) {
 		n = min(n, len(keys))
 		subset := ids[:n]
 
-		b.Run(fmt.Sprintf("files=%d", n), func(b *testing.B) {
-			b.ReportAllocs()
-			var totalBytes int64
-			for b.Loop() {
-				totalBytes = 0
-				cr, err := newCatfileReader(gitDir, subset, catfileReaderOptions{})
-				if err != nil {
-					b.Fatalf("newCatfileReader: %v", err)
-				}
-				for range subset {
-					size, missing, excluded, err := cr.Next()
+		for _, benchMode := range []struct {
+			name      string
+			unordered bool
+		}{
+			{name: "ordered"},
+			{name: "unordered", unordered: true},
+		} {
+			b.Run(fmt.Sprintf("files=%d/mode=%s", n, benchMode.name), func(b *testing.B) {
+				b.ReportAllocs()
+				var totalBytes int64
+				for b.Loop() {
+					totalBytes = 0
+					cr, err := newCatfileReader(gitDir, subset, catfileReaderOptions{unordered: benchMode.unordered})
 					if err != nil {
-						cr.Close()
-						b.Fatalf("Next: %v", err)
+						b.Fatalf("newCatfileReader: %v", err)
 					}
-					if missing || excluded {
-						continue
+					for range subset {
+						_, size, missing, excluded, err := cr.Next()
+						if err != nil {
+							cr.Close()
+							b.Fatalf("Next: %v", err)
+						}
+						if missing || excluded {
+							continue
+						}
+						content := make([]byte, size)
+						if _, err := io.ReadFull(cr, content); err != nil {
+							cr.Close()
+							b.Fatalf("ReadFull: %v", err)
+						}
+						totalBytes += int64(len(content))
 					}
-					content := make([]byte, size)
-					if _, err := io.ReadFull(cr, content); err != nil {
-						cr.Close()
-						b.Fatalf("ReadFull: %v", err)
-					}
-					totalBytes += int64(len(content))
+					cr.Close()
 				}
-				cr.Close()
-			}
-			b.ReportMetric(float64(totalBytes), "content-bytes/op")
-			b.ReportMetric(float64(len(subset)), "files/op")
-		})
+				b.ReportMetric(float64(totalBytes), "content-bytes/op")
+				b.ReportMetric(float64(len(subset)), "files/op")
+			})
+		}
 	}
 }

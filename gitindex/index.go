@@ -648,6 +648,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	if len(mainRepoIDs) > 0 {
 		crOpts := catfileReaderOptions{
 			filterSpec: catfileFilterSpec(opts),
+			unordered:  true,
 		}
 		cr, err := newCatfileReader(opts.RepoDir, mainRepoIDs, crOpts)
 		if err != nil {
@@ -680,15 +681,32 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 
 // indexCatfileBlobs streams main-repo blobs from the catfileReader into the
 // builder. Large blobs are skipped without reading content into memory.
-// keys must correspond 1:1 (in order) with the ids passed to newCatfileReader.
-// The reader is always closed when this function returns.
+// The reader may return blobs out of request order, so responses are matched
+// back to the queued file keys by object ID. The reader is always closed when
+// this function returns.
 func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]BlobLocation, opts Options, builder *index.Builder) error {
 	defer cr.Close()
 
-	for idx, key := range keys {
-		size, missing, excluded, err := cr.Next()
+	keysByID := make(map[plumbing.Hash][]fileKey, len(keys))
+	for _, key := range keys {
+		keysByID[key.ID] = append(keysByID[key.ID], key)
+	}
+
+	for idx := 0; idx < len(keys); idx++ {
+		id, size, missing, excluded, err := cr.Next()
 		if err != nil {
-			return fmt.Errorf("cat-file next for %s: %w", key.FullPath(), err)
+			return fmt.Errorf("cat-file next for blob %s: %w", id, err)
+		}
+
+		queued := keysByID[id]
+		if len(queued) == 0 {
+			return fmt.Errorf("cat-file returned unexpected blob %s", id)
+		}
+		key := queued[0]
+		if len(queued) == 1 {
+			delete(keysByID, id)
+		} else {
+			keysByID[id] = queued[1:]
 		}
 
 		branches := repos[key].Branches

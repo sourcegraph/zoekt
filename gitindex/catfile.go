@@ -30,12 +30,15 @@ import (
 
 type catfileReaderOptions struct {
 	filterSpec string
+	unordered  bool
 }
 
 // catfileReader provides streaming access to git blob objects via a pipelined
 // "git cat-file --batch --buffer" process. A writer goroutine feeds all blob
 // SHAs to stdin while the caller reads responses one at a time, similar to
-// archive/tar.Reader.
+// archive/tar.Reader. When the reader is configured with --unordered, git may
+// return objects in pack order instead of request order, so callers must use
+// the object ID returned by Next to correlate responses.
 //
 // The --buffer flag switches git's output from per-object flush (write_or_die)
 // to libc stdio buffering (fwrite), reducing syscalls. After stdin EOF, git
@@ -48,13 +51,14 @@ type catfileReaderOptions struct {
 //	defer cr.Close()
 //
 //	for {
-//	    size, missing, excluded, err := cr.Next()
+//	    id, size, missing, excluded, err := cr.Next()
 //	    if err == io.EOF { break }
 //	    if missing { continue }
 //	    if excluded { continue }
 //	    if size > maxSize { continue } // unread bytes auto-skipped
 //	    content := make([]byte, size)
 //	    io.ReadFull(cr, content)
+//	    _ = id // match back to the requested blob if using --unordered
 //	}
 type catfileReader struct {
 	cmd      *exec.Cmd
@@ -74,6 +78,9 @@ type catfileReader struct {
 // when done. Pass a zero-value catfileReaderOptions when no options are needed.
 func newCatfileReader(repoDir string, ids []plumbing.Hash, opts catfileReaderOptions) (*catfileReader, error) {
 	args := []string{"cat-file", "--batch", "--buffer"}
+	if opts.unordered {
+		args = append(args, "--unordered")
+	}
 	if opts.filterSpec != "" {
 		args = append(args, "--filter="+opts.filterSpec)
 	}
@@ -123,18 +130,18 @@ func newCatfileReader(repoDir string, ids []plumbing.Hash, opts catfileReaderOpt
 	}, nil
 }
 
-// Next advances to the next blob entry. It returns the blob's size and whether
-// it is missing or excluded by the configured filter. Any unread content from
-// the previous entry is automatically discarded. Returns io.EOF when all
-// entries have been consumed.
+// Next advances to the next blob entry. It returns the blob ID, size, and
+// whether it is missing or excluded by the configured filter. Any unread
+// content from the previous entry is automatically discarded. Returns io.EOF
+// when all entries have been consumed.
 //
 // After Next returns successfully with missing=false and excluded=false, call
 // Read to consume the blob content, or call Next again to skip it.
-func (cr *catfileReader) Next() (size int, missing bool, excluded bool, err error) {
+func (cr *catfileReader) Next() (id plumbing.Hash, size int, missing bool, excluded bool, err error) {
 	// Discard unread content from the previous entry.
 	if cr.pending > 0 {
 		if _, err := cr.reader.Discard(cr.pending); err != nil {
-			return 0, false, false, fmt.Errorf("discard pending bytes: %w", err)
+			return plumbing.ZeroHash, 0, false, false, fmt.Errorf("discard pending bytes: %w", err)
 		}
 		cr.pending = 0
 	}
@@ -142,33 +149,57 @@ func (cr *catfileReader) Next() (size int, missing bool, excluded bool, err erro
 	headerBytes, err := cr.reader.ReadBytes('\n')
 	if err != nil {
 		if err == io.EOF {
-			return 0, false, false, io.EOF
+			return plumbing.ZeroHash, 0, false, false, io.EOF
 		}
-		return 0, false, false, fmt.Errorf("read header: %w", err)
+		return plumbing.ZeroHash, 0, false, false, fmt.Errorf("read header: %w", err)
 	}
 	header := headerBytes[:len(headerBytes)-1] // trim \n
-
-	if bytes.HasSuffix(header, []byte(" missing")) {
-		return 0, true, false, nil
+	firstSpace := bytes.IndexByte(header, ' ')
+	if firstSpace == -1 {
+		return plumbing.ZeroHash, 0, false, false, fmt.Errorf("unexpected header: %q", header)
 	}
 
-	if bytes.HasSuffix(header, []byte(" excluded")) {
-		return 0, false, true, nil
+	id, err = parseCatfileObjectID(header[:firstSpace])
+	if err != nil {
+		return plumbing.ZeroHash, 0, false, false, fmt.Errorf("parse object id from %q: %w", header, err)
+	}
+
+	rest := header[firstSpace+1:]
+	if bytes.Equal(rest, []byte("missing")) {
+		return id, 0, true, false, nil
+	}
+
+	if bytes.Equal(rest, []byte("excluded")) {
+		return id, 0, false, true, nil
+	}
+
+	lastSpace := bytes.LastIndexByte(header, ' ')
+	if lastSpace <= firstSpace {
+		return plumbing.ZeroHash, 0, false, false, fmt.Errorf("unexpected header: %q", header)
 	}
 
 	// Parse size from "<oid> <type> <size>".
-	lastSpace := bytes.LastIndexByte(header, ' ')
-	if lastSpace == -1 {
-		return 0, false, false, fmt.Errorf("unexpected header: %q", header)
-	}
 	size, err = strconv.Atoi(string(header[lastSpace+1:]))
 	if err != nil {
-		return 0, false, false, fmt.Errorf("parse size from %q: %w", header, err)
+		return plumbing.ZeroHash, 0, false, false, fmt.Errorf("parse size from %q: %w", header, err)
 	}
 
 	// Track pending bytes: content + trailing LF.
 	cr.pending = size + 1
-	return size, false, false, nil
+	return id, size, false, false, nil
+}
+
+func parseCatfileObjectID(raw []byte) (plumbing.Hash, error) {
+	if len(raw) != 40 {
+		return plumbing.ZeroHash, fmt.Errorf("invalid object id length %d", len(raw))
+	}
+
+	var id plumbing.Hash
+	if _, err := hex.Decode(id[:], raw); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return id, nil
 }
 
 // Read reads from the current blob's content. Implements io.Reader. Returns
