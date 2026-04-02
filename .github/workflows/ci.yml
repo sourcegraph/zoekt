@@ -63,21 +63,23 @@ jobs:
 
           NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
-          # On macOS, Homebrew keg-only packages (openssl, curl, gettext) are
-          # not linked into the default search paths. Git's config.mak.uname
-          # gained Homebrew auto-detection around v2.47, but older versions
-          # (2.34.1, 2.39.5) lack it. Git's Makefile overrides CFLAGS and
-          # LDFLAGS env vars, so we pass them on the make command line where
-          # they take precedence over Makefile assignments.
-          MAKE_ARGS="prefix=$HOME/git-install"
+          # On macOS, Homebrew keg-only packages (openssl, curl, expat,
+          # gettext) are not linked into the default search paths.
+          # Git's config.mak.uname has partial Homebrew auto-detection:
+          #   - gettext: since git 2.27 (Intel), 2.44 (ARM)
+          #   - openssl, curl, expat: NOT auto-detected in any version
+          # Git's Makefile uses -include config.mak (silently skipped if
+          # absent), so we write paths there. Uses += to append to flags.
           if [ "$RUNNER_OS" = "macOS" ]; then
             BREW_PREFIX=$(brew --prefix)
-            MAKE_ARGS="$MAKE_ARGS CPPFLAGS=-I${BREW_PREFIX}/opt/openssl/include\ -I${BREW_PREFIX}/opt/curl/include\ -I${BREW_PREFIX}/opt/expat/include\ -I${BREW_PREFIX}/opt/gettext/include"
-            MAKE_ARGS="$MAKE_ARGS LDFLAGS=-L${BREW_PREFIX}/opt/openssl/lib\ -L${BREW_PREFIX}/opt/curl/lib\ -L${BREW_PREFIX}/opt/expat/lib\ -L${BREW_PREFIX}/opt/gettext/lib"
+            printf '%s\n' \
+              "CPPFLAGS += -I${BREW_PREFIX}/opt/openssl/include -I${BREW_PREFIX}/opt/curl/include -I${BREW_PREFIX}/opt/expat/include -I${BREW_PREFIX}/opt/gettext/include" \
+              "LDFLAGS += -L${BREW_PREFIX}/opt/openssl/lib -L${BREW_PREFIX}/opt/curl/lib -L${BREW_PREFIX}/opt/expat/lib -L${BREW_PREFIX}/opt/gettext/lib" \
+              > config.mak
           fi
 
-          make $MAKE_ARGS -j"$NPROC" all
-          make $MAKE_ARGS install
+          make prefix="$HOME/git-install" -j"$NPROC" all
+          make prefix="$HOME/git-install" install
 
       - name: Verify git build
         run: |
