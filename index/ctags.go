@@ -55,8 +55,6 @@ func parseSymbols(todo []*Document, languageMap ctags.LanguageMap, parserBins ct
 			continue
 		}
 
-		DetermineLanguageIfUnknown(doc)
-
 		parserType := languageMap[normalizeLanguage(doc.Language)]
 		if parserType == ctags.NoCTags {
 			continue

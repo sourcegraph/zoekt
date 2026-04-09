@@ -624,10 +624,10 @@ func (b *Builder) Add(doc Document) error {
 		doc.SkipReason = skip
 	}
 
-	// Pre-compute file category while content is still available.
-	// This overlaps with catfile I/O and avoids redundant enry calls
-	// later in sortDocuments and ShardBuilder.Add.
+	// Pre-compute file category and language while content is still
+	// available, before content is dropped for skipped documents.
 	DetermineFileCategory(&doc)
+	DetermineLanguageIfUnknown(&doc)
 
 	b.todo = append(b.todo, &doc)
 
@@ -892,9 +892,7 @@ func rank(d *Document, origIdx int) []float64 {
 		skipped = 1.0
 	}
 
-	// Use pre-computed Category from DetermineFileCategory instead of
-	// calling enry.IsGenerated/IsVendor/IsTest again. The category is
-	// computed before sorting in buildShard, avoiding redundant regex work.
+	// Use pre-computed Category from DetermineFileCategory.
 	generated := 0.0
 	if d.Category == FileCategoryGenerated {
 		generated = 1.0
@@ -942,14 +940,6 @@ func rank(d *Document, origIdx int) []float64 {
 }
 
 func sortDocuments(todo []*Document) {
-	// Pre-compute file categories so rank() can use cached values
-	// instead of calling enry functions redundantly.
-	for _, t := range todo {
-		if t.Category == FileCategoryMissing {
-			DetermineFileCategory(t)
-		}
-	}
-
 	rs := make([]rankedDoc, 0, len(todo))
 	for i, t := range todo {
 		rd := rankedDoc{t, rank(t, i)}

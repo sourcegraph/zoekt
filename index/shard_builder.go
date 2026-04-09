@@ -135,7 +135,6 @@ func newPostingsBuilder(shardMaxBytes int) *postingsBuilder {
 	}
 }
 
-
 // reset clears the builder for reuse. All postingList allocations
 // (backing arrays, map entries, ASCII array slots) are retained so the
 // next shard build avoids re-allocating them.
@@ -544,9 +543,8 @@ func DetermineLanguageIfUnknown(doc *Document) {
 
 // Add a file which only occurs in certain branches.
 func (b *ShardBuilder) Add(doc Document) error {
-	// Skip binary check and category detection if already computed
-	// (e.g., by Builder.Add which calls DocChecker.Check and
-	// DetermineFileCategory before docs reach buildShard).
+	// Skip binary check if already computed (e.g., by Builder.Add
+	// which calls DocChecker.Check before docs reach buildShard).
 	if doc.Category == FileCategoryMissing {
 		if index := bytes.IndexByte(doc.Content, 0); index > 0 {
 			doc.SkipReason = SkipReasonBinary
