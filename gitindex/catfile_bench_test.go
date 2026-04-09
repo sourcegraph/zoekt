@@ -136,6 +136,8 @@ func BenchmarkBlobRead_CatfileReader(b *testing.B) {
 			b.Run(fmt.Sprintf("files=%d/mode=%s", n, benchMode.name), func(b *testing.B) {
 				b.ReportAllocs()
 				var totalBytes int64
+				var totalPeakRSS uint64
+				var peakRSSSamples int
 				for b.Loop() {
 					totalBytes = 0
 					cr, err := newCatfileReader(gitDir, subset, catfileReaderOptions{unordered: benchMode.unordered})
@@ -158,10 +160,25 @@ func BenchmarkBlobRead_CatfileReader(b *testing.B) {
 						}
 						totalBytes += int64(len(content))
 					}
-					cr.Close()
+					// Force the child to close stdout before Close() so the recorded
+					// rusage reflects the fully-drained cat-file process.
+					if _, _, _, _, err := cr.Next(); err != io.EOF {
+						cr.Close()
+						b.Fatalf("final Next: got %v, want io.EOF", err)
+					}
+					if err := cr.Close(); err != nil {
+						b.Fatalf("Close: %v", err)
+					}
+					if peakRSS, ok := cr.maxRSSBytes(); ok {
+						totalPeakRSS += peakRSS
+						peakRSSSamples++
+					}
 				}
 				b.ReportMetric(float64(totalBytes), "content-bytes/op")
 				b.ReportMetric(float64(len(subset)), "files/op")
+				if peakRSSSamples > 0 {
+					b.ReportMetric(float64(totalPeakRSS)/float64(peakRSSSamples), "git-maxrss-bytes/op")
+				}
 			})
 		}
 	}

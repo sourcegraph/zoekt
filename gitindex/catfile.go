@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"sync"
 	"syscall"
@@ -68,6 +69,9 @@ type catfileReader struct {
 	// pending tracks unread content bytes + trailing LF for the current
 	// entry. Next() discards any pending bytes before reading the next header.
 	pending int
+
+	peakRSSBytes uint64
+	hasPeakRSS   bool
 
 	closeOnce sync.Once
 	closeErr  error
@@ -255,6 +259,9 @@ func (cr *catfileReader) Close() error {
 		// Wait for writer goroutine (unblocks via broken pipe from Kill).
 		<-cr.writeErr
 		err := cr.cmd.Wait()
+		if ps := cr.cmd.ProcessState; ps != nil {
+			cr.peakRSSBytes, cr.hasPeakRSS = maxRSSBytes(ps.SysUsage())
+		}
 		// Suppress the expected "signal: killed" error from our own Kill().
 		if isKilledErr(err) {
 			err = nil
@@ -262,6 +269,26 @@ func (cr *catfileReader) Close() error {
 		cr.closeErr = err
 	})
 	return cr.closeErr
+}
+
+func (cr *catfileReader) maxRSSBytes() (uint64, bool) {
+	return cr.peakRSSBytes, cr.hasPeakRSS
+}
+
+func maxRSSBytes(sysUsage any) (uint64, bool) {
+	rusage, ok := sysUsage.(*syscall.Rusage)
+	if !ok || rusage == nil || rusage.Maxrss < 0 {
+		return 0, false
+	}
+
+	// Darwin reports ru_maxrss in bytes, while Linux reports it in KiB.
+	maxRSS := uint64(rusage.Maxrss)
+	switch runtime.GOOS {
+	case "linux", "android":
+		maxRSS *= 1024
+	}
+
+	return maxRSS, true
 }
 
 // isKilledErr reports whether err is an exec.ExitError caused by SIGKILL.
