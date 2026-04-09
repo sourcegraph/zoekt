@@ -1149,9 +1149,8 @@ func TestSetTemplates(t *testing.T) {
 }
 
 func BenchmarkPrepareNormalBuild(b *testing.B) {
-	// NOTE: To run the benchmark, download a large repo (like github.com/chromium/chromium/) and change this to its path.
-	repoDir := "/path/to/your/repo"
-	repo, err := git.PlainOpen(repoDir)
+	repoDir := requireBenchGitRepo(b)
+	repo, err := plainOpenRepo(repoDir)
 	if err != nil {
 		b.Fatalf("Failed to open test repository: %v", err)
 	}
@@ -1160,7 +1159,7 @@ func BenchmarkPrepareNormalBuild(b *testing.B) {
 		RepoDir:      repoDir,
 		Submodules:   false,
 		BranchPrefix: "refs/heads/",
-		Branches:     []string{"main"},
+		Branches:     []string{"HEAD"},
 		BuildOptions: index.Options{
 			RepositoryDescription: zoekt.Repository{
 				Name: "test-repo",
