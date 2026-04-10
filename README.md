@@ -82,6 +82,25 @@ This will start a web server with a simple search UI at http://localhost:6070.
 See the [query syntax docs](doc/query_syntax.md) for more details on the query
 language.
 
+#### Container image
+
+Zoekt publishes a single container image at `ghcr.io/sourcegraph/zoekt`. It
+includes the Zoekt binaries, `git`, and `universal-ctags`. By default it runs
+`zoekt-webserver` against `/data/index`:
+
+    docker run --rm -p 6070:6070 -v "$PWD/index:/data/index" ghcr.io/sourcegraph/zoekt
+
+You can override the default command to run `zoekt-indexserver` instead. This
+example stores cloned repositories, logs, and indexes under `/data` and reads a
+mounted mirror config file:
+
+    docker run --rm \
+      -v "$PWD/config.json:/config.json:ro" \
+      -v "$PWD/token.txt:/home/zoekt/token.txt:ro" \
+      -v "$PWD/zoekt-data:/data" \
+      ghcr.io/sourcegraph/zoekt \
+      zoekt-indexserver -mirror_config /config.json -data_dir /data
+
 If you start the web server with `-rpc`, it exposes a [simple JSON search
 API](doc/json-api.md) at `http://localhost:6070/api/search`.
 
