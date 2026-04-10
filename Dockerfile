@@ -27,7 +27,9 @@ FROM alpine:3
 RUN apk add --no-cache git ca-certificates bind-tools tini jansson wget
 
 COPY --chmod=755 install-ctags-alpine.sh /usr/local/bin/install-ctags-alpine.sh
-RUN /usr/local/bin/install-ctags-alpine.sh && rm /usr/local/bin/install-ctags-alpine.sh
+RUN /usr/local/bin/install-ctags-alpine.sh && \
+    rm /usr/local/bin/install-ctags-alpine.sh \
+      /usr/local/bin/universal-optscript
 
 RUN addgroup -S zoekt && \
     adduser -S -G zoekt -h /home/zoekt zoekt && \
