@@ -45,6 +45,6 @@ CTAGS_TMPDIR=$(mktemp -d /tmp/ctags.XXXXXX)
 curl --retry 5 "https://codeload.github.com/universal-ctags/ctags/tar.gz/$CTAGS_VERSION" | tar xz -C "$CTAGS_TMPDIR"
 cd "$CTAGS_TMPDIR/$CTAGS_ARCHIVE_TOP_LEVEL_DIR"
 ./autogen.sh
-./configure --program-prefix=universal- --enable-json
+./configure --program-prefix=universal- --enable-json --disable-readcmd
 make -j"$NUMCPUS" --load-average="$NUMCPUS"
 make install
