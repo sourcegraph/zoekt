@@ -1084,6 +1084,9 @@ func testFileRankAspect(t *testing.T, c filerankCase) {
 
 	got := make([]*Document, len(c.docs))
 	copy(got, c.docs)
+	for _, d := range got {
+		DetermineFileCategory(d)
+	}
 	sortDocuments(got)
 
 	print := func(ds []*Document) string {

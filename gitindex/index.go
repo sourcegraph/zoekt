@@ -689,6 +689,8 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]BlobLocation, opts Options, builder *index.Builder) error {
 	defer cr.Close()
 
+	slab := newContentSlab(16 << 20) // 16 MB per slab
+
 	for idx, key := range keys {
 		size, missing, excluded, err := cr.Next()
 		if err != nil {
@@ -711,10 +713,7 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 				// Skip without reading content into memory.
 				doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 			} else {
-				// Pre-allocate and read the full blob content in one call.
-				// io.ReadFull is preferred over io.LimitedReader here as it
-				// avoids the intermediate allocation and the size is known.
-				content := make([]byte, size)
+				content := slab.alloc(size)
 				if _, err := io.ReadFull(cr, content); err != nil {
 					return fmt.Errorf("read blob %s: %w", keyFullPath, err)
 				}
