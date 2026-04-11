@@ -112,7 +112,7 @@ func main() {
 		repos, err = getUserRepos(client, *user, reposFilters)
 	default:
 		log.Printf("no user or org specified, cloning all repos.")
-		repos, err = getUserRepos(client, "", reposFilters)
+		repos, err = getAllRepos(client, reposFilters)
 	}
 
 	if err != nil {
@@ -219,6 +219,27 @@ func getOrgRepos(client *gitea.Client, org string, reposFilters reposFilters) ([
 		searchOptions.Page = resp.NextPage
 		repos = filterRepositories(repos, *reposFilters.noArchived)
 		allRepos = append(allRepos, repos...)
+		if resp.NextPage == 0 {
+			break
+		}
+	}
+	return allRepos, nil
+}
+
+func getAllRepos(client *gitea.Client, reposFilters reposFilters) ([]*gitea.Repository, error) {
+	var allRepos []*gitea.Repository
+	searchOptions := &gitea.SearchRepoOptions{}
+	for {
+		repos, resp, err := client.SearchRepos(*searchOptions)
+		if err != nil {
+			return nil, err
+		}
+		if len(repos) == 0 {
+			break
+		}
+		repos = filterRepositories(repos, *reposFilters.noArchived)
+		allRepos = append(allRepos, repos...)
+		searchOptions.Page = resp.NextPage
 		if resp.NextPage == 0 {
 			break
 		}
