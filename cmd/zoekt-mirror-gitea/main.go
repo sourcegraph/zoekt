@@ -196,8 +196,29 @@ func filterRepositories(repos []*gitea.Repository, noArchived bool) (filteredRep
 	return
 }
 
-func getOrgRepos(client *gitea.Client, org string, reposFilters reposFilters) ([]*gitea.Repository, error) {
+func searchRepos(client *gitea.Client, searchOptions *gitea.SearchRepoOptions, reposFilters reposFilters) ([]*gitea.Repository, error) {
 	var allRepos []*gitea.Repository
+	for {
+		repos, resp, err := client.SearchRepos(*searchOptions)
+		if err != nil {
+			return nil, err
+		}
+		if len(repos) == 0 {
+			break
+		}
+
+		repos = filterRepositories(repos, *reposFilters.noArchived)
+		allRepos = append(allRepos, repos...)
+		searchOptions.Page = resp.NextPage
+		if resp.NextPage == 0 {
+			break
+		}
+	}
+
+	return allRepos, nil
+}
+
+func getOrgRepos(client *gitea.Client, org string, reposFilters reposFilters) ([]*gitea.Repository, error) {
 	searchOptions := &gitea.SearchRepoOptions{}
 	// OwnerID
 	organization, _, err := client.GetOrg(org)
@@ -207,70 +228,22 @@ func getOrgRepos(client *gitea.Client, org string, reposFilters reposFilters) ([
 
 	searchOptions.OwnerID = organization.ID
 
-	for {
-		repos, resp, err := client.SearchRepos(*searchOptions)
-		if err != nil {
-			return nil, err
-		}
-		if len(repos) == 0 {
-			break
-		}
-
-		searchOptions.Page = resp.NextPage
-		repos = filterRepositories(repos, *reposFilters.noArchived)
-		allRepos = append(allRepos, repos...)
-		if resp.NextPage == 0 {
-			break
-		}
-	}
-	return allRepos, nil
+	return searchRepos(client, searchOptions, reposFilters)
 }
 
 func getAllRepos(client *gitea.Client, reposFilters reposFilters) ([]*gitea.Repository, error) {
-	var allRepos []*gitea.Repository
-	searchOptions := &gitea.SearchRepoOptions{}
-	for {
-		repos, resp, err := client.SearchRepos(*searchOptions)
-		if err != nil {
-			return nil, err
-		}
-		if len(repos) == 0 {
-			break
-		}
-		repos = filterRepositories(repos, *reposFilters.noArchived)
-		allRepos = append(allRepos, repos...)
-		searchOptions.Page = resp.NextPage
-		if resp.NextPage == 0 {
-			break
-		}
-	}
-	return allRepos, nil
+	return searchRepos(client, &gitea.SearchRepoOptions{}, reposFilters)
 }
 
 func getUserRepos(client *gitea.Client, user string, reposFilters reposFilters) ([]*gitea.Repository, error) {
-	var allRepos []*gitea.Repository
 	searchOptions := &gitea.SearchRepoOptions{}
 	u, _, err := client.GetUserInfo(user)
 	if err != nil {
 		return nil, err
 	}
 	searchOptions.OwnerID = u.ID
-	for {
-		repos, resp, err := client.SearchRepos(*searchOptions)
-		if err != nil {
-			return nil, err
-		}
-		if len(repos) == 0 {
-			break
-		}
-		repos = filterRepositories(repos, *reposFilters.noArchived)
-		allRepos = append(allRepos, repos...)
-		searchOptions.Page = resp.NextPage
-		if resp.NextPage == 0 {
-			break
-		}
-	}
-	return allRepos, nil
+
+	return searchRepos(client, searchOptions, reposFilters)
 }
 
 func cloneRepos(destDir string, repos []*gitea.Repository) error {
