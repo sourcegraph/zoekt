@@ -631,8 +631,6 @@ func (b *Builder) Add(doc Document) error {
 	DetermineFileCategory(&doc)
 	DetermineLanguageIfUnknown(&doc)
 
-	b.todo = append(b.todo, &doc)
-
 	if doc.SkipReason == SkipReasonNone {
 		b.size += len(doc.Name) + len(doc.Content)
 	} else {
@@ -641,6 +639,8 @@ func (b *Builder) Add(doc Document) error {
 		// shard size limit, so otherwise we might buffer too much data in memory before flushing.
 		doc.Content = nil
 	}
+
+	b.todo = append(b.todo, &doc)
 
 	if b.size > b.opts.ShardMax {
 		return b.flush()
@@ -889,24 +889,24 @@ type rankedDoc struct {
 // at query time, because earlier documents receive a boost at query time and
 // have a higher chance of being searched before limits kick in.
 func rank(d *Document, origIdx int) []float64 {
+	flags := d.rankFlags
+
 	skipped := 0.0
 	if d.SkipReason != SkipReasonNone {
 		skipped = 1.0
 	}
-
-	// Use pre-computed Category from DetermineFileCategory.
 	generated := 0.0
-	if d.Category == FileCategoryGenerated {
+	if flags.has(fileRankGenerated) {
 		generated = 1.0
 	}
 
 	vendor := 0.0
-	if d.Category == FileCategoryVendored {
+	if flags.has(fileRankVendored) {
 		vendor = 1.0
 	}
 
 	test := 0.0
-	if d.Category == FileCategoryTest {
+	if flags.has(fileRankTest) {
 		test = 1.0
 	}
 

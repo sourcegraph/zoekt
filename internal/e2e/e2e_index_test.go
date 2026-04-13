@@ -791,7 +791,7 @@ func TestDeltaShards(t *testing.T) {
 				}
 
 				cmpOpts := []cmp.Option{
-					cmpopts.IgnoreFields(index.Document{}, "Branches"),
+					cmpopts.IgnoreFields(index.Document{}, "Branches", "rankFlags"),
 					cmpopts.SortSlices(func(a, b index.Document) bool {
 						if a.Name < b.Name {
 							return true

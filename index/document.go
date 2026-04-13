@@ -11,6 +11,10 @@ type Document struct {
 	Language          string
 	Category          FileCategory
 
+	// rankFlags is computed with Category before content is discarded. It is
+	// only used for initial shard ordering, not persisted or needed by merge/explode.
+	rankFlags fileRankFlags
+
 	SkipReason SkipReason
 
 	// Document sections for symbols. Offsets should use bytes.

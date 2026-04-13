@@ -12,6 +12,18 @@ import (
 // A file's category is used in search scoring to determine the weight of a file match.
 type FileCategory byte
 
+type fileRankFlags byte
+
+const (
+	fileRankTest fileRankFlags = 1 << iota
+	fileRankVendored
+	fileRankGenerated
+)
+
+func (f fileRankFlags) has(flag fileRankFlags) bool {
+	return f&flag != 0
+}
+
 const (
 	// FileCategoryMissing is a sentinel value that indicates we never computed the file category during indexing
 	// (which means we're reading from an old index version). This value can never be written to the index.
@@ -26,12 +38,10 @@ const (
 	FileCategoryDocumentation
 )
 
+// DetermineFileCategory computes the persisted category and independent ranking
+// flags together. Call it before discarding content: ranking must retain all
+// applicable classifications even though the category stores only the first.
 func DetermineFileCategory(doc *Document) {
-	if doc.SkipReason == SkipReasonBinary {
-		doc.Category = FileCategoryBinary
-		return
-	}
-
 	name := doc.Name
 	content := doc.Content
 
@@ -42,14 +52,28 @@ func DetermineFileCategory(doc *Document) {
 		content = nil
 	}
 
-	category := FileCategoryDefault
+	var flags fileRankFlags
 	if enry.IsTest(name) {
+		flags |= fileRankTest
+	}
+	if enry.IsVendor(name) {
+		flags |= fileRankVendored
+	}
+	if enry.IsGenerated(name, content) {
+		flags |= fileRankGenerated
+	}
+	doc.rankFlags = flags
+
+	category := FileCategoryDefault
+	if doc.SkipReason == SkipReasonBinary {
+		category = FileCategoryBinary
+	} else if flags.has(fileRankTest) {
 		category = FileCategoryTest
 	} else if enry.IsDotFile(name) {
 		category = FileCategoryDotFile
-	} else if enry.IsVendor(name) {
+	} else if flags.has(fileRankVendored) {
 		category = FileCategoryVendored
-	} else if enry.IsGenerated(name, content) {
+	} else if flags.has(fileRankGenerated) {
 		category = FileCategoryGenerated
 	} else if enry.IsConfiguration(name) {
 		category = FileCategoryConfig

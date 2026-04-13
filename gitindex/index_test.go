@@ -1137,7 +1137,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 					}
 
 					compareOptions := []cmp.Option{
-						cmpopts.IgnoreFields(index.Document{}, "Branches"),
+						cmpopts.IgnoreFields(index.Document{}, "Branches", "rankFlags"),
 						cmpopts.EquateEmpty(),
 					}
 
