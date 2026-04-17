@@ -219,6 +219,19 @@ message Repository {
 
   // Additional metadata about the repository.
   map<string, string> metadata = 19;
+
+  // Advisory statistics used by experimental delta-index admission rules.
+  RepositoryDeltaStats delta_stats = 20;
+}
+
+message RepositoryDeltaStats {
+  uint64 live_indexed_bytes = 1;
+  uint64 live_document_count = 2;
+  uint64 live_path_count = 3;
+  uint64 physical_indexed_bytes = 4;
+  uint64 physical_document_count = 5;
+  uint64 tombstone_path_count = 6;
+  uint64 delta_layer_count = 7;
 }
 
 message IndexMetadata {

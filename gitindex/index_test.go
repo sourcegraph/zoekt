@@ -40,6 +40,8 @@ import (
 	"github.com/sourcegraph/zoekt/search"
 )
 
+const initGitWorktreeRepoName = "github.com/sourcegraph/zoekt"
+
 func TestIndexEmptyRepo(t *testing.T) {
 	t.Parallel()
 
@@ -193,7 +195,7 @@ func TestIndexGitRepo_ResolveHEADToBranch_Worktree(t *testing.T) {
 		t.Fatalf("IndexGitRepo(worktree): %v", err)
 	}
 
-	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	repo := indexedRepositoryForTest(t, indexDir, initGitWorktreeRepoName)
 	if got, want := repositoryBranchNames(repo.Branches), []string{"worktree-branch"}; !cmp.Equal(got, want) {
 		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}
@@ -219,7 +221,7 @@ func TestIndexGitRepo_ResolveHEADToBranch_DisabledPreservesHEAD(t *testing.T) {
 		t.Fatalf("IndexGitRepo(worktree): %v", err)
 	}
 
-	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	repo := indexedRepositoryForTest(t, indexDir, initGitWorktreeRepoName)
 	if got, want := repositoryBranchNames(repo.Branches), []string{"HEAD"}; !cmp.Equal(got, want) {
 		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}
@@ -246,7 +248,7 @@ func TestIndexGitRepo_ResolveHEADToBranch_DetachedHEADPreservesHEAD(t *testing.T
 		t.Fatalf("IndexGitRepo(detached HEAD): %v", err)
 	}
 
-	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	repo := indexedRepositoryForTest(t, indexDir, initGitWorktreeRepoName)
 	if got, want := repositoryBranchNames(repo.Branches), []string{"HEAD"}; !cmp.Equal(got, want) {
 		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}
@@ -309,7 +311,7 @@ func TestIndexGitRepo_ResolveHEADToBranch_DedupesResolvedBranch(t *testing.T) {
 				t.Fatalf("IndexGitRepo(%v): %v", tc.branches, err)
 			}
 
-			repo := indexedRepositoryForTest(t, indexDir, "repo")
+			repo := indexedRepositoryForTest(t, indexDir, initGitWorktreeRepoName)
 			if got, want := repositoryBranchNames(repo.Branches), []string{"worktree-branch"}; !cmp.Equal(got, want) {
 				t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
 			}
@@ -348,7 +350,7 @@ func TestIndexGitRepo_ResolveHEADToBranch_MigratesLegacyHEADOnIncremental(t *tes
 		t.Fatal("resolved IndexGitRepo should rebuild when legacy HEAD metadata resolves to a concrete branch")
 	}
 
-	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	repo := indexedRepositoryForTest(t, indexDir, initGitWorktreeRepoName)
 	if got, want := repositoryBranchNames(repo.Branches), []string{"worktree-branch"}; !cmp.Equal(got, want) {
 		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}
@@ -925,7 +927,6 @@ func initGitWorktree(t *testing.T, fileName, content string) (string, string) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	runGit(t, repoDir, "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git")
-	runGit(t, repoDir, "config", "zoekt.name", "repo")
 	runGit(t, repoDir, "add", ".")
 	runGit(t, repoDir, "commit", "-m", "initial commit")
 
