@@ -109,6 +109,12 @@ type Options struct {
 	// in the older shards for this repository.
 	changedOrRemovedFiles []string
 
+	// AllowDeltaBranchSetChange allows a delta build to rewrite existing shard
+	// metadata to a different branch set. Callers must only set this when the
+	// delta documents fully replace all live paths that could have old branch
+	// masks.
+	AllowDeltaBranchSetChange bool
+
 	LanguageMap ctags.LanguageMap
 
 	// ShardMerging is true if builder should respect compound shards. This is a
@@ -715,7 +721,7 @@ func (b *Builder) Finish() error {
 				repository.FileTombstones[f] = struct{}{}
 			}
 
-			if !BranchNamesEqual(repository.Branches, b.opts.RepositoryDescription.Branches) {
+			if !b.opts.AllowDeltaBranchSetChange && !BranchNamesEqual(repository.Branches, b.opts.RepositoryDescription.Branches) {
 				return deltaBranchSetError{
 					shardName: shard,
 					old:       repository.Branches,

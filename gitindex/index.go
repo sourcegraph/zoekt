@@ -502,21 +502,58 @@ func validateDeltaAdmissionMode(mode string) error {
 	}
 }
 
+func expandBranchesForOptions(repo *git.Repository, opts Options) ([]string, error) {
+	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
+	if err != nil {
+		return nil, err
+	}
+	if !opts.ResolveHEADToBranch {
+		return branches, nil
+	}
+
+	headBranch, ok, err := resolveHEADBranchName(repo)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return branches, nil
+	}
+
+	for i, branch := range branches {
+		if branch == "HEAD" {
+			branches[i] = headBranch
+		}
+	}
+	return uniqPreserveOrder(branches), nil
+}
+
+func resolveHEADBranchName(repo *git.Repository) (string, bool, error) {
+	ref, err := repo.Head()
+	if err != nil {
+		return "", false, err
+	}
+	if !ref.Name().IsBranch() {
+		return "", false, nil
+	}
+	return ref.Name().Short(), true, nil
+}
+
+func uniqPreserveOrder(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := values[:0]
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
 func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string, error) {
 	var result []string
 	for _, b := range bs {
-		// Sourcegraph: We disable resolving refs. We want to return the exact ref
-		// requested so we can match it up.
-		if b == "HEAD" && false {
-			ref, err := repo.Head()
-			if err != nil {
-				return nil, err
-			}
-
-			result = append(result, strings.TrimPrefix(ref.Name().String(), prefix))
-			continue
-		}
-
 		if strings.Contains(b, "*") {
 			iter, err := repo.Branches()
 			if err != nil {
@@ -548,7 +585,7 @@ func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string,
 		result = append(result, b)
 	}
 
-	return result, nil
+	return uniqPreserveOrder(result), nil
 }
 
 // IndexGitRepo indexes the git repository as specified by the options.
@@ -603,7 +640,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		log.Printf("setTemplatesFromRepo(%s): %s", opts.RepoDir, err)
 	}
 
-	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
+	branches, err := expandBranchesForOptions(repo, opts)
 	if err != nil {
 		return false, fmt.Errorf("expandBranches: %w", err)
 	}
@@ -644,6 +681,10 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	var changedOrRemovedFiles []string
 
 	if opts.BuildOptions.IsDelta {
+		allowDeltaBranchSetChange := false
+		if existingRepository, _, ok, err := opts.BuildOptions.FindRepositoryMetadata(); err == nil && ok {
+			allowDeltaBranchSetChange = !index.BranchNamesEqual(existingRepository.Branches, opts.BuildOptions.RepositoryDescription.Branches)
+		}
 		repos, branchVersions, changedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
 		if err != nil {
 			log.Printf("delta build: falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
@@ -656,6 +697,9 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 			} else {
 				opts.BuildOptions.RepositoryDescription.DeltaStats = stats
 			}
+		}
+		if opts.BuildOptions.IsDelta && allowDeltaBranchSetChange {
+			opts.BuildOptions.AllowDeltaBranchSetChange = true
 		}
 	}
 
@@ -1392,6 +1436,100 @@ func existingFileTombstones(opts index.Options) (map[string]struct{}, error) {
 	return tombstones, nil
 }
 
+func prepareBranchSetDeltaBuild(options Options, repository *git.Repository, existingRepository *zoekt.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+	if err := validateBranchSetDelta(options, existingRepository); err != nil {
+		return nil, nil, nil, err
+	}
+
+	repos, branchVersions, err = prepareNormalBuildRecurse(options, repository, nil, false)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("preparing branch-set delta live files: %w", err)
+	}
+
+	changedOrDeletedPaths, err = indexedFilePaths(options.BuildOptions)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return repos, branchVersions, changedOrDeletedPaths, nil
+}
+
+func validateBranchSetDelta(options Options, existingRepository *zoekt.Repository) error {
+	newBranches := repositoryBranchNamesForDelta(options.BuildOptions.RepositoryDescription.Branches)
+	if len(newBranches) != len(uniqPreserveOrder(append([]string(nil), newBranches...))) {
+		return fmt.Errorf("ambiguous branch mapping: duplicate requested branch names %q", strings.Join(newBranches, ", "))
+	}
+
+	oldBranches := repositoryBranchNamesForDelta(existingRepository.Branches)
+	if len(oldBranches) != len(uniqPreserveOrder(append([]string(nil), oldBranches...))) {
+		return fmt.Errorf("ambiguous branch mapping: duplicate existing branch names %q", strings.Join(oldBranches, ", "))
+	}
+
+	if branchNameSetOverlap(oldBranches, newBranches) {
+		return nil
+	}
+	if options.ResolveHEADToBranch && len(oldBranches) == 1 && len(newBranches) == 1 {
+		return nil
+	}
+
+	return fmt.Errorf("ambiguous branch mapping: requested branch set %q has no stable branch in common with existing branch set %q", strings.Join(newBranches, ", "), strings.Join(oldBranches, ", "))
+}
+
+func repositoryBranchNamesForDelta(branches []zoekt.RepositoryBranch) []string {
+	names := make([]string, 0, len(branches))
+	for _, branch := range branches {
+		names = append(names, branch.Name)
+	}
+	return names
+}
+
+func branchNameSetOverlap(a, b []string) bool {
+	seen := make(map[string]struct{}, len(a))
+	for _, name := range a {
+		seen[name] = struct{}{}
+	}
+	for _, name := range b {
+		if _, ok := seen[name]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func indexedFilePaths(opts index.Options) ([]string, error) {
+	paths := make(map[string]struct{})
+	for _, shard := range opts.FindAllShards() {
+		f, err := os.Open(shard)
+		if err != nil {
+			return nil, fmt.Errorf("opening shard %q: %w", shard, err)
+		}
+		indexFile, err := index.NewIndexFile(f)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("opening index file %q: %w", shard, err)
+		}
+		searcher, err := index.NewSearcher(indexFile)
+		if err != nil {
+			indexFile.Close()
+			return nil, fmt.Errorf("opening searcher for %q: %w", shard, err)
+		}
+		result, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
+		searcher.Close()
+		if err != nil {
+			return nil, fmt.Errorf("listing indexed paths from shard %q: %w", shard, err)
+		}
+		for _, file := range result.Files {
+			paths[file.FileName] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(paths))
+	for path := range paths {
+		result = append(result, path)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
 func ensureStatsV1DeltaShardsSupported(opts index.Options) error {
 	for _, shard := range opts.FindAllShards() {
 		if strings.HasPrefix(filepath.Base(shard), "compound-") {
@@ -1478,37 +1616,21 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		}
 	}
 
-	// Check to see if the set of branch names is consistent with what we last indexed.
-	// If it isn't consistent, that we can't proceed with a delta build (and the caller should fall back to a
-	// normal one).
-
-	if !index.BranchNamesEqual(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches) {
-		var existingBranchNames []string
-		for _, b := range existingRepository.Branches {
-			existingBranchNames = append(existingBranchNames, b.Name)
-		}
-
-		var optionsBranchNames []string
-		for _, b := range options.BuildOptions.RepositoryDescription.Branches {
-			optionsBranchNames = append(optionsBranchNames, b.Name)
-		}
-
-		existingBranchList := strings.Join(existingBranchNames, ", ")
-		optionsBranchList := strings.Join(optionsBranchNames, ", ")
-
-		return nil, nil, nil, fmt.Errorf("requested branch set in build options (%q) != branch set found on disk (%q) - branch set must be the same for delta shards", optionsBranchList, existingBranchList)
-	}
-
-	// Check if the build options hash does not match the repository metadata's hash
-	// If it does not index then one or more index options has changed and will require a normal build instead of a delta build
+	// Check if the build options hash does not match the repository metadata's hash.
+	// If it does not match, one or more index options changed and require a
+	// normal build instead of a delta build.
 	if options.BuildOptions.GetHash() != existingRepository.IndexOptions {
 		return nil, nil, nil, fmt.Errorf("one or more index options previously stored for repository %s (ID: %d) does not match the index options for this requested build; These index option updates are incompatible with delta build. new index options: %+v", existingRepository.Name, existingRepository.ID, options.BuildOptions.HashOptions())
+	}
+
+	if !index.BranchNamesEqual(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches) {
+		return prepareBranchSetDeltaBuild(options, repository, existingRepository)
 	}
 
 	// branch => (path, sha1) => repo.
 	repos = map[fileKey]BlobLocation{}
 
-	branches, err := expandBranches(repository, options.Branches, options.BranchPrefix)
+	branches, err := expandBranchesForOptions(repository, options)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("expandBranches: %w", err)
 	}
@@ -1656,7 +1778,7 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 	// Branch => Repo => SHA1
 	branchVersions = map[string]map[string]plumbing.Hash{}
 
-	branches, err := expandBranches(repository, options.Branches, options.BranchPrefix)
+	branches, err := expandBranchesForOptions(repository, options)
 	if err != nil {
 		return nil, nil, fmt.Errorf("expandBranches: %w", err)
 	}
