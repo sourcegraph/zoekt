@@ -93,6 +93,10 @@ type indexArgs struct {
 	// before attempting a delta build.
 	DeltaShardNumberFallbackThreshold uint64
 
+	// DeltaAdmissionMode controls experimental delta admission behavior in
+	// zoekt-git-index. Empty preserves current behavior.
+	DeltaAdmissionMode string
+
 	// ShardMerging is true if we want zoekt-git-index to respect compound shards.
 	ShardMerging bool
 }
@@ -402,6 +406,9 @@ func indexRepo(ctx context.Context, gitDir string, sourcegraph Sourcegraph, o *i
 	if o.UseDelta {
 		args = append(args, "-delta")
 		args = append(args, "-delta_threshold", strconv.FormatUint(o.DeltaShardNumberFallbackThreshold, 10))
+		if o.DeltaAdmissionMode != "" {
+			args = append(args, "-delta_admission_mode", o.DeltaAdmissionMode)
+		}
 	}
 
 	if len(o.LanguageMap) > 0 {

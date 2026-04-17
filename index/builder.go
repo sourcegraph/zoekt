@@ -735,6 +735,7 @@ func (b *Builder) Finish() error {
 			repository.LatestCommitDate = b.opts.RepositoryDescription.LatestCommitDate
 
 			repository.Metadata = b.opts.RepositoryDescription.Metadata
+			repository.DeltaStats = b.opts.RepositoryDescription.DeltaStats
 
 			tempPath, finalPath, err := JsonMarshalRepoMetaTemp(shard, repository)
 			if err != nil {

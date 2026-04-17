@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,6 +32,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/config"
@@ -42,6 +44,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/query"
 
 	git "github.com/go-git/go-git/v5"
 )
@@ -391,6 +394,10 @@ type Options struct {
 	// List of branch names to index, e.g. []string{"HEAD", "stable"}
 	Branches []string
 
+	// ResolveHEADToBranch is reserved for a separate HEAD/worktree fix. It is
+	// intentionally not used by the delta admission logic.
+	ResolveHEADToBranch bool
+
 	// DeltaShardNumberFallbackThreshold defines an upper limit (inclusive) on the number of preexisting shards
 	// that can exist before attempting another delta build. If the number of preexisting shards exceeds this threshold,
 	// then a normal build will be performed instead.
@@ -398,6 +405,101 @@ type Options struct {
 	// If DeltaShardNumberFallbackThreshold is 0, then this fallback behavior is disabled:
 	// a delta build will always be performed regardless of the number of preexisting shards.
 	DeltaShardNumberFallbackThreshold uint64
+
+	// DeltaAdmissionMode controls experimental cost-based delta admission. The
+	// empty value preserves the historical delta behavior exactly.
+	DeltaAdmissionMode string
+
+	// DeltaAdmissionThresholds configures the stats-v1 admission mode. Zero
+	// values are replaced with conservative defaults.
+	DeltaAdmissionThresholds DeltaAdmissionThresholds
+
+	// DeltaAdmissionLogPath, if non-empty, receives one JSON object per
+	// stats-v1 delta admission decision.
+	DeltaAdmissionLogPath string
+}
+
+const DeltaAdmissionModeStatsV1 = "stats-v1"
+
+// DeltaAdmissionThresholds are experimental cost gates for stats-v1 delta
+// admission. These are performance/debt heuristics only; correctness gates such
+// as branch-set compatibility and option hashes are checked separately before
+// these thresholds are considered.
+//
+// A delta is accepted only when every configured gate is satisfied. The first
+// failed gate becomes the logged rejection reason, but later gates may also
+// have failed.
+type DeltaAdmissionThresholds struct {
+	// MaxDeltaIndexedBytesRatio limits write mass:
+	//
+	//	candidate_indexed_bytes / live_indexed_bytes
+	//
+	// This is the primary delta-vs-full signal. Delta indexing rewrites whole
+	// changed documents, so a tiny edit to a large file can still be expensive.
+	MaxDeltaIndexedBytesRatio float64
+
+	// MaxPhysicalLiveBytesRatio limits accumulated stacked-shard debt:
+	//
+	//	next_physical_indexed_bytes / live_indexed_bytes
+	//
+	// Physical bytes include old documents hidden by file tombstones. Higher
+	// values mean more disk and more query-time index data than a clean full
+	// rebuild would need.
+	MaxPhysicalLiveBytesRatio float64
+
+	// MaxTombstonePathRatio limits accumulated stale-path metadata:
+	//
+	//	next_tombstone_path_count / live_path_count
+	//
+	// This can force a rebuild even when the current candidate delta is small,
+	// because the stack has accumulated enough deleted/changed paths.
+	MaxTombstonePathRatio float64
+
+	// MaxShardFanoutRatio limits shard fanout relative to a clean rebuild
+	// estimate:
+	//
+	//	next_shard_count / ceil(live_indexed_bytes / shard_max)
+	//
+	// It is intentionally approximate. It protects query fanout and file-system
+	// overhead when many small delta shards accumulate. Unlike the layer-count
+	// cap, this scales with repos whose clean full index naturally spans many
+	// shards.
+	MaxShardFanoutRatio float64
+}
+
+func (t DeltaAdmissionThresholds) withDefaults() DeltaAdmissionThresholds {
+	if t.MaxDeltaIndexedBytesRatio == 0 {
+		// A conservative write-mass default: once a candidate delta approaches
+		// one fifth of the live corpus, a clean rebuild is often competitive and
+		// avoids adding read debt.
+		t.MaxDeltaIndexedBytesRatio = 0.20
+	}
+	if t.MaxPhysicalLiveBytesRatio == 0 {
+		// Allow at most roughly 25% extra physical indexed bytes before forcing
+		// a full rebuild to compact stale documents.
+		t.MaxPhysicalLiveBytesRatio = 1.25
+	}
+	if t.MaxTombstonePathRatio == 0 {
+		// Rebuild once about one fifth of live paths have stale entries in old
+		// shards. This keeps tombstone metadata and skip checks bounded.
+		t.MaxTombstonePathRatio = 0.20
+	}
+	if t.MaxShardFanoutRatio == 0 {
+		// Allow up to 20x the shard count of a clean rebuild. This directly caps
+		// query fanout without forcing large repos to rebuild after an arbitrary
+		// number of tiny deltas.
+		t.MaxShardFanoutRatio = 20
+	}
+	return t
+}
+
+func validateDeltaAdmissionMode(mode string) error {
+	switch mode {
+	case "", DeltaAdmissionModeStatsV1:
+		return nil
+	default:
+		return fmt.Errorf("unknown delta admission mode %q", mode)
+	}
 }
 
 func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string, error) {
@@ -475,6 +577,9 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	if opts.RepoDir == "" {
 		return false, fmt.Errorf("gitindex: must set RepoDir")
 	}
+	if err := validateDeltaAdmissionMode(opts.DeltaAdmissionMode); err != nil {
+		return false, err
+	}
 
 	opts.BuildOptions.RepositoryDescription.Source = opts.RepoDir
 
@@ -543,6 +648,14 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		if err != nil {
 			log.Printf("delta build: falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
 			opts.BuildOptions.IsDelta = false
+		} else if opts.DeltaAdmissionMode == DeltaAdmissionModeStatsV1 {
+			stats, err := prepareDeltaStatsV1(opts, repo, repos, changedOrRemovedFiles)
+			if err != nil {
+				log.Printf("delta build: falling back to normal build since stats-v1 admission rejected delta, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
+				opts.BuildOptions.IsDelta = false
+			} else {
+				opts.BuildOptions.RepositoryDescription.DeltaStats = stats
+			}
 		}
 	}
 
@@ -550,6 +663,18 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		repos, branchVersions, err = prepareNormalBuild(opts, repo)
 		if err != nil {
 			return false, fmt.Errorf("preparing normal build: %w", err)
+		}
+		if opts.DeltaAdmissionMode == DeltaAdmissionModeStatsV1 {
+			stats, err := repositoryStatsForFiles(repos, opts.BuildOptions)
+			if err != nil {
+				return false, fmt.Errorf("computing stats-v1 full build stats: %w", err)
+			}
+			stats.PhysicalIndexedBytes = stats.LiveIndexedBytes
+			stats.PhysicalDocumentCount = stats.LiveDocumentCount
+			stats.TombstonePathCount = 0
+			stats.DeltaLayerCount = 0
+			stats.LastFullIndexTimeUnix = time.Now().Unix()
+			opts.BuildOptions.RepositoryDescription.DeltaStats = stats
 		}
 	}
 
@@ -846,6 +971,478 @@ type gitIndexConfig struct {
 	prepareNormalBuild prepareNormalBuildFunc
 }
 
+type deltaAdmissionFallbackError struct {
+	reason string
+}
+
+func (e deltaAdmissionFallbackError) Error() string {
+	return "stats-v1 delta admission rejected delta: " + e.reason
+}
+
+type deltaAdmissionDecisionLogEntry struct {
+	Time       time.Time `json:"time"`
+	Repo       string    `json:"repo"`
+	Mode       string    `json:"mode"`
+	Accepted   bool      `json:"accepted"`
+	Reason     string    `json:"reason"`
+	BranchName string    `json:"branch_name,omitempty"`
+
+	ExistingStatsPresent bool `json:"existing_stats_present"`
+
+	CandidateIndexedBytes  uint64 `json:"candidate_indexed_bytes"`
+	CandidateDocumentCount uint64 `json:"candidate_document_count"`
+	CandidatePathCount     uint64 `json:"candidate_path_count"`
+	ChangedOrDeletedPaths  uint64 `json:"changed_or_deleted_paths"`
+
+	LiveIndexedBytes  uint64 `json:"live_indexed_bytes"`
+	LiveDocumentCount uint64 `json:"live_document_count"`
+	LivePathCount     uint64 `json:"live_path_count"`
+
+	NextLiveIndexedBytes  uint64 `json:"next_live_indexed_bytes,omitempty"`
+	NextLiveDocumentCount uint64 `json:"next_live_document_count,omitempty"`
+	NextLivePathCount     uint64 `json:"next_live_path_count,omitempty"`
+
+	NextPhysicalIndexedBytes  uint64  `json:"next_physical_indexed_bytes"`
+	NextPhysicalDocumentCount uint64  `json:"next_physical_document_count"`
+	NextTombstonePathCount    uint64  `json:"next_tombstone_path_count"`
+	NextDeltaLayerCount       uint64  `json:"next_delta_layer_count"`
+	ShardFanoutRatio          float64 `json:"shard_fanout_ratio"`
+
+	WriteBytesRatio    *float64 `json:"write_bytes_ratio,omitempty"`
+	PhysicalLiveRatio  *float64 `json:"physical_live_ratio,omitempty"`
+	TombstonePathRatio *float64 `json:"tombstone_path_ratio,omitempty"`
+
+	Thresholds DeltaAdmissionThresholds `json:"thresholds"`
+}
+
+func prepareDeltaStatsV1(options Options, repository *git.Repository, candidateRepos map[fileKey]BlobLocation, changedOrDeletedPaths []string) (*zoekt.RepositoryDeltaStats, error) {
+	existingRepository, _, ok, err := options.BuildOptions.FindRepositoryMetadata()
+	if err != nil {
+		return nil, fmt.Errorf("loading existing repository metadata: %w", err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("loading existing repository metadata: not found")
+	}
+
+	candidateStats, err := repositoryStatsForFiles(candidateRepos, options.BuildOptions)
+	if err != nil {
+		return nil, fmt.Errorf("computing delta candidate stats: %w", err)
+	}
+
+	var currentStats *zoekt.RepositoryDeltaStats
+	liveStatsForDecision := existingRepository.DeltaStats
+	if liveStatsForDecision == nil {
+		currentStats, err = computeCurrentLiveStats(options, repository)
+		if err != nil {
+			return nil, err
+		}
+		liveStatsForDecision = currentStats
+	}
+
+	existingPhysicalIndexedBytes := liveStatsForDecision.LiveIndexedBytes
+	existingPhysicalDocumentCount := liveStatsForDecision.LiveDocumentCount
+	existingDeltaLayerCount := uint64(0)
+	lastFullIndexTimeUnix := int64(0)
+	if stats := existingRepository.DeltaStats; stats != nil {
+		existingPhysicalIndexedBytes = stats.PhysicalIndexedBytes
+		existingPhysicalDocumentCount = stats.PhysicalDocumentCount
+		existingDeltaLayerCount = stats.DeltaLayerCount
+		lastFullIndexTimeUnix = stats.LastFullIndexTimeUnix
+	} else if stats, err := existingPhysicalStats(options.BuildOptions); err == nil {
+		existingPhysicalIndexedBytes = stats.PhysicalIndexedBytes
+		existingPhysicalDocumentCount = stats.PhysicalDocumentCount
+	} else {
+		log.Printf("stats-v1: failed to compute physical stats from old index for repository=%q: %s", options.BuildOptions.RepositoryDescription.Name, err)
+	}
+
+	tombstones, err := existingFileTombstones(options.BuildOptions)
+	if err != nil {
+		return nil, fmt.Errorf("computing existing tombstones: %w", err)
+	}
+	for _, path := range changedOrDeletedPaths {
+		tombstones[path] = struct{}{}
+	}
+
+	nextDeltaLayerCount := existingDeltaLayerCount
+	if candidateStats.LiveDocumentCount > 0 || len(changedOrDeletedPaths) > 0 {
+		nextDeltaLayerCount++
+	}
+
+	nextPhysicalIndexedBytes := existingPhysicalIndexedBytes + candidateStats.LiveIndexedBytes
+	nextPhysicalDocumentCount := existingPhysicalDocumentCount + candidateStats.LiveDocumentCount
+	if nextPhysicalIndexedBytes < liveStatsForDecision.LiveIndexedBytes {
+		nextPhysicalIndexedBytes = liveStatsForDecision.LiveIndexedBytes
+	}
+	if nextPhysicalDocumentCount < liveStatsForDecision.LiveDocumentCount {
+		nextPhysicalDocumentCount = liveStatsForDecision.LiveDocumentCount
+	}
+
+	thresholds := options.DeltaAdmissionThresholds.withDefaults()
+	shardFanoutRatio := shardFanoutRatio(options.BuildOptions, liveStatsForDecision.LiveIndexedBytes, candidateStats.LiveIndexedBytes)
+	decision := deltaAdmissionDecisionLogEntry{
+		Time:       time.Now().UTC(),
+		Repo:       options.BuildOptions.RepositoryDescription.Name,
+		Mode:       DeltaAdmissionModeStatsV1,
+		Accepted:   false,
+		BranchName: singleBranchName(options.BuildOptions.RepositoryDescription.Branches),
+
+		ExistingStatsPresent: existingRepository.DeltaStats != nil,
+
+		CandidateIndexedBytes:  candidateStats.LiveIndexedBytes,
+		CandidateDocumentCount: candidateStats.LiveDocumentCount,
+		CandidatePathCount:     candidateStats.LivePathCount,
+		ChangedOrDeletedPaths:  uint64(len(changedOrDeletedPaths)),
+
+		LiveIndexedBytes:  liveStatsForDecision.LiveIndexedBytes,
+		LiveDocumentCount: liveStatsForDecision.LiveDocumentCount,
+		LivePathCount:     liveStatsForDecision.LivePathCount,
+
+		NextPhysicalIndexedBytes:  nextPhysicalIndexedBytes,
+		NextPhysicalDocumentCount: nextPhysicalDocumentCount,
+		NextTombstonePathCount:    uint64(len(tombstones)),
+		NextDeltaLayerCount:       nextDeltaLayerCount,
+		ShardFanoutRatio:          shardFanoutRatio,
+
+		WriteBytesRatio:    finiteRatio(candidateStats.LiveIndexedBytes, liveStatsForDecision.LiveIndexedBytes),
+		PhysicalLiveRatio:  finiteRatio(nextPhysicalIndexedBytes, liveStatsForDecision.LiveIndexedBytes),
+		TombstonePathRatio: finiteRatio(uint64(len(tombstones)), liveStatsForDecision.LivePathCount),
+
+		Thresholds: thresholds,
+	}
+	reject := func(reason string) (*zoekt.RepositoryDeltaStats, error) {
+		decision.Reason = reason
+		writeDeltaAdmissionDecisionLog(options, decision)
+		return nil, deltaAdmissionFallbackError{reason: reason}
+	}
+
+	// Evaluate write-mass gates before read-debt gates. The write-mass gates
+	// answer "is this individual delta worth doing?", while the read-debt gates
+	// answer "has the existing stack become expensive enough to compact?" The
+	// logged reason is the first failed gate in this order.
+	if r := ratio(candidateStats.LiveIndexedBytes, liveStatsForDecision.LiveIndexedBytes); r > thresholds.MaxDeltaIndexedBytesRatio {
+		return reject(fmt.Sprintf("write indexed bytes ratio %.4f exceeds %.4f", r, thresholds.MaxDeltaIndexedBytesRatio))
+	}
+	if r := ratio(nextPhysicalIndexedBytes, liveStatsForDecision.LiveIndexedBytes); r > thresholds.MaxPhysicalLiveBytesRatio {
+		return reject(fmt.Sprintf("physical/live bytes ratio %.4f exceeds %.4f", r, thresholds.MaxPhysicalLiveBytesRatio))
+	}
+	if r := ratio(uint64(len(tombstones)), liveStatsForDecision.LivePathCount); r > thresholds.MaxTombstonePathRatio {
+		return reject(fmt.Sprintf("tombstone path ratio %.4f exceeds %.4f", r, thresholds.MaxTombstonePathRatio))
+	}
+	if shardFanoutRatio > thresholds.MaxShardFanoutRatio {
+		return reject(fmt.Sprintf("shard fanout ratio %.4f exceeds %.4f", shardFanoutRatio, thresholds.MaxShardFanoutRatio))
+	}
+
+	nextLiveStats := currentStats
+	if nextLiveStats == nil {
+		nextLiveStats, err = nextLiveStatsFromDelta(options, repository, existingRepository, candidateStats, candidateRepos, changedOrDeletedPaths)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if nextPhysicalIndexedBytes < nextLiveStats.LiveIndexedBytes {
+		nextPhysicalIndexedBytes = nextLiveStats.LiveIndexedBytes
+	}
+	if nextPhysicalDocumentCount < nextLiveStats.LiveDocumentCount {
+		nextPhysicalDocumentCount = nextLiveStats.LiveDocumentCount
+	}
+
+	stats := &zoekt.RepositoryDeltaStats{
+		LiveIndexedBytes:      nextLiveStats.LiveIndexedBytes,
+		LiveDocumentCount:     nextLiveStats.LiveDocumentCount,
+		LivePathCount:         nextLiveStats.LivePathCount,
+		PhysicalIndexedBytes:  nextPhysicalIndexedBytes,
+		PhysicalDocumentCount: nextPhysicalDocumentCount,
+		TombstonePathCount:    uint64(len(tombstones)),
+		DeltaLayerCount:       nextDeltaLayerCount,
+		LastFullIndexTimeUnix: lastFullIndexTimeUnix,
+	}
+
+	decision.Accepted = true
+	decision.Reason = "accepted"
+	decision.NextLiveIndexedBytes = nextLiveStats.LiveIndexedBytes
+	decision.NextLiveDocumentCount = nextLiveStats.LiveDocumentCount
+	decision.NextLivePathCount = nextLiveStats.LivePathCount
+	decision.NextPhysicalIndexedBytes = nextPhysicalIndexedBytes
+	decision.NextPhysicalDocumentCount = nextPhysicalDocumentCount
+	writeDeltaAdmissionDecisionLog(options, decision)
+
+	return stats, nil
+}
+
+func writeDeltaAdmissionDecisionLog(options Options, decision deltaAdmissionDecisionLogEntry) {
+	if options.DeltaAdmissionLogPath == "" {
+		return
+	}
+
+	f, err := os.OpenFile(options.DeltaAdmissionLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
+	if err != nil {
+		log.Printf("stats-v1: failed to open delta admission log %q: %s", options.DeltaAdmissionLogPath, err)
+		return
+	}
+	defer f.Close()
+
+	if err := json.NewEncoder(f).Encode(decision); err != nil {
+		log.Printf("stats-v1: failed to write delta admission log %q: %s", options.DeltaAdmissionLogPath, err)
+	}
+}
+
+func singleBranchName(branches []zoekt.RepositoryBranch) string {
+	if len(branches) != 1 {
+		return ""
+	}
+	return branches[0].Name
+}
+
+func finiteRatio(n, d uint64) *float64 {
+	r := ratio(n, d)
+	if math.IsInf(r, 0) || math.IsNaN(r) {
+		return nil
+	}
+	return &r
+}
+
+func computeCurrentLiveStats(options Options, repository *git.Repository) (*zoekt.RepositoryDeltaStats, error) {
+	currentRepos, _, err := prepareNormalBuild(options, repository)
+	if err != nil {
+		return nil, fmt.Errorf("computing current live stats: %w", err)
+	}
+	currentStats, err := repositoryStatsForFiles(currentRepos, options.BuildOptions)
+	if err != nil {
+		return nil, fmt.Errorf("computing current live stats: %w", err)
+	}
+	return currentStats, nil
+}
+
+func nextLiveStatsFromDelta(options Options, repository *git.Repository, existingRepository *zoekt.Repository, candidateStats *zoekt.RepositoryDeltaStats, candidateRepos map[fileKey]BlobLocation, changedOrDeletedPaths []string) (*zoekt.RepositoryDeltaStats, error) {
+	if existingRepository.DeltaStats == nil {
+		return nil, fmt.Errorf("existing DeltaStats missing")
+	}
+
+	affectedPaths := make(map[string]struct{}, len(changedOrDeletedPaths)+len(candidateRepos))
+	for _, path := range changedOrDeletedPaths {
+		affectedPaths[path] = struct{}{}
+	}
+	for key := range candidateRepos {
+		affectedPaths[key.FullPath()] = struct{}{}
+	}
+
+	oldAffectedRepos, err := oldLiveFilesForPaths(repository, existingRepository.Branches, affectedPaths)
+	if err != nil {
+		return nil, err
+	}
+	oldAffectedStats, err := repositoryStatsForFiles(oldAffectedRepos, options.BuildOptions)
+	if err != nil {
+		return nil, fmt.Errorf("computing old live stats for changed paths: %w", err)
+	}
+
+	oldStats := existingRepository.DeltaStats
+	return &zoekt.RepositoryDeltaStats{
+		LiveIndexedBytes:      addAfterSubtract(oldStats.LiveIndexedBytes, oldAffectedStats.LiveIndexedBytes, candidateStats.LiveIndexedBytes),
+		LiveDocumentCount:     addAfterSubtract(oldStats.LiveDocumentCount, oldAffectedStats.LiveDocumentCount, candidateStats.LiveDocumentCount),
+		LivePathCount:         addAfterSubtract(oldStats.LivePathCount, oldAffectedStats.LivePathCount, candidateStats.LivePathCount),
+		PhysicalIndexedBytes:  oldStats.PhysicalIndexedBytes,
+		PhysicalDocumentCount: oldStats.PhysicalDocumentCount,
+		TombstonePathCount:    oldStats.TombstonePathCount,
+		DeltaLayerCount:       oldStats.DeltaLayerCount,
+		LastFullIndexTimeUnix: oldStats.LastFullIndexTimeUnix,
+	}, nil
+}
+
+func oldLiveFilesForPaths(repository *git.Repository, branches []zoekt.RepositoryBranch, paths map[string]struct{}) (map[fileKey]BlobLocation, error) {
+	repos := make(map[fileKey]BlobLocation)
+	if len(paths) == 0 {
+		return repos, nil
+	}
+
+	for _, branch := range branches {
+		commit, err := getCommit(repository, "", branch.Version)
+		if err != nil {
+			return nil, fmt.Errorf("getting last indexed commit for branch %q: %w", branch.Name, err)
+		}
+
+		tree, err := commit.Tree()
+		if err != nil {
+			return nil, fmt.Errorf("getting last indexed git tree for branch %q: %w", branch.Name, err)
+		}
+
+		ig, err := newIgnoreMatcher(tree)
+		if err != nil {
+			return nil, fmt.Errorf("newIgnoreMatcher for branch %q: %w", branch.Name, err)
+		}
+
+		for path := range paths {
+			if ig.Match(path) {
+				continue
+			}
+
+			f, err := tree.File(path)
+			if err != nil {
+				if errors.Is(err, object.ErrFileNotFound) {
+					continue
+				}
+				return nil, fmt.Errorf("getting old file %q in branch %q: %w", path, branch.Name, err)
+			}
+
+			key := fileKey{Path: path, ID: f.ID()}
+			if existing, ok := repos[key]; ok {
+				existing.Branches = append(existing.Branches, branch.Name)
+				repos[key] = existing
+			} else {
+				repos[key] = BlobLocation{
+					GitRepo:  repository,
+					Branches: []string{branch.Name},
+				}
+			}
+		}
+	}
+
+	return repos, nil
+}
+
+func addAfterSubtract(base, subtract, add uint64) uint64 {
+	if subtract > base {
+		return add
+	}
+	return base - subtract + add
+}
+
+func repositoryStatsForFiles(files map[fileKey]BlobLocation, opts index.Options) (*zoekt.RepositoryDeltaStats, error) {
+	stats := &zoekt.RepositoryDeltaStats{
+		LiveDocumentCount: uint64(len(files)),
+	}
+	paths := make(map[string]struct{}, len(files))
+	for key, location := range files {
+		name := key.FullPath()
+		paths[name] = struct{}{}
+
+		indexedBytes := uint64(len(name))
+		blob, err := location.GitRepo.BlobObject(key.ID)
+		if err == nil {
+			size := uint64(blob.Size)
+			if blob.Size <= int64(opts.SizeMax) || opts.IgnoreSizeMax(name) {
+				indexedBytes += size
+			}
+		} else if !errors.Is(err, plumbing.ErrObjectNotFound) {
+			return nil, fmt.Errorf("loading blob %s for %q: %w", key.ID, name, err)
+		}
+		stats.LiveIndexedBytes += indexedBytes
+	}
+	stats.LivePathCount = uint64(len(paths))
+	return stats, nil
+}
+
+func existingPhysicalStats(opts index.Options) (*zoekt.RepositoryDeltaStats, error) {
+	shards := opts.FindAllShards()
+	if len(shards) == 0 {
+		return nil, fmt.Errorf("no existing shards")
+	}
+
+	stats := &zoekt.RepositoryDeltaStats{}
+	found := false
+	for _, shard := range shards {
+		f, err := os.Open(shard)
+		if err != nil {
+			return nil, err
+		}
+		indexFile, err := index.NewIndexFile(f)
+		if err != nil {
+			return nil, err
+		}
+		searcher, err := index.NewSearcher(indexFile)
+		if err != nil {
+			indexFile.Close()
+			return nil, err
+		}
+		list, err := searcher.List(context.Background(), &query.Const{Value: true}, &zoekt.ListOptions{})
+		searcher.Close()
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range list.Repos {
+			if sameRepository(&entry.Repository, &opts.RepositoryDescription) {
+				found = true
+				stats.PhysicalIndexedBytes += uint64(max(entry.Stats.ContentBytes, 0))
+				stats.PhysicalDocumentCount += uint64(max(entry.Stats.Documents, 0))
+			}
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("repository %q not found in existing shards", opts.RepositoryDescription.Name)
+	}
+	return stats, nil
+}
+
+func existingFileTombstones(opts index.Options) (map[string]struct{}, error) {
+	tombstones := map[string]struct{}{}
+	for _, shard := range opts.FindAllShards() {
+		repositories, _, err := index.ReadMetadataPathAlive(shard)
+		if err != nil {
+			return nil, err
+		}
+		for _, repository := range repositories {
+			if !sameRepository(repository, &opts.RepositoryDescription) {
+				continue
+			}
+			for path := range repository.FileTombstones {
+				tombstones[path] = struct{}{}
+			}
+		}
+	}
+	return tombstones, nil
+}
+
+func ensureStatsV1DeltaShardsSupported(opts index.Options) error {
+	for _, shard := range opts.FindAllShards() {
+		if strings.HasPrefix(filepath.Base(shard), "compound-") {
+			return fmt.Errorf("stats-v1 delta builds don't support repositories contained in compound shards (shard %q)", shard)
+		}
+		repositories, _, err := index.ReadMetadataPathAlive(shard)
+		if err != nil {
+			return err
+		}
+		if len(repositories) > 1 {
+			return fmt.Errorf("stats-v1 delta builds don't support compound shards (shard %q contains %d repositories)", shard, len(repositories))
+		}
+	}
+	return nil
+}
+
+func sameRepository(a, b *zoekt.Repository) bool {
+	if a.ID != 0 || b.ID != 0 {
+		return a.ID == b.ID
+	}
+	return a.Name == b.Name
+}
+
+func ratio(n, d uint64) float64 {
+	if d == 0 {
+		if n == 0 {
+			return 0
+		}
+		return math.Inf(1)
+	}
+	return float64(n) / float64(d)
+}
+
+func shardFanoutRatio(opts index.Options, liveIndexedBytes, candidateIndexedBytes uint64) float64 {
+	existingShardCount := uint64(len(opts.FindAllShards()))
+	nextShardCount := existingShardCount
+	if candidateIndexedBytes > 0 {
+		nextShardCount += max(ceilDiv(candidateIndexedBytes, uint64(opts.ShardMax)), 1)
+	}
+
+	cleanShardCount := max(ceilDiv(liveIndexedBytes, uint64(opts.ShardMax)), 1)
+	return ratio(nextShardCount, cleanShardCount)
+}
+
+func ceilDiv(n, d uint64) uint64 {
+	if d == 0 {
+		return 0
+	}
+	return (n + d - 1) / d
+}
+
 func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
 	if options.Submodules {
 		return nil, nil, nil, fmt.Errorf("delta builds currently don't support submodule indexing")
@@ -859,6 +1456,11 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("no existing shards found for repository")
+	}
+	if options.DeltaAdmissionMode == DeltaAdmissionModeStatsV1 {
+		if err := ensureStatsV1DeltaShardsSupported(options.BuildOptions); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 
 	if options.DeltaShardNumberFallbackThreshold > 0 {

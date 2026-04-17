@@ -24,6 +24,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/gitindex"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 )
 
@@ -615,6 +616,45 @@ func TestIndex(t *testing.T) {
 			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev,release " +
 				"-delta -delta_threshold 22 -file_limit 1048576 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
+		},
+	}, {
+		name: "delta stats-v1 admission",
+		args: indexArgs{
+			Incremental:        true,
+			IndexDir:           "/data/index",
+			UseDelta:           true,
+			DeltaAdmissionMode: gitindex.DeltaAdmissionModeStatsV1,
+			IndexOptions: IndexOptions{
+				Name:     "test/repo",
+				CloneURL: "http://api.test/.internal/git/test/repo",
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "HEAD", Version: "deadbeef"},
+				},
+				TenantID: 1,
+			},
+			DeltaShardNumberFallbackThreshold: 22,
+		},
+		mockRepositoryMetadata: &zoekt.Repository{
+			Name: "test/repo",
+			Branches: []zoekt.RepositoryBranch{
+				{Name: "HEAD", Version: "oldhead"},
+			},
+		},
+		want: []string{
+			"git -c init.defaultBranch=nonExistentBranchBB0FOFCH32 init --bare $TMPDIR/test%2Frepo.git",
+			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Actor-UID: internal",
+			"git -C $TMPDIR/test%2Frepo.git config --add http.extraHeader X-Sourcegraph-Tenant-ID: 1",
+			"git -C $TMPDIR/test%2Frepo.git -c protocol.version=2 fetch --depth=1 --no-tags --filter=blob:limit=1048577 http://api.test/.internal/git/test/repo deadbeef oldhead",
+			"git -C $TMPDIR/test%2Frepo.git update-ref HEAD deadbeef",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.archived 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.fork 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.latestCommitDate 1",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.name test/repo",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.priority 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
+			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
+			"zoekt-git-index -submodules=false -incremental -branches HEAD -delta -delta_threshold 22 -delta_admission_mode stats-v1 -file_limit 1048576 -index /data/index -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}}
 

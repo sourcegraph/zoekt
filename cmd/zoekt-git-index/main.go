@@ -45,6 +45,8 @@ func run() int {
 		"It also affects name if the indexed repository is under this directory.")
 	isDelta := flag.Bool("delta", false, "whether we should use delta build")
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
+	deltaAdmissionMode := flag.String("delta_admission_mode", "", "experimental delta admission mode (empty or stats-v1)")
+	deltaAdmissionLogJSON := flag.String("delta_admission_log_json", "", "append experimental delta admission decisions as JSON lines to this file")
 	languageMap := flag.String("language_map", "", "a mapping between a language and its ctags processor (a:0,b:3).")
 
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to `file`")
@@ -132,6 +134,8 @@ func run() int {
 			Branches:                          branches,
 			RepoDir:                           dir,
 			DeltaShardNumberFallbackThreshold: *deltaShardNumberFallbackThreshold,
+			DeltaAdmissionMode:                *deltaAdmissionMode,
+			DeltaAdmissionLogPath:             *deltaAdmissionLogJSON,
 		}
 
 		if _, err := gitindex.IndexGitRepo(gitOpts); err != nil {
