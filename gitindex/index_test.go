@@ -173,6 +173,338 @@ func TestIndexGitRepo_Worktree(t *testing.T) {
 	}
 }
 
+func TestIndexGitRepo_ResolveHEADToBranch_Worktree(t *testing.T) {
+	t.Parallel()
+
+	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	indexDir := t.TempDir()
+
+	opts := Options{
+		RepoDir:             worktreeDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo(worktree): %v", err)
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	if got, want := repositoryBranchNames(repo.Branches), []string{"worktree-branch"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_DisabledPreservesHEAD(t *testing.T) {
+	t.Parallel()
+
+	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	indexDir := t.TempDir()
+
+	opts := Options{
+		RepoDir:             worktreeDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: false,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo(worktree): %v", err)
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	if got, want := repositoryBranchNames(repo.Branches), []string{"HEAD"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_DetachedHEADPreservesHEAD(t *testing.T) {
+	t.Parallel()
+
+	repoDir, _ := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	runGit(t, repoDir, "checkout", "--detach")
+	indexDir := t.TempDir()
+
+	opts := Options{
+		RepoDir:             repoDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo(detached HEAD): %v", err)
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	if got, want := repositoryBranchNames(repo.Branches), []string{"HEAD"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_BareRepo(t *testing.T) {
+	t.Parallel()
+
+	repoDir, _ := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	bareDir := cloneBareRepo(t, repoDir)
+	indexDir := t.TempDir()
+
+	opts := Options{
+		RepoDir:             bareDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo(bare HEAD): %v", err)
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	if got, want := repositoryBranchNames(repo.Branches), []string{"main"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_DedupesResolvedBranch(t *testing.T) {
+	t.Parallel()
+
+	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+
+	for _, tc := range []struct {
+		name     string
+		branches []string
+	}{
+		{name: "explicit branch", branches: []string{"HEAD", "worktree-branch"}},
+		{name: "wildcard branch", branches: []string{"HEAD", "worktree-*"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			indexDir := t.TempDir()
+			opts := Options{
+				RepoDir:             worktreeDir,
+				Branches:            tc.branches,
+				ResolveHEADToBranch: true,
+				BuildOptions: index.Options{
+					RepositoryDescription: zoekt.Repository{Name: "repo"},
+					IndexDir:              indexDir,
+				},
+			}
+
+			if _, err := IndexGitRepo(opts); err != nil {
+				t.Fatalf("IndexGitRepo(%v): %v", tc.branches, err)
+			}
+
+			repo := indexedRepositoryForTest(t, indexDir, "repo")
+			if got, want := repositoryBranchNames(repo.Branches), []string{"worktree-branch"}; !cmp.Equal(got, want) {
+				t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+			}
+		})
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_MigratesLegacyHEADOnIncremental(t *testing.T) {
+	t.Parallel()
+
+	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	indexDir := t.TempDir()
+
+	legacyOpts := Options{
+		RepoDir:             worktreeDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: false,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+	if updated, err := IndexGitRepo(legacyOpts); err != nil {
+		t.Fatalf("legacy IndexGitRepo: %v", err)
+	} else if !updated {
+		t.Fatal("legacy IndexGitRepo unexpectedly skipped indexing")
+	}
+
+	resolvedOpts := legacyOpts
+	resolvedOpts.Incremental = true
+	resolvedOpts.ResolveHEADToBranch = true
+
+	if updated, err := IndexGitRepo(resolvedOpts); err != nil {
+		t.Fatalf("resolved IndexGitRepo: %v", err)
+	} else if !updated {
+		t.Fatal("resolved IndexGitRepo should rebuild when legacy HEAD metadata resolves to a concrete branch")
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	if got, want := repositoryBranchNames(repo.Branches), []string{"worktree-branch"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_DeltaFallsBackWhenCheckoutBranchChanges(t *testing.T) {
+	t.Parallel()
+
+	repositoryDir := t.TempDir()
+	runGit(t, repositoryDir, "init", "-b", "feature-a")
+
+	if err := os.WriteFile(filepath.Join(repositoryDir, "branch.txt"), []byte("feature-a-needle\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile feature-a: %v", err)
+	}
+	runGit(t, repositoryDir, "add", "branch.txt")
+	runGit(t, repositoryDir, "commit", "-m", "feature-a")
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:             repositoryDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("initial IndexGitRepo: %v", err)
+	}
+
+	runGit(t, repositoryDir, "checkout", "-b", "feature-b")
+	if err := os.WriteFile(filepath.Join(repositoryDir, "branch.txt"), []byte("feature-b-needle\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile feature-b: %v", err)
+	}
+	runGit(t, repositoryDir, "add", "branch.txt")
+	runGit(t, repositoryDir, "commit", "-m", "feature-b")
+
+	deltaOpts := opts
+	deltaOpts.BuildOptions.IsDelta = true
+
+	deltaBuildCalled := false
+	prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+		deltaBuildCalled = true
+		return prepareDeltaBuild(options, repository)
+	}
+
+	normalBuildCalled := false
+	prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
+		normalBuildCalled = true
+		return prepareNormalBuild(options, repository)
+	}
+
+	if _, err := indexGitRepo(deltaOpts, gitIndexConfig{
+		prepareDeltaBuild:  prepareDeltaSpy,
+		prepareNormalBuild: prepareNormalSpy,
+	}); err != nil {
+		t.Fatalf("delta IndexGitRepo: %v", err)
+	}
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted")
+	}
+	if !normalBuildCalled {
+		t.Fatal("expected checkout branch change to fall back to normal build")
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	if got, want := repositoryBranchNames(repo.Branches), []string{"feature-b"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+
+	if got := searchFileNamesForTest(t, indexDir, "feature-a-needle"); len(got) != 0 {
+		t.Fatalf("feature-a content should not remain indexed after normal rebuild fallback, got %v", got)
+	}
+	if got, want := searchFileNamesForTest(t, indexDir, "feature-b-needle"), []string{"branch.txt"}; !cmp.Equal(got, want) {
+		t.Fatalf("feature-b search mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_LegacyHEADDeltaMigrationThenDeltaNoop(t *testing.T) {
+	t.Parallel()
+
+	repositoryDir := t.TempDir()
+	runGit(t, repositoryDir, "init", "-b", "feature-a")
+
+	if err := os.WriteFile(filepath.Join(repositoryDir, "branch.txt"), []byte("feature-a-needle\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile feature-a: %v", err)
+	}
+	runGit(t, repositoryDir, "add", "branch.txt")
+	runGit(t, repositoryDir, "commit", "-m", "feature-a")
+
+	indexDir := t.TempDir()
+	legacyOpts := Options{
+		RepoDir:             repositoryDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: false,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(legacyOpts); err != nil {
+		t.Fatalf("legacy IndexGitRepo: %v", err)
+	}
+
+	runWithSpies := func(t *testing.T, opts Options) (deltaBuildCalled, normalBuildCalled bool) {
+		t.Helper()
+
+		prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+			deltaBuildCalled = true
+			return prepareDeltaBuild(options, repository)
+		}
+
+		prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
+			normalBuildCalled = true
+			return prepareNormalBuild(options, repository)
+		}
+
+		if _, err := indexGitRepo(opts, gitIndexConfig{
+			prepareDeltaBuild:  prepareDeltaSpy,
+			prepareNormalBuild: prepareNormalSpy,
+		}); err != nil {
+			t.Fatalf("IndexGitRepo: %v", err)
+		}
+
+		return deltaBuildCalled, normalBuildCalled
+	}
+
+	resolvedDeltaOpts := legacyOpts
+	resolvedDeltaOpts.ResolveHEADToBranch = true
+	resolvedDeltaOpts.BuildOptions.IsDelta = true
+
+	deltaBuildCalled, normalBuildCalled := runWithSpies(t, resolvedDeltaOpts)
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted for legacy HEAD migration")
+	}
+	if !normalBuildCalled {
+		t.Fatal("expected legacy HEAD metadata to fall back to normal build")
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	if got, want := repositoryBranchNames(repo.Branches), []string{"feature-a"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch after migration (-want +got):\n%s", cmp.Diff(want, got))
+	}
+
+	deltaBuildCalled, normalBuildCalled = runWithSpies(t, resolvedDeltaOpts)
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted after migration")
+	}
+	if normalBuildCalled {
+		t.Fatal("expected unchanged resolved HEAD branch to stay on the delta path after migration")
+	}
+}
+
 func TestIndexGitRepo_DeltaAdmissionStatsV1WritesForwardAndUsesDeltaDebt(t *testing.T) {
 	t.Parallel()
 
