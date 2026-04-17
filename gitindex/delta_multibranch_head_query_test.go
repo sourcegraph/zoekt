@@ -300,9 +300,10 @@ func headWorktreeInitLinkedWorktrees(t *testing.T) (repoDir, worktreeA, worktree
 
 func headWorktreeOptions(repoDir, indexDir, repoName string, repoID uint32, branches []string) Options {
 	return Options{
-		RepoDir:             repoDir,
-		Branches:            append([]string(nil), branches...),
-		ResolveHEADToBranch: true,
+		RepoDir:                   repoDir,
+		Branches:                  append([]string(nil), branches...),
+		ResolveHEADToBranch:       true,
+		AllowDeltaBranchSetChange: true,
 		BuildOptions: index.Options{
 			RepositoryDescription: zoekt.Repository{
 				ID:   repoID,
@@ -752,8 +753,9 @@ func querySurfaceWriteAndCommitFile(t *testing.T, repoDir, name, content, messag
 
 func querySurfaceOptions(repoDir, indexDir string, branches []string) Options {
 	return Options{
-		RepoDir:  filepath.Join(repoDir, ".git"),
-		Branches: append([]string(nil), branches...),
+		RepoDir:                   filepath.Join(repoDir, ".git"),
+		Branches:                  append([]string(nil), branches...),
+		AllowDeltaBranchSetChange: true,
 		BuildOptions: index.Options{
 			IndexDir: indexDir,
 			RepositoryDescription: zoekt.Repository{

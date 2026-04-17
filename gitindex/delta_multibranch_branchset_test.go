@@ -230,8 +230,9 @@ type singleRenameSearchHit struct {
 
 func singleRenameOptions(repoDir, indexDir string, branches []string) Options {
 	return Options{
-		RepoDir:  filepath.Join(repoDir, ".git"),
-		Branches: append([]string(nil), branches...),
+		RepoDir:                   filepath.Join(repoDir, ".git"),
+		Branches:                  append([]string(nil), branches...),
+		AllowDeltaBranchSetChange: true,
 		BuildOptions: index.Options{
 			IndexDir: indexDir,
 			RepositoryDescription: zoekt.Repository{
@@ -849,8 +850,9 @@ func multiRenameInitRepository(t *testing.T, branchFiles map[string]map[string]s
 
 func multiRenameIndexOptions(repositoryDir, indexDir string, branches []string) Options {
 	return Options{
-		RepoDir:  filepath.Join(repositoryDir, ".git"),
-		Branches: append([]string(nil), branches...),
+		RepoDir:                   filepath.Join(repositoryDir, ".git"),
+		Branches:                  append([]string(nil), branches...),
+		AllowDeltaBranchSetChange: true,
 		BuildOptions: index.Options{
 			RepositoryDescription: zoekt.Repository{Name: "repository"},
 			IndexDir:              indexDir,
@@ -1277,9 +1279,10 @@ func addBranchWriteCommit(t *testing.T, repoDir string, files map[string]string,
 
 func addBranchOptions(repoDir, indexDir string, branches []string) Options {
 	return Options{
-		RepoDir:            filepath.Join(repoDir, ".git"),
-		Branches:           branches,
-		DeltaAdmissionMode: DeltaAdmissionModeStatsV1,
+		RepoDir:                   filepath.Join(repoDir, ".git"),
+		Branches:                  branches,
+		AllowDeltaBranchSetChange: true,
+		DeltaAdmissionMode:        DeltaAdmissionModeStatsV1,
 		DeltaAdmissionThresholds: DeltaAdmissionThresholds{
 			MaxDeltaIndexedBytesRatio: 100,
 			MaxPhysicalLiveBytesRatio: 100,
@@ -1654,8 +1657,9 @@ func removeBranchRunScenario(t *testing.T, scenario removeBranchScenario) {
 
 func removeBranchOptions(repoDir, indexDir string, branches []string) Options {
 	return Options{
-		RepoDir:  filepath.Join(repoDir, ".git"),
-		Branches: append([]string(nil), branches...),
+		RepoDir:                   filepath.Join(repoDir, ".git"),
+		Branches:                  append([]string(nil), branches...),
+		AllowDeltaBranchSetChange: true,
 		BuildOptions: index.Options{
 			RepositoryDescription: zoekt.Repository{
 				ID:   removeBranchRepoID,
@@ -2131,8 +2135,9 @@ func combinedBranchRunIndex(t *testing.T, repoDir, indexDir string, branches []s
 	t.Helper()
 
 	opts := Options{
-		RepoDir:  filepath.Join(repoDir, ".git"),
-		Branches: append([]string(nil), branches...),
+		RepoDir:                   filepath.Join(repoDir, ".git"),
+		Branches:                  append([]string(nil), branches...),
+		AllowDeltaBranchSetChange: true,
 		BuildOptions: index.Options{
 			RepositoryDescription: zoekt.Repository{
 				ID:   combinedBranchRepoID,

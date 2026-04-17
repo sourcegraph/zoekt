@@ -368,9 +368,10 @@ func TestIndexGitRepo_ResolveHEADToBranch_DeltaHandlesCheckoutBranchChanges(t *t
 
 	indexDir := t.TempDir()
 	opts := Options{
-		RepoDir:             repositoryDir,
-		Branches:            []string{"HEAD"},
-		ResolveHEADToBranch: true,
+		RepoDir:                   repositoryDir,
+		Branches:                  []string{"HEAD"},
+		ResolveHEADToBranch:       true,
+		AllowDeltaBranchSetChange: true,
 		BuildOptions: index.Options{
 			RepositoryDescription: zoekt.Repository{Name: "repo"},
 			IndexDir:              indexDir,
@@ -481,6 +482,7 @@ func TestIndexGitRepo_ResolveHEADToBranch_LegacyHEADDeltaMigrationThenDeltaNoop(
 
 	resolvedDeltaOpts := legacyOpts
 	resolvedDeltaOpts.ResolveHEADToBranch = true
+	resolvedDeltaOpts.AllowDeltaBranchSetChange = true
 	resolvedDeltaOpts.BuildOptions.IsDelta = true
 
 	deltaBuildCalled, normalBuildCalled := runWithSpies(t, resolvedDeltaOpts)

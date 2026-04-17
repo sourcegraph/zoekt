@@ -394,9 +394,15 @@ type Options struct {
 	// List of branch names to index, e.g. []string{"HEAD", "stable"}
 	Branches []string
 
-	// ResolveHEADToBranch is reserved for a separate HEAD/worktree fix. It is
-	// intentionally not used by the delta admission logic.
+	// ResolveHEADToBranch resolves an attached HEAD to its short branch name in
+	// indexed metadata. Detached HEAD remains HEAD.
 	ResolveHEADToBranch bool
+
+	// AllowDeltaBranchSetChange allows delta indexing when the requested branch
+	// set differs from the existing index metadata. The conservative
+	// implementation rewrites old shard metadata and tombstones all old live
+	// paths before adding a full live delta layer for the new branch set.
+	AllowDeltaBranchSetChange bool
 
 	// DeltaShardNumberFallbackThreshold defines an upper limit (inclusive) on the number of preexisting shards
 	// that can exist before attempting another delta build. If the number of preexisting shards exceeds this threshold,
@@ -507,24 +513,23 @@ func expandBranchesForOptions(repo *git.Repository, opts Options) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	if !opts.ResolveHEADToBranch {
-		return branches, nil
-	}
-
-	headBranch, ok, err := resolveHEADBranchName(repo)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return branches, nil
-	}
-
-	for i, branch := range branches {
-		if branch == "HEAD" {
-			branches[i] = headBranch
+	if opts.ResolveHEADToBranch {
+		headBranch, ok, err := resolveHEADBranchName(repo)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			for i, branch := range branches {
+				if branch == "HEAD" {
+					branches[i] = headBranch
+				}
+			}
 		}
 	}
-	return uniqPreserveOrder(branches), nil
+	if opts.ResolveHEADToBranch || opts.AllowDeltaBranchSetChange {
+		return uniqPreserveOrder(branches), nil
+	}
+	return branches, nil
 }
 
 func resolveHEADBranchName(repo *git.Repository) (string, bool, error) {
@@ -585,7 +590,7 @@ func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string,
 		result = append(result, b)
 	}
 
-	return uniqPreserveOrder(result), nil
+	return result, nil
 }
 
 // IndexGitRepo indexes the git repository as specified by the options.
@@ -683,7 +688,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	if opts.BuildOptions.IsDelta {
 		allowDeltaBranchSetChange := false
 		if existingRepository, _, ok, err := opts.BuildOptions.FindRepositoryMetadata(); err == nil && ok {
-			allowDeltaBranchSetChange = !index.BranchNamesEqual(existingRepository.Branches, opts.BuildOptions.RepositoryDescription.Branches)
+			allowDeltaBranchSetChange = opts.AllowDeltaBranchSetChange && !index.BranchNamesEqual(existingRepository.Branches, opts.BuildOptions.RepositoryDescription.Branches)
 		}
 		repos, branchVersions, changedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
 		if err != nil {
@@ -1701,6 +1706,22 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	}
 
 	if !index.BranchNamesEqual(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches) {
+		if !options.AllowDeltaBranchSetChange {
+			var existingBranchNames []string
+			for _, b := range existingRepository.Branches {
+				existingBranchNames = append(existingBranchNames, b.Name)
+			}
+
+			var optionsBranchNames []string
+			for _, b := range options.BuildOptions.RepositoryDescription.Branches {
+				optionsBranchNames = append(optionsBranchNames, b.Name)
+			}
+
+			existingBranchList := strings.Join(existingBranchNames, ", ")
+			optionsBranchList := strings.Join(optionsBranchNames, ", ")
+
+			return nil, nil, nil, fmt.Errorf("requested branch set in build options (%q) != branch set found on disk (%q) - branch set must be the same for delta shards", optionsBranchList, existingBranchList)
+		}
 		return prepareBranchSetDeltaBuild(options, repository, existingRepository)
 	}
 

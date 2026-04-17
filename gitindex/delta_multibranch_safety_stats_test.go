@@ -329,9 +329,10 @@ func TestIndexGitRepo_DeltaCompoundShardBeforeBranchSetChangeFallsBack(t *testin
 
 func ambiguityOptions(repoDir, indexDir string, branches []string) Options {
 	return Options{
-		RepoDir:            filepath.Join(repoDir, ".git"),
-		Branches:           append([]string(nil), branches...),
-		DeltaAdmissionMode: DeltaAdmissionModeStatsV1,
+		RepoDir:                   filepath.Join(repoDir, ".git"),
+		Branches:                  append([]string(nil), branches...),
+		AllowDeltaBranchSetChange: true,
+		DeltaAdmissionMode:        DeltaAdmissionModeStatsV1,
 		DeltaAdmissionThresholds: DeltaAdmissionThresholds{
 			MaxDeltaIndexedBytesRatio: 100,
 			MaxPhysicalLiveBytesRatio: 100,
@@ -882,9 +883,10 @@ func statsBranchRunIndex(t *testing.T, repoDir, indexDir string, branches []stri
 
 func statsBranchOptions(repoDir, indexDir string, branches []string) Options {
 	return Options{
-		RepoDir:            filepath.Join(repoDir, ".git"),
-		Branches:           append([]string(nil), branches...),
-		DeltaAdmissionMode: DeltaAdmissionModeStatsV1,
+		RepoDir:                   filepath.Join(repoDir, ".git"),
+		Branches:                  append([]string(nil), branches...),
+		AllowDeltaBranchSetChange: true,
+		DeltaAdmissionMode:        DeltaAdmissionModeStatsV1,
 		DeltaAdmissionThresholds: DeltaAdmissionThresholds{
 			MaxDeltaIndexedBytesRatio: 100,
 			MaxPhysicalLiveBytesRatio: 100,
