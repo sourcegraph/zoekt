@@ -47,6 +47,8 @@ func run() int {
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
 	deltaAdmissionMode := flag.String("delta_admission_mode", "", "experimental delta admission mode (empty or stats-v1)")
 	deltaAdmissionLogJSON := flag.String("delta_admission_log_json", "", "append experimental delta admission decisions as JSON lines to this file")
+	resolveHEADToBranch := flag.Bool("resolve_head_to_branch", false, "resolve attached HEAD to its short branch name in indexed metadata")
+	allowDeltaBranchSetChange := flag.Bool("allow_delta_branch_set_change", false, "allow delta builds to update branch sets by rewriting old shard metadata and tombstoning old live paths")
 	languageMap := flag.String("language_map", "", "a mapping between a language and its ctags processor (a:0,b:3).")
 
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to `file`")
@@ -136,6 +138,8 @@ func run() int {
 			DeltaShardNumberFallbackThreshold: *deltaShardNumberFallbackThreshold,
 			DeltaAdmissionMode:                *deltaAdmissionMode,
 			DeltaAdmissionLogPath:             *deltaAdmissionLogJSON,
+			ResolveHEADToBranch:               *resolveHEADToBranch,
+			AllowDeltaBranchSetChange:         *allowDeltaBranchSetChange,
 		}
 
 		if _, err := gitindex.IndexGitRepo(gitOpts); err != nil {

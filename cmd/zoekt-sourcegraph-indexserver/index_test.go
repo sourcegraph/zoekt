@@ -620,10 +620,12 @@ func TestIndex(t *testing.T) {
 	}, {
 		name: "delta stats-v1 admission",
 		args: indexArgs{
-			Incremental:        true,
-			IndexDir:           "/data/index",
-			UseDelta:           true,
-			DeltaAdmissionMode: gitindex.DeltaAdmissionModeStatsV1,
+			Incremental:               true,
+			IndexDir:                  "/data/index",
+			UseDelta:                  true,
+			DeltaAdmissionMode:        gitindex.DeltaAdmissionModeStatsV1,
+			ResolveHEADToBranch:       true,
+			AllowDeltaBranchSetChange: true,
 			IndexOptions: IndexOptions{
 				Name:     "test/repo",
 				CloneURL: "http://api.test/.internal/git/test/repo",
@@ -654,7 +656,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
-			"zoekt-git-index -submodules=false -incremental -branches HEAD -delta -delta_threshold 22 -delta_admission_mode stats-v1 -file_limit 1048576 -index /data/index -disable_ctags $TMPDIR/test%2Frepo.git",
+			"zoekt-git-index -submodules=false -incremental -branches HEAD -delta -delta_threshold 22 -delta_admission_mode stats-v1 -resolve_head_to_branch -allow_delta_branch_set_change -file_limit 1048576 -index /data/index -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}}
 

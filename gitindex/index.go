@@ -1523,6 +1523,14 @@ func prepareBranchSetDeltaBuild(options Options, repository *git.Repository, exi
 		return nil, nil, nil, err
 	}
 
+	repos, branchVersions, changedOrDeletedPaths, ok, err := prepareSmartBranchSetDeltaBuild(options, repository, existingRepository)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if ok {
+		return repos, branchVersions, changedOrDeletedPaths, nil
+	}
+
 	repos, branchVersions, err = prepareNormalBuildRecurse(options, repository, nil, false)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("preparing branch-set delta live files: %w", err)
@@ -1533,6 +1541,137 @@ func prepareBranchSetDeltaBuild(options Options, repository *git.Repository, exi
 		return nil, nil, nil, err
 	}
 	return repos, branchVersions, changedOrDeletedPaths, nil
+}
+
+func prepareSmartBranchSetDeltaBuild(options Options, repository *git.Repository, existingRepository *zoekt.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, ok bool, err error) {
+	oldBranches := existingRepository.Branches
+	newBranches := options.BuildOptions.RepositoryDescription.Branches
+	if len(oldBranches) != len(newBranches) {
+		return nil, nil, nil, false, nil
+	}
+	if branchNamesMoved(oldBranches, newBranches) {
+		return nil, nil, nil, false, nil
+	}
+
+	rawURL := options.BuildOptions.RepositoryDescription.URL
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, nil, nil, false, fmt.Errorf("parsing repository URL %q: %w", rawURL, err)
+	}
+
+	type branchTree struct {
+		name string
+		tree *object.Tree
+		ig   *ignore.Matcher
+	}
+	currentTrees := make([]branchTree, 0, len(newBranches))
+	affectedPaths := map[string]struct{}{}
+
+	for i := range oldBranches {
+		oldCommit, err := getCommit(repository, "", oldBranches[i].Version)
+		if err != nil {
+			return nil, nil, nil, false, fmt.Errorf("getting last indexed commit for branch %q: %w", oldBranches[i].Name, err)
+		}
+		oldTree, err := oldCommit.Tree()
+		if err != nil {
+			return nil, nil, nil, false, fmt.Errorf("getting last indexed git tree for branch %q: %w", oldBranches[i].Name, err)
+		}
+
+		newCommit, err := getCommit(repository, "", newBranches[i].Version)
+		if err != nil {
+			return nil, nil, nil, false, fmt.Errorf("getting current commit for branch %q: %w", newBranches[i].Name, err)
+		}
+		newTree, err := newCommit.Tree()
+		if err != nil {
+			return nil, nil, nil, false, fmt.Errorf("getting current git tree for branch %q: %w", newBranches[i].Name, err)
+		}
+		ig, err := newIgnoreMatcher(newTree)
+		if err != nil {
+			return nil, nil, nil, false, fmt.Errorf("newIgnoreMatcher for branch %q: %w", newBranches[i].Name, err)
+		}
+		currentTrees = append(currentTrees, branchTree{
+			name: newBranches[i].Name,
+			tree: newTree,
+			ig:   ig,
+		})
+
+		changes, err := object.DiffTreeWithOptions(context.Background(), oldTree, newTree, &object.DiffTreeOptions{DetectRenames: false})
+		if err != nil {
+			return nil, nil, nil, false, fmt.Errorf("generating changeset for branch %q -> %q: %w", oldBranches[i].Name, newBranches[i].Name, err)
+		}
+		for j, c := range changes {
+			oldFile, newFile, err := c.Files()
+			if err != nil {
+				return nil, nil, nil, false, fmt.Errorf("change #%d: getting files before and after change: %w", j, err)
+			}
+			if oldFile != nil {
+				if c.From.Name == ignore.IgnoreFile {
+					return nil, nil, nil, false, fmt.Errorf("%q file is not yet supported in delta builds", ignore.IgnoreFile)
+				}
+				affectedPaths[c.From.Name] = struct{}{}
+			}
+			if newFile != nil {
+				if c.To.Name == ignore.IgnoreFile {
+					return nil, nil, nil, false, fmt.Errorf("%q file is not yet supported in delta builds", ignore.IgnoreFile)
+				}
+				affectedPaths[c.To.Name] = struct{}{}
+			}
+		}
+	}
+
+	changedOrDeletedPaths = make([]string, 0, len(affectedPaths))
+	for path := range affectedPaths {
+		changedOrDeletedPaths = append(changedOrDeletedPaths, path)
+	}
+	sort.Strings(changedOrDeletedPaths)
+
+	repos = make(map[fileKey]BlobLocation)
+	for _, path := range changedOrDeletedPaths {
+		for _, current := range currentTrees {
+			if current.ig.Match(path) {
+				continue
+			}
+			f, err := current.tree.File(path)
+			if err != nil {
+				if errors.Is(err, object.ErrFileNotFound) {
+					continue
+				}
+				return nil, nil, nil, false, fmt.Errorf("getting current file %q in branch %q: %w", path, current.name, err)
+			}
+			key := fileKey{Path: path, ID: f.ID()}
+			if existing, ok := repos[key]; ok {
+				existing.Branches = append(existing.Branches, current.name)
+				repos[key] = existing
+			} else {
+				repos[key] = BlobLocation{
+					GitRepo:  repository,
+					URL:      u,
+					Branches: []string{current.name},
+				}
+			}
+		}
+	}
+
+	for key, info := range repos {
+		sort.Strings(info.Branches)
+		info.Branches = uniq(info.Branches)
+		repos[key] = info
+	}
+
+	return repos, nil, changedOrDeletedPaths, true, nil
+}
+
+func branchNamesMoved(oldBranches, newBranches []zoekt.RepositoryBranch) bool {
+	oldIndex := make(map[string]int, len(oldBranches))
+	for i, branch := range oldBranches {
+		oldIndex[branch.Name] = i
+	}
+	for i, branch := range newBranches {
+		if old, ok := oldIndex[branch.Name]; ok && old != i {
+			return true
+		}
+	}
+	return false
 }
 
 func validateBranchSetDelta(options Options, existingRepository *zoekt.Repository) error {
