@@ -46,7 +46,6 @@ func TestIndexGitRepo_DeltaMultiBranchAmbiguityFallsBack(t *testing.T) {
 		cleanBranches   []string
 		compareBranches []string
 		patterns        []string
-		requireFallback bool
 	}{
 		{
 			name:            "ambiguous rename without provenance",
@@ -63,7 +62,6 @@ func TestIndexGitRepo_DeltaMultiBranchAmbiguityFallsBack(t *testing.T) {
 			finalBranches:   []string{"baz", "bar"},
 			compareBranches: []string{"foo", "baz", "bar"},
 			patterns:        []string{"foo-original-needle", "bar-stable-needle"},
-			requireFallback: true,
 		},
 		{
 			name:            "many-to-one branch rename",
@@ -81,7 +79,6 @@ func TestIndexGitRepo_DeltaMultiBranchAmbiguityFallsBack(t *testing.T) {
 			finalBranches:   []string{"c"},
 			compareBranches: []string{"a", "b", "c"},
 			patterns:        []string{"a-original-needle", "b-original-needle"},
-			requireFallback: true,
 		},
 		{
 			name:            "one-to-many branch split",
@@ -103,7 +100,6 @@ func TestIndexGitRepo_DeltaMultiBranchAmbiguityFallsBack(t *testing.T) {
 			finalBranches:   []string{"b", "c"},
 			compareBranches: []string{"a", "b", "c"},
 			patterns:        []string{"split-shared-needle", "split-c-original-needle", "split-c-final-needle"},
-			requireFallback: true,
 		},
 		{
 			name:            "duplicate final branch names after wildcard expansion",
@@ -141,8 +137,8 @@ func TestIndexGitRepo_DeltaMultiBranchAmbiguityFallsBack(t *testing.T) {
 			if !deltaBuildCalled {
 				t.Fatal("expected delta build to be attempted before selecting the safe fallback")
 			}
-			if tc.requireFallback && !normalBuildCalled {
-				t.Fatalf("expected ambiguous branch mapping to fall back to a normal rebuild instead of accepting an arbitrary delta mapping")
+			if normalBuildCalled {
+				t.Fatalf("expected unmatched branch mapping to stay on the delta path when branch-set deltas are allowed")
 			}
 
 			cleanBranches := tc.cleanBranches
@@ -812,7 +808,7 @@ func TestIndexGitRepo_DeltaMultiBranchStatsAdmissionLogAcceptedBranchSetDelta(t 
 	statsBranchAssertJSONPresent(t, entry, "physical_live_ratio")
 }
 
-func TestIndexGitRepo_DeltaMultiBranchStatsAdmissionLogAmbiguousMappingFallback(t *testing.T) {
+func TestIndexGitRepo_DeltaMultiBranchStatsAdmissionLogUnmatchedBranchMappingAccepted(t *testing.T) {
 	t.Parallel()
 
 	repoDir := statsBranchCreateRepository(t, []string{"foo", "bar"}, map[string]statsBranchFiles{
@@ -832,10 +828,10 @@ func TestIndexGitRepo_DeltaMultiBranchStatsAdmissionLogAmbiguousMappingFallback(
 
 	deltaCalled, normalCalled := statsBranchRunIndex(t, repoDir, indexDir, []string{"baz", "bar"}, true, logPath)
 	if !deltaCalled {
-		t.Error("expected ambiguous branch mapping to attempt a delta build")
+		t.Error("expected unmatched branch mapping to attempt a delta build")
 	}
-	if !normalCalled {
-		t.Error("expected ambiguous branch mapping to fall back to a normal rebuild")
+	if normalCalled {
+		t.Error("expected unmatched branch mapping to stay on the delta path when branch-set deltas are allowed")
 	}
 
 	entries := statsBranchReadAdmissionLogObjects(t, logPath)
@@ -843,8 +839,8 @@ func TestIndexGitRepo_DeltaMultiBranchStatsAdmissionLogAmbiguousMappingFallback(
 		t.Fatalf("got %d admission log entries, want 1", len(entries))
 	}
 	entry := entries[0]
-	statsBranchAssertJSONBool(t, entry, "accepted", false)
-	statsBranchAssertJSONStringContains(t, entry, "reason", "ambiguous branch mapping")
+	statsBranchAssertJSONBool(t, entry, "accepted", true)
+	statsBranchAssertJSONString(t, entry, "reason", "accepted")
 	statsBranchAssertJSONNumber(t, entry, "old_branch_count", 2)
 	statsBranchAssertJSONNumber(t, entry, "new_branch_count", 2)
 	statsBranchAssertJSONPresent(t, entry, "branch_mapping")

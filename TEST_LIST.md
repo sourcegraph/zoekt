@@ -2,6 +2,8 @@
 
 Goal: define failing tests that should pass once delta indexing can update multi-branch indexes across branch-set changes. These tests should verify that the delta path is actually used and that branch-filtered lookups return the same results as a clean full rebuild.
 
+Branch-set-changing deltas are explicitly opt-in via `gitindex.Options.AllowDeltaBranchSetChange`. With that option enabled, unmatched old/new branch slots are allowed to use the conservative full-live delta path; the option itself is the caller's provenance that branch-set changes are intentional. Without that option, branch-set mismatches should preserve the old behavior and fall back to a normal rebuild.
+
 ## Test Harness Expectations
 
 - Each test should build an initial full index, mutate the Git repo, request a delta build, and assert the delta build path was used.
@@ -84,7 +86,7 @@ Goal: define failing tests that should pass once delta indexing can update multi
 12. Rename branch order changes at the same time.
     - Initial: `[feature-a, release, qa-a]`
     - Final: `[qa-b, feature-b, release]`
-    - Expect: delta used only if mapping is explicit and unambiguous; branch-filtered search must match clean rebuild exactly.
+    - Expect: delta used when `AllowDeltaBranchSetChange` is set; branch-filtered search must match clean rebuild exactly.
 
 ## Add Branches
 
@@ -202,25 +204,28 @@ Goal: define failing tests that should pass once delta indexing can update multi
 
 ## Ambiguity And Safety Tests
 
-33. Ambiguous rename without provenance.
+33. Unmatched old/new branch names with branch-set delta opt-in.
     - Initial: `[foo, bar]`
     - Final: `[baz, bar]`
-    - If no metadata can prove `foo -> baz`, expect full rebuild or explicit error, not silent arbitrary mapping.
+    - With `AllowDeltaBranchSetChange`, expect delta used; final results match clean rebuild and branch mapping is logged.
+    - Without `AllowDeltaBranchSetChange`, expect old behavior: full rebuild fallback.
 
-34. Many-to-one branch rename.
+34. Many-to-one branch update with branch-set delta opt-in.
     - Initial: `[a, b]`
     - Final: `[c]`
-    - Expect: full rebuild unless a precise merge mapping is supported.
+    - With `AllowDeltaBranchSetChange`, expect delta used via the conservative full-live path; final results match clean rebuild.
+    - Without the flag, expect fallback.
 
-35. One-to-many branch split.
+35. One-to-many branch split with branch-set delta opt-in.
     - Initial: `[a]`
     - Final: `[b, c]`
-    - Expect: delta used only if both new branches can be compared to old `a`; otherwise full rebuild.
+    - With `AllowDeltaBranchSetChange`, expect delta used via the conservative full-live path; final results match clean rebuild.
+    - Without the flag, expect fallback.
 
 36. Duplicate final branch names after wildcard expansion.
     - Initial: `[main]`
     - Final request expands to `[main, main]`
-    - Expect: deterministic dedupe or full rebuild; never duplicate branch masks.
+    - Expect deterministic dedupe when branch-set changes are allowed, or full rebuild otherwise; never duplicate branch masks.
 
 37. Branch removed and re-added with the same name but unrelated history.
     - Initial: `[release]` at old lineage
@@ -251,7 +256,8 @@ Goal: define failing tests that should pass once delta indexing can update multi
     - Expect: JSONL contains mapping summary, accepted=true, old/new branch counts, and cost metrics.
 
 45. Admission log for fallback due ambiguous mapping.
-    - Expect: accepted=false with a specific reason such as `ambiguous branch mapping`, not a generic branch-list mismatch.
+    - Expect `accepted=true` for unmatched branch mappings when `AllowDeltaBranchSetChange` is set and the conservative delta path is safe.
+    - Keep `accepted=false` fallback logging for structurally unsafe cases such as missing commits or unsupported compound shards.
 
 ## Query Surfaces To Exercise
 

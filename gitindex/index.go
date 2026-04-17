@@ -1546,14 +1546,7 @@ func validateBranchSetDelta(options Options, existingRepository *zoekt.Repositor
 		return fmt.Errorf("ambiguous branch mapping: duplicate existing branch names %q", strings.Join(oldBranches, ", "))
 	}
 
-	if branchNameSetOverlap(oldBranches, newBranches) {
-		return nil
-	}
-	if options.ResolveHEADToBranch && len(oldBranches) == 1 && len(newBranches) == 1 {
-		return nil
-	}
-
-	return fmt.Errorf("ambiguous branch mapping: requested branch set %q has no stable branch in common with existing branch set %q", strings.Join(newBranches, ", "), strings.Join(oldBranches, ", "))
+	return nil
 }
 
 func repositoryBranchNamesForDelta(branches []zoekt.RepositoryBranch) []string {
@@ -1562,19 +1555,6 @@ func repositoryBranchNamesForDelta(branches []zoekt.RepositoryBranch) []string {
 		names = append(names, branch.Name)
 	}
 	return names
-}
-
-func branchNameSetOverlap(a, b []string) bool {
-	seen := make(map[string]struct{}, len(a))
-	for _, name := range a {
-		seen[name] = struct{}{}
-	}
-	for _, name := range b {
-		if _, ok := seen[name]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 func indexedFilePaths(opts index.Options) ([]string, error) {
