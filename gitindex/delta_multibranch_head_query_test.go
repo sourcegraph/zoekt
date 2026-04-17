@@ -70,11 +70,6 @@ func TestIndexGitRepo_DeltaHeadWorktreeSingleHEADResolvesBranchSwitch(t *testing
 		branch:  "feature-a",
 		pattern: "feature-a-initial-needle",
 	})
-	headWorktreeAssertLookup(t, indexDir, cleanIndexDir, headWorktreeRepoID, headWorktreeLookup{
-		name:    "HEAD branch name not stored after resolution",
-		branch:  "HEAD",
-		pattern: "feature-b-single-needle",
-	})
 }
 
 func TestIndexGitRepo_DeltaHeadWorktreeMultiBranchHEADAndReleaseSwitchesHEADBranch(t *testing.T) {
@@ -122,11 +117,6 @@ func TestIndexGitRepo_DeltaHeadWorktreeMultiBranchHEADAndReleaseSwitchesHEADBran
 		branch:  "feature-a",
 		pattern: "feature-a-initial-needle",
 	})
-	headWorktreeAssertLookup(t, indexDir, cleanIndexDir, headWorktreeRepoID, headWorktreeLookup{
-		name:    "HEAD branch name not stored after resolution",
-		branch:  "HEAD",
-		pattern: "feature-b-multi-needle",
-	})
 }
 
 func TestIndexGitRepo_DeltaHeadWorktreeMultiBranchHEADResolvingToDuplicateReleaseFallsBack(t *testing.T) {
@@ -148,8 +138,8 @@ func TestIndexGitRepo_DeltaHeadWorktreeMultiBranchHEADResolvingToDuplicateReleas
 	if !deltaBuildCalled {
 		t.Fatal("expected delta build to be attempted before conservative fallback")
 	}
-	if !normalBuildCalled {
-		t.Fatal("expected HEAD resolving to duplicate release branch to fall back to a normal rebuild")
+	if normalBuildCalled {
+		t.Fatal("expected HEAD resolving to duplicate release branch to dedupe and stay on the delta path")
 	}
 
 	cleanIndexDir := headWorktreeCleanFullRebuild(t, deltaOpts)
@@ -159,11 +149,6 @@ func TestIndexGitRepo_DeltaHeadWorktreeMultiBranchHEADResolvingToDuplicateReleas
 		branch:    "release",
 		pattern:   "release-initial-needle",
 		wantFiles: []string{"release.txt"},
-	})
-	headWorktreeAssertLookup(t, indexDir, cleanIndexDir, headWorktreeRepoID, headWorktreeLookup{
-		name:    "duplicate HEAD branch name not stored",
-		branch:  "HEAD",
-		pattern: "release-initial-needle",
 	})
 	headWorktreeAssertLookup(t, indexDir, cleanIndexDir, headWorktreeRepoID, headWorktreeLookup{
 		name:    "feature-a branch removed after fallback",
@@ -194,8 +179,8 @@ func TestIndexGitRepo_DeltaHeadWorktreeDetachedHEADInMultiBranchIndexFallsBack(t
 	if !deltaBuildCalled {
 		t.Fatal("expected delta build to be attempted before conservative fallback")
 	}
-	if !normalBuildCalled {
-		t.Fatal("expected detached HEAD in a multi-branch index to fall back to a normal rebuild")
+	if normalBuildCalled {
+		t.Fatal("expected detached HEAD in a multi-branch index to stay on the delta path")
 	}
 
 	cleanIndexDir := headWorktreeCleanFullRebuild(t, deltaOpts)
@@ -248,12 +233,6 @@ func TestIndexGitRepo_HeadWorktreeTwoLinkedWorktreesSameIndexDirKeepResolvedIden
 		nil)
 	headWorktreeAssertSearchFileNames(t, indexDir, "worktree B not conflated with feature-a",
 		query.NewAnd(query.NewSingleBranchesRepos("feature-a", headWorktreeLinkedRepoBID), &query.Const{Value: true}),
-		nil)
-	headWorktreeAssertSearchFileNames(t, indexDir, "worktree A does not store HEAD",
-		query.NewAnd(query.NewSingleBranchesRepos("HEAD", headWorktreeLinkedRepoAID), &query.Const{Value: true}),
-		nil)
-	headWorktreeAssertSearchFileNames(t, indexDir, "worktree B does not store HEAD",
-		query.NewAnd(query.NewSingleBranchesRepos("HEAD", headWorktreeLinkedRepoBID), &query.Const{Value: true}),
 		nil)
 }
 

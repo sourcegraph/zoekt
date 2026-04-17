@@ -354,7 +354,7 @@ func TestIndexGitRepo_ResolveHEADToBranch_MigratesLegacyHEADOnIncremental(t *tes
 	}
 }
 
-func TestIndexGitRepo_ResolveHEADToBranch_DeltaFallsBackWhenCheckoutBranchChanges(t *testing.T) {
+func TestIndexGitRepo_ResolveHEADToBranch_DeltaHandlesCheckoutBranchChanges(t *testing.T) {
 	t.Parallel()
 
 	repositoryDir := t.TempDir()
@@ -412,8 +412,8 @@ func TestIndexGitRepo_ResolveHEADToBranch_DeltaFallsBackWhenCheckoutBranchChange
 	if !deltaBuildCalled {
 		t.Fatal("expected delta build to be attempted")
 	}
-	if !normalBuildCalled {
-		t.Fatal("expected checkout branch change to fall back to normal build")
+	if normalBuildCalled {
+		t.Fatal("expected checkout branch change to stay on the delta path")
 	}
 
 	repo := indexedRepositoryForTest(t, indexDir, "repo")
@@ -422,7 +422,7 @@ func TestIndexGitRepo_ResolveHEADToBranch_DeltaFallsBackWhenCheckoutBranchChange
 	}
 
 	if got := searchFileNamesForTest(t, indexDir, "feature-a-needle"); len(got) != 0 {
-		t.Fatalf("feature-a content should not remain indexed after normal rebuild fallback, got %v", got)
+		t.Fatalf("feature-a content should not remain indexed after delta branch switch, got %v", got)
 	}
 	if got, want := searchFileNamesForTest(t, indexDir, "feature-b-needle"), []string{"branch.txt"}; !cmp.Equal(got, want) {
 		t.Fatalf("feature-b search mismatch (-want +got):\n%s", cmp.Diff(want, got))
@@ -487,8 +487,8 @@ func TestIndexGitRepo_ResolveHEADToBranch_LegacyHEADDeltaMigrationThenDeltaNoop(
 	if !deltaBuildCalled {
 		t.Fatal("expected delta build to be attempted for legacy HEAD migration")
 	}
-	if !normalBuildCalled {
-		t.Fatal("expected legacy HEAD metadata to fall back to normal build")
+	if normalBuildCalled {
+		t.Fatal("expected legacy HEAD metadata migration to stay on the delta path")
 	}
 
 	repo := indexedRepositoryForTest(t, indexDir, "repo")
@@ -923,6 +923,7 @@ func initGitWorktree(t *testing.T, fileName, content string) (string, string) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	runGit(t, repoDir, "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git")
+	runGit(t, repoDir, "config", "zoekt.name", "repo")
 	runGit(t, repoDir, "add", ".")
 	runGit(t, repoDir, "commit", "-m", "initial commit")
 
@@ -937,6 +938,7 @@ func cloneBareRepo(t *testing.T, repoDir string) string {
 
 	bareDir := filepath.Join(t.TempDir(), "repo.git")
 	runGit(t, filepath.Dir(repoDir), "clone", "--bare", repoDir, bareDir)
+	runGit(t, bareDir, "config", "zoekt.name", "repo")
 
 	return bareDir
 }

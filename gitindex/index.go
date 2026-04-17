@@ -1033,6 +1033,10 @@ type deltaAdmissionDecisionLogEntry struct {
 
 	ExistingStatsPresent bool `json:"existing_stats_present"`
 
+	OldBranchCount uint64                      `json:"old_branch_count"`
+	NewBranchCount uint64                      `json:"new_branch_count"`
+	BranchMapping  []deltaAdmissionBranchEntry `json:"branch_mapping,omitempty"`
+
 	CandidateIndexedBytes  uint64 `json:"candidate_indexed_bytes"`
 	CandidateDocumentCount uint64 `json:"candidate_document_count"`
 	CandidatePathCount     uint64 `json:"candidate_path_count"`
@@ -1057,6 +1061,12 @@ type deltaAdmissionDecisionLogEntry struct {
 	TombstonePathRatio *float64 `json:"tombstone_path_ratio,omitempty"`
 
 	Thresholds DeltaAdmissionThresholds `json:"thresholds"`
+}
+
+type deltaAdmissionBranchEntry struct {
+	Old  string `json:"old,omitempty"`
+	New  string `json:"new,omitempty"`
+	Kind string `json:"kind"`
 }
 
 func prepareDeltaStatsV1(options Options, repository *git.Repository, candidateRepos map[fileKey]BlobLocation, changedOrDeletedPaths []string) (*zoekt.RepositoryDeltaStats, error) {
@@ -1131,6 +1141,10 @@ func prepareDeltaStatsV1(options Options, repository *git.Repository, candidateR
 		BranchName: singleBranchName(options.BuildOptions.RepositoryDescription.Branches),
 
 		ExistingStatsPresent: existingRepository.DeltaStats != nil,
+
+		OldBranchCount: uint64(len(existingRepository.Branches)),
+		NewBranchCount: uint64(len(options.BuildOptions.RepositoryDescription.Branches)),
+		BranchMapping:  deltaAdmissionBranchMapping(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches),
 
 		CandidateIndexedBytes:  candidateStats.LiveIndexedBytes,
 		CandidateDocumentCount: candidateStats.LiveDocumentCount,
@@ -1236,6 +1250,69 @@ func singleBranchName(branches []zoekt.RepositoryBranch) string {
 		return ""
 	}
 	return branches[0].Name
+}
+
+func deltaAdmissionBranchMapping(oldBranches, newBranches []zoekt.RepositoryBranch) []deltaAdmissionBranchEntry {
+	oldNames := repositoryBranchNamesForDelta(oldBranches)
+	newNames := repositoryBranchNamesForDelta(newBranches)
+	usedOld := make([]bool, len(oldNames))
+	usedNew := make([]bool, len(newNames))
+	mapping := make([]deltaAdmissionBranchEntry, 0, max(len(oldNames), len(newNames)))
+
+	for i, oldName := range oldNames {
+		for j, newName := range newNames {
+			if usedNew[j] || oldName != newName {
+				continue
+			}
+			usedOld[i] = true
+			usedNew[j] = true
+			mapping = append(mapping, deltaAdmissionBranchEntry{
+				Old:  oldName,
+				New:  newName,
+				Kind: "exact",
+			})
+			break
+		}
+	}
+
+	for i, oldName := range oldNames {
+		if usedOld[i] {
+			continue
+		}
+		newIndex := -1
+		for j := range newNames {
+			if !usedNew[j] {
+				newIndex = j
+				break
+			}
+		}
+		if newIndex == -1 {
+			mapping = append(mapping, deltaAdmissionBranchEntry{
+				Old:  oldName,
+				Kind: "removed",
+			})
+			continue
+		}
+		usedOld[i] = true
+		usedNew[newIndex] = true
+		mapping = append(mapping, deltaAdmissionBranchEntry{
+			Old:  oldName,
+			New:  newNames[newIndex],
+			Kind: "renamed",
+		})
+	}
+
+	for j, newName := range newNames {
+		if usedNew[j] {
+			continue
+		}
+		mapping = append(mapping, deltaAdmissionBranchEntry{
+			New:  newName,
+			Kind: "added",
+		})
+	}
+
+	return mapping
 }
 
 func finiteRatio(n, d uint64) *float64 {
