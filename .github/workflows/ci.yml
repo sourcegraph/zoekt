@@ -6,39 +6,202 @@ on:
   workflow_dispatch:
 name: CI
 jobs:
-  test:
+  init:
     runs-on: ubuntu-latest
-    container: alpine:edge # latest go pls
+    outputs:
+      runners: ${{ steps.matrix.outputs.runners }}
+      git-versions: ${{ steps.matrix.outputs.git-versions }}
+      ctags-versions: ${{ steps.matrix.outputs.ctags-versions }}
     steps:
-      - name: checkout
-        uses: actions/checkout@v3
-
-      - name: add dependencies
-        run: apk add go git tar
-
-      - name: Cache ctags
-        uses: actions/cache@v3
-        with:
-          path: /usr/local/bin/universal-ctags
-          key: ${{ runner.os }}-ctags-${{ hashFiles('install-ctags-alpine.sh') }}
-
-      - name: Cache Go modules
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: install ctags
+      - name: Define matrix
+        id: matrix
         run: |
-          if [ ! -f /usr/local/bin/universal-ctags ]; then
-            ./install-ctags-alpine.sh
+          echo 'runners=["ubuntu-24.04","ubuntu-22.04","ubuntu-24.04-arm","ubuntu-22.04-arm","macos-15","macos-26","macos-15-intel","macos-26-intel"]' >> "$GITHUB_OUTPUT"
+          # Git versions to test against:
+          #   2.34.1 — Ubuntu 22.04 LTS (Jammy), oldest supported LTS, ships 1:2.34.1-1ubuntu1
+          #   2.39.5 — Debian 12 (Bookworm), ships 1:2.39.5-0+deb12u3, reported failing in #1029
+          #   2.47.3 — Debian 13 (Trixie) + Alpine 3.21, ships 1:2.47.3-0+deb13u1, also failing in #1029
+          #   2.53.0 — Latest stable (2026-02-02), first version with cat-file --batch --filter= (added in 2.50.0)
+          echo 'git-versions=["2.34.1","2.39.5","2.47.3","2.53.0"]' >> "$GITHUB_OUTPUT"
+          # Universal-ctags versions to test against:
+          #   p5.9.20210829.0 — Ubuntu 22.04/24.04 LTS, ships 5.9.20210829.0-1 (2021-08-29 snapshot)
+          #   v6.2.1 — Latest stable, matches Homebrew and Alpine Edge
+          echo 'ctags-versions=["p5.9.20210829.0","v6.2.1"]' >> "$GITHUB_OUTPUT"
+
+  build-git:
+    needs: init
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(needs.init.outputs.runners) }}
+        git-version: ${{ fromJSON(needs.init.outputs.git-versions) }}
+    runs-on: ${{ matrix.runner }}
+    name: build-git (${{ matrix.runner }}, git ${{ matrix.git-version }})
+    steps:
+      - name: Cache git build
+        id: cache-git
+        uses: actions/cache@v5.0.4
+        with:
+          path: ~/git-install
+          key: git-${{ matrix.git-version }}-${{ matrix.runner }}
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make libssl-dev libcurl4-gnutls-dev libexpat1-dev libz-dev gettext
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install openssl curl expat gettext
+
+      - name: Build git from source
+        if: steps.cache-git.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL "https://www.kernel.org/pub/software/scm/git/git-${{ matrix.git-version }}.tar.gz" | tar xz
+          cd "git-${{ matrix.git-version }}"
+
+          NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+          # On macOS, Homebrew keg-only packages (openssl, curl, expat,
+          # gettext) are not linked into the default search paths.
+          # Git's config.mak.uname has partial Homebrew auto-detection:
+          #   - gettext: since git 2.27 (Intel), 2.44 (ARM)
+          #   - openssl, curl, expat: NOT auto-detected in any version
+          # Git's Makefile uses -include config.mak (silently skipped if
+          # absent), so we write paths there. Uses += to append to flags.
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            BREW_PREFIX=$(brew --prefix)
+            printf '%s\n' \
+              "CPPFLAGS += -I${BREW_PREFIX}/opt/openssl/include -I${BREW_PREFIX}/opt/curl/include -I${BREW_PREFIX}/opt/expat/include -I${BREW_PREFIX}/opt/gettext/include" \
+              "LDFLAGS += -L${BREW_PREFIX}/opt/openssl/lib -L${BREW_PREFIX}/opt/curl/lib -L${BREW_PREFIX}/opt/expat/lib -L${BREW_PREFIX}/opt/gettext/lib" \
+              > config.mak
           fi
 
-      - name: test
+          make prefix="$HOME/git-install" -j"$NPROC" all
+          make prefix="$HOME/git-install" install
+
+      - name: Verify git build
+        run: |
+          "$HOME/git-install/bin/git" --version
+          "$HOME/git-install/bin/git" --version | grep -q "${{ matrix.git-version }}"
+
+      - name: Upload git binaries
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: git-${{ matrix.git-version }}-${{ matrix.runner }}
+          path: ~/git-install
+          retention-days: 1
+
+  build-ctags:
+    needs: init
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(needs.init.outputs.runners) }}
+        ctags-version: ${{ fromJSON(needs.init.outputs.ctags-versions) }}
+    runs-on: ${{ matrix.runner }}
+    name: build-ctags (${{ matrix.runner }}, ctags ${{ matrix.ctags-version }})
+    steps:
+      - name: Cache ctags build
+        id: cache-ctags
+        uses: actions/cache@v5.0.4
+        with:
+          path: ~/ctags-install
+          key: ctags-${{ matrix.ctags-version }}-${{ matrix.runner }}
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make pkg-config autoconf automake libjansson-dev libyaml-dev libxml2-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install autoconf automake pkg-config jansson libyaml pcre2
+
+      - name: Build universal-ctags from source
+        if: steps.cache-ctags.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL "https://github.com/universal-ctags/ctags/archive/refs/tags/${{ matrix.ctags-version }}.tar.gz" | tar xz
+          cd ctags-*/
+
+          NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+          ./autogen.sh
+          ./configure --prefix="$HOME/ctags-install" --program-prefix=universal- --enable-json
+          make -j"$NPROC"
+          make install
+
+      - name: Verify ctags build
+        run: |
+          "$HOME/ctags-install/bin/universal-ctags" --version
+          "$HOME/ctags-install/bin/universal-ctags" --version | grep -q "Universal Ctags"
+
+      - name: Upload ctags binaries
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: ctags-${{ matrix.ctags-version }}-${{ matrix.runner }}
+          path: ~/ctags-install
+          retention-days: 1
+
+  test:
+    needs: [init, build-git, build-ctags]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(needs.init.outputs.runners) }}
+        git-version: ${{ fromJSON(needs.init.outputs.git-versions) }}
+        ctags-version: ${{ fromJSON(needs.init.outputs.ctags-versions) }}
+    runs-on: ${{ matrix.runner }}
+    name: test (${{ matrix.runner }}, git ${{ matrix.git-version }}, ctags ${{ matrix.ctags-version }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: go.mod
+
+      - name: Download git binaries
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: git-${{ matrix.git-version }}-${{ matrix.runner }}
+          path: ~/git-install
+
+      - name: Add git to PATH
+        run: |
+          chmod -R +x "$HOME/git-install/bin" "$HOME/git-install/libexec"
+          echo "$HOME/git-install/bin" >> "$GITHUB_PATH"
+
+      - name: Download ctags binaries
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: ctags-${{ matrix.ctags-version }}-${{ matrix.runner }}
+          path: ~/ctags-install
+
+      - name: Add ctags to PATH
+        run: |
+          chmod -R +x "$HOME/ctags-install/bin"
+          echo "$HOME/ctags-install/bin" >> "$GITHUB_PATH"
+
+      - name: Install ctags runtime dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libjansson4 libyaml-0-2 libxml2
+
+      - name: Install ctags runtime dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install jansson libyaml pcre2
+
+      - name: Print versions
+        run: |
+          go version
+          git --version
+          git --version | grep -q "${{ matrix.git-version }}"
+          universal-ctags --version
+
+      - name: Test
         run: go test ./...
 
   fuzz-test:
