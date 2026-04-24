@@ -124,7 +124,9 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 		return err
 	}
 
-	opts.RepositoryDescription.Name = filepath.Base(dir)
+	if opts.RepositoryDescription.Name == "" {
+		opts.RepositoryDescription.Name = filepath.Base(dir)
+	}
 	builder, err := index.NewBuilder(opts)
 	if err != nil {
 		return err
