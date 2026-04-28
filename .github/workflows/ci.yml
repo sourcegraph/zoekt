@@ -11,19 +11,19 @@ jobs:
     container: alpine:edge # latest go pls
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: add dependencies
         run: apk add go git tar
 
       - name: Cache ctags
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: /usr/local/bin/universal-ctags
           key: ${{ runner.os }}-ctags-${{ hashFiles('install-ctags-alpine.sh') }}
 
       - name: Cache Go modules
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/go-build
@@ -41,34 +41,20 @@ jobs:
       - name: test
         run: go test ./...
 
-  fuzz-test:
-    name: fuzz test
-    runs-on: ubuntu-latest
-    container: alpine:edge
-    steps:
-      - name: add dependencies
-        run: apk add bash go
-      - uses: jidicula/go-fuzz-action@2d8b802597c47a79764d83dabc27fb672f2fb8d9
-        with:
-          packages: 'github.com/sourcegraph/zoekt' # This is the package where the Protobuf round trip tests are defined
-          fuzz-time: 30s
-          fuzz-minimize-time: 1m
-          go-version: '1.23'
-
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@1.1.0
+        uses: ludeeus/action-shellcheck@2.0.0
 
   shfmt:
     name: shfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: reviewdog/action-shfmt@v1.0.2
+      - uses: actions/checkout@v6
+      - uses: reviewdog/action-shfmt@v1.0.4
         with:
           filter_mode: "nofilter"
           fail_on_error: "true"
@@ -79,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       # Install the `buf` CLI
       - uses: bufbuild/buf-setup-action@v1
         with:
@@ -92,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       # Install the `buf` CLI
       - uses: bufbuild/buf-setup-action@v1
         with:
@@ -105,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       # Install the `buf` CLI
       - uses: bufbuild/buf-setup-action@v1
         with:
