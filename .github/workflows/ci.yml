@@ -48,7 +48,7 @@ jobs:
     steps:
       - name: add dependencies
         run: apk add bash go
-      - uses: jidicula/go-fuzz-action@b9a9c3d15cfb668a2ddc569e6f270014fe6bada9 # v1.2.0
+      - uses: jidicula/go-fuzz-action@23f1a5dd8444188fc547d3143a70e1261ff7fce6 # main (post-v1.2.0, uses upload-artifact@v7)
         with:
           packages: 'github.com/sourcegraph/zoekt' # This is the package where the Protobuf round trip tests are defined
           fuzz-time: 30s
