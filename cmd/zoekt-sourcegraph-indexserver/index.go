@@ -93,6 +93,18 @@ type indexArgs struct {
 	// before attempting a delta build.
 	DeltaShardNumberFallbackThreshold uint64
 
+	// DeltaAdmissionMode controls experimental delta admission behavior in
+	// zoekt-git-index. Empty preserves current behavior.
+	DeltaAdmissionMode string
+
+	// ResolveHEADToBranch asks zoekt-git-index to store an attached HEAD as its
+	// short branch name instead of the literal HEAD alias.
+	ResolveHEADToBranch bool
+
+	// AllowDeltaBranchSetChange asks zoekt-git-index to allow delta builds when
+	// the requested branch names differ from existing shard metadata.
+	AllowDeltaBranchSetChange bool
+
 	// ShardMerging is true if we want zoekt-git-index to respect compound shards.
 	ShardMerging bool
 }
@@ -402,6 +414,15 @@ func indexRepo(ctx context.Context, gitDir string, sourcegraph Sourcegraph, o *i
 	if o.UseDelta {
 		args = append(args, "-delta")
 		args = append(args, "-delta_threshold", strconv.FormatUint(o.DeltaShardNumberFallbackThreshold, 10))
+		if o.DeltaAdmissionMode != "" {
+			args = append(args, "-delta_admission_mode", o.DeltaAdmissionMode)
+		}
+	}
+	if o.ResolveHEADToBranch {
+		args = append(args, "-resolve_head_to_branch")
+	}
+	if o.AllowDeltaBranchSetChange {
+		args = append(args, "-allow_delta_branch_set_change")
 	}
 
 	if len(o.LanguageMap) > 0 {

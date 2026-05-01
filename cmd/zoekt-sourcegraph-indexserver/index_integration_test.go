@@ -326,6 +326,40 @@ func gitIndexOptionsForTest(args *indexArgs, repoDir string) gitindex.Options {
 		BranchPrefix:                      "refs/heads/",
 		Branches:                          branches,
 		DeltaShardNumberFallbackThreshold: args.DeltaShardNumberFallbackThreshold,
+		DeltaAdmissionMode:                args.DeltaAdmissionMode,
+		ResolveHEADToBranch:               args.ResolveHEADToBranch,
+		AllowDeltaBranchSetChange:         args.AllowDeltaBranchSetChange,
+	}
+}
+
+func TestGitIndexOptionsForTestDoesNotResolveHEADAlias(t *testing.T) {
+	args := &indexArgs{
+		IndexOptions: IndexOptions{
+			Name: "test/repo",
+			Branches: []zoekt.RepositoryBranch{
+				{Name: "HEAD", Version: "deadbeef"},
+			},
+		},
+	}
+
+	opts := gitIndexOptionsForTest(args, "/tmp/repo.git")
+	if opts.ResolveHEADToBranch {
+		t.Fatal("Sourcegraph synthetic bare repos should not resolve HEAD inside gitindex")
+	}
+}
+
+func TestGitIndexOptionsForTestPassesExperimentalDeltaFlags(t *testing.T) {
+	args := &indexArgs{
+		ResolveHEADToBranch:       true,
+		AllowDeltaBranchSetChange: true,
+	}
+
+	opts := gitIndexOptionsForTest(args, "/tmp/repo.git")
+	if !opts.ResolveHEADToBranch {
+		t.Fatal("expected ResolveHEADToBranch to pass through")
+	}
+	if !opts.AllowDeltaBranchSetChange {
+		t.Fatal("expected AllowDeltaBranchSetChange to pass through")
 	}
 }
 

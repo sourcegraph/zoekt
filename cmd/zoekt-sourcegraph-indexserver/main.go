@@ -56,6 +56,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	indexserverv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/zoekt/indexserver/v1"
+	"github.com/sourcegraph/zoekt/gitindex"
 	"github.com/sourcegraph/zoekt/grpc/defaults"
 	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
@@ -227,6 +228,10 @@ type Server struct {
 	// deltaShardNumberFallbackThreshold is an upper limit on the number of preexisting shards that can exist
 	// before attempting a delta build.
 	deltaShardNumberFallbackThreshold uint64
+
+	// deltaAdmissionMode controls experimental delta admission behavior. Empty
+	// preserves current behavior.
+	deltaAdmissionMode string
 
 	// repositoriesSkipSymbolsCalculationAllowList is an allowlist for repositories that
 	// we skip calculating symbols metadata for during builds
@@ -626,6 +631,7 @@ func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, 
 	}
 
 	args.DeltaShardNumberFallbackThreshold = s.deltaShardNumberFallbackThreshold
+	args.DeltaAdmissionMode = s.deltaAdmissionMode
 
 	if _, ok := s.repositoriesSkipSymbolsCalculationAllowList[repositoryName]; ok {
 		tr.LazyPrintf("skipping symbols calculation")
@@ -1519,6 +1525,14 @@ func newServer(conf rootConfig) (*Server, error) {
 		debugLog.Printf("disabling delta build fallback behavior - delta builds will be performed regardless of the number of preexisting shards")
 	}
 
+	deltaAdmissionMode, err := deltaAdmissionModeFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	if deltaAdmissionMode != "" {
+		debugLog.Printf("using experimental delta admission mode %q", deltaAdmissionMode)
+	}
+
 	reposShouldSkipSymbolsCalculation := getEnvWithDefaultEmptySet("SKIP_SYMBOLS_REPOS_ALLOWLIST")
 	if len(reposShouldSkipSymbolsCalculation) > 0 {
 		debugLog.Printf("skipping generating symbols metadata for: %s", joinStringSet(reposShouldSkipSymbolsCalculation, ", "))
@@ -1580,6 +1594,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		shardMerging:                      !conf.disableShardMerging,
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
 		deltaShardNumberFallbackThreshold: deltaShardNumberFallbackThreshold,
+		deltaAdmissionMode:                deltaAdmissionMode,
 		repositoriesSkipSymbolsCalculationAllowList: reposShouldSkipSymbolsCalculation,
 		hostname: conf.hostname,
 		mergeOpts: mergeOpts{
@@ -1592,6 +1607,16 @@ func newServer(conf rootConfig) (*Server, error) {
 		timeout:        indexingTimeout,
 		indexSemaphore: make(chan struct{}, int(conf.indexConcurrency)),
 	}, err
+}
+
+func deltaAdmissionModeFromEnv() (string, error) {
+	mode := getEnvWithDefaultString("DELTA_ADMISSION_MODE", "")
+	switch mode {
+	case "", gitindex.DeltaAdmissionModeStatsV1:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid DELTA_ADMISSION_MODE %q", mode)
+	}
 }
 
 func newGRPCServer(logger sglog.Logger, s *Server, additionalOpts ...grpc.ServerOption) *grpc.Server {

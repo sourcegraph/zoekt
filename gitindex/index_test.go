@@ -17,6 +17,7 @@ package gitindex
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
@@ -38,6 +39,8 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
 )
+
+const initGitWorktreeRepoName = "github.com/sourcegraph/zoekt"
 
 func TestIndexEmptyRepo(t *testing.T) {
 	t.Parallel()
@@ -169,6 +172,606 @@ func TestIndexGitRepo_Worktree(t *testing.T) {
 
 	if len(results.Files) != 1 {
 		t.Fatalf("got search result %v, want 1 file", results.Files)
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_Worktree(t *testing.T) {
+	t.Parallel()
+
+	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	indexDir := t.TempDir()
+
+	opts := Options{
+		RepoDir:             worktreeDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo(worktree): %v", err)
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, initGitWorktreeRepoName)
+	if got, want := repositoryBranchNames(repo.Branches), []string{"worktree-branch"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_DisabledPreservesHEAD(t *testing.T) {
+	t.Parallel()
+
+	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	indexDir := t.TempDir()
+
+	opts := Options{
+		RepoDir:             worktreeDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: false,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo(worktree): %v", err)
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, initGitWorktreeRepoName)
+	if got, want := repositoryBranchNames(repo.Branches), []string{"HEAD"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_DetachedHEADPreservesHEAD(t *testing.T) {
+	t.Parallel()
+
+	repoDir, _ := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	runGit(t, repoDir, "checkout", "--detach")
+	indexDir := t.TempDir()
+
+	opts := Options{
+		RepoDir:             repoDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo(detached HEAD): %v", err)
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, initGitWorktreeRepoName)
+	if got, want := repositoryBranchNames(repo.Branches), []string{"HEAD"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_BareRepo(t *testing.T) {
+	t.Parallel()
+
+	repoDir, _ := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	bareDir := cloneBareRepo(t, repoDir)
+	indexDir := t.TempDir()
+
+	opts := Options{
+		RepoDir:             bareDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo(bare HEAD): %v", err)
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	if got, want := repositoryBranchNames(repo.Branches), []string{"main"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_DedupesResolvedBranch(t *testing.T) {
+	t.Parallel()
+
+	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+
+	for _, tc := range []struct {
+		name     string
+		branches []string
+	}{
+		{name: "explicit branch", branches: []string{"HEAD", "worktree-branch"}},
+		{name: "wildcard branch", branches: []string{"HEAD", "worktree-*"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			indexDir := t.TempDir()
+			opts := Options{
+				RepoDir:             worktreeDir,
+				Branches:            tc.branches,
+				ResolveHEADToBranch: true,
+				BuildOptions: index.Options{
+					RepositoryDescription: zoekt.Repository{Name: "repo"},
+					IndexDir:              indexDir,
+				},
+			}
+
+			if _, err := IndexGitRepo(opts); err != nil {
+				t.Fatalf("IndexGitRepo(%v): %v", tc.branches, err)
+			}
+
+			repo := indexedRepositoryForTest(t, indexDir, initGitWorktreeRepoName)
+			if got, want := repositoryBranchNames(repo.Branches), []string{"worktree-branch"}; !cmp.Equal(got, want) {
+				t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+			}
+		})
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_MigratesLegacyHEADOnIncremental(t *testing.T) {
+	t.Parallel()
+
+	_, worktreeDir := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	indexDir := t.TempDir()
+
+	legacyOpts := Options{
+		RepoDir:             worktreeDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: false,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+	if updated, err := IndexGitRepo(legacyOpts); err != nil {
+		t.Fatalf("legacy IndexGitRepo: %v", err)
+	} else if !updated {
+		t.Fatal("legacy IndexGitRepo unexpectedly skipped indexing")
+	}
+
+	resolvedOpts := legacyOpts
+	resolvedOpts.Incremental = true
+	resolvedOpts.ResolveHEADToBranch = true
+
+	if updated, err := IndexGitRepo(resolvedOpts); err != nil {
+		t.Fatalf("resolved IndexGitRepo: %v", err)
+	} else if !updated {
+		t.Fatal("resolved IndexGitRepo should rebuild when legacy HEAD metadata resolves to a concrete branch")
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, initGitWorktreeRepoName)
+	if got, want := repositoryBranchNames(repo.Branches), []string{"worktree-branch"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_DeltaHandlesCheckoutBranchChanges(t *testing.T) {
+	t.Parallel()
+
+	repositoryDir := t.TempDir()
+	runGit(t, repositoryDir, "init", "-b", "feature-a")
+
+	if err := os.WriteFile(filepath.Join(repositoryDir, "branch.txt"), []byte("feature-a-needle\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile feature-a: %v", err)
+	}
+	runGit(t, repositoryDir, "add", "branch.txt")
+	runGit(t, repositoryDir, "commit", "-m", "feature-a")
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:                   repositoryDir,
+		Branches:                  []string{"HEAD"},
+		ResolveHEADToBranch:       true,
+		AllowDeltaBranchSetChange: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("initial IndexGitRepo: %v", err)
+	}
+
+	runGit(t, repositoryDir, "checkout", "-b", "feature-b")
+	if err := os.WriteFile(filepath.Join(repositoryDir, "branch.txt"), []byte("feature-b-needle\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile feature-b: %v", err)
+	}
+	runGit(t, repositoryDir, "add", "branch.txt")
+	runGit(t, repositoryDir, "commit", "-m", "feature-b")
+
+	deltaOpts := opts
+	deltaOpts.BuildOptions.IsDelta = true
+
+	deltaBuildCalled := false
+	prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+		deltaBuildCalled = true
+		return prepareDeltaBuild(options, repository)
+	}
+
+	normalBuildCalled := false
+	prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
+		normalBuildCalled = true
+		return prepareNormalBuild(options, repository)
+	}
+
+	if _, err := indexGitRepo(deltaOpts, gitIndexConfig{
+		prepareDeltaBuild:  prepareDeltaSpy,
+		prepareNormalBuild: prepareNormalSpy,
+	}); err != nil {
+		t.Fatalf("delta IndexGitRepo: %v", err)
+	}
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted")
+	}
+	if normalBuildCalled {
+		t.Fatal("expected checkout branch change to stay on the delta path")
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	if got, want := repositoryBranchNames(repo.Branches), []string{"feature-b"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+
+	if got := searchFileNamesForTest(t, indexDir, "feature-a-needle"); len(got) != 0 {
+		t.Fatalf("feature-a content should not remain indexed after delta branch switch, got %v", got)
+	}
+	if got, want := searchFileNamesForTest(t, indexDir, "feature-b-needle"), []string{"branch.txt"}; !cmp.Equal(got, want) {
+		t.Fatalf("feature-b search mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestIndexGitRepo_ResolveHEADToBranch_LegacyHEADDeltaMigrationThenDeltaNoop(t *testing.T) {
+	t.Parallel()
+
+	repositoryDir := t.TempDir()
+	runGit(t, repositoryDir, "init", "-b", "feature-a")
+
+	if err := os.WriteFile(filepath.Join(repositoryDir, "branch.txt"), []byte("feature-a-needle\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile feature-a: %v", err)
+	}
+	runGit(t, repositoryDir, "add", "branch.txt")
+	runGit(t, repositoryDir, "commit", "-m", "feature-a")
+
+	indexDir := t.TempDir()
+	legacyOpts := Options{
+		RepoDir:             repositoryDir,
+		Branches:            []string{"HEAD"},
+		ResolveHEADToBranch: false,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(legacyOpts); err != nil {
+		t.Fatalf("legacy IndexGitRepo: %v", err)
+	}
+
+	runWithSpies := func(t *testing.T, opts Options) (deltaBuildCalled, normalBuildCalled bool) {
+		t.Helper()
+
+		prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+			deltaBuildCalled = true
+			return prepareDeltaBuild(options, repository)
+		}
+
+		prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
+			normalBuildCalled = true
+			return prepareNormalBuild(options, repository)
+		}
+
+		if _, err := indexGitRepo(opts, gitIndexConfig{
+			prepareDeltaBuild:  prepareDeltaSpy,
+			prepareNormalBuild: prepareNormalSpy,
+		}); err != nil {
+			t.Fatalf("IndexGitRepo: %v", err)
+		}
+
+		return deltaBuildCalled, normalBuildCalled
+	}
+
+	resolvedDeltaOpts := legacyOpts
+	resolvedDeltaOpts.ResolveHEADToBranch = true
+	resolvedDeltaOpts.AllowDeltaBranchSetChange = true
+	resolvedDeltaOpts.BuildOptions.IsDelta = true
+
+	deltaBuildCalled, normalBuildCalled := runWithSpies(t, resolvedDeltaOpts)
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted for legacy HEAD migration")
+	}
+	if normalBuildCalled {
+		t.Fatal("expected legacy HEAD metadata migration to stay on the delta path")
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repo")
+	if got, want := repositoryBranchNames(repo.Branches), []string{"feature-a"}; !cmp.Equal(got, want) {
+		t.Fatalf("indexed branch names mismatch after migration (-want +got):\n%s", cmp.Diff(want, got))
+	}
+
+	deltaBuildCalled, normalBuildCalled = runWithSpies(t, resolvedDeltaOpts)
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted after migration")
+	}
+	if normalBuildCalled {
+		t.Fatal("expected unchanged resolved HEAD branch to stay on the delta path after migration")
+	}
+}
+
+func TestIndexGitRepo_DeltaAdmissionStatsV1WritesForwardAndUsesDeltaDebt(t *testing.T) {
+	t.Parallel()
+
+	repositoryDir := t.TempDir()
+	indexDir := t.TempDir()
+	runGit(t, repositoryDir, "init", "-b", "main")
+	writeAndCommitFile(t, repositoryDir, "stable.txt", "stable\n", "stable")
+	writeAndCommitFile(t, repositoryDir, "changing.txt", "alpha\n", "alpha")
+
+	opts := Options{
+		RepoDir:            filepath.Join(repositoryDir, ".git"),
+		Branches:           []string{"main"},
+		DeltaAdmissionMode: DeltaAdmissionModeStatsV1,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repository"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("initial IndexGitRepo: %v", err)
+	}
+	repo := indexedRepositoryForTest(t, indexDir, "repository")
+	assertDeltaStats(t, repo, func(stats *zoekt.RepositoryDeltaStats) {
+		if stats.DeltaLayerCount != 0 {
+			t.Fatalf("initial full build DeltaLayerCount = %d, want 0", stats.DeltaLayerCount)
+		}
+		if stats.TombstonePathCount != 0 {
+			t.Fatalf("initial full build TombstonePathCount = %d, want 0", stats.TombstonePathCount)
+		}
+		if stats.LiveDocumentCount != 2 || stats.PhysicalDocumentCount != 2 {
+			t.Fatalf("initial doc counts = live %d physical %d, want 2/2", stats.LiveDocumentCount, stats.PhysicalDocumentCount)
+		}
+		if stats.LiveIndexedBytes == 0 || stats.PhysicalIndexedBytes != stats.LiveIndexedBytes {
+			t.Fatalf("initial bytes = live %d physical %d, want nonzero/equal", stats.LiveIndexedBytes, stats.PhysicalIndexedBytes)
+		}
+	})
+
+	writeAndCommitFile(t, repositoryDir, "changing.txt", "beta\n", "beta")
+	logPath := filepath.Join(indexDir, "delta-admission.jsonl")
+	deltaOpts := opts
+	deltaOpts.BuildOptions.IsDelta = true
+	deltaOpts.DeltaAdmissionLogPath = logPath
+	deltaOpts.DeltaAdmissionThresholds = DeltaAdmissionThresholds{
+		MaxDeltaIndexedBytesRatio: 10,
+		MaxPhysicalLiveBytesRatio: 10,
+		MaxTombstonePathRatio:     10,
+	}
+	deltaBuildCalled, normalBuildCalled := indexGitRepoWithPrepareSpies(t, deltaOpts)
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted")
+	}
+	if normalBuildCalled {
+		t.Fatal("expected stats-v1 to accept a small first delta")
+	}
+
+	decisions := readDeltaAdmissionLogEntries(t, logPath)
+	if len(decisions) != 1 {
+		t.Fatalf("got %d admission log entries, want 1", len(decisions))
+	}
+	if !decisions[0].Accepted {
+		t.Fatalf("first decision accepted = false, reason %q", decisions[0].Reason)
+	}
+	if decisions[0].CandidateDocumentCount != 1 {
+		t.Fatalf("candidate document count = %d, want 1", decisions[0].CandidateDocumentCount)
+	}
+	if decisions[0].WriteBytesRatio == nil || *decisions[0].WriteBytesRatio <= 0 {
+		t.Fatalf("write bytes ratio = %v, want positive", decisions[0].WriteBytesRatio)
+	}
+
+	repo = indexedRepositoryForTest(t, indexDir, "repository")
+	assertDeltaStats(t, repo, func(stats *zoekt.RepositoryDeltaStats) {
+		if stats.DeltaLayerCount != 1 {
+			t.Fatalf("first delta DeltaLayerCount = %d, want 1", stats.DeltaLayerCount)
+		}
+		if stats.TombstonePathCount != 1 {
+			t.Fatalf("first delta TombstonePathCount = %d, want 1", stats.TombstonePathCount)
+		}
+		if stats.LiveDocumentCount != 2 {
+			t.Fatalf("first delta LiveDocumentCount = %d, want 2", stats.LiveDocumentCount)
+		}
+		if stats.PhysicalDocumentCount <= stats.LiveDocumentCount {
+			t.Fatalf("first delta should record physical document debt, got physical %d live %d", stats.PhysicalDocumentCount, stats.LiveDocumentCount)
+		}
+		if stats.PhysicalIndexedBytes <= stats.LiveIndexedBytes {
+			t.Fatalf("first delta should record physical byte debt, got physical %d live %d", stats.PhysicalIndexedBytes, stats.LiveIndexedBytes)
+		}
+	})
+	assertLiveDeltaStatsMatchFullBuild(t, opts, repo.DeltaStats)
+
+	writeAndCommitFile(t, repositoryDir, "changing.txt", "gamma\n", "gamma")
+	deltaBuildCalled, normalBuildCalled = indexGitRepoWithPrepareSpies(t, deltaOpts)
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted")
+	}
+	if normalBuildCalled {
+		t.Fatal("expected stats-v1 to accept another small delta even though layer count increases")
+	}
+
+	decisions = readDeltaAdmissionLogEntries(t, logPath)
+	if len(decisions) != 2 {
+		t.Fatalf("got %d admission log entries, want 2", len(decisions))
+	}
+	if !decisions[1].Accepted {
+		t.Fatalf("second decision accepted = false, reason %q", decisions[1].Reason)
+	}
+
+	repo = indexedRepositoryForTest(t, indexDir, "repository")
+	assertDeltaStats(t, repo, func(stats *zoekt.RepositoryDeltaStats) {
+		if stats.DeltaLayerCount != 2 {
+			t.Fatalf("second delta DeltaLayerCount = %d, want 2", stats.DeltaLayerCount)
+		}
+		if stats.PhysicalIndexedBytes <= stats.LiveIndexedBytes {
+			t.Fatalf("second delta should preserve physical byte debt, got physical %d live %d", stats.PhysicalIndexedBytes, stats.LiveIndexedBytes)
+		}
+	})
+}
+
+func TestIndexGitRepo_DeltaAdmissionStatsV1BackfillsOldIndexStats(t *testing.T) {
+	t.Parallel()
+
+	repositoryDir := t.TempDir()
+	indexDir := t.TempDir()
+	runGit(t, repositoryDir, "init", "-b", "main")
+	writeAndCommitFile(t, repositoryDir, "one.txt", "one\n", "one")
+	writeAndCommitFile(t, repositoryDir, "two.txt", "two\n", "two")
+
+	opts := Options{
+		RepoDir:  filepath.Join(repositoryDir, ".git"),
+		Branches: []string{"main"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repository"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("initial legacy IndexGitRepo: %v", err)
+	}
+	if repo := indexedRepositoryForTest(t, indexDir, "repository"); repo.DeltaStats != nil {
+		t.Fatalf("empty delta admission mode should not write DeltaStats, got %+v", repo.DeltaStats)
+	}
+
+	writeAndCommitFile(t, repositoryDir, "one.txt", "one updated\n", "one updated")
+	deltaOpts := opts
+	deltaOpts.BuildOptions.IsDelta = true
+	deltaOpts.DeltaAdmissionMode = DeltaAdmissionModeStatsV1
+	deltaOpts.DeltaAdmissionThresholds = DeltaAdmissionThresholds{
+		MaxDeltaIndexedBytesRatio: 10,
+		MaxPhysicalLiveBytesRatio: 10,
+		MaxTombstonePathRatio:     10,
+	}
+
+	deltaBuildCalled, normalBuildCalled := indexGitRepoWithPrepareSpies(t, deltaOpts)
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted")
+	}
+	if normalBuildCalled {
+		t.Fatal("expected stats-v1 to use manual old-index stats and accept the small delta")
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repository")
+	assertDeltaStats(t, repo, func(stats *zoekt.RepositoryDeltaStats) {
+		if stats.LiveDocumentCount != 2 {
+			t.Fatalf("LiveDocumentCount = %d, want 2", stats.LiveDocumentCount)
+		}
+		if stats.PhysicalDocumentCount <= stats.LiveDocumentCount {
+			t.Fatalf("expected physical document debt after delta, got physical %d live %d", stats.PhysicalDocumentCount, stats.LiveDocumentCount)
+		}
+		if stats.DeltaLayerCount != 1 {
+			t.Fatalf("DeltaLayerCount = %d, want 1", stats.DeltaLayerCount)
+		}
+	})
+}
+
+func TestIndexGitRepo_DeltaAdmissionStatsV1FallsBackOnWriteMass(t *testing.T) {
+	t.Parallel()
+
+	repositoryDir := t.TempDir()
+	indexDir := t.TempDir()
+	runGit(t, repositoryDir, "init", "-b", "main")
+	writeAndCommitFile(t, repositoryDir, "large.txt", strings.Repeat("a", 1024), "large")
+	writeAndCommitFile(t, repositoryDir, "small.txt", "small\n", "small")
+
+	opts := Options{
+		RepoDir:            filepath.Join(repositoryDir, ".git"),
+		Branches:           []string{"main"},
+		DeltaAdmissionMode: DeltaAdmissionModeStatsV1,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repository"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("initial IndexGitRepo: %v", err)
+	}
+
+	writeAndCommitFile(t, repositoryDir, "large.txt", strings.Repeat("b", 1024), "large updated")
+	deltaOpts := opts
+	deltaOpts.BuildOptions.IsDelta = true
+	deltaOpts.DeltaAdmissionThresholds = DeltaAdmissionThresholds{
+		MaxDeltaIndexedBytesRatio: 0.01,
+		MaxPhysicalLiveBytesRatio: 10,
+		MaxTombstonePathRatio:     10,
+	}
+
+	deltaBuildCalled, normalBuildCalled := indexGitRepoWithPrepareSpies(t, deltaOpts)
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted")
+	}
+	if !normalBuildCalled {
+		t.Fatal("expected stats-v1 to fall back when candidate write mass exceeds threshold")
+	}
+
+	repo := indexedRepositoryForTest(t, indexDir, "repository")
+	assertDeltaStats(t, repo, func(stats *zoekt.RepositoryDeltaStats) {
+		if stats.DeltaLayerCount != 0 {
+			t.Fatalf("fallback normal rebuild DeltaLayerCount = %d, want 0", stats.DeltaLayerCount)
+		}
+		if stats.PhysicalIndexedBytes != stats.LiveIndexedBytes {
+			t.Fatalf("fallback normal rebuild bytes = physical %d live %d, want equal", stats.PhysicalIndexedBytes, stats.LiveIndexedBytes)
+		}
+	})
+}
+
+func TestIndexGitRepo_DeltaAdmissionEmptyModePreservesCurrentRules(t *testing.T) {
+	t.Parallel()
+
+	repositoryDir := t.TempDir()
+	indexDir := t.TempDir()
+	runGit(t, repositoryDir, "init", "-b", "main")
+	writeAndCommitFile(t, repositoryDir, "large.txt", strings.Repeat("a", 1024), "large")
+
+	opts := Options{
+		RepoDir:  filepath.Join(repositoryDir, ".git"),
+		Branches: []string{"main"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repository"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("initial IndexGitRepo: %v", err)
+	}
+
+	writeAndCommitFile(t, repositoryDir, "large.txt", strings.Repeat("b", 1024), "large updated")
+	deltaOpts := opts
+	deltaOpts.BuildOptions.IsDelta = true
+	deltaOpts.DeltaAdmissionThresholds = DeltaAdmissionThresholds{
+		MaxDeltaIndexedBytesRatio: 0.01,
+	}
+	deltaBuildCalled, normalBuildCalled := indexGitRepoWithPrepareSpies(t, deltaOpts)
+	if !deltaBuildCalled {
+		t.Fatal("expected delta build to be attempted")
+	}
+	if normalBuildCalled {
+		t.Fatal("empty delta admission mode should preserve current delta behavior and ignore stats thresholds")
+	}
+	if repo := indexedRepositoryForTest(t, indexDir, "repository"); repo.DeltaStats != nil {
+		t.Fatalf("empty delta admission mode should not write DeltaStats, got %+v", repo.DeltaStats)
 	}
 }
 
@@ -338,8 +941,152 @@ func cloneBareRepo(t *testing.T, repoDir string) string {
 
 	bareDir := filepath.Join(t.TempDir(), "repo.git")
 	runGit(t, filepath.Dir(repoDir), "clone", "--bare", repoDir, bareDir)
+	runGit(t, bareDir, "config", "zoekt.name", "repo")
 
 	return bareDir
+}
+
+func indexedRepositoryForTest(t *testing.T, indexDir, repoName string) *zoekt.Repository {
+	t.Helper()
+
+	opts := index.Options{
+		IndexDir: indexDir,
+		RepositoryDescription: zoekt.Repository{
+			Name: repoName,
+		},
+	}
+
+	repo, _, ok, err := opts.FindRepositoryMetadata()
+	if err != nil {
+		t.Fatalf("FindRepositoryMetadata: %v", err)
+	}
+	if !ok {
+		t.Fatalf("FindRepositoryMetadata: repository %q not found", repoName)
+	}
+
+	return repo
+}
+
+func repositoryBranchNames(branches []zoekt.RepositoryBranch) []string {
+	names := make([]string, 0, len(branches))
+	for _, branch := range branches {
+		names = append(names, branch.Name)
+	}
+	return names
+}
+
+func searchFileNamesForTest(t *testing.T, indexDir, pattern string) []string {
+	t.Helper()
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatalf("NewDirectorySearcher(%s): %v", indexDir, err)
+	}
+	defer searcher.Close()
+
+	result, err := searcher.Search(context.Background(), &query.Substring{Pattern: pattern}, &zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatalf("Search(%q): %v", pattern, err)
+	}
+
+	var names []string
+	for _, file := range result.Files {
+		names = append(names, file.FileName)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func writeAndCommitFile(t *testing.T, repoDir, name, content, message string) {
+	t.Helper()
+
+	file := filepath.Join(repoDir, name)
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(file), err)
+	}
+	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", file, err)
+	}
+	runGit(t, repoDir, "add", "-A")
+	runGit(t, repoDir, "commit", "-m", message)
+}
+
+func indexGitRepoWithPrepareSpies(t *testing.T, opts Options) (deltaBuildCalled, normalBuildCalled bool) {
+	t.Helper()
+
+	prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+		deltaBuildCalled = true
+		return prepareDeltaBuild(options, repository)
+	}
+	prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
+		normalBuildCalled = true
+		return prepareNormalBuild(options, repository)
+	}
+
+	if _, err := indexGitRepo(opts, gitIndexConfig{
+		prepareDeltaBuild:  prepareDeltaSpy,
+		prepareNormalBuild: prepareNormalSpy,
+	}); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	return deltaBuildCalled, normalBuildCalled
+}
+
+func assertDeltaStats(t *testing.T, repo *zoekt.Repository, check func(*zoekt.RepositoryDeltaStats)) {
+	t.Helper()
+	if repo.DeltaStats == nil {
+		t.Fatal("DeltaStats is nil")
+	}
+	check(repo.DeltaStats)
+}
+
+func assertLiveDeltaStatsMatchFullBuild(t *testing.T, opts Options, deltaStats *zoekt.RepositoryDeltaStats) {
+	t.Helper()
+
+	cleanIndexDir := t.TempDir()
+	cleanOpts := opts
+	cleanOpts.BuildOptions.IndexDir = cleanIndexDir
+	cleanOpts.BuildOptions.IsDelta = false
+	cleanOpts.BuildOptions.RepositoryDescription.DeltaStats = nil
+	if _, err := IndexGitRepo(cleanOpts); err != nil {
+		t.Fatalf("clean IndexGitRepo: %v", err)
+	}
+
+	cleanRepo := indexedRepositoryForTest(t, cleanIndexDir, cleanOpts.BuildOptions.RepositoryDescription.Name)
+	assertDeltaStats(t, cleanRepo, func(cleanStats *zoekt.RepositoryDeltaStats) {
+		if deltaStats.LiveIndexedBytes != cleanStats.LiveIndexedBytes {
+			t.Fatalf("LiveIndexedBytes = %d, want clean full build %d", deltaStats.LiveIndexedBytes, cleanStats.LiveIndexedBytes)
+		}
+		if deltaStats.LiveDocumentCount != cleanStats.LiveDocumentCount {
+			t.Fatalf("LiveDocumentCount = %d, want clean full build %d", deltaStats.LiveDocumentCount, cleanStats.LiveDocumentCount)
+		}
+		if deltaStats.LivePathCount != cleanStats.LivePathCount {
+			t.Fatalf("LivePathCount = %d, want clean full build %d", deltaStats.LivePathCount, cleanStats.LivePathCount)
+		}
+	})
+}
+
+func readDeltaAdmissionLogEntries(t *testing.T, path string) []deltaAdmissionDecisionLogEntry {
+	t.Helper()
+
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", path, err)
+	}
+
+	var entries []deltaAdmissionDecisionLogEntry
+	for _, line := range strings.Split(strings.TrimSpace(string(blob)), "\n") {
+		if line == "" {
+			continue
+		}
+		var entry deltaAdmissionDecisionLogEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("Unmarshal(%q): %v", line, err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
 }
 
 func TestIndexDeltaBasic(t *testing.T) {
