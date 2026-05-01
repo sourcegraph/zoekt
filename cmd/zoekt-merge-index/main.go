@@ -15,6 +15,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -72,6 +73,10 @@ func merge(dstDir string, names []string) (string, error) {
 }
 
 func mergeCmd(paths []string) (string, error) {
+	if len(paths) == 0 {
+		return "", fmt.Errorf("merge requires at least one shard path")
+	}
+
 	if paths[0] == "-" {
 		paths = []string{}
 		scanner := bufio.NewScanner(os.Stdin)
@@ -82,6 +87,9 @@ func mergeCmd(paths []string) (string, error) {
 			return "", err
 		}
 		log.Printf("merging %d paths from stdin", len(paths))
+		if len(paths) == 0 {
+			return "", fmt.Errorf("merge requires at least one shard path")
+		}
 	}
 
 	return merge(filepath.Dir(paths[0]), paths)
@@ -92,18 +100,32 @@ func explodeCmd(path string) error {
 }
 
 func main() {
-	switch subCommand := os.Args[1]; subCommand {
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s <command> [args]\n\n", os.Args[0])
+		fmt.Fprintln(flag.CommandLine.Output(), "Commands:")
+		fmt.Fprintln(flag.CommandLine.Output(), "  merge <shard> [<shard>...]")
+		fmt.Fprintln(flag.CommandLine.Output(), "  merge -")
+		fmt.Fprintln(flag.CommandLine.Output(), "  explode <compound-shard>")
+	}
+	flag.Parse()
+
+	switch subCommand := flag.Arg(0); subCommand {
 	case "merge":
-		compoundShardPath, err := mergeCmd(os.Args[2:])
+		compoundShardPath, err := mergeCmd(flag.Args()[1:])
 		if err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println(compoundShardPath)
 	case "explode":
-		if err := explodeCmd(os.Args[2]); err != nil {
+		if flag.NArg() != 2 {
+			log.Fatal("explode requires exactly one compound shard path")
+		}
+		if err := explodeCmd(flag.Arg(1)); err != nil {
 			log.Fatal(err)
 		}
 	default:
-		log.Fatalf("unknown subcommand %s", subCommand)
+		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", subCommand)
+		flag.Usage()
+		os.Exit(2)
 	}
 }
