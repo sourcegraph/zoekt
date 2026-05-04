@@ -546,7 +546,7 @@ func (b *ShardBuilder) Add(doc Document) error {
 	// Skip binary check if already computed (e.g., by Builder.Add
 	// which calls DocChecker.Check before docs reach buildShard).
 	if doc.Category == FileCategoryMissing {
-		if index := bytes.IndexByte(doc.Content, 0); index > 0 {
+		if index := bytes.IndexByte(doc.Content, 0); index >= 0 {
 			doc.SkipReason = SkipReasonBinary
 		}
 	}
@@ -686,7 +686,7 @@ func (t *DocChecker) Check(content []byte, maxTrigramCount int, allowLargeFile b
 		return SkipReasonTooSmall
 	}
 
-	if index := bytes.IndexByte(content, 0); index > 0 {
+	if index := bytes.IndexByte(content, 0); index >= 0 {
 		return SkipReasonBinary
 	}
 

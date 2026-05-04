@@ -3409,7 +3409,7 @@ func TestDocChecker(t *testing.T) {
 			t.Errorf("Check(%q): %v", text, skip)
 		}
 	}
-	for _, text := range []string{"zero\x00byte", "xx", "0123456789abcdefghi"} {
+	for _, text := range []string{"zero\x00byte", "\x00starts with null byte", "xx", "0123456789abcdefghi"} {
 		if skip := docChecker.Check([]byte(text), 15, false); skip == SkipReasonNone {
 			t.Errorf("Check(%q) succeeded", text)
 		}
@@ -3421,7 +3421,7 @@ func TestDocChecker(t *testing.T) {
 			t.Errorf("Check(%q): %v", text, skip)
 		}
 	}
-	for _, text := range []string{"zero\x00byte", "xx"} {
+	for _, text := range []string{"zero\x00byte", "\x00starts with null byte", "xx"} {
 		if skip := docChecker.Check([]byte(text), 15, true); skip == SkipReasonNone {
 			t.Errorf("Check(%q) succeeded", text)
 		}
