@@ -143,6 +143,18 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 		repo.CommitURLTemplate = urlJoinPath("commits", varVersion)
 		repo.FileURLTemplate = urlJoinPath(varPath) + "?at={{.Version}}"
 		repo.LineFragmentTemplate = "#{{.LineNumber}}"
+	case "bitbucket-cloud":
+		// https://bitbucket.org/<workspace>/<repo_slug>/commits/<version>
+		// https://bitbucket.org/<workspace>/<repo_slug>/src/<version>/<path>
+		repo.CommitURLTemplate = urlJoinPath("commits", varVersion)
+		repo.FileURLTemplate = urlJoinPath("src", varVersion, varPath)
+		repo.LineFragmentTemplate = "#{{.LineNumber}}"
+	case "azuredevops":
+		// https://dev.azure.com/<organization>/<project>/_git/<repo>/commit/<version>
+		// https://dev.azure.com/<organization>/<project>/_git/<repo>?path=/<path>&version=GC<version>
+		repo.CommitURLTemplate = urlJoinPath("commit", varVersion)
+		repo.FileURLTemplate = urlJoinPath() + "?path=/{{.Path}}&version=GC{{.Version}}&_a=contents"
+		repo.LineFragmentTemplate = "&line={{.LineNumber}}&lineEnd={{.LineNumber}}&lineStartColumn=1&lineEndColumn=200"
 	case "gitlab":
 		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/commit/b152c864303dae0e55377a1e2c53c9592380ffed
 		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/blob/aad04155b3f6fc50ede88aedaee7fc624d481149/files/gitlab-config-template/gitlab.rb.template

@@ -1098,6 +1098,16 @@ func TestSetTemplates(t *testing.T) {
 		file:   "https://example.com/repo/name/dir/name.txt?at=VERSION",
 		line:   "#10",
 	}, {
+		typ:    "bitbucket-cloud",
+		commit: "https://example.com/repo/name/commits/VERSION",
+		file:   "https://example.com/repo/name/src/VERSION/dir/name.txt",
+		line:   "#10",
+	}, {
+		typ:    "azuredevops",
+		commit: "https://example.com/repo/name/commit/VERSION",
+		file:   "https://example.com/repo/name?path=/dir/name.txt&version=GCVERSION&_a=contents",
+		line:   "&line=10&lineEnd=10&lineStartColumn=1&lineEndColumn=200",
+	}, {
 		typ:    "gitlab",
 		commit: "https://example.com/repo/name/-/commit/VERSION",
 		file:   "https://example.com/repo/name/-/blob/VERSION/dir/name.txt",
