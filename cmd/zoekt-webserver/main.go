@@ -308,6 +308,7 @@ func main() {
 		Handler: handler,
 	}
 
+	serveErrCh := make(chan error, 1)
 	go func() {
 		sglog.Scoped("server").Info("starting server", sglog.Stringp("address", listen), sglog.Stringp("unixSocket", listenUnix))
 		err := serveHTTP(srv, *listenUnix, *sslCert, *sslKey)
@@ -316,6 +317,7 @@ func main() {
 			// Fatal otherwise shutdownOnSignal will block
 			log.Fatalf("ListenAndServe: %v", err)
 		}
+		serveErrCh <- err
 	}()
 
 	if s.RPC {
@@ -330,6 +332,7 @@ func main() {
 			log.Fatalf("http.Server.Shutdown: %v", err)
 		}
 	}
+	<-serveErrCh
 }
 
 func serveHTTP(srv *http.Server, unixSocket, sslCert, sslKey string) error {
