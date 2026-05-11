@@ -131,6 +131,7 @@ func main() {
 	logRefresh := flag.Duration("log_refresh", 24*time.Hour, "if using --log_dir, start writing a new file this often.")
 
 	listen := flag.String("listen", ":6070", "listen on this address.")
+	listenUnix := flag.String("listen_unix", "", "listen on this Unix socket path instead of TCP")
 	indexDir := flag.String("index", index.DefaultDir, "set index directory to use")
 	html := flag.Bool("html", true, "enable HTML interface")
 	enableRPC := flag.Bool("rpc", false, "enable go/net RPC")
@@ -278,10 +279,18 @@ func main() {
 	if *sslCert != "" || *sslKey != "" {
 		watchdogAddr = "https://" + *listen
 	}
+	watchdogUnixSocket := ""
+	if *listenUnix != "" {
+		watchdogUnixSocket = *listenUnix
+		watchdogAddr = "http://unix"
+		if *sslCert != "" || *sslKey != "" {
+			watchdogAddr = "https://unix"
+		}
+	}
 	watchdogAddr += "/healthz"
 
 	if watchdogErrCount > 0 && watchdogTick > 0 {
-		go watchdog(watchdogTick, watchdogErrCount, watchdogAddr)
+		go watchdog(watchdogTick, watchdogErrCount, watchdogAddr, watchdogUnixSocket)
 	} else {
 		log.Println("watchdog disabled")
 	}
@@ -300,13 +309,8 @@ func main() {
 	}
 
 	go func() {
-		sglog.Scoped("server").Info("starting server", sglog.Stringp("address", listen))
-		var err error
-		if *sslCert != "" || *sslKey != "" {
-			err = srv.ListenAndServeTLS(*sslCert, *sslKey)
-		} else {
-			err = srv.ListenAndServe()
-		}
+		sglog.Scoped("server").Info("starting server", sglog.Stringp("address", listen), sglog.Stringp("unixSocket", listenUnix))
+		err := serveHTTP(srv, *listenUnix, *sslCert, *sslKey)
 
 		if err != http.ErrServerClosed {
 			// Fatal otherwise shutdownOnSignal will block
@@ -326,6 +330,48 @@ func main() {
 			log.Fatalf("http.Server.Shutdown: %v", err)
 		}
 	}
+}
+
+func serveHTTP(srv *http.Server, unixSocket, sslCert, sslKey string) error {
+	if unixSocket != "" {
+		l, err := listenUnixSocket(unixSocket)
+		if err != nil {
+			return err
+		}
+		defer os.Remove(unixSocket)
+
+		if sslCert != "" || sslKey != "" {
+			return srv.ServeTLS(l, sslCert, sslKey)
+		}
+		return srv.Serve(l)
+	}
+
+	if sslCert != "" || sslKey != "" {
+		return srv.ListenAndServeTLS(sslCert, sslKey)
+	}
+	return srv.ListenAndServe()
+}
+
+func listenUnixSocket(socket string) (net.Listener, error) {
+	// We cannot bind a socket to an existing pathname.
+	if err := os.Remove(socket); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("error removing socket file: %s", socket)
+	}
+
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen on socket %s: %w", socket, err)
+	}
+
+	// nginx and zoekt-webserver often run as different users. Make the socket
+	// broadly connectable like the indexserver socket used by this binary's
+	// reverse proxy support.
+	if err := os.Chmod(socket, 0o777); err != nil {
+		_ = l.Close()
+		return nil, fmt.Errorf("failed to change permission of socket %s: %w", socket, err)
+	}
+
+	return l, nil
 }
 
 // addProxyHandler adds a handler to "mux" that proxies all requests with base
@@ -424,9 +470,15 @@ func watchdogOnce(ctx context.Context, client *http.Client, addr string) error {
 	return nil
 }
 
-func watchdog(dt time.Duration, maxErrCount int, addr string) {
+func watchdog(dt time.Duration, maxErrCount int, addr, unixSocket string) {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if unixSocket != "" {
+		tr.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", unixSocket)
+		}
 	}
 	client := &http.Client{
 		Transport: tr,
