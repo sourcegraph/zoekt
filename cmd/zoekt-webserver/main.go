@@ -310,7 +310,6 @@ func main() {
 
 	serveErrCh := make(chan error, 1)
 	go func() {
-		sglog.Scoped("server").Info("starting server", sglog.Stringp("address", listen), sglog.Stringp("unixSocket", listenUnix))
 		err := serveHTTP(srv, *listenUnix, *sslCert, *sslKey)
 
 		if err != http.ErrServerClosed {
@@ -336,14 +335,17 @@ func main() {
 }
 
 func serveHTTP(srv *http.Server, unixSocket, sslCert, sslKey string) error {
+	logger := sglog.Scoped("server")
 	if unixSocket != "" {
 		l, err := listenUnixSocket(unixSocket)
 		if err != nil {
 			return err
 		}
+		logger.Info("starting server", sglog.String("unixSocket", unixSocket))
 		return srv.Serve(l)
 	}
 
+	logger.Info("starting server", sglog.String("address", srv.Addr))
 	if sslCert != "" || sslKey != "" {
 		return srv.ListenAndServeTLS(sslCert, sslKey)
 	}
