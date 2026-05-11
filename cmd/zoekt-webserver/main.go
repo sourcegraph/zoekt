@@ -341,7 +341,6 @@ func serveHTTP(srv *http.Server, unixSocket, sslCert, sslKey string) error {
 		if err != nil {
 			return err
 		}
-		defer os.Remove(unixSocket)
 		return srv.Serve(l)
 	}
 
