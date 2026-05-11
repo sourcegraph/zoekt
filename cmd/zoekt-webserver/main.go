@@ -183,6 +183,9 @@ func main() {
 		// caller to divert stderr output if necessary.
 		go divertLogs(*logDir, *logRefresh)
 	}
+	if *listenUnix != "" && (*sslCert != "" || *sslKey != "") {
+		log.Fatal("-listen_unix cannot be combined with -ssl_cert or -ssl_key")
+	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
 	_, _ = maxprocs.Set()
@@ -283,9 +286,6 @@ func main() {
 	if *listenUnix != "" {
 		watchdogUnixSocket = *listenUnix
 		watchdogAddr = "http://unix"
-		if *sslCert != "" || *sslKey != "" {
-			watchdogAddr = "https://unix"
-		}
 	}
 	watchdogAddr += "/healthz"
 
@@ -339,10 +339,6 @@ func serveHTTP(srv *http.Server, unixSocket, sslCert, sslKey string) error {
 			return err
 		}
 		defer os.Remove(unixSocket)
-
-		if sslCert != "" || sslKey != "" {
-			return srv.ServeTLS(l, sslCert, sslKey)
-		}
 		return srv.Serve(l)
 	}
 
