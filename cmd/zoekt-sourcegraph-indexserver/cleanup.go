@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -31,12 +31,12 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	start := time.Now()
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0o755); err != nil {
-		log.Printf("failed to create trash dir: %v", err)
+		errorLog.Printf("failed to create trash dir: %v", err)
 	}
 
 	trash := getShards(trashDir)
 	tombtones := getTombstonedRepos(indexDir)
-	index := getShards(indexDir)
+	indexShards := getShards(indexDir)
 
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
@@ -46,16 +46,16 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			if shard.ModTime.Before(minAge) {
 				old = true
 			} else if shard.ModTime.After(now) {
-				debug.Printf("trashed shard %s has timestamp in the future, reseting to now", shard.Path)
+				debugLog.Printf("trashed shard %s has timestamp in the future, reseting to now", shard.Path)
 				_ = os.Chtimes(shard.Path, now, now)
 			}
 		}
 
-		if _, conflicts := index[repo]; !conflicts && !old {
+		if _, conflicts := indexShards[repo]; !conflicts && !old {
 			continue
 		}
 
-		log.Printf("removing old shards from trash for %v", repo)
+		infoLog.Printf("removing old shards from trash for %v", repo)
 		removeAll(shards...)
 		delete(trash, repo)
 	}
@@ -63,7 +63,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	// tombstones: Remove tombstones that conflict with index or trash. After this,
 	// tombstones only contain repos that are neither in the trash nor in the index.
 	for repo := range tombtones {
-		if _, conflicts := index[repo]; conflicts {
+		if _, conflicts := indexShards[repo]; conflicts {
 			delete(tombtones, repo)
 		}
 		// Trash takes precedence over tombstones.
@@ -76,20 +76,20 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	// shards that have the same ID but different names delete and start over.
 	// This can happen when a repository is renamed. In future we should make
 	// shard file names based on ID.
-	for repo, shards := range index {
+	for repo, shards := range indexShards {
 		if consistentRepoName(shards) {
 			continue
 		}
 
 		// prevent further processing since we will delete
-		delete(index, repo)
+		delete(indexShards, repo)
 
 		// This should be rare, so give an informative log message.
 		var paths []string
 		for _, shard := range shards {
 			paths = append(paths, filepath.Base(shard.Path))
 		}
-		log.Printf("removing shards for %v due to multiple repository names: %s", repo, strings.Join(paths, " "))
+		infoLog.Printf("removing shards for %v due to multiple repository names: %s", repo, strings.Join(paths, " "))
 
 		// We may be in both normal and compound shards in this case. First
 		// tombstone the compound shards so we don't just rm them.
@@ -114,25 +114,25 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	for _, repo := range repos {
 		// Delete from index so that index will only contain shards to be
 		// trashed.
-		delete(index, repo)
+		delete(indexShards, repo)
 
 		if shards, ok := trash[repo]; ok {
-			log.Printf("restoring shards from trash for %v", repo)
+			infoLog.Printf("restoring shards from trash for %v", repo)
 			moveAll(indexDir, shards)
 			continue
 		}
 
 		if s, ok := tombtones[repo]; ok {
-			log.Printf("removing tombstone for %v", repo)
-			err := zoekt.UnsetTombstone(s.Path, repo)
+			infoLog.Printf("removing tombstone for %v", repo)
+			err := index.UnsetTombstone(s.Path, repo)
 			if err != nil {
-				log.Printf("error removing tombstone for %v: %s", repo, err)
+				errorLog.Printf("error removing tombstone for %v: %s", repo, err)
 			}
 		}
 	}
 
 	// index: Move non-existent repos into trash
-	for repo, shards := range index {
+	for repo, shards := range indexShards {
 		// Best-effort touch. If touch fails, we will just remove from the
 		// trash sooner.
 		for _, shard := range shards {
@@ -150,16 +150,16 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	// the files now since cleanup runs with a global lock (no indexing jobs
 	// running at the same time).
 	if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
-		log.Printf("Glob: %v", err)
+		errorLog.Printf("Glob: %v", err)
 	} else {
 		for _, f := range failures {
 			st, err := os.Stat(f)
 			if err != nil {
-				log.Printf("Stat(%q): %v", f, err)
+				errorLog.Printf("Stat(%q): %v", f, err)
 				continue
 			}
 			if !st.IsDir() {
-				log.Printf("removing tmp file: %s", f)
+				infoLog.Printf("removing tmp file: %s", f)
 				os.Remove(f)
 			}
 		}
@@ -179,7 +179,7 @@ type shard struct {
 func getShards(dir string) map[uint32][]shard {
 	d, err := os.Open(dir)
 	if err != nil {
-		debug.Printf("failed to getShards: %s", dir)
+		debugLog.Printf("failed to getShards: %s", dir)
 		return nil
 	}
 	defer d.Close()
@@ -191,16 +191,16 @@ func getShards(dir string) map[uint32][]shard {
 		path := filepath.Join(dir, n)
 		fi, err := os.Stat(path)
 		if err != nil {
-			debug.Printf("stat failed: %v", err)
+			debugLog.Printf("stat failed: %v", err)
 			continue
 		}
 		if fi.IsDir() || filepath.Ext(path) != ".zoekt" {
 			continue
 		}
 
-		repos, _, err := zoekt.ReadMetadataPathAlive(path)
+		repos, _, err := index.ReadMetadataPathAlive(path)
 		if err != nil {
-			debug.Printf("failed to read shard: %v", err)
+			debugLog.Printf("failed to read shard: %v", err)
 			continue
 		}
 
@@ -232,7 +232,7 @@ func getTombstonedRepos(dir string) map[uint32]shard {
 	m := make(map[uint32]shard)
 
 	for _, p := range paths {
-		repos, _, err := zoekt.ReadMetadataPath(p)
+		repos, _, err := index.ReadMetadataPath(p)
 		if err != nil {
 			continue
 		}
@@ -260,7 +260,7 @@ var incompleteRE = regexp.MustCompile(`\.zoekt[0-9]+(\.\w+)?$`)
 func removeIncompleteShards(dir string) {
 	d, err := os.Open(dir)
 	if err != nil {
-		debug.Printf("failed to removeIncompleteShards: %s", dir)
+		debugLog.Printf("failed to removeIncompleteShards: %s", dir)
 		return
 	}
 	defer d.Close()
@@ -270,9 +270,9 @@ func removeIncompleteShards(dir string) {
 		if incompleteRE.MatchString(n) {
 			path := filepath.Join(dir, n)
 			if err := os.Remove(path); err != nil {
-				debug.Printf("failed to remove incomplete shard %s: %v", path, err)
+				debugLog.Printf("failed to remove incomplete shard %s: %v", path, err)
 			} else {
-				debug.Printf("cleaned up incomplete shard %s", path)
+				debugLog.Printf("cleaned up incomplete shard %s", path)
 			}
 		}
 	}
@@ -286,13 +286,13 @@ func removeAll(shards ...shard) {
 	// exceedingly rare due to it being a mix of partial failure on something in
 	// trash + an admin re-adding a repository.
 	for _, shard := range shards {
-		paths, err := zoekt.IndexFilePaths(shard.Path)
+		paths, err := index.IndexFilePaths(shard.Path)
 		if err != nil {
-			debug.Printf("failed to remove shard %s: %v", shard.Path, err)
+			debugLog.Printf("failed to remove shard %s: %v", shard.Path, err)
 		}
 		for _, p := range paths {
 			if err := os.Remove(p); err != nil {
-				debug.Printf("failed to remove shard file %s: %v", p, err)
+				debugLog.Printf("failed to remove shard file %s: %v", p, err)
 			}
 		}
 	}
@@ -300,9 +300,9 @@ func removeAll(shards ...shard) {
 
 func moveAll(dstDir string, shards []shard) {
 	for i, shard := range shards {
-		paths, err := zoekt.IndexFilePaths(shard.Path)
+		paths, err := index.IndexFilePaths(shard.Path)
 		if err != nil {
-			log.Printf("failed to stat shard paths, deleting all shards for %s: %v", shard.RepoName, err)
+			errorLog.Printf("failed to stat shard paths, deleting all shards for %s: %v", shard.RepoName, err)
 			removeAll(shards...)
 			return
 		}
@@ -316,7 +316,7 @@ func moveAll(dstDir string, shards []shard) {
 		// HACK we do not yet support tombstones in compound shard. So we avoid
 		// needing to deal with it by always deleting the whole compound shard.
 		if strings.HasPrefix(filepath.Base(shard.Path), "compound-") {
-			log.Printf("HACK removing compound shard since we don't support tombstoning: %s", shard.Path)
+			infoLog.Printf("HACK removing compound shard since we don't support tombstoning: %s", shard.Path)
 			removeAll(shard)
 			continue
 		}
@@ -331,7 +331,7 @@ func moveAll(dstDir string, shards []shard) {
 		}
 
 		if err != nil {
-			log.Printf("failed to move shard, deleting all shards for %s: %v", shard.RepoName, err)
+			errorLog.Printf("failed to move shard, deleting all shards for %s: %v", shard.RepoName, err)
 			removeAll(dstShard) // some files may have moved to dst
 			removeAll(shards...)
 			return
@@ -368,8 +368,8 @@ func maybeSetTombstone(shards []shard, repoID uint32) bool {
 		return false
 	}
 
-	if err := zoekt.SetTombstone(shards[0].Path, repoID); err != nil {
-		log.Printf("error setting tombstone for %d in shard %s: %s. Removing shard\n", repoID, shards[0].Path, err)
+	if err := index.SetTombstone(shards[0].Path, repoID); err != nil {
+		errorLog.Printf("error setting tombstone for %d in shard %s: %s. Removing shard\n", repoID, shards[0].Path, err)
 		_ = os.Remove(shards[0].Path)
 	}
 	return true
@@ -378,6 +378,11 @@ func maybeSetTombstone(shards []shard, repoID uint32) bool {
 var metricVacuumRunning = promauto.NewGauge(prometheus.GaugeOpts{
 	Name: "index_vacuum_running",
 	Help: "Set to 1 if indexserver's vacuum job is running.",
+})
+
+var metricNumberShards = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "index_number_shards",
+	Help: "The number of total shards.",
 })
 
 var metricNumberCompoundShards = promauto.NewGauge(prometheus.GaugeOpts{
@@ -409,7 +414,7 @@ func (s *Server) vacuum() {
 		path := filepath.Join(s.IndexDir, fn)
 		info, err := os.Stat(path)
 		if err != nil {
-			debug.Printf("vacuum stat failed: %v", err)
+			errorLog.Printf("vacuum stat failed: %v", err)
 			continue
 		}
 
@@ -422,8 +427,9 @@ func (s *Server) vacuum() {
 			})
 
 			if err != nil {
-				debug.Printf("failed to explode compound shard %s: %s", path, string(b))
+				errorLog.Printf("failed to explode compound shard: shard=%s out=%s err=%s", path, string(b), err)
 			}
+			infoLog.Printf("exploded compound shard: shard=%s", path)
 			continue
 		}
 
@@ -432,7 +438,7 @@ func (s *Server) vacuum() {
 		})
 
 		if err != nil {
-			debug.Printf("error while removing tombstones in %s: %s", fn, err)
+			errorLog.Printf("error while removing tombstones in %s: %s", path, err)
 		}
 	}
 }
@@ -449,7 +455,7 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 		runMerge = exec.Command("zoekt-merge-index", "merge", fn).Run
 	}
 
-	repos, _, err := zoekt.ReadMetadataPath(fn)
+	repos, _, err := index.ReadMetadataPath(fn)
 	if err != nil {
 		return nil, fmt.Errorf("zoekt.ReadMetadataPath: %s", err)
 	}
@@ -465,7 +471,7 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 	}
 
 	defer func() {
-		paths, err := zoekt.IndexFilePaths(fn)
+		paths, err := index.IndexFilePaths(fn)
 		if err != nil {
 			return
 		}

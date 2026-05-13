@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -19,11 +18,10 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
-	"github.com/sourcegraph/zoekt/ctags"
 	"golang.org/x/net/trace"
 
 	"github.com/sourcegraph/zoekt"
+	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 )
 
 // SourcegraphListResult is the return value of Sourcegraph.List. It is its
@@ -68,11 +66,6 @@ type Sourcegraph interface {
 	// options for each id in repos.
 	ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32)
 
-	// GetDocumentRanks returns a map from paths within the given repo to their
-	// rank vectors. Paths are assumed to be ordered by each pairwise component of
-	// the resulting vector, higher ranks coming earlier
-	GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error)
-
 	// UpdateIndexStatus sends a request to Sourcegraph to confirm that the
 	// given repositories have been indexed.
 	UpdateIndexStatus(repositories []indexStatus) error
@@ -88,7 +81,7 @@ func WithBatchSize(batchSize int) SourcegraphClientOption {
 	}
 }
 
-func newSourcegraphClient(rootURL *url.URL, hostname string, grpcClient proto.ZoektConfigurationServiceClient, opts ...SourcegraphClientOption) *sourcegraphClient {
+func newSourcegraphClient(rootURL *url.URL, hostname string, grpcClient configv1.ZoektConfigurationServiceClient, opts ...SourcegraphClientOption) *sourcegraphClient {
 	client := &sourcegraphClient{
 		Root:       rootURL,
 		Hostname:   hostname,
@@ -118,7 +111,7 @@ type sourcegraphClient struct {
 	BatchSize int
 
 	// grpcClient is used to make requests to the Sourcegraph instance if gRPC is enabled.
-	grpcClient proto.ZoektConfigurationServiceClient
+	grpcClient configv1.ZoektConfigurationServiceClient
 
 	// configFingerprintProto is the last config fingerprint (as GRPC) returned from
 	// Sourcegraph. It can be used for future calls to the configuration
@@ -126,27 +119,13 @@ type sourcegraphClient struct {
 	//
 	// configFingerprintProto is mutually exclusive with configFingerprint - this field
 	// will only be used if gRPC is enabled.
-	configFingerprintProto *proto.Fingerprint
+	configFingerprintProto *configv1.Fingerprint
 
 	// configFingerprintReset tracks when we should zero out the
 	// configFingerprint. We want to periodically do this just in case our
 	// configFingerprint logic is faulty. When it is cleared out, we fallback to
 	// calculating everything.
 	configFingerprintReset time.Time
-}
-
-// GetDocumentRanks asks Sourcegraph for a mapping of file paths to rank
-// vectors.
-func (s *sourcegraphClient) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
-	resp, err := s.grpcClient.DocumentRanks(ctx, &proto.DocumentRanksRequest{Repository: repoName})
-	if err != nil {
-		return RepoPathRanks{}, err
-	}
-
-	var out RepoPathRanks
-	out.FromProto(resp)
-
-	return out, nil
 }
 
 func (s *sourcegraphClient) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
@@ -288,65 +267,32 @@ type indexOptionsItem struct {
 	Error string
 }
 
-func (o *indexOptionsItem) FromProto(x *proto.ZoektIndexOptions) {
-	branches := make([]zoekt.RepositoryBranch, 0, len(x.Branches))
-	for _, b := range x.GetBranches() {
-		branches = append(branches, zoekt.RepositoryBranch{
-			Name:    b.GetName(),
-			Version: b.GetVersion(),
-		})
-	}
-
+func (o *indexOptionsItem) FromProto(x *configv1.ZoektIndexOptions) {
 	item := indexOptionsItem{}
-	languageMap := make(map[string]ctags.CTagsParserType)
-
-	for _, lang := range x.GetLanguageMap() {
-		languageMap[lang.GetLanguage()] = ctags.CTagsParserType(lang.GetCtags().Number())
-	}
-
-	item.IndexOptions = IndexOptions{
-		RepoID:     uint32(x.GetRepoId()),
-		LargeFiles: x.GetLargeFiles(),
-		Symbols:    x.GetSymbols(),
-		Branches:   branches,
-		Name:       x.GetName(),
-
-		Priority: x.GetPriority(),
-
-		DocumentRanksVersion: x.GetDocumentRanksVersion(),
-
-		Public:   x.GetPublic(),
-		Fork:     x.GetFork(),
-		Archived: x.GetArchived(),
-
-		LanguageMap:      languageMap,
-		ShardConcurrency: x.GetShardConcurrency(),
-	}
-
+	item.IndexOptions.FromProto(x)
 	item.Error = x.GetError()
-
 	*o = item
 }
 
-func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
-	branches := make([]*proto.ZoektRepositoryBranch, 0, len(o.Branches))
+func (o *indexOptionsItem) ToProto() *configv1.ZoektIndexOptions {
+	branches := make([]*configv1.ZoektRepositoryBranch, 0, len(o.Branches))
 	for _, b := range o.Branches {
-		branches = append(branches, &proto.ZoektRepositoryBranch{
+		branches = append(branches, &configv1.ZoektRepositoryBranch{
 			Name:    b.Name,
 			Version: b.Version,
 		})
 	}
 
-	languageMap := make([]*proto.LanguageMapping, 0, len(o.LanguageMap))
+	languageMap := make([]*configv1.LanguageMapping, 0, len(o.LanguageMap))
 
 	for lang, parser := range o.LanguageMap {
-		languageMap = append(languageMap, &proto.LanguageMapping{
+		languageMap = append(languageMap, &configv1.LanguageMapping{
 			Language: lang,
-			Ctags:    proto.CTagsParserType(parser),
+			Ctags:    configv1.CTagsParserType(parser),
 		})
 	}
 
-	return &proto.ZoektIndexOptions{
+	return &configv1.ZoektIndexOptions{
 		RepoId:     int32(o.RepoID),
 		LargeFiles: o.LargeFiles,
 		Symbols:    o.Symbols,
@@ -354,8 +300,6 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 		Name:       o.Name,
 
 		Priority: o.Priority,
-
-		DocumentRanksVersion: o.DocumentRanksVersion,
 
 		Public:   o.Public,
 		Fork:     o.Fork,
@@ -365,16 +309,18 @@ func (o *indexOptionsItem) ToProto() *proto.ZoektIndexOptions {
 
 		LanguageMap:      languageMap,
 		ShardConcurrency: o.ShardConcurrency,
+
+		TenantId: int64(o.TenantID),
 	}
 }
 
-func (s *sourcegraphClient) getIndexOptions(ctx context.Context, fingerprint *proto.Fingerprint, repos []uint32) ([]indexOptionsItem, *proto.Fingerprint, error) {
+func (s *sourcegraphClient) getIndexOptions(ctx context.Context, fingerprint *configv1.Fingerprint, repos []uint32) ([]indexOptionsItem, *configv1.Fingerprint, error) {
 	repoIDs := make([]int32, 0, len(repos))
 	for _, id := range repos {
 		repoIDs = append(repoIDs, int32(id))
 	}
 
-	req := proto.SearchConfigurationRequest{
+	req := configv1.SearchConfigurationRequest{
 		RepoIds:     repoIDs,
 		Fingerprint: fingerprint,
 	}
@@ -402,7 +348,7 @@ func (s *sourcegraphClient) getCloneURL(name string) string {
 }
 
 func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) ([]uint32, error) {
-	var request proto.ListRequest
+	var request configv1.ListRequest
 	request.Hostname = s.Hostname
 	request.IndexedIds = make([]int32, 0, len(indexed))
 	for _, id := range indexed {
@@ -432,32 +378,32 @@ type updateIndexStatusRequest struct {
 	Repositories []indexStatus
 }
 
-func (u *updateIndexStatusRequest) ToProto() *proto.UpdateIndexStatusRequest {
-	repositories := make([]*proto.UpdateIndexStatusRequest_Repository, 0, len(u.Repositories))
+func (u *updateIndexStatusRequest) ToProto() *configv1.UpdateIndexStatusRequest {
+	repositories := make([]*configv1.UpdateIndexStatusRequest_Repository, 0, len(u.Repositories))
 
 	for _, repo := range u.Repositories {
-		branches := make([]*proto.ZoektRepositoryBranch, 0, len(repo.Branches))
+		branches := make([]*configv1.ZoektRepositoryBranch, 0, len(repo.Branches))
 
 		for _, branch := range repo.Branches {
-			branches = append(branches, &proto.ZoektRepositoryBranch{
+			branches = append(branches, &configv1.ZoektRepositoryBranch{
 				Name:    branch.Name,
 				Version: branch.Version,
 			})
 		}
 
-		repositories = append(repositories, &proto.UpdateIndexStatusRequest_Repository{
+		repositories = append(repositories, &configv1.UpdateIndexStatusRequest_Repository{
 			RepoId:        repo.RepoID,
 			Branches:      branches,
 			IndexTimeUnix: repo.IndexTimeUnix,
 		})
 	}
 
-	return &proto.UpdateIndexStatusRequest{
+	return &configv1.UpdateIndexStatusRequest{
 		Repositories: repositories,
 	}
 }
 
-func (u *updateIndexStatusRequest) FromProto(x *proto.UpdateIndexStatusRequest) {
+func (u *updateIndexStatusRequest) FromProto(x *configv1.UpdateIndexStatusRequest) {
 	protoRepositories := x.GetRepositories()
 	repositories := make([]indexStatus, 0, len(protoRepositories))
 
@@ -501,39 +447,6 @@ func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error 
 type sourcegraphFake struct {
 	RootDir string
 	Log     *log.Logger
-}
-
-// GetDocumentRanks expects a file where each line has the following format:
-// path<tab>rank... where rank is a float64.
-func (sf sourcegraphFake) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
-	dir := filepath.Join(sf.RootDir, filepath.FromSlash(repoName))
-
-	fd, err := os.Open(filepath.Join(dir, "SG_DOCUMENT_RANKS"))
-	if err != nil {
-		return RepoPathRanks{}, err
-	}
-
-	ranks := RepoPathRanks{}
-
-	sum := 0.0
-	count := 0
-	scanner := bufio.NewScanner(fd)
-	for scanner.Scan() {
-		s := scanner.Text()
-		pathRanks := strings.Split(s, "\t")
-		if rank, err := strconv.ParseFloat(pathRanks[1], 64); err == nil {
-			ranks.Paths[pathRanks[0]] = rank
-			sum += rank
-			count++
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return RepoPathRanks{}, err
-	}
-
-	ranks.MeanRank = sum / float64(count)
-	return ranks, nil
 }
 
 func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
@@ -635,10 +548,6 @@ func (sf sourcegraphFake) getIndexOptions(name string) (IndexOptions, error) {
 		Archived: exists("SG_ARCHIVED"),
 
 		Priority: float("SG_PRIORITY"),
-	}
-
-	if stat, err := os.Stat(filepath.Join(dir, "SG_DOCUMENT_RANKS")); err == nil {
-		opts.DocumentRanksVersion = stat.ModTime().String()
 	}
 
 	branches, err := sf.getBranches(name)
@@ -763,40 +672,6 @@ func (s sourcegraphNop) List(ctx context.Context, indexed []uint32) (*Sourcegrap
 func (s sourcegraphNop) ForceIterateIndexOptions(onSuccess func(IndexOptions), onError func(uint32, error), repos ...uint32) {
 }
 
-func (s sourcegraphNop) GetDocumentRanks(ctx context.Context, repoName string) (RepoPathRanks, error) {
-	return RepoPathRanks{}, nil
-}
-
 func (s sourcegraphNop) UpdateIndexStatus(repositories []indexStatus) error {
 	return nil
-}
-
-type RepoPathRanks struct {
-	MeanRank float64            `json:"mean_reference_count"`
-	Paths    map[string]float64 `json:"paths"`
-}
-
-func (r *RepoPathRanks) FromProto(x *proto.DocumentRanksResponse) {
-	protoPaths := x.GetPaths()
-	ranks := make(map[string]float64, len(protoPaths))
-	for filePath, rank := range protoPaths {
-		ranks[filePath] = rank
-	}
-
-	*r = RepoPathRanks{
-		MeanRank: x.GetMeanRank(),
-		Paths:    ranks,
-	}
-}
-
-func (r *RepoPathRanks) ToProto() *proto.DocumentRanksResponse {
-	paths := make(map[string]float64, len(r.Paths))
-	for filePath, rank := range r.Paths {
-		paths[filePath] = rank
-	}
-
-	return &proto.DocumentRanksResponse{
-		MeanRank: r.MeanRank,
-		Paths:    paths,
-	}
 }

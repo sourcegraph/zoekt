@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This binary fetches all repos of a user or organization and clones
-// them.  It is strongly recommended to get a personal API token from
-// https://github.com/settings/tokens, save the token in a file, and
-// point the --token option to it.
+// Command zoekt-mirror-github fetches all repos of a github user or organization
+// and clones them. It is strongly recommended to get a personal API token from
+// https://github.com/settings/tokens, save the token in a file, and point the
+// --token option to it.
 package main
 
 import (
@@ -23,13 +23,14 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/google/go-github/v27/github"
+	"github.com/google/go-github/v78/github"
 	"golang.org/x/oauth2"
 
 	"github.com/sourcegraph/zoekt/gitindex"
@@ -50,6 +51,7 @@ type reposFilters struct {
 	topics        []string
 	excludeTopics []string
 	noArchived    *bool
+	visibility    []string
 }
 
 func main() {
@@ -57,9 +59,7 @@ func main() {
 	githubURL := flag.String("url", "", "GitHub Enterprise url. If not set github.com will be used as the host.")
 	org := flag.String("org", "", "organization to mirror")
 	user := flag.String("user", "", "user to mirror")
-	token := flag.String("token",
-		filepath.Join(os.Getenv("HOME"), ".github-token"),
-		"file holding API token.")
+	token := flag.String("token", "", "file holding API token. If not set defaults to $HOME/.github-token if present, else uses unauthenticated GitHub client.")
 	forks := flag.Bool("forks", false, "also mirror forks.")
 	deleteRepos := flag.Bool("delete", false, "delete missing repos")
 	namePattern := flag.String("name", "", "only clone repos whose name matches the given regexp.")
@@ -69,6 +69,8 @@ func main() {
 	excludeTopics := topicsFlag{}
 	flag.Var(&excludeTopics, "exclude_topic", "don't clone repos whose have one of given topics. You can add multiple topics by setting this more than once.")
 	noArchived := flag.Bool("no_archived", false, "mirror only projects that are not archived")
+	visibility := topicsFlag{}
+	flag.Var(&visibility, "visibility", "filter repos by visibility (public, private, internal). You can add multiple values by setting this more than once.")
 
 	flag.Parse()
 
@@ -80,8 +82,8 @@ func main() {
 	}
 
 	var host string
-	var apiBaseURL string
 	var client *github.Client
+	tc := newOAuthClient(token)
 	if *githubURL != "" {
 		rootURL, err := url.Parse(*githubURL)
 		if err != nil {
@@ -92,46 +94,25 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		apiBaseURL = rootURL.ResolveReference(apiPath).String()
-		client, err = github.NewEnterpriseClient(apiBaseURL, apiBaseURL, nil)
+		apiBaseURL := rootURL.ResolveReference(apiPath).String()
+		client, err = github.NewEnterpriseClient(apiBaseURL, apiBaseURL, tc)
 		if err != nil {
 			log.Fatal(err)
 		}
 	} else {
 		host = "github.com"
-		apiBaseURL = "https://github.com/"
-		client = github.NewClient(nil)
+		client = github.NewClient(tc)
 	}
 	destDir := filepath.Join(*dest, host)
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
 
-	if *token != "" {
-		content, err := os.ReadFile(*token)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		ts := oauth2.StaticTokenSource(
-			&oauth2.Token{
-				AccessToken: strings.TrimSpace(string(content)),
-			})
-		tc := oauth2.NewClient(context.Background(), ts)
-		if *githubURL != "" {
-			client, err = github.NewEnterpriseClient(apiBaseURL, apiBaseURL, tc)
-			if err != nil {
-				log.Fatal(err)
-			}
-		} else {
-			client = github.NewClient(tc)
-		}
-	}
-
 	reposFilters := reposFilters{
 		topics:        topics,
 		excludeTopics: excludeTopics,
 		noArchived:    noArchived,
+		visibility:    visibility,
 	}
 	var repos []*github.Repository
 	var err error
@@ -184,6 +165,32 @@ func main() {
 	}
 }
 
+func newOAuthClient(token *string) *http.Client {
+	var content []byte
+	var err error
+
+	if *token != "" { // user explicitly provided a token which must exist
+		content, err = os.ReadFile(*token)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		defaultToken := filepath.Join(os.Getenv("HOME"), ".github-token")
+		content, err = os.ReadFile(defaultToken)
+		if err != nil && os.IsNotExist(err) { // use unauthenticated client
+			return nil
+		} else if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{
+			AccessToken: strings.TrimSpace(string(content)),
+		})
+	return oauth2.NewClient(context.Background(), ts)
+}
+
 func deleteStaleRepos(destDir string, filter *gitindex.Filter, repos []*github.Repository, user string) error {
 	var baseURL string
 	if len(repos) > 0 {
@@ -225,9 +232,12 @@ func hasIntersection(s1, s2 []string) bool {
 	return false
 }
 
-func filterRepositories(repos []*github.Repository, include []string, exclude []string, noArchived bool) (filteredRepos []*github.Repository) {
+func filterRepositories(repos []*github.Repository, include []string, exclude []string, noArchived bool, visibility []string) (filteredRepos []*github.Repository) {
 	for _, repo := range repos {
 		if noArchived && *repo.Archived {
+			continue
+		}
+		if len(visibility) > 0 && !hasIntersection(visibility, []string{repo.GetVisibility()}) {
 			continue
 		}
 		if (len(include) == 0 || hasIntersection(include, repo.Topics)) &&
@@ -251,7 +261,7 @@ func getOrgRepos(client *github.Client, org string, reposFilters reposFilters) (
 		}
 
 		opt.Page = resp.NextPage
-		repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived)
+		repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived, reposFilters.visibility)
 		allRepos = append(allRepos, repos...)
 		if resp.NextPage == 0 {
 			break
@@ -273,7 +283,7 @@ func getUserRepos(client *github.Client, user string, reposFilters reposFilters)
 		}
 
 		opt.Page = resp.NextPage
-		repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived)
+		repos = filterRepositories(repos, reposFilters.topics, reposFilters.excludeTopics, *reposFilters.noArchived, reposFilters.visibility)
 		allRepos = append(allRepos, repos...)
 		if resp.NextPage == 0 {
 			break
@@ -282,11 +292,10 @@ func getUserRepos(client *github.Client, user string, reposFilters reposFilters)
 	return allRepos, nil
 }
 
-func itoa(p *int) string {
-	if p != nil {
-		return strconv.Itoa(*p)
+func setOptionalIntConfig(config map[string]string, key string, value *int) {
+	if value != nil {
+		config[key] = strconv.Itoa(*value)
 	}
-	return ""
 }
 
 func cloneRepos(destDir string, repos []*github.Repository) error {
@@ -301,15 +310,15 @@ func cloneRepos(destDir string, repos []*github.Repository) error {
 			"zoekt.web-url":      *r.HTMLURL,
 			"zoekt.name":         filepath.Join(host.Hostname(), *r.FullName),
 
-			"zoekt.github-stars":       itoa(r.StargazersCount),
-			"zoekt.github-watchers":    itoa(r.WatchersCount),
-			"zoekt.github-subscribers": itoa(r.SubscribersCount),
-			"zoekt.github-forks":       itoa(r.ForksCount),
-
 			"zoekt.archived": marshalBool(r.Archived != nil && *r.Archived),
 			"zoekt.fork":     marshalBool(r.Fork != nil && *r.Fork),
 			"zoekt.public":   marshalBool(r.Private == nil || !*r.Private),
 		}
+		setOptionalIntConfig(config, "zoekt.github-stars", r.StargazersCount)
+		setOptionalIntConfig(config, "zoekt.github-watchers", r.WatchersCount)
+		setOptionalIntConfig(config, "zoekt.github-subscribers", r.SubscribersCount)
+		setOptionalIntConfig(config, "zoekt.github-forks", r.ForksCount)
+
 		dest, err := gitindex.CloneRepo(destDir, *r.FullName, *r.CloneURL, config)
 		if err != nil {
 			return err

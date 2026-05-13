@@ -29,12 +29,12 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
-	"github.com/sourcegraph/zoekt/ignore"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/ignore"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 func createSubmoduleRepo(dir string) error {
@@ -106,6 +106,8 @@ EOF
 }
 
 func TestFindGitRepos(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -141,6 +143,8 @@ func TestFindGitRepos(t *testing.T) {
 }
 
 func TestCollectFiles(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -195,6 +199,8 @@ func TestCollectFiles(t *testing.T) {
 }
 
 func TestSubmoduleIndex(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -203,7 +209,7 @@ func TestSubmoduleIndex(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 	}
 	opts := Options{
@@ -219,7 +225,7 @@ func TestSubmoduleIndex(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}
@@ -238,6 +244,72 @@ func TestSubmoduleIndex(t *testing.T) {
 
 	file := results.Files[0]
 	if got, want := file.SubRepositoryName, "gerrit.googlesource.com/bdir"; got != want {
+		t.Errorf("got subrepo name %q, want %q", got, want)
+	}
+	if got, want := file.SubRepositoryPath, "bname"; got != want {
+		t.Errorf("got subrepo path %q, want %q", got, want)
+	}
+
+	subVersion := file.Version
+	if len(subVersion) != 40 {
+		t.Fatalf("got %q, want hex sha1", subVersion)
+	}
+
+	if results, err := searcher.Search(context.Background(), &query.Substring{Pattern: "acont"}, &zoekt.SearchOptions{}); err != nil {
+		t.Fatalf("Search('acont'): %v", err)
+	} else if len(results.Files) != 1 {
+		t.Errorf("got %v, want 1 result", results.Files)
+	} else if f := results.Files[0]; f.Version == subVersion {
+		t.Errorf("version in super repo matched version is subrepo.")
+	}
+}
+
+func TestSubmoduleIndexWithoutRepocache(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	if err := createSubmoduleRepo(dir); err != nil {
+		t.Fatalf("createSubmoduleRepo: %v", err)
+	}
+
+	indexDir := t.TempDir()
+
+	buildOpts := index.Options{
+		RepositoryDescription: zoekt.Repository{Name: "adir"},
+		IndexDir:              indexDir,
+	}
+	opts := Options{
+		RepoDir:      filepath.Join(dir, "adir"),
+		BuildOptions: buildOpts,
+		BranchPrefix: "refs/heads/",
+		Branches:     []string{"master"},
+		Submodules:   true,
+		Incremental:  true,
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(),
+		&query.Substring{Pattern: "bcont"},
+		&zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal("Search", err)
+	}
+
+	if len(results.Files) != 1 {
+		t.Fatalf("got search result %v, want 1 file", results.Files)
+	}
+
+	file := results.Files[0]
+	if got, want := file.SubRepositoryName, "bname"; got != want {
 		t.Errorf("got subrepo name %q, want %q", got, want)
 	}
 	if got, want := file.SubRepositoryPath, "bname"; got != want {
@@ -299,6 +371,8 @@ EOF
 }
 
 func TestSearchSymlinkByContent(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSymlinkRepo(dir); err != nil {
@@ -307,7 +381,7 @@ func TestSearchSymlinkByContent(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 	}
 	opts := Options{
@@ -323,7 +397,7 @@ func TestSearchSymlinkByContent(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}
@@ -356,6 +430,8 @@ func TestSearchSymlinkByContent(t *testing.T) {
 }
 
 func TestAllowMissingBranch(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -364,7 +440,7 @@ func TestAllowMissingBranch(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 	}
 
@@ -422,6 +498,8 @@ git update-ref refs/meta/config HEAD
 }
 
 func TestBranchWildcard(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createMultibranchRepo(dir); err != nil {
@@ -430,7 +508,7 @@ func TestBranchWildcard(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo",
@@ -450,7 +528,7 @@ func TestBranchWildcard(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}
@@ -468,6 +546,8 @@ func TestBranchWildcard(t *testing.T) {
 }
 
 func TestSkipSubmodules(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
@@ -476,7 +556,7 @@ func TestSkipSubmodules(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "gerrit.googlesource.com/adir",
@@ -500,6 +580,8 @@ func TestSkipSubmodules(t *testing.T) {
 }
 
 func TestFullAndShortRefNames(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createMultibranchRepo(dir); err != nil {
@@ -508,7 +590,7 @@ func TestFullAndShortRefNames(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo",
@@ -529,7 +611,7 @@ func TestFullAndShortRefNames(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}
@@ -545,6 +627,8 @@ func TestFullAndShortRefNames(t *testing.T) {
 }
 
 func TestUniq(t *testing.T) {
+	t.Parallel()
+
 	in := []string{"a", "b", "b", "c", "c"}
 	want := []string{"a", "b", "c"}
 	got := uniq(in)
@@ -554,6 +638,8 @@ func TestUniq(t *testing.T) {
 }
 
 func TestLatestCommit(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	indexDir := t.TempDir()
 
@@ -561,7 +647,7 @@ func TestLatestCommit(t *testing.T) {
 		t.Fatalf("createMultibranchRepo: %v", err)
 	}
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo",
@@ -579,7 +665,7 @@ func TestLatestCommit(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}

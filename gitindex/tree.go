@@ -23,12 +23,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/sourcegraph/zoekt/ignore"
 
-	"github.com/go-git/go-git/v5"
+	"github.com/sourcegraph/zoekt/ignore"
 )
 
 // RepoWalker walks one or more commit trees, collecting the files to index in its Files map.
@@ -178,9 +178,16 @@ func (rw *RepoWalker) handleSubmodule(p string, id *plumbing.Hash, branch string
 }
 
 func (rw *RepoWalker) handleEntry(p string, e *object.TreeEntry, branch string, subRepoVersions map[string]plumbing.Hash, ig *ignore.Matcher) error {
-	if e.Mode == filemode.Submodule && rw.repoCache != nil {
-		if err := rw.tryHandleSubmodule(p, &e.Hash, branch, subRepoVersions, ig); err != nil {
-			return fmt.Errorf("submodule %s: %v", p, err)
+	if e.Mode == filemode.Submodule {
+		if rw.repoCache != nil {
+			// Index the submodule using repo cache
+			if err := rw.tryHandleSubmodule(p, &e.Hash, branch, subRepoVersions, ig); err != nil {
+				return fmt.Errorf("submodule %s: %v", p, err)
+			}
+		} else {
+			// Record the commit ID for the submodule path
+			// This will be the submodule's commit hash, not the parent's
+			subRepoVersions[p] = e.Hash
 		}
 	}
 

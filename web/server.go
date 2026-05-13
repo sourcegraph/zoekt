@@ -32,8 +32,12 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
+
+	"github.com/sourcegraph/zoekt/index"
+	zjson "github.com/sourcegraph/zoekt/internal/json"
+
 	"github.com/sourcegraph/zoekt"
-	zjson "github.com/sourcegraph/zoekt/json"
+	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -43,6 +47,9 @@ var Funcmap = template.FuncMap{
 	},
 	"More": func(orig int) int {
 		return orig * 3
+	},
+	"AddLineNumbers": func(content string, lineNum int, isBefore bool) []lineMatch {
+		return AddLineNumbers(content, lineNum, isBefore)
 	},
 	"HumanUnit": func(orig int64) string {
 		b := orig
@@ -75,6 +82,42 @@ var Funcmap = template.FuncMap{
 	"TrimTrailingNewline": func(s string) string {
 		return strings.TrimSuffix(s, "\n")
 	},
+}
+
+// lineMatch represents a line of content with its associated line number
+type lineMatch struct {
+	LineNum int
+	Content string
+}
+
+// AddLineNumbers adds line numbers to the beginning of each line in the given content string.
+// The line numbers are relative to the current line number (lineNum).
+// For 'before' content, numbers will count backwards from lineNum-1.
+// For 'after' content, numbers will count forwards from lineNum+1.
+func AddLineNumbers(content string, lineNum int, isBefore bool) []lineMatch {
+	if content == "" {
+		return nil
+	}
+
+	lines := strings.Split(content, "\n")
+	var result []lineMatch
+
+	for i, line := range lines {
+		if i == len(lines)-1 && line == "" {
+			continue
+		}
+
+		var num int
+		if isBefore {
+			num = lineNum - len(lines) + i
+		} else {
+			num = lineNum + i + 1
+		}
+
+		// Add the line number and content to the result
+		result = append(result, lineMatch{LineNum: num, Content: line})
+	}
+	return result
 }
 
 const defaultNumResults = 50
@@ -151,7 +194,7 @@ func (s *Server) getTextTemplate(str string) *texttemplate.Template {
 		return t
 	}
 
-	t, err := zoekt.ParseTemplate(str)
+	t, err := index.ParseTemplate(str)
 	if err != nil {
 		log.Printf("text template parse error: %v", err)
 		t = texttemplate.Must(texttemplate.New("empty").Parse(""))
@@ -206,7 +249,10 @@ func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
 	q := &query.Const{Value: true}
 	opts := &zoekt.SearchOptions{ShardMaxMatchCount: 1, TotalMaxMatchCount: 1, MaxDocDisplayCount: 1}
 
-	result, err := s.Searcher.Search(r.Context(), q, opts)
+	// We need to use WithUnsafeContext here because we want to perform a full
+	// search returning results. The result of this search is not used for anything
+	// other than determining if the server is healthy.
+	result, err := s.Searcher.Search(systemtenant.WithUnsafeContext(r.Context()), q, opts)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("not ready: %v", err), http.StatusInternalServerError)
 		return
@@ -608,6 +654,13 @@ func (s *Server) servePrintErr(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	f := result.Files[0]
+
+	if qvals.Get("format") == "raw" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(f.Content)
+		return nil
+	}
 
 	byteLines := bytes.Split(f.Content, []byte{'\n'})
 	strLines := make([]string, 0, len(byteLines))

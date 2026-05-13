@@ -10,8 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
 )
 
 func TestHasMultipleShards(t *testing.T) {
@@ -48,12 +51,12 @@ func TestDoNotDeleteSingleShards(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create a test shard.
-	opts := build.Options{
+	opts := index.Options{
 		IndexDir:              dir,
 		RepositoryDescription: zoekt.Repository{Name: "test-repo"},
 	}
 	opts.SetDefaults()
-	b, err := build.NewBuilder(opts)
+	b, err := index.NewBuilder(opts)
 	if err != nil {
 		t.Fatalf("NewBuilder: %v", err)
 	}
@@ -196,6 +199,65 @@ func TestMerge(t *testing.T) {
 			checkCount(dir, "*_v16.00000.zoekt", tc.wantSimple)
 		})
 	}
+}
+
+func TestExplodeTenantCompoundShards(t *testing.T) {
+	tenanttest.MockEnforce(t)
+	dir := t.TempDir()
+	s := &Server{IndexDir: dir}
+
+	// Create two compound shards:
+	// 1. One with repos from tenant 1 and 2
+	// 2. One with repos from tenant 2 and 3
+	cs1 := createCompoundShard(t, dir, []uint32{1, 2}, func(in *zoekt.Repository) {
+		if in.ID == 1 {
+			in.TenantID = 1
+		} else {
+			in.TenantID = 2
+		}
+	})
+
+	cs2 := createCompoundShard(t, dir, []uint32{3, 4}, func(in *zoekt.Repository) {
+		if in.ID == 3 {
+			in.TenantID = 2
+		} else {
+			in.TenantID = 3
+		}
+	})
+
+	// Create context with tenant 1
+	ctx := tenanttest.NewTestContext()
+
+	// Explode shards for tenant 1
+	err := s.explodeTenantCompoundShards(ctx, func(path string) error {
+		// For this test we call explode directly instead of calling it in a
+		// separate process.
+		return index.Explode(dir, path)
+	})
+	require.NoError(t, err)
+
+	// Check that only cs1 was exploded (since it contained a repo from tenant
+	// 1) and cs2 remains untouched
+	require.NoFileExists(t, cs1)
+	require.FileExists(t, cs2)
+
+	// Check that we have 2 simple shards (from cs1) and 1 compound shard (cs2)
+	simpleShards, err := filepath.Glob(filepath.Join(dir, "*_v16.00000.zoekt"))
+	require.NoError(t, err)
+	require.Len(t, simpleShards, 2, "expected 2 simple shards")
+
+	// check that the simple shards are from tenant 1 and 2
+	for _, shard := range simpleShards {
+		repos, _, err := index.ReadMetadataPath(shard)
+		require.NoError(t, err)
+		for _, repo := range repos {
+			require.Contains(t, []int{1, 2}, repo.TenantID, "expected tenant 1 or 2, but got %d", repo.TenantID)
+		}
+	}
+
+	compoundShards, err := filepath.Glob(filepath.Join(dir, "compound-*"))
+	require.NoError(t, err)
+	require.Len(t, compoundShards, 1, "expected 1 compound shard")
 }
 
 func copyTestShards(dstDir string, srcShards []string) ([]string, error) {

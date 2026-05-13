@@ -84,7 +84,7 @@ supported by all projects.
 
 ## What about the search on `github.com`?
 
-Github's search has great coverage, but unfortunately, its search
+GitHub's search has great coverage, but unfortunately, its search
 functionality doesn't support arbitrary substrings. For example, a
 query [for part of my
 surname](https://github.com/search?utf8=%E2%9C%93&q=nienhuy&type=Code)
@@ -111,7 +111,9 @@ rudimentary support for filtering, and there is no symbol ranking.
 
 The search server should have local SSD to store the index file (which
 is 3.5x the corpus size), and have at least 20% more RAM than the
-corpus size.
+corpus size. For optimal performance with large codebases, consider
+using machines with ample CPU cores, as search operations can be
+parallelized across shards.
 
 ## Can I index multiple branches?
 

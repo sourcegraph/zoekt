@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// zoekt-repo-index indexes a repo-based repository. The constituent git
+// Command zoekt-repo-index indexes repository that uses the Android 'repo'
+// tool (https://android.googlesource.com/tools/repo). The constituent git
 // repositories should already have been downloaded to the --repo_cache
-// directory, eg.
+// directory, for example:
 //
 // go install github.com/sourcegraph/zoekt/cmd/zoekt-repo-index &&
 //
@@ -39,15 +40,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/google/slothfs/manifest"
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
-	"github.com/sourcegraph/zoekt/gitindex"
-	"github.com/sourcegraph/zoekt/ignore"
-	"go.uber.org/automaxprocs/maxprocs"
-
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/google/slothfs/manifest"
+	"go.uber.org/automaxprocs/maxprocs"
+
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/ignore"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 var _ = log.Println
@@ -127,7 +128,7 @@ func main() {
 	revPrefix := flag.String("rev_prefix", "refs/remotes/origin/", "prefix for references")
 	baseURLStr := flag.String("base_url", "", "base url to interpret repository names")
 	repoCacheDir := flag.String("repo_cache", "", "root for repository cache")
-	indexDir := flag.String("index", build.DefaultDir, "index directory for *.zoekt files")
+	indexDir := flag.String("index", index.DefaultDir, "index directory for *.zoekt files")
 	manifestRepoURL := flag.String("manifest_repo_url", "", "set a URL for a git repository holding manifest XML file. Provide the BRANCH:XML-FILE as further command-line arguments")
 	manifestRevPrefix := flag.String("manifest_rev_prefix", "refs/remotes/origin/", "prefixes for branches in manifest repository")
 	repoName := flag.String("name", "", "set repository name")
@@ -150,7 +151,7 @@ func main() {
 		*repoName = filepath.Join(u.Host, u.Path)
 	}
 
-	opts := build.Options{
+	opts := index.Options{
 		Parallelism: *parallelism,
 		SizeMax:     *sizeMax,
 		ShardMax:    *shardLimit,
@@ -258,7 +259,7 @@ func main() {
 		return
 	}
 
-	builder, err := build.NewBuilder(opts)
+	builder, err := index.NewBuilder(opts)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -269,7 +270,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		doc := zoekt.Document{
+		doc := index.Document{
 			Name:              k.FullPath(),
 			Content:           data,
 			SubRepositoryPath: k.SubRepoPath,

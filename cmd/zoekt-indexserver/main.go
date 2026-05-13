@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This program manages a zoekt indexing deployment:
-// * recycling logs
-// * periodically fetching new data.
-// * periodically reindexing all git repos.
-
+// Command zoekt-indexserver starts a service that periodically reindexes repositories. It follows
+// a "pull-based" design, where it reaches out to code hosts to fetch new data.
 package main
 
 import (
@@ -33,8 +30,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 const day = time.Hour * 24
@@ -71,10 +68,7 @@ func (o *Options) validate() {
 		log.Fatal("cpu_fraction must be between 0.0 and 1.0")
 	}
 
-	o.cpuCount = int(math.Trunc(float64(runtime.GOMAXPROCS(0)) * o.cpuFraction))
-	if o.cpuCount < 1 {
-		o.cpuCount = 1
-	}
+	o.cpuCount = max(int(math.Trunc(float64(runtime.GOMAXPROCS(0))*o.cpuFraction)), 1)
 	if o.indexFlagsStr != "" {
 		o.indexFlags = strings.Split(o.indexFlagsStr, " ")
 	}
@@ -206,13 +200,13 @@ func deleteIfOrphan(repoDir string, fn string) error {
 	}
 	defer f.Close()
 
-	ifile, err := zoekt.NewIndexFile(f)
+	ifile, err := index.NewIndexFile(f)
 	if err != nil {
 		return nil
 	}
 	defer ifile.Close()
 
-	repos, _, err := zoekt.ReadMetadata(ifile)
+	repos, _, err := index.ReadMetadata(ifile)
 	if err != nil {
 		return nil
 	}

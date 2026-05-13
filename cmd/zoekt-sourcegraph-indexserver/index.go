@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -18,11 +16,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
-	"github.com/sourcegraph/zoekt/ctags"
-
 	sglog "github.com/sourcegraph/log"
+
+	"github.com/sourcegraph/zoekt"
+	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/ctags"
 )
 
 const defaultIndexingTimeout = 1*time.Hour + 30*time.Minute
@@ -53,11 +52,6 @@ type IndexOptions struct {
 	// Priority indicates ranking in results, higher first.
 	Priority float64
 
-	// DocumentRanksVersion when non-empty will lead to indexing using offline
-	// ranking. When the string changes this will also cause us to re-index with
-	// new ranks.
-	DocumentRanksVersion string
-
 	// Public is true if the repository is public.
 	Public bool
 
@@ -73,6 +67,9 @@ type IndexOptions struct {
 	// The number of threads to use for indexing shards. Defaults to the number of available
 	// CPUs. If the server flag -cpu_fraction is set, then this value overrides it.
 	ShardConcurrency int32
+
+	// TenantID is the tenant ID for the repository.
+	TenantID int
 }
 
 // indexArgs represents the arguments we pass to zoekt-git-index
@@ -88,9 +85,6 @@ type indexArgs struct {
 	// Parallelism is the number of shards to compute in parallel.
 	Parallelism int
 
-	// FileLimit is the maximum size of a file
-	FileLimit int
-
 	// UseDelta is true if we want to use the new delta indexer. This should
 	// only be true for repositories we explicitly enable.
 	UseDelta bool
@@ -103,37 +97,37 @@ type indexArgs struct {
 	ShardMerging bool
 }
 
-// BuildOptions returns a build.Options represented by indexArgs. Note: it
+// BuildOptions returns a index.Options represented by indexArgs. Note: it
 // doesn't set fields like repository/branch.
-func (o *indexArgs) BuildOptions() *build.Options {
-	return &build.Options{
+func (o *indexArgs) BuildOptions() *index.Options {
+	return &index.Options{
 		// It is important that this RepositoryDescription exactly matches what
 		// the indexer we call will produce. This is to ensure that
 		// IncrementalSkipIndexing and IndexState can correctly calculate if
 		// nothing needs to be done.
 		RepositoryDescription: zoekt.Repository{
-			ID:       uint32(o.IndexOptions.RepoID),
+			TenantID: o.TenantID,
+			ID:       o.RepoID,
 			Name:     o.Name,
 			Branches: o.Branches,
 			RawConfig: map[string]string{
-				"repoid":   strconv.Itoa(int(o.IndexOptions.RepoID)),
+				"repoid":   strconv.Itoa(int(o.RepoID)),
 				"priority": strconv.FormatFloat(o.Priority, 'g', -1, 64),
 				"public":   marshalBool(o.Public),
 				"fork":     marshalBool(o.Fork),
 				"archived": marshalBool(o.Archived),
 				// Calculate repo rank based on the latest commit date.
 				"latestCommitDate": "1",
+				"tenantID":         strconv.Itoa(o.TenantID),
 			},
 		},
 		IndexDir:         o.IndexDir,
 		Parallelism:      o.Parallelism,
-		SizeMax:          o.FileLimit,
+		SizeMax:          MaxFileSize,
 		LargeFiles:       o.LargeFiles,
 		CTagsMustSucceed: o.Symbols,
 		DisableCTags:     !o.Symbols,
 		IsDelta:          o.UseDelta,
-
-		DocumentRanksVersion: o.DocumentRanksVersion,
 
 		LanguageMap: o.LanguageMap,
 
@@ -177,7 +171,7 @@ type gitIndexConfig struct {
 	timeout time.Duration
 }
 
-func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
+func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
 	logger := l.Scoped("gitIndex")
 
 	if len(o.Branches) == 0 {
@@ -192,7 +186,7 @@ func gitIndex(c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.L
 		return errors.New("findRepositoryMetadata in provided configuration was nil - a function must be provided")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	gitDir, err := tmpGitDir(o.Name)
@@ -235,6 +229,17 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 		return err
 	}
 
+	for _, header := range []string{
+		"X-Sourcegraph-Actor-UID: internal",
+		"X-Sourcegraph-Tenant-ID: " + strconv.Itoa(o.TenantID),
+	} {
+		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "--add", "http.extraHeader", header)
+		cmd.Stdin = &bytes.Buffer{}
+		if err := c.runCmd(cmd); err != nil {
+			return err
+		}
+	}
+
 	var fetchDuration time.Duration
 	successfullyFetchedCommitsCount := 0
 	allFetchesSucceeded := true
@@ -252,13 +257,13 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 		fetchArgs := []string{
 			"-C", gitDir,
 			"-c", "protocol.version=2",
-			"-c", "http.extraHeader=X-Sourcegraph-Actor-UID: internal",
 			"fetch", "--depth=1", "--no-tags",
 		}
 
-		// If there are no exceptions to MaxFileSize (1MB), we can avoid fetching these large files.
+		// Git's blob:limit filter excludes blobs whose size is >= the given limit,
+		// while zoekt indexes files up to and including FileLimit bytes.
 		if len(o.LargeFiles) == 0 {
-			fetchArgs = append(fetchArgs, "--filter=blob:limit=1m")
+			fetchArgs = append(fetchArgs, fmt.Sprintf("--filter=blob:limit=%d", int64(MaxFileSize)+1))
 		}
 
 		fetchArgs = append(fetchArgs, o.CloneURL)
@@ -315,7 +320,7 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 			name := o.BuildOptions().RepositoryDescription.Name
 			id := o.BuildOptions().RepositoryDescription.ID
 
-			log.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch both latest and prior commits: %s", name, id, err)
+			errorLog.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch both latest and prior commits: %s", name, id, err)
 			err = fetchOnlyLatestCommits()
 			if err != nil {
 				return err
@@ -379,44 +384,6 @@ func setZoektConfig(ctx context.Context, gitDir string, o *indexArgs, c gitIndex
 func indexRepo(ctx context.Context, gitDir string, sourcegraph Sourcegraph, o *indexArgs, c gitIndexConfig, logger sglog.Logger) error {
 	args := []string{
 		"-submodules=false",
-	}
-
-	if o.DocumentRanksVersion != "" {
-		// We store the document ranks as JSON in gitDir and tell zoekt-git-index where
-		// to find the file.
-		documentsRankFile := filepath.Join(gitDir, "documents.rank")
-
-		saveDocumentRanks := func() error {
-			r, err := sourcegraph.GetDocumentRanks(context.Background(), o.Name)
-			if err != nil {
-				return fmt.Errorf("GetDocumentRanks: %w", err)
-			}
-
-			b, err := json.Marshal(r)
-			if err != nil {
-				return err
-			}
-
-			if err := os.WriteFile(documentsRankFile, b, 0o600); err != nil {
-				return fmt.Errorf("failed to write %s to disk: %w", documentsRankFile, err)
-			}
-
-			return nil
-		}
-
-		if err := saveDocumentRanks(); err != nil {
-			// log and fall back to online ranking
-			logger.Warn(
-				"error saving document ranks. Falling back to online ranking",
-				sglog.Error(err),
-				sglog.String("repo", o.Name),
-				sglog.Uint32("id", o.RepoID),
-			)
-		} else {
-			args = append(args,
-				"-offline_ranking", documentsRankFile,
-				"-offline_ranking_version", o.DocumentRanksVersion)
-		}
 	}
 
 	// Even though we check for incremental in this process, we still pass it
@@ -483,4 +450,39 @@ func tmpGitDir(name string) (string, error) {
 		}
 	}
 	return dir, nil
+}
+
+// FromProto converts a ZoektIndexOptions proto message into an IndexOptions struct.
+func (o *IndexOptions) FromProto(x *configv1.ZoektIndexOptions) {
+	branches := make([]zoekt.RepositoryBranch, 0, len(x.Branches))
+	for _, b := range x.GetBranches() {
+		branches = append(branches, zoekt.RepositoryBranch{
+			Name:    b.GetName(),
+			Version: b.GetVersion(),
+		})
+	}
+
+	languageMap := make(map[string]ctags.CTagsParserType)
+	for _, lang := range x.GetLanguageMap() {
+		languageMap[lang.GetLanguage()] = ctags.CTagsParserType(lang.GetCtags().Number())
+	}
+
+	*o = IndexOptions{
+		RepoID:     uint32(x.GetRepoId()),
+		LargeFiles: x.GetLargeFiles(),
+		Symbols:    x.GetSymbols(),
+		Branches:   branches,
+		Name:       x.GetName(),
+
+		Priority: x.GetPriority(),
+
+		Public:   x.GetPublic(),
+		Fork:     x.GetFork(),
+		Archived: x.GetArchived(),
+
+		LanguageMap:      languageMap,
+		ShardConcurrency: x.GetShardConcurrency(),
+
+		TenantID: int(x.TenantId),
+	}
 }

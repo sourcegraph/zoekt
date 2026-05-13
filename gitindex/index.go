@@ -17,8 +17,8 @@ package gitindex
 
 import (
 	"bytes"
+	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,13 +32,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
-	"github.com/sourcegraph/zoekt/ignore"
-
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/filesystem"
+
+	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/ignore"
+	"github.com/sourcegraph/zoekt/index"
 
 	git "github.com/go-git/go-git/v5"
 )
@@ -140,6 +143,18 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 		repo.CommitURLTemplate = urlJoinPath("commits", varVersion)
 		repo.FileURLTemplate = urlJoinPath(varPath) + "?at={{.Version}}"
 		repo.LineFragmentTemplate = "#{{.LineNumber}}"
+	case "bitbucket-cloud":
+		// https://bitbucket.org/<workspace>/<repo_slug>/commits/<version>
+		// https://bitbucket.org/<workspace>/<repo_slug>/src/<version>/<path>
+		repo.CommitURLTemplate = urlJoinPath("commits", varVersion)
+		repo.FileURLTemplate = urlJoinPath("src", varVersion, varPath)
+		repo.LineFragmentTemplate = "#{{.LineNumber}}"
+	case "azuredevops":
+		// https://dev.azure.com/<organization>/<project>/_git/<repo>/commit/<version>
+		// https://dev.azure.com/<organization>/<project>/_git/<repo>?path=/<path>&version=GC<version>
+		repo.CommitURLTemplate = urlJoinPath("commit", varVersion)
+		repo.FileURLTemplate = urlJoinPath() + "?path=/{{.Path}}&version=GC{{.Version}}&_a=contents"
+		repo.LineFragmentTemplate = "&line={{.LineNumber}}&lineEnd={{.LineNumber}}&lineStartColumn=1&lineEndColumn=200"
 	case "gitlab":
 		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/commit/b152c864303dae0e55377a1e2c53c9592380ffed
 		// https://gitlab.com/gitlab-org/omnibus-gitlab/-/blob/aad04155b3f6fc50ede88aedaee7fc624d481149/files/gitlab-config-template/gitlab.rb.template
@@ -179,6 +194,23 @@ func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error)
 	return commitObj, nil
 }
 
+func plainOpenRepo(repoDir string) (*git.Repository, error) {
+	// Try repoDir as the repository root first so bare repositories open
+	// correctly. If repoDir itself is not a repository, fall back to searching
+	// for a .git entry to preserve compatibility with worktree paths.
+	repo, err := git.PlainOpenWithOptions(repoDir, &git.PlainOpenOptions{
+		EnableDotGitCommonDir: true,
+	})
+	if err == nil || !errors.Is(err, git.ErrRepositoryNotExists) {
+		return repo, err
+	}
+
+	return git.PlainOpenWithOptions(repoDir, &git.PlainOpenOptions{
+		DetectDotGit:          true,
+		EnableDotGitCommonDir: true,
+	})
+}
+
 func configLookupRemoteURL(cfg *config.Config, key string) string {
 	rc := cfg.Remotes[key]
 	if rc == nil || len(rc.URLs) == 0 {
@@ -190,7 +222,7 @@ func configLookupRemoteURL(cfg *config.Config, key string) string {
 var sshRelativeURLRegexp = regexp.MustCompile(`^([^@]+)@([^:]+):(.*)$`)
 
 func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
-	repo, err := git.PlainOpen(repoDir)
+	repo, err := plainOpenRepo(repoDir)
 	if err != nil {
 		return err
 	}
@@ -200,6 +232,19 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 		return err
 	}
 
+	return setTemplatesFromRepoConfig(desc, cfg)
+}
+
+func setTemplatesFromRepo(desc *zoekt.Repository, repo *git.Repository, repoDir string) error {
+	cfg, err := repo.Config()
+	if err == nil {
+		return setTemplatesFromRepoConfig(desc, cfg)
+	}
+
+	return setTemplatesFromConfig(desc, repoDir)
+}
+
+func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) error {
 	sec := cfg.Raw.Section("zoekt")
 
 	webURLStr := sec.Options.Get("web-url")
@@ -245,6 +290,8 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	id, _ := strconv.ParseUint(sec.Options.Get("repoid"), 10, 32)
 	desc.ID = uint32(id)
 
+	desc.TenantID, _ = strconv.Atoi(sec.Options.Get("tenantID"))
+
 	if desc.RawConfig == nil {
 		desc.RawConfig = map[string]string{}
 	}
@@ -275,6 +322,44 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 	}
 
 	return nil
+}
+
+// This attempts to get a repo URL similar to the main repository template processing as in setTemplatesFromConfig()
+func normalizeSubmoduleRemoteURL(cfg *config.Config) (string, error) {
+	sec := cfg.Raw.Section("zoekt")
+	remoteURL := sec.Options.Get("web-url")
+	if remoteURL == "" {
+		// fall back to "origin" remote
+		remoteURL = configLookupRemoteURL(cfg, "origin")
+		if remoteURL == "" {
+			return "", nil
+		}
+	}
+
+	if sm := sshRelativeURLRegexp.FindStringSubmatch(remoteURL); sm != nil {
+		user := sm[1]
+		host := sm[2]
+		path := sm[3]
+
+		remoteURL = fmt.Sprintf("ssh+git://%s@%s/%s", user, host, path)
+	}
+
+	u, err := url.Parse(remoteURL)
+	if err != nil {
+		return "", fmt.Errorf("unable to parse remote URL %q: %w", remoteURL, err)
+	}
+
+	if u.Scheme == "ssh+git" {
+		u.Scheme = "https"
+		u.User = nil
+	}
+
+	// Assume we cannot build templates for this URL, leave it empty
+	if u.Scheme == "" {
+		return "", nil
+	}
+
+	return u.String(), nil
 }
 
 // SetTemplatesFromOrigin fills in templates based on the origin URL.
@@ -310,7 +395,7 @@ type Options struct {
 	RepoCacheDir string
 
 	// Indexing options.
-	BuildOptions build.Options
+	BuildOptions index.Options
 
 	// Prefix of the branch to index, e.g. `remotes/origin`.
 	BranchPrefix string
@@ -404,13 +489,25 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	}
 
 	opts.BuildOptions.RepositoryDescription.Source = opts.RepoDir
-	repo, err := git.PlainOpen(opts.RepoDir)
-	if err != nil {
-		return false, fmt.Errorf("git.PlainOpen: %w", err)
+
+	var repo *git.Repository
+	legacyRepoOpen := cmp.Or(os.Getenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION"), "false")
+	if b, err := strconv.ParseBool(legacyRepoOpen); b || err != nil {
+		repo, err = plainOpenRepo(opts.RepoDir)
+		if err != nil {
+			return false, fmt.Errorf("plainOpenRepo: %w", err)
+		}
+	} else {
+		var repoCloser io.Closer
+		repo, repoCloser, err = openRepo(opts.RepoDir)
+		if err != nil {
+			return false, fmt.Errorf("openRepo: %w", err)
+		}
+		defer repoCloser.Close()
 	}
 
-	if err := setTemplatesFromConfig(&opts.BuildOptions.RepositoryDescription, opts.RepoDir); err != nil {
-		log.Printf("setTemplatesFromConfig(%s): %s", opts.RepoDir, err)
+	if err := setTemplatesFromRepo(&opts.BuildOptions.RepositoryDescription, repo, opts.RepoDir); err != nil {
+		log.Printf("setTemplatesFromRepo(%s): %s", opts.RepoDir, err)
 	}
 
 	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
@@ -478,8 +575,13 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		tpl := opts.BuildOptions.RepositoryDescription
 		if path != "" {
 			tpl = zoekt.Repository{URL: info.URL.String()}
-			if err := SetTemplatesFromOrigin(&tpl, info.URL); err != nil {
-				log.Printf("setTemplatesFromOrigin(%s, %s): %s", path, info.URL, err)
+			if info.URL.String() != "" {
+				if err := SetTemplatesFromOrigin(&tpl, info.URL); err != nil {
+					log.Printf("setTemplatesFromOrigin(%s, %s): %s", path, info.URL, err)
+				}
+			}
+			if tpl.Name == "" {
+				tpl.Name = path
 			}
 		}
 		opts.BuildOptions.SubRepositories[path] = &tpl
@@ -495,38 +597,13 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		}
 	}
 
-	builder, err := build.NewBuilder(opts.BuildOptions)
+	builder, err := index.NewBuilder(opts.BuildOptions)
 	if err != nil {
 		return false, fmt.Errorf("build.NewBuilder: %w", err)
 	}
 
 	// Preparing the build can consume substantial memory, so check usage before starting to index.
 	builder.CheckMemoryUsage()
-
-	var ranks repoPathRanks
-	var meanRank float64
-	if opts.BuildOptions.DocumentRanksPath != "" {
-		data, err := os.ReadFile(opts.BuildOptions.DocumentRanksPath)
-		if err != nil {
-			return false, err
-		}
-
-		err = json.Unmarshal(data, &ranks)
-		if err != nil {
-			return false, err
-		}
-
-		// Compute the mean rank for this repository. Note: we overwrite the rank
-		// mean that's stored in the document ranks file, since that currently
-		// represents a global mean rank across repos, which is not what we want.
-		numRanks := len(ranks.Paths)
-		if numRanks > 0 {
-			for _, rank := range ranks.Paths {
-				meanRank += rank
-			}
-			ranks.MeanRank = meanRank / float64(numRanks)
-		}
-	}
 
 	// we don't need to check error, since we either already have an error, or
 	// we returning the first call to builder.Finish.
@@ -550,45 +627,198 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	sort.Strings(names)
 	names = uniq(names)
 
-	log.Printf("attempting to index %d total files", totalFiles)
-	for idx, name := range names {
-		keys := fileKeys[name]
+	// Separate main-repo keys from submodule keys, collecting blob SHAs
+	// for the main repo so we can stream them via git cat-file --batch.
+	// ZOEKT_DISABLE_CATFILE_BATCH=true falls back to the go-git path for
+	// all files, useful as a kill switch if the cat-file path causes issues.
+	//
+	// 2026-04-02(keegan) we are regularly seeing git growing to over 9GB in
+	// memory usage in our production cluster. Disabling by default until the
+	// issue is resolved.
+	catfileBatchDisabled := cmp.Or(os.Getenv("ZOEKT_DISABLE_CATFILE_BATCH"), "true")
+	useCatfileBatch := true
+	if disabled, _ := strconv.ParseBool(catfileBatchDisabled); disabled {
+		useCatfileBatch = false
+		log.Printf("cat-file batch disabled via ZOEKT_DISABLE_CATFILE_BATCH, using go-git")
+	}
 
-		for _, key := range keys {
-			doc, err := createDocument(key, repos, ranks, opts.BuildOptions)
-			if err != nil {
-				return false, err
-			}
+	mainRepoKeys := make([]fileKey, 0, totalFiles)
+	mainRepoIDs := make([]plumbing.Hash, 0, totalFiles)
+	var submoduleKeys []fileKey
 
-			if err := builder.Add(doc); err != nil {
-				return false, fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
-			}
-
-			if idx%10_000 == 0 {
-				builder.CheckMemoryUsage()
+	for _, name := range names {
+		for _, key := range fileKeys[name] {
+			if useCatfileBatch && key.SubRepoPath == "" {
+				mainRepoKeys = append(mainRepoKeys, key)
+				mainRepoIDs = append(mainRepoIDs, key.ID)
+			} else {
+				submoduleKeys = append(submoduleKeys, key)
 			}
 		}
 	}
+
+	log.Printf("attempting to index %d total files (%d via cat-file, %d via go-git)", totalFiles, len(mainRepoIDs), len(submoduleKeys))
+
+	// Stream main-repo blobs via pipelined cat-file --batch --buffer.
+	// Large blobs are skipped without reading content into memory.
+	if len(mainRepoIDs) > 0 {
+		crOpts := catfileReaderOptions{
+			filterSpec: catfileFilterSpec(opts),
+		}
+		cr, err := newCatfileReader(opts.RepoDir, mainRepoIDs, crOpts)
+		if err != nil {
+			return false, fmt.Errorf("newCatfileReader: %w", err)
+		}
+
+		if err := indexCatfileBlobs(cr, mainRepoKeys, repos, opts, builder); err != nil {
+			return false, err
+		}
+	}
+
+	// Index submodule blobs via go-git.
+	for idx, key := range submoduleKeys {
+		doc, err := createDocument(key, repos, opts.BuildOptions)
+		if err != nil {
+			return false, err
+		}
+
+		if err := builder.Add(doc); err != nil {
+			return false, fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
+		}
+
+		if idx%10_000 == 0 {
+			builder.CheckMemoryUsage()
+		}
+	}
+
 	return true, builder.Finish()
 }
 
-type repoPathRanks struct {
-	MeanRank float64            `json:"mean_reference_count"`
-	Paths    map[string]float64 `json:"paths"`
+// indexCatfileBlobs streams main-repo blobs from the catfileReader into the
+// builder. Large blobs are skipped without reading content into memory.
+// keys must correspond 1:1 (in order) with the ids passed to newCatfileReader.
+// The reader is always closed when this function returns.
+func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]BlobLocation, opts Options, builder *index.Builder) error {
+	defer cr.Close()
+
+	slab := newContentSlab(16 << 20) // 16 MB per slab
+
+	for idx, key := range keys {
+		size, missing, excluded, err := cr.Next()
+		if err != nil {
+			return fmt.Errorf("cat-file next for %s: %w", key.FullPath(), err)
+		}
+
+		branches := repos[key].Branches
+		var doc index.Document
+
+		if missing {
+			// Unexpected for local repos — may indicate corruption, shallow
+			// clone, or a race with git gc. Log a warning and skip.
+			log.Printf("warning: blob %s missing for %s", key.ID, key.FullPath())
+			doc = skippedDoc(key, branches, index.SkipReasonMissing)
+		} else if excluded {
+			doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
+		} else {
+			keyFullPath := key.FullPath()
+			if size > opts.BuildOptions.SizeMax && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
+				// Skip without reading content into memory.
+				doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
+			} else {
+				content := slab.alloc(size)
+				if _, err := io.ReadFull(cr, content); err != nil {
+					return fmt.Errorf("read blob %s: %w", keyFullPath, err)
+				}
+				doc = index.Document{
+					SubRepositoryPath: key.SubRepoPath,
+					Name:              keyFullPath,
+					Content:           content,
+					Branches:          branches,
+				}
+			}
+		}
+
+		if err := builder.Add(doc); err != nil {
+			return fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
+		}
+
+		if idx%10_000 == 0 {
+			builder.CheckMemoryUsage()
+		}
+	}
+
+	return nil
 }
 
-// rank returns the rank for a given path. It uses these rules:
-//   - If we have a concrete rank for this file, always use it
-//   - If there's no rank, and it's a low priority file like a test, then use rank 0
-//   - Otherwise use the mean rank of this repository, to avoid giving it a big disadvantage
-func (r repoPathRanks) rank(path string, content []byte) float64 {
-	if rank, ok := r.Paths[path]; ok {
-		return rank
-	} else if build.IsLowPriority(path, content) {
-		return 0.0
-	} else {
-		return r.MeanRank
+// openRepo opens a git repository in a way that's optimized for indexing.
+//
+// It copies the relevant logic from git.PlainOpen, and tweaks certain filesystem options.
+func openRepo(repoDir string) (*git.Repository, io.Closer, error) {
+	fs := osfs.New(repoDir)
+
+	// Check if the root directory exists.
+	if _, err := fs.Stat(""); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, git.ErrRepositoryNotExists
+		}
+		return nil, nil, err
 	}
+
+	fi, err := fs.Stat(git.GitDirName)
+	if err == nil && !fi.IsDir() {
+		return openCompatibleRepo(repoDir)
+	}
+
+	return openOptimizedRepo(repoDir)
+}
+
+func openCompatibleRepo(repoDir string) (*git.Repository, io.Closer, error) {
+	repo, err := plainOpenRepo(repoDir)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return repo, noopCloser{}, nil
+}
+
+func openOptimizedRepo(repoDir string) (*git.Repository, io.Closer, error) {
+	fs := osfs.New(repoDir)
+	wt := fs
+
+	// If there's a .git directory, use that as the new root.
+	if fi, err := fs.Stat(git.GitDirName); err == nil && fi.IsDir() {
+		if fs, err = fs.Chroot(git.GitDirName); err != nil {
+			return nil, nil, fmt.Errorf("fs.Chroot: %w", err)
+		}
+	}
+
+	s := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{
+		// Cache the packfile handles, preventing the packfile from being opened then closed on every object access
+		KeepDescriptors: true,
+	})
+
+	// Because we're keeping descriptors open, we need to close the storage object when we're done.
+	repo, err := git.Open(s, wt)
+	return repo, s, err
+}
+
+type noopCloser struct{}
+
+func (noopCloser) Close() error { return nil }
+
+func catfileFilterSpec(opts Options) string {
+	// Can't filter by size if we have large file exceptions
+	if len(opts.BuildOptions.LargeFiles) > 0 {
+		return ""
+	}
+
+	if opts.BuildOptions.SizeMax <= 0 {
+		return ""
+	}
+
+	// Git's blob:limit filter excludes blobs whose size is >= the given limit,
+	// while zoekt indexes files up to and including SizeMax bytes.
+	return fmt.Sprintf("blob:limit=%d", int64(opts.BuildOptions.SizeMax)+1)
 }
 
 func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
@@ -662,7 +892,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	// If it isn't consistent, that we can't proceed with a delta build (and the caller should fall back to a
 	// normal one).
 
-	if !build.BranchNamesEqual(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches) {
+	if !index.BranchNamesEqual(existingRepository.Branches, options.BuildOptions.RepositoryDescription.Branches) {
 		var existingBranchNames []string
 		for _, b := range existingRepository.Branches {
 			existingBranchNames = append(existingBranchNames, b.Name)
@@ -680,7 +910,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	}
 
 	// Check if the build options hash does not match the repository metadata's hash
-	// If it does not match then one or more index options has changed and will require a normal build instead of a delta build
+	// If it does not index then one or more index options has changed and will require a normal build instead of a delta build
 	if options.BuildOptions.GetHash() != existingRepository.IndexOptions {
 		return nil, nil, nil, fmt.Errorf("one or more index options previously stored for repository %s (ID: %d) does not match the index options for this requested build; These index option updates are incompatible with delta build. new index options: %+v", existingRepository.Name, existingRepository.ID, options.BuildOptions.HashOptions())
 	}
@@ -688,10 +918,15 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	// branch => (path, sha1) => repo.
 	repos = map[fileKey]BlobLocation{}
 
-	// branch name -> git worktree at most current commit
-	branchToCurrentTree := make(map[string]*object.Tree, len(options.Branches))
+	branches, err := expandBranches(repository, options.Branches, options.BranchPrefix)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("expandBranches: %w", err)
+	}
 
-	for _, b := range options.Branches {
+	// branch name -> git worktree at most current commit
+	branchToCurrentTree := make(map[string]*object.Tree, len(branches))
+
+	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("getting last current commit for branch %q: %w", b, err)
@@ -821,10 +1056,13 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 
 func prepareNormalBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
 	var repoCache *RepoCache
-	if options.Submodules {
+	if options.Submodules && options.RepoCacheDir != "" {
 		repoCache = NewRepoCache(options.RepoCacheDir)
 	}
+	return prepareNormalBuildRecurse(options, repository, repoCache, false)
+}
 
+func prepareNormalBuildRecurse(options Options, repository *git.Repository, repoCache *RepoCache, isSubrepo bool) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
 	// Branch => Repo => SHA1
 	branchVersions = map[string]map[string]plumbing.Hash{}
 
@@ -833,7 +1071,22 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 		return nil, nil, fmt.Errorf("expandBranches: %w", err)
 	}
 
-	rw := NewRepoWalker(repository, options.BuildOptions.RepositoryDescription.URL, repoCache)
+	repoURL := options.BuildOptions.RepositoryDescription.URL
+
+	if isSubrepo {
+		cfg, err := repository.Config()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to get repository config: %w", err)
+		}
+
+		u, err := normalizeSubmoduleRemoteURL(cfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to identify subrepository URL: %w", err)
+		}
+		repoURL = u
+	}
+
+	rw := NewRepoWalker(repository, repoURL, repoCache)
 	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)
 		if err != nil {
@@ -862,56 +1115,89 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 		branchVersions[b] = subVersions
 	}
 
+	// Index submodules using go-git if we didn't do so using the repo cache
+	if options.Submodules && options.RepoCacheDir == "" {
+		worktree, err := repository.Worktree()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get repository worktree: %w", err)
+		}
+
+		submodules, err := worktree.Submodules()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get submodules: %w", err)
+		}
+
+		for _, submodule := range submodules {
+			subRepository, err := submodule.Repository()
+			if err != nil {
+				log.Printf("failed to open submodule repository: %s, %s", submodule.Config().Name, err)
+				continue
+			}
+
+			sw, subVersions, err := prepareNormalBuildRecurse(options, subRepository, repoCache, true)
+			if err != nil {
+				log.Printf("failed to index submodule repository: %s, %s", submodule.Config().Name, err)
+				continue
+			}
+
+			log.Printf("adding subrepository files from: %s", submodule.Config().Name)
+
+			for k, repo := range sw {
+				rw.Files[fileKey{
+					SubRepoPath: filepath.Join(submodule.Config().Path, k.SubRepoPath),
+					Path:        k.Path,
+					ID:          k.ID,
+				}] = repo
+			}
+
+			for k, v := range subVersions {
+				branchVersions[filepath.Join(submodule.Config().Path, k)] = v
+			}
+		}
+	}
+
 	return rw.Files, branchVersions, nil
 }
 
 func createDocument(key fileKey,
 	repos map[fileKey]BlobLocation,
-	ranks repoPathRanks,
-	opts build.Options,
-) (zoekt.Document, error) {
+	opts index.Options,
+) (index.Document, error) {
 	repo := repos[key]
 	blob, err := repo.GitRepo.BlobObject(key.ID)
 	branches := repos[key].Branches
 
 	// We filter out large documents when fetching the repo. So if an object is too large, it will not be found.
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		return skippedLargeDoc(key, branches, opts), nil
+		return skippedDoc(key, branches, index.SkipReasonTooLarge), nil
 	}
 
 	if err != nil {
-		return zoekt.Document{}, err
+		return index.Document{}, err
 	}
 
 	keyFullPath := key.FullPath()
 	if blob.Size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(keyFullPath) {
-		return skippedLargeDoc(key, branches, opts), nil
+		return skippedDoc(key, branches, index.SkipReasonTooLarge), nil
 	}
 
 	contents, err := blobContents(blob)
 	if err != nil {
-		return zoekt.Document{}, err
+		return index.Document{}, err
 	}
 
-	var pathRanks []float64
-	if len(ranks.Paths) > 0 {
-		// If the repository has ranking data, then store the file's rank.
-		pathRank := ranks.rank(keyFullPath, contents)
-		pathRanks = []float64{pathRank}
-	}
-
-	return zoekt.Document{
+	return index.Document{
 		SubRepositoryPath: key.SubRepoPath,
 		Name:              keyFullPath,
 		Content:           contents,
 		Branches:          branches,
-		Ranks:             pathRanks,
 	}, nil
 }
 
-func skippedLargeDoc(key fileKey, branches []string, opts build.Options) zoekt.Document {
-	return zoekt.Document{
-		SkipReason:        fmt.Sprintf("file size exceeds maximum size %d", opts.SizeMax),
+// skippedDoc creates a Document placeholder for a blob that was not indexed.
+func skippedDoc(key fileKey, branches []string, reason index.SkipReason) index.Document {
+	return index.Document{
+		SkipReason:        reason,
 		Name:              key.FullPath(),
 		Branches:          branches,
 		SubRepositoryPath: key.SubRepoPath,

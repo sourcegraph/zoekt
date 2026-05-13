@@ -22,6 +22,8 @@ import (
 )
 
 func TestListReposNonExistent(t *testing.T) {
+	t.Parallel()
+
 	u, err := url.Parse("https://gerrit.googlesource.com/")
 	if err != nil {
 		t.Fatalf("url.Parse: %v", err)
@@ -34,6 +36,8 @@ func TestListReposNonExistent(t *testing.T) {
 }
 
 func TestListRepos(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {

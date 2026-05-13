@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 // mergeMeta updates the .meta files for the shards on disk for o.
@@ -16,10 +18,10 @@ import (
 // failure. This means you might have an inconsistent state on disk if an
 // error is returned. It is recommended to fallback to re-indexing in that
 // case.
-func mergeMeta(o *build.Options) error {
+func mergeMeta(o *index.Options) error {
 	todo := map[string]string{}
 	for _, fn := range o.FindAllShards() {
-		repos, md, err := zoekt.ReadMetadataPath(fn)
+		repos, md, err := index.ReadMetadataPath(fn)
 		if err != nil {
 			return err
 		}
@@ -44,7 +46,7 @@ func mergeMeta(o *build.Options) error {
 			continue
 		}
 
-		var merged interface{}
+		var merged any
 		if md.IndexFormatVersion >= 17 {
 			merged = repos
 		} else {
@@ -81,7 +83,7 @@ func mergeMeta(o *build.Options) error {
 //
 // Note: .tmp is the same suffix used by Builder. indexserver knows to clean
 // them up.
-func jsonMarshalTmpFile(v interface{}, p string) (_ string, err error) {
+func jsonMarshalTmpFile(v any, p string) (_ string, err error) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return "", err
@@ -110,3 +112,8 @@ func jsonMarshalTmpFile(v interface{}, p string) (_ string, err error) {
 
 // respect process umask. build does this.
 var umask os.FileMode
+
+func init() {
+	umask = os.FileMode(unix.Umask(0))
+	unix.Umask(int(umask))
+}

@@ -14,7 +14,7 @@ github.com/golang/go/src/net/rpc/server.go
 197:func NewServer() *Server {
 hidden 104 more line matches
 
-github.com/sourcegraph/cody/vscode/test/fixtures/mock-server.ts
+github.com/sourcegraph/cody-public-snapshot/vscode/test/fixtures/mock-server.ts
 126:    const server = app.listen(SERVER_PORT, () => {
 19:const SERVER_PORT = 49300
 21:export const SERVER_URL = 'http://localhost:49300'

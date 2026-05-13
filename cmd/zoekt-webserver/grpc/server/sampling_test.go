@@ -16,7 +16,7 @@ func TestSamplingStream(t *testing.T) {
 	}
 	fileEvents := func(n int) []*zoekt.SearchResult {
 		res := make([]*zoekt.SearchResult, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			res[i] = filesEvent
 		}
 		return res
@@ -26,7 +26,7 @@ func TestSamplingStream(t *testing.T) {
 	}
 	statsEvents := func(n int) []*zoekt.SearchResult {
 		res := make([]*zoekt.SearchResult, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			res[i] = statsEvent
 		}
 		return res

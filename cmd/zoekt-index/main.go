@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Command zoekt-index indexes a directory of files.
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -23,10 +25,10 @@ import (
 	"runtime/pprof"
 	"strings"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
-	"github.com/sourcegraph/zoekt/cmd"
 	"go.uber.org/automaxprocs/maxprocs"
+
+	"github.com/sourcegraph/zoekt/cmd"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 type fileInfo struct {
@@ -61,6 +63,7 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 func main() {
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to file")
 	ignoreDirs := flag.String("ignore_dirs", ".git,.hg,.svn", "comma separated list of directories to ignore.")
+	metaFile := flag.String("meta", "", "path to .meta JSON file with repository description")
 	flag.Parse()
 
 	if flag.NArg() == 0 {
@@ -95,6 +98,18 @@ func main() {
 			}
 		}
 	}
+
+	if *metaFile != "" {
+		// Read and parse the .meta JSON file into opts.RepositoryDescription
+		data, err := os.ReadFile(*metaFile)
+		if err != nil {
+			log.Fatalf("failed to read .meta file %s: %v", *metaFile, err)
+		}
+		if err := json.Unmarshal(data, &opts.RepositoryDescription); err != nil {
+			log.Fatalf("failed to decode .meta file %s: %v", *metaFile, err)
+		}
+	}
+
 	for _, arg := range flag.Args() {
 		opts.RepositoryDescription.Source = arg
 		if err := indexArg(arg, *opts, ignoreDirMap); err != nil {
@@ -103,14 +118,16 @@ func main() {
 	}
 }
 
-func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error {
+func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error {
 	dir, err := filepath.Abs(filepath.Clean(arg))
 	if err != nil {
 		return err
 	}
 
-	opts.RepositoryDescription.Name = filepath.Base(dir)
-	builder, err := build.NewBuilder(opts)
+	if opts.RepositoryDescription.Name == "" {
+		opts.RepositoryDescription.Name = filepath.Base(dir)
+	}
+	builder, err := index.NewBuilder(opts)
 	if err != nil {
 		return err
 	}
@@ -135,9 +152,9 @@ func indexArg(arg string, opts build.Options, ignore map[string]struct{}) error 
 	for f := range comm {
 		displayName := strings.TrimPrefix(f.name, dir+"/")
 		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
-			if err := builder.Add(zoekt.Document{
+			if err := builder.Add(index.Document{
 				Name:       displayName,
-				SkipReason: fmt.Sprintf("document size %d larger than limit %d", f.size, opts.SizeMax),
+				SkipReason: index.SkipReasonTooLarge,
 			}); err != nil {
 				return err
 			}

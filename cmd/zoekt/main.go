@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The 'zoekt' command supports searching over an index directory or shard.
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -23,12 +26,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
+	"strings"
 	"time"
 
 	"github.com/felixge/fgprof"
+
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 func displayMatches(files []zoekt.FileMatch, pat string, withRepo bool, list bool) {
@@ -43,8 +49,16 @@ func displayMatches(files []zoekt.FileMatch, pat string, withRepo bool, list boo
 		}
 
 		for _, m := range f.LineMatches {
-			fmt.Printf("%s%s:%d:%s%s\n", r, f.FileName, m.LineNumber, m.Line, addTabIfNonEmpty(f.Debug))
+			l := bytes.TrimSuffix(m.Line, []byte{'\n'})
+			fmt.Printf("%s%s:%d:%s%s\n", r, f.FileName, m.LineNumber, l, addTabIfNonEmpty(f.Debug))
 		}
+	}
+}
+
+func displayMatchesJSONL(files []zoekt.FileMatch) {
+	encoder := json.NewEncoder(os.Stdout)
+	for _, f := range files {
+		encoder.Encode(f)
 	}
 }
 
@@ -61,19 +75,19 @@ func loadShard(fn string, verbose bool) (zoekt.Searcher, error) {
 		return nil, err
 	}
 
-	iFile, err := zoekt.NewIndexFile(f)
+	iFile, err := index.NewIndexFile(f)
 	if err != nil {
 		return nil, err
 	}
 
-	s, err := zoekt.NewSearcher(iFile)
+	s, err := index.NewSearcher(iFile)
 	if err != nil {
 		iFile.Close()
 		return nil, fmt.Errorf("NewSearcher(%s): %v", fn, err)
 	}
 
 	if verbose {
-		repo, index, err := zoekt.ReadMetadata(iFile)
+		repo, index, err := index.ReadMetadata(iFile)
 		if err != nil {
 			iFile.Close()
 			return nil, fmt.Errorf("ReadMetadata(%s): %v", fn, err)
@@ -159,12 +173,13 @@ func main() {
 	verbose := flag.Bool("v", false, "print some background data")
 	withRepo := flag.Bool("r", false, "print the repo before the file name")
 	list := flag.Bool("l", false, "print matching filenames only")
+	jsonl := flag.Bool("jsonl", false, "print results in jsonl format")
 	sym := flag.Bool("sym", false, "do experimental symbol search")
 
 	flag.Usage = func() {
 		name := os.Args[0]
 		fmt.Fprintf(os.Stderr, "Usage:\n\n  %s [option] QUERY\n"+
-			"for example\n\n  %s 'byte file:java -file:test'\n\n", name, name)
+			"for example\n\n  %s byte file:java -file:test\n\n", name, name)
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\n")
 	}
@@ -175,14 +190,18 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	pat := flag.Arg(0)
+	pat := strings.Join(flag.Args(), " ")
+
+	if !*verbose {
+		log.SetOutput(io.Discard)
+	}
 
 	var searcher zoekt.Searcher
 	var err error
 	if *shard != "" {
 		searcher, err = loadShard(*shard, *verbose)
 	} else {
-		searcher, err = shards.NewDirectorySearcher(*index)
+		searcher, err = search.NewDirectorySearcher(*index)
 	}
 
 	if err != nil {
@@ -219,7 +238,12 @@ func main() {
 		sres, _ = searcher.Search(context.Background(), q, &sOpts)
 	}
 
-	displayMatches(sres.Files, pat, *withRepo, *list)
+	if *jsonl {
+		displayMatchesJSONL(sres.Files)
+	} else {
+		displayMatches(sres.Files, pat, *withRepo, *list)
+	}
+
 	if *verbose {
 		log.Printf("stats: %#v", sres.Stats)
 	}

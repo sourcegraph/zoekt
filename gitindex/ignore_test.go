@@ -9,11 +9,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sourcegraph/zoekt/query"
-
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
-	"github.com/sourcegraph/zoekt/shards"
+	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 func createSourcegraphignoreRepo(dir string) error {
@@ -49,6 +48,8 @@ git update-ref refs/meta/config HEAD
 }
 
 func TestIgnore(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSourcegraphignoreRepo(dir); err != nil {
@@ -57,7 +58,7 @@ func TestIgnore(t *testing.T) {
 
 	indexDir := t.TempDir()
 
-	buildOpts := build.Options{
+	buildOpts := index.Options{
 		IndexDir: indexDir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo",
@@ -77,7 +78,7 @@ func TestIgnore(t *testing.T) {
 		t.Fatalf("IndexGitRepo: %v", err)
 	}
 
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		t.Fatal("NewDirectorySearcher", err)
 	}

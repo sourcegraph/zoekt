@@ -44,6 +44,8 @@ message StreamSearchResponse {
 }
 
 message SearchOptions {
+  reserved 11, 12;
+
   // Return an upper-bound estimate of eligible documents in
   // stats.ShardFilesConsidered.
   bool estimate_doc_count = 1;
@@ -90,15 +92,6 @@ message SearchOptions {
   // If true, ChunkMatches will be returned in each FileMatch rather than LineMatches
   // EXPERIMENTAL: the behavior of this flag may be changed in future versions.
   bool chunk_matches = 10;
-
-  // EXPERIMENTAL. If true, document ranks are used as additional input for
-  // sorting matches.
-  bool use_document_ranks = 11;
-
-  // EXPERIMENTAL. When UseDocumentRanks is enabled, this can be optionally set to adjust
-  // their weight in the file match score. If the value is <= 0.0, the default weight value
-  // will be used. This option is temporary and is only exposed for testing/ tuning purposes.
-  double document_ranks_weight = 12;
 
   // Trace turns on opentracing for this request if true and if the Jaeger address was provided as
   // a command-line flag
@@ -220,6 +213,12 @@ message Repository {
   // file_tombstones is a set of file paths that should be ignored across all branches
   // in this shard.
   repeated string file_tombstones = 17;
+
+  // tenant_id is the tenant ID of the repository.
+  int64 tenant_id = 18;
+
+  // Additional metadata about the repository.
+  map<string, string> metadata = 19;
 }
 
 message IndexMetadata {
@@ -489,6 +488,7 @@ message ChunkMatch {
 
   double score = 6;
   string debug_score = 7;
+  uint32 best_line_match = 8;
 }
 
 message Range {

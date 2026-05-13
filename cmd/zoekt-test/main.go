@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// zoekt-test compares the search engine results with raw substring search
+// Command zoekt-test compares the zoekt results with raw substring search.
 package main
 
 import (
@@ -32,9 +32,9 @@ import (
 	"time"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 func readTree(dir string) (map[string][]byte, error) {
@@ -72,7 +72,7 @@ func compare(dir, patfile string, caseSensitive bool) error {
 	}
 	defer os.RemoveAll(indexDir)
 
-	var opts build.Options
+	var opts index.Options
 	opts.SetDefaults()
 	opts.IndexDir = indexDir
 
@@ -84,7 +84,7 @@ func compare(dir, patfile string, caseSensitive bool) error {
 		return fmt.Errorf("no contents")
 	}
 
-	builder, err := build.NewBuilder(opts)
+	builder, err := index.NewBuilder(opts)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func compare(dir, patfile string, caseSensitive bool) error {
 	if err != nil {
 		return err
 	}
-	searcher, err := shards.NewDirectorySearcher(indexDir)
+	searcher, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		return err
 	}
@@ -170,8 +170,8 @@ func compare(dir, patfile string, caseSensitive bool) error {
 }
 
 var (
-	memprofile = flag.String("memprofile", "", "write memory profile to `file`")
-	cpuprofile = flag.String("cpuprofile", "", "write memory profile to `file`")
+	memprofile = flag.String("mem_profile", "", "write memory profile to `file`")
+	cpuprofile = flag.String("cpu_profile", "", "write cpu profile to `file`")
 )
 
 func testLoadIndexDir(indexDir string) {
@@ -179,7 +179,7 @@ func testLoadIndexDir(indexDir string) {
 	runtime.GC()
 	runtime.ReadMemStats(&a)
 	start := time.Now()
-	s, err := shards.NewDirectorySearcher(indexDir)
+	s, err := search.NewDirectorySearcher(indexDir)
 	if err != nil {
 		return
 	}

@@ -25,12 +25,12 @@ import (
 	"testing/quick"
 	"time"
 
+	fuzz "github.com/AdaLogics/go-fuzz-headers"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	webproto "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"google.golang.org/protobuf/proto"
 
-	fuzz "github.com/AdaLogics/go-fuzz-headers"
+	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 )
 
 func TestProtoRoundtrip(t *testing.T) {
@@ -413,8 +413,8 @@ var (
 	exampleSearchResultBytes []byte
 
 	// The proto struct representation of the search result
-	exampleSearchResultProto = func() *webproto.SearchResponse {
-		sr := new(webproto.SearchResponse)
+	exampleSearchResultProto = func() *webserverv1.SearchResponse {
+		sr := new(webserverv1.SearchResponse)
 		err := proto.Unmarshal(exampleSearchResultBytes, sr)
 		if err != nil {
 			panic(err)
@@ -433,7 +433,7 @@ func BenchmarkGobRoundtrip(b *testing.B) {
 				var buf bytes.Buffer
 				enc := gob.NewEncoder(&buf)
 
-				for i := 0; i < count; i++ {
+				for range count {
 					err := enc.Encode(exampleSearchResultGo)
 					if err != nil {
 						panic(err)
@@ -442,7 +442,7 @@ func BenchmarkGobRoundtrip(b *testing.B) {
 				}
 
 				dec := gob.NewDecoder(&buf)
-				for i := 0; i < count; i++ {
+				for range count {
 					var res SearchResult
 					err := dec.Decode(&res)
 					if err != nil {
@@ -459,7 +459,7 @@ func BenchmarkProtoRoundtrip(b *testing.B) {
 		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				buffers := make([][]byte, 0, count)
-				for i := 0; i < count; i++ {
+				for range count {
 					buf, err := proto.Marshal(exampleSearchResultProto)
 					if err != nil {
 						b.Fatal(err)
@@ -468,7 +468,7 @@ func BenchmarkProtoRoundtrip(b *testing.B) {
 				}
 
 				for _, buf := range buffers {
-					res := new(webproto.SearchResponse)
+					res := new(webserverv1.SearchResponse)
 					err := proto.Unmarshal(buf, res)
 					if err != nil {
 						b.Fatal(err)

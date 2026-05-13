@@ -10,9 +10,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This binary fetches all repos of a project, and of a specific type, in case
-// these are specified, and clones them. By default it fetches and clones all
-// existing repos.
+// Command zoekt-mirror-bitbucket-server fetches all repos of a bitbucket project,
+// optionally of a specific type, and clones them.
 package main
 
 import (
@@ -180,7 +179,7 @@ func IsValidProjectType(projectType string) bool {
 
 func getAllRepos(client bitbucketv1.APIClient) ([]bitbucketv1.Repository, error) {
 	var allRepos []bitbucketv1.Repository
-	opts := map[string]interface{}{
+	opts := map[string]any{
 		"limit": 1000,
 		"start": 0,
 	}
@@ -209,7 +208,7 @@ func getAllRepos(client bitbucketv1.APIClient) ([]bitbucketv1.Repository, error)
 
 func getProjectRepos(client bitbucketv1.APIClient, projectName string) ([]bitbucketv1.Repository, error) {
 	var allRepos []bitbucketv1.Repository
-	opts := map[string]interface{}{
+	opts := map[string]any{
 		"limit": 1000,
 		"start": 0,
 	}

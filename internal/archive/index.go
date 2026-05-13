@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 // Options specify the archive specific indexing options.
@@ -74,7 +74,7 @@ func (o *Options) SetDefaults() {
 }
 
 // Index archive specified in opts using bopts.
-func Index(opts Options, bopts build.Options) error {
+func Index(opts Options, bopts index.Options) error {
 	opts.SetDefaults()
 
 	if opts.Name == "" && opts.RepoURL == "" {
@@ -114,7 +114,7 @@ func Index(opts Options, bopts build.Options) error {
 	defer a.Close()
 
 	bopts.RepositoryDescription.Source = opts.Archive
-	var builder *build.Builder
+	var builder *index.Builder
 
 	once := sync.Once{}
 	var onceErr error
@@ -124,7 +124,7 @@ func Index(opts Options, bopts build.Options) error {
 		once.Do(func() {
 			// We use the ModTime of the first file as a proxy for the latest commit date.
 			bopts.RepositoryDescription.LatestCommitDate = f.ModTime
-			builder, onceErr = build.NewBuilder(bopts)
+			builder, onceErr = index.NewBuilder(bopts)
 		})
 		if onceErr != nil {
 			return onceErr
@@ -140,7 +140,7 @@ func Index(opts Options, bopts build.Options) error {
 			return nil
 		}
 
-		return builder.Add(zoekt.Document{
+		return builder.Add(index.Document{
 			Name:     name,
 			Content:  contents,
 			Branches: brs,

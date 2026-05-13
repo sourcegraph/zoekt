@@ -32,6 +32,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -54,14 +55,14 @@ func (s *memSeeker) Name() string {
 	return "memSeeker"
 }
 
-func searcherForTest(t *testing.T, b *zoekt.IndexBuilder) zoekt.Streamer {
+func searcherForTest(t *testing.T, b *index.ShardBuilder) zoekt.Streamer {
 	var buf bytes.Buffer
 	if err := b.Write(&buf); err != nil {
 		t.Fatal(err)
 	}
 	f := &memSeeker{buf.Bytes()}
 
-	searcher, err := zoekt.NewSearcher(f)
+	searcher, err := index.NewSearcher(f)
 	if err != nil {
 		t.Fatalf("NewSearcher: %v", err)
 	}
@@ -83,7 +84,7 @@ func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.Search
 }
 
 func TestBasic(t *testing.T) {
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:                 "name",
 		URL:                  "repo-url",
 		CommitURLTemplate:    `{{ URLJoinPath "https://github.com/org/repo/commit/" .Version}}`,
@@ -92,9 +93,9 @@ func TestBasic(t *testing.T) {
 		Branches:             []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		// use a name which requires correct escaping. https://github.com/sourcegraph/zoekt/issues/807
 		Name:    "foo/bar+baz",
 		Content: []byte("to carry water in the no later bla"),
@@ -149,7 +150,7 @@ func TestBasic(t *testing.T) {
 }
 
 func TestPrint(t *testing.T) {
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:                 "name",
 		URL:                  "repo-url",
 		CommitURLTemplate:    "{{.Version}}",
@@ -158,9 +159,9 @@ func TestPrint(t *testing.T) {
 		Branches:             []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:     "f2",
 		Content:  []byte("to carry water in the no later bla"),
 		Branches: []string{"master"},
@@ -168,7 +169,7 @@ func TestPrint(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:     "dir/f2",
 		Content:  []byte("blabla"),
 		Branches: []string{"master"},
@@ -202,15 +203,15 @@ func TestPrint(t *testing.T) {
 }
 
 func TestPrintDefault(t *testing.T) {
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:     "name",
 		URL:      "repo-url",
 		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:     "f2",
 		Content:  []byte("to carry water in the no later bla"),
 		Branches: []string{"master"},
@@ -272,15 +273,15 @@ type Expectation struct {
 }
 
 func TestFormatJson(t *testing.T) {
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:     "name",
 		URL:      "repo-url",
 		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:     "f2",
 		Content:  []byte("to carry water in the no later bla"),
 		Branches: []string{"master"},
@@ -327,36 +328,36 @@ func TestFormatJson(t *testing.T) {
 }
 
 func TestContextLines(t *testing.T) {
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:     "name",
 		URL:      "repo-url",
 		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:     "f2",
 		Content:  []byte("one line\nsecond snippet\nthird thing\nfourth\nfifth block\nsixth example\nseventh"),
 		Branches: []string{"master"},
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:     "f3",
 		Content:  []byte("\n\n\n\nto carry water in the no later bla\n\n\n\n"),
 		Branches: []string{"master"},
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:     "f4",
 		Content:  []byte("un   \n \n\ttrois\n     \n\nsix\n     "),
 		Branches: []string{"master"},
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:     "f5",
 		Content:  []byte("\ngreen\npastures\n\nhere"),
 		Branches: []string{"master"},
@@ -440,7 +441,7 @@ func TestContextLines(t *testing.T) {
 			},
 		},
 		"/search?q=one&format=json&ctx=2": {
-			"match at start returns After but no Before",
+			"index at start returns After but no Before",
 			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
@@ -461,7 +462,7 @@ func TestContextLines(t *testing.T) {
 			},
 		},
 		"/search?q=seventh&format=json&ctx=2": {
-			"match at end returns Before but no After",
+			"index at end returns Before but no After",
 			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
@@ -482,7 +483,7 @@ func TestContextLines(t *testing.T) {
 			},
 		},
 		"/search?q=seventh&format=json&ctx=10": {
-			"match with large context at end returns whole document",
+			"index with large context at end returns whole document",
 			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
@@ -503,7 +504,7 @@ func TestContextLines(t *testing.T) {
 			},
 		},
 		"/search?q=one&format=json&ctx=10": {
-			"match with large context at start returns whole document",
+			"index with large context at start returns whole document",
 			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
@@ -651,15 +652,15 @@ func checkResultMatches(t *testing.T, ts *httptest.Server, req string, expected 
 }
 
 func TestContextLinesMustBeValid(t *testing.T) {
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:     "name",
 		URL:      "repo-url",
 		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:     "f2",
 		Content:  []byte("to carry water in the no later bla"),
 		Branches: []string{"master"},
@@ -746,13 +747,13 @@ func TestCrash(t *testing.T) {
 }
 
 func TestHostCustomization(t *testing.T) {
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name: "name",
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:    "file",
 		Content: []byte("bla"),
 	}); err != nil {
@@ -798,15 +799,15 @@ func TestHostCustomization(t *testing.T) {
 }
 
 func TestDupResult(t *testing.T) {
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name: "name",
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 
-	for i := 0; i < 2; i++ {
-		if err := b.Add(zoekt.Document{
+	for i := range 2 {
+		if err := b.Add(index.Document{
 			Name:    fmt.Sprintf("file%d", i),
 			Content: []byte("bla"),
 		}); err != nil {
@@ -848,15 +849,15 @@ func TestDupResult(t *testing.T) {
 }
 
 func TestTruncateLine(t *testing.T) {
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name: "name",
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 
 	largePadding := bytes.Repeat([]byte{'a'}, 100*1000) // 100kb
-	if err := b.Add(zoekt.Document{
+	if err := b.Add(index.Document{
 		Name:    "file",
 		Content: append(append(largePadding, []byte("helloworld")...), largePadding...),
 	}); err != nil {
@@ -904,15 +905,15 @@ func TestTruncateLine(t *testing.T) {
 }
 
 func TestHealthz(t *testing.T) {
-	b, err := zoekt.NewIndexBuilder(&zoekt.Repository{
+	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name: "name",
 	})
 	if err != nil {
-		t.Fatalf("NewIndexBuilder: %v", err)
+		t.Fatalf("NewShardBuilder: %v", err)
 	}
 
-	for i := 0; i < 2; i++ {
-		if err := b.Add(zoekt.Document{
+	for i := range 2 {
+		if err := b.Add(index.Document{
 			Name:    fmt.Sprintf("file%d", i),
 			Content: []byte("bla"),
 		}); err != nil {

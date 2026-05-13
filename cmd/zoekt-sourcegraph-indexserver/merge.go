@@ -1,7 +1,8 @@
 package main
 
 import (
-	"log"
+	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
-	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 var metricShardMergingRunning = promauto.NewGauge(prometheus.GaugeOpts{
@@ -46,6 +48,12 @@ func defaultMergeCmd(args ...string) *exec.Cmd {
 	return cmd
 }
 
+func defaultExplodeCmd(args ...string) *exec.Cmd {
+	cmd := exec.Command("zoekt-merge-index", "explode")
+	cmd.Args = append(cmd.Args, args...)
+	return cmd
+}
+
 // doMerge drives the merge process. It holds the lock on s.indexDir for the
 // duration of 1 merge, which might be several minutes, depending on the target
 // size of the compound shard.
@@ -58,7 +66,7 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 	// Guard against the user triggering competing merge jobs with the debug
 	// command.
 	if !mergeRunning.CompareAndSwap(false, true) {
-		log.Printf("merge already running")
+		infoLog.Printf("merge already running")
 		return
 	}
 	defer mergeRunning.Store(false)
@@ -73,14 +81,14 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 		next = false
 		s.muIndexDir.Global(func() {
 			candidates, excluded := loadCandidates(s.IndexDir, s.mergeOpts)
-			log.Printf("loadCandidates: candidates=%d excluded=%d", len(candidates), excluded)
+			infoLog.Printf("loadCandidates: candidates=%d excluded=%d", len(candidates), excluded)
 
 			c := pickCandidates(candidates, s.mergeOpts.targetSizeBytes)
 			if len(c.shards) <= 1 {
-				log.Printf("could not find enough shards to build a compound shard")
+				infoLog.Printf("could not find enough shards to build a compound shard")
 				return
 			}
-			log.Printf("start merging: shards=%d total_size=%.2fMiB", len(c.shards), float64(c.size)/(1024*1024))
+			infoLog.Printf("start merging: shards=%d total_size=%.2fMiB", len(c.shards), float64(c.size)/(1024*1024))
 
 			var paths []string
 			for _, p := range c.shards {
@@ -88,13 +96,25 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 			}
 
 			start := time.Now()
-			out, err := mergeCmd(paths...).CombinedOutput()
 
-			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(time.Since(start).Seconds())
+			cmd := mergeCmd(paths...)
+
+			// zoekt-merge-index writes the full path of the new compound shard to stdout.
+			stdoutBuf := &bytes.Buffer{}
+			stderrBuf := &bytes.Buffer{}
+			cmd.Stdout = stdoutBuf
+			cmd.Stderr = stderrBuf
+
+			err := cmd.Run()
+
+			durationSeconds := time.Since(start).Seconds()
+			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(durationSeconds)
 			if err != nil {
-				log.Printf("mergeCmd: out=%s, err=%s", out, err)
+				errorLog.Printf("error merging shards: stdout=%s, stderr=%s, durationSeconds=%.2f err=%s", stdoutBuf.String(), stderrBuf.String(), durationSeconds, err)
 				return
 			}
+
+			infoLog.Printf("finished merging: shard=%s durationSeconds=%.2f", stdoutBuf.String(), durationSeconds)
 
 			next = true
 		})
@@ -114,7 +134,7 @@ func loadCandidates(dir string, opts mergeOpts) ([]candidate, int) {
 
 	d, err := os.Open(dir)
 	if err != nil {
-		debug.Printf("failed to load candidates: %s", dir)
+		debugLog.Printf("failed to load candidates: %s", dir)
 		return []candidate{}, excluded
 	}
 	defer d.Close()
@@ -126,7 +146,7 @@ func loadCandidates(dir string, opts mergeOpts) ([]candidate, int) {
 
 		fi, err := os.Stat(path)
 		if err != nil {
-			debug.Printf("stat failed for %s: %s", n, err)
+			debugLog.Printf("stat failed for %s: %s", n, err)
 			continue
 		}
 
@@ -191,9 +211,9 @@ func isExcluded(path string, fi os.FileInfo, opts mergeOpts) bool {
 		return true
 	}
 
-	repos, _, err := zoekt.ReadMetadataPath(path)
+	repos, _, err := index.ReadMetadataPath(path)
 	if err != nil {
-		debug.Printf("failed to load metadata for %s\n", fi.Name())
+		debugLog.Printf("failed to load metadata for %s\n", fi.Name())
 		return true
 	}
 
@@ -221,4 +241,42 @@ type compound struct {
 func (c *compound) add(cand candidate) {
 	c.shards = append(c.shards, cand)
 	c.size += cand.sizeBytes
+}
+
+// explodeTenantCompoundShards explodes all compound shards that have repos from
+// the tenant in question. The caller must hold the global lock.
+func (s *Server) explodeTenantCompoundShards(ctx context.Context, explodeFunc func(path string) error) error {
+	tnt, err := tenant.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	paths, err := filepath.Glob(filepath.Join(s.IndexDir, "compound-*"))
+	if err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+
+nextCompoundShard:
+	for _, path := range paths {
+		// We don't use ReadMetadataPathAlive because we want to detect
+		// tombstoned repos, too.
+		repos, _, err := index.ReadMetadataPath(path)
+		if err != nil {
+			return err
+		}
+		for _, repo := range repos {
+			if repo.TenantID == tnt.ID() {
+				err := explodeFunc(path)
+				if err != nil {
+					return err
+				}
+
+				continue nextCompoundShard
+			}
+		}
+	}
+	return nil
 }

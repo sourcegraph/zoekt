@@ -4,9 +4,10 @@ import (
 	"context"
 
 	"github.com/opentracing/opentracing-go"
+
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/trace"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/trace"
 )
 
 func NewTraceAwareSearcher(s zoekt.Streamer) zoekt.Streamer {
@@ -15,7 +16,7 @@ func NewTraceAwareSearcher(s zoekt.Streamer) zoekt.Streamer {
 
 // traceAwareSearcher wraps a zoekt.Searcher instance so that the tracing context item is set in the
 // context. This context item toggles on trace collection via the
-// github.com/sourcegraph/zoekt/trace/ot package.
+// github.com/sourcegraph/zoekt/internal/trace/ot package.
 type traceAwareSearcher struct {
 	Searcher zoekt.Streamer
 }
@@ -25,6 +26,10 @@ func (s traceAwareSearcher) Search(
 	q query.Q,
 	opts *zoekt.SearchOptions,
 ) (*zoekt.SearchResult, error) {
+	if opts == nil {
+		opts = &zoekt.SearchOptions{}
+	}
+
 	ctx = trace.WithOpenTracingEnabled(ctx, opts.Trace)
 	spanContext := trace.SpanContextFromContext(ctx)
 	if opts.Trace && spanContext != nil {
@@ -41,6 +46,10 @@ func (s traceAwareSearcher) StreamSearch(
 	opts *zoekt.SearchOptions,
 	sender zoekt.Sender,
 ) error {
+	if opts == nil {
+		opts = &zoekt.SearchOptions{}
+	}
+
 	ctx = trace.WithOpenTracingEnabled(ctx, opts.Trace)
 	spanContext := trace.SpanContextFromContext(ctx)
 	if opts.Trace && spanContext != nil {

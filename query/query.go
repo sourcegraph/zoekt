@@ -26,6 +26,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/grafana/regexp"
+
 	"github.com/sourcegraph/zoekt/internal/syntaxutil"
 )
 
@@ -508,6 +509,17 @@ func (q *Branch) String() string {
 	return fmt.Sprintf("branch:%q", q.Pattern)
 }
 
+// Meta represents a query for metadata fields.
+type Meta struct {
+	Field string         // The metadata field name
+	Value *regexp.Regexp // The value to match
+}
+
+// String returns a string representation of the Meta query.
+func (m *Meta) String() string {
+	return fmt.Sprintf("meta.%s:%s", m.Field, m.Value)
+}
+
 func queryChildren(q Q) []Q {
 	switch s := q.(type) {
 	case *And:
@@ -650,6 +662,17 @@ func evalConstants(q Q) Q {
 	case *Branch:
 		if s.Pattern == "" {
 			return &Const{true}
+		}
+	case *BranchesRepos:
+		for _, br := range s.List {
+			if !br.Repos.IsEmpty() {
+				return q
+			}
+		}
+		return &Const{false}
+	case *RepoIDs:
+		if s.Repos.IsEmpty() {
+			return &Const{false}
 		}
 	case *RepoSet:
 		if len(s.Set) == 0 {

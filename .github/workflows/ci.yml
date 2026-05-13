@@ -11,45 +11,50 @@ jobs:
     container: alpine:edge # latest go pls
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
+
       - name: add dependencies
-        run: apk add go git
+        run: apk add go git tar
+
+      - name: Cache ctags
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/bin/universal-ctags
+          key: ${{ runner.os }}-ctags-${{ hashFiles('install-ctags-alpine.sh') }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
       - name: install ctags
-        run: ./install-ctags-alpine.sh
+        run: |
+          if [ ! -f /usr/local/bin/universal-ctags ]; then
+            ./install-ctags-alpine.sh
+          fi
+
       - name: test
         run: go test ./...
-
-  fuzz-test:
-    name: fuzz test
-    runs-on: ubuntu-latest
-    container: alpine:edge
-    steps:
-      - name: add dependencies
-        run: apk add bash go
-      # Pinned a commit to make go version configurable.
-      # This should be safe to upgrade once this commit is in a released version:
-      # https://github.com/jidicula/go-fuzz-action/commit/23cc553941669144159507e2cccdbb4afc5b3076
-      - uses: jidicula/go-fuzz-action@0206b61afc603b665297621fa5e691b1447a5e57
-        with:
-          packages: 'github.com/sourcegraph/zoekt' # This is the package where the Protobuf round trip tests are defined
-          fuzz-time: 30s
-          fuzz-minimize-time: 1m
-          go-version: '1.22'
 
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@1.1.0
+        uses: ludeeus/action-shellcheck@2.0.0
 
   shfmt:
     name: shfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: reviewdog/action-shfmt@v1.0.2
+      - uses: actions/checkout@v6
+      - uses: reviewdog/action-shfmt@v1.0.4
         with:
           filter_mode: "nofilter"
           fail_on_error: "true"
@@ -60,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       # Install the `buf` CLI
       - uses: bufbuild/buf-setup-action@v1
         with:
@@ -73,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       # Install the `buf` CLI
       - uses: bufbuild/buf-setup-action@v1
         with:
@@ -86,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       # Install the `buf` CLI
       - uses: bufbuild/buf-setup-action@v1
         with:
@@ -94,73 +99,3 @@ jobs:
       # Check if the generated code is up-to-date
       - run: .github/workflows/buf-generate-check.sh
 
-  # We build a shared docker image called "zoekt". This is not pushed, but is
-  # used for creating the indexserver and webserver images.
-  docker:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    needs:
-      - "test"
-      - "shellcheck"
-    steps:
-      - name: checkout
-        uses: actions/checkout@v3
-
-      - name: version
-        id: version
-        run: .github/workflows/docker-version.sh
-
-      - name: docker-meta-webserver
-        id: meta-webserver
-        uses: docker/metadata-action@v3
-        with:
-          images: |
-            sourcegraph/zoekt-webserver
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=sha
-      - name: docker-meta-indexserver
-        id: meta-indexserver
-        uses: docker/metadata-action@v3
-        with:
-          images: |
-            sourcegraph/zoekt-indexserver
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=sha
-
-      - name: build-zoekt
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          tags: "zoekt:latest"
-          push: "false"
-          build-args: VERSION=${{ steps.version.outputs.value }}
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: build-push-webserver
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          tags: sourcegraph/zoekt-webserver:${{ steps.version.outputs.value }}, ${{ steps.meta-webserver.outputs.tags }}, sourcegraph/zoekt-webserver:latest
-          file: Dockerfile.webserver
-          cache-from: sourcegraph/zoekt-webserver:latest
-          push: true
-
-      - name: build-push-indexserver
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          tags: sourcegraph/zoekt-indexserver:${{ steps.version.outputs.value }}, ${{ steps.meta-indexserver.outputs.tags }}, sourcegraph/zoekt-indexserver:latest
-          file: Dockerfile.indexserver
-          cache-from: sourcegraph/zoekt-indexserver:latest
-          push: true

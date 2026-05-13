@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package zoekt.indexserver.v1;
+
+option go_package = "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/zoekt/indexserver/v1";
+
+message DeleteAllDataRequest {}
+
+message DeleteAllDataResponse {}
+
+service SourcegraphIndexserverService {
+  // DeleteAllData deletes all data for the tenant in the request context.
+  // This is used for pruning all data after a tenant has been deleted.
+  rpc DeleteAllData(DeleteAllDataRequest) returns (DeleteAllDataResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}

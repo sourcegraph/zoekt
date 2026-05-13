@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package zoekt // import "github.com/sourcegraph/zoekt"
+package zoekt
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -32,7 +33,6 @@ const (
 	sliceHeaderBytes  uint64 = 24
 	stringHeaderBytes uint64 = 16
 	pointerSize       uint64 = 8
-	interfaceBytes    uint64 = 16
 )
 
 // FileMatch contains all the matches within a file.
@@ -135,6 +135,22 @@ func (m *FileMatch) sizeBytes() (sz uint64) {
 	return
 }
 
+// AddScore increments the score of the FileMatch by the computed score. If
+// debugScore is true, it also adds a debug string to the FileMatch. If raw is
+// -1, it is ignored. Otherwise, it is added to the debug string.
+func (m *FileMatch) AddScore(what string, computed float64, raw float64, debugScore bool) {
+	if computed != 0 && debugScore {
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s", what)
+		if raw != -1 {
+			fmt.Fprintf(&b, "(%s)", strconv.FormatFloat(raw, 'f', -1, 64))
+		}
+		fmt.Fprintf(&b, ":%.2f, ", computed)
+		m.Debug += b.String()
+	}
+	m.Score += computed
+}
+
 // ChunkMatch is a set of non-overlapping matches within a contiguous range of
 // lines in the file.
 type ChunkMatch struct {
@@ -161,7 +177,13 @@ type ChunkMatch struct {
 	// beginning of a line (Column will always be 1).
 	ContentStart Location
 
+	// Score is the overall relevance score of this chunk.
 	Score float64
+
+	// BestLineMatch is the line number of the highest-scoring line match in this chunk.
+	// The line number represents the index in the full file, and is 1-based. If FileName: true,
+	// this number will be 0.
+	BestLineMatch uint32
 }
 
 func (cm *ChunkMatch) sizeBytes() (sz uint64) {
@@ -553,6 +575,9 @@ func (r RepositoryBranch) String() string {
 
 // Repository holds repository metadata.
 type Repository struct {
+	// Sourcegraph's tenant ID
+	TenantID int
+
 	// Sourcegraph's repository ID
 	ID uint32
 
@@ -561,6 +586,9 @@ type Repository struct {
 
 	// The repository URL.
 	URL string
+
+	// Additional metadata about the repository.
+	Metadata map[string]string
 
 	// The physical source where this repo came from, eg. full
 	// path to the zip filename or git repository directory. This
@@ -622,8 +650,8 @@ type Repository struct {
 func (r *Repository) UnmarshalJSON(data []byte) error {
 	// We define a new type so that we can use json.Unmarshal
 	// without recursing into this same method.
-	type repository *Repository
-	repo := repository(r)
+	type repository Repository
+	repo := (*repository)(r)
 
 	err := json.Unmarshal(data, repo)
 	if err != nil {
@@ -633,6 +661,11 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 	if v, ok := repo.RawConfig["repoid"]; ok {
 		id, _ := strconv.ParseUint(v, 10, 32)
 		r.ID = uint32(id)
+	}
+
+	if v, ok := repo.RawConfig["tenantID"]; ok {
+		id, _ := strconv.ParseInt(v, 10, 64)
+		r.TenantID = int(id)
 	}
 
 	// Sourcegraph indexserver doesn't set repo.Rank, so we set it here. Setting it
@@ -657,11 +690,15 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 			// Normalize the repo score within [0, maxUint16), with the midpoint at 5,000.
 			// This means popular repos (roughly ones with over 5,000 stars) see diminishing
 			// returns from more stars.
-			r.Rank = uint16(r.priority / (5000.0 + r.priority) * maxUInt16)
+			r.Rank = uint16(r.priority / (5000.0 + r.priority) * math.MaxUint16)
 		}
 	}
 
 	return nil
+}
+
+func (r *Repository) GetPriority() float64 {
+	return r.priority
 }
 
 // monthsSince1970 returns the number of months since 1970. It returns values in
@@ -673,7 +710,7 @@ func monthsSince1970(t time.Time) uint16 {
 		return 0
 	}
 	months := int(t.Year()-1970)*12 + int(t.Month()-1)
-	return uint16(min(months, maxUInt16))
+	return uint16(min(months, math.MaxUint16))
 }
 
 // MergeMutable will merge x into r. mutated will be true if it made any
@@ -960,18 +997,10 @@ type SearchOptions struct {
 	// EXPERIMENTAL: the behavior of this flag may be changed in future versions.
 	ChunkMatches bool
 
-	// EXPERIMENTAL. If true, document ranks are used as additional input for
-	// sorting matches.
-	UseDocumentRanks bool
-
-	// EXPERIMENTAL. When UseDocumentRanks is enabled, this can be optionally set to adjust
-	// their weight in the file match score. If the value is <= 0.0, the default weight value
-	// will be used. This option is temporary and is only exposed for testing/ tuning purposes.
-	DocumentRanksWeight float64
-
 	// EXPERIMENTAL. If true, use text-search style scoring instead of the default
 	// scoring formula. The scoring algorithm treats each match in a file as a term
-	// and computes an approximation to BM25.
+	// and computes an approximation to BM25. When enabled, BM25 scoring is used for
+	// the overall FileMatch score, as well as individual LineMatch and ChunkMatch scores.
 	//
 	// The calculation of IDF assumes that Zoekt visits all documents containing any
 	// of the query terms during evaluation. This is true, for example, if all query
@@ -989,6 +1018,17 @@ type SearchOptions struct {
 
 	// SpanContext is the opentracing span context, if it exists, from the zoekt client
 	SpanContext map[string]string
+}
+
+func (o *SearchOptions) SetDefaults() {
+	if o.ShardMaxMatchCount == 0 {
+		// We cap the total number of matches, so overly broad
+		// searches don't crash the machine.
+		o.ShardMaxMatchCount = 100000
+	}
+	if o.TotalMaxMatchCount == 0 {
+		o.TotalMaxMatchCount = 10 * o.ShardMaxMatchCount
+	}
 }
 
 // String returns a succinct representation of the options. This is meant for
@@ -1036,14 +1076,9 @@ func (s *SearchOptions) String() string {
 	addDuration("MaxWallTime", s.MaxWallTime)
 	addDuration("FlushWallTime", s.FlushWallTime)
 
-	if s.DocumentRanksWeight > 0 {
-		add("DocumentRanksWeight", strconv.FormatFloat(s.DocumentRanksWeight, 'g', -1, 64))
-	}
-
 	addBool("EstimateDocCount", s.EstimateDocCount)
 	addBool("Whole", s.Whole)
 	addBool("ChunkMatches", s.ChunkMatches)
-	addBool("UseDocumentRanks", s.UseDocumentRanks)
 	addBool("UseBM25Scoring", s.UseBM25Scoring)
 	addBool("Trace", s.Trace)
 	addBool("DebugScore", s.DebugScore)

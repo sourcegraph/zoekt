@@ -9,19 +9,20 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/log/logtest"
+	"github.com/stretchr/testify/require"
 	"github.com/xeipuuv/gojsonschema"
 	"google.golang.org/grpc"
 
-	"github.com/google/go-cmp/cmp"
-
 	"github.com/sourcegraph/zoekt"
-	proto "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/protos/sourcegraph/zoekt/configuration/v1"
+	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 func TestServer_defaultArgs(t *testing.T) {
@@ -43,12 +44,17 @@ func TestServer_defaultArgs(t *testing.T) {
 		IndexDir:    "/testdata/index",
 		Parallelism: 6,
 		Incremental: true,
-		FileLimit:   1 << 20,
 	}
 	got := s.indexArgs(IndexOptions{Name: "testName"})
 	if !cmp.Equal(got, want) {
 		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}
+}
+
+func TestIndexNoTenant(t *testing.T) {
+	s := &Server{}
+	_, err := s.index(context.Background(), &indexArgs{})
+	require.ErrorIs(t, err, tenant.ErrMissingTenant)
 }
 
 func TestServer_parallelism(t *testing.T) {
@@ -142,18 +148,14 @@ func TestListRepoIDs(t *testing.T) {
 	s := newSourcegraphClient(&testURL, testHostname, grpcClient, clientOptions...)
 
 	listCalled := false
-	grpcClient.mockList = func(ctx context.Context, in *proto.ListRequest, opts ...grpc.CallOption) (*proto.ListResponse, error) {
+	grpcClient.mockList = func(ctx context.Context, in *configv1.ListRequest, opts ...grpc.CallOption) (*configv1.ListResponse, error) {
 		listCalled = true
 
 		gotRepoIDs := in.GetIndexedIds()
-		sort.Slice(gotRepoIDs, func(i, j int) bool {
-			return gotRepoIDs[i] < gotRepoIDs[j]
-		})
+		slices.Sort(gotRepoIDs)
 
 		wantRepoIDs := []int32{1, 3}
-		sort.Slice(wantRepoIDs, func(i, j int) bool {
-			return wantRepoIDs[i] < wantRepoIDs[j]
-		})
+		slices.Sort(wantRepoIDs)
 
 		if diff := cmp.Diff(wantRepoIDs, gotRepoIDs); diff != "" {
 			t.Errorf("indexed repoIDs mismatch (-want +got):\n%s", diff)
@@ -164,7 +166,7 @@ func TestListRepoIDs(t *testing.T) {
 			t.Errorf("hostname mismatch (-want +got):\n%s", diff)
 		}
 
-		return &proto.ListResponse{RepoIds: []int32{1, 2, 3}}, nil
+		return &configv1.ListResponse{RepoIds: []int32{1, 2, 3}}, nil
 	}
 
 	ctx := context.Background()
@@ -178,14 +180,10 @@ func TestListRepoIDs(t *testing.T) {
 	}
 
 	receivedRepoIDs := got.IDs
-	sort.Slice(receivedRepoIDs, func(i, j int) bool {
-		return receivedRepoIDs[i] < receivedRepoIDs[j]
-	})
+	slices.Sort(receivedRepoIDs)
 
 	expectedRepoIDs := []uint32{1, 2, 3}
-	sort.Slice(expectedRepoIDs, func(i, j int) bool {
-		return expectedRepoIDs[i] < expectedRepoIDs[j]
-	})
+	slices.Sort(expectedRepoIDs)
 
 	if diff := cmp.Diff(expectedRepoIDs, receivedRepoIDs); diff != "" {
 		t.Errorf("mismatch in list of all repoIDs (-want +got):\n%s", diff)
@@ -197,6 +195,9 @@ func TestMain(m *testing.M) {
 	level := sglog.LevelInfo
 	if !testing.Verbose() {
 		log.SetOutput(io.Discard)
+		debugLog.SetOutput(io.Discard)
+		infoLog.SetOutput(io.Discard)
+		errorLog.SetOutput(io.Discard)
 		level = sglog.LevelNone
 	}
 
@@ -216,7 +217,6 @@ func TestCreateEmptyShard(t *testing.T) {
 		Incremental: true,
 		IndexDir:    dir,
 		Parallelism: 1,
-		FileLimit:   1,
 	}
 
 	if err := createEmptyShard(args); err != nil {

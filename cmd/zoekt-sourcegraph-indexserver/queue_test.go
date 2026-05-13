@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/sourcegraph/log/logtest"
+
 	"github.com/sourcegraph/zoekt"
 )
 
@@ -19,7 +20,7 @@ func TestQueue(t *testing.T) {
 	backoffDuration := 1 * time.Millisecond
 	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
 	}
 
@@ -64,7 +65,7 @@ func TestQueueFIFO(t *testing.T) {
 	backoffDuration := 1 * time.Millisecond
 	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
 	}
 
@@ -189,7 +190,7 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 	// test: send a request to the queue's debug endpoint
 	response, err := http.Get(server.URL)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatalf("%s", err.Error())
 	}
 
 	defer response.Body.Close()

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"slices"
 	"unsafe"
 )
 
@@ -106,7 +107,7 @@ func reposMapDecode(b []byte) (ReposMap, error) {
 	// don't own b, so we create a copy of it.
 	r := binaryReader{
 		typ: "ReposMap",
-		b:   append([]byte{}, b...),
+		b:   slices.Clone(b),
 	}
 
 	// Version
@@ -129,7 +130,7 @@ func reposMapDecode(b []byte) (ReposMap, error) {
 	allBranchesLen := r.uvarint()
 	allBranches := make([]RepositoryBranch, 0, allBranchesLen)
 
-	for i := 0; i < l; i++ {
+	for range l {
 		repoID := r.uvarint()
 		hasSymbols := r.byt() == 1
 		var indexTimeUnix int64
@@ -137,7 +138,7 @@ func reposMapDecode(b []byte) (ReposMap, error) {
 			indexTimeUnix = int64(r.uvarint())
 		}
 		lb := r.uvarint()
-		for i := 0; i < lb; i++ {
+		for range lb {
 			allBranches = append(allBranches, RepositoryBranch{
 				Name:    r.str(),
 				Version: r.str(),

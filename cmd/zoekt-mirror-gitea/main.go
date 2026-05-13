@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This binary fetches all repos of a user or organization and clones
-// them.  It is strongly recommended to get a personal API token from
-// https://gitea.com/user/settings/applications, save the token in a
-// file, and point the --token option to it.
+// Command zoekt-mirror-gitea fetches all repos of a gitea user or organization
+// and clones them. It is strongly recommended to get a personal API token from
+// https://gitea.com/user/settings/applications, save the token in a file, and point
+// the --token option to it.
 package main
 
 import (
@@ -89,7 +89,10 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		clientOptions = append(clientOptions, gitea.SetToken(string(content)))
+		contentStr := string(content)
+		// Editors tend to insert newlines that make the token invalid, so clean it up
+		contentStr = strings.TrimSpace(contentStr)
+		clientOptions = append(clientOptions, gitea.SetToken(contentStr))
 	}
 	client, err := gitea.NewClient(*giteaURL, clientOptions...)
 	if err != nil {
@@ -109,7 +112,7 @@ func main() {
 		repos, err = getUserRepos(client, *user, reposFilters)
 	default:
 		log.Printf("no user or org specified, cloning all repos.")
-		repos, err = getUserRepos(client, "", reposFilters)
+		repos, err = getAllRepos(client, reposFilters)
 	}
 
 	if err != nil {
@@ -193,8 +196,29 @@ func filterRepositories(repos []*gitea.Repository, noArchived bool) (filteredRep
 	return
 }
 
-func getOrgRepos(client *gitea.Client, org string, reposFilters reposFilters) ([]*gitea.Repository, error) {
+func searchRepos(client *gitea.Client, searchOptions *gitea.SearchRepoOptions, reposFilters reposFilters) ([]*gitea.Repository, error) {
 	var allRepos []*gitea.Repository
+	for {
+		repos, resp, err := client.SearchRepos(*searchOptions)
+		if err != nil {
+			return nil, err
+		}
+		if len(repos) == 0 {
+			break
+		}
+
+		repos = filterRepositories(repos, *reposFilters.noArchived)
+		allRepos = append(allRepos, repos...)
+		searchOptions.Page = resp.NextPage
+		if resp.NextPage == 0 {
+			break
+		}
+	}
+
+	return allRepos, nil
+}
+
+func getOrgRepos(client *gitea.Client, org string, reposFilters reposFilters) ([]*gitea.Repository, error) {
 	searchOptions := &gitea.SearchRepoOptions{}
 	// OwnerID
 	organization, _, err := client.GetOrg(org)
@@ -204,49 +228,22 @@ func getOrgRepos(client *gitea.Client, org string, reposFilters reposFilters) ([
 
 	searchOptions.OwnerID = organization.ID
 
-	for {
-		repos, resp, err := client.SearchRepos(*searchOptions)
-		if err != nil {
-			return nil, err
-		}
-		if len(repos) == 0 {
-			break
-		}
+	return searchRepos(client, searchOptions, reposFilters)
+}
 
-		searchOptions.Page = resp.NextPage
-		repos = filterRepositories(repos, *reposFilters.noArchived)
-		allRepos = append(allRepos, repos...)
-		if resp.NextPage == 0 {
-			break
-		}
-	}
-	return allRepos, nil
+func getAllRepos(client *gitea.Client, reposFilters reposFilters) ([]*gitea.Repository, error) {
+	return searchRepos(client, &gitea.SearchRepoOptions{}, reposFilters)
 }
 
 func getUserRepos(client *gitea.Client, user string, reposFilters reposFilters) ([]*gitea.Repository, error) {
-	var allRepos []*gitea.Repository
 	searchOptions := &gitea.SearchRepoOptions{}
 	u, _, err := client.GetUserInfo(user)
 	if err != nil {
 		return nil, err
 	}
 	searchOptions.OwnerID = u.ID
-	for {
-		repos, resp, err := client.SearchRepos(*searchOptions)
-		if err != nil {
-			return nil, err
-		}
-		if len(repos) == 0 {
-			break
-		}
-		repos = filterRepositories(repos, *reposFilters.noArchived)
-		allRepos = append(allRepos, repos...)
-		searchOptions.Page = resp.NextPage
-		if resp.NextPage == 0 {
-			break
-		}
-	}
-	return allRepos, nil
+
+	return searchRepos(client, searchOptions, reposFilters)
 }
 
 func cloneRepos(destDir string, repos []*gitea.Repository) error {

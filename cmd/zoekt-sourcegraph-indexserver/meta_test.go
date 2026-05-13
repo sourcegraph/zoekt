@@ -6,8 +6,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 func TestMergeMeta(t *testing.T) {
@@ -17,7 +18,7 @@ func TestMergeMeta(t *testing.T) {
 	var repoFns []string
 
 	for _, name := range repoNames {
-		opts := build.Options{
+		opts := index.Options{
 			IndexDir: dir,
 			RepositoryDescription: zoekt.Repository{
 				Name: name,
@@ -27,7 +28,7 @@ func TestMergeMeta(t *testing.T) {
 			},
 		}
 		opts.SetDefaults()
-		b, err := build.NewBuilder(opts)
+		b, err := index.NewBuilder(opts)
 		if err != nil {
 			t.Fatalf("NewBuilder: %v", err)
 		}
@@ -41,7 +42,7 @@ func TestMergeMeta(t *testing.T) {
 	}
 
 	// update meta on repo3 then test it changed
-	opts := &build.Options{
+	opts := &index.Options{
 		IndexDir: dir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo3",
@@ -54,7 +55,7 @@ func TestMergeMeta(t *testing.T) {
 	if err := mergeMeta(opts); err != nil {
 		t.Fatal(err)
 	}
-	repos, _, _ := zoekt.ReadMetadataPath(repoFns[3])
+	repos, _, _ := index.ReadMetadataPath(repoFns[3])
 	if got, want := repos[0].RawConfig["public"], "0"; got != want {
 		t.Fatalf("failed to update metadata of repo3. Got public %q want %q", got, want)
 	}
@@ -72,7 +73,7 @@ func TestMergeMeta(t *testing.T) {
 
 	readPublic := func() []string {
 		var public []string
-		repos, _, _ := zoekt.ReadMetadataPath(dstFn)
+		repos, _, _ := index.ReadMetadataPath(dstFn)
 		for _, r := range repos {
 			public = append(public, r.RawConfig["public"])
 		}
@@ -84,7 +85,7 @@ func TestMergeMeta(t *testing.T) {
 	}
 
 	// Update a repo1 in compound shard to be private
-	opts = &build.Options{
+	opts = &index.Options{
 		IndexDir: dir,
 		RepositoryDescription: zoekt.Repository{
 			Name: "repo1",
@@ -105,7 +106,7 @@ func TestMergeMeta(t *testing.T) {
 func merge(t *testing.T, dstDir string, names []string) (string, string, error) {
 	t.Helper()
 
-	var files []zoekt.IndexFile
+	var files []index.IndexFile
 	for _, fn := range names {
 		f, err := os.Open(fn)
 		if err != nil {
@@ -113,7 +114,7 @@ func merge(t *testing.T, dstDir string, names []string) (string, string, error) 
 		}
 		defer f.Close()
 
-		indexFile, err := zoekt.NewIndexFile(f)
+		indexFile, err := index.NewIndexFile(f)
 		if err != nil {
 			return "", "", err
 		}
@@ -122,5 +123,5 @@ func merge(t *testing.T, dstDir string, names []string) (string, string, error) 
 		files = append(files, indexFile)
 	}
 
-	return zoekt.Merge(dstDir, files...)
+	return index.Merge(dstDir, files...)
 }

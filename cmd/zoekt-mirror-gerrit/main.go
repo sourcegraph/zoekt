@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This binary fetches all repos of a Gerrit host.
-
+// Command zoekt-mirror-gerrit fetches all repos of a Gerrit host.
 package main
 
 import (
@@ -34,6 +33,7 @@ import (
 	gerrit "github.com/andygrunwald/go-gerrit"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
+
 	"github.com/sourcegraph/zoekt/gitindex"
 )
 
@@ -147,8 +147,6 @@ func main() {
 			projectURL = schemeInfo.URL
 			if s == "http" && schemeInfo.IsAuthRequired {
 				projectURL = addPassword(projectURL, rootURL.User)
-				// remove "/a/" prefix needed for API call with basic auth but not with git command → cleaner repo name
-				projectURL = strings.Replace(projectURL, "/a/${project}", "/${project}", 1)
 			}
 			break
 		}

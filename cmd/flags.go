@@ -20,23 +20,22 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 )
 
 var (
 	version = flag.Bool("version", false, "Print version number")
-	opts    = &build.Options{}
+	opts    = &index.Options{}
 )
 
 func init() {
 	opts.Flags(flag.CommandLine)
 }
 
-func OptionsFromFlags() *build.Options {
+func OptionsFromFlags() *index.Options {
 	if *version {
 		name := filepath.Base(os.Args[0])
-		fmt.Printf("%s version %q\n", name, zoekt.Version)
+		fmt.Printf("%s version %q\n", name, index.Version)
 		os.Exit(0)
 	}
 

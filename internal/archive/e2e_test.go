@@ -19,9 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/build"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/query"
-	"github.com/sourcegraph/zoekt/shards"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 func TestMain(m *testing.M) {
@@ -118,7 +118,7 @@ func testIndexIncrementally(t *testing.T, format string) {
 	fileSize := 1000
 
 	files := map[string]string{}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		s := fmt.Sprintf("%d", i)
 		files["F"+s] = strings.Repeat("a", fileSize)
 		files["!F"+s] = strings.Repeat("a", fileSize)
@@ -161,7 +161,7 @@ func testIndexIncrementally(t *testing.T, format string) {
 	for _, test := range tests {
 		largeFiles, wantNumFiles := test.largeFiles, test.wantNumFiles
 
-		bopts := build.Options{
+		bopts := index.Options{
 			SizeMax:    fileSize - 1,
 			IndexDir:   indexDir,
 			LargeFiles: largeFiles,
@@ -179,7 +179,7 @@ func testIndexIncrementally(t *testing.T, format string) {
 			t.Fatalf("error creating index: %v", err)
 		}
 
-		ss, err := shards.NewDirectorySearcher(indexDir)
+		ss, err := search.NewDirectorySearcher(indexDir)
 		if err != nil {
 			t.Fatalf("NewDirectorySearcher(%s): %v", indexDir, err)
 		}
@@ -220,7 +220,7 @@ func testLatestCommitDate(t *testing.T, format string) {
 
 	fileSize := 10
 	files := map[string]string{}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		s := fmt.Sprintf("%d", i)
 		files["F"+s] = strings.Repeat("a", fileSize)
 		files["!F"+s] = strings.Repeat("a", fileSize)
@@ -234,7 +234,7 @@ func testLatestCommitDate(t *testing.T, format string) {
 
 	// Index
 	indexDir := t.TempDir()
-	bopts := build.Options{
+	bopts := index.Options{
 		IndexDir: indexDir,
 	}
 	opts := Options{
@@ -254,7 +254,7 @@ func testLatestCommitDate(t *testing.T, format string) {
 	indexFiles, err := f.Readdirnames(1)
 	require.Len(t, indexFiles, 1)
 
-	repos, _, err := zoekt.ReadMetadataPath(filepath.Join(indexDir, indexFiles[0]))
+	repos, _, err := index.ReadMetadataPath(filepath.Join(indexDir, indexFiles[0]))
 	require.NoError(t, err)
 	require.Len(t, repos, 1)
 	require.True(t, repos[0].LatestCommitDate.Equal(modTime))

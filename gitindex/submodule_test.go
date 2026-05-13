@@ -20,6 +20,8 @@ import (
 )
 
 func TestParseGitModules(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		data string
 		want map[string]*SubmoduleEntry

@@ -7,9 +7,10 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+
+	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 )
 
 var metricGRPCMethodStatus = promauto.NewCounterVec(prometheus.CounterOpts{

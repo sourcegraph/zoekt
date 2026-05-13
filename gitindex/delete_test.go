@@ -8,6 +8,8 @@ import (
 )
 
 func TestDeleteRepos(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	if err := createSubmoduleRepo(dir); err != nil {
