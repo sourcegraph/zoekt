@@ -389,9 +389,7 @@ func indexRepo(ctx context.Context, gitDir string, sourcegraph Sourcegraph, o *i
 	// Even though we check for incremental in this process, we still pass it
 	// in just in case we regress in how we check in process. We will still
 	// notice thanks to metrics and increased load on gitserver.
-	if o.Incremental {
-		args = append(args, "-incremental")
-	}
+	args = append(args, fmt.Sprintf("-incremental=%v", o.Incremental))
 
 	var branches []string
 	for _, b := range o.Branches {

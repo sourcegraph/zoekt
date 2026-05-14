@@ -499,7 +499,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 42",
-			"zoekt-git-index -submodules=false -branches HEAD -file_limit 1048576 -disable_ctags $TMPDIR/test%2Frepo.git",
+			"zoekt-git-index -submodules=false -incremental=false -branches HEAD -file_limit 1048576 -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}, {
 		name: "minimal-id",
@@ -526,7 +526,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 123",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
-			"zoekt-git-index -submodules=false -branches HEAD -file_limit 1048576 -disable_ctags $TMPDIR/test%2Frepo.git",
+			"zoekt-git-index -submodules=false -incremental=false -branches HEAD -file_limit 1048576 -disable_ctags $TMPDIR/test%2Frepo.git",
 		},
 	}, {
 		name: "all",
@@ -561,7 +561,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
-			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev " +
+			"zoekt-git-index -submodules=false -incremental=true -branches HEAD,dev " +
 				"-file_limit 1048576 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
 		},
@@ -612,7 +612,7 @@ func TestIndex(t *testing.T) {
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.public 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.repoid 0",
 			"git -C $TMPDIR/test%2Frepo.git config zoekt.tenantID 1",
-			"zoekt-git-index -submodules=false -incremental -branches HEAD,dev,release " +
+			"zoekt-git-index -submodules=false -incremental=true -branches HEAD,dev,release " +
 				"-delta -delta_threshold 22 -file_limit 1048576 -parallelism 4 -index /data/index -require_ctags -large_file foo -large_file bar " +
 				"$TMPDIR/test%2Frepo.git",
 		},
