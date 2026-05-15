@@ -79,6 +79,11 @@ type Regexp struct {
 	CaseSensitive bool
 }
 
+// RegexpString returns the marshaled raw regexp pattern for q.
+func (q *Regexp) RegexpString() string {
+	return syntaxutil.RegexpString(q.Regexp)
+}
+
 func (q *Regexp) String() string {
 	pref := ""
 	if q.FileName {
@@ -87,7 +92,7 @@ func (q *Regexp) String() string {
 	if q.CaseSensitive {
 		pref = "case_" + pref
 	}
-	return fmt.Sprintf("%sregex:%q", pref, syntaxutil.RegexpString(q.Regexp))
+	return fmt.Sprintf("%sregex:%q", pref, q.RegexpString())
 }
 
 // gobRegexp wraps Regexp to make it gob-encodable/decodable. Regexp contains syntax.Regexp, which
@@ -100,7 +105,7 @@ type gobRegexp struct {
 
 // GobEncode implements gob.Encoder.
 func (q Regexp) GobEncode() ([]byte, error) {
-	gobq := gobRegexp{Regexp: q, RegexpString: syntaxutil.RegexpString(q.Regexp)}
+	gobq := gobRegexp{Regexp: q, RegexpString: q.RegexpString()}
 	gobq.Regexp.Regexp = nil // can't be gob-encoded/decoded
 	return json.Marshal(gobq)
 }

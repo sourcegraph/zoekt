@@ -101,3 +101,25 @@ func TestOptimize(t *testing.T) {
 		})
 	}
 }
+
+func TestRegexpRegexpString(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: `abc`, want: `abc`},
+		{in: `a.*b`, want: `a(?-s:.)*b`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			q := &Regexp{Regexp: mustParseRE(tt.in)}
+			if got := q.RegexpString(); got != tt.want {
+				t.Fatalf("RegexpString(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+			if got := q.String(); got == tt.want {
+				t.Fatalf("String(%q) = raw pattern %q, want query formatting", tt.in, got)
+			}
+		})
+	}
+}

@@ -115,7 +115,7 @@ func RegexpFromProto(p *webserverv1.Regexp) (*Regexp, error) {
 
 func (r *Regexp) ToProto() *webserverv1.Regexp {
 	return &webserverv1.Regexp{
-		Regexp:        r.Regexp.String(),
+		Regexp:        r.RegexpString(),
 		FileName:      r.FileName,
 		Content:       r.Content,
 		CaseSensitive: r.CaseSensitive,
