@@ -103,6 +103,15 @@ func TestQueryRoundtrip(t *testing.T) {
 	}
 }
 
+func TestRegexpProtoUsesRegexpString(t *testing.T) {
+	q := &Regexp{Regexp: regexpMustParse(`a.*b`)}
+	protoQ := q.ToProto()
+
+	if got, want := protoQ.GetRegexp(), q.RegexpString(); got != want {
+		t.Fatalf("ToProto().Regexp = %q, want %q", got, want)
+	}
+}
+
 func regexpMustParse(s string) *syntax.Regexp {
 	re, err := syntax.Parse(s, syntax.Perl)
 	if err != nil {
