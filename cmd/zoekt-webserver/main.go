@@ -252,6 +252,8 @@ func main() {
 
 	debugserver.AddHandlers(serveMux, *enablePprof)
 
+	addMCPHandlers(serveMux, searcher)
+
 	if *enableIndexserverProxy {
 		socket := filepath.Join(*indexDir, "indexserver.sock")
 		sglog.Scoped("server").Info("adding reverse proxy", sglog.String("socket", socket))

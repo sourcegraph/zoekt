@@ -20,6 +20,8 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.2.0
+	github.com/lestrrat-go/jwx/v2 v2.1.6
+	github.com/mark3labs/mcp-go v0.43.0
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/peterbourgon/ff/v3 v3.4.0
@@ -60,13 +62,28 @@ require (
 
 require (
 	github.com/42wim/httpsig v1.2.2 // indirect
+	github.com/bahlo/generic-list-go v0.2.0 // indirect
+	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/davidmz/go-pageant v1.0.2 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/go-fed/httpsig v1.1.0 // indirect
+	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
+	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/lestrrat-go/blackmagic v1.0.3 // indirect
+	github.com/lestrrat-go/httpcc v1.0.1 // indirect
+	github.com/lestrrat-go/httprc v1.0.6 // indirect
+	github.com/lestrrat-go/iter v1.0.2 // indirect
+	github.com/lestrrat-go/option v1.0.1 // indirect
+	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/segmentio/asm v1.2.0 // indirect
+	github.com/spf13/cast v1.7.1 // indirect
 	github.com/tetratelabs/wazero v1.9.0 // indirect
 	github.com/wasilibs/wazero-helpers v0.0.0-20240620070341-3dff1577cd52 // indirect
+	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 )
 
