@@ -912,7 +912,7 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() { s.forceIndex(r.Context(), uint32(id)) }()
+	go func() { s.forceIndex(context.Background(), uint32(id)) }()
 
 	// 202 Accepted
 	w.WriteHeader(http.StatusAccepted)
