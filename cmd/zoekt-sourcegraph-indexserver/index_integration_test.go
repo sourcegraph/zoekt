@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt"
+	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/gitindex"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
@@ -112,15 +114,45 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 			assertSearchContains(t, searcher, "devneedle", "dev.txt")
 			assertSearchEmpty(t, searcher, "largeneedle")
 
-			require.NoError(updateIndexStatusOnSourcegraph(c, args, sg))
+			require.NoError(updateIndexStatusOnSourcegraph(c, args, sg, nil))
 			require.Len(sg.updates, 1)
 			require.Len(sg.updates[0], 1)
 			require.Equal(args.RepoID, sg.updates[0][0].RepoID)
 			require.Equal(metadata.IndexTime.Unix(), sg.updates[0][0].IndexTimeUnix)
+			require.Equal(configv1.UpdateIndexStatusRequest_Repository_STATE_SUCCESS, sg.updates[0][0].State)
+			require.Empty(sg.updates[0][0].FailureMessage)
 			if diff := cmp.Diff(args.Branches, sg.updates[0][0].Branches); diff != "" {
 				t.Fatalf("status branches mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestUpdateIndexStatusOnSourcegraphFailure(t *testing.T) {
+	sg := &recordingSourcegraph{}
+	args := &indexArgs{IndexOptions: IndexOptions{
+		RepoID: 123,
+		Name:   "test/repo",
+		Branches: []zoekt.RepositoryBranch{
+			{Name: "HEAD", Version: "deadbeef"},
+		},
+	}}
+	c := gitIndexConfig{
+		findRepositoryMetadata: func(args *indexArgs) (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error) {
+			t.Fatal("failure status update should not read repository metadata")
+			return nil, nil, false, nil
+		},
+	}
+
+	require.NoError(t, updateIndexStatusOnSourcegraph(c, args, sg, errors.New("boom")))
+	require.Len(t, sg.updates, 1)
+	require.Len(t, sg.updates[0], 1)
+	require.Equal(t, args.RepoID, sg.updates[0][0].RepoID)
+	require.Equal(t, int64(0), sg.updates[0][0].IndexTimeUnix)
+	require.Equal(t, configv1.UpdateIndexStatusRequest_Repository_STATE_FAILURE, sg.updates[0][0].State)
+	require.Equal(t, "boom", sg.updates[0][0].FailureMessage)
+	if diff := cmp.Diff(args.Branches, sg.updates[0][0].Branches); diff != "" {
+		t.Fatalf("status branches mismatch (-want +got):\n%s", diff)
 	}
 }
 

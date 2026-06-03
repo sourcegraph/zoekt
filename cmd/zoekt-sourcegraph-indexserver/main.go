@@ -675,12 +675,7 @@ func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, 
 		timeout: s.timeout,
 	}
 
-	err = gitIndex(ctx, c, args, s.Sourcegraph, s.logger)
-	if err != nil {
-		return indexStateFail, err
-	}
-
-	if err := updateIndexStatusOnSourcegraph(c, args, s.Sourcegraph); err != nil {
+	logIndexStatusUpdateError := func(err error) {
 		s.logger.Error("failed to update index status",
 			sglog.String("repo", args.Name),
 			sglog.Uint32("id", args.RepoID),
@@ -689,26 +684,50 @@ func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, 
 		)
 	}
 
+	err = gitIndex(ctx, c, args, s.Sourcegraph, s.logger)
+	if err != nil {
+		if statusErr := updateIndexStatusOnSourcegraph(c, args, s.Sourcegraph, err); statusErr != nil {
+			logIndexStatusUpdateError(statusErr)
+		}
+		return indexStateFail, err
+	}
+
+	if err := updateIndexStatusOnSourcegraph(c, args, s.Sourcegraph, nil); err != nil {
+		logIndexStatusUpdateError(err)
+	}
+
 	return indexStateSuccess, nil
 }
 
 // updateIndexStatusOnSourcegraph pushes the current state to sourcegraph so
 // it can update the zoekt_repos table.
-func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Sourcegraph) error {
-	// We need to read from disk for IndexTime.
-	_, metadata, ok, err := c.findRepositoryMetadata(args)
-	if err != nil {
-		return fmt.Errorf("failed to read metadata for new/updated index: %w", err)
-	}
-	if !ok {
-		return errors.New("failed to find metadata for new/updated index")
+func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Sourcegraph, indexErr error) error {
+	state := configv1.UpdateIndexStatusRequest_Repository_STATE_SUCCESS
+	var failureMessage string
+	var indexTimeUnix int64
+	if indexErr != nil {
+		state = configv1.UpdateIndexStatusRequest_Repository_STATE_FAILURE
+		failureMessage = indexErr.Error()
+	} else {
+		// We need to read from disk for IndexTime.
+		_, metadata, ok, err := c.findRepositoryMetadata(args)
+		if err != nil {
+			return fmt.Errorf("failed to read metadata for new/updated index: %w", err)
+		}
+		if !ok {
+			return errors.New("failed to find metadata for new/updated index")
+		}
+		indexTimeUnix = metadata.IndexTime.Unix()
 	}
 
 	status := []indexStatus{{
-		RepoID:        args.RepoID,
-		Branches:      args.Branches,
-		IndexTimeUnix: metadata.IndexTime.Unix(),
+		RepoID:         args.RepoID,
+		Branches:       args.Branches,
+		IndexTimeUnix:  indexTimeUnix,
+		State:          state,
+		FailureMessage: failureMessage,
 	}}
+
 	if err := sg.UpdateIndexStatus(status); err != nil {
 		return fmt.Errorf("failed to update sourcegraph with status: %w", err)
 	}
