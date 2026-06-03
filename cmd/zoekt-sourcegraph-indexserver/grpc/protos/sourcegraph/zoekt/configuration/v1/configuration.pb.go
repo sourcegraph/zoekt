@@ -748,6 +748,8 @@ type UpdateIndexStatusRequest_Repository struct {
 	Branches []*ZoektRepositoryBranch `protobuf:"bytes,2,rep,name=branches,proto3" json:"branches,omitempty"`
 	// index_time_unix is the unix timestamp for when the index was created.
 	IndexTimeUnix int64 `protobuf:"varint,3,opt,name=index_time_unix,json=indexTimeUnix,proto3" json:"index_time_unix,omitempty"`
+	// last_index_error is non-empty when the most recent index attempt failed.
+	LastIndexError string `protobuf:"bytes,4,opt,name=last_index_error,json=lastIndexError,proto3" json:"last_index_error,omitempty"`
 }
 
 func (x *UpdateIndexStatusRequest_Repository) Reset() {
@@ -801,6 +803,13 @@ func (x *UpdateIndexStatusRequest_Repository) GetIndexTimeUnix() int64 {
 		return x.IndexTimeUnix
 	}
 	return 0
+}
+
+func (x *UpdateIndexStatusRequest_Repository) GetLastIndexError() string {
+	if x != nil {
+		return x.LastIndexError
+	}
+	return ""
 }
 
 var File_sourcegraph_zoekt_configuration_v1_configuration_proto protoreflect.FileDescriptor

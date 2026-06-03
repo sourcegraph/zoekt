@@ -677,6 +677,7 @@ func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, 
 
 	err = gitIndex(ctx, c, args, s.Sourcegraph, s.logger)
 	if err != nil {
+		reportIndexFailureToSourcegraph(args, s.Sourcegraph, err, s.logger)
 		return indexStateFail, err
 	}
 
@@ -690,6 +691,25 @@ func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, 
 	}
 
 	return indexStateSuccess, nil
+}
+
+// reportIndexFailureToSourcegraph sends the error message of a failed index
+// attempt to Sourcegraph via UpdateIndexStatus so it can be persisted.
+// Any error is logged but not propagated — this is best-effort.
+func reportIndexFailureToSourcegraph(args *indexArgs, sg Sourcegraph, indexErr error, logger sglog.Logger) {
+	status := []indexStatus{{
+		RepoID:         args.RepoID,
+		LastIndexError: indexErr.Error(),
+		// Branches and IndexTimeUnix intentionally zero:
+		// the index did not complete so there is no new shard data.
+	}}
+	if err := sg.UpdateIndexStatus(status); err != nil {
+		logger.Error("failed to report index failure to sourcegraph",
+			sglog.String("repo", args.Name),
+			sglog.Uint32("id", args.RepoID),
+			sglog.Error(err),
+		)
+	}
 }
 
 // updateIndexStatusOnSourcegraph pushes the current state to sourcegraph so

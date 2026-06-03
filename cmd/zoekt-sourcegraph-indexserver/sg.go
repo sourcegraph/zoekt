@@ -369,9 +369,10 @@ func (s *sourcegraphClient) listRepoIDs(ctx context.Context, indexed []uint32) (
 }
 
 type indexStatus struct {
-	RepoID        uint32
-	Branches      []zoekt.RepositoryBranch
-	IndexTimeUnix int64
+	RepoID         uint32
+	Branches       []zoekt.RepositoryBranch
+	IndexTimeUnix  int64
+	LastIndexError string
 }
 
 type updateIndexStatusRequest struct {
@@ -392,9 +393,10 @@ func (u *updateIndexStatusRequest) ToProto() *configv1.UpdateIndexStatusRequest 
 		}
 
 		repositories = append(repositories, &configv1.UpdateIndexStatusRequest_Repository{
-			RepoId:        repo.RepoID,
-			Branches:      branches,
-			IndexTimeUnix: repo.IndexTimeUnix,
+			RepoId:         repo.RepoID,
+			Branches:       branches,
+			IndexTimeUnix:  repo.IndexTimeUnix,
+			LastIndexError: repo.LastIndexError,
 		})
 	}
 
@@ -419,9 +421,10 @@ func (u *updateIndexStatusRequest) FromProto(x *configv1.UpdateIndexStatusReques
 		}
 
 		repositories = append(repositories, indexStatus{
-			RepoID:        repo.GetRepoId(),
-			Branches:      branches,
-			IndexTimeUnix: repo.GetIndexTimeUnix(),
+			RepoID:         repo.GetRepoId(),
+			Branches:       branches,
+			IndexTimeUnix:  repo.GetIndexTimeUnix(),
+			LastIndexError: repo.GetLastIndexError(),
 		})
 	}
 

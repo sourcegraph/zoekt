@@ -154,6 +154,10 @@ message UpdateIndexStatusRequest {
 
     // index_time_unix is the unix timestamp for when the index was created.
     int64 index_time_unix = 3;
+
+    // last_index_error is non-empty when the most recent index attempt failed.
+    // An empty string means the attempt succeeded.
+    string last_index_error = 4;
   }
 
   repeated Repository repositories = 1;
