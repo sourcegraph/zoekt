@@ -708,6 +708,12 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 	if indexErr != nil {
 		state = configv1.UpdateIndexStatusRequest_Repository_STATE_FAILURE
 		failureMessage = indexErr.Error()
+
+		// On failure, metadata may not exist yet. Include index time if we can,
+		// but do not block reporting the failure status.
+		if _, metadata, ok, err := c.findRepositoryMetadata(args); err == nil && ok {
+			indexTimeUnix = metadata.IndexTime.Unix()
+		}
 	} else {
 		// We need to read from disk for IndexTime.
 		_, metadata, ok, err := c.findRepositoryMetadata(args)

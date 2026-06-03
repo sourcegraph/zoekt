@@ -129,30 +129,52 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 }
 
 func TestUpdateIndexStatusOnSourcegraphFailure(t *testing.T) {
-	sg := &recordingSourcegraph{}
-	args := &indexArgs{IndexOptions: IndexOptions{
-		RepoID: 123,
-		Name:   "test/repo",
-		Branches: []zoekt.RepositoryBranch{
-			{Name: "HEAD", Version: "deadbeef"},
-		},
-	}}
-	c := gitIndexConfig{
-		findRepositoryMetadata: func(args *indexArgs) (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error) {
-			t.Fatal("failure status update should not read repository metadata")
-			return nil, nil, false, nil
-		},
-	}
+	indexTime := time.Unix(123, 0)
 
-	require.NoError(t, updateIndexStatusOnSourcegraph(c, args, sg, errors.New("boom")))
-	require.Len(t, sg.updates, 1)
-	require.Len(t, sg.updates[0], 1)
-	require.Equal(t, args.RepoID, sg.updates[0][0].RepoID)
-	require.Equal(t, int64(0), sg.updates[0][0].IndexTimeUnix)
-	require.Equal(t, configv1.UpdateIndexStatusRequest_Repository_STATE_FAILURE, sg.updates[0][0].State)
-	require.Equal(t, "boom", sg.updates[0][0].FailureMessage)
-	if diff := cmp.Diff(args.Branches, sg.updates[0][0].Branches); diff != "" {
-		t.Fatalf("status branches mismatch (-want +got):\n%s", diff)
+	for _, tc := range []struct {
+		name          string
+		metadata      *zoekt.IndexMetadata
+		metadataOK    bool
+		metadataErr   error
+		wantIndexTime int64
+	}{
+		{
+			name:          "metadata available",
+			metadata:      &zoekt.IndexMetadata{IndexTime: indexTime},
+			metadataOK:    true,
+			wantIndexTime: indexTime.Unix(),
+		},
+		{
+			name:        "metadata unavailable",
+			metadataErr: errors.New("metadata boom"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sg := &recordingSourcegraph{}
+			args := &indexArgs{IndexOptions: IndexOptions{
+				RepoID: 123,
+				Name:   "test/repo",
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "HEAD", Version: "deadbeef"},
+				},
+			}}
+			c := gitIndexConfig{
+				findRepositoryMetadata: func(args *indexArgs) (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error) {
+					return nil, tc.metadata, tc.metadataOK, tc.metadataErr
+				},
+			}
+
+			require.NoError(t, updateIndexStatusOnSourcegraph(c, args, sg, errors.New("boom")))
+			require.Len(t, sg.updates, 1)
+			require.Len(t, sg.updates[0], 1)
+			require.Equal(t, args.RepoID, sg.updates[0][0].RepoID)
+			require.Equal(t, tc.wantIndexTime, sg.updates[0][0].IndexTimeUnix)
+			require.Equal(t, configv1.UpdateIndexStatusRequest_Repository_STATE_FAILURE, sg.updates[0][0].State)
+			require.Equal(t, "boom", sg.updates[0][0].FailureMessage)
+			if diff := cmp.Diff(args.Branches, sg.updates[0][0].Branches); diff != "" {
+				t.Fatalf("status branches mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
