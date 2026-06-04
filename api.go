@@ -645,6 +645,43 @@ type Repository struct {
 	// FileTombstones is a set of file paths that should be ignored across all branches
 	// in this shard.
 	FileTombstones map[string]struct{} `json:",omitempty"`
+
+	// DeltaStats contains advisory statistics used by experimental delta-index
+	// admission rules. Missing or stale stats must not affect correctness.
+	DeltaStats *RepositoryDeltaStats `json:",omitempty"`
+}
+
+// RepositoryDeltaStats records approximate live and physical index statistics
+// for deciding whether a future delta build is likely to be cheap enough.
+type RepositoryDeltaStats struct {
+	// LiveIndexedBytes approximates bytes that would contribute to shard sizing
+	// for the current live repository: file names plus indexed content bytes.
+	LiveIndexedBytes uint64
+
+	// LiveDocumentCount is the number of live, deduplicated indexed documents.
+	LiveDocumentCount uint64
+
+	// LivePathCount is the number of distinct live file paths.
+	LivePathCount uint64
+
+	// PhysicalIndexedBytes approximates bytes physically present across stacked
+	// shards, including stale documents hidden by tombstones.
+	PhysicalIndexedBytes uint64
+
+	// PhysicalDocumentCount is the number of physical documents across stacked
+	// shards, including stale documents hidden by tombstones.
+	PhysicalDocumentCount uint64
+
+	// TombstonePathCount is the number of paths currently tombstoned in old shards.
+	TombstonePathCount uint64
+
+	// DeltaLayerCount is the number of accepted delta generations since the last
+	// full rebuild.
+	DeltaLayerCount uint64
+
+	// LastFullIndexTimeUnix is the Unix timestamp of the last full rebuild when
+	// known. It is zero for old indexes where the value cannot be recovered.
+	LastFullIndexTimeUnix int64
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {

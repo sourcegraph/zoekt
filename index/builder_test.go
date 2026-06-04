@@ -533,6 +533,11 @@ func TestBuilder_BranchNamesEqual(t *testing.T) {
 			expected:    false,
 		},
 		{
+			oldBranches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "v1"}},
+			newBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
+			expected:    false,
+		},
+		{
 			oldBranches: []zoekt.RepositoryBranch{{Name: "main", Version: "v1"}},
 			newBranches: []zoekt.RepositoryBranch{},
 			expected:    false,
@@ -711,6 +716,40 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 					{Name: "main", Version: "v2"},
 				},
 				LatestCommitDate: olderTime,
+			},
+		},
+		{
+			name: "update advisory delta stats",
+			originalRepository: zoekt.Repository{
+				Name: "repo",
+				ID:   1,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "main", Version: "v1"},
+				},
+				DeltaStats: &zoekt.RepositoryDeltaStats{
+					LiveIndexedBytes:      10,
+					LiveDocumentCount:     1,
+					LivePathCount:         1,
+					PhysicalIndexedBytes:  10,
+					PhysicalDocumentCount: 1,
+				},
+			},
+			updatedRepository: zoekt.Repository{
+				Name: "repo",
+				ID:   1,
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "main", Version: "v2"},
+				},
+				DeltaStats: &zoekt.RepositoryDeltaStats{
+					LiveIndexedBytes:      11,
+					LiveDocumentCount:     1,
+					LivePathCount:         1,
+					PhysicalIndexedBytes:  22,
+					PhysicalDocumentCount: 2,
+					TombstonePathCount:    1,
+					DeltaLayerCount:       1,
+					LastFullIndexTimeUnix: 123,
+				},
 			},
 		},
 	} {

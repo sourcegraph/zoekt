@@ -349,6 +349,37 @@ func TestRepositoryMergeMutable(t *testing.T) {
 			t.Fatalf("got different LineFragmentTemplate, %s vs %s", a.LineFragmentTemplate, b.LineFragmentTemplate)
 		}
 	})
+	t.Run("different DeltaStats", func(t *testing.T) {
+		a := a
+		a.DeltaStats = &RepositoryDeltaStats{
+			LiveIndexedBytes:      10,
+			LiveDocumentCount:     1,
+			LivePathCount:         1,
+			PhysicalIndexedBytes:  10,
+			PhysicalDocumentCount: 1,
+		}
+		b := a
+		b.DeltaStats = &RepositoryDeltaStats{
+			LiveIndexedBytes:      20,
+			LiveDocumentCount:     2,
+			LivePathCount:         2,
+			PhysicalIndexedBytes:  30,
+			PhysicalDocumentCount: 3,
+			TombstonePathCount:    1,
+			DeltaLayerCount:       1,
+		}
+
+		mutated, err := a.MergeMutable(&b)
+		if err != nil {
+			t.Fatalf("got err %v", err)
+		}
+		if mutated {
+			t.Fatalf("want mutated=false, got true")
+		}
+		if reflect.DeepEqual(a.DeltaStats, b.DeltaStats) {
+			t.Fatalf("MergeMutable should ignore advisory DeltaStats")
+		}
+	})
 	t.Run("all same", func(t *testing.T) {
 		b := a
 		mutated, err := a.MergeMutable(&b)
@@ -362,6 +393,44 @@ func TestRepositoryMergeMutable(t *testing.T) {
 			t.Fatalf("got different Repository, %v vs %v", a, b)
 		}
 	})
+}
+
+func TestRepositoryDeltaStatsJSON(t *testing.T) {
+	repo := Repository{
+		ID:   1,
+		Name: "repo",
+		DeltaStats: &RepositoryDeltaStats{
+			LiveIndexedBytes:      11,
+			LiveDocumentCount:     2,
+			LivePathCount:         2,
+			PhysicalIndexedBytes:  19,
+			PhysicalDocumentCount: 3,
+			TombstonePathCount:    1,
+			DeltaLayerCount:       2,
+			LastFullIndexTimeUnix: 123,
+		},
+	}
+
+	blob, err := json.Marshal(repo)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var round Repository
+	if err := json.Unmarshal(blob, &round); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(repo.DeltaStats, round.DeltaStats) {
+		t.Fatalf("DeltaStats round trip mismatch: got %+v, want %+v", round.DeltaStats, repo.DeltaStats)
+	}
+
+	var old Repository
+	if err := json.Unmarshal([]byte(`{"ID":1,"Name":"repo"}`), &old); err != nil {
+		t.Fatalf("Unmarshal old metadata: %v", err)
+	}
+	if old.DeltaStats != nil {
+		t.Fatalf("missing DeltaStats should decode as nil, got %+v", old.DeltaStats)
+	}
 }
 
 func TestMonthsSince1970(t *testing.T) {

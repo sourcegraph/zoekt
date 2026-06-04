@@ -22,6 +22,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/gitindex"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
@@ -55,6 +56,37 @@ func TestIndexNoTenant(t *testing.T) {
 	s := &Server{}
 	_, err := s.index(context.Background(), &indexArgs{})
 	require.ErrorIs(t, err, tenant.ErrMissingTenant)
+}
+
+func TestDeltaAdmissionModeFromEnv(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		value   string
+		want    string
+		wantErr bool
+	}{
+		{name: "empty"},
+		{name: "stats-v1", value: gitindex.DeltaAdmissionModeStatsV1, want: gitindex.DeltaAdmissionModeStatsV1},
+		{name: "invalid", value: "current", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DELTA_ADMISSION_MODE", tc.value)
+
+			got, err := deltaAdmissionModeFromEnv()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
 
 func TestServer_parallelism(t *testing.T) {

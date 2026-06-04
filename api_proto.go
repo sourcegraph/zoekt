@@ -417,6 +417,38 @@ func (r *RepositoryBranch) ToProto() *webserverv1.RepositoryBranch {
 	}
 }
 
+func RepositoryDeltaStatsFromProto(p *webserverv1.RepositoryDeltaStats) *RepositoryDeltaStats {
+	if p == nil {
+		return nil
+	}
+
+	return &RepositoryDeltaStats{
+		LiveIndexedBytes:      p.GetLiveIndexedBytes(),
+		LiveDocumentCount:     p.GetLiveDocumentCount(),
+		LivePathCount:         p.GetLivePathCount(),
+		PhysicalIndexedBytes:  p.GetPhysicalIndexedBytes(),
+		PhysicalDocumentCount: p.GetPhysicalDocumentCount(),
+		TombstonePathCount:    p.GetTombstonePathCount(),
+		DeltaLayerCount:       p.GetDeltaLayerCount(),
+	}
+}
+
+func (s *RepositoryDeltaStats) ToProto() *webserverv1.RepositoryDeltaStats {
+	if s == nil {
+		return nil
+	}
+
+	return &webserverv1.RepositoryDeltaStats{
+		LiveIndexedBytes:      s.LiveIndexedBytes,
+		LiveDocumentCount:     s.LiveDocumentCount,
+		LivePathCount:         s.LivePathCount,
+		PhysicalIndexedBytes:  s.PhysicalIndexedBytes,
+		PhysicalDocumentCount: s.PhysicalDocumentCount,
+		TombstonePathCount:    s.TombstonePathCount,
+		DeltaLayerCount:       s.DeltaLayerCount,
+	}
+}
+
 func RepositoryFromProto(p *webserverv1.Repository) Repository {
 	branches := make([]RepositoryBranch, len(p.GetBranches()))
 	for i, branch := range p.GetBranches() {
@@ -454,6 +486,7 @@ func RepositoryFromProto(p *webserverv1.Repository) Repository {
 		LatestCommitDate:     p.GetLatestCommitDate().AsTime(),
 		FileTombstones:       fileTombstones,
 		Metadata:             p.GetMetadata(),
+		DeltaStats:           RepositoryDeltaStatsFromProto(p.GetDeltaStats()),
 	}
 }
 
@@ -497,6 +530,7 @@ func (r *Repository) ToProto() *webserverv1.Repository {
 		LatestCommitDate:     timestamppb.New(r.LatestCommitDate),
 		FileTombstones:       fileTombstones,
 		Metadata:             r.Metadata,
+		DeltaStats:           r.DeltaStats.ToProto(),
 	}
 }
 
