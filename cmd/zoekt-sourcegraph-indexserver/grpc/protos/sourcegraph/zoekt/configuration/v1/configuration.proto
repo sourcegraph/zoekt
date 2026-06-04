@@ -146,6 +146,12 @@ message ListResponse {
 // UpdateIndexStatusRequest is the request to the UpdateIndexStatus RPC.
 message UpdateIndexStatusRequest {
   message Repository {
+    enum State {
+      STATE_UNSPECIFIED = 0;
+      STATE_SUCCESS = 1;
+      STATE_FAILURE = 2;
+    }
+
     // repo_id is the Sourcegraph repository ID.
     uint32 repo_id = 1;
 
@@ -154,6 +160,15 @@ message UpdateIndexStatusRequest {
 
     // index_time_unix is the unix timestamp for when the index was created.
     int64 index_time_unix = 3;
+
+    // state describes the outcome of the most recent indexing attempt.
+    //
+    // Unspecified is treated as success by the server for backwards compatibility
+    // with older clients that only reported successful indexing.
+    State state = 4;
+
+    // failure_message describes the most recent indexing failure when state is failure.
+    string failure_message = 5;
   }
 
   repeated Repository repositories = 1;
