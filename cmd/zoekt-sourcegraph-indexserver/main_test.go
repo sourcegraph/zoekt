@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
 	sglog "github.com/sourcegraph/log"
@@ -55,6 +56,27 @@ func TestIndexNoTenant(t *testing.T) {
 	s := &Server{}
 	_, err := s.index(context.Background(), &indexArgs{})
 	require.ErrorIs(t, err, tenant.ErrMissingTenant)
+}
+
+func TestTruncateFailureMessageForSourcegraph(t *testing.T) {
+	t.Run("preserves short message", func(t *testing.T) {
+		require.Equal(t, "boom", truncateFailureMessageForSourcegraph("boom"))
+	})
+
+	t.Run("truncates oversized utf8 message", func(t *testing.T) {
+		input := strings.Repeat("é", maxFailureMessageBytes) + "tail"
+
+		got := truncateFailureMessageForSourcegraph(input)
+		parts := strings.Split(got, failureMessageTruncationMarker)
+
+		require.Len(t, parts, 2)
+		require.LessOrEqual(t, len(got), maxFailureMessageBytes)
+		require.True(t, utf8.ValidString(got))
+		require.NotEmpty(t, parts[0])
+		require.True(t, strings.HasPrefix(input, parts[0]))
+		require.Contains(t, parts[1], "tail")
+		require.Less(t, len(parts[0])+len(parts[1]), len(input))
+	})
 }
 
 func TestServer_parallelism(t *testing.T) {

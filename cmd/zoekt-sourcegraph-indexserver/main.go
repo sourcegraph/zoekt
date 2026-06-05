@@ -44,6 +44,7 @@ import (
 	"sync"
 	"text/tabwriter"
 	"time"
+	"unicode/utf8"
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
@@ -254,6 +255,11 @@ var (
 // time."  famous last words. A client was indexing a monorepo with 42
 // cores... 5m was not enough.
 const noOutputTimeout = 30 * time.Minute
+
+const (
+	maxFailureMessageBytes         = 12 * 1024
+	failureMessageTruncationMarker = "\n\n[Error message truncated]\n\n"
+)
 
 func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 	out := &synchronizedBuffer{}
@@ -707,7 +713,7 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 	var indexTimeUnix int64
 	if indexErr != nil {
 		state = configv1.UpdateIndexStatusRequest_Repository_STATE_FAILURE
-		failureMessage = indexErr.Error()
+		failureMessage = truncateFailureMessageForSourcegraph(indexErr.Error())
 
 		// On failure, metadata may not exist yet. Include index time if we can,
 		// but do not block reporting the failure status.
@@ -739,6 +745,51 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 	}
 
 	return nil
+}
+
+func truncateFailureMessageForSourcegraph(s string) string {
+	if len(s) <= maxFailureMessageBytes {
+		return s
+	}
+
+	budget := maxFailureMessageBytes - len(failureMessageTruncationMarker)
+	headBytes := budget / 2
+	tailBytes := budget - headBytes
+
+	return utf8PrefixBytes(s, headBytes) + failureMessageTruncationMarker + utf8SuffixBytes(s, tailBytes)
+}
+
+func utf8PrefixBytes(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+
+	if maxBytes <= 0 {
+		return ""
+	}
+
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+
+	return s[:maxBytes]
+}
+
+func utf8SuffixBytes(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+
+	if maxBytes <= 0 {
+		return ""
+	}
+
+	start := len(s) - maxBytes
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+
+	return s[start:]
 }
 
 func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
