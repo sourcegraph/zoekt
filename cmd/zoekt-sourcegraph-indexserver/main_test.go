@@ -57,6 +57,19 @@ func TestIndexNoTenant(t *testing.T) {
 	require.ErrorIs(t, err, tenant.ErrMissingTenant)
 }
 
+func TestTruncateFailureMessageForSourcegraph(t *testing.T) {
+	t.Run("preserves short message", func(t *testing.T) {
+		require.Equal(t, "boom", truncateFailureMessageForSourcegraph("boom"))
+	})
+
+	t.Run("truncates oversized utf8 message", func(t *testing.T) {
+		input := strings.Repeat("é", maxFailureMessageBytes) + "tail"
+		want := strings.Repeat("é", (maxFailureMessageBytes-len(failureMessageTruncationMarker))/len("é")) + failureMessageTruncationMarker
+
+		require.Equal(t, want, truncateFailureMessageForSourcegraph(input))
+	})
+}
+
 func TestServer_parallelism(t *testing.T) {
 	root, err := url.Parse("http://api.test")
 	if err != nil {
