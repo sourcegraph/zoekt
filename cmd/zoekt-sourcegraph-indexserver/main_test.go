@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
 	sglog "github.com/sourcegraph/log"
@@ -64,9 +65,17 @@ func TestTruncateFailureMessageForSourcegraph(t *testing.T) {
 
 	t.Run("truncates oversized utf8 message", func(t *testing.T) {
 		input := strings.Repeat("é", maxFailureMessageBytes) + "tail"
-		want := strings.Repeat("é", (maxFailureMessageBytes-len(failureMessageTruncationMarker))/len("é")) + failureMessageTruncationMarker
 
-		require.Equal(t, want, truncateFailureMessageForSourcegraph(input))
+		got := truncateFailureMessageForSourcegraph(input)
+		parts := strings.Split(got, failureMessageTruncationMarker)
+
+		require.Len(t, parts, 2)
+		require.LessOrEqual(t, len(got), maxFailureMessageBytes)
+		require.True(t, utf8.ValidString(got))
+		require.NotEmpty(t, parts[0])
+		require.True(t, strings.HasPrefix(input, parts[0]))
+		require.Contains(t, parts[1], "tail")
+		require.Less(t, len(parts[0])+len(parts[1]), len(input))
 	})
 }
 

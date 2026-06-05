@@ -258,7 +258,7 @@ const noOutputTimeout = 30 * time.Minute
 
 const (
 	maxFailureMessageBytes         = 12 * 1024
-	failureMessageTruncationMarker = "\n\n[Error message truncated]"
+	failureMessageTruncationMarker = "\n\n[Error message truncated]\n\n"
 )
 
 func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
@@ -752,7 +752,11 @@ func truncateFailureMessageForSourcegraph(s string) string {
 		return s
 	}
 
-	return utf8PrefixBytes(s, maxFailureMessageBytes-len(failureMessageTruncationMarker)) + failureMessageTruncationMarker
+	budget := maxFailureMessageBytes - len(failureMessageTruncationMarker)
+	headBytes := budget / 2
+	tailBytes := budget - headBytes
+
+	return utf8PrefixBytes(s, headBytes) + failureMessageTruncationMarker + utf8SuffixBytes(s, tailBytes)
 }
 
 func utf8PrefixBytes(s string, maxBytes int) string {
@@ -769,6 +773,23 @@ func utf8PrefixBytes(s string, maxBytes int) string {
 	}
 
 	return s[:maxBytes]
+}
+
+func utf8SuffixBytes(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+
+	if maxBytes <= 0 {
+		return ""
+	}
+
+	start := len(s) - maxBytes
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+
+	return s[start:]
 }
 
 func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
