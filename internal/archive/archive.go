@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -114,7 +115,7 @@ func newZipArchive(r io.Reader, closer io.Closer) (*zipArchive, error) {
 func detectContentType(r io.Reader) (string, io.Reader, error) {
 	var buf [512]byte
 	n, err := io.ReadFull(r, buf[:])
-	if err != nil && err != io.ErrUnexpectedEOF {
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return "", nil, err
 	}
 
