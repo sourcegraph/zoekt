@@ -275,6 +275,7 @@ func addDocument(d *indexData, ib *ShardBuilder, repoID int, docID uint32) error
 		// Branches set below since it requires lookups
 		SubRepositoryPath: d.subRepoPaths[repoID][d.subRepos[docID]],
 		Language:          d.languageMap[d.getLanguage(docID)],
+		Category:          d.getCategory(docID),
 		// SkipReason not set, will be part of content from original indexer.
 	}
 
