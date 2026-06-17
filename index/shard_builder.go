@@ -549,6 +549,9 @@ func (b *ShardBuilder) Add(doc Document) error {
 		if index := bytes.IndexByte(doc.Content, 0); index >= 0 {
 			doc.SkipReason = SkipReasonBinary
 		}
+		// Preserve the original content for category detection in callers that
+		// bypass Builder.Add and pass skipped documents directly.
+		DetermineFileCategory(&doc)
 	}
 
 	if doc.SkipReason != SkipReasonNone {
@@ -558,9 +561,6 @@ func (b *ShardBuilder) Add(doc Document) error {
 	}
 
 	DetermineLanguageIfUnknown(&doc)
-	if doc.Category == FileCategoryMissing {
-		DetermineFileCategory(&doc)
-	}
 
 	sort.Sort(symbolSlice{doc.Symbols, doc.SymbolsMetaData})
 	var last DocumentSection
