@@ -15,6 +15,7 @@
 package search
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -244,7 +245,7 @@ func (s *DirectoryWatcher) watch() error {
 			case err := <-watcher.Errors:
 				// Ignore ErrEventOverflow since we rely on the presence of events so
 				// safe to ignore.
-				if err != nil && err != fsnotify.ErrEventOverflow {
+				if err != nil && !errors.Is(err, fsnotify.ErrEventOverflow) {
 					log.Println("[ERROR] watcher error:", err)
 				}
 
