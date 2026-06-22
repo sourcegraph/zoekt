@@ -3,7 +3,6 @@ package tracer
 import (
 	"context"
 	"fmt"
-	"log"
 	"regexp"
 
 	"github.com/opentracing/opentracing-go"
@@ -65,8 +64,9 @@ func configureOpenTelemetry(resource sglog.Resource) (opentracing.Tracer, error)
 	bridge, otelTracerProvider := otelbridge.NewTracerPair(provider.Tracer("tracer.global"))
 	bridge.SetTextMapPropagator(compositePropagator)
 	otel.SetTracerProvider(otelTracerProvider)
+	otelLogger := sglog.Scoped("otel")
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-		log.Println("opentelemetry: ", err.Error())
+		otelLogger.Debug("error encountered", sglog.Error(err))
 	}))
 
 	// Done
