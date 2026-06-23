@@ -671,24 +671,21 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		}
 
 		if err := indexCatfileBlobs(cr, mainRepoKeys, repos, opts, builder); err != nil {
-			return false, err
+			var readErr *catfileReadError
+			if errors.As(err, &readErr) && readErr.processed == 0 {
+				log.Printf("git cat-file failed before yielding any blobs, falling back to go-git for %d blobs: %v", len(mainRepoKeys), err)
+				if err := indexGoGitBlobs(mainRepoKeys, repos, opts.BuildOptions, builder); err != nil {
+					return false, err
+				}
+			} else {
+				return false, err
+			}
 		}
 	}
 
 	// Index submodule blobs via go-git.
-	for idx, key := range submoduleKeys {
-		doc, err := createDocument(key, repos, opts.BuildOptions)
-		if err != nil {
-			return false, err
-		}
-
-		if err := builder.Add(doc); err != nil {
-			return false, fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
-		}
-
-		if idx%10_000 == 0 {
-			builder.CheckMemoryUsage()
-		}
+	if err := indexGoGitBlobs(submoduleKeys, repos, opts.BuildOptions, builder); err != nil {
+		return false, err
 	}
 
 	return true, builder.Finish()
@@ -700,13 +697,14 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 // The reader is always closed when this function returns.
 func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]BlobLocation, opts Options, builder *index.Builder) error {
 	defer cr.Close()
+	processed := 0
 
 	slab := newContentSlab(16 << 20) // 16 MB per slab
 
 	for idx, key := range keys {
 		size, missing, excluded, err := cr.Next()
 		if err != nil {
-			return fmt.Errorf("cat-file next for %s: %w", key.FullPath(), err)
+			return &catfileReadError{processed: processed, err: fmt.Errorf("cat-file next for %s: %w", key.FullPath(), err)}
 		}
 
 		branches := repos[key].Branches
@@ -727,7 +725,7 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 			} else {
 				content := slab.alloc(size)
 				if _, err := io.ReadFull(cr, content); err != nil {
-					return fmt.Errorf("read blob %s: %w", keyFullPath, err)
+					return &catfileReadError{processed: processed, err: fmt.Errorf("read blob %s: %w", keyFullPath, err)}
 				}
 				doc = index.Document{
 					SubRepositoryPath: key.SubRepoPath,
@@ -736,6 +734,39 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 					Branches:          branches,
 				}
 			}
+		}
+
+		if err := builder.Add(doc); err != nil {
+			return fmt.Errorf("error adding document with name %s: %w", key.FullPath(), err)
+		}
+		processed++
+
+		if idx%10_000 == 0 {
+			builder.CheckMemoryUsage()
+		}
+	}
+
+	return nil
+}
+
+type catfileReadError struct {
+	processed int
+	err       error
+}
+
+func (e *catfileReadError) Error() string {
+	return e.err.Error()
+}
+
+func (e *catfileReadError) Unwrap() error {
+	return e.err
+}
+
+func indexGoGitBlobs(keys []fileKey, repos map[fileKey]BlobLocation, opts index.Options, builder *index.Builder) error {
+	for idx, key := range keys {
+		doc, err := createDocument(key, repos, opts)
+		if err != nil {
+			return err
 		}
 
 		if err := builder.Add(doc); err != nil {
