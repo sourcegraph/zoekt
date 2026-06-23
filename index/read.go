@@ -23,6 +23,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"unicode/utf8"
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/prometheus/client_golang/prometheus"
@@ -513,10 +514,82 @@ func (d *indexData) verify() error {
 		"branch masks":      len(d.fileBranchMasks),
 		"doc section index": len(d.docSectionsIndex) - 1,
 		"newlines index":    len(d.newlinesIndex) - 1,
+		"file end runes":    len(d.fileEndRunes),
+		"name end runes":    len(d.fileNameEndRunes),
 	} {
 		if got != n {
 			return fmt.Errorf("got %s %d, want %d", what, got, n)
 		}
+	}
+
+	if err := d.verifyRuneBoundaryMapping("content", d.boundaries, d.fileEndRunes, d.runeOffsets, false); err != nil {
+		return err
+	}
+	if err := d.verifyRuneBoundaryMapping("filename", d.fileNameIndex, d.fileNameEndRunes, d.fileNameRuneOffsets, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *indexData) verifyRuneBoundaryMapping(what string, byteEnds, runeEnds []uint32, sample runeOffsetMap, filename bool) error {
+	var prevRune uint32
+	for i, endRune := range runeEnds {
+		startByte := byteEnds[i]
+		endByte := byteEnds[i+1]
+		if endByte < startByte {
+			return fmt.Errorf("corrupt index: %s %d byte end %d before start %d", what, i, endByte, startByte)
+		}
+		if endRune < prevRune {
+			return fmt.Errorf("corrupt index: %s %d rune end %d before previous end %d", what, i, endRune, prevRune)
+		}
+
+		if d.metaData.PlainASCII {
+			wantRuneEnd := prevRune + endByte - startByte
+			if endRune != wantRuneEnd {
+				return fmt.Errorf("corrupt index: plain ASCII %s %d ends at rune %d, want %d from byte boundaries", what, i, endRune, wantRuneEnd)
+			}
+			prevRune = endRune
+			continue
+		}
+
+		byteOff, left := sample.lookup(endRune)
+		if byteOff > endByte {
+			return fmt.Errorf("corrupt index: %s %d rune end %d maps to byte offset %d after byte end %d", what, i, endRune, byteOff, endByte)
+		}
+
+		var data []byte
+		if filename {
+			if byteOff > uint32(len(d.fileNameContent)) {
+				return fmt.Errorf("corrupt index: %s %d rune end %d maps to byte offset %d past filename data size %d", what, i, endRune, byteOff, len(d.fileNameContent))
+			}
+			if endByte > uint32(len(d.fileNameContent)) {
+				return fmt.Errorf("corrupt index: %s %d byte end %d past filename data size %d", what, i, endByte, len(d.fileNameContent))
+			}
+			data = d.fileNameContent[byteOff:endByte]
+		} else {
+			blob, err := d.readSectionBlob(simpleSection{
+				off: d.boundariesStart + byteOff,
+				sz:  endByte - byteOff,
+			})
+			if err != nil {
+				return err
+			}
+			data = blob
+		}
+
+		for ; left > 0; left-- {
+			if len(data) == 0 {
+				return fmt.Errorf("corrupt index: %s %d rune end %d does not have enough bytes before byte end %d", what, i, endRune, endByte)
+			}
+			_, sz := utf8.DecodeRune(data)
+			byteOff += uint32(sz)
+			data = data[sz:]
+		}
+
+		if byteOff != endByte {
+			return fmt.Errorf("corrupt index: %s %d rune end %d maps to byte offset %d, want byte end %d", what, i, endRune, byteOff, endByte)
+		}
+		prevRune = endRune
 	}
 	return nil
 }
