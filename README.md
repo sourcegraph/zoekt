@@ -1,3 +1,5 @@
+こんにちは
+
 # Zoekt: fast code search
 
     "Zoekt, en gij zult spinazie eten" - Jan Eertink
