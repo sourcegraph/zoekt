@@ -95,9 +95,13 @@ func TestParseQuery(t *testing.T) {
 		{"lang:c++", &Language{"C++"}},
 		{"lang:cpp", &Language{"C++"}},
 		{"sym:pqr", &Symbol{&Substring{Pattern: "pqr"}}},
+		{"(sym:pqr)", &Symbol{&Substring{Pattern: "pqr"}}},
 		{"sym:Pqr", &Symbol{&Substring{Pattern: "Pqr", CaseSensitive: true}}},
 		{"sym:.*", &Symbol{&Regexp{Regexp: mustParseRE(".*")}}},
 		{"sym:a(b|d)e", &Symbol{&Regexp{Regexp: mustParseRE("a[bd]e")}}},
+		{"(file:helpers\\.go)", &Substring{Pattern: "helpers.go", FileName: true}},
+		{"(repo:go)", &Repo{regexp.MustCompile("go")}},
+		{"-(file:helpers\\.go)", &Not{&Substring{Pattern: "helpers.go", FileName: true}}},
 
 		// case
 		{"abc case:yes", &Substring{Pattern: "abc", CaseSensitive: true}},
@@ -192,6 +196,8 @@ func TestTokenize(t *testing.T) {
 		{"file:bla", tokFile, "bla"},
 		{"file:bla ", tokFile, "bla"},
 		{"f:bla ", tokFile, "bla"},
+		{"(file:bla)", tokParenOpen, "("},
+		{"(sym:bla)", tokParenOpen, "("},
 		{"(abc def) ", tokParenOpen, "("},
 		{"(abcdef)", tokText, "(abcdef)"},
 		{"(abc)(de)", tokText, "(abc)(de)"},
