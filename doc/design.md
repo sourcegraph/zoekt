@@ -244,6 +244,12 @@ interpreted as regular expressions, otherwise they are used for grouping
     (abc def) => and[substring:"abc" substring:"def"]
     (abc\ def) => regexp:"(abc def)"
 
+Parenthesized field expressions are treated as grouping even without spaces,
+so field modifiers still apply:
+
+    (sym:foo) => Symbol:"foo"
+    (file:java) => Substring_file:"java"
+
 there is an implicit "AND" between elements of a parenthesized list.
 There is an "OR" operator, which has lower priority than the implicit
 "AND":
