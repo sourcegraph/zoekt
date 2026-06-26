@@ -614,7 +614,6 @@ func TestBuilder_DeltaShardsBuildsShouldErrorOnIndexOptionsMismatch(t *testing.T
 			options: func(options *Options) { options.LargeFiles = []string{"-large_file", "*.md", "-large_file", "*.yaml"} },
 		},
 	} {
-		test := test
 
 		t.Run(test.name, func(t *testing.T) {
 			indexDir := t.TempDir()
@@ -714,7 +713,6 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 			},
 		},
 	} {
-		test := test
 
 		t.Run(test.name, func(t *testing.T) {
 			indexDir := t.TempDir()
@@ -1090,11 +1088,11 @@ func testFileRankAspect(t *testing.T, c filerankCase) {
 	sortDocuments(got)
 
 	print := func(ds []*Document) string {
-		r := ""
+		var r strings.Builder
 		for _, d := range ds {
-			r += fmt.Sprintf("%v, ", d)
+			r.WriteString(fmt.Sprintf("%v, ", d))
 		}
-		return r
+		return r.String()
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got docs [%v], want [%v]", print(got), print(want))

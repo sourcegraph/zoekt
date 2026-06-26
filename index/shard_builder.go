@@ -121,10 +121,7 @@ const initialPostingCap = 64
 // derived from the maximum shard content size. Intentionally over-estimates
 // (the map only holds non-ASCII trigrams) to avoid rehashing.
 func estimateNgrams(shardMaxBytes int) int {
-	n := shardMaxBytes / 600
-	if n < 1024 {
-		n = 1024
-	}
+	n := max(shardMaxBytes/600, 1024)
 	return n
 }
 
