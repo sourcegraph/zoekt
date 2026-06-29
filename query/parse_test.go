@@ -98,6 +98,11 @@ func TestParseQuery(t *testing.T) {
 		{"sym:Pqr", &Symbol{&Substring{Pattern: "Pqr", CaseSensitive: true}}},
 		{"sym:.*", &Symbol{&Regexp{Regexp: mustParseRE(".*")}}},
 		{"sym:a(b|d)e", &Symbol{&Regexp{Regexp: mustParseRE("a[bd]e")}}},
+		// Field keywords directly after an opening paren must be tokenized
+		// as fields, not folded into a literal text token. Regression test
+		// for https://github.com/sourcegraph/zoekt/issues/1074.
+		{"(sym:foo)", &Symbol{&Substring{Pattern: "foo"}}},
+		{"(f:bar)", &Substring{Pattern: "bar", FileName: true}},
 
 		// case
 		{"abc case:yes", &Substring{Pattern: "abc", CaseSensitive: true}},

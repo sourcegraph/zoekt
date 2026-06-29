@@ -520,6 +520,17 @@ var reservedWords = map[string]int{
 	"or": tokOr,
 }
 
+// hasFieldPrefix reports whether b starts with any of the field prefixes
+// recognized by the tokenizer (e.g. `sym:`, `file:`, `meta.`).
+func hasFieldPrefix(b []byte) bool {
+	for pref := range prefixes {
+		if bytes.HasPrefix(b, []byte(pref)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *token) setType() {
 	// After we consumed the input, we have to interpret some of the text,
 	// eg. to distinguish between ")" the text and ) the query grouping
@@ -564,6 +575,24 @@ func nextToken(in []byte) (*token, error) {
 			Text:  []byte{'-'},
 			Input: in[:1],
 		}, nil
+	}
+
+	// If the input opens with one or more `(` and is immediately followed by
+	// a known field prefix (e.g. `sym:`, `file:`, `repo:`), emit the `(` as
+	// a paren-open token. Otherwise the main loop would consume the whole
+	// `(sym:foo)` as a single literal text token (issue #1074).
+	if left[0] == '(' {
+		i := 0
+		for i < len(left) && left[i] == '(' {
+			i++
+		}
+		if i < len(left) && hasFieldPrefix(left[i:]) {
+			return &token{
+				Type:  tokParenOpen,
+				Text:  []byte{'('},
+				Input: in[:1],
+			}, nil
+		}
 	}
 
 	foundSpace := false
