@@ -80,7 +80,7 @@ func TestCatfileReader_ConcurrentClose(t *testing.T) {
 	wg.Add(goroutines)
 	barrier := make(chan struct{})
 
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			<-barrier // all start at once
@@ -186,7 +186,7 @@ func createManyBlobRepo(t *testing.T, fileCount, fileSize int) (string, []plumbi
 
 	runGit(t, dir, "init", "-b", "main", "repo")
 
-	for i := 0; i < fileCount; i++ {
+	for i := range fileCount {
 		content := bytes.Repeat([]byte{byte(i)}, fileSize)
 		name := filepath.Join(repoDir, fmt.Sprintf("file_%03d.bin", i))
 		if err := os.WriteFile(name, content, 0o644); err != nil {
@@ -203,7 +203,7 @@ func createManyBlobRepo(t *testing.T, fileCount, fileSize int) (string, []plumbi
 	}
 
 	ids := make([]plumbing.Hash, 0, fileCount)
-	for _, entry := range bytes.Split(out, []byte{0}) {
+	for entry := range bytes.SplitSeq(out, []byte{0}) {
 		if len(entry) == 0 {
 			continue
 		}
@@ -268,7 +268,7 @@ func TestCatfileReader_ReadAfterFullConsumption(t *testing.T) {
 	}
 
 	// Blob is fully read — additional Reads must return EOF.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		buf := make([]byte, 10)
 		n, err := cr.Read(buf)
 		if n != 0 || err != io.EOF {
@@ -718,7 +718,7 @@ func TestCatfileReader_RepeatedNextAfterEOF(t *testing.T) {
 	}
 
 	// Second and third EOF — must be stable.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		_, _, _, err = cr.Next()
 		if err != io.EOF {
 			t.Fatalf("Next #%d after EOF: %v, want io.EOF", i+2, err)
@@ -843,7 +843,7 @@ func TestCatfileReader_DuplicateSHAs(t *testing.T) {
 	}
 	defer cr.Close()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		size, missing, excluded, err := cr.Next()
 		if err != nil {
 			t.Fatalf("Next #%d: %v", i, err)
