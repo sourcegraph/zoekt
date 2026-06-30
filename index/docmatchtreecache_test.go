@@ -69,9 +69,9 @@ func TestDocMatchTreeCache_Concurrent(t *testing.T) {
 	done := make(chan bool, numGoroutines)
 
 	// Reader goroutines (should be majority of operations)
-	for i := 0; i < numGoroutines-1; i++ {
+	for i := range numGoroutines - 1 {
 		go func(id int) {
-			for j := 0; j < numOperations; j++ {
+			for j := range numOperations {
 				field := "field" + strconv.Itoa(j%10)
 				value := "value" + strconv.Itoa(j%20)
 				cache.Get(field, value)
@@ -82,7 +82,7 @@ func TestDocMatchTreeCache_Concurrent(t *testing.T) {
 
 	// Writer goroutine (fewer write operations)
 	go func() {
-		for j := 0; j < numOperations/10; j++ {
+		for j := range numOperations / 10 {
 			field := "field" + strconv.Itoa(j%10)
 			value := "value" + strconv.Itoa(j%20)
 			tree := trees[j%len(trees)]
@@ -92,7 +92,7 @@ func TestDocMatchTreeCache_Concurrent(t *testing.T) {
 	}()
 
 	// Wait for all goroutines to complete
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 }

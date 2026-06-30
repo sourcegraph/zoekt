@@ -1360,7 +1360,7 @@ func getEnvWithDefaultDuration(k string, defaultVal time.Duration) time.Duration
 
 func getEnvWithDefaultEmptySet(k string) map[string]struct{} {
 	set := map[string]struct{}{}
-	for _, v := range strings.Split(os.Getenv(k), ",") {
+	for v := range strings.SplitSeq(os.Getenv(k), ",") {
 		v = strings.TrimSpace(v)
 		if v != "" {
 			set[v] = struct{}{}
