@@ -299,7 +299,7 @@ func (t *deadlineTimer) Stop() {
 func parseTuneables(v string) map[string]int {
 	m := map[string]int{}
 
-	for _, kv := range strings.Split(v, ",") {
+	for kv := range strings.SplitSeq(v, ",") {
 		if kv == "" {
 			continue
 		}

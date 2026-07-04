@@ -340,7 +340,7 @@ func executeMirror(cfg []ConfigEntry, repoDir string, pendingRepos chan<- string
 
 		stdout, _ := loggedRun(cmd)
 
-		for _, fn := range bytes.Split(stdout, []byte{'\n'}) {
+		for fn := range bytes.SplitSeq(stdout, []byte{'\n'}) {
 			if len(fn) == 0 {
 				continue
 			}

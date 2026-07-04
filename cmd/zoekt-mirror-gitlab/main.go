@@ -87,8 +87,8 @@ func main() {
 		ListOptions: gitlab.ListOptions{
 			PerPage: 100,
 		},
-		Sort:       gitlab.Ptr("asc"),
-		OrderBy:    gitlab.Ptr("id"),
+		Sort:       new("asc"),
+		OrderBy:    new("id"),
 		Membership: isMember,
 	}
 	if *isPublic {
@@ -100,11 +100,11 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		opt.LastActivityAfter = gitlab.Ptr(targetDate)
+		opt.LastActivityAfter = new(targetDate)
 	}
 
 	if *noArchived {
-		opt.Archived = gitlab.Ptr(false)
+		opt.Archived = new(false)
 	}
 
 	var gitlabProjects []*gitlab.Project
