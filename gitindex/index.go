@@ -823,7 +823,7 @@ func catfileFilterSpec(opts Options) string {
 
 func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
 	ignoreFile, err := tree.File(ignore.IgnoreFile)
-	if err == object.ErrFileNotFound {
+	if errors.Is(err, object.ErrFileNotFound) {
 		return &ignore.Matcher{}, nil
 	}
 	if err != nil {
