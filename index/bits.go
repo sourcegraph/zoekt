@@ -62,6 +62,21 @@ func toLower(in []byte) []byte {
 func caseFoldingEqualsRunes(lower, mixed []byte) (int, bool) {
 	matchTotal := 0
 	for len(lower) > 0 && len(mixed) > 0 {
+		lb := lower[0]
+		mb := mixed[0]
+		if lb < utf8.RuneSelf && mb < utf8.RuneSelf {
+			if mb >= 'A' && mb <= 'Z' {
+				mb |= 0x20
+			}
+			if lb != mb {
+				return 0, false
+			}
+			lower = lower[1:]
+			mixed = mixed[1:]
+			matchTotal++
+			continue
+		}
+
 		lr, lsz := utf8.DecodeRune(lower)
 		lower = lower[lsz:]
 
