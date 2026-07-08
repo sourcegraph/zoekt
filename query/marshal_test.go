@@ -9,7 +9,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/RoaringBitmap/roaring"
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/google/go-cmp/cmp"
 )
 
