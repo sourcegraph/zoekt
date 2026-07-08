@@ -28,7 +28,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 
-	"github.com/RoaringBitmap/roaring"
+	"github.com/RoaringBitmap/roaring/v2"
 )
 
 func (w *writer) writeTOC(toc *indexTOC) {

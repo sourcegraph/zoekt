@@ -10,7 +10,7 @@ import (
 
 	"slices"
 
-	"github.com/RoaringBitmap/roaring"
+	"github.com/RoaringBitmap/roaring/v2"
 )
 
 func branchesReposEncode(brs []BranchRepos) ([]byte, error) {

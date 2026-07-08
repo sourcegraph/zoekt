@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/RoaringBitmap/roaring"
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt/internal/syntaxutil"

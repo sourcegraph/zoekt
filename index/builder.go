@@ -35,7 +35,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bmatcuk/doublestar"
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/dustin/go-humanize"
 	"github.com/rs/xid"
 	"golang.org/x/sys/unix"
@@ -97,7 +97,7 @@ type Options struct {
 	// LargeFiles is a slice of glob patterns, including ** for any number
 	// of directories, where matching file paths should be indexed
 	// regardless of their size. The full pattern syntax is here:
-	// https://github.com/bmatcuk/doublestar/tree/v1#patterns.
+	// https://github.com/bmatcuk/doublestar/tree/v4#patterns.
 	LargeFiles []string
 
 	// IsDelta is true if this run contains only the changed documents since the

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp/syntax"
 
-	"github.com/RoaringBitmap/roaring"
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/grafana/regexp"
 
 	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"

@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware/v2"
 
 	"github.com/sourcegraph/zoekt/grpc/propagator"
 	"github.com/sourcegraph/zoekt/internal/tenant/internal/tenanttype"
