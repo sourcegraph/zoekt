@@ -64,6 +64,7 @@ func caseFoldingEqualsRunes(lower, mixed []byte) (int, bool) {
 	for len(lower) > 0 && len(mixed) > 0 {
 		lb := lower[0]
 		mb := mixed[0]
+		// Fast path for ASCII character matching, done for performance.
 		if lb < utf8.RuneSelf && mb < utf8.RuneSelf {
 			if mb >= 'A' && mb <= 'Z' {
 				mb |= 0x20
