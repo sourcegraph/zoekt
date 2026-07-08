@@ -30,7 +30,11 @@ func GetLanguageByNameOrAlias(nameOrAlias string) (lang string, ok bool) {
 		return lang, true
 	}
 
-	return enry.GetLanguageByAlias(alias)
+	lang, ok = enry.GetLanguageByAlias(alias)
+	if !ok {
+		return "", false
+	}
+	return legacyLanguageName(lang), true
 }
 
 // GetLanguageExtensions returns the list of file extensions for a given
@@ -47,6 +51,7 @@ func GetLanguageExtensions(language string) []string {
 		return langs
 	}
 
+	language = enryLanguageName(language)
 	ignoreExts, isNiche := nicheExtensionUsages[language]
 	// Force a copy to avoid accidentally modifying the global variable
 	exts := slices.Clone(enry.GetLanguageExtensions(language))

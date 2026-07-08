@@ -94,6 +94,8 @@ func TestParseQuery(t *testing.T) {
 
 		{"lang:c++", &Language{"C++"}},
 		{"lang:cpp", &Language{"C++"}},
+		{"lang:mathematica", &Language{"Mathematica"}},
+		{"lang:\"Wolfram Language\"", &Language{"Mathematica"}},
 		{"sym:pqr", &Symbol{&Substring{Pattern: "pqr"}}},
 		{"sym:Pqr", &Symbol{&Substring{Pattern: "Pqr", CaseSensitive: true}}},
 		{"sym:.*", &Symbol{&Regexp{Regexp: mustParseRE(".*")}}},

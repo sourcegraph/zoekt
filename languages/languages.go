@@ -16,6 +16,19 @@ var enryLanguageMappings = map[string]string{
 	"c#":  "c_sharp",
 }
 
+// go-enry follows Linguist's rename from "Mathematica" to "Wolfram Language".
+// Keep exposing "Mathematica" from Zoekt so new indexes continue to match the
+// language name stored in existing shards and used by Zoekt clients.
+// Without this compatibility mapping, mixed old/new indexes would split
+// lang:mathematica results until every repository had been reindexed.
+var legacyLanguageNames = map[string]string{
+	"Wolfram Language": "Mathematica",
+}
+
+var enryLanguageNames = map[string]string{
+	"Mathematica": "Wolfram Language",
+}
+
 // NormalizeLanguage converts the language name to lowercase and maps known
 // aliases to their canonical names.
 func NormalizeLanguage(filetype string) string {
@@ -99,7 +112,29 @@ func GetLanguages(path string, getContent func() ([]byte, error)) ([]string, err
 	}
 
 	langs, err := impl()
-	return slices.Clone(langs), err
+	return applyLegacyLanguageNames(langs), err
+}
+
+func applyLegacyLanguageNames(langs []string) []string {
+	out := slices.Clone(langs)
+	for i, lang := range out {
+		out[i] = legacyLanguageName(lang)
+	}
+	return out
+}
+
+func legacyLanguageName(lang string) string {
+	if legacy, ok := legacyLanguageNames[lang]; ok {
+		return legacy
+	}
+	return lang
+}
+
+func enryLanguageName(lang string) string {
+	if enryName, ok := enryLanguageNames[lang]; ok {
+		return enryName
+	}
+	return lang
 }
 
 // GetLanguagesFromContent is a convenience wrapper around GetLanguages that

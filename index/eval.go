@@ -23,11 +23,11 @@ import (
 	"strings"
 	"time"
 
-	enry_data "github.com/go-enry/go-enry/v2/data"
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/languages"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -89,7 +89,7 @@ func (d *indexData) simplify(in query.Q) query.Q {
 				// For index files that haven't been re-indexed by go-enry,
 				// fall back to file-based matching and continue even if this
 				// repo doesn't have the specific language present.
-				extsForLang := enry_data.ExtensionsByLanguage[r.Language]
+				extsForLang := languages.GetLanguageExtensions(r.Language)
 				if extsForLang != nil {
 					extFrags := make([]string, 0, len(extsForLang))
 					for _, ext := range extsForLang {

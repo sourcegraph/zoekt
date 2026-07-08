@@ -85,6 +85,12 @@ func TestGetLanguageExtensions_NonAmbiguousExtensions(t *testing.T) {
 	}
 }
 
+func TestGetLanguageExtensions_LegacyLanguageName(t *testing.T) {
+	extensions := GetLanguageExtensions("Mathematica")
+	require.Contains(t, extensions, ".wl")
+	require.Contains(t, extensions, ".mathematica")
+}
+
 func TestGetLanguagesByExtension_UnsupportedExtensions(t *testing.T) {
 	for ext, language := range unsupportedByEnryExtensionToNameMap {
 		filename := "foo" + ext
