@@ -13,5 +13,9 @@ self: super: rec {
   });
 
   # Skip building if same ctags version as registry
-  universal-ctags = if super.universal-ctags.version == my-universal-ctags.version then super.universal-ctags else my-universal-ctags;
+  universal-ctags =
+    if super.universal-ctags.version == my-universal-ctags.version then
+      super.universal-ctags
+    else
+      my-universal-ctags;
 }

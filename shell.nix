@@ -1,8 +1,10 @@
-{ pkgs ? import <nixpkgs> {
-  overlays = [
-    (import ./ctag-overlay.nix)
-  ];
-}}:
+{
+  pkgs ? import <nixpkgs> {
+    overlays = [
+      (import ./ctag-overlay.nix)
+    ];
+  },
+}:
 let
   # pkgs.universal-ctags installs the binary as "ctags", not "universal-ctags"
   # like zoekt expects.
@@ -15,7 +17,7 @@ pkgs.mkShell {
   name = "zoekt";
 
   nativeBuildInputs = [
-    pkgs.go_1_23
+    pkgs.go_1_26
 
     # zoekt-git-index
     pkgs.git
