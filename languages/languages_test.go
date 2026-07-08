@@ -72,8 +72,8 @@ fourthpower[x_] := square[square[x]]
 		{path: "file.magik", content: emptyContent, expectedLanguages: []string{"Magik"}},
 		{path: "file.apxc", content: emptyContent, expectedLanguages: []string{"Apex"}},
 		// Check that we classify cls files by content and not just by extension
-		{path: "tex.cls", content: `\DeclareOption*{}`, expectedLanguages: []string{"TeX", "Apex", "ObjectScript", "Visual Basic 6.0", "OpenEdge ABL", "VBA"}},
-		{path: "tex.cls", content: `public class HelloWorld {`, expectedLanguages: []string{"Apex", "Visual Basic 6.0", "TeX", "OpenEdge ABL", "ObjectScript", "VBA"}},
+		{path: "tex.cls", content: `\DeclareOption*{}`, expectedLanguages: []string{"TeX", "Apex", "ObjectScript", "Visual Basic 6.0", "VBA", "OpenEdge ABL"}},
+		{path: "tex.cls", content: `public class HelloWorld {`, expectedLanguages: []string{"Apex", "Visual Basic 6.0", "VBA", "TeX", "OpenEdge ABL", "ObjectScript"}},
 	}
 
 	for _, testCase := range testCases {
@@ -169,6 +169,18 @@ func TestGetLanguageByNameOrAlias(t *testing.T) {
 			name:   "apex example unsupported by linguist alias",
 			alias:  "apex",
 			want:   "Apex",
+			wantOk: true,
+		},
+		{
+			name:   "mathematica legacy name",
+			alias:  "mathematica",
+			want:   "Mathematica",
+			wantOk: true,
+		},
+		{
+			name:   "wolfram language alias",
+			alias:  "Wolfram Language",
+			want:   "Mathematica",
 			wantOk: true,
 		},
 	}

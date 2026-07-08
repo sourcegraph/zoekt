@@ -10,7 +10,7 @@ require (
 	github.com/felixge/fgprof v0.9.5
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/gfleury/go-bitbucket-v1 v0.0.0-20240917142304-df385efaac68
-	github.com/go-enry/go-enry/v2 v2.9.1
+	github.com/go-enry/go-enry/v2 v2.9.6
 	github.com/go-git/go-git/v5 v5.19.0
 	github.com/gobwas/glob v0.2.3
 	github.com/google/go-cmp v0.7.0
