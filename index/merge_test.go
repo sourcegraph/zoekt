@@ -1,6 +1,8 @@
 package index
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -156,6 +158,37 @@ func TestExplode(t *testing.T) {
 
 	for _, s := range simpleShards {
 		checkSameShards(t, s, filepath.Join(tmpDir, filepath.Base(s)))
+	}
+}
+
+// TestExplodeEmptyShard verifies that exploding a compound shard with zero
+// repositories removes the shard and returns success, instead of failing and
+// leaving an unusable shard on disk. A compound shard reaches this state once
+// all of its repos have been tombstoned and merged out. Such a shard cannot be
+// loaded by zoekt-webserver, so leaving it in place drives up the indexed
+// search error rate until it is removed.
+func TestExplodeEmptyShard(t *testing.T) {
+	dir := t.TempDir()
+
+	// Build a compound shard that contains no repositories.
+	sb := newShardBuilder(0)
+	sb.indexFormatVersion = NextIndexFormatVersion
+	path := filepath.Join(dir, fmt.Sprintf("compound-empty_v%d.00000.zoekt", NextIndexFormatVersion))
+	if err := builderWriteAll(path, sb); err != nil {
+		t.Fatalf("builderWriteAll: %v", err)
+	}
+
+	// Confirm the shard really is the empty-shard case.
+	if _, _, err := ReadMetadataPath(path); !errors.Is(err, ErrEmptyShard) {
+		t.Fatalf("ReadMetadataPath: got %v, want ErrEmptyShard", err)
+	}
+
+	// Explode should remove the empty shard and return nil.
+	if err := Explode(dir, path); err != nil {
+		t.Fatalf("Explode: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("empty shard was not removed, stat err = %v", err)
 	}
 }
 
