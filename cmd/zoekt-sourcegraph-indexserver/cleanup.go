@@ -428,8 +428,9 @@ func (s *Server) vacuum() {
 
 			if err != nil {
 				errorLog.Printf("failed to explode compound shard: shard=%s out=%s err=%s", path, string(b), err)
+			} else {
+				infoLog.Printf("exploded compound shard: shard=%s", path)
 			}
-			infoLog.Printf("exploded compound shard: shard=%s", path)
 			continue
 		}
 

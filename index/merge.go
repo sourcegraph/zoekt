@@ -2,6 +2,7 @@ package index
 
 import (
 	"crypto/sha1"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -164,7 +165,14 @@ func Explode(dstDir string, inputShard string) error {
 		}
 	}()
 	if err != nil {
-		return fmt.Errorf("zoekt.Explode: %w", err)
+		// A compound shard with no repositories (for example after all of its
+		// repos have been tombstoned and merged out) has nothing to explode into
+		// simple shards. It holds no data and cannot be loaded by zoekt-webserver,
+		// so treat it as empty and fall through to remove the input shard below
+		// rather than leaving it on disk to fail on every reload.
+		if !errors.Is(err, ErrEmptyShard) {
+			return fmt.Errorf("zoekt.Explode: %w", err)
+		}
 	}
 
 	// remove the input shard first to avoid duplicate indexes. In the worst case,

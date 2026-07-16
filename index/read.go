@@ -17,6 +17,7 @@ package index
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/crc64"
 	"log"
@@ -426,6 +427,11 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	return &d, nil
 }
 
+// ErrEmptyShard is returned when reading the metadata of a shard that contains
+// no repositories and has no ID to backfill one from. Such a shard holds no
+// data and cannot be loaded, so callers may treat it as safe to delete.
+var ErrEmptyShard = errors.New("len(repos)=0. Cannot backfill ID")
+
 func (r *reader) parseMetadata(metaData simpleSection, repoMetaData simpleSection) ([]*zoekt.Repository, *zoekt.IndexMetadata, error) {
 	var md zoekt.IndexMetadata
 	if err := r.readJSON(&md, metaData); err != nil {
@@ -461,7 +467,7 @@ func (r *reader) parseMetadata(metaData simpleSection, repoMetaData simpleSectio
 
 	if md.ID == "" {
 		if len(repos) == 0 {
-			return nil, nil, fmt.Errorf("len(repos)=0. Cannot backfill ID")
+			return nil, nil, ErrEmptyShard
 		}
 		md.ID = backfillID(repos[0].Name)
 	}
