@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -48,8 +49,8 @@ func (c *cleanupScheduler) run(mu *indexMutex, cleanup func()) {
 // cleanup trashes shards in indexDir that do not exist in repos. For repos
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
 // back into indexDir. Additionally it uses now to remove shards that have
-// been in the trash for 24 hours. It also deletes files left behind by
-// interrupted index operations.
+// been in the trash for 24 hours and removes legacy repositoryless shards. It
+// also deletes files left behind by interrupted index operations.
 func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool, timings *phaseTimings) {
 	start := time.Now()
 	timings.next("stale_files")
@@ -61,11 +62,11 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool, 
 	removeStaleShardFiles(trashDir)
 
 	timings.next("scan_trash")
-	trash := getShards(trashDir)
+	trash := getShards(trashDir, true)
 	timings.next("scan_tombstones")
 	tombtones := getTombstonedRepos(indexDir)
 	timings.next("scan_index")
-	indexShards := getShards(indexDir)
+	indexShards := getShards(indexDir, true)
 
 	// trash: Remove old shards and conflicts with index
 	timings.next("prune_trash")
@@ -233,7 +234,7 @@ type shard struct {
 	RepoTombstone bool
 }
 
-func getShards(dir string) map[uint32][]shard {
+func getShards(dir string, removeRepositoryless bool) map[uint32][]shard {
 	d, err := os.Open(dir)
 	if err != nil {
 		debugLog.Printf("failed to getShards: %s", dir)
@@ -257,6 +258,11 @@ func getShards(dir string) map[uint32][]shard {
 
 		repos, _, err := index.ReadMetadataPathAlive(path)
 		if err != nil {
+			if removeRepositoryless && errors.Is(err, index.ErrEmptyShard) {
+				infoLog.Printf("removing repositoryless shard: %s", path)
+				removeAll(shard{Path: path})
+				continue
+			}
 			debugLog.Printf("failed to read shard: %v", err)
 			continue
 		}
@@ -549,20 +555,6 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 		return nil, nil
 	}
 
-	defer func() {
-		paths, err := index.IndexFilePaths(fn)
-		if err != nil {
-			return
-		}
-		for _, path := range paths {
-			os.Remove(path)
-		}
-	}()
-	// Merging would write an empty compound shard that zoekt-webserver cannot
-	// load. Removing the shard (deferred above) is all that is left to do.
-	if len(tombstones) == len(repos) {
-		return tombstones, nil
-	}
 	err = runMerge()
 	if err != nil {
 		return nil, fmt.Errorf("runMerge: %s", err)
