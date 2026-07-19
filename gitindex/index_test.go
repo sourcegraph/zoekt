@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -134,6 +135,132 @@ func TestIndexTinyRepo(t *testing.T) {
 		if len(results.Files) != 1 {
 			t.Fatalf("got search result %v, want 1 file", results.Files)
 		}
+	}
+}
+
+func TestIndexGitRepo_FallbackWhenCatfileFilterUnsupported(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-b", "main", "repo")
+
+	repoDir := filepath.Join(dir, "repo")
+	if err := os.WriteFile(filepath.Join(repoDir, "file1.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "initial commit")
+
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("LookPath(git): %v", err)
+	}
+
+	shimDir := t.TempDir()
+	shimPath := filepath.Join(shimDir, "git")
+	shim := fmt.Sprintf(`#!/bin/sh
+if [ "$1" = "cat-file" ]; then
+  shift
+  for arg in "$@"; do
+    case "$arg" in
+      --filter=*)
+        echo "error: unknown option '$arg'" >&2
+        echo "usage: git cat-file" >&2
+        exit 129
+        ;;
+    esac
+  done
+  exec %q cat-file "$@"
+fi
+exec %q "$@"
+`, realGit, realGit)
+	if err := os.WriteFile(shimPath, []byte(shim), 0o755); err != nil {
+		t.Fatalf("WriteFile(%q): %v", shimPath, err)
+	}
+	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:  repoDir,
+		Branches: []string{"main"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+			SizeMax:               1 << 20,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal("search failed", err)
+	}
+
+	if len(results.Files) != 1 {
+		t.Fatalf("got search result %v, want 1 file", results.Files)
+	}
+}
+
+func TestIndexGitRepo_ErrorsIfCatfileFailsAfterFirstBlob(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-b", "main", "repo")
+
+	repoDir := filepath.Join(dir, "repo")
+	for name, content := range map[string]string{
+		"a.go": "package main\n\nconst A = 1\n",
+		"b.go": "package main\n\nconst B = 2\n",
+	} {
+		if err := os.WriteFile(filepath.Join(repoDir, name), []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile(%q): %v", name, err)
+		}
+	}
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "initial commit")
+
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("LookPath(git): %v", err)
+	}
+
+	shimDir := t.TempDir()
+	shimPath := filepath.Join(shimDir, "git")
+	shim := fmt.Sprintf(`#!/bin/sh
+if [ "$1" = "cat-file" ]; then
+  shift
+  IFS= read -r first || exit 1
+  printf '%%s\n' "$first" | %q cat-file "$@"
+  echo "error: synthetic cat-file failure after first object" >&2
+  exit 1
+fi
+exec %q "$@"
+`, realGit, realGit)
+	if err := os.WriteFile(shimPath, []byte(shim), 0o755); err != nil {
+		t.Fatalf("WriteFile(%q): %v", shimPath, err)
+	}
+	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:  repoDir,
+		Branches: []string{"main"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+			SizeMax:               1 << 20,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err == nil {
+		t.Fatal("IndexGitRepo succeeded, want error")
+	} else if !strings.Contains(err.Error(), "synthetic cat-file failure after first object") {
+		t.Fatalf("IndexGitRepo error = %v, want synthetic cat-file failure", err)
 	}
 }
 
