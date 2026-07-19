@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -235,8 +236,8 @@ func (cr *catfileReader) Close() error {
 
 // isKilledErr reports whether err is an exec.ExitError caused by SIGKILL.
 func isKilledErr(err error) bool {
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
 		return false
 	}
 	ws, ok := exitErr.Sys().(syscall.WaitStatus)
