@@ -59,6 +59,9 @@ Negate an expression using the `-` symbol.
 ### 3. **Grouping**
 
 Group queries using parentheses `()` to create complex logic.
+Parentheses around field expressions preserve the field semantics, so
+`(sym:MyFunction)` is equivalent to `sym:MyFunction` rather than a content
+search for the literal text `sym:MyFunction`.
 
 #### Examples:
 - Match either of two repositories:
