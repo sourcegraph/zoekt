@@ -16,6 +16,7 @@ package index
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"path"
 	"slices"
@@ -99,14 +100,21 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 		return r
 	}
 
-	sample := p.id.runeOffsets
-	runeEnds := p.id.fileEndRunes
-	fileStartByte := p.id.boundaries[p.idx]
+	var sample runeOffsetMap
+	var runeEnds []uint32
+	var fileStartByte, fileEndByte uint32
 	if filename {
 		sample = p.id.fileNameRuneOffsets
 		runeEnds = p.id.fileNameEndRunes
 		fileStartByte = p.id.fileNameIndex[p.idx]
+		fileEndByte = p.id.fileNameIndex[p.idx+1]
+	} else {
+		sample = p.id.runeOffsets
+		runeEnds = p.id.fileEndRunes
+		fileStartByte = p.id.boundaries[p.idx]
+		fileEndByte = p.id.boundaries[p.idx+1]
 	}
+	fileSize := fileEndByte - fileStartByte
 
 	absR := r
 	if p.idx > 0 {
@@ -118,18 +126,35 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 	var data []byte
 
 	if filename {
+		if byteOff > uint32(len(p.id.fileNameContent)) {
+			p.err = fmt.Errorf("corrupt index: filename rune offset %d maps to byte offset %d past filename data size %d", absR, byteOff, len(p.id.fileNameContent))
+			return fileSize
+		}
 		data = p.id.fileNameContent[byteOff:]
 	} else {
 		data, p.err = p.id.readContentSlice(byteOff, 3*runeOffsetFrequency)
 		if p.err != nil {
-			return 0
+			return fileSize
 		}
 	}
 	for left > 0 {
+		if len(data) == 0 {
+			p.err = fmt.Errorf("corrupt index: rune offset %d maps past available data", absR)
+			return fileSize
+		}
 		_, sz := utf8.DecodeRune(data)
 		byteOff += uint32(sz)
 		data = data[sz:]
 		left--
+	}
+
+	if byteOff < fileStartByte {
+		p.err = fmt.Errorf("corrupt index: rune offset %d maps to byte offset %d before file start %d", absR, byteOff, fileStartByte)
+		return fileSize
+	}
+	if byteOff > fileEndByte {
+		p.err = fmt.Errorf("corrupt index: rune offset %d maps to byte offset %d after file end %d", absR, byteOff, fileEndByte)
+		return fileSize
 	}
 
 	byteOff -= fileStartByte
