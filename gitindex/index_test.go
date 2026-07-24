@@ -866,7 +866,6 @@ func TestIndexDeltaBasic(t *testing.T) {
 			},
 		},
 	} {
-		test := test
 
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
