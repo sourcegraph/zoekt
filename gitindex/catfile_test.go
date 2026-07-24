@@ -246,6 +246,9 @@ func TestCatfileReader_Excluded(t *testing.T) {
 	t.Parallel()
 
 	repoDir, blobs := createTestRepo(t)
+	if err := checkCatfileFilterSupport(repoDir, "blob:limit=1k"); err != nil {
+		t.Skipf("installed git does not support cat-file --filter (available in Git 2.50+): %v", err)
+	}
 
 	ids := []plumbing.Hash{
 		blobs["large.bin"],

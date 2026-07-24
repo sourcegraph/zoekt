@@ -641,6 +641,13 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		useCatfileBatch = false
 		log.Printf("cat-file batch disabled via ZOEKT_DISABLE_CATFILE_BATCH, using go-git")
 	}
+	filterSpec := catfileFilterSpec(opts)
+	if useCatfileBatch && filterSpec != "" {
+		if err := checkCatfileFilterSupport(opts.RepoDir, filterSpec); err != nil {
+			useCatfileBatch = false
+			log.Printf("git cat-file does not support --filter (%v), using go-git", err)
+		}
+	}
 
 	mainRepoKeys := make([]fileKey, 0, totalFiles)
 	mainRepoIDs := make([]plumbing.Hash, 0, totalFiles)
@@ -663,7 +670,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	// Large blobs are skipped without reading content into memory.
 	if len(mainRepoIDs) > 0 {
 		crOpts := catfileReaderOptions{
-			filterSpec: catfileFilterSpec(opts),
+			filterSpec: filterSpec,
 		}
 		cr, err := newCatfileReader(opts.RepoDir, mainRepoIDs, crOpts)
 		if err != nil {
