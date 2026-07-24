@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ ${AMP_EXECUTOR:-} != "sandbox" ]]; then
+  echo ".agents/setup must run inside an Amp orb" >&2
+  exit 1
+fi
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ctags_path="/usr/local/bin/universal-ctags"
+ctags_url="https://storage.googleapis.com/universal_ctags/x86_64-linux/dist/universal-ctags-6.0.0.2783f009"
+ctags_sha256="e99b942754ce9d55c9445513236c010753d26decbb38ed932780bec098ac0809"
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "Installing Go from Debian testing..."
+  cat <<'EOF' | sudo tee /etc/apt/sources.list.d/amp-go-testing.sources >/dev/null
+Types: deb
+URIs: http://deb.debian.org/debian
+Suites: forky
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+EOF
+
+  cleanup_apt_source() {
+    sudo rm -f /etc/apt/sources.list.d/amp-go-testing.sources
+  }
+  trap cleanup_apt_source EXIT
+
+  sudo apt-get update
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -t forky golang-go
+
+  cleanup_apt_source
+  trap - EXIT
+fi
+
+if ! echo "$ctags_sha256  $ctags_path" | sha256sum --check --status 2>/dev/null; then
+  echo "Installing Universal Ctags..."
+  ctags_download="$(mktemp)"
+  trap 'rm -f "$ctags_download"' EXIT
+  curl -fsSL --retry 5 -o "$ctags_download" "$ctags_url"
+  echo "$ctags_sha256  $ctags_download" | sha256sum --check --status
+  sudo install -m 0755 "$ctags_download" "$ctags_path"
+fi
+
+echo "Downloading Go modules..."
+cd "$repo_root"
+go mod download
+
+echo "Orb setup complete."
