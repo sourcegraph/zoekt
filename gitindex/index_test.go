@@ -313,6 +313,47 @@ func TestCatfileFilterSpec(t *testing.T) {
 	}
 }
 
+func TestIndexGitRepo_CatfileFilterUnsupportedFallsBack(t *testing.T) {
+	repoDir, _ := initGitWorktree(t, "hello.txt", "hello world\n")
+	indexDir := t.TempDir()
+
+	binDir := t.TempDir()
+	fakeGit := filepath.Join(binDir, "git")
+	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\necho 'cat-file --filter unsupported' >&2\nexit 129\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(%q): %v", fakeGit, err)
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv("ZOEKT_DISABLE_CATFILE_BATCH", "false")
+
+	opts := Options{
+		RepoDir:  repoDir,
+		Branches: []string{"main"},
+		BuildOptions: index.Options{
+			DisableCTags:          true,
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+			SizeMax:               1 << 20,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal("search failed", err)
+	}
+	if len(results.Files) != 1 || results.Files[0].FileName != "hello.txt" {
+		t.Fatalf("got search result %v, want hello.txt", results.Files)
+	}
+}
+
 func initGitWorktree(t *testing.T, fileName, content string) (string, string) {
 	t.Helper()
 

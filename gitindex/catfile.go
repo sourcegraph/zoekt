@@ -22,6 +22,7 @@ import (
 	"io"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -30,6 +31,25 @@ import (
 
 type catfileReaderOptions struct {
 	filterSpec string
+}
+
+// checkCatfileFilterSupport checks whether git supports filtering cat-file
+// batch output. The feature was added in Git 2.50, but probing the command also
+// supports vendor backports without relying on version-string parsing.
+func checkCatfileFilterSupport(repoDir, filterSpec string) error {
+	cmd := exec.Command("git", "cat-file", "--batch-check", "--filter="+filterSpec)
+	cmd.Dir = repoDir
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		detail, _, _ := strings.Cut(strings.TrimSpace(stderr.String()), "\n")
+		if detail != "" {
+			return fmt.Errorf("%w: %s", err, detail)
+		}
+		return err
+	}
+	return nil
 }
 
 // catfileReader provides streaming access to git blob objects via a pipelined
