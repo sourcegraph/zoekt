@@ -1,6 +1,7 @@
 package index
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -45,15 +46,18 @@ func TestMergePreservesStoredCategoryForSkippedGeneratedFile(t *testing.T) {
 	}
 	defer indexFile.Close()
 
-	tmpName, dstName, err := Merge(tmpDir, indexFile)
+	result, err := Merge(tmpDir, indexFile)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
-	if err := os.Rename(tmpName, dstName); err != nil {
+	if !result.HasOutput() {
+		t.Fatal("Merge produced no output")
+	}
+	if err := os.Rename(result.TempPath, result.FinalPath); err != nil {
 		t.Fatalf("Rename: %v", err)
 	}
 
-	mergedFile, err := os.Open(dstName)
+	mergedFile, err := os.Open(result.FinalPath)
 	if err != nil {
 		t.Fatalf("Open merged shard: %v", err)
 	}
@@ -119,17 +123,20 @@ func TestExplode(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	tmpName, dstName, err := Merge(tmpDir, files...)
+	result, err := Merge(tmpDir, files...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = os.Rename(tmpName, dstName)
+	if !result.HasOutput() {
+		t.Fatal("Merge produced no output")
+	}
+	err = os.Rename(result.TempPath, result.FinalPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// explode
-	f, err := os.Open(dstName)
+	f, err := os.Open(result.FinalPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,6 +168,170 @@ func TestExplode(t *testing.T) {
 	}
 }
 
+func TestMergeAllTombstonedProducesNoShard(t *testing.T) {
+	dir := t.TempDir()
+	sb := newShardBuilder(0)
+	sb.indexFormatVersion = NextIndexFormatVersion
+	if err := sb.setRepository(&zoekt.Repository{ID: 1, Name: "deleted", Tombstone: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sb.Add(Document{Name: "f", Content: []byte("content")}); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(dir, "all-tombstoned.zoekt")
+	if err := builderWriteAll(path, sb); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexFile, err := NewIndexFile(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer indexFile.Close()
+
+	result, err := Merge(dir, indexFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.HasOutput() {
+		t.Fatalf("Merge produced an output for an all-tombstoned shard: %+v", result)
+	}
+	if matches, err := filepath.Glob(filepath.Join(dir, "compound-*")); err != nil {
+		t.Fatal(err)
+	} else if len(matches) != 0 {
+		t.Fatalf("Merge wrote compound shards: %v", matches)
+	}
+}
+
+func TestShardBuilderRejectsRepositorylessShard(t *testing.T) {
+	sb := newShardBuilder(0)
+	sb.indexFormatVersion = NextIndexFormatVersion
+	if err := sb.Write(&bytes.Buffer{}); err == nil {
+		t.Fatal("Write succeeded without repository metadata")
+	}
+}
+
+func TestVerifyRepositoryReferences(t *testing.T) {
+	tests := []struct {
+		name      string
+		data      indexData
+		wantError bool
+	}{
+		{
+			name: "valid",
+			data: indexData{
+				repoMetaData:    make([]zoekt.Repository, 2),
+				fileBranchMasks: make([]uint64, 3),
+				repos:           []uint16{0, 0, 1},
+			},
+		},
+		{
+			name: "wrong reference count",
+			data: indexData{
+				repoMetaData:    make([]zoekt.Repository, 1),
+				fileBranchMasks: make([]uint64, 2),
+				repos:           []uint16{0},
+			},
+			wantError: true,
+		},
+		{
+			name: "repository out of range",
+			data: indexData{
+				repoMetaData:    make([]zoekt.Repository, 1),
+				fileBranchMasks: make([]uint64, 1),
+				repos:           []uint16{1},
+			},
+			wantError: true,
+		},
+		{
+			name: "repositories out of order",
+			data: indexData{
+				repoMetaData:    make([]zoekt.Repository, 2),
+				fileBranchMasks: make([]uint64, 2),
+				repos:           []uint16{1, 0},
+			},
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.data.verifyRepositoryReferences()
+			if (err != nil) != tt.wantError {
+				t.Fatalf("verifyRepositoryReferences() error = %v, wantError %t", err, tt.wantError)
+			}
+		})
+	}
+}
+
+func TestMergeAndExplodePreserveRepositoryWithoutDocuments(t *testing.T) {
+	dir := t.TempDir()
+	sb := newShardBuilder(0)
+	sb.indexFormatVersion = NextIndexFormatVersion
+	if err := sb.setRepository(&zoekt.Repository{ID: 1, Name: "deleted", Tombstone: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sb.Add(Document{Name: "f", Content: []byte("content")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sb.setRepository(&zoekt.Repository{ID: 2, Name: "empty"}); err != nil {
+		t.Fatal(err)
+	}
+
+	inputPath := filepath.Join(dir, "input.zoekt")
+	if err := builderWriteAll(inputPath, sb); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(inputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexFile, err := NewIndexFile(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Merge(dir, indexFile)
+	indexFile.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.HasOutput() {
+		t.Fatal("Merge produced no output for a live repository without documents")
+	}
+	if err := os.Rename(result.TempPath, result.FinalPath); err != nil {
+		t.Fatal(err)
+	}
+
+	repos, _, err := ReadMetadataPath(result.FinalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 || repos[0].Name != "empty" {
+		t.Fatalf("merged repositories = %v, want empty", repos)
+	}
+
+	if err := Explode(dir, result.FinalPath); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{
+		IndexDir:              dir,
+		RepositoryDescription: *repos[0],
+	}
+	simplePath := opts.shardNameVersion(IndexFormatVersion, 0)
+	repos, _, err = ReadMetadataPath(simplePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 || repos[0].Name != "empty" {
+		t.Fatalf("exploded repositories = %v, want empty", repos)
+	}
+}
+
 // TestExplodeEmptyShard verifies that exploding a compound shard with zero
 // repositories removes the shard and returns success, instead of failing and
 // leaving an unusable shard on disk. A compound shard reaches this state once
@@ -170,13 +341,8 @@ func TestExplode(t *testing.T) {
 func TestExplodeEmptyShard(t *testing.T) {
 	dir := t.TempDir()
 
-	// Build a compound shard that contains no repositories.
-	sb := newShardBuilder(0)
-	sb.indexFormatVersion = NextIndexFormatVersion
 	path := filepath.Join(dir, fmt.Sprintf("compound-empty_v%d.00000.zoekt", NextIndexFormatVersion))
-	if err := builderWriteAll(path, sb); err != nil {
-		t.Fatalf("builderWriteAll: %v", err)
-	}
+	writeLegacyRepositorylessShard(t, path)
 
 	// Confirm the shard really is the empty-shard case.
 	if _, _, err := ReadMetadataPath(path); !errors.Is(err, ErrEmptyShard) {
@@ -189,6 +355,46 @@ func TestExplodeEmptyShard(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("empty shard was not removed, stat err = %v", err)
+	}
+}
+
+func writeLegacyRepositorylessShard(t *testing.T, path string) {
+	t.Helper()
+
+	sb := newShardBuilder(0)
+	sb.indexFormatVersion = NextIndexFormatVersion
+	sb.ID = "legacy-shard-id"
+	if err := sb.setRepository(&zoekt.Repository{ID: 1, Name: "legacy"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := builderWriteAll(path, sb); err != nil {
+		t.Fatalf("builderWriteAll: %v", err)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexFile, err := NewIndexFile(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var toc indexTOC
+	if err := (&reader{r: indexFile}).readTOCSections(&toc, []string{"repoMetaData"}); err != nil {
+		indexFile.Close()
+		t.Fatal(err)
+	}
+	indexFile.Close()
+
+	emptyMetadata := bytes.Repeat([]byte(" "), int(toc.repoMetaData.sz))
+	copy(emptyMetadata, "[]")
+	f, err = os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteAt(emptyMetadata, int64(toc.repoMetaData.off)); err != nil {
+		t.Fatal(err)
 	}
 }
 

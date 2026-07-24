@@ -966,11 +966,14 @@ func createTestCompoundShard(t testing.TB, indexDir string, repositories []zoekt
 	}
 
 	// merge all the simple shards into a compound shard
-	tmpName, dstName, err := Merge(indexDir, files...)
+	result, err := Merge(indexDir, files...)
 	if err != nil {
 		t.Fatalf("merging index files into compound shard: %s", err)
 	}
-	if err := os.Rename(tmpName, dstName); err != nil {
+	if !result.HasOutput() {
+		t.Fatal("merging index files produced no output")
+	}
+	if err := os.Rename(result.TempPath, result.FinalPath); err != nil {
 		t.Fatal(err)
 	}
 }

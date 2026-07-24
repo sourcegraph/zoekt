@@ -26,13 +26,14 @@ import (
 )
 
 // merge merges the input shards into a compound shard in dstDir. It returns the
-// full path to the compound shard. The input shards are removed on success.
+// full path to the compound shard, or an empty path when no live repositories
+// remain. The input shards are removed on success.
 func merge(dstDir string, names []string) (string, error) {
 	var files []index.IndexFile
 	for _, fn := range names {
 		f, err := os.Open(fn)
 		if err != nil {
-			return "", nil
+			return "", err
 		}
 		defer f.Close()
 
@@ -45,7 +46,7 @@ func merge(dstDir string, names []string) (string, error) {
 		files = append(files, indexFile)
 	}
 
-	tmpName, dstName, err := index.Merge(dstDir, files...)
+	result, err := index.Merge(dstDir, files...)
 	if err != nil {
 		return "", err
 	}
@@ -63,13 +64,15 @@ func merge(dstDir string, names []string) (string, error) {
 		}
 	}
 
-	// We only rename the compound shard if all simple shards could be deleted in the
-	// previous step. This guarantees we won't have duplicate indexes.
-	if err := os.Rename(tmpName, dstName); err != nil {
-		return "", fmt.Errorf("zoekt-merge-index: failed to rename compound shard: %w", err)
+	if result.HasOutput() {
+		// We only rename the compound shard if all simple shards could be deleted in the
+		// previous step. This guarantees we won't have duplicate indexes.
+		if err := os.Rename(result.TempPath, result.FinalPath); err != nil {
+			return "", fmt.Errorf("zoekt-merge-index: failed to rename compound shard: %w", err)
+		}
 	}
 
-	return dstName, nil
+	return result.FinalPath, nil
 }
 
 func mergeCmd(paths []string) (string, error) {
@@ -115,7 +118,9 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(compoundShardPath)
+		if compoundShardPath != "" {
+			fmt.Println(compoundShardPath)
+		}
 	case "explode":
 		if flag.NArg() != 2 {
 			log.Fatal("explode requires exactly one compound shard path")

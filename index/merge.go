@@ -14,41 +14,53 @@ import (
 	"github.com/sourcegraph/zoekt"
 )
 
-// Merge files into a compound shard in dstDir. Merge returns tmpName and a
-// dstName. It is the responsibility of the caller to delete the input shards and
-// rename the temporary compound shard from tmpName to dstName.
-func Merge(dstDir string, files ...IndexFile) (tmpName, dstName string, _ error) {
+// MergeResult describes the optional output of a successful Merge. HasOutput
+// is false when every input repository was tombstoned and the merge therefore
+// produced no replacement shard.
+type MergeResult struct {
+	TempPath  string
+	FinalPath string
+}
+
+// HasOutput reports whether the merge produced a replacement shard.
+func (r MergeResult) HasOutput() bool {
+	return r.TempPath != ""
+}
+
+// Merge files into a compound shard in dstDir. A successful merge produces no
+// output when every input repository is tombstoned. It is the responsibility
+// of the caller to delete the input shards and, when result.HasOutput(), rename
+// the temporary compound shard to its final path.
+func Merge(dstDir string, files ...IndexFile) (result MergeResult, _ error) {
 	var ds []*indexData
 	for _, f := range files {
 		searcher, err := NewSearcher(f)
 		if err != nil {
-			return "", "", err
+			return MergeResult{}, err
 		}
 		ds = append(ds, searcher.(*indexData))
 	}
 
 	ib, err := merge(ds...)
 	if err != nil {
-		return "", "", err
+		return MergeResult{}, err
+	}
+	if len(ib.repoList) == 0 {
+		return MergeResult{}, nil
 	}
 
 	hasher := sha1.New()
-	for _, d := range ds {
-		for i, md := range d.repoMetaData {
-			if d.repoMetaData[i].Tombstone {
-				continue
-			}
-			hasher.Write([]byte(md.Name))
-			hasher.Write([]byte{0})
-		}
+	for _, repo := range ib.repoList {
+		hasher.Write([]byte(repo.Name))
+		hasher.Write([]byte{0})
 	}
 
-	dstName = filepath.Join(dstDir, fmt.Sprintf("compound-%x_v%d.%05d.zoekt", hasher.Sum(nil), NextIndexFormatVersion, 0))
-	tmpName = dstName + ".tmp"
-	if err := builderWriteAll(tmpName, ib); err != nil {
-		return "", "", err
+	result.FinalPath = filepath.Join(dstDir, fmt.Sprintf("compound-%x_v%d.%05d.zoekt", hasher.Sum(nil), NextIndexFormatVersion, 0))
+	result.TempPath = result.FinalPath + ".tmp"
+	if err := builderWriteAll(result.TempPath, ib); err != nil {
+		return MergeResult{}, err
 	}
-	return tmpName, dstName, nil
+	return result, nil
 }
 
 func builderWriteAll(fn string, ib *ShardBuilder) error {
@@ -103,41 +115,46 @@ func merge(ds ...*indexData) (*ShardBuilder, error) {
 	sb.indexFormatVersion = NextIndexFormatVersion
 
 	for _, d := range ds {
-		lastRepoID := -1
-		for docID := uint32(0); int(docID) < len(d.fileBranchMasks); docID++ {
-			repoID := int(d.repos[docID])
-
-			if d.repoMetaData[repoID].Tombstone {
-				continue
+		err := forEachRepositoryDocumentRange(d, func(repoID int, start, end uint32) error {
+			repo := &d.repoMetaData[repoID]
+			if repo.Tombstone {
+				return nil
 			}
 
-			if repoID != lastRepoID {
-				if lastRepoID > repoID {
-					return nil, fmt.Errorf("non-contiguous repo ids in %s for document %d: old=%d current=%d", d.String(), docID, lastRepoID, repoID)
-				}
-				lastRepoID = repoID
-
-				// Initialize repo metadata if it does not already exist.
-				repo := d.repoMetaData[repoID]
-				if repo.Metadata == nil {
-					repo.Metadata = make(map[string]string)
-				}
-
-				// TODO we are losing empty repos on merging since we only get here if
-				// there is an associated document.
-
-				if err := sb.setRepository(&d.repoMetaData[repoID]); err != nil {
-					return nil, err
-				}
+			if err := sb.setRepository(repo); err != nil {
+				return err
 			}
 
-			if err := addDocument(d, sb, repoID, docID); err != nil {
-				return nil, err
+			for docID := start; docID < end; docID++ {
+				if err := addDocument(d, sb, repoID, docID); err != nil {
+					return err
+				}
 			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	return sb, nil
+}
+
+func forEachRepositoryDocumentRange(d *indexData, f func(repoID int, start, end uint32) error) error {
+	var docID uint32
+	for repoID := range d.repoMetaData {
+		start := docID
+		for int(docID) < len(d.repos) && d.repos[docID] == uint16(repoID) {
+			docID++
+		}
+		if err := f(repoID, start, docID); err != nil {
+			return err
+		}
+	}
+	if int(docID) != len(d.repos) {
+		return fmt.Errorf("document %d in %s references repository %d, but the shard has %d repositories", docID, d.String(), d.repos[docID], len(d.repoMetaData))
+	}
+	return nil
 }
 
 // Explode takes an input shard and creates 1 simple shard per repository. It is
@@ -233,44 +250,26 @@ func explode(dstDir string, f IndexFile, ibFuncs ...shardBuilderFunc) (map[strin
 		return builderWriteAll(shardNameTmp, ib)
 	}
 
-	var sb *ShardBuilder
-	lastRepoID := -1
-	for docID := uint32(0); int(docID) < len(d.fileBranchMasks); docID++ {
-		repoID := int(d.repos[docID])
-
+	err = forEachRepositoryDocumentRange(d, func(repoID int, start, end uint32) error {
 		if d.repoMetaData[repoID].Tombstone {
-			continue
+			return nil
 		}
 
-		if repoID != lastRepoID {
-			if lastRepoID > repoID {
-				return shardNames, fmt.Errorf("non-contiguous repo ids in %s for document %d: old=%d current=%d", d.String(), docID, lastRepoID, repoID)
-			}
-			lastRepoID = repoID
+		sb := newShardBuilder(0)
+		sb.indexFormatVersion = IndexFormatVersion
+		if err := sb.setRepository(&d.repoMetaData[repoID]); err != nil {
+			return err
+		}
 
-			if sb != nil {
-				if err := writeShard(sb); err != nil {
-					return shardNames, err
-				}
-			}
-
-			sb = newShardBuilder(0)
-			sb.indexFormatVersion = IndexFormatVersion
-			if err := sb.setRepository(&d.repoMetaData[repoID]); err != nil {
-				return shardNames, err
+		for docID := start; docID < end; docID++ {
+			if err := addDocument(d, sb, repoID, docID); err != nil {
+				return err
 			}
 		}
-
-		err := addDocument(d, sb, repoID, docID)
-		if err != nil {
-			return shardNames, err
-		}
-	}
-
-	if sb != nil {
-		if err := writeShard(sb); err != nil {
-			return shardNames, err
-		}
+		return writeShard(sb)
+	})
+	if err != nil {
+		return shardNames, err
 	}
 
 	return shardNames, nil

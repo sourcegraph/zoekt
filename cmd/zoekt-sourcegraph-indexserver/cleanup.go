@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,7 +27,8 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 // cleanup trashes shards in indexDir that do not exist in repos. For repos
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
 // back into indexDir. Additionally it uses now to remove shards that have
-// been in the trash for 24 hours. It also deletes .tmp files older than 4 hours.
+// been in the trash for 24 hours, removes legacy repositoryless shards, and
+// deletes .tmp files older than 4 hours.
 func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) {
 	start := time.Now()
 	trashDir := filepath.Join(indexDir, ".trash")
@@ -34,9 +36,9 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		errorLog.Printf("failed to create trash dir: %v", err)
 	}
 
-	trash := getShards(trashDir)
+	trash := getShards(trashDir, true)
 	tombtones := getTombstonedRepos(indexDir)
-	indexShards := getShards(indexDir)
+	indexShards := getShards(indexDir, true)
 
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
@@ -176,7 +178,7 @@ type shard struct {
 	RepoTombstone bool
 }
 
-func getShards(dir string) map[uint32][]shard {
+func getShards(dir string, removeRepositoryless bool) map[uint32][]shard {
 	d, err := os.Open(dir)
 	if err != nil {
 		debugLog.Printf("failed to getShards: %s", dir)
@@ -200,6 +202,11 @@ func getShards(dir string) map[uint32][]shard {
 
 		repos, _, err := index.ReadMetadataPathAlive(path)
 		if err != nil {
+			if removeRepositoryless && errors.Is(err, index.ErrEmptyShard) {
+				infoLog.Printf("removing repositoryless shard: %s", path)
+				removeAll(shard{Path: path})
+				continue
+			}
 			debugLog.Printf("failed to read shard: %v", err)
 			continue
 		}
@@ -471,15 +478,6 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 		return nil, nil
 	}
 
-	defer func() {
-		paths, err := index.IndexFilePaths(fn)
-		if err != nil {
-			return
-		}
-		for _, path := range paths {
-			os.Remove(path)
-		}
-	}()
 	err = runMerge()
 	if err != nil {
 		return nil, fmt.Errorf("runMerge: %s", err)
