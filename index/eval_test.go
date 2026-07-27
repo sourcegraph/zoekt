@@ -379,11 +379,11 @@ func TestGatherBranches(t *testing.T) {
 	content := []byte("dummy")
 	b := testShardBuilder(t, &zoekt.Repository{
 		Branches: []zoekt.RepositoryBranch{
-			{"foo", "v1"},
-			{"foo-2", "v1"},
-			{"main", "v1"},
-			{"bar", "v1"},
-			{"quz", "v1"},
+			{Name: "foo", Version: "v1"},
+			{Name: "foo-2", Version: "v1"},
+			{Name: "main", Version: "v1"},
+			{Name: "bar", Version: "v1"},
+			{Name: "quz", Version: "v1"},
 		},
 	},
 		Document{Name: "f1", Content: content, Branches: []string{"foo", "bar", "quz"}},

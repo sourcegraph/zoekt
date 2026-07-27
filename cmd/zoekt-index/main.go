@@ -90,8 +90,8 @@ func main() {
 
 	ignoreDirMap := map[string]struct{}{}
 	if *ignoreDirs != "" {
-		dirs := strings.Split(*ignoreDirs, ",")
-		for _, d := range dirs {
+		dirs := strings.SplitSeq(*ignoreDirs, ",")
+		for d := range dirs {
 			d = strings.TrimSpace(d)
 			if d != "" {
 				ignoreDirMap[d] = struct{}{}

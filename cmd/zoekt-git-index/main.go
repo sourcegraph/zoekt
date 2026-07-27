@@ -101,7 +101,7 @@ func run() int {
 	}
 
 	opts.LanguageMap = make(ctags.LanguageMap)
-	for _, mapping := range strings.Split(*languageMap, ",") {
+	for mapping := range strings.SplitSeq(*languageMap, ",") {
 		m := strings.Split(mapping, ":")
 		if len(m) != 2 {
 			continue
