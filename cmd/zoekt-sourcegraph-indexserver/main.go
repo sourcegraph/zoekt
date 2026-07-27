@@ -213,7 +213,7 @@ type Server struct {
 	// CPUCount is the number of CPUs to use for indexing shards.
 	CPUCount int
 
-	queue Queue
+	queue *Queue
 
 	// muIndexDir protects the index directory from concurrent access.
 	muIndexDir indexMutex
@@ -1652,7 +1652,7 @@ func newServer(conf rootConfig) (*Server, error) {
 		IndexConcurrency:                  int(conf.indexConcurrency),
 		Interval:                          conf.interval,
 		CPUCount:                          cpuCount,
-		queue:                             *q,
+		queue:                             q,
 		shardMerging:                      !conf.disableShardMerging,
 		deltaBuildRepositoriesAllowList:   deltaBuildRepositoriesAllowList,
 		deltaShardNumberFallbackThreshold: deltaShardNumberFallbackThreshold,
