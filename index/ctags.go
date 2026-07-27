@@ -16,6 +16,7 @@ package index
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -67,9 +68,15 @@ func parseSymbols(todo []*Document, languageMap ctags.LanguageMap, parserBins ct
 
 		monitor.BeginParsing(doc)
 		es, err := parser.Parse(doc.Name, doc.Content, parserType)
-		monitor.EndParsing(es)
+		monitor.EndParsing(es, parserType, err)
 
 		if err != nil {
+			var timeoutErr *ctags.ParseTimeoutError
+			if errors.As(err, &timeoutErr) {
+				// Symbol extraction is best effort. A timeout only means this file
+				// has no symbol metadata, so continue indexing the remaining files.
+				continue
+			}
 			return err
 		}
 		if len(es) == 0 {
@@ -224,6 +231,7 @@ type monitor struct {
 
 	currentDocName       string
 	currentDocSize       int
+	currentDocStart      time.Time
 	currentDocStuckCount int
 
 	done chan struct{}
@@ -248,11 +256,12 @@ func (m *monitor) BeginParsing(doc *Document) {
 	// set current doc
 	m.currentDocName = doc.Name
 	m.currentDocSize = len(doc.Content)
+	m.currentDocStart = now
 
 	m.mu.Unlock()
 }
 
-func (m *monitor) EndParsing(entries []*ctags.Entry) {
+func (m *monitor) EndParsing(entries []*ctags.Entry, parserType ctags.CTagsParserType, err error) {
 	now := time.Now()
 	m.mu.Lock()
 	m.lastUpdate = now
@@ -261,15 +270,19 @@ func (m *monitor) EndParsing(entries []*ctags.Entry) {
 	m.totalSize += m.currentDocSize
 	m.totalSymbols += len(entries)
 
-	// inform done if we warned about current document
-	if m.currentDocStuckCount > 0 {
+	var timeoutErr *ctags.ParseTimeoutError
+	if errors.As(err, &timeoutErr) {
+		log.Printf("WARN: skipping symbol analysis after timeout: file=%q parser=%s duration=%v timeout=%v size_bytes=%d", m.currentDocName, ctags.ParserToString(parserType), now.Sub(m.currentDocStart).Truncate(time.Second), timeoutErr.Timeout, m.currentDocSize)
+	} else if m.currentDocStuckCount > 0 {
+		// Inform done if we warned about the current document.
 		log.Printf("symbol analysis for %s (size %d bytes) is done and found %d symbols", m.currentDocName, m.currentDocSize, len(entries))
-		m.currentDocStuckCount = 0
 	}
+	m.currentDocStuckCount = 0
 
 	// unset current document
 	m.currentDocName = ""
 	m.currentDocSize = 0
+	m.currentDocStart = time.Time{}
 
 	m.mu.Unlock()
 }

@@ -48,6 +48,16 @@ type parseResult struct {
 	err     error
 }
 
+// ParseTimeoutError reports that ctags exceeded the per-file parsing timeout.
+type ParseTimeoutError struct {
+	Name    string
+	Timeout time.Duration
+}
+
+func (e *ParseTimeoutError) Error() string {
+	return fmt.Sprintf("ctags timed out after %s parsing %s", e.Timeout, e.Name)
+}
+
 func (lp *CTagsParser) Parse(name string, content []byte, typ CTagsParserType) ([]*Entry, error) {
 	if lp.parsers[typ] == nil {
 		parser, err := lp.newParserProcess(typ)
@@ -71,8 +81,11 @@ func (lp *CTagsParser) Parse(name string, content []byte, typ CTagsParserType) (
 	case resp := <-recv:
 		return resp.entries, resp.err
 	case <-deadline.C:
-		// Error out since ctags hanging is a sign something bad is happening.
-		return nil, fmt.Errorf("ctags timedout after %s parsing %s", parseTimeout, name)
+		// The parser is still processing this request and cannot safely be reused.
+		// Discard it so a later file gets a fresh process.
+		delete(lp.parsers, typ)
+		go parser.Close()
+		return nil, &ParseTimeoutError{Name: name, Timeout: parseTimeout}
 	}
 }
 

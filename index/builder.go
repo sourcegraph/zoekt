@@ -91,7 +91,8 @@ type Options struct {
 	// Same as CTagsPath but for scip-ctags
 	ScipCTagsPath string
 
-	// If set, ctags must succeed.
+	// If set, ctags binaries must be available and non-timeout parser errors
+	// fail indexing. Per-file parsing timeouts are skipped.
 	CTagsMustSucceed bool
 
 	// LargeFiles is a slice of glob patterns, including ** for any number
