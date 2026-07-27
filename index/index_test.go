@@ -1208,9 +1208,9 @@ func TestDocumentOrder(t *testing.T) {
 func TestBranchMask(t *testing.T) {
 	b := testShardBuilder(t, &zoekt.Repository{
 		Branches: []zoekt.RepositoryBranch{
-			{"master", "v-master"},
-			{"stable", "v-stable"},
-			{"bonzai", "v-bonzai"},
+			{Name: "master", Version: "v-master"},
+			{Name: "stable", Version: "v-stable"},
+			{Name: "bonzai", Version: "v-bonzai"},
 		},
 	}, Document{Name: "f1", Content: []byte("needle"), Branches: []string{"master"}},
 		Document{Name: "f2", Content: []byte("needle"), Branches: []string{"stable", "master"}},
@@ -1263,7 +1263,7 @@ func TestBranchLimit(t *testing.T) {
 		for i := range limit {
 			s := fmt.Sprintf("b%d", i)
 			r.Branches = append(r.Branches, zoekt.RepositoryBranch{
-				s, "v-" + s,
+				Name: s, Version: "v-" + s,
 			})
 		}
 		_, err := NewShardBuilder(r)
@@ -1279,8 +1279,8 @@ func TestBranchReport(t *testing.T) {
 	branches := []string{"stable", "master"}
 	b := testShardBuilder(t, &zoekt.Repository{
 		Branches: []zoekt.RepositoryBranch{
-			{"stable", "vs"},
-			{"master", "vm"},
+			{Name: "stable", Version: "vs"},
+			{Name: "master", Version: "vm"},
 		},
 	},
 		Document{Name: "f2", Content: []byte("needle"), Branches: branches})
@@ -1317,8 +1317,8 @@ func TestBranchReport(t *testing.T) {
 func TestBranchVersions(t *testing.T) {
 	b := testShardBuilder(t, &zoekt.Repository{
 		Branches: []zoekt.RepositoryBranch{
-			{"stable", "v-stable"},
-			{"master", "v-master"},
+			{Name: "stable", Version: "v-stable"},
+			{Name: "master", Version: "v-master"},
 		},
 	}, Document{Name: "f2", Content: []byte("needle"), Branches: []string{"master"}})
 
@@ -2744,7 +2744,7 @@ func TestAndOrUnicode(t *testing.T) {
 
 	b := testShardBuilder(t, &zoekt.Repository{
 		Name:     "name",
-		Branches: []zoekt.RepositoryBranch{{"master", "master-version"}},
+		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "master-version"}},
 	}, Document{
 		Name:    "f2",
 		Content: []byte("orange\u2318apple"),
