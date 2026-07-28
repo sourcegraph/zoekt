@@ -15,13 +15,16 @@ on the internet.
 
 I had to implement SSH hashed hostkey checking on a whim recently, and
 here is how I quickly zoomed into the relevant code using
-[our public zoekt instance](http://cs.bazel.build):
+[our public zoekt instance](https://cs.bazel.build):
 
-* [hash host ssh](http://cs.bazel.build/search?q=hash+host+ssh&num=50): more than 20k results in 750 files, in 3 seconds
+The result counts and timings below are a historical snapshot; they vary with
+the indexed corpus, server configuration, and cache state.
 
-* [hash host r:openssh](http://cs.bazel.build/search?q=hash+host+r%3Aopenssh&num=50): 6k results in 114 files, in 20ms
+* [hash host ssh](https://cs.bazel.build/search?q=hash+host+ssh&num=50): more than 20k results in 750 files, in 3 seconds
 
-* [hash host r:openssh known_host](http://cs.bazel.build/search?q=hash+host+r%3Aopenssh+known_host&num=50): 4k result in 42 files, in 13ms
+* [hash host r:openssh](https://cs.bazel.build/search?q=hash+host+r%3Aopenssh&num=50): 6k results in 114 files, in 20ms
+
+* [hash host r:openssh known_host](https://cs.bazel.build/search?q=hash+host+r%3Aopenssh+known_host&num=50): 4k result in 42 files, in 13ms
 
 the last query still yielded a substantial number of results, but the
 function `hash_host` that I was looking for was the 3rd result from
@@ -56,8 +59,8 @@ this to work, you need the following features:
   googlesource.com.
 
 * Speed: `zoekt` uses an index based on positional trigrams. For rare
-  strings, eg. `nienhuys`, this typically yields results in ~10ms if
-  the operating system caches are warm.
+  strings, eg. `nienhuys`, this can yield results in milliseconds when the
+  operating system caches are warm.
 
 * Approximate queries: `zoekt` supports substring patterns and regular
   expressions, and can do case-insensitive matching on UTF-8 text.
@@ -84,14 +87,10 @@ supported by all projects.
 
 ## What about the search on `github.com`?
 
-GitHub's search has great coverage, but unfortunately, its search
-functionality doesn't support arbitrary substrings. For example, a
-query [for part of my
-surname](https://github.com/search?utf8=%E2%9C%93&q=nienhuy&type=Code)
-does not turn up anything (except this document), while
-[my complete
-name](https://github.com/search?utf8=%E2%9C%93&q=nienhuys&type=Code)
-does.
+GitHub provides hosted code search across repositories on GitHub. Zoekt is
+intended for deployments that need to self-host search, index repositories
+from multiple code hosts, choose which branches to index, or integrate search
+through their own web service or API.
 
 ## What about Etsy/Hound?
 
@@ -117,34 +116,30 @@ parallelized across shards.
 
 ## Can I index multiple branches?
 
-Yes. You can index 64 branches (see also
-https://github.com/google/zoekt/issues/32). Files that are identical
-across branches take up space just once in the index.
+Yes. Pass a comma-separated list to `zoekt-git-index -branches`. Zoekt can
+index up to 64 branches per repository, and files that are identical across
+branches take up space just once in the index.
 
 ## How fast is the search?
 
-Rare strings, are extremely fast to retrieve, for example `r:torvalds
+Search latency depends on the corpus, query, result limit, hardware, and cache
+state. As a historical example, `r:torvalds
 crazy` (search "crazy" in the linux kernel) typically takes [about
 7-10ms on
-cs.bazel.build](http://cs.bazel.build/search?q=r%3Atorvalds+crazy&num=70).
+cs.bazel.build](https://cs.bazel.build/search?q=r%3Atorvalds+crazy&num=70).
 
 The speed for common strings is dominated by how many results you want
 to see. For example [r:torvalds license] can give some results
 quickly, but producing [all 86k
-results](http://cs.bazel.build/search?q=r%3Atorvalds+license&num=50000)
+results](https://cs.bazel.build/search?q=r%3Atorvalds+license&num=50000)
 takes between 100ms and 1 second. Then, streaming the results to your
 browser, and rendering the HTML takes several seconds.
 
 ## How fast is the indexer?
 
-The Linux kernel (55K files, 545M data) takes about 160s to index on
-my x250 laptop using a single thread.  The process can be parallelized
-for speedup.
-
-## What does [cs.bazel.build](https://cs.bazel.build/) run on?
-
-Currently, it runs on a single Google Cloud VM with 16 vCPUs, 60G RAM and an
-attached physical SSD.
+In one historical benchmark, the Linux kernel (55K files, 545M data) took
+about 160 seconds to index on an X250 laptop using a single thread. The process
+can be parallelized for speedup.
 
 ## How does `zoekt` work?
 
@@ -158,6 +153,6 @@ distance apart.
 Some further background documentation
 
  * [Designdoc](design.md) for technical details
- * [Godoc](https://godoc.org/github.com/google/zoekt)
+ * [Godoc](https://pkg.go.dev/github.com/sourcegraph/zoekt)
  * Gerrit 2016 user summit: [slides](https://storage.googleapis.com/gerrit-talks/summit/2016/zoekt.pdf)
  * Gerrit 2017 user summit: [transcript](https://gitenterprise.me/2017/11/01/gerrit-user-summit-zoekt-code-search-engine/),  [slides](https://storage.googleapis.com/gerrit-talks/summit/2017/Zoekt%20-%20improved%20codesearch.pdf), [video](https://www.youtube.com/watch?v=_-KTAvgJYdI)

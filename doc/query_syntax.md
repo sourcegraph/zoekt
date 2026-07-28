@@ -9,11 +9,13 @@ For a brief overview of Zoekt's query syntax, see [these great docs from neogrok
 ## Syntax Overview
 
 A query is made up of expressions. An **expression** can be:
-- A negation (e.g., `-`),
+- A search pattern (e.g., `error.*handler`),
 - A field (e.g., `repo:`),
 - A grouping (e.g., parentheses `()`),
+- A negated expression (e.g., `-repo:archived-project`).
 
-Logical `OR` operations combine multiple expressions. The **`AND` operator is implicit**, meaning multiple expressions written together will be automatically treated as `AND`.
+The lowercase `or` operator combines alternatives. Conjunction is implicit,
+so multiple expressions written together are treated as AND conditions.
 
 ---
 
@@ -25,17 +27,18 @@ Fields restrict your query to specific criteria. Here's a list of fields and the
 
 | Field        | Aliases | Values                 | Description                                                | Examples                               |
 |--------------|---------|------------------------|------------------------------------------------------------|----------------------------------------|
-| `archived:`  | `a:`    | `yes` or `no`          | Filters archived repositories.                             | `archived:yes`                         |
-| `case:`      | `c:`    | `yes`, `no`, or `auto` | Matches case-sensitive or insensitive text.                | `case:yes content:"Foo"`               |
-| `content:`   | `c:`    | Text (string or regex) | Searches content of files.                                 | `content:"search term"`                |
-| `file:`      | `f:`    | Text (string or regex) | Searches file names.                                       | `file:"main.go"`                       |
-| `fork:`      | `f:`    | `yes` or `no`          | Filters forked repositories.                               | `fork:no`                              |
-| `lang:`      | `l:`    | Text                   | Filters by programming language.                           | `lang:python`                          |
+| `archived:`  |         | `yes` or `no`          | Filters archived repositories.                             | `archived:yes`                         |
+| `case:`      |         | `yes`, `no`, or `auto` | Matches case-sensitive or insensitive text.                | `case:yes content:"Foo"`               |
+| `content:`   | `c:`    | Regex pattern          | Searches content of files.                                 | `content:"search term"`                |
+| `file:`      | `f:`    | Regex pattern          | Searches file names.                                       | `file:main\.go$`                       |
+| `fork:`      |         | `yes` or `no`          | Filters forked repositories.                               | `fork:no`                              |
+| `lang:`      |         | Text                   | Filters by programming language.                           | `lang:python`                          |
+| `meta.<field>:` |      | Regex pattern          | Filters repository metadata values.                        | `meta.license:Apache-.*`               |
 | `public:`    |         | `yes` or `no`          | Filters public repositories.                               | `public:yes`                           |
-| `regex:`     |         | Regex pattern          | Matches content using a regular expression.                | `regex:/foo.*bar/`                     |
-| `repo:`      | `r:`    | Text (string or regex) | Filters repositories by name.                              | `repo:"github.com/user/project"`       |
-| `sym:`       |         | Text                   | Searches for symbol names.                                 | `sym:"MyFunction"`                     |
-| `branch:`    | `b:`    | Text                   | Searches within a specific branch.                         | `branch:main`                          |
+| `regex:`     |         | Regex pattern          | Matches content using a regular expression.                | `regex:foo.*bar`                       |
+| `repo:`      | `r:`    | Regex pattern          | Filters repositories by name.                              | `repo:github\.com/user/project$`       |
+| `sym:`       |         | Regex pattern          | Searches for symbol names.                                 | `sym:"MyFunction"`                     |
+| `branch:`    | `b:`    | Text                   | Matches branch names containing the value; `HEAD` selects the default branch. | `branch:main` |
 | `type:`      | `t:`    | `filematch`, `filename`, `file`, or `repo` | Limits result types.                   | `type:filematch`                       |
 
 ---
@@ -47,7 +50,7 @@ Negate an expression using the `-` symbol.
 #### Examples:
 - Exclude a repository:
   ```plaintext
-  -repo:"github.com/example/repo"
+  -repo:github\.com/example/repo$
   ```
 - Exclude a language:
   ```plaintext
@@ -82,7 +85,8 @@ Use `or` to combine multiple expressions.
   lang:go or lang:java
   ```
 
-`and` boolean operator is applied automatically when expressions are separated by a space.
+Conjunction is applied automatically when expressions are separated by a
+space. The word `and` is not an operator; it is interpreted as a search term.
 
 ---
 
@@ -98,6 +102,17 @@ public:yes archived:no fork:no
 
 This finds repositories that are public, not archived, and not forks.
 
+### Filtering by Repository Metadata
+
+When an indexer stores custom key-value metadata for a repository, use
+`meta.<field>:` to match the value with a regular expression. For example:
+
+```plaintext
+meta.license:Apache-.*
+```
+
+Repositories without that metadata field do not match.
+
 ### Result Type Control
 
 The `type:` operator controls what kind of results are returned:
@@ -108,7 +123,7 @@ type:repo content:config
 
 This returns repository names instead of file matches. Valid values include:
 - `filematch` - Returns file content matches (default)
-- `filename` - Returns only matching filenames
+- `filename` (or `file`) - Returns only matching filenames
 - `repo` - Returns only repository names
 
 `type:` applies to the whole expression in its current scope, including `or`
@@ -124,9 +139,16 @@ for example `(type:repo foo) or bar`.
   Use `yes` or `no` for fields like `archived:` or `fork:`.
 
 - **Text Fields**:
-  Text fields (`content:`, `repo:`, etc.) accept:
-  - Strings: `"my text"`
-  - Regular expressions: `/my.*regex/`
+  Search terms and text fields (`content:`, `repo:`, etc.) are parsed as
+  [Go regular expressions](https://pkg.go.dev/regexp/syntax). Patterns that
+  contain no regular expression operations are optimized as substring
+  searches. Write patterns directly without surrounding `/` delimiters;
+  slashes in a pattern are matched literally.
+
+- **Quoted Values**:
+  Double quotes group values containing spaces, as in `"my text"`. Inside a
+  quoted value, a backslash escapes the next character. Use two backslashes
+  when the regular expression itself needs a backslash.
 
 - **Escape Characters**:
   To include special characters, use backslashes (`\`).
@@ -138,7 +160,7 @@ for example `(type:repo foo) or bar`.
   ```
 - Match the regex `foo.*bar`:
   ```plaintext
-  content:/foo.*bar/
+  content:foo.*bar
   ```
 
 ---
@@ -165,12 +187,12 @@ case-sensitive; otherwise, it will be case-insensitive.
 
 2. **Exclude archived repositories and match a regex**:
    ```plaintext
-   archived:no regex:/error.*handler/
+   archived:no regex:error.*handler
    ```
 
 3. **Find files named `README.md` in forks**:
    ```plaintext
-   file:"README.md" fork:yes
+   file:README\.md$ fork:yes
    ```
 
 4. **Search for a specific branch**:
@@ -180,7 +202,7 @@ case-sensitive; otherwise, it will be case-insensitive.
 
 5. **Combine multiple fields**:
    ```plaintext
-   (repo:"github.com/example" or repo:"github.com/test") and lang:go
+   (repo:github\.com/example$ or repo:github\.com/test$) lang:go
    ```
 
 ---
@@ -189,12 +211,12 @@ case-sensitive; otherwise, it will be case-insensitive.
 
 1. **Combine Filters**: You can combine as many fields as needed. For instance:
    ```plaintext
-   repo:"github.com/example" lang:go content:"init"
+   repo:github\.com/example$ lang:go content:"init"
    ```
 
 2. **Use Regular Expressions**: Make complex content searches more powerful:
    ```plaintext
-   content:/func\s+\w+\s*\(/
+   content:func\s+\w+\s*\(
    ```
 
 3. **Case Sensitivity**: Use `case:yes` for exact matches:
@@ -204,39 +226,38 @@ case-sensitive; otherwise, it will be case-insensitive.
 
 4. **Match Specific File Types**:
    ```plaintext
-   file:".*\.go" content:"package main"
+   file:.*\.go$ content:"package main"
    ```
 
 ### EBNF Summary
 
 ```ebnf
-query       = expression , { "or" , expression } ;
+query       = conjunction , { "or" , conjunction } ;
 
-expression  = negation
-            | grouping
-            | field ;
+conjunction = expression , { expression } ;
 
-negation    = "-" , expression ;
+expression  = [ "-" ] , ( grouping | text | field ) ;
 
 grouping    = "(" , query , ")" ;
 
-field       = ( ( "archived:" | "a:" ) , boolean )
-            | ( ( "case:" | "c:" ) , ("yes" | "no" | "auto") )
+field       = ( "archived:" , boolean )
+            | ( "case:" , ("yes" | "no" | "auto") )
             | ( ( "content:" | "c:" ) , text )
             | ( ( "file:" | "f:" ) , text )
-            | ( ( "fork:" | "f:" ) , boolean )
-            | ( ( "lang:" | "l:" ) , text )
-            | ( ( "public:" ) , boolean )
-            | ( ( "regex:" ) , text )
+            | ( "fork:" , boolean )
+            | ( "lang:" , text )
+            | ( "public:" , boolean )
+            | ( "regex:" , text )
             | ( ( "repo:" | "r:" ) , text )
-            | ( ( "sym:" ) , text )
+            | ( "sym:" , text )
             | ( ( "branch:" | "b:" ) , text )
-            | ( ( "type:" | "t:" ) , type );
+            | ( ( "type:" | "t:" ) , type )
+            | ( "meta." , metadata-name , ":" , text );
 
 boolean     = "yes" | "no" ;
-text        = string | regex ;
-string      = '"' , { character | escape } , '"' ;
-regex       = '/' , { character | escape } , '/' ;
+text        = quoted | unquoted ;
+quoted      = '"' , { character | escape } , '"' ;
+unquoted    = character , { character | escape } ;
 
 type        = "filematch" | "filename" | "file" | "repo" ;
 ```

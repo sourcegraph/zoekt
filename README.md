@@ -28,7 +28,9 @@ For more details on Zoekt's design, see the [docs directory](doc/).
 
 ### Installation
 
-    go get github.com/sourcegraph/zoekt/
+Install the commands you need with `go install`, as shown below. The examples
+use the latest released version and assume that Go's binary installation
+directory is on your `PATH`.
 
 **Note**: It is also recommended to install [Universal ctags](https://github.com/universal-ctags/ctags), as symbol
 information is a key signal in ranking search results. See [ctags.md](doc/ctags.md) for more information.
@@ -40,19 +42,19 @@ for simple local usage, or for testing and development.
 
 #### Indexing a local git repo
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index
-    $GOPATH/bin/zoekt-git-index -index ~/.zoekt /path/to/repo
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index@latest
+    zoekt-git-index -index ~/.zoekt /path/to/repo
 
 #### Indexing a local directory (not git-specific)
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-index
-    $GOPATH/bin/zoekt-index -index ~/.zoekt /path/to/repo
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-index@latest
+    zoekt-index -index ~/.zoekt /path/to/repo
 
 #### Searching an index
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt
-    $GOPATH/bin/zoekt 'hello'
-    $GOPATH/bin/zoekt 'hello file:README'
+    go install github.com/sourcegraph/zoekt/cmd/zoekt@latest
+    zoekt 'hello'
+    zoekt 'hello file:README'
 
 ### Zoekt services
 
@@ -61,13 +63,15 @@ of remote repositories. The index server can be configured to periodically fetch
 from a code host. The webserver can be configured to serve search results through a web UI or API.
 
 #### Indexing a GitHub organization
-    
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-indexserver
+
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-indexserver@latest
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-mirror-github@latest
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index@latest
 
     echo YOUR_GITHUB_TOKEN_HERE > token.txt
     echo '[{"GitHubOrg": "apache", "CredentialPath": "token.txt"}]' > config.json
 
-    $GOPATH/bin/zoekt-indexserver -mirror_config config.json -data_dir ~/.zoekt/ 
+    zoekt-indexserver -mirror_config config.json -data_dir ~/.zoekt/
 
 This will fetch all repos under 'github.com/apache', then index the repositories. The indexserver takes care of
 periodically fetching and indexing new data, and cleaning up logfiles. See [config.go](cmd/zoekt-indexserver/config.go)
@@ -75,8 +79,8 @@ for more details on this configuration.
 
 #### Starting the web server
 
-    go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver
-    $GOPATH/bin/zoekt-webserver -index ~/.zoekt/
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver@latest
+    zoekt-webserver -index ~/.zoekt/
 
 This will start a web server with a simple search UI at http://localhost:6070.
 See the [query syntax docs](doc/query_syntax.md) for more details on the query
@@ -91,13 +95,13 @@ includes the Zoekt binaries, `git`, and `universal-ctags`. By default it runs
     docker run --rm -p 6070:6070 -v "$PWD/index:/data/index" ghcr.io/sourcegraph/zoekt
 
 You can override the default command to run `zoekt-indexserver` instead. This
-example stores cloned repositories, logs, and indexes under `/data` and reads a
-mounted mirror config file:
+example stores cloned repositories, logs, and indexes in the named Docker
+volume `zoekt-data` and reads a mounted mirror config file:
 
     docker run --rm \
       -v "$PWD/config.json:/config.json:ro" \
       -v "$PWD/token.txt:/home/zoekt/token.txt:ro" \
-      -v "$PWD/zoekt-data:/data" \
+      -v zoekt-data:/data \
       ghcr.io/sourcegraph/zoekt \
       zoekt-indexserver -mirror_config /config.json -data_dir /data
 
@@ -105,11 +109,12 @@ If you start the web server with `-rpc`, it exposes a [simple JSON search
 API](doc/json-api.md) at `http://localhost:6070/api/search`.
 
 The JSON API supports advanced features including:
-- Streaming search results (using the `FlushWallTime` option)
 - Alternative BM25 scoring (using the `UseBM25Scoring` option)
 - Context lines around matches (using the `NumContextLines` option)
 
-Finally, the web server exposes a gRPC API that supports [structured query objects](query/query.go) and advanced search options.
+Finally, the web server exposes a [gRPC API](grpc/protos/zoekt/webserver/v1/webserver.proto)
+that supports structured query objects, streaming search results, and advanced
+search options.
 
 ## Acknowledgements
 
