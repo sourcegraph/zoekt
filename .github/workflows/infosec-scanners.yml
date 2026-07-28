@@ -1,0 +1,11 @@
+name: infosec workflows
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+jobs:
+  infosec-scanners:
+    name: run infosec scanners
+    uses: fastfishio/infosec-centralized-workflows/.github/workflows/security-workflows.yml@main
+    secrets: inherit
