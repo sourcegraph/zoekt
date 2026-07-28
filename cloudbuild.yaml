@@ -1,0 +1,20 @@
+substitutions:
+    _REPO: is-zoekt-testing
+
+steps:
+- name: ubuntu
+  args: [ 'bash', '-c', 'test $(echo ${REPO_NAME}|grep -o ${_REPO}|wc -l) -eq 1 && echo "match" || exit 1' ]
+
+- name: gcr.io/kaniko-project/executor:v1.23.2
+  args:
+  - --destination=gcr.io/$PROJECT_ID/$_REPO:${COMMIT_SHA}
+  - --destination=gcr.io/$PROJECT_ID/$_REPO:${BRANCH_NAME}
+  - --build-arg=VERSION=${COMMIT_SHA}
+  - --registry-mirror=mirror.gcr.io
+  - --cache=true
+  - --cache-ttl=6h
+
+- name: gcr.io/nooncore-is/is-image-scanner:main
+  entrypoint: ''
+  env:
+    - REPO_ID=$_REPO
