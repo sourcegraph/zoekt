@@ -47,7 +47,7 @@ type jsonListReply struct {
 
 func (s *jsonSearcher) jsonSearch(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	w.Header().Add("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 
 	if req.Method != "POST" {
 		jsonError(w, http.StatusMethodNotAllowed, "Only POST is supported")
@@ -96,16 +96,19 @@ func (s *jsonSearcher) jsonSearch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err = json.NewEncoder(w).Encode(jsonSearchReply{searchResult})
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	writeJSONResponse(w, jsonSearchReply{searchResult})
 }
 
 func jsonError(w http.ResponseWriter, statusCode int, err string) {
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(struct{ Error string }{Error: err})
+}
+
+func writeJSONResponse(w http.ResponseWriter, response any) {
+	// The response types are known to be JSON-compatible. Encode directly to
+	// avoid allocating a copy of the response, and assume any error is a write
+	// error for which it is too late to send an HTTP error response.
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // Calculates and sets heuristic defaults on opts for various upper bounds on
@@ -146,7 +149,7 @@ func CalculateDefaultSearchLimits(ctx context.Context,
 }
 
 func (s *jsonSearcher) jsonList(w http.ResponseWriter, req *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 
 	if req.Method != "POST" {
 		jsonError(w, http.StatusMethodNotAllowed, "Only POST is supported")
@@ -172,9 +175,5 @@ func (s *jsonSearcher) jsonList(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err = json.NewEncoder(w).Encode(jsonListReply{listResult})
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	writeJSONResponse(w, jsonListReply{listResult})
 }
