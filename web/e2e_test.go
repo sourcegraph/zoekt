@@ -195,7 +195,7 @@ func TestPrint(t *testing.T) {
 
 	for req, needles := range map[string][]string{
 		"/print?q=bla&r=name&f=f2": {
-			`pre id="l1" class="inline-pre"><span class="noselect"><a href="#l1">`,
+			`pre id="l1"><span class="noselect"><a href="#l1">`,
 		},
 	} {
 		checkNeedles(t, ts, req, needles)
@@ -482,8 +482,8 @@ func TestContextLines(t *testing.T) {
 				},
 			},
 		},
-		"/search?q=seventh&format=json&ctx=10": {
-			"index with large context at end returns whole document",
+		"/search?q=seventh&format=json&ctx=5": {
+			"context at end is capped at maxCtxLines",
 			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
@@ -498,13 +498,13 @@ func TestContextLines(t *testing.T) {
 								Post:  "",
 							},
 						},
-						Before: "one line\nsecond snippet\nthird thing\nfourth\nfifth block\nsixth example\n",
+						Before: "second snippet\nthird thing\nfourth\nfifth block\nsixth example\n",
 					},
 				},
 			},
 		},
-		"/search?q=one&format=json&ctx=10": {
-			"index with large context at start returns whole document",
+		"/search?q=one&format=json&ctx=5": {
+			"context at start is capped at maxCtxLines",
 			FileMatch{
 				FileName: "f2",
 				Repo:     "name",
@@ -519,7 +519,7 @@ func TestContextLines(t *testing.T) {
 								Post:  " line\n",
 							},
 						},
-						After: "second snippet\nthird thing\nfourth\nfifth block\nsixth example\nseventh",
+						After: "second snippet\nthird thing\nfourth\nfifth block\nsixth example\n",
 					},
 				},
 			},
@@ -683,13 +683,13 @@ func TestContextLinesMustBeValid(t *testing.T) {
 	defer ts.Close()
 
 	// Don't care about ctx if format is not json
-	code := getHttpStatusCode(t, ts, "/search?q=water&ctx=10")
+	code := getHttpStatusCode(t, ts, "/search?q=water&ctx=5")
 	if code != 200 {
 		t.Errorf("Expected 200 but got %v", code)
 	}
 
 	// ctx must be a valid integer in the right range.
-	for _, want := range []string{"foo", "-1", "20"} {
+	for _, want := range []string{"foo", "-1", "10", "20"} {
 		code := getHttpStatusCode(t, ts, "/search?q=water&format=json&ctx="+want)
 		if code != 418 {
 			t.Errorf("Expected 418 but got %v", code)
@@ -978,5 +978,73 @@ func assertResults(t *testing.T, files []zoekt.FileMatch, want string) {
 
 	if d := cmp.Diff(want, got); d != "" {
 		t.Fatalf("unexpected results (-want, +got):\n%s", d)
+	}
+}
+
+// TestRequestCaps verifies the hard server-side caps on per-request yield.
+// These bound how much code a single request can return, so bulk retrieval
+// needs many individually rate-limited and audited requests. Loosening
+// maxNumResults/maxCtxLines should fail here.
+func TestRequestCaps(t *testing.T) {
+	b, err := index.NewShardBuilder(&zoekt.Repository{
+		Name:     "name",
+		Branches: []zoekt.RepositoryBranch{{Name: "master", Version: "1234"}},
+	})
+	if err != nil {
+		t.Fatalf("NewShardBuilder: %v", err)
+	}
+	// One match per file, more files than maxNumResults.
+	for i := 0; i < maxNumResults+20; i++ {
+		if err := b.Add(index.Document{
+			Name:     fmt.Sprintf("f%d", i),
+			Content:  []byte("needle\n"),
+			Branches: []string{"master"},
+		}); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+	}
+
+	srv := Server{Searcher: searcherForTest(t, b), Top: Top, HTML: true}
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// num is clamped, not honoured: asking for everything yields maxNumResults files.
+	res, err := http.Get(ts.URL + "/search?q=needle&num=100000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(body), `class="file-card"`); got != maxNumResults {
+		t.Errorf("num=100000 returned %d file cards, want clamp to %d", got, maxNumResults)
+	}
+
+	// ctx at the cap is accepted; above it is rejected rather than silently
+	// truncated, so JSON consumers never mistake short context for complete.
+	res, err = http.Get(ts.URL + fmt.Sprintf("/search?q=needle&ctx=%d", maxCtxLines))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("ctx=%d: got status %d, want 200", maxCtxLines, res.StatusCode)
+	}
+
+	for _, bad := range []string{fmt.Sprint(maxCtxLines + 1), "-1", "foo"} {
+		res, err := http.Get(ts.URL + "/search?q=needle&format=json&ctx=" + bad)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode == http.StatusOK {
+			t.Errorf("ctx=%s: got status 200, want an error", bad)
+		}
 	}
 }

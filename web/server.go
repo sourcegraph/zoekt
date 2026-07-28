@@ -122,6 +122,22 @@ func AddLineNumbers(content string, lineNum int, isBefore bool) []lineMatch {
 
 const defaultNumResults = 50
 
+// Hard server-side caps on how much a single request may return. Upstream
+// leaves num unbounded and caps ctx at 10, which lets one query
+// (e.g. `q=.*&num=100000&ctx=10`) return the better part of the corpus in a
+// single request that costs the caller one rate-limit token and one audit
+// row. These caps keep per-request yield small and predictable, so bulk
+// retrieval needs many requests: each rate limited, each logged.
+//
+// num is clamped (a bigger ask silently yields fewer files, and the UI's
+// "show more" link stays harmless), while an out-of-range ctx is rejected:
+// JSON API consumers must not receive silently truncated context and treat
+// it as complete.
+const (
+	maxNumResults = 50
+	maxCtxLines   = 5
+)
+
 type Server struct {
 	Searcher zoekt.Streamer
 
@@ -333,6 +349,9 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 	if err != nil || num <= 0 {
 		num = defaultNumResults
 	}
+	if num > maxNumResults {
+		num = maxNumResults
+	}
 
 	sOpts := zoekt.SearchOptions{
 		MaxWallTime: 10 * time.Second,
@@ -341,8 +360,8 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 	numCtxLines := 0
 	if ctxLinesStr := qvals.Get("ctx"); ctxLinesStr != "" {
 		numCtxLines, err = strconv.Atoi(ctxLinesStr)
-		if err != nil || numCtxLines < 0 || numCtxLines > 10 {
-			return nil, fmt.Errorf("Number of context lines must be between 0 and 10")
+		if err != nil || numCtxLines < 0 || numCtxLines > maxCtxLines {
+			return nil, fmt.Errorf("Number of context lines must be between 0 and %d", maxCtxLines)
 		}
 	}
 	sOpts.NumContextLines = numCtxLines
@@ -359,6 +378,12 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 	result, err := s.Searcher.Search(ctx, q, &sOpts)
 	if err != nil {
 		return nil, err
+	}
+
+	// MaxDocDisplayCount is advisory here: nothing on this path enforces it,
+	// so the cap has to be applied to the results themselves.
+	if len(result.Files) > num {
+		result.Files = result.Files[:num]
 	}
 
 	fileMatches, err := s.formatResults(result, queryStr, s.Print)
@@ -612,6 +637,9 @@ func (s *Server) servePrintErr(w http.ResponseWriter, r *http.Request) error {
 	num, err := strconv.Atoi(numStr)
 	if err != nil || num <= 0 {
 		num = defaultNumResults
+	}
+	if num > maxNumResults {
+		num = maxNumResults
 	}
 
 	re, err := syntax.Parse("^"+regexp.QuoteMeta(fileStr)+"$", 0)
