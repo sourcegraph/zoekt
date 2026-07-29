@@ -639,7 +639,8 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	useCatfileBatch := true
 	if disabled, _ := strconv.ParseBool(catfileBatchDisabled); disabled {
 		useCatfileBatch = false
-		log.Printf("cat-file batch disabled via ZOEKT_DISABLE_CATFILE_BATCH, using go-git")
+	} else {
+		log.Printf("cat-file batch enabled via ZOEKT_DISABLE_CATFILE_BATCH=false")
 	}
 	filterSpec := catfileFilterSpec(opts)
 	if useCatfileBatch && filterSpec != "" {
