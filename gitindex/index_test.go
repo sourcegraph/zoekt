@@ -172,6 +172,40 @@ func TestIndexGitRepo_Worktree(t *testing.T) {
 	}
 }
 
+func TestIndexGitRepoPreservesRepositoryName(t *testing.T) {
+	t.Parallel()
+
+	repoDir, _ := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:  repoDir,
+		Branches: []string{"HEAD"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "local/repo"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatal(err)
+	}
+	shards, err := filepath.Glob(filepath.Join(indexDir, "*.zoekt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shards) != 1 {
+		t.Fatalf("got %d shards, want 1", len(shards))
+	}
+	repositories, _, err := index.ReadMetadataPath(shards[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := repositories[0].Name, opts.BuildOptions.RepositoryDescription.Name; got != want {
+		t.Fatalf("repository name is %q, want %q", got, want)
+	}
+}
+
 func TestOpenRepoVariants(t *testing.T) {
 	t.Parallel()
 
