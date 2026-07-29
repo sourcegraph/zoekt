@@ -79,6 +79,69 @@ func TestReadWrite(t *testing.T) {
 	}
 }
 
+func TestVerifyRuneBoundaryMapping(t *testing.T) {
+	id := &indexData{
+		file:             &memSeeker{[]byte("éx")},
+		boundaries:       []uint32{0, 2, 3},
+		fileEndRunes:     []uint32{1, 2},
+		fileNameContent:  []byte("abé"),
+		fileNameIndex:    []uint32{0, 1, 4},
+		fileNameEndRunes: []uint32{1, 3},
+		fileBranchMasks:  []uint64{0, 0},
+		docSectionsIndex: []uint32{0, 0, 0},
+		newlinesIndex:    []uint32{0, 0, 0},
+	}
+
+	if err := id.verify(); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+
+	id.fileEndRunes[0] = 0
+	if err := id.verify(); err == nil || !strings.Contains(err.Error(), "content 0 rune end 0 maps to byte offset 0, want byte end 2") {
+		t.Fatalf("verify content corruption error = %v", err)
+	}
+	id.fileEndRunes[0] = 1
+
+	id.fileNameEndRunes[1] = 2
+	if err := id.verify(); err == nil || !strings.Contains(err.Error(), "filename 1 rune end 2 maps to byte offset 2, want byte end 4") {
+		t.Fatalf("verify filename corruption error = %v", err)
+	}
+}
+
+func TestVerifyPlainASCIIRuneBoundaryMapping(t *testing.T) {
+	id := &indexData{
+		file:             &memSeeker{[]byte("abc")},
+		boundaries:       []uint32{0, 1, 3},
+		fileEndRunes:     []uint32{1, 3},
+		fileNameContent:  []byte("fg"),
+		fileNameIndex:    []uint32{0, 1, 2},
+		fileNameEndRunes: []uint32{1, 2},
+		fileBranchMasks:  []uint64{0, 0},
+		docSectionsIndex: []uint32{0, 0, 0},
+		newlinesIndex:    []uint32{0, 0, 0},
+		metaData: zoekt.IndexMetadata{
+			PlainASCII: true,
+		},
+	}
+
+	if err := id.verify(); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+
+	id.file = &memSeeker{[]byte("é")}
+	id.boundaries = []uint32{0, 2}
+	id.fileEndRunes = []uint32{1}
+	id.fileNameContent = []byte("f")
+	id.fileNameIndex = []uint32{0, 1}
+	id.fileNameEndRunes = []uint32{1}
+	id.fileBranchMasks = []uint64{0}
+	id.docSectionsIndex = []uint32{0, 0}
+	id.newlinesIndex = []uint32{0, 0}
+	if err := id.verify(); err == nil || !strings.Contains(err.Error(), "plain ASCII content 0 ends at rune 1, want 2") {
+		t.Fatalf("verify plain ASCII corruption error = %v", err)
+	}
+}
+
 func TestReadWriteNames(t *testing.T) {
 	b, err := NewShardBuilder(nil)
 	if err != nil {
