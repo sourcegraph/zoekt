@@ -420,6 +420,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.repos = make([]uint16, len(d.fileBranchMasks))
 	}
 
+	if err := d.verifyRepositoryReferences(); err != nil {
+		return nil, err
+	}
+
 	if err := d.calculateStats(); err != nil {
 		return nil, err
 	}
@@ -427,10 +431,11 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 	return &d, nil
 }
 
-// ErrEmptyShard is returned when reading the metadata of a shard that contains
-// no repositories and has no ID to backfill one from. Such a shard holds no
-// data and cannot be loaded, so callers may treat it as safe to delete.
-var ErrEmptyShard = errors.New("len(repos)=0. Cannot backfill ID")
+// ErrEmptyShard is returned when reading a shard that contains no repository
+// metadata. Persisted shards must describe at least one repository, even when
+// that repository contains no documents. Callers responsible for cleaning up
+// legacy shards may treat this error as a signal to remove the shard.
+var ErrEmptyShard = errors.New("shard contains no repository metadata")
 
 func (r *reader) parseMetadata(metaData simpleSection, repoMetaData simpleSection) ([]*zoekt.Repository, *zoekt.IndexMetadata, error) {
 	var md zoekt.IndexMetadata
@@ -465,10 +470,11 @@ func (r *reader) parseMetadata(metaData simpleSection, repoMetaData simpleSectio
 		}
 	}
 
+	if len(repos) == 0 {
+		return nil, &md, ErrEmptyShard
+	}
+
 	if md.ID == "" {
-		if len(repos) == 0 {
-			return nil, nil, ErrEmptyShard
-		}
 		md.ID = backfillID(repos[0].Name)
 	}
 
@@ -523,6 +529,24 @@ func (d *indexData) verify() error {
 		if got != n {
 			return fmt.Errorf("got %s %d, want %d", what, got, n)
 		}
+	}
+	return nil
+}
+
+func (d *indexData) verifyRepositoryReferences() error {
+	if len(d.repos) != len(d.fileBranchMasks) {
+		return fmt.Errorf("got repository references for %d documents, want %d", len(d.repos), len(d.fileBranchMasks))
+	}
+
+	var previous uint16
+	for docID, repoID := range d.repos {
+		if int(repoID) >= len(d.repoMetaData) {
+			return fmt.Errorf("document %d references repository %d, but the shard has %d repositories", docID, repoID, len(d.repoMetaData))
+		}
+		if docID > 0 && repoID < previous {
+			return fmt.Errorf("repository references are not contiguous at document %d: previous=%d current=%d", docID, previous, repoID)
+		}
+		previous = repoID
 	}
 	return nil
 }

@@ -125,6 +125,10 @@ func writePostings(w *writer, s *postingsBuilder, ngramText *simpleSection,
 }
 
 func (b *ShardBuilder) Write(out io.Writer) error {
+	if len(b.repoList) == 0 {
+		return fmt.Errorf("cannot write shard without repository metadata")
+	}
+
 	next := b.indexFormatVersion == NextIndexFormatVersion
 
 	buffered := bufio.NewWriterSize(out, 1<<20)
