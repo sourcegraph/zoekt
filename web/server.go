@@ -138,6 +138,11 @@ const (
 	maxCtxLines   = 5
 )
 
+// Context lines shown around a match when the request does not ask for a
+// specific number. Upstream defaults to 0 (matching line only), which is too
+// little to judge a hit; 5 is the cap, so the default is also the ceiling.
+const defaultCtxLines = 5
+
 type Server struct {
 	Searcher zoekt.Streamer
 
@@ -357,7 +362,7 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 		MaxWallTime: 10 * time.Second,
 	}
 
-	numCtxLines := 0
+	numCtxLines := defaultCtxLines
 	if ctxLinesStr := qvals.Get("ctx"); ctxLinesStr != "" {
 		numCtxLines, err = strconv.Atoi(ctxLinesStr)
 		if err != nil || numCtxLines < 0 || numCtxLines > maxCtxLines {

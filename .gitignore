@@ -14,3 +14,17 @@ bazel-zoekt
 
 # macOS
 .DS_Store
+
+# Local index data — shards contain indexed source, never commit them
+*.zoekt
+/index/
+/data/
+zoekt-data/
+
+# Mirror credentials and local run config
+token.txt
+secrets/
+.env
+
+# Locally built binaries (the Dockerfile builds all of ./cmd/...)
+/zoekt-*
