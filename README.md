@@ -45,6 +45,29 @@ for simple local usage, or for testing and development.
     go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index@latest
     zoekt-git-index -index ~/.zoekt /path/to/repo
 
+#### Synchronizing local git repos
+
+`zoekt-local-sync` recursively discovers Git repositories under one or more
+roots. Repository names are relative to their root; the command fails before
+changing the index if two repositories have the same name. By default the
+command previews the repositories that would be removed and indexed; pass `-f`
+to apply the sync. The supplied roots are the complete desired set for the
+index directory, so repositories not found beneath them are removed. Use
+separate index directories for repository sets that should be managed
+independently:
+
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-local-sync@latest
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index@latest
+    zoekt-local-sync -index ~/.zoekt ~/src
+    zoekt-local-sync -index ~/.zoekt -f ~/src
+
+The `list` and `remove` subcommands inspect and explicitly remove repositories.
+Removal, like synchronization, previews by default and requires `-f` to apply:
+
+    zoekt-local-sync list -index ~/.zoekt
+    zoekt-local-sync remove -index ~/.zoekt path/to/repo
+    zoekt-local-sync remove -index ~/.zoekt -f path/to/repo
+
 #### Indexing a local directory (not git-specific)
 
     go install github.com/sourcegraph/zoekt/cmd/zoekt-index@latest

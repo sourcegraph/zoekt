@@ -236,6 +236,13 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 }
 
 func setTemplatesFromRepo(desc *zoekt.Repository, repo *git.Repository, repoDir string) error {
+	// A caller-supplied name identifies the repository and its shards, so it
+	// takes precedence over names derived from zoekt config or the origin URL.
+	// Other repository fields are intentionally refreshed from that config.
+	if desc.Name != "" {
+		defer func(name string) { desc.Name = name }(desc.Name)
+	}
+
 	cfg, err := repo.Config()
 	if err == nil {
 		return setTemplatesFromRepoConfig(desc, cfg)
@@ -388,6 +395,9 @@ type Options struct {
 	// than the refs in the repository.
 	Incremental bool
 
+	// DryRun reports whether indexing is needed without writing an index.
+	DryRun bool
+
 	// Don't error out if some branch is missing
 	AllowMissingBranch bool
 
@@ -462,15 +472,17 @@ func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string,
 }
 
 // IndexGitRepo indexes the git repository as specified by the options.
-// The returned bool indicates whether the index was updated as a result. This
-// can be informative if doing incremental indexing.
+// The returned bool indicates whether the index was updated, or would be
+// updated when DryRun is set. This can be informative if doing incremental
+// indexing.
 func IndexGitRepo(opts Options) (bool, error) {
 	return indexGitRepo(opts, gitIndexConfig{})
 }
 
 // indexGitRepo indexes the git repository as specified by the options and the provided gitIndexConfig.
-// The returned bool indicates whether the index was updated as a result. This
-// can be informative if doing incremental indexing.
+// The returned bool indicates whether the index was updated, or would be
+// updated when DryRun is set. This can be informative if doing incremental
+// indexing.
 func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	prepareDeltaBuild := prepareDeltaBuild
 	if config.prepareDeltaBuild != nil {
@@ -536,6 +548,9 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 
 	if opts.Incremental && opts.BuildOptions.IncrementalSkipIndexing() {
 		return false, nil
+	}
+	if opts.DryRun {
+		return true, nil
 	}
 
 	// branch => (path, sha1) => repo.
