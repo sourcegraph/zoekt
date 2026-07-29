@@ -132,8 +132,9 @@ Index format
 The index is organized in shards, where each shard is a file, laid out
 such that it can be mmap'd efficiently.
 
-Each shard contains data for one code repository. The basic data in an
-index shard are the following
+A shard can contain one repository or, after shard merging, multiple
+repositories in a compound shard. The basic data in an index shard are the
+following
 
    * file contents
    * filenames
@@ -307,9 +308,9 @@ Since the UI is unauthenticated, there are no authentication secrets to steal.
 
 Since the code is public, there is no sensitive code to steal.
 
-This leaves us with the following senstive data:
+This leaves us with the following sensitive data:
 
-   * Credentials for accesssing git repostitories (eg. github access token)
+   * Credentials for accessing git repositories (eg. github access token)
    * TLS server certificates
    * Query logs
 
