@@ -99,6 +99,7 @@ EOF
 `
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
+	cmd.Env = gitTestEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("execution error: %v, output %s", err, out)
 	}
@@ -364,6 +365,7 @@ EOF
 `
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
+	cmd.Env = gitTestEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("execution error: %v, output %s", err, out)
 	}
@@ -491,6 +493,7 @@ git update-ref refs/meta/config HEAD
 `
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
+	cmd.Env = gitTestEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("execution error: %v, output %s", err, out)
 	}

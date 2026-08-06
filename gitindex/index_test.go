@@ -46,6 +46,7 @@ func TestIndexEmptyRepo(t *testing.T) {
 
 	cmd := exec.Command("git", "init", "-b", "master", "repo")
 	cmd.Dir = dir
+	cmd.Env = gitTestEnv()
 
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("cmd.Run: %v", err)
@@ -1082,7 +1083,15 @@ func runGit(t *testing.T, cwd string, args ...string) {
 
 	cmd := exec.Command("git", args...)
 	cmd.Dir = cwd
-	cmd.Env = append(os.Environ(),
+	cmd.Env = gitTestEnv()
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("execution error: %v, output %s", err, out)
+	}
+}
+
+func gitTestEnv() []string {
+	return append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=",
 		"GIT_CONFIG_SYSTEM=",
 		"GIT_COMMITTER_NAME=Kierkegaard",
@@ -1090,10 +1099,6 @@ func runGit(t *testing.T, cwd string, args ...string) {
 		"GIT_AUTHOR_NAME=Kierkegaard",
 		"GIT_AUTHOR_EMAIL=soren@apache.com",
 	)
-
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("execution error: %v, output %s", err, out)
-	}
 }
 
 func TestSetTemplates_e2e(t *testing.T) {
