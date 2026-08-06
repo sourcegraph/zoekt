@@ -35,6 +35,7 @@ git clone orig/.git clone.git
 
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
+	cmd.Env = gitTestEnv()
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("execution error: %v, output %s", err, out)

@@ -702,6 +702,7 @@ git init -b main
 `
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
+	cmd.Env = gitTestEnv()
 	_, err := cmd.CombinedOutput()
 	require.NoError(t, err)
 
