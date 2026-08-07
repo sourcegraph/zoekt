@@ -32,8 +32,9 @@ import (
 )
 
 type fileInfo struct {
-	name string
-	size int64
+	name      string
+	size      int64
+	isSymlink bool
 }
 
 type fileAggregator struct {
@@ -54,8 +55,13 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 		}
 	}
 
-	if info.Mode().IsRegular() {
-		a.sink <- fileInfo{path, info.Size()}
+	mode := info.Mode()
+	if mode.IsRegular() || mode&os.ModeSymlink != 0 {
+		a.sink <- fileInfo{
+			name:      path,
+			size:      info.Size(),
+			isSymlink: mode&os.ModeSymlink != 0,
+		}
 	}
 	return nil
 }
@@ -166,9 +172,19 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 			}
 			continue
 		}
-		content, err := os.ReadFile(f.name)
-		if err != nil {
-			return err
+		var content []byte
+		if f.isSymlink {
+			target, err := os.Readlink(f.name)
+			if err != nil {
+				return err
+			}
+			content = []byte(target)
+		} else {
+			var err error
+			content, err = os.ReadFile(f.name)
+			if err != nil {
+				return err
+			}
 		}
 
 		if err := builder.Add(index.Document{
