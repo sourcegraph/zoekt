@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -835,7 +836,8 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	start = time.Now()
 
 	loaded := ss.getLoaded()
-	done, err := ss.streamSearch(ctx, proc, q, opts, loaded.shards, collectSender)
+	origins := &fileMatchOrigins{}
+	done, err := ss.streamSearch(ctx, proc, q, opts, loaded.shards, collectSender, origins)
 	defer done()
 	if err != nil {
 		return nil, err
@@ -849,7 +851,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		}
 	}
 
-	copyFiles(aggregate)
+	ss.handleFileCopyFaults(q, copyFiles(aggregate, origins))
 
 	if !loaded.ready {
 		// We may have missed results due to not being fully loaded.
@@ -912,7 +914,10 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	// 4. copyFileSender (copy)
 	//
 	// For streaming, the wrapping has to happen in the inverted order.
-	sender = copyFileSender(sender)
+	origins := &fileMatchOrigins{}
+	sender = copyFileSender(sender, func(result *zoekt.SearchResult) {
+		ss.handleFileCopyFaults(q, copyFiles(result, origins))
+	})
 
 	if truncator, hasLimits := index.NewDisplayTruncator(opts); hasLimits {
 		var cancel context.CancelFunc
@@ -923,7 +928,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 
 	sender, flush := newFlushCollectSender(opts, sender)
 
-	done, err := ss.streamSearch(ctx, proc, q, opts, shards, sender)
+	done, err := ss.streamSearch(ctx, proc, q, opts, shards, sender, origins)
 
 	// Even though streaming is done, we may have results sitting in a buffer we
 	// need to flush. So we need to send those before calling done.
@@ -941,7 +946,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 // collector can't see. Calling done informs the garbage collector it is free
 // to collect those shards. The caller must call copyFiles on any
 // SearchResults it returns/streams out before calling done.
-func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, shards []*rankedShard, sender zoekt.Sender) (done func(), err error) {
+func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, shards []*rankedShard, sender zoekt.Sender, origins *fileMatchOrigins) (done func(), err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	overallStart := time.Now()
 	metricSearchRunning.Inc()
@@ -1008,6 +1013,7 @@ func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q qu
 			defer wg.Done()
 			for s := range search {
 				sr, err := ss.searchOneShard(ctx, s, q, opts)
+				origins.register(s, sr)
 				r := &result{priority: s.priority, SearchResult: sr, err: err}
 				results <- r
 			}
@@ -1188,17 +1194,201 @@ func copySlice(src *[]byte) {
 	*src = dst
 }
 
-func copyFiles(sr *zoekt.SearchResult) {
-	for i := range sr.Files {
-		copySlice(&sr.Files[i].Content)
-		copySlice(&sr.Files[i].Checksum)
-		for l := range sr.Files[i].LineMatches {
-			copySlice(&sr.Files[i].LineMatches[l].Line)
-			copySlice(&sr.Files[i].LineMatches[l].Before)
-			copySlice(&sr.Files[i].LineMatches[l].After)
+func copyFile(file *zoekt.FileMatch) (recovered any, stack []byte) {
+	restorePanicOnFault := debug.SetPanicOnFault(true)
+	defer func() {
+		debug.SetPanicOnFault(restorePanicOnFault)
+		if recovered = recover(); recovered != nil {
+			stack = debug.Stack()
 		}
-		for c := range sr.Files[i].ChunkMatches {
-			copySlice(&sr.Files[i].ChunkMatches[c].Content)
+	}()
+
+	copySlice(&file.Content)
+	copySlice(&file.Checksum)
+	for i := range file.LineMatches {
+		copySlice(&file.LineMatches[i].Line)
+		copySlice(&file.LineMatches[i].Before)
+		copySlice(&file.LineMatches[i].After)
+	}
+	for i := range file.ChunkMatches {
+		copySlice(&file.ChunkMatches[i].Content)
+	}
+	return nil, nil
+}
+
+type fileMatchOrigins struct {
+	mu      sync.Mutex
+	ranges  []fileMatchOriginRange
+	faulted map[zoekt.Searcher]struct{}
+	unknown map[unknownFileCopyFaultKey]struct{}
+}
+
+type fileMatchOriginRange struct {
+	first uintptr
+	last  uintptr
+	shard zoekt.Searcher
+}
+
+type unknownFileCopyFaultKey struct {
+	repositoryID uint32
+	repository   string
+	fileName     string
+	version      string
+}
+
+// Aggregation copies and reorders FileMatch values but preserves their byte
+// slice headers. Each shard result contributes one pointer range, keeping
+// provenance proportional to searched shards rather than returned matches.
+func fileMatchDataPointer(file *zoekt.FileMatch) uintptr {
+	data := file.Content
+	if len(data) == 0 {
+		data = file.Checksum
+	}
+	for i := 0; len(data) == 0 && i < len(file.LineMatches); i++ {
+		data = file.LineMatches[i].Line
+		if len(data) == 0 {
+			data = file.LineMatches[i].Before
+		}
+		if len(data) == 0 {
+			data = file.LineMatches[i].After
+		}
+	}
+	for i := 0; len(data) == 0 && i < len(file.ChunkMatches); i++ {
+		data = file.ChunkMatches[i].Content
+	}
+	if len(data) == 0 {
+		return 0
+	}
+	return uintptr(unsafe.Pointer(unsafe.SliceData(data)))
+}
+
+func (o *fileMatchOrigins) register(shard zoekt.Searcher, result *zoekt.SearchResult) {
+	if result == nil {
+		return
+	}
+
+	var first, last uintptr
+	for i := range result.Files {
+		pointer := fileMatchDataPointer(&result.Files[i])
+		if pointer == 0 {
+			continue
+		}
+		if first == 0 || pointer < first {
+			first = pointer
+		}
+		if pointer > last {
+			last = pointer
+		}
+	}
+	if first == 0 {
+		return
+	}
+
+	o.mu.Lock()
+	o.ranges = append(o.ranges, fileMatchOriginRange{
+		first: first,
+		last:  last,
+		shard: shard,
+	})
+	o.mu.Unlock()
+}
+
+func (o *fileMatchOrigins) recordFault(pointer uintptr, file *zoekt.FileMatch) (zoekt.Searcher, bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	var shard zoekt.Searcher
+	for _, candidate := range o.ranges {
+		if pointer < candidate.first || pointer > candidate.last {
+			continue
+		}
+		if shard != nil && shard != candidate.shard {
+			shard = nil
+			break
+		}
+		shard = candidate.shard
+	}
+	if shard != nil {
+		if o.faulted == nil {
+			o.faulted = make(map[zoekt.Searcher]struct{})
+		}
+		if _, exists := o.faulted[shard]; exists {
+			return shard, false
+		}
+		o.faulted[shard] = struct{}{}
+		return shard, true
+	}
+
+	key := unknownFileCopyFaultKey{
+		repositoryID: file.RepositoryID,
+		repository:   file.Repository,
+		fileName:     file.FileName,
+		version:      file.Version,
+	}
+	if o.unknown == nil {
+		o.unknown = make(map[unknownFileCopyFaultKey]struct{})
+	}
+	if _, exists := o.unknown[key]; exists {
+		return nil, false
+	}
+	o.unknown[key] = struct{}{}
+	return nil, true
+}
+
+type fileCopyFault struct {
+	file      zoekt.FileMatch
+	shard     zoekt.Searcher
+	recovered any
+	stack     []byte
+}
+
+func copyFiles(sr *zoekt.SearchResult, origins *fileMatchOrigins) []fileCopyFault {
+	kept := sr.Files[:0]
+	var faults []fileCopyFault
+	for i := range sr.Files {
+		file := &sr.Files[i]
+		originKey := fileMatchDataPointer(file)
+		fileRecovered, fileStack := copyFile(file)
+		if fileRecovered != nil {
+			shard, record := origins.recordFault(originKey, file)
+			if !record {
+				continue
+			}
+			faults = append(faults, fileCopyFault{
+				file:      *file,
+				shard:     shard,
+				recovered: fileRecovered,
+				stack:     fileStack,
+			})
+			continue
+		}
+		kept = append(kept, *file)
+	}
+	clear(sr.Files[len(kept):])
+	sr.Files = kept
+	if len(faults) > 0 {
+		sr.Stats.Crashes += len(faults)
+		metricSearchCrashesTotal.Add(float64(len(faults)))
+	}
+	return faults
+}
+
+func (ss *shardedSearcher) handleFileCopyFaults(q query.Q, faults []fileCopyFault) {
+	for _, fault := range faults {
+		if fault.shard == nil {
+			shardRecoveryLogger().Error(
+				"crashed result copy for unknown shard",
+				sglog.Uint32("repository_id", fault.file.RepositoryID),
+				sglog.String("repository", fault.file.Repository),
+				sglog.String("file", fault.file.FileName),
+				sglog.String("stacktrace", string(fault.stack)),
+			)
+			continue
+		}
+
+		logShardCrash("copy", fault.shard, q, fault.recovered, fault.stack)
+		if isMemoryFault(fault.recovered) {
+			ss.shardRepairs.schedule(fault.shard)
 		}
 	}
 }
