@@ -600,7 +600,9 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		}
 	}
 
-	copyFiles(aggregate)
+	copyFiles(aggregate, func(file *zoekt.FileMatch, recovered any, stack []byte) {
+		ss.handleFileCopyFault(q, loaded.shards, file, recovered, stack)
+	})
 
 	if !loaded.ready {
 		// We may have missed results due to not being fully loaded.
@@ -663,7 +665,9 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	// 4. copyFileSender (copy)
 	//
 	// For streaming, the wrapping has to happen in the inverted order.
-	sender = copyFileSender(sender)
+	sender = copyFileSender(sender, func(file *zoekt.FileMatch, recovered any, stack []byte) {
+		ss.handleFileCopyFault(q, shards, file, recovered, stack)
+	})
 
 	if truncator, hasLimits := index.NewDisplayTruncator(opts); hasLimits {
 		var cancel context.CancelFunc
@@ -938,19 +942,76 @@ func copySlice(src *[]byte) {
 	*src = dst
 }
 
-func copyFiles(sr *zoekt.SearchResult) {
-	for i := range sr.Files {
-		copySlice(&sr.Files[i].Content)
-		copySlice(&sr.Files[i].Checksum)
-		for l := range sr.Files[i].LineMatches {
-			copySlice(&sr.Files[i].LineMatches[l].Line)
-			copySlice(&sr.Files[i].LineMatches[l].Before)
-			copySlice(&sr.Files[i].LineMatches[l].After)
+type fileCopyFaultHandler func(*zoekt.FileMatch, any, []byte)
+
+func copyFile(file *zoekt.FileMatch) (recovered any, stack []byte) {
+	restorePanicOnFault := debug.SetPanicOnFault(true)
+	defer func() {
+		debug.SetPanicOnFault(restorePanicOnFault)
+		if recovered = recover(); recovered != nil {
+			stack = debug.Stack()
 		}
-		for c := range sr.Files[i].ChunkMatches {
-			copySlice(&sr.Files[i].ChunkMatches[c].Content)
+	}()
+
+	copySlice(&file.Content)
+	copySlice(&file.Checksum)
+	for i := range file.LineMatches {
+		copySlice(&file.LineMatches[i].Line)
+		copySlice(&file.LineMatches[i].Before)
+		copySlice(&file.LineMatches[i].After)
+	}
+	for i := range file.ChunkMatches {
+		copySlice(&file.ChunkMatches[i].Content)
+	}
+	return nil, nil
+}
+
+func copyFiles(sr *zoekt.SearchResult, onFault fileCopyFaultHandler) {
+	kept := sr.Files[:0]
+	for i := range sr.Files {
+		file := &sr.Files[i]
+		recovered, stack := copyFile(file)
+		if recovered != nil {
+			sr.Stats.Crashes++
+			metricSearchCrashesTotal.Inc()
+			if onFault != nil {
+				onFault(file, recovered, stack)
+			}
+			continue
+		}
+		kept = append(kept, *file)
+	}
+	clear(sr.Files[len(kept):])
+	sr.Files = kept
+}
+
+func (ss *shardedSearcher) handleFileCopyFault(
+	q query.Q,
+	shards []*rankedShard,
+	file *zoekt.FileMatch,
+	recovered any,
+	stack []byte,
+) {
+	for _, shard := range shards {
+		for _, repo := range shard.repos {
+			nameMatches := file.Repository != "" && repo.Name == file.Repository
+			idMatches := repo.ID != 0 && file.RepositoryID != 0 && repo.ID == file.RepositoryID
+			if !nameMatches && !idMatches {
+				continue
+			}
+
+			logShardCrash("copy", shard, q, recovered, stack)
+			ss.shardRepairs.schedule(shard)
+			return
 		}
 	}
+
+	shardRecoveryLogger().Error(
+		"crashed result copy for unknown shard",
+		sglog.Uint32("repository_id", file.RepositoryID),
+		sglog.String("repository", file.Repository),
+		sglog.String("stacktrace", string(stack)),
+	)
 }
 
 func logShardCrash(operation string, s zoekt.Searcher, q query.Q, recovered any, stack []byte) {
