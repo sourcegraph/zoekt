@@ -187,6 +187,15 @@ type compressedPostingIterator struct {
 
 func newCompressedPostingIterator(b []byte, w ngram) *compressedPostingIterator {
 	d, sz := binary.Uvarint(b)
+	if sz <= 0 {
+		// binary.Uvarint returns a non-positive length when b is empty or the
+		// varint overflows 64 bits; slicing b[sz:] would panic, so yield an
+		// exhausted iterator (issue #1106).
+		return &compressedPostingIterator{
+			_first: math.MaxUint32,
+			what:   w,
+		}
+	}
 	return &compressedPostingIterator{
 		_first:           uint32(d),
 		blob:             b[sz:],
@@ -212,6 +221,12 @@ func (i *compressedPostingIterator) next(limit uint32) {
 
 	for i._first <= limit && len(i.blob) > 0 {
 		delta, sz := binary.Uvarint(i.blob)
+		if sz <= 0 {
+			// Corrupt or overflowing varint; stop advancing rather than panic
+			// on i.blob[sz:] (issue #1106).
+			i.blob = nil
+			break
+		}
 		i._first += uint32(delta)
 		i.indexBytesLoaded += sz
 		i.blob = i.blob[sz:]

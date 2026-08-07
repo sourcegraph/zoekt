@@ -16,6 +16,7 @@ package index
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -111,4 +112,25 @@ func genUints32(size int) []uint32 {
 		nums[i] = r.Uint32()
 	}
 	return nums
+}
+
+func TestCompressedPostingIterator_overflowVarint(t *testing.T) {
+	// A varint that overflows 64 bits makes binary.Uvarint return a negative
+	// length, so slicing blob[sz:] used to panic (issue #1106). The iterator
+	// must instead treat the posting list as exhausted.
+	overflow := []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01}
+
+	// Construction from an overflowing first varint.
+	it := newCompressedPostingIterator(overflow, stringToNGram("abc"))
+	if got := it.first(); got != math.MaxUint32 {
+		t.Fatalf("first() after overflow varint = %d, want exhausted (%d)", got, uint32(math.MaxUint32))
+	}
+
+	// A valid first entry followed by an overflowing delta, hit while advancing.
+	blob := append([]byte{0x01}, overflow...)
+	it = newCompressedPostingIterator(blob, stringToNGram("abc"))
+	it.next(100)
+	if got := it.first(); got != math.MaxUint32 {
+		t.Fatalf("first() after overflow delta = %d, want exhausted (%d)", got, uint32(math.MaxUint32))
+	}
 }
