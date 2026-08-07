@@ -209,13 +209,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	searcher = &loggedSearcher{
+	loggedSearcher := &loggedSearcher{
 		Streamer: searcher,
 		Logger:   sglog.Scoped("searcher"),
 	}
 
 	s := &web.Server{
-		Searcher: searcher,
+		Searcher: loggedSearcher,
+		Ready:    searcher.Ready,
 		Top:      web.Top,
 		Version:  index.Version,
 	}

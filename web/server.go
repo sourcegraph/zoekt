@@ -124,6 +124,9 @@ const defaultNumResults = 50
 
 type Server struct {
 	Searcher zoekt.Streamer
+	// Ready reports whether the initial shard load is complete. A nil Ready
+	// function means the Searcher does not load asynchronously and is ready.
+	Ready func() bool
 
 	// Serve HTML interface
 	HTML bool
@@ -241,8 +244,18 @@ func NewMux(s *Server) (*http.ServeMux, error) {
 	}
 
 	mux.HandleFunc("/healthz", s.serveHealthz)
+	mux.HandleFunc("/readyz", s.serveReadyz)
 
 	return mux, nil
+}
+
+func (s *Server) serveReadyz(w http.ResponseWriter, _ *http.Request) {
+	if s.Ready != nil && !s.Ready() {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {

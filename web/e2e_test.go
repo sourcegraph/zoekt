@@ -963,6 +963,34 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestReadyz(t *testing.T) {
+	ready := false
+	srv := Server{
+		Searcher: nil,
+		Ready:    func() bool { return ready },
+		Top:      Top,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if got, want := response.Code, http.StatusServiceUnavailable; got != want {
+		t.Fatalf("before initial load: got status %d, want %d", got, want)
+	}
+
+	ready = true
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if got, want := response.Code, http.StatusOK; got != want {
+		t.Fatalf("after initial load: got status %d, want %d", got, want)
+	}
+}
+
 func assertResults(t *testing.T, files []zoekt.FileMatch, want string) {
 	t.Helper()
 
