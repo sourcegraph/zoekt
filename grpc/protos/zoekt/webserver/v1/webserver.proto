@@ -312,8 +312,8 @@ message Stats {
   // Files for which we loaded file content to verify substring matches
   int64 files_loaded = 8;
 
-  // Candidate files whose contents weren't examined because we
-  // gathered enough matches.
+  // Candidate files whose contents weren't examined because a search limit
+  // was reached or the search context was canceled.
   int64 files_skipped = 9;
 
   // Shards that we scanned to find matches.
@@ -351,6 +351,11 @@ message Stats {
 
   // NgramLookups is the number of times we accessed an ngram in the index.
   int64 ngram_lookups = 18;
+
+  // Portion of files_skipped caused by a context cancellation observed while
+  // searching a shard. This includes cancellations caused by deadlines and
+  // internal search limits.
+  int64 files_skipped_due_to_cancellation = 21;
 }
 
 enum FlushReason {
