@@ -50,6 +50,8 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 		c.aggregate.Files = append(c.aggregate.Files, r.Files...)
 
 		if c.hasDisplayLimit() {
+			// Rank before each truncation so the bounded aggregate remains the
+			// result we would return from the chunks seen so far.
 			c.aggregate.Files = index.SortAndTruncateFiles(c.aggregate.Files, c.opts)
 		}
 
@@ -77,6 +79,8 @@ func (c *collectSender) Done() (_ *zoekt.SearchResult, ok bool) {
 	agg := c.aggregate
 	c.aggregate = nil
 	if !c.hasDisplayLimit() {
+		// Without a display limit every file must be retained, so sorting after
+		// each chunk only repeats work. Rank the full aggregate once at the end.
 		agg.Files = index.SortAndTruncateFiles(agg.Files, c.opts)
 	}
 	return agg, true
