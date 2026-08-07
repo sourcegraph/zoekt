@@ -135,6 +135,11 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 	// we returning the first call to builder.Finish.
 	defer builder.Finish() // nolint:errcheck
 
+	branches := make([]string, 0, len(opts.RepositoryDescription.Branches))
+	for _, branch := range opts.RepositoryDescription.Branches {
+		branches = append(branches, branch.Name)
+	}
+
 	comm := make(chan fileInfo, 100)
 	agg := fileAggregator{
 		ignoreDirs: ignore,
@@ -154,6 +159,7 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
 			if err := builder.Add(index.Document{
 				Name:       displayName,
+				Branches:   branches,
 				SkipReason: index.SkipReasonTooLarge,
 			}); err != nil {
 				return err
@@ -165,7 +171,11 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 			return err
 		}
 
-		if err := builder.AddFile(displayName, content); err != nil {
+		if err := builder.Add(index.Document{
+			Name:     displayName,
+			Content:  content,
+			Branches: branches,
+		}); err != nil {
 			return err
 		}
 	}
