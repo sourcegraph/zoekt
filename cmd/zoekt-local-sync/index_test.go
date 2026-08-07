@@ -133,8 +133,12 @@ func TestSyncIndexesWithRootRelativeName(t *testing.T) {
 	if got, want := records[0].Name, "team/repo"; got != want {
 		t.Fatalf("got repository name %q, want %q", got, want)
 	}
-	if got := records[0].Source; got != repositoryPath {
-		t.Fatalf("got repository source %q, want %q", got, repositoryPath)
+	wantSource, err := filepath.EvalSymlinks(repositoryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := records[0].Source; got != wantSource {
+		t.Fatalf("got repository source %q, want %q", got, wantSource)
 	}
 	if !strings.HasPrefix(out.String(), `Indexing "team/repo" from `) {
 		t.Fatalf("sync output did not announce repository before indexing:\n%s", out.String())
