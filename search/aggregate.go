@@ -33,8 +33,9 @@ func newCollectSender(opts *zoekt.SearchOptions) *collectSender {
 	return &collectSender{opts: opts}
 }
 
-// Send aggregates the new search result by adding it stats and ranking
-// and truncating its files according to the input SearchOptions.
+// Send aggregates the new search result by adding its stats. Display-limited
+// results are ranked and truncated as chunks arrive to keep the aggregate
+// bounded.
 func (c *collectSender) Send(r *zoekt.SearchResult) {
 	if c.aggregate == nil {
 		c.aggregate = &zoekt.SearchResult{
@@ -48,7 +49,9 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 	if len(r.Files) > 0 {
 		c.aggregate.Files = append(c.aggregate.Files, r.Files...)
 
-		c.aggregate.Files = index.SortAndTruncateFiles(c.aggregate.Files, c.opts)
+		if c.hasDisplayLimit() {
+			c.aggregate.Files = index.SortAndTruncateFiles(c.aggregate.Files, c.opts)
+		}
 
 		maps.Copy(c.aggregate.RepoURLs, r.RepoURLs)
 		maps.Copy(c.aggregate.LineFragments, r.LineFragments)
@@ -73,7 +76,14 @@ func (c *collectSender) Done() (_ *zoekt.SearchResult, ok bool) {
 
 	agg := c.aggregate
 	c.aggregate = nil
+	if !c.hasDisplayLimit() {
+		agg.Files = index.SortAndTruncateFiles(agg.Files, c.opts)
+	}
 	return agg, true
+}
+
+func (c *collectSender) hasDisplayLimit() bool {
+	return c.opts.MaxDocDisplayCount > 0 || c.opts.MaxMatchDisplayCount > 0
 }
 
 // newFlushCollectSender creates a sender which will collect and rank results
