@@ -2,12 +2,10 @@
 
 set -euo pipefail
 
-if [[ ${AMP_EXECUTOR:-} != "sandbox" ]]; then
-  echo ".agents/setup must run inside an Amp orb" >&2
-  exit 1
-fi
-
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+buf_path="/usr/local/bin/buf"
+buf_url="https://github.com/bufbuild/buf/releases/download/v1.47.2/buf-Linux-x86_64"
+buf_sha256="3a0c4da8d46eea8136affa63db202c76a44f8112384160b73c3fffb1cf14b5d8"
 ctags_path="/usr/local/bin/universal-ctags"
 ctags_url="https://storage.googleapis.com/universal_ctags/x86_64-linux/dist/universal-ctags-6.0.0.2783f009"
 ctags_sha256="e99b942754ce9d55c9445513236c010753d26decbb38ed932780bec098ac0809"
@@ -31,6 +29,17 @@ EOF
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -t forky golang-go
 
   cleanup_apt_source
+  trap - EXIT
+fi
+
+if ! echo "$buf_sha256  $buf_path" | sha256sum --check --status 2>/dev/null; then
+  echo "Installing Buf..."
+  buf_download="$(mktemp)"
+  trap 'rm -f "$buf_download"' EXIT
+  curl -fsSL --retry 5 -o "$buf_download" "$buf_url"
+  echo "$buf_sha256  $buf_download" | sha256sum --check --status
+  sudo install -m 0755 "$buf_download" "$buf_path"
+  rm -f "$buf_download"
   trap - EXIT
 fi
 
