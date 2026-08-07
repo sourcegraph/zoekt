@@ -231,17 +231,24 @@ func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
 	return newDirectorySearcher(dir, true)
 }
 
+// ReadySearcher is a Streamer that reports whether its initial load is
+// complete.
+type ReadySearcher interface {
+	zoekt.Streamer
+	Ready() bool
+}
+
 // NewDirectorySearcherFast is like NewDirectorySearcher, but does not block
 // on the initial loading of shards.
 //
 // This exists since in the case of zoekt-webserver we are happy with having
 // partial availability since that is better than no availability on large
 // instances.
-func NewDirectorySearcherFast(dir string) (zoekt.Streamer, error) {
+func NewDirectorySearcherFast(dir string) (ReadySearcher, error) {
 	return newDirectorySearcher(dir, false)
 }
 
-func newDirectorySearcher(dir string, waitUntilReady bool) (zoekt.Streamer, error) {
+func newDirectorySearcher(dir string, waitUntilReady bool) (ReadySearcher, error) {
 	ss := newShardedSearcher(int64(runtime.GOMAXPROCS(0)))
 	tl := &loader{
 		ss: ss,
@@ -262,7 +269,19 @@ func newDirectorySearcher(dir string, waitUntilReady bool) (zoekt.Streamer, erro
 		directoryWatcher: dw,
 	}
 
-	return &typeRepoSearcher{Streamer: ds}, nil
+	return &readySearcher{
+		Streamer: &typeRepoSearcher{Streamer: ds},
+		ready:    ss,
+	}, nil
+}
+
+type readySearcher struct {
+	zoekt.Streamer
+	ready *shardedSearcher
+}
+
+func (s *readySearcher) Ready() bool {
+	return s.ready.Ready()
 }
 
 type directorySearcher struct {
@@ -1137,6 +1156,11 @@ func (s *shardedSearcher) getLoaded() loaded {
 		shards: ranked,
 		ready:  ready,
 	}
+}
+
+// Ready reports whether all shards present at startup have finished loading.
+func (s *shardedSearcher) Ready() bool {
+	return s.ready.Load()
 }
 
 func mkRankedShard(s zoekt.Searcher) *rankedShard {

@@ -82,6 +82,9 @@ func TestCrashResilience(t *testing.T) {
 
 	ss := newShardedSearcher(2)
 	ss.ranked.Store([]*rankedShard{{Searcher: &crashSearcher{}}})
+	if ss.Ready() {
+		t.Fatal("new sharded searcher is ready before its initial load")
+	}
 
 	var wantCrashes int
 	test := func(t *testing.T) {
@@ -107,6 +110,9 @@ func TestCrashResilience(t *testing.T) {
 	// After marking as ready we should only have the crashSearcher
 	// contributing.
 	ss.markReady()
+	if !ss.Ready() {
+		t.Fatal("sharded searcher is not ready after its initial load")
+	}
 	wantCrashes = 1
 	t.Run("ready", test)
 }
