@@ -37,9 +37,9 @@ type shardLoader interface {
 }
 
 type DirectoryWatcher struct {
-	dir        string
-	timestamps map[string]time.Time
-	loader     shardLoader
+	dir    string
+	files  map[string]watchedFile
+	loader shardLoader
 
 	// closed once ready
 	ready    chan struct{}
@@ -52,6 +52,22 @@ type DirectoryWatcher struct {
 	stopped chan struct{}
 }
 
+type watchedFile struct {
+	shard   os.FileInfo
+	meta    os.FileInfo
+	modTime time.Time
+}
+
+func (f watchedFile) equal(other watchedFile) bool {
+	if !f.modTime.Equal(other.modTime) || !os.SameFile(f.shard, other.shard) {
+		return false
+	}
+	if (f.meta == nil) != (other.meta == nil) {
+		return false
+	}
+	return f.meta == nil || os.SameFile(f.meta, other.meta)
+}
+
 func (sw *DirectoryWatcher) Stop() {
 	sw.closeOnce.Do(func() {
 		close(sw.quit)
@@ -61,12 +77,12 @@ func (sw *DirectoryWatcher) Stop() {
 
 func newDirectoryWatcher(dir string, loader shardLoader) (*DirectoryWatcher, error) {
 	sw := &DirectoryWatcher{
-		dir:        dir,
-		timestamps: map[string]time.Time{},
-		loader:     loader,
-		ready:      make(chan struct{}),
-		quit:       make(chan struct{}),
-		stopped:    make(chan struct{}),
+		dir:     dir,
+		files:   map[string]watchedFile{},
+		loader:  loader,
+		ready:   make(chan struct{}),
+		quit:    make(chan struct{}),
+		stopped: make(chan struct{}),
 	}
 
 	go func() {
@@ -140,7 +156,7 @@ func (s *DirectoryWatcher) scan() error {
 		}
 	}
 
-	ts := map[string]time.Time{}
+	files := map[string]watchedFile{}
 	for _, fn := range fs {
 		if name, version := versionFromPath(fn); latest[name] != version {
 			continue
@@ -151,31 +167,35 @@ func (s *DirectoryWatcher) scan() error {
 			continue
 		}
 
-		ts[fn] = fi.ModTime()
+		current := watchedFile{
+			shard:   fi,
+			modTime: fi.ModTime(),
+		}
 
 		fiMeta, err := os.Lstat(fn + ".meta")
-		if err != nil {
-			continue
+		if err == nil {
+			current.meta = fiMeta
+			if fiMeta.ModTime().After(current.modTime) {
+				current.modTime = fiMeta.ModTime()
+			}
 		}
-		if fiMeta.ModTime().After(fi.ModTime()) {
-			ts[fn] = fiMeta.ModTime()
-		}
+		files[fn] = current
 	}
 
 	var toLoad []string
-	for k, mtime := range ts {
-		if t, ok := s.timestamps[k]; !ok || t != mtime {
+	for k, current := range files {
+		if previous, ok := s.files[k]; !ok || !previous.equal(current) {
 			toLoad = append(toLoad, k)
-			s.timestamps[k] = mtime
+			s.files[k] = current
 		}
 	}
 
 	var toDrop []string
 	// Unload deleted shards.
-	for k := range s.timestamps {
-		if _, ok := ts[k]; !ok {
+	for k := range s.files {
+		if _, ok := files[k]; !ok {
 			toDrop = append(toDrop, k)
-			delete(s.timestamps, k)
+			delete(s.files, k)
 		}
 	}
 

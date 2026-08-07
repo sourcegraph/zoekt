@@ -45,6 +45,72 @@ func advanceFS() {
 	time.Sleep(10 * time.Millisecond)
 }
 
+func TestDirWatcherReloadsReplacementWithSameModTime(t *testing.T) {
+	for _, replaced := range []string{"shard", "meta"} {
+		t.Run(replaced, func(t *testing.T) {
+			dir := t.TempDir()
+			shard := filepath.Join(dir, "foo.zoekt")
+			meta := shard + ".meta"
+			fixedTime := time.Unix(1_700_000_000, 0)
+
+			writeFileWithModTime(t, shard, "first shard", fixedTime)
+			writeFileWithModTime(t, meta, "first meta", fixedTime)
+
+			logger := &loggingLoader{
+				loads: make(chan string, 2),
+				drops: make(chan string, 1),
+			}
+			dw := &DirectoryWatcher{
+				dir:    dir,
+				files:  map[string]watchedFile{},
+				loader: logger,
+			}
+			if err := dw.scan(); err != nil {
+				t.Fatal(err)
+			}
+			if got := <-logger.loads; got != shard {
+				t.Fatalf("got initial load %q, want %q", got, shard)
+			}
+
+			path := shard
+			if replaced == "meta" {
+				path = meta
+			}
+			replacement := path + ".replacement"
+			writeFileWithModTime(t, replacement, "replacement", fixedTime)
+			if err := os.Rename(replacement, path); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := dw.scan(); err != nil {
+				t.Fatal(err)
+			}
+			if got := <-logger.loads; got != shard {
+				t.Fatalf("got replacement load %q, want %q", got, shard)
+			}
+
+			if err := dw.scan(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case got := <-logger.loads:
+				t.Fatalf("unchanged replacement triggered another load of %q", got)
+			default:
+			}
+		})
+	}
+}
+
+func writeFileWithModTime(t *testing.T, path, content string, modTime time.Time) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, modTime, modTime); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDirWatcherUnloadOnce(t *testing.T) {
 	dir := t.TempDir()
 
