@@ -109,6 +109,19 @@ func isSpace(c byte) bool {
 	return c == ' ' || c == '\t'
 }
 
+func startsQuerySyntax(in []byte) bool {
+	if len(in) > 0 && in[0] == '-' {
+		in = in[1:]
+	}
+
+	for pref := range prefixes {
+		if bytes.HasPrefix(in, []byte(pref)) {
+			return true
+		}
+	}
+	return false
+}
+
 // Parse parses a string into a query.
 func Parse(qStr string) (Q, error) {
 	b := []byte(qStr)
@@ -562,6 +575,13 @@ func nextToken(in []byte) (*token, error) {
 		return &token{
 			Type:  tokNegate,
 			Text:  []byte{'-'},
+			Input: in[:1],
+		}, nil
+	}
+	if left[0] == '(' && startsQuerySyntax(left[1:]) {
+		return &token{
+			Type:  tokParenOpen,
+			Text:  []byte{'('},
 			Input: in[:1],
 		}, nil
 	}
