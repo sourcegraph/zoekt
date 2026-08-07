@@ -213,8 +213,9 @@ type shardedSearcher struct {
 	mu     sync.Mutex // protects writes to shards
 	shards map[string]*rankedShard
 
-	ready  atomic.Bool
-	ranked atomic.Value
+	ready        atomic.Bool
+	ranked       atomic.Value
+	shardRepairs *shardRepairQueue
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
@@ -222,6 +223,7 @@ func newShardedSearcher(n int64) *shardedSearcher {
 		shards: make(map[string]*rankedShard),
 		sched:  newScheduler(n),
 	}
+	ss.shardRepairs = newShardRepairQueue(ss.reloadShardByKey)
 	return ss
 }
 
@@ -584,7 +586,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	start = time.Now()
 
 	loaded := ss.getLoaded()
-	done, err := streamSearch(ctx, proc, q, opts, loaded.shards, collectSender)
+	done, err := ss.streamSearch(ctx, proc, q, opts, loaded.shards, collectSender)
 	defer done()
 	if err != nil {
 		return nil, err
@@ -598,7 +600,9 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		}
 	}
 
-	copyFiles(aggregate)
+	copyFiles(aggregate, func(file *zoekt.FileMatch, recovered any, stack []byte) {
+		ss.handleFileCopyFault(q, loaded.shards, file, recovered, stack)
+	})
 
 	if !loaded.ready {
 		// We may have missed results due to not being fully loaded.
@@ -661,7 +665,9 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	// 4. copyFileSender (copy)
 	//
 	// For streaming, the wrapping has to happen in the inverted order.
-	sender = copyFileSender(sender)
+	sender = copyFileSender(sender, func(file *zoekt.FileMatch, recovered any, stack []byte) {
+		ss.handleFileCopyFault(q, shards, file, recovered, stack)
+	})
 
 	if truncator, hasLimits := index.NewDisplayTruncator(opts); hasLimits {
 		var cancel context.CancelFunc
@@ -672,7 +678,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 
 	sender, flush := newFlushCollectSender(opts, sender)
 
-	done, err := streamSearch(ctx, proc, q, opts, shards, sender)
+	done, err := ss.streamSearch(ctx, proc, q, opts, shards, sender)
 
 	// Even though streaming is done, we may have results sitting in a buffer we
 	// need to flush. So we need to send those before calling done.
@@ -690,7 +696,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 // collector can't see. Calling done informs the garbage collector it is free
 // to collect those shards. The caller must call copyFiles on any
 // SearchResults it returns/streams out before calling done.
-func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, shards []*rankedShard, sender zoekt.Sender) (done func(), err error) {
+func (ss *shardedSearcher) streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.SearchOptions, shards []*rankedShard, sender zoekt.Sender) (done func(), err error) {
 	tr, ctx := trace.New(ctx, "shardedSearcher.streamSearch", "")
 	overallStart := time.Now()
 	metricSearchRunning.Inc()
@@ -756,7 +762,7 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 		go func() {
 			defer wg.Done()
 			for s := range search {
-				sr, err := searchOneShard(ctx, s, q, opts)
+				sr, err := ss.searchOneShard(ctx, s, q, opts)
 				r := &result{priority: s.priority, SearchResult: sr, err: err}
 				results <- r
 			}
@@ -936,19 +942,76 @@ func copySlice(src *[]byte) {
 	*src = dst
 }
 
-func copyFiles(sr *zoekt.SearchResult) {
-	for i := range sr.Files {
-		copySlice(&sr.Files[i].Content)
-		copySlice(&sr.Files[i].Checksum)
-		for l := range sr.Files[i].LineMatches {
-			copySlice(&sr.Files[i].LineMatches[l].Line)
-			copySlice(&sr.Files[i].LineMatches[l].Before)
-			copySlice(&sr.Files[i].LineMatches[l].After)
+type fileCopyFaultHandler func(*zoekt.FileMatch, any, []byte)
+
+func copyFile(file *zoekt.FileMatch) (recovered any, stack []byte) {
+	restorePanicOnFault := debug.SetPanicOnFault(true)
+	defer func() {
+		debug.SetPanicOnFault(restorePanicOnFault)
+		if recovered = recover(); recovered != nil {
+			stack = debug.Stack()
 		}
-		for c := range sr.Files[i].ChunkMatches {
-			copySlice(&sr.Files[i].ChunkMatches[c].Content)
+	}()
+
+	copySlice(&file.Content)
+	copySlice(&file.Checksum)
+	for i := range file.LineMatches {
+		copySlice(&file.LineMatches[i].Line)
+		copySlice(&file.LineMatches[i].Before)
+		copySlice(&file.LineMatches[i].After)
+	}
+	for i := range file.ChunkMatches {
+		copySlice(&file.ChunkMatches[i].Content)
+	}
+	return nil, nil
+}
+
+func copyFiles(sr *zoekt.SearchResult, onFault fileCopyFaultHandler) {
+	kept := sr.Files[:0]
+	for i := range sr.Files {
+		file := &sr.Files[i]
+		recovered, stack := copyFile(file)
+		if recovered != nil {
+			sr.Stats.Crashes++
+			metricSearchCrashesTotal.Inc()
+			if onFault != nil {
+				onFault(file, recovered, stack)
+			}
+			continue
+		}
+		kept = append(kept, *file)
+	}
+	clear(sr.Files[len(kept):])
+	sr.Files = kept
+}
+
+func (ss *shardedSearcher) handleFileCopyFault(
+	q query.Q,
+	shards []*rankedShard,
+	file *zoekt.FileMatch,
+	recovered any,
+	stack []byte,
+) {
+	for _, shard := range shards {
+		for _, repo := range shard.repos {
+			nameMatches := file.Repository != "" && repo.Name == file.Repository
+			idMatches := repo.ID != 0 && file.RepositoryID != 0 && repo.ID == file.RepositoryID
+			if !nameMatches && !idMatches {
+				continue
+			}
+
+			logShardCrash("copy", shard, q, recovered, stack)
+			ss.shardRepairs.schedule(shard)
+			return
 		}
 	}
+
+	shardRecoveryLogger().Error(
+		"crashed result copy for unknown shard",
+		sglog.Uint32("repository_id", file.RepositoryID),
+		sglog.String("repository", file.Repository),
+		sglog.String("stacktrace", string(stack)),
+	)
 }
 
 func logShardCrash(operation string, s zoekt.Searcher, q query.Q, recovered any, stack []byte) {
@@ -968,9 +1031,11 @@ func logShardCrash(operation string, s zoekt.Searcher, q query.Q, recovered any,
 	shardRecoveryLogger().Error("crashed shard", fields...)
 }
 
-func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
+func (ss *shardedSearcher) searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.SearchOptions) (sr *zoekt.SearchResult, err error) {
 	metricSearchShardRunning.Inc()
+	restorePanicOnFault := debug.SetPanicOnFault(true)
 	defer func() {
+		debug.SetPanicOnFault(restorePanicOnFault)
 		metricSearchShardRunning.Dec()
 		if e := recover(); e != nil {
 			logShardCrash("search", s, q, e, debug.Stack())
@@ -979,6 +1044,7 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 				sr = &zoekt.SearchResult{}
 			}
 			sr.Stats.Crashes = 1
+			ss.shardRepairs.schedule(s)
 		}
 	}()
 
@@ -990,12 +1056,15 @@ type shardListResult struct {
 	err error
 }
 
-func listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.ListOptions, sink chan shardListResult) {
+func (ss *shardedSearcher) listOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoekt.ListOptions, sink chan shardListResult) {
 	metricListShardRunning.Inc()
+	restorePanicOnFault := debug.SetPanicOnFault(true)
 	defer func() {
+		debug.SetPanicOnFault(restorePanicOnFault)
 		metricListShardRunning.Dec()
 		if r := recover(); r != nil {
 			logShardCrash("list", s, q, r, debug.Stack())
+			ss.shardRepairs.schedule(s)
 			sink <- shardListResult{
 				&zoekt.RepoList{Crashes: 1}, nil,
 			}
@@ -1075,7 +1144,7 @@ func (ss *shardedSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 	for range runtime.GOMAXPROCS(0) {
 		go func() {
 			for s := range feeder {
-				listOneShard(ctx, s, q, opts, all)
+				ss.listOneShard(ctx, s, q, opts, all)
 			}
 		}()
 	}
@@ -1160,7 +1229,7 @@ func (s *shardedSearcher) getLoaded() loaded {
 
 // Ready reports whether all shards present at startup have finished loading.
 func (s *shardedSearcher) Ready() bool {
-	return s.ready.Load()
+	return s.ready.Load() && s.shardRepairs.ready()
 }
 
 func mkRankedShard(s zoekt.Searcher) *rankedShard {
@@ -1215,6 +1284,10 @@ func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.replaceLocked(shards)
+}
+
+func (s *shardedSearcher) replaceLocked(shards map[string]zoekt.Searcher) {
 	for key, shard := range shards {
 		var r *rankedShard
 		if shard != nil {
@@ -1226,6 +1299,13 @@ func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
 			delete(s.shards, key)
 		} else {
 			s.shards[key] = r
+		}
+
+		if old != nil {
+			s.shardRepairs.unregister(old)
+		}
+		if r != nil {
+			s.shardRepairs.register(r, key)
 		}
 
 		if old != nil && old.Searcher != nil {
@@ -1277,6 +1357,31 @@ func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
 	s.ranked.Store(ranked)
 
 	metricShardsLoaded.Set(float64(len(ranked)))
+}
+
+func (s *shardedSearcher) reloadShardByKey(key string, faulted zoekt.Searcher) error {
+	shard, err := loadShard(key)
+	if err != nil {
+		return err
+	}
+
+	if !s.swapIfCurrent(key, faulted, shard) {
+		shard.Close()
+		log.Printf("[INFO] discarding shard repair superseded by a concurrent update: %s", key)
+	}
+	return nil
+}
+
+func (s *shardedSearcher) swapIfCurrent(key string, faulted, replacement zoekt.Searcher) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current, ok := s.shards[key]
+	if !ok || current != faulted {
+		return false
+	}
+	s.replaceLocked(map[string]zoekt.Searcher{key: replacement})
+	return true
 }
 
 func loadShard(fn string) (zoekt.Searcher, error) {

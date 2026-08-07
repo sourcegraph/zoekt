@@ -173,9 +173,9 @@ func limitSender(cancel context.CancelFunc, sender zoekt.Sender, truncator index
 	})
 }
 
-func copyFileSender(sender zoekt.Sender) zoekt.Sender {
+func copyFileSender(sender zoekt.Sender, onFault fileCopyFaultHandler) zoekt.Sender {
 	return zoekt.SenderFunc(func(result *zoekt.SearchResult) {
-		copyFiles(result)
+		copyFiles(result, onFault)
 		sender.Send(result)
 	})
 }
