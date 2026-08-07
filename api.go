@@ -395,9 +395,14 @@ type Stats struct {
 	// Files for which we loaded file content to verify substring matches
 	FilesLoaded int
 
-	// Candidate files whose contents weren't examined because we
-	// gathered enough matches.
+	// Candidate files whose contents weren't examined because a search limit
+	// was reached or the search context was canceled.
 	FilesSkipped int
+
+	// FilesSkippedDueToCancellation is the portion of FilesSkipped caused by a
+	// context cancellation observed while searching a shard. This includes
+	// cancellations caused by deadlines and internal search limits.
+	FilesSkippedDueToCancellation int
 
 	// Shards that we scanned to find matches.
 	ShardsScanned int
@@ -437,7 +442,7 @@ type Stats struct {
 }
 
 func (s *Stats) sizeBytes() (sz uint64) {
-	sz = 16 * 8 // This assumes we are running on a 64-bit architecture
+	sz = 17 * 8 // This assumes we are running on a 64-bit architecture
 	sz += 1     // FlushReason
 
 	return
@@ -451,6 +456,7 @@ func (s *Stats) Add(o Stats) {
 	s.FilesConsidered += o.FilesConsidered
 	s.FilesLoaded += o.FilesLoaded
 	s.FilesSkipped += o.FilesSkipped
+	s.FilesSkippedDueToCancellation += o.FilesSkippedDueToCancellation
 	s.MatchCount += o.MatchCount
 	s.NgramMatches += o.NgramMatches
 	s.NgramLookups += o.NgramLookups
@@ -483,6 +489,7 @@ func (s *Stats) Zero() bool {
 		s.FilesConsidered > 0 ||
 		s.FilesLoaded > 0 ||
 		s.FilesSkipped > 0 ||
+		s.FilesSkippedDueToCancellation > 0 ||
 		s.MatchCount > 0 ||
 		s.NgramMatches > 0 ||
 		s.NgramLookups > 0 ||
