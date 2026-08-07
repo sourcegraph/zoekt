@@ -28,6 +28,7 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/sourcegraph/zoekt/cmd"
+	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
 )
 
@@ -39,6 +40,8 @@ type fileInfo struct {
 
 type fileAggregator struct {
 	ignoreDirs map[string]struct{}
+	ignore     *ignore.Matcher
+	root       string
 	sizeMax    int64
 	sink       chan fileInfo
 }
@@ -52,6 +55,18 @@ func (a *fileAggregator) add(path string, info os.FileInfo, err error) error {
 		base := filepath.Base(path)
 		if _, ok := a.ignoreDirs[base]; ok {
 			return filepath.SkipDir
+		}
+	}
+	if path != a.root {
+		rel, err := filepath.Rel(a.root, path)
+		if err != nil {
+			return err
+		}
+		if a.ignore.Match(filepath.ToSlash(rel)) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 	}
 
@@ -129,6 +144,10 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 	if err != nil {
 		return err
 	}
+	ignoreMatcher, err := newIgnoreMatcher(dir)
+	if err != nil {
+		return err
+	}
 
 	if opts.RepositoryDescription.Name == "" {
 		opts.RepositoryDescription.Name = filepath.Base(dir)
@@ -149,6 +168,8 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 	comm := make(chan fileInfo, 100)
 	agg := fileAggregator{
 		ignoreDirs: ignore,
+		ignore:     ignoreMatcher,
+		root:       dir,
 		sink:       comm,
 		sizeMax:    int64(opts.SizeMax),
 	}
@@ -197,4 +218,52 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 	}
 
 	return builder.Finish()
+}
+
+func newIgnoreMatcher(root string) (*ignore.Matcher, error) {
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		return nil, err
+	}
+	if !rootInfo.IsDir() {
+		return &ignore.Matcher{}, nil
+	}
+
+	sourcegraphDir := filepath.Join(root, ".sourcegraph")
+	info, err := os.Lstat(sourcegraphDir)
+	if os.IsNotExist(err) {
+		return &ignore.Matcher{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Do not resolve a symlinked .sourcegraph directory.
+	if !info.IsDir() {
+		return &ignore.Matcher{}, nil
+	}
+
+	ignorePath := filepath.Join(root, ignore.IgnoreFile)
+	info, err = os.Lstat(ignorePath)
+	if os.IsNotExist(err) {
+		return &ignore.Matcher{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Ignore files must be regular files; in particular, do not follow symlinks.
+	if !info.Mode().IsRegular() {
+		return &ignore.Matcher{}, nil
+	}
+
+	f, err := os.Open(ignorePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	matcher, err := ignore.ParseIgnoreFile(f)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", ignorePath, err)
+	}
+	return matcher, nil
 }
