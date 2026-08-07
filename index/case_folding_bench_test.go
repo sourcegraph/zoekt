@@ -25,7 +25,7 @@ func TestCaseFoldingEqualsRunes(t *testing.T) {
 		{"äbč", "ÄBČ", true, 5}, // 'ä' (2 bytes), 'b' (1 byte), 'č' (2 bytes)
 		{"äbč", "ÄBX", false, 0},
 	} {
-		sz, ok := caseFoldingEqualsRunes([]byte(tc.lower), []byte(tc.mixed))
+		sz, ok, _ := caseFoldingEqualsRunes([]byte(tc.lower), []byte(tc.mixed))
 		if ok != tc.wantMatch || sz != tc.wantSz {
 			t.Errorf("caseFoldingEqualsRunes(%q, %q): got (%d, %t), want (%d, %t)",
 				tc.lower, tc.mixed, sz, ok, tc.wantSz, tc.wantMatch)
@@ -45,7 +45,7 @@ func BenchmarkCaseFoldingEqualsRunes(b *testing.B) {
 	b.Run("ASCII", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			sz, ok := caseFoldingEqualsRunes(asciiLower, asciiMixed)
+			sz, ok, _ := caseFoldingEqualsRunes(asciiLower, asciiMixed)
 			if !ok || sz != len(asciiMixed) {
 				b.Fatalf("bad match: %d, %t", sz, ok)
 			}
@@ -55,7 +55,7 @@ func BenchmarkCaseFoldingEqualsRunes(b *testing.B) {
 	b.Run("Unicode", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			sz, ok := caseFoldingEqualsRunes(unicodeLower, unicodeMixed)
+			sz, ok, _ := caseFoldingEqualsRunes(unicodeLower, unicodeMixed)
 			if !ok || sz != len(unicodeMixed) {
 				b.Fatalf("bad match: %d, %t", sz, ok)
 			}

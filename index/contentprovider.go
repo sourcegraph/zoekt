@@ -16,6 +16,7 @@ package index
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"path"
 	"slices"
@@ -36,7 +37,6 @@ type contentProvider struct {
 	stats *zoekt.Stats
 
 	// mutable
-	err      error
 	idx      uint32
 	_data    []byte
 	_nl      []uint32
@@ -58,10 +58,34 @@ func (p *contentProvider) setDocument(docID uint32) {
 	p._data = nil
 }
 
+// panicCorrupt stops a search as soon as it detects a corrupt shard invariant.
+// searchOneShard recovers the panic at the shard boundary, logs the error with
+// the query and stack trace, and increments Stats.Crashes. Callers therefore get
+// partial results with an explicit crashed-shard signal rather than a silent
+// non-match.
+func (p *contentProvider) panicCorrupt(err error) {
+	shard := "unknown"
+	if p.id.file != nil {
+		shard = p.id.file.Name()
+	}
+	repo := "unknown"
+	if p.idx < uint32(len(p.id.repos)) {
+		repoID := p.id.repos[p.idx]
+		if int(repoID) < len(p.id.repoMetaData) {
+			repo = p.id.repoMetaData[repoID].Name
+		}
+	}
+	panic(fmt.Errorf("corrupt shard %q while searching repository %q, document %d: %w", shard, repo, p.idx, err))
+}
+
 func (p *contentProvider) docSections() []DocumentSection {
 	if p._sects == nil {
 		var sz uint32
-		p._sects, sz, p.err = p.id.readDocSections(p.idx, p._sectBuf)
+		var err error
+		p._sects, sz, err = p.id.readDocSections(p.idx, p._sectBuf)
+		if err != nil {
+			p.panicCorrupt(fmt.Errorf("reading document sections: %w", err))
+		}
 		p.stats.ContentBytesLoaded += int64(sz)
 		p._sectBuf = p._sects
 	}
@@ -71,7 +95,11 @@ func (p *contentProvider) docSections() []DocumentSection {
 func (p *contentProvider) newlines() newlines {
 	if p._nl == nil {
 		var sz uint32
-		p._nl, sz, p.err = p.id.readNewlines(p.idx, p._nlBuf)
+		var err error
+		p._nl, sz, err = p.id.readNewlines(p.idx, p._nlBuf)
+		if err != nil {
+			p.panicCorrupt(fmt.Errorf("reading newline offsets: %w", err))
+		}
 		p._nlBuf = p._nl
 		p.stats.ContentBytesLoaded += int64(sz)
 	}
@@ -84,7 +112,11 @@ func (p *contentProvider) data(fileName bool) []byte {
 	}
 
 	if p._data == nil {
-		p._data, p.err = p.id.readContents(p.idx)
+		var err error
+		p._data, err = p.id.readContents(p.idx)
+		if err != nil {
+			p.panicCorrupt(fmt.Errorf("reading content: %w", err))
+		}
 		p.stats.FilesLoaded++
 		p.stats.ContentBytesLoaded += int64(len(p._data))
 	}
@@ -95,45 +127,86 @@ func (p *contentProvider) data(fileName bool) []byte {
 // runes (relative to document start). If filename is set, the corpus
 // is the set of filenames, with the document being the name itself.
 func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
-	if p.id.metaData.PlainASCII {
-		return r
-	}
-
-	sample := p.id.runeOffsets
-	runeEnds := p.id.fileEndRunes
-	fileStartByte := p.id.boundaries[p.idx]
+	var sample runeOffsetMap
+	var runeEnds []uint32
+	var fileStartByte, fileEndByte uint32
+	kind := "content"
 	if filename {
 		sample = p.id.fileNameRuneOffsets
 		runeEnds = p.id.fileNameEndRunes
 		fileStartByte = p.id.fileNameIndex[p.idx]
+		fileEndByte = p.id.fileNameIndex[p.idx+1]
+		kind = "filename"
+	} else {
+		sample = p.id.runeOffsets
+		runeEnds = p.id.fileEndRunes
+		fileStartByte = p.id.boundaries[p.idx]
+		fileEndByte = p.id.boundaries[p.idx+1]
 	}
 
-	absR := r
-	if p.idx > 0 {
-		absR += runeEnds[p.idx-1]
+	if p.id.metaData.PlainASCII {
+		if r > fileEndByte-fileStartByte {
+			p.panicCorrupt(fmt.Errorf("%s rune offset %d is after file size %d", kind, r, fileEndByte-fileStartByte))
+			return 0
+		}
+		return r
 	}
+
+	absR64 := uint64(r)
+	if p.idx > 0 {
+		absR64 += uint64(runeEnds[p.idx-1])
+	}
+	if absR64 > uint64(^uint32(0)) {
+		p.panicCorrupt(fmt.Errorf("%s rune offset %d overflows the corpus rune offset", kind, r))
+		return 0
+	}
+	absR := uint32(absR64)
 
 	byteOff, left := sample.lookup(absR)
 
 	var data []byte
 
 	if filename {
-		data = p.id.fileNameContent[byteOff:]
+		if byteOff > uint64(len(p.id.fileNameContent)) {
+			p.panicCorrupt(fmt.Errorf("filename rune offset %d maps to byte offset %d past filename data size %d", absR, byteOff, len(p.id.fileNameContent)))
+			return 0
+		}
+		data = p.id.fileNameContent[uint32(byteOff):]
 	} else {
-		data, p.err = p.id.readContentSlice(byteOff, 3*runeOffsetFrequency)
-		if p.err != nil {
+		corpusEnd := p.id.boundaries[len(p.id.boundaries)-1]
+		if byteOff > uint64(corpusEnd) {
+			p.panicCorrupt(fmt.Errorf("content rune offset %d maps to byte offset %d past content data size %d", absR, byteOff, corpusEnd))
+			return 0
+		}
+		var err error
+		data, err = p.id.readContentSlice(uint32(byteOff), 3*runeOffsetFrequency)
+		if err != nil {
+			p.panicCorrupt(fmt.Errorf("content rune offset %d cannot load bytes at offset %d: %w", absR, byteOff, err))
 			return 0
 		}
 	}
 	for left > 0 {
+		if len(data) == 0 {
+			p.panicCorrupt(fmt.Errorf("%s rune offset %d has no decode bytes at byte offset %d", kind, absR, byteOff))
+			return 0
+		}
 		_, sz := utf8.DecodeRune(data)
-		byteOff += uint32(sz)
+		byteOff += uint64(sz)
 		data = data[sz:]
 		left--
 	}
 
-	byteOff -= fileStartByte
-	return byteOff
+	if byteOff < uint64(fileStartByte) {
+		p.panicCorrupt(fmt.Errorf("%s rune offset %d maps to byte offset %d before file start %d", kind, absR, byteOff, fileStartByte))
+		return 0
+	}
+	if byteOff > uint64(fileEndByte) {
+		p.panicCorrupt(fmt.Errorf("%s rune offset %d maps to byte offset %d after file end %d", kind, absR, byteOff, fileEndByte))
+		return 0
+	}
+
+	byteOff -= uint64(fileStartByte)
+	return uint32(byteOff)
 }
 
 // fillMatches converts the internal candidateMatch slice into our API's LineMatch.

@@ -46,13 +46,24 @@ type candidateMatch struct {
 	symbol        bool
 }
 
-// Matches content against the substring, and populates byteMatchSz on success
-func (m *candidateMatch) matchContent(content []byte) bool {
+// Matches content against the substring, and populates byteMatchSz on success.
+func (m *candidateMatch) matchContent(content []byte) (bool, error) {
+	kind := "content"
+	if m.fileName {
+		kind = "filename"
+	}
+	if m.byteOffset > uint32(len(content)) {
+		return false, fmt.Errorf("corrupt index: match byte offset %d is after %s size %d", m.byteOffset, kind, len(content))
+	}
+
 	if m.caseSensitive {
+		if uint64(m.byteOffset)+uint64(len(m.substrBytes)) > uint64(len(content)) {
+			return false, fmt.Errorf("corrupt index: case-sensitive match span [%d:%d] exceeds %s size %d", m.byteOffset, uint64(m.byteOffset)+uint64(len(m.substrBytes)), kind, len(content))
+		}
 		comp := bytes.Equal(m.substrBytes, content[m.byteOffset:m.byteOffset+uint32(len(m.substrBytes))])
 
 		m.byteMatchSz = uint32(len(m.substrBytes))
-		return comp
+		return comp, nil
 	} else {
 		// It is tempting to try a simple ASCII based
 		// comparison if possible, but we need more
@@ -61,9 +72,12 @@ func (m *candidateMatch) matchContent(content []byte) bool {
 		// as upper case variant). We can only degrade to
 		// ASCII if we are sure that both the corpus and the
 		// query is ASCII only
-		sz, ok := caseFoldingEqualsRunes(m.substrLowered, content[m.byteOffset:])
+		sz, ok, truncated := caseFoldingEqualsRunes(m.substrLowered, content[m.byteOffset:])
+		if truncated {
+			return false, fmt.Errorf("corrupt index: case-insensitive match at byte offset %d extends beyond %s size %d", m.byteOffset, kind, len(content))
+		}
 		m.byteMatchSz = uint32(sz)
-		return ok
+		return ok, nil
 	}
 }
 
