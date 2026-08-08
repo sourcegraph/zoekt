@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
@@ -370,6 +371,101 @@ func (ss *shardedSearcher) Close() {
 	ss.replace(shards)
 }
 
+const (
+	// Wait until direct membership checks have paid for inspecting the branch
+	// bitmaps before considering an aggregate.
+	branchesReposMinimumProbes uint64 = 16 << 10
+
+	// A fold near the end of shard selection cannot repay its setup cost.
+	branchesReposMinimumRemainingShards = 16
+
+	// branchesReposUnionContainerCost conservatively prices copying one roaring
+	// container as 128 direct bitmap membership checks.
+	branchesReposUnionContainerCost uint64 = 128
+)
+
+type branchesReposSelector struct {
+	branches []query.BranchRepos
+	repos    *roaring.Bitmap
+	probes   uint64
+
+	// settled is set once folding has been performed or ruled out for the
+	// remaining shards.
+	settled bool
+}
+
+func newBranchesReposSelector(branches []query.BranchRepos) *branchesReposSelector {
+	return &branchesReposSelector{branches: branches}
+}
+
+func (s *branchesReposSelector) contains(id uint32) bool {
+	if s.repos != nil {
+		return s.repos.Contains(id)
+	}
+
+	for i, branch := range s.branches {
+		if branch.Repos.Contains(id) {
+			s.probes += uint64(i + 1)
+			return true
+		}
+	}
+	s.probes += uint64(len(s.branches))
+	return false
+}
+
+func (s *branchesReposSelector) maybeFold(remainingShards int) {
+	if s.settled || s.probes < branchesReposMinimumProbes {
+		return
+	}
+	if remainingShards < branchesReposMinimumRemainingShards {
+		s.settled = true
+		return
+	}
+
+	var containers uint64
+	for _, branch := range s.branches {
+		if !branch.Repos.IsEmpty() {
+			containers += branch.Repos.Stats().Containers
+		}
+	}
+
+	// Count one repository per remaining shard. This deliberately
+	// underestimates future direct checks for compound shards so small scans
+	// stay on the allocation-free path.
+	if uint64(remainingShards)*uint64(len(s.branches)) <= containers*branchesReposUnionContainerCost {
+		s.settled = true
+		return
+	}
+
+	// Retain a single non-empty bitmap directly. Folding begins with a clone
+	// only when a second bitmap must be incorporated, so a one-branch result
+	// does not allocate or mutate the query bitmap.
+	var repos *roaring.Bitmap
+	copied := false
+	for _, branch := range s.branches {
+		if branch.Repos.IsEmpty() {
+			continue
+		}
+		if repos == nil {
+			repos = branch.Repos
+			continue
+		}
+		if !copied {
+			union := roaring.New()
+			union.Or(repos)
+			repos = union
+			copied = true
+		}
+		repos.Or(branch.Repos)
+	}
+	if repos == nil {
+		repos = roaring.New()
+	}
+
+	s.repos = repos
+	s.settled = true
+}
+
 func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
 	and, ok := q.(*query.And)
 	if ok {
@@ -412,6 +508,7 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 	for i, c := range and.Children {
 		var setSize int
 		var hasRepos func([]*zoekt.Repository) (bool, bool)
+		var branchesSelector *branchesReposSelector
 		switch setQuery := c.(type) {
 		case *query.RepoSet:
 			setSize = len(setQuery.Set)
@@ -433,14 +530,21 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 				setSize += int(br.Repos.GetCardinality())
 			}
 
-			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
-				for _, br := range setQuery.List {
-					if br.Repos.Contains(repo.ID) {
-						return true
+			if len(setQuery.List) <= 1 {
+				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+					for _, br := range setQuery.List {
+						if br.Repos.Contains(repo.ID) {
+							return true
+						}
 					}
-				}
-				return false
-			})
+					return false
+				})
+			} else {
+				branchesSelector = newBranchesReposSelector(setQuery.List)
+				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+					return branchesSelector.contains(repo.ID)
+				})
+			}
 		case *query.Meta:
 			// Meta queries filter repositories based on metadata fields.
 			// By checking this at the shard level, we can skip entire shards
@@ -470,16 +574,40 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 		filtered := make([]*rankedShard, 0, setSize)
 		filteredAll := true
 
-		for _, s := range shards {
-			if s.repos == nil {
-				// repos is nil if we failed to List the shard. This shouldn't
-				// happen, but if it does we don't know what is in it and must search
-				// it without simplifying the query.
-				filtered = append(filtered, s)
-				filteredAll = false
-			} else if any, all := hasRepos(s.repos); any {
-				filtered = append(filtered, s)
-				filteredAll = filteredAll && all
+		if branchesSelector == nil {
+			for _, s := range shards {
+				if s.repos == nil {
+					// repos is nil if we failed to List the shard. This shouldn't
+					// happen, but if it does we don't know what is in it and must search
+					// it without simplifying the query.
+					filtered = append(filtered, s)
+					filteredAll = false
+				} else if any, all := hasRepos(s.repos); any {
+					filtered = append(filtered, s)
+					filteredAll = filteredAll && all
+				}
+			}
+		} else {
+			var lastProbes uint64
+			for shardIndex, s := range shards {
+				if s.repos == nil {
+					// repos is nil if we failed to List the shard. This shouldn't
+					// happen, but if it does we don't know what is in it and must search
+					// it without simplifying the query.
+					filtered = append(filtered, s)
+					filteredAll = false
+					continue
+				}
+
+				any, all := hasRepos(s.repos)
+				if !branchesSelector.settled && branchesSelector.probes != lastProbes {
+					branchesSelector.maybeFold(len(shards) - shardIndex - 1)
+					lastProbes = branchesSelector.probes
+				}
+				if any {
+					filtered = append(filtered, s)
+					filteredAll = filteredAll && all
+				}
 			}
 		}
 

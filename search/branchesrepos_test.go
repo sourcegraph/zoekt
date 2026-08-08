@@ -16,6 +16,7 @@ package search
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/RoaringBitmap/roaring"
@@ -85,29 +86,101 @@ func matchingBranchesReposShards(shards []*rankedShard, q *query.BranchesRepos) 
 	return matching
 }
 
-func TestSelectRepoSetBranchesRepos(t *testing.T) {
-	shards, ids := newBranchesReposShards(5, 2)
-	shards[4].repos = nil
+func assertSelectRepoSetBranchesRepos(t *testing.T, name string, shards []*rankedShard, q *query.BranchesRepos) query.Q {
+	t.Helper()
 
-	q := newBranchesReposQuery(3)
-	addBranchesReposIDs(q, 0, ids[0])
-	addBranchesReposIDs(q, 2, ids[1])
-	addBranchesReposIDs(q, 0, []uint32{ids[2][0]})
-	addBranchesReposIDs(q, 2, []uint32{ids[2][0]})
-
+	before := q.String()
 	want := matchingBranchesReposShards(shards, q)
 	got, gotQuery := selectRepoSet(shards, q)
 
 	if len(got) != len(want) {
-		t.Fatalf("selected %d shards, want %d", len(got), len(want))
+		t.Fatalf("%s: selected %d shards, want %d", name, len(got), len(want))
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Fatalf("selected shard %d = %p, want %p", i, got[i], want[i])
+			t.Fatalf("%s: selected shard %d = %p, want %p", name, i, got[i], want[i])
 		}
 	}
-	if gotQuery != q {
+	if got := q.String(); got != before {
+		t.Fatalf("%s: selectRepoSet mutated query: got %s, want %s", name, got, before)
+	}
+
+	return gotQuery
+}
+
+func TestSelectRepoSetBranchesRepos(t *testing.T) {
+	shards, ids := newBranchesReposShards(5, 2)
+	shards[4].repos = nil
+
+	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
+	addBranchesReposIDs(q, 0, ids[0])
+	addBranchesReposIDs(q, branchesReposBenchmarkBranches-1, ids[1])
+	addBranchesReposIDs(q, 4, []uint32{ids[2][0]})
+	addBranchesReposIDs(q, branchesReposBenchmarkBranches-1, []uint32{ids[2][0]})
+
+	if gotQuery := assertSelectRepoSetBranchesRepos(t, "mixed membership", shards, q); gotQuery != q {
 		t.Fatalf("selectRepoSet changed multi-branch query: got %s, want %s", gotQuery, q)
+	}
+}
+
+func TestSelectRepoSetBranchesReposManyBranches(t *testing.T) {
+	shards, ids := newBranchesReposShards(branchesReposBenchmarkBranches+1, 1)
+	shards[len(shards)-1].repos = nil
+
+	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
+	addBranchesReposIDs(q, 0, ids[0])
+	addBranchesReposIDs(q, 4, ids[1])
+	addBranchesReposIDs(q, branchesReposBenchmarkBranches-1, ids[2])
+	addBranchesReposIDs(q, branchesReposBenchmarkBranches-1, ids[0])
+
+	if gotQuery := assertSelectRepoSetBranchesRepos(t, "many branches", shards, q); gotQuery != q {
+		t.Fatalf("selectRepoSet changed multi-branch query: got %s, want %s", gotQuery, q)
+	}
+}
+
+func TestSelectRepoSetBranchesReposEmptyUnion(t *testing.T) {
+	shards, _ := newBranchesReposShards(branchesReposBenchmarkBranches+100, 1)
+	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
+
+	gotQuery := assertSelectRepoSetBranchesRepos(t, "empty union", shards, q)
+	constant, ok := gotQuery.(*query.Const)
+	if !ok || constant.Value {
+		t.Fatalf("empty branch repository set returned %s, want FALSE", gotQuery)
+	}
+}
+
+func TestSelectRepoSetBranchesReposDifferential(t *testing.T) {
+	random := rand.New(rand.NewPCG(1, 2))
+
+	for testCase := range 1_500 {
+		branches := 2 + random.IntN(15)
+		shardCount := 1 + random.IntN(32)
+		if testCase%10 == 0 {
+			branches = branchesReposBenchmarkBranches
+			shardCount = branchesReposBenchmarkBranches + 1 + random.IntN(branchesReposBenchmarkBranches)
+		}
+
+		shards, ids := newBranchesReposShards(shardCount, 1+random.IntN(branchesReposBenchmarkRepos))
+		q := newBranchesReposQuery(branches)
+		for _, shardIDs := range ids {
+			for _, id := range shardIDs {
+				if random.IntN(4) == 0 {
+					addBranchesReposIDs(q, random.IntN(branches), []uint32{id})
+				}
+			}
+		}
+		for branch := range q.List {
+			for range random.IntN(3) {
+				q.List[branch].Repos.Add(uint32(random.Uint64()))
+			}
+		}
+		for shard := range shards {
+			if random.IntN(16) == 0 {
+				shards[shard].repos = nil
+			}
+		}
+
+		assertSelectRepoSetBranchesRepos(t, fmt.Sprintf("random case %d", testCase), shards, q)
 	}
 }
 
@@ -225,8 +298,7 @@ func BenchmarkSelectRepoSetBranchesReposLargeBitmapsModerateShards(b *testing.B)
 
 // BenchmarkSelectRepoSetBranchesReposLatePrefixThenFirst covers a query whose
 // early final-branch matches are followed by a much larger first-branch run.
-// The latter is already the linear scan's cheapest path, so building a union
-// based only on the prefix would add work instead of removing it.
+// The fold must repay its dense-bitmap clone across that suffix.
 func BenchmarkSelectRepoSetBranchesReposLatePrefixThenFirst(b *testing.B) {
 	shards, ids := newBranchesReposShards(10_000, branchesReposBenchmarkRepos)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
@@ -243,8 +315,8 @@ func BenchmarkSelectRepoSetBranchesReposLatePrefixThenFirst(b *testing.B) {
 
 // BenchmarkSelectRepoSetBranchesReposMissPrefixThenFifth covers an initially
 // miss-heavy scan followed by repositories that take the fifth branch's cheap
-// linear path. Materializing an aggregate from the miss prefix must not make
-// that suffix slower.
+// direct path. Materializing an aggregate from the miss prefix must not make
+// that suffix allocate.
 func BenchmarkSelectRepoSetBranchesReposMissPrefixThenFifth(b *testing.B) {
 	shards, ids := newBranchesReposShards(10_000, branchesReposBenchmarkRepos)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
@@ -259,8 +331,7 @@ func BenchmarkSelectRepoSetBranchesReposMissPrefixThenFifth(b *testing.B) {
 
 // BenchmarkSelectRepoSetBranchesReposSampledFirstRepoOnly covers a miss-heavy
 // query whose interior sample shards match only through their first repository.
-// A sampling guard must not discard aggregation while the other repositories
-// and almost all other shards still require the expensive path.
+// The observed scan work must still justify folding for the remaining shards.
 func BenchmarkSelectRepoSetBranchesReposSampledFirstRepoOnly(b *testing.B) {
 	shards, ids := newBranchesReposShards(10_000, branchesReposBenchmarkRepos)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
