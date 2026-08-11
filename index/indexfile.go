@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux || darwin || freebsd || netbsd
+//go:build linux || darwin || freebsd || netbsd || illumos
 
 package index
 
