@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1.7
-FROM golang:1.26.2-alpine AS builder
+# Build on the native host arch and cross-compile; avoid QEMU for `go build`.
+FROM --platform=$BUILDPLATFORM golang:1.26.2-alpine AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 RUN apk add --no-cache ca-certificates
 
@@ -16,11 +20,11 @@ ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     mkdir -p /out && \
-    go build \
-      -trimpath \
-      -ldflags "-X github.com/sourcegraph/zoekt.Version=$VERSION" \
-      -o /out/ \
-      ./cmd/...
+    GOOS="$TARGETOS" GOARCH="$TARGETARCH" go build \
+    -trimpath \
+    -ldflags "-X github.com/sourcegraph/zoekt.Version=$VERSION" \
+    -o /out/ \
+    ./cmd/...
 
 FROM alpine:3
 
