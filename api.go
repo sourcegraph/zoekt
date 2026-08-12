@@ -86,10 +86,6 @@ type FileMatch struct {
 	RepositoryID uint32 `json:",omitempty"`
 }
 
-type foo string
-
-var _ = foo("bak")
-
 func (m *FileMatch) sizeBytes() (sz uint64) {
 	// Score
 	sz += 8

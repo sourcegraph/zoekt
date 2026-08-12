@@ -43,8 +43,8 @@ RUN set -eux; \
     esac; \
     apk_name="uctags-${CTAGS_VERSION}-linux-${ctags_arch}.release.apk"; \
     base_url="https://github.com/universal-ctags/ctags-nightly-build/releases/download/${CTAGS_VERSION}%2B${CTAGS_COMMIT}"; \
-    wget -O "/tmp/${apk_name}" "${base_url}/${apk_name}"; \
-    wget -O /etc/apk/keys/uctags.rsa.pub "${base_url}/${apk_name}.rsa.pub"; \
+    wget -qO "/tmp/${apk_name}" "${base_url}/${apk_name}"; \
+    wget -qO /etc/apk/keys/uctags.rsa.pub "${base_url}/${apk_name}.rsa.pub"; \
     apk add --no-cache "/tmp/${apk_name}"; \
     rm "/tmp/${apk_name}"; \
     ln -s ctags /usr/bin/universal-ctags
