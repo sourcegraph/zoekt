@@ -57,9 +57,9 @@ func toLower(in []byte) []byte {
 }
 
 // compare 'lower' and 'mixed', where lower is the needle. 'mixed' may
-// be larger than 'lower'. Returns whether there was a match, and if
-// yes, the byte size of the match.
-func caseFoldingEqualsRunes(lower, mixed []byte) (int, bool) {
+// be larger than 'lower'. Returns the byte size of the match, whether there was
+// a match, and whether mixed ended before lower.
+func caseFoldingEqualsRunes(lower, mixed []byte) (int, bool, bool) {
 	matchTotal := 0
 	for len(lower) > 0 && len(mixed) > 0 {
 		lb := lower[0]
@@ -70,7 +70,7 @@ func caseFoldingEqualsRunes(lower, mixed []byte) (int, bool) {
 				mb |= 0x20
 			}
 			if lb != mb {
-				return 0, false
+				return 0, false, !hasEnoughRunes(mixed, lower)
 			}
 			lower = lower[1:]
 			mixed = mixed[1:]
@@ -86,11 +86,37 @@ func caseFoldingEqualsRunes(lower, mixed []byte) (int, bool) {
 		matchTotal += msz
 
 		if lr != unicode.ToLower(mr) {
-			return 0, false
+			return 0, false, !hasEnoughRunes(mixed, lower)
 		}
 	}
 
-	return matchTotal, len(lower) == 0
+	return matchTotal, len(lower) == 0, len(lower) > 0
+}
+
+func hasEnoughRunes(mixed, lower []byte) bool {
+	// A UTF-8 rune occupies at most UTFMax bytes, and lower cannot contain
+	// more runes than bytes. A sufficiently long mixed suffix therefore proves
+	// the candidate span fits without walking either slice. In practice this
+	// keeps ordinary mismatches constant-time and reserves the exact scan below
+	// for candidates close enough to the document end to be truncated.
+	if len(mixed)/utf8.UTFMax >= len(lower) {
+		return true
+	}
+
+	// Compare only rune availability, not values: the caller already knows the
+	// candidate mismatches. Reaching the end of mixed first means the candidate's
+	// expected rune span crosses the document boundary, which is a corrupt index
+	// invariant rather than an ordinary non-match.
+	for len(lower) > 0 {
+		if len(mixed) == 0 {
+			return false
+		}
+		_, sz := utf8.DecodeRune(lower)
+		lower = lower[sz:]
+		_, sz = utf8.DecodeRune(mixed)
+		mixed = mixed[sz:]
+	}
+	return true
 }
 
 type ngram uint64
@@ -394,12 +420,12 @@ func makeRuneOffsetMap(off []uint32) runeOffsetMap {
 // runes to traverse, given the granularity of runeOffsetFrequency.
 //
 // It does this by finding the nearest point to interpolate from in the map.
-func (m runeOffsetMap) lookup(runeOffset uint32) (uint32, uint32) {
+func (m runeOffsetMap) lookup(runeOffset uint32) (uint64, uint32) {
 	left := runeOffset % runeOffsetFrequency
 	runeOffset -= left
 	slen := len(m)
 	if slen == 0 {
-		return runeOffset, left
+		return uint64(runeOffset), left
 	}
 	// sort.Search finds the *first* index for which the predicate is true,
 	// but we want to find the *last* index for which the predicate is true.
@@ -410,9 +436,9 @@ func (m runeOffsetMap) lookup(runeOffset uint32) (uint32, uint32) {
 	idx = slen - 1 - idx
 	// idx is now in the range [-1, len(m))-- -1 indicates that the offset is smaller
 	// than the first entry in the map, so no correction is necessary.
-	byteOff := runeOffset
+	byteOff := uint64(runeOffset)
 	if idx >= 0 {
-		byteOff = m[idx].byteOffset + runeOffset - m[idx].runeOffset
+		byteOff = uint64(m[idx].byteOffset) + uint64(runeOffset) - uint64(m[idx].runeOffset)
 	}
 	return byteOff, left
 }
