@@ -190,6 +190,22 @@ func TestSearch_ShardRepoMaxMatchCountOpt(t *testing.T) {
 	})
 }
 
+func TestSearch_ShardMaxMatchCountStats(t *testing.T) {
+	cs := compoundReposShard(t, "foo")
+
+	sr, err := cs.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{ShardMaxMatchCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := sr.Stats.FilesSkipped, 1; got != want {
+		t.Errorf("FilesSkipped: got %d, want %d", got, want)
+	}
+	if got := sr.Stats.FilesSkippedDueToCancellation; got != 0 {
+		t.Errorf("FilesSkippedDueToCancellation: got %d, want 0", got)
+	}
+}
+
 func compoundReposShard(t *testing.T, names ...string) *indexData {
 	t.Helper()
 

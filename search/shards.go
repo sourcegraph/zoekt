@@ -108,7 +108,11 @@ var (
 	})
 	metricSearchFilesSkippedTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "zoekt_search_files_skipped_total",
-		Help: "Total candidate files whose contents weren't examined because we gathered enough matches",
+		Help: "Total candidate files whose contents weren't examined because a search limit was reached or the search context was canceled",
+	})
+	metricSearchFilesSkippedDueToCancellationTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "zoekt_search_files_skipped_due_to_cancellation_total",
+		Help: "Total files skipped because a context cancellation was observed while searching a shard",
 	})
 	metricSearchShardsSkippedTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "zoekt_search_shards_skipped_total",
@@ -920,6 +924,7 @@ func observeMetrics(sr *zoekt.SearchResult) {
 	metricSearchFilesConsideredTotal.Add(float64(sr.Stats.FilesConsidered))
 	metricSearchFilesLoadedTotal.Add(float64(sr.Stats.FilesLoaded))
 	metricSearchFilesSkippedTotal.Add(float64(sr.Stats.FilesSkipped))
+	metricSearchFilesSkippedDueToCancellationTotal.Add(float64(sr.Stats.FilesSkippedDueToCancellation))
 	metricSearchShardsSkippedTotal.Add(float64(sr.Stats.ShardsSkipped))
 	metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
 	metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
