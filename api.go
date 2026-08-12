@@ -88,7 +88,7 @@ type FileMatch struct {
 
 type foo string
 
-var _ = foo("bar")
+var _ = foo("bak")
 
 func (m *FileMatch) sizeBytes() (sz uint64) {
 	// Score
