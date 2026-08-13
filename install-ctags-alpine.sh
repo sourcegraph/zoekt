@@ -3,12 +3,12 @@
 # Installs universal-ctags from prebuilt Linux tarballs (amd64/arm64).
 # Zoekt looks up "universal-ctags" on PATH; the tarball installs "ctags".
 #
-# sha256 sums below are GitHub release asset digests. When bumping
-# CTAGS_VERSION or CTAGS_COMMIT, copy them from the release page/API:
+# When bumping CTAGS_VERSION, update CTAGS_COMMIT and the sha256 sums below
+# together from the release page/API:
 # https://github.com/universal-ctags/ctags-nightly-build/releases
 
-CTAGS_VERSION=${CTAGS_VERSION:-2024.01.07}
-CTAGS_COMMIT=${CTAGS_COMMIT:-4053f69a35d8d3d307b274040f27c147eec79ee7}
+CTAGS_VERSION=2024.01.07
+CTAGS_COMMIT=4053f69a35d8d3d307b274040f27c147eec79ee7
 # GitHub release asset digests for uctags-${CTAGS_VERSION}-linux-*.tar.xz
 CTAGS_TAR_SHA256_X86_64=0c0bbc9f81d3f7151988b94e78c64914ab41ee4c5e10debfe79f73fee54a68a0
 CTAGS_TAR_SHA256_AARCH64=a50e25cb5b4ced8fea119984695e77464aaa73d5d4a53c10fec34dd82b1d9e5f
