@@ -148,3 +148,5 @@ require (
 )
 
 go 1.25.9
+
+toolchain go1.26.5

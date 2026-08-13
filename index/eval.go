@@ -260,8 +260,13 @@ nextFileMatch:
 			repoMatchCount = 0
 		}
 
-		if canceled || (res.Stats.MatchCount >= opts.ShardMaxMatchCount && opts.ShardMaxMatchCount > 0) {
-			res.Stats.FilesSkipped += int(docCount - nextDoc)
+		shardMaxMatchCountReached := opts.ShardMaxMatchCount > 0 && res.Stats.MatchCount >= opts.ShardMaxMatchCount
+		if canceled || shardMaxMatchCountReached {
+			filesSkipped := int(docCount - nextDoc)
+			res.Stats.FilesSkipped += filesSkipped
+			if canceled && !shardMaxMatchCountReached {
+				res.Stats.FilesSkippedDueToCancellation += filesSkipped
+			}
 			break
 		}
 

@@ -563,6 +563,7 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 		sglog.Int("stat.FilesConsidered", st.FilesConsidered),
 		sglog.Int("stat.FilesLoaded", st.FilesLoaded),
 		sglog.Int("stat.FilesSkipped", st.FilesSkipped),
+		sglog.Int("stat.FilesSkippedDueToCancellation", st.FilesSkippedDueToCancellation),
 		sglog.Int("stat.ShardsScanned", st.ShardsScanned),
 		sglog.Int("stat.ShardsSkipped", st.ShardsSkipped),
 		sglog.Int("stat.ShardsSkippedFilter", st.ShardsSkippedFilter),

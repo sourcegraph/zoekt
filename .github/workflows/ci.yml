@@ -8,31 +8,31 @@ name: CI
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: alpine:edge # latest go pls
+    container: alpine:3
     steps:
-      - name: checkout
-        uses: actions/checkout@v6
-
       - name: add dependencies
-        run: apk add go git tar
+        # zstd for faster actions/cache
+        # tar needed for actions/cache (busybox tar is incompatible)
+        # git for a native checkout (also needed in tests)
+        # jansson is here until we move to prebuilt ctags binaries (TODO: remove)
+        run: apk add zstd git tar jansson
+
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Cache ctags
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             /usr/bin/ctags
             /usr/bin/universal-ctags
           key: ${{ runner.os }}-ctags-${{ hashFiles('install-ctags-alpine.sh') }}
-
-      - name: Cache Go modules
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
 
       - name: install ctags
         run: |

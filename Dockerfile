@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Build on the native host arch and cross-compile; avoid QEMU for `go build`.
-FROM --platform=$BUILDPLATFORM golang:1.26.2-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH

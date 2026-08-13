@@ -97,6 +97,112 @@ func TestBoundary(t *testing.T) {
 	}
 }
 
+func TestSearchPanicsOnCorruptRuneOffset(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		fileName      bool
+		caseSensitive bool
+	}{
+		{name: "content case sensitive", caseSensitive: true},
+		{name: "content case insensitive"},
+		{name: "filename case sensitive", fileName: true, caseSensitive: true},
+		{name: "filename case insensitive", fileName: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			first := strings.Repeat("é", runeOffsetFrequency)
+			var docs []Document
+			if tc.fileName {
+				docs = []Document{
+					{Name: first, Content: []byte("first")},
+					{Name: "prefixneedle", Content: []byte("second")},
+				}
+			} else {
+				docs = []Document{
+					{Name: "first", Content: []byte(first)},
+					{Name: "second", Content: []byte("prefixneedle")},
+				}
+			}
+
+			searcher := searcherForTest(t, testShardBuilder(t, nil, docs...))
+			d := searcher.(*indexData)
+			corrupt := runeOffsetMap{{runeOffset: runeOffsetFrequency, byteOffset: 0}}
+			if tc.fileName {
+				d.fileNameRuneOffsets = corrupt
+			} else {
+				d.runeOffsets = corrupt
+			}
+
+			pattern := "NEEDLE"
+			if tc.caseSensitive {
+				pattern = "needle"
+			}
+			panicText := searchPanic(t, searcher, &query.Substring{
+				Pattern:       pattern,
+				FileName:      tc.fileName,
+				CaseSensitive: tc.caseSensitive,
+			})
+			if !strings.Contains(panicText, "before file start") || !strings.Contains(panicText, "document 1") {
+				t.Fatalf("Search panic = %q, want contextual before-file-start corruption", panicText)
+			}
+		})
+	}
+}
+
+func TestSearchPanicsOnMatchPastDocumentEnd(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		fileName      bool
+		caseSensitive bool
+	}{
+		{name: "content case sensitive", caseSensitive: true},
+		{name: "content case insensitive"},
+		{name: "filename case sensitive", fileName: true, caseSensitive: true},
+		{name: "filename case insensitive", fileName: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := Document{Name: "prefixneedle", Content: []byte("prefixneedle")}
+			searcher := searcherForTest(t, testShardBuilder(t, nil, doc))
+			d := searcher.(*indexData)
+			if tc.fileName {
+				d.fileNameIndex[1]--
+			} else {
+				d.boundaries[1]--
+			}
+
+			pattern := "NEEDLE"
+			if tc.caseSensitive {
+				pattern = "needle"
+			}
+			panicText := searchPanic(t, searcher, &query.Substring{
+				Pattern:       pattern,
+				FileName:      tc.fileName,
+				CaseSensitive: tc.caseSensitive,
+			})
+			if (!strings.Contains(panicText, "beyond") && !strings.Contains(panicText, "exceeds")) || !strings.Contains(panicText, "document 0") {
+				t.Fatalf("Search panic = %q, want contextual match-span corruption", panicText)
+			}
+		})
+	}
+}
+
+func searchPanic(t *testing.T, searcher zoekt.Searcher, q query.Q) string {
+	t.Helper()
+	var recovered any
+	var res *zoekt.SearchResult
+	var err error
+	func() {
+		defer func() { recovered = recover() }()
+		res, err = searcher.Search(context.Background(), q, &zoekt.SearchOptions{})
+	}()
+	if recovered == nil {
+		if err != nil {
+			t.Fatalf("Search returned error instead of panicking: %v", err)
+		}
+		t.Fatalf("Search returned result %#v without a corruption panic", res)
+	}
+	return fmt.Sprint(recovered)
+}
+
 func TestDocSectionInvalid(t *testing.T) {
 	b, err := NewShardBuilder(nil)
 	if err != nil {

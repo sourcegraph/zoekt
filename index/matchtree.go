@@ -977,7 +977,12 @@ func (t *substrMatchTree) matches(cp *contentProvider, cost int, known map[match
 		if m.byteOffset == 0 && m.runeOffset > 0 {
 			m.byteOffset = cp.findOffset(m.fileName, m.runeOffset)
 		}
-		if m.matchContent(cp.data(m.fileName)) {
+		content := cp.data(m.fileName)
+		matched, err := m.matchContent(content)
+		if err != nil {
+			cp.panicCorrupt(err)
+		}
+		if matched {
 			pruned = append(pruned, m)
 		}
 	}

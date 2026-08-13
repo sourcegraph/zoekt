@@ -224,7 +224,7 @@ func TestCondenseRuneOffsets(t *testing.T) {
 		for j, byteOffset := range tc.arr {
 			runeOffset := uint32(j * runeOffsetFrequency)
 			gotByteOffset, _ := got.lookup(runeOffset)
-			if gotByteOffset != byteOffset {
+			if gotByteOffset != uint64(byteOffset) {
 				t.Errorf("#%d: lookup(%v) got %v, want %v", i, runeOffset, gotByteOffset, byteOffset)
 			}
 		}
@@ -247,7 +247,7 @@ func TestRuneOffsetLookup(t *testing.T) {
 		if gotLeft != tc.wantLeft {
 			t.Errorf("#%d: got left=%v, want left=%v", i, gotLeft, tc.wantLeft)
 		}
-		if gotOff != tc.wantOff {
+		if gotOff != uint64(tc.wantOff) {
 			t.Errorf("#%d: got off=%v, want off=%v", i, gotOff, tc.wantOff)
 		}
 	}
@@ -257,7 +257,7 @@ func TestRuneOffsetLookup(t *testing.T) {
 	wanted := []uint32{0, 0, 0, 105, 105, 105, 210, 210, 310, 310, 430, 430, 530, 630}
 	for i, v := range inputs {
 		got, _ := m.lookup(v)
-		if got != wanted[i] {
+		if got != uint64(wanted[i]) {
 			t.Errorf("got off=%v, want off=%v for map=%v", got, wanted[i], m)
 		}
 	}
