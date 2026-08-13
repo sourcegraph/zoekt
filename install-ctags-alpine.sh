@@ -1,40 +1,44 @@
 #!/bin/sh
 
-# Installs universal-ctags from prebuilt Alpine APKs (amd64/arm64).
-# Zoekt looks up "universal-ctags" on PATH; the APK installs "ctags".
+# Installs universal-ctags from prebuilt Linux tarballs (amd64/arm64).
+# Zoekt looks up "universal-ctags" on PATH; the tarball installs "ctags".
 #
 # sha256 sums below are GitHub release asset digests. When bumping
 # CTAGS_VERSION or CTAGS_COMMIT, copy them from the release page/API:
 # https://github.com/universal-ctags/ctags-nightly-build/releases
 
-CTAGS_VERSION=${CTAGS_VERSION:-2026.08.11}
-CTAGS_COMMIT=${CTAGS_COMMIT:-8361949f6a2465fb1bbaf26a234278c3c3cbd3ac}
-# GitHub release asset digests for uctags-${CTAGS_VERSION}-linux-*.release.apk
-CTAGS_APK_SHA256_X86_64=bde53a3092fd540e004bf7923322a21604592734aea002086764f02456378c9d
-CTAGS_APK_SHA256_AARCH64=245239f8097a2877ad91d14e742670d25ecd5bac7d2b77fdb0139dfcce291d22
+CTAGS_VERSION=${CTAGS_VERSION:-2024.01.07}
+CTAGS_COMMIT=${CTAGS_COMMIT:-4053f69a35d8d3d307b274040f27c147eec79ee7}
+# GitHub release asset digests for uctags-${CTAGS_VERSION}-linux-*.tar.xz
+CTAGS_TAR_SHA256_X86_64=0c0bbc9f81d3f7151988b94e78c64914ab41ee4c5e10debfe79f73fee54a68a0
+CTAGS_TAR_SHA256_AARCH64=a50e25cb5b4ced8fea119984695e77464aaa73d5d4a53c10fec34dd82b1d9e5f
 
 set -eux
 
+apk add --no-cache xz
+
 case "${TARGETARCH:-$(uname -m)}" in
   amd64 | x86_64)
-    apk_name="uctags-${CTAGS_VERSION}-linux-x86_64.release.apk"
-    apk_sha256=$CTAGS_APK_SHA256_X86_64
+    ctags_arch=x86_64
+    tar_sha256=$CTAGS_TAR_SHA256_X86_64
     ;;
   arm64 | aarch64)
-    apk_name="uctags-${CTAGS_VERSION}-linux-aarch64.release.apk"
-    apk_sha256=$CTAGS_APK_SHA256_AARCH64
+    ctags_arch=aarch64
+    tar_sha256=$CTAGS_TAR_SHA256_AARCH64
     ;;
   *) echo "unsupported architecture: ${TARGETARCH:-$(uname -m)}" >&2; exit 1 ;;
 esac
 
+archive_name="uctags-${CTAGS_VERSION}-linux-${ctags_arch}.tar.xz"
+extract_dir="uctags-${CTAGS_VERSION}-linux-${ctags_arch}"
 base_url="https://github.com/universal-ctags/ctags-nightly-build/releases/download/${CTAGS_VERSION}%2B${CTAGS_COMMIT}"
-apk_path="/tmp/${apk_name}"
+archive_path="/tmp/${archive_name}"
 
-wget -qO "$apk_path" "${base_url}/${apk_name}"
-wget -qO /etc/apk/keys/uctags.rsa.pub "${base_url}/${apk_name}.rsa.pub"
+wget -qO "$archive_path" "${base_url}/${archive_name}"
 
-echo "$apk_sha256  $apk_path" | sha256sum -c -
-apk add --no-cache "$apk_path"
-rm "$apk_path"
+echo "$tar_sha256  $archive_path" | sha256sum -c -
+tar -xJf "$archive_path" -C /tmp
+install -m 0755 "/tmp/${extract_dir}/bin/ctags" /usr/bin/ctags
+rm -rf "$archive_path" "/tmp/${extract_dir}"
 
 ln -sf /usr/bin/ctags /usr/bin/universal-ctags
