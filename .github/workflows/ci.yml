@@ -8,9 +8,13 @@ name: CI
 jobs:
   test:
     runs-on: ubuntu-latest
+    container: alpine:3
     steps:
       - name: checkout
         uses: actions/checkout@v7
+
+      # - name: add dependencies
+      #   run: apk add zstd
 
       - name: setup go
         uses: actions/setup-go@v7
