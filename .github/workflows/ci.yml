@@ -14,7 +14,8 @@ jobs:
         # zstd for faster actions/cache
         # tar needed for actions/cache (busybox tar is incompatible)
         # git for a native checkout (also needed in tests)
-        run: apk add zstd git tar
+        # jansson is here until we move to prebuilt ctags binaries (TODO: remove)
+        run: apk add zstd git tar jansson
 
       - name: checkout
         uses: actions/checkout@v7
