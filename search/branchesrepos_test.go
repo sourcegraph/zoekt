@@ -166,11 +166,170 @@ func TestSelectRepoSetBranchesReposManyBranches(t *testing.T) {
 	}
 }
 
-func TestSelectRepoSetBranchesReposEmptyUnion(t *testing.T) {
+func TestSelectRepoSetBranchesReposBuildsBloom(t *testing.T) {
+	// 128 one-repository misses through 128 branch bitmaps make exactly 16,384
+	// direct miss probes before the final 16 shards.
+	const missShards = 128
+	shards, ids := newBranchesReposShards(missShards+branchesReposMinimumRemainingShards, 1)
+	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
+	for shard, shardIDs := range ids[missShards:] {
+		branch := 0
+		if shard%2 != 0 {
+			branch = branchesReposBenchmarkBranches - 1
+		}
+		addBranchesReposIDs(q, branch, shardIDs)
+	}
+
+	// Keep the multi-branch query after filtering so its identity can be
+	// checked below.
+	shards[missShards].repos = append(shards[missShards].repos, &zoekt.Repository{ID: ids[0][0]})
+
+	if !branchesReposMaySelect(shards, len(q.List), 2) {
+		t.Fatal("preflight did not recognize a filterable scan")
+	}
+
+	snapshots := snapshotBranchesRepos(q)
+	sel := newBranchesReposSelector(q.List, 2)
+	for _, shard := range shards[:missShards] {
+		if sel.containsDirect(shard.repos[0].ID) {
+			t.Fatalf("miss shard %d matched", shard.repos[0].ID)
+		}
+	}
+	if got := sel.missProbes; got != branchesReposMinimumMissProbes {
+		t.Fatalf("direct miss probes = %d, want %d", got, branchesReposMinimumMissProbes)
+	}
+
+	var bloom branchesReposBloom
+	if !sel.maybeBuildBloom(shards[missShards:], &bloom) {
+		t.Fatal("selector did not build a membership filter")
+	}
+	if bloom.mayContain(ids[0][0]) && sel.containsDirect(ids[0][0]) {
+		t.Fatalf("miss repository %d matched after filter setup", ids[0][0])
+	}
+	for _, shard := range shards[missShards:] {
+		id := shard.repos[0].ID
+		if !bloom.mayContain(id) || !sel.containsDirect(id) {
+			t.Fatalf("matching shard %d did not match after filter setup", id)
+		}
+	}
+	assertBranchesReposUnchanged(t, "bloom filter", q, snapshots)
+
+	if gotQuery := assertSelectRepoSetBranchesRepos(t, "bloom filter", shards, q); gotQuery != q {
+		t.Fatalf("selectRepoSet changed multi-branch query: got %s, want %s", gotQuery, q)
+	}
+}
+
+func TestBranchesReposMayReachSelector(t *testing.T) {
+	shards, _ := newBranchesReposShards(32, 1)
+	if branchesReposMayReachSelector(shards, branchesReposBenchmarkBranches) {
+		t.Fatal("short scan reached selector threshold")
+	}
+
+	shards, _ = newBranchesReposShards(144, 1)
+	if !branchesReposMayReachSelector(shards, branchesReposBenchmarkBranches) {
+		t.Fatal("long scan did not reach selector threshold")
+	}
+}
+
+func TestBranchesReposMaySelectRequiresRemainingWork(t *testing.T) {
+	shards, _ := newBranchesReposShards(128, branchesReposBenchmarkRepos)
+	if !branchesReposMayReachSelector(shards, branchesReposBenchmarkBranches) {
+		t.Fatal("preflight did not reach selector threshold")
+	}
+	if branchesReposMaySelect(shards, branchesReposBenchmarkBranches, 128*100) {
+		t.Fatal("preflight selected a selector with too little remaining miss work")
+	}
+}
+
+func TestBranchesReposCanBuildBloomRejectsSaturatedFilter(t *testing.T) {
+	if !branchesReposCanBuildBloom(branchesReposBloomMaxCardinality) {
+		t.Fatal("filter capacity was rejected")
+	}
+	if branchesReposCanBuildBloom(branchesReposBloomMaxCardinality + 1) {
+		t.Fatal("saturated filter was accepted")
+	}
+}
+
+func TestBranchesReposSelectorSkipsNonProbingShards(t *testing.T) {
+	const missShards = 128
+	shards, _ := newBranchesReposShards(missShards+128, 1)
+	for _, shard := range shards[missShards:] {
+		shard.repos = nil
+	}
+
+	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
+	q.List[0].Repos.Add(100_000)
+	q.List[branchesReposBenchmarkBranches-1].Repos.Add(200_000)
+	sel := newBranchesReposSelector(q.List, 2)
+	for _, shard := range shards[:missShards] {
+		if sel.containsDirect(shard.repos[0].ID) {
+			t.Fatalf("miss shard %d matched", shard.repos[0].ID)
+		}
+	}
+
+	var bloom branchesReposBloom
+	if sel.maybeBuildBloom(shards[missShards:], &bloom) {
+		t.Fatal("selector built a filter despite only unlisted remaining shards")
+	}
+	if !sel.settled {
+		t.Fatal("selector did not settle without known remaining shards")
+	}
+
+	if gotQuery := assertSelectRepoSetBranchesRepos(t, "unlisted remaining shards", shards, q); gotQuery != q {
+		t.Fatalf("selectRepoSet changed multi-branch query: got %s, want %s", gotQuery, q)
+	}
+
+	for _, shard := range shards[missShards:] {
+		shard.repos = []*zoekt.Repository{}
+	}
+	emptySelector := newBranchesReposSelector(q.List, 2)
+	for _, shard := range shards[:missShards] {
+		emptySelector.containsDirect(shard.repos[0].ID)
+	}
+	var emptyBloom branchesReposBloom
+	if emptySelector.maybeBuildBloom(shards[missShards:], &emptyBloom) {
+		t.Fatal("selector built a filter despite only empty remaining shard lists")
+	}
+}
+
+func TestBranchesReposSelectorRetainsFirstBranch(t *testing.T) {
+	shards, ids := newBranchesReposShards(128, 1)
+	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
+	for _, shardIDs := range ids {
+		addBranchesReposIDs(q, 0, shardIDs)
+	}
+	q.List[1].Repos.Add(100_000)
+
+	sel := newBranchesReposSelector(q.List, 129)
+	for _, shard := range shards {
+		if !sel.containsDirect(shard.repos[0].ID) {
+			t.Fatalf("matching shard %d did not match", shard.repos[0].ID)
+		}
+	}
+	if got, want := sel.preferred, -1; got != want {
+		t.Fatalf("preferred branch = %d, want %d", got, want)
+	}
+	if got := sel.missProbes; got != 0 {
+		t.Fatalf("direct miss probes = %d, want 0", got)
+	}
+	if branchesReposFirstMatchIsLater(shards, q.List) {
+		t.Fatal("first-branch-only query established a later preference")
+	}
+
+	late := newBranchesReposQuery(branchesReposBenchmarkBranches)
+	for _, shardIDs := range ids {
+		addBranchesReposIDs(late, branchesReposBenchmarkBranches-1, shardIDs)
+	}
+	if !branchesReposFirstMatchIsLater(shards, late.List) {
+		t.Fatal("later-branch query did not establish a preference")
+	}
+}
+
+func TestSelectRepoSetBranchesReposEmptyBitmaps(t *testing.T) {
 	shards, _ := newBranchesReposShards(branchesReposBenchmarkBranches+100, 1)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
 
-	gotQuery := assertSelectRepoSetBranchesRepos(t, "empty union", shards, q)
+	gotQuery := assertSelectRepoSetBranchesRepos(t, "empty bitmaps", shards, q)
 	constant, ok := gotQuery.(*query.Const)
 	if !ok || constant.Value {
 		t.Fatalf("empty branch repository set returned %s, want FALSE", gotQuery)
@@ -310,7 +469,7 @@ func BenchmarkSelectRepoSetBranchesReposLargeBitmapsFewShards(b *testing.B) {
 
 // BenchmarkSelectRepoSetBranchesReposLargeBitmapsModerateShards covers the
 // adaptive boundary where 128 100-ID bitmaps still have too little remaining
-// miss work to repay materializing their aggregate.
+// miss work to repay building a membership filter.
 func BenchmarkSelectRepoSetBranchesReposLargeBitmapsModerateShards(b *testing.B) {
 	shards, _ := newBranchesReposShards(128, branchesReposBenchmarkRepos)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
@@ -326,8 +485,8 @@ func BenchmarkSelectRepoSetBranchesReposLargeBitmapsModerateShards(b *testing.B)
 
 // BenchmarkSelectRepoSetBranchesReposDistributedBitmapsModerateShards covers
 // sparse bitmaps with 2,048 roaring containers each. The scan reaches the
-// adaptive threshold, but copying or inspecting every container cannot repay
-// itself across only 128 miss shards.
+// adaptive threshold, but visiting every requested ID cannot repay itself
+// across only 128 miss shards.
 func BenchmarkSelectRepoSetBranchesReposDistributedBitmapsModerateShards(b *testing.B) {
 	shards, _ := newBranchesReposShards(128, branchesReposBenchmarkRepos)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
@@ -342,8 +501,8 @@ func BenchmarkSelectRepoSetBranchesReposDistributedBitmapsModerateShards(b *test
 }
 
 // BenchmarkSelectRepoSetBranchesReposUnlistedShards covers a failed shard-list
-// lookup after enough known misses to reach the fold threshold. Unlisted
-// shards skip membership checks and must not repay a union's setup cost.
+// lookup after enough known misses to reach the filter threshold. Unlisted
+// shards skip membership checks and must not repay filter setup.
 func BenchmarkSelectRepoSetBranchesReposUnlistedShards(b *testing.B) {
 	const knownMissShards = 32
 	shards, _ := newBranchesReposShards(10_000, branchesReposBenchmarkRepos)
@@ -361,8 +520,8 @@ func BenchmarkSelectRepoSetBranchesReposUnlistedShards(b *testing.B) {
 }
 
 // BenchmarkSelectRepoSetBranchesReposFirstBranchWithDistributedBitmap covers
-// a cheap first-branch hit path plus a large nonmatching bitmap. The selector
-// must retain the first branch rather than build a filter for every query ID.
+// a cheap first-branch hit path plus a large nonmatching bitmap. Setup must
+// retain the direct path rather than build a saturated filter for every query ID.
 func BenchmarkSelectRepoSetBranchesReposFirstBranchWithDistributedBitmap(b *testing.B) {
 	shards, ids := newBranchesReposShards(10_000, branchesReposBenchmarkRepos)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
@@ -378,7 +537,7 @@ func BenchmarkSelectRepoSetBranchesReposFirstBranchWithDistributedBitmap(b *test
 
 // BenchmarkSelectRepoSetBranchesReposLatePrefixThenFirst covers a query whose
 // early final-branch matches are followed by a much larger first-branch run.
-// The fold must repay its dense-bitmap clone across that suffix.
+// The selector must retain the recently matching branch across that suffix.
 func BenchmarkSelectRepoSetBranchesReposLatePrefixThenFirst(b *testing.B) {
 	shards, ids := newBranchesReposShards(10_000, branchesReposBenchmarkRepos)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
@@ -395,8 +554,7 @@ func BenchmarkSelectRepoSetBranchesReposLatePrefixThenFirst(b *testing.B) {
 
 // BenchmarkSelectRepoSetBranchesReposMissPrefixThenFifth covers an initially
 // miss-heavy scan followed by repositories that take the fifth branch's cheap
-// direct path. Materializing an aggregate from the miss prefix must not make
-// that suffix allocate.
+// direct path. The miss prefix must not make that suffix allocate.
 func BenchmarkSelectRepoSetBranchesReposMissPrefixThenFifth(b *testing.B) {
 	shards, ids := newBranchesReposShards(10_000, branchesReposBenchmarkRepos)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
@@ -411,7 +569,7 @@ func BenchmarkSelectRepoSetBranchesReposMissPrefixThenFifth(b *testing.B) {
 
 // BenchmarkSelectRepoSetBranchesReposSampledFirstRepoOnly covers a miss-heavy
 // query whose interior sample shards match only through their first repository.
-// The observed scan work must still justify folding for the remaining shards.
+// The observed miss work must still justify filtering the remaining shards.
 func BenchmarkSelectRepoSetBranchesReposSampledFirstRepoOnly(b *testing.B) {
 	shards, ids := newBranchesReposShards(10_000, branchesReposBenchmarkRepos)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
