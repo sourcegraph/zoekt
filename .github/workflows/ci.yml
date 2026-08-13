@@ -12,8 +12,8 @@ jobs:
     steps:
       - name: add dependencies
         # zstd for faster actions/cache
+        # tar needed for actions/cache (busybox tar is incompatible)
         # git for a native checkout (also needed in tests)
-        # tar needed for setup-go
         run: apk add zstd git tar
 
       - name: checkout
