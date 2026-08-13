@@ -19,7 +19,9 @@ jobs:
       - name: Cache ctags
         uses: actions/cache@v5
         with:
-          path: /usr/local/bin/universal-ctags
+          path: |
+            /usr/bin/ctags
+            /usr/bin/universal-ctags
           key: ${{ runner.os }}-ctags-${{ hashFiles('install-ctags-alpine.sh') }}
 
       - name: Cache Go modules
@@ -34,7 +36,7 @@ jobs:
 
       - name: install ctags
         run: |
-          if [ ! -f /usr/local/bin/universal-ctags ]; then
+          if [ ! -f /usr/bin/ctags ]; then
             ./install-ctags-alpine.sh
           fi
 

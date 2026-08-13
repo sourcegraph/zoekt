@@ -1,50 +1,25 @@
 #!/bin/sh
 
-# This script installs universal-ctags within an alpine container.
+# Installs universal-ctags from prebuilt Alpine APKs (amd64/arm64).
+# Zoekt looks up "universal-ctags" on PATH; the APK installs "ctags".
 
-# Commit hash of github.com/universal-ctags/ctags.
-# Last bumped 2024-09-02.
-CTAGS_VERSION=v6.1.0
-CTAGS_ARCHIVE_TOP_LEVEL_DIR=ctags-6.1.0
-# When using commits you can rely on
-# CTAGS_ARCHIVE_TOP_LEVEL_DIR=ctags-$CTAGS_VERSION
-
-CTAGS_TMPDIR=
-
-cleanup() {
-  apk --no-cache --purge del ctags-build-deps || true
-  cd /
-  if [ -n "$CTAGS_TMPDIR" ]; then
-    rm -rf "$CTAGS_TMPDIR"
-  fi
-}
-
-trap cleanup EXIT
+CTAGS_VERSION=${CTAGS_VERSION:-2026.08.11}
+CTAGS_COMMIT=${CTAGS_COMMIT:-8361949f6a2465fb1bbaf26a234278c3c3cbd3ac}
 
 set -eux
 
-apk --no-cache add \
-  --virtual ctags-build-deps \
-  autoconf \
-  automake \
-  binutils \
-  curl \
-  g++ \
-  gcc \
-  jansson-dev \
-  make \
-  pkgconfig
+case "${TARGETARCH:-$(uname -m)}" in
+  amd64 | x86_64) ctags_arch=x86_64 ;;
+  arm64 | aarch64) ctags_arch=aarch64 ;;
+  *) echo "unsupported architecture: ${TARGETARCH:-$(uname -m)}" >&2; exit 1 ;;
+esac
 
-# ctags is dynamically linked against jansson
-apk --no-cache add jansson
+apk_name="uctags-${CTAGS_VERSION}-linux-${ctags_arch}.release.apk"
+base_url="https://github.com/universal-ctags/ctags-nightly-build/releases/download/${CTAGS_VERSION}%2B${CTAGS_COMMIT}"
 
-NUMCPUS=$(grep -c '^processor' /proc/cpuinfo)
-CTAGS_TMPDIR=$(mktemp -d /tmp/ctags.XXXXXX)
+wget -qO "/tmp/${apk_name}" "${base_url}/${apk_name}"
+wget -qO /etc/apk/keys/uctags.rsa.pub "${base_url}/${apk_name}.rsa.pub"
+apk add --no-cache "/tmp/${apk_name}"
+rm "/tmp/${apk_name}"
 
-# Installation
-curl --retry 5 "https://codeload.github.com/universal-ctags/ctags/tar.gz/$CTAGS_VERSION" | tar xz -C "$CTAGS_TMPDIR"
-cd "$CTAGS_TMPDIR/$CTAGS_ARCHIVE_TOP_LEVEL_DIR"
-./autogen.sh
-./configure --program-prefix=universal- --enable-json --disable-readcmd
-make -j"$NUMCPUS" --load-average="$NUMCPUS"
-make install
+ln -sf /usr/bin/ctags /usr/bin/universal-ctags
