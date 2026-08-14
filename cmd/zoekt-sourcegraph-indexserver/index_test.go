@@ -440,7 +440,7 @@ func TestGetIndexOptions(t *testing.T) {
 			continue
 		}
 
-		tc.IndexOptions.CloneURL = sg.getCloneURL(got.Name)
+		tc.CloneURL = sg.getCloneURL(got.Name)
 
 		if d := cmp.Diff(*tc.IndexOptions, got); d != "" {
 			t.Errorf("mismatch (-want +got):\n%s", d)

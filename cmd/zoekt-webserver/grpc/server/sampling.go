@@ -25,10 +25,10 @@ func (s *samplingSender) Send(event *zoekt.SearchResult) {
 	if len(event.Files) == 0 {
 		s.aggCount++
 
-		s.agg.Stats.Add(event.Stats)
+		s.agg.Add(event.Stats)
 		s.agg.Progress = event.Progress
 
-		if s.aggCount%100 == 0 && !s.agg.Stats.Zero() {
+		if s.aggCount%100 == 0 && !s.agg.Zero() {
 			s.next.Send(&s.agg)
 			s.agg = zoekt.SearchResult{}
 		}
@@ -39,8 +39,8 @@ func (s *samplingSender) Send(event *zoekt.SearchResult) {
 	// If we have aggregate stats, we merge them with the new event before sending
 	// it. We drop agg.Progress, because we assume that event.Progress reflects the
 	// latest status.
-	if !s.agg.Stats.Zero() {
-		event.Stats.Add(s.agg.Stats)
+	if !s.agg.Zero() {
+		event.Add(s.agg.Stats)
 		s.agg = zoekt.SearchResult{}
 	}
 
@@ -49,7 +49,7 @@ func (s *samplingSender) Send(event *zoekt.SearchResult) {
 
 // Flush sends any aggregated stats that we haven't sent yet
 func (s *samplingSender) Flush() {
-	if !s.agg.Stats.Zero() {
+	if !s.agg.Zero() {
 		s.next.Send(&zoekt.SearchResult{
 			Stats: s.agg.Stats,
 			Progress: zoekt.Progress{

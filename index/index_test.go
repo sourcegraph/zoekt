@@ -780,7 +780,7 @@ func TestNegativeMatchesOnlyShortcut(t *testing.T) {
 				Pattern: "appel",
 			}}))
 
-		if sres.Stats.FilesConsidered != 1 {
+		if sres.FilesConsidered != 1 {
 			t.Errorf("got %#v, want FilesConsidered: 1", sres.Stats)
 		}
 	})
@@ -794,7 +794,7 @@ func TestNegativeMatchesOnlyShortcut(t *testing.T) {
 				Pattern: "appel",
 			}}), chunkOpts)
 
-		if sres.Stats.FilesConsidered != 1 {
+		if sres.FilesConsidered != 1 {
 			t.Errorf("got %#v, want FilesConsidered: 1", sres.Stats)
 		}
 	})
@@ -1081,7 +1081,7 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 		sres := searchForTest(t, b, &query.Regexp{Regexp: mustParseRE(".")})
 
 		matches := sres.Files
-		if len(matches) != 2 || sres.Stats.MatchCount != 2 {
+		if len(matches) != 2 || sres.MatchCount != 2 {
 			t.Fatalf("got %v, want 2 matches", matches)
 		}
 		if len(matches[0].LineMatches[0].Line) != 4 || len(matches[1].LineMatches[0].Line) != 4 {
@@ -1093,7 +1093,7 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 		sres := searchForTest(t, b, &query.Regexp{Regexp: mustParseRE(".")}, chunkOpts)
 
 		matches := sres.Files
-		if len(matches) != 2 || sres.Stats.MatchCount != 8 {
+		if len(matches) != 2 || sres.MatchCount != 8 {
 			t.Fatalf("got %v, want 2 matches", matches)
 		}
 		if len(matches[0].ChunkMatches[0].Content) != 4 || len(matches[1].ChunkMatches[0].Content) != 4 {
@@ -1620,8 +1620,8 @@ func TestRepoName(t *testing.T) {
 			t.Fatalf("got %v, want 0 matches", sres.Files)
 		}
 
-		if sres.Stats.FilesConsidered > 0 {
-			t.Fatalf("got FilesConsidered %d, should have short circuited", sres.Stats.FilesConsidered)
+		if sres.FilesConsidered > 0 {
+			t.Fatalf("got FilesConsidered %d, should have short circuited", sres.FilesConsidered)
 		}
 
 		sres = searchForTest(t, b,
@@ -1647,8 +1647,8 @@ func TestRepoName(t *testing.T) {
 			t.Fatalf("got %v, want 0 matches", sres.Files)
 		}
 
-		if sres.Stats.FilesConsidered > 0 {
-			t.Fatalf("got FilesConsidered %d, should have short circuited", sres.Stats.FilesConsidered)
+		if sres.FilesConsidered > 0 {
+			t.Fatalf("got FilesConsidered %d, should have short circuited", sres.FilesConsidered)
 		}
 
 		sres = searchForTest(t, b,
@@ -2628,8 +2628,8 @@ func TestEstimateDocCount(t *testing.T) {
 				&query.Repo{Regexp: regexp.MustCompile("reponame")},
 			), zoekt.SearchOptions{
 				EstimateDocCount: true,
-			}); sres.Stats.ShardFilesConsidered != 2 {
-			t.Errorf("got FilesConsidered = %d, want 2", sres.Stats.FilesConsidered)
+			}); sres.ShardFilesConsidered != 2 {
+			t.Errorf("got FilesConsidered = %d, want 2", sres.FilesConsidered)
 		}
 		if sres := searchForTest(t, b,
 			query.NewAnd(
@@ -2637,8 +2637,8 @@ func TestEstimateDocCount(t *testing.T) {
 				&query.Repo{Regexp: regexp.MustCompile("nomatch")},
 			), zoekt.SearchOptions{
 				EstimateDocCount: true,
-			}); sres.Stats.ShardFilesConsidered != 0 {
-			t.Errorf("got FilesConsidered = %d, want 0", sres.Stats.FilesConsidered)
+			}); sres.ShardFilesConsidered != 0 {
+			t.Errorf("got FilesConsidered = %d, want 0", sres.FilesConsidered)
 		}
 	})
 
@@ -2650,8 +2650,8 @@ func TestEstimateDocCount(t *testing.T) {
 			), zoekt.SearchOptions{
 				EstimateDocCount: true,
 				ChunkMatches:     true,
-			}); sres.Stats.ShardFilesConsidered != 2 {
-			t.Errorf("got FilesConsidered = %d, want 2", sres.Stats.FilesConsidered)
+			}); sres.ShardFilesConsidered != 2 {
+			t.Errorf("got FilesConsidered = %d, want 2", sres.FilesConsidered)
 		}
 		if sres := searchForTest(t, b,
 			query.NewAnd(
@@ -2660,8 +2660,8 @@ func TestEstimateDocCount(t *testing.T) {
 			), zoekt.SearchOptions{
 				EstimateDocCount: true,
 				ChunkMatches:     true,
-			}); sres.Stats.ShardFilesConsidered != 0 {
-			t.Errorf("got FilesConsidered = %d, want 0", sres.Stats.FilesConsidered)
+			}); sres.ShardFilesConsidered != 0 {
+			t.Errorf("got FilesConsidered = %d, want 0", sres.FilesConsidered)
 		}
 	})
 }
@@ -2726,13 +2726,13 @@ func TestIOStats(t *testing.T) {
 		res := searchForTest(t, b, q)
 
 		// 4096 (content) + 2 (overhead: newlines or doc sections)
-		if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
+		if got, want := res.ContentBytesLoaded, int64(4098); got != want {
 			t.Errorf("got content I/O %d, want %d", got, want)
 		}
 
 		// 1024 entries, each 4 bytes apart. 4 fits into single byte
 		// delta encoded.
-		if got, want := res.Stats.IndexBytesLoaded, int64(1024); got != want {
+		if got, want := res.IndexBytesLoaded, int64(1024); got != want {
 			t.Errorf("got index I/O %d, want %d", got, want)
 		}
 	})
@@ -2742,13 +2742,13 @@ func TestIOStats(t *testing.T) {
 		res := searchForTest(t, b, q, chunkOpts)
 
 		// 4096 (content) + 2 (overhead: newlines or doc sections)
-		if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
+		if got, want := res.ContentBytesLoaded, int64(4098); got != want {
 			t.Errorf("got content I/O %d, want %d", got, want)
 		}
 
 		// 1024 entries, each 4 bytes apart. 4 fits into single byte
 		// delta encoded.
-		if got, want := res.Stats.IndexBytesLoaded, int64(1024); got != want {
+		if got, want := res.IndexBytesLoaded, int64(1024); got != want {
 			t.Errorf("got index I/O %d, want %d", got, want)
 		}
 	})
@@ -2758,13 +2758,13 @@ func TestIOStats(t *testing.T) {
 		res := searchForTest(t, b, q, zoekt.SearchOptions{UseBM25Scoring: true})
 
 		// 4096 (content) + 2 (overhead: newlines or doc sections)
-		if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
+		if got, want := res.ContentBytesLoaded, int64(4098); got != want {
 			t.Errorf("got content I/O %d, want %d", got, want)
 		}
 
 		// 1024 entries, each 4 bytes apart. 4 fits into single byte
 		// delta encoded.
-		if got, want := res.Stats.IndexBytesLoaded, int64(1024); got != want {
+		if got, want := res.IndexBytesLoaded, int64(1024); got != want {
 			t.Errorf("got index I/O %d, want %d", got, want)
 		}
 	})
@@ -2774,13 +2774,13 @@ func TestIOStats(t *testing.T) {
 		res := searchForTest(t, b, q, zoekt.SearchOptions{UseBM25Scoring: true, ChunkMatches: true})
 
 		// 4096 (content) + 2 (overhead: newlines or doc sections)
-		if got, want := res.Stats.ContentBytesLoaded, int64(4098); got != want {
+		if got, want := res.ContentBytesLoaded, int64(4098); got != want {
 			t.Errorf("got content I/O %d, want %d", got, want)
 		}
 
 		// 1024 entries, each 4 bytes apart. 4 fits into single byte
 		// delta encoded.
-		if got, want := res.Stats.IndexBytesLoaded, int64(1024); got != want {
+		if got, want := res.IndexBytesLoaded, int64(1024); got != want {
 			t.Errorf("got index I/O %d, want %d", got, want)
 		}
 	})
@@ -2988,8 +2988,8 @@ func TestLangShortcut(t *testing.T) {
 		if len(res.Files) != 0 {
 			t.Fatalf("got %v, want 0 results", res.Files)
 		}
-		if res.Stats.IndexBytesLoaded > 0 {
-			t.Errorf("got matchBytesLoaded %d, want 0", res.Stats.IndexBytesLoaded)
+		if res.IndexBytesLoaded > 0 {
+			t.Errorf("got matchBytesLoaded %d, want 0", res.IndexBytesLoaded)
 		}
 	})
 
@@ -2998,8 +2998,8 @@ func TestLangShortcut(t *testing.T) {
 		if len(res.Files) != 0 {
 			t.Fatalf("got %v, want 0 results", res.Files)
 		}
-		if res.Stats.IndexBytesLoaded > 0 {
-			t.Errorf("got matchBytesLoaded %d, want 0", res.Stats.IndexBytesLoaded)
+		if res.IndexBytesLoaded > 0 {
+			t.Errorf("got matchBytesLoaded %d, want 0", res.IndexBytesLoaded)
 		}
 	})
 }
@@ -4033,7 +4033,7 @@ func TestWordSearch(t *testing.T) {
 			t.Fatalf("got %v, want 1 match in 1 file", sres.Files)
 		}
 
-		if sres.Stats.RegexpsConsidered != 0 {
+		if sres.RegexpsConsidered != 0 {
 			t.Fatal("expected regexp to be skipped")
 		}
 
@@ -4067,7 +4067,7 @@ func TestWordSearch(t *testing.T) {
 			t.Fatalf("got %v, want 1 match in 1 file", sres.Files)
 		}
 
-		if sres.Stats.RegexpsConsidered != 0 {
+		if sres.RegexpsConsidered != 0 {
 			t.Fatal("expected regexp to be skipped")
 		}
 

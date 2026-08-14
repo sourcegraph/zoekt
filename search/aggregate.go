@@ -44,7 +44,7 @@ func (c *collectSender) Send(r *zoekt.SearchResult) {
 		}
 	}
 
-	c.aggregate.Stats.Add(r.Stats)
+	c.aggregate.Add(r.Stats)
 
 	if len(r.Files) > 0 {
 		c.aggregate.Files = append(c.aggregate.Files, r.Files...)

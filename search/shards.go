@@ -606,11 +606,11 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 
 	if !loaded.ready {
 		// We may have missed results due to not being fully loaded.
-		aggregate.Stats.Crashes++
+		aggregate.Crashes++
 	}
 
-	aggregate.Stats.Wait = wait
-	aggregate.Stats.Duration = time.Since(start)
+	aggregate.Wait = wait
+	aggregate.Duration = time.Since(start)
 
 	return aggregate, nil
 }
@@ -828,7 +828,7 @@ search:
 
 			// Update the match count statistics and stop searching new shards if we've
 			// reached the limit set in the options.
-			totalMatchCount += r.SearchResult.Stats.MatchCount
+			totalMatchCount += r.MatchCount
 			if opts.TotalMaxMatchCount > 0 && totalMatchCount > opts.TotalMaxMatchCount {
 				stop()
 			}
@@ -916,20 +916,20 @@ func sendByRepository(result *zoekt.SearchResult, opts *zoekt.SearchOptions, sen
 }
 
 func observeMetrics(sr *zoekt.SearchResult) {
-	metricSearchContentBytesLoadedTotal.Add(float64(sr.Stats.ContentBytesLoaded))
-	metricSearchIndexBytesLoadedTotal.Add(float64(sr.Stats.IndexBytesLoaded))
-	metricSearchCrashesTotal.Add(float64(sr.Stats.Crashes))
-	metricSearchFileCountTotal.Add(float64(sr.Stats.FileCount))
-	metricSearchShardFilesConsideredTotal.Add(float64(sr.Stats.ShardFilesConsidered))
-	metricSearchFilesConsideredTotal.Add(float64(sr.Stats.FilesConsidered))
-	metricSearchFilesLoadedTotal.Add(float64(sr.Stats.FilesLoaded))
-	metricSearchFilesSkippedTotal.Add(float64(sr.Stats.FilesSkipped))
-	metricSearchFilesSkippedDueToCancellationTotal.Add(float64(sr.Stats.FilesSkippedDueToCancellation))
-	metricSearchShardsSkippedTotal.Add(float64(sr.Stats.ShardsSkipped))
-	metricSearchMatchCountTotal.Add(float64(sr.Stats.MatchCount))
-	metricSearchNgramMatchesTotal.Add(float64(sr.Stats.NgramMatches))
-	metricSearchNgramLookupsTotal.Add(float64(sr.Stats.NgramLookups))
-	metricSearchRegexpsConsideredTotal.Add(float64(sr.Stats.RegexpsConsidered))
+	metricSearchContentBytesLoadedTotal.Add(float64(sr.ContentBytesLoaded))
+	metricSearchIndexBytesLoadedTotal.Add(float64(sr.IndexBytesLoaded))
+	metricSearchCrashesTotal.Add(float64(sr.Crashes))
+	metricSearchFileCountTotal.Add(float64(sr.FileCount))
+	metricSearchShardFilesConsideredTotal.Add(float64(sr.ShardFilesConsidered))
+	metricSearchFilesConsideredTotal.Add(float64(sr.FilesConsidered))
+	metricSearchFilesLoadedTotal.Add(float64(sr.FilesLoaded))
+	metricSearchFilesSkippedTotal.Add(float64(sr.FilesSkipped))
+	metricSearchFilesSkippedDueToCancellationTotal.Add(float64(sr.FilesSkippedDueToCancellation))
+	metricSearchShardsSkippedTotal.Add(float64(sr.ShardsSkipped))
+	metricSearchMatchCountTotal.Add(float64(sr.MatchCount))
+	metricSearchNgramMatchesTotal.Add(float64(sr.NgramMatches))
+	metricSearchNgramLookupsTotal.Add(float64(sr.NgramLookups))
+	metricSearchRegexpsConsideredTotal.Add(float64(sr.RegexpsConsidered))
 }
 
 func copySlice(src *[]byte) {
@@ -983,7 +983,7 @@ func searchOneShard(ctx context.Context, s zoekt.Searcher, q query.Q, opts *zoek
 			if sr == nil {
 				sr = &zoekt.SearchResult{}
 			}
-			sr.Stats.Crashes = 1
+			sr.Crashes = 1
 		}
 	}()
 

@@ -75,7 +75,7 @@ type adapter struct {
 }
 
 func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
-	sr, err := a.Searcher.Search(ctx, q, opts)
+	sr, err := a.Search(ctx, q, opts)
 	if err != nil {
 		return err
 	}
@@ -711,7 +711,7 @@ type crashSearcher struct {
 
 func (s *crashSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
 	res := zoekt.SearchResult{}
-	res.Stats.Crashes = 1
+	res.Crashes = 1
 	return &res, nil
 }
 

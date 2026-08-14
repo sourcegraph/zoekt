@@ -198,10 +198,10 @@ func TestSearch_ShardMaxMatchCountStats(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got, want := sr.Stats.FilesSkipped, 1; got != want {
+	if got, want := sr.FilesSkipped, 1; got != want {
 		t.Errorf("FilesSkipped: got %d, want %d", got, want)
 	}
-	if got := sr.Stats.FilesSkippedDueToCancellation; got != 0 {
+	if got := sr.FilesSkippedDueToCancellation; got != 0 {
 		t.Errorf("FilesSkippedDueToCancellation: got %d, want 0", got)
 	}
 }
