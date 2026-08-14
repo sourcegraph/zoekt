@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 	"testing/quick"
 
@@ -111,4 +112,44 @@ func genUints32(size int) []uint32 {
 		nums[i] = r.Uint32()
 	}
 	return nums
+}
+
+func TestCompressedPostingIteratorMalformedVarint(t *testing.T) {
+	overflow := []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01}
+
+	for _, tc := range []struct {
+		name string
+		bad  []byte
+		want string
+	}{
+		{name: "truncated", bad: []byte{0x80}, want: "truncated varint"},
+		{name: "overflowing", bad: overflow, want: "overflowing varint"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("first", func(t *testing.T) {
+				assertPanicContains(t, "ngram \"abc\" at byte offset 0: "+tc.want, func() {
+					newCompressedPostingIterator(tc.bad, stringToNGram("abc"))
+				})
+			})
+
+			t.Run("delta", func(t *testing.T) {
+				blob := append([]byte{0x01}, tc.bad...)
+				it := newCompressedPostingIterator(blob, stringToNGram("abc"))
+				assertPanicContains(t, "ngram \"abc\" at byte offset 1: "+tc.want, func() {
+					it.next(100)
+				})
+			})
+		})
+	}
+}
+
+func assertPanicContains(t *testing.T, want string, f func()) {
+	t.Helper()
+	defer func() {
+		got := recover()
+		if got == nil || !strings.Contains(fmt.Sprint(got), want) {
+			t.Fatalf("panic = %v, want panic containing %q", got, want)
+		}
+	}()
+	f()
 }
