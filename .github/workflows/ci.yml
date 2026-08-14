@@ -14,8 +14,7 @@ jobs:
         # zstd for faster actions/cache
         # tar needed for actions/cache (busybox tar is incompatible)
         # git for a native checkout (also needed in tests)
-        # jansson is here until we move to prebuilt ctags binaries (TODO: remove)
-        run: apk add zstd git tar jansson
+        run: apk add zstd git tar
 
       - name: checkout
         uses: actions/checkout@v7
@@ -29,12 +28,14 @@ jobs:
       - name: Cache ctags
         uses: actions/cache@v6
         with:
-          path: /usr/local/bin/universal-ctags
+          path: |
+            /usr/bin/ctags
+            /usr/bin/universal-ctags
           key: ${{ runner.os }}-ctags-${{ hashFiles('install-ctags-alpine.sh') }}
 
       - name: install ctags
         run: |
-          if [ ! -f /usr/local/bin/universal-ctags ]; then
+          if [ ! -f /usr/bin/ctags ]; then
             ./install-ctags-alpine.sh
           fi
 
