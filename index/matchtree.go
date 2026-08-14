@@ -439,7 +439,7 @@ func (t *boostMatchTree) prepare(doc uint32) {
 
 func (t *substrMatchTree) prepare(nextDoc uint32) {
 	t.matchIterator.prepare(nextDoc)
-	t.current = t.matchIterator.candidates()
+	t.current = t.candidates()
 	t.contEvaluated = false
 }
 

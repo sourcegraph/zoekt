@@ -335,7 +335,7 @@ func (s *sourcegraphClient) getIndexOptions(ctx context.Context, fingerprint *co
 	for _, x := range protoItems {
 		var item indexOptionsItem
 		item.FromProto(x)
-		item.IndexOptions.CloneURL = s.getCloneURL(item.Name)
+		item.CloneURL = s.getCloneURL(item.Name)
 
 		items = append(items, item)
 	}

@@ -92,7 +92,7 @@ func TestCrashResilience(t *testing.T) {
 		opts := &zoekt.SearchOptions{}
 		if res, err := ss.Search(context.Background(), q, opts); err != nil {
 			t.Fatalf("Search: %v", err)
-		} else if res.Stats.Crashes != wantCrashes {
+		} else if res.Crashes != wantCrashes {
 			t.Errorf("got stats %#v, want crashes = %d", res.Stats, wantCrashes)
 		}
 
@@ -1406,7 +1406,7 @@ func TestNewDirectorySearcher_empty(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			return res.Stats.Crashes == 0
+			return res.Crashes == 0
 		})
 
 		test(t, ss)

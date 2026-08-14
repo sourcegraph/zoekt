@@ -116,7 +116,7 @@ func (fs fieldsStringer) String() string {
 	for _, f := range fs {
 		f.Marshal(&e)
 	}
-	return e.Builder.String()
+	return e.String()
 }
 
 // encoder is a log.Encoder used by fieldsStringer.
@@ -128,16 +128,16 @@ type encoder struct {
 func (e *encoder) EmitString(key, value string) {
 	if e.prefixNewline {
 		// most times encoder is used is for one field
-		e.Builder.WriteString("\n")
+		e.WriteString("\n")
 	}
 	if !e.prefixNewline {
 		e.prefixNewline = true
 	}
 
-	e.Builder.Grow(len(key) + 1 + len(value))
-	e.Builder.WriteString(key)
-	e.Builder.WriteString(":")
-	e.Builder.WriteString(value)
+	e.Grow(len(key) + 1 + len(value))
+	e.WriteString(key)
+	e.WriteString(":")
+	e.WriteString(value)
 }
 
 func (e *encoder) EmitBool(key string, value bool) {

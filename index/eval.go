@@ -149,7 +149,7 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOpt
 
 	select {
 	case <-ctx.Done():
-		res.Stats.ShardsSkipped++
+		res.ShardsSkipped++
 		return &res, nil
 	default:
 	}
@@ -160,7 +160,7 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOpt
 	}
 
 	if opts.EstimateDocCount {
-		res.Stats.ShardFilesConsidered = len(d.fileBranchMasks)
+		res.ShardFilesConsidered = len(d.fileBranchMasks)
 		return &res, nil
 	}
 
@@ -178,13 +178,13 @@ func (d *indexData) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOpt
 	if err != nil {
 		return nil, err
 	}
-	res.Stats.MatchTreeConstruction = timer.Elapsed()
+	res.MatchTreeConstruction = timer.Elapsed()
 	if mt == nil {
-		res.Stats.ShardsSkippedFilter++
+		res.ShardsSkippedFilter++
 		return &res, nil
 	}
 
-	res.Stats.ShardsScanned++
+	res.ShardsScanned++
 
 	cp := &contentProvider{
 		id:    d,
@@ -240,7 +240,7 @@ nextFileMatch:
 			// Skip documents over ShardRepoMaxMatchCount if specified.
 			if opts.ShardRepoMaxMatchCount > 0 {
 				if repoMatchCount >= opts.ShardRepoMaxMatchCount && repoID == lastRepoID {
-					res.Stats.FilesSkipped++
+					res.FilesSkipped++
 					continue
 				}
 			}
@@ -260,17 +260,17 @@ nextFileMatch:
 			repoMatchCount = 0
 		}
 
-		shardMaxMatchCountReached := opts.ShardMaxMatchCount > 0 && res.Stats.MatchCount >= opts.ShardMaxMatchCount
+		shardMaxMatchCountReached := opts.ShardMaxMatchCount > 0 && res.MatchCount >= opts.ShardMaxMatchCount
 		if canceled || shardMaxMatchCountReached {
 			filesSkipped := int(docCount - nextDoc)
-			res.Stats.FilesSkipped += filesSkipped
+			res.FilesSkipped += filesSkipped
 			if canceled && !shardMaxMatchCountReached {
-				res.Stats.FilesSkippedDueToCancellation += filesSkipped
+				res.FilesSkippedDueToCancellation += filesSkipped
 			}
 			break
 		}
 
-		res.Stats.FilesConsidered++
+		res.FilesConsidered++
 		mt.prepare(nextDoc)
 
 		cp.setDocument(nextDoc)
@@ -355,9 +355,9 @@ nextFileMatch:
 
 		res.Files = append(res.Files, fileMatch)
 
-		res.Stats.MatchCount += len(fileMatch.LineMatches)
-		res.Stats.MatchCount += matchedChunkRanges
-		res.Stats.FileCount++
+		res.MatchCount += len(fileMatch.LineMatches)
+		res.MatchCount += matchedChunkRanges
+		res.FileCount++
 	}
 
 	for _, md := range d.repoMetaData {
@@ -371,7 +371,7 @@ nextFileMatch:
 	// Update stats based on work done during document search.
 	updateMatchTreeStats(mt, &res.Stats)
 
-	res.Stats.MatchTreeSearch = timer.Elapsed()
+	res.MatchTreeSearch = timer.Elapsed()
 
 	return &res, nil
 }
