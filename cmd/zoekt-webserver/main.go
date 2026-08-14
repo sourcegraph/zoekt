@@ -233,7 +233,7 @@ func main() {
 
 	if *hostCustomization != "" {
 		s.HostCustomQueries = map[string]string{}
-		for _, h := range strings.SplitN(*hostCustomization, ",", -1) {
+		for _, h := range strings.Split(*hostCustomization, ",") {
 			if len(h) == 0 {
 				continue
 			}

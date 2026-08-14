@@ -1090,7 +1090,7 @@ func testFileRankAspect(t *testing.T, c filerankCase) {
 	print := func(ds []*Document) string {
 		var r strings.Builder
 		for _, d := range ds {
-			r.WriteString(fmt.Sprintf("%v, ", d))
+			fmt.Fprintf(&r, "%v, ", d)
 		}
 		return r.String()
 	}

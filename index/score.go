@@ -394,7 +394,7 @@ func (d *indexData) scoreFileBM25(fileMatch *zoekt.FileMatch, doc uint32, cands 
 		// To make the debug output easier to read, we split the score into the query dependent score and the tiebreaker
 		fileMatch.Debug = fmt.Sprintf("bm25-score: %.2f (low-priority: %t) <- sum-termFrequencies: %d, length-ratio: %.2f", score, lowPriority, sumTF, L)
 		if boosted {
-			fileMatch.Debug += fmt.Sprintf(" (boosted)")
+			fileMatch.Debug += " (boosted)"
 		}
 	}
 }

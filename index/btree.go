@@ -272,12 +272,12 @@ func (bt *btree) String() string {
 		case *leaf:
 			return
 		case *innerNode:
-			s += fmt.Sprintf("[")
+			s += "["
 			for _, key := range nd.keys {
 				s += fmt.Sprintf("%d,", key)
 			}
 			s = s[:len(s)-1] // remove trailing comma
-			s += fmt.Sprintf("]")
+			s += "]"
 
 		}
 	})
