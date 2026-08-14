@@ -24,10 +24,12 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"testing/quick"
 	"time"
@@ -1411,6 +1413,55 @@ func TestNewDirectorySearcher_empty(t *testing.T) {
 
 		test(t, ss)
 	})
+}
+
+func TestDirectorySearcherOptionsIndexFileOpener(t *testing.T) {
+	dir := t.TempDir()
+	writeShard := func(name string, repositoryID uint32) {
+		t.Helper()
+		builder := testShardBuilder(t, &zoekt.Repository{
+			ID:   repositoryID,
+			Name: name,
+		}, index.Document{
+			Name:    "file.txt",
+			Content: []byte("content"),
+		})
+		var contents bytes.Buffer
+		if err := builder.Write(&contents); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(dir, name+".zoekt"),
+			contents.Bytes(),
+			0o600,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeShard("initial", 1)
+	var opens atomic.Int32
+	searcher, err := NewDirectorySearcherWithOptions(dir, DirectorySearcherOptions{
+		IndexFileOpener: func(file *os.File) (index.IndexFile, error) {
+			opens.Add(1)
+			return index.NewIndexFile(file)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(searcher.Close)
+	if got := opens.Load(); got != 1 {
+		t.Fatalf("initial shard opens = %d, want 1", got)
+	}
+
+	writeShard("added", 2)
+	deadline := testDeadline(t, 10*time.Second)
+	if !waitForPredicate(deadline, 10*time.Millisecond, func() bool {
+		return opens.Load() == 2
+	}) {
+		t.Fatalf("shard opens after watcher reload = %d, want 2", opens.Load())
+	}
 }
 
 // testDeadline returns the deadline for t, but ensures it is no longer than

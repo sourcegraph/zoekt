@@ -229,10 +229,36 @@ func newShardedSearcher(n int64) *shardedSearcher {
 	return ss
 }
 
+// IndexFileOpener constructs an index file and takes ownership of f. A
+// directory searcher may call the opener concurrently for different shards.
+type IndexFileOpener func(f *os.File) (index.IndexFile, error)
+
+// DirectorySearcherOptions configures how a directory searcher loads shards.
+type DirectorySearcherOptions struct {
+	// IndexFileOpener defaults to index.NewIndexFile.
+	IndexFileOpener IndexFileOpener
+}
+
+func (o DirectorySearcherOptions) indexFileOpener() IndexFileOpener {
+	if o.IndexFileOpener != nil {
+		return o.IndexFileOpener
+	}
+	return index.NewIndexFile
+}
+
 // NewDirectorySearcher returns a searcher instance that loads all
 // shards corresponding to a glob into memory.
 func NewDirectorySearcher(dir string) (zoekt.Streamer, error) {
-	return newDirectorySearcher(dir, true)
+	return NewDirectorySearcherWithOptions(dir, DirectorySearcherOptions{})
+}
+
+// NewDirectorySearcherWithOptions is like NewDirectorySearcher, with control
+// over how shard files are opened.
+func NewDirectorySearcherWithOptions(
+	dir string,
+	opts DirectorySearcherOptions,
+) (zoekt.Streamer, error) {
+	return newDirectorySearcher(dir, true, opts)
 }
 
 // ReadySearcher is a Streamer that reports whether its initial load is
@@ -249,13 +275,27 @@ type ReadySearcher interface {
 // partial availability since that is better than no availability on large
 // instances.
 func NewDirectorySearcherFast(dir string) (ReadySearcher, error) {
-	return newDirectorySearcher(dir, false)
+	return NewDirectorySearcherFastWithOptions(dir, DirectorySearcherOptions{})
 }
 
-func newDirectorySearcher(dir string, waitUntilReady bool) (ReadySearcher, error) {
+// NewDirectorySearcherFastWithOptions is like NewDirectorySearcherFast, with
+// control over how shard files are opened.
+func NewDirectorySearcherFastWithOptions(
+	dir string,
+	opts DirectorySearcherOptions,
+) (ReadySearcher, error) {
+	return newDirectorySearcher(dir, false, opts)
+}
+
+func newDirectorySearcher(
+	dir string,
+	waitUntilReady bool,
+	opts DirectorySearcherOptions,
+) (ReadySearcher, error) {
 	ss := newShardedSearcher(int64(runtime.GOMAXPROCS(0)))
 	tl := &loader{
-		ss: ss,
+		ss:              ss,
+		indexFileOpener: opts.indexFileOpener(),
 	}
 	dw, err := newDirectoryWatcher(dir, tl)
 	if err != nil {
@@ -302,7 +342,8 @@ func (s *directorySearcher) Close() {
 }
 
 type loader struct {
-	ss *shardedSearcher
+	ss              *shardedSearcher
+	indexFileOpener IndexFileOpener
 }
 
 func (tl *loader) load(keys ...string) {
@@ -350,7 +391,7 @@ func (tl *loader) load(keys ...string) {
 			defer sem.Release(1)
 			defer wg.Done()
 
-			shard, err := loadShard(key)
+			shard, err := loadShard(key, tl.indexFileOpener)
 			if err != nil {
 				metricShardsLoadFailedTotal.Inc()
 				log.Printf("[ERROR] reloading: %s, err %v ", key, err)
@@ -1529,13 +1570,13 @@ func (s *shardedSearcher) replace(shards map[string]zoekt.Searcher) {
 	metricShardsLoaded.Set(float64(len(ranked)))
 }
 
-func loadShard(fn string) (zoekt.Searcher, error) {
+func loadShard(fn string, openIndexFile IndexFileOpener) (zoekt.Searcher, error) {
 	f, err := os.Open(fn)
 	if err != nil {
 		return nil, err
 	}
 
-	iFile, err := index.NewIndexFile(f)
+	iFile, err := openIndexFile(f)
 	if err != nil {
 		return nil, err
 	}
