@@ -393,6 +393,301 @@ func (ss *shardedSearcher) Close() {
 	ss.replace(shards)
 }
 
+const (
+	// Wait until direct misses have paid for building a membership filter.
+	branchesReposMinimumMissProbes uint64 = 16 << 10
+
+	// An adaptive selector near the end of shard selection cannot repay its
+	// setup cost.
+	branchesReposMinimumRemainingShards = 16
+
+	// The fixed 16 KiB filter avoids allocating a union for each query. Two
+	// hashes keep false positives low for the miss-heavy searches that reach the
+	// adaptive path.
+	branchesReposBloomWords = 2048
+	branchesReposBloomBits  = branchesReposBloomWords * 64
+	branchesReposBloomMask  = branchesReposBloomBits - 1
+
+	// Keep at least four filter bits per requested ID, so most direct misses
+	// can be rejected before scanning the branch bitmaps.
+	branchesReposBloomMaxCardinality = branchesReposBloomBits / 4
+)
+
+type branchesReposBloom struct {
+	bits [branchesReposBloomWords]uint64
+}
+
+type branchesReposSelector struct {
+	branches    []query.BranchRepos
+	cardinality uint64
+	preferred   int
+
+	missProbes uint64
+
+	// settled is set once filtering has been enabled or ruled out for the
+	// remaining shards.
+	settled bool
+}
+
+func newBranchesReposSelector(branches []query.BranchRepos, cardinality uint64) *branchesReposSelector {
+	return &branchesReposSelector{branches: branches, cardinality: cardinality, preferred: -1}
+}
+
+func branchesReposBloomHash(id uint32) uint32 {
+	id ^= id >> 16
+	id *= 0x7feb352d
+	id ^= id >> 15
+	id *= 0x846ca68b
+	return id ^ id>>16
+}
+
+func (b *branchesReposBloom) add(id uint32) {
+	first := branchesReposBloomHash(id)
+	second := branchesReposBloomHash(id ^ 0x9e3779b9)
+	b.bits[(first&branchesReposBloomMask)>>6] |= uint64(1) << (first & 63)
+	b.bits[(second&branchesReposBloomMask)>>6] |= uint64(1) << (second & 63)
+}
+
+func (b *branchesReposBloom) mayContain(id uint32) bool {
+	first := branchesReposBloomHash(id)
+	second := branchesReposBloomHash(id ^ 0x9e3779b9)
+	return b.bits[(first&branchesReposBloomMask)>>6]&(uint64(1)<<(first&63)) != 0 &&
+		b.bits[(second&branchesReposBloomMask)>>6]&(uint64(1)<<(second&63)) != 0
+}
+
+func (b *branchesReposBloom) build(branches []query.BranchRepos) {
+	for _, branch := range branches {
+		branch.Repos.Iterate(func(id uint32) bool {
+			b.add(id)
+			return true
+		})
+	}
+}
+
+func (s *branchesReposSelector) containsDirect(id uint32) bool {
+	if s.preferred >= 0 {
+		if s.branches[s.preferred].Repos.Contains(id) {
+			return true
+		}
+		for i, branch := range s.branches {
+			if i == s.preferred {
+				continue
+			}
+			if branch.Repos.Contains(id) {
+				s.preferred = i
+				return true
+			}
+		}
+	} else {
+		for i, branch := range s.branches {
+			if branch.Repos.Contains(id) {
+				// The first branch is already the direct fast path. Remember only a
+				// later match so first-branch-heavy queries retain that path.
+				if i != 0 {
+					s.preferred = i
+				}
+				return true
+			}
+		}
+	}
+
+	// A direct miss checks every branch exactly once, regardless of the
+	// preferred branch's position.
+	s.missProbes += uint64(len(s.branches))
+	return false
+}
+
+func (s *branchesReposSelector) matchesDirect(repos []*zoekt.Repository) (any, all bool) {
+	all = true
+	for _, repo := range repos {
+		matched := s.containsDirect(repo.ID)
+		any = any || matched
+		all = all && matched
+	}
+	return any, all
+}
+
+func (s *branchesReposSelector) matchesBloom(repos []*zoekt.Repository, bloom *branchesReposBloom) (any, all bool) {
+	all = true
+	for _, repo := range repos {
+		matched := bloom.mayContain(repo.ID) && s.containsDirect(repo.ID)
+		any = any || matched
+		all = all && matched
+	}
+	return any, all
+}
+
+func (s *branchesReposSelector) maybeBuildBloom(remaining []*rankedShard, bloom *branchesReposBloom) bool {
+	if s.settled || s.missProbes < branchesReposMinimumMissProbes {
+		return false
+	}
+	if len(remaining) < branchesReposMinimumRemainingShards {
+		s.settled = true
+		return false
+	}
+
+	// An unlisted shard skips membership checks during selection. Keep the
+	// uncertain remainder on the direct path rather than building a filter.
+	remainingRepoShards := 0
+	for _, shard := range remaining {
+		if shard.repos == nil {
+			s.settled = true
+			return false
+		}
+		if len(shard.repos) > 0 {
+			remainingRepoShards++
+		}
+	}
+	if remainingRepoShards < branchesReposMinimumRemainingShards {
+		s.settled = true
+		return false
+	}
+
+	// Building the filter visits each requested repository ID once. Count one
+	// repository per remaining shard, deliberately underestimating compound
+	// shards so uncertain scans stay on the direct path.
+	futureProbes := uint64(remainingRepoShards) * uint64(len(s.branches))
+	if futureProbes <= s.cardinality {
+		s.settled = true
+		return false
+	}
+
+	bloom.build(s.branches)
+	s.settled = true
+	return true
+}
+
+// branchesReposCanBuildBloom reports whether the fixed filter retains at least
+// four bits per requested repository ID.
+func branchesReposCanBuildBloom(cardinality uint64) bool {
+	return cardinality <= branchesReposBloomMaxCardinality
+}
+
+// branchesReposMayReachSelector avoids selector metadata work when the known
+// prefix cannot reach the miss-work threshold while enough shards remain to use
+// a selector.
+func branchesReposMayReachSelector(shards []*rankedShard, branches int) bool {
+	if branches == 0 || len(shards) <= branchesReposMinimumRemainingShards {
+		return false
+	}
+
+	var probes uint64
+	for _, shard := range shards[:len(shards)-branchesReposMinimumRemainingShards] {
+		if shard.repos == nil {
+			continue
+		}
+		probes += uint64(len(shard.repos)) * uint64(branches)
+		if probes >= branchesReposMinimumMissProbes {
+			return true
+		}
+	}
+	return false
+}
+
+// branchesReposMaySelect avoids selector setup when the known prefix cannot
+// reach the miss-work threshold while enough shards remain to use it.
+func branchesReposMaySelect(shards []*rankedShard, branches int, cardinality uint64) bool {
+	if branches == 0 || len(shards) <= branchesReposMinimumRemainingShards {
+		return false
+	}
+
+	var probes uint64
+	for shardIndex, shard := range shards[:len(shards)-branchesReposMinimumRemainingShards] {
+		// An unlisted shard remains selected during filtering, but it has no
+		// known repositories to contribute direct membership probes here.
+		if shard.repos == nil {
+			continue
+		}
+		probes += uint64(len(shard.repos)) * uint64(branches)
+		if probes >= branchesReposMinimumMissProbes {
+			// The adaptive path only counts one repository per remaining shard,
+			// so use the same conservative bound before allocating its selector.
+			remainingProbes := uint64(len(shards)-shardIndex-1) * uint64(branches)
+			return remainingProbes > cardinality
+		}
+	}
+	return false
+}
+
+// selectBranchesReposWithBloom keeps the fixed filter in a cold helper frame:
+// ordinary repository selection does not need to grow its stack for it.
+func selectBranchesReposWithBloom(shards []*rankedShard, branches []query.BranchRepos, cardinality uint64, setSize int) ([]*rankedShard, bool) {
+	selector := newBranchesReposSelector(branches, cardinality)
+	var bloom branchesReposBloom
+	bloomReady := false
+	filtered := make([]*rankedShard, 0, setSize)
+	filteredAll := true
+	var lastMissProbes uint64
+	for shardIndex, shard := range shards {
+		if shard.repos == nil {
+			// repos is nil if we failed to List the shard. This shouldn't happen,
+			// but if it does we don't know what is in it and must search it without
+			// simplifying the query.
+			filtered = append(filtered, shard)
+			filteredAll = false
+			continue
+		}
+
+		var any, all bool
+		if bloomReady {
+			any, all = selector.matchesBloom(shard.repos, &bloom)
+		} else {
+			any, all = selector.matchesDirect(shard.repos)
+		}
+		if !bloomReady && !selector.settled && selector.missProbes != lastMissProbes {
+			bloomReady = selector.maybeBuildBloom(shards[shardIndex+1:], &bloom)
+			lastMissProbes = selector.missProbes
+		}
+		if any {
+			filtered = append(filtered, shard)
+			filteredAll = filteredAll && all
+		}
+	}
+	return filtered, filteredAll
+}
+
+// branchesReposFirstMatchIsLater reports whether the first known repository
+// matches a branch after the direct first-branch fast path.
+func branchesReposFirstMatchIsLater(shards []*rankedShard, branches []query.BranchRepos) bool {
+	for _, shard := range shards {
+		if shard.repos == nil || len(shard.repos) == 0 {
+			continue
+		}
+		for branch, candidate := range branches {
+			if candidate.Repos.Contains(shard.repos[0].ID) {
+				return branch != 0
+			}
+		}
+		return false
+	}
+	return false
+}
+
+// selectBranchesReposWithPreferred avoids saturating the fixed filter while
+// retaining the last matching branch as a cheap direct path.
+func selectBranchesReposWithPreferred(shards []*rankedShard, branches []query.BranchRepos, cardinality uint64, setSize int) ([]*rankedShard, bool) {
+	selector := newBranchesReposSelector(branches, cardinality)
+	filtered := make([]*rankedShard, 0, setSize)
+	filteredAll := true
+	for _, shard := range shards {
+		if shard.repos == nil {
+			// repos is nil if we failed to List the shard. This shouldn't happen,
+			// but if it does we don't know what is in it and must search it without
+			// simplifying the query.
+			filtered = append(filtered, shard)
+			filteredAll = false
+			continue
+		}
+
+		any, all := selector.matchesDirect(shard.repos)
+		if any {
+			filtered = append(filtered, shard)
+			filteredAll = filteredAll && all
+		}
+	}
+	return filtered, filteredAll
+}
+
 func selectRepoSet(shards []*rankedShard, q query.Q) ([]*rankedShard, query.Q) {
 	and, ok := q.(*query.And)
 	if ok {
@@ -435,6 +730,9 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 	for i, c := range and.Children {
 		var setSize int
 		var hasRepos func([]*zoekt.Repository) (bool, bool)
+		var branchesForSelector []query.BranchRepos
+		var branchesCardinality uint64
+		var buildBloom bool
 		switch setQuery := c.(type) {
 		case *query.RepoSet:
 			setSize = len(setQuery.Set)
@@ -452,18 +750,115 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 				return setQuery.Regexp.MatchString(repo.Name)
 			})
 		case *query.BranchesRepos:
-			for _, br := range setQuery.List {
-				setSize += int(br.Repos.GetCardinality())
+			if !branchesReposMayReachSelector(shards, len(setQuery.List)) {
+				onlyBranch := -1
+				for branch, br := range setQuery.List {
+					branchCardinality := br.Repos.GetCardinality()
+					setSize += int(branchCardinality)
+					if branchCardinality == 0 {
+						continue
+					}
+					if onlyBranch < 0 {
+						onlyBranch = branch
+						continue
+					}
+					onlyBranch = -2
+					for _, remaining := range setQuery.List[branch+1:] {
+						setSize += int(remaining.Repos.GetCardinality())
+					}
+					break
+				}
+				if onlyBranch >= 0 {
+					repos := setQuery.List[onlyBranch].Repos
+					hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+						return repos.Contains(repo.ID)
+					})
+				} else {
+					hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+						for _, br := range setQuery.List {
+							if br.Repos.Contains(repo.ID) {
+								return true
+							}
+						}
+						return false
+					})
+				}
+				break
 			}
 
-			hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+			// For a saturated first branch, keep the direct path unless the
+			// first known repository establishes a later useful preference.
+			if setQuery.List[0].Repos.GetCardinality() > branchesReposBloomMaxCardinality &&
+				!branchesReposFirstMatchIsLater(shards, setQuery.List) {
 				for _, br := range setQuery.List {
-					if br.Repos.Contains(repo.ID) {
-						return true
-					}
+					setSize += int(br.Repos.GetCardinality())
 				}
-				return false
-			})
+				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+					for _, br := range setQuery.List {
+						if br.Repos.Contains(repo.ID) {
+							return true
+						}
+					}
+					return false
+				})
+				break
+			}
+
+			var cardinality uint64
+			nonEmptyBranches := 0
+			onlyBranch := -1
+			for branch, br := range setQuery.List {
+				branchCardinality := br.Repos.GetCardinality()
+				setSize += int(branchCardinality)
+				cardinality += branchCardinality
+				if branchCardinality != 0 {
+					nonEmptyBranches++
+					onlyBranch = branch
+				}
+			}
+
+			if nonEmptyBranches == 1 {
+				repos := setQuery.List[onlyBranch].Repos
+				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+					return repos.Contains(repo.ID)
+				})
+				break
+			}
+
+			if !branchesReposCanBuildBloom(cardinality) {
+				if branchesReposFirstMatchIsLater(shards, setQuery.List) {
+					branchesForSelector = setQuery.List
+					branchesCardinality = cardinality
+				} else {
+					hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+						for _, br := range setQuery.List {
+							if br.Repos.Contains(repo.ID) {
+								return true
+							}
+						}
+						return false
+					})
+				}
+				break
+			}
+
+			maySelect := nonEmptyBranches > 1 &&
+				uint64(len(shards))*uint64(len(setQuery.List)) > cardinality &&
+				branchesReposMaySelect(shards, len(setQuery.List), cardinality)
+			if maySelect {
+				branchesForSelector = setQuery.List
+				branchesCardinality = cardinality
+				buildBloom = true
+			} else {
+				hasRepos = hasReposForPredicate(func(repo *zoekt.Repository) bool {
+					for _, br := range setQuery.List {
+						if br.Repos.Contains(repo.ID) {
+							return true
+						}
+					}
+					return false
+				})
+			}
 		case *query.Meta:
 			// Meta queries filter repositories based on metadata fields.
 			// By checking this at the shard level, we can skip entire shards
@@ -490,19 +885,28 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 			setSize = len(shards)
 		}
 
-		filtered := make([]*rankedShard, 0, setSize)
-		filteredAll := true
-
-		for _, s := range shards {
-			if s.repos == nil {
-				// repos is nil if we failed to List the shard. This shouldn't
-				// happen, but if it does we don't know what is in it and must search
-				// it without simplifying the query.
-				filtered = append(filtered, s)
-				filteredAll = false
-			} else if any, all := hasRepos(s.repos); any {
-				filtered = append(filtered, s)
-				filteredAll = filteredAll && all
+		var filtered []*rankedShard
+		var filteredAll bool
+		if branchesForSelector != nil {
+			if buildBloom {
+				filtered, filteredAll = selectBranchesReposWithBloom(shards, branchesForSelector, branchesCardinality, setSize)
+			} else {
+				filtered, filteredAll = selectBranchesReposWithPreferred(shards, branchesForSelector, branchesCardinality, setSize)
+			}
+		} else {
+			filtered = make([]*rankedShard, 0, setSize)
+			filteredAll = true
+			for _, s := range shards {
+				if s.repos == nil {
+					// repos is nil if we failed to List the shard. This shouldn't
+					// happen, but if it does we don't know what is in it and must search
+					// it without simplifying the query.
+					filtered = append(filtered, s)
+					filteredAll = false
+				} else if any, all := hasRepos(s.repos); any {
+					filtered = append(filtered, s)
+					filteredAll = filteredAll && all
+				}
 			}
 		}
 
