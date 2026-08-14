@@ -46,7 +46,7 @@ func normalizedGet(u *url.URL) ([]byte, error) {
 		return nil, err
 	}
 
-	c = bytes.Replace(c, []byte{'\n'}, []byte{' '}, -1)
+	c = bytes.ReplaceAll(c, []byte{'\n'}, []byte{' '})
 	return c, nil
 }
 

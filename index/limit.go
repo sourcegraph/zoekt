@@ -2,6 +2,7 @@ package index
 
 import (
 	"log"
+	"slices"
 
 	"github.com/sourcegraph/zoekt"
 )
@@ -97,8 +98,8 @@ func limitChunkMatches(file *zoekt.FileMatch, limit int) int {
 			// a trailing newline.
 			n := cm.Ranges[len(cm.Ranges)-1].End.LineNumber - cm.Ranges[limit-1].End.LineNumber
 			if n > 0 {
-				for b := len(cm.Content) - 1; b >= 0; b-- {
-					if cm.Content[b] == '\n' {
+				for b, v := range slices.Backward(cm.Content) {
+					if v == '\n' {
 						n -= 1
 					}
 					if n == 0 {

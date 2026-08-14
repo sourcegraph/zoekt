@@ -29,6 +29,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -530,8 +531,8 @@ func (o *Options) FindAllShards() []string {
 // IgnoreSizeMax determines whether the max size should be ignored.
 func (o *Options) IgnoreSizeMax(name string) bool {
 	// A pattern match will override preceding pattern matches.
-	for i := len(o.LargeFiles) - 1; i >= 0; i-- {
-		pattern := strings.TrimSpace(o.LargeFiles[i])
+	for _, v := range slices.Backward(o.LargeFiles) {
+		pattern := strings.TrimSpace(v)
 		negated, validatedPattern := checkIsNegatePattern(pattern)
 
 		if m, _ := doublestar.PathMatch(validatedPattern, name); m {

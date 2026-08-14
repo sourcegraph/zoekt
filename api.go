@@ -482,25 +482,25 @@ func (s *Stats) Zero() bool {
 		return true
 	}
 
-	return !(s.ContentBytesLoaded > 0 ||
-		s.IndexBytesLoaded > 0 ||
-		s.Crashes > 0 ||
-		s.FileCount > 0 ||
-		s.FilesConsidered > 0 ||
-		s.FilesLoaded > 0 ||
-		s.FilesSkipped > 0 ||
-		s.FilesSkippedDueToCancellation > 0 ||
-		s.MatchCount > 0 ||
-		s.NgramMatches > 0 ||
-		s.NgramLookups > 0 ||
-		s.ShardFilesConsidered > 0 ||
-		s.ShardsScanned > 0 ||
-		s.ShardsSkipped > 0 ||
-		s.ShardsSkippedFilter > 0 ||
-		s.Wait > 0 ||
-		s.MatchTreeConstruction > 0 ||
-		s.MatchTreeSearch > 0 ||
-		s.RegexpsConsidered > 0)
+	return s.ContentBytesLoaded <= 0 &&
+		s.IndexBytesLoaded <= 0 &&
+		s.Crashes <= 0 &&
+		s.FileCount <= 0 &&
+		s.FilesConsidered <= 0 &&
+		s.FilesLoaded <= 0 &&
+		s.FilesSkipped <= 0 &&
+		s.FilesSkippedDueToCancellation <= 0 &&
+		s.MatchCount <= 0 &&
+		s.NgramMatches <= 0 &&
+		s.NgramLookups <= 0 &&
+		s.ShardFilesConsidered <= 0 &&
+		s.ShardsScanned <= 0 &&
+		s.ShardsSkipped <= 0 &&
+		s.ShardsSkippedFilter <= 0 &&
+		s.Wait <= 0 &&
+		s.MatchTreeConstruction <= 0 &&
+		s.MatchTreeSearch <= 0 &&
+		s.RegexpsConsidered <= 0
 }
 
 // Progress contains information about the global progress of the running search query.
@@ -930,7 +930,7 @@ type RepoListField int
 
 const (
 	RepoListFieldRepos    RepoListField = 0
-	RepoListFieldReposMap               = 2
+	RepoListFieldReposMap RepoListField = 2
 )
 
 type ListOptions struct {

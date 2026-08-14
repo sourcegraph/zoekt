@@ -4093,7 +4093,7 @@ func BenchmarkScoreChunkMatches(b *testing.B) {
 	ctx := context.Background()
 	var builder strings.Builder
 	for i := range 1000 {
-		builder.WriteString(fmt.Sprintf("line-%d one one one two two two three three three four four four five five\n", i))
+		fmt.Fprintf(&builder, "line-%d one one one two two two three three three four four four five five\n", i)
 	}
 
 	searcher := searcherForTest(b, testShardBuilder(b, nil,

@@ -305,7 +305,7 @@ func TestDefaultGRPCServiceConfigurationSyntax(t *testing.T) {
 	if !result.Valid() {
 		var errs strings.Builder
 		for _, err := range result.Errors() {
-			errs.WriteString(fmt.Sprintf("- %s\n", err))
+			fmt.Fprintf(&errs, "- %s\n", err)
 		}
 
 		t.Fatalf("default service config is invalid:\n%s", errs.String())

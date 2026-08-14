@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -133,8 +134,8 @@ func removeShard(path string) error {
 	var errs []error
 	// Remove the optional metadata sidecar first. If deletion then fails, the
 	// shard remains self-consistent and can be retried on the next sync.
-	for i := len(paths) - 1; i >= 0; i-- {
-		path := paths[i]
+	for _, path := range slices.Backward(paths) {
+
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			errs = append(errs, err)
 		}

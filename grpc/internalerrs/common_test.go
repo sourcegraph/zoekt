@@ -3,7 +3,6 @@ package internalerrs
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -479,8 +478,8 @@ func TestMassageIntoStatusErr(t *testing.T) {
 				t.Errorf("Expected ok to be %v, but got %v", tc.expectedOk, ok)
 			}
 
-			expectedStatusString := fmt.Sprintf("%s", tc.expected)
-			actualStatusString := fmt.Sprintf("%s", result)
+			expectedStatusString := tc.expected.String()
+			actualStatusString := result.String()
 
 			if diff := cmp.Diff(expectedStatusString, actualStatusString); diff != "" {
 				t.Fatalf("Unexpected status string (-want +got):\n%s", diff)

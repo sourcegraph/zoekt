@@ -75,7 +75,7 @@ func TestLimitMatches(t *testing.T) {
 
 				// 1 line of context.
 				cm.Content = append(cm.Content, []byte("context\n")...)
-				for i := 0; i < numRanges; i += 1 {
+				for i := range numRanges {
 					cm.Ranges = append(cm.Ranges, zoekt.Range{
 						// We only provide LineNumber as that's all that's
 						// relevant.
