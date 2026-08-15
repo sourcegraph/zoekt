@@ -1,14 +1,20 @@
 package defaults
 
 import (
+	"context"
+	"fmt"
+	"runtime"
 	"sync"
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/prometheus/client_golang/prometheus"
 	sglog "github.com/sourcegraph/log"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	"github.com/sourcegraph/zoekt/grpc/internalerrs"
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
@@ -19,6 +25,8 @@ import (
 func NewServer(logger sglog.Logger, additionalOpts ...grpc.ServerOption) *grpc.Server {
 	metrics := serverMetricsOnce()
 
+	recoveryOpt := recovery.WithRecoveryHandlerContext(panicRecoveryHandler(logger))
+
 	opts := []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainStreamInterceptor(
@@ -27,6 +35,7 @@ func NewServer(logger sglog.Logger, additionalOpts ...grpc.ServerOption) *grpc.S
 			metrics.StreamServerInterceptor(),
 			messagesize.StreamServerInterceptor,
 			internalerrs.LoggingStreamServerInterceptor(logger),
+			recovery.StreamServerInterceptor(recoveryOpt),
 		),
 		grpc.ChainUnaryInterceptor(
 			propagator.UnaryServerPropagator(tenant.Propagator{}),
@@ -34,6 +43,7 @@ func NewServer(logger sglog.Logger, additionalOpts ...grpc.ServerOption) *grpc.S
 			metrics.UnaryServerInterceptor(),
 			messagesize.UnaryServerInterceptor,
 			internalerrs.LoggingUnaryServerInterceptor(logger),
+			recovery.UnaryServerInterceptor(recoveryOpt),
 		),
 	}
 
@@ -49,6 +59,35 @@ func NewServer(logger sglog.Logger, additionalOpts ...grpc.ServerOption) *grpc.S
 	s := grpc.NewServer(opts...)
 	reflection.Register(s)
 	return s
+}
+
+// panicRecoveryHandler logs a recovered handler panic along with its stack and
+// converts it into an Internal error.
+//
+// Nothing about the panic reaches the caller. Panic values here routinely carry
+// shard paths, repository names and indexed file names, for example the corrupt
+// shard reports in index/contentprovider.go, and the caller may have no access
+// to any of it. The detail belongs in our logs.
+func panicRecoveryHandler(logger sglog.Logger) recovery.RecoveryHandlerFuncContext {
+	return func(ctx context.Context, p any) error {
+		stack := make([]byte, 64<<10)
+		stack = stack[:runtime.Stack(stack, false)]
+
+		// Without the method the log line is a stack blob with no indication of
+		// which call produced it.
+		method, ok := grpc.Method(ctx)
+		if !ok {
+			method = "unknown"
+		}
+
+		logger.Error("recovered from panic in gRPC handler",
+			sglog.String("method", method),
+			sglog.String("panic", fmt.Sprint(p)),
+			sglog.String("stacktrace", string(stack)),
+		)
+
+		return status.Error(codes.Internal, "internal error")
+	}
 }
 
 // serviceMetricsOnce returns a singleton instance of the server metrics

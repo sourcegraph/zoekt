@@ -7,6 +7,8 @@ import (
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
+
+	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 )
 
 func TestQueryRoundtrip(t *testing.T) {
@@ -109,6 +111,48 @@ func TestRegexpProtoUsesRegexpString(t *testing.T) {
 
 	if got, want := protoQ.GetRegexp(), q.RegexpString(); got != want {
 		t.Fatalf("ToProto().Regexp = %q, want %q", got, want)
+	}
+}
+
+// A query node arrives straight off the wire, so an absent node or an unset
+// oneof has to come back as an error. Both used to panic, which took down the
+// whole server since there is no recovery interceptor upstream of the handler.
+func TestQFromProtoRejectsMissingNodes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		q    *webserverv1.Q
+	}{
+		{
+			name: "nil node, as returned by GetQuery on a request with no query",
+			q:    (&webserverv1.SearchRequest{}).GetQuery(),
+		},
+		{
+			name: "node present but oneof unset",
+			q:    &webserverv1.Q{},
+		},
+		{
+			name: "child node with oneof unset",
+			q: &webserverv1.Q{Query: &webserverv1.Q_And{And: &webserverv1.And{
+				Children: []*webserverv1.Q{{}},
+			}}},
+		},
+		{
+			name: "nil child node",
+			q: &webserverv1.Q{Query: &webserverv1.Q_Or{Or: &webserverv1.Or{
+				Children: []*webserverv1.Q{nil},
+			}}},
+		},
+		{
+			name: "wrapper with no child",
+			q:    &webserverv1.Q{Query: &webserverv1.Q_Not{Not: &webserverv1.Not{}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := QFromProto(tc.q)
+			if err == nil {
+				t.Fatalf("QFromProto returned %v, want an error", q)
+			}
+		})
 	}
 }
 
