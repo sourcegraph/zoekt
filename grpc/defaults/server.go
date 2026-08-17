@@ -61,20 +61,15 @@ func NewServer(logger sglog.Logger, additionalOpts ...grpc.ServerOption) *grpc.S
 	return s
 }
 
-// panicRecoveryHandler logs a recovered handler panic along with its stack and
-// converts it into an Internal error.
-//
-// Nothing about the panic reaches the caller. Panic values here routinely carry
-// shard paths, repository names and indexed file names, for example the corrupt
-// shard reports in index/contentprovider.go, and the caller may have no access
-// to any of it. The detail belongs in our logs.
+// panicRecoveryHandler converts a recovered handler panic into an Internal
+// error. Shard searches already recover their own panics in searchOneShard, so
+// this only sees bugs in the layer between gRPC and the shard searchers. The
+// panic value is logged rather than returned, since it is internal detail.
 func panicRecoveryHandler(logger sglog.Logger) recovery.RecoveryHandlerFuncContext {
 	return func(ctx context.Context, p any) error {
 		stack := make([]byte, 64<<10)
 		stack = stack[:runtime.Stack(stack, false)]
 
-		// Without the method the log line is a stack blob with no indication of
-		// which call produced it.
 		method, ok := grpc.Method(ctx)
 		if !ok {
 			method = "unknown"

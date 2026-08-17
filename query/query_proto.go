@@ -55,9 +55,6 @@ func QToProto(q Q) *webserverv1.Q {
 	}
 }
 
-// QFromProto converts a protobuf query node into a Q. The message is untrusted
-// input, so a missing node or an unset oneof is reported as an error rather
-// than panicking: these reach us straight from a gRPC request.
 func QFromProto(p *webserverv1.Q) (Q, error) {
 	if p == nil {
 		return nil, fmt.Errorf("query node is missing")
