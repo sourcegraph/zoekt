@@ -6,9 +6,6 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 buf_path="/usr/local/bin/buf"
 buf_url="https://github.com/bufbuild/buf/releases/download/v1.47.2/buf-Linux-x86_64"
 buf_sha256="3a0c4da8d46eea8136affa63db202c76a44f8112384160b73c3fffb1cf14b5d8"
-ctags_path="/usr/local/bin/universal-ctags"
-ctags_url="https://storage.googleapis.com/universal_ctags/x86_64-linux/dist/universal-ctags-6.0.0.2783f009"
-ctags_sha256="e99b942754ce9d55c9445513236c010753d26decbb38ed932780bec098ac0809"
 
 if ! command -v go >/dev/null 2>&1; then
   echo "Installing Go from Debian testing..."
@@ -43,13 +40,8 @@ if ! echo "$buf_sha256  $buf_path" | sha256sum --check --status 2>/dev/null; the
   trap - EXIT
 fi
 
-if ! echo "$ctags_sha256  $ctags_path" | sha256sum --check --status 2>/dev/null; then
-  echo "Installing Universal Ctags..."
-  ctags_download="$(mktemp)"
-  trap 'rm -f "$ctags_download"' EXIT
-  curl -fsSL --retry 5 -o "$ctags_download" "$ctags_url"
-  echo "$ctags_sha256  $ctags_download" | sha256sum --check --status
-  sudo install -m 0755 "$ctags_download" "$ctags_path"
+if ! command -v universal-ctags >/dev/null 2>&1; then
+  sudo CTAGS_INSTALL_DIR=/usr/local/bin "$repo_root/install-ctags-alpine.sh"
 fi
 
 echo "Downloading Go modules..."
