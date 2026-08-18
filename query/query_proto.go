@@ -56,6 +56,10 @@ func QToProto(q Q) *webserverv1.Q {
 }
 
 func QFromProto(p *webserverv1.Q) (Q, error) {
+	if p == nil {
+		return nil, fmt.Errorf("query node is missing")
+	}
+
 	switch v := p.Query.(type) {
 	case *webserverv1.Q_RawConfig:
 		return RawConfigFromProto(v.RawConfig), nil
@@ -96,7 +100,7 @@ func QFromProto(p *webserverv1.Q) (Q, error) {
 	case *webserverv1.Q_Meta:
 		return MetaFromProto(v.Meta)
 	default:
-		panic(fmt.Sprintf("unknown query node %T", p.Query))
+		return nil, fmt.Errorf("unknown query node %T", p.Query)
 	}
 }
 
