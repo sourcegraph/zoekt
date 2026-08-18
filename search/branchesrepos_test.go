@@ -382,7 +382,7 @@ func BenchmarkSelectRepoSetBranchesReposLargeBitmapsFewShards(b *testing.B) {
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
 
 	for branch := range q.List {
-		for id := uint32(0); id < 100; id++ {
+		for id := range uint32(100) {
 			q.List[branch].Repos.Add(100_000 + uint32(branch)*100 + id)
 		}
 	}
@@ -398,7 +398,7 @@ func BenchmarkSelectRepoSetBranchesReposLargeBitmapsModerateShards(b *testing.B)
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
 
 	for branch := range q.List {
-		for id := uint32(0); id < 100; id++ {
+		for id := range uint32(100) {
 			q.List[branch].Repos.Add(100_000 + uint32(branch)*100 + id)
 		}
 	}
@@ -434,7 +434,7 @@ func BenchmarkSelectRepoSetBranchesReposUnlistedShards(b *testing.B) {
 	}
 	q := newBranchesReposQuery(branchesReposBenchmarkBranches)
 	for branch := range q.List {
-		for id := uint32(0); id < 100; id++ {
+		for id := range uint32(100) {
 			q.List[branch].Repos.Add(100_000 + uint32(branch)*100 + id)
 		}
 	}
