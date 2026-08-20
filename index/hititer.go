@@ -187,9 +187,7 @@ type compressedPostingIterator struct {
 
 func newCompressedPostingIterator(b []byte, w ngram) *compressedPostingIterator {
 	d, sz := binary.Uvarint(b)
-	if sz <= 0 {
-		panicMalformedPostingVarint(w, 0, sz)
-	}
+	validatePostingVarint(b, sz)
 	return &compressedPostingIterator{
 		_first:           uint32(d),
 		blob:             b[sz:],
@@ -215,9 +213,7 @@ func (i *compressedPostingIterator) next(limit uint32) {
 
 	for i._first <= limit && len(i.blob) > 0 {
 		delta, sz := binary.Uvarint(i.blob)
-		if sz <= 0 {
-			panicMalformedPostingVarint(i.what, i.indexBytesLoaded, sz)
-		}
+		validatePostingVarint(i.blob, sz)
 		i._first += uint32(delta)
 		i.indexBytesLoaded += sz
 		i.blob = i.blob[sz:]
@@ -228,14 +224,10 @@ func (i *compressedPostingIterator) next(limit uint32) {
 	}
 }
 
-// panicMalformedPostingVarint makes corruption observable at the shard
-// boundary instead of returning incomplete results from an exhausted iterator.
-func panicMalformedPostingVarint(w ngram, offset, sz int) {
-	kind := "truncated"
-	if sz < 0 {
-		kind = "overflowing"
-	}
-	panic(fmt.Errorf("corrupt posting list for ngram %q at byte offset %d: %s varint", w, offset, kind))
+// validatePostingVarint intentionally relies on the bounds check to panic for
+// the non-positive lengths binary.Uvarint returns for malformed input.
+func validatePostingVarint(blob []byte, sz int) {
+	_ = blob[sz-1]
 }
 
 func (i *compressedPostingIterator) updateStats(s *zoekt.Stats) {
