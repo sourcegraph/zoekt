@@ -187,6 +187,7 @@ type compressedPostingIterator struct {
 
 func newCompressedPostingIterator(b []byte, w ngram) *compressedPostingIterator {
 	d, sz := binary.Uvarint(b)
+	validatePostingVarint(b, sz)
 	return &compressedPostingIterator{
 		_first:           uint32(d),
 		blob:             b[sz:],
@@ -212,6 +213,7 @@ func (i *compressedPostingIterator) next(limit uint32) {
 
 	for i._first <= limit && len(i.blob) > 0 {
 		delta, sz := binary.Uvarint(i.blob)
+		validatePostingVarint(i.blob, sz)
 		i._first += uint32(delta)
 		i.indexBytesLoaded += sz
 		i.blob = i.blob[sz:]
@@ -220,6 +222,12 @@ func (i *compressedPostingIterator) next(limit uint32) {
 	if i._first <= limit && len(i.blob) == 0 {
 		i._first = math.MaxUint32
 	}
+}
+
+// validatePostingVarint intentionally relies on the bounds check to panic for
+// the non-positive lengths binary.Uvarint returns for malformed input.
+func validatePostingVarint(blob []byte, sz int) {
+	_ = blob[sz-1]
 }
 
 func (i *compressedPostingIterator) updateStats(s *zoekt.Stats) {

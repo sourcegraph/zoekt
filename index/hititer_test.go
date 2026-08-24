@@ -112,3 +112,41 @@ func genUints32(size int) []uint32 {
 	}
 	return nums
 }
+
+func TestCompressedPostingIteratorMalformedVarint(t *testing.T) {
+	overflow := []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01}
+
+	for _, tc := range []struct {
+		name string
+		bad  []byte
+	}{
+		{name: "truncated", bad: []byte{0x80}},
+		{name: "overflowing", bad: overflow},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("first", func(t *testing.T) {
+				assertPanic(t, func() {
+					newCompressedPostingIterator(tc.bad, stringToNGram("abc"))
+				})
+			})
+
+			t.Run("delta", func(t *testing.T) {
+				blob := append([]byte{0x01}, tc.bad...)
+				it := newCompressedPostingIterator(blob, stringToNGram("abc"))
+				assertPanic(t, func() {
+					it.next(100)
+				})
+			})
+		})
+	}
+}
+
+func assertPanic(t *testing.T, f func()) {
+	t.Helper()
+	defer func() {
+		if got := recover(); got == nil {
+			t.Fatal("got no panic, want corruption panic")
+		}
+	}()
+	f()
+}
