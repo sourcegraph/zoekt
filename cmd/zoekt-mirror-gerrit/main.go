@@ -18,6 +18,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -113,10 +114,13 @@ func main() {
 	if *httpCrendentialsPath != "" {
 		creds, err := os.ReadFile(*httpCrendentialsPath)
 		if err != nil {
-			log.Print("Cannot read gerrit http credentials, going Anonymous")
+			log.Printf("Cannot read gerrit http credentials (%v), going Anonymous", err)
 		} else {
-			splitCreds := strings.Split(strings.TrimSpace(string(creds)), ":")
-			rootURL.User = url.UserPassword(splitCreds[0], splitCreds[1])
+			user, err := parseHTTPCredentials(string(creds))
+			if err != nil {
+				log.Fatalf("%s: %v", *httpCrendentialsPath, err)
+			}
+			rootURL.User = user
 		}
 	}
 
@@ -278,6 +282,14 @@ func buildCloneURL(projectURL, project string, needsAuth bool, user *url.Userinf
 		u.User = user
 	}
 	return u, nil
+}
+
+func parseHTTPCredentials(creds string) (*url.Userinfo, error) {
+	split := strings.SplitN(strings.TrimSpace(creds), ":", 2)
+	if len(split) != 2 {
+		return nil, errors.New("expected format 'username:password'")
+	}
+	return url.UserPassword(split[0], split[1]), nil
 }
 
 func addMetaConfigFetch(repoDir string) error {

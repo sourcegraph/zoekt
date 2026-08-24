@@ -87,3 +87,37 @@ func TestBuildCloneURLKeepsSchemeUserWithoutCredentials(t *testing.T) {
 		t.Fatalf("password set, want none: %q", u.String())
 	}
 }
+
+func TestParseHTTPCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		creds     string
+		wantUser  string
+		wantPass  string
+		wantError bool
+	}{
+		{name: "simple", creds: "admin:secret", wantUser: "admin", wantPass: "secret"},
+		{name: "password containing colon", creds: "admin:pa:ss", wantUser: "admin", wantPass: "pa:ss"},
+		{name: "password containing slash", creds: "admin:abc/def", wantUser: "admin", wantPass: "abc/def"},
+		{name: "surrounding whitespace", creds: "\n admin:pa:ss\n", wantUser: "admin", wantPass: "pa:ss"},
+		{name: "empty password", creds: "admin:", wantUser: "admin", wantPass: ""},
+		{name: "no colon", creds: "adminonly", wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			user, err := parseHTTPCredentials(tc.creds)
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("parseHTTPCredentials(%q) succeeded, want error", tc.creds)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseHTTPCredentials(%q): %v", tc.creds, err)
+			}
+			pass, ok := user.Password()
+			if user.Username() != tc.wantUser || !ok || pass != tc.wantPass {
+				t.Fatalf("got (%q, %q, %v), want (%q, %q, true)", user.Username(), pass, ok, tc.wantUser, tc.wantPass)
+			}
+		})
+	}
+}
