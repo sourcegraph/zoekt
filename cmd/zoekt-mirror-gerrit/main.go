@@ -141,16 +141,7 @@ func main() {
 		log.Fatalf("GetServerInfo: %v", err)
 	}
 
-	var projectURL string
-	for _, s := range []string{"http", "anonymous http"} {
-		if schemeInfo, ok := info.Download.Schemes[s]; ok {
-			projectURL = schemeInfo.URL
-			if s == "http" && schemeInfo.IsAuthRequired {
-				projectURL = addPassword(projectURL, rootURL.User)
-			}
-			break
-		}
-	}
+	projectURL, needsAuth := selectProjectURL(info)
 	if projectURL == "" {
 		log.Fatalf("project URL is empty, got Schemes %#v", info.Download.Schemes)
 	}
@@ -180,9 +171,9 @@ func main() {
 			continue
 		}
 
-		cloneURL, err := url.Parse(strings.Replace(projectURL, "${project}", k, 1))
+		cloneURL, err := buildCloneURL(projectURL, k, needsAuth, rootURL.User)
 		if err != nil {
-			log.Fatalf("url.Parse: %v", err)
+			log.Fatalf("buildCloneURL: %v", err)
 		}
 
 		name := filepath.Join(cloneURL.Host, cloneURL.Path)
@@ -267,10 +258,26 @@ func anonymousURL(u *url.URL) string {
 	return anon.String()
 }
 
-func addPassword(u string, user *url.Userinfo) string {
-	password, _ := user.Password()
-	username := user.Username()
-	return strings.Replace(u, fmt.Sprintf("://%s@", username), fmt.Sprintf("://%s:%s@", username, password), 1)
+func selectProjectURL(info *gerrit.ServerInfo) (string, bool) {
+	for _, s := range []string{"http", "anonymous http"} {
+		if schemeInfo, ok := info.Download.Schemes[s]; ok {
+			return schemeInfo.URL, s == "http" && schemeInfo.IsAuthRequired
+		}
+	}
+	return "", false
+}
+
+func buildCloneURL(projectURL, project string, needsAuth bool, user *url.Userinfo) (*url.URL, error) {
+	u, err := url.Parse(strings.Replace(projectURL, "${project}", project, 1))
+	if err != nil {
+		return nil, err
+	}
+	// Leave the download scheme's own userinfo alone when no credentials were
+	// configured: git can still resolve them via a credential helper or .netrc.
+	if needsAuth && user != nil {
+		u.User = user
+	}
+	return u, nil
 }
 
 func addMetaConfigFetch(repoDir string) error {
