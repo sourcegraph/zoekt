@@ -236,19 +236,44 @@ func setTemplatesFromConfig(desc *zoekt.Repository, repoDir string) error {
 }
 
 func setTemplatesFromRepo(desc *zoekt.Repository, repo *git.Repository, repoDir string) error {
-	// A caller-supplied name identifies the repository and its shards, so it
-	// takes precedence over names derived from zoekt config or the origin URL.
-	// Other repository fields are intentionally refreshed from that config.
-	if desc.Name != "" {
-		defer func(name string) { desc.Name = name }(desc.Name)
-	}
+	// The caller-supplied name is a fallback for repos without zoekt.name. It
+	// still identifies the repository and shard names better than an inferred
+	// origin URL, but an explicit repo config should win.
+	name := desc.Name
 
 	cfg, err := repo.Config()
 	if err == nil {
-		return setTemplatesFromRepoConfig(desc, cfg)
+		return setTemplatesFromRepoConfigPreservingName(desc, cfg, name)
 	}
 
-	return setTemplatesFromConfig(desc, repoDir)
+	// Some repositories, notably worktrees with .git files, need the plainOpenRepo
+	// fallback to resolve their common dir before go-git can read config.
+	repo, err = plainOpenRepo(repoDir)
+	if err != nil {
+		return err
+	}
+
+	cfg, err = repo.Config()
+	if err != nil {
+		return err
+	}
+
+	return setTemplatesFromRepoConfigPreservingName(desc, cfg, name)
+}
+
+func setTemplatesFromRepoConfigPreservingName(desc *zoekt.Repository, cfg *config.Config, name string) error {
+	if name != "" && cfg.Raw.Section("zoekt").Options.Get("name") == "" {
+		defer func() {
+			// A caller-supplied name identifies the repository and its shards, so it
+			// takes precedence over names derived from the origin URL. Other repository
+			// fields are intentionally refreshed from config.
+			desc.Name = name
+		}()
+	}
+	if err := setTemplatesFromRepoConfig(desc, cfg); err != nil {
+		return err
+	}
+	return nil
 }
 
 func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) error {
