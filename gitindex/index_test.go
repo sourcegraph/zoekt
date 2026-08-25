@@ -207,6 +207,83 @@ func TestIndexGitRepoPreservesRepositoryName(t *testing.T) {
 	}
 }
 
+func TestIndexGitRepoPrefersConfiguredRepositoryName(t *testing.T) {
+	t.Parallel()
+
+	configuredName := "github.com/sgtest/go-diff"
+	fallbackName := url.QueryEscape(configuredName)
+	repoDir, _ := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	runGit(t, repoDir, "config", "zoekt.name", configuredName)
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:  repoDir,
+		Branches: []string{"HEAD"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: fallbackName},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatal(err)
+	}
+	shards, err := filepath.Glob(filepath.Join(indexDir, "*.zoekt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shards) != 1 {
+		t.Fatalf("got %d shards, want 1", len(shards))
+	}
+	repositories, _, err := index.ReadMetadataPath(shards[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := repositories[0].Name; got != configuredName {
+		t.Fatalf("repository name is %q, want %q", got, configuredName)
+	}
+	if got, wantPrefix := filepath.Base(shards[0]), url.QueryEscape(configuredName)+"_v"; !strings.HasPrefix(got, wantPrefix) {
+		t.Fatalf("shard name is %q, want prefix %q", got, wantPrefix)
+	}
+}
+
+func TestIndexGitRepoPreservesRepositoryNameOnTemplateError(t *testing.T) {
+	t.Parallel()
+
+	repoDir, _ := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
+	runGit(t, repoDir, "config", "remote.origin.url", "git@example.com:sourcegraph/zoekt.git")
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:  repoDir,
+		Branches: []string{"HEAD"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "local/repo"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatal(err)
+	}
+	shards, err := filepath.Glob(filepath.Join(indexDir, "*.zoekt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shards) != 1 {
+		t.Fatalf("got %d shards, want 1", len(shards))
+	}
+	repositories, _, err := index.ReadMetadataPath(shards[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := repositories[0].Name, opts.BuildOptions.RepositoryDescription.Name; got != want {
+		t.Fatalf("repository name is %q, want %q", got, want)
+	}
+}
+
 func TestOpenRepoVariants(t *testing.T) {
 	t.Parallel()
 
