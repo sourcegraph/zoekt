@@ -118,6 +118,7 @@ type Repository struct {
 	IndexTime time.Time
 	Branches  []Branch
 	Files     int64
+	Metadata  map[string]string
 
 	// Total amount of content bytes.
 	Size int64

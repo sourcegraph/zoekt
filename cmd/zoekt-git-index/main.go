@@ -17,6 +17,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"log"
 	"os"
@@ -46,6 +47,7 @@ func run() int {
 	isDelta := flag.Bool("delta", false, "whether we should use delta build")
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
 	languageMap := flag.String("language_map", "", "a mapping between a language and its ctags processor (a:0,b:3).")
+	metaFile := flag.String("meta", "", "path to .meta JSON file with repository description")
 
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to `file`")
 
@@ -76,6 +78,16 @@ func run() int {
 
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
+
+	if *metaFile != "" {
+		data, err := os.ReadFile(*metaFile)
+		if err != nil {
+			log.Fatalf("failed to read .meta file %s: %v", *metaFile, err)
+		}
+		if err := json.Unmarshal(data, &opts.RepositoryDescription); err != nil {
+			log.Fatalf("failed to decode .meta file %s: %v", *metaFile, err)
+		}
+	}
 
 	var branches []string
 	if *branchesStr != "" {
@@ -121,7 +133,9 @@ func run() int {
 	profiler.Init("zoekt-git-index")
 	exitStatus := 0
 	for dir, name := range gitRepos {
-		opts.RepositoryDescription.Name = name
+		if opts.RepositoryDescription.Name == "" {
+			opts.RepositoryDescription.Name = name
+		}
 		gitOpts := gitindex.Options{
 			BranchPrefix:                      *branchPrefix,
 			Incremental:                       *incremental,

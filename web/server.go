@@ -598,6 +598,7 @@ func (s *Server) serveListReposErr(q query.Q, qStr string, r *http.Request) (*Re
 			Size:       r.Stats.ContentBytes,
 			MemorySize: r.Stats.IndexBytes,
 			Files:      int64(r.Stats.Documents),
+			Metadata:   r.Repository.Metadata,
 		}
 		for _, b := range r.Repository.Branches {
 			var buf bytes.Buffer
