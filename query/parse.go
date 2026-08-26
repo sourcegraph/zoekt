@@ -110,7 +110,8 @@ func isSpace(c byte) bool {
 }
 
 func startsQuerySyntax(in []byte) bool {
-	if len(in) > 0 && in[0] == '-' {
+	// Skip grouping and negation tokens before the first atom.
+	for len(in) > 0 && (in[0] == '(' || in[0] == '-') {
 		in = in[1:]
 	}
 

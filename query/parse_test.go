@@ -96,6 +96,8 @@ func TestParseQuery(t *testing.T) {
 		{"lang:cpp", &Language{"C++"}},
 		{"sym:pqr", &Symbol{&Substring{Pattern: "pqr"}}},
 		{"(sym:pqr)", &Symbol{&Substring{Pattern: "pqr"}}},
+		{"((sym:pqr))", &Symbol{&Substring{Pattern: "pqr"}}},
+		{"(-sym:pqr)", &Not{&Symbol{&Substring{Pattern: "pqr"}}}},
 		{"sym:Pqr", &Symbol{&Substring{Pattern: "Pqr", CaseSensitive: true}}},
 		{"sym:.*", &Symbol{&Regexp{Regexp: mustParseRE(".*")}}},
 		{"sym:a(b|d)e", &Symbol{&Regexp{Regexp: mustParseRE("a[bd]e")}}},
