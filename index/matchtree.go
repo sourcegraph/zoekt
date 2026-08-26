@@ -207,13 +207,17 @@ type regexpMatchTree struct {
 	bruteForceMatchTree
 }
 
-func newRegexpMatchTree(s *query.Regexp) *regexpMatchTree {
+func regexpPattern(s *query.Regexp) string {
 	prefix := ""
 	if !s.CaseSensitive {
 		prefix = "(?i)"
 	}
 
-	pattern := prefix + syntaxutil.RegexpString(s.Regexp)
+	return prefix + syntaxutil.RegexpString(s.Regexp)
+}
+
+func newRegexpMatchTree(s *query.Regexp) *regexpMatchTree {
+	pattern := regexpPattern(s)
 
 	// hybridRegexp is only used for file content matching; skip the RE2
 	// compilation overhead for filename-only regexps.
