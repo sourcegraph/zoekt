@@ -90,6 +90,9 @@ func TestRegexpParse(t *testing.T) {
 	cases := []testcase{
 		{"(foo|)bar", substrMT("bar"), false, false},
 		{"(foo|)", &bruteForceMatchTree{}, false, false},
+		{"éa", &bruteForceMatchTree{}, false, false},
+		{"éab", substrMT("éab"), true, false},
+		{"(éa|êb)", &bruteForceMatchTree{}, false, false},
 		{"(foo|bar)baz.*bla", &andMatchTree{[]matchTree{
 			&orMatchTree{[]matchTree{
 				substrMT("foo"),
