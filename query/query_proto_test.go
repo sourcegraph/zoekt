@@ -18,9 +18,7 @@ func TestQueryRoundtrip(t *testing.T) {
 			CaseSensitive: true,
 		},
 		&Symbol{
-			Expr: &Language{
-				Language: "go",
-			},
+			Expr: &Substring{Pattern: "symbol"},
 		},
 		&Language{
 			Language: "typescript",
@@ -100,6 +98,13 @@ func TestQueryRoundtrip(t *testing.T) {
 				t.Fatalf("unexpected diff: %s", diff)
 			}
 		})
+	}
+}
+
+func TestSymbolFromProtoRejectsNonTextAtom(t *testing.T) {
+	p := (&Symbol{Expr: &Language{Language: "go"}}).ToProto()
+	if _, err := SymbolFromProto(p); err == nil {
+		t.Fatal("SymbolFromProto succeeded for a non-text expression")
 	}
 }
 

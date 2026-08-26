@@ -287,6 +287,17 @@ func TestSymbolMatchTree(t *testing.T) {
 	}
 }
 
+func TestSymbolMatchTreeRejectsNonTextAtom(t *testing.T) {
+	q := &query.Symbol{Expr: &query.Language{Language: "go"}}
+	_, err := (&indexData{}).newMatchTree(q, matchTreeOpt{})
+	if err == nil {
+		t.Fatal("newMatchTree succeeded for a non-text symbol expression")
+	}
+	if got, want := err.Error(), "symbol expression must be a substring or regexp, got *query.Language"; got != want {
+		t.Fatalf("unexpected error: got %q, want %q", got, want)
+	}
+}
+
 func TestRepoSet(t *testing.T) {
 	d := &indexData{
 		repoMetaData:    []zoekt.Repository{{Name: "r0"}, {Name: "r1"}, {Name: "r2"}, {Name: "r3"}},

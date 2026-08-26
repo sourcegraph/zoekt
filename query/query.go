@@ -125,9 +125,20 @@ func (q *Regexp) GobDecode(data []byte) error {
 	return nil
 }
 
-// Symbol finds a string that is a symbol.
+// Symbol finds a text atom within an indexed symbol section.
 type Symbol struct {
+	// Expr must be a *Substring or *Regexp.
 	Expr Q
+}
+
+// Validate reports whether the symbol expression is a supported text atom.
+func (s *Symbol) Validate() error {
+	switch s.Expr.(type) {
+	case *Substring, *Regexp:
+		return nil
+	default:
+		return fmt.Errorf("symbol expression must be a substring or regexp, got %T", s.Expr)
+	}
 }
 
 func (s *Symbol) String() string {
