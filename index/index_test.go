@@ -3160,6 +3160,20 @@ func TestSymbolSubstring(t *testing.T) {
 			t.Fatalf("got offset %d, end %d want 7, 10", m.Start.ByteOffset, m.End.ByteOffset)
 		}
 	})
+
+	t.Run("ShortSubstring", func(t *testing.T) {
+		q := &query.Symbol{
+			Expr: &query.Substring{Pattern: "la"},
+		}
+		res := searchForTest(t, b, q)
+		if len(res.Files) != 1 || len(res.Files[0].LineMatches) != 1 {
+			t.Fatalf("got %v, want 1 line in 1 file", res.Files)
+		}
+		m := res.Files[0].LineMatches[0].LineFragments[0]
+		if m.Offset != 8 || m.MatchLength != 2 {
+			t.Fatalf("got offset %d, size %d want 8 size 2", m.Offset, m.MatchLength)
+		}
+	})
 }
 
 func TestSymbolSubstringExact(t *testing.T) {
@@ -3277,6 +3291,83 @@ func TestSymbolRegexpPartial(t *testing.T) {
 			t.Fatalf("got match end %d, want 4", m.End.ByteOffset)
 		}
 	})
+}
+
+func TestSymbolRegexpAlternation(t *testing.T) {
+	tests := []struct {
+		name    string
+		query   string
+		content string
+		symbols []DocumentSection
+		offsets []uint32
+	}{
+		{
+			name:    "ASCII",
+			query:   "sym:(abc|def)",
+			content: "abc def abc def",
+			symbols: []DocumentSection{{8, 11}, {12, 15}},
+			offsets: []uint32{8, 12},
+		},
+		{
+			name:    "Unicode",
+			query:   "sym:(éa|êb)",
+			content: "éa êb éa êb",
+			symbols: []DocumentSection{{8, 11}, {12, 15}},
+			offsets: []uint32{8, 12},
+		},
+		{
+			name:    "matches outside symbols only",
+			query:   "sym:(abc|def)",
+			content: "abc def ghi jkl",
+			symbols: []DocumentSection{{8, 11}, {12, 15}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, err := query.Parse(tt.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b := testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
+				Document{
+					Name:    "f1",
+					Content: []byte(tt.content),
+					Symbols: tt.symbols,
+				},
+			)
+
+			t.Run("LineMatches", func(t *testing.T) {
+				res := searchForTest(t, b, q)
+				var got []uint32
+				for _, file := range res.Files {
+					for _, line := range file.LineMatches {
+						for _, fragment := range line.LineFragments {
+							got = append(got, fragment.Offset)
+						}
+					}
+				}
+				if diff := cmp.Diff(tt.offsets, got); diff != "" {
+					t.Fatalf("offsets mismatch (-want +got):\n%s", diff)
+				}
+			})
+
+			t.Run("ChunkMatches", func(t *testing.T) {
+				res := searchForTest(t, b, q, chunkOpts)
+				var got []uint32
+				for _, file := range res.Files {
+					for _, chunk := range file.ChunkMatches {
+						for _, r := range chunk.Ranges {
+							got = append(got, r.Start.ByteOffset)
+						}
+					}
+				}
+				if diff := cmp.Diff(tt.offsets, got); diff != "" {
+					t.Fatalf("offsets mismatch (-want +got):\n%s", diff)
+				}
+			})
+		})
+	}
 }
 
 func TestSymbolRegexpAll(t *testing.T) {

@@ -184,7 +184,7 @@ func TestEquivalentQuerySkipRegexpTree(t *testing.T) {
 		}
 
 		d := &indexData{}
-		mt, err := d.newMatchTree(q, matchTreeOpt{})
+		mt, err := d.newMatchTree(q)
 		if err != nil {
 			t.Errorf("Error creating match tree from query: %s", q)
 			continue
@@ -209,7 +209,7 @@ func TestWordSearchSkipRegexpTree(t *testing.T) {
 	}
 
 	d := &indexData{}
-	mt, err := d.newMatchTree(q, matchTreeOpt{})
+	mt, err := d.newMatchTree(q)
 	if err != nil {
 		t.Fatalf("Error creating match tree from query: %s", q)
 	}
@@ -241,10 +241,13 @@ func TestSymbolMatchTree(t *testing.T) {
 		regexAll bool
 	}{
 		{query: "sym:.*", regex: "(?i)(?-s:.)*", regexAll: true},
+		{query: "sym:a", regex: "(?i)a"},
+		{query: "sym:ab", regex: "(?i)ab"},
 		{query: "sym:(ab|cd)", regex: "(?i)ab|cd"},
+		{query: "sym:(abc|def)", regex: "(?i)abc|def"},
 		{query: "sym:b.r", regex: "(?i)b(?-s:.)r"},
 		{query: "sym:horse", substr: "horse"},
-		{query: `sym:\bthread\b case:yes`, regex: `\bthread\b`}, // check we disable word search opt
+		{query: `sym:\bthread\b case:yes`, regex: `\bthread\b`},
 		{query: `sym:\bthread\b case:no`, regex: `(?i)\bthread\b`},
 	}
 
@@ -256,7 +259,7 @@ func TestSymbolMatchTree(t *testing.T) {
 		}
 
 		d := &indexData{}
-		mt, err := d.newMatchTree(q, matchTreeOpt{})
+		mt, err := d.newMatchTree(q)
 		if err != nil {
 			t.Errorf("Error creating match tree from query: %s", q)
 			continue
@@ -289,7 +292,7 @@ func TestSymbolMatchTree(t *testing.T) {
 
 func TestSymbolMatchTreeRejectsNonTextAtom(t *testing.T) {
 	q := &query.Symbol{Expr: &query.Language{Language: "go"}}
-	_, err := (&indexData{}).newMatchTree(q, matchTreeOpt{})
+	_, err := (&indexData{}).newMatchTree(q)
 	if err == nil {
 		t.Fatal("newMatchTree succeeded for a non-text symbol expression")
 	}
@@ -304,7 +307,7 @@ func TestRepoSet(t *testing.T) {
 		fileBranchMasks: []uint64{1, 1, 1, 1, 1, 1},
 		repos:           []uint16{0, 0, 1, 2, 3, 3},
 	}
-	mt, err := d.newMatchTree(&query.RepoSet{Set: map[string]bool{"r1": true, "r3": true, "r99": true}}, matchTreeOpt{})
+	mt, err := d.newMatchTree(&query.RepoSet{Set: map[string]bool{"r1": true, "r3": true, "r99": true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +330,7 @@ func TestRepo(t *testing.T) {
 		fileBranchMasks: []uint64{1, 1, 1, 1, 1},
 		repos:           []uint16{0, 0, 1, 0, 1},
 	}
-	mt, err := d.newMatchTree(&query.Repo{Regexp: regexp.MustCompile("ar")}, matchTreeOpt{})
+	mt, err := d.newMatchTree(&query.Repo{Regexp: regexp.MustCompile("ar")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +361,7 @@ func TestBranchesRepos(t *testing.T) {
 	mt, err := d.newMatchTree(&query.BranchesRepos{List: []query.BranchRepos{
 		{Branch: "b1", Repos: roaring.BitmapOf(hash("bar"))},
 		{Branch: "b2", Repos: roaring.BitmapOf(hash("bar"))},
-	}}, matchTreeOpt{})
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +386,7 @@ func TestRepoIDs(t *testing.T) {
 		fileBranchMasks: []uint64{1, 1, 1, 1, 1, 1},
 		repos:           []uint16{0, 0, 1, 2, 3, 3},
 	}
-	mt, err := d.newMatchTree(&query.RepoIDs{Repos: roaring.BitmapOf(1, 3, 99)}, matchTreeOpt{})
+	mt, err := d.newMatchTree(&query.RepoIDs{Repos: roaring.BitmapOf(1, 3, 99)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +458,7 @@ func TestMetaQueryMatchTree(t *testing.T) {
 		Value: regexp.MustCompile("M.T"),
 	}
 
-	mt, err := d.newMatchTree(q, matchTreeOpt{})
+	mt, err := d.newMatchTree(q)
 	if err != nil {
 		t.Fatalf("failed to build matchTree: %v", err)
 	}
