@@ -1160,6 +1160,10 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		}, nil
 
 	case *query.Symbol:
+		if err := s.Validate(); err != nil {
+			return nil, err
+		}
+
 		// Disable WordMatchTree since we don't support it in symbols yet.
 		optCopy := opt
 		optCopy.DisableWordMatchOptimization = true

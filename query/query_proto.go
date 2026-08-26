@@ -132,9 +132,13 @@ func SymbolFromProto(p *webserverv1.Symbol) (*Symbol, error) {
 		return nil, err
 	}
 
-	return &Symbol{
+	symbol := &Symbol{
 		Expr: expr,
-	}, nil
+	}
+	if err := symbol.Validate(); err != nil {
+		return nil, err
+	}
+	return symbol, nil
 }
 
 func (s *Symbol) ToProto() *webserverv1.Symbol {
