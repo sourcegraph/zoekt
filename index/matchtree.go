@@ -193,10 +193,6 @@ type regexpMatchTree struct {
 	// For small inputs and filename matches, regexp is used directly.
 	hybridRegexp *hybridre2.Regexp
 
-	// origRegexp is the original parsed regexp from the query structure. It
-	// does not include mutations such as case sensitivity.
-	origRegexp *syntax.Regexp
-
 	fileName bool
 
 	// mutable
@@ -207,13 +203,17 @@ type regexpMatchTree struct {
 	bruteForceMatchTree
 }
 
-func newRegexpMatchTree(s *query.Regexp) *regexpMatchTree {
+func regexpPattern(s *query.Regexp) string {
 	prefix := ""
 	if !s.CaseSensitive {
 		prefix = "(?i)"
 	}
 
-	pattern := prefix + syntaxutil.RegexpString(s.Regexp)
+	return prefix + syntaxutil.RegexpString(s.Regexp)
+}
+
+func newRegexpMatchTree(s *query.Regexp) *regexpMatchTree {
+	pattern := regexpPattern(s)
 
 	// hybridRegexp is only used for file content matching; skip the RE2
 	// compilation overhead for filename-only regexps.
@@ -224,9 +224,21 @@ func newRegexpMatchTree(s *query.Regexp) *regexpMatchTree {
 	return &regexpMatchTree{
 		regexp:       regexp.MustCompile(pattern),
 		hybridRegexp: hr,
-		origRegexp:   s.Regexp,
 		fileName:     s.FileName,
 	}
+}
+
+func (d *indexData) newSymbolRegexpMatchTree(s *query.Regexp) (*symbolRegexpMatchTree, error) {
+	prefilter, _, _, err := d.regexpToMatchTreeRecursive(s.Regexp, ngramSize, s.FileName, s.CaseSensitive)
+	if err != nil {
+		return nil, err
+	}
+
+	return &symbolRegexpMatchTree{
+		regexp:    regexp.MustCompile(regexpPattern(s)),
+		all:       isRegexpAll(s.Regexp),
+		matchTree: prefilter,
+	}, nil
 }
 
 // \bLITERAL\b
@@ -992,13 +1004,7 @@ func (t *substrMatchTree) matches(cp *contentProvider, cost int, known map[match
 	return matchesStateForSlice(t.current)
 }
 
-type matchTreeOpt struct {
-	// DisableWordMatchOptimization is used to disable the use of wordMatchTree.
-	// This was added since we do not support wordMatchTree with symbol search.
-	DisableWordMatchOptimization bool
-}
-
-func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error) {
+func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 	if q == nil {
 		return nil, fmt.Errorf("got nil (sub)query")
 	}
@@ -1021,7 +1027,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		}
 
 		var tr matchTree
-		if wmt, ok := regexpToWordMatchTree(s, opt); ok {
+		if wmt, ok := regexpToWordMatchTree(s); ok {
 			// A common search we get is "\bLITERAL\b". Avoid the regex engine and
 			// provide something faster.
 			tr = wmt
@@ -1037,7 +1043,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 	case *query.And:
 		var r []matchTree
 		for _, ch := range s.Children {
-			ct, err := d.newMatchTree(ch, opt)
+			ct, err := d.newMatchTree(ch)
 			if err != nil {
 				return nil, err
 			}
@@ -1047,7 +1053,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 	case *query.Or:
 		var r []matchTree
 		for _, ch := range s.Children {
-			ct, err := d.newMatchTree(ch, opt)
+			ct, err := d.newMatchTree(ch)
 			if err != nil {
 				return nil, err
 			}
@@ -1055,7 +1061,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		}
 		return &orMatchTree{r}, nil
 	case *query.Not:
-		ct, err := d.newMatchTree(s.Child, opt)
+		ct, err := d.newMatchTree(s.Child)
 		return &notMatchTree{
 			child: ct,
 		}, err
@@ -1065,7 +1071,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 			break
 		}
 
-		ct, err := d.newMatchTree(s.Child, opt)
+		ct, err := d.newMatchTree(s.Child)
 		if err != nil {
 			return nil, err
 		}
@@ -1075,7 +1081,7 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 		}, nil
 
 	case *query.Boost:
-		ct, err := d.newMatchTree(s.Child, opt)
+		ct, err := d.newMatchTree(s.Child)
 		if err != nil {
 			return nil, err
 		}
@@ -1164,39 +1170,32 @@ func (d *indexData) newMatchTree(q query.Q, opt matchTreeOpt) (matchTree, error)
 			return nil, err
 		}
 
-		// Disable WordMatchTree since we don't support it in symbols yet.
-		optCopy := opt
-		optCopy.DisableWordMatchOptimization = true
+		if regexpQuery, ok := s.Expr.(*query.Regexp); ok {
+			return d.newSymbolRegexpMatchTree(regexpQuery)
+		}
 
-		subMT, err := d.newMatchTree(s.Expr, optCopy)
+		substrQuery := s.Expr.(*query.Substring)
+		patternSize := utf8.RuneCountInString(substrQuery.Pattern)
+		if patternSize < ngramSize {
+			return d.newSymbolRegexpMatchTree(&query.Regexp{
+				Regexp:        &syntax.Regexp{Op: syntax.OpLiteral, Rune: []rune(substrQuery.Pattern)},
+				FileName:      substrQuery.FileName,
+				Content:       substrQuery.Content,
+				CaseSensitive: substrQuery.CaseSensitive,
+			})
+		}
+
+		subMT, err := d.newSubstringMatchTree(substrQuery)
 		if err != nil {
 			return nil, err
 		}
 
-		if substr, ok := subMT.(*substrMatchTree); ok {
-			return &symbolSubstrMatchTree{
-				substrMatchTree: substr,
-				patternSize:     uint32(utf8.RuneCountInString(substr.query.Pattern)),
-				fileEndRunes:    d.fileEndRunes,
-				fileEndSymbol:   d.fileEndSymbol,
-				sections:        d.runeDocSections,
-			}, nil
-		}
-
-		var regexpMT *regexpMatchTree
-		visitMatchTree(subMT, func(mt matchTree) {
-			if t, ok := mt.(*regexpMatchTree); ok {
-				regexpMT = t
-			}
-		})
-		if regexpMT == nil {
-			return nil, fmt.Errorf("found %T inside query.Symbol", subMT)
-		}
-
-		return &symbolRegexpMatchTree{
-			regexp:    regexpMT.regexp,
-			all:       isRegexpAll(regexpMT.origRegexp),
-			matchTree: subMT,
+		return &symbolSubstrMatchTree{
+			substrMatchTree: subMT.(*substrMatchTree),
+			patternSize:     uint32(patternSize),
+			fileEndRunes:    d.fileEndRunes,
+			fileEndSymbol:   d.fileEndSymbol,
+			sections:        d.runeDocSections,
 		}, nil
 
 	case *query.FileNameSet:
@@ -1326,10 +1325,7 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 	return st, nil
 }
 
-func regexpToWordMatchTree(q *query.Regexp, opt matchTreeOpt) (_ *wordMatchTree, ok bool) {
-	if opt.DisableWordMatchOptimization {
-		return nil, false
-	}
+func regexpToWordMatchTree(q *query.Regexp) (_ *wordMatchTree, ok bool) {
 	// Needs to be case sensitive
 	if !q.CaseSensitive || q.Regexp.Flags&syntax.FoldCase != 0 {
 		return nil, false
