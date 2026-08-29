@@ -48,6 +48,33 @@ func TestMerge(t *testing.T) {
 	require.Len(t, result.Files, 2)
 }
 
+func TestMergeAllTombstonedDeletesInputWithoutOutput(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "all-tombstoned.zoekt")
+
+	sb, err := index.NewShardBuilder(&zoekt.Repository{ID: 1, Name: "deleted", Tombstone: true})
+	require.NoError(t, err)
+	require.NoError(t, sb.Add(index.Document{Name: "f", Content: []byte("content")}))
+	f, err := os.Create(inputPath)
+	require.NoError(t, err)
+	require.NoError(t, sb.Write(f))
+	require.NoError(t, f.Close())
+
+	outputPath, err := merge(dir, []string{inputPath})
+	require.NoError(t, err)
+	require.Empty(t, outputPath)
+	_, err = os.Stat(inputPath)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	matches, err := filepath.Glob(filepath.Join(dir, "*.zoekt"))
+	require.NoError(t, err)
+	require.Empty(t, matches)
+}
+
+func TestMergeReturnsInputOpenError(t *testing.T) {
+	_, err := merge(t.TempDir(), []string{filepath.Join(t.TempDir(), "missing.zoekt")})
+	require.Error(t, err)
+}
+
 // Merge 2 simple shards and then explode them.
 func TestExplode(t *testing.T) {
 	v16Shards, err := filepath.Glob("../../testdata/shards/repo*_v16.*.zoekt")

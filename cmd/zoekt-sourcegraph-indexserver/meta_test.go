@@ -63,13 +63,17 @@ func TestMergeMeta(t *testing.T) {
 	// create a compound shard. Use a new indexdir to avoid the need to cleanup
 	// old shards.
 	dir = t.TempDir()
-	tmpFn, dstFn, err := merge(t, dir, repoFns)
+	result, err := merge(t, dir, repoFns)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(tmpFn, dstFn); err != nil {
+	if !result.HasOutput() {
+		t.Fatal("merge produced no output")
+	}
+	if err := os.Rename(result.TempPath, result.FinalPath); err != nil {
 		t.Fatal(err)
 	}
+	dstFn := result.FinalPath
 
 	readPublic := func() []string {
 		var public []string
@@ -103,20 +107,20 @@ func TestMergeMeta(t *testing.T) {
 	}
 }
 
-func merge(t *testing.T, dstDir string, names []string) (string, string, error) {
+func merge(t *testing.T, dstDir string, names []string) (index.MergeResult, error) {
 	t.Helper()
 
 	var files []index.IndexFile
 	for _, fn := range names {
 		f, err := os.Open(fn)
 		if err != nil {
-			return "", "", err
+			return index.MergeResult{}, err
 		}
 		defer f.Close()
 
 		indexFile, err := index.NewIndexFile(f)
 		if err != nil {
-			return "", "", err
+			return index.MergeResult{}, err
 		}
 		defer indexFile.Close()
 
