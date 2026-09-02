@@ -224,6 +224,8 @@ func TestExplodeTenantCompoundShards(t *testing.T) {
 			in.TenantID = 3
 		}
 	})
+	orphanMeta := filepath.Join(dir, "compound-0000000000000000000000000000000000000000_v17.00000.zoekt.meta")
+	require.NoError(t, os.WriteFile(orphanMeta, []byte("[]"), 0o600))
 
 	// Create context with tenant 1
 	ctx := tenanttest.NewTestContext()
@@ -240,6 +242,7 @@ func TestExplodeTenantCompoundShards(t *testing.T) {
 	// 1) and cs2 remains untouched
 	require.NoFileExists(t, cs1)
 	require.FileExists(t, cs2)
+	require.FileExists(t, orphanMeta)
 
 	// Check that we have 2 simple shards (from cs1) and 1 compound shard (cs2)
 	simpleShards, err := filepath.Glob(filepath.Join(dir, "*_v16.00000.zoekt"))
@@ -255,7 +258,7 @@ func TestExplodeTenantCompoundShards(t *testing.T) {
 		}
 	}
 
-	compoundShards, err := filepath.Glob(filepath.Join(dir, "compound-*"))
+	compoundShards, err := filepath.Glob(filepath.Join(dir, "compound-*.zoekt"))
 	require.NoError(t, err)
 	require.Len(t, compoundShards, 1, "expected 1 compound shard")
 }
