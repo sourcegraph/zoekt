@@ -50,7 +50,7 @@ func setTombstone(shardPath string, repoID uint32, tombstone bool) error {
 		os.Remove(tempPath)
 	}
 
-	return nil
+	return err
 }
 
 // JsonMarshalRepoMetaTemp writes the json encoding of the given repository metadata to a temporary file
