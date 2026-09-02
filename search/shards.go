@@ -822,7 +822,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	collectSender := newCollectSender(opts)
 
 	start := time.Now()
-	proc, err := ss.sched.Acquire(ctx)
+	proc, err := ss.sched.Acquire(ctx, schedulingClass(opts))
 	if err != nil {
 		return nil, err
 	}
@@ -871,7 +871,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	}()
 
 	start := time.Now()
-	proc, err := ss.sched.Acquire(ctx)
+	proc, err := ss.sched.Acquire(ctx, schedulingClass(opts))
 	if err != nil {
 		return err
 	}
@@ -929,6 +929,13 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	done()
 
 	return err
+}
+
+func schedulingClass(opts *zoekt.SearchOptions) zoekt.SchedulingClass {
+	if opts == nil {
+		return zoekt.SchedulingClassInteractive
+	}
+	return opts.SchedulingClass
 }
 
 // streamSearch is an internal helper since both Search and StreamSearch are
@@ -1277,7 +1284,7 @@ func (ss *shardedSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 		isAll = c.Value
 	}
 
-	proc, err := ss.sched.Acquire(ctx)
+	proc, err := ss.sched.Acquire(ctx, zoekt.SchedulingClassInteractive)
 	if err != nil {
 		return nil, err
 	}

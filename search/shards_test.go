@@ -70,6 +70,42 @@ func (s *crashSearcher) Close() {}
 
 func (s *crashSearcher) String() string { return "crashSearcher" }
 
+type recordingScheduler struct {
+	classes []zoekt.SchedulingClass
+}
+
+func (s *recordingScheduler) Acquire(_ context.Context, class zoekt.SchedulingClass) (*process, error) {
+	s.classes = append(s.classes, class)
+	return &process{releaseFunc: func() {}}, nil
+}
+
+func TestSearchSchedulingClass(t *testing.T) {
+	sched := &recordingScheduler{}
+	ss := newShardedSearcher(1)
+	ss.sched = sched
+	opts := &zoekt.SearchOptions{SchedulingClass: zoekt.SchedulingClassBatch}
+	q := &query.Const{Value: true}
+
+	if _, err := ss.Search(context.Background(), q, nil); err != nil {
+		t.Fatalf("Search with default options: %v", err)
+	}
+	if _, err := ss.Search(context.Background(), q, opts); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if err := ss.StreamSearch(context.Background(), q, opts, zoekt.SenderFunc(func(*zoekt.SearchResult) {})); err != nil {
+		t.Fatalf("StreamSearch: %v", err)
+	}
+
+	want := []zoekt.SchedulingClass{
+		zoekt.SchedulingClassInteractive,
+		zoekt.SchedulingClassBatch,
+		zoekt.SchedulingClassBatch,
+	}
+	if diff := cmp.Diff(want, sched.classes); diff != "" {
+		t.Fatalf("scheduling classes mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestCrashResilience(t *testing.T) {
 	out := &bytes.Buffer{}
 	oldOut := log.Writer()

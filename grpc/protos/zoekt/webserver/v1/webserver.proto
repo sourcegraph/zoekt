@@ -76,6 +76,18 @@ message SearchOptions {
   // be sent and then the behaviour will revert to the normal streaming.
   google.protobuf.Duration flush_wall_time = 7;
 
+  enum SchedulingClass {
+    // Default class for latency-sensitive searches. Interactive requests that
+    // run for long enough are demoted to the batch queue as a safety backstop.
+    SCHEDULING_CLASS_INTERACTIVE_UNSPECIFIED = 0;
+    // Class for bulk searches that should be admitted directly to the batch
+    // queue without consuming interactive capacity.
+    SCHEDULING_CLASS_BATCH = 1;
+  }
+
+  // Scheduler queue used to admit this request.
+  SchedulingClass scheduling_class = 17;
+
   // Truncates the number of documents (i.e. files) after collating and
   // sorting the results.
   int64 max_doc_display_count = 8;
