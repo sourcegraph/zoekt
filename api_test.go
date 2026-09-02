@@ -177,7 +177,7 @@ func TestSearchOptions_String(t *testing.T) {
 		switch f.Kind() {
 		case reflect.Bool:
 			f.SetBool(true)
-		case reflect.Int:
+		case reflect.Int, reflect.Int8:
 			f.SetInt(1)
 		case reflect.Int64:
 			f.SetInt(1)

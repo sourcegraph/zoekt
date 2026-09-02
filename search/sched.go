@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/sourcegraph/zoekt"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -19,9 +20,9 @@ import (
 // scheduler is for managing concurrent searches.
 type scheduler interface {
 	// Acquire blocks until a normal process is created (ie for a search
-	// request). See process documentation. It will only return an error if the
-	// context expires.
-	Acquire(ctx context.Context) (*process, error)
+	// request) in the requested scheduling class. See process documentation. It
+	// will only return an error if the context expires.
+	Acquire(ctx context.Context, class zoekt.SchedulingClass) (*process, error)
 }
 
 // The ZOEKTSCHED environment variable controls variables within the
@@ -84,8 +85,9 @@ func newScheduler(capacity int64) scheduler {
 // We use semaphores to limit the number of running processes. A process
 // represents something which has acquired from the semaphore. An exclusive
 // process acquires the full semaphore. Every process is either fast or slow. A
-// process starts as fast, but is downgraded to slow after a period of time.
-// time. Downgrading relies on a process co-operatively deciding to downgrade.
+// batch process starts as slow; otherwise it starts as fast and is downgraded
+// to slow after a period of time. Downgrading relies on a process
+// co-operatively deciding to downgrade.
 //
 // We intentionally keep the algorithm simple, but have a general interface to
 // allow improvements as we learn more.
@@ -128,7 +130,20 @@ func newMultiScheduler(capacity int64) *multiScheduler {
 }
 
 // Acquire implements scheduler.Acquire.
-func (s *multiScheduler) Acquire(ctx context.Context) (*process, error) {
+func (s *multiScheduler) Acquire(ctx context.Context, class zoekt.SchedulingClass) (*process, error) {
+	if class == zoekt.SchedulingClassBatch {
+		// The caller has already decided this request can tolerate batch
+		// latency. Admit it directly to batch so it never consumes interactive
+		// capacity. It also needs no yield timer: it is already in the queue an
+		// interactive request would yield into.
+		if err := s.semBatch.Acquire(ctx); err != nil {
+			return nil, err
+		}
+		return &process{
+			releaseFunc: s.semBatch.Release,
+		}, nil
+	}
+
 	// There are two stages, interactive and batch. We first start by acquiring the interactive mode semaphore.
 	// At some point in the future (if this search request is expensive enough),
 	// yieldFunc will switch us to the batch mode semaphore.
@@ -180,7 +195,7 @@ type semaphoreScheduler struct {
 }
 
 // Acquire implements scheduler.Acquire.
-func (s *semaphoreScheduler) Acquire(ctx context.Context) (*process, error) {
+func (s *semaphoreScheduler) Acquire(ctx context.Context, _ zoekt.SchedulingClass) (*process, error) {
 	return s.acquire(ctx, 1)
 }
 

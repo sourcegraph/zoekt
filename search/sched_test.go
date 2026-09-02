@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/sourcegraph/zoekt"
 )
 
 func BenchmarkYield(b *testing.B) {
@@ -54,7 +55,7 @@ func BenchmarkYield(b *testing.B) {
 		ctx := context.Background()
 		sched := newMultiScheduler(1)
 		sched.interactiveDuration = quantum
-		proc, err := sched.Acquire(ctx)
+		proc, err := sched.Acquire(ctx, zoekt.SchedulingClassInteractive)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -75,7 +76,7 @@ func TestYield(t *testing.T) {
 
 	sched := newMultiScheduler(1)
 	sched.interactiveDuration = quantum
-	proc, err := sched.Acquire(ctx)
+	proc, err := sched.Acquire(ctx, zoekt.SchedulingClassInteractive)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +126,7 @@ func TestMultiScheduler(t *testing.T) {
 	var procs []*process
 	addProc := func() {
 		t.Helper()
-		proc, err := sched.Acquire(ctx)
+		proc, err := sched.Acquire(ctx, zoekt.SchedulingClassInteractive)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -143,7 +144,7 @@ func TestMultiScheduler(t *testing.T) {
 	}
 
 	// We expect this to fail since the queue is at capacity
-	if _, err := sched.Acquire(quickCtx(t)); err == nil {
+	if _, err := sched.Acquire(quickCtx(t), zoekt.SchedulingClassInteractive); err == nil {
 		t.Fatal("expected first acquire after cap to fail")
 	}
 
@@ -154,7 +155,7 @@ func TestMultiScheduler(t *testing.T) {
 	addProc()
 
 	// We expect this to fail since the queue is at capacity again.
-	if _, err := sched.Acquire(quickCtx(t)); err == nil {
+	if _, err := sched.Acquire(quickCtx(t), zoekt.SchedulingClassInteractive); err == nil {
 		t.Fatal("expected second acquire after cap to fail")
 	}
 
@@ -174,6 +175,62 @@ func TestMultiScheduler(t *testing.T) {
 		p.Release()
 	}
 	procs = nil
+}
+
+func TestMultiSchedulerBatchAdmission(t *testing.T) {
+	sched := newMultiScheduler(4)
+
+	interactive := make([]*process, 4)
+	for i := range interactive {
+		proc, err := sched.Acquire(context.Background(), zoekt.SchedulingClassInteractive)
+		if err != nil {
+			t.Fatal(err)
+		}
+		interactive[i] = proc
+	}
+	defer func() {
+		for _, proc := range interactive {
+			if proc != nil {
+				proc.Release()
+			}
+		}
+	}()
+
+	batch, err := sched.Acquire(context.Background(), zoekt.SchedulingClassBatch)
+	if err != nil {
+		t.Fatalf("batch acquire while interactive capacity is full: %v", err)
+	}
+	defer batch.Release()
+	if batch.yieldTimer != nil {
+		t.Fatal("batch process has an interactive demotion timer")
+	}
+
+	if _, err := sched.Acquire(quickCtx(t), zoekt.SchedulingClassBatch); err == nil {
+		t.Fatal("batch acquire succeeded while batch capacity is full")
+	}
+
+	interactive[0].Release()
+	interactive[0] = nil
+	proc, err := sched.Acquire(context.Background(), zoekt.SchedulingClassInteractive)
+	if err != nil {
+		t.Fatalf("interactive acquire while batch capacity is full: %v", err)
+	}
+	proc.Release()
+}
+
+func TestMultiSchedulerBatchAdmissionCancellation(t *testing.T) {
+	sched := newMultiScheduler(1)
+	proc, err := sched.Acquire(context.Background(), zoekt.SchedulingClassBatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proc.Release()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := sched.Acquire(ctx, zoekt.SchedulingClassBatch); err != context.Canceled {
+		t.Fatalf("got error %v, want %v", err, context.Canceled)
+	}
 }
 
 func quickCtx(t *testing.T) context.Context {

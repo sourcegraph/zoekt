@@ -956,6 +956,17 @@ func (o *ListOptions) String() string {
 	return fmt.Sprintf("%#v", o)
 }
 
+// SchedulingClass controls which scheduler queue admits a search request.
+type SchedulingClass int8
+
+const (
+	// SchedulingClassInteractive is the default for latency-sensitive searches.
+	SchedulingClassInteractive SchedulingClass = iota
+	// SchedulingClassBatch is for bulk searches that should not consume
+	// interactive scheduler capacity.
+	SchedulingClassBatch
+)
+
 type SearchOptions struct {
 	// Return an upper-bound estimate of eligible documents in
 	// stats.ShardFilesConsidered.
@@ -986,6 +997,10 @@ type SearchOptions struct {
 	// instead will collate and sort results. At FlushWallTime the results will
 	// be sent and then the behaviour will revert to the normal streaming.
 	FlushWallTime time.Duration
+
+	// SchedulingClass selects the scheduler queue used to admit this request.
+	// The zero value is SchedulingClassInteractive.
+	SchedulingClass SchedulingClass
 
 	// Truncates the number of documents (i.e. files) after collating and
 	// sorting the results.
@@ -1082,6 +1097,7 @@ func (s *SearchOptions) String() string {
 
 	addDuration("MaxWallTime", s.MaxWallTime)
 	addDuration("FlushWallTime", s.FlushWallTime)
+	addInt("SchedulingClass", int(s.SchedulingClass))
 
 	addBool("EstimateDocCount", s.EstimateDocCount)
 	addBool("Whole", s.Whole)
