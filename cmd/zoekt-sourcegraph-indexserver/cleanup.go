@@ -26,13 +26,16 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 // cleanup trashes shards in indexDir that do not exist in repos. For repos
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
 // back into indexDir. Additionally it uses now to remove shards that have
-// been in the trash for 24 hours. It also deletes .tmp files older than 4 hours.
+// been in the trash for 24 hours. It also deletes files left behind by
+// interrupted index operations.
 func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) {
 	start := time.Now()
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0o755); err != nil {
 		errorLog.Printf("failed to create trash dir: %v", err)
 	}
+	removeStaleShardFiles(indexDir)
+	removeStaleShardFiles(trashDir)
 
 	trash := getShards(trashDir)
 	tombtones := getTombstonedRepos(indexDir)
@@ -257,25 +260,46 @@ func getTombstonedRepos(dir string) map[uint32]shard {
 
 var incompleteRE = regexp.MustCompile(`\.zoekt[0-9]+(\.\w+)?$`)
 
-func removeIncompleteShards(dir string) {
+func removeStaleShardFiles(dir string) {
 	d, err := os.Open(dir)
 	if err != nil {
-		debugLog.Printf("failed to removeIncompleteShards: %s", dir)
+		debugLog.Printf("failed to remove stale shard files in %s: %v", dir, err)
 		return
 	}
 	defer d.Close()
 
 	names, _ := d.Readdirnames(-1)
+	sort.Strings(names)
+
 	for _, n := range names {
+		path := filepath.Join(dir, n)
+		kind := ""
+
 		if incompleteRE.MatchString(n) {
-			path := filepath.Join(dir, n)
-			if err := os.Remove(path); err != nil {
-				debugLog.Printf("failed to remove incomplete shard %s: %v", path, err)
-			} else {
-				debugLog.Printf("cleaned up incomplete shard %s", path)
-			}
+			// Incomplete shard writes have a numeric suffix after .zoekt and
+			// may also have a metadata suffix.
+			kind = "incomplete shard"
+		} else if strings.HasSuffix(n, ".zoekt.meta") &&
+			!sortContainsString(names, strings.TrimSuffix(n, ".meta")) {
+			// Metadata sidecars are orphaned when their corresponding shard
+			// is not present in the directory.
+			kind = "orphan metadata"
+		} else {
+			continue
+		}
+
+		if err := os.Remove(path); err != nil {
+			debugLog.Printf("failed to remove %s %s: %v", kind, path, err)
+		} else {
+			debugLog.Printf("cleaned up %s %s", kind, path)
 		}
 	}
+}
+
+// sortContainsString reports whether a sorted list contains needle.
+func sortContainsString(list []string, needle string) bool {
+	i := sort.SearchStrings(list, needle)
+	return i < len(list) && list[i] == needle
 }
 
 func removeAll(shards ...shard) {
