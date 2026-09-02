@@ -381,7 +381,7 @@ func isIndexingPaused(indexDir string) (bool, string) {
 
 // Run the sync loop. This blocks forever.
 func (s *Server) Run() {
-	removeIncompleteShards(s.IndexDir)
+	removeStaleShardFiles(s.IndexDir)
 
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {

@@ -196,8 +196,8 @@ func globBase(pattern string) []string {
 	return paths
 }
 
-func TestRemoveIncompleteShards(t *testing.T) {
-	shards, incomplete := []string{
+func TestRemoveStaleShardFiles(t *testing.T) {
+	shards, stale := []string{
 		"test.zoekt",
 		"foo.zoekt",
 		"bar.zoekt",
@@ -206,18 +206,19 @@ func TestRemoveIncompleteShards(t *testing.T) {
 		"incomplete.zoekt123",
 		"crash.zoekt567",
 		"metacrash.zoekt789.meta",
+		"orphan.zoekt.meta",
 	}
 	sort.Strings(shards)
 
 	dir := t.TempDir()
 
-	for _, shard := range append(shards, incomplete...) {
+	for _, shard := range append(shards, stale...) {
 		_, err := os.Create(filepath.Join(dir, shard))
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	removeIncompleteShards(dir)
+	removeStaleShardFiles(dir)
 
 	left, _ := filepath.Glob(filepath.Join(dir, "*"))
 	sort.Strings(left)
@@ -227,6 +228,31 @@ func TestRemoveIncompleteShards(t *testing.T) {
 
 	if !reflect.DeepEqual(shards, left) {
 		t.Errorf("\ngot shards: %v\nwant: %v\n", left, shards)
+	}
+}
+
+func TestCleanupRemovesOrphanMetadata(t *testing.T) {
+	dir := t.TempDir()
+	trashDir := filepath.Join(dir, ".trash")
+	if err := os.Mkdir(trashDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{
+		filepath.Join(dir, "orphan.zoekt.meta"),
+		filepath.Join(trashDir, "trashed-orphan.zoekt.meta"),
+	}
+	for _, path := range paths {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cleanup(dir, nil, time.Now(), false)
+
+	for _, path := range paths {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("orphan metadata still exists at %s", path)
+		}
 	}
 }
 
