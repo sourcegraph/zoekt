@@ -1457,6 +1457,70 @@ func TestBranchVersions(t *testing.T) {
 	})
 }
 
+func TestBranchVersionMatchesQuery(t *testing.T) {
+	const repoID = 42
+	b := testShardBuilder(t, &zoekt.Repository{
+		ID: repoID,
+		Branches: []zoekt.RepositoryBranch{
+			{Name: "master", Version: "v-master"},
+			{Name: "stable", Version: "v-stable"},
+		},
+	}, Document{
+		Name:     "shared",
+		Content:  []byte("needle"),
+		Branches: []string{"master", "stable"},
+	})
+
+	tests := []struct {
+		name         string
+		query        query.Q
+		wantVersion  string
+		wantBranches []string
+	}{
+		{
+			name:         "no branch query",
+			query:        &query.Substring{Pattern: "needle"},
+			wantVersion:  "v-master",
+			wantBranches: []string{"master", "stable"},
+		},
+		{
+			name: "branch query",
+			query: query.NewAnd(
+				&query.Substring{Pattern: "needle"},
+				&query.Branch{Pattern: "stable", Exact: true},
+			),
+			wantVersion:  "v-stable",
+			wantBranches: []string{"stable"},
+		},
+		{
+			name: "branches repos query",
+			query: query.NewAnd(
+				&query.Substring{Pattern: "needle"},
+				query.NewSingleBranchesRepos("stable", repoID),
+			),
+			wantVersion:  "v-stable",
+			wantBranches: []string{"stable"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sres := searchForTest(t, b, tt.query)
+			if len(sres.Files) != 1 {
+				t.Fatalf("got %v, want 1 result", sres.Files)
+			}
+
+			f := sres.Files[0]
+			if f.Version != tt.wantVersion {
+				t.Errorf("got version %q, want %q", f.Version, tt.wantVersion)
+			}
+			if diff := cmp.Diff(tt.wantBranches, f.Branches); diff != "" {
+				t.Errorf("branches mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func mustParseRE(s string) *syntax.Regexp {
 	r, err := syntax.Parse(s, syntax.Perl)
 	if err != nil {

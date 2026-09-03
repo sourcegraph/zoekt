@@ -51,7 +51,8 @@ type FileMatch struct {
 	// was mounted.
 	SubRepositoryPath string `json:",omitempty"`
 
-	// Commit SHA1 (hex) of the (sub)repo holding the file.
+	// Commit SHA1 (hex) of the (sub)repo holding the file. If Branches is not
+	// empty, Version is the commit for Branches[0].
 	Version string `json:",omitempty"`
 
 	// Detected language of the result.

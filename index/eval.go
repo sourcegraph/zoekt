@@ -301,6 +301,7 @@ nextFileMatch:
 			Checksum:           d.getChecksum(nextDoc),
 			Language:           d.languageMap[d.getLanguage(nextDoc)],
 		}
+		branchMask := d.matchingBranchMask(nextDoc, mt, known)
 
 		if s := d.subRepos[nextDoc]; s > 0 {
 			if s >= uint32(len(d.subRepoPaths[d.repos[nextDoc]])) {
@@ -310,11 +311,11 @@ nextFileMatch:
 			fileMatch.SubRepositoryPath = path
 			sr := md.SubRepoMap[path]
 			fileMatch.SubRepositoryName = sr.Name
-			if idx := d.branchIndex(nextDoc); idx >= 0 {
+			if idx := branchIndex(branchMask); idx >= 0 {
 				fileMatch.Version = sr.Branches[idx].Version
 			}
 		} else {
-			idx := d.branchIndex(nextDoc)
+			idx := branchIndex(branchMask)
 			if idx >= 0 {
 				fileMatch.Version = md.Branches[idx].Version
 			}
@@ -338,7 +339,7 @@ nextFileMatch:
 			d.scoreFile(&fileMatch, nextDoc, mt, known, opts)
 		}
 
-		fileMatch.Branches = d.gatherBranches(nextDoc, mt, known)
+		fileMatch.Branches = d.gatherBranches(nextDoc, branchMask)
 		sortMatchesByScore(fileMatch.LineMatches)
 		sortChunkMatchesByScore(fileMatch.ChunkMatches)
 		if opts.Whole {
@@ -481,8 +482,7 @@ func setScoreWeight(scoreWeight float64, cm []*candidateMatch) []*candidateMatch
 	return cm
 }
 
-func (d *indexData) branchIndex(docID uint32) int {
-	mask := d.fileBranchMasks[docID]
+func branchIndex(mask uint64) int {
 	idx := 0
 	for mask != 0 {
 		if mask&0x1 != 0 {
@@ -494,11 +494,10 @@ func (d *indexData) branchIndex(docID uint32) int {
 	return -1
 }
 
-// gatherBranches returns a list of branch names taking into account any branch
-// filters in the query. If the query contains a branch filter, it returns all
-// branches containing the docID and matching the branch filter. Otherwise, it
-// returns all branches containing docID.
-func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTree]bool) []string {
+// matchingBranchMask returns the branches containing docID which matched a
+// branch filter in the query. If no branch filter matched, it returns all
+// branches containing docID.
+func (d *indexData) matchingBranchMask(docID uint32, mt matchTree, known map[matchTree]bool) uint64 {
 	var mask uint64
 	visitMatchAtoms(mt, known, func(mt matchTree) {
 		bq, ok := mt.(*branchQueryMatchTree)
@@ -512,7 +511,10 @@ func (d *indexData) gatherBranches(docID uint32, mt matchTree, known map[matchTr
 	if mask == 0 {
 		mask = d.fileBranchMasks[docID]
 	}
+	return mask
+}
 
+func (d *indexData) gatherBranches(docID uint32, mask uint64) []string {
 	var branches []string
 	id := uint64(1)
 	branchNames := d.branchNames[d.repos[docID]]
