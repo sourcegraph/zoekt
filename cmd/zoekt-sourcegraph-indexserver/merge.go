@@ -251,7 +251,7 @@ func (s *Server) explodeTenantCompoundShards(ctx context.Context, explodeFunc fu
 		return err
 	}
 
-	paths, err := filepath.Glob(filepath.Join(s.IndexDir, "compound-*"))
+	paths, err := filepath.Glob(filepath.Join(s.IndexDir, "compound-*.zoekt"))
 	if err != nil {
 		return err
 	}
