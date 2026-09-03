@@ -32,7 +32,7 @@ import (
 
 type shardLoader interface {
 	// Load a new file.
-	load(filenames ...string)
+	load(filenames ...string) []string
 	drop(filenames ...string)
 }
 
@@ -186,7 +186,6 @@ func (s *DirectoryWatcher) scan() error {
 	for k, current := range files {
 		if previous, ok := s.files[k]; !ok || !previous.equal(current) {
 			toLoad = append(toLoad, k)
-			s.files[k] = current
 		}
 	}
 
@@ -204,7 +203,11 @@ func (s *DirectoryWatcher) scan() error {
 	}
 
 	s.loader.drop(toDrop...)
-	s.loader.load(toLoad...)
+	for _, loaded := range s.loader.load(toLoad...) {
+		if current, ok := files[loaded]; ok {
+			s.files[loaded] = current
+		}
+	}
 
 	return nil
 }
@@ -231,6 +234,12 @@ func (s *DirectoryWatcher) watch() error {
 		return err
 	}
 	if err := watcher.Add(s.dir); err != nil {
+		watcher.Close()
+		return err
+	}
+	// Reconcile changes made between the initial scan and watcher registration.
+	if err := s.scan(); err != nil {
+		watcher.Close()
 		return err
 	}
 
@@ -239,6 +248,9 @@ func (s *DirectoryWatcher) watch() error {
 	signal := make(chan struct{}, 1)
 
 	go func() {
+		defer watcher.Close()
+		defer close(signal)
+
 		notify := func() {
 			select {
 			case signal <- struct{}{}:
@@ -247,10 +259,14 @@ func (s *DirectoryWatcher) watch() error {
 		}
 
 		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
 
 		for {
 			select {
-			case event := <-watcher.Events:
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
 				// Only notify if a file we read in has changed. This is important to
 				// avoid all the events writing to temporary files.
 				if strings.HasSuffix(event.Name, ".zoekt") || strings.HasSuffix(event.Name, ".meta") {
@@ -261,17 +277,13 @@ func (s *DirectoryWatcher) watch() error {
 				// Periodically just double check the disk
 				notify()
 
-			case err := <-watcher.Errors:
-				// Ignore ErrEventOverflow since we rely on the presence of events so
-				// safe to ignore.
-				if err != nil && err != fsnotify.ErrEventOverflow {
-					log.Println("[ERROR] watcher error:", err)
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
 				}
+				handleWatcherError(err, notify)
 
 			case <-s.quit:
-				watcher.Close()
-				ticker.Stop()
-				close(signal)
 				return
 			}
 		}
@@ -287,4 +299,14 @@ func (s *DirectoryWatcher) watch() error {
 	}()
 
 	return nil
+}
+
+func handleWatcherError(err error, notify func()) {
+	if err == nil {
+		return
+	}
+	notify()
+	if err != fsnotify.ErrEventOverflow {
+		log.Println("[ERROR] watcher error:", err)
+	}
 }
