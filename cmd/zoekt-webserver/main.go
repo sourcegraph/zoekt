@@ -36,13 +36,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/shirou/gopsutil/v3/disk"
 	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/mountinfo"
-	"github.com/uber/jaeger-client-go"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/sys/unix"
@@ -575,16 +573,6 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 }
 
 func traceContext(ctx context.Context) sglog.TraceContext {
-	otSpan := opentracing.SpanFromContext(ctx)
-	if otSpan != nil {
-		if jaegerSpan, ok := otSpan.Context().(jaeger.SpanContext); ok {
-			return sglog.TraceContext{
-				TraceID: jaegerSpan.TraceID().String(),
-				SpanID:  jaegerSpan.SpanID().String(),
-			}
-		}
-	}
-
 	if otelSpan := oteltrace.SpanFromContext(ctx).SpanContext(); otelSpan.IsValid() {
 		return sglog.TraceContext{
 			TraceID: otelSpan.TraceID().String(),
