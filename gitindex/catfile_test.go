@@ -2,6 +2,7 @@ package gitindex
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -140,6 +141,30 @@ func TestCatfileReader(t *testing.T) {
 	_, _, _, err = cr.Next()
 	if err != io.EOF {
 		t.Errorf("expected io.EOF after last entry, got %v", err)
+	}
+}
+
+func TestCatfileReader_ReportsProcessError(t *testing.T) {
+	binDir := t.TempDir()
+	fakeGit := filepath.Join(binDir, "git")
+	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\necho 'synthetic cat-file failure' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(%q): %v", fakeGit, err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	cr, err := newCatfileReader(t.TempDir(), []plumbing.Hash{plumbing.ZeroHash}, catfileReaderOptions{})
+	if err != nil {
+		t.Fatalf("newCatfileReader: %v", err)
+	}
+	defer cr.Close()
+
+	_, _, _, err = cr.Next()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("Next error = %v, want exec.ExitError", err)
+	}
+	if !strings.Contains(err.Error(), "synthetic cat-file failure") {
+		t.Fatalf("Next error = %v, want cat-file stderr", err)
 	}
 }
 
