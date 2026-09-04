@@ -39,7 +39,6 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/dustin/go-humanize"
 	"github.com/rs/xid"
-	"golang.org/x/sys/unix"
 
 	"maps"
 
@@ -98,7 +97,8 @@ type Options struct {
 
 	// LargeFiles is a slice of glob patterns, including ** for any number
 	// of directories, where matching file paths should be indexed
-	// regardless of their size. The full pattern syntax is here:
+	// regardless of their size. Paths and patterns always use forward slashes
+	// as separators. The full pattern syntax is here:
 	// https://github.com/bmatcuk/doublestar/tree/v4#patterns.
 	LargeFiles []string
 
@@ -337,7 +337,7 @@ func (o *Options) SetDefaults() {
 	if o.RepositoryDescription.Name == "" && o.RepositoryDescription.URL != "" {
 		parsed, _ := url.Parse(o.RepositoryDescription.URL)
 		if parsed != nil {
-			o.RepositoryDescription.Name = filepath.Join(parsed.Host, parsed.Path)
+			o.RepositoryDescription.Name = path.Join(parsed.Host, parsed.Path)
 		}
 	}
 }
@@ -492,7 +492,7 @@ func (o *Options) findShard() string {
 }
 
 func (o *Options) findCompoundShard() string {
-	compoundShards, err := filepath.Glob(path.Join(o.IndexDir, "compound-*.zoekt"))
+	compoundShards, err := filepath.Glob(filepath.Join(o.IndexDir, "compound-*.zoekt"))
 	if err != nil {
 		return ""
 	}
@@ -535,7 +535,7 @@ func (o *Options) IgnoreSizeMax(name string) bool {
 		pattern := strings.TrimSpace(v)
 		negated, validatedPattern := checkIsNegatePattern(pattern)
 
-		if m, _ := doublestar.PathMatch(validatedPattern, name); m {
+		if m, _ := doublestar.Match(validatedPattern, filepath.ToSlash(name)); m {
 			if negated {
 				return false
 			} else {
@@ -1127,8 +1127,3 @@ func (e *deltaIndexOptionsMismatchError) Error() string {
 
 // umask holds the Umask of the current process
 var umask os.FileMode
-
-func init() {
-	umask = os.FileMode(unix.Umask(0))
-	unix.Umask(int(umask))
-}

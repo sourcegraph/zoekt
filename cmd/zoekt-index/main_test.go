@@ -16,7 +16,10 @@ import (
 func TestIndexArgAttachesConfiguredBranches(t *testing.T) {
 	sourceDir := t.TempDir()
 	indexDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(sourceDir, "file.txt"), []byte("needle\n"), 0o644); err != nil {
+	if err := os.Mkdir(filepath.Join(sourceDir, "subdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "subdir", "file.txt"), []byte("needle\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -55,6 +58,9 @@ func TestIndexArgAttachesConfiguredBranches(t *testing.T) {
 	}
 	if len(result.Files) != 1 {
 		t.Fatalf("main branch returned %d files, want 1", len(result.Files))
+	}
+	if got := result.Files[0].FileName; got != "subdir/file.txt" {
+		t.Fatalf("file name = %q, want %q", got, "subdir/file.txt")
 	}
 	if got := result.Files[0].Branches; !reflect.DeepEqual(got, []string{"main"}) {
 		t.Fatalf("branches = %v, want [main]", got)

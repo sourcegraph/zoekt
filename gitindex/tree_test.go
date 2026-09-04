@@ -37,6 +37,13 @@ import (
 	"github.com/sourcegraph/zoekt/search"
 )
 
+func TestFileKeyFullPathUsesRepositorySeparators(t *testing.T) {
+	key := fileKey{SubRepoPath: "submodule", Path: "dir/file.go"}
+	if got, want := key.FullPath(), "submodule/dir/file.go"; got != want {
+		t.Fatalf("full path = %q, want %q", got, want)
+	}
+}
+
 func createSubmoduleRepo(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err

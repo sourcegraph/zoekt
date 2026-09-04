@@ -24,6 +24,19 @@ import (
 
 var update = flag.Bool("update", false, "update golden file")
 
+func TestOptionsSetDefaultsUsesRepositoryPaths(t *testing.T) {
+	opts := Options{
+		RepositoryDescription: zoekt.Repository{
+			URL: "https://github.com/sourcegraph/zoekt",
+		},
+	}
+	opts.SetDefaults()
+
+	if got, want := opts.RepositoryDescription.Name, "github.com/sourcegraph/zoekt"; got != want {
+		t.Fatalf("repository name = %q, want %q", got, want)
+	}
+}
+
 // ensure we don't regress on how we build v16
 func TestBuildv16(t *testing.T) {
 	dir := t.TempDir()
@@ -981,6 +994,12 @@ func TestIgnoreSizeMax(t *testing.T) {
 		expected   bool
 	}{
 		{
+			name:       "star does not match across directories",
+			largeFiles: []string{"dir/*.md"},
+			filePaths:  []string{"dir/sub/file.md"},
+			expected:   false,
+		},
+		{
 			name:       "empty pattern does nothing",
 			largeFiles: []string{""},
 			filePaths:  []string{"F0"},
@@ -1179,12 +1198,12 @@ func TestOptions_shardName(t *testing.T) {
 	}
 
 	t.Setenv("WORKSPACES_API_URL", "")
-	if got, want := opts.shardNameVersion(16, 0), "/data/a%2Fb_v16.00000.zoekt"; got != want {
+	if got, want := opts.shardNameVersion(16, 0), filepath.Join("/data", "a%2Fb_v16.00000.zoekt"); got != want {
 		t.Fatalf("expected shard name to be repo name based:\ngot:  %q\nwant: %q", got, want)
 	}
 
 	t.Setenv("WORKSPACES_API_URL", "http://example.com")
-	if got, want := opts.shardNameVersion(16, 0), "/data/000000123_000000456_v16.00000.zoekt"; got != want {
+	if got, want := opts.shardNameVersion(16, 0), filepath.Join("/data", "000000123_000000456_v16.00000.zoekt"); got != want {
 		t.Fatalf("expected shard name to be ID based:\ngot:  %q\nwant: %q", got, want)
 	}
 
@@ -1196,7 +1215,7 @@ func TestOptions_shardName(t *testing.T) {
 			Name: "a/b",
 		},
 	}
-	if got, want := opts.shardNameVersion(16, 0), "/data/000000000_000000000_v16.00000.zoekt"; got != want {
+	if got, want := opts.shardNameVersion(16, 0), filepath.Join("/data", "000000000_000000000_v16.00000.zoekt"); got != want {
 		t.Fatalf("expected shard name to be with no tenant:\ngot:  %q\nwant: %q", got, want)
 	}
 }

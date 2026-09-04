@@ -182,7 +182,11 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 	}()
 
 	for f := range comm {
-		displayName := strings.TrimPrefix(f.name, dir+"/")
+		displayName, err := filepath.Rel(dir, f.name)
+		if err != nil {
+			return err
+		}
+		displayName = filepath.ToSlash(displayName)
 		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
 			if err := builder.Add(index.Document{
 				Name:       displayName,
