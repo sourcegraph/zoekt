@@ -3,7 +3,7 @@
 OBJECTIVE
 =========
 
-Provide full text code search for git based corpuses.
+Provide full text code search for Git based corpuses.
 
 Goals:
 
@@ -101,7 +101,7 @@ compare the candidate matches without regard for case.
 UTF-8
 -----
 
-UTF-8 is the defacto encoding for unicode. Zoekt assumes that files
+UTF-8 is the de facto encoding for Unicode. Zoekt assumes that files
 are UTF-8 encoded.  Characters have differing widths in UTF-8, so we
 use rune offsets in the trigram index, and convert those back to bytes
 with a lookup table: every 100 runes, we store the rune-index to
@@ -165,7 +165,7 @@ shards.
 Ranking
 -------
 
-In absense of advanced signals (e.g. pagerank on symbol references),
+In absence of advanced signals (e.g. PageRank on symbol references),
 ranking options are limited: the following signals could be used for
 ranking
 
@@ -173,7 +173,7 @@ ranking
    * closeness to matches for other atoms
    * quality of match: does match boundary coincide with a word boundary?
    * file latest update time
-   * filename lengh
+   * filename length
    * tokenizer ranking: does a match fall comment or string literal?
    * symbol ranking: it the match a symbol definition?
 
@@ -285,7 +285,7 @@ would also render the search results. The process is as follows:
     (AND original-query repo:REPO (OR "branch:visible-1" "branch:visible-2" .. ))
 
    * The search service returns the search results, leaving it to
-     gitiles to render them. Gitiles can apply any further filtering
+     Gitiles to render them. Gitiles can apply any further filtering
      as necessary.
 
 
@@ -297,7 +297,7 @@ system also crawls repositories and (re)indexes them. Since the system
 is designed to run on a single machine, we provide a service
 management tool, with the following responsibilities:
 
-   * Poll git hosting sites (eg. github.com, googlesource.com), to fetch new updates
+   * Poll Git hosting sites (eg. github.com, googlesource.com), to fetch new updates
    * Reindex any changed repositories
    * Run the webserver; and restart if it goes down for any reason
    * Delete old webserver logs
@@ -316,13 +316,13 @@ Since the code is public, there is no sensitive code to steal.
 
 This leaves us with the following sensitive data:
 
-   * Credentials for accessing git repositories (eg. github access token)
+   * Credentials for accessing Git repositories (eg. GitHub access token)
    * TLS server certificates
    * Query logs
 
 The system handles the following untrusted data:
 
-   * code in git repositories
+   * code in Git repositories
    * search queries
 
 Since 'zoekt' itself is written in Go, it does not have memory
