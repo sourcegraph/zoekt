@@ -18,9 +18,8 @@ import (
 )
 
 func New(ctx context.Context, family, title string) (*Trace, context.Context) {
-	tracer := GetOpenTracer(ctx, nil)
-	span, ctx := opentracing.StartSpanFromContextWithTracer(ctx,
-		tracer,
+	span, ctx := opentracing.StartSpanFromContext(
+		ctx,
 		family,
 		opentracing.Tag{Key: "title", Value: title},
 	)

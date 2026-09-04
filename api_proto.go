@@ -706,7 +706,6 @@ func SearchOptionsFromProto(p *webserverv1.SearchOptions) *SearchOptions {
 		MaxMatchDisplayCount:   int(p.GetMaxMatchDisplayCount()),
 		NumContextLines:        int(p.GetNumContextLines()),
 		ChunkMatches:           p.GetChunkMatches(),
-		Trace:                  p.GetTrace(),
 		DebugScore:             p.GetDebugScore(),
 		UseBM25Scoring:         p.GetUseBm25Scoring(),
 	}
@@ -730,7 +729,6 @@ func (s *SearchOptions) ToProto() *webserverv1.SearchOptions {
 		MaxMatchDisplayCount:   int64(s.MaxMatchDisplayCount),
 		NumContextLines:        int64(s.NumContextLines),
 		ChunkMatches:           s.ChunkMatches,
-		Trace:                  s.Trace,
 		DebugScore:             s.DebugScore,
 		UseBm25Scoring:         s.UseBM25Scoring,
 	}

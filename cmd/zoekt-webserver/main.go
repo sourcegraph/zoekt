@@ -56,7 +56,6 @@ import (
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/debugserver"
 	"github.com/sourcegraph/zoekt/internal/profiler"
-	"github.com/sourcegraph/zoekt/internal/trace"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
@@ -259,7 +258,7 @@ func main() {
 		addProxyHandler(serveMux, socket)
 	}
 
-	handler := trace.Middleware(serveMux)
+	var handler http.Handler = serveMux
 
 	// Sourcegraph: We use environment variables to configure watchdog since
 	// they are more convenient than flags in containerized environments.
@@ -288,10 +287,7 @@ func main() {
 	}
 
 	logger := sglog.Scoped("ZoektWebserverGRPCServer")
-
-	streamer := web.NewTraceAwareSearcher(s.Searcher)
-	grpcServer := newGRPCServer(logger, streamer)
-
+	grpcServer := newGRPCServer(logger, s.Searcher)
 	handler = grpcutil.MultiplexGRPC(grpcServer, handler)
 	handler = corsHandler(handler, *corsOrigin)
 
