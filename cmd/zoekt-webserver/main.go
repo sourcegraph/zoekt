@@ -309,7 +309,7 @@ func main() {
 			err = srv.ListenAndServe()
 		}
 
-		if err != http.ErrServerClosed {
+		if !errors.Is(err, http.ErrServerClosed) {
 			// Fatal otherwise shutdownOnSignal will block
 			log.Fatalf("ListenAndServe: %v", err)
 		}
