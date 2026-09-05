@@ -56,6 +56,11 @@ type IndexOptions struct {
 	// Archived is true if the repository is archived.
 	Archived bool
 
+	// CacheGitRepo retains the shallow clone between indexing jobs to avoid
+	// repeatedly transferring unchanged monorepo content. See git_cache.go for
+	// the bounded lifetime; this does not affect the resulting search index.
+	CacheGitRepo bool
+
 	// Map from language to scip-ctags, universal-ctags, or neither
 	LanguageMap ctags.LanguageMap
 
@@ -292,6 +297,8 @@ func (o *IndexOptions) FromProto(x *configv1.ZoektIndexOptions) {
 		Symbols:    x.GetSymbols(),
 		Branches:   branches,
 		Name:       x.GetName(),
+
+		CacheGitRepo: x.GetCacheGitRepo(),
 
 		Priority: x.GetPriority(),
 
