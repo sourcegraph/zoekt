@@ -126,8 +126,8 @@ func initGitRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexCon
 		"X-Sourcegraph-Tenant-ID: " + strconv.Itoa(o.TenantID),
 	} {
 		action := "--add"
-		if o.CacheGitRepo && i == 0 {
-			// Reused clones must not accumulate authentication headers.
+		if i == 0 {
+			// Reset the multi-value key before adding the expected headers.
 			action = "--replace-all"
 		}
 		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", action, "http.extraHeader", header)
@@ -161,12 +161,7 @@ func (gitRepoCache) fetch(ctx context.Context, gitDir string, o *indexArgs, c gi
 		fetchArgs := []string{
 			"-C", gitDir,
 			"-c", "protocol.version=2",
-			"fetch", "--depth=1", "--no-tags",
-		}
-
-		if o.CacheGitRepo {
-			// A background GC could outlive the indexing lock and race expiry.
-			fetchArgs = append(fetchArgs, "--atomic", "--no-auto-maintenance")
+			"fetch", "--depth=1", "--no-tags", "--atomic", "--no-auto-maintenance",
 		}
 
 		// Git's blob:limit filter excludes blobs whose size is >= the given limit,
