@@ -197,16 +197,24 @@ func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph S
 
 	var gitDir string
 	var cached gitRepoCacheEntry
+	var cacheState string
+	cacheLogger := logger
 	if o.CacheGitRepo {
-		gitDir, cached, err = prepareCachedGitDir(o, time.Now())
+		cacheLogger = logger.With(sglog.String("repo", o.Name), sglog.Uint32("id", o.RepoID), sglog.Int("tenant", o.TenantID))
+		gitDir, cached, cacheState, err = prepareCachedGitDir(o, time.Now(), cacheLogger)
 	} else {
 		gitDir, err = tmpGitDir(o.Name)
 	}
 	if err != nil {
 		return err
 	}
+	failureReason := "prepare_error"
 	defer func() {
-		if !o.CacheGitRepo || err != nil {
+		if o.CacheGitRepo && err != nil {
+			if _, removeErr := removeGitRepoCache(gitDir, failureReason, cacheLogger); removeErr != nil {
+				cacheLogger.Warn("failed to remove git clone cache", sglog.Error(removeErr))
+			}
+		} else if !o.CacheGitRepo {
 			if removeErr := os.RemoveAll(gitDir); removeErr != nil {
 				logger.Warn("failed to remove git clone", sglog.String("path", gitDir), sglog.Error(removeErr))
 			}
@@ -221,11 +229,25 @@ func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph S
 		}
 	}
 
+	failureReason = "fetch_error"
+	fetchStart := time.Now()
 	err = fetchRepo(ctx, gitDir, o, c, logger)
+	if o.CacheGitRepo {
+		fetchDuration := time.Since(fetchStart)
+		size, sizeErr := gitRepoCacheSize(gitDir)
+		outcome := "success"
+		if err != nil {
+			outcome = "failure"
+		}
+		cacheLogger.Info("git clone cache fetch", sglog.String("cache_state", cacheState),
+			sglog.Duration("cache_age", fetchStart.Sub(cached.Created)), sglog.Duration("fetch_duration", fetchDuration),
+			sglog.String("outcome", outcome), sglog.Int64("cache_size_bytes", size), sglog.Error(sizeErr))
+	}
 	if err != nil {
 		return err
 	}
 
+	failureReason = "index_error"
 	err = setZoektConfig(ctx, gitDir, o, c)
 	if err != nil {
 		return err
@@ -293,7 +315,7 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 
 	defer func() {
 		success := strconv.FormatBool(allFetchesSucceeded)
-		name := repoNameForMetric(o.Name)
+		name := repoNameForMetric(o.Name, o.CacheGitRepo)
 		metricFetchDuration.WithLabelValues(success, name).Observe(fetchDuration.Seconds())
 	}()
 
@@ -376,7 +398,8 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 			if o.CacheGitRepo {
 				// Do not let a failed fetch poison a retained clone, including the
 				// existing fallback when a delta base is no longer available.
-				if err := os.RemoveAll(gitDir); err != nil {
+				cacheLogger := logger.With(sglog.String("repo", o.Name), sglog.Uint32("id", o.RepoID), sglog.Int("tenant", o.TenantID))
+				if _, err := removeGitRepoCache(gitDir, "delta_fetch_error", cacheLogger); err != nil {
 					return err
 				}
 				if err := initGitRepo(ctx, gitDir, o, c); err != nil {

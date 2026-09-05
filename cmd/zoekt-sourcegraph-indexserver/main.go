@@ -414,7 +414,7 @@ func (s *Server) Run() {
 				defer close(cleanupDone)
 				s.muIndexDir.Global(func() {
 					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
-					if err := cleanupGitRepoCache(repos.IDs, time.Now()); err != nil {
+					if err := cleanupGitRepoCache(repos.IDs, time.Now(), s.logger); err != nil {
 						s.logger.Error("failed to clean git clone cache", sglog.Error(err))
 					}
 				})
@@ -503,10 +503,10 @@ func (s *Server) processQueue() {
 			state, err := s.index(context.Background(), args)
 
 			elapsed := time.Since(start)
-			metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(elapsed.Seconds())
+			metricIndexDuration.WithLabelValues(string(state), repoNameForMetric(opts.Name, opts.CacheGitRepo)).Observe(elapsed.Seconds())
 
 			indexDelay := time.Since(item.DateAddedToQueue)
-			metricIndexingDelay.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(indexDelay.Seconds())
+			metricIndexingDelay.WithLabelValues(string(state), repoNameForMetric(opts.Name, opts.CacheGitRepo)).Observe(indexDelay.Seconds())
 
 			if err != nil {
 				errorLog.Printf("error indexing %s: %s", args.String(), err)
@@ -542,11 +542,14 @@ func (s *Server) processQueue() {
 	}
 }
 
-// repoNameForMetric returns a normalized version of the given repository name that is
-// suitable for use with Prometheus metrics.
-func repoNameForMetric(repo string) string {
-	// Check to see if we want to be able to capture separate indexing metrics for this repository.
-	// If we don't, set to a default string to keep the cardinality for the Prometheus metric manageable.
+// repoNameForMetric keeps cardinality bounded to explicitly selected repositories.
+// Sourcegraph enables caching only for its small monorepo list; naming those repos
+// lets existing fetch/index latency panels show the impact without a second
+// allowlist or a new label dimension. The manual allowlist remains additive.
+func repoNameForMetric(repo string, cacheGitRepo bool) string {
+	if cacheGitRepo {
+		return repo
+	}
 	if _, ok := reposWithSeparateIndexingMetrics[repo]; ok {
 		return repo
 	}
@@ -625,7 +628,7 @@ func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, 
 	// Reclaim opt-outs even when the shard is already current and indexing
 	// below would be a no-op. Cached Git data is not part of index identity.
 	if !args.CacheGitRepo || len(args.Branches) == 0 {
-		if err := os.RemoveAll(cachedGitDir(args)); err != nil {
+		if _, err := removeGitRepoCache(cachedGitDir(args), "disabled", s.logger); err != nil {
 			return indexStateFail, err
 		}
 	}
@@ -1205,7 +1208,8 @@ func (s *Server) DeleteAllData(ctx context.Context, _ *indexserverv1.DeleteAllDa
 		if err := purgeTenantShards(ctx, filepath.Join(s.IndexDir, ".trash")); err != nil {
 			merr = multierr.Append(merr, err)
 		}
-		if err := os.RemoveAll(filepath.Join(gitRepoCacheDir(), strconv.Itoa(tnt.ID()))); err != nil {
+		if _, err := removeGitRepoCache(filepath.Join(gitRepoCacheDir(), strconv.Itoa(tnt.ID())), "tenant_delete",
+			s.logger.With(sglog.Int("tenant", tnt.ID()))); err != nil {
 			merr = multierr.Append(merr, err)
 		}
 	})
@@ -1240,6 +1244,9 @@ func setupTmpDir(logger sglog.Logger, main bool, index string) error {
 	tmpRoot := filepath.Join(index, dir)
 
 	if main {
+		if _, err := removeGitRepoCache(filepath.Join(tmpRoot, "git-cache"), "startup", logger); err != nil {
+			logger.Error("failed to remove git clone cache", sglog.Error(err))
+		}
 		logger.Info("removing tmp dir", sglog.String("tmpRoot", tmpRoot))
 		err := os.RemoveAll(tmpRoot)
 		if err != nil {

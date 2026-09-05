@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sourcegraph/log/logtest"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -57,14 +58,16 @@ func TestPrepareCachedGitDir(t *testing.T) {
 			require.NoError(t, os.WriteFile(sentinel, nil, 0o600))
 			// Access/mtime must not extend a busy repository's maximum lifetime.
 			require.NoError(t, os.Chtimes(dir, now, now))
-			gotDir, got, err := prepareCachedGitDir(&args, now)
+			gotDir, got, state, err := prepareCachedGitDir(&args, now, logtest.Scoped(t))
 			require.NoError(t, err)
 			require.Equal(t, dir, gotDir)
 			require.NoFileExists(t, filepath.Join(dir, gitRepoCacheMetadata))
 			if tc.reuse {
+				require.Equal(t, "reused", state)
 				require.FileExists(t, sentinel)
 				require.Equal(t, entry.Created, got.Created)
 			} else {
+				require.Equal(t, "reset", state)
 				require.NoDirExists(t, dir)
 				require.Equal(t, now, got.Created)
 			}
@@ -77,8 +80,9 @@ func TestPrepareCachedGitDir(t *testing.T) {
 		if contents != "" {
 			require.NoError(t, os.WriteFile(filepath.Join(dir, gitRepoCacheMetadata), []byte(contents), 0o600))
 		}
-		_, _, err := prepareCachedGitDir(&args, now)
+		_, _, state, err := prepareCachedGitDir(&args, now, logtest.Scoped(t))
 		require.NoError(t, err)
+		require.Equal(t, "reset", state)
 		require.NoDirExists(t, dir)
 	}
 	other := args
@@ -112,7 +116,7 @@ func TestCleanupGitRepoCache(t *testing.T) {
 			if tc.assigned {
 				assigned = []uint32{args.RepoID}
 			}
-			require.NoError(t, cleanupGitRepoCache(assigned, now))
+			require.NoError(t, cleanupGitRepoCache(assigned, now, logtest.Scoped(t)))
 			if tc.keep {
 				require.DirExists(t, dir)
 			} else {
@@ -123,7 +127,7 @@ func TestCleanupGitRepoCache(t *testing.T) {
 	args := indexArgs{IndexOptions: IndexOptions{RepoID: 42, TenantID: 1, Name: "interrupted"}}
 	dir := cachedGitDir(&args)
 	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, cleanupGitRepoCache([]uint32{42}, now))
+	require.NoError(t, cleanupGitRepoCache([]uint32{42}, now, logtest.Scoped(t)))
 	require.NoDirExists(t, dir)
 }
 
@@ -138,7 +142,7 @@ func TestCachedGitIndexIntegration(t *testing.T) {
 			Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: fixture.mainCommit}, {Name: "old", Version: fixture.mainCommit}},
 		},
 	}
-	logger := logtest.Scoped(t)
+	logger, captured := logtest.Captured(t)
 	c := gitIndexConfig{
 		timeout: time.Minute,
 		findRepositoryMetadata: func(args *indexArgs) (*zoekt.Repository, *zoekt.IndexMetadata, bool, error) {
@@ -248,6 +252,23 @@ func TestCachedGitIndexIntegration(t *testing.T) {
 	require.NoDirExists(t, dir)
 	require.NoError(t, gitIndex(context.Background(), c, &args, sourcegraphNop{}, logger))
 	require.NoDirExists(t, filepath.Join(os.TempDir(), "test%2Frepo.git"))
+
+	logs := captured()
+	fetchLogs := logs.Filter(func(l logtest.CapturedLog) bool { return l.Message == "git clone cache fetch" })
+	require.GreaterOrEqual(t, len(fetchLogs), 3)
+	for i, state := range []string{"cold", "reused", "reset"} {
+		require.Equal(t, state, fetchLogs[i].Fields["cache_state"])
+		require.Equal(t, "success", fetchLogs[i].Fields["outcome"])
+		require.Equal(t, args.Name, fetchLogs[i].Fields["repo"])
+		require.Contains(t, fetchLogs[i].Fields, "fetch_duration")
+		require.Contains(t, fetchLogs[i].Fields, "cache_size_bytes")
+	}
+	require.True(t, fetchLogs.Contains(func(l logtest.CapturedLog) bool { return l.Fields["outcome"] == "failure" }))
+	for _, reason := range []string{"filter_change", "delta_fetch_error", "fetch_error", "index_error", "disabled"} {
+		require.True(t, logs.Contains(func(l logtest.CapturedLog) bool {
+			return l.Message == "removed git clone cache" && l.Fields["reason"] == reason
+		}), "missing eviction reason %s", reason)
+	}
 }
 
 func TestGitCacheTenantDeletionAndRestart(t *testing.T) {
@@ -284,4 +305,50 @@ func TestCacheGitRepoProtoAndIndexIdentity(t *testing.T) {
 	before := args.BuildOptions()
 	args.CacheGitRepo = true
 	require.Equal(t, before, args.BuildOptions())
+}
+
+func TestGitRepoCacheMetrics(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	logger := logtest.Scoped(t)
+	now := time.Now()
+	var sizes []int64
+	for _, id := range []uint32{1, 2} {
+		args := indexArgs{IndexOptions: IndexOptions{RepoID: id, TenantID: 1, Name: "repo"}}
+		dir := writeCacheEntry(t, &args, gitRepoCacheEntry{Created: now, RepoID: id})
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "objects", "pack"), []byte("contents"), 0o600))
+		metadata, err := os.Stat(filepath.Join(dir, gitRepoCacheMetadata))
+		require.NoError(t, err)
+		sizes = append(sizes, metadata.Size()+8)
+		// Directory accounting must neither follow symlinks nor include their targets.
+		require.NoError(t, os.Symlink(os.TempDir(), filepath.Join(dir, "external")))
+	}
+	require.NoError(t, cleanupGitRepoCache([]uint32{1, 2}, now, logger))
+	require.Equal(t, float64(sizes[0]+sizes[1]), testutil.ToFloat64(metricGitRepoCacheSize))
+	require.Equal(t, float64(2), testutil.ToFloat64(metricGitRepoCacheRepositories))
+	require.NoError(t, cleanupGitRepoCache([]uint32{1}, now, logger))
+	require.Equal(t, float64(sizes[0]), testutil.ToFloat64(metricGitRepoCacheSize))
+	require.Equal(t, float64(1), testutil.ToFloat64(metricGitRepoCacheRepositories))
+	require.NoError(t, cleanupGitRepoCache(nil, now, logger))
+	require.Zero(t, testutil.ToFloat64(metricGitRepoCacheSize))
+	require.Zero(t, testutil.ToFloat64(metricGitRepoCacheRepositories))
+}
+
+func TestRepoNameForMetric(t *testing.T) {
+	old := reposWithSeparateIndexingMetrics
+	reposWithSeparateIndexingMetrics = map[string]struct{}{"manual": {}}
+	t.Cleanup(func() { reposWithSeparateIndexingMetrics = old })
+	for _, tc := range []struct {
+		repo   string
+		cached bool
+		want   string
+	}{
+		{"ordinary", false, ""},
+		{"monorepo", true, "monorepo"},
+		{"manual", false, "manual"},
+		{"manual", true, "manual"},
+		{"Manual", false, ""}, // Preserve exact matching for the manual allowlist.
+	} {
+		require.Equal(t, tc.want, repoNameForMetric(tc.repo, tc.cached))
+	}
 }
