@@ -414,6 +414,9 @@ func (s *Server) Run() {
 				defer close(cleanupDone)
 				s.muIndexDir.Global(func() {
 					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
+					if err := cleanupGitRepoCache(repos.IDs, time.Now()); err != nil {
+						s.logger.Error("failed to clean git clone cache", sglog.Error(err))
+					}
 				})
 			}()
 
@@ -617,6 +620,14 @@ func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, 
 	// Sourcegraph should always provide a tenant ID.
 	if args.TenantID < 1 {
 		return indexStateFail, tenant.ErrMissingTenant
+	}
+
+	// Reclaim opt-outs even when the shard is already current and indexing
+	// below would be a no-op. Cached Git data is not part of index identity.
+	if !args.CacheGitRepo || len(args.Branches) == 0 {
+		if err := os.RemoveAll(cachedGitDir(args)); err != nil {
+			return indexStateFail, err
+		}
 	}
 
 	tr.LazyPrintf("branches: %v", args.Branches)
@@ -1192,6 +1203,9 @@ func (s *Server) DeleteAllData(ctx context.Context, _ *indexserverv1.DeleteAllDa
 			merr = multierr.Append(merr, err)
 		}
 		if err := purgeTenantShards(ctx, filepath.Join(s.IndexDir, ".trash")); err != nil {
+			merr = multierr.Append(merr, err)
+		}
+		if err := os.RemoveAll(filepath.Join(gitRepoCacheDir(), strconv.Itoa(tnt.ID()))); err != nil {
 			merr = multierr.Append(merr, err)
 		}
 	})

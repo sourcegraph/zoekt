@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -60,6 +61,11 @@ type IndexOptions struct {
 
 	// Archived is true if the repository is archived.
 	Archived bool
+
+	// CacheGitRepo retains the shallow clone between indexing jobs to avoid
+	// repeatedly transferring unchanged monorepo content. See git_cache.go for
+	// the bounded lifetime; this does not affect the resulting search index.
+	CacheGitRepo bool
 
 	// Map from language to scip-ctags, universal-ctags, or neither
 	LanguageMap ctags.LanguageMap
@@ -171,7 +177,7 @@ type gitIndexConfig struct {
 	timeout time.Duration
 }
 
-func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
+func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) (err error) {
 	logger := l.Scoped("gitIndex")
 
 	if len(o.Branches) == 0 {
@@ -189,11 +195,31 @@ func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph S
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	gitDir, err := tmpGitDir(o.Name)
+	var gitDir string
+	var cached gitRepoCacheEntry
+	if o.CacheGitRepo {
+		gitDir, cached, err = prepareCachedGitDir(o, time.Now())
+	} else {
+		gitDir, err = tmpGitDir(o.Name)
+	}
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(gitDir) // best-effort cleanup
+	defer func() {
+		if !o.CacheGitRepo || err != nil {
+			if removeErr := os.RemoveAll(gitDir); removeErr != nil {
+				logger.Warn("failed to remove git clone", sglog.String("path", gitDir), sglog.Error(removeErr))
+			}
+		}
+	}()
+
+	if o.CacheGitRepo {
+		// Drop removed refs before installing new ones, including transitions
+		// such as "release" to "release/v2" that conflict in Git's ref namespace.
+		if err := removeStaleGitRefs(ctx, gitDir, cached.Branches, o.Branches, c); err != nil {
+			return err
+		}
+	}
 
 	err = fetchRepo(ctx, gitDir, o, c, logger)
 	if err != nil {
@@ -210,10 +236,19 @@ func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph S
 		return err
 	}
 
+	if o.CacheGitRepo {
+		cached.Branches = o.Branches
+		b, err := json.Marshal(cached)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(gitDir, gitRepoCacheMetadata), b, 0o600)
+	}
+
 	return nil
 }
 
-func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfig, logger sglog.Logger) error {
+func initGitRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfig) error {
 	// Create a repo to fetch into
 	cmd := exec.CommandContext(ctx, "git",
 		// use a random default branch. This is so that HEAD isn't a symref to a
@@ -229,15 +264,27 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 		return err
 	}
 
-	for _, header := range []string{
+	for i, header := range []string{
 		"X-Sourcegraph-Actor-UID: internal",
 		"X-Sourcegraph-Tenant-ID: " + strconv.Itoa(o.TenantID),
 	} {
-		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", "--add", "http.extraHeader", header)
+		action := "--add"
+		if o.CacheGitRepo && i == 0 {
+			// Reused clones must not accumulate authentication headers.
+			action = "--replace-all"
+		}
+		cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "config", action, "http.extraHeader", header)
 		cmd.Stdin = &bytes.Buffer{}
 		if err := c.runCmd(cmd); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfig, logger sglog.Logger) error {
+	if err := initGitRepo(ctx, gitDir, o, c); err != nil {
+		return err
 	}
 
 	var fetchDuration time.Duration
@@ -260,6 +307,11 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 			"fetch", "--depth=1", "--no-tags",
 		}
 
+		if o.CacheGitRepo {
+			// A background GC could outlive the indexing lock and race expiry.
+			fetchArgs = append(fetchArgs, "--atomic", "--no-auto-maintenance")
+		}
+
 		// Git's blob:limit filter excludes blobs whose size is >= the given limit,
 		// while zoekt indexes files up to and including FileLimit bytes.
 		if len(o.LargeFiles) == 0 {
@@ -275,7 +327,7 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 
 		fetchArgs = append(fetchArgs, commits...)
 
-		cmd = exec.CommandContext(ctx, "git", fetchArgs...)
+		cmd := exec.CommandContext(ctx, "git", fetchArgs...)
 		cmd.Stdin = &bytes.Buffer{}
 
 		start := time.Now()
@@ -321,6 +373,16 @@ func fetchRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfi
 			id := o.BuildOptions().RepositoryDescription.ID
 
 			errorLog.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch both latest and prior commits: %s", name, id, err)
+			if o.CacheGitRepo {
+				// Do not let a failed fetch poison a retained clone, including the
+				// existing fallback when a delta base is no longer available.
+				if err := os.RemoveAll(gitDir); err != nil {
+					return err
+				}
+				if err := initGitRepo(ctx, gitDir, o, c); err != nil {
+					return err
+				}
+			}
 			err = fetchOnlyLatestCommits()
 			if err != nil {
 				return err
@@ -471,6 +533,8 @@ func (o *IndexOptions) FromProto(x *configv1.ZoektIndexOptions) {
 		Symbols:    x.GetSymbols(),
 		Branches:   branches,
 		Name:       x.GetName(),
+
+		CacheGitRepo: x.GetCacheGitRepo(),
 
 		Priority: x.GetPriority(),
 
