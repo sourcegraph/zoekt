@@ -85,7 +85,7 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 				timeout: time.Minute,
 			}
 
-			require.NoError(fetchRepo(ctx, gitDir, args, c, logtest.Scoped(t)))
+			require.NoError(gitCache.fetch(ctx, gitDir, args, c, logtest.Scoped(t)))
 			assertPartialBareFetch(t, gitDir, fixture)
 
 			require.NoError(setZoektConfig(ctx, gitDir, args, c))
