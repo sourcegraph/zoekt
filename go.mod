@@ -20,7 +20,6 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
-	github.com/opentracing/opentracing-go v1.2.0
 	github.com/peterbourgon/ff/v3 v3.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.20.5
@@ -31,16 +30,11 @@ require (
 	github.com/sourcegraph/log v0.0.0-20241024013702-574f7079c888
 	github.com/sourcegraph/mountinfo v0.0.0-20251117172727-e9f6a87f579c
 	github.com/stretchr/testify v1.11.1
-	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	github.com/uber/jaeger-lib v2.4.1+incompatible
 	github.com/wasilibs/go-re2 v1.10.0
 	github.com/xeipuuv/gojsonschema v1.2.0
 	gitlab.com/gitlab-org/api/client-go v1.46.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
-	go.opentelemetry.io/contrib/propagators/jaeger v1.43.0
-	go.opentelemetry.io/contrib/propagators/ot v1.43.0
 	go.opentelemetry.io/otel v1.43.0
-	go.opentelemetry.io/otel/bridge/opentracing v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
@@ -77,7 +71,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	code.gitea.io/sdk/gitea v0.20.0
 	dario.cat/mergo v1.0.1 // indirect
-	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
