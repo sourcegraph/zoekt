@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
@@ -18,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	sglog "github.com/sourcegraph/log"
 
 	"github.com/sourcegraph/zoekt"
@@ -38,6 +41,11 @@ import (
 // and write it only after success. An interrupted job cannot leave a reusable
 // clone with stale locks or partially updated refs. Metadata lives outside Git's
 // config because this acquisition policy must not affect shard/index identity.
+//
+// Cache gauges are sampled during cleanup, outside Prometheus's scrape path.
+// They sum file sizes, not filesystem allocation or network bytes transferred.
+// Lifecycle logs distinguish cold/reused fetches and explain resets; aggregate
+// gauges show growth without introducing another per-repository metric family.
 type gitRepoCache struct{}
 
 var gitCache gitRepoCache
@@ -46,9 +54,22 @@ var gitRepoCacheMaxAge = getEnvWithDefaultDuration("SRC_GIT_REPO_CACHE_MAX_AGE",
 
 const gitRepoCacheMetadata = "zoekt-cache.json"
 
+var (
+	metricGitRepoCacheSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "index_git_repo_cache_size_bytes",
+		Help: "Sum of regular file sizes in retained Git clones, sampled during cache cleanup.",
+	})
+	metricGitRepoCacheRepositories = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "index_git_repo_cache_repositories",
+		Help: "Number of retained Git clones, sampled during cache cleanup.",
+	})
+)
+
 type gitRepoCacheEntry struct {
 	Created  time.Time
 	RepoID   uint32
+	Name     string
+	TenantID int
 	CloneURL string
 	Filtered bool
 	Branches []zoekt.RepositoryBranch
@@ -58,12 +79,14 @@ type gitRepoCacheEntry struct {
 // cached clones are marked reusable and temporary clones are deleted. Any
 // failure (including a panic) discards the clone; cleanup errors are logged
 // without hiding the job error. The callback must not retain the directory.
-func (cache gitRepoCache) withFetchedRepo(ctx context.Context, c gitIndexConfig, o *indexArgs, logger sglog.Logger, use func(string) error) error {
+func (cache gitRepoCache) withFetchedRepo(ctx context.Context, c gitIndexConfig, o *indexArgs, logger sglog.Logger, use func(string) error) (err error) {
 	var gitDir string
 	var cached gitRepoCacheEntry
-	var err error
+	var cacheState string
+	cacheLogger := logger
 	if o.CacheGitRepo {
-		gitDir, cached, err = cache.prepare(o, time.Now())
+		cacheLogger = logger.With(sglog.String("repo", o.Name), sglog.Uint32("id", o.RepoID), sglog.Int("tenant", o.TenantID))
+		gitDir, cached, cacheState, err = cache.prepare(o, time.Now(), cacheLogger)
 	} else {
 		gitDir, err = tmpGitDir(o.Name)
 	}
@@ -71,10 +94,15 @@ func (cache gitRepoCache) withFetchedRepo(ctx context.Context, c gitIndexConfig,
 		return err
 	}
 	keep := false
+	failureReason := "prepare_error"
 	defer func() {
 		if !keep {
-			if err := os.RemoveAll(gitDir); err != nil {
-				logger.Warn("failed to remove git clone", sglog.String("path", gitDir), sglog.Error(err))
+			if o.CacheGitRepo {
+				if _, removeErr := cache.removeDir(gitDir, failureReason, cacheLogger); removeErr != nil {
+					cacheLogger.Warn("failed to remove git clone cache", sglog.Error(removeErr))
+				}
+			} else if removeErr := os.RemoveAll(gitDir); removeErr != nil {
+				logger.Warn("failed to remove git clone", sglog.String("path", gitDir), sglog.Error(removeErr))
 			}
 		}
 	}()
@@ -86,13 +114,30 @@ func (cache gitRepoCache) withFetchedRepo(ctx context.Context, c gitIndexConfig,
 			return err
 		}
 	}
-	if err := cache.fetch(ctx, gitDir, o, c, logger); err != nil {
+	failureReason = "fetch_error"
+	fetchStart := time.Now()
+	err = cache.fetch(ctx, gitDir, o, c, logger)
+	if o.CacheGitRepo {
+		fetchDuration := time.Since(fetchStart)
+		size, sizeErr := gitRepoCacheSize(gitDir)
+		outcome := "success"
+		if err != nil {
+			outcome = "failure"
+		}
+		cacheLogger.Info("git clone cache fetch", sglog.String("cache_state", cacheState),
+			sglog.Duration("cache_age", fetchStart.Sub(cached.Created)), sglog.Duration("fetch_duration", fetchDuration),
+			sglog.String("outcome", outcome), sglog.Int64("cache_size_bytes", size), sglog.Error(sizeErr))
+	}
+	if err != nil {
 		return err
 	}
-	if err := use(gitDir); err != nil {
+
+	failureReason = "index_error"
+	if err = use(gitDir); err != nil {
 		return err
 	}
 	if o.CacheGitRepo {
+		failureReason = "metadata_error"
 		cached.Branches = o.Branches
 		b, err := json.Marshal(cached)
 		if err != nil {
@@ -151,7 +196,7 @@ func (gitRepoCache) fetch(ctx context.Context, gitDir string, o *indexArgs, c gi
 
 	defer func() {
 		success := strconv.FormatBool(allFetchesSucceeded)
-		name := repoNameForMetric(o.Name)
+		name := repoNameForMetric(o.Name, o.CacheGitRepo)
 		metricFetchDuration.WithLabelValues(success, name).Observe(fetchDuration.Seconds())
 	}()
 
@@ -229,7 +274,8 @@ func (gitRepoCache) fetch(ctx context.Context, gitDir string, o *indexArgs, c gi
 			if o.CacheGitRepo {
 				// Do not let a failed fetch poison a retained clone, including the
 				// existing fallback when a delta base is no longer available.
-				if err := os.RemoveAll(gitDir); err != nil {
+				cacheLogger := logger.With(sglog.String("repo", o.Name), sglog.Uint32("id", o.RepoID), sglog.Int("tenant", o.TenantID))
+				if _, err := gitCache.removeDir(gitDir, "delta_fetch_error", cacheLogger); err != nil {
 					return err
 				}
 				if err := initGitRepo(ctx, gitDir, o, c); err != nil {
@@ -307,21 +353,37 @@ func (gitRepoCache) readEntry(dir string) (gitRepoCacheEntry, error) {
 	return entry, err
 }
 
-func (cache gitRepoCache) prepare(o *indexArgs, now time.Time) (string, gitRepoCacheEntry, error) {
+func (cache gitRepoCache) prepare(o *indexArgs, now time.Time, logger sglog.Logger) (string, gitRepoCacheEntry, string, error) {
 	dir := cache.cachedDir(o)
 	entry, err := cache.readEntry(dir)
-	if err != nil || !now.Before(entry.Created.Add(gitRepoCacheMaxAge)) ||
-		entry.CloneURL != o.CloneURL || entry.Filtered != (len(o.LargeFiles) == 0) {
+	reason := ""
+	switch {
+	case err != nil:
+		reason = "incomplete"
+	case !now.Before(entry.Created.Add(gitRepoCacheMaxAge)):
+		reason = "age"
+	case entry.CloneURL != o.CloneURL:
+		reason = "source_change"
+	case entry.Filtered != (len(o.LargeFiles) == 0):
 		// Changing from filtered to full fetching can otherwise leave previously
 		// omitted blobs missing even when fetching a commit we already have.
-		if err := os.RemoveAll(dir); err != nil {
-			return "", entry, err
-		}
-		entry = gitRepoCacheEntry{Created: now, RepoID: o.RepoID, CloneURL: o.CloneURL, Filtered: len(o.LargeFiles) == 0}
-	} else if err := os.Remove(filepath.Join(dir, gitRepoCacheMetadata)); err != nil {
-		return "", entry, err
+		reason = "filter_change"
 	}
-	return dir, entry, nil
+	state := "reused"
+	if reason != "" {
+		removed, err := cache.removeDir(dir, reason, logger)
+		if err != nil {
+			return "", entry, "", err
+		}
+		state = "cold"
+		if removed {
+			state = "reset"
+		}
+		entry = gitRepoCacheEntry{Created: now, RepoID: o.RepoID, Name: o.Name, TenantID: o.TenantID, CloneURL: o.CloneURL, Filtered: len(o.LargeFiles) == 0}
+	} else if err := os.Remove(filepath.Join(dir, gitRepoCacheMetadata)); err != nil {
+		return "", entry, "", err
+	}
+	return dir, entry, state, nil
 }
 
 func removeStaleGitRefs(ctx context.Context, dir string, previous, current []zoekt.RepositoryBranch, c gitIndexConfig) error {
@@ -340,32 +402,92 @@ func removeStaleGitRefs(ctx context.Context, dir string, previous, current []zoe
 	return nil
 }
 
-func (cache gitRepoCache) remove(o *indexArgs) error {
-	return os.RemoveAll(cache.cachedDir(o))
+func (cache gitRepoCache) remove(o *indexArgs, reason string, logger sglog.Logger) (bool, error) {
+	return cache.removeDir(cache.cachedDir(o), reason, logger)
 }
 
-func (cache gitRepoCache) removeTenant(tenantID int) error {
-	return os.RemoveAll(filepath.Join(cache.rootDir(), strconv.Itoa(tenantID)))
+func (cache gitRepoCache) removeTenant(tenantID int, reason string, logger sglog.Logger) (bool, error) {
+	return cache.removeDir(filepath.Join(cache.rootDir(), strconv.Itoa(tenantID)), reason, logger)
 }
 
 // cleanup runs under indexMutex.Global, just like shard cleanup.
 // Sweeping also reclaims expired clones of repositories that never index again.
-func (cache gitRepoCache) cleanup(repos []uint32, now time.Time) error {
+func (cache gitRepoCache) cleanup(repos []uint32, now time.Time, logger sglog.Logger) error {
 	dirs, err := filepath.Glob(filepath.Join(cache.rootDir(), "*", "*.git"))
 	if err != nil {
 		return err
 	}
 	var errs error
+	var sizeErr error
+	var total int64
+	var repositories int
 	for _, dir := range dirs {
 		entry, err := cache.readEntry(dir)
 		// Only a handful of repos are cached; avoid allocating a second map of
 		// the potentially much larger complete assignment list for their lookup.
-		if err == nil && slices.Contains(repos, entry.RepoID) && now.Before(entry.Created.Add(gitRepoCacheMaxAge)) {
-			continue
+		reason := ""
+		switch {
+		case err != nil:
+			reason = "incomplete"
+		case !slices.Contains(repos, entry.RepoID):
+			reason = "unassigned"
+		case !now.Before(entry.Created.Add(gitRepoCacheMaxAge)):
+			reason = "age"
 		}
-		if err := os.RemoveAll(dir); err != nil {
-			errs = errors.Join(errs, err)
+		if reason != "" {
+			if _, err := cache.removeDir(dir, reason, logger); err == nil {
+				continue
+			} else {
+				errs = errors.Join(errs, err)
+			}
 		}
+		// Include clones whose deletion failed so the gauges don't hide them.
+		size, err := gitRepoCacheSize(dir)
+		sizeErr = errors.Join(sizeErr, err)
+		total += size
+		repositories++
 	}
-	return errs
+	if sizeErr == nil {
+		metricGitRepoCacheSize.Set(float64(total))
+		metricGitRepoCacheRepositories.Set(float64(repositories))
+	}
+	return errors.Join(errs, sizeErr)
+}
+
+func gitRepoCacheSize(dir string) (int64, error) {
+	var size int64
+	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type().IsRegular() {
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			size += info.Size()
+		}
+		return nil
+	})
+	return size, err
+}
+
+// removeDir reports actual removals only, not every uncached repo's
+// no-op cleanup. Size-accounting failures must not prevent data deletion.
+func (cache gitRepoCache) removeDir(dir, reason string, logger sglog.Logger) (bool, error) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	if entry, err := cache.readEntry(dir); err == nil {
+		logger = logger.With(sglog.String("repo", entry.Name), sglog.Uint32("id", entry.RepoID), sglog.Int("tenant", entry.TenantID))
+	}
+	size, sizeErr := gitRepoCacheSize(dir)
+	if err := os.RemoveAll(dir); err != nil {
+		return false, err
+	}
+	logger.Info("removed git clone cache", sglog.String("path", dir), sglog.String("reason", reason),
+		sglog.Int64("cache_size_bytes", size), sglog.Error(sizeErr))
+	return true, nil
 }
