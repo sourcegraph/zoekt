@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/sourcegraph/zoekt"
@@ -12,6 +13,58 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
 )
+
+func TestCheckDuplicateShardPrefixes(t *testing.T) {
+	t.Setenv("WORKSPACES_API_URL", "")
+
+	tests := []struct {
+		name    string
+		args    []string
+		opts    index.Options
+		wantErr string
+	}{
+		{
+			name: "shared repository name",
+			args: []string{"alpha", "beta"},
+			opts: index.Options{RepositoryDescription: zoekt.Repository{
+				Name: "repo",
+			}},
+			wantErr: `both use shard prefix "repo"`,
+		},
+		{
+			name:    "shared directory basename",
+			args:    []string{"alpha/src", "beta/src"},
+			wantErr: `both use shard prefix "src"`,
+		},
+		{
+			name: "shared prefix override",
+			args: []string{"alpha", "beta"},
+			opts: index.Options{
+				ShardPrefixOverride: "shared",
+			},
+			wantErr: `both use shard prefix "shared"`,
+		},
+		{
+			name: "distinct directory basenames",
+			args: []string{"alpha", "beta"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := checkDuplicateShardPrefixes(test.args, test.opts)
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("checkDuplicateShardPrefixes() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("checkDuplicateShardPrefixes() error = %v, want containing %q", err, test.wantErr)
+			}
+		})
+	}
+}
 
 func TestIndexArgAttachesConfiguredBranches(t *testing.T) {
 	sourceDir := t.TempDir()
