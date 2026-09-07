@@ -30,6 +30,7 @@ import (
 	"github.com/sourcegraph/zoekt/cmd"
 	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
 type fileInfo struct {
@@ -131,12 +132,49 @@ func main() {
 		}
 	}
 
+	if err := checkDuplicateShardPrefixes(flag.Args(), *opts); err != nil {
+		log.Fatal(err)
+	}
+
 	for _, arg := range flag.Args() {
 		opts.RepositoryDescription.Source = arg
 		if err := indexArg(arg, *opts, ignoreDirMap); err != nil {
 			log.Fatal(err)
 		}
 	}
+}
+
+func checkDuplicateShardPrefixes(args []string, opts index.Options) error {
+	seen := make(map[string]string, len(args))
+	for _, arg := range args {
+		prefix, err := shardPrefix(arg, opts)
+		if err != nil {
+			return err
+		}
+		if previous, ok := seen[prefix]; ok {
+			return fmt.Errorf("cannot index %q and %q in one invocation: both use shard prefix %q, so the latter would overwrite the former", previous, arg, prefix)
+		}
+		seen[prefix] = arg
+	}
+	return nil
+}
+
+func shardPrefix(arg string, opts index.Options) (string, error) {
+	if opts.ShardPrefixOverride != "" {
+		return opts.ShardPrefixOverride, nil
+	}
+	if tenant.UseIDBasedShardNames() {
+		return fmt.Sprintf("%09d_%09d", opts.RepositoryDescription.TenantID, opts.RepositoryDescription.ID), nil
+	}
+	if opts.RepositoryDescription.Name != "" {
+		return opts.RepositoryDescription.Name, nil
+	}
+
+	dir, err := filepath.Abs(filepath.Clean(arg))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Base(dir), nil
 }
 
 func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error {
