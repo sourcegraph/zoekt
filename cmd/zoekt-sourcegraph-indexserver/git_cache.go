@@ -27,7 +27,8 @@ import (
 // Selected monorepos keep their shallow bare clones between index jobs to avoid
 // repeatedly transferring unchanged objects. Ordinary Git GC is not sufficient
 // to bound this cache: repacking partial clones retains unreachable objects in
-// promisor packs. Instead, expire clones seven days after creation (not access).
+// promisor packs. Instead, expire clones after a bounded age from creation (not
+// access), configurable with SRC_GIT_REPO_CACHE_MAX_AGE.
 // Clones and metadata live under the indexserver tmp root, so setupTmpDir clears
 // both on restart. Paths are resolved at use time, after setupTmpDir sets TMPDIR.
 // Callers hold the appropriate indexMutex lock to exclude concurrent use/cleanup;
@@ -41,7 +42,7 @@ type gitRepoCache struct{}
 
 var gitCache gitRepoCache
 
-const gitRepoCacheMaxAge = 7 * 24 * time.Hour
+var gitRepoCacheMaxAge = getEnvWithDefaultDuration("SRC_GIT_REPO_CACHE_MAX_AGE", 7*24*time.Hour)
 
 const gitRepoCacheMetadata = "zoekt-cache.json"
 
