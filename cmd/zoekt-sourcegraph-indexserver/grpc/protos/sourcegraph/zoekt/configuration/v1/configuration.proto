@@ -117,6 +117,11 @@ message ZoektIndexOptions {
 
   // tenant_id is the tenant ID of the repository.
   int64 tenant_id = 14;
+
+  // cache_git_repo retains a shallow clone between indexing jobs to avoid
+  // repeatedly fetching unchanged monorepo content. The indexserver bounds its
+  // lifetime; this option does not change the contents of the search index.
+  bool cache_git_repo = 15;
 }
 
 // ZoektRepositoryBranch describes an indexed branch of a repository.

@@ -299,6 +299,8 @@ func (o *indexOptionsItem) ToProto() *configv1.ZoektIndexOptions {
 		Branches:   branches,
 		Name:       o.Name,
 
+		CacheGitRepo: o.CacheGitRepo,
+
 		Priority: o.Priority,
 
 		Public:   o.Public,
