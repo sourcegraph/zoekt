@@ -34,6 +34,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -45,7 +46,6 @@ import (
 	"github.com/uber/jaeger-client-go"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/automaxprocs/maxprocs"
-	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	"github.com/sourcegraph/zoekt"
@@ -348,8 +348,8 @@ func addProxyHandler(mux *http.ServeMux, socket string) {
 // times you will read the channel (used as buffer for signal.Notify).
 func shutdownSignalChan(maxReads int) <-chan os.Signal {
 	c := make(chan os.Signal, maxReads)
-	signal.Notify(c, os.Interrupt) // terminal C-c and goreman
-	signal.Notify(c, unix.SIGTERM) // Kubernetes
+	signal.Notify(c, os.Interrupt)    // terminal C-c and goreman
+	signal.Notify(c, syscall.SIGTERM) // Kubernetes and Windows shutdown events
 	return c
 }
 
@@ -464,7 +464,10 @@ func mustRegisterDiskMonitor(path string) {
 		Help:        "Amount of free space disk space.",
 		ConstLabels: prometheus.Labels{"path": path},
 	}, func() float64 {
-		usage, _ := disk.Usage(path)
+		usage, err := disk.Usage(path)
+		if err != nil {
+			return 0
+		}
 		return float64(usage.Free)
 	}))
 
@@ -473,7 +476,10 @@ func mustRegisterDiskMonitor(path string) {
 		Help:        "Amount of total disk space.",
 		ConstLabels: prometheus.Labels{"path": path},
 	}, func() float64 {
-		usage, _ := disk.Usage(path)
+		usage, err := disk.Usage(path)
+		if err != nil {
+			return 0
+		}
 		return float64(usage.Total)
 	}))
 }

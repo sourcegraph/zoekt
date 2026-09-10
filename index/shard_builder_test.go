@@ -1,6 +1,7 @@
 package index
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ func TestShardName(t *testing.T) {
 			prefix:   "short",
 			version:  1,
 			shardNum: 42,
-			expected: "index/short_v1.00042.zoekt",
+			expected: filepath.Join("index", "short_v1.00042.zoekt"),
 		},
 		{
 			name:     "long prefix truncated",
@@ -30,7 +31,7 @@ func TestShardName(t *testing.T) {
 			prefix:   strings.Repeat("a", 300),
 			version:  2,
 			shardNum: 1,
-			expected: "index/" + strings.Repeat("a", 200) + "003ef1ba" + "_v2.00001.zoekt",
+			expected: filepath.Join("index", strings.Repeat("a", 200)+"003ef1ba"+"_v2.00001.zoekt"),
 		},
 		{
 			name:     "empty indexDir",
