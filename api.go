@@ -575,6 +575,11 @@ func (sr *SearchResult) SizeBytes() (sz uint64) {
 type RepositoryBranch struct {
 	Name    string
 	Version string
+
+	// Additional metadata about the branch, eg. whether it is actively
+	// maintained. Analogous to Repository.Metadata, but scoped to a
+	// single branch.
+	Metadata map[string]string `json:",omitempty"`
 }
 
 func (r RepositoryBranch) String() string {

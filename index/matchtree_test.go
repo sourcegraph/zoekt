@@ -486,6 +486,49 @@ func TestMetaQueryMatchTree(t *testing.T) {
 	}
 }
 
+func TestBranchMetaQueryMatchTree(t *testing.T) {
+	d := &indexData{
+		repoMetaData: []zoekt.Repository{
+			{Name: "r0", Branches: []zoekt.RepositoryBranch{
+				{Name: "main", Metadata: map[string]string{"supported": "true"}},
+				{Name: "feature", Metadata: map[string]string{"supported": "false"}},
+			}},
+			{Name: "r1", Branches: []zoekt.RepositoryBranch{
+				{Name: "main", Metadata: map[string]string{"supported": "true"}},
+			}},
+		},
+		// doc0, doc2 are on "main" (bit 0), doc1 is on "feature" (bit 1),
+		// doc2 is on both, doc3 is on r1's "main", doc4 is on no branch.
+		fileBranchMasks: []uint64{1, 2, 3, 1, 0},
+		repos:           []uint16{0, 0, 0, 1, 1},
+	}
+
+	q := &query.BranchMeta{
+		Field: "supported",
+		Value: regexp.MustCompile("true"),
+	}
+
+	mt, err := d.newMatchTree(q)
+	if err != nil {
+		t.Fatalf("failed to build matchTree: %v", err)
+	}
+
+	var matched []uint32
+	for {
+		doc := mt.nextDoc()
+		if doc == math.MaxUint32 {
+			break
+		}
+		matched = append(matched, doc)
+		mt.prepare(doc)
+	}
+
+	want := []uint32{0, 2, 3}
+	if !reflect.DeepEqual(matched, want) {
+		t.Errorf("branch.meta match failed: got %v, want %v", matched, want)
+	}
+}
+
 func Test_queryMetaCacheKey(t *testing.T) {
 	cases := []struct {
 		field   string

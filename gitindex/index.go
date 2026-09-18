@@ -438,6 +438,10 @@ type Options struct {
 	// List of branch names to index, e.g. []string{"HEAD", "stable"}
 	Branches []string
 
+	// BranchMetadata maps a branch name to metadata to attach to it, eg.
+	// whether it is actively maintained ("Supported").
+	BranchMetadata map[string]map[string]string
+
 	// DeltaShardNumberFallbackThreshold defines an upper limit (inclusive) on the number of preexisting shards
 	// that can exist before attempting another delta build. If the number of preexisting shards exceeds this threshold,
 	// then a normal build will be performed instead.
@@ -562,8 +566,9 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		}
 
 		opts.BuildOptions.RepositoryDescription.Branches = append(opts.BuildOptions.RepositoryDescription.Branches, zoekt.RepositoryBranch{
-			Name:    b,
-			Version: commit.Hash.String(),
+			Name:     b,
+			Version:  commit.Hash.String(),
+			Metadata: opts.BranchMetadata[b],
 		})
 
 		if when := commit.Committer.When; when.After(opts.BuildOptions.RepositoryDescription.LatestCommitDate) {
