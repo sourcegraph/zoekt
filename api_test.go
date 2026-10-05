@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"math"
 	"reflect"
 	"strings"
@@ -509,6 +510,9 @@ func TestParseRepoID(t *testing.T) {
 			got, err := ParseRepoID(tc.in)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("ParseRepoID(%q) error = %v, wantErr %v", tc.in, err, tc.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrInvalidRepoID) {
+				t.Fatalf("ParseRepoID(%q) error %v does not wrap ErrInvalidRepoID", tc.in, err)
 			}
 			if got != tc.want {
 				t.Fatalf("ParseRepoID(%q) = %d, want %d", tc.in, got, tc.want)

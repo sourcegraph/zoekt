@@ -1393,3 +1393,43 @@ func TestSetTemplates_RepoID(t *testing.T) {
 		})
 	}
 }
+
+func TestIndexGitRepo_InvalidRepoID(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-b", "main", "repo")
+
+	repoDir := filepath.Join(dir, "repo")
+	if err := os.WriteFile(filepath.Join(repoDir, "file1.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "initial commit")
+	// Repo config is only consulted for repositories with a zoekt.name or an
+	// origin remote, so give this one a name.
+	runGit(t, repoDir, "config", "zoekt.name", "example.com/repo")
+	runGit(t, repoDir, "config", "zoekt.repoid", "4294967296")
+
+	opts := Options{
+		RepoDir:  repoDir,
+		Branches: []string{"main"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              dir,
+		},
+	}
+
+	_, err := IndexGitRepo(opts)
+	if !errors.Is(err, zoekt.ErrInvalidRepoID) {
+		t.Fatalf("IndexGitRepo error = %v, want one wrapping zoekt.ErrInvalidRepoID", err)
+	}
+
+	shards, err := filepath.Glob(filepath.Join(dir, "*.zoekt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shards) != 0 {
+		t.Fatalf("expected no shards to be written, got %v", shards)
+	}
+}

@@ -655,11 +655,17 @@ type Repository struct {
 	FileTombstones map[string]struct{} `json:",omitempty"`
 }
 
+// ErrInvalidRepoID is returned, wrapped, by ParseRepoID when a repository ID
+// is malformed or does not fit in 32 bits. Callers that tolerate other
+// configuration problems can use errors.Is to still fail on this one.
+var ErrInvalidRepoID = errors.New("invalid repository ID")
+
 // ParseRepoID parses a repository ID, such as the value of the "zoekt.repoid"
 // git config key. The value must be a decimal integer that fits in 32 bits.
-// Malformed or out-of-range values return an error rather than being silently
-// clamped: a clamped ID would collide with the IDs of other repositories in
-// repository lists, compound shard lookups and tombstones.
+// Malformed or out-of-range values return an error wrapping ErrInvalidRepoID
+// rather than being silently clamped: a clamped ID would collide with the IDs
+// of other repositories in repository lists, compound shard lookups and
+// tombstones.
 func ParseRepoID(s string) (uint32, error) {
 	id, err := strconv.ParseUint(s, 10, 32)
 	if err != nil {
@@ -667,7 +673,7 @@ func ParseRepoID(s string) (uint32, error) {
 		if errors.As(err, &numErr) {
 			err = numErr.Err
 		}
-		return 0, fmt.Errorf("invalid repository ID %q: %w", s, err)
+		return 0, fmt.Errorf("%w %q: %w", ErrInvalidRepoID, s, err)
 	}
 	return uint32(id), nil
 }
