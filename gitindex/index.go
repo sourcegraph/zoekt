@@ -319,8 +319,13 @@ func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) erro
 		}
 	}
 
-	id, _ := strconv.ParseUint(sec.Options.Get("repoid"), 10, 32)
-	desc.ID = uint32(id)
+	if v := sec.Options.Get("repoid"); v != "" {
+		id, err := zoekt.ParseRepoID(v)
+		if err != nil {
+			return fmt.Errorf("zoekt.repoid: %w", err)
+		}
+		desc.ID = id
+	}
 
 	desc.TenantID, _ = strconv.Atoi(sec.Options.Get("tenantID"))
 

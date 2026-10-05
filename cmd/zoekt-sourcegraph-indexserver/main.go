@@ -939,12 +939,12 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	// ?id=
 	indexMsg := ""
 	if v := values.Get("id"); v != "" {
-		id, err := strconv.Atoi(v)
+		id, err := zoekt.ParseRepoID(v)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		indexMsg, _ = s.forceIndex(r.Context(), uint32(id))
+		indexMsg, _ = s.forceIndex(r.Context(), id)
 	}
 
 	// ?show_repos=
@@ -993,13 +993,18 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := strconv.Atoi(r.Form.Get("repo"))
+	v := r.Form.Get("repo")
+	if v == "" {
+		http.Error(w, "missing repo parameter", http.StatusBadRequest)
+		return
+	}
+	id, err := zoekt.ParseRepoID(v)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	go func() { s.forceIndex(context.Background(), uint32(id)) }()
+	go func() { s.forceIndex(context.Background(), id) }()
 
 	// 202 Accepted
 	w.WriteHeader(http.StatusAccepted)

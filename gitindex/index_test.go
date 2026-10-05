@@ -1352,3 +1352,44 @@ func BenchmarkPrepareNormalBuild(b *testing.B) {
 		b.Fatalf("Unexpected empty results")
 	}
 }
+
+func TestSetTemplates_RepoID(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		repoID  string
+		want    uint32
+		wantErr bool
+	}{
+		{name: "valid", repoID: "12345", want: 12345},
+		{name: "max uint32", repoID: "4294967295", want: 4294967295},
+		{name: "out of range", repoID: "4294967296", wantErr: true},
+		{name: "malformed", repoID: "abc", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			runGit(t, dir, "init", "-b", "master")
+			runGit(t, dir, "config", "zoekt.name", "example.com/repo")
+			runGit(t, dir, "config", "zoekt.repoid", tc.repoID)
+
+			desc := zoekt.Repository{}
+			err := setTemplatesFromConfig(&desc, dir)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error, got ID %d", desc.ID)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("setTemplatesFromConfig: %v", err)
+			}
+			if desc.ID != tc.want {
+				t.Fatalf("got ID %d, want %d", desc.ID, tc.want)
+			}
+		})
+	}
+}
