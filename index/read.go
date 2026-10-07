@@ -326,7 +326,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	d.contentNgrams, err = d.newBtreeIndex(toc.ngramText, toc.postings)
+	d.contentNgrams, err = d.newNgramIndex(toc.ngramText, toc.postings)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 
 	d.fileNameIndex = toc.fileNames.relativeIndex()
 
-	d.fileNameNgrams, err = d.newBtreeIndex(toc.nameNgramText, toc.namePostings)
+	d.fileNameNgrams, err = d.newNgramIndex(toc.nameNgramText, toc.namePostings)
 	if err != nil {
 		return nil, err
 	}
@@ -477,31 +477,13 @@ func (r *reader) parseMetadata(metaData simpleSection, repoMetaData simpleSectio
 
 const ngramEncoding = 8
 
-func (d *indexData) newBtreeIndex(ngramSec simpleSection, postings compoundSection) (btreeIndex, error) {
-	bi := btreeIndex{file: d.file}
-
-	textContent, err := d.readSectionBlob(ngramSec)
+func (d *indexData) newNgramIndex(ngramSec simpleSection, postings compoundSection) (ngramIndex, error) {
+	ngramText, err := d.readSectionBlob(ngramSec)
 	if err != nil {
-		return btreeIndex{}, err
+		return ngramIndex{}, err
 	}
 
-	// For 500k trigams we can expect approx 1000 leaf nodes (500k divided by
-	// half the bucketSize) and 20 nodes on level 2 (all but the rightmost
-	// inner nodes will have exactly v=50 children) plus a root node.
-	bt := newBtree(btreeOpts{bucketSize: btreeBucketSize, v: 50})
-	for i := 0; i < len(textContent); i += ngramEncoding {
-		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
-		bt.insert(ng)
-	}
-	bt.freeze()
-
-	bi.bt = bt
-
-	// hold on to simple sections (8 bytes each)
-	bi.ngramSec = ngramSec
-	bi.postingIndex = postings.index
-
-	return bi, nil
+	return newNgramIndex(d.file, ngramSec, postings.index, ngramText), nil
 }
 
 func (d *indexData) verify() error {

@@ -37,7 +37,7 @@ type indexData struct {
 
 	file IndexFile
 
-	contentNgrams btreeIndex
+	contentNgrams ngramIndex
 
 	newlinesStart uint32
 	newlinesIndex []uint32
@@ -59,7 +59,7 @@ type indexData struct {
 
 	fileNameContent []byte
 	fileNameIndex   []uint32
-	fileNameNgrams  btreeIndex
+	fileNameNgrams  ngramIndex
 
 	// fileEndSymbol[i] is the index of the first symbol for document i.
 	fileEndSymbol []uint32
@@ -382,7 +382,7 @@ func minFrequencyNgramOffsets(ngramOffs []runeNgramOff, frequencies []uint32) (f
 	return
 }
 
-func (data *indexData) ngrams(filename bool) btreeIndex {
+func (data *indexData) ngrams(filename bool) ngramIndex {
 	if filename {
 		return data.fileNameNgrams
 	}
@@ -424,8 +424,8 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 		return nil, errors.New("iterateNgrams needs non empty string")
 	}
 
-	// PERF: Sort to increase the chances adjacent checks are in the same btree
-	// bucket (which can cause disk IO).
+	// PERF: Sort to increase the chances adjacent checks are in the same bucket
+	// (which can cause disk IO).
 	slices.SortFunc(ngramOffs, runeNgramOff.Compare)
 	frequencies := make([]uint32, 0, len(ngramOffs))
 	indexMap := make([]int, len(ngramOffs))
