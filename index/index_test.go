@@ -2232,7 +2232,7 @@ func TestListRepos(t *testing.T) {
 				Repos:                      1,
 				Shards:                     1,
 				Documents:                  4,
-				IndexBytes:                 412,
+				IndexBytes:                 340,
 				ContentBytes:               68,
 				NewLinesCount:              4,
 				DefaultBranchNewLinesCount: 2,
