@@ -313,6 +313,22 @@ func parseExpr(in []byte) (Q, int, error) {
 			Field: field,
 			Value: re,
 		}
+	case tokBranchMeta:
+		// Split on ':' to separate field and value
+		parts := bytes.SplitN([]byte(text), []byte(":"), 2)
+		if len(parts) != 2 {
+			return nil, 0, fmt.Errorf("query: invalid branch.meta field syntax %q", text)
+		}
+		field := string(parts[0])
+		valuePattern := string(parts[1])
+		re, err := regexp.Compile(valuePattern)
+		if err != nil {
+			return nil, 0, fmt.Errorf("query: invalid regexp in branch.meta value: %v", err)
+		}
+		expr = &BranchMeta{
+			Field: field,
+			Value: re,
+		}
 	}
 
 	return expr, len(in) - len(b), nil
@@ -486,6 +502,7 @@ const (
 	tokPublic     = 16
 	tokFork       = 17
 	tokMeta       = 18
+	tokBranchMeta = 19
 )
 
 var tokNames = map[int]string{
@@ -507,27 +524,29 @@ var tokNames = map[int]string{
 	tokSym:        "Symbol",
 	tokType:       "Type",
 	tokMeta:       "Meta",
+	tokBranchMeta: "BranchMeta",
 }
 
 var prefixes = map[string]int{
-	"archived:": tokArchived,
-	"b:":        tokBranch,
-	"branch:":   tokBranch,
-	"c:":        tokContent,
-	"case:":     tokCase,
-	"content:":  tokContent,
-	"f:":        tokFile,
-	"file:":     tokFile,
-	"fork:":     tokFork,
-	"public:":   tokPublic,
-	"r:":        tokRepo,
-	"regex:":    tokRegex,
-	"repo:":     tokRepo,
-	"lang:":     tokLang,
-	"sym:":      tokSym,
-	"t:":        tokType,
-	"type:":     tokType,
-	"meta.":     tokMeta,
+	"archived:":    tokArchived,
+	"b:":           tokBranch,
+	"branch:":      tokBranch,
+	"c:":           tokContent,
+	"case:":        tokCase,
+	"content:":     tokContent,
+	"f:":           tokFile,
+	"file:":        tokFile,
+	"fork:":        tokFork,
+	"public:":      tokPublic,
+	"r:":           tokRepo,
+	"regex:":       tokRegex,
+	"repo:":        tokRepo,
+	"lang:":        tokLang,
+	"sym:":         tokSym,
+	"t:":           tokType,
+	"type:":        tokType,
+	"meta.":        tokMeta,
+	"branch.meta.": tokBranchMeta,
 }
 
 var reservedWords = map[string]int{
