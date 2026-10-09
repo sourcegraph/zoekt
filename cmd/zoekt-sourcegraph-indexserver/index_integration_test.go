@@ -25,19 +25,29 @@ import (
 
 func TestFetchRepoAndIndex_Integration(t *testing.T) {
 	requireGitDaemon(t)
+	t.Setenv("GIT_NO_LAZY_FETCH", "1")
 
 	for _, tc := range []struct {
 		name                     string
 		disableGoGitOptimization bool
+		catfile                  bool
+		largeFiles               []string
 	}{
 		{name: "optimized repo open"},
 		{name: "legacy repo open", disableGoGitOptimization: true},
+		{name: "cat-file partial clone", catfile: true},
+		{name: "cat-file large file exception", catfile: true, largeFiles: []string{"big.bin"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require := require.New(t)
 
 			ctx := context.Background()
 			fixture := newGitFetchFixture(t)
+			if tc.catfile {
+				t.Setenv("ZOEKT_DISABLE_CATFILE_BATCH", "false")
+			} else {
+				t.Setenv("ZOEKT_DISABLE_CATFILE_BATCH", "true")
+			}
 
 			if tc.disableGoGitOptimization {
 				t.Setenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION", "true")
@@ -47,10 +57,11 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 
 			sg := &recordingSourcegraph{
 				opts: IndexOptions{
-					RepoID:   123,
-					Name:     "test/repo",
-					CloneURL: fixture.cloneURL,
-					Symbols:  false,
+					RepoID:     123,
+					Name:       "test/repo",
+					CloneURL:   fixture.cloneURL,
+					Symbols:    false,
+					LargeFiles: tc.largeFiles,
 					Branches: []zoekt.RepositoryBranch{
 						{Name: "HEAD", Version: fixture.mainCommit},
 						{Name: "dev", Version: fixture.devCommit},
@@ -86,13 +97,29 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 			}
 
 			require.NoError(gitCache.fetch(ctx, gitDir, args, c, logtest.Scoped(t)))
-			assertPartialBareFetch(t, gitDir, fixture)
+			if len(tc.largeFiles) == 0 {
+				assertPartialBareFetch(t, gitDir, fixture)
+			}
 
 			require.NoError(setZoektConfig(ctx, gitDir, args, c))
+
+			if tc.catfile {
+				// The regression must exercise cat-file, not the old-Git fallback.
+				probe := exec.Command("git", "cat-file", "--batch-check", "--filter=blob:limit=1")
+				probe.Dir = gitDir
+				if err := runIntegrationCommand(probe); err != nil {
+					t.Skipf("cat-file filtering unavailable: %v", err)
+				}
+			}
 
 			updated, err := gitindex.IndexGitRepo(gitIndexOptionsForTest(args, gitDir))
 			require.NoError(err)
 			require.True(updated)
+			if len(tc.largeFiles) == 0 {
+				// Checking only search results would miss fetching a large blob and
+				// then skipping it. It must still be absent from the object store.
+				assertPartialBareFetch(t, gitDir, fixture)
+			}
 
 			repository, metadata, ok, err := args.BuildOptions().FindRepositoryMetadata()
 			require.NoError(err)
@@ -112,7 +139,13 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 
 			assertSearchContains(t, searcher, "smallneedle", "small.txt")
 			assertSearchContains(t, searcher, "devneedle", "dev.txt")
-			assertSearchEmpty(t, searcher, "largeneedle")
+			if len(tc.largeFiles) > 0 {
+				assertSearchContains(t, searcher, "largeneedle", "big.bin")
+			} else {
+				assertSearchEmpty(t, searcher, "largeneedle")
+				// Switching blob readers must preserve the user-visible skip reason.
+				assertSearchContains(t, searcher, "NOT-INDEXED: exceeds the maximum size limit", "big.bin")
+			}
 
 			require.NoError(updateIndexStatusOnSourcegraph(c, args, sg, nil))
 			require.Len(sg.updates, 1)

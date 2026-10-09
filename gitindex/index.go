@@ -750,6 +750,7 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 	defer cr.Close()
 
 	slab := newContentSlab(16 << 20) // 16 MB per slab
+	missingFiles := 0
 
 	for idx, key := range keys {
 		size, missing, excluded, err := cr.Next()
@@ -761,10 +762,13 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 		var doc index.Document
 
 		if missing {
-			// Unexpected for local repos — may indicate corruption, shallow
-			// clone, or a race with git gc. Log a warning and skip.
-			log.Printf("warning: blob %s missing for %s", key.ID, key.FullPath())
-			doc = skippedDoc(key, branches, index.SkipReasonMissing)
+			// Size-filtered partial clones intentionally omit large blobs. Match
+			// createDocument's assumption that missing blobs were filtered out,
+			// so switching readers preserves the user-visible skip reason. This
+			// is not a size check: other causes of missing objects get the same
+			// explanation. Keep a missing-object count for diagnostics below.
+			missingFiles++
+			doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 		} else if excluded {
 			doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 		} else {
@@ -793,6 +797,12 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 		if idx%10_000 == 0 {
 			builder.CheckMemoryUsage()
 		}
+	}
+
+	// Partial clones may intentionally omit many blobs. Summarize once instead
+	// of emitting a warning for every skipped file.
+	if missingFiles > 0 {
+		log.Printf("skipped %d files with missing Git objects in %s", missingFiles, opts.RepoDir)
 	}
 
 	return nil
