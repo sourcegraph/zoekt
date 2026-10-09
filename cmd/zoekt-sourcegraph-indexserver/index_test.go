@@ -470,6 +470,8 @@ func TestGetIndexOptions(t *testing.T) {
 }
 
 func TestIndex(t *testing.T) {
+	t.Setenv("GIT_NO_LAZY_FETCH", "0")
+
 	cases := []struct {
 		name                   string
 		args                   indexArgs
@@ -622,8 +624,18 @@ func TestIndex(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var got []string
 			runCmd := func(c *exec.Cmd) error {
-				if c.Env != nil {
-					t.Fatal("expected nil Env for command. Tenant Enforcement relies on us inheritting the parent process environment.")
+				// Tenant enforcement relies on inheriting the parent environment.
+				// Only the indexing subprocess should override lazy fetching.
+				gotEnv := c.Environ()
+				wantEnv := os.Environ()
+				if c.Args[0] == "zoekt-git-index" {
+					wantEnv = slices.DeleteFunc(wantEnv, func(entry string) bool {
+						return strings.HasPrefix(entry, "GIT_NO_LAZY_FETCH=")
+					})
+					wantEnv = append(wantEnv, "GIT_NO_LAZY_FETCH=1")
+				}
+				if diff := cmp.Diff(wantEnv, gotEnv, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+					t.Fatalf("environment mismatch (-want +got):\n%s", diff)
 				}
 
 				cmd := strings.Join(c.Args, " ")

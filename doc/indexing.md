@@ -43,3 +43,26 @@ The *Community.git* repository can then be indexed with `zoekt-git-index`
 ```sh
 zoekt-git-index -branches main -index /data/index -repo_cache /data/repos Community.git
 ```
+
+# Cat-file and partial clones
+
+`zoekt-git-index` can read blobs through `git cat-file` instead of go-git.
+This optimization is disabled by default. Set `ZOEKT_DISABLE_CATFILE_BATCH=false`
+to opt in, or `true` to switch back to go-git.
+
+In a partial clone, Git can fetch missing objects from a promisor remote on
+demand. Even `cat-file --filter=blob:limit=...` can fetch a missing blob to learn
+its size before excluding it from the output. The resulting `git index-pack`
+subprocess can use memory proportional to the uncompressed blob size, even
+though Zoekt skips the file.
+
+With Git 2.45 or newer, set `GIT_NO_LAZY_FETCH=1` when running `zoekt-git-index`
+to index only locally available content. Fetch all content you want indexed
+first, including any large-file exceptions. Disabling lazy fetching on an
+arbitrary partial clone can otherwise omit wanted content from search results.
+
+Without lazy fetching, cat-file reports absent blobs as `missing`, not
+`excluded`, because their sizes are unknown locally. Zoekt keeps their filenames,
+skips their content with `SkipReasonMissing`, and logs one count of missing files
+per repository indexing pass. Missing objects are not assumed to be oversized:
+they may be intentionally omitted by a clone filter or absent for another reason.
