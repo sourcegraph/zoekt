@@ -117,7 +117,6 @@ func TestDetermineFileCategorySkippedRankFlags(t *testing.T) {
 		{SkipReasonTooManyTrigrams, true},
 		{SkipReasonTooLarge, false},
 		{SkipReasonBinary, false},
-		{SkipReasonMissing, false},
 	} {
 		t.Run(tc.skip.explanation(), func(t *testing.T) {
 			doc := Document{

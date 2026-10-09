@@ -62,7 +62,9 @@ first, including any large-file exceptions. Disabling lazy fetching on an
 arbitrary partial clone can otherwise omit wanted content from search results.
 
 Without lazy fetching, cat-file reports absent blobs as `missing`, not
-`excluded`, because their sizes are unknown locally. Zoekt keeps their filenames,
-skips their content with `SkipReasonMissing`, and logs one count of missing files
-per repository indexing pass. Missing objects are not assumed to be oversized:
-they may be intentionally omitted by a clone filter or absent for another reason.
+`excluded`, because their sizes are unknown locally. Both Zoekt blob readers
+assume missing blobs were omitted by a size filter and preserve the filename with
+the explanation `NOT-INDEXED: exceeds the maximum size limit`. This keeps the
+user-visible reason consistent when switching readers; it is not a size check,
+so objects missing for other reasons receive the same explanation. The cat-file
+reader also logs one count of missing files per repository indexing pass.

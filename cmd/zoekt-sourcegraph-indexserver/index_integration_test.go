@@ -143,6 +143,8 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 				assertSearchContains(t, searcher, "largeneedle", "big.bin")
 			} else {
 				assertSearchEmpty(t, searcher, "largeneedle")
+				// Switching blob readers must preserve the user-visible skip reason.
+				assertSearchContains(t, searcher, "NOT-INDEXED: exceeds the maximum size limit", "big.bin")
 			}
 
 			require.NoError(updateIndexStatusOnSourcegraph(c, args, sg, nil))

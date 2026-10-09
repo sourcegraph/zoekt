@@ -762,12 +762,13 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 		var doc index.Document
 
 		if missing {
-			// Expected for size-filtered partial clones when lazy fetching is
-			// disabled (as in the Sourcegraph indexserver), but can also indicate
-			// corruption or a race with git gc. Keep the reason as missing: the
-			// blob's size is unknown, so we cannot assume it was filtered out.
+			// Size-filtered partial clones intentionally omit large blobs. Match
+			// createDocument's assumption that missing blobs were filtered out,
+			// so switching readers preserves the user-visible skip reason. This
+			// is not a size check: other causes of missing objects get the same
+			// explanation. Keep a missing-object count for diagnostics below.
 			missingFiles++
-			doc = skippedDoc(key, branches, index.SkipReasonMissing)
+			doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 		} else if excluded {
 			doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 		} else {
