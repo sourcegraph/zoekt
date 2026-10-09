@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -487,4 +489,62 @@ func TestRepositoryUnmarshalJSONStackOverflowFix(t *testing.T) {
 	if nestedSubmodule.ID != 33333 {
 		t.Errorf("Expected nested-submodule ID 33333, got %d", nestedSubmodule.ID)
 	}
+}
+
+func TestParseRepoID(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    uint32
+		wantErr bool
+	}{
+		{in: "1", want: 1},
+		{in: "0", want: 0},
+		{in: "4294967295", want: math.MaxUint32},
+		{in: "", wantErr: true},
+		{in: "4294967296", wantErr: true},
+		{in: "-1", wantErr: true},
+		{in: "12abc", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := ParseRepoID(tc.in)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("ParseRepoID(%q) error = %v, wantErr %v", tc.in, err, tc.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrInvalidRepoID) {
+				t.Fatalf("ParseRepoID(%q) error %v does not wrap ErrInvalidRepoID", tc.in, err)
+			}
+			if got != tc.want {
+				t.Fatalf("ParseRepoID(%q) = %d, want %d", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRepositoryUnmarshalJSON_RepoID(t *testing.T) {
+	t.Run("out of range is an error", func(t *testing.T) {
+		var repo Repository
+		err := json.Unmarshal([]byte(`{"name":"r","rawconfig":{"repoid":"4294967296"}}`), &repo)
+		if err == nil {
+			t.Fatalf("expected an error for an out-of-range repoid, got ID %d", repo.ID)
+		}
+	})
+
+	t.Run("malformed is an error", func(t *testing.T) {
+		var repo Repository
+		err := json.Unmarshal([]byte(`{"name":"r","rawconfig":{"repoid":"abc"}}`), &repo)
+		if err == nil {
+			t.Fatalf("expected an error for a malformed repoid, got ID %d", repo.ID)
+		}
+	})
+
+	t.Run("empty repoid leaves ID untouched", func(t *testing.T) {
+		var repo Repository
+		if err := json.Unmarshal([]byte(`{"name":"r","id":7,"rawconfig":{"repoid":""}}`), &repo); err != nil {
+			t.Fatal(err)
+		}
+		if repo.ID != 7 {
+			t.Fatalf("got ID %d, want 7", repo.ID)
+		}
+	})
 }
