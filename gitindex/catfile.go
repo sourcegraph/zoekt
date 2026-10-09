@@ -62,6 +62,11 @@ func checkCatfileFilterSupport(repoDir, filterSpec string) error {
 // to libc stdio buffering (fwrite), reducing syscalls. After stdin EOF, git
 // calls fflush(stdout) to deliver any remaining output.
 //
+// A closed stdout pipe is ambiguous: it can mean either clean completion or
+// that git exited unsuccessfully. When a read reaches EOF, the reader waits for
+// git and substitutes its exit error and stderr if it failed. Close uses the
+// same wait path, since an exec.Cmd may only be waited on once.
+//
 // Usage:
 //
 //	cr, err := newCatfileReader(repoDir, ids, catfileReaderOptions{})
@@ -81,10 +86,18 @@ type catfileReader struct {
 	cmd      *exec.Cmd
 	reader   *bufio.Reader
 	writeErr <-chan error
+	stderr   *bytes.Buffer
+
+	// EOF handling and Close may both need to reap the process.
+	waitOnce sync.Once
+	waitErr  error
 
 	// pending tracks unread content bytes + trailing LF for the current
 	// entry. Next() discards any pending bytes before reading the next header.
 	pending int
+	// Wait closes the stdout pipe, so remember a clean EOF rather than reading
+	// the closed pipe on subsequent calls to Next.
+	eof bool
 
 	closeOnce sync.Once
 	closeErr  error
@@ -101,6 +114,10 @@ func newCatfileReader(repoDir string, ids []plumbing.Hash, opts catfileReaderOpt
 
 	cmd := exec.Command("git", args...)
 	cmd.Dir = repoDir
+	// Stdout EOF alone does not reveal why git exited. Buffer stderr so it can
+	// be attached to the process error after Wait completes.
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -141,6 +158,7 @@ func newCatfileReader(repoDir string, ids []plumbing.Hash, opts catfileReaderOpt
 		cmd:      cmd,
 		reader:   bufio.NewReaderSize(stdout, 512*1024),
 		writeErr: writeErr,
+		stderr:   stderr,
 	}, nil
 }
 
@@ -152,18 +170,26 @@ func newCatfileReader(repoDir string, ids []plumbing.Hash, opts catfileReaderOpt
 // After Next returns successfully with missing=false and excluded=false, call
 // Read to consume the blob content, or call Next again to skip it.
 func (cr *catfileReader) Next() (size int, missing bool, excluded bool, err error) {
+	if cr.eof {
+		return 0, false, false, io.EOF
+	}
+
 	// Discard unread content from the previous entry.
 	if cr.pending > 0 {
 		if _, err := cr.reader.Discard(cr.pending); err != nil {
-			return 0, false, false, fmt.Errorf("discard pending bytes: %w", err)
+			return 0, false, false, fmt.Errorf("discard pending bytes: %w", cr.processError(err))
 		}
 		cr.pending = 0
 	}
 
 	headerBytes, err := cr.reader.ReadBytes('\n')
 	if err != nil {
-		if err == io.EOF {
-			return 0, false, false, io.EOF
+		if errors.Is(err, io.EOF) {
+			err = cr.processError(err)
+			if errors.Is(err, io.EOF) {
+				cr.eof = true
+			}
+			return 0, false, false, err
 		}
 		return 0, false, false, fmt.Errorf("read header: %w", err)
 	}
@@ -205,7 +231,7 @@ func (cr *catfileReader) Read(p []byte) (int, error) {
 	if contentRemaining <= 0 {
 		// Only the trailing LF remains; consume it and signal EOF.
 		if _, err := cr.reader.ReadByte(); err != nil {
-			return 0, fmt.Errorf("read trailing LF: %w", err)
+			return 0, fmt.Errorf("read trailing LF: %w", cr.processError(err))
 		}
 		cr.pending = 0
 		return 0, io.EOF
@@ -218,13 +244,13 @@ func (cr *catfileReader) Read(p []byte) (int, error) {
 	n, err := cr.reader.Read(p)
 	cr.pending -= n
 	if err != nil {
-		return n, err
+		return n, cr.processError(err)
 	}
 
 	// If we've consumed all content bytes, also consume the trailing LF.
 	if cr.pending == 1 {
 		if _, err := cr.reader.ReadByte(); err != nil {
-			return n, fmt.Errorf("read trailing LF: %w", err)
+			return n, fmt.Errorf("read trailing LF: %w", cr.processError(err))
 		}
 		cr.pending = 0
 	}
@@ -244,7 +270,7 @@ func (cr *catfileReader) Close() error {
 		_, _ = io.Copy(io.Discard, cr.reader)
 		// Wait for writer goroutine (unblocks via broken pipe from Kill).
 		<-cr.writeErr
-		err := cr.cmd.Wait()
+		err := cr.waitProcess()
 		// Suppress the expected "signal: killed" error from our own Kill().
 		if isKilledErr(err) {
 			err = nil
@@ -252,6 +278,34 @@ func (cr *catfileReader) Close() error {
 		cr.closeErr = err
 	})
 	return cr.closeErr
+}
+
+// processError turns EOF into the underlying process failure when git exited
+// unsuccessfully. It only waits after EOF, when no more stdout can arrive.
+func (cr *catfileReader) processError(err error) error {
+	if !errors.Is(err, io.EOF) {
+		return err
+	}
+	if processErr := cr.waitProcess(); processErr != nil {
+		return processErr
+	}
+	return err
+}
+
+// waitProcess reaps cat-file at most once and adds its stderr to exit errors.
+func (cr *catfileReader) waitProcess() error {
+	cr.waitOnce.Do(func() {
+		cr.waitErr = cr.cmd.Wait()
+		if cr.waitErr == nil {
+			return
+		}
+		if stderr := strings.TrimSpace(cr.stderr.String()); stderr != "" {
+			cr.waitErr = fmt.Errorf("git cat-file: %w: %s", cr.waitErr, stderr)
+		} else {
+			cr.waitErr = fmt.Errorf("git cat-file: %w", cr.waitErr)
+		}
+	})
+	return cr.waitErr
 }
 
 // isKilledErr reports whether err is an exec.ExitError caused by SIGKILL.
