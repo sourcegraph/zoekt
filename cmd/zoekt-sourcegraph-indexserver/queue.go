@@ -124,6 +124,13 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Lock()
 	item := q.getOrAdd(opts.RepoID)
 	if !reflect.DeepEqual(item.opts, opts) {
+		if item.indexed && item.heapIdx >= 0 {
+			// A periodic recheck is not time spent waiting for an update.
+			// Keep the original age only if an update was already pending.
+			q.seq++
+			item.seq = q.seq
+			item.dateAddedToQueue = time.Now()
+		}
 		item.indexed = false
 		item.opts = opts
 	}
