@@ -28,39 +28,68 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 // back into indexDir. Additionally it uses now to remove shards that have
 // been in the trash for 24 hours. It also deletes files left behind by
 // interrupted index operations.
-func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) {
+func cleanup(mu *indexMutex, indexDir string, repos []uint32, now time.Time, shardMerging bool) {
 	start := time.Now()
+	defer func() { metricCleanupDuration.Observe(time.Since(start).Seconds()) }()
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0o755); err != nil {
 		errorLog.Printf("failed to create trash dir: %v", err)
 	}
-	removeStaleShardFiles(indexDir)
-	removeStaleShardFiles(trashDir)
+	// Incomplete files cannot always be attributed to a repository. Only
+	// scavenge them in an idle window; never wait for index jobs to finish.
+	mu.TryGlobal(func() {
+		removeStaleShardFiles(indexDir)
+		removeStaleShardFiles(trashDir)
+		removeTmpFiles(indexDir)
+	})
+	mu.Maintain(func(p *indexMaintenance) {
+		cleanupRepos(p, indexDir, repos, now, shardMerging)
+	})
+}
 
+func cleanupRepos(p *indexMaintenance, indexDir string, repos []uint32, now time.Time, shardMerging bool) {
+	trashDir := filepath.Join(indexDir, ".trash")
 	trash := getShards(trashDir)
 	tombtones := getTombstonedRepos(indexDir)
 	indexShards := getShards(indexDir)
+	// Retain the original names even after an earlier phase removes a shard
+	// from these maps (notably when repairing renamed repositories).
+	repoShards := make(map[uint32][]shard)
+	withRepo := func(repo uint32, f func()) {
+		shards, ok := repoShards[repo]
+		if !ok {
+			shards = append([]shard{}, trash[repo]...)
+			shards = append(shards, indexShards[repo]...)
+			if s, ok := tombtones[repo]; ok {
+				shards = append(shards, s)
+			}
+			repoShards[repo] = shards
+		}
+		p.withShards(shards, f)
+	}
 
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
 	for repo, shards := range trash {
-		old := false
-		for _, shard := range shards {
-			if shard.ModTime.Before(minAge) {
-				old = true
-			} else if shard.ModTime.After(now) {
-				debugLog.Printf("trashed shard %s has timestamp in the future, reseting to now", shard.Path)
-				_ = os.Chtimes(shard.Path, now, now)
+		withRepo(repo, func() {
+			old := false
+			for _, shard := range shards {
+				if shard.ModTime.Before(minAge) {
+					old = true
+				} else if shard.ModTime.After(now) {
+					debugLog.Printf("trashed shard %s has timestamp in the future, reseting to now", shard.Path)
+					_ = os.Chtimes(shard.Path, now, now)
+				}
 			}
-		}
 
-		if _, conflicts := indexShards[repo]; !conflicts && !old {
-			continue
-		}
+			if _, conflicts := indexShards[repo]; !conflicts && !old {
+				return
+			}
 
-		infoLog.Printf("removing old shards from trash for %v", repo)
-		removeAll(shards...)
-		delete(trash, repo)
+			infoLog.Printf("removing old shards from trash for %v", repo)
+			removeAll(shards...)
+			delete(trash, repo)
+		})
 	}
 
 	// tombstones: Remove tombstones that conflict with index or trash. After this,
@@ -84,74 +113,81 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			continue
 		}
 
-		// prevent further processing since we will delete
-		delete(indexShards, repo)
+		withRepo(repo, func() {
+			// prevent further processing since we will delete
+			delete(indexShards, repo)
 
-		// This should be rare, so give an informative log message.
-		var paths []string
-		for _, shard := range shards {
-			paths = append(paths, filepath.Base(shard.Path))
-		}
-		infoLog.Printf("removing shards for %v due to multiple repository names: %s", repo, strings.Join(paths, " "))
+			// This should be rare, so give an informative log message.
+			var paths []string
+			for _, shard := range shards {
+				paths = append(paths, filepath.Base(shard.Path))
+			}
+			infoLog.Printf("removing shards for %v due to multiple repository names: %s", repo, strings.Join(paths, " "))
 
-		// We may be in both normal and compound shards in this case. First
-		// tombstone the compound shards so we don't just rm them.
-		simple := shards[:0]
-		for _, s := range shards {
-			if shardMerging && maybeSetTombstone([]shard{s}, repo) {
-				continue
+			// We may be in both normal and compound shards in this case. First
+			// tombstone the compound shards so we don't just rm them.
+			simple := shards[:0]
+			for _, s := range shards {
+				if shardMerging && maybeSetTombstone([]shard{s}, repo) {
+					continue
+				}
+
+				simple = append(simple, s)
 			}
 
-			simple = append(simple, s)
-		}
+			if len(simple) == 0 {
+				return
+			}
 
-		if len(simple) == 0 {
-			continue
-		}
-
-		removeAll(simple...)
+			removeAll(simple...)
+		})
 	}
 
 	// index: Move missing repos from trash into index
 	// index: Restore deleted or tombstoned repos.
 	for _, repo := range repos {
-		// Delete from index so that index will only contain shards to be
-		// trashed.
+		_, inTrash := trash[repo]
+		_, tombstoned := tombtones[repo]
+		if inTrash || tombstoned {
+			withRepo(repo, func() {
+				if shards, ok := trash[repo]; ok {
+					infoLog.Printf("restoring shards from trash for %v", repo)
+					moveAll(indexDir, shards)
+					return
+				}
+
+				if s, ok := tombtones[repo]; ok {
+					infoLog.Printf("removing tombstone for %v", repo)
+					err := index.UnsetTombstone(s.Path, repo)
+					if err != nil {
+						errorLog.Printf("error removing tombstone for %v: %s", repo, err)
+					}
+				}
+			})
+		}
+		// Assigned repositories must never be trashed, even if busy.
 		delete(indexShards, repo)
-
-		if shards, ok := trash[repo]; ok {
-			infoLog.Printf("restoring shards from trash for %v", repo)
-			moveAll(indexDir, shards)
-			continue
-		}
-
-		if s, ok := tombtones[repo]; ok {
-			infoLog.Printf("removing tombstone for %v", repo)
-			err := index.UnsetTombstone(s.Path, repo)
-			if err != nil {
-				errorLog.Printf("error removing tombstone for %v: %s", repo, err)
-			}
-		}
 	}
 
 	// index: Move non-existent repos into trash
 	for repo, shards := range indexShards {
-		// Best-effort touch. If touch fails, we will just remove from the
-		// trash sooner.
-		for _, shard := range shards {
-			_ = os.Chtimes(shard.Path, now, now)
-		}
+		withRepo(repo, func() {
+			// Best-effort touch. If touch fails, we will just remove from the
+			// trash sooner.
+			for _, shard := range shards {
+				_ = os.Chtimes(shard.Path, now, now)
+			}
 
-		if shardMerging && maybeSetTombstone(shards, repo) {
-			continue
-		}
-		moveAll(trashDir, shards)
+			if shardMerging && maybeSetTombstone(shards, repo) {
+				return
+			}
+			moveAll(trashDir, shards)
+		})
 	}
+}
 
-	// Remove .tmp files from crashed indexer runs-- for example, if an indexer
-	// OOMs, it will leave around .tmp files, usually in a loop. We can remove
-	// the files now since cleanup runs with a global lock (no indexing jobs
-	// running at the same time).
+// removeTmpFiles requires the global lock: these may belong to active writers.
+func removeTmpFiles(indexDir string) {
 	if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
 		errorLog.Printf("Glob: %v", err)
 	} else {
@@ -167,8 +203,28 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			}
 		}
 	}
+}
 
-	metricCleanupDuration.Observe(time.Since(start).Seconds())
+// withShards reserves all members of affected shards, including tombstoned
+// members: an index job can still rewrite their shared metadata sidecar.
+func (p *indexMaintenance) withShards(shards []shard, f func()) bool {
+	names := make(map[string]bool)
+	ids := make(map[uint32]bool)
+	for _, s := range shards {
+		names[s.RepoName] = true
+		ids[s.RepoID] = true
+		if strings.HasPrefix(filepath.Base(s.Path), "compound-") {
+			repos, _, err := index.ReadMetadataPath(s.Path)
+			if err != nil {
+				return false
+			}
+			for _, repo := range repos {
+				names[repo.Name] = true
+				ids[repo.ID] = true
+			}
+		}
+	}
+	return p.with(func(repo indexRepository) bool { return names[repo.name] || ids[repo.id] }, f)
 }
 
 type shard struct {
@@ -415,8 +471,7 @@ var metricNumberCompoundShards = promauto.NewGauge(prometheus.GaugeOpts{
 })
 
 // vacuum removes tombstoned repos from compound shards and removes compound
-// shards if they shrink below minSizeBytes. Vacuum locks the index directory for
-// each compound shard it vacuums.
+// shards if they shrink below minSizeBytes. Busy compound shards are skipped.
 func (s *Server) vacuum() {
 	metricVacuumRunning.Set(1)
 	defer metricVacuumRunning.Set(0)
@@ -435,36 +490,36 @@ func (s *Server) vacuum() {
 			continue
 		}
 
-		path := filepath.Join(s.IndexDir, fn)
-		info, err := os.Stat(path)
-		if err != nil {
-			errorLog.Printf("vacuum stat failed: %v", err)
-			continue
-		}
-
-		if info.Size() < s.mergeOpts.minSizeBytes {
-			cmd := exec.Command("zoekt-merge-index", "explode", path)
-
-			var b []byte
-			s.muIndexDir.Global(func() {
-				b, err = cmd.CombinedOutput()
-			})
-
+		// Let cleanup and merging proceed between compound shards.
+		s.muIndexDir.Maintain(func(p *indexMaintenance) {
+			path := filepath.Join(s.IndexDir, fn)
+			info, err := os.Stat(path)
 			if err != nil {
-				errorLog.Printf("failed to explode compound shard: shard=%s out=%s err=%s", path, string(b), err)
-			} else {
-				infoLog.Printf("exploded compound shard: shard=%s", path)
+				errorLog.Printf("vacuum stat failed: %v", err)
+				return
 			}
-			continue
-		}
 
-		s.muIndexDir.Global(func() {
-			_, err = removeTombstones(path)
+			p.withShards([]shard{{Path: path}}, func() {
+				if info.Size() < s.mergeOpts.minSizeBytes {
+					cmd := exec.Command("zoekt-merge-index", "explode", path)
+
+					b, err := cmd.CombinedOutput()
+
+					if err != nil {
+						errorLog.Printf("failed to explode compound shard: shard=%s out=%s err=%s", path, string(b), err)
+					} else {
+						infoLog.Printf("exploded compound shard: shard=%s", path)
+					}
+					return
+				}
+
+				_, err = removeTombstones(path)
+
+				if err != nil {
+					errorLog.Printf("error while removing tombstones in %s: %s", path, err)
+				}
+			})
 		})
-
-		if err != nil {
-			errorLog.Printf("error while removing tombstones in %s: %s", path, err)
-		}
 	}
 }
 

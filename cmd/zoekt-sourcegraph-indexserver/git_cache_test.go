@@ -190,7 +190,7 @@ func TestCleanupGitRepoCache(t *testing.T) {
 			if tc.assigned {
 				assigned = []uint32{args.RepoID}
 			}
-			require.NoError(t, gitCache.cleanup(assigned, now))
+			require.NoError(t, gitCache.cleanup(&indexMutex{}, assigned, now))
 			if tc.keep {
 				require.DirExists(t, dir)
 			} else {
@@ -201,8 +201,34 @@ func TestCleanupGitRepoCache(t *testing.T) {
 	args := indexArgs{IndexOptions: IndexOptions{RepoID: 42, TenantID: 1, Name: "interrupted"}}
 	dir := gitCache.cachedDir(&args)
 	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, gitCache.cleanup([]uint32{42}, now))
+	require.NoError(t, gitCache.cleanup(&indexMutex{}, []uint32{42}, now))
 	require.NoDirExists(t, dir)
+}
+
+func TestGitCacheCleanupSkipsBusyClone(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	var mu indexMutex
+	args := indexArgs{IndexOptions: IndexOptions{RepoID: 1, TenantID: 1, Name: "busy"}}
+	busy := gitCache.cachedDir(&args)
+	// An active fetch has no completion marker, just like an interrupted one.
+	require.NoError(t, os.MkdirAll(busy, 0o700))
+	args.Name = "idle"
+	idle := gitCache.cachedDir(&args)
+	require.NoError(t, os.MkdirAll(idle, 0o700))
+	stop := holdIndex(t, &mu, "busy", 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := gitCache.cleanup(&mu, nil, time.Now()); err != nil {
+			t.Error(err)
+		}
+	}()
+	awaitMaintenance(t, done)
+	require.DirExists(t, busy)
+	require.NoDirExists(t, idle)
+	stop()
+	require.NoError(t, gitCache.cleanup(&mu, nil, time.Now()))
+	require.NoDirExists(t, busy)
 }
 
 func TestCachedGitIndexIntegration(t *testing.T) {

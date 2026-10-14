@@ -54,9 +54,8 @@ func defaultExplodeCmd(args ...string) *exec.Cmd {
 	return cmd
 }
 
-// doMerge drives the merge process. It holds the lock on s.indexDir for the
-// duration of 1 merge, which might be several minutes, depending on the target
-// size of the compound shard.
+// doMerge drives the merge process. Each merge reserves only its input
+// repositories; busy repositories are left for a later pass.
 func (s *Server) doMerge() {
 	s.merge(defaultMergeCmd)
 }
@@ -79,8 +78,8 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 	next := true
 	for next {
 		next = false
-		s.muIndexDir.Global(func() {
-			candidates, excluded := loadCandidates(s.IndexDir, s.mergeOpts)
+		s.muIndexDir.Maintain(func(p *indexMaintenance) {
+			candidates, excluded := loadCandidates(p, s.IndexDir, s.mergeOpts)
 			infoLog.Printf("loadCandidates: candidates=%d excluded=%d", len(candidates), excluded)
 
 			c := pickCandidates(candidates, s.mergeOpts.targetSizeBytes)
@@ -95,41 +94,55 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 				paths = append(paths, p.path)
 			}
 
-			start := time.Now()
-
-			cmd := mergeCmd(paths...)
-
-			// zoekt-merge-index writes the full path of the new compound shard to stdout.
-			stdoutBuf := &bytes.Buffer{}
-			stderrBuf := &bytes.Buffer{}
-			cmd.Stdout = stdoutBuf
-			cmd.Stderr = stderrBuf
-
-			err := cmd.Run()
-
-			durationSeconds := time.Since(start).Seconds()
-			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(durationSeconds)
-			if err != nil {
-				errorLog.Printf("error merging shards: stdout=%s, stderr=%s, durationSeconds=%.2f err=%s", stdoutBuf.String(), stderrBuf.String(), durationSeconds, err)
-				return
+			names := make(map[string]bool, len(c.shards))
+			ids := make(map[uint32]bool, len(c.shards))
+			for _, shard := range c.shards {
+				names[shard.repo.name] = true
+				ids[shard.repo.id] = true
 			}
+			ran := p.with(func(repo indexRepository) bool { return names[repo.name] || ids[repo.id] }, func() {
+				start := time.Now()
 
-			infoLog.Printf("finished merging: shard=%s durationSeconds=%.2f", stdoutBuf.String(), durationSeconds)
+				cmd := mergeCmd(paths...)
 
-			next = true
+				// zoekt-merge-index writes the full path of the new compound shard to stdout.
+				stdoutBuf := &bytes.Buffer{}
+				stderrBuf := &bytes.Buffer{}
+				cmd.Stdout = stdoutBuf
+				cmd.Stderr = stderrBuf
+
+				err := cmd.Run()
+
+				durationSeconds := time.Since(start).Seconds()
+				metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(durationSeconds)
+				if err != nil {
+					errorLog.Printf("error merging shards: stdout=%s, stderr=%s, durationSeconds=%.2f err=%s", stdoutBuf.String(), stderrBuf.String(), durationSeconds, err)
+					return
+				}
+
+				infoLog.Printf("finished merging: shard=%s durationSeconds=%.2f", stdoutBuf.String(), durationSeconds)
+
+				next = true
+			})
+			if !ran {
+				// An input changed after candidate selection. Rescan instead of
+				// merging stale paths (possibly now part of a multi-shard index).
+				next = true
+			}
 		})
 	}
 }
 
 type candidate struct {
 	path string
+	repo indexRepository
 
 	// The size as reported by os.Stat.
 	sizeBytes int64
 }
 
 // loadCandidates returns all shards eligible for merging.
-func loadCandidates(dir string, opts mergeOpts) ([]candidate, int) {
+func loadCandidates(p *indexMaintenance, dir string, opts mergeOpts) ([]candidate, int) {
 	excluded := 0
 
 	d, err := os.Open(dir)
@@ -154,13 +167,15 @@ func loadCandidates(dir string, opts mergeOpts) ([]candidate, int) {
 			continue
 		}
 
-		if isExcluded(path, fi, opts) {
+		repo, exclude := isExcluded(path, fi, opts)
+		if exclude || !p.with(func(r indexRepository) bool { return r.name == repo.name || r.id == repo.id }, func() {}) {
 			excluded++
 			continue
 		}
 
 		candidates = append(candidates, candidate{
 			path:      path,
+			repo:      repo,
 			sizeBytes: fi.Size(),
 		})
 	}
@@ -202,19 +217,19 @@ type mergeOpts struct {
 	minAgeDays int
 }
 
-// isExcluded returns true if a shard should not be merged, false otherwise.
+// isExcluded returns the repository identity and whether a shard should be excluded.
 //
 // We need path and FileInfo because FileInfo does not contain the full path, see
 // discussion here https://github.com/golang/go/issues/32300.
-func isExcluded(path string, fi os.FileInfo, opts mergeOpts) bool {
+func isExcluded(path string, fi os.FileInfo, opts mergeOpts) (indexRepository, bool) {
 	if hasMultipleShards(path) {
-		return true
+		return indexRepository{}, true
 	}
 
 	repos, _, err := index.ReadMetadataPath(path)
 	if err != nil {
 		debugLog.Printf("failed to load metadata for %s\n", fi.Name())
-		return true
+		return indexRepository{}, true
 	}
 
 	// Exclude compound shards from being merge targets. Why? We want repositories in a
@@ -223,14 +238,14 @@ func isExcluded(path string, fi os.FileInfo, opts mergeOpts) bool {
 	// size (handled by cleanup), reindex the repositories and merge them with other
 	// shards in the correct order.
 	if len(repos) > 1 {
-		return true
+		return indexRepository{}, true
 	}
 
 	if repos[0].LatestCommitDate.After(time.Now().AddDate(0, 0, -opts.minAgeDays)) {
-		return true
+		return indexRepository{}, true
 	}
 
-	return false
+	return indexRepository{name: repos[0].Name, id: repos[0].ID}, false
 }
 
 type compound struct {

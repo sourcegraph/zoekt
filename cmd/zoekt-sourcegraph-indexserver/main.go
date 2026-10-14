@@ -412,12 +412,10 @@ func (s *Server) Run() {
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
-				s.muIndexDir.Global(func() {
-					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
-					if err := gitCache.cleanup(repos.IDs, time.Now()); err != nil {
-						s.logger.Error("failed to clean git clone cache", sglog.Error(err))
-					}
-				})
+				cleanup(&s.muIndexDir, s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
+				if err := gitCache.cleanup(&s.muIndexDir, repos.IDs, time.Now()); err != nil {
+					s.logger.Error("failed to clean git clone cache", sglog.Error(err))
+				}
 			}()
 
 			repos.IterateIndexOptions(s.queue.AddOrUpdate)

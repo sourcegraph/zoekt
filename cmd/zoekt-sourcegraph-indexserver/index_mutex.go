@@ -17,14 +17,17 @@ type indexMutex struct {
 	// takes read lock.
 	indexMu sync.RWMutex
 
-	// runningMu protects running. You need to first be holding indexMu.
+	// runningMu protects running and maintenance state. Acquire indexMu first.
 	runningMu sync.Mutex
 
 	// Match both names (legacy shard paths) and IDs (renames and ID-based paths).
 	running map[indexRepository]struct{}
+
+	maintenanceMu sync.Mutex
+	maintenance   *indexMaintenance // protected by runningMu
 }
 
-// With runs f if no job with the same repository name or ID is running.
+// With runs f if repoName is neither running nor reserved by maintenance.
 // If f runs true is returned, otherwise false is returned.
 //
 // With blocks if f runs or the Global lock is held.
@@ -44,12 +47,15 @@ func (m *indexMutex) With(repoName string, repoID uint32, f func()) bool {
 			break
 		}
 	}
-	if alreadyRunning {
+	if alreadyRunning || (m.maintenance != nil && m.maintenance.blocks != nil && m.maintenance.blocks(repo)) {
 		m.runningMu.Unlock()
 		metricIndexMutexAlreadyRunning.Inc()
 		return false
 	}
 	m.running[repo] = struct{}{}
+	if m.maintenance != nil {
+		m.maintenance.changed[repo] = struct{}{}
+	}
 	m.runningMu.Unlock()
 
 	// release the repository
@@ -67,8 +73,7 @@ func (m *indexMutex) With(repoName string, repoID uint32, f func()) bool {
 	return true
 }
 
-// Global runs f once the global lock is held. IE no other Global or With f's
-// will be running.
+// Global runs f exclusively, excluding repository jobs and maintenance passes.
 func (m *indexMutex) Global(f func()) {
 	metricIndexMutexGlobal.Inc()
 	defer metricIndexMutexGlobal.Dec()
@@ -79,9 +84,73 @@ func (m *indexMutex) Global(f func()) {
 	f()
 }
 
+// TryGlobal runs f only if the directory is idle. Unlike Global it never queues
+// a writer behind a long index job, which would block new readers too.
+func (m *indexMutex) TryGlobal(f func()) {
+	if m.indexMu.TryLock() {
+		defer m.indexMu.Unlock()
+		metricIndexMutexGlobal.Inc()
+		defer metricIndexMutexGlobal.Dec()
+		f()
+	}
+}
+
+// Maintain serializes maintenance passes, but lets unrelated index jobs run.
+// The pass must reserve affected repositories with indexMaintenance.with before
+// mutating files. Global operations (tenant deletion) still exclude both.
+func (m *indexMutex) Maintain(f func(*indexMaintenance)) {
+	m.maintenanceMu.Lock()
+	defer m.maintenanceMu.Unlock()
+	m.indexMu.RLock()
+	defer m.indexMu.RUnlock()
+
+	m.runningMu.Lock()
+	p := &indexMaintenance{mu: m, changed: make(map[indexRepository]struct{})}
+	for repo := range m.running {
+		p.changed[repo] = struct{}{}
+	}
+	m.maintenance = p
+	m.runningMu.Unlock()
+	defer func() {
+		m.runningMu.Lock()
+		m.maintenance = nil
+		m.runningMu.Unlock()
+	}()
+	f(p)
+}
+
 type indexRepository struct {
 	name string
 	id   uint32
+}
+
+type indexMaintenance struct {
+	mu *indexMutex
+	// Include jobs that finished during the scan: their writes invalidate its
+	// snapshot even though they no longer hold a repository lock.
+	changed map[indexRepository]struct{}
+	blocks  func(indexRepository) bool
+}
+
+// with skips repositories touched since the pass began, and prevents matching
+// jobs from starting until f returns. Calls within a pass must be sequential.
+func (p *indexMaintenance) with(matches func(indexRepository) bool, f func()) bool {
+	p.mu.runningMu.Lock()
+	for repo := range p.changed {
+		if matches(repo) {
+			p.mu.runningMu.Unlock()
+			return false
+		}
+	}
+	p.blocks = matches
+	p.mu.runningMu.Unlock()
+	defer func() {
+		p.mu.runningMu.Lock()
+		p.blocks = nil
+		p.mu.runningMu.Unlock()
+	}()
+	f()
+	return true
 }
 
 var (

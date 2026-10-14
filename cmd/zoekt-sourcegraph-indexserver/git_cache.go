@@ -347,24 +347,31 @@ func (cache gitRepoCache) removeTenant(tenantID int) error {
 	return os.RemoveAll(filepath.Join(cache.rootDir(), strconv.Itoa(tenantID)))
 }
 
-// cleanup runs under indexMutex.Global, just like shard cleanup.
-// Sweeping also reclaims expired clones of repositories that never index again.
-func (cache gitRepoCache) cleanup(repos []uint32, now time.Time) error {
-	dirs, err := filepath.Glob(filepath.Join(cache.rootDir(), "*", "*.git"))
-	if err != nil {
-		return err
-	}
+// cleanup skips clones used by index jobs, including clones whose completion
+// marker is temporarily absent. It also reclaims clones that never index again.
+func (cache gitRepoCache) cleanup(mu *indexMutex, repos []uint32, now time.Time) error {
 	var errs error
-	for _, dir := range dirs {
-		entry, err := cache.readEntry(dir)
-		// Only a handful of repos are cached; avoid allocating a second map of
-		// the potentially much larger complete assignment list for their lookup.
-		if err == nil && slices.Contains(repos, entry.RepoID) && now.Before(entry.Created.Add(gitRepoCacheMaxAge)) {
-			continue
+	mu.Maintain(func(p *indexMaintenance) {
+		dirs, err := filepath.Glob(filepath.Join(cache.rootDir(), "*", "*.git"))
+		if err != nil {
+			errs = err
+			return
 		}
-		if err := os.RemoveAll(dir); err != nil {
-			errs = errors.Join(errs, err)
+		for _, dir := range dirs {
+			p.with(func(repo indexRepository) bool {
+				return strings.HasSuffix(dir, fmt.Sprintf("-%x.git", sha256.Sum256([]byte(repo.name))))
+			}, func() {
+				entry, err := cache.readEntry(dir)
+				// Only a handful of repos are cached; avoid allocating a second map of
+				// the potentially much larger complete assignment list for their lookup.
+				if err == nil && slices.Contains(repos, entry.RepoID) && now.Before(entry.Created.Add(gitRepoCacheMaxAge)) {
+					return
+				}
+				if err := os.RemoveAll(dir); err != nil {
+					errs = errors.Join(errs, err)
+				}
+			})
 		}
-	}
+	})
 	return errs
 }

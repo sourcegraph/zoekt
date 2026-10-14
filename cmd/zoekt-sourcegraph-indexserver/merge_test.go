@@ -201,6 +201,45 @@ func TestMerge(t *testing.T) {
 	}
 }
 
+func TestMergeSkipsBusyRepository(t *testing.T) {
+	dir := t.TempDir()
+	s := &Server{IndexDir: dir}
+	for id := uint32(1); id <= 3; id++ {
+		name := fmt.Sprintf("repo%d", id)
+		path := filepath.Join(dir, name+"_v16.00000.zoekt")
+		createTestShard(t, name, id, path)
+		if id != 1 {
+			info, err := os.Stat(path)
+			require.NoError(t, err)
+			s.mergeOpts.targetSizeBytes += info.Size()
+		}
+	}
+	stop := holdIndex(t, &s.muIndexDir, "renamed-repo1", 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.merge(func(paths ...string) *exec.Cmd {
+			for _, path := range paths {
+				if strings.Contains(path, "repo1_") {
+					t.Error("merging an active repository")
+				}
+			}
+			if s.muIndexDir.With("renamed-repo2", 2, func() {}) {
+				t.Error("index started on a merge input")
+			}
+			if !s.muIndexDir.With("unrelated", 4, func() {}) {
+				t.Error("unrelated index did not run during merge")
+			}
+			return helperCallMerge(paths...)
+		})
+	}()
+	awaitMaintenance(t, done)
+	require.FileExists(t, filepath.Join(dir, "repo1_v16.00000.zoekt"))
+	require.NoFileExists(t, filepath.Join(dir, "repo2_v16.00000.zoekt"))
+	require.NoFileExists(t, filepath.Join(dir, "repo3_v16.00000.zoekt"))
+	stop()
+}
+
 func TestExplodeTenantCompoundShards(t *testing.T) {
 	tenanttest.MockEnforce(t)
 	dir := t.TempDir()

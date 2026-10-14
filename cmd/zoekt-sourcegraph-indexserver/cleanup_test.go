@@ -12,10 +12,69 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
 )
+
+func TestCleanupSkipsBusyRepositories(t *testing.T) {
+	dir := t.TempDir()
+	var mu indexMutex
+	active := filepath.Join(dir, "repo1.zoekt")
+	idle := filepath.Join(dir, "repo3.zoekt")
+	compound := createCompoundShard(t, dir, []uint32{1, 2})
+	require.NoError(t, index.SetTombstone(compound, 1))
+	createTestShard(t, "repo1", 1, active)
+	createTestShard(t, "repo3", 3, idle)
+	tmp := filepath.Join(dir, "in-progress.tmp")
+	require.NoError(t, os.WriteFile(tmp, nil, 0o600))
+	// The next index may already have the new name while disk metadata still
+	// has the old name. Exclusion must also match repository IDs.
+	stop := holdIndex(t, &mu, "renamed-repo1", 1)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		cleanup(&mu, dir, nil, time.Now(), true)
+	}()
+	awaitMaintenance(t, done)
+	require.FileExists(t, active)
+	require.FileExists(t, tmp)
+	require.FileExists(t, filepath.Join(dir, ".trash", "repo3.zoekt"))
+	repos, _, err := index.ReadMetadataPathAlive(compound)
+	require.NoError(t, err)
+	require.Len(t, repos, 1)
+	require.Equal(t, uint32(2), repos[0].ID, "must not mutate a busy repo's shared sidecar")
+
+	stop()
+	cleanup(&mu, dir, nil, time.Now(), true)
+	require.NoFileExists(t, tmp)
+	require.FileExists(t, filepath.Join(dir, ".trash", "repo1.zoekt"))
+	repos, _, err = index.ReadMetadataPathAlive(compound)
+	require.NoError(t, err)
+	require.Empty(t, repos)
+}
+
+func TestVacuumSkipsBusyCompound(t *testing.T) {
+	dir := t.TempDir()
+	busy := createCompoundShard(t, dir, []uint32{1, 2})
+	idle := createCompoundShard(t, dir, []uint32{3, 4})
+	require.NoError(t, index.SetTombstone(busy, 1))
+	require.NoError(t, index.SetTombstone(idle, 3))
+	mockMerger = func() error { return nil }
+	t.Cleanup(func() { mockMerger = nil })
+	s := &Server{IndexDir: dir}
+	stop := holdIndex(t, &s.muIndexDir, "repo1", 1)
+	done := make(chan struct{})
+	go func() { defer close(done); s.vacuum() }()
+	awaitMaintenance(t, done)
+	require.FileExists(t, busy)
+	require.NoFileExists(t, idle)
+	stop()
+	s.vacuum()
+	require.NoFileExists(t, busy)
+}
 
 func TestCleanup(t *testing.T) {
 	mk := func(name string, n int, mtime time.Time) shard {
@@ -138,7 +197,7 @@ func TestCleanup(t *testing.T) {
 			for _, name := range tt.repos {
 				repoIDs = append(repoIDs, fakeID(name))
 			}
-			cleanup(dir, repoIDs, now, false)
+			cleanup(&indexMutex{}, dir, repoIDs, now, false)
 
 			if d := cmp.Diff(tt.wantIndex, glob(filepath.Join(dir, "*.zoekt"))); d != "" {
 				t.Errorf("unexpected index (-want, +got):\n%s", d)
@@ -247,7 +306,7 @@ func TestCleanupRemovesOrphanMetadata(t *testing.T) {
 		}
 	}
 
-	cleanup(dir, nil, time.Now(), false)
+	cleanup(&indexMutex{}, dir, nil, time.Now(), false)
 
 	for _, path := range paths {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -438,7 +497,7 @@ func TestCleanupCompoundShards(t *testing.T) {
 	// want indexed
 	repos := []uint32{1, 2, 3, 4, 5}
 
-	cleanup(dir, repos, now, true)
+	cleanup(&indexMutex{}, dir, repos, now, true)
 
 	index := getShards(dir)
 	trash := getShards(filepath.Join(dir, ".trash"))
