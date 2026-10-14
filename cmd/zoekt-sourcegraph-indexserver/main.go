@@ -412,11 +412,15 @@ func (s *Server) Run() {
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
+				lockStart := time.Now()
 				s.muIndexDir.Global(func() {
+					metricCleanupPhaseDuration.WithLabelValues("lock_wait").Observe(time.Since(lockStart).Seconds())
 					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
+					cacheStart := time.Now()
 					if err := gitCache.cleanup(repos.IDs, time.Now()); err != nil {
 						s.logger.Error("failed to clean git clone cache", sglog.Error(err))
 					}
+					metricCleanupPhaseDuration.WithLabelValues("git_cache").Observe(time.Since(cacheStart).Seconds())
 				})
 			}()
 

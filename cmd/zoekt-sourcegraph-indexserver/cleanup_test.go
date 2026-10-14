@@ -12,10 +12,66 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
 )
+
+func TestCleanupMetrics(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(metricCleanupPhaseDuration, metricCleanupRepositories, metricCleanupRepositoryActions)
+	readMetrics := func() map[string]float64 {
+		t.Helper()
+		families, err := registry.Gather()
+		if err != nil {
+			t.Fatal(err)
+		}
+		values := make(map[string]float64)
+		for _, family := range families {
+			for _, metric := range family.GetMetric() {
+				key := family.GetName() + "/" + metric.GetLabel()[0].GetValue()
+				values[key] = metric.GetGauge().GetValue() + metric.GetCounter().GetValue() + float64(metric.GetHistogram().GetSampleCount())
+			}
+		}
+		return values
+	}
+
+	dir := t.TempDir()
+	now := time.Now()
+	createTestShard(t, "keep", 1, filepath.Join(dir, "keep.zoekt"))
+	createTestShard(t, "trash", 2, filepath.Join(dir, "trash.zoekt"))
+	// Two shards for one repo distinguish repository counts from shard counts.
+	createTestShard(t, "trash", 2, filepath.Join(dir, "trash-extra.zoekt"))
+	expired := filepath.Join(dir, ".trash", "expired.zoekt")
+	createTestShard(t, "expired", 3, expired)
+	old := now.Add(-25 * time.Hour)
+	if err := os.Chtimes(expired, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	before := readMetrics()
+	cleanup(dir, []uint32{1}, now, false)
+	after := readMetrics()
+	for state, want := range map[string]float64{"index": 2, "trash": 1, "tombstoned": 0} {
+		key := "index_cleanup_repositories/" + state
+		if got, ok := after[key]; !ok || got != want {
+			t.Errorf("%s: got %v (present %v), want %v", key, got, ok, want)
+		}
+	}
+	for _, action := range []string{"prune_trash", "trash"} {
+		key := "index_cleanup_repository_actions_total/" + action
+		if got := after[key] - before[key]; got != 1 {
+			t.Errorf("%s: got delta %v, want 1", key, got)
+		}
+	}
+	for _, phase := range []string{"stale_files", "scan_trash", "scan_tombstones", "scan_index", "prune_trash", "remove_inconsistent", "restore", "trash_unassigned", "tmp_files"} {
+		key := "index_cleanup_phase_duration_seconds/" + phase
+		if got := after[key] - before[key]; got != 1 {
+			t.Errorf("%s: got observation count delta %v, want 1", key, got)
+		}
+	}
+}
 
 func TestCleanup(t *testing.T) {
 	mk := func(name string, n int, mtime time.Time) shard {

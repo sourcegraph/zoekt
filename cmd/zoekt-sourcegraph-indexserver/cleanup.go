@@ -23,6 +23,22 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 	Buckets: prometheus.LinearBuckets(1, 1, 10),
 })
 
+var metricCleanupPhaseDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name:    "index_cleanup_phase_duration_seconds",
+	Help:    "Wall time of cleanup phases. lock_wait and git_cache are outside index_cleanup_duration_seconds.",
+	Buckets: prometheus.ExponentialBuckets(0.001, 4, 12),
+}, []string{"phase"})
+
+var metricCleanupRepositories = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "index_cleanup_repositories",
+	Help: "Repositories found in the last cleanup scan, before reconciliation. A repository may appear in multiple states.",
+}, []string{"state"})
+
+var metricCleanupRepositoryActions = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "index_cleanup_repository_actions_total",
+	Help: "Repository cleanup actions attempted, including operations that subsequently fail.",
+}, []string{"action"})
+
 // cleanup trashes shards in indexDir that do not exist in repos. For repos
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
 // back into indexDir. Additionally it uses now to remove shards that have
@@ -30,16 +46,29 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 // interrupted index operations.
 func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) {
 	start := time.Now()
+	phaseStart := start
+	observePhase := func(phase string) {
+		finished := time.Now()
+		metricCleanupPhaseDuration.WithLabelValues(phase).Observe(finished.Sub(phaseStart).Seconds())
+		phaseStart = finished
+	}
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0o755); err != nil {
 		errorLog.Printf("failed to create trash dir: %v", err)
 	}
 	removeStaleShardFiles(indexDir)
 	removeStaleShardFiles(trashDir)
+	observePhase("stale_files")
 
 	trash := getShards(trashDir)
+	observePhase("scan_trash")
 	tombtones := getTombstonedRepos(indexDir)
+	observePhase("scan_tombstones")
 	indexShards := getShards(indexDir)
+	observePhase("scan_index")
+	metricCleanupRepositories.WithLabelValues("trash").Set(float64(len(trash)))
+	metricCleanupRepositories.WithLabelValues("tombstoned").Set(float64(len(tombtones)))
+	metricCleanupRepositories.WithLabelValues("index").Set(float64(len(indexShards)))
 
 	// trash: Remove old shards and conflicts with index
 	minAge := now.Add(-24 * time.Hour)
@@ -59,6 +88,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		}
 
 		infoLog.Printf("removing old shards from trash for %v", repo)
+		metricCleanupRepositoryActions.WithLabelValues("prune_trash").Inc()
 		removeAll(shards...)
 		delete(trash, repo)
 	}
@@ -74,6 +104,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			delete(tombtones, repo)
 		}
 	}
+	observePhase("prune_trash")
 
 	// index: We are ID based, but store shards by name still. If we end up with
 	// shards that have the same ID but different names delete and start over.
@@ -86,6 +117,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 
 		// prevent further processing since we will delete
 		delete(indexShards, repo)
+		metricCleanupRepositoryActions.WithLabelValues("remove_inconsistent").Inc()
 
 		// This should be rare, so give an informative log message.
 		var paths []string
@@ -111,6 +143,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 
 		removeAll(simple...)
 	}
+	observePhase("remove_inconsistent")
 
 	// index: Move missing repos from trash into index
 	// index: Restore deleted or tombstoned repos.
@@ -121,18 +154,21 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 
 		if shards, ok := trash[repo]; ok {
 			infoLog.Printf("restoring shards from trash for %v", repo)
+			metricCleanupRepositoryActions.WithLabelValues("restore").Inc()
 			moveAll(indexDir, shards)
 			continue
 		}
 
 		if s, ok := tombtones[repo]; ok {
 			infoLog.Printf("removing tombstone for %v", repo)
+			metricCleanupRepositoryActions.WithLabelValues("unset_tombstone").Inc()
 			err := index.UnsetTombstone(s.Path, repo)
 			if err != nil {
 				errorLog.Printf("error removing tombstone for %v: %s", repo, err)
 			}
 		}
 	}
+	observePhase("restore")
 
 	// index: Move non-existent repos into trash
 	for repo, shards := range indexShards {
@@ -143,10 +179,13 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 		}
 
 		if shardMerging && maybeSetTombstone(shards, repo) {
+			metricCleanupRepositoryActions.WithLabelValues("set_tombstone").Inc()
 			continue
 		}
+		metricCleanupRepositoryActions.WithLabelValues("trash").Inc()
 		moveAll(trashDir, shards)
 	}
+	observePhase("trash_unassigned")
 
 	// Remove .tmp files from crashed indexer runs-- for example, if an indexer
 	// OOMs, it will leave around .tmp files, usually in a loop. We can remove
@@ -167,6 +206,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 			}
 		}
 	}
+	observePhase("tmp_files")
 
 	metricCleanupDuration.Observe(time.Since(start).Seconds())
 }
