@@ -495,7 +495,7 @@ func (s *Server) processQueue() {
 		opts := item.Opts
 		args := s.indexArgs(opts)
 
-		ran := s.muIndexDir.With(opts.Name, func() {
+		ran := s.muIndexDir.With(opts.Name, opts.RepoID, func() {
 			// only record time taken once we hold the lock. This avoids us
 			// recording time taken while merging/cleanup runs.
 			start := time.Now()
@@ -1147,7 +1147,7 @@ func (s *Server) forceIndex(ctx context.Context, id uint32) (string, error) {
 	args.Incremental = false // force re-index
 
 	var state indexState
-	ran := s.muIndexDir.With(opts.Name, func() {
+	ran := s.muIndexDir.With(opts.Name, opts.RepoID, func() {
 		state, err = s.index(ctx, args)
 	})
 	if !ran {

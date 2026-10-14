@@ -291,8 +291,7 @@ func (gitRepoCache) rootDir() string {
 }
 
 func (cache gitRepoCache) cachedDir(o *indexArgs) string {
-	// Include the name because indexMutex serializes by name; a rename must not
-	// share a mutable clone with an already-running job under the old name.
+	// Include the name so a rename gets a fresh clone under its new identity.
 	return filepath.Join(cache.rootDir(), strconv.Itoa(o.TenantID),
 		fmt.Sprintf("%d-%x.git", o.RepoID, sha256.Sum256([]byte(o.Name))))
 }
