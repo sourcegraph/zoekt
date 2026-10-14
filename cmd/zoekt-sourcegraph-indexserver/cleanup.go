@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	sglog "github.com/sourcegraph/log"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
@@ -49,8 +50,9 @@ func (c *cleanupScheduler) run(mu *indexMutex, cleanup func()) {
 // back into indexDir. Additionally it uses now to remove shards that have
 // been in the trash for 24 hours. It also deletes files left behind by
 // interrupted index operations.
-func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) {
+func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool, timings *phaseTimings) {
 	start := time.Now()
+	timings.next("stale_files")
 	trashDir := filepath.Join(indexDir, ".trash")
 	if err := os.MkdirAll(trashDir, 0o755); err != nil {
 		errorLog.Printf("failed to create trash dir: %v", err)
@@ -58,11 +60,15 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	removeStaleShardFiles(indexDir)
 	removeStaleShardFiles(trashDir)
 
+	timings.next("scan_trash")
 	trash := getShards(trashDir)
+	timings.next("scan_tombstones")
 	tombtones := getTombstonedRepos(indexDir)
+	timings.next("scan_index")
 	indexShards := getShards(indexDir)
 
 	// trash: Remove old shards and conflicts with index
+	timings.next("prune_trash")
 	minAge := now.Add(-24 * time.Hour)
 	for repo, shards := range trash {
 		old := false
@@ -100,6 +106,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	// shards that have the same ID but different names delete and start over.
 	// This can happen when a repository is renamed. In future we should make
 	// shard file names based on ID.
+	timings.next("remove_inconsistent")
 	for repo, shards := range indexShards {
 		if consistentRepoName(shards) {
 			continue
@@ -135,6 +142,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 
 	// index: Move missing repos from trash into index
 	// index: Restore deleted or tombstoned repos.
+	timings.next("restore")
 	for _, repo := range repos {
 		// Delete from index so that index will only contain shards to be
 		// trashed.
@@ -156,6 +164,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	}
 
 	// index: Move non-existent repos into trash
+	timings.next("trash_unassigned")
 	for repo, shards := range indexShards {
 		// Best-effort touch. If touch fails, we will just remove from the
 		// trash sooner.
@@ -173,6 +182,7 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	// OOMs, it will leave around .tmp files, usually in a loop. We can remove
 	// the files now since cleanup runs with a global lock (no indexing jobs
 	// running at the same time).
+	timings.next("tmp_files")
 	if failures, err := filepath.Glob(filepath.Join(indexDir, "*.tmp")); err != nil {
 		errorLog.Printf("Glob: %v", err)
 	} else {
@@ -190,6 +200,29 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool) 
 	}
 
 	metricCleanupDuration.Observe(time.Since(start).Seconds())
+}
+
+// phaseTimings records consecutive phases as structured duration fields.
+// Its zero value is ready to use; it is owned by a single cleanup pass.
+type phaseTimings struct {
+	name   string
+	start  time.Time
+	fields []sglog.Field
+}
+
+// next ends the previous phase, if any, and starts name.
+func (p *phaseTimings) next(name string) {
+	now := time.Now()
+	if p.name != "" {
+		p.fields = append(p.fields, sglog.Duration(p.name, now.Sub(p.start)))
+	}
+	p.name, p.start = name, now
+}
+
+// finish ends the final phase and returns the fields for the caller to log.
+func (p *phaseTimings) finish() []sglog.Field {
+	p.next("")
+	return p.fields
 }
 
 type shard struct {

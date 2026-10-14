@@ -413,12 +413,32 @@ func (s *Server) Run() {
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
+				var timings phaseTimings
+				var fields []sglog.Field
+				var lockWait, workDuration time.Duration
+				start := time.Now()
+				timings.next("lock_wait")
 				cleanupSchedule.run(&s.muIndexDir, func() {
-					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
+					workStart := time.Now()
+					lockWait = workStart.Sub(start)
+					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging, &timings)
+					timings.next("git_cache")
 					if err := gitCache.cleanup(repos.IDs, time.Now()); err != nil {
 						s.logger.Error("failed to clean git clone cache", sglog.Error(err))
 					}
+					fields = timings.finish()
+					workDuration = time.Since(workStart)
 				})
+				if fields == nil { // Cleanup was skipped during its cooldown.
+					return
+				}
+				fields = append(fields, sglog.Duration("lock_held", workDuration))
+				// Log outside the lock. Slow waits matter even when cleanup itself is fast.
+				if lockWait > 5*time.Second || workDuration > 5*time.Second {
+					s.logger.Info("cleanup finished", fields...)
+				} else {
+					s.logger.Debug("cleanup finished", fields...)
+				}
 			}()
 
 			repos.IterateIndexOptions(s.queue.AddOrUpdate)
