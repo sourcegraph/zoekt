@@ -175,7 +175,7 @@ func TestCleanup(t *testing.T) {
 			for _, name := range tt.repos {
 				repoIDs = append(repoIDs, fakeID(name))
 			}
-			cleanup(dir, repoIDs, now, false)
+			cleanup(dir, repoIDs, now, false, &phaseTimings{})
 
 			if d := cmp.Diff(tt.wantIndex, glob(filepath.Join(dir, "*.zoekt"))); d != "" {
 				t.Errorf("unexpected index (-want, +got):\n%s", d)
@@ -284,7 +284,7 @@ func TestCleanupRemovesOrphanMetadata(t *testing.T) {
 		}
 	}
 
-	cleanup(dir, nil, time.Now(), false)
+	cleanup(dir, nil, time.Now(), false, &phaseTimings{})
 
 	for _, path := range paths {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -475,7 +475,7 @@ func TestCleanupCompoundShards(t *testing.T) {
 	// want indexed
 	repos := []uint32{1, 2, 3, 4, 5}
 
-	cleanup(dir, repos, now, true)
+	cleanup(dir, repos, now, true, &phaseTimings{})
 
 	index := getShards(dir)
 	trash := getShards(filepath.Join(dir, ".trash"))
