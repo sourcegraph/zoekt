@@ -46,9 +46,9 @@ zoekt-git-index -branches main -index /data/index -repo_cache /data/repos Commun
 
 # Cat-file and partial clones
 
-`zoekt-git-index` can read blobs through `git cat-file` instead of go-git.
-This optimization is disabled by default. Set `ZOEKT_DISABLE_CATFILE_BATCH=false`
-to opt in, or `true` to switch back to go-git.
+`zoekt-git-index` reads blobs from the main repository through a pipelined
+`git cat-file --batch` process; submodule blobs still use go-git. Set
+`ZOEKT_DISABLE_CATFILE_BATCH=true` to read all blobs through go-git instead.
 
 In a partial clone, Git can fetch missing objects from a promisor remote on
 demand. Even `cat-file --filter=blob:limit=...` can fetch a missing blob to learn
