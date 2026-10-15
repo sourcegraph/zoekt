@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -16,6 +17,42 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
 )
+
+func TestCleanupScheduler(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		work     time.Duration
+		cooldown time.Duration
+	}{
+		{"minimum", 3 * time.Second, time.Minute},
+		{"proportional", 6 * time.Second, 66 * time.Second},
+		{"slow cleanup", 19 * time.Second, 209 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var mu indexMutex
+				var schedule cleanupScheduler
+				runs := 0
+				work := func() { runs++; time.Sleep(tc.work) }
+				schedule.run(&mu, work)
+				if runs != 1 {
+					t.Fatal("first cleanup did not run")
+				}
+				schedule.run(&mu, work)
+				time.Sleep(tc.cooldown - time.Nanosecond)
+				schedule.run(&mu, work)
+				if runs != 1 {
+					t.Fatal("cleanup ran before its cooldown ended")
+				}
+				time.Sleep(time.Nanosecond)
+				schedule.run(&mu, work)
+				if runs != 2 {
+					t.Fatal("cleanup did not run at its deadline")
+				}
+			})
+		})
+	}
+}
 
 func TestCleanup(t *testing.T) {
 	mk := func(name string, n int, mtime time.Time) shard {

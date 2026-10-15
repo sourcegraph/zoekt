@@ -385,6 +385,7 @@ func (s *Server) Run() {
 
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
+		var cleanupSchedule cleanupScheduler
 		// We update the list of indexed repos every Interval. To speed up manual
 		// testing we also listen for SIGUSR1 to trigger updates.
 		// "pkill -SIGUSR1 zoekt-sourcegra"
@@ -412,7 +413,7 @@ func (s *Server) Run() {
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
-				s.muIndexDir.Global(func() {
+				cleanupSchedule.run(&s.muIndexDir, func() {
 					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
 					if err := gitCache.cleanup(repos.IDs, time.Now()); err != nil {
 						s.logger.Error("failed to clean git clone cache", sglog.Error(err))

@@ -23,6 +23,27 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 	Buckets: prometheus.LinearBuckets(1, 1, 10),
 })
 
+// cleanupScheduler is used sequentially by the sync loop. Its zero value is ready.
+type cleanupScheduler struct {
+	next time.Time
+}
+
+func (c *cleanupScheduler) run(mu *indexMutex, cleanup func()) {
+	if time.Now().Before(c.next) {
+		return
+	}
+	mu.Global(func() {
+		start := time.Now()
+		cleanup()
+		finished := time.Now()
+		// Rest for 11 times the lock-held work to target at most 1/12 of
+		// elapsed time (five minutes/hour), with at least a minute between
+		// runs. This is a long-run duty cycle, not a hard hourly budget;
+		// time waiting for the lock is not cleanup work.
+		c.next = finished.Add(max(time.Minute, 11*finished.Sub(start)))
+	})
+}
+
 // cleanup trashes shards in indexDir that do not exist in repos. For repos
 // that do not exist in indexDir, but do in indexDir/.trash it will move them
 // back into indexDir. Additionally it uses now to remove shards that have
