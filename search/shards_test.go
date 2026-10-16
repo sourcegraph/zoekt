@@ -1498,6 +1498,18 @@ func TestDirectorySearcherOptionsIndexFileOpener(t *testing.T) {
 	}) {
 		t.Fatalf("shard opens after watcher reload = %d, want 2", opens.Load())
 	}
+
+	ss := searcher.(*readySearcher).ready
+	key := filepath.Join(dir, "initial.zoekt")
+	ss.mu.Lock()
+	faulted := ss.shards[key]
+	ss.mu.Unlock()
+	if err := ss.reloadShardByKey(key, faulted); err != nil {
+		t.Fatal(err)
+	}
+	if got := opens.Load(); got != 3 {
+		t.Fatalf("shard opens after repair = %d, want 3", got)
+	}
 }
 
 // testDeadline returns the deadline for t, but ensures it is no longer than
