@@ -1352,3 +1352,84 @@ func BenchmarkPrepareNormalBuild(b *testing.B) {
 		b.Fatalf("Unexpected empty results")
 	}
 }
+
+func TestSetTemplates_RepoID(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		repoID  string
+		want    uint32
+		wantErr bool
+	}{
+		{name: "valid", repoID: "12345", want: 12345},
+		{name: "max uint32", repoID: "4294967295", want: 4294967295},
+		{name: "out of range", repoID: "4294967296", wantErr: true},
+		{name: "malformed", repoID: "abc", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			runGit(t, dir, "init", "-b", "master")
+			runGit(t, dir, "config", "zoekt.name", "example.com/repo")
+			runGit(t, dir, "config", "zoekt.repoid", tc.repoID)
+
+			desc := zoekt.Repository{}
+			err := setTemplatesFromConfig(&desc, dir)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error, got ID %d", desc.ID)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("setTemplatesFromConfig: %v", err)
+			}
+			if desc.ID != tc.want {
+				t.Fatalf("got ID %d, want %d", desc.ID, tc.want)
+			}
+		})
+	}
+}
+
+func TestIndexGitRepo_InvalidRepoID(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-b", "main", "repo")
+
+	repoDir := filepath.Join(dir, "repo")
+	if err := os.WriteFile(filepath.Join(repoDir, "file1.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "initial commit")
+	// Repo config is only consulted for repositories with a zoekt.name or an
+	// origin remote, so give this one a name.
+	runGit(t, repoDir, "config", "zoekt.name", "example.com/repo")
+	runGit(t, repoDir, "config", "zoekt.repoid", "4294967296")
+
+	opts := Options{
+		RepoDir:  repoDir,
+		Branches: []string{"main"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              dir,
+		},
+	}
+
+	_, err := IndexGitRepo(opts)
+	if !errors.Is(err, zoekt.ErrInvalidRepoID) {
+		t.Fatalf("IndexGitRepo error = %v, want one wrapping zoekt.ErrInvalidRepoID", err)
+	}
+
+	shards, err := filepath.Glob(filepath.Join(dir, "*.zoekt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shards) != 0 {
+		t.Fatalf("expected no shards to be written, got %v", shards)
+	}
+}
