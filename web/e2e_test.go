@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -697,6 +698,63 @@ func TestCrash(t *testing.T) {
 	if want := "1 shards crashed"; !strings.Contains(result, want) {
 		t.Errorf("result did not have %q: %s", want, result)
 	}
+}
+
+type fixedSearcher struct {
+	zoekt.Streamer
+	files []zoekt.FileMatch
+}
+
+func (s *fixedSearcher) Search(context.Context, query.Q, *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
+	// FileCount above len(files) makes the page render "show more".
+	return &zoekt.SearchResult{Files: slices.Clone(s.files), Stats: zoekt.Stats{FileCount: len(s.files) + 1}}, nil
+}
+
+func TestSortResults(t *testing.T) {
+	srv := Server{
+		// In relevance order, as returned by the searcher.
+		Searcher: &fixedSearcher{files: []zoekt.FileMatch{
+			{Repository: "b", FileName: "a.go"},
+			{Repository: "a", FileName: "z.go"},
+			{Repository: "a", FileName: "dir/a.go"},
+		}},
+		Top:  Top,
+		HTML: true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	for order, want := range map[string][]string{
+		"":     {"b:a.go", "a:z.go", "a:dir/a.go"},
+		"path": {"a:dir/a.go", "a:z.go", "b:a.go"},
+	} {
+		res, err := http.Get(ts.URL + "/search?q=x&format=json&order=" + order)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result ApiSearchResult
+		err = json.NewDecoder(res.Body).Decode(&result)
+		res.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var got []string
+		for _, fm := range result.Result.FileMatches {
+			got = append(got, fm.Repo+":"+fm.FileName)
+		}
+		if d := cmp.Diff(want, got); d != "" {
+			t.Errorf("order %q (-want +got):\n%s", order, d)
+		}
+	}
+
+	checkNeedles(t, ts, "/search?q=x&order=path&ctx=2&debug=true", []string{`&order=path">show more`, `&ctx=2&debug=true">relevance</a>`})
 }
 
 func TestHostCustomization(t *testing.T) {
