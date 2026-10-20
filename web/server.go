@@ -16,6 +16,7 @@ package web
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"net"
 	"net/http"
 	"regexp/syntax"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -340,6 +342,11 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 		return nil, err
 	}
 
+	order := qvals.Get("order")
+	if order != "" && order != "path" {
+		return nil, fmt.Errorf("got unknown sort key %q, allowed path", order)
+	}
+
 	numStr := qvals.Get("num")
 
 	num, err := strconv.Atoi(numStr)
@@ -374,6 +381,13 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 		return nil, err
 	}
 
+	if order == "path" {
+		// Only the top num results are reordered.
+		slices.SortStableFunc(result.Files, func(a, b zoekt.FileMatch) int {
+			return cmp.Or(strings.Compare(a.Repository, b.Repository), strings.Compare(a.FileName, b.FileName))
+		})
+	}
+
 	fileMatches, err := s.formatResults(result, queryStr, s.Print)
 	if err != nil {
 		return nil, err
@@ -384,6 +398,7 @@ func (s *Server) serveSearchErr(r *http.Request) (*ApiSearchResult, error) {
 			Query:     queryStr,
 			Num:       num,
 			Ctx:       numCtxLines,
+			Order:     order,
 			AutoFocus: true,
 		},
 		Stats:       result.Stats,
