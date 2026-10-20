@@ -252,20 +252,15 @@ func (p *process) Yield(ctx context.Context) error {
 		return nil
 	}
 
-	// We've just exceeded our timeslice.
-
-	// First, try to yield. This can return an error if our context expired.
-	err := p.yieldFunc(ctx)
-	if err != nil {
-		return err
-	}
-
-	// We've successfully yielded. Second, stop our timer and mark it nil so we don't call
-	// yieldFunc again.
+	// We've just exceeded our timeslice. Stop our timer and mark it nil so we
+	// only ever call yieldFunc once, even if it fails. Callers may ignore the
+	// error and keep calling Yield, and retrying with an expired context would
+	// fail again on every call.
 	p.yieldTimer.Stop()
 	p.yieldTimer = nil
 
-	return nil
+	// Try to yield. This can return an error if our context expired.
+	return p.yieldFunc(ctx)
 }
 
 // newDeadlineTimer returns a timer which fires after deadline. Once it fires
