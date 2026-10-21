@@ -108,6 +108,21 @@ func TestSearchSchedulingClass(t *testing.T) {
 	}
 }
 
+func TestSearchHealthCheckSkipsScheduler(t *testing.T) {
+	ss := newShardedSearcher(1)
+	proc, err := ss.sched.Acquire(context.Background(), zoekt.SchedulingClassInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proc.Release()
+
+	ctx, cancel := context.WithTimeout(WithHealthCheck(context.Background()), time.Second)
+	defer cancel()
+	if _, err := ss.Search(ctx, &query.Const{Value: true}, nil); err != nil {
+		t.Fatalf("health check Search with every slot taken: %v", err)
+	}
+}
+
 func TestCrashResilience(t *testing.T) {
 	out := &bytes.Buffer{}
 	oldOut := log.Writer()

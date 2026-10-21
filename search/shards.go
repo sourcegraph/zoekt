@@ -214,6 +214,10 @@ type shardedSearcher struct {
 	// pressure.
 	sched scheduler
 
+	// healthCheck admits searches marked with WithHealthCheck, one at a time,
+	// instead of sched.
+	healthCheck *semaphore.Weighted
+
 	mu     sync.Mutex // protects writes to shards
 	shards map[string]*rankedShard
 
@@ -223,10 +227,34 @@ type shardedSearcher struct {
 
 func newShardedSearcher(n int64) *shardedSearcher {
 	ss := &shardedSearcher{
-		shards: make(map[string]*rankedShard),
-		sched:  newScheduler(n),
+		shards:      make(map[string]*rankedShard),
+		sched:       newScheduler(n),
+		healthCheck: semaphore.NewWeighted(1),
 	}
 	return ss
+}
+
+type healthCheckKey struct{}
+
+// WithHealthCheck marks ctx as belonging to a health check. Search and
+// StreamSearch calls made with the returned context skip the search scheduler,
+// so they answer even when every search slot is taken. They still search the
+// loaded shards, but only one runs at a time. Only use it for cheap queries,
+// like the one zoekt-webserver's /healthz runs.
+func WithHealthCheck(ctx context.Context) context.Context {
+	return context.WithValue(ctx, healthCheckKey{}, true)
+}
+
+// acquire admits a search. Health checks bypass the scheduler, see
+// WithHealthCheck.
+func (ss *shardedSearcher) acquire(ctx context.Context, opts *zoekt.SearchOptions) (*process, error) {
+	if ctx.Value(healthCheckKey{}) == nil {
+		return ss.sched.Acquire(ctx, schedulingClass(opts))
+	}
+	if err := ss.healthCheck.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
+	return &process{releaseFunc: func() { ss.healthCheck.Release(1) }}, nil
 }
 
 // IndexFileOpener constructs an index file and takes ownership of f. A
@@ -863,7 +891,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 	collectSender := newCollectSender(opts)
 
 	start := time.Now()
-	proc, err := ss.sched.Acquire(ctx, schedulingClass(opts))
+	proc, err := ss.acquire(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -912,7 +940,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	}()
 
 	start := time.Now()
-	proc, err := ss.sched.Acquire(ctx, schedulingClass(opts))
+	proc, err := ss.acquire(ctx, opts)
 	if err != nil {
 		return err
 	}

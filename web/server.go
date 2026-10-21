@@ -39,6 +39,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 var Funcmap = template.FuncMap{
@@ -265,7 +266,12 @@ func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
 	// We need to use WithUnsafeContext here because we want to perform a full
 	// search returning results. The result of this search is not used for anything
 	// other than determining if the server is healthy.
-	result, err := s.Searcher.Search(systemtenant.WithUnsafeContext(r.Context()), q, opts)
+	//
+	// WithHealthCheck skips the search scheduler. Kubernetes uses this endpoint
+	// as a liveness probe, and a probe queued behind user searches times out
+	// under load and gets a busy but healthy process killed.
+	ctx := search.WithHealthCheck(systemtenant.WithUnsafeContext(r.Context()))
+	result, err := s.Searcher.Search(ctx, q, opts)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("not ready: %v", err), http.StatusInternalServerError)
 		return
