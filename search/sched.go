@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"strconv"
@@ -21,7 +22,9 @@ import (
 type scheduler interface {
 	// Acquire blocks until a normal process is created (ie for a search
 	// request) in the requested scheduling class. See process documentation. It
-	// will only return an error if the context expires.
+	// will only return an error if the context expires. If ctx expired with
+	// cause zoekt.ErrOverloaded (see withAdmissionDeadline) it returns
+	// zoekt.ErrOverloaded.
 	Acquire(ctx context.Context, class zoekt.SchedulingClass) (*process, error)
 }
 
@@ -38,10 +41,36 @@ type scheduler interface {
 //	queries to run in the larger interactive queue for Xs before moving them
 //	to the batch queue.
 //
-// Note: these tuneables should be regarded as temporary while we experiment
-// with our scheduler in production. They should not be relied upon in
-// customers/sourcegraph.com in a permanent manor (only temporary).
+//	queuewaitseconds: setting queuewaitseconds=X rejects a search with
+//	zoekt.ErrOverloaded if it waits more than Xs to be admitted to its
+//	scheduling class. Regardless, a search waits at most half its remaining
+//	time (MaxWallTime).
+//
+// Note: the defaults should not need tuning. These tuneables exist so
+// operators can react to production incidents without a new release. If one
+// stays set for long, prefer improving the defaults.
 var zoektSched = parseTuneables(os.Getenv("ZOEKTSCHED"))
+
+// schedQueueWait is the queuewaitseconds tuneable. Zero means no limit.
+var schedQueueWait = time.Duration(zoektSched["queuewaitseconds"]) * time.Second
+
+// withAdmissionDeadline returns a context for waiting on the scheduler. It
+// expires with cause zoekt.ErrOverloaded once half of ctx's remaining time
+// has passed, so an admitted search keeps enough time to do useful work
+// instead of being admitted only to time out, or once queueWait has passed if
+// that is sooner. queueWait of zero means no limit.
+func withAdmissionDeadline(ctx context.Context, queueWait time.Duration) (context.Context, context.CancelFunc) {
+	limit := queueWait
+	if deadline, ok := ctx.Deadline(); ok {
+		if half := time.Until(deadline) / 2; limit == 0 || half < limit {
+			limit = half
+		}
+	}
+	if limit == 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeoutCause(ctx, limit, zoekt.ErrOverloaded)
+}
 
 // newScheduler returns a scheduler for use in searches. It will return a
 // multiScheduler unless that has been disabled with the environment variable
@@ -208,6 +237,9 @@ func (s *semaphoreScheduler) Exclusive() *process {
 
 func (s *semaphoreScheduler) acquire(ctx context.Context, weight int64) (*process, error) {
 	if err := s.throttle.Acquire(ctx, weight); err != nil {
+		if errors.Is(context.Cause(ctx), zoekt.ErrOverloaded) {
+			return nil, zoekt.ErrOverloaded
+		}
 		return nil, err
 	}
 	return &process{
@@ -346,8 +378,10 @@ func parseTuneables(v string) map[string]int {
 //
 // We have counters for each possible reason a process finished:
 //
-//   - interactive timedout
+//   - interactive timedout (ctx expired while queued)
 //   - batch timedout
+//   - interactive shed (queued past its admission deadline)
+//   - batch shed
 //   - released
 //
 // We have separate gauges and counters for exclusive processes which index
@@ -373,6 +407,7 @@ type sema struct {
 	metricQueued        *gaugeCounter
 	metricRunning       *gaugeCounter
 	metricTimedoutTotal prometheus.Counter
+	metricShedTotal     prometheus.Counter
 }
 
 func newSema(capacity int64, typ string) *sema {
@@ -388,6 +423,7 @@ func newSema(capacity int64, typ string) *sema {
 			counter: metricSchedTotal.WithLabelValues(typ, "running"),
 		},
 		metricTimedoutTotal: metricSchedTotal.WithLabelValues(typ, "timedout"),
+		metricShedTotal:     metricSchedTotal.WithLabelValues(typ, "shed"),
 	}
 }
 
@@ -397,6 +433,10 @@ func (s *sema) Acquire(ctx context.Context) error {
 
 	err := s.sem.Acquire(ctx, 1)
 	if err != nil {
+		if errors.Is(context.Cause(ctx), zoekt.ErrOverloaded) {
+			s.metricShedTotal.Inc()
+			return zoekt.ErrOverloaded
+		}
 		s.metricTimedoutTotal.Inc()
 		return err
 	}

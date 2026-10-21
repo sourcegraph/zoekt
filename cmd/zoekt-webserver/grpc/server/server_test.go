@@ -14,7 +14,9 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -276,6 +278,50 @@ func mustParse(s string) query.Q {
 		panic(err)
 	}
 	return q
+}
+
+func TestShedSearchIsResourceExhausted(t *testing.T) {
+	gs := grpc.NewServer()
+	defer gs.Stop()
+
+	webserverv1.RegisterWebserverServiceServer(gs, NewServer(adapter{overloadedSearcher{}}))
+	ts := httptest.NewUnstartedServer(gs)
+	ts.Config.Protocols = grpcutil.Protocols()
+	ts.Start()
+	defer ts.Close()
+
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cc, err := grpc.NewClient(u.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cc.Close()
+
+	client := webserverv1.NewWebserverServiceClient(cc)
+	q := query.QToProto(&query.Const{Value: true})
+
+	_, err = client.Search(context.Background(), &webserverv1.SearchRequest{Query: q})
+	if got := status.Code(err); got != codes.ResourceExhausted {
+		t.Errorf("Search: got code %v (%v), want ResourceExhausted", got, err)
+	}
+
+	stream, err := client.StreamSearch(context.Background(), &webserverv1.StreamSearchRequest{Request: &webserverv1.SearchRequest{Query: q}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = stream.Recv()
+	if got := status.Code(err); got != codes.ResourceExhausted {
+		t.Errorf("StreamSearch: got code %v (%v), want ResourceExhausted", got, err)
+	}
+}
+
+type overloadedSearcher struct{ zoekt.Searcher }
+
+func (overloadedSearcher) Search(context.Context, query.Q, *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
+	return nil, zoekt.ErrOverloaded
 }
 
 type adapter struct {

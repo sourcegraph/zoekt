@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"math"
 
 	"google.golang.org/grpc/codes"
@@ -32,7 +33,7 @@ func (s *Server) Search(ctx context.Context, req *webserverv1.SearchRequest) (*w
 
 	res, err := s.streamer.Search(ctx, q, zoekt.SearchOptionsFromProto(req.GetOpts()))
 	if err != nil {
-		return nil, err
+		return nil, searchError(err)
 	}
 
 	return res.ToProto(), nil
@@ -52,6 +53,15 @@ func (s *Server) StreamSearch(req *webserverv1.StreamSearchRequest, ss webserver
 	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(request.GetOpts()), sampler)
 	if err == nil {
 		sampler.Flush()
+	}
+	return searchError(err)
+}
+
+// searchError gives a search rejected by load shedding a distinct status code
+// so clients can tell it apart from a failed or timed out search.
+func searchError(err error) error {
+	if errors.Is(err, zoekt.ErrOverloaded) {
+		return status.Error(codes.ResourceExhausted, err.Error())
 	}
 	return err
 }

@@ -218,6 +218,10 @@ type shardedSearcher struct {
 	// instead of sched.
 	healthCheck *semaphore.Weighted
 
+	// queueWait bounds how long a search waits for the scheduler before it is
+	// rejected with zoekt.ErrOverloaded. Zero means only MaxWallTime bounds it.
+	queueWait time.Duration
+
 	mu     sync.Mutex // protects writes to shards
 	shards map[string]*rankedShard
 
@@ -230,6 +234,7 @@ func newShardedSearcher(n int64) *shardedSearcher {
 		shards:      make(map[string]*rankedShard),
 		sched:       newScheduler(n),
 		healthCheck: semaphore.NewWeighted(1),
+		queueWait:   schedQueueWait,
 	}
 	return ss
 }
@@ -245,10 +250,14 @@ func WithHealthCheck(ctx context.Context) context.Context {
 	return context.WithValue(ctx, healthCheckKey{}, true)
 }
 
-// acquire admits a search. Health checks bypass the scheduler, see
-// WithHealthCheck.
+// acquire admits a search to the scheduler, rejecting it with
+// zoekt.ErrOverloaded if it is not admitted in time, see
+// withAdmissionDeadline. Health checks bypass the scheduler and are never
+// shed, see WithHealthCheck.
 func (ss *shardedSearcher) acquire(ctx context.Context, opts *zoekt.SearchOptions) (*process, error) {
 	if ctx.Value(healthCheckKey{}) == nil {
+		ctx, cancel := withAdmissionDeadline(ctx, ss.queueWait)
+		defer cancel()
 		return ss.sched.Acquire(ctx, schedulingClass(opts))
 	}
 	if err := ss.healthCheck.Acquire(ctx, 1); err != nil {
@@ -885,7 +894,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		}
 		tr.Finish()
 	}()
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := withMaxWallTime(ctx, opts)
 	defer cancel()
 
 	collectSender := newCollectSender(opts)
@@ -938,6 +947,8 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		}
 		tr.Finish()
 	}()
+	ctx, cancel := withMaxWallTime(ctx, opts)
+	defer cancel()
 
 	start := time.Now()
 	proc, err := ss.acquire(ctx, opts)
@@ -1000,6 +1011,15 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	return err
 }
 
+// withMaxWallTime bounds ctx by opts.MaxWallTime. Callers apply it when the
+// request arrives so time spent waiting for the scheduler counts against it.
+func withMaxWallTime(ctx context.Context, opts *zoekt.SearchOptions) (context.Context, context.CancelFunc) {
+	if opts == nil || opts.MaxWallTime == 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, opts.MaxWallTime)
+}
+
 func schedulingClass(opts *zoekt.SearchOptions) zoekt.SchedulingClass {
 	if opts == nil {
 		return zoekt.SchedulingClassInteractive
@@ -1043,13 +1063,8 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 		return func() {}, nil
 	}
 
-	var cancel context.CancelFunc
-	if opts.MaxWallTime == 0 {
-		ctx, cancel = context.WithCancel(ctx)
-	} else {
-		ctx, cancel = context.WithTimeout(ctx, opts.MaxWallTime)
-	}
-
+	// Search and StreamSearch already bound ctx by MaxWallTime.
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// We set the number of workers to GOMAXPROCS, or the number of shards,
@@ -1353,6 +1368,8 @@ func (ss *shardedSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 		isAll = c.Value
 	}
 
+	// List is not shed: clients use it to learn what is indexed, so a
+	// rejection does more harm than waiting.
 	proc, err := ss.sched.Acquire(ctx, zoekt.SchedulingClassInteractive)
 	if err != nil {
 		return nil, err
