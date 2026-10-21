@@ -1146,6 +1146,25 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			fileMasks: d.fileBranchMasks,
 			repos:     d.repos,
 		}, nil
+	case *query.BranchMeta:
+		masks := make([]uint64, 0, len(d.repoMetaData))
+		for _, r := range d.repoMetaData {
+			mask := uint64(0)
+			for j, br := range r.Branches {
+				if br.Metadata == nil {
+					continue
+				}
+				if val, ok := br.Metadata[s.Field]; ok && s.Value.MatchString(val) {
+					mask |= uint64(1) << uint(j)
+				}
+			}
+			masks = append(masks, mask)
+		}
+		return &branchQueryMatchTree{
+			masks:     masks,
+			fileMasks: d.fileBranchMasks,
+			repos:     d.repos,
+		}, nil
 	case *query.Const:
 		if s.Value {
 			return &bruteForceMatchTree{}, nil

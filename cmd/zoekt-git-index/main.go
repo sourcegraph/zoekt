@@ -79,6 +79,7 @@ func run() int {
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
 
+	var branchMetadata map[string]map[string]string
 	if *metaFile != "" {
 		data, err := os.ReadFile(*metaFile)
 		if err != nil {
@@ -87,6 +88,17 @@ func run() int {
 		if err := json.Unmarshal(data, &opts.RepositoryDescription); err != nil {
 			log.Fatalf("failed to decode .meta file %s: %v", *metaFile, err)
 		}
+
+		// BranchMetadata is not part of zoekt.Repository (branch versions
+		// aren't known yet at this point), so it is decoded separately and
+		// applied by gitindex once it discovers the actual branches.
+		var branchMeta struct {
+			BranchMetadata map[string]map[string]string
+		}
+		if err := json.Unmarshal(data, &branchMeta); err != nil {
+			log.Fatalf("failed to decode BranchMetadata from .meta file %s: %v", *metaFile, err)
+		}
+		branchMetadata = branchMeta.BranchMetadata
 	}
 
 	var branches []string
@@ -144,6 +156,7 @@ func run() int {
 			AllowMissingBranch:                *allowMissing,
 			BuildOptions:                      *opts,
 			Branches:                          branches,
+			BranchMetadata:                    branchMetadata,
 			RepoDir:                           dir,
 			DeltaShardNumberFallbackThreshold: *deltaShardNumberFallbackThreshold,
 		}
