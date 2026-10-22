@@ -40,8 +40,8 @@ func TestRanking(t *testing.T) {
 	requireCTags(t)
 
 	archiveURLs := []string{
-		"https://github.com/sourcegraph/sourcegraph-public-snapshot/tree/v5.2.2", // Nov 1 2023
-		"https://github.com/golang/go/tree/go1.21.4",                             // Nov 7 2023
+		"https://github.com/sourcegraph/sourcegraph-public-snapshot/tree/v5.2.2",  // Nov 1 2023
+		"https://github.com/golang/go/tree/go1.21.4",                              // Nov 7 2023
 		"https://github.com/sourcegraph/cody-public-snapshot/tree/vscode-v0.14.5", // Nov 8 2023
 		// The commit before ranking e2e tests were added to avoid matching
 		// content inside our golden files.
