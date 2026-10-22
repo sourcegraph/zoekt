@@ -39,8 +39,9 @@ func (a *tarArchive) Next() (*File, error) {
 			return nil, err
 		}
 
-		// We only care about files
-		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
+		// We only care about files. tar.Reader reports legacy TypeRegA
+		// entries as TypeReg.
+		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
 
