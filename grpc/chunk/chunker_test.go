@@ -119,11 +119,7 @@ func TestChunker_DeliverAllMessages(t *testing.T) {
 
 		if err := quick.Check(func(payloads [][]byte) bool {
 			lastErr = runTest(payloads)
-			if lastErr != nil {
-				return false
-			}
-
-			return true
+			return lastErr == nil
 		}, nil); err != nil {
 			t.Fatal(lastErr)
 		}
