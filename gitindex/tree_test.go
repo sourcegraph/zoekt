@@ -31,7 +31,6 @@ import (
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
@@ -175,7 +174,7 @@ func TestCollectFiles(t *testing.T) {
 	}
 
 	rw := NewRepoWalker(repo, aURL.String(), cache)
-	versions, err := rw.CollectFiles(tree, "main", &ignore.Matcher{})
+	versions, err := rw.CollectFiles(tree, "main")
 	if err != nil {
 		t.Fatalf("CollectFiles: %v", err)
 	}
