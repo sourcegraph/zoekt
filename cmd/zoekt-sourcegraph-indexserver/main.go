@@ -1360,18 +1360,6 @@ func getEnvWithDefaultUint64(k string, defaultVal uint64) uint64 {
 	return i
 }
 
-func getEnvWithDefaultFloat64(k string, defaultVal float64) float64 {
-	v := os.Getenv(k)
-	if v == "" {
-		return defaultVal
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		log.Fatalf("error parsing ENV %s to float64: %s", k, err)
-	}
-	return f
-}
-
 func getEnvWithDefaultString(k string, defaultVal string) string {
 	v := os.Getenv(k)
 	if v == "" {

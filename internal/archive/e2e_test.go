@@ -251,7 +251,7 @@ func testLatestCommitDate(t *testing.T, format string) {
 	f, err := os.Open(indexDir)
 	require.NoError(t, err)
 
-	indexFiles, err := f.Readdirnames(1)
+	indexFiles, _ := f.Readdirnames(1)
 	require.Len(t, indexFiles, 1)
 
 	repos, _, err := index.ReadMetadataPath(filepath.Join(indexDir, indexFiles[0]))

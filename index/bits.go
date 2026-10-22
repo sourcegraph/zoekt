@@ -272,18 +272,6 @@ func unmarshalDocSections(data []byte, ds []DocumentSection) []DocumentSection {
 	return ds
 }
 
-type ngramSlice []ngram
-
-func (p ngramSlice) Len() int { return len(p) }
-
-func (p ngramSlice) Less(i, j int) bool {
-	return p[i] < p[j]
-}
-
-func (p ngramSlice) Swap(i, j int) {
-	p[i], p[j] = p[j], p[i]
-}
-
 func toSizedDeltas(offsets []uint32) []byte {
 	var enc [8]byte
 
