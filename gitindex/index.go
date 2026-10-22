@@ -1160,12 +1160,7 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 			return nil, nil, fmt.Errorf("commit.Tree: %w", err)
 		}
 
-		ig, err := newIgnoreMatcher(tree)
-		if err != nil {
-			return nil, nil, fmt.Errorf("newIgnoreMatcher: %w", err)
-		}
-
-		subVersions, err := rw.CollectFiles(tree, b, ig)
+		subVersions, err := rw.CollectFiles(tree, b)
 		if err != nil {
 			return nil, nil, fmt.Errorf("CollectFiles: %w", err)
 		}

@@ -97,8 +97,11 @@ func (rw *RepoWalker) parseModuleMap(t *object.Tree) error {
 // non-nil, recurse into submodules. In addition, it returns a mapping
 // that indicates in which repo each SHA1 can be found.
 //
+// Files matched by the tree's own ignore file are skipped. Each submodule is
+// filtered by its own ignore file, since its paths are relative to its root.
+//
 // The collected files are available through the RepoWalker.Files map.
-func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string, ig *ignore.Matcher) (map[string]plumbing.Hash, error) {
+func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string) (map[string]plumbing.Hash, error) {
 	if err := rw.parseModuleMap(t); err != nil {
 		return nil, fmt.Errorf("parseModuleMap: %w", err)
 	}
@@ -160,7 +163,7 @@ func (rw *RepoWalker) handleSubmodule(p string, id *plumbing.Hash, branch string
 	subRepoVersions[p] = *id
 
 	sw := NewRepoWalker(subRepo, subURL.String(), rw.repoCache)
-	subVersions, err := sw.CollectFiles(tree, branch, ig)
+	subVersions, err := sw.CollectFiles(tree, branch)
 	if err != nil {
 		return err
 	}

@@ -50,7 +50,7 @@ func collectBlobKeys(b *testing.B, repoDir string) (map[fileKey]BlobLocation, st
 	}
 
 	rw := NewRepoWalker(repo, "https://example.com/repo", nil)
-	if _, err := rw.CollectFiles(tree, "HEAD", nil); err != nil {
+	if _, err := rw.CollectFiles(tree, "HEAD"); err != nil {
 		b.Fatalf("CollectFiles: %v", err)
 	}
 
