@@ -17,7 +17,7 @@ pkgs.mkShell {
   name = "zoekt";
 
   nativeBuildInputs = [
-    pkgs.go_1_26
+    pkgs.go_1_27
 
     # zoekt-git-index
     pkgs.git
