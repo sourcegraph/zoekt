@@ -147,6 +147,9 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
+// Make sure this is as low as possible such that our code still compiles.
+// Zoekt is consumed as a library.
 go 1.25.9
 
-toolchain go1.26.5
+// What we use in dev/CI
+toolchain go1.27.3
