@@ -4,8 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 )
 
@@ -23,17 +21,26 @@ func SplitMethodName(fullMethod string) (string, string) {
 // MultiplexGRPC takes a gRPC server and a plain HTTP handler and multiplexes the
 // request handling. Any requests that declare themselves as gRPC requests are routed
 // to the gRPC server, all others are routed to the httpHandler.
+//
+// gRPC requires HTTP/2, so the http.Server serving this handler must enable
+// the protocols returned by Protocols.
 func MultiplexGRPC(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
-	newHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
 			grpcServer.ServeHTTP(w, r)
 		} else {
 			httpHandler.ServeHTTP(w, r)
 		}
 	})
+}
 
-	// Until we enable TLS, we need to fall back to the h2c protocol, which is
-	// basically HTTP2 without TLS. The standard library does not implement the
-	// h2s protocol, so this hijacks h2s requests and handles them correctly.
-	return h2c.NewHandler(newHandler, &http2.Server{})
+// Protocols returns the protocols an http.Server serving gRPC should enable.
+// Until we enable TLS, gRPC clients connect using unencrypted HTTP/2 (h2c),
+// which net/http only serves when explicitly enabled.
+func Protocols() *http.Protocols {
+	var p http.Protocols
+	p.SetHTTP1(true)
+	p.SetHTTP2(true)
+	p.SetUnencryptedHTTP2(true)
+	return &p
 }

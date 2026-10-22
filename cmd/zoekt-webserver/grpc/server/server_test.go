@@ -13,14 +13,13 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"go.uber.org/atomic"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"github.com/sourcegraph/zoekt/internal/mockSearcher"
 	"github.com/sourcegraph/zoekt/query"
@@ -53,14 +52,16 @@ func TestClientServer(t *testing.T) {
 	defer gs.Stop()
 
 	webserverv1.RegisterWebserverServiceServer(gs, NewServer(adapter{mock}))
-	ts := httptest.NewServer(h2c.NewHandler(gs, &http2.Server{}))
+	ts := httptest.NewUnstartedServer(gs)
+	ts.Config.Protocols = grpcutil.Protocols()
+	ts.Start()
 	defer ts.Close()
 
 	u, err := url.Parse(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cc, err := grpc.Dial(u.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	cc, err := grpc.NewClient(u.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -268,7 +268,7 @@ func newClient(t *testing.T, serverSocketPath string) (grpc_testing.TestServiceC
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 
-	conn, err := grpc.Dial(serverSocketPath, connOpts...)
+	conn, err := grpc.NewClient(serverSocketPath, connOpts...)
 	if err != nil {
 		t.Fatal(err)
 	}

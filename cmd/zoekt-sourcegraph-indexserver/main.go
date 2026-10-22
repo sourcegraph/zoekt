@@ -1505,7 +1505,8 @@ func startServer(conf rootConfig) error {
 		go func() {
 			debugLog.Printf("serving HTTP on %s", conf.listen)
 			mux := grpcutil.MultiplexGRPC(newGRPCServer(sglog.Scoped("indexserver"), s), mux)
-			log.Fatal(http.ListenAndServe(conf.listen, mux))
+			srv := &http.Server{Addr: conf.listen, Handler: mux, Protocols: grpcutil.Protocols()}
+			log.Fatal(srv.ListenAndServe())
 		}()
 
 		// Serve mux on a unix domain socket on a best-effort-basis so that
@@ -1776,7 +1777,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 	// This dialer is used to connect via gRPC to the Sourcegraph instance.
 	// This is done lazily, so we can provide the client to use regardless of
 	// whether we enabled gRPC or not initially.
-	cc, err := grpc.Dial(addr, opts...)
+	cc, err := grpc.NewClient(addr, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("dialing %q: %w", addr, err)
 	}

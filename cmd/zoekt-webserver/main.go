@@ -292,8 +292,9 @@ func main() {
 	handler = corsHandler(handler, *corsOrigin)
 
 	srv := &http.Server{
-		Addr:    *listen,
-		Handler: handler,
+		Addr:      *listen,
+		Handler:   handler,
+		Protocols: grpcutil.Protocols(),
 	}
 
 	go func() {
