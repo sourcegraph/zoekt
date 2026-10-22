@@ -85,7 +85,7 @@ var validRepoNameFormat = []string{qualifiedRepoNameFormat, projectRepoNameForma
 
 func validateRepoNameFormat(s string) {
 	if !slices.Contains(validRepoNameFormat, s) {
-		log.Fatal(fmt.Sprintf("repo-name-format must be one of %s", strings.Join(validRepoNameFormat, ", ")))
+		log.Fatalf("repo-name-format must be one of %s", strings.Join(validRepoNameFormat, ", "))
 	}
 }
 
