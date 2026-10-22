@@ -24,7 +24,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -988,23 +987,5 @@ func TestReadyz(t *testing.T) {
 	mux.ServeHTTP(response, request)
 	if got, want := response.Code, http.StatusOK; got != want {
 		t.Fatalf("after initial load: got status %d, want %d", got, want)
-	}
-}
-
-func assertResults(t *testing.T, files []zoekt.FileMatch, want string) {
-	t.Helper()
-
-	var lines []string
-	for _, fm := range files {
-		for _, cm := range fm.ChunkMatches {
-			lines = append(lines, fmt.Sprintf("%s: %s", fm.FileName, string(cm.Content)))
-		}
-	}
-	sort.Strings(lines)
-	got := strings.TrimSpace(strings.Join(lines, "\n"))
-	want = strings.TrimSpace(want)
-
-	if d := cmp.Diff(want, got); d != "" {
-		t.Fatalf("unexpected results (-want, +got):\n%s", d)
 	}
 }

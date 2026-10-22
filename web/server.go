@@ -172,23 +172,6 @@ type Server struct {
 	lastStatsTS time.Time
 }
 
-func (s *Server) getTemplate(str string) *template.Template {
-	s.templateMu.Lock()
-	defer s.templateMu.Unlock()
-	t := s.templateCache[str]
-	if t != nil {
-		return t
-	}
-
-	t, err := template.New("cache").Parse(str)
-	if err != nil {
-		log.Printf("html template parse error: %v", err)
-		t = template.Must(template.New("empty").Parse(""))
-	}
-	s.templateCache[str] = t
-	return t
-}
-
 func (s *Server) getTextTemplate(str string) *texttemplate.Template {
 	s.templateMu.Lock()
 	defer s.templateMu.Unlock()
