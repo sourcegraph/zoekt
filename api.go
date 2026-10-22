@@ -968,6 +968,11 @@ const (
 	SchedulingClassBatch
 )
 
+// ErrOverloaded is returned when a search is rejected because the server
+// could not start it in time. No shards were searched. Over gRPC it is
+// reported as codes.ResourceExhausted.
+var ErrOverloaded = errors.New("zoekt: search rejected because the server is overloaded")
+
 type SearchOptions struct {
 	// Return an upper-bound estimate of eligible documents in
 	// stats.ShardFilesConsidered.
@@ -991,7 +996,10 @@ type SearchOptions struct {
 	// be set to 1 to find all repositories containing a result.
 	ShardRepoMaxMatchCount int
 
-	// Abort the search after this much time has passed.
+	// Abort the search after this much time has passed since the request
+	// arrived. Time spent waiting for the scheduler counts against it. If the
+	// search cannot be admitted to the scheduler within half this time it
+	// fails with ErrOverloaded.
 	MaxWallTime time.Duration
 
 	// FlushWallTime if non-zero will stop streaming behaviour at first and

@@ -17,6 +17,7 @@ package search
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"hash/fnv"
@@ -122,6 +123,125 @@ func TestSearchHealthCheckSkipsScheduler(t *testing.T) {
 		t.Fatalf("health check Search with every slot taken: %v", err)
 	}
 }
+
+func TestSearchShedding(t *testing.T) {
+	q := &query.Substring{Pattern: "foo"}
+	interactive := zoekt.SchedulingClassInteractive
+	batch := zoekt.SchedulingClassBatch
+
+	// saturated returns a searcher whose interactive and batch slots are
+	// held, and a func to release them.
+	saturated := func(t *testing.T) (*shardedSearcher, func()) {
+		ss := newShardedSearcher(1)
+		ss.ranked.Store([]*rankedShard{{Searcher: &deadlineSearcher{}}})
+		var procs []*process
+		for _, class := range []zoekt.SchedulingClass{interactive, batch} {
+			proc, err := ss.sched.Acquire(context.Background(), class)
+			if err != nil {
+				t.Fatal(err)
+			}
+			procs = append(procs, proc)
+		}
+		return ss, func() {
+			for _, p := range procs {
+				p.Release()
+			}
+		}
+	}
+
+	cases := []struct {
+		name      string
+		queueWait time.Duration
+		opts      zoekt.SearchOptions
+	}{
+		{"MaxWallTime bounds wait", 0, zoekt.SearchOptions{MaxWallTime: 50 * time.Millisecond}},
+		{"queuewait bounds wait", 50 * time.Millisecond, zoekt.SearchOptions{}},
+		{"queuewait shorter than MaxWallTime", 50 * time.Millisecond, zoekt.SearchOptions{MaxWallTime: time.Hour}},
+		{"batch", 50 * time.Millisecond, zoekt.SearchOptions{SchedulingClass: batch}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ss, release := saturated(t)
+			ss.queueWait = tc.queueWait
+
+			// The client would wait much longer than the admission deadline.
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			if _, err := ss.Search(ctx, q, &tc.opts); !errors.Is(err, zoekt.ErrOverloaded) {
+				t.Errorf("Search: got %v, want ErrOverloaded", err)
+			}
+			if err := ss.StreamSearch(ctx, q, &tc.opts, zoekt.SenderFunc(func(*zoekt.SearchResult) {})); !errors.Is(err, zoekt.ErrOverloaded) {
+				t.Errorf("StreamSearch: got %v, want ErrOverloaded", err)
+			}
+
+			// Rejected searches must not hold on to scheduler capacity.
+			release()
+			if _, err := ss.Search(context.Background(), q, &tc.opts); err != nil {
+				t.Errorf("Search after release: %v", err)
+			}
+		})
+	}
+
+	t.Run("List is not shed", func(t *testing.T) {
+		ss, release := saturated(t)
+		defer release()
+		ss.queueWait = time.Millisecond
+
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		if _, err := ss.List(ctx, q, nil); !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("List: got %v, want context.DeadlineExceeded", err)
+		}
+	})
+}
+
+func TestMaxWallTimeIncludesQueueWait(t *testing.T) {
+	shard := &deadlineSearcher{}
+	ss := newShardedSearcher(1)
+	ss.ranked.Store([]*rankedShard{{Searcher: shard}})
+
+	holder, err := ss.sched.Acquire(context.Background(), zoekt.SchedulingClassInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const maxWallTime = time.Minute
+	const wait = 100 * time.Millisecond
+	arrived := time.Now()
+	go func() {
+		time.Sleep(wait)
+		holder.Release()
+	}()
+
+	if _, err := ss.Search(context.Background(), &query.Substring{Pattern: "foo"}, &zoekt.SearchOptions{MaxWallTime: maxWallTime}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The search queued for at least wait. If its budget started at admission
+	// the shard deadline would be at least arrived+maxWallTime+wait.
+	if latest := arrived.Add(maxWallTime + wait/2); shard.deadline.IsZero() || shard.deadline.After(latest) {
+		t.Fatalf("shard searched with deadline %v, want at most %v", shard.deadline, latest)
+	}
+}
+
+// deadlineSearcher records the context deadline of its last search.
+type deadlineSearcher struct {
+	deadline time.Time
+}
+
+func (s *deadlineSearcher) Search(ctx context.Context, _ query.Q, _ *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
+	s.deadline, _ = ctx.Deadline()
+	return &zoekt.SearchResult{}, nil
+}
+
+func (s *deadlineSearcher) List(context.Context, query.Q, *zoekt.ListOptions) (*zoekt.RepoList, error) {
+	return &zoekt.RepoList{}, nil
+}
+
+func (s *deadlineSearcher) Close() {}
+
+func (s *deadlineSearcher) String() string { return "deadlineSearcher" }
 
 func TestCrashResilience(t *testing.T) {
 	out := &bytes.Buffer{}

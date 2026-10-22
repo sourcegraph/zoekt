@@ -540,6 +540,8 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 			logger.Warn("search canceled", sglog.Error(err))
 		case errors.Is(err, context.DeadlineExceeded):
 			logger.Warn("search timeout", sglog.Error(err))
+		case errors.Is(err, zoekt.ErrOverloaded):
+			logger.Warn("search shed", sglog.Error(err))
 		default:
 			logger.Error("search failed", sglog.Error(err))
 		}
