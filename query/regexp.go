@@ -49,9 +49,13 @@ func LowerRegexp(r *syntax.Regexp) *syntax.Regexp {
 
 // OptimizeRegexp converts capturing groups to non-capturing groups.
 // Returns original input if an error is encountered
+//
+// It deliberately does not call Simplify: that expands bounded repeats like
+// x{0,500} into hundreds of nested groups, whose string form Go's regexp
+// parser rejects as nesting too deeply. Regexp compilation simplifies
+// internally, and regexpToMatchTreeRecursive handles OpRepeat directly.
 func OptimizeRegexp(re *syntax.Regexp, flags syntax.Flags) *syntax.Regexp {
-	r := convertCapture(re, flags)
-	return r.Simplify()
+	return convertCapture(re, flags)
 }
 
 func convertCapture(re *syntax.Regexp, flags syntax.Flags) *syntax.Regexp {

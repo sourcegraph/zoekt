@@ -83,19 +83,15 @@ func TestOptimize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// optimizeRegexp always calls Simplify
-			// calling Simplify here makes test cases more predictable
-			simplifiedWant := mustParseRE(tt.want).Simplify()
+			want := mustParseRE(tt.want)
 
 			in := mustParseRE(tt.in)
 			got := OptimizeRegexp(in, regexpFlags)
 
 			// String comparison as the same Regexp string can have different ASTs
-			// e.g. optimize of `ba(na){1,2}` == `bana(?:na)?`
-			//      however the AST is different from directly parsing `bana(?:na)?`
-			if got.String() != simplifiedWant.String() {
+			if got.String() != want.String() {
 				printRegexp(t, got, 0)
-				printRegexp(t, simplifiedWant, 0)
+				printRegexp(t, want, 0)
 				t.Errorf("got %s, want %s\n", got, tt.want)
 			}
 		})
