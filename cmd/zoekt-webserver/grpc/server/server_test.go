@@ -24,6 +24,7 @@ import (
 	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"github.com/sourcegraph/zoekt/internal/mockSearcher"
+	"github.com/sourcegraph/zoekt/internal/shardtest"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -53,7 +54,7 @@ func TestClientServer(t *testing.T) {
 	gs := grpc.NewServer()
 	defer gs.Stop()
 
-	webserverv1.RegisterWebserverServiceServer(gs, NewServer(adapter{mock}))
+	webserverv1.RegisterWebserverServiceServer(gs, NewServer(shardtest.Streamer{Searcher: mock}))
 	ts := httptest.NewUnstartedServer(gs)
 	ts.Config.Protocols = grpcutil.Protocols()
 	ts.Start()
@@ -284,7 +285,7 @@ func TestShedSearchIsResourceExhausted(t *testing.T) {
 	gs := grpc.NewServer()
 	defer gs.Stop()
 
-	webserverv1.RegisterWebserverServiceServer(gs, NewServer(adapter{overloadedSearcher{}}))
+	webserverv1.RegisterWebserverServiceServer(gs, NewServer(shardtest.Streamer{Searcher: overloadedSearcher{}}))
 	ts := httptest.NewUnstartedServer(gs)
 	ts.Config.Protocols = grpcutil.Protocols()
 	ts.Start()
@@ -322,17 +323,4 @@ type overloadedSearcher struct{ zoekt.Searcher }
 
 func (overloadedSearcher) Search(context.Context, query.Q, *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
 	return nil, zoekt.ErrOverloaded
-}
-
-type adapter struct {
-	zoekt.Searcher
-}
-
-func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
-	sr, err := a.Search(ctx, q, opts)
-	if err != nil {
-		return err
-	}
-	sender.Send(sr)
-	return nil
 }
