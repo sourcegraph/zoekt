@@ -431,6 +431,43 @@ func searcherForTest(t testing.TB, b *ShardBuilder) zoekt.Searcher {
 	return searcher
 }
 
+func TestSearchTypeQuery(t *testing.T) {
+	searcher := searcherForTest(t, testShardBuilder(t, nil,
+		Document{Name: "foo.go", Content: []byte("func foo() {}")},
+	))
+	defer searcher.Close()
+
+	for _, tc := range []struct {
+		q         string
+		wantFiles int
+		wantErr   bool
+	}{
+		{q: "type:file foo", wantFiles: 1},
+		{q: "type:filematch foo", wantFiles: 1},
+		{q: "type:repo foo", wantErr: true},
+	} {
+		t.Run(tc.q, func(t *testing.T) {
+			q, err := query.Parse(tc.q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("want error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Files) != tc.wantFiles {
+				t.Fatalf("got %d files, want %d", len(res.Files), tc.wantFiles)
+			}
+		})
+	}
+}
+
 func TestCaseFold(t *testing.T) {
 	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("I love BaNaNAS.")},
