@@ -143,3 +143,5 @@ search options.
 
 Thanks to Han-Wen Nienhuys for creating Zoekt. Thanks to Alexander Neubeck for
 coming up with this idea, and helping Han-Wen Nienhuys flesh it out.
+
+Hello, world!
