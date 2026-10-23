@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -64,6 +65,9 @@ func main() {
 	}
 
 	repoID := *repoIDFlag
+	if uint64(repoID) > math.MaxUint32 {
+		log.Fatalf("--repoid %d is out of range: repository IDs must fit in 32 bits (max %d)", repoID, uint64(math.MaxUint32))
+	}
 	if repoID != 0 {
 		config["zoekt.repoid"] = strconv.FormatUint(uint64(repoID), 10)
 	}
