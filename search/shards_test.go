@@ -38,6 +38,8 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
 	sglog "github.com/sourcegraph/log"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/shardtest"
@@ -1520,17 +1522,13 @@ func TestNewDirectorySearcher_empty(t *testing.T) {
 		}
 		t.Cleanup(ss.Close)
 
-		deadline := testDeadline(t, 10*time.Second)
-
 		// Wait for scanning of directory to be done. We should be returning
 		// non-zero crashes until then.
-		waitForPredicate(deadline, 10*time.Millisecond, func() bool {
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
 			res, err := ss.Search(ctx, &query.Const{Value: true}, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return res.Crashes == 0
-		})
+			require.NoError(c, err)
+			assert.Zero(c, res.Crashes)
+		}, 10*time.Second, 10*time.Millisecond)
 
 		test(t, ss)
 	})
@@ -1577,33 +1575,7 @@ func TestDirectorySearcherOptionsIndexFileOpener(t *testing.T) {
 	}
 
 	writeShard("added", 2)
-	deadline := testDeadline(t, 10*time.Second)
-	if !waitForPredicate(deadline, 10*time.Millisecond, func() bool {
-		return opens.Load() == 2
-	}) {
-		t.Fatalf("shard opens after watcher reload = %d, want 2", opens.Load())
-	}
-}
-
-// testDeadline returns the deadline for t, but ensures it is no longer than
-// maxTimeout away.
-func testDeadline(t *testing.T, maxTimeout time.Duration) time.Time {
-	deadline := time.Now().Add(maxTimeout)
-	if d, ok := t.Deadline(); ok && d.Before(deadline) {
-		// give 1s for us to do a final test run
-		deadline = d.Add(-time.Second)
-	}
-	return deadline
-}
-
-func waitForPredicate(deadline time.Time, tick time.Duration, pred func() bool) bool {
-	for time.Now().Before(deadline) {
-		if pred() {
-			return true
-		}
-
-		time.Sleep(tick)
-	}
-
-	return pred()
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.Equal(c, int32(2), opens.Load(), "shard opens after watcher reload")
+	}, 10*time.Second, 10*time.Millisecond)
 }
