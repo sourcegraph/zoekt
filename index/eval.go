@@ -640,7 +640,11 @@ func (d *indexData) regexpToMatchTreeRecursive(r *syntax.Regexp, minTextSize int
 
 	case syntax.OpRepeat:
 		if r.Min == 1 {
-			return d.regexpToMatchTreeRecursive(r.Sub[0], minTextSize, fileName, caseSensitive)
+			// Like OpPlus for (x){1} and (x){1,}. A bounded (x){1,n} is
+			// not equivalent to x: it can't cover a run of more than n x's
+			// with a single match.
+			mt, isEq, singleLine, err := d.regexpToMatchTreeRecursive(r.Sub[0], minTextSize, fileName, caseSensitive)
+			return mt, isEq && (r.Max == 1 || r.Max == -1), singleLine, err
 		} else if r.Min > 1 {
 			// (x){2,} can't be expressed precisely by the matchTree
 			mt, _, singleLine, err := d.regexpToMatchTreeRecursive(r.Sub[0], minTextSize, fileName, caseSensitive)

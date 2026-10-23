@@ -1108,6 +1108,21 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 	})
 }
 
+func TestSearchBoundedRepeatRegexp(t *testing.T) {
+	b := testShardBuilder(t, nil,
+		Document{Name: "match", Content: []byte("foo and bar")},
+		Document{Name: "nomatch", Content: []byte("bar and foo")})
+
+	q, err := query.Parse(`foo.{0,500}bar`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sres := searchForTest(t, b, q)
+	if len(sres.Files) != 1 || sres.Files[0].FileName != "match" {
+		t.Fatalf("got %v, want only file \"match\"", sres.Files)
+	}
+}
+
 func TestSearchBM25MatchScores(t *testing.T) {
 	ctx := context.Background()
 	searcher := searcherForTest(t, testShardBuilder(t, nil,
