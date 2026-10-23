@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 // createTestRepo creates a git repo with various test files and returns
@@ -20,7 +22,7 @@ func createTestRepo(t *testing.T) (string, map[string]plumbing.Hash) {
 	dir := t.TempDir()
 	repoDir := filepath.Join(dir, "repo")
 
-	runGit(t, dir, "init", "-b", "main", "repo")
+	testutil.RunGit(t, dir, "init", "-b", "main", "repo")
 
 	files := []struct {
 		name    string
@@ -38,19 +40,14 @@ func createTestRepo(t *testing.T) (string, map[string]plumbing.Hash) {
 		}
 	}
 
-	runGit(t, repoDir, "add", ".")
-	runGit(t, repoDir, "commit", "-m", "initial")
+	testutil.RunGit(t, repoDir, "add", ".")
+	testutil.RunGit(t, repoDir, "commit", "-m", "initial")
 
 	// Get blob SHAs for each file.
 	blobs := map[string]plumbing.Hash{}
 	for _, file := range files {
-		name := file.name
-		out, err := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD:"+name).Output()
-		if err != nil {
-			t.Fatalf("rev-parse %s: %v", name, err)
-		}
-		sha := strings.TrimSpace(string(out))
-		blobs[name] = plumbing.NewHash(sha)
+		sha := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", "HEAD:"+file.name))
+		blobs[file.name] = plumbing.NewHash(sha)
 	}
 
 	return repoDir, blobs

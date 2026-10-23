@@ -18,10 +18,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"log"
 	"math"
 	"os"
@@ -42,17 +40,14 @@ import (
 	sglog "github.com/sourcegraph/log"
 
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 )
 
 func TestMain(m *testing.M) {
-	flag.Parse()
-	if !testing.Verbose() {
-		log.SetOutput(io.Discard)
-	}
-	os.Exit(m.Run())
+	testutil.Main(m)
 }
 
 type crashSearcher struct{}

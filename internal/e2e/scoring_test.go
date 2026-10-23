@@ -23,6 +23,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/ctags"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
 )
@@ -660,18 +661,11 @@ func Get() {
 }
 
 func skipIfCTagsUnavailable(t *testing.T, parserType ctags.CTagsParserType) {
-	// Never skip universal-ctags tests in CI
-	if os.Getenv("CI") != "" && parserType == ctags.UniversalCTags {
-		return
-	}
-
 	switch parserType {
 	case ctags.UniversalCTags:
-		requireCTags(t)
+		testutil.RequireCTags(t)
 	case ctags.ScipCTags:
-		if checkScipCTags() == "" {
-			t.Skip("scip-ctags not available")
-		}
+		testutil.RequireScipCTags(t)
 	default:
 		t.Fatalf("unexpected parser type")
 	}
@@ -757,7 +751,7 @@ func withoutTiebreaker(fullScore float64, useBM25 bool) float64 {
 }
 
 func TestRepoRanks(t *testing.T) {
-	requireCTags(t)
+	testutil.RequireCTags(t)
 	dir := t.TempDir()
 
 	opts := index.Options{
