@@ -35,6 +35,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
 )
@@ -46,7 +47,7 @@ func TestIndexEmptyRepo(t *testing.T) {
 
 	cmd := exec.Command("git", "init", "-b", "master", "repo")
 	cmd.Dir = dir
-	cmd.Env = gitTestEnv()
+	cmd.Env = testutil.GitEnv()
 
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("cmd.Run: %v", err)
@@ -96,14 +97,14 @@ func TestIndexTinyRepo(t *testing.T) {
 
 	// Create a repo with one file in it.
 	dir := t.TempDir()
-	runGit(t, dir, "init", "-b", "main", "repo")
+	testutil.RunGit(t, dir, "init", "-b", "main", "repo")
 
 	repoDir := filepath.Join(dir, "repo")
 	if err := os.WriteFile(filepath.Join(repoDir, "file1.go"), []byte("package main\n\nfunc main() {}\n"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	runGit(t, repoDir, "add", ".")
-	runGit(t, repoDir, "commit", "-m", "initial commit")
+	testutil.RunGit(t, repoDir, "add", ".")
+	testutil.RunGit(t, repoDir, "commit", "-m", "initial commit")
 
 	// Test that indexing accepts both the repo directory, and the .git subdirectory.
 	for _, testDir := range []string{"repo", "repo/.git"} {
@@ -213,7 +214,7 @@ func TestIndexGitRepoPrefersConfiguredRepositoryName(t *testing.T) {
 	configuredName := "github.com/sgtest/go-diff"
 	fallbackName := url.QueryEscape(configuredName)
 	repoDir, _ := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
-	runGit(t, repoDir, "config", "zoekt.name", configuredName)
+	testutil.RunGit(t, repoDir, "config", "zoekt.name", configuredName)
 
 	indexDir := t.TempDir()
 	opts := Options{
@@ -252,7 +253,7 @@ func TestIndexGitRepoPreservesRepositoryNameOnTemplateError(t *testing.T) {
 	t.Parallel()
 
 	repoDir, _ := initGitWorktree(t, "file1.go", "package main\n\nfunc main() {}\n")
-	runGit(t, repoDir, "config", "remote.origin.url", "git@example.com:sourcegraph/zoekt.git")
+	testutil.RunGit(t, repoDir, "config", "remote.origin.url", "git@example.com:sourcegraph/zoekt.git")
 
 	indexDir := t.TempDir()
 	opts := Options{
@@ -470,18 +471,18 @@ func initGitWorktree(t *testing.T, fileName, content string) (string, string) {
 	t.Helper()
 
 	dir := t.TempDir()
-	runGit(t, dir, "init", "-b", "main", "repo")
+	testutil.RunGit(t, dir, "init", "-b", "main", "repo")
 
 	repoDir := filepath.Join(dir, "repo")
 	if err := os.WriteFile(filepath.Join(repoDir, fileName), []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	runGit(t, repoDir, "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git")
-	runGit(t, repoDir, "add", ".")
-	runGit(t, repoDir, "commit", "-m", "initial commit")
+	testutil.RunGit(t, repoDir, "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git")
+	testutil.RunGit(t, repoDir, "add", ".")
+	testutil.RunGit(t, repoDir, "commit", "-m", "initial commit")
 
 	worktreeDir := filepath.Join(dir, "wt")
-	runGit(t, repoDir, "worktree", "add", "-b", "worktree-branch", worktreeDir)
+	testutil.RunGit(t, repoDir, "worktree", "add", "-b", "worktree-branch", worktreeDir)
 
 	return repoDir, worktreeDir
 }
@@ -490,7 +491,7 @@ func cloneBareRepo(t *testing.T, repoDir string) string {
 	t.Helper()
 
 	bareDir := filepath.Join(t.TempDir(), "repo.git")
-	runGit(t, filepath.Dir(repoDir), "clone", "--bare", repoDir, bareDir)
+	testutil.RunGit(t, filepath.Dir(repoDir), "clone", "--bare", repoDir, bareDir)
 
 	return bareDir
 }
@@ -986,11 +987,11 @@ func TestIndexDeltaBasic(t *testing.T) {
 			repositoryDir := t.TempDir()
 
 			// setup: initialize the repository and all of its branches
-			runGit(t, repositoryDir, "init", "-b", "master")
+			testutil.RunGit(t, repositoryDir, "init", "-b", "master")
 
 			for _, b := range test.branches {
-				runGit(t, repositoryDir, "checkout", "-b", b)
-				runGit(t, repositoryDir, "commit", "--allow-empty", "-m", "empty commit")
+				testutil.RunGit(t, repositoryDir, "checkout", "-b", b)
+				testutil.RunGit(t, repositoryDir, "commit", "--allow-empty", "-m", "empty commit")
 			}
 
 			for _, step := range test.steps {
@@ -1000,7 +1001,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 
 						hadChange := false
 
-						runGit(t, repositoryDir, "checkout", b)
+						testutil.RunGit(t, repositoryDir, "checkout", b)
 
 						for _, d := range step.deletedDocuments[b] {
 							hadChange = true
@@ -1033,8 +1034,8 @@ func TestIndexDeltaBasic(t *testing.T) {
 							continue
 						}
 
-						runGit(t, repositoryDir, "add", "-A")
-						runGit(t, repositoryDir, "commit", "-m", step.name)
+						testutil.RunGit(t, repositoryDir, "add", "-A")
+						testutil.RunGit(t, repositoryDir, "commit", "-m", step.name)
 					}
 
 					// setup: prepare indexOptions with given overrides
@@ -1150,42 +1151,14 @@ func TestIndexDeltaBasic(t *testing.T) {
 	}
 }
 
-func runGit(t *testing.T, cwd string, args ...string) {
-	t.Helper()
-
-	err := os.MkdirAll(cwd, 0o755)
-	if err != nil {
-		t.Fatalf("ensuring path %q exists: %s", cwd, err)
-	}
-
-	cmd := exec.Command("git", args...)
-	cmd.Dir = cwd
-	cmd.Env = gitTestEnv()
-
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("execution error: %v, output %s", err, out)
-	}
-}
-
-func gitTestEnv() []string {
-	return append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=",
-		"GIT_CONFIG_SYSTEM=",
-		"GIT_COMMITTER_NAME=Kierkegaard",
-		"GIT_COMMITTER_EMAIL=soren@apache.com",
-		"GIT_AUTHOR_NAME=Kierkegaard",
-		"GIT_AUTHOR_EMAIL=soren@apache.com",
-	)
-}
-
 func TestSetTemplates_e2e(t *testing.T) {
 	t.Parallel()
 
 	repositoryDir := t.TempDir()
 
 	// setup: initialize the repository and all of its branches
-	runGit(t, repositoryDir, "init", "-b", "master")
-	runGit(t, repositoryDir, "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git")
+	testutil.RunGit(t, repositoryDir, "init", "-b", "master")
+	testutil.RunGit(t, repositoryDir, "config", "remote.origin.url", "git@github.com:sourcegraph/zoekt.git")
 	desc := zoekt.Repository{}
 	if err := setTemplatesFromConfig(&desc, repositoryDir); err != nil {
 		t.Fatalf("setTemplatesFromConfig: %v", err)

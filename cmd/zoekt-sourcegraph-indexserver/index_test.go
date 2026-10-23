@@ -25,6 +25,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/internal/ctags"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 func TestIterateIndexOptions_Fingerprint(t *testing.T) {
@@ -714,7 +715,7 @@ git init -b main
 `
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
-	cmd.Env = gitTestEnv()
+	cmd.Env = testutil.GitEnv()
 	_, err := cmd.CombinedOutput()
 	require.NoError(t, err)
 

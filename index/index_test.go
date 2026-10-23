@@ -46,6 +46,8 @@ func clearScores(r *zoekt.SearchResult) {
 	}
 }
 
+// Copy of shardtest.Builder: internal tests of package index cannot import
+// internal/shardtest, since it imports index.
 func testShardBuilder(tb testing.TB, repo *zoekt.Repository, docs ...Document) *ShardBuilder {
 	tb.Helper()
 
@@ -290,6 +292,8 @@ func TestEmptyIndex(t *testing.T) {
 	}
 }
 
+// Copy of shardtest.IndexFile: internal tests of package index cannot import
+// internal/shardtest, since it imports index.
 type memSeeker struct {
 	data []byte
 }
@@ -410,6 +414,8 @@ func searchForTest(t *testing.T, b *ShardBuilder, q query.Q, o ...zoekt.SearchOp
 	return res
 }
 
+// Copy of shardtest.Searcher: internal tests of package index cannot import
+// internal/shardtest, since it imports index.
 func searcherForTest(t testing.TB, b *ShardBuilder) zoekt.Searcher {
 	var buf bytes.Buffer
 	if err := b.Write(&buf); err != nil {

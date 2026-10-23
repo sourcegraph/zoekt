@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,6 +18,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/archive"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
 )
@@ -37,7 +37,7 @@ func TestRanking(t *testing.T) {
 		t.Skip("skipping due to short flag")
 	}
 
-	requireCTags(t)
+	testutil.RequireCTags(t)
 
 	archiveURLs := []string{
 		"https://github.com/sourcegraph/sourcegraph-public-snapshot/tree/v5.2.2",  // Nov 1 2023
@@ -352,34 +352,4 @@ func addTabIfNonEmpty(s string) string {
 		return "\t" + s
 	}
 	return s
-}
-
-func requireCTags(tb testing.TB) {
-	tb.Helper()
-
-	if os.Getenv("CTAGS_COMMAND") != "" {
-		return
-	}
-	if _, err := exec.LookPath("universal-ctags"); err == nil {
-		return
-	}
-
-	// On CI we require ctags to be available. Otherwise we skip
-	if os.Getenv("CI") != "" {
-		tb.Fatal("universal-ctags is missing")
-	} else {
-		tb.Skip("universal-ctags is missing")
-	}
-}
-
-func checkScipCTags() string {
-	if ctags := os.Getenv("SCIP_CTAGS_COMMAND"); ctags != "" {
-		return ctags
-	}
-
-	if ctags, err := exec.LookPath("scip-ctags"); err == nil {
-		return ctags
-	}
-
-	return ""
 }

@@ -4,8 +4,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -16,10 +14,11 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/prometheus/client_golang/prometheus/testutil"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 var update = flag.Bool("update", false, "update golden file")
@@ -223,11 +222,7 @@ func TestIncrementalSkipIndexing(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	flag.Parse()
-	if !testing.Verbose() {
-		log.SetOutput(io.Discard)
-	}
-	os.Exit(m.Run())
+	testutil.Main(m)
 }
 
 func TestDontCountContentOfSkippedFiles(t *testing.T) {
@@ -327,7 +322,7 @@ func TestSkipCompoundShards(t *testing.T) {
 	require.Empty(t, shard)
 
 	// Check if the "skipped" counter was incremented
-	skippedCount := int(testutil.ToFloat64(metricCompoundShardLookups.WithLabelValues("skipped")))
+	skippedCount := int(promtestutil.ToFloat64(metricCompoundShardLookups.WithLabelValues("skipped")))
 	require.Equal(t, wantSkippedCount, skippedCount)
 }
 

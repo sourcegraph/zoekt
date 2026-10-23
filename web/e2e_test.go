@@ -32,55 +32,9 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/shardtest"
 	"github.com/sourcegraph/zoekt/query"
 )
-
-// TODO(hanwen): cut & paste from ../ . Should create internal test
-// util package.
-type memSeeker struct {
-	data []byte
-}
-
-func (s *memSeeker) Close() {}
-func (s *memSeeker) Read(off, sz uint32) ([]byte, error) {
-	return s.data[off : off+sz], nil
-}
-
-func (s *memSeeker) Size() (uint32, error) {
-	return uint32(len(s.data)), nil
-}
-
-func (s *memSeeker) Name() string {
-	return "memSeeker"
-}
-
-func searcherForTest(t *testing.T, b *index.ShardBuilder) zoekt.Streamer {
-	var buf bytes.Buffer
-	if err := b.Write(&buf); err != nil {
-		t.Fatal(err)
-	}
-	f := &memSeeker{buf.Bytes()}
-
-	searcher, err := index.NewSearcher(f)
-	if err != nil {
-		t.Fatalf("NewSearcher: %v", err)
-	}
-
-	return adapter{Searcher: searcher}
-}
-
-type adapter struct {
-	zoekt.Searcher
-}
-
-func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
-	sr, err := a.Search(ctx, q, opts)
-	if err != nil {
-		return err
-	}
-	sender.Send(sr)
-	return nil
-}
 
 func TestBasic(t *testing.T) {
 	b, err := index.NewShardBuilder(&zoekt.Repository{
@@ -105,7 +59,7 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	s := searcherForTest(t, b)
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
 	srv := Server{
 		Searcher: s,
 		Top:      Top,
@@ -176,7 +130,7 @@ func TestPrint(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	s := searcherForTest(t, b)
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
 	srv := Server{
 		Searcher: s,
 		Top:      Top,
@@ -217,7 +171,7 @@ func TestPrintDefault(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	s := searcherForTest(t, b)
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
 	srv := Server{
 		Searcher: s,
 		Top:      Top,
@@ -287,7 +241,7 @@ func TestFormatJson(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	s := searcherForTest(t, b)
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
 	srv := Server{
 		Searcher: s,
 		Top:      Top,
@@ -363,7 +317,7 @@ func TestContextLines(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	s := searcherForTest(t, b)
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
 	srv := Server{
 		Searcher: s,
 		Top:      Top,
@@ -666,7 +620,7 @@ func TestContextLinesMustBeValid(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	s := searcherForTest(t, b)
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
 	srv := Server{
 		Searcher: s,
 		Top:      Top,
@@ -759,7 +713,7 @@ func TestHostCustomization(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	s := searcherForTest(t, b)
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
 	srv := Server{
 		Searcher: s,
 		Top:      Top,
@@ -813,7 +767,7 @@ func TestDupResult(t *testing.T) {
 			t.Fatalf("Add: %v", err)
 		}
 	}
-	s := searcherForTest(t, b)
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
 	srv := Server{
 		Searcher: s,
 		Top:      Top,
@@ -862,7 +816,7 @@ func TestTruncateLine(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	s := searcherForTest(t, b)
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
 	srv := Server{
 		Searcher: s,
 		Top:      Top,
@@ -919,7 +873,7 @@ func TestHealthz(t *testing.T) {
 			t.Fatalf("Add: %v", err)
 		}
 	}
-	s := searcherForTest(t, b)
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
 	srv := Server{
 		Searcher: s,
 		Top:      Top,

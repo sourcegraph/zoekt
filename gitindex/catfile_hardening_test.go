@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 // --- Close lifecycle tests ---
@@ -184,7 +186,7 @@ func createManyBlobRepo(t *testing.T, fileCount, fileSize int) (string, []plumbi
 	dir := t.TempDir()
 	repoDir := filepath.Join(dir, "repo")
 
-	runGit(t, dir, "init", "-b", "main", "repo")
+	testutil.RunGit(t, dir, "init", "-b", "main", "repo")
 
 	for i := range fileCount {
 		content := bytes.Repeat([]byte{byte(i)}, fileSize)
@@ -194,8 +196,8 @@ func createManyBlobRepo(t *testing.T, fileCount, fileSize int) (string, []plumbi
 		}
 	}
 
-	runGit(t, repoDir, "add", ".")
-	runGit(t, repoDir, "commit", "-m", "many files")
+	testutil.RunGit(t, repoDir, "add", ".")
+	testutil.RunGit(t, repoDir, "commit", "-m", "many files")
 
 	out, err := exec.Command("git", "-C", repoDir, "ls-tree", "-r", "-z", "HEAD").Output()
 	if err != nil {

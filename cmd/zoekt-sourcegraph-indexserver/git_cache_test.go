@@ -20,6 +20,7 @@ import (
 	indexserverv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/zoekt/indexserver/v1"
 	"github.com/sourcegraph/zoekt/gitindex"
 	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 	"github.com/sourcegraph/zoekt/search"
 )
 
@@ -71,7 +72,7 @@ func TestWithFetchedRepo(t *testing.T) {
 					return gitCache.withFetchedRepo(context.Background(), c, &args, logtest.Scoped(t), func(gitDir string) error {
 						called = true
 						require.Equal(t, dir, gitDir)
-						require.Equal(t, fixture.mainCommit, strings.TrimSpace(runGitOutput(t, gitDir, "rev-parse", "HEAD")))
+						require.Equal(t, fixture.mainCommit, strings.TrimSpace(testutil.RunGit(t, gitDir, "rev-parse", "HEAD")))
 						require.NoFileExists(t, marker)
 						switch outcome {
 						case "callback error":
@@ -237,8 +238,8 @@ func TestCachedGitIndexIntegration(t *testing.T) {
 	packs, err := filepath.Glob(filepath.Join(dir, "objects", "pack", "*.pack"))
 	require.NoError(t, err)
 	require.NotEmpty(t, packs)
-	smallBlob := strings.TrimSpace(runGitOutput(t, dir, "rev-parse", "HEAD:small.txt"))
-	runGit(t, dir, "pack-refs", "--all")
+	smallBlob := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD:small.txt"))
+	testutil.RunGit(t, dir, "pack-refs", "--all")
 
 	args.Branches = []zoekt.RepositoryBranch{{Name: "HEAD", Version: fixture.devCommit}}
 	args.Branches = append(args.Branches, zoekt.RepositoryBranch{Name: "old/nested", Version: fixture.devCommit})
@@ -257,12 +258,12 @@ func TestCachedGitIndexIntegration(t *testing.T) {
 	for _, pack := range newPacks {
 		if !slices.Contains(packs, pack) {
 			// The unchanged blob must not be downloaded into the new pack again.
-			require.NotContains(t, runGitOutput(t, dir, "verify-pack", "-v", pack), smallBlob)
+			require.NotContains(t, testutil.RunGit(t, dir, "verify-pack", "-v", pack), smallBlob)
 		}
 	}
-	require.Equal(t, fixture.devCommit, strings.TrimSpace(runGitOutput(t, dir, "rev-parse", "HEAD")))
-	require.Equal(t, "refs/heads/old/nested", strings.TrimSpace(runGitOutput(t, dir, "for-each-ref", "--format=%(refname)", "refs/heads/old")))
-	headers := strings.Split(strings.TrimSpace(runGitOutput(t, dir, "config", "--get-all", "http.extraHeader")), "\n")
+	require.Equal(t, fixture.devCommit, strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD")))
+	require.Equal(t, "refs/heads/old/nested", strings.TrimSpace(testutil.RunGit(t, dir, "for-each-ref", "--format=%(refname)", "refs/heads/old")))
+	headers := strings.Split(strings.TrimSpace(testutil.RunGit(t, dir, "config", "--get-all", "http.extraHeader")), "\n")
 	require.Equal(t, []string{"X-Sourcegraph-Actor-UID: internal", "X-Sourcegraph-Tenant-ID: 1"}, headers)
 	searcher, err := search.NewDirectorySearcher(args.IndexDir)
 	require.NoError(t, err)

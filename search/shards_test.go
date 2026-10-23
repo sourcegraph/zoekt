@@ -18,10 +18,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"log"
 	"math"
 	"os"
@@ -40,19 +38,19 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
 	sglog "github.com/sourcegraph/log"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/shardtest"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/query"
 )
 
 func TestMain(m *testing.M) {
-	flag.Parse()
-	if !testing.Verbose() {
-		log.SetOutput(io.Discard)
-	}
-	os.Exit(m.Run())
+	testutil.Main(m)
 }
 
 type crashSearcher struct{}
@@ -391,8 +389,8 @@ func TestShardedSearcher_Ranking(t *testing.T) {
 			"public":   "1",
 			"priority": strconv.FormatFloat(priority, 'f', 2, 64),
 		}
-		b := testShardBuilder(t, r, docs...)
-		shard := searcherForTest(t, b)
+		b := shardtest.Builder(t, r, docs...)
+		shard := shardtest.Searcher(t, b)
 		ss.replace(map[string]zoekt.Searcher{
 			fmt.Sprintf("key-%d", nextShardNum): shard,
 		})
@@ -433,8 +431,8 @@ func TestShardedSearcher_DocumentRanking(t *testing.T) {
 			"public": "1",
 		}
 		r.Rank = rank
-		b := testShardBuilder(t, r, docs...)
-		shard := searcherForTest(t, b)
+		b := shardtest.Builder(t, r, docs...)
+		shard := shardtest.Searcher(t, b)
 		ss.replace(map[string]zoekt.Searcher{
 			fmt.Sprintf("key-%d", nextShardNum): shard,
 		})
@@ -612,7 +610,7 @@ func TestFilteringShardsByMeta(t *testing.T) {
 		}
 
 		ss.replace(map[string]zoekt.Searcher{
-			shardName: searcherForTest(t, testShardBuilder(t, repo, doc)),
+			shardName: shardtest.Searcher(t, shardtest.Builder(t, repo, doc)),
 		})
 	}
 
@@ -753,25 +751,8 @@ func hash(name string) uint32 {
 	return h.Sum32()
 }
 
-type memSeeker struct {
-	data []byte
-}
-
-func (s *memSeeker) Name() string {
-	return "memseeker"
-}
-
-func (s *memSeeker) Close() {}
-func (s *memSeeker) Read(off, sz uint32) ([]byte, error) {
-	return s.data[off : off+sz], nil
-}
-
-func (s *memSeeker) Size() (uint32, error) {
-	return uint32(len(s.data)), nil
-}
-
 func TestUnloadIndex(t *testing.T) {
-	b := testShardBuilder(t, nil, index.Document{
+	b := shardtest.Builder(t, nil, index.Document{
 		Name:    "filename",
 		Content: []byte("needle needle needle"),
 	})
@@ -781,7 +762,7 @@ func TestUnloadIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	indexBytes := buf.Bytes()
-	indexFile := &memSeeker{indexBytes}
+	indexFile := shardtest.IndexFile(indexBytes)
 	searcher, err := index.NewSearcher(indexFile)
 	if err != nil {
 		t.Fatalf("NewSearcher: %v", err)
@@ -842,10 +823,10 @@ func TestShardedSearcher_List(t *testing.T) {
 	// Test duplicate removal when ListOptions.Minimal is true and false
 	ss := newShardedSearcher(4)
 	ss.replace(map[string]zoekt.Searcher{
-		"1": searcherForTest(t, testShardBuilder(t, repos[0], doc)),
-		"2": searcherForTest(t, testShardBuilder(t, repos[0])),
-		"3": searcherForTest(t, testShardBuilder(t, repos[1], doc)),
-		"4": searcherForTest(t, testShardBuilder(t, repos[1])),
+		"1": shardtest.Searcher(t, shardtest.Builder(t, repos[0], doc)),
+		"2": shardtest.Searcher(t, shardtest.Builder(t, repos[0])),
+		"3": shardtest.Searcher(t, shardtest.Builder(t, repos[1], doc)),
+		"4": shardtest.Searcher(t, shardtest.Builder(t, repos[1])),
 	})
 	ss.markReady()
 
@@ -969,35 +950,6 @@ func TestShardedSearcher_List(t *testing.T) {
 	}
 }
 
-func testShardBuilder(t testing.TB, repo *zoekt.Repository, docs ...index.Document) *index.ShardBuilder {
-	b, err := index.NewShardBuilder(repo)
-	if err != nil {
-		t.Fatalf("NewShardBuilder: %v", err)
-	}
-
-	for i, d := range docs {
-		if err := b.Add(d); err != nil {
-			t.Fatalf("Add %d: %v", i, err)
-		}
-	}
-	return b
-}
-
-func searcherForTest(t testing.TB, b *index.ShardBuilder) zoekt.Searcher {
-	var buf bytes.Buffer
-	if err := b.Write(&buf); err != nil {
-		t.Fatal(err)
-	}
-	f := &memSeeker{buf.Bytes()}
-
-	searcher, err := index.NewSearcher(f)
-	if err != nil {
-		t.Fatalf("NewSearcher: %v", err)
-	}
-
-	return searcher
-}
-
 func reposForTest(n int) (result []*zoekt.Repository) {
 	for i := range n {
 		result = append(result, &zoekt.Repository{
@@ -1009,7 +961,7 @@ func reposForTest(n int) (result []*zoekt.Repository) {
 }
 
 func testSearcherForRepo(b testing.TB, r *zoekt.Repository, numFiles int) zoekt.Searcher {
-	builder := testShardBuilder(b, r)
+	builder := shardtest.Builder(b, r)
 
 	if err := builder.Add(index.Document{
 		Name:    fmt.Sprintf("%s/filename-%d.go", r.Name, 0),
@@ -1027,7 +979,7 @@ func testSearcherForRepo(b testing.TB, r *zoekt.Repository, numFiles int) zoekt.
 		}
 	}
 
-	return searcherForTest(b, builder)
+	return shardtest.Searcher(b, builder)
 }
 
 func BenchmarkShardedSearch(b *testing.B) {
@@ -1118,8 +1070,8 @@ func TestRawQuerySearch(t *testing.T) {
 	addShard := func(repo string, rawConfig map[string]string, docs ...index.Document) {
 		r := &zoekt.Repository{Name: repo}
 		r.RawConfig = rawConfig
-		b := testShardBuilder(t, r, docs...)
-		shard := searcherForTest(t, b)
+		b := shardtest.Builder(t, r, docs...)
+		shard := shardtest.Searcher(t, b)
 		ss.replace(map[string]zoekt.Searcher{fmt.Sprintf("key-%d", nextShardNum): shard})
 		nextShardNum++
 	}
@@ -1350,7 +1302,7 @@ func TestFileBasedSearch(t *testing.T) {
 	// -----------0123456789012345678901234567890123456789
 	c2 := []byte("In Dutch, ananas means pineapple")
 	// -----------0123456789012345678901234567890123456789
-	b := testShardBuilder(t, nil,
+	b := shardtest.Builder(t, nil,
 		index.Document{Name: "f1", Content: c1},
 		index.Document{Name: "f2", Content: c2},
 	)
@@ -1386,7 +1338,7 @@ func TestWordBoundaryRanking(t *testing.T) {
 		{"StreamSearch", testShardedStreamSearch},
 	}
 
-	b := testShardBuilder(t, nil,
+	b := shardtest.Builder(t, nil,
 		index.Document{Name: "f1", Content: []byte("xbytex xbytex")},
 		index.Document{Name: "f2", Content: []byte("xbytex\nbytex\nbyte bla")},
 		// -----------------------------------------0123456 789012 34567890
@@ -1426,7 +1378,7 @@ func TestAtomCountScore(t *testing.T) {
 		{"StreamSearch", testShardedStreamSearch},
 	}
 
-	b := testShardBuilder(t,
+	b := shardtest.Builder(t,
 		&zoekt.Repository{
 			Branches: []zoekt.RepositoryBranch{
 				{Name: "branches", Version: "v1"},
@@ -1460,14 +1412,14 @@ func TestAtomCountScore(t *testing.T) {
 }
 
 func TestUseBM25Scoring(t *testing.T) {
-	b := testShardBuilder(t,
+	b := shardtest.Builder(t,
 		&zoekt.Repository{},
 		index.Document{Name: "f1", Content: []byte("one two two three")},
 		index.Document{Name: "f2", Content: []byte("one two one two")},
 		index.Document{Name: "f3", Content: []byte("one three three three")})
 
 	ss := newShardedSearcher(1)
-	searcher := searcherForTest(t, b)
+	searcher := shardtest.Searcher(t, b)
 	ss.replace(map[string]zoekt.Searcher{"r1": searcher})
 
 	q := query.NewOr(
@@ -1496,7 +1448,7 @@ func TestUseBM25Scoring(t *testing.T) {
 
 func testShardedStreamSearch(t *testing.T, q query.Q, ib *index.ShardBuilder, useDocumentRanks bool) []zoekt.FileMatch {
 	ss := newShardedSearcher(1)
-	searcher := searcherForTest(t, ib)
+	searcher := shardtest.Searcher(t, ib)
 	ss.replace(map[string]zoekt.Searcher{"r1": searcher})
 
 	var files []zoekt.FileMatch
@@ -1516,7 +1468,7 @@ func testShardedStreamSearch(t *testing.T, q query.Q, ib *index.ShardBuilder, us
 
 func testShardedSearch(t *testing.T, q query.Q, ib *index.ShardBuilder, useDocumentRanks bool) []zoekt.FileMatch {
 	ss := newShardedSearcher(1)
-	searcher := searcherForTest(t, ib)
+	searcher := shardtest.Searcher(t, ib)
 	ss.replace(map[string]zoekt.Searcher{"r1": searcher})
 
 	opts := zoekt.SearchOptions{}
@@ -1570,17 +1522,13 @@ func TestNewDirectorySearcher_empty(t *testing.T) {
 		}
 		t.Cleanup(ss.Close)
 
-		deadline := testDeadline(t, 10*time.Second)
-
 		// Wait for scanning of directory to be done. We should be returning
 		// non-zero crashes until then.
-		waitForPredicate(deadline, 10*time.Millisecond, func() bool {
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
 			res, err := ss.Search(ctx, &query.Const{Value: true}, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return res.Crashes == 0
-		})
+			require.NoError(c, err)
+			assert.Zero(c, res.Crashes)
+		}, 10*time.Second, 10*time.Millisecond)
 
 		test(t, ss)
 	})
@@ -1590,7 +1538,7 @@ func TestDirectorySearcherOptionsIndexFileOpener(t *testing.T) {
 	dir := t.TempDir()
 	writeShard := func(name string, repositoryID uint32) {
 		t.Helper()
-		builder := testShardBuilder(t, &zoekt.Repository{
+		builder := shardtest.Builder(t, &zoekt.Repository{
 			ID:   repositoryID,
 			Name: name,
 		}, index.Document{
@@ -1627,33 +1575,7 @@ func TestDirectorySearcherOptionsIndexFileOpener(t *testing.T) {
 	}
 
 	writeShard("added", 2)
-	deadline := testDeadline(t, 10*time.Second)
-	if !waitForPredicate(deadline, 10*time.Millisecond, func() bool {
-		return opens.Load() == 2
-	}) {
-		t.Fatalf("shard opens after watcher reload = %d, want 2", opens.Load())
-	}
-}
-
-// testDeadline returns the deadline for t, but ensures it is no longer than
-// maxTimeout away.
-func testDeadline(t *testing.T, maxTimeout time.Duration) time.Time {
-	deadline := time.Now().Add(maxTimeout)
-	if d, ok := t.Deadline(); ok && d.Before(deadline) {
-		// give 1s for us to do a final test run
-		deadline = d.Add(-time.Second)
-	}
-	return deadline
-}
-
-func waitForPredicate(deadline time.Time, tick time.Duration, pred func() bool) bool {
-	for time.Now().Before(deadline) {
-		if pred() {
-			return true
-		}
-
-		time.Sleep(tick)
-	}
-
-	return pred()
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.Equal(c, int32(2), opens.Load(), "shard opens after watcher reload")
+	}, 10*time.Second, 10*time.Millisecond)
 }

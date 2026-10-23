@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -12,6 +10,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
 )
@@ -21,8 +20,7 @@ func TestMerge(t *testing.T) {
 	require.NoError(t, err)
 	sort.Strings(v16Shards)
 
-	testShards, err := copyTestShards(t.TempDir(), v16Shards)
-	require.NoError(t, err)
+	testShards := testutil.CopyFiles(t, t.TempDir(), v16Shards...)
 	t.Log(testShards)
 
 	dir := t.TempDir()
@@ -54,8 +52,7 @@ func TestExplode(t *testing.T) {
 	require.NoError(t, err)
 	sort.Strings(v16Shards)
 
-	testShards, err := copyTestShards(t.TempDir(), v16Shards)
-	require.NoError(t, err)
+	testShards := testutil.CopyFiles(t, t.TempDir(), v16Shards...)
 	t.Log(testShards)
 
 	dir := t.TempDir()
@@ -115,34 +112,4 @@ func TestExplode(t *testing.T) {
 			require.Len(t, result.Files, c.wantResults)
 		})
 	}
-}
-
-func copyTestShards(dstDir string, srcShards []string) ([]string, error) {
-	var tmpShards []string
-	for _, s := range srcShards {
-		dst := filepath.Join(dstDir, filepath.Base(s))
-		tmpShards = append(tmpShards, dst)
-		if err := copyFile(s, dst); err != nil {
-			return nil, err
-		}
-	}
-	return tmpShards, nil
-}
-
-func copyFile(src, dst string) (err error) {
-	s, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer s.Close()
-
-	d, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(d, s); err != nil {
-		d.Close()
-		return err
-	}
-	return d.Close()
 }
