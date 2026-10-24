@@ -1123,6 +1123,41 @@ func TestSearchBoundedRepeatRegexp(t *testing.T) {
 	}
 }
 
+func TestSearchBM25ScoresAreDeterministic(t *testing.T) {
+	content := []byte("alpha beta beta gamma gamma gamma delta delta delta delta\n")
+	searcher := searcherForTest(t, testShardBuilder(t, nil,
+		Document{Name: "a.txt", Content: content},
+		Document{Name: "b.txt", Content: content},
+		// a longer file, so the average file length differs from len(content)
+		Document{Name: "c.txt", Content: bytes.Repeat([]byte("lorem ipsum\n"), 20)},
+	))
+	defer searcher.Close()
+
+	q, err := query.Parse("alpha or beta or gamma or delta")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fileScores := map[float64]bool{}
+	lineScores := map[float64]bool{}
+	for range 200 {
+		res, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{UseBM25Scoring: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Files) != 2 {
+			t.Fatalf("got %d files, want 2", len(res.Files))
+		}
+		for _, fm := range res.Files {
+			fileScores[fm.Score] = true
+			lineScores[fm.LineMatches[0].Score] = true
+		}
+	}
+	if len(fileScores) != 1 || len(lineScores) != 1 {
+		t.Fatalf("got %d distinct file scores and %d distinct line scores, want 1 each", len(fileScores), len(lineScores))
+	}
+}
+
 func TestSearchBM25MatchScores(t *testing.T) {
 	ctx := context.Background()
 	searcher := searcherForTest(t, testShardBuilder(t, nil,
@@ -4294,6 +4329,20 @@ func BenchmarkScoreChunkMatches(b *testing.B) {
 
 			matches := sres.Files
 			if len(matches) == 0 {
+				b.Fatalf("want file index, got none")
+			}
+		}
+	})
+
+	b.Run("score large ChunkMatch with BM25", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for b.Loop() {
+			sres, err := searcher.Search(ctx, q, &zoekt.SearchOptions{ChunkMatches: true, NumContextLines: 1, UseBM25Scoring: true})
+			if err != nil {
+				b.Fatal(err)
+			}
+			if len(sres.Files) == 0 {
 				b.Fatalf("want file index, got none")
 			}
 		}
