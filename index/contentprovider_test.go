@@ -8,6 +8,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/sourcegraph/zoekt"
 )
 
 func getNewlines(data []byte) newlines {
@@ -223,67 +225,74 @@ func TestChunkMatches(t *testing.T) {
 		candidateMatches: []*candidateMatch{match_0_2},
 		numContextLines:  0,
 		want: []candidateChunk{{
-			firstLine:  1,
-			minOffset:  0,
-			lastLine:   1,
-			maxOffset:  2,
-			candidates: []*candidateMatch{match_0_2},
+			firstCandidate: 0,
+			endCandidate:   1,
+			firstLine:      1,
+			minOffset:      0,
+			lastLine:       1,
+			maxOffset:      2,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{match_0_2},
 		numContextLines:  5,
 		want: []candidateChunk{{
-			firstLine:  1,
-			minOffset:  0,
-			lastLine:   1,
-			maxOffset:  2,
-			candidates: []*candidateMatch{match_0_2},
+			firstCandidate: 0,
+			endCandidate:   1,
+			firstLine:      1,
+			minOffset:      0,
+			lastLine:       1,
+			maxOffset:      2,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{match_0_2, match_6_10},
 		numContextLines:  0,
 		want: []candidateChunk{{
-			firstLine:  1,
-			minOffset:  0,
-			lastLine:   1,
-			maxOffset:  10,
-			candidates: []*candidateMatch{match_0_2, match_6_10},
+			firstCandidate: 0,
+			endCandidate:   2,
+			firstLine:      1,
+			minOffset:      0,
+			lastLine:       1,
+			maxOffset:      10,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{match_0_2, match_10_16},
 		numContextLines:  0,
 		want: []candidateChunk{{
-			firstLine:  1,
-			minOffset:  0,
-			lastLine:   2,
-			maxOffset:  16,
-			candidates: []*candidateMatch{match_0_2, match_10_16},
+			firstCandidate: 0,
+			endCandidate:   2,
+			firstLine:      1,
+			minOffset:      0,
+			lastLine:       2,
+			maxOffset:      16,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{match_0_2, match_19_42},
 		numContextLines:  0,
 		want: []candidateChunk{{
-			firstLine:  1,
-			minOffset:  0,
-			lastLine:   1,
-			maxOffset:  2,
-			candidates: []*candidateMatch{match_0_2},
+			firstCandidate: 0,
+			endCandidate:   1,
+			firstLine:      1,
+			minOffset:      0,
+			lastLine:       1,
+			maxOffset:      2,
 		}, {
-			firstLine:  2,
-			minOffset:  19,
-			lastLine:   4,
-			maxOffset:  42,
-			candidates: []*candidateMatch{match_19_42},
+			firstCandidate: 1,
+			endCandidate:   2,
+			firstLine:      2,
+			minOffset:      19,
+			lastLine:       4,
+			maxOffset:      42,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{match_0_2, match_19_42},
 		numContextLines:  1,
 		want: []candidateChunk{{
-			firstLine:  1,
-			minOffset:  0,
-			lastLine:   4,
-			maxOffset:  42,
-			candidates: []*candidateMatch{match_0_2, match_19_42},
+			firstCandidate: 0,
+			endCandidate:   2,
+			firstLine:      1,
+			minOffset:      0,
+			lastLine:       4,
+			maxOffset:      42,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{
@@ -291,23 +300,26 @@ func TestChunkMatches(t *testing.T) {
 		},
 		numContextLines: 0,
 		want: []candidateChunk{{
-			firstLine:  1,
-			minOffset:  0,
-			lastLine:   1,
-			maxOffset:  2,
-			candidates: []*candidateMatch{match_0_2},
+			firstCandidate: 0,
+			endCandidate:   1,
+			firstLine:      1,
+			minOffset:      0,
+			lastLine:       1,
+			maxOffset:      2,
 		}, {
-			firstLine:  2,
-			minOffset:  19,
-			lastLine:   4,
-			maxOffset:  48,
-			candidates: []*candidateMatch{match_19_42, match_45_48},
+			firstCandidate: 1,
+			endCandidate:   3,
+			firstLine:      2,
+			minOffset:      19,
+			lastLine:       4,
+			maxOffset:      48,
 		}, {
-			firstLine:  6,
-			minOffset:  71,
-			lastLine:   6,
-			maxOffset:  72,
-			candidates: []*candidateMatch{match_71_72},
+			firstCandidate: 3,
+			endCandidate:   4,
+			firstLine:      6,
+			minOffset:      71,
+			lastLine:       6,
+			maxOffset:      72,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{
@@ -315,19 +327,110 @@ func TestChunkMatches(t *testing.T) {
 		},
 		numContextLines: 100,
 		want: []candidateChunk{{
-			firstLine:  1,
-			minOffset:  0,
-			lastLine:   6,
-			maxOffset:  72,
-			candidates: []*candidateMatch{match_0_2, match_19_42, match_45_48, match_71_72},
+			firstCandidate: 0,
+			endCandidate:   4,
+			firstLine:      1,
+			minOffset:      0,
+			lastLine:       6,
+			maxOffset:      72,
 		}},
 	}}
 
 	newlines := getNewlines(content)
-	for _, tt := range cases {
-		t.Run("", func(t *testing.T) {
-			got := chunkCandidates(tt.candidateMatches, newlines, tt.numContextLines)
+	for i, tt := range cases {
+		t.Run(fmt.Sprintf("case_%d", i), func(t *testing.T) {
+			got, _ := chunkCandidates(tt.candidateMatches, newlines, content, tt.numContextLines)
 			if diff := cmp.Diff(fmt.Sprintf("%#v\n", tt.want), fmt.Sprintf("%#v\n", got)); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestLineNumberCursor(t *testing.T) {
+	for _, content := range []string{"", "one", "one\ntwo", "one\ntwo\n", "\n\n", "é\nmiddle\nend"} {
+		t.Run(fmt.Sprintf("len_%d", len(content)), func(t *testing.T) {
+			nls := getNewlines([]byte(content))
+			sequences := [][]uint32{{}}
+			for offset := uint32(0); offset <= uint32(len(content)); offset++ {
+				sequences[0] = append(sequences[0], offset)
+			}
+			sequences = append(sequences, []uint32{0, uint32(len(content))})
+
+			for _, offsets := range sequences {
+				cursor := lineNumberCursor{newlines: nls}
+				for _, offset := range offsets {
+					if got, want := cursor.atOffset(offset), nls.atOffset(offset); got != want {
+						t.Fatalf("atOffset(%d) = %d, want %d for %q", offset, got, want, content)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestFillContentChunkMatchesSortsUnorderedMatches(t *testing.T) {
+	content := []byte("zero\none\ntwo\n")
+	searcher := searcherForTest(t, testShardBuilder(t, nil, Document{Name: "f1", Content: content}))
+	id := searcher.(*indexData)
+	cp := &contentProvider{id: id, stats: &zoekt.Stats{}}
+	cp.setDocument(0)
+
+	first := &candidateMatch{byteOffset: 0, byteMatchSz: 4}
+	last := &candidateMatch{byteOffset: 9, byteMatchSz: 3}
+	unsorted := []*candidateMatch{last, first}
+	got := cp.fillContentChunkMatches(unsorted, 0, "", &zoekt.SearchOptions{})
+	want := cp.fillContentChunkMatches([]*candidateMatch{first, last}, 0, "", &zoekt.SearchOptions{})
+
+	if unsorted[0] != first {
+		t.Fatal("unsorted matches were not sorted before chunk construction")
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestChunkCandidateRanges(t *testing.T) {
+	cases := []struct {
+		name       string
+		content    []byte
+		candidates []*candidateMatch
+		want       []zoekt.Range
+	}{
+		{
+			name:    "newline and eof endpoints",
+			content: []byte("é\n\nlast\n"),
+			candidates: []*candidateMatch{
+				{byteOffset: 0, byteMatchSz: 0},
+				{byteOffset: 2, byteMatchSz: 1},
+				{byteOffset: 3, byteMatchSz: 0},
+				{byteOffset: 4, byteMatchSz: 5},
+				{byteOffset: 9, byteMatchSz: 0},
+			},
+			want: []zoekt.Range{
+				{Start: zoekt.Location{ByteOffset: 0, LineNumber: 1, Column: 1}, End: zoekt.Location{ByteOffset: 0, LineNumber: 1, Column: 1}},
+				{Start: zoekt.Location{ByteOffset: 2, LineNumber: 1, Column: 2}, End: zoekt.Location{ByteOffset: 3, LineNumber: 1, Column: 3}},
+				{Start: zoekt.Location{ByteOffset: 3, LineNumber: 2, Column: 1}, End: zoekt.Location{ByteOffset: 3, LineNumber: 2, Column: 1}},
+				{Start: zoekt.Location{ByteOffset: 4, LineNumber: 3, Column: 1}, End: zoekt.Location{ByteOffset: 9, LineNumber: 3, Column: 6}},
+				{Start: zoekt.Location{ByteOffset: 9, LineNumber: 4, Column: 1}, End: zoekt.Location{ByteOffset: 9, LineNumber: 4, Column: 1}},
+			},
+		},
+		{
+			name:    "multiline match ending at eof",
+			content: []byte("é\nmiddle\nend"),
+			candidates: []*candidateMatch{
+				{byteOffset: 0, byteMatchSz: 13},
+			},
+			want: []zoekt.Range{
+				{Start: zoekt.Location{ByteOffset: 0, LineNumber: 1, Column: 1}, End: zoekt.Location{ByteOffset: 13, LineNumber: 3, Column: 4}},
+			},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			_, got := chunkCandidates(tt.candidates, getNewlines(tt.content), tt.content, 0)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Fatal(diff)
 			}
 		})

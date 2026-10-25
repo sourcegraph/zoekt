@@ -39,9 +39,7 @@ type chunkScore struct {
 // scoreChunk calculates the score for each line in the chunk based on its candidate matches, and returns the score of
 // the best-scoring line, along with its line number.
 // Invariant: there should be at least one input candidate, len(ms) > 0.
-func (p *contentProvider) scoreChunk(ms []*candidateMatch, language string, opts *zoekt.SearchOptions) (chunkScore, []*zoekt.Symbol) {
-	nl := p.newlines()
-
+func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range, language string, opts *zoekt.SearchOptions) (chunkScore, []*zoekt.Symbol) {
 	var bestScore lineScore
 	bestLine := 0
 	var symbolInfo []*zoekt.Symbol
@@ -51,7 +49,7 @@ func (p *contentProvider) scoreChunk(ms []*candidateMatch, language string, opts
 	for i, m := range ms {
 		lineNumber := -1
 		if !m.fileName {
-			lineNumber = nl.atOffset(m.byteOffset)
+			lineNumber = int(ranges[i].Start.LineNumber)
 		}
 
 		// If this match represents a new line, then score the previous line and update 'start'.
