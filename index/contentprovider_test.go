@@ -225,74 +225,67 @@ func TestChunkMatches(t *testing.T) {
 		candidateMatches: []*candidateMatch{match_0_2},
 		numContextLines:  0,
 		want: []candidateChunk{{
-			firstCandidate: 0,
-			endCandidate:   1,
-			firstLine:      1,
-			minOffset:      0,
-			lastLine:       1,
-			maxOffset:      2,
+			endCandidate: 1,
+			firstLine:    1,
+			minOffset:    0,
+			lastLine:     1,
+			maxOffset:    2,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{match_0_2},
 		numContextLines:  5,
 		want: []candidateChunk{{
-			firstCandidate: 0,
-			endCandidate:   1,
-			firstLine:      1,
-			minOffset:      0,
-			lastLine:       1,
-			maxOffset:      2,
+			endCandidate: 1,
+			firstLine:    1,
+			minOffset:    0,
+			lastLine:     1,
+			maxOffset:    2,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{match_0_2, match_6_10},
 		numContextLines:  0,
 		want: []candidateChunk{{
-			firstCandidate: 0,
-			endCandidate:   2,
-			firstLine:      1,
-			minOffset:      0,
-			lastLine:       1,
-			maxOffset:      10,
+			endCandidate: 2,
+			firstLine:    1,
+			minOffset:    0,
+			lastLine:     1,
+			maxOffset:    10,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{match_0_2, match_10_16},
 		numContextLines:  0,
 		want: []candidateChunk{{
-			firstCandidate: 0,
-			endCandidate:   2,
-			firstLine:      1,
-			minOffset:      0,
-			lastLine:       2,
-			maxOffset:      16,
+			endCandidate: 2,
+			firstLine:    1,
+			minOffset:    0,
+			lastLine:     2,
+			maxOffset:    16,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{match_0_2, match_19_42},
 		numContextLines:  0,
 		want: []candidateChunk{{
-			firstCandidate: 0,
-			endCandidate:   1,
-			firstLine:      1,
-			minOffset:      0,
-			lastLine:       1,
-			maxOffset:      2,
+			endCandidate: 1,
+			firstLine:    1,
+			minOffset:    0,
+			lastLine:     1,
+			maxOffset:    2,
 		}, {
-			firstCandidate: 1,
-			endCandidate:   2,
-			firstLine:      2,
-			minOffset:      19,
-			lastLine:       4,
-			maxOffset:      42,
+			endCandidate: 2,
+			firstLine:    2,
+			minOffset:    19,
+			lastLine:     4,
+			maxOffset:    42,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{match_0_2, match_19_42},
 		numContextLines:  1,
 		want: []candidateChunk{{
-			firstCandidate: 0,
-			endCandidate:   2,
-			firstLine:      1,
-			minOffset:      0,
-			lastLine:       4,
-			maxOffset:      42,
+			endCandidate: 2,
+			firstLine:    1,
+			minOffset:    0,
+			lastLine:     4,
+			maxOffset:    42,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{
@@ -300,26 +293,23 @@ func TestChunkMatches(t *testing.T) {
 		},
 		numContextLines: 0,
 		want: []candidateChunk{{
-			firstCandidate: 0,
-			endCandidate:   1,
-			firstLine:      1,
-			minOffset:      0,
-			lastLine:       1,
-			maxOffset:      2,
+			endCandidate: 1,
+			firstLine:    1,
+			minOffset:    0,
+			lastLine:     1,
+			maxOffset:    2,
 		}, {
-			firstCandidate: 1,
-			endCandidate:   3,
-			firstLine:      2,
-			minOffset:      19,
-			lastLine:       4,
-			maxOffset:      48,
+			endCandidate: 3,
+			firstLine:    2,
+			minOffset:    19,
+			lastLine:     4,
+			maxOffset:    48,
 		}, {
-			firstCandidate: 3,
-			endCandidate:   4,
-			firstLine:      6,
-			minOffset:      71,
-			lastLine:       6,
-			maxOffset:      72,
+			endCandidate: 4,
+			firstLine:    6,
+			minOffset:    71,
+			lastLine:     6,
+			maxOffset:    72,
 		}},
 	}, {
 		candidateMatches: []*candidateMatch{
@@ -327,12 +317,11 @@ func TestChunkMatches(t *testing.T) {
 		},
 		numContextLines: 100,
 		want: []candidateChunk{{
-			firstCandidate: 0,
-			endCandidate:   4,
-			firstLine:      1,
-			minOffset:      0,
-			lastLine:       6,
-			maxOffset:      72,
+			endCandidate: 4,
+			firstLine:    1,
+			minOffset:    0,
+			lastLine:     6,
+			maxOffset:    72,
 		}},
 	}}
 
@@ -369,7 +358,7 @@ func TestLineNumberCursor(t *testing.T) {
 	}
 }
 
-func TestFillContentChunkMatchesSortsUnorderedMatches(t *testing.T) {
+func TestFillContentChunkMatchesSortsAndIsolatesRanges(t *testing.T) {
 	content := []byte("zero\none\ntwo\n")
 	searcher := searcherForTest(t, testShardBuilder(t, nil, Document{Name: "f1", Content: content}))
 	id := searcher.(*indexData)
@@ -387,6 +376,14 @@ func TestFillContentChunkMatchesSortsUnorderedMatches(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatal(diff)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d chunks, want 2", len(got))
+	}
+	secondRange := got[1].Ranges[0]
+	got[0].Ranges = append(got[0].Ranges, zoekt.Range{Start: zoekt.Location{ByteOffset: 99}})
+	if diff := cmp.Diff(secondRange, got[1].Ranges[0]); diff != "" {
+		t.Fatalf("appending to one chunk's ranges changed the next chunk: %s", diff)
 	}
 }
 

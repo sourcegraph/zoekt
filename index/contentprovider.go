@@ -401,9 +401,10 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 	newlines := p.newlines()
 	chunks, ranges := chunkCandidates(ms, newlines, data, numContextLines)
 	chunkMatches := make([]zoekt.ChunkMatch, 0, len(chunks))
+	candidateStart := 0
 	for _, chunk := range chunks {
-		chunkCandidates := ms[chunk.firstCandidate:chunk.endCandidate]
-		chunkRanges := ranges[chunk.firstCandidate:chunk.endCandidate]
+		chunkCandidates := ms[candidateStart:chunk.endCandidate]
+		chunkRanges := ranges[candidateStart:chunk.endCandidate:chunk.endCandidate]
 
 		firstLineNumber := max(int(chunk.firstLine)-numContextLines, 1)
 		firstLineStart := newlines.lineStart(firstLineNumber)
@@ -423,17 +424,17 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 			Score:         chunkScore.score,
 			DebugScore:    chunkScore.debugScore,
 		})
+		candidateStart = chunk.endCandidate
 	}
 	return chunkMatches
 }
 
 type candidateChunk struct {
-	firstCandidate int    // 0-based, inclusive index into the sorted candidate slice
-	endCandidate   int    // 0-based, exclusive index into the sorted candidate slice
-	firstLine      uint32 // 1-based, inclusive
-	lastLine       uint32 // 1-based, inclusive
-	minOffset      uint32 // 0-based, inclusive
-	maxOffset      uint32 // 0-based, exclusive
+	endCandidate int    // 0-based, exclusive index into the sorted candidate slice
+	firstLine    uint32 // 1-based, inclusive
+	lastLine     uint32 // 1-based, inclusive
+	minOffset    uint32 // 0-based, inclusive
+	maxOffset    uint32 // 0-based, exclusive
 }
 
 // lineNumberCursor resolves nondecreasing offsets, reusing the current line and
@@ -507,12 +508,11 @@ func chunkCandidates(ms []*candidateMatch, newlines newlines, data []byte, numCo
 			}
 		} else {
 			chunks = append(chunks, candidateChunk{
-				firstCandidate: i,
-				endCandidate:   i + 1,
-				firstLine:      uint32(firstLine),
-				lastLine:       uint32(lastLine),
-				minOffset:      startOffset,
-				maxOffset:      endOffset,
+				endCandidate: i + 1,
+				firstLine:    uint32(firstLine),
+				lastLine:     uint32(lastLine),
+				minOffset:    startOffset,
+				maxOffset:    endOffset,
 			})
 		}
 	}

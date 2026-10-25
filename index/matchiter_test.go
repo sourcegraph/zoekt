@@ -28,7 +28,7 @@ func TestMatchSize(t *testing.T) {
 		size: 80,
 	}, {
 		v:    candidateChunk{},
-		size: 32,
+		size: 24,
 	}}
 	for _, c := range cases {
 		got := reflect.TypeOf(c.v).Size()
