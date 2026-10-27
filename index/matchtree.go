@@ -1071,7 +1071,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			return d.newMatchTree(s.Child)
 		}
 		if s.Type != query.TypeFileName {
-			return nil, fmt.Errorf("%s must be evaluated before searching a shard", s)
+			return nil, fmt.Errorf("type:repo must be rewritten before searching a shard (see search.typeRepoSearcher)")
 		}
 
 		ct, err := d.newMatchTree(s.Child)
