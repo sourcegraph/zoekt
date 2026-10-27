@@ -1160,6 +1160,30 @@ func TestSearchBoundedRepeatRegexp(t *testing.T) {
 	}
 }
 
+// A regexp tree can be valid while its string form is not: Simplify expands
+// a{1,501} into nesting deeper than Go's parser allows. Search must return
+// an error for such a query instead of panicking.
+func TestSearchUncompilableRegexp(t *testing.T) {
+	re, err := syntax.Parse("a{1,501}", syntax.Perl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re = re.Simplify()
+
+	searcher := searcherForTest(t, testShardBuilder(t, nil, Document{Name: "f", Content: []byte("aaa")}))
+	for name, q := range map[string]query.Q{
+		"content": &query.Regexp{Regexp: re, Content: true},
+		"file":    &query.Regexp{Regexp: re, FileName: true},
+		"sym":     &query.Symbol{Expr: &query.Regexp{Regexp: re}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{}); err == nil {
+				t.Fatal("want error")
+			}
+		})
+	}
+}
+
 func TestSearchBM25MatchScores(t *testing.T) {
 	ctx := context.Background()
 	searcher := searcherForTest(t, testShardBuilder(t, nil,
