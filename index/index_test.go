@@ -431,6 +431,43 @@ func searcherForTest(t testing.TB, b *ShardBuilder) zoekt.Searcher {
 	return searcher
 }
 
+func TestSearchTypeQuery(t *testing.T) {
+	searcher := searcherForTest(t, testShardBuilder(t, nil,
+		Document{Name: "foo.go", Content: []byte("func foo() {}")},
+	))
+	defer searcher.Close()
+
+	for _, tc := range []struct {
+		q         string
+		wantFiles int
+		wantErr   bool
+	}{
+		{q: "type:file foo", wantFiles: 1},
+		{q: "type:filematch foo", wantFiles: 1},
+		{q: "type:repo foo", wantErr: true},
+	} {
+		t.Run(tc.q, func(t *testing.T) {
+			q, err := query.Parse(tc.q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("want error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Files) != tc.wantFiles {
+				t.Fatalf("got %d files, want %d", len(res.Files), tc.wantFiles)
+			}
+		})
+	}
+}
+
 func TestCaseFold(t *testing.T) {
 	b := testShardBuilder(t, nil,
 		Document{Name: "f1", Content: []byte("I love BaNaNAS.")},
@@ -1155,6 +1192,30 @@ func TestSearchBM25ScoresAreDeterministic(t *testing.T) {
 	}
 	if len(fileScores) != 1 || len(lineScores) != 1 {
 		t.Fatalf("got %d distinct file scores and %d distinct line scores, want 1 each", len(fileScores), len(lineScores))
+	}
+}
+
+// A regexp tree can be valid while its string form is not: Simplify expands
+// a{1,501} into nesting deeper than Go's parser allows. Search must return
+// an error for such a query instead of panicking.
+func TestSearchUncompilableRegexp(t *testing.T) {
+	re, err := syntax.Parse("a{1,501}", syntax.Perl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re = re.Simplify()
+
+	searcher := searcherForTest(t, testShardBuilder(t, nil, Document{Name: "f", Content: []byte("aaa")}))
+	for name, q := range map[string]query.Q{
+		"content": &query.Regexp{Regexp: re, Content: true},
+		"file":    &query.Regexp{Regexp: re, FileName: true},
+		"sym":     &query.Symbol{Expr: &query.Regexp{Regexp: re}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{}); err == nil {
+				t.Fatal("want error")
+			}
+		})
 	}
 }
 

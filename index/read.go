@@ -366,7 +366,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	d.runeDocSections = unmarshalDocSections(blob, nil)
+	d.runeDocSections, err = unmarshalDocSections(blob, nil)
+	if err != nil {
+		return nil, fmt.Errorf("runeDocSections: %w", err)
+	}
 
 	var runeOffsets, fileNameRuneOffsets []uint32
 
@@ -377,10 +380,12 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		toc.nameEndRunes:    &d.fileNameEndRunes,
 		toc.fileEndRunes:    &d.fileEndRunes,
 	} {
-		if blob, err := d.readSectionBlob(sect); err != nil {
+		blob, err := d.readSectionBlob(sect)
+		if err != nil {
 			return nil, err
-		} else {
-			*dest = fromSizedDeltas(blob, nil)
+		}
+		if *dest, err = fromSizedDeltas(blob, nil); err != nil {
+			return nil, err
 		}
 	}
 
@@ -414,7 +419,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		if err != nil {
 			return nil, err
 		}
-		d.repos = fromSizedDeltas16(blob, nil)
+		d.repos, err = fromSizedDeltas16(blob, nil)
+		if err != nil {
+			return nil, fmt.Errorf("repos: %w", err)
+		}
 	} else {
 		// every document is for repo index 0 (default value of uint16)
 		d.repos = make([]uint16, len(d.fileBranchMasks))
@@ -535,7 +543,10 @@ func (d *indexData) readNewlines(i uint32, buf []uint32) ([]uint32, uint32, erro
 		return nil, 0, err
 	}
 
-	nl := fromSizedDeltas(blob, buf)
+	nl, err := fromSizedDeltas(blob, buf)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	// can be nil if buf is nil and there are no doc sections. However, we rely
 	// on it being non-nil to cache the read.
@@ -555,7 +566,10 @@ func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]Document
 		return nil, 0, err
 	}
 
-	ds := unmarshalDocSections(blob, buf)
+	ds, err := unmarshalDocSections(blob, buf)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	// can be nil if buf is nil and there are no doc sections. However, we rely
 	// on it being non-nil to cache the read.
@@ -570,6 +584,9 @@ func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]Document
 // results coming from this searcher are valid only for the lifetime
 // of the Searcher itself, ie. []byte members should be copied into
 // fresh buffers if the result is to survive closing the shard.
+//
+// The searcher does not evaluate type:repo, since that depends on every
+// shard; callers must rewrite it first, as search.typeRepoSearcher does.
 func NewSearcher(r IndexFile) (zoekt.Searcher, error) {
 	rd := &reader{r: r}
 

@@ -17,6 +17,7 @@ package index
 import (
 	"cmp"
 	"encoding/binary"
+	"errors"
 	"math"
 	"sort"
 	"unicode"
@@ -241,8 +242,16 @@ func marshalDocSections(secs []DocumentSection) []byte {
 	return toSizedDeltas(ints)
 }
 
-func unmarshalDocSections(data []byte, ds []DocumentSection) []DocumentSection {
+// errCorruptVarint is returned by the delta decoders when binary.Uvarint
+// reports a truncated or overflowing varint. Without this check a truncated
+// varint (n == 0) never advances the input, so the decode loop never ends.
+var errCorruptVarint = errors.New("truncated or overflowing varint")
+
+func unmarshalDocSections(data []byte, ds []DocumentSection) ([]DocumentSection, error) {
 	sz, m := binary.Uvarint(data)
+	if m < 0 {
+		return nil, errCorruptVarint
+	}
 	data = data[m:]
 
 	if cap(ds) < int(sz)/2 {
@@ -258,18 +267,24 @@ func unmarshalDocSections(data []byte, ds []DocumentSection) []DocumentSection {
 		var d DocumentSection
 
 		delta, m := binary.Uvarint(data)
+		if m <= 0 {
+			return nil, errCorruptVarint
+		}
 		last += uint32(delta)
 		data = data[m:]
 		d.Start = last
 
 		delta, m = binary.Uvarint(data)
+		if m <= 0 {
+			return nil, errCorruptVarint
+		}
 		last += uint32(delta)
 		data = data[m:]
 		d.End = last
 
 		ds = append(ds, d)
 	}
-	return ds
+	return ds, nil
 }
 
 func toSizedDeltas(offsets []uint32) []byte {
@@ -291,8 +306,11 @@ func toSizedDeltas(offsets []uint32) []byte {
 	return deltas
 }
 
-func fromSizedDeltas(data []byte, ps []uint32) []uint32 {
+func fromSizedDeltas(data []byte, ps []uint32) ([]uint32, error) {
 	sz, m := binary.Uvarint(data)
+	if m < 0 {
+		return nil, errCorruptVarint
+	}
 	data = data[m:]
 
 	if cap(ps) < int(sz) {
@@ -304,12 +322,15 @@ func fromSizedDeltas(data []byte, ps []uint32) []uint32 {
 	var last uint32
 	for len(data) > 0 {
 		delta, m := binary.Uvarint(data)
+		if m <= 0 {
+			return nil, errCorruptVarint
+		}
 		offset := last + uint32(delta)
 		last = offset
 		data = data[m:]
 		ps = append(ps, offset)
 	}
-	return ps
+	return ps, nil
 }
 
 func toSizedDeltas16(offsets []uint16) []byte {
@@ -331,8 +352,11 @@ func toSizedDeltas16(offsets []uint16) []byte {
 	return deltas
 }
 
-func fromSizedDeltas16(data []byte, ps []uint16) []uint16 {
+func fromSizedDeltas16(data []byte, ps []uint16) ([]uint16, error) {
 	sz, m := binary.Uvarint(data)
+	if m < 0 {
+		return nil, errCorruptVarint
+	}
 	data = data[m:]
 
 	if cap(ps) < int(sz) {
@@ -344,15 +368,18 @@ func fromSizedDeltas16(data []byte, ps []uint16) []uint16 {
 	var last uint16
 	for len(data) > 0 {
 		delta, m := binary.Uvarint(data)
+		if m <= 0 {
+			return nil, errCorruptVarint
+		}
 		offset := last + uint16(delta)
 		last = offset
 		data = data[m:]
 		ps = append(ps, offset)
 	}
-	return ps
+	return ps, nil
 }
 
-func fromDeltas(data []byte, buf []uint32) []uint32 {
+func fromDeltas(data []byte, buf []uint32) ([]uint32, error) {
 	buf = buf[:0]
 	if cap(buf) < len(data)/2 {
 		buf = make([]uint32, 0, len(data)/2)
@@ -361,12 +388,15 @@ func fromDeltas(data []byte, buf []uint32) []uint32 {
 	var last uint32
 	for len(data) > 0 {
 		delta, m := binary.Uvarint(data)
+		if m <= 0 {
+			return nil, errCorruptVarint
+		}
 		offset := last + uint32(delta)
 		last = offset
 		data = data[m:]
 		buf = append(buf, offset)
 	}
-	return buf
+	return buf, nil
 }
 
 type runeOffsetCorrection struct {

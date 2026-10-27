@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-enry/go-enry/v2"
 	enrydata "github.com/go-enry/go-enry/v2/data"
+	"github.com/go-enry/go-enry/v2/data/rule"
+	"github.com/grafana/regexp"
 )
 
 // GetLanguageByNameOrAlias returns the standardized name for
@@ -113,6 +115,10 @@ var sgExtraLangsForExts = map[string]string{
 
 var sgExtraContentHeuristics = map[string]*enrydata.Heuristics{
 	".c": enrydata.ContentHeuristics[".h"],
+	".cls": {
+		rule.Or(rule.MatchingLanguages("TeX"), regexp.MustCompile(`\A[%\\]`)),
+		rule.Always(rule.MatchingLanguages("Apex")),
+	},
 }
 
 // overrideAmbiguousExtensionsMap represents extensions which are ambiguous according to
