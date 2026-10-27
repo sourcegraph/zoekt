@@ -121,6 +121,9 @@ func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string) (map[string]pl
 		if err == io.EOF {
 			break
 		}
+		if err == object.ErrMaxTreeDepth {
+			return nil, fmt.Errorf("TreeWalker.Next: %w", err)
+		}
 		if err := rw.handleEntry(name, &entry, branch, subRepoVersions, ig); err != nil {
 			return nil, fmt.Errorf("handleEntry: %w", err)
 		}
