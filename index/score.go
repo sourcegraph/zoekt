@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/go-enry/go-enry/v2"
@@ -218,15 +219,8 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 	lineLength := nl.lineStart(lineNumber+1) - nl.lineStart(lineNumber)
 	L := float64(lineLength) / 100.0
 
-	score := 0.0
 	tfs := p.calculateTermFrequency(ms, false) // ignore file priority, since we're just scoring within a single file
-	// sum in candidate order, not map order, so the float sum is the same on every search
-	for _, m := range ms {
-		if f, ok := tfs[string(m.substrLowered)]; ok {
-			score += tfScore(k, b, L, f)
-			delete(tfs, string(m.substrLowered))
-		}
-	}
+	score, _ := sumTFScores(k, b, L, tfs)
 
 	// Check if any index comes from a symbol match tree, and if so hydrate in symbol information
 	var symbolInfo []*zoekt.Symbol
@@ -243,6 +237,26 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 
 	score = boostScore(score, ms)
 	return score, symbolInfo
+}
+
+// sumTFScores sums the BM25 term frequency scores of tf. Floating-point addition
+// is not associative, so it adds the scores in ascending order of frequency. This
+// makes the result depend only on L and the frequencies, not on map iteration
+// order or on where the terms occur. It also returns the sum of the frequencies.
+func sumTFScores(k, b, L float64, tf map[string]int) (float64, int) {
+	var buf [16]int // stack space for the common case of few terms
+	fs := buf[:0]
+	for _, f := range tf {
+		fs = append(fs, f)
+	}
+	slices.Sort(fs)
+
+	score, sumTF := 0.0, 0
+	for _, f := range fs {
+		sumTF += f
+		score += tfScore(k, b, L, f)
+	}
+	return score, sumTF
 }
 
 // tfScore is the term frequency score for BM25.
@@ -383,16 +397,7 @@ func (d *indexData) scoreFileBM25(fileMatch *zoekt.FileMatch, doc uint32, cands 
 
 	L := fileLength / averageFileLength
 
-	bm25Score := 0.0
-	sumTF := 0 // Just for debugging
-	// sum in candidate order, not map order, so the float sum is the same on every search
-	for _, m := range cands {
-		if f, ok := tf[string(m.substrLowered)]; ok {
-			sumTF += f
-			bm25Score += tfScore(k, b, L, f)
-			delete(tf, string(m.substrLowered))
-		}
-	}
+	bm25Score, sumTF := sumTFScores(k, b, L, tf)
 
 	score := boostScore(bm25Score, cands)
 	boosted := score != bm25Score
