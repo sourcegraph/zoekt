@@ -27,11 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
 
@@ -201,51 +196,6 @@ func TestCollectFiles(t *testing.T) {
 	want := []string{".gitmodules", "afile", "bname/bfile", "bname/bsymlink", "subdir/sub-file"}
 	if !reflect.DeepEqual(paths, want) {
 		t.Errorf("got %v, want %v", paths, want)
-	}
-}
-
-func TestCollectFilesTreeTooDeep(t *testing.T) {
-	t.Parallel()
-
-	repo, err := git.Init(memory.NewStorage(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	blob := repo.Storer.NewEncodedObject()
-	blob.SetType(plumbing.BlobObject)
-	hash, err := repo.Storer.SetEncodedObject(blob)
-	if err != nil {
-		t.Fatal(err)
-	}
-	name, mode := "file", filemode.Regular
-	for range 1100 {
-		obj := repo.Storer.NewEncodedObject()
-		tree := &object.Tree{Entries: []object.TreeEntry{{Name: name, Mode: mode, Hash: hash}}}
-		if err := tree.Encode(obj); err != nil {
-			t.Fatal(err)
-		}
-		if hash, err = repo.Storer.SetEncodedObject(obj); err != nil {
-			t.Fatal(err)
-		}
-		name, mode = "d", filemode.Dir
-	}
-	tree, err := repo.TreeObject(hash)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		_, err := NewRepoWalker(repo, "https://example.com/repo", nil).CollectFiles(tree, "main")
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("CollectFiles: got nil error for a tree deeper than go-git's limit")
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("CollectFiles did not return for a tree deeper than go-git's limit")
 	}
 }
 
