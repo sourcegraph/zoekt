@@ -843,7 +843,7 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	data := cp.data(t.fileName)
 	// For file content, use hybridRegexp which dispatches to go-re2 when
 	// len(data) >= ZOEKT_RE2_THRESHOLD_BYTES. For filename matching, use
-	// grafana/regexp directly: filenames are always short, so the WASM
+	// grafana/regexp directly: filenames are always short, so the cgo
 	// call overhead of go-re2 outweighs any benefit.
 	var idxs [][]int
 	if t.fileName {

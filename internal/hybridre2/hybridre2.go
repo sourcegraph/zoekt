@@ -14,16 +14,20 @@
 
 // Package hybridre2 provides a hybrid regex engine that switches between
 // grafana/regexp (an optimized fork of Go's stdlib regexp) and
-// wasilibs/go-re2 (RE2 via WebAssembly) based on input size.
+// wasilibs/go-re2 (RE2 via cgo) based on input size.
 //
 // Motivation: Go's regexp engine lacks a lazy DFA, making it O(n·m) for
 // hard patterns. RE2's lazy DFA provides linear-time matching, which is
 // dramatically faster for large inputs (>32KB) or complex patterns. For
-// small inputs the WASM call overhead of go-re2 exceeds the savings,
+// small inputs the cgo call overhead of go-re2 exceeds the savings,
 // so grafana/regexp remains the better choice there.
 //
 // The threshold is controlled by the ZOEKT_RE2_THRESHOLD_BYTES environment
-// variable, read once at program startup:
+// variable, read once on the first Compile. It only takes effect in binaries
+// built with -tags re2_cgo (which requires CGO_ENABLED=1, the RE2 and Abseil
+// development libraries, pkg-config and a C++ compiler); default builds do
+// not link go-re2 and ignore it, logging a warning if it is set to a
+// non-negative value:
 //
 //   - -1 (default): disabled, always use grafana/regexp
 //   - 0: always use go-re2
@@ -32,9 +36,10 @@
 // # Known tradeoffs
 //
 // Memory: each Regexp holds compiled state for both engines when RE2 is
-// enabled. Patterns are compiled per-search (not cached globally), so under
-// high concurrency with many unique patterns the WASM heap adds up. Monitor
-// RSS when first enabling the threshold in production.
+// enabled, and RE2's lazy DFA can grow up to go-re2's memory limit (128 MiB
+// by default) for as long as the Regexp is alive. Native memory is only
+// released when the Regexp is garbage collected, so compile a pattern once
+// and reuse it. Monitor RSS when first enabling the threshold in production.
 //
 // UTF-8 semantics: go-re2 stops at invalid UTF-8; grafana/regexp replaces
 // invalid bytes with U+FFFD and continues. Results may differ on binary
@@ -51,12 +56,12 @@
 package hybridre2
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"sync"
 
 	grafanaregexp "github.com/grafana/regexp"
-	re2regexp "github.com/wasilibs/go-re2"
 )
 
 const (
@@ -74,25 +79,34 @@ const (
 // Negative means disabled; zero means always use RE2.
 //
 // Tests may reassign this variable to override the threshold.
-var threshold = sync.OnceValue(func() int64 {
-	if val, ok := os.LookupEnv(envThreshold); ok {
-		if n, err := strconv.ParseInt(val, 10, 64); err == nil {
-			return n
-		}
+var threshold = sync.OnceValue(readThreshold)
+
+func readThreshold() int64 {
+	val, ok := os.LookupEnv(envThreshold)
+	if !ok {
+		return disabled
 	}
-	return disabled
-})
+	n, err := strconv.ParseInt(val, 10, 64)
+	if err != nil || n < 0 {
+		return disabled
+	}
+	if !re2Available {
+		log.Printf("hybridre2: %s is set but this binary was built without -tags re2_cgo; RE2 stays disabled", envThreshold)
+		return disabled
+	}
+	return n
+}
 
 // Regexp is a compiled regular expression that dispatches to either
 // grafana/regexp or go-re2 at match time, based on input size.
 type Regexp struct {
 	grafana *grafanaregexp.Regexp
-	re2     *re2regexp.Regexp // nil when threshold() < 0 (disabled)
+	re2     *re2Engine // nil when threshold() < 0 (disabled)
 }
 
 // Compile returns a new Regexp. The grafana/regexp variant is always compiled.
 // The go-re2 variant is only compiled when ZOEKT_RE2_THRESHOLD_BYTES is set to
-// a non-negative value; when RE2 is disabled (the default), skipping WASM
+// a non-negative value; when RE2 is disabled (the default), skipping RE2
 // compilation keeps the disabled path truly zero-cost.
 func Compile(pattern string) (*Regexp, error) {
 	g, err := grafanaregexp.Compile(pattern)
@@ -101,7 +115,7 @@ func Compile(pattern string) (*Regexp, error) {
 	}
 	result := &Regexp{grafana: g}
 	if threshold() >= 0 {
-		r, err := re2regexp.Compile(pattern)
+		r, err := compileRE2(pattern)
 		if err != nil {
 			return nil, err
 		}
