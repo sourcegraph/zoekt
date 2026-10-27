@@ -85,6 +85,10 @@ func TestQueryRoundtrip(t *testing.T) {
 			},
 			Boost: 20,
 		},
+		&Meta{
+			Field: "license",
+			Value: regexp.MustCompile("^MIT$"),
+		},
 	}
 
 	for _, q := range testCases {
