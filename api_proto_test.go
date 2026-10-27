@@ -274,6 +274,7 @@ func TestProtoRoundtrip(t *testing.T) {
 				Documents:                  5,
 				IndexBytes:                 6,
 				ContentBytes:               7,
+				FileContentBytes:           11,
 				NewLinesCount:              8,
 				DefaultBranchNewLinesCount: 9,
 				OtherBranchesNewLinesCount: 10,

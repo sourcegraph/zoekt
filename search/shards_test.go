@@ -835,6 +835,7 @@ func TestShardedSearcher_List(t *testing.T) {
 		Documents:                  1,
 		IndexBytes:                 196,
 		ContentBytes:               13,
+		FileContentBytes:           7,
 		NewLinesCount:              1,
 		DefaultBranchNewLinesCount: 1,
 		OtherBranchesNewLinesCount: 1,

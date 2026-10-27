@@ -1219,6 +1219,55 @@ func TestSearchUncompilableRegexp(t *testing.T) {
 	}
 }
 
+func TestSearchBM25AverageFileLength(t *testing.T) {
+	filler := strings.Repeat("lorem ipsum\n", 10)
+	one := Document{Name: "one", Content: []byte("needle\n" + filler)}
+	two := Document{Name: "two", Content: []byte("needle needle\n" + filler[:len(filler)-7])}
+	big := Document{Name: "big", Content: []byte(strings.Repeat(filler, 50))}
+	small := Document{Name: "small", Content: []byte("short\n")}
+
+	totalBytes := len(one.Content) + len(two.Content) + len(big.Content) + 5*len(small.Content)
+	avg := float64(totalBytes) / 8
+
+	scores := func(opts zoekt.SearchOptions, shards ...*ShardBuilder) map[string]float64 {
+		t.Helper()
+		opts.UseBM25Scoring = true
+		got := map[string]float64{}
+		for _, b := range shards {
+			res, err := searcherForTest(t, b).Search(context.Background(), &query.Substring{Pattern: "needle"}, &opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, fm := range res.Files {
+				got[fm.FileName] = fm.Score
+			}
+		}
+		return got
+	}
+
+	// The same files in one shard, and split so that "one" shares a shard
+	// with a long file and "two" with short files.
+	oneShard := scores(zoekt.SearchOptions{},
+		testShardBuilder(t, nil, one, two, big, small, small, small, small, small))
+	split := func(opts zoekt.SearchOptions) map[string]float64 {
+		return scores(opts,
+			testShardBuilder(t, nil, one, big),
+			testShardBuilder(t, nil, two, small, small, small, small, small))
+	}
+
+	if got := split(zoekt.SearchOptions{}); got["two"] >= got["one"] {
+		t.Fatalf("expected per-shard averages to rank one above two, got %v", got)
+	}
+
+	got := split(zoekt.SearchOptions{BM25AverageFileLength: avg})
+	if diff := cmp.Diff(oneShard, got, cmpopts.EquateApprox(0, 1e-9)); diff != "" {
+		t.Fatalf("split scores differ from one shard scores (-want +got):\n%s", diff)
+	}
+	if got["two"] <= got["one"] {
+		t.Fatalf("want two ranked above one, got %v", got)
+	}
+}
+
 func TestSearchBM25MatchScores(t *testing.T) {
 	ctx := context.Background()
 	searcher := searcherForTest(t, testShardBuilder(t, nil,
@@ -2274,9 +2323,10 @@ func TestListRepos(t *testing.T) {
 					Repos: []*zoekt.RepoListEntry{{
 						Repository: *repo,
 						Stats: zoekt.RepoStats{
-							Documents:    4,
-							ContentBytes: 68, // (15 bytes of content and 2 bytes of filename) x 4
-							Shards:       1,
+							Documents:        4,
+							ContentBytes:     68, // (15 bytes of content and 2 bytes of filename) x 4
+							FileContentBytes: 60,
+							Shards:           1,
 
 							NewLinesCount:              4,
 							DefaultBranchNewLinesCount: 2,
@@ -2284,10 +2334,11 @@ func TestListRepos(t *testing.T) {
 						},
 					}},
 					Stats: zoekt.RepoStats{
-						Repos:        1,
-						Documents:    4,
-						ContentBytes: 68,
-						Shards:       1,
+						Repos:            1,
+						Documents:        4,
+						ContentBytes:     68,
+						FileContentBytes: 60,
+						Shards:           1,
 
 						NewLinesCount:              4,
 						DefaultBranchNewLinesCount: 2,
@@ -2351,6 +2402,7 @@ func TestListRepos(t *testing.T) {
 				Documents:                  4,
 				IndexBytes:                 340,
 				ContentBytes:               68,
+				FileContentBytes:           60,
 				NewLinesCount:              4,
 				DefaultBranchNewLinesCount: 2,
 				OtherBranchesNewLinesCount: 3,
@@ -4150,6 +4202,7 @@ func TestStats(t *testing.T) {
 					Documents:                  0,
 					IndexBytes:                 20,
 					ContentBytes:               0,
+					FileContentBytes:           0,
 					NewLinesCount:              0,
 					DefaultBranchNewLinesCount: 0,
 					OtherBranchesNewLinesCount: 0,
@@ -4176,6 +4229,7 @@ func TestStats(t *testing.T) {
 					Documents:                  2,
 					IndexBytes:                 224,
 					ContentBytes:               28,
+					FileContentBytes:           18,
 					NewLinesCount:              0,
 					DefaultBranchNewLinesCount: 0,
 					OtherBranchesNewLinesCount: 0,
@@ -4214,6 +4268,7 @@ func TestStats(t *testing.T) {
 					Documents:                  2,
 					IndexBytes:                 180,
 					ContentBytes:               28,
+					FileContentBytes:           18,
 					NewLinesCount:              0,
 					DefaultBranchNewLinesCount: 0,
 					OtherBranchesNewLinesCount: 0,
@@ -4226,6 +4281,7 @@ func TestStats(t *testing.T) {
 					Documents:                  2,
 					IndexBytes:                 180,
 					ContentBytes:               28,
+					FileContentBytes:           18,
 					NewLinesCount:              0,
 					DefaultBranchNewLinesCount: 0,
 					OtherBranchesNewLinesCount: 0,
@@ -4258,14 +4314,16 @@ func TestStats(t *testing.T) {
 		got := repoListEntries(b)
 
 		entryEmpty := zoekt.RepoListEntry{Stats: zoekt.RepoStats{
-			Shards:       1,
-			Documents:    0,
-			ContentBytes: 0,
+			Shards:           1,
+			Documents:        0,
+			ContentBytes:     0,
+			FileContentBytes: 0,
 		}}
 		entryNonEmpty := zoekt.RepoListEntry{Stats: zoekt.RepoStats{
-			Shards:       1,
-			Documents:    1,
-			ContentBytes: 14,
+			Shards:           1,
+			Documents:        1,
+			ContentBytes:     14,
+			FileContentBytes: 9,
 		}}
 
 		want := []zoekt.RepoListEntry{
