@@ -1161,11 +1161,11 @@ func TestSearchBoundedRepeatRegexp(t *testing.T) {
 }
 
 func TestSearchBM25ScoresAreDeterministic(t *testing.T) {
-	content := []byte("alpha beta beta gamma gamma gamma delta delta delta delta\n")
 	searcher := searcherForTest(t, testShardBuilder(t, nil,
-		Document{Name: "a.txt", Content: content},
-		Document{Name: "b.txt", Content: content},
-		// a longer file, so the average file length differs from len(content)
+		Document{Name: "a.txt", Content: []byte("alpha beta beta gamma gamma gamma delta delta delta delta\n")},
+		// same term frequencies as a.txt, in a different order
+		Document{Name: "b.txt", Content: []byte("delta delta delta delta gamma gamma gamma beta beta alpha\n")},
+		// a longer file, so the average file length differs from that of a.txt and b.txt
 		Document{Name: "c.txt", Content: bytes.Repeat([]byte("lorem ipsum\n"), 20)},
 	))
 	defer searcher.Close()
