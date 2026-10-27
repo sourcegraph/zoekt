@@ -337,6 +337,40 @@ func TestVacuum(t *testing.T) {
 	}
 }
 
+// TestVacuumAllTombstoned checks that vacuuming a compound shard whose repos
+// are all tombstoned deletes the shard instead of writing an empty compound
+// shard, which zoekt-webserver cannot load.
+func TestVacuumAllTombstoned(t *testing.T) {
+	tmpDir := t.TempDir()
+	fn := createCompoundShard(t, tmpDir, []uint32{1, 2})
+	for _, id := range []uint32{1, 2} {
+		if err := index.SetTombstone(fn, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := mergeHelper(t, fn); err == nil {
+		t.Fatal("index.Merge should refuse to write a compound shard without repos")
+	}
+
+	mockMerger = func() error { return mergeHelper(t, fn) }
+	got, err := removeTombstones(fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("wanted 2 tombstones, got %d", len(got))
+	}
+
+	shards, err := filepath.Glob(tmpDir + "/compound-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shards) != 0 {
+		t.Fatalf("expected no compound shards, got %v", shards)
+	}
+}
+
 // Create 2 compound shards, each of which contains the same tombstoned repo but
 // from different commit dates.
 func TestGetTombstonedRepos(t *testing.T) {
