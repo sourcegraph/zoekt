@@ -570,6 +570,9 @@ func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]Document
 // results coming from this searcher are valid only for the lifetime
 // of the Searcher itself, ie. []byte members should be copied into
 // fresh buffers if the result is to survive closing the shard.
+//
+// The searcher does not evaluate type:repo, since that depends on every
+// shard; callers must rewrite it first, as search.typeRepoSearcher does.
 func NewSearcher(r IndexFile) (zoekt.Searcher, error) {
 	rd := &reader{r: r}
 

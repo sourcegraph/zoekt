@@ -17,7 +17,6 @@ package index
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"math"
 	"regexp/syntax"
 	"strings"
@@ -1067,8 +1066,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}, err
 
 	case *query.Type:
+		if s.Type == query.TypeFileMatch {
+			// file matches are what a shard search returns anyway
+			return d.newMatchTree(s.Child)
+		}
 		if s.Type != query.TypeFileName {
-			break
+			return nil, fmt.Errorf("type:repo must be rewritten before searching a shard (see search.typeRepoSearcher)")
 		}
 
 		ct, err := d.newMatchTree(s.Child)
@@ -1295,8 +1298,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			},
 		}, nil
 	}
-	log.Panicf("type %T", q)
-	return nil, nil
+	return nil, fmt.Errorf("unsupported query %T", q)
 }
 
 func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error) {
