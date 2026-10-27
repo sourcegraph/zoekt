@@ -220,8 +220,12 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 
 	score := 0.0
 	tfs := p.calculateTermFrequency(ms, false) // ignore file priority, since we're just scoring within a single file
-	for _, f := range tfs {
-		score += tfScore(k, b, L, f)
+	// sum in candidate order, not map order, so the float sum is the same on every search
+	for _, m := range ms {
+		if f, ok := tfs[string(m.substrLowered)]; ok {
+			score += tfScore(k, b, L, f)
+			delete(tfs, string(m.substrLowered))
+		}
 	}
 
 	// Check if any index comes from a symbol match tree, and if so hydrate in symbol information
@@ -381,9 +385,13 @@ func (d *indexData) scoreFileBM25(fileMatch *zoekt.FileMatch, doc uint32, cands 
 
 	bm25Score := 0.0
 	sumTF := 0 // Just for debugging
-	for _, f := range tf {
-		sumTF += f
-		bm25Score += tfScore(k, b, L, f)
+	// sum in candidate order, not map order, so the float sum is the same on every search
+	for _, m := range cands {
+		if f, ok := tf[string(m.substrLowered)]; ok {
+			sumTF += f
+			bm25Score += tfScore(k, b, L, f)
+			delete(tf, string(m.substrLowered))
+		}
 	}
 
 	score := boostScore(bm25Score, cands)
