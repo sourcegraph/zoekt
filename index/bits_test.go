@@ -16,6 +16,7 @@ package index
 
 import (
 	"encoding/binary"
+	"errors"
 	"log"
 	"math"
 	"math/rand"
@@ -66,7 +67,10 @@ func (ngramRunes) Generate(rand *rand.Rand, size int) reflect.Value {
 func TestDocSection(t *testing.T) {
 	in := []DocumentSection{{1, 2}, {3, 4}}
 	serialized := marshalDocSections(in)
-	roundtrip := unmarshalDocSections(serialized, nil)
+	roundtrip, err := unmarshalDocSections(serialized, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(in, roundtrip) {
 		t.Errorf("got %v, want %v", roundtrip, in)
 	}
@@ -113,7 +117,10 @@ func TestNextFileIndex(t *testing.T) {
 func TestDeltas(t *testing.T) {
 	in := []uint32{1, 72, 0xfff}
 	out := toSizedDeltas(in)
-	round := fromSizedDeltas(out, nil)
+	round, err := fromSizedDeltas(out, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(in, round) {
 		t.Errorf("got %v, want %v", round, in)
 	}
@@ -127,7 +134,11 @@ func TestSizedDeltas(t *testing.T) {
 		if len(data) == 0 {
 			return nil
 		}
-		return fromSizedDeltas(data, nil)
+		ps, err := fromSizedDeltas(data, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ps
 	}
 	testIncreasingIntCoder(t, encode, decode)
 }
@@ -137,9 +148,60 @@ func TestFromDeltas(t *testing.T) {
 		if len(data) == 0 {
 			return nil
 		}
-		return fromDeltas(data, nil)
+		ps, err := fromDeltas(data, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ps
 	}
 	testIncreasingIntCoder(t, toDeltas, decode)
+}
+
+// TestDeltaDecodersMalformedVarint checks that every delta decoder reports a
+// truncated or overflowing varint as an error. A truncated varint used to make
+// the decode loop spin forever, hanging Search on a corrupt shard.
+func TestDeltaDecodersMalformedVarint(t *testing.T) {
+	overflow := []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01}
+	decoders := map[string]func([]byte) error{
+		"fromSizedDeltas": func(b []byte) error {
+			_, err := fromSizedDeltas(b, nil)
+			return err
+		},
+		"fromSizedDeltas16": func(b []byte) error {
+			_, err := fromSizedDeltas16(b, nil)
+			return err
+		},
+		"fromDeltas": func(b []byte) error {
+			_, err := fromDeltas(b, nil)
+			return err
+		},
+		"unmarshalDocSections": func(b []byte) error {
+			_, err := unmarshalDocSections(b, nil)
+			return err
+		},
+	}
+	for _, tc := range []struct {
+		name string
+		data []byte
+	}{
+		// size 2, then a delta whose last byte has the continuation bit set.
+		{name: "truncated", data: []byte{0x02, 0x01, 0x80}},
+		{name: "overflowing", data: append([]byte{0x02, 0x01}, overflow...)},
+		{name: "overflowing size", data: overflow},
+		// size 2, then a single delta: a document section without an end.
+		{name: "missing section end", data: []byte{0x02, 0x01}},
+	} {
+		for name, decode := range decoders {
+			if tc.name == "missing section end" && name != "unmarshalDocSections" {
+				continue
+			}
+			t.Run(tc.name+"/"+name, func(t *testing.T) {
+				if err := decode(tc.data); !errors.Is(err, errCorruptVarint) {
+					t.Fatalf("got err %v, want %v", err, errCorruptVarint)
+				}
+			})
+		}
+	}
 }
 
 func TestCompressedPostingIterator(t *testing.T) {
@@ -275,7 +337,11 @@ func TestUnmarshalDocSections(t *testing.T) {
 		}
 
 		data := marshalDocSections(ds)
-		got := unmarshalDocSections(data, nil)
+		got, err := unmarshalDocSections(data, nil)
+		if err != nil {
+			t.Log(err)
+			return false
+		}
 		if len(ds) == len(got) && len(ds) == 0 {
 			return true
 		}
@@ -309,7 +375,7 @@ func BenchmarkUnmarshalDocSections(b *testing.B) {
 		b.Run(strconv.Itoa(size), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				if ds := unmarshalDocSections(data, nil); len(ds) != size {
+				if ds, _ := unmarshalDocSections(data, nil); len(ds) != size {
 					b.Fatalf("wrong size: got %d, want %d", len(ds), size)
 				}
 			}
