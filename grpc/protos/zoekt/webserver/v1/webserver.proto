@@ -113,6 +113,13 @@ message SearchOptions {
   // Currently, this treats each match in a file as a term and computes an approximation to BM25.
   // When enabled, all other scoring signals are ignored, including document ranks.
   bool use_bm25_scoring = 15;
+
+  // EXPERIMENTAL. If greater than zero and use_bm25_scoring is set, BM25 uses
+  // this average file length in bytes instead of the average of the shard
+  // that holds the file. Set this to give a file the same score for every
+  // shard layout, for example to sum(file_content_bytes) / sum(documents) of
+  // RepoStats over the shards being searched.
+  double bm25_average_file_length = 18;
 }
 
 message ListRequest {
@@ -270,6 +277,11 @@ message RepoStats {
 
   // content_bytes is the amount of RAM used for raw content.
   int64 content_bytes = 5;
+
+  // file_content_bytes is the total length of the documents' contents. Unlike
+  // content_bytes it does not include file names. It is the file length that
+  // BM25 scoring uses, see SearchOptions.bm25_average_file_length.
+  int64 file_content_bytes = 9;
 
   // Sourcegraph specific stats below. These are not as efficient to calculate
   // as the above statistics. We experimentally measured about a 10% slower

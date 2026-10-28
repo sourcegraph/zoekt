@@ -211,8 +211,9 @@ func (d *indexData) calculateStatsForFileRange(start, end uint32) zoekt.RepoStat
 	// after aggregation. For now I will move forward with this until we can
 	// chat more.
 	return zoekt.RepoStats{
-		ContentBytes: int64(bytesContent) + int64(bytesFN),
-		Documents:    int(end - start),
+		ContentBytes:     int64(bytesContent) + int64(bytesFN),
+		FileContentBytes: int64(bytesContent),
+		Documents:        int(end - start),
 		// CR keegan for stefan: our shard count is going to go out of whack,
 		// since we will aggregate these. So we will report more shards than are
 		// present on disk. What should we do?

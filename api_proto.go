@@ -549,6 +549,7 @@ func RepoStatsFromProto(p *webserverv1.RepoStats) RepoStats {
 		Documents:                  int(p.GetDocuments()),
 		IndexBytes:                 p.GetIndexBytes(),
 		ContentBytes:               p.GetContentBytes(),
+		FileContentBytes:           p.GetFileContentBytes(),
 		NewLinesCount:              p.GetNewLinesCount(),
 		DefaultBranchNewLinesCount: p.GetDefaultBranchNewLinesCount(),
 		OtherBranchesNewLinesCount: p.GetOtherBranchesNewLinesCount(),
@@ -562,6 +563,7 @@ func (s *RepoStats) ToProto() *webserverv1.RepoStats {
 		Documents:                  int64(s.Documents),
 		IndexBytes:                 s.IndexBytes,
 		ContentBytes:               s.ContentBytes,
+		FileContentBytes:           s.FileContentBytes,
 		NewLinesCount:              s.NewLinesCount,
 		DefaultBranchNewLinesCount: s.DefaultBranchNewLinesCount,
 		OtherBranchesNewLinesCount: s.OtherBranchesNewLinesCount,
@@ -708,6 +710,7 @@ func SearchOptionsFromProto(p *webserverv1.SearchOptions) *SearchOptions {
 		ChunkMatches:           p.GetChunkMatches(),
 		DebugScore:             p.GetDebugScore(),
 		UseBM25Scoring:         p.GetUseBm25Scoring(),
+		BM25AverageFileLength:  p.GetBm25AverageFileLength(),
 	}
 }
 
@@ -731,5 +734,6 @@ func (s *SearchOptions) ToProto() *webserverv1.SearchOptions {
 		ChunkMatches:           s.ChunkMatches,
 		DebugScore:             s.DebugScore,
 		UseBm25Scoring:         s.UseBM25Scoring,
+		Bm25AverageFileLength:  s.BM25AverageFileLength,
 	}
 }

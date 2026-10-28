@@ -385,7 +385,10 @@ func (d *indexData) scoreFileBM25(fileMatch *zoekt.FileMatch, doc uint32, cands 
 	// Use standard parameter defaults used in Lucene (https://lucene.apache.org/core/10_1_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)
 	k, b := 1.2, 0.75
 
-	averageFileLength := float64(d.boundaries[d.numDocs()]) / float64(d.numDocs())
+	averageFileLength := opts.BM25AverageFileLength
+	if averageFileLength <= 0 {
+		averageFileLength = float64(d.boundaries[d.numDocs()]) / float64(d.numDocs())
+	}
 	// This is very unlikely, but explicitly guard against division by zero.
 	if averageFileLength == 0 {
 		averageFileLength++

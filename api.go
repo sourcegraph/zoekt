@@ -812,6 +812,11 @@ type RepoStats struct {
 	// ContentBytes is the amount of RAM used for raw content.
 	ContentBytes int64
 
+	// FileContentBytes is the total length of the documents' contents. Unlike
+	// ContentBytes it does not include file names. It is the file length that
+	// BM25 scoring uses, see SearchOptions.BM25AverageFileLength.
+	FileContentBytes int64
+
 	// Sourcegraph specific stats below. These are not as efficient to calculate
 	// as the above statistics. We experimentally measured about a 10% slower
 	// shard load time. However, we find these values very useful to track and
@@ -843,6 +848,7 @@ func (s *RepoStats) Add(o *RepoStats) {
 	s.IndexBytes += o.IndexBytes
 	s.Documents += o.Documents
 	s.ContentBytes += o.ContentBytes
+	s.FileContentBytes += o.FileContentBytes
 
 	// Sourcegraph specific
 	s.NewLinesCount += o.NewLinesCount
@@ -1040,6 +1046,15 @@ type SearchOptions struct {
 	// When enabled, all other scoring signals are ignored, including document ranks.
 	UseBM25Scoring bool
 
+	// EXPERIMENTAL. If greater than zero and UseBM25Scoring is set, BM25 uses
+	// this average file length in bytes instead of the average of the shard
+	// that holds the file. By default each shard has its own average, so the
+	// score of a file depends on which shard holds it. Set this to give a file
+	// the same score for every shard layout, for example to
+	// sum(RepoStats.FileContentBytes) / sum(RepoStats.Documents) over the
+	// shards being searched.
+	BM25AverageFileLength float64
+
 	// If set, the search results will contain debug information for scoring.
 	DebugScore bool
 }
@@ -1105,6 +1120,9 @@ func (s *SearchOptions) String() string {
 	addBool("Whole", s.Whole)
 	addBool("ChunkMatches", s.ChunkMatches)
 	addBool("UseBM25Scoring", s.UseBM25Scoring)
+	if s.BM25AverageFileLength != 0 {
+		add("BM25AverageFileLength", strconv.FormatFloat(s.BM25AverageFileLength, 'g', -1, 64))
+	}
 	addBool("DebugScore", s.DebugScore)
 
 	b.WriteByte('}')
