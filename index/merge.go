@@ -31,6 +31,10 @@ func Merge(dstDir string, files ...IndexFile) (tmpName, dstName string, _ error)
 	if err != nil {
 		return "", "", err
 	}
+	// A compound shard without repositories cannot be loaded by NewSearcher.
+	if len(ib.repoList) == 0 {
+		return "", "", errors.New("merge: no repositories left to merge")
+	}
 
 	hasher := sha1.New()
 	for _, d := range ds {

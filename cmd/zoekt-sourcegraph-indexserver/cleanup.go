@@ -558,6 +558,11 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 			os.Remove(path)
 		}
 	}()
+	// Merging would write an empty compound shard that zoekt-webserver cannot
+	// load. Removing the shard (deferred above) is all that is left to do.
+	if len(tombstones) == len(repos) {
+		return tombstones, nil
+	}
 	err = runMerge()
 	if err != nil {
 		return nil, fmt.Errorf("runMerge: %s", err)
