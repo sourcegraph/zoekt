@@ -1,10 +1,14 @@
 package index
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
 )
 
 func TestShardName(t *testing.T) {
@@ -134,5 +138,42 @@ func TestShardBuilderAddDeterminesCategoryBeforeReplacingSkippedContent(t *testi
 	}
 	if got != langCode {
 		t.Fatalf("got stored language code %d, want Go=%d", langCode, got)
+	}
+}
+
+func TestShardBuilderCountsSkippedFiles(t *testing.T) {
+	repo := &zoekt.Repository{
+		Name:     "repo",
+		Branches: []zoekt.RepositoryBranch{{Name: "main"}, {Name: "dev"}, {Name: "feat"}},
+	}
+	b := testShardBuilder(t, repo,
+		Document{Name: "large", SkipReason: SkipReasonTooLarge, Branches: []string{"main", "dev", "feat"}},
+		Document{Name: "small", SkipReason: SkipReasonTooSmall, Branches: []string{"main"}},
+		Document{Name: "trigrams", SkipReason: SkipReasonTooManyTrigrams, Branches: []string{"dev", "feat"}},
+		// ShardBuilder.Add detects binary content itself.
+		Document{Name: "bin", Content: []byte("a\x00b"), Branches: []string{"main", "dev"}},
+		Document{Name: "bin", Content: []byte("c\x00d"), Branches: []string{"feat"}},
+		Document{Name: "text", Content: []byte("not skipped"), Branches: []string{"main", "dev", "feat"}},
+	)
+
+	want := &zoekt.SkippedFiles{
+		TooLarge:        zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
+		TooSmall:        zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
+		Binary:          zoekt.SkippedFileCount{Total: 2, DefaultBranch: 1},
+		TooManyTrigrams: zoekt.SkippedFileCount{Total: 1, DefaultBranch: 0},
+	}
+
+	s := searcherForTest(t, b)
+	defer s.Close()
+	if diff := cmp.Diff(want, s.(*indexData).repoMetaData[0].SkippedFiles); diff != "" {
+		t.Errorf("stored SkippedFiles mismatch (-want +got):\n%s", diff)
+	}
+
+	res, err := s.List(context.Background(), &query.Const{Value: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Repos[0].Repository.SkippedFiles; got != nil {
+		t.Errorf("List must not expose per-shard Repository.SkippedFiles, got %+v", got)
 	}
 }
