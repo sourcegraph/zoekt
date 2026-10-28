@@ -6,6 +6,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"google.golang.org/protobuf/proto"
+
+	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 )
 
 func TestIndexOptions_RoundTrip(t *testing.T) {
@@ -33,8 +36,18 @@ func TestIndexOptions_RoundTrip(t *testing.T) {
 func TestUpdateIndexStatusRequest_RoundTrip(t *testing.T) {
 	var diff string
 	f := func(original updateIndexStatusRequest) bool {
+		// Go through the wire format: nil SkippedFiles (unknown) must stay
+		// distinct from present but all-zero counts.
+		b, err := proto.Marshal(original.ToProto())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded configv1.UpdateIndexStatusRequest
+		if err := proto.Unmarshal(b, &decoded); err != nil {
+			t.Fatal(err)
+		}
 		var converted updateIndexStatusRequest
-		converted.FromProto(original.ToProto())
+		converted.FromProto(&decoded)
 
 		options := []cmp.Option{
 			cmpopts.EquateEmpty(),

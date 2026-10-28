@@ -376,6 +376,10 @@ type indexStatus struct {
 	IndexTimeUnix  int64
 	State          configv1.UpdateIndexStatusRequest_Repository_State
 	FailureMessage string
+
+	// SkippedFiles is the sum of the skipped-file counts over all of the
+	// repository's shards. Nil means unknown.
+	SkippedFiles *zoekt.SkippedFiles
 }
 
 type updateIndexStatusRequest struct {
@@ -401,6 +405,7 @@ func (u *updateIndexStatusRequest) ToProto() *configv1.UpdateIndexStatusRequest 
 			IndexTimeUnix:  repo.IndexTimeUnix,
 			State:          repo.State,
 			FailureMessage: repo.FailureMessage,
+			SkippedFiles:   skippedFilesToProto(repo.SkippedFiles),
 		})
 	}
 
@@ -430,11 +435,44 @@ func (u *updateIndexStatusRequest) FromProto(x *configv1.UpdateIndexStatusReques
 			IndexTimeUnix:  repo.GetIndexTimeUnix(),
 			State:          repo.GetState(),
 			FailureMessage: repo.GetFailureMessage(),
+			SkippedFiles:   skippedFilesFromProto(repo.GetSkippedFiles()),
 		})
 	}
 
 	*u = updateIndexStatusRequest{
 		Repositories: repositories,
+	}
+}
+
+// skippedFilesToProto converts the counts, keeping nil (unknown) distinct from
+// all-zero counts.
+func skippedFilesToProto(s *zoekt.SkippedFiles) *configv1.SkippedFiles {
+	if s == nil {
+		return nil
+	}
+	count := func(c zoekt.SkippedFileCount) *configv1.SkippedFileCount {
+		return &configv1.SkippedFileCount{Total: c.Total, DefaultBranch: c.DefaultBranch}
+	}
+	return &configv1.SkippedFiles{
+		TooLarge:        count(s.TooLarge),
+		TooSmall:        count(s.TooSmall),
+		Binary:          count(s.Binary),
+		TooManyTrigrams: count(s.TooManyTrigrams),
+	}
+}
+
+func skippedFilesFromProto(x *configv1.SkippedFiles) *zoekt.SkippedFiles {
+	if x == nil {
+		return nil
+	}
+	count := func(c *configv1.SkippedFileCount) zoekt.SkippedFileCount {
+		return zoekt.SkippedFileCount{Total: c.GetTotal(), DefaultBranch: c.GetDefaultBranch()}
+	}
+	return &zoekt.SkippedFiles{
+		TooLarge:        count(x.GetTooLarge()),
+		TooSmall:        count(x.GetTooSmall()),
+		Binary:          count(x.GetBinary()),
+		TooManyTrigrams: count(x.GetTooManyTrigrams()),
 	}
 }
 

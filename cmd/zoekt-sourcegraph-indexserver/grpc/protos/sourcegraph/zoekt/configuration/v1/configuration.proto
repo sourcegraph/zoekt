@@ -174,9 +174,38 @@ message UpdateIndexStatusRequest {
 
     // failure_message describes the most recent indexing failure when state is failure.
     string failure_message = 5;
+
+    // skipped_files counts the files that the index contains but whose content
+    // was not indexed, summed over all of the repository's shards.
+    //
+    // On failure, it is unset and the counts from the last success remain
+    // valid, because the previous index is still served. On success, unset
+    // means unknown, for example because some shards were written by an older
+    // version of Zoekt.
+    SkippedFiles skipped_files = 6;
   }
 
   repeated Repository repositories = 1;
+}
+
+// SkippedFiles counts the files whose content was not indexed, by reason.
+message SkippedFiles {
+  // too_large counts files larger than the file size limit.
+  SkippedFileCount too_large = 1;
+  // too_small counts files smaller than the minimum file size.
+  SkippedFileCount too_small = 2;
+  // binary counts files that look like binary files.
+  SkippedFileCount binary = 3;
+  // too_many_trigrams counts files with too many distinct trigrams.
+  SkippedFileCount too_many_trigrams = 4;
+}
+
+// SkippedFileCount counts skipped files of one reason.
+message SkippedFileCount {
+  // total counts each skipped file once, even if several branches contain it.
+  uint32 total = 1;
+  // default_branch counts the skipped files on the default branch.
+  uint32 default_branch = 2;
 }
 
 // UpdateIndexStatusResponse is the response from the UpdateIndexStatus RPC.

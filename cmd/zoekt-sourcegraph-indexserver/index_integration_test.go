@@ -158,6 +158,16 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 			if diff := cmp.Diff(args.Branches, sg.updates[0][0].Branches); diff != "" {
 				t.Fatalf("status branches mismatch (-want +got):\n%s", diff)
 			}
+
+			// big.bin is the same document on both branches. With the large
+			// file exception, the counts are known and zero, not unknown.
+			wantSkipped := &zoekt.SkippedFiles{}
+			if len(tc.largeFiles) == 0 {
+				wantSkipped.TooLarge = zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1}
+			}
+			if diff := cmp.Diff(wantSkipped, sg.updates[0][0].SkippedFiles); diff != "" {
+				t.Fatalf("status skipped files mismatch (-want +got):\n%s", diff)
+			}
 		})
 	}
 }
@@ -205,6 +215,7 @@ func TestUpdateIndexStatusOnSourcegraphFailure(t *testing.T) {
 			require.Equal(t, tc.wantIndexTime, sg.updates[0][0].IndexTimeUnix)
 			require.Equal(t, configv1.UpdateIndexStatusRequest_Repository_STATE_FAILURE, sg.updates[0][0].State)
 			require.Equal(t, "boom", sg.updates[0][0].FailureMessage)
+			require.Nil(t, sg.updates[0][0].SkippedFiles)
 			if diff := cmp.Diff(args.Branches, sg.updates[0][0].Branches); diff != "" {
 				t.Fatalf("status branches mismatch (-want +got):\n%s", diff)
 			}
