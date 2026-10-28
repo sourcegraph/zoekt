@@ -116,10 +116,21 @@ func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string) (map[string]pl
 
 	// Path => commit SHA1
 	subRepoVersions := make(map[string]plumbing.Hash)
+	skippedTrees := 0
 	for {
 		name, entry, err := tw.Next()
 		if err == io.EOF {
-			break
+			if name == "" {
+				break
+			}
+			// go-git returns io.EOF with the subtree's name when it cannot
+			// read a subtree, after moving past it, so keep walking. Without
+			// the ignore file we would index paths the repo excludes.
+			if name == path.Dir(ignore.IgnoreFile) {
+				return nil, fmt.Errorf("cannot read tree %s (%s)", name, entry.Hash)
+			}
+			skippedTrees++
+			continue
 		}
 		if err == object.ErrMaxTreeDepth {
 			return nil, fmt.Errorf("TreeWalker.Next: %w", err)
@@ -127,6 +138,9 @@ func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string) (map[string]pl
 		if err := rw.handleEntry(name, &entry, branch, subRepoVersions, ig); err != nil {
 			return nil, fmt.Errorf("handleEntry: %w", err)
 		}
+	}
+	if skippedTrees > 0 {
+		log.Printf("skipped %d trees with missing Git objects on branch %s", skippedTrees, branch)
 	}
 	return subRepoVersions, nil
 }
