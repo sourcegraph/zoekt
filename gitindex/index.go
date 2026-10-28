@@ -850,10 +850,11 @@ func openOptimizedRepo(repoDir string) (*git.Repository, io.Closer, error) {
 		}
 	}
 
-	s := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{
+	objCache := cache.NewObjectLRUDefault()
+	s := newAlternatesStorage(filesystem.NewStorageWithOptions(fs, objCache, filesystem.Options{
 		// Cache the packfile handles, preventing the packfile from being opened then closed on every object access
 		KeepDescriptors: true,
-	})
+	}), fs, objCache)
 
 	// Because we're keeping descriptors open, we need to close the storage object when we're done.
 	repo, err := git.Open(s, wt)
