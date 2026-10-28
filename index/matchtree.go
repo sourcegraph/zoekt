@@ -213,7 +213,7 @@ func regexpPattern(s *query.Regexp) string {
 
 func newRegexpMatchTree(s *query.Regexp) (*regexpMatchTree, error) {
 	pattern := regexpPattern(s)
-	re, err := regexpCache.compile(pattern)
+	re, err := regexpCache().compile(pattern)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +222,7 @@ func newRegexpMatchTree(s *query.Regexp) (*regexpMatchTree, error) {
 	// compilation overhead for filename-only regexps.
 	var hr *hybridre2.Regexp
 	if !s.FileName {
-		hr, err = regexpCache.compileHybrid(pattern)
+		hr, err = regexpCache().compileHybrid(pattern)
 		if err != nil {
 			return nil, err
 		}
@@ -240,7 +240,7 @@ func (d *indexData) newSymbolRegexpMatchTree(s *query.Regexp) (*symbolRegexpMatc
 		return nil, err
 	}
 
-	re, err := regexpCache.compile(regexpPattern(s))
+	re, err := regexpCache().compile(regexpPattern(s))
 	if err != nil {
 		return nil, err
 	}

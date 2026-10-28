@@ -3,6 +3,7 @@ package index
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -10,7 +11,7 @@ import (
 )
 
 func TestLRUCachesValuesAndErrors(t *testing.T) {
-	c := newLRU[string](4)
+	c := newLRU[string](4, defaultMaxCachedPatternLen)
 	var calls int
 	compile := func(k string) (string, error) {
 		calls++
@@ -34,7 +35,7 @@ func TestLRUCachesValuesAndErrors(t *testing.T) {
 }
 
 func TestLRUEvictsLeastRecentlyUsed(t *testing.T) {
-	c := newLRU[string](2)
+	c := newLRU[string](2, defaultMaxCachedPatternLen)
 	var calls int
 	compile := func(k string) (string, error) { calls++; return k, nil }
 
@@ -59,18 +60,18 @@ func TestLRUEvictsLeastRecentlyUsed(t *testing.T) {
 }
 
 func TestLRUSkipsLongPatterns(t *testing.T) {
-	c := newLRU[string](4)
+	c := newLRU[string](4, defaultMaxCachedPatternLen)
 	var calls int
 	compile := func(k string) (string, error) { calls++; return k, nil }
 
-	long := strings.Repeat("a", maxCachedPatternLen+1)
+	long := strings.Repeat("a", defaultMaxCachedPatternLen+1)
 	c.get(long, compile)
 	c.get(long, compile)
 	if calls != 2 || len(c.items) != 0 {
 		t.Fatalf("calls = %d, cached = %d; want 2, 0", calls, len(c.items))
 	}
 
-	atCap := strings.Repeat("a", maxCachedPatternLen)
+	atCap := strings.Repeat("a", defaultMaxCachedPatternLen)
 	c.get(atCap, compile)
 	c.get(atCap, compile)
 	if calls != 3 {
@@ -79,7 +80,7 @@ func TestLRUSkipsLongPatterns(t *testing.T) {
 }
 
 func TestLRUPanickingCompileLeavesNoEntry(t *testing.T) {
-	c := newLRU[string](4)
+	c := newLRU[string](4, defaultMaxCachedPatternLen)
 	func() {
 		defer func() {
 			if r := recover(); r != "boom" {
@@ -105,7 +106,7 @@ func TestLRUPanickingCompileLeavesNoEntry(t *testing.T) {
 }
 
 func TestLRUFirstWriterWins(t *testing.T) {
-	c := newLRU[*int](4)
+	c := newLRU[*int](4, defaultMaxCachedPatternLen)
 	first, second := 1, 2
 	inCompile := make(chan struct{})
 	release := make(chan struct{})
@@ -136,7 +137,7 @@ func TestLRUFirstWriterWins(t *testing.T) {
 
 func TestLRUConcurrent(t *testing.T) {
 	const limit = 16
-	c := newLRU[string](limit)
+	c := newLRU[string](limit, defaultMaxCachedPatternLen)
 	var compiles atomic.Int64
 	compile := func(k string) (string, error) { compiles.Add(1); return k, nil }
 
@@ -158,5 +159,58 @@ func TestLRUConcurrent(t *testing.T) {
 
 	if len(c.items) != c.order.Len() || len(c.items) > limit {
 		t.Fatalf("size = %d/%d, limit %d", len(c.items), c.order.Len(), limit)
+	}
+}
+
+func TestRegexpCacheConfigFromEnv(t *testing.T) {
+	defaults := regexpCacheConfig{defaultRegexpCacheSize, defaultMaxCachedPatternLen}
+	for _, tc := range []struct {
+		name      string
+		size, pat string // empty means unset
+		want      regexpCacheConfig
+	}{
+		{"defaults", "", "", defaults},
+		{"valid", "8", "100", regexpCacheConfig{8, 100}},
+		{"zero disables", "0", "0", regexpCacheConfig{0, 0}},
+		{"invalid", "many", "1.5", defaults},
+		{"negative", "-1", "-1", defaults},
+		{"only size", "8", "", regexpCacheConfig{8, defaultMaxCachedPatternLen}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for name, val := range map[string]string{envRegexpCacheSize: tc.size, envRegexpCachePatternSize: tc.pat} {
+				// t.Setenv restores the original value afterwards; unset
+				// the variable for this case unless the case sets it.
+				t.Setenv(name, "")
+				os.Unsetenv(name)
+				if val != "" {
+					t.Setenv(name, val)
+				}
+			}
+			if got := regexpCacheConfigFromEnv(); got != tc.want {
+				t.Errorf("config = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRegexpCacheHonoursConfig(t *testing.T) {
+	c := newCompiledRegexps(regexpCacheConfig{size: 2, maxPattern: 4})
+	for _, p := range []string{"a", "b", "c", "abcde"} {
+		if _, err := c.compile(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := len(c.plain.items); n != 2 {
+		t.Errorf("cached %d patterns, want the size limit 2", n)
+	}
+	if _, ok := c.plain.items["abcde"]; ok {
+		t.Error("pattern over the length cap was cached")
+	}
+
+	off := newCompiledRegexps(regexpCacheConfig{size: 0, maxPattern: 4})
+	re1, _ := off.compile("a")
+	re2, _ := off.compile("a")
+	if re1 == re2 || len(off.plain.items) != 0 {
+		t.Error("size 0 should compile every call and cache nothing")
 	}
 }

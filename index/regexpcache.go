@@ -2,6 +2,9 @@ package index
 
 import (
 	"container/list"
+	"log"
+	"os"
+	"strconv"
 	"sync"
 
 	"github.com/grafana/regexp"
@@ -10,22 +13,62 @@ import (
 )
 
 const (
-	// regexpCacheSize bounds each cache by entry count. A search compiles the
-	// same pattern once per shard, so this only has to cover the searches
-	// running at once.
-	regexpCacheSize = 256
+	envRegexpCacheSize        = "ZOEKT_REGEXP_CACHE_SIZE"
+	envRegexpCachePatternSize = "ZOEKT_REGEXP_CACHE_MAX_PATTERN_BYTES"
 
-	// maxCachedPatternLen is the longest pattern (in bytes) that is cached.
-	// The compiled program grows with pattern length, so longer patterns are
-	// compiled per shard as before rather than pinned by the cache. This does
-	// not bound RE2's lazy DFA, which can additionally grow per cached regexp
-	// up to go-re2's memory limit. Typical queries are well below this.
-	maxCachedPatternLen = 4 << 10
+	// defaultRegexpCacheSize bounds each cache by entry count. A search
+	// compiles the same pattern once per shard, so this only has to cover
+	// the searches running at once. With RE2 on, a cached regexp's lazy DFA
+	// can grow to go-re2's 128 MiB limit, so the worst case is this times
+	// that. Zero disables the cache.
+	defaultRegexpCacheSize = 256
+
+	// defaultMaxCachedPatternLen is the longest pattern (in bytes) that is
+	// cached. The compiled program grows with pattern length, so longer
+	// patterns are compiled per shard as before rather than pinned by the
+	// cache. This does not bound RE2's lazy DFA. Typical queries are well
+	// below this.
+	defaultMaxCachedPatternLen = 4 << 10
 )
 
-var regexpCache = &compiledRegexps{
-	plain:  newLRU[*regexp.Regexp](regexpCacheSize),
-	hybrid: newLRU[*hybridre2.Regexp](regexpCacheSize),
+type regexpCacheConfig struct {
+	size       int
+	maxPattern int
+}
+
+// regexpCache returns the process-wide caches, configured from the
+// environment on first use.
+var regexpCache = sync.OnceValue(func() *compiledRegexps {
+	return newCompiledRegexps(regexpCacheConfigFromEnv())
+})
+
+func regexpCacheConfigFromEnv() regexpCacheConfig {
+	return regexpCacheConfig{
+		size:       envInt(envRegexpCacheSize, defaultRegexpCacheSize),
+		maxPattern: envInt(envRegexpCachePatternSize, defaultMaxCachedPatternLen),
+	}
+}
+
+// envInt reads a non-negative integer from the environment. An unset
+// variable gives def; an invalid or negative one logs a warning and gives def.
+func envInt(name string, def int) int {
+	val, ok := os.LookupEnv(name)
+	if !ok {
+		return def
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil || n < 0 {
+		log.Printf("index: ignoring invalid %s=%q, using %d", name, val, def)
+		return def
+	}
+	return n
+}
+
+func newCompiledRegexps(cfg regexpCacheConfig) *compiledRegexps {
+	return &compiledRegexps{
+		plain:  newLRU[*regexp.Regexp](cfg.size, cfg.maxPattern),
+		hybrid: newLRU[*hybridre2.Regexp](cfg.size, cfg.maxPattern),
+	}
 }
 
 type compiledRegexps struct {
@@ -55,16 +98,18 @@ type lruEntry[T any] struct {
 type lru[T any] struct {
 	mu    sync.Mutex
 	limit int
-	items map[string]*lruEntry[T]
-	order *list.List // keys, most recent first
+	// maxKeyLen is the longest key that is cached.
+	maxKeyLen int
+	items     map[string]*lruEntry[T]
+	order     *list.List // keys, most recent first
 }
 
-func newLRU[T any](limit int) *lru[T] {
-	return &lru[T]{limit: limit, items: map[string]*lruEntry[T]{}, order: list.New()}
+func newLRU[T any](limit, maxKeyLen int) *lru[T] {
+	return &lru[T]{limit: limit, maxKeyLen: maxKeyLen, items: map[string]*lruEntry[T]{}, order: list.New()}
 }
 
 func (c *lru[T]) get(key string, compile func(string) (T, error)) (T, error) {
-	if len(key) > maxCachedPatternLen {
+	if c.limit == 0 || len(key) > c.maxKeyLen {
 		return compile(key)
 	}
 
