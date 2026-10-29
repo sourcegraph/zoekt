@@ -8,36 +8,23 @@ name: CI
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: alpine:3
     steps:
-      - name: add dependencies
-        # zstd for faster actions/cache
-        # tar needed for actions/cache (busybox tar is incompatible)
-        # git for a native checkout (also needed in tests)
-        run: apk add zstd git tar
-
       - name: checkout
         uses: actions/checkout@v7
 
-      - name: setup go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
+      - name: install dev tools
+        uses: ./.github/actions/dev-tools
 
-      - name: Cache ctags
+      - name: cache go
         uses: actions/cache@v6
         with:
+          # Includes the toolchain go.mod asks for, which Go downloads into the
+          # module cache.
           path: |
-            /usr/bin/ctags
-            /usr/bin/universal-ctags
-          key: ${{ runner.os }}-ctags-${{ hashFiles('install-ctags-alpine.sh') }}
-
-      - name: install ctags
-        run: |
-          if [ ! -f /usr/bin/ctags ]; then
-            ./install-ctags-alpine.sh
-          fi
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
 
       - name: test
         run: go test ./...
@@ -67,10 +54,8 @@ jobs:
     steps:
       # Run `git checkout`
       - uses: actions/checkout@v6
-      # Install the `buf` CLI
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ secrets.GH_TOKEN }}
+      # Install `buf` from flake.nix
+      - uses: ./.github/actions/dev-tools
       # Lint your Protobuf sources
       - run: .github/workflows/buf-lint-check.sh
 
@@ -80,10 +65,8 @@ jobs:
     steps:
       # Run `git checkout`
       - uses: actions/checkout@v6
-      # Install the `buf` CLI
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ secrets.GH_TOKEN }}
+      # Install `buf` from flake.nix
+      - uses: ./.github/actions/dev-tools
       # Check to see if the Protobuf sources are formatted
       - run: .github/workflows/buf-format-check.sh
 
@@ -93,10 +76,8 @@ jobs:
     steps:
       # Run `git checkout`
       - uses: actions/checkout@v6
-      # Install the `buf` CLI
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ secrets.GH_TOKEN }}
+      # Install `buf` from flake.nix
+      - uses: ./.github/actions/dev-tools
       # Check if the generated code is up-to-date
       - run: .github/workflows/buf-generate-check.sh
 

@@ -6,6 +6,9 @@
 # When bumping CTAGS_VERSION, update CTAGS_COMMIT and the sha256 sums below
 # together from the release page/API:
 # https://github.com/universal-ctags/ctags-nightly-build/releases
+#
+# ctag-overlay.nix reads the CTAGS_* lines below to give the Nix flake (CI,
+# orbs, nix develop) the same ctags, so keep them as unquoted NAME=value lines.
 
 CTAGS_VERSION=2024.01.07
 CTAGS_COMMIT=4053f69a35d8d3d307b274040f27c147eec79ee7

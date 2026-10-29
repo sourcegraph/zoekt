@@ -5,24 +5,23 @@
     ];
   },
 }:
-let
-  # pkgs.universal-ctags installs the binary as "ctags", not "universal-ctags"
-  # like zoekt expects.
-  universal-ctags = pkgs.writeScriptBin "universal-ctags" ''
-    #!${pkgs.stdenv.shell}
-    exec ${pkgs.universal-ctags}/bin/ctags "$@"
-  '';
-in
 pkgs.mkShell {
   name = "zoekt";
 
-  nativeBuildInputs = [
+  # Also installed by .agents/setup (orbs) and CI via the flake's dev-tools
+  # package.
+  packages = [
+    # go.mod's toolchain line makes this Go download and switch to the exact
+    # toolchain zoekt uses.
     pkgs.go_1_27
 
-    # zoekt-git-index
-    pkgs.git
+    # zoekt-git-index and tests
+    pkgs.gitMinimal
 
-    # Used to index symbols
-    universal-ctags
+    # Used to index symbols, pinned by ./ctag-overlay.nix
+    pkgs.universal-ctags
+
+    # Protobuf lint, format and generate checks
+    pkgs.buf
   ];
 }

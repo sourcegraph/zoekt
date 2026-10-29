@@ -3,49 +3,23 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-buf_path="/usr/local/bin/buf"
-buf_url="https://github.com/bufbuild/buf/releases/download/v1.47.2/buf-Linux-x86_64"
-buf_sha256="3a0c4da8d46eea8136affa63db202c76a44f8112384160b73c3fffb1cf14b5d8"
-
-if ! command -v go >/dev/null 2>&1; then
-  echo "Installing Go from Debian testing..."
-  cat <<'EOF' | sudo tee /etc/apt/sources.list.d/amp-go-testing.sources >/dev/null
-Types: deb
-URIs: http://deb.debian.org/debian
-Suites: forky
-Components: main
-Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
-EOF
-
-  cleanup_apt_source() {
-    sudo rm -f /etc/apt/sources.list.d/amp-go-testing.sources
-  }
-  trap cleanup_apt_source EXIT
-
-  sudo apt-get update
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -t forky golang-go
-
-  cleanup_apt_source
-  trap - EXIT
-fi
-
-if ! echo "$buf_sha256  $buf_path" | sha256sum --check --status 2>/dev/null; then
-  echo "Installing Buf..."
-  buf_download="$(mktemp)"
-  trap 'rm -f "$buf_download"' EXIT
-  curl -fsSL --retry 5 -o "$buf_download" "$buf_url"
-  echo "$buf_sha256  $buf_download" | sha256sum --check --status
-  sudo install -m 0755 "$buf_download" "$buf_path"
-  rm -f "$buf_download"
-  trap - EXIT
-fi
-
-if ! command -v universal-ctags >/dev/null 2>&1; then
-  sudo CTAGS_INSTALL_DIR=/usr/local/bin "$repo_root/install-ctags-alpine.sh"
-fi
-
-echo "Downloading Go modules..."
 cd "$repo_root"
+
+# Install the dev shell's tools (Go, git, universal-ctags, buf) from the flake
+# and link them into ~/.local/bin, which is on PATH for every orb command, so
+# agents don't need to run commands through `nix develop`. The out-link keeps
+# the tools from being garbage collected.
+echo "Installing dev tools from flake.nix..."
+tools="$HOME/.local/share/zoekt-dev-tools"
+nix build .#dev-tools --out-link "$tools"
+mkdir -p "$HOME/.local/bin"
+ln -sf "$tools"/bin/* "$HOME/.local/bin/"
+export PATH="$HOME/.local/bin:$PATH"
+
+# Go switches to the toolchain in go.mod before running any command in the
+# module, so this downloads that toolchain into the snapshot as well.
+echo "Downloading the Go toolchain and modules..."
 go mod download
+go version
 
 echo "Orb setup complete."
