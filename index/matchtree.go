@@ -213,7 +213,7 @@ func regexpPattern(s *query.Regexp) string {
 
 func newRegexpMatchTree(s *query.Regexp) (*regexpMatchTree, error) {
 	pattern := regexpPattern(s)
-	re, err := regexp.Compile(pattern)
+	re, err := regexpCache().compile(pattern)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +222,7 @@ func newRegexpMatchTree(s *query.Regexp) (*regexpMatchTree, error) {
 	// compilation overhead for filename-only regexps.
 	var hr *hybridre2.Regexp
 	if !s.FileName {
-		hr, err = hybridre2.Compile(pattern)
+		hr, err = regexpCache().compileHybrid(pattern)
 		if err != nil {
 			return nil, err
 		}
@@ -240,7 +240,7 @@ func (d *indexData) newSymbolRegexpMatchTree(s *query.Regexp) (*symbolRegexpMatc
 		return nil, err
 	}
 
-	re, err := regexp.Compile(regexpPattern(s))
+	re, err := regexpCache().compile(regexpPattern(s))
 	if err != nil {
 		return nil, err
 	}
@@ -843,7 +843,7 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	data := cp.data(t.fileName)
 	// For file content, use hybridRegexp which dispatches to go-re2 when
 	// len(data) >= ZOEKT_RE2_THRESHOLD_BYTES. For filename matching, use
-	// grafana/regexp directly: filenames are always short, so the WASM
+	// grafana/regexp directly: filenames are always short, so the cgo
 	// call overhead of go-re2 outweighs any benefit.
 	var idxs [][]int
 	if t.fileName {
