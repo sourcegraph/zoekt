@@ -1,0 +1,14 @@
+name: dev tools
+description: >-
+  Installs Nix and puts the flake's dev-tools package (Go, git,
+  universal-ctags, buf) on PATH, the same tools as `nix develop` and orb
+  setup.
+runs:
+  using: composite
+  steps:
+    - uses: cachix/install-nix-action@v31
+
+    - shell: bash
+      run: |
+        nix build .#dev-tools --out-link "$RUNNER_TEMP/dev-tools"
+        echo "$RUNNER_TEMP/dev-tools/bin" >> "$GITHUB_PATH"
