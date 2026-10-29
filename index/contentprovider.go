@@ -393,45 +393,23 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int, language string, opts *zoekt.SearchOptions) []zoekt.ChunkMatch {
 	data := p.data(false)
 
-	// columnHelper prevents O(len(ms) * len(data)) lookups for all columns.
-	// However, it depends on ms being sorted by byteOffset and non-overlapping.
-	// This invariant is true at the time of writing, but we conservatively
-	// enforce this. Note: chunkCandidates preserves the sorting so safe to
-	// transform now.
-	columnHelper := columnHelper{data: data}
 	if !sort.IsSorted((sortByOffsetSlice)(ms)) {
 		log.Printf("WARN: performance invariant violated. candidate matches are not sorted in fillContentChunkMatches. Report to developers.")
 		sort.Sort((sortByOffsetSlice)(ms))
 	}
 
 	newlines := p.newlines()
-	chunks := chunkCandidates(ms, newlines, numContextLines)
+	chunks, ranges := chunkCandidates(ms, newlines, data, numContextLines)
 	chunkMatches := make([]zoekt.ChunkMatch, 0, len(chunks))
+	candidateStart := 0
 	for _, chunk := range chunks {
-		ranges := make([]zoekt.Range, 0, len(chunk.candidates))
-		for _, cm := range chunk.candidates {
-			startOffset := cm.byteOffset
-			endOffset := cm.byteOffset + cm.byteMatchSz
-			startLine, endLine := newlines.offsetRangeToLineRange(startOffset, endOffset)
-
-			ranges = append(ranges, zoekt.Range{
-				Start: zoekt.Location{
-					ByteOffset: startOffset,
-					LineNumber: uint32(startLine),
-					Column:     columnHelper.get(int(newlines.lineStart(startLine)), startOffset),
-				},
-				End: zoekt.Location{
-					ByteOffset: endOffset,
-					LineNumber: uint32(endLine),
-					Column:     columnHelper.get(int(newlines.lineStart(endLine)), endOffset),
-				},
-			})
-		}
+		chunkCandidates := ms[candidateStart:chunk.endCandidate]
+		chunkRanges := ranges[candidateStart:chunk.endCandidate:chunk.endCandidate]
 
 		firstLineNumber := max(int(chunk.firstLine)-numContextLines, 1)
 		firstLineStart := newlines.lineStart(firstLineNumber)
 
-		chunkScore, symbolInfo := p.scoreChunk(chunk.candidates, language, opts)
+		chunkScore, symbolInfo := p.scoreChunk(chunkCandidates, chunkRanges, language, opts)
 		chunkMatches = append(chunkMatches, zoekt.ChunkMatch{
 			Content: newlines.getLines(data, firstLineNumber, int(chunk.lastLine)+numContextLines+1),
 			ContentStart: zoekt.Location{
@@ -440,22 +418,51 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 				Column:     1,
 			},
 			FileName:      false,
-			Ranges:        ranges,
+			Ranges:        chunkRanges,
 			SymbolInfo:    symbolInfo,
 			BestLineMatch: uint32(chunkScore.bestLine),
 			Score:         chunkScore.score,
 			DebugScore:    chunkScore.debugScore,
 		})
+		candidateStart = chunk.endCandidate
 	}
 	return chunkMatches
 }
 
 type candidateChunk struct {
-	candidates []*candidateMatch
-	firstLine  uint32 // 1-based, inclusive
-	lastLine   uint32 // 1-based, inclusive
-	minOffset  uint32 // 0-based, inclusive
-	maxOffset  uint32 // 0-based, exclusive
+	endCandidate int    // 0-based, exclusive index into the sorted candidate slice
+	firstLine    uint32 // 1-based, inclusive
+	lastLine     uint32 // 1-based, inclusive
+	minOffset    uint32 // 0-based, inclusive
+	maxOffset    uint32 // 0-based, exclusive
+}
+
+// lineNumberCursor resolves nondecreasing offsets, reusing the current line and
+// binary-searching only when an offset passes its next newline.
+type lineNumberCursor struct {
+	newlines newlines
+	next     int
+}
+
+func (c *lineNumberCursor) atOffset(offset uint32) int {
+	if c.next < len(c.newlines.locs) && c.newlines.locs[c.next] >= offset {
+		return c.next + 1
+	}
+
+	start := c.next
+	c.next += sort.Search(len(c.newlines.locs)-start, func(i int) bool {
+		return c.newlines.locs[start+i] >= offset
+	})
+	return c.next + 1
+}
+
+// offsetRangeToLineRange returns the 1-based lines containing [startOffset, endOffset).
+// The end uses max(startOffset, max(endOffset, 1)-1) to preserve newline
+// and empty-range behavior.
+func (c *lineNumberCursor) offsetRangeToLineRange(startOffset, endOffset uint32) (startLine, endLine int) {
+	startLine = c.atOffset(startOffset)
+	endLine = c.atOffset(max(startOffset, max(endOffset, 1)-1))
+	return startLine, endLine
 }
 
 // chunkCandidates groups a set of sorted, non-overlapping candidate matches by line number. Adjacent
@@ -463,36 +470,53 @@ type candidateChunk struct {
 // it to overlap with an adjacent chunk.
 //
 // input invariants: ms is sorted by byteOffset and is non overlapping with respect to endOffset.
-// output invariants: if you flatten candidates the input invariant is retained.
-func chunkCandidates(ms []*candidateMatch, newlines newlines, numContextLines int) []candidateChunk {
+// output invariants: the candidate spans and ranges retain the input ordering.
+func chunkCandidates(ms []*candidateMatch, newlines newlines, data []byte, numContextLines int) ([]candidateChunk, []zoekt.Range) {
 	var chunks []candidateChunk
+	ranges := make([]zoekt.Range, 0, len(ms))
+	lineCursor := lineNumberCursor{newlines: newlines}
+	// columnHelper amortizes UTF-8 rune counting across the sorted endpoints.
+	columns := columnHelper{data: data}
 
-	for _, m := range ms {
+	for i, m := range ms {
 		startOffset := m.byteOffset
 		endOffset := m.byteOffset + m.byteMatchSz
-		firstLine, lastLine := newlines.offsetRangeToLineRange(startOffset, endOffset)
+		firstLine, lastLine := lineCursor.offsetRangeToLineRange(startOffset, endOffset)
+
+		ranges = append(ranges, zoekt.Range{
+			Start: zoekt.Location{
+				ByteOffset: startOffset,
+				LineNumber: uint32(firstLine),
+				Column:     columns.get(int(newlines.lineStart(firstLine)), startOffset),
+			},
+			End: zoekt.Location{
+				ByteOffset: endOffset,
+				LineNumber: uint32(lastLine),
+				Column:     columns.get(int(newlines.lineStart(lastLine)), endOffset),
+			},
+		})
 
 		if len(chunks) > 0 && int(chunks[len(chunks)-1].lastLine)+numContextLines >= firstLine-numContextLines {
 			// If a new chunk created with the current candidateMatch would
 			// overlap with the previous chunk, instead add the candidateMatch
 			// to the last chunk and extend end of the last chunk.
 			last := &chunks[len(chunks)-1]
-			last.candidates = append(last.candidates, m)
+			last.endCandidate = i + 1
 			if last.maxOffset < endOffset {
 				last.lastLine = uint32(lastLine)
 				last.maxOffset = uint32(endOffset)
 			}
 		} else {
 			chunks = append(chunks, candidateChunk{
-				firstLine:  uint32(firstLine),
-				lastLine:   uint32(lastLine),
-				minOffset:  startOffset,
-				maxOffset:  endOffset,
-				candidates: []*candidateMatch{m},
+				endCandidate: i + 1,
+				firstLine:    uint32(firstLine),
+				lastLine:     uint32(lastLine),
+				minOffset:    startOffset,
+				maxOffset:    endOffset,
 			})
 		}
 	}
-	return chunks
+	return chunks, ranges
 }
 
 // columnHelper is a helper struct which caches the number of runes last
@@ -563,17 +587,6 @@ func (nls newlines) lineStart(lineNumber int) uint32 {
 	} else {
 		return nls.locs[startIdx] + 1
 	}
-}
-
-// offsetRangeToLineRange returns range of lines that fully contains the given byte range.
-// The inputs are 0-based byte offsets into the file representing the (exclusive) range [startOffset, endOffset).
-// The return values are 1-based line numbers representing the (inclusive) range [startLine, endLine].
-func (nls newlines) offsetRangeToLineRange(startOffset, endOffset uint32) (startLine, endLine int) {
-	startLine = nls.atOffset(startOffset)
-	endLine = nls.atOffset(
-		max(startOffset, max(endOffset, 1)-1), // clamp endOffset and prevent underflow
-	)
-	return startLine, endLine
 }
 
 // getLines returns a slice of data containing the lines [low, high).
