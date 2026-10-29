@@ -31,8 +31,7 @@ FROM alpine:3
 RUN apk add --no-cache git ca-certificates bind-tools tini
 
 COPY --chmod=755 install-ctags-alpine.sh /usr/local/bin/install-ctags-alpine.sh
-ARG TARGETARCH
-RUN TARGETARCH="$TARGETARCH" /usr/local/bin/install-ctags-alpine.sh && \
+RUN /usr/local/bin/install-ctags-alpine.sh && \
     rm /usr/local/bin/install-ctags-alpine.sh
 
 RUN addgroup -S zoekt && \
