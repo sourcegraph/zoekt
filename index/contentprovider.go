@@ -393,6 +393,10 @@ func (p *contentProvider) fillContentMatches(ms []*candidateMatch, numContextLin
 func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numContextLines int, language string, opts *zoekt.SearchOptions) []zoekt.ChunkMatch {
 	data := p.data(false)
 
+	// chunkCandidates resolves lines and columns with cursors that avoid
+	// O(len(ms) * len(data)) lookups. However, they depend on ms being sorted
+	// by byteOffset and non-overlapping. This invariant is true at the time of
+	// writing, but we conservatively enforce sorting.
 	if !sort.IsSorted((sortByOffsetSlice)(ms)) {
 		log.Printf("WARN: performance invariant violated. candidate matches are not sorted in fillContentChunkMatches. Report to developers.")
 		sort.Sort((sortByOffsetSlice)(ms))
@@ -437,14 +441,26 @@ type candidateChunk struct {
 	maxOffset    uint32 // 0-based, exclusive
 }
 
-// lineNumberCursor resolves nondecreasing offsets, reusing the current line and
-// binary-searching only when an offset passes its next newline.
+// lineNumberCursor is like newlines.atOffset, but amortizes lookups for
+// nondecreasing offsets. It reuses the current line and only binary-searches
+// once an offset passes the next newline, so many matches on the same line
+// cost O(1) each.
 type lineNumberCursor struct {
 	newlines newlines
-	next     int
+	// next is the index into newlines.locs of the newline ending the line
+	// returned by the last lookup.
+	next int
 }
 
+// atOffset returns the line containing the offset. If the offset lands on
+// the newline ending line M, we return M.
 func (c *lineNumberCursor) atOffset(offset uint32) int {
+	if c.next > 0 && c.newlines.locs[c.next-1] >= offset {
+		// offset moved backwards past a newline, which violates our input
+		// invariant. Restart the search so we stay correct, just slower.
+		c.next = 0
+	}
+
 	if c.next < len(c.newlines.locs) && c.newlines.locs[c.next] >= offset {
 		return c.next + 1
 	}
@@ -456,12 +472,14 @@ func (c *lineNumberCursor) atOffset(offset uint32) int {
 	return c.next + 1
 }
 
-// offsetRangeToLineRange returns the 1-based lines containing [startOffset, endOffset).
-// The end uses max(startOffset, max(endOffset, 1)-1) to preserve newline
-// and empty-range behavior.
+// offsetRangeToLineRange returns range of lines that fully contains the given byte range.
+// The inputs are 0-based byte offsets into the file representing the (exclusive) range [startOffset, endOffset).
+// The return values are 1-based line numbers representing the (inclusive) range [startLine, endLine].
 func (c *lineNumberCursor) offsetRangeToLineRange(startOffset, endOffset uint32) (startLine, endLine int) {
 	startLine = c.atOffset(startOffset)
-	endLine = c.atOffset(max(startOffset, max(endOffset, 1)-1))
+	endLine = c.atOffset(
+		max(startOffset, max(endOffset, 1)-1), // clamp endOffset and prevent underflow
+	)
 	return startLine, endLine
 }
 
@@ -474,8 +492,9 @@ func (c *lineNumberCursor) offsetRangeToLineRange(startOffset, endOffset uint32)
 func chunkCandidates(ms []*candidateMatch, newlines newlines, data []byte, numContextLines int) ([]candidateChunk, []zoekt.Range) {
 	var chunks []candidateChunk
 	ranges := make([]zoekt.Range, 0, len(ms))
+	// Both cursors rely on the input invariant to amortize their lookups
+	// across matches.
 	lineCursor := lineNumberCursor{newlines: newlines}
-	// columnHelper amortizes UTF-8 rune counting across the sorted endpoints.
 	columns := columnHelper{data: data}
 
 	for i, m := range ms {
