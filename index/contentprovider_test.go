@@ -3,6 +3,7 @@ package index
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"testing"
 	"testing/quick"
 	"unicode/utf8"
@@ -345,6 +346,11 @@ func TestLineNumberCursor(t *testing.T) {
 				sequences[0] = append(sequences[0], offset)
 			}
 			sequences = append(sequences, []uint32{0, uint32(len(content))})
+			// Decreasing offsets violate the input invariant, but must still
+			// resolve correctly.
+			descending := slices.Clone(sequences[0])
+			slices.Reverse(descending)
+			sequences = append(sequences, descending)
 
 			for _, offsets := range sequences {
 				cursor := lineNumberCursor{newlines: nls}
