@@ -314,13 +314,12 @@ func checkSameShards(t *testing.T, shard1, shard2 string) {
 }
 
 // Merged documents carry no SkipReason, so merge and explode must copy each
-// repository's skipped file counts from its source shard. Repositories from
-// shards without counts must stay unknown.
+// repository's skipped file counts from its source shard.
 func TestMergeExplodePreservesSkippedFiles(t *testing.T) {
 	inputDir, mergeDir := t.TempDir(), t.TempDir()
 	branches := []zoekt.RepositoryBranch{{Name: "main"}, {Name: "dev"}}
 
-	build := func(name string, recordSkipped bool, docs ...Document) *os.File {
+	build := func(name string, docs ...Document) *os.File {
 		sb, err := NewShardBuilder(&zoekt.Repository{Name: name, Branches: branches})
 		if err != nil {
 			t.Fatal(err)
@@ -329,10 +328,6 @@ func TestMergeExplodePreservesSkippedFiles(t *testing.T) {
 			if err := sb.Add(d); err != nil {
 				t.Fatal(err)
 			}
-		}
-		if !recordSkipped {
-			// Like a shard written before Zoekt recorded skipped files.
-			sb.repoList[0].SkippedFiles = nil
 		}
 		fn := filepath.Join(inputDir, name+".zoekt")
 		if err := builderWriteAll(fn, sb); err != nil {
@@ -346,8 +341,8 @@ func TestMergeExplodePreservesSkippedFiles(t *testing.T) {
 		return f
 	}
 
-	readSkipped := func(paths ...string) map[string]*zoekt.SkippedFiles {
-		got := map[string]*zoekt.SkippedFiles{}
+	readSkipped := func(paths ...string) map[string]zoekt.SkippedFiles {
+		got := map[string]zoekt.SkippedFiles{}
 		for _, p := range paths {
 			repos, _, err := ReadMetadataPath(p)
 			if err != nil {
@@ -362,14 +357,12 @@ func TestMergeExplodePreservesSkippedFiles(t *testing.T) {
 
 	var inputs []IndexFile
 	for _, f := range []*os.File{
-		build("a", true,
+		build("a",
 			Document{Name: "large", SkipReason: SkipReasonTooLarge, Branches: []string{"main", "dev"}},
 			Document{Name: "bin", Content: []byte("a\x00b"), Branches: []string{"dev"}},
 			Document{Name: "text", Content: []byte("not skipped"), Branches: []string{"main"}}),
-		build("b", true,
+		build("b",
 			Document{Name: "trigrams", SkipReason: SkipReasonTooManyTrigrams, Branches: []string{"main"}}),
-		build("c", false,
-			Document{Name: "small", SkipReason: SkipReasonTooSmall, Branches: []string{"main"}}),
 	} {
 		indexFile, err := NewIndexFile(f)
 		if err != nil {
@@ -379,7 +372,7 @@ func TestMergeExplodePreservesSkippedFiles(t *testing.T) {
 		inputs = append(inputs, indexFile)
 	}
 
-	want := map[string]*zoekt.SkippedFiles{
+	want := map[string]zoekt.SkippedFiles{
 		"a": {
 			TooLarge: zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
 			Binary:   zoekt.SkippedFileCount{Total: 1, DefaultBranch: 0},
@@ -387,7 +380,6 @@ func TestMergeExplodePreservesSkippedFiles(t *testing.T) {
 		"b": {
 			TooManyTrigrams: zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
 		},
-		"c": nil,
 	}
 
 	tmpName, compound, err := Merge(mergeDir, inputs...)

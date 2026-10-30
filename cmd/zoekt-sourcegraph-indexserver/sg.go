@@ -378,7 +378,7 @@ type indexStatus struct {
 	FailureMessage string
 
 	// SkippedFiles is the sum of the skipped-file counts over all of the
-	// repository's shards. Nil means unknown.
+	// repository's shards. Nil means not reported.
 	SkippedFiles *zoekt.SkippedFiles
 }
 
@@ -444,7 +444,7 @@ func (u *updateIndexStatusRequest) FromProto(x *configv1.UpdateIndexStatusReques
 	}
 }
 
-// skippedFilesToProto converts the counts, keeping nil (unknown) distinct from
+// skippedFilesToProto converts the counts, keeping nil (not reported) distinct from
 // all-zero counts.
 func skippedFilesToProto(s *zoekt.SkippedFiles) *configv1.SkippedFiles {
 	if s == nil {

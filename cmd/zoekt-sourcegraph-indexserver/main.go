@@ -764,11 +764,12 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 		}
 		indexTimeUnix = metadata.IndexTime.Unix()
 
-		// The counts are secondary, so report unknown rather than fail the
+		// The counts are secondary, so leave them unset rather than fail the
 		// status update.
-		skippedFiles, err = sumSkippedFiles(args.BuildOptions())
-		if err != nil {
+		if sum, err := sumSkippedFiles(args.BuildOptions()); err != nil {
 			errorLog.Printf("reading skipped-file counts for %s: %v", args.String(), err)
+		} else {
+			skippedFiles = &sum
 		}
 	}
 
@@ -789,35 +790,25 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 }
 
 // sumSkippedFiles sums the skipped-file counts of the repository over all of
-// its shards. It returns nil (unknown) if there are no shards or if any shard
-// has no counts, for example because an older version of Zoekt wrote it.
+// its shards. Shards written before Zoekt recorded the counts add zero.
 //
 // After a delta build, the sum can be too high until the next full build: the
 // older shards still count the skipped files at paths the delta build changed,
 // and the delta shard counts those paths again for every branch.
-func sumSkippedFiles(o *index.Options) (*zoekt.SkippedFiles, error) {
-	shards := o.FindAllShards()
-	if len(shards) == 0 {
-		return nil, nil
-	}
+func sumSkippedFiles(o *index.Options) (zoekt.SkippedFiles, error) {
 	var sum zoekt.SkippedFiles
-	for _, shard := range shards {
+	for _, shard := range o.FindAllShards() {
 		repos, _, err := index.ReadMetadataPathAlive(shard)
 		if err != nil {
-			return nil, fmt.Errorf("reading metadata for shard %q: %w", shard, err)
+			return zoekt.SkippedFiles{}, fmt.Errorf("reading metadata for shard %q: %w", shard, err)
 		}
-		found := false
 		for _, r := range repos {
-			if r.ID == o.RepositoryDescription.ID && r.SkippedFiles != nil {
-				sum.Add(r.SkippedFiles)
-				found = true
+			if r.ID == o.RepositoryDescription.ID {
+				sum.Add(&r.SkippedFiles)
 			}
 		}
-		if !found {
-			return nil, nil
-		}
 	}
-	return &sum, nil
+	return sum, nil
 }
 
 func truncateFailureMessageForSourcegraph(s string) string {

@@ -385,7 +385,7 @@ func NewShardBuilder(r *zoekt.Repository) (*ShardBuilder, error) {
 	if err := b.setRepository(r); err != nil {
 		return nil, err
 	}
-	b.repoList[0].SkippedFiles = &zoekt.SkippedFiles{}
+	b.repoList[0].SkippedFiles = zoekt.SkippedFiles{}
 	return b, nil
 }
 
@@ -427,13 +427,6 @@ func (b *ShardBuilder) setRepository(desc *zoekt.Repository) error {
 	}
 
 	repo := *desc
-
-	// Merge and explode pass the metadata of a loaded shard. Copy the counts
-	// so that counting in this builder never writes into the source shard.
-	if desc.SkippedFiles != nil {
-		skipped := *desc.SkippedFiles
-		repo.SkippedFiles = &skipped
-	}
 
 	// copy subrepomap without root
 	repo.SubRepoMap = map[string]*zoekt.Repository{}
@@ -649,9 +642,7 @@ func (b *ShardBuilder) Add(doc Document) error {
 
 	// Merge copies the counts of the source shards and adds documents without
 	// a SkipReason, so documents are not counted twice.
-	if skipped := b.repoList[repoIdx].SkippedFiles; skipped != nil {
-		countSkipped(skipped, doc.SkipReason, mask)
-	}
+	countSkipped(&b.repoList[repoIdx].SkippedFiles, doc.SkipReason, mask)
 
 	return nil
 }

@@ -481,45 +481,25 @@ func TestSumSkippedFiles(t *testing.T) {
 	}
 	opts.SetDefaults()
 
-	require.Nil(t, mustSumSkippedFiles(t, &opts), "no shards")
-
 	b, err := index.NewBuilder(opts)
 	require.NoError(t, err)
 	for _, doc := range []index.Document{
 		{Name: "big", Content: []byte(strings.Repeat("a", 200)), Branches: []string{"main"}},
-		{Name: "bin", Content: []byte("a\x00b"), Branches: []string{"main", "dev"}},
-		{Name: "ok", Content: []byte("hello"), Branches: []string{"dev"}},
+		{Name: "bin", Content: []byte("a\x00b"), Branches: []string{"dev"}},
+		{Name: "ok", Content: []byte("hello"), Branches: []string{"main", "dev"}},
 	} {
 		require.NoError(t, b.Add(doc))
 	}
 	require.NoError(t, b.Finish())
+	require.Len(t, opts.FindAllShards(), 3)
 
-	shards := opts.FindAllShards()
-	require.Len(t, shards, 3)
-
-	want := &zoekt.SkippedFiles{
+	got, err := sumSkippedFiles(&opts)
+	require.NoError(t, err)
+	want := zoekt.SkippedFiles{
 		TooLarge: zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
-		Binary:   zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
+		Binary:   zoekt.SkippedFileCount{Total: 1},
 	}
-	if diff := cmp.Diff(want, mustSumSkippedFiles(t, &opts)); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("sum mismatch (-want +got):\n%s", diff)
 	}
-
-	// One shard without counts, like a shard written by an older version of
-	// Zoekt, makes the whole sum unknown.
-	repos, _, err := index.ReadMetadataPath(shards[2])
-	require.NoError(t, err)
-	repos[0].SkippedFiles = nil
-	tmp, final, err := index.JsonMarshalRepoMetaTemp(shards[2], repos[0])
-	require.NoError(t, err)
-	require.NoError(t, os.Rename(tmp, final))
-
-	require.Nil(t, mustSumSkippedFiles(t, &opts), "shard without counts")
-}
-
-func mustSumSkippedFiles(t *testing.T, o *index.Options) *zoekt.SkippedFiles {
-	t.Helper()
-	s, err := sumSkippedFiles(o)
-	require.NoError(t, err)
-	return s
 }

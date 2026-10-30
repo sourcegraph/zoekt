@@ -36,7 +36,7 @@ func TestIndexOptions_RoundTrip(t *testing.T) {
 func TestUpdateIndexStatusRequest_RoundTrip(t *testing.T) {
 	var diff string
 	f := func(original updateIndexStatusRequest) bool {
-		// Go through the wire format: nil SkippedFiles (unknown) must stay
+		// Go through the wire format: nil SkippedFiles (not reported) must stay
 		// distinct from present but all-zero counts.
 		b, err := proto.Marshal(original.ToProto())
 		if err != nil {

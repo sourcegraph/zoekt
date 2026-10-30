@@ -656,13 +656,13 @@ type Repository struct {
 
 	// SkippedFiles counts the documents of this repository in this shard that
 	// were skipped at index time. It is per-shard index metadata: set when read
-	// with ReadMetadata*, nil for shards written before Zoekt recorded it, and
+	// with ReadMetadata*, zero for shards written before Zoekt recorded it, and
 	// kept by merge, explode and .meta rewrites. The indexserver sums it over
 	// a repository's shards and reports it to Sourcegraph.
 	//
-	// It is always nil in List results, where nil does not mean unknown, and it
-	// is not part of the Repository protobuf.
-	SkippedFiles *SkippedFiles `json:",omitempty"`
+	// It is always zero in List results and is not part of the Repository
+	// protobuf.
+	SkippedFiles SkippedFiles `json:",omitzero"`
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {
@@ -866,10 +866,10 @@ func (s *SkippedFiles) Add(o *SkippedFiles) {
 type SkippedFileCount struct {
 	// Total is the number of skipped documents. A document with the same
 	// contents on several branches is counted once.
-	Total uint32 `json:",omitzero"`
+	Total uint64 `json:",omitzero"`
 
 	// DefaultBranch is the number of skipped documents on the default branch.
-	DefaultBranch uint32 `json:",omitzero"`
+	DefaultBranch uint64 `json:",omitzero"`
 }
 
 func (c *SkippedFileCount) add(o *SkippedFileCount) {

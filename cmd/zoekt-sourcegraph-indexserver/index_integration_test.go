@@ -160,7 +160,7 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 			}
 
 			// big.bin is the same document on both branches. With the large
-			// file exception, the counts are known and zero, not unknown.
+			// file exception, zero counts are still reported.
 			wantSkipped := &zoekt.SkippedFiles{}
 			if len(tc.largeFiles) == 0 {
 				wantSkipped.TooLarge = zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1}

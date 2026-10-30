@@ -156,7 +156,7 @@ func TestShardBuilderCountsSkippedFiles(t *testing.T) {
 		Document{Name: "text", Content: []byte("not skipped"), Branches: []string{"main", "dev", "feat"}},
 	)
 
-	want := &zoekt.SkippedFiles{
+	want := zoekt.SkippedFiles{
 		TooLarge:        zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
 		TooSmall:        zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
 		Binary:          zoekt.SkippedFileCount{Total: 2, DefaultBranch: 1},
@@ -173,7 +173,7 @@ func TestShardBuilderCountsSkippedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := res.Repos[0].Repository.SkippedFiles; got != nil {
+	if got := res.Repos[0].Repository.SkippedFiles; got != (zoekt.SkippedFiles{}) {
 		t.Errorf("List must not expose per-shard Repository.SkippedFiles, got %+v", got)
 	}
 }

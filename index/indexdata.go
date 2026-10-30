@@ -241,7 +241,7 @@ func (d *indexData) calculateStats() error {
 		// List callers must not see per-shard counts: shardedSearcher.List
 		// keeps one arbitrary shard's Repository per repo. md is a copy, so
 		// d.repoMetaData keeps the counts for merge and explode.
-		md.SkippedFiles = nil
+		md.SkippedFiles = zoekt.SkippedFiles{}
 
 		d.repoListEntry = append(d.repoListEntry, zoekt.RepoListEntry{
 			Repository:    md,

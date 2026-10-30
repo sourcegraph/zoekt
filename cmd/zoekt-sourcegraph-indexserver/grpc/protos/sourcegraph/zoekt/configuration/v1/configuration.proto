@@ -179,9 +179,9 @@ message UpdateIndexStatusRequest {
     // was not indexed, summed over all of the repository's shards.
     //
     // On failure, it is unset and the counts from the last success remain
-    // valid, because the previous index is still served. On success, unset
-    // means unknown, for example because some shards were written by an older
-    // version of Zoekt.
+    // valid, because the previous index is still served. On success, it is
+    // set unless reading the counts failed. Shards written by older versions
+    // of Zoekt count as zero.
     SkippedFiles skipped_files = 6;
   }
 
@@ -203,9 +203,9 @@ message SkippedFiles {
 // SkippedFileCount counts skipped files of one reason.
 message SkippedFileCount {
   // total counts each skipped file once, even if several branches contain it.
-  uint32 total = 1;
+  uint64 total = 1;
   // default_branch counts the skipped files on the default branch.
-  uint32 default_branch = 2;
+  uint64 default_branch = 2;
 }
 
 // UpdateIndexStatusResponse is the response from the UpdateIndexStatus RPC.

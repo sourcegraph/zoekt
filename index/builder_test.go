@@ -752,11 +752,6 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 				if diff := cmp.Diff(&test.updatedRepository, foundRepository, diffOptions...); diff != "" {
 					t.Errorf("shard %q: unexpected diff in repository metadata (-want +got):\n%s", s, diff)
 				}
-
-				// Rewriting the metadata of older shards must keep their counts.
-				if foundRepository.SkippedFiles == nil {
-					t.Errorf("shard %q: lost its skipped file counts", s)
-				}
 			}
 		})
 	}
