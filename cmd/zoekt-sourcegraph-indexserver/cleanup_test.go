@@ -303,6 +303,7 @@ func TestVacuum(t *testing.T) {
 	}
 
 	mockMerger = func() error { return mergeHelper(t, fn) }
+	t.Cleanup(func() { mockMerger = nil })
 	got, err := removeTombstones(fn)
 	if err != nil {
 		t.Fatal(err)
@@ -337,37 +338,48 @@ func TestVacuum(t *testing.T) {
 	}
 }
 
-// TestVacuumAllTombstoned checks that vacuuming a compound shard whose repos
-// are all tombstoned deletes the shard instead of writing an empty compound
-// shard, which zoekt-webserver cannot load.
-func TestVacuumAllTombstoned(t *testing.T) {
+func TestVacuumDeletesAllTombstonedShard(t *testing.T) {
 	tmpDir := t.TempDir()
 	fn := createCompoundShard(t, tmpDir, []uint32{1, 2})
-	for _, id := range []uint32{1, 2} {
-		if err := index.SetTombstone(fn, id); err != nil {
+	for _, repoID := range []uint32{1, 2} {
+		if err := index.SetTombstone(fn, repoID); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	if err := mergeHelper(t, fn); err == nil {
-		t.Fatal("index.Merge should refuse to write a compound shard without repos")
-	}
-
 	mockMerger = func() error { return mergeHelper(t, fn) }
-	got, err := removeTombstones(fn)
+	t.Cleanup(func() { mockMerger = nil })
+	removed, err := removeTombstones(fn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("wanted 2 tombstones, got %d", len(got))
+	if len(removed) != 2 {
+		t.Fatalf("removed %d repositories, want 2", len(removed))
+	}
+	if _, err := os.Stat(fn); !os.IsNotExist(err) {
+		t.Fatalf("all-tombstoned shard was not removed: %v", err)
+	}
+	if matches, err := filepath.Glob(filepath.Join(tmpDir, "compound-*")); err != nil {
+		t.Fatal(err)
+	} else if len(matches) != 0 {
+		t.Fatalf("vacuum left compound shards behind: %v", matches)
+	}
+}
+
+func TestCleanupRemovesRepositorylessShard(t *testing.T) {
+	dir := t.TempDir()
+	path := createCompoundShard(t, dir, []uint32{1})
+	if err := os.WriteFile(path+".meta", []byte("[]"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
-	shards, err := filepath.Glob(tmpDir + "/compound-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(shards) != 0 {
-		t.Fatalf("expected no compound shards, got %v", shards)
+	// Cleanup runs independently of shard merging, so legacy repositoryless
+	// shards are recovered even if vacuum is disabled.
+	cleanup(dir, []uint32{1}, time.Now(), false, &phaseTimings{})
+	for _, path := range []string{path, path + ".meta"} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("repositoryless shard path %s was not removed: %v", path, err)
+		}
 	}
 }
 
@@ -511,8 +523,8 @@ func TestCleanupCompoundShards(t *testing.T) {
 
 	cleanup(dir, repos, now, true, &phaseTimings{})
 
-	index := getShards(dir)
-	trash := getShards(filepath.Join(dir, ".trash"))
+	index := getShards(dir, false)
+	trash := getShards(filepath.Join(dir, ".trash"), false)
 
 	if len(trash) != 0 {
 		t.Fatalf("expected empty trash, got %+v", trash)
@@ -590,19 +602,22 @@ func createCompoundShard(t *testing.T, dir string, ids []uint32, optFns ...func(
 	}
 
 	// create a compound shard.
-	tmpFn, dstFn, err := merge(t, dir, repoFns)
+	result, err := merge(t, dir, repoFns)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !result.HasOutput() {
+		t.Fatal("merge produced no output")
 	}
 	for _, old := range repoFns {
 		if err := os.Remove(old); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.Rename(tmpFn, dstFn); err != nil {
+	if err := os.Rename(result.TempPath, result.FinalPath); err != nil {
 		t.Fatal(err)
 	}
-	return dstFn
+	return result.FinalPath
 }
 
 func mergeHelper(t *testing.T, fn string) error {
@@ -620,6 +635,22 @@ func mergeHelper(t *testing.T, fn string) error {
 	}
 	defer indexFile.Close()
 
-	_, _, err = index.Merge(filepath.Dir(fn), indexFile)
-	return err
+	result, err := index.Merge(filepath.Dir(fn), indexFile)
+	if err != nil {
+		return err
+	}
+
+	paths, err := index.IndexFilePaths(fn)
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+	}
+	if result.HasOutput() {
+		return os.Rename(result.TempPath, result.FinalPath)
+	}
+	return nil
 }
