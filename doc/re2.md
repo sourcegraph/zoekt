@@ -43,27 +43,12 @@ command discards log output unless you pass `-v`.
 
 ## Compiled regexp cache
 
-Zoekt keeps compiled regexps in a process-wide cache, so a pattern is not
-recompiled for every shard and search. There is one cache for
-grafana/regexp and one for the RE2 variant. Two environment variables tune
-them; both are read once, on the first regexp compile, and an invalid or
-negative value logs a warning and keeps the default:
-
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `ZOEKT_REGEXP_CACHE_SIZE` | `256` | Entries per cache. `0` disables caching. |
-| `ZOEKT_REGEXP_CACHE_MAX_PATTERN_BYTES` | `4096` | Longest pattern that is cached. |
-
-With RE2 on, a cached regexp keeps its lazy DFA, which can grow to go-re2's
-128 MiB limit. go-re2 doesn't let zoekt set that limit per regexp, so the
-worst case is the cache size times 128 MiB. Lower `ZOEKT_REGEXP_CACHE_SIZE`
-if that matters, but not too far. With RE2 on, very small values (or `0`) can
-raise RSS under many concurrent searches with distinct regexps, because every
-shard then compiles its own copy and go-re2 frees the native memory only when
-finalizers run. Keep it well above the number of concurrent searches.
-
-`ZOEKT_REGEXP_CACHE_MAX_PATTERN_BYTES` measures the pattern after zoekt's
-parsing and normalization, so it can be longer than what the user typed.
+Zoekt shares a compiled regexp between all shards and searches that use the
+same pattern at the same time, so a search does not compile its pattern once
+per shard. The cache holds compiled regexps weakly: once no search uses a
+pattern, the garbage collector frees it (and with RE2, its lazy DFA), and a
+later search compiles it again. Memory is therefore bounded by the distinct
+patterns in use, not by a cache size, and there is nothing to tune.
 
 ## Known tradeoffs
 
