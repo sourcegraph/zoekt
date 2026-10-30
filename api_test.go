@@ -276,6 +276,23 @@ func TestRepositoryMergeMutable(t *testing.T) {
 			t.Fatalf("want err, got mutated=%t", mutated)
 		}
 	})
+	t.Run("different Branch Metadata", func(t *testing.T) {
+		// A branch-metadata-only change (eg. toggling "supported") is
+		// treated the same as any other Branches change: it requires a
+		// reindex, since Branches as a whole is immutable.
+		b := a
+		b.Branches = []RepositoryBranch{
+			{
+				Name:     "branchName",
+				Version:  "branchVersion",
+				Metadata: map[string]string{"supported": "true"},
+			},
+		}
+		mutated, err := a.MergeMutable(&b)
+		if err == nil {
+			t.Fatalf("want err, got mutated=%t", mutated)
+		}
+	})
 	t.Run("different RawConfig", func(t *testing.T) {
 		b := a
 		b.RawConfig = map[string]string{"foo": "bar"}
@@ -359,6 +376,40 @@ func TestRepositoryMergeMutable(t *testing.T) {
 			t.Fatalf("got different Repository, %v vs %v", a, b)
 		}
 	})
+}
+
+func TestRepositoryBranchMetadataJSONRoundTrip(t *testing.T) {
+	repo := Repository{
+		Name: "repo",
+		Branches: []RepositoryBranch{
+			{Name: "main", Version: "v1", Metadata: map[string]string{"supported": "true"}},
+			{Name: "old-feature", Version: "v2"}, // no metadata
+		},
+	}
+
+	data, err := json.Marshal(repo)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var got Repository
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if !reflect.DeepEqual(repo.Branches, got.Branches) {
+		t.Fatalf("Branches round-trip mismatch: got %+v, want %+v", got.Branches, repo.Branches)
+	}
+
+	// Shards written before this field existed decode with a nil map, not
+	// an error; branch.meta.<field> queries simply won't match them.
+	var old Repository
+	if err := json.Unmarshal([]byte(`{"Name":"repo","Branches":[{"Name":"main","Version":"v1"}]}`), &old); err != nil {
+		t.Fatalf("Unmarshal old shard format: %v", err)
+	}
+	if old.Branches[0].Metadata != nil {
+		t.Fatalf("want nil Metadata for old shard format, got %v", old.Branches[0].Metadata)
+	}
 }
 
 func TestMonthsSince1970(t *testing.T) {
