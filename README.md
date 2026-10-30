@@ -128,6 +128,10 @@ volume `zoekt-data` and reads a mounted mirror config file:
       ghcr.io/sourcegraph/zoekt \
       zoekt-indexserver -mirror_config /config.json -data_dir /data
 
+The image is built with Nix. To build it yourself on Linux, run:
+
+    nix build .#docker-image && docker load < result
+
 If you start the web server with `-rpc`, it exposes a [simple JSON search
 API](doc/json-api.md) at `http://localhost:6070/api/search`.
 

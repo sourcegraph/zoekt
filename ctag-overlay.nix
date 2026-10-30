@@ -1,27 +1,22 @@
-# Pins universal-ctags to the nightly build that ./install-ctags-alpine.sh
-# installs in the Docker image, so Docker, CI, orbs and `nix develop` share one
-# pin. Bump ctags by editing that script; this overlay reads its CTAGS_* lines.
+# Pins universal-ctags for the Docker image, CI, orbs and `nix develop`.
+#
+# When bumping, update version, commit and the sha256 sums together from the
+# release page/API:
+# https://github.com/universal-ctags/ctags-nightly-build/releases
 #
 # Like nixpkgs' package, it also provides "universal-ctags", the name zoekt
 # looks up on PATH.
 final: prev:
 let
-  inherit (final) lib;
+  version = "2024.01.07";
+  commit = "4053f69a35d8d3d307b274040f27c147eec79ee7";
+  # GitHub release asset digests for uctags-${version}-linux-*.tar.xz
+  sha256 = {
+    x86_64 = "0c0bbc9f81d3f7151988b94e78c64914ab41ee4c5e10debfe79f73fee54a68a0";
+    aarch64 = "a50e25cb5b4ced8fea119984695e77464aaa73d5d4a53c10fec34dd82b1d9e5f";
+  };
 
-  pins = lib.listToAttrs (
-    lib.concatMap (
-      line:
-      let
-        m = builtins.match "(CTAGS_[A-Z0-9_]+)=([^$]*)" line;
-      in
-      lib.optional (m != null) (lib.nameValuePair (lib.elemAt m 0) (lib.elemAt m 1))
-    ) (lib.splitString "\n" (builtins.readFile ./install-ctags-alpine.sh))
-  );
-  version = pins.CTAGS_VERSION;
-  commit = pins.CTAGS_COMMIT;
-
-  # The nightly builds publish static Linux binaries, the same ones the Docker
-  # image uses.
+  # The nightly builds publish static Linux binaries.
   linuxArch =
     {
       x86_64-linux = "x86_64";
@@ -37,7 +32,7 @@ in
         inherit version;
         src = final.fetchurl {
           url = "https://github.com/universal-ctags/ctags-nightly-build/releases/download/${version}%2B${commit}/uctags-${version}-linux-${linuxArch}.tar.xz";
-          sha256 = pins."CTAGS_TAR_SHA256_${lib.toUpper linuxArch}";
+          sha256 = sha256.${linuxArch};
         };
         installPhase = ''
           install -Dm755 bin/ctags $out/bin/ctags

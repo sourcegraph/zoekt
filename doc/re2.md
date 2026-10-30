@@ -24,8 +24,8 @@ RE2 is only available in binaries built with `CGO_ENABLED=1` and the
 CGO_ENABLED=1 go build -tags re2_cgo ./cmd/zoekt-webserver
 ```
 
-The published Dockerfile builds with `CGO_ENABLED=0`, so images built from it
-ignore the setting.
+The published container image is built with `CGO_ENABLED=0`, so it
+ignores the setting.
 
 Then set `ZOEKT_RE2_THRESHOLD_BYTES` for the process. It is read once, on the
 first regexp compile:
