@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"math"
@@ -31,7 +32,7 @@ func (s *Server) Search(ctx context.Context, req *webserverv1.SearchRequest) (*w
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	res, err := s.streamer.Search(ctx, q, zoekt.SearchOptionsFromProto(req.GetOpts()))
+	res, err := s.streamer.Search(ctx, q, zoekt.SearchOptionsFromProto(cmp.Or(req.GetOpts(), &webserverv1.SearchOptions{})))
 	if err != nil {
 		return nil, searchError(err)
 	}
@@ -50,7 +51,7 @@ func (s *Server) StreamSearch(req *webserverv1.StreamSearchRequest, ss webserver
 	sender := gRPCChunkSender(ss)
 	sampler := newSamplingSender(sender)
 
-	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(request.GetOpts()), sampler)
+	err = s.streamer.StreamSearch(ss.Context(), q, zoekt.SearchOptionsFromProto(cmp.Or(request.GetOpts(), &webserverv1.SearchOptions{})), sampler)
 	if err == nil {
 		sampler.Flush()
 	}
