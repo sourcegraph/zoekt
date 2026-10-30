@@ -27,7 +27,7 @@ require (
 	github.com/prometheus/procfs v0.15.1
 	github.com/rs/xid v1.6.0
 	github.com/shirou/gopsutil/v3 v3.24.5
-	github.com/sourcegraph/go-ctags v0.0.0-20261028134543-dfef6082007f
+	github.com/sourcegraph/go-ctags v0.0.0-20261028141448-51b3518cd4be
 	github.com/sourcegraph/log v0.0.0-20241024013702-574f7079c888
 	github.com/sourcegraph/mountinfo v0.0.0-20251117172727-e9f6a87f579c
 	github.com/stretchr/testify v1.11.1

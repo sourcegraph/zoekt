@@ -280,8 +280,8 @@ github.com/shirou/gopsutil/v3 v3.24.5/go.mod h1:bsoOS1aStSs9ErQ1WWfxllSeS1K5D+U3
 github.com/sirupsen/logrus v1.7.0/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/skeema/knownhosts v1.3.1 h1:X2osQ+RAjK76shCbvhHHHVl3ZlgDm8apHEHFqRjnBY8=
 github.com/skeema/knownhosts v1.3.1/go.mod h1:r7KTdC8l4uxWRyK2TpQZ/1o5HaSzh06ePQNxPwTcfiY=
-github.com/sourcegraph/go-ctags v0.0.0-20261028134543-dfef6082007f h1:amk0Nxm0pWz4eWyLMxW3sUeBmfqN9D3BuOYGXFKxI64=
-github.com/sourcegraph/go-ctags v0.0.0-20261028134543-dfef6082007f/go.mod h1:ol3v7qt2iNcy5vpILcsBY7f0BnSW0fi4oUNMYDpH2Yc=
+github.com/sourcegraph/go-ctags v0.0.0-20261028141448-51b3518cd4be h1:a1Tsrr9Fpq6MHhnP5dpVwYXUc521gzIkPM/sDengH8o=
+github.com/sourcegraph/go-ctags v0.0.0-20261028141448-51b3518cd4be/go.mod h1:ol3v7qt2iNcy5vpILcsBY7f0BnSW0fi4oUNMYDpH2Yc=
 github.com/sourcegraph/log v0.0.0-20241024013702-574f7079c888 h1:9PUH8Hn8mVhPTtRKqot1HHsbLRDP0H2A+FSyuRumP2Q=
 github.com/sourcegraph/log v0.0.0-20241024013702-574f7079c888/go.mod h1:IDp09QkoqS8Z3CyN2RW6vXjgABkNpDbyjLIHNQwQ8P8=
 github.com/sourcegraph/mountinfo v0.0.0-20251117172727-e9f6a87f579c h1:6F/5RpKA1mga6IAHIYsiaCzQF4hzZEAifM08oO7BFoE=
