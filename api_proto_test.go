@@ -179,7 +179,9 @@ func TestProtoRoundtrip(t *testing.T) {
 		f := func(f1 *Repository) bool {
 			p1 := f1.ToProto()
 			f2 := RepositoryFromProto(p1)
-			if diff := cmp.Diff(f1, &f2, cmpopts.IgnoreUnexported(Repository{})); diff != "" {
+			// SkippedFiles is per-shard index metadata and not part of the
+			// Repository protobuf.
+			if diff := cmp.Diff(f1, &f2, cmpopts.IgnoreUnexported(Repository{}), cmpopts.IgnoreFields(Repository{}, "SkippedFiles")); diff != "" {
 				fmt.Printf("got diff: %s", diff)
 				return false
 			}
@@ -512,6 +514,7 @@ func Fuzz_RepoList_ProtoRoundTrip(f *testing.F) {
 
 		opts := []cmp.Option{
 			cmpopts.IgnoreUnexported(Repository{}),
+			cmpopts.IgnoreFields(Repository{}, "SkippedFiles"), // not part of the protobuf
 			cmpopts.EquateEmpty(),
 		}
 

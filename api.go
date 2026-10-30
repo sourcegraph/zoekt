@@ -653,6 +653,16 @@ type Repository struct {
 	// FileTombstones is a set of file paths that should be ignored across all branches
 	// in this shard.
 	FileTombstones map[string]struct{} `json:",omitempty"`
+
+	// SkippedFiles counts the documents of this repository in this shard that
+	// were skipped at index time. It is per-shard index metadata: set when read
+	// with ReadMetadata*, zero for shards written before Zoekt recorded it, and
+	// kept by merge, explode and .meta rewrites. The indexserver sums it over
+	// a repository's shards and reports it to Sourcegraph.
+	//
+	// It is always zero in List results and is not part of the Repository
+	// protobuf.
+	SkippedFiles SkippedFiles `json:",omitzero"`
 }
 
 func (r *Repository) UnmarshalJSON(data []byte) error {
@@ -839,6 +849,37 @@ type RepoStats struct {
 	// OtherBranchesNewLinesCount is the number of newlines "\n" in all branches
 	// except the default branch.
 	OtherBranchesNewLinesCount uint64
+}
+
+// SkippedFiles counts documents skipped at index time, per reason.
+type SkippedFiles struct {
+	TooLarge        SkippedFileCount `json:",omitzero"`
+	TooSmall        SkippedFileCount `json:",omitzero"`
+	Binary          SkippedFileCount `json:",omitzero"`
+	TooManyTrigrams SkippedFileCount `json:",omitzero"`
+}
+
+// Add adds the counts of o to s.
+func (s *SkippedFiles) Add(o *SkippedFiles) {
+	s.TooLarge.add(&o.TooLarge)
+	s.TooSmall.add(&o.TooSmall)
+	s.Binary.add(&o.Binary)
+	s.TooManyTrigrams.add(&o.TooManyTrigrams)
+}
+
+// SkippedFileCount counts skipped documents of one reason.
+type SkippedFileCount struct {
+	// Total is the number of skipped documents. A document with the same
+	// contents on several branches is counted once.
+	Total uint64 `json:",omitzero"`
+
+	// DefaultBranch is the number of skipped documents on the default branch.
+	DefaultBranch uint64 `json:",omitzero"`
+}
+
+func (c *SkippedFileCount) add(o *SkippedFileCount) {
+	c.Total += o.Total
+	c.DefaultBranch += o.DefaultBranch
 }
 
 func (s *RepoStats) Add(o *RepoStats) {

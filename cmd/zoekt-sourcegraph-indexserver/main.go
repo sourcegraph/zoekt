@@ -743,6 +743,7 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 	state := configv1.UpdateIndexStatusRequest_Repository_STATE_SUCCESS
 	var failureMessage string
 	var indexTimeUnix int64
+	var skippedFiles *zoekt.SkippedFiles
 	if indexErr != nil {
 		state = configv1.UpdateIndexStatusRequest_Repository_STATE_FAILURE
 		failureMessage = truncateFailureMessageForSourcegraph(indexErr.Error())
@@ -762,6 +763,14 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 			return errors.New("failed to find metadata for new/updated index")
 		}
 		indexTimeUnix = metadata.IndexTime.Unix()
+
+		// The counts are secondary, so leave them unset rather than fail the
+		// status update.
+		if sum, err := sumSkippedFiles(args.BuildOptions()); err != nil {
+			errorLog.Printf("reading skipped-file counts for %s: %v", args.String(), err)
+		} else {
+			skippedFiles = &sum
+		}
 	}
 
 	status := []indexStatus{{
@@ -770,6 +779,7 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 		IndexTimeUnix:  indexTimeUnix,
 		State:          state,
 		FailureMessage: failureMessage,
+		SkippedFiles:   skippedFiles,
 	}}
 
 	if err := sg.UpdateIndexStatus(status); err != nil {
@@ -777,6 +787,28 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 	}
 
 	return nil
+}
+
+// sumSkippedFiles sums the skipped-file counts of the repository over all of
+// its shards. Shards written before Zoekt recorded the counts add zero.
+//
+// After a delta build, the sum can be too high until the next full build: the
+// older shards still count the skipped files at paths the delta build changed,
+// and the delta shard counts those paths again for every branch.
+func sumSkippedFiles(o *index.Options) (zoekt.SkippedFiles, error) {
+	var sum zoekt.SkippedFiles
+	for _, shard := range o.FindAllShards() {
+		repos, _, err := index.ReadMetadataPathAlive(shard)
+		if err != nil {
+			return zoekt.SkippedFiles{}, fmt.Errorf("reading metadata for shard %q: %w", shard, err)
+		}
+		for _, r := range repos {
+			if r.ID == o.RepositoryDescription.ID {
+				sum.Add(&r.SkippedFiles)
+			}
+		}
+	}
+	return sum, nil
 }
 
 func truncateFailureMessageForSourcegraph(s string) string {

@@ -1058,6 +1058,7 @@ func (b *Builder) newShardBuilder() (*ShardBuilder, error) {
 	desc.HasSymbols = !b.opts.DisableCTags && b.opts.CTagsPath != ""
 	desc.SubRepoMap = b.opts.SubRepositories
 	desc.IndexOptions = b.opts.GetHash()
+	desc.SkippedFiles = zoekt.SkippedFiles{}
 
 	content := b.getPostingsBuilder()
 	name := b.getPostingsBuilder()

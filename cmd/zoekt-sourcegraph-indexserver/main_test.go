@@ -23,6 +23,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
@@ -464,5 +465,41 @@ func TestAddDefaultPort(t *testing.T) {
 				t.Errorf("addDefaultPort(%q) mismatch (-want +got):\n%s", test.input, diff)
 			}
 		})
+	}
+}
+
+func TestSumSkippedFiles(t *testing.T) {
+	opts := index.Options{
+		IndexDir: t.TempDir(),
+		SizeMax:  100,
+		ShardMax: 1, // one document per shard
+		RepositoryDescription: zoekt.Repository{
+			ID:       1,
+			Name:     "repo",
+			Branches: []zoekt.RepositoryBranch{{Name: "main"}, {Name: "dev"}},
+		},
+	}
+	opts.SetDefaults()
+
+	b, err := index.NewBuilder(opts)
+	require.NoError(t, err)
+	for _, doc := range []index.Document{
+		{Name: "big", Content: []byte(strings.Repeat("a", 200)), Branches: []string{"main"}},
+		{Name: "bin", Content: []byte("a\x00b"), Branches: []string{"dev"}},
+		{Name: "ok", Content: []byte("hello"), Branches: []string{"main", "dev"}},
+	} {
+		require.NoError(t, b.Add(doc))
+	}
+	require.NoError(t, b.Finish())
+	require.Len(t, opts.FindAllShards(), 3)
+
+	got, err := sumSkippedFiles(&opts)
+	require.NoError(t, err)
+	want := zoekt.SkippedFiles{
+		TooLarge: zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
+		Binary:   zoekt.SkippedFileCount{Total: 1},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("sum mismatch (-want +got):\n%s", diff)
 	}
 }

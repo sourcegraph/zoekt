@@ -745,7 +745,7 @@ func TestBuilder_DeltaShardsMetadataInOlderShards(t *testing.T) {
 
 				diffOptions := []cmp.Option{
 					cmpopts.IgnoreUnexported(zoekt.Repository{}),
-					cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions"),
+					cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions", "SkippedFiles"),
 					cmpopts.EquateEmpty(),
 				}
 
@@ -852,7 +852,7 @@ func TestFindRepositoryMetadata(t *testing.T) {
 			// check outcome
 			compareOptions := []cmp.Option{
 				cmpopts.IgnoreUnexported(zoekt.Repository{}),
-				cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions"),
+				cmpopts.IgnoreFields(zoekt.Repository{}, "IndexOptions", "SkippedFiles"),
 				cmpopts.EquateEmpty(),
 			}
 

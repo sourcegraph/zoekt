@@ -385,6 +385,7 @@ func NewShardBuilder(r *zoekt.Repository) (*ShardBuilder, error) {
 	if err := b.setRepository(r); err != nil {
 		return nil, err
 	}
+	b.repoList[0].SkippedFiles = zoekt.SkippedFiles{}
 	return b, nil
 }
 
@@ -639,7 +640,33 @@ func (b *ShardBuilder) Add(doc Document) error {
 	}
 	b.categories = append(b.categories, category)
 
+	// Merge copies the counts of the source shards and adds documents without
+	// a SkipReason, so documents are not counted twice.
+	countSkipped(&b.repoList[repoIdx].SkippedFiles, doc.SkipReason, mask)
+
 	return nil
+}
+
+// countSkipped counts a document with the given skip reason and branch mask.
+func countSkipped(s *zoekt.SkippedFiles, reason SkipReason, branchMask uint64) {
+	var c *zoekt.SkippedFileCount
+	switch reason {
+	case SkipReasonTooLarge:
+		c = &s.TooLarge
+	case SkipReasonTooSmall:
+		c = &s.TooSmall
+	case SkipReasonBinary:
+		c = &s.Binary
+	case SkipReasonTooManyTrigrams:
+		c = &s.TooManyTrigrams
+	default:
+		return
+	}
+	c.Total++
+	// Zoekt by convention represents the default branch as the lowest bit.
+	if branchMask&1 == 1 {
+		c.DefaultBranch++
+	}
 }
 
 func (b *ShardBuilder) branchMask(br string) uint64 {
