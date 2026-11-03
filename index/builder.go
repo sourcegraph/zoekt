@@ -776,16 +776,49 @@ func (b *Builder) Finish() error {
 		}
 	}
 
+	// Publish data before delta metadata updates, in descending shard-name
+	// order. Keep shard zero last: indexing decisions use its metadata.
+	artifacts := make([]finishedShard, 0, len(artifactPaths))
 	for tmp, final := range artifactPaths {
-		if err := os.Rename(tmp, final); err != nil {
-			b.buildError = err
-			continue
+		artifacts = append(artifacts, finishedShard{tmp, final})
+	}
+	sort.Slice(artifacts, func(i, j int) bool {
+		iMeta := strings.HasSuffix(artifacts[i].final, ".meta")
+		jMeta := strings.HasSuffix(artifacts[j].final, ".meta")
+		if iMeta != jMeta {
+			return !iMeta
 		}
+		return artifacts[i].final > artifacts[j].final
+	})
 
-		delete(toDelete, final)
+	for _, artifact := range artifacts {
+		if err := os.Rename(artifact.temp, artifact.final); err != nil {
+			b.buildError = err
+			break
+		}
+		delete(toDelete, artifact.final)
+		if !strings.HasSuffix(artifact.final, ".meta") {
+			// The old sidecar overrides embedded metadata. Remove it only
+			// after replacing its shard, even if a later rename fails.
+			meta := artifact.final + ".meta"
+			if err := os.Remove(meta); err != nil && !os.IsNotExist(err) {
+				b.buildError = err
+				break
+			}
+			delete(toDelete, meta)
+		}
 	}
 
 	b.finishedShards = map[string]string{}
+
+	// Keep un-replaced prior shards live if publication failed. Only clean up
+	// staging files; already published replacements are not rolled back.
+	if b.buildError != nil {
+		for _, artifact := range artifacts {
+			os.Remove(artifact.temp)
+		}
+		return b.buildError
+	}
 
 	for p := range toDelete {
 		// Don't delete compound shards, set tombstones instead.
