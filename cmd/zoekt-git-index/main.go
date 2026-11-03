@@ -133,9 +133,6 @@ func run() int {
 	profiler.Init("zoekt-git-index")
 	exitStatus := 0
 	for dir, name := range gitRepos {
-		if opts.RepositoryDescription.Name == "" {
-			opts.RepositoryDescription.Name = name
-		}
 		gitOpts := gitindex.Options{
 			BranchPrefix:                      *branchPrefix,
 			Incremental:                       *incremental,
@@ -146,6 +143,9 @@ func run() int {
 			Branches:                          branches,
 			RepoDir:                           dir,
 			DeltaShardNumberFallbackThreshold: *deltaShardNumberFallbackThreshold,
+		}
+		if gitOpts.BuildOptions.RepositoryDescription.Name == "" {
+			gitOpts.BuildOptions.RepositoryDescription.Name = name
 		}
 
 		if _, err := gitindex.IndexGitRepo(gitOpts); err != nil {
