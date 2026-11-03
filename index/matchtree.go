@@ -896,8 +896,10 @@ func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTr
 				byteMatchSz: uint32(len(t.word)),
 				fileName:    t.fileName,
 			})
+			offset += idx + len(t.word)
+		} else {
+			offset += idx + 1
 		}
-		offset += idx + len(t.word)
 	}
 
 	t.found = found
