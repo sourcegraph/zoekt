@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"regexp/syntax"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -194,9 +195,17 @@ type regexpMatchTree struct {
 
 	fileName bool
 
+	// If the regexp can't match a newline (singleLine), pruneMatchTree sets
+	// prefilter to its literal prefilter. Every match then lies on a line with
+	// a prefilter hit.
+	singleLine bool
+	prefilter  matchTree
+
 	// mutable
 	reEvaluated bool
 	found       []*candidateMatch
+	offs        []uint32
+	spans       [][2]int
 
 	// nextDoc, prepare.
 	bruteForceMatchTree
@@ -231,6 +240,7 @@ func newRegexpMatchTree(s *query.Regexp) (*regexpMatchTree, error) {
 		regexp:       re,
 		hybridRegexp: hr,
 		fileName:     s.FileName,
+		singleLine:   !s.FileName && !canMatchNewline(s.Regexp),
 	}, nil
 }
 
@@ -848,6 +858,14 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	var idxs [][]int
 	if t.fileName {
 		idxs = t.regexp.FindAllIndex(data, -1)
+	} else if spans, ok := t.lineSpans(cp, len(data)); ok {
+		for _, sp := range spans {
+			for _, idx := range t.hybridRegexp.FindAllIndex(data[sp[0]:sp[1]], -1) {
+				idx[0] += sp[0]
+				idx[1] += sp[0]
+				idxs = append(idxs, idx)
+			}
+		}
 	} else {
 		idxs = t.hybridRegexp.FindAllIndex(data, -1)
 	}
@@ -865,6 +883,92 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	t.reEvaluated = true
 
 	return matchesStateForSlice(t.found)
+}
+
+// lineSpans returns the byte ranges of the lines holding a hit of t.prefilter,
+// merging adjacent lines. It returns false if the regexp should scan the whole
+// file.
+func (t *regexpMatchTree) lineSpans(cp *contentProvider, size int) ([][2]int, bool) {
+	var ok bool
+	if t.offs, ok = appendHits(t.offs[:0], t.prefilter); !ok {
+		return nil, false
+	}
+	slices.Sort(t.offs)
+	nl := cp.newlines()
+	spans, covered := t.spans[:0], 0
+	for _, off := range t.offs {
+		line := nl.atOffset(off)
+		start, end := int(nl.lineStart(line)), int(nl.lineStart(line+1))
+		if n := len(spans); n > 0 && start <= spans[n-1][1] {
+			covered += end - spans[n-1][1]
+			spans[n-1][1] = end
+		} else {
+			covered += end - start
+			spans = append(spans, [2]int{start, end})
+		}
+	}
+	t.spans = spans
+	// Scan the whole file if the hit lines cover most of it anyway.
+	return spans, covered*2 <= size
+}
+
+// appendHits appends to offs the offsets of the content hits of the
+// prefilter mt, chosen so that every match of its regexp contains one of
+// them. It returns false if mt can't tell.
+func appendHits(offs []uint32, mt matchTree) ([]uint32, bool) {
+	switch t := mt.(type) {
+	case *substrMatchTree:
+		if !t.contEvaluated && len(t.current) > 0 {
+			return offs, false
+		}
+		for _, c := range t.current {
+			offs = append(offs, c.byteOffset)
+		}
+		return offs, true
+	case *andLineMatchTree:
+		return appendHits(offs, &t.andMatchTree)
+	case *andMatchTree:
+		// A match holds a hit of every child, so keep the child with the fewest.
+		start, found := len(offs), false
+		for _, ch := range t.children {
+			end := len(offs)
+			o, ok := appendHits(offs, ch)
+			if ok && (!found || len(o)-end < end-start) {
+				offs, found = append(o[:start], o[end:]...), true
+			} else {
+				offs = o[:end]
+			}
+		}
+		return offs, found
+	case *orMatchTree:
+		for _, ch := range t.children {
+			var ok bool
+			if offs, ok = appendHits(offs, ch); !ok {
+				return offs, false
+			}
+		}
+		return offs, true
+	}
+	return offs, false
+}
+
+// canMatchNewline reports whether a match of re can contain '\n'. \A and \z
+// count too, since a run of lines has its own start and end of text.
+func canMatchNewline(re *syntax.Regexp) bool {
+	switch re.Op {
+	case syntax.OpAnyChar, syntax.OpBeginText, syntax.OpEndText:
+		return true
+	case syntax.OpLiteral:
+		return slices.Contains(re.Rune, '\n')
+	case syntax.OpCharClass:
+		for i := 0; i < len(re.Rune); i += 2 {
+			if re.Rune[i] <= '\n' && '\n' <= re.Rune[i+1] {
+				return true
+			}
+		}
+		return false
+	}
+	return slices.ContainsFunc(re.Sub, canMatchNewline)
 }
 
 func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTree]bool) matchesState {
@@ -1387,6 +1491,14 @@ func pruneMatchTree(mt matchTree) (matchTree, error) {
 				return nil, nil
 			}
 			mt.children[i] = newChild
+		}
+		// newMatchTree pairs a regexp with its prefilter; give it the pruned one.
+		if len(mt.children) == 2 {
+			rt, ok := mt.children[0].(*regexpMatchTree)
+			nv, ok2 := mt.children[1].(*noVisitMatchTree)
+			if ok && ok2 && rt.singleLine {
+				rt.prefilter = nv.matchTree
+			}
 		}
 	case *orMatchTree:
 		// *All* branches of an OR becoming impossible means the entire clause
