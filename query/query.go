@@ -536,6 +536,19 @@ func (m *Meta) String() string {
 	return fmt.Sprintf("meta.%s:%s", m.Field, m.Value)
 }
 
+// BranchMeta represents a query for metadata fields on a branch. Unlike
+// Meta, which matches whole repositories, BranchMeta only matches files
+// that are part of a branch whose metadata satisfies the predicate.
+type BranchMeta struct {
+	Field string         // The branch metadata field name
+	Value *regexp.Regexp // The value to match
+}
+
+// String returns a string representation of the BranchMeta query.
+func (m *BranchMeta) String() string {
+	return fmt.Sprintf("branch.meta.%s:%s", m.Field, m.Value)
+}
+
 func queryChildren(q Q) []Q {
 	switch s := q.(type) {
 	case *And:
