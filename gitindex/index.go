@@ -319,8 +319,13 @@ func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) erro
 		}
 	}
 
-	id, _ := strconv.ParseUint(sec.Options.Get("repoid"), 10, 32)
-	desc.ID = uint32(id)
+	if v := sec.Options.Get("repoid"); v != "" {
+		id, err := zoekt.ParseRepoID(v)
+		if err != nil {
+			return fmt.Errorf("zoekt.repoid: %w", err)
+		}
+		desc.ID = id
+	}
 
 	desc.TenantID, _ = strconv.Atoi(sec.Options.Get("tenantID"))
 
@@ -544,6 +549,13 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	}
 
 	if err := setTemplatesFromRepo(&opts.BuildOptions.RepositoryDescription, repo, opts.RepoDir); err != nil {
+		// Template and URL problems only degrade the result links, so they are
+		// logged and indexing continues. An invalid repository ID is different:
+		// continuing would write a shard without an ID and without its raw
+		// config, so fail the build instead.
+		if errors.Is(err, zoekt.ErrInvalidRepoID) {
+			return false, fmt.Errorf("setTemplatesFromRepo(%s): %w", opts.RepoDir, err)
+		}
 		log.Printf("setTemplatesFromRepo(%s): %s", opts.RepoDir, err)
 	}
 
