@@ -383,7 +383,7 @@ type loader struct {
 	indexFileOpener IndexFileOpener
 }
 
-func (tl *loader) load(keys ...string) {
+func (tl *loader) load(keys ...string) []string {
 	// This is called with all keys on startup, so once this function has
 	// finished running shardedSearcher will be ready.
 	defer tl.ss.markReady()
@@ -391,7 +391,7 @@ func (tl *loader) load(keys ...string) {
 	if len(keys) == 0 {
 		// If there's nothing to load, we exit early here, but we want to mark
 		// ourselves as ready.
-		return
+		return nil
 	}
 
 	var (
@@ -399,6 +399,7 @@ func (tl *loader) load(keys ...string) {
 		wg           sync.WaitGroup // used to wait for all shards to load
 		sem          = semaphore.NewWeighted(int64(runtime.GOMAXPROCS(0)))
 		loadedShards = make(map[string]zoekt.Searcher)
+		loadedKeys   = make([]string, 0, len(keys))
 	)
 
 	publishLoaded := func() {
@@ -438,6 +439,7 @@ func (tl *loader) load(keys ...string) {
 
 			mu.Lock()
 			loadedShards[key] = shard
+			loadedKeys = append(loadedKeys, key)
 			mu.Unlock()
 		}(key)
 	}
@@ -445,6 +447,7 @@ func (tl *loader) load(keys ...string) {
 	wg.Wait()
 
 	publishLoaded()
+	return loadedKeys
 }
 
 func (tl *loader) drop(keys ...string) {
