@@ -130,7 +130,8 @@ func merge(ds ...*indexData) (*ShardBuilder, error) {
 				// TODO we are losing empty repos on merging since we only get here if
 				// there is an associated document.
 
-				if err := sb.setRepository(&d.repoMetaData[repoID]); err != nil {
+				repoWithTombstones := d.repoMetaWithTombstones(repoID)
+				if err := sb.setRepository(&repoWithTombstones); err != nil {
 					return nil, err
 				}
 			}
@@ -260,7 +261,8 @@ func explode(dstDir string, f IndexFile, ibFuncs ...shardBuilderFunc) (map[strin
 
 			sb = newShardBuilder(0)
 			sb.indexFormatVersion = IndexFormatVersion
-			if err := sb.setRepository(&d.repoMetaData[repoID]); err != nil {
+			repo := d.repoMetaWithTombstones(repoID)
+			if err := sb.setRepository(&repo); err != nil {
 				return shardNames, err
 			}
 		}

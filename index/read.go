@@ -428,6 +428,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.repos = make([]uint16, len(d.fileBranchMasks))
 	}
 
+	if err := d.initTombstonedDocs(); err != nil {
+		return nil, err
+	}
+
 	if err := d.calculateStats(); err != nil {
 		return nil, err
 	}
@@ -481,6 +485,59 @@ func (r *reader) parseMetadata(metaData simpleSection, repoMetaData simpleSectio
 	}
 
 	return repos, &md, nil
+}
+
+// filterShardFileTombstones returns the subset of tombstones whose file names
+// exist in shardPath's fileNames section.
+func filterShardFileTombstones(shardPath string, tombstones map[string]struct{}) (map[string]struct{}, error) {
+	if len(tombstones) == 0 {
+		return nil, nil
+	}
+
+	f, err := os.Open(shardPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	inf, err := NewIndexFile(f)
+	if err != nil {
+		return nil, err
+	}
+	defer inf.Close()
+
+	rd := &reader{r: inf}
+	var toc indexTOC
+	if err := rd.readTOCSections(&toc, []string{"fileNames"}); err != nil {
+		return nil, err
+	}
+
+	if len(toc.fileNames.offsets) == 0 {
+		return nil, nil
+	}
+
+	nameContent, err := inf.Read(toc.fileNames.data.off, toc.fileNames.data.sz)
+	if err != nil {
+		return nil, err
+	}
+	nameIndex := toc.fileNames.relativeIndex()
+
+	var filtered map[string]struct{}
+	for i := 0; i+1 < len(nameIndex); i++ {
+		start, end := nameIndex[i], nameIndex[i+1]
+		if end > uint32(len(nameContent)) || start > end {
+			return nil, fmt.Errorf("corrupt fileNames section in shard %q", shardPath)
+		}
+		name := nameContent[start:end]
+		if _, ok := tombstones[string(name)]; ok {
+			if filtered == nil {
+				filtered = make(map[string]struct{})
+			}
+			filtered[string(name)] = struct{}{}
+		}
+	}
+
+	return filtered, nil
 }
 
 const ngramEncoding = 8
