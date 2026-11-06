@@ -94,11 +94,16 @@ func limitChunkMatches(file *zoekt.FileMatch, limit int) int {
 			// lines from it, where N is the difference between the line number
 			// of the end of the old last Range and that of the new last Range.
 			// This calculation is correct in the presence of both context lines
-			// and multiline Ranges, taking into account that Content never has
-			// a trailing newline.
+			// and multiline Ranges.
 			n := cm.Ranges[len(cm.Ranges)-1].End.LineNumber - cm.Ranges[limit-1].End.LineNumber
 			if n > 0 {
-				for b, v := range slices.Backward(cm.Content) {
+				// Lines in Content keep their terminating newline. The last one
+				// closes a line we are keeping, so skip it before counting.
+				content := cm.Content
+				if len(content) > 0 && content[len(content)-1] == '\n' {
+					content = content[:len(content)-1]
+				}
+				for b, v := range slices.Backward(content) {
 					if v == '\n' {
 						n -= 1
 					}
