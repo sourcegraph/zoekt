@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Install the `buf` CLI
-      - uses: bufbuild/buf-setup-action@v1
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
       # Run breaking change detection against the `main` branch
-      - uses: bufbuild/buf-breaking-action@v1
+      - uses: bufbuild/buf-breaking-action@c57b3d842a5c3f3b454756ef65305a50a587c5ba # v1.1.4
         with:
           against: 'https://github.com/sourcegraph/zoekt.git#branch=main'
