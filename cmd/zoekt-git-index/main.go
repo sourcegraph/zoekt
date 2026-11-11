@@ -32,6 +32,7 @@ import (
 	"github.com/sourcegraph/zoekt/gitindex"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 	"github.com/sourcegraph/zoekt/internal/profiler"
+	"github.com/sourcegraph/zoekt/languages"
 )
 
 func run() int {
@@ -118,7 +119,7 @@ func run() int {
 		if len(m) != 2 {
 			continue
 		}
-		opts.LanguageMap[m[0]] = ctags.StringToParser(m[1])
+		opts.LanguageMap[languages.NormalizeLanguage(m[0])] = ctags.StringToParser(m[1])
 	}
 
 	if heapProfileTrigger := os.Getenv("ZOEKT_HEAP_PROFILE_TRIGGER"); heapProfileTrigger != "" {
