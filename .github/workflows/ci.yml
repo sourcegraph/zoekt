@@ -10,13 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: install dev tools
         uses: ./.github/actions/dev-tools
 
       - name: cache go
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Includes the toolchain go.mod asks for, which Go downloads into the
           # module cache.
@@ -33,16 +33,16 @@ jobs:
     name: shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
 
   shfmt:
     name: shfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: reviewdog/action-shfmt@v1.0.4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: reviewdog/action-shfmt@d8f080930b9be5847b4f97e9f4122b81a82aaeac # v1.0.4
         with:
           filter_mode: "nofilter"
           fail_on_error: "true"
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Install `buf` from flake.nix
       - uses: ./.github/actions/dev-tools
       # Lint your Protobuf sources
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Install `buf` from flake.nix
       - uses: ./.github/actions/dev-tools
       # Check to see if the Protobuf sources are formatted
@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Install `buf` from flake.nix
       - uses: ./.github/actions/dev-tools
       # Check if the generated code is up-to-date

@@ -6,7 +6,7 @@ description: >-
 runs:
   using: composite
   steps:
-    - uses: cachix/install-nix-action@v31
+    - uses: cachix/install-nix-action@91f6a0f59e94dfb2cfed0f4000f36a68ead1d20c # v31.11.4
 
     - shell: bash
       run: |
