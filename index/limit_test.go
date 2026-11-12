@@ -8,6 +8,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/query"
 )
 
 func TestLimitMatches(t *testing.T) {
@@ -161,5 +162,40 @@ func TestLimitMatches(t *testing.T) {
 				t.Errorf("Expected %v but got %v", tc.expected, got)
 			}
 		})
+	}
+}
+
+func TestLimitChunkMatchesContent(t *testing.T) {
+	// Three matches, on lines 1, 3 and 5, in a file that ends with a newline.
+	// With one line of context they merge into a single chunk whose Content
+	// spans lines 1 to 6.
+	content := "l1 MATCH\nl2\nl3 MATCH\nl4\nl5 MATCH\nl6\n"
+	b := testShardBuilder(t, nil, Document{Name: "f1", Content: []byte(content)})
+
+	res := searchForTest(t, b, &query.Substring{Pattern: "MATCH", CaseSensitive: true},
+		zoekt.SearchOptions{ChunkMatches: true, NumContextLines: 1})
+	if len(res.Files) != 1 || len(res.Files[0].ChunkMatches) != 1 {
+		t.Fatalf("want one file with one chunk, got %d files", len(res.Files))
+	}
+	if got := len(res.Files[0].ChunkMatches[0].Ranges); got != 3 {
+		t.Fatalf("want 3 ranges before truncation, got %d", got)
+	}
+
+	files := SortAndTruncateFiles(res.Files, &zoekt.SearchOptions{
+		ChunkMatches:         true,
+		NumContextLines:      1,
+		MaxMatchDisplayCount: 2,
+	})
+
+	cm := files[0].ChunkMatches[0]
+	if len(cm.Ranges) != 2 {
+		t.Fatalf("want 2 ranges after truncation, got %d", len(cm.Ranges))
+	}
+	// The dropped third range was on line 5, so its line must go too.
+	if bytes.Contains(cm.Content, []byte("l5 MATCH")) {
+		t.Errorf("Content still holds the dropped match on line 5: %q", cm.Content)
+	}
+	if want := "l1 MATCH\nl2\nl3 MATCH\nl4"; string(cm.Content) != want {
+		t.Errorf("Content = %q, want %q", cm.Content, want)
 	}
 }
