@@ -661,6 +661,7 @@ func (b *Builder) MarkFileAsChangedOrRemoved(path string) {
 // stale shards from previous runs. This should always be called, also
 // in failure cases, to ensure cleanup.
 //
+// A failed publication can leave a mix of old and new shards until a retry.
 // It is safe to call Finish() multiple times.
 func (b *Builder) Finish() error {
 	if b.finishCalled {
@@ -769,6 +770,12 @@ func (b *Builder) Finish() error {
 			paths, err := IndexFilePaths(name)
 			if err != nil {
 				b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
+				for tmp := range artifactPaths {
+					if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
+						log.Printf("removing incomplete shard artifact %s: %v", tmp, err)
+					}
+				}
+				b.finishedShards = map[string]string{}
 				return b.buildError
 			}
 			for _, p := range paths {
@@ -777,31 +784,33 @@ func (b *Builder) Finish() error {
 		}
 	}
 
-	// Publish data before delta metadata updates, in ascending shard-number
-	// order to keep new shards discoverable. Keep shard zero last in each
-	// group: indexing decisions use its metadata.
-	artifacts := make([]finishedShard, 0, len(artifactPaths))
-	for tmp, final := range artifactPaths {
-		artifacts = append(artifacts, finishedShard{tmp, final})
+	type publicationArtifact struct {
+		finishedShard
+		isMeta, isShardZero bool
+		shardNum            int
 	}
+	artifacts := make([]publicationArtifact, 0, len(artifactPaths))
+	for tmp, final := range artifactPaths {
+		name := strings.TrimSuffix(final, ".meta")
+		isMeta := name != final
+		name = strings.TrimSuffix(name, ".zoekt")
+		shardNum, err := strconv.Atoi(name[strings.LastIndexByte(name, '.')+1:])
+		if err != nil {
+			// Compound shard names need not have a shard number.
+			shardNum = 0
+		}
+		artifacts = append(artifacts, publicationArtifact{finishedShard{tmp, final}, isMeta, shardNum == 0, shardNum})
+	}
+	// Publish data before metadata, ascending with shard zero last for discovery and indexing decisions.
 	sort.Slice(artifacts, func(i, j int) bool {
-		iName := strings.TrimSuffix(artifacts[i].final, ".meta")
-		jName := strings.TrimSuffix(artifacts[j].final, ".meta")
-		iMeta := iName != artifacts[i].final
-		jMeta := jName != artifacts[j].final
-		if iMeta != jMeta {
-			return !iMeta
+		a, b := artifacts[i], artifacts[j]
+		if a.isMeta != b.isMeta {
+			return !a.isMeta
 		}
-		iZero := strings.HasSuffix(iName, ".00000.zoekt")
-		jZero := strings.HasSuffix(jName, ".00000.zoekt")
-		if iZero != jZero {
-			return !iZero
+		if a.isShardZero != b.isShardZero {
+			return !a.isShardZero
 		}
-		// Shard numbers are zero-padded to a minimum width of five digits.
-		if len(iName) != len(jName) {
-			return len(iName) < len(jName)
-		}
-		return iName < jName
+		return a.shardNum < b.shardNum
 	})
 
 	hadShardZero := len(oldShards) > 0 && oldShards[0] == b.opts.shardName(0)
@@ -813,7 +822,7 @@ func (b *Builder) Finish() error {
 		}
 		renamed++
 		delete(toDelete, artifact.final)
-		if !strings.HasSuffix(artifact.final, ".meta") {
+		if !artifact.isMeta {
 			// The old sidecar overrides embedded metadata. Remove it only
 			// after replacing its shard, even if a later rename fails.
 			meta := artifact.final + ".meta"
@@ -833,7 +842,7 @@ func (b *Builder) Finish() error {
 	if b.buildError != nil {
 		for i, artifact := range artifacts {
 			paths := []string{artifact.temp, artifact.final}
-			if hadShardZero || i >= renamed || strings.HasSuffix(artifact.final, ".meta") {
+			if hadShardZero || i >= renamed || artifact.isMeta {
 				paths = paths[:1]
 			}
 			for _, p := range paths {
