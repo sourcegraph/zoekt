@@ -104,7 +104,7 @@ func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
 		// SimpleFold cycles through a fold class in increasing order,
 		// wrapping back to its smallest rune.
 		r := unicode.SimpleFold(pr)
-		for r != pr && r < mr {
+		for r > pr && r < mr {
 			r = unicode.SimpleFold(r)
 		}
 		if r != mr {
