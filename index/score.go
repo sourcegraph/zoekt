@@ -45,6 +45,20 @@ func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range,
 	bestLine := 0
 	var symbolInfo []*zoekt.Symbol
 
+	// scoreLine returns symbol info indexed like the matches it was given, or
+	// nil if none of them is a symbol. SymbolInfo has to stay aligned with,
+	// and the same length as, Ranges, so place each line's entries at the
+	// offset of its first match.
+	collect := func(si []*zoekt.Symbol, start int) {
+		if si == nil {
+			return
+		}
+		if symbolInfo == nil {
+			symbolInfo = make([]*zoekt.Symbol, len(ms))
+		}
+		copy(symbolInfo[start:], si)
+	}
+
 	start := 0
 	currentLine := -1
 	for i, m := range ms {
@@ -56,7 +70,7 @@ func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range,
 		// If this match represents a new line, then score the previous line and update 'start'.
 		if i != 0 && lineNumber != currentLine {
 			score, si := p.scoreLine(ms[start:i], language, currentLine, opts)
-			symbolInfo = append(symbolInfo, si...)
+			collect(si, start)
 			if score.score > bestScore.score {
 				bestScore = score
 				bestLine = currentLine
@@ -68,7 +82,7 @@ func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range,
 
 	// Make sure to score the last line
 	line, si := p.scoreLine(ms[start:], language, currentLine, opts)
-	symbolInfo = append(symbolInfo, si...)
+	collect(si, start)
 	if line.score > bestScore.score {
 		bestScore = line
 		bestLine = currentLine
@@ -222,13 +236,16 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 
 	// Check if any index comes from a symbol match tree, and if so hydrate in symbol information
 	var symbolInfo []*zoekt.Symbol
-	for _, m := range ms {
+	for i, m := range ms {
 		if m.symbol {
 			if sec, si, ok := p.findSymbol(m); ok && si != nil {
+				if symbolInfo == nil {
+					symbolInfo = make([]*zoekt.Symbol, len(ms))
+				}
 				// findSymbols does not hydrate in Sym. So we need to store it.
 				sym := sectionSlice(p.data(false), sec)
 				si.Sym = string(sym)
-				symbolInfo = append(symbolInfo, si)
+				symbolInfo[i] = si
 			}
 		}
 	}
