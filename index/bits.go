@@ -96,16 +96,16 @@ func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
 		if pr > mr {
 			pr, mr = mr, pr
 		}
-		// Try lowercasing the smaller rune first. The dotted-I mapping,
-		// which leaves its simple-fold class, decreases the rune instead.
-		if unicode.ToLower(pr) == mr {
-			continue
-		}
-		// SimpleFold cycles through a fold class in increasing order,
-		// wrapping back to its smallest rune.
-		r := unicode.SimpleFold(pr)
-		for r > pr && r < mr {
-			r = unicode.SimpleFold(r)
+		var r rune
+		if mr <= unicode.MaxLatin1 {
+			// Lowercasing is enough when both runes are in Latin-1.
+			r = unicode.ToLower(pr)
+		} else {
+			// SimpleFold returns the next larger rune, or wraps to the smallest.
+			r = unicode.SimpleFold(pr)
+			for r > pr && r < mr {
+				r = unicode.SimpleFold(r)
+			}
 		}
 		if r != mr {
 			return 0, false, !hasEnoughRunes(mixed[mi:], pattern[pi:])
