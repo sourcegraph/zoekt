@@ -85,9 +85,8 @@ func TestLimitMatches(t *testing.T) {
 					})
 					cm.Content = append(cm.Content, fmt.Appendf(nil, "range%dStart\nrange%dEnd\n", i, i)...)
 				}
-				// 1 line of context. Content in zoekt notably just does not
-				// contain a trailing newline.
-				cm.Content = append(cm.Content, []byte("context")...)
+				// 1 line of context.
+				cm.Content = append(cm.Content, []byte("context\n")...)
 
 				// Next Chunk starts two lines past the number of lines we just
 				// added.
@@ -120,7 +119,7 @@ func TestLimitMatches(t *testing.T) {
 					}
 
 					// Using the logic from generateChunkMatch.
-					expectedNewlines := 1 + (len(cm.Ranges) * 2)
+					expectedNewlines := 2 + (len(cm.Ranges) * 2)
 					actualNewlines := bytes.Count(cm.Content, []byte("\n"))
 					if actualNewlines != expectedNewlines {
 						t.Errorf("Expected Content to have %d newlines but got %d", expectedNewlines, actualNewlines)
@@ -195,7 +194,7 @@ func TestLimitChunkMatchesContent(t *testing.T) {
 	if bytes.Contains(cm.Content, []byte("l5 MATCH")) {
 		t.Errorf("Content still holds the dropped match on line 5: %q", cm.Content)
 	}
-	if want := "l1 MATCH\nl2\nl3 MATCH\nl4"; string(cm.Content) != want {
+	if want := "l1 MATCH\nl2\nl3 MATCH\nl4\n"; string(cm.Content) != want {
 		t.Errorf("Content = %q, want %q", cm.Content, want)
 	}
 }
