@@ -94,13 +94,20 @@ func TestCandidateMatchContentBounds(t *testing.T) {
 		})
 	}
 
-	t.Run("case-insensitive mismatch with complete span", func(t *testing.T) {
-		match := candidateMatch{byteOffset: 1, substrBytes: []byte("dx"), substrLowered: []byte("dx")}
-		matched, err := match.matchContent([]byte("abc"))
-		if matched || err != nil {
-			t.Fatalf("matchContent = (%t, %v), want ordinary non-match", matched, err)
-		}
-	})
+	for _, tc := range []struct{ pattern, content string }{
+		{"dx", "bc"},
+		{"Ⱥab", "Ⱥax"},
+		{"😀ab", "😀ax"},
+	} {
+		t.Run("case-insensitive mismatch with complete span/"+tc.pattern, func(t *testing.T) {
+			pattern := []byte(tc.pattern)
+			match := candidateMatch{byteOffset: 1, substrBytes: pattern, substrLowered: toLower(pattern)}
+			matched, err := match.matchContent([]byte("a" + tc.content))
+			if matched || err != nil {
+				t.Fatalf("matchContent = (%t, %v), want ordinary non-match", matched, err)
+			}
+		})
+	}
 }
 
 // Candidate verification must use the same fold classes as trigram generation.
