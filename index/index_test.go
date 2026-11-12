@@ -2032,6 +2032,18 @@ func TestRegexpCaseFolding(t *testing.T) {
 	if len(res.Files) != 1 {
 		t.Fatalf("got %v, want one index", res.Files)
 	}
+
+	// A case-folded literal must not turn into a case-sensitive substring of
+	// its folded (upper case) runes.
+	for _, s := range []string{"(?i)gitiles", "(?i)GITILES"} {
+		q, err := query.Parse(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res := searchForTest(t, b, q); len(res.Files) != 1 {
+			t.Errorf("%s: got %v, want one file", s, res.Files)
+		}
+	}
 }
 
 func TestCaseRegexp(t *testing.T) {
