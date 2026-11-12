@@ -45,22 +45,18 @@ func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range,
 	bestLine := 0
 	var symbolInfo []*zoekt.Symbol
 
-	// scoreLine returns nil when nothing on the line was a symbol match, so
-	// appending its result directly would contribute no entries for that
-	// line's candidates and shift every later symbol onto the wrong match.
-	// SymbolInfo has to stay aligned with, and the same length as, Ranges.
-	scored := 0
-	collect := func(si []*zoekt.Symbol, n int) {
-		switch {
-		case si != nil:
-			if symbolInfo == nil {
-				symbolInfo = make([]*zoekt.Symbol, scored, len(ms))
-			}
-			symbolInfo = append(symbolInfo, si...)
-		case symbolInfo != nil:
-			symbolInfo = append(symbolInfo, make([]*zoekt.Symbol, n)...)
+	// scoreLine returns symbol info indexed like the matches it was given, or
+	// nil if none of them is a symbol. SymbolInfo has to stay aligned with,
+	// and the same length as, Ranges, so place each line's entries at the
+	// offset of its first match.
+	collect := func(si []*zoekt.Symbol, start int) {
+		if si == nil {
+			return
 		}
-		scored += n
+		if symbolInfo == nil {
+			symbolInfo = make([]*zoekt.Symbol, len(ms))
+		}
+		copy(symbolInfo[start:], si)
 	}
 
 	start := 0
@@ -74,7 +70,7 @@ func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range,
 		// If this match represents a new line, then score the previous line and update 'start'.
 		if i != 0 && lineNumber != currentLine {
 			score, si := p.scoreLine(ms[start:i], language, currentLine, opts)
-			collect(si, i-start)
+			collect(si, start)
 			if score.score > bestScore.score {
 				bestScore = score
 				bestLine = currentLine
@@ -86,7 +82,7 @@ func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range,
 
 	// Make sure to score the last line
 	line, si := p.scoreLine(ms[start:], language, currentLine, opts)
-	collect(si, len(ms)-start)
+	collect(si, start)
 	if line.score > bestScore.score {
 		bestScore = line
 		bestLine = currentLine
@@ -240,13 +236,16 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 
 	// Check if any index comes from a symbol match tree, and if so hydrate in symbol information
 	var symbolInfo []*zoekt.Symbol
-	for _, m := range ms {
+	for i, m := range ms {
 		if m.symbol {
 			if sec, si, ok := p.findSymbol(m); ok && si != nil {
+				if symbolInfo == nil {
+					symbolInfo = make([]*zoekt.Symbol, len(ms))
+				}
 				// findSymbols does not hydrate in Sym. So we need to store it.
 				sym := sectionSlice(p.data(false), sec)
 				si.Sym = string(sym)
-				symbolInfo = append(symbolInfo, si)
+				symbolInfo[i] = si
 			}
 		}
 	}
