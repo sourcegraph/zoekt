@@ -70,15 +70,23 @@ var asciiLower = func() [256]byte {
 
 // Compare pattern and mixed using Unicode simple folding. Mixed may be larger
 // than pattern. Return the byte size of the match, whether there was a match,
-// and whether mixed ended before pattern.
-func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
+// and whether mixed ended before pattern. The optional lowered pattern must be
+// toLower(pattern); it keeps mismatch extent checks cheap when lowercasing
+// shortens the pattern.
+func caseFoldingEqualsRunes(pattern, mixed []byte, lowered ...[]byte) (int, bool, bool) {
 	pi, mi := 0, 0
+	// pi-lowerDelta is the corresponding byte offset in the lowered pattern.
+	lowerDelta := 0
 	for pi < len(pattern) && mi < len(mixed) {
 		pb, mb := pattern[pi], mixed[mi]
 		// Fast path for ASCII character matching, done for performance.
 		if pb|mb < utf8.RuneSelf {
 			if asciiLower[pb] != asciiLower[mb] {
-				return 0, false, !hasEnoughRunes(mixed[mi:], pattern[pi:])
+				extent := pattern[pi:]
+				if len(lowered) != 0 {
+					extent = lowered[0][pi-lowerDelta:]
+				}
+				return 0, false, !hasEnoughRunes(mixed[mi:], extent)
 			}
 			pi++
 			mi++
@@ -86,6 +94,10 @@ func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
 		}
 
 		pr, psz := utf8.DecodeRune(pattern[pi:])
+		if len(lowered) != 0 {
+			_, lsz := utf8.DecodeRune(lowered[0][pi-lowerDelta:])
+			lowerDelta += psz - lsz
+		}
 		pi += psz
 		mr, msz := utf8.DecodeRune(mixed[mi:])
 		mi += msz
@@ -108,7 +120,11 @@ func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
 			}
 		}
 		if r != mr {
-			return 0, false, !hasEnoughRunes(mixed[mi:], pattern[pi:])
+			extent := pattern[pi:]
+			if len(lowered) != 0 {
+				extent = lowered[0][pi-lowerDelta:]
+			}
+			return 0, false, !hasEnoughRunes(mixed[mi:], extent)
 		}
 	}
 
