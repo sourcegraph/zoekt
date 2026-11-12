@@ -78,7 +78,11 @@ type indexData struct {
 	// name => mask (power of 2)
 	branchIDs []map[string]uint
 
-	metaData     zoekt.IndexMetadata
+	metaData zoekt.IndexMetadata
+
+	// repoMetaData holds per-repository metadata for this shard. Note that
+	// FileTombstones is moved into tombstonedDocs on load and set to nil;
+	// use repoMetaWithTombstones when writing shard metadata in merge/explode.
 	repoMetaData []zoekt.Repository
 
 	subRepos     []uint32
@@ -103,6 +107,10 @@ type indexData struct {
 
 	// rawConfigMasks contains the encoded RawConfig for each repository
 	rawConfigMasks []uint8
+
+	// tombstonedDocs is a bitset indexed by docID marking documents whose file
+	// name is present in their repository's FileTombstones.
+	tombstonedDocs []uint64
 
 	// Cache for docMatchTree objects
 	docMatchTreeCache *docMatchTreeCache
@@ -335,6 +343,7 @@ func (d *indexData) memoryUse() int {
 	sz += 2 * len(d.repos)
 	sz += 8 * len(d.runeDocSections)
 	sz += 8 * len(d.fileBranchMasks)
+	sz += 8 * len(d.tombstonedDocs)
 	sz += d.contentNgrams.SizeBytes()
 	sz += d.fileNameNgrams.SizeBytes()
 	return sz
@@ -511,6 +520,75 @@ func (d *indexData) fileName(i uint32) []byte {
 
 func (d *indexData) numDocs() uint32 {
 	return uint32(len(d.fileBranchMasks))
+}
+
+// isDocTombstoned reports whether doc is marked as tombstoned in this shard.
+func (d *indexData) isDocTombstoned(doc uint32) bool {
+	word := int(doc >> 6)
+	if word >= len(d.tombstonedDocs) {
+		return false
+	}
+	return d.tombstonedDocs[word]&(uint64(1)<<(doc&63)) != 0
+}
+
+// initTombstonedDocs converts per-repository FileTombstones maps into the
+// per-shard tombstonedDocs bitset and clears FileTombstones to release memory.
+func (d *indexData) initTombstonedDocs() {
+	hasTombstones := false
+	for i := range d.repoMetaData {
+		if len(d.repoMetaData[i].FileTombstones) > 0 {
+			hasTombstones = true
+			break
+		}
+	}
+	if !hasTombstones {
+		return
+	}
+
+	docCount := d.numDocs()
+	for docID := uint32(0); docID < docCount; docID++ {
+		tombstones := d.repoMetaData[d.repos[docID]].FileTombstones
+		if len(tombstones) == 0 {
+			continue
+		}
+		if _, ok := tombstones[string(d.fileName(docID))]; ok {
+			if d.tombstonedDocs == nil {
+				d.tombstonedDocs = make([]uint64, (docCount+63)/64)
+			}
+			d.tombstonedDocs[docID>>6] |= uint64(1) << (docID & 63)
+		}
+	}
+
+	for i := range d.repoMetaData {
+		d.repoMetaData[i].FileTombstones = nil
+	}
+}
+
+// repoMetaWithTombstones returns a copy of d.repoMetaData[repoID] with
+// FileTombstones reconstructed from tombstonedDocs for merge and explode.
+func (d *indexData) repoMetaWithTombstones(repoID int) zoekt.Repository {
+	repo := d.repoMetaData[repoID]
+	if len(d.tombstonedDocs) == 0 {
+		return repo
+	}
+
+	var restored map[string]struct{}
+	for wordIdx, word := range d.tombstonedDocs {
+		for word != 0 {
+			bit := bits.TrailingZeros64(word)
+			word &= word - 1
+			docID := uint32(wordIdx*64 + bit)
+			if int(d.repos[docID]) != repoID {
+				continue
+			}
+			if restored == nil {
+				restored = make(map[string]struct{})
+			}
+			restored[string(d.fileName(docID))] = struct{}{}
+		}
+	}
+	repo.FileTombstones = restored
+	return repo
 }
 
 func (s *indexData) Close() {

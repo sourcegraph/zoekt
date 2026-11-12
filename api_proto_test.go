@@ -235,11 +235,10 @@ func TestProtoRoundtrip(t *testing.T) {
 				}},
 				SubRepoMap: map[string]*Repository{
 					"test": {
-						ID:             2,
-						Name:           "subrepo",
-						Branches:       []RepositoryBranch{},
-						SubRepoMap:     map[string]*Repository{},
-						FileTombstones: map[string]struct{}{},
+						ID:         2,
+						Name:       "subrepo",
+						Branches:   []RepositoryBranch{},
+						SubRepoMap: map[string]*Repository{},
 					},
 				},
 				CommitURLTemplate:    "committemplate",
@@ -254,9 +253,6 @@ func TestProtoRoundtrip(t *testing.T) {
 				HasSymbols:       true,
 				Tombstone:        false,
 				LatestCommitDate: time.Now(),
-				FileTombstones: map[string]struct{}{
-					"test1": {},
-				},
 			},
 			IndexMetadata: IndexMetadata{
 				IndexFormatVersion:    32,
@@ -404,7 +400,6 @@ func (*Repository) Generate(rng *rand.Rand, _ int) reflect.Value {
 		HasSymbols:           gen(r.HasSymbols, rng),
 		Tombstone:            gen(r.Tombstone, rng),
 		LatestCommitDate:     latestCommitDate,
-		FileTombstones:       gen(r.FileTombstones, rng),
 	}
 	return reflect.ValueOf(v)
 }
