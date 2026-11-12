@@ -4417,6 +4417,26 @@ func TestWordSearch(t *testing.T) {
 	})
 }
 
+func TestWordSearchOverlap(t *testing.T) {
+	// "0.0" at offset 2 is not a word, the overlapping one at offset 4 is.
+	b := testShardBuilder(t, nil, Document{Name: "f1", Content: []byte("v10.0.0")})
+
+	sres := searchForTest(t, b,
+		&query.Regexp{
+			Regexp:        mustParseRE(`\b0\.0\b`),
+			CaseSensitive: true,
+			Content:       true,
+		})
+
+	if len(sres.Files) != 1 || len(sres.Files[0].LineMatches) != 1 {
+		t.Fatalf("got %v, want 1 match in 1 file", sres.Files)
+	}
+
+	if got := sres.Files[0].LineMatches[0].LineFragments[0].Offset; got != 4 {
+		t.Errorf("got offset %d, want 4", got)
+	}
+}
+
 // Simple benchmark focused on chunk match scoring. It creates a single file that will have a 1000-line chunk match.
 // The benchmark time is expected to be strongly correlated with time spent assembling and scoring this chunk.
 func BenchmarkScoreChunkMatches(b *testing.B) {
