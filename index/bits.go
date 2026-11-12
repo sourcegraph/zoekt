@@ -95,7 +95,16 @@ func caseFoldingEqualsRunes(pattern, mixed []byte, lowered ...[]byte) (int, bool
 
 		pr, psz := utf8.DecodeRune(pattern[pi:])
 		if len(lowered) != 0 {
-			_, lsz := utf8.DecodeRune(lowered[0][pi-lowerDelta:])
+			// toLower produces valid UTF-8; only the leading byte is needed.
+			lsz := 1
+			switch b := lowered[0][pi-lowerDelta]; {
+			case b >= 0xf0:
+				lsz = 4
+			case b >= 0xe0:
+				lsz = 3
+			case b >= 0xc0:
+				lsz = 2
+			}
 			lowerDelta += psz - lsz
 		}
 		pi += psz
