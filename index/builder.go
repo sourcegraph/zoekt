@@ -661,6 +661,7 @@ func (b *Builder) MarkFileAsChangedOrRemoved(path string) {
 // stale shards from previous runs. This should always be called, also
 // in failure cases, to ensure cleanup.
 //
+// A failed publication can leave a mix of old and new shards until a retry.
 // It is safe to call Finish() multiple times.
 func (b *Builder) Finish() error {
 	if b.finishCalled {
@@ -777,6 +778,13 @@ func (b *Builder) Finish() error {
 			paths, err := IndexFilePaths(name)
 			if err != nil {
 				b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
+				for tmp := range artifactPaths {
+					if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
+						log.Printf("removing incomplete shard artifact %s: %v", tmp, err)
+					}
+				}
+				b.finishedShards = map[string]string{}
+				return b.buildError
 			}
 			for _, p := range paths {
 				toDelete[p] = struct{}{}
@@ -784,16 +792,75 @@ func (b *Builder) Finish() error {
 		}
 	}
 
+	type publicationArtifact struct {
+		finishedShard
+		isMeta, isShardZero bool
+		shardNum            int
+	}
+	artifacts := make([]publicationArtifact, 0, len(artifactPaths))
 	for tmp, final := range artifactPaths {
-		if err := os.Rename(tmp, final); err != nil {
-			b.buildError = err
-			continue
+		name := strings.TrimSuffix(final, ".meta")
+		isMeta := name != final
+		name = strings.TrimSuffix(name, ".zoekt")
+		shardNum, err := strconv.Atoi(name[strings.LastIndexByte(name, '.')+1:])
+		if err != nil {
+			// Compound shard names need not have a shard number.
+			shardNum = 0
 		}
+		artifacts = append(artifacts, publicationArtifact{finishedShard{tmp, final}, isMeta, shardNum == 0, shardNum})
+	}
+	// Publish data before metadata, ascending with shard zero last for discovery and indexing decisions.
+	sort.Slice(artifacts, func(i, j int) bool {
+		a, b := artifacts[i], artifacts[j]
+		if a.isMeta != b.isMeta {
+			return !a.isMeta
+		}
+		if a.isShardZero != b.isShardZero {
+			return !a.isShardZero
+		}
+		return a.shardNum < b.shardNum
+	})
 
-		delete(toDelete, final)
+	hadShardZero := len(oldShards) > 0 && oldShards[0] == b.opts.shardName(0)
+	renamed := 0
+	for _, artifact := range artifacts {
+		if err := os.Rename(artifact.temp, artifact.final); err != nil {
+			b.buildError = err
+			break
+		}
+		renamed++
+		delete(toDelete, artifact.final)
+		if !artifact.isMeta {
+			// The old sidecar overrides embedded metadata. Remove it only
+			// after replacing its shard, even if a later rename fails.
+			meta := artifact.final + ".meta"
+			if err := os.Remove(meta); err != nil && !os.IsNotExist(err) {
+				b.buildError = err
+				break
+			}
+			delete(toDelete, meta)
+		}
 	}
 
 	b.finishedShards = map[string]string{}
+
+	// Keep un-replaced prior shards live if publication failed. Without a prior
+	// simple shard zero, remove new data too: a smaller retry cannot discover
+	// and retire it. Replacements of an existing simple index are not rolled back.
+	if b.buildError != nil {
+		for i, artifact := range artifacts {
+			paths := []string{artifact.temp, artifact.final}
+			if hadShardZero || i >= renamed || artifact.isMeta {
+				paths = paths[:1]
+			}
+			for _, p := range paths {
+				if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+					log.Printf("removing incomplete shard artifact %s: %v", p, err)
+				}
+			}
+		}
+		return b.buildError
+	}
 
 	for p := range toDelete {
 		// Don't delete compound shards, set tombstones instead.
