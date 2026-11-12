@@ -57,6 +57,17 @@ func toLower(in []byte) []byte {
 	return out
 }
 
+var asciiLower = func() [256]byte {
+	var lower [256]byte
+	for i := range lower {
+		lower[i] = byte(i)
+		if i >= 'A' && i <= 'Z' {
+			lower[i] |= 0x20
+		}
+	}
+	return lower
+}()
+
 // Compare pattern and mixed using Unicode simple folding. Mixed may be larger
 // than pattern. Return the byte size of the match, whether there was a match,
 // and whether mixed ended before pattern.
@@ -67,16 +78,8 @@ func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
 		mb := mixed[0]
 		// Fast path for ASCII character matching, done for performance.
 		if pb < utf8.RuneSelf && mb < utf8.RuneSelf {
-			if pb != mb {
-				if pb >= 'A' && pb <= 'Z' {
-					pb |= 0x20
-				}
-				if mb >= 'A' && mb <= 'Z' {
-					mb |= 0x20
-				}
-				if pb != mb {
-					return 0, false, !hasEnoughRunes(mixed, pattern)
-				}
+			if asciiLower[pb] != asciiLower[mb] {
+				return 0, false, !hasEnoughRunes(mixed, pattern)
 			}
 			pattern = pattern[1:]
 			mixed = mixed[1:]
@@ -91,7 +94,9 @@ func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
 		mixed = mixed[msz:]
 		matchTotal += msz
 
-		if pr == mr {
+		// ToLower handles the common lower-pattern/upper-subject case.
+		// Dotted I is the one lowercase mapping outside its simple-fold class.
+		if pr == mr || (mr != '\u0130' && pr == unicode.ToLower(mr)) {
 			continue
 		}
 		// SimpleFold cycles through a fold class in increasing order,
