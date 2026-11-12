@@ -90,16 +90,19 @@ func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
 		mr, msz := utf8.DecodeRune(mixed[mi:])
 		mi += msz
 
-		// ToLower handles the common lower-pattern/upper-subject case.
-		// Dotted I is the one lowercase mapping outside its simple-fold class.
-		if pr == mr || (mr != '\u0130' && pr == unicode.ToLower(mr)) {
+		if pr == mr {
+			continue
+		}
+		if pr > mr {
+			pr, mr = mr, pr
+		}
+		// Try lowercasing the smaller rune first. The dotted-I mapping,
+		// which leaves its simple-fold class, decreases the rune instead.
+		if unicode.ToLower(pr) == mr {
 			continue
 		}
 		// SimpleFold cycles through a fold class in increasing order,
 		// wrapping back to its smallest rune.
-		if pr > mr {
-			pr, mr = mr, pr
-		}
 		r := unicode.SimpleFold(pr)
 		for r != pr && r < mr {
 			r = unicode.SimpleFold(r)
@@ -112,13 +115,13 @@ func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
 	return mi, pi == len(pattern), pi < len(pattern)
 }
 
-func hasEnoughRunes(mixed, lower []byte) bool {
-	// A UTF-8 rune occupies at most UTFMax bytes, and lower cannot contain
+func hasEnoughRunes(mixed, pattern []byte) bool {
+	// A UTF-8 rune occupies at most UTFMax bytes, and pattern cannot contain
 	// more runes than bytes. A sufficiently long mixed suffix therefore proves
 	// the candidate span fits without walking either slice. In practice this
 	// keeps ordinary mismatches constant-time and reserves the exact scan below
 	// for candidates close enough to the document end to be truncated.
-	if len(mixed)/utf8.UTFMax >= len(lower) {
+	if len(mixed)/utf8.UTFMax >= len(pattern) {
 		return true
 	}
 
@@ -126,12 +129,12 @@ func hasEnoughRunes(mixed, lower []byte) bool {
 	// candidate mismatches. Reaching the end of mixed first means the candidate's
 	// expected rune span crosses the document boundary, which is a corrupt index
 	// invariant rather than an ordinary non-match.
-	for len(lower) > 0 {
+	for len(pattern) > 0 {
 		if len(mixed) == 0 {
 			return false
 		}
-		_, sz := utf8.DecodeRune(lower)
-		lower = lower[sz:]
+		_, sz := utf8.DecodeRune(pattern)
+		pattern = pattern[sz:]
 		_, sz = utf8.DecodeRune(mixed)
 		mixed = mixed[sz:]
 	}
