@@ -98,7 +98,8 @@ func limitChunkMatches(file *zoekt.FileMatch, limit int) int {
 			n := cm.Ranges[len(cm.Ranges)-1].End.LineNumber - cm.Ranges[limit-1].End.LineNumber
 			if n > 0 {
 				// Lines in Content keep their terminating newline. The last one
-				// closes a line we are keeping, so skip it before counting.
+				// closes the last line, so skip it before counting. The newline
+				// we stop at terminates the last line we keep, so keep it.
 				content := cm.Content
 				if len(content) > 0 && content[len(content)-1] == '\n' {
 					content = content[:len(content)-1]
@@ -108,7 +109,7 @@ func limitChunkMatches(file *zoekt.FileMatch, limit int) int {
 						n -= 1
 					}
 					if n == 0 {
-						cm.Content = cm.Content[:b]
+						cm.Content = cm.Content[:b+1]
 						break
 					}
 				}
