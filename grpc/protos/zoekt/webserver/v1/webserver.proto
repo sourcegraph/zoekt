@@ -226,9 +226,8 @@ message Repository {
   // before this field was added.
   google.protobuf.Timestamp latest_commit_date = 16;
 
-  // file_tombstones is a set of file paths that should be ignored across all branches
-  // in this shard.
-  repeated string file_tombstones = 17;
+  reserved 17;
+  reserved "file_tombstones";
 
   // tenant_id is the tenant ID of the repository.
   int64 tenant_id = 18;

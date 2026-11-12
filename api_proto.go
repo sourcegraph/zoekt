@@ -431,11 +431,6 @@ func RepositoryFromProto(p *webserverv1.Repository) Repository {
 		subRepoMap[name] = &r
 	}
 
-	fileTombstones := make(map[string]struct{}, len(p.GetFileTombstones()))
-	for _, file := range p.GetFileTombstones() {
-		fileTombstones[file] = struct{}{}
-	}
-
 	return Repository{
 		TenantID:             int(p.GetTenantId()),
 		ID:                   p.GetId(),
@@ -454,7 +449,6 @@ func RepositoryFromProto(p *webserverv1.Repository) Repository {
 		HasSymbols:           p.GetHasSymbols(),
 		Tombstone:            p.GetTombstone(),
 		LatestCommitDate:     p.GetLatestCommitDate().AsTime(),
-		FileTombstones:       fileTombstones,
 		Metadata:             p.GetMetadata(),
 	}
 }
@@ -472,11 +466,6 @@ func (r *Repository) ToProto() *webserverv1.Repository {
 	subRepoMap := make(map[string]*webserverv1.Repository, len(r.SubRepoMap))
 	for name, repo := range r.SubRepoMap {
 		subRepoMap[name] = repo.ToProto()
-	}
-
-	fileTombstones := make([]string, 0, len(r.FileTombstones))
-	for file := range r.FileTombstones {
-		fileTombstones = append(fileTombstones, file)
 	}
 
 	return &webserverv1.Repository{
@@ -497,7 +486,6 @@ func (r *Repository) ToProto() *webserverv1.Repository {
 		HasSymbols:           r.HasSymbols,
 		Tombstone:            r.Tombstone,
 		LatestCommitDate:     timestamppb.New(r.LatestCommitDate),
-		FileTombstones:       fileTombstones,
 		Metadata:             r.Metadata,
 	}
 }
