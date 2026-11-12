@@ -533,7 +533,7 @@ func (d *indexData) isDocTombstoned(doc uint32) bool {
 
 // initTombstonedDocs converts per-repository FileTombstones maps into the
 // per-shard tombstonedDocs bitset and clears FileTombstones to release memory.
-func (d *indexData) initTombstonedDocs() error {
+func (d *indexData) initTombstonedDocs() {
 	hasTombstones := false
 	for i := range d.repoMetaData {
 		if len(d.repoMetaData[i].FileTombstones) > 0 {
@@ -542,23 +542,12 @@ func (d *indexData) initTombstonedDocs() error {
 		}
 	}
 	if !hasTombstones {
-		return nil
+		return
 	}
 
 	docCount := d.numDocs()
-	if len(d.repos) != int(docCount) {
-		return fmt.Errorf("repos length mismatch: got %d, want %d", len(d.repos), docCount)
-	}
-	if docCount > 0 && len(d.fileNameIndex) != int(docCount)+1 {
-		return fmt.Errorf("fileNameIndex length mismatch: got %d, want %d", len(d.fileNameIndex), docCount+1)
-	}
-
 	for docID := uint32(0); docID < docCount; docID++ {
-		repoID := d.repos[docID]
-		if int(repoID) >= len(d.repoMetaData) {
-			return fmt.Errorf("document %d repoID %d out of range %d", docID, repoID, len(d.repoMetaData))
-		}
-		tombstones := d.repoMetaData[repoID].FileTombstones
+		tombstones := d.repoMetaData[d.repos[docID]].FileTombstones
 		if len(tombstones) == 0 {
 			continue
 		}
@@ -573,7 +562,6 @@ func (d *indexData) initTombstonedDocs() error {
 	for i := range d.repoMetaData {
 		d.repoMetaData[i].FileTombstones = nil
 	}
-	return nil
 }
 
 // repoMetaWithTombstones returns a copy of d.repoMetaData[repoID] with
@@ -585,13 +573,12 @@ func (d *indexData) repoMetaWithTombstones(repoID int) zoekt.Repository {
 	}
 
 	var restored map[string]struct{}
-	docCount := d.numDocs()
 	for wordIdx, word := range d.tombstonedDocs {
 		for word != 0 {
 			bit := bits.TrailingZeros64(word)
 			word &= word - 1
 			docID := uint32(wordIdx*64 + bit)
-			if docID >= docCount || int(docID) >= len(d.repos) || int(d.repos[docID]) != repoID {
+			if int(d.repos[docID]) != repoID {
 				continue
 			}
 			if restored == nil {

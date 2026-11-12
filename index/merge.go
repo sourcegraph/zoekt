@@ -121,17 +121,11 @@ func merge(ds ...*indexData) (*ShardBuilder, error) {
 				}
 				lastRepoID = repoID
 
-				// Initialize repo metadata if it does not already exist.
-				repo := d.repoMetaData[repoID]
-				if repo.Metadata == nil {
-					repo.Metadata = make(map[string]string)
-				}
-
 				// TODO we are losing empty repos on merging since we only get here if
 				// there is an associated document.
 
-				repoWithTombstones := d.repoMetaWithTombstones(repoID)
-				if err := sb.setRepository(&repoWithTombstones); err != nil {
+				repo := d.repoMetaWithTombstones(repoID)
+				if err := sb.setRepository(&repo); err != nil {
 					return nil, err
 				}
 			}

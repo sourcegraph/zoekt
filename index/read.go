@@ -428,9 +428,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		d.repos = make([]uint16, len(d.fileBranchMasks))
 	}
 
-	if err := d.initTombstonedDocs(); err != nil {
-		return nil, err
-	}
+	d.initTombstonedDocs()
 
 	if err := d.calculateStats(); err != nil {
 		return nil, err

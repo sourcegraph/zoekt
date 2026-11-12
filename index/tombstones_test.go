@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -247,23 +248,56 @@ func TestBuilderDeltaPrunesUnrelatedFileTombstones(t *testing.T) {
 		t.Fatalf("Finish delta: %v", err)
 	}
 
-	wantPerShard := []map[string]struct{}{
-		{"shard0_drop.go": {}},
-		{"shard1_drop.go": {}},
-	}
-	if len(oldShards) != len(wantPerShard) {
-		t.Fatalf("expected %d old shards, got %d", len(wantPerShard), len(oldShards))
-	}
-	for i, shard := range oldShards {
-		repos, _, err := ReadMetadataPathAlive(shard)
-		if err != nil {
-			t.Fatalf("ReadMetadataPathAlive(%s): %v", shard, err)
+	checkTombstones := func(want map[string]map[string]struct{}) {
+		t.Helper()
+		shards := opts.FindAllShards()
+		if len(shards) != len(want) {
+			t.Fatalf("expected %d shards, got %d", len(want), len(shards))
 		}
-		got := repos[0].FileTombstones
-		if diff := cmp.Diff(wantPerShard[i], got); diff != "" {
-			t.Fatalf("shard %s FileTombstones mismatch (-want +got):\n%s", shard, diff)
+		for _, shard := range shards {
+			repos, _, err := ReadMetadataPathAlive(shard)
+			if err != nil {
+				t.Fatalf("ReadMetadataPathAlive(%s): %v", shard, err)
+			}
+			if diff := cmp.Diff(want[shard], repos[0].FileTombstones); diff != "" {
+				t.Fatalf("shard %s FileTombstones mismatch (-want +got):\n%s", shard, diff)
+			}
 		}
 	}
+
+	shards := opts.FindAllShards()
+	if len(shards) != 3 {
+		t.Fatalf("expected 2 old shards and 1 delta shard, got %v", shards)
+	}
+	var deltaShard string
+	for _, shard := range shards {
+		if !slices.Contains(oldShards, shard) {
+			deltaShard = shard
+		}
+	}
+	checkTombstones(map[string]map[string]struct{}{
+		oldShards[0]: {"shard0_drop.go": {}},
+		oldShards[1]: {"shard1_drop.go": {}},
+		deltaShard:   nil,
+	})
+
+	// A second delta adds to each shard's own tombstones. The first delta's
+	// shard now holds the live shard0_drop.go, so it gets a tombstone too.
+	deltaOpts.RepositoryDescription.Branches = []zoekt.RepositoryBranch{{Name: "main", Version: "v3"}}
+	db, err = NewBuilder(deltaOpts)
+	if err != nil {
+		t.Fatalf("NewBuilder second delta: %v", err)
+	}
+	db.MarkFileAsChangedOrRemoved("shard0_keep.go")
+	db.MarkFileAsChangedOrRemoved("shard0_drop.go")
+	if err := db.Finish(); err != nil {
+		t.Fatalf("Finish second delta: %v", err)
+	}
+	checkTombstones(map[string]map[string]struct{}{
+		oldShards[0]: {"shard0_drop.go": {}, "shard0_keep.go": {}},
+		oldShards[1]: {"shard1_drop.go": {}},
+		deltaShard:   {"shard0_drop.go": {}},
+	})
 }
 
 func TestMergeAndExplodePreserveFileTombstones(t *testing.T) {
