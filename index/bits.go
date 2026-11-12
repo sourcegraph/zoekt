@@ -72,27 +72,23 @@ var asciiLower = func() [256]byte {
 // than pattern. Return the byte size of the match, whether there was a match,
 // and whether mixed ended before pattern.
 func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
-	matchTotal := 0
-	for len(pattern) > 0 && len(mixed) > 0 {
-		pb := pattern[0]
-		mb := mixed[0]
+	pi, mi := 0, 0
+	for pi < len(pattern) && mi < len(mixed) {
+		pb, mb := pattern[pi], mixed[mi]
 		// Fast path for ASCII character matching, done for performance.
-		if pb < utf8.RuneSelf && mb < utf8.RuneSelf {
+		if pb|mb < utf8.RuneSelf {
 			if asciiLower[pb] != asciiLower[mb] {
-				return 0, false, !hasEnoughRunes(mixed, pattern)
+				return 0, false, !hasEnoughRunes(mixed[mi:], pattern[pi:])
 			}
-			pattern = pattern[1:]
-			mixed = mixed[1:]
-			matchTotal++
+			pi++
+			mi++
 			continue
 		}
 
-		pr, psz := utf8.DecodeRune(pattern)
-		pattern = pattern[psz:]
-
-		mr, msz := utf8.DecodeRune(mixed)
-		mixed = mixed[msz:]
-		matchTotal += msz
+		pr, psz := utf8.DecodeRune(pattern[pi:])
+		pi += psz
+		mr, msz := utf8.DecodeRune(mixed[mi:])
+		mi += msz
 
 		// ToLower handles the common lower-pattern/upper-subject case.
 		// Dotted I is the one lowercase mapping outside its simple-fold class.
@@ -109,11 +105,11 @@ func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
 			r = unicode.SimpleFold(r)
 		}
 		if r != mr {
-			return 0, false, !hasEnoughRunes(mixed, pattern)
+			return 0, false, !hasEnoughRunes(mixed[mi:], pattern[pi:])
 		}
 	}
 
-	return matchTotal, len(pattern) == 0, len(pattern) > 0
+	return mi, pi == len(pattern), pi < len(pattern)
 }
 
 func hasEnoughRunes(mixed, lower []byte) bool {
