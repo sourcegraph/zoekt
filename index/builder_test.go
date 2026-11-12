@@ -1,6 +1,7 @@
 package index
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -284,6 +285,182 @@ func TestPartialSuccess(t *testing.T) {
 		t.Errorf("glob(%s): %v", dir, err)
 	} else if len(fs) != 0 {
 		t.Errorf("got shards %v, want []", fs)
+	}
+}
+
+func TestBuilderFinishPublication(t *testing.T) {
+	for _, tt := range []struct {
+		storage   string
+		failShard int // -1 means success
+	}{
+		{"simple", -1}, {"simple", 1}, {"simple", 0},
+		{"compound", -1}, {"compound", 1}, {"compound", 0},
+	} {
+		t.Run(fmt.Sprintf("%s/rename_%d", tt.storage, tt.failShard), func(t *testing.T) {
+			dir := t.TempDir()
+			repo := zoekt.Repository{Name: "repo", ID: 1, Branches: []zoekt.RepositoryBranch{{Name: "main", Version: "old"}}}
+			disableCTags := func(o *Options) { o.DisableCTags = true; o.CTagsPath = ""; o.ScipCTagsPath = ""; o.ShardMerging = true }
+			if tt.storage == "compound" {
+				createTestCompoundShard(t, dir, []zoekt.Repository{repo, {Name: "neighbor", ID: 2}}, disableCTags)
+			} else {
+				createTestShard(t, dir, repo, 3, disableCTags)
+			}
+			opts := Options{IndexDir: dir, RepositoryDescription: repo, DisableCTags: true, ShardMerging: true, Parallelism: 1, ShardMax: 1}
+			opts.SetDefaults()
+			oldShards := opts.FindAllShards()
+			oldFiles := make(map[string][]byte)
+			for _, shard := range oldShards {
+				repos, _, err := ReadMetadataPathAlive(shard)
+				require.NoError(t, err)
+				// Stale sidecars must not hide reintroduced files after replacement.
+				repos[0].FileTombstones = map[string]struct{}{"replacement-0": {}, "replacement-1": {}}
+				var metadata any = repos[0]
+				if tt.storage == "compound" {
+					metadata = repos
+				}
+				tmp, final, err := JsonMarshalRepoMetaTemp(shard, metadata)
+				require.NoError(t, err)
+				require.NoError(t, os.Rename(tmp, final))
+				for _, path := range []string{shard, final} {
+					oldFiles[path], err = os.ReadFile(path)
+					require.NoError(t, err)
+				}
+			}
+
+			opts.RepositoryDescription.Branches = []zoekt.RepositoryBranch{{Name: "main", Version: "new"}}
+			b, err := NewBuilder(opts)
+			require.NoError(t, err)
+			for i := range 2 {
+				require.NoError(t, b.Add(Document{Name: fmt.Sprintf("replacement-%d", i), Content: []byte("replacement contents"), Branches: []string{"main"}}))
+			}
+			require.Len(t, b.finishedShards, 2)
+			newFiles := make(map[string][]byte)
+			var missing string
+			for tmp, final := range b.finishedShards {
+				newFiles[final], err = os.ReadFile(tmp)
+				require.NoError(t, err)
+				if final == opts.shardName(tt.failShard) {
+					missing = tmp
+					require.NoError(t, os.Remove(tmp))
+				}
+			}
+
+			err = b.Finish()
+			if tt.failShard >= 0 {
+				var linkErr *os.LinkError
+				if !errors.As(err, &linkErr) || linkErr.Op != "rename" || linkErr.Old != missing || linkErr.New != opts.shardName(tt.failShard) || !os.IsNotExist(err) {
+					t.Errorf("Finish returned %v, want the rename error for shard %d", err, tt.failShard)
+				}
+				if opts.IncrementalSkipIndexing() {
+					t.Error("failed publication looks current")
+				}
+			} else if err != nil {
+				t.Errorf("Finish returned %v, want successful publication", err)
+			}
+			if got := b.Finish(); got != err {
+				t.Errorf("second Finish returned %v, want %v", got, err)
+			}
+			staged, globErr := filepath.Glob(filepath.Join(dir, "*.tmp"))
+			require.NoError(t, globErr)
+			if len(staged) != 0 || len(b.finishedShards) != 0 {
+				t.Errorf("staged artifacts remain: %v, %v", staged, b.finishedShards)
+			}
+
+			for final, want := range newFiles {
+				published := tt.failShard < 0 || (tt.storage == "simple" && tt.failShard == 0 && final == opts.shardName(1))
+				if published {
+					got, readErr := os.ReadFile(final)
+					if readErr != nil || !bytes.Equal(got, want) {
+						t.Errorf("published shard %s differs from staged data: %v", final, readErr)
+					}
+					if _, statErr := os.Stat(final + ".meta"); !os.IsNotExist(statErr) {
+						t.Errorf("published shard %s retains stale sidecar: %v", final, statErr)
+					}
+					delete(oldFiles, final)
+					delete(oldFiles, final+".meta")
+				} else if tt.storage == "compound" {
+					if _, statErr := os.Stat(final); !os.IsNotExist(statErr) {
+						t.Errorf("new shard %s remains after failed compound conversion: %v", final, statErr)
+					}
+				}
+			}
+			if tt.storage == "compound" && tt.failShard < 0 {
+				repos, _, readErr := ReadMetadataPathAlive(oldShards[0])
+				if readErr != nil || len(repos) != 1 || repos[0].ID != 2 {
+					t.Errorf("compound retirement changed neighboring repository: %+v, %v", repos, readErr)
+				}
+			} else {
+				for path, want := range oldFiles {
+					got, readErr := os.ReadFile(path)
+					if tt.failShard < 0 {
+						if !os.IsNotExist(readErr) {
+							t.Errorf("stale shard file %s remains: %v", path, readErr)
+						}
+					} else if readErr != nil || !bytes.Equal(got, want) {
+						t.Errorf("unpublished shard file %s changed: %v", path, readErr)
+					}
+				}
+			}
+			// A smaller retry must discover and retire all remaining simple shards.
+			createTestShard(t, dir, opts.RepositoryDescription, 1, disableCTags)
+			shards, globErr := filepath.Glob(filepath.Join(dir, "repo_*.zoekt"))
+			require.NoError(t, globErr)
+			if diff := cmp.Diff([]string{opts.shardName(0)}, shards); diff != "" {
+				t.Errorf("retry left stale shards (-want +got):\n%s", diff)
+			}
+			if tt.storage == "compound" {
+				repos, _, readErr := ReadMetadataPathAlive(oldShards[0])
+				if readErr != nil || len(repos) != 1 || repos[0].ID != 2 {
+					t.Errorf("retry changed neighboring repository: %+v, %v", repos, readErr)
+				}
+			}
+		})
+	}
+}
+
+func TestBuilderFinishDeltaPublicationFailure(t *testing.T) {
+	dir := t.TempDir()
+	repo := zoekt.Repository{Name: "repo", ID: 1, Branches: []zoekt.RepositoryBranch{{Name: "main", Version: "old"}}}
+	oldShards := createTestShard(t, dir, repo, 2, func(o *Options) { o.DisableCTags = true; o.CTagsPath = ""; o.ScipCTagsPath = "" })
+	oldFiles := make(map[string][]byte)
+	for _, shard := range oldShards {
+		var err error
+		oldFiles[shard], err = os.ReadFile(shard)
+		require.NoError(t, err)
+	}
+	repo.Branches = []zoekt.RepositoryBranch{{Name: "main", Version: "new"}}
+	opts := Options{IndexDir: dir, RepositoryDescription: repo, DisableCTags: true, IsDelta: true, Parallelism: 1, ShardMax: 1}
+	opts.SetDefaults()
+	b, err := NewBuilder(opts)
+	require.NoError(t, err)
+	b.MarkFileAsChangedOrRemoved("0")
+	for i := range 2 {
+		require.NoError(t, b.AddFile(fmt.Sprintf("replacement-%d", i), []byte("replacement contents")))
+	}
+	var missing string
+	for tmp, final := range b.finishedShards {
+		if final == opts.shardName(len(oldShards)) {
+			missing = tmp
+			require.NoError(t, os.Remove(tmp))
+		}
+	}
+	require.NotEmpty(t, missing)
+	err = b.Finish()
+	var linkErr *os.LinkError
+	if !errors.As(err, &linkErr) || linkErr.Op != "rename" || linkErr.Old != missing || !os.IsNotExist(err) {
+		t.Errorf("Finish returned %v, want the missing delta shard's rename error", err)
+	}
+	for path, want := range oldFiles {
+		got, readErr := os.ReadFile(path)
+		if readErr != nil || !bytes.Equal(got, want) {
+			t.Errorf("prior shard file %s changed: %v", path, readErr)
+		}
+		if _, statErr := os.Stat(path + ".meta"); !os.IsNotExist(statErr) {
+			t.Errorf("delta metadata published before data: %s, %v", path, statErr)
+		}
+	}
+	if got := b.Finish(); got != err {
+		t.Errorf("second Finish returned %v, want %v", got, err)
 	}
 }
 
