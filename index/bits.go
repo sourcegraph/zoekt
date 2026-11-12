@@ -57,41 +57,58 @@ func toLower(in []byte) []byte {
 	return out
 }
 
-// compare 'lower' and 'mixed', where lower is the needle. 'mixed' may
-// be larger than 'lower'. Returns the byte size of the match, whether there was
-// a match, and whether mixed ended before lower.
-func caseFoldingEqualsRunes(lower, mixed []byte) (int, bool, bool) {
+// Compare pattern and mixed using Unicode simple folding. Mixed may be larger
+// than pattern. Return the byte size of the match, whether there was a match,
+// and whether mixed ended before pattern.
+func caseFoldingEqualsRunes(pattern, mixed []byte) (int, bool, bool) {
 	matchTotal := 0
-	for len(lower) > 0 && len(mixed) > 0 {
-		lb := lower[0]
+	for len(pattern) > 0 && len(mixed) > 0 {
+		pb := pattern[0]
 		mb := mixed[0]
 		// Fast path for ASCII character matching, done for performance.
-		if lb < utf8.RuneSelf && mb < utf8.RuneSelf {
-			if mb >= 'A' && mb <= 'Z' {
-				mb |= 0x20
+		if pb < utf8.RuneSelf && mb < utf8.RuneSelf {
+			if pb != mb {
+				if pb >= 'A' && pb <= 'Z' {
+					pb |= 0x20
+				}
+				if mb >= 'A' && mb <= 'Z' {
+					mb |= 0x20
+				}
+				if pb != mb {
+					return 0, false, !hasEnoughRunes(mixed, pattern)
+				}
 			}
-			if lb != mb {
-				return 0, false, !hasEnoughRunes(mixed, lower)
-			}
-			lower = lower[1:]
+			pattern = pattern[1:]
 			mixed = mixed[1:]
 			matchTotal++
 			continue
 		}
 
-		lr, lsz := utf8.DecodeRune(lower)
-		lower = lower[lsz:]
+		pr, psz := utf8.DecodeRune(pattern)
+		pattern = pattern[psz:]
 
 		mr, msz := utf8.DecodeRune(mixed)
 		mixed = mixed[msz:]
 		matchTotal += msz
 
-		if lr != unicode.ToLower(mr) {
-			return 0, false, !hasEnoughRunes(mixed, lower)
+		if pr == mr {
+			continue
+		}
+		// SimpleFold cycles through a fold class in increasing order,
+		// wrapping back to its smallest rune.
+		if pr > mr {
+			pr, mr = mr, pr
+		}
+		r := unicode.SimpleFold(pr)
+		for r != pr && r < mr {
+			r = unicode.SimpleFold(r)
+		}
+		if r != mr {
+			return 0, false, !hasEnoughRunes(mixed, pattern)
 		}
 	}
 
-	return matchTotal, len(lower) == 0, len(lower) > 0
+	return matchTotal, len(pattern) == 0, len(pattern) > 0
 }
 
 func hasEnoughRunes(mixed, lower []byte) bool {

@@ -72,7 +72,7 @@ func (m *candidateMatch) matchContent(content []byte) (bool, error) {
 		// as upper case variant). We can only degrade to
 		// ASCII if we are sure that both the corpus and the
 		// query is ASCII only
-		sz, ok, truncated := caseFoldingEqualsRunes(m.substrLowered, content[m.byteOffset:])
+		sz, ok, truncated := caseFoldingEqualsRunes(m.substrBytes, content[m.byteOffset:])
 		if truncated {
 			return false, fmt.Errorf("corrupt index: case-insensitive match at byte offset %d extends beyond %s size %d", m.byteOffset, kind, len(content))
 		}
