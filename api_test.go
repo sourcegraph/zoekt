@@ -521,30 +521,19 @@ func TestParseRepoID(t *testing.T) {
 	}
 }
 
-func TestRepositoryUnmarshalJSON_RepoID(t *testing.T) {
-	t.Run("out of range is an error", func(t *testing.T) {
-		var repo Repository
-		err := json.Unmarshal([]byte(`{"name":"r","rawconfig":{"repoid":"4294967296"}}`), &repo)
-		if err == nil {
-			t.Fatalf("expected an error for an out-of-range repoid, got ID %d", repo.ID)
-		}
-	})
-
-	t.Run("malformed is an error", func(t *testing.T) {
-		var repo Repository
-		err := json.Unmarshal([]byte(`{"name":"r","rawconfig":{"repoid":"abc"}}`), &repo)
-		if err == nil {
-			t.Fatalf("expected an error for a malformed repoid, got ID %d", repo.ID)
-		}
-	})
-
-	t.Run("empty repoid leaves ID untouched", func(t *testing.T) {
-		var repo Repository
-		if err := json.Unmarshal([]byte(`{"name":"r","id":7,"rawconfig":{"repoid":""}}`), &repo); err != nil {
-			t.Fatal(err)
-		}
-		if repo.ID != 7 {
-			t.Fatalf("got ID %d, want 7", repo.ID)
-		}
-	})
+// Shards written before invalid IDs were rejected at index time must still
+// load, keeping the ID stored in their JSON.
+func TestRepositoryUnmarshalJSON_InvalidRepoID(t *testing.T) {
+	for _, v := range []string{"4294967296", "abc", ""} {
+		t.Run(v, func(t *testing.T) {
+			var repo Repository
+			data := `{"name":"r","id":7,"rawconfig":{"repoid":"` + v + `"}}`
+			if err := json.Unmarshal([]byte(data), &repo); err != nil {
+				t.Fatal(err)
+			}
+			if repo.ID != 7 {
+				t.Fatalf("got ID %d, want 7", repo.ID)
+			}
+		})
+	}
 }

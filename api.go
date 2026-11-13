@@ -689,10 +689,11 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	if v, ok := repo.RawConfig["repoid"]; ok && v != "" {
-		r.ID, err = ParseRepoID(v)
-		if err != nil {
-			return fmt.Errorf("repository %q: %w", repo.Name, err)
+	// Invalid IDs are rejected at index time. Shards written before that keep
+	// the ID stored in their JSON so they still load.
+	if v, ok := repo.RawConfig["repoid"]; ok {
+		if id, err := ParseRepoID(v); err == nil {
+			r.ID = id
 		}
 	}
 
