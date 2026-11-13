@@ -1379,7 +1379,7 @@ func getEnvWithDefaultInt(k string, defaultVal int) int {
 	if v == "" {
 		return defaultVal
 	}
-	i, err := strconv.Atoi(k)
+	i, err := strconv.Atoi(v)
 	if err != nil {
 		log.Fatalf("error parsing ENV %s to int: %s", k, err)
 	}

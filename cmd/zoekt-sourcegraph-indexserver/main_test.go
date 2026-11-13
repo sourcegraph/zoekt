@@ -500,3 +500,13 @@ func TestSumSkippedFiles(t *testing.T) {
 		t.Fatalf("sum mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestGetEnvWithDefaultInt(t *testing.T) {
+	if got := getEnvWithDefaultInt("ZOEKT_TEST_INT", 7); got != 7 {
+		t.Fatalf("unset: got %d, want 7", got)
+	}
+	t.Setenv("ZOEKT_TEST_INT", "3")
+	if got := getEnvWithDefaultInt("ZOEKT_TEST_INT", 7); got != 3 {
+		t.Fatalf("set: got %d, want 3", got)
+	}
+}
