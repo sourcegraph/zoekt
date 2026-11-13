@@ -284,8 +284,8 @@ github.com/sourcegraph/go-ctags v0.0.0-20261102140213-2e73e57077a7 h1:a3PJGzo7X+
 github.com/sourcegraph/go-ctags v0.0.0-20261102140213-2e73e57077a7/go.mod h1:ol3v7qt2iNcy5vpILcsBY7f0BnSW0fi4oUNMYDpH2Yc=
 github.com/sourcegraph/log v0.0.0-20241024013702-574f7079c888 h1:9PUH8Hn8mVhPTtRKqot1HHsbLRDP0H2A+FSyuRumP2Q=
 github.com/sourcegraph/log v0.0.0-20241024013702-574f7079c888/go.mod h1:IDp09QkoqS8Z3CyN2RW6vXjgABkNpDbyjLIHNQwQ8P8=
-github.com/sourcegraph/mountinfo v0.0.0-20251117172727-e9f6a87f579c h1:6F/5RpKA1mga6IAHIYsiaCzQF4hzZEAifM08oO7BFoE=
-github.com/sourcegraph/mountinfo v0.0.0-20251117172727-e9f6a87f579c/go.mod h1:ghoEiutaNVERt2cu5q/bU3HOo29AHGSPrRZE1sOaA0w=
+github.com/sourcegraph/mountinfo v0.0.0-20261113140115-da840481fa02 h1:dQ5cRx0I3xfO6/AmComvQGz9hEohqi6Zsy39VrIuVcY=
+github.com/sourcegraph/mountinfo v0.0.0-20261113140115-da840481fa02/go.mod h1:zQKyraMamJkNtbRu/dUZQk60M4qdZET7FadYI2bW8T0=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
 github.com/stretchr/objx v0.5.0/go.mod h1:Yh+to48EsGEfYuaHDzXPcE3xhTkx73EhmCGUpEOglKo=

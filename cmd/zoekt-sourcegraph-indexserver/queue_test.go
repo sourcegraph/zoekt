@@ -11,14 +11,13 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/sourcegraph/log/logtest"
 
 	"github.com/sourcegraph/zoekt"
 )
 
 func TestQueue(t *testing.T) {
 	backoffDuration := 1 * time.Millisecond
-	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
+	queue := NewQueue(backoffDuration, backoffDuration, newTestLogger(t))
 
 	for i := range 100 {
 		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
@@ -63,7 +62,7 @@ func TestQueueFIFO(t *testing.T) {
 	// Tests that the queue fallbacks to FIFO if everything has the same
 	// priority
 	backoffDuration := 1 * time.Millisecond
-	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
+	queue := NewQueue(backoffDuration, backoffDuration, newTestLogger(t))
 
 	for i := range 100 {
 		queue.AddOrUpdate(mkHEADIndexOptions(i, strconv.Itoa(i)))
@@ -89,7 +88,7 @@ func TestQueueFIFO(t *testing.T) {
 
 func TestQueue_MaybeRemoveMissing(t *testing.T) {
 	backoffDuration := 1 * time.Millisecond
-	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
+	queue := NewQueue(backoffDuration, backoffDuration, newTestLogger(t))
 
 	queue.AddOrUpdate(IndexOptions{RepoID: 1, Name: "foo"})
 	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
@@ -107,7 +106,7 @@ func TestQueue_MaybeRemoveMissing(t *testing.T) {
 
 func TestQueue_Bump(t *testing.T) {
 	backoffDuration := 1 * time.Millisecond
-	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
+	queue := NewQueue(backoffDuration, backoffDuration, newTestLogger(t))
 
 	queue.AddOrUpdate(IndexOptions{RepoID: 1, Name: "foo"})
 	queue.AddOrUpdate(IndexOptions{RepoID: 2, Name: "bar"})
@@ -136,7 +135,7 @@ func TestQueue_Bump(t *testing.T) {
 }
 
 func TestQueueChangedAfterBump(t *testing.T) {
-	q := NewQueue(0, 0, logtest.Scoped(t))
+	q := NewQueue(0, 0, newTestLogger(t))
 	q.AddOrUpdate(mkHEADIndexOptions(1, "old"))
 	item, _ := q.Pop()
 	q.SetIndexed(item.Opts, indexStateSuccess)
@@ -203,7 +202,7 @@ func TestQueue_Integration_DebugQueue(t *testing.T) {
 	}
 
 	backoffDuration := 1 * time.Millisecond
-	queue := NewQueue(backoffDuration, backoffDuration, logtest.Scoped(t))
+	queue := NewQueue(backoffDuration, backoffDuration, newTestLogger(t))
 
 	// setup: add two repositories to the queue and pop one of them
 	poppedRepository := mkHEADIndexOptions(0, "popped")

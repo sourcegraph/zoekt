@@ -19,8 +19,6 @@ import (
 	"strings"
 	"time"
 
-	sglog "github.com/sourcegraph/log"
-
 	"github.com/sourcegraph/zoekt"
 )
 
@@ -59,7 +57,7 @@ type gitRepoCacheEntry struct {
 // cached clones are marked reusable and temporary clones are deleted. Any
 // failure (including a panic) discards the clone; cleanup errors are logged
 // without hiding the job error. The callback must not retain the directory.
-func (cache gitRepoCache) withFetchedRepo(ctx context.Context, c gitIndexConfig, o *indexArgs, logger sglog.Logger, use func(string) error) error {
+func (cache gitRepoCache) withFetchedRepo(ctx context.Context, c gitIndexConfig, o *indexArgs, logger *slog.Logger, use func(string) error) error {
 	var gitDir string
 	var cached gitRepoCacheEntry
 	var err error
@@ -75,7 +73,7 @@ func (cache gitRepoCache) withFetchedRepo(ctx context.Context, c gitIndexConfig,
 	defer func() {
 		if !keep {
 			if err := os.RemoveAll(gitDir); err != nil {
-				logger.Warn("failed to remove git clone", sglog.String("path", gitDir), sglog.Error(err))
+				logger.Warn("failed to remove git clone", slog.String("path", gitDir), slog.Any("error", err))
 			}
 		}
 	}()
@@ -141,7 +139,7 @@ func initGitRepo(ctx context.Context, gitDir string, o *indexArgs, c gitIndexCon
 	return nil
 }
 
-func (gitRepoCache) fetch(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfig, logger sglog.Logger) error {
+func (gitRepoCache) fetch(ctx context.Context, gitDir string, o *indexArgs, c gitIndexConfig, logger *slog.Logger) error {
 	if err := initGitRepo(ctx, gitDir, o, c); err != nil {
 		return err
 	}
@@ -263,10 +261,10 @@ func (gitRepoCache) fetch(ctx context.Context, gitDir string, o *indexArgs, c gi
 	}
 
 	logger.Debug("successfully fetched git data",
-		sglog.String("repo", o.Name),
-		sglog.Uint32("id", o.RepoID),
-		sglog.Int("commits_count", successfullyFetchedCommitsCount),
-		sglog.Duration("duration", fetchDuration),
+		slog.String("repo", o.Name),
+		slog.Uint64("id", uint64(o.RepoID)),
+		slog.Int("commits_count", successfullyFetchedCommitsCount),
+		slog.Duration("duration", fetchDuration),
 	)
 	return nil
 }

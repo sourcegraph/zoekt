@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/shirou/gopsutil/v3/disk"
-	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/mountinfo"
 	"github.com/uber/jaeger-client-go"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -163,16 +162,13 @@ func main() {
 		os.Exit(0)
 	}
 
-	resource := sglog.Resource{
+	resource := logging.Resource{
 		Name:       "zoekt-webserver",
 		Version:    index.Version,
 		InstanceID: index.HostnameBestEffort(),
 	}
 
-	liblog := sglog.Init(resource)
-	defer liblog.Sync()
-	logResource := logging.Resource{Name: resource.Name, Version: resource.Version, InstanceID: resource.InstanceID}
-	logging.Init(os.Stderr, logResource)
+	logging.Init(os.Stderr, resource)
 	tracer.Init(resource)
 	profiler.Init("zoekt-webserver")
 
@@ -183,7 +179,7 @@ func main() {
 		// We could do fdup acrobatics to also redirect
 		// stderr, but it is simpler and more portable for the
 		// caller to divert stderr output if necessary.
-		go divertLogs(*logDir, *logRefresh, logResource)
+		go divertLogs(*logDir, *logRefresh, resource)
 	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
@@ -195,12 +191,11 @@ func main() {
 
 	mustRegisterDiskMonitor(*indexDir)
 
-	metricsLogger := sglog.Scoped("metricsRegistration")
-
-	mustRegisterMemoryMapMetrics(metricsLogger)
+	mustRegisterMemoryMapMetrics(logging.Scoped(slog.Default(), "metricsRegistration"))
 
 	opts := mountinfo.CollectorOpts{Namespace: "zoekt_webserver"}
-	c := mountinfo.NewCollector(metricsLogger, opts, map[string]string{"indexDir": *indexDir})
+	// The scope matches the one mountinfo.NewCollector used to log with.
+	c := mountinfo.NewSlogCollector(logging.Scoped(slog.Default(), "metricsRegistration.mountPointInfo.deviceNameDiscovery"), opts, map[string]string{"indexDir": *indexDir})
 
 	prometheus.DefaultRegisterer.MustRegister(c)
 
@@ -214,7 +209,7 @@ func main() {
 
 	loggedSearcher := &loggedSearcher{
 		Streamer: searcher,
-		Logger:   sglog.Scoped("searcher"),
+		Logger:   logging.Scoped(slog.Default(), "searcher"),
 	}
 
 	s := &web.Server{
@@ -258,7 +253,7 @@ func main() {
 
 	if *enableIndexserverProxy {
 		socket := filepath.Join(*indexDir, "indexserver.sock")
-		sglog.Scoped("server").Info("adding reverse proxy", sglog.String("socket", socket))
+		logging.Scoped(slog.Default(), "server").Info("adding reverse proxy", slog.String("socket", socket))
 		addProxyHandler(serveMux, socket)
 	}
 
@@ -290,7 +285,7 @@ func main() {
 		slog.Info("watchdog disabled")
 	}
 
-	logger := sglog.Scoped("ZoektWebserverGRPCServer")
+	logger := logging.Scoped(slog.Default(), "ZoektWebserverGRPCServer")
 	grpcServer := newGRPCServer(logger, s.Searcher)
 	handler = grpcutil.MultiplexGRPC(grpcServer, handler)
 	handler = corsHandler(handler, *corsOrigin)
@@ -302,7 +297,7 @@ func main() {
 	}
 
 	go func() {
-		sglog.Scoped("server").Info("starting server", sglog.Stringp("address", listen))
+		logging.Scoped(slog.Default(), "server").Info("starting server", slog.String("address", *listen))
 		var err error
 		if *sslCert != "" || *sslKey != "" {
 			err = srv.ListenAndServeTLS(*sslCert, *sslKey)
@@ -483,7 +478,7 @@ func mustRegisterDiskMonitor(path string) {
 
 type loggedSearcher struct {
 	zoekt.Streamer
-	Logger sglog.Logger
+	Logger *slog.Logger
 }
 
 func (s *loggedSearcher) Search(
@@ -523,29 +518,29 @@ func (s *loggedSearcher) StreamSearch(
 }
 
 func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, st *zoekt.Stats, err error) {
-	logger := s.Logger.
-		WithTrace(traceContext(ctx)).
+	traceID, spanID := traceContext(ctx)
+	logger := logging.WithTrace(s.Logger, traceID, spanID).
 		With(
-			sglog.String("query", q.String()),
-			sglog.Bool("opts.EstimateDocCount", opts.EstimateDocCount),
-			sglog.Bool("opts.Whole", opts.Whole),
-			sglog.Int("opts.ShardMaxMatchCount", opts.ShardMaxMatchCount),
-			sglog.Int("opts.TotalMaxMatchCount", opts.TotalMaxMatchCount),
-			sglog.Duration("opts.MaxWallTime", opts.MaxWallTime),
-			sglog.Int("opts.MaxDocDisplayCount", opts.MaxDocDisplayCount),
-			sglog.Int("opts.MaxMatchDisplayCount", opts.MaxMatchDisplayCount),
+			slog.String("query", q.String()),
+			slog.Bool("opts.EstimateDocCount", opts.EstimateDocCount),
+			slog.Bool("opts.Whole", opts.Whole),
+			slog.Int("opts.ShardMaxMatchCount", opts.ShardMaxMatchCount),
+			slog.Int("opts.TotalMaxMatchCount", opts.TotalMaxMatchCount),
+			slog.Duration("opts.MaxWallTime", opts.MaxWallTime),
+			slog.Int("opts.MaxDocDisplayCount", opts.MaxDocDisplayCount),
+			slog.Int("opts.MaxMatchDisplayCount", opts.MaxMatchDisplayCount),
 		)
 
 	if err != nil {
 		switch {
 		case errors.Is(err, context.Canceled):
-			logger.Warn("search canceled", sglog.Error(err))
+			logger.Warn("search canceled", slog.Any("error", err))
 		case errors.Is(err, context.DeadlineExceeded):
-			logger.Warn("search timeout", sglog.Error(err))
+			logger.Warn("search timeout", slog.Any("error", err))
 		case errors.Is(err, zoekt.ErrOverloaded):
-			logger.Warn("search shed", sglog.Error(err))
+			logger.Warn("search shed", slog.Any("error", err))
 		default:
-			logger.Error("search failed", sglog.Error(err))
+			logger.Error("search failed", slog.Any("error", err))
 		}
 		return
 	}
@@ -555,52 +550,48 @@ func (s *loggedSearcher) log(ctx context.Context, q query.Q, opts *zoekt.SearchO
 	}
 
 	logger.Debug("search",
-		sglog.Int64("stat.ContentBytesLoaded", st.ContentBytesLoaded),
-		sglog.Int64("stat.IndexBytesLoaded", st.IndexBytesLoaded),
-		sglog.Int("stat.Crashes", st.Crashes),
-		sglog.Duration("stat.Duration", st.Duration),
-		sglog.Int("stat.FileCount", st.FileCount),
-		sglog.Int("stat.ShardFilesConsidered", st.ShardFilesConsidered),
-		sglog.Int("stat.FilesConsidered", st.FilesConsidered),
-		sglog.Int("stat.FilesLoaded", st.FilesLoaded),
-		sglog.Int("stat.FilesSkipped", st.FilesSkipped),
-		sglog.Int("stat.FilesSkippedDueToCancellation", st.FilesSkippedDueToCancellation),
-		sglog.Int("stat.ShardsScanned", st.ShardsScanned),
-		sglog.Int("stat.ShardsSkipped", st.ShardsSkipped),
-		sglog.Int("stat.ShardsSkippedFilter", st.ShardsSkippedFilter),
-		sglog.Int("stat.MatchCount", st.MatchCount),
-		sglog.Int("stat.NgramMatches", st.NgramMatches),
-		sglog.Int("stat.NgramLookups", st.NgramLookups),
-		sglog.Duration("stat.Wait", st.Wait),
-		sglog.Duration("stat.MatchTreeConstruction", st.MatchTreeConstruction),
-		sglog.Duration("stat.MatchTreeSearch", st.MatchTreeSearch),
-		sglog.Int("stat.RegexpsConsidered", st.RegexpsConsidered),
-		sglog.String("stat.FlushReason", st.FlushReason.String()),
+		slog.Int64("stat.ContentBytesLoaded", st.ContentBytesLoaded),
+		slog.Int64("stat.IndexBytesLoaded", st.IndexBytesLoaded),
+		slog.Int("stat.Crashes", st.Crashes),
+		slog.Duration("stat.Duration", st.Duration),
+		slog.Int("stat.FileCount", st.FileCount),
+		slog.Int("stat.ShardFilesConsidered", st.ShardFilesConsidered),
+		slog.Int("stat.FilesConsidered", st.FilesConsidered),
+		slog.Int("stat.FilesLoaded", st.FilesLoaded),
+		slog.Int("stat.FilesSkipped", st.FilesSkipped),
+		slog.Int("stat.FilesSkippedDueToCancellation", st.FilesSkippedDueToCancellation),
+		slog.Int("stat.ShardsScanned", st.ShardsScanned),
+		slog.Int("stat.ShardsSkipped", st.ShardsSkipped),
+		slog.Int("stat.ShardsSkippedFilter", st.ShardsSkippedFilter),
+		slog.Int("stat.MatchCount", st.MatchCount),
+		slog.Int("stat.NgramMatches", st.NgramMatches),
+		slog.Int("stat.NgramLookups", st.NgramLookups),
+		slog.Duration("stat.Wait", st.Wait),
+		slog.Duration("stat.MatchTreeConstruction", st.MatchTreeConstruction),
+		slog.Duration("stat.MatchTreeSearch", st.MatchTreeSearch),
+		slog.Int("stat.RegexpsConsidered", st.RegexpsConsidered),
+		slog.String("stat.FlushReason", st.FlushReason.String()),
 	)
 }
 
-func traceContext(ctx context.Context) sglog.TraceContext {
+// traceContext returns the trace and span IDs of the span in ctx, or empty
+// strings if there is none.
+func traceContext(ctx context.Context) (traceID, spanID string) {
 	otSpan := opentracing.SpanFromContext(ctx)
 	if otSpan != nil {
 		if jaegerSpan, ok := otSpan.Context().(jaeger.SpanContext); ok {
-			return sglog.TraceContext{
-				TraceID: jaegerSpan.TraceID().String(),
-				SpanID:  jaegerSpan.SpanID().String(),
-			}
+			return jaegerSpan.TraceID().String(), jaegerSpan.SpanID().String()
 		}
 	}
 
 	if otelSpan := oteltrace.SpanFromContext(ctx).SpanContext(); otelSpan.IsValid() {
-		return sglog.TraceContext{
-			TraceID: otelSpan.TraceID().String(),
-			SpanID:  otelSpan.SpanID().String(),
-		}
+		return otelSpan.TraceID().String(), otelSpan.SpanID().String()
 	}
 
-	return sglog.TraceContext{}
+	return "", ""
 }
 
-func newGRPCServer(logger sglog.Logger, streamer zoekt.Streamer, additionalOpts ...grpc.ServerOption) *grpc.Server {
+func newGRPCServer(logger *slog.Logger, streamer zoekt.Streamer, additionalOpts ...grpc.ServerOption) *grpc.Server {
 	s := defaults.NewServer(logger, additionalOpts...)
 	webserverv1.RegisterWebserverServiceServer(s, grpcserver.NewServer(streamer))
 

@@ -1,15 +1,17 @@
 package main
 
 import (
+	"log/slog"
 	"path"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/procfs"
-	sglog "github.com/sourcegraph/log"
+
+	"github.com/sourcegraph/zoekt/internal/logging"
 )
 
-func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
-	logger = logger.Scoped("memoryMapMetrics")
+func mustRegisterMemoryMapMetrics(logger *slog.Logger) {
+	logger = logging.Scoped(logger, "memoryMapMetrics")
 
 	// The memory map metrics are collected via /proc, which
 	// is only available on linux-based operating systems.
@@ -22,8 +24,8 @@ func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 	if err != nil {
 		logger.Debug(
 			"skipping registration",
-			sglog.String("reason", "failed to initialize proc FS"),
-			sglog.String("error", err.Error()),
+			slog.String("reason", "failed to initialize proc FS"),
+			slog.String("error", err.Error()),
 		)
 
 		return
@@ -33,9 +35,9 @@ func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 	if err != nil {
 		logger.Debug(
 			"skipping registration",
-			sglog.String("path", path.Join(procfs.DefaultMountPoint, "self")),
-			sglog.String("reason", "failed to initialize process info object for current process"),
-			sglog.String("error", err.Error()),
+			slog.String("path", path.Join(procfs.DefaultMountPoint, "self")),
+			slog.String("reason", "failed to initialize process info object for current process"),
+			slog.String("error", err.Error()),
 		)
 
 		return
@@ -51,8 +53,8 @@ func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 		if err != nil {
 			logger.Debug(
 				"failed to read virtual memory statistics for the current process",
-				sglog.String("path", path.Join(procfs.DefaultMountPoint, "sys", "vm")),
-				sglog.String("error", err.Error()),
+				slog.String("path", path.Join(procfs.DefaultMountPoint, "sys", "vm")),
+				slog.String("error", err.Error()),
 			)
 
 			return 0
@@ -73,8 +75,8 @@ func mustRegisterMemoryMapMetrics(logger sglog.Logger) {
 		if err != nil {
 			logger.Debug(
 				"failed to read memory mappings for current process",
-				sglog.String("path", path.Join(procfs.DefaultMountPoint, "self", "maps")),
-				sglog.String("error", err.Error()),
+				slog.String("path", path.Join(procfs.DefaultMountPoint, "self", "maps")),
+				slog.String("error", err.Error()),
 			)
 
 			return 0

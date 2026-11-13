@@ -6,13 +6,14 @@ import (
 	"reflect"
 
 	"github.com/opentracing/opentracing-go"
-	sglog "github.com/sourcegraph/log"
 	"github.com/uber/jaeger-client-go"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 	jaegermetrics "github.com/uber/jaeger-lib/metrics"
+
+	"github.com/sourcegraph/zoekt/internal/logging"
 )
 
-func configureJaeger(resource sglog.Resource) (opentracing.Tracer, error) {
+func configureJaeger(resource logging.Resource) (opentracing.Tracer, error) {
 	cfg, err := jaegercfg.FromEnv()
 	cfg.ServiceName = resource.Name
 	if err != nil {
