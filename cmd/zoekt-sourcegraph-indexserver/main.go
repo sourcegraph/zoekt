@@ -52,7 +52,6 @@ import (
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/mountinfo"
 
 	"github.com/sourcegraph/zoekt"
@@ -1583,10 +1582,11 @@ func startServer(conf rootConfig) error {
 	}
 	go oc.Run()
 
-	logger := sglog.Scoped("metricsRegistration")
 	opts := mountinfo.CollectorOpts{Namespace: "zoekt_indexserver"}
 
-	c := mountinfo.NewCollector(logger, opts, map[string]string{"indexDir": conf.index})
+	// The scope matches the one mountinfo.NewCollector used to log with.
+	logger := logging.Scoped(slog.Default(), "metricsRegistration.mountPointInfo.deviceNameDiscovery")
+	c := mountinfo.NewSlogCollector(logger, opts, map[string]string{"indexDir": conf.index})
 	prometheus.DefaultRegisterer.MustRegister(c)
 
 	s.Run()
@@ -1865,8 +1865,6 @@ func main() {
 		Version:    index.Version,
 		InstanceID: index.HostnameBestEffort(),
 	}
-	liblog := sglog.Init(sglog.Resource{Name: resource.Name, Version: resource.Version, InstanceID: resource.InstanceID})
-	defer liblog.Sync()
 	logging.Init(os.Stderr, resource)
 
 	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {

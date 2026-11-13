@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/shirou/gopsutil/v3/disk"
-	sglog "github.com/sourcegraph/log"
 	"github.com/sourcegraph/mountinfo"
 	"github.com/uber/jaeger-client-go"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -169,8 +168,6 @@ func main() {
 		InstanceID: index.HostnameBestEffort(),
 	}
 
-	liblog := sglog.Init(sglog.Resource{Name: resource.Name, Version: resource.Version, InstanceID: resource.InstanceID})
-	defer liblog.Sync()
 	logging.Init(os.Stderr, resource)
 	tracer.Init(resource)
 	profiler.Init("zoekt-webserver")
@@ -197,7 +194,8 @@ func main() {
 	mustRegisterMemoryMapMetrics(logging.Scoped(slog.Default(), "metricsRegistration"))
 
 	opts := mountinfo.CollectorOpts{Namespace: "zoekt_webserver"}
-	c := mountinfo.NewCollector(sglog.Scoped("metricsRegistration"), opts, map[string]string{"indexDir": *indexDir})
+	// The scope matches the one mountinfo.NewCollector used to log with.
+	c := mountinfo.NewSlogCollector(logging.Scoped(slog.Default(), "metricsRegistration.mountPointInfo.deviceNameDiscovery"), opts, map[string]string{"indexDir": *indexDir})
 
 	prometheus.DefaultRegisterer.MustRegister(c)
 

@@ -28,8 +28,7 @@ require (
 	github.com/rs/xid v1.6.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/sourcegraph/go-ctags v0.0.0-20261102140213-2e73e57077a7
-	github.com/sourcegraph/log v0.0.0-20241024013702-574f7079c888
-	github.com/sourcegraph/mountinfo v0.0.0-20251117172727-e9f6a87f579c
+	github.com/sourcegraph/mountinfo v0.0.0-20261113140115-da840481fa02
 	github.com/stretchr/testify v1.11.1
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
@@ -65,6 +64,7 @@ require (
 	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/sourcegraph/log v0.0.0-20241024013702-574f7079c888 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 )
 
