@@ -40,7 +40,15 @@ func TestInit(t *testing.T) {
 			"SeverityText": "WARN",
 			"Body":         "warn",
 			"Resource":     resource,
-			"Attributes":   map[string]any{"repo": "foo", "duration": 1.5},
+			"Attributes":   map[string]any{"repo": "foo", "duration": 1.5, "until": 42.0},
+		}, {
+			"SeverityText":         "WARN",
+			"Body":                 "scoped",
+			"InstrumentationScope": "server.sub",
+			"TraceId":              "trace",
+			"SpanId":               "span",
+			"Resource":             resource,
+			"Attributes":           map[string]any{"repo": "foo", "opts": map[string]any{"n": 1.0}},
 		}, {
 			"SeverityText": "INFO",
 			"Body":         "from log package 1",
@@ -58,7 +66,15 @@ func TestInit(t *testing.T) {
 			"severity":   "WARN",
 			"message":    "warn",
 			"Resource":   resource,
-			"Attributes": map[string]any{"repo": "foo", "duration": 1.5},
+			"Attributes": map[string]any{"repo": "foo", "duration": 1.5, "until": 42.0},
+		}, {
+			"severity":             "WARN",
+			"message":              "scoped",
+			"InstrumentationScope": "server.sub",
+			"TraceId":              "trace",
+			"SpanId":               "span",
+			"Resource":             resource,
+			"Attributes":           map[string]any{"repo": "foo", "opts": map[string]any{"n": 1.0}},
 		}, {
 			"severity": "INFO",
 			"message":  "from log package 1",
@@ -75,7 +91,9 @@ func TestInit(t *testing.T) {
 			var buf bytes.Buffer
 			Init(&buf, Resource{Name: "zoekt-webserver", Version: "v1", InstanceID: "host"})
 			slog.Info("info")
-			slog.Warn("warn", "repo", "foo", "duration", 1500*time.Millisecond)
+			slog.Warn("warn", "repo", "foo", "duration", 1500*time.Millisecond, "until", time.Unix(0, 42))
+			l := WithTrace(Scoped(Scoped(slog.Default(), "server"), "sub"), "trace", "span")
+			l.With("repo", "foo").WithGroup("opts").Warn("scoped", "n", 1)
 			log.Printf("from log package %d", 1)
 
 			timeKey := "Timestamp"
@@ -109,5 +127,57 @@ func TestInit(t *testing.T) {
 				t.Errorf("mismatch (-want +got):\n%s", d)
 			}
 		})
+	}
+}
+
+func TestSampler(t *testing.T) {
+	s := newSampler(2, 3)
+	now := time.Unix(100, 0)
+
+	var got []bool
+	for range 8 {
+		got = append(got, s.allow(now, slog.LevelWarn, "shed"))
+	}
+	// The first 2 are logged, then every 3rd after them.
+	want := []bool{true, true, false, false, true, false, false, true}
+	if d := cmp.Diff(want, got); d != "" {
+		t.Errorf("mismatch (-want +got):\n%s", d)
+	}
+
+	if !s.allow(now, slog.LevelError, "shed") || !s.allow(now, slog.LevelWarn, "other") {
+		t.Error("a different level or message was sampled with another's count")
+	}
+	if !s.allow(now.Add(time.Second), slog.LevelWarn, "shed") {
+		t.Error("the count was not reset in the next second")
+	}
+
+	if newSampler(0, 100) != nil || newSampler(-1, 100) != nil {
+		t.Error("an initial count of 0 or less does not disable sampling")
+	}
+}
+
+func TestInitSampling(t *testing.T) {
+	defaultLogger, logOut, logFlags := slog.Default(), log.Writer(), log.Flags()
+	t.Cleanup(func() {
+		slog.SetDefault(defaultLogger)
+		log.SetOutput(logOut)
+		log.SetFlags(logFlags)
+	})
+	t.Setenv("SRC_LOG_SAMPLING_INITIAL", "1")
+	t.Setenv("SRC_LOG_SAMPLING_THEREAFTER", "0")
+
+	var buf bytes.Buffer
+	Init(&buf, Resource{})
+	for range 3 {
+		slog.Warn("shed")
+		log.Print("from log package")
+	}
+
+	// Sampling applies to slog records, but never to the log package.
+	if got := strings.Count(buf.String(), `"Body":"shed"`); got != 1 {
+		t.Errorf("got %d sampled records, want 1", got)
+	}
+	if got := strings.Count(buf.String(), `"Body":"from log package"`); got != 3 {
+		t.Errorf("got %d log package records, want 3", got)
 	}
 }
