@@ -699,17 +699,19 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	// Invalid IDs are rejected at index time. Shards written before that keep
-	// the ID stored in their JSON so they still load.
-	if v, ok := repo.RawConfig["repoid"]; ok {
+	// ID and TenantID are stored in the JSON. RawConfig only fills them in for
+	// shards written before those fields existed, and an invalid value there
+	// is ignored rather than replacing the stored one.
+	if v, ok := repo.RawConfig["repoid"]; ok && r.ID == 0 {
 		if id, err := ParseRepoID(v); err == nil {
 			r.ID = id
 		}
 	}
 
-	if v, ok := repo.RawConfig["tenantID"]; ok {
-		id, _ := strconv.ParseInt(v, 10, 64)
-		r.TenantID = int(id)
+	if v, ok := repo.RawConfig["tenantID"]; ok && r.TenantID == 0 {
+		if id, err := strconv.Atoi(v); err == nil {
+			r.TenantID = id
+		}
 	}
 
 	// Sourcegraph indexserver doesn't set repo.Rank, so we set it here. Setting it

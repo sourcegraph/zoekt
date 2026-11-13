@@ -521,18 +521,42 @@ func TestParseRepoID(t *testing.T) {
 	}
 }
 
-// Shards written before invalid IDs were rejected at index time must still
-// load, keeping the ID stored in their JSON.
-func TestRepositoryUnmarshalJSON_InvalidRepoID(t *testing.T) {
+// The JSON ID and TenantID are authoritative. RawConfig only fills them in for
+// old shards that lack them, and invalid values there are ignored.
+func TestRepositoryUnmarshalJSON_RawConfigIDs(t *testing.T) {
+	type testCase struct {
+		name         string
+		data         string
+		wantID       uint32
+		wantTenantID int
+	}
+	cases := []testCase{{
+		name:         "legacy shard without fields",
+		data:         `{"name":"r","rawconfig":{"repoid":"12","tenantID":"3"}}`,
+		wantID:       12,
+		wantTenantID: 3,
+	}, {
+		name:         "fields win over raw config",
+		data:         `{"name":"r","ID":7,"TenantID":5,"rawconfig":{"repoid":"12","tenantID":"3"}}`,
+		wantID:       7,
+		wantTenantID: 5,
+	}}
 	for _, v := range []string{"4294967296", "abc", ""} {
-		t.Run(v, func(t *testing.T) {
+		cases = append(cases, testCase{
+			name:         "invalid raw config " + v,
+			data:         `{"name":"r","ID":7,"TenantID":5,"rawconfig":{"repoid":"` + v + `","tenantID":"` + v + `"}}`,
+			wantID:       7,
+			wantTenantID: 5,
+		})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			var repo Repository
-			data := `{"name":"r","id":7,"rawconfig":{"repoid":"` + v + `"}}`
-			if err := json.Unmarshal([]byte(data), &repo); err != nil {
+			if err := json.Unmarshal([]byte(tc.data), &repo); err != nil {
 				t.Fatal(err)
 			}
-			if repo.ID != 7 {
-				t.Fatalf("got ID %d, want 7", repo.ID)
+			if repo.ID != tc.wantID || repo.TenantID != tc.wantTenantID {
+				t.Fatalf("got ID %d TenantID %d, want %d %d", repo.ID, repo.TenantID, tc.wantID, tc.wantTenantID)
 			}
 		})
 	}
