@@ -84,9 +84,18 @@ func (s *Server) List(ctx context.Context, req *webserverv1.ListRequest) (*webse
 // gRPCChunkSender is a zoekt.Sender that sends small chunks of FileMatches to the provided gRPC stream.
 func gRPCChunkSender(ss webserverv1.WebserverService_StreamSearchServer) zoekt.Sender {
 	f := func(r *zoekt.SearchResult) {
-		result := r.ToStreamProto().GetResponseChunk()
+		// Once the client is gone every Send fails, so don't spend time and
+		// memory converting the result to protos.
+		if ss.Context().Err() != nil {
+			return
+		}
 
-		if len(result.GetFiles()) == 0 { // stats-only result, send it immediately
+		files := r.Files
+		header := *r
+		header.Files = nil
+		result := header.ToStreamProto().GetResponseChunk()
+
+		if len(files) == 0 { // stats-only result, send it immediately
 			_ = ss.Send(&webserverv1.StreamSearchResponse{
 				ResponseChunk: result,
 			})
@@ -109,7 +118,7 @@ func gRPCChunkSender(ss webserverv1.WebserverService_StreamSearchServer) zoekt.S
 
 			progress := result.GetProgress()
 
-			if numFilesSent < len(result.GetFiles()) { // more chunks to come
+			if numFilesSent < len(files) { // more chunks to come
 				progress = &webserverv1.Progress{
 					Priority: result.GetProgress().GetPriority(),
 
@@ -132,7 +141,16 @@ func gRPCChunkSender(ss webserverv1.WebserverService_StreamSearchServer) zoekt.S
 			})
 		}
 
-		_ = chunk.SendAll(sendFunc, result.GetFiles()...)
+		// Convert file matches as we go rather than up front, so a failed
+		// Send stops the conversion. A single result can hold millions of
+		// ranges.
+		c := chunk.New(sendFunc)
+		for i := range files {
+			if err := c.Send(files[i].ToProto()); err != nil {
+				return
+			}
+		}
+		_ = c.Flush()
 	}
 
 	return zoekt.SenderFunc(f)
