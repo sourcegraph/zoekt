@@ -13,11 +13,18 @@ import (
 	"github.com/sourcegraph/zoekt/index"
 )
 
-var metricFinalAggregateSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Name:    "zoekt_final_aggregate_size",
-	Help:    "The number of file matches we aggregated before flushing",
-	Buckets: prometheus.ExponentialBuckets(1, 2, 20),
-}, []string{"reason"})
+var (
+	metricFinalAggregateSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "zoekt_final_aggregate_size",
+		Help:    "The number of file matches we aggregated before flushing",
+		Buckets: prometheus.ExponentialBuckets(1, 2, 20),
+	}, []string{"reason"})
+	metricSearchTimeToFirstResult = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "zoekt_search_time_to_first_result_seconds",
+		Help:    "The duration from receiving a streaming search request until the first search result is ready to send.",
+		Buckets: prometheus.DefBuckets,
+	})
+)
 
 // collectSender is a sender that will aggregate results. Once sending is
 // done, you call Done to return the aggregated result which are ranked.
@@ -93,8 +100,17 @@ func (c *collectSender) hasDisplayLimit() bool {
 // newFlushCollectSender creates a sender which will collect and rank results
 // until opts.FlushWallTime. After that it will stream each result as it is
 // sent.
-func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender) (zoekt.Sender, func()) {
-	// We don't need to do any collecting, so just pass back the sender to use
+func newFlushCollectSender(opts *zoekt.SearchOptions, sender zoekt.Sender, searchStart time.Time) (zoekt.Sender, func()) {
+	downstream := sender
+	var firstResult sync.Once
+	sender = zoekt.SenderFunc(func(result *zoekt.SearchResult) {
+		firstResult.Do(func() {
+			metricSearchTimeToFirstResult.Observe(time.Since(searchStart).Seconds())
+		})
+		downstream.Send(result)
+	})
+
+	// We don't need to do any collecting, so use the instrumented sender
 	// directly.
 	if opts.FlushWallTime == 0 {
 		return sender, func() {}

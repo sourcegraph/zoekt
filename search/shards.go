@@ -999,7 +999,7 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		sender = limitSender(cancel, sender, truncator)
 	}
 
-	sender, flush := newFlushCollectSender(opts, sender)
+	sender, flush := newFlushCollectSender(opts, sender, start)
 
 	done, err := streamSearch(ctx, proc, q, opts, shards, sender)
 
