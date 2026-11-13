@@ -54,11 +54,10 @@
 // sourced from zoekt query parsing are validated before reaching this
 // package, so this is unlikely in practice.
 //
-// Caching: the index package caches compiled patterns of up to 4 KB, so for
-// those the memory above is bounded by the cache size (256 entries) rather
-// than the number of shards searched. The DFA of each cached Regexp stays
-// resident while it is cached.
-// A compile that panics costs one shard, as it did before the cache.
+// Caching: the index package shares a compiled Regexp between the shards
+// and searches that use it at the same time, and holds it only weakly, so
+// the memory above is bounded by the number of distinct patterns in use
+// rather than the number of shards searched.
 package hybridre2
 
 import (

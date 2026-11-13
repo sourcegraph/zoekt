@@ -1,79 +1,22 @@
 package index
 
 import (
-	"container/list"
-	"log/slog"
-	"os"
-	"strconv"
+	"runtime"
 	"sync"
+	"weak"
 
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt/internal/hybridre2"
 )
 
-const (
-	envRegexpCacheSize        = "ZOEKT_REGEXP_CACHE_SIZE"
-	envRegexpCachePatternSize = "ZOEKT_REGEXP_CACHE_MAX_PATTERN_BYTES"
-
-	// defaultRegexpCacheSize bounds each cache by entry count. A search
-	// compiles the same pattern once per shard, so this only has to cover
-	// the searches running at once. With RE2 on, a cached regexp's lazy DFA
-	// can grow to go-re2's 128 MiB limit, so the worst case is this times
-	// that. Zero disables the cache.
-	defaultRegexpCacheSize = 256
-
-	// defaultMaxCachedPatternLen is the longest pattern (in bytes) that is
-	// cached. The compiled program grows with pattern length, so longer
-	// patterns are compiled per shard as before rather than pinned by the
-	// cache. This does not bound RE2's lazy DFA. Typical queries are well
-	// below this.
-	defaultMaxCachedPatternLen = 4 << 10
-)
-
-type regexpCacheConfig struct {
-	size       int
-	maxPattern int
-}
-
-// regexpCache returns the process-wide caches, configured from the
-// environment on first use.
-var regexpCache = sync.OnceValue(func() *compiledRegexps {
-	return newCompiledRegexps(regexpCacheConfigFromEnv())
-})
-
-func regexpCacheConfigFromEnv() regexpCacheConfig {
-	return regexpCacheConfig{
-		size:       envInt(envRegexpCacheSize, defaultRegexpCacheSize),
-		maxPattern: envInt(envRegexpCachePatternSize, defaultMaxCachedPatternLen),
-	}
-}
-
-// envInt reads a non-negative integer from the environment. An unset
-// variable gives def; an invalid or negative one logs a warning and gives def.
-func envInt(name string, def int) int {
-	val, ok := os.LookupEnv(name)
-	if !ok {
-		return def
-	}
-	n, err := strconv.Atoi(val)
-	if err != nil || n < 0 {
-		slog.Warn("ignoring invalid environment variable value", "name", name, "value", val, "default", def)
-		return def
-	}
-	return n
-}
-
-func newCompiledRegexps(cfg regexpCacheConfig) *compiledRegexps {
-	return &compiledRegexps{
-		plain:  newLRU[*regexp.Regexp](cfg.size, cfg.maxPattern),
-		hybrid: newLRU[*hybridre2.Regexp](cfg.size, cfg.maxPattern),
-	}
-}
+// regexpCache holds the process-wide caches of compiled regexps, one for
+// grafana/regexp and one for hybridre2.
+var regexpCache = &compiledRegexps{}
 
 type compiledRegexps struct {
-	plain  *lru[*regexp.Regexp]
-	hybrid *lru[*hybridre2.Regexp]
+	plain  weakCache[regexp.Regexp]
+	hybrid weakCache[hybridre2.Regexp]
 }
 
 func (c *compiledRegexps) compile(pattern string) (*regexp.Regexp, error) {
@@ -84,57 +27,73 @@ func (c *compiledRegexps) compileHybrid(pattern string) (*hybridre2.Regexp, erro
 	return c.hybrid.get(pattern, hybridre2.Compile)
 }
 
-type lruEntry[T any] struct {
-	val  T
+// weakCache shares a compiled value between its users for as long as any
+// of them holds it. A search compiles the same pattern once per shard, and
+// the shards of a search (and concurrent searches with the same pattern)
+// overlap, so they share one compile. The cache only holds values weakly:
+// once no search references a value the garbage collector frees it and a
+// cleanup removes its entry, so the cache needs no size limit and never
+// pins a regexp (or RE2's lazy DFA) that nothing uses.
+//
+// Concurrent callers missing on the same key wait for a single compile.
+// Errors are returned to the callers sharing that compile but not cached,
+// since there is no value whose collection would remove the entry.
+type weakCache[T any] struct {
+	m sync.Map // string -> *weakEntry[T]
+}
+
+type weakEntry[T any] struct {
+	// done is closed when the compile finishes. Waiters block on it rather
+	// than a mutex, so they all wake at once instead of one at a time.
+	done chan struct{}
+	val  weak.Pointer[T]
 	err  error
-	elem *list.Element
 }
 
-// lru is a bounded, concurrency-safe memo. Callers missing on the same key
-// concurrently each compile, and the first to finish publishes its result;
-// the others return it and drop their own. Compile errors are cached like
-// values, since they are deterministic for a given pattern. Evicted values
-// stay valid for searches still holding them.
-type lru[T any] struct {
-	mu    sync.Mutex
-	limit int
-	// maxKeyLen is the longest key that is cached.
-	maxKeyLen int
-	items     map[string]*lruEntry[T]
-	order     *list.List // keys, most recent first
-}
+func (c *weakCache[T]) get(key string, compile func(string) (*T, error)) (*T, error) {
+	for {
+		v, ok := c.m.Load(key)
+		if !ok {
+			e := &weakEntry[T]{done: make(chan struct{})}
+			if v, ok = c.m.LoadOrStore(key, e); !ok {
+				return c.fill(key, e, compile)
+			}
+		}
+		e := v.(*weakEntry[T])
 
-func newLRU[T any](limit, maxKeyLen int) *lru[T] {
-	return &lru[T]{limit: limit, maxKeyLen: maxKeyLen, items: map[string]*lruEntry[T]{}, order: list.New()}
-}
-
-func (c *lru[T]) get(key string, compile func(string) (T, error)) (T, error) {
-	if c.limit == 0 || len(key) > c.maxKeyLen {
-		return compile(key)
+		// A non-blocking receive on a closed channel doesn't take its lock,
+		// so check that first: most calls hit a finished entry.
+		select {
+		case <-e.done:
+		default:
+			<-e.done
+		}
+		if e.err != nil {
+			return nil, e.err
+		}
+		if val := e.val.Value(); val != nil {
+			return val, nil
+		}
+		// The value was collected before its cleanup ran, or the compile
+		// panicked. Replace the entry.
+		c.m.CompareAndDelete(key, e)
 	}
+}
 
-	c.mu.Lock()
-	if e, ok := c.items[key]; ok {
-		c.order.MoveToFront(e.elem)
-		c.mu.Unlock()
-		return e.val, e.err
-	}
-	c.mu.Unlock()
+// fill compiles key into e, which the caller just stored, and wakes the
+// callers waiting on it. If compile panics, done is still closed and the
+// waiters replace e.
+func (c *weakCache[T]) fill(key string, e *weakEntry[T], compile func(string) (*T, error)) (*T, error) {
+	defer close(e.done)
 
-	// Compile without the lock so a miss never blocks other shards. A panic
-	// propagates before anything is inserted.
 	val, err := compile(key)
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if e, ok := c.items[key]; ok {
-		return e.val, e.err
+	if err != nil {
+		e.err = err
+		c.m.CompareAndDelete(key, e)
+		return nil, err
 	}
-	c.items[key] = &lruEntry[T]{val: val, err: err, elem: c.order.PushFront(key)}
-	if c.order.Len() > c.limit {
-		oldest := c.order.Back()
-		c.order.Remove(oldest)
-		delete(c.items, oldest.Value.(string))
-	}
-	return val, err
+	e.val = weak.Make(val)
+	// Only remove e: a newer entry for key may already exist.
+	runtime.AddCleanup(val, func(e *weakEntry[T]) { c.m.CompareAndDelete(key, e) }, e)
+	return val, nil
 }
