@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -486,5 +488,52 @@ func TestRepositoryUnmarshalJSONStackOverflowFix(t *testing.T) {
 
 	if nestedSubmodule.ID != 33333 {
 		t.Errorf("Expected nested-submodule ID 33333, got %d", nestedSubmodule.ID)
+	}
+}
+
+func TestParseRepoID(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    uint32
+		wantErr bool
+	}{
+		{in: "1", want: 1},
+		{in: "0", want: 0},
+		{in: "4294967295", want: math.MaxUint32},
+		{in: "", wantErr: true},
+		{in: "4294967296", wantErr: true},
+		{in: "-1", wantErr: true},
+		{in: "12abc", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := ParseRepoID(tc.in)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("ParseRepoID(%q) error = %v, wantErr %v", tc.in, err, tc.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrInvalidRepoID) {
+				t.Fatalf("ParseRepoID(%q) error %v does not wrap ErrInvalidRepoID", tc.in, err)
+			}
+			if got != tc.want {
+				t.Fatalf("ParseRepoID(%q) = %d, want %d", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// Shards written before invalid IDs were rejected at index time must still
+// load, keeping the ID stored in their JSON.
+func TestRepositoryUnmarshalJSON_InvalidRepoID(t *testing.T) {
+	for _, v := range []string{"4294967296", "abc", ""} {
+		t.Run(v, func(t *testing.T) {
+			var repo Repository
+			data := `{"name":"r","id":7,"rawconfig":{"repoid":"` + v + `"}}`
+			if err := json.Unmarshal([]byte(data), &repo); err != nil {
+				t.Fatal(err)
+			}
+			if repo.ID != 7 {
+				t.Fatalf("got ID %d, want 7", repo.ID)
+			}
+		})
 	}
 }
