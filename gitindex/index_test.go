@@ -40,6 +40,177 @@ import (
 	"github.com/sourcegraph/zoekt/search"
 )
 
+func TestGetCommitBranchPrefix(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	testutil.RunGit(t, dir, "init", "-b", "work")
+	testutil.RunGit(t, dir, "commit", "--allow-empty", "-m", "local")
+	local := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD"))
+	testutil.RunGit(t, dir, "commit", "--allow-empty", "-m", "remote")
+	remote := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD"))
+	testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/main", remote)
+	testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/topic/nested", remote)
+	testutil.RunGit(t, dir, "update-ref", "refs/heads/main", local)
+	testutil.RunGit(t, dir, "update-ref", "refs/heads/refs/remotes/missing/main", local)
+	testutil.RunGit(t, dir, "update-ref", "refs/heads/remotes/missing/main", local)
+	testutil.RunGit(t, dir, "tag", "main", local)
+	testutil.RunGit(t, dir, "update-ref", "refs/heads/tagged", local)
+	testutil.RunGit(t, dir, "tag", "tagged", remote)
+	testutil.RunGit(t, dir, "tag", "-a", "annotated", "-m", "annotated", remote)
+	testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/only", remote)
+	testutil.RunGit(t, dir, "update-ref", "ORIG_HEAD", local)
+	testutil.RunGit(t, dir, "update-ref", "refs/meta/config", remote)
+	tagHash := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "refs/tags/annotated"))
+	treeHash := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD^{tree}"))
+	testutil.RunGit(t, dir, "tag", "-a", "refs/remotes/missing/main", "-m", "tree alias", treeHash)
+	for _, name := range []string{remote[:12], tagHash[:12]} {
+		testutil.RunGit(t, dir, "update-ref", "refs/heads/"+name, local)
+		testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/"+name, local)
+	}
+	for _, name := range []string{treeHash[:12], treeHash} {
+		testutil.RunGit(t, dir, "update-ref", "refs/heads/"+name, local)
+		testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/"+name, remote)
+	}
+
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, prefix, ref, want string
+	}{
+		{"remote", "refs/remotes/origin", "main", remote},
+		{"remote trailing slash", "refs/remotes/origin/", "main", remote},
+		{"remote shorthand prefix", "remotes/origin", "main", remote},
+		{"remote abbreviated prefix", "origin", "main", remote},
+		{"local shorthand prefix", "heads", "tagged", local},
+		{"tag shorthand prefix", "tags", "annotated", remote},
+		{"local versus tag", "refs/heads/", "tagged", local},
+		{"nested branch", "refs/remotes/origin", "topic/nested", remote},
+		{"missing namespace", "refs/remotes/missing", "main", ""},
+		{"missing shorthand namespace", "remotes/missing", "main", ""},
+		{"missing branch", "refs/remotes/origin", "missing", ""},
+		{"empty prefix", "", "main", local},
+		{"qualified local", "refs/remotes/origin", "refs/heads/main", local},
+		{"qualified remote", "refs/heads", "refs/remotes/origin/main", remote},
+		{"qualified tag", "refs/heads", "refs/tags/main", local},
+		{"annotated tag", "refs/tags", "annotated", remote},
+		{"commit hash", "refs/remotes/origin", local, local},
+		{"previous version hash", "", local, local},
+		{"HEAD", "refs/heads", "HEAD", remote},
+		{"HEAD parent", "refs/heads", "HEAD~1", local},
+		{"hash parent", "refs/heads", remote + "^", local},
+		{"abbreviated hash", "refs/remotes/origin", local[:12], local},
+		{"odd abbreviated hash", "refs/heads", remote[:11], remote},
+		{"abbreviated tag object", "refs/heads", tagHash[:12], remote},
+		{"hash versus branch", "refs/remotes/origin", remote[:12], remote},
+		{"tag object versus branch", "refs/remotes/origin", tagHash[:12], remote},
+		{"hexadecimal branch", "refs/remotes/origin", treeHash[:12], remote},
+		{"full hexadecimal branch", "refs/remotes/origin", treeHash, remote},
+		{"shorthand local ref", "refs/remotes/origin", "heads/work", remote},
+		{"shorthand remote ref", "refs/heads", "remotes/origin/main", remote},
+		{"shorthand tag ref", "refs/heads", "tags/annotated", remote},
+		{"custom qualified ref", "refs/heads", "meta/config", remote},
+		{"namespace-only parent", "refs/remotes/origin", "only~1", local},
+		{"namespace-only peel", "refs/remotes/origin", "only^0", remote},
+		{"direct parent precedence", "refs/remotes/origin", "main^0", local},
+		{"HEAD alias", "refs/remotes/origin", "@", remote},
+		{"top-level ref", "refs/remotes/origin", "ORIG_HEAD", local},
+		{"colon expression", "refs/remotes/origin", "main:file.txt", local},
+		{"normalized fallback", "refs/remotes/origin", "missing/../only", remote},
+		{"empty revision fallback", "refs/heads/main", "", local},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			commit, err := getCommit(repo, tt.prefix, tt.ref)
+			if tt.want == "" {
+				if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+					t.Errorf("getCommit(%q, %q) error = %v, want reference not found", tt.prefix, tt.ref, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("getCommit(%q, %q): %v", tt.prefix, tt.ref, err)
+			} else if got := commit.Hash.String(); got != tt.want {
+				t.Errorf("getCommit(%q, %q) = %s, want %s", tt.prefix, tt.ref, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIndexBranchPrefixDelta(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	testutil.RunGit(t, dir, "init", "-b", "work")
+	options := Options{
+		RepoDir:      dir,
+		BranchPrefix: "refs/remotes/origin",
+		Branches:     []string{"main"},
+		BuildOptions: index.Options{
+			IndexDir:              t.TempDir(),
+			RepositoryDescription: zoekt.Repository{Name: "repository"},
+			DisableCTags:          true,
+		},
+	}
+
+	for _, content := range []string{"initial remote payload", "updated remote payload"} {
+		if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		testutil.RunGit(t, dir, "add", ".")
+		testutil.RunGit(t, dir, "commit", "-m", content)
+		remote := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD"))
+		testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/main", remote)
+
+		if options.BuildOptions.IsDelta {
+			if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("wrong branch payload"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			testutil.RunGit(t, dir, "commit", "-am", "local competitor")
+			testutil.RunGit(t, dir, "branch", "main")
+		}
+
+		normalBuildCalled := false
+		_, err := indexGitRepo(options, gitIndexConfig{
+			prepareNormalBuild: func(options Options, repo *git.Repository) (map[fileKey]BlobLocation, map[string]map[string]plumbing.Hash, error) {
+				normalBuildCalled = true
+				return prepareNormalBuild(options, repo)
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if options.BuildOptions.IsDelta && normalBuildCalled {
+			t.Fatal("delta build fell back to a normal build")
+		}
+
+		ss, err := search.NewDirectorySearcher(options.BuildOptions.IndexDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := ss.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
+		ss.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Files) != 1 || string(result.Files[0].Content) != content {
+			t.Errorf("indexed files = %v, want file.txt with content %q", result.Files, content)
+		}
+		for _, shard := range options.BuildOptions.FindAllShards() {
+			repos, _, err := index.ReadMetadataPath(shard)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []zoekt.RepositoryBranch{{Name: "main", Version: remote}}
+			if len(repos) != 1 || !cmp.Equal(repos[0].Branches, want) {
+				t.Errorf("indexed repositories = %v, want main at %s", repos, remote)
+			}
+		}
+		options.BuildOptions.IsDelta = true
+	}
+}
+
 func TestIndexEmptyRepo(t *testing.T) {
 	t.Parallel()
 

@@ -26,6 +26,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -37,6 +38,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/sourcegraph/zoekt"
@@ -176,12 +179,86 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 	return nil
 }
 
-// getCommit returns a tree object for the given reference.
+// prefixedRefStorer binds a short name to its namespace without changing
+// ResolveRevision's hash lookup, parsing or tag peeling.
+type prefixedRefStorer struct {
+	storage.Storer
+	prefix string
+	ref    plumbing.ReferenceName
+}
+
+func (s *prefixedRefStorer) Reference(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	if name != s.ref {
+		// Do not let ResolveRevision's other shorthand expansions escape the namespace.
+		return nil, plumbing.ErrReferenceNotFound
+	}
+	joined := path.Join(s.prefix, name.String())
+	kind, _, _ := strings.Cut(joined, "/")
+	switch kind {
+	case "heads", "tags", "remotes":
+		joined = "refs/" + joined
+	}
+	if strings.HasPrefix(joined, "refs/") {
+		return storer.ResolveReference(s.Storer, plumbing.ReferenceName(joined))
+	}
+
+	// Preserve abbreviated prefixes such as origin, but expand the joined name,
+	// never the bare branch name.
+	var firstErr error
+	for _, rule := range plumbing.RefRevParseRules {
+		r, err := storer.ResolveReference(s.Storer, plumbing.ReferenceName(fmt.Sprintf(rule, joined)))
+		if err == nil {
+			return r, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+	return nil, firstErr
+}
+
+type hashPrefixStorer interface {
+	HashesWithPrefix([]byte) ([]plumbing.Hash, error)
+}
+
+// getCommit returns a commit for the given branch name or explicit revision.
 func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error) {
-	sha1, err := repo.ResolveRevision(plumbing.Revision(ref))
-	// ref might be a branch name (e.g. "master") add branch prefix and try again.
-	if err != nil {
-		sha1, err = repo.ResolveRevision(plumbing.Revision(filepath.Join(prefix, ref)))
+	resolver := repo
+	if prefix != "" {
+		// Only literal ref names use namespace precedence. Let the revision parser
+		// handle expressions and malformed names, including the existing fallback.
+		explicit := ref == "HEAD" || plumbing.ReferenceName("refs/"+ref).Validate() != nil
+		kind, _, qualified := strings.Cut(ref, "/")
+		if qualified {
+			switch kind {
+			case "refs", "heads", "tags", "remotes":
+				explicit = true
+			}
+			if !explicit {
+				_, err := repo.Reference(plumbing.ReferenceName("refs/"+ref), true)
+				explicit = err == nil
+			}
+		}
+		if !explicit {
+			// Top-level refs such as ORIG_HEAD have their own meaning, too.
+			_, err := repo.Reference(plumbing.ReferenceName(ref), true)
+			explicit = err == nil
+		}
+		if !explicit {
+			var store storage.Storer = &prefixedRefStorer{Storer: repo.Storer, prefix: prefix, ref: plumbing.ReferenceName(ref)}
+			if hashes, ok := repo.Storer.(hashPrefixStorer); ok {
+				// Preserve go-git's fast object-prefix lookup instead of forcing a scan.
+				store = struct {
+					storage.Storer
+					hashPrefixStorer
+				}{store, hashes}
+			}
+			resolver = &git.Repository{Storer: store}
+		}
+	}
+	sha1, err := resolver.ResolveRevision(plumbing.Revision(ref))
+	if err != nil && resolver == repo {
+		sha1, err = repo.ResolveRevision(plumbing.Revision(path.Join(prefix, ref)))
 	}
 	if err != nil {
 		return nil, err
