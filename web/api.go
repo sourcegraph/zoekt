@@ -30,6 +30,8 @@ type LastInput struct {
 	Num   int
 	Ctx   int
 
+	Order string
+
 	// If set, focus on the search box.
 	AutoFocus bool
 

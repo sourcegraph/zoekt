@@ -225,8 +225,12 @@ document.onkeydown=function(e){
       {{ $fileCount := len .FileMatches }}
       Found {{.Stats.MatchCount}} results in {{.Stats.FileCount}} files{{if or (lt $fileCount .Stats.FileCount) (or (gt .Stats.ShardsSkipped 0) (gt .Stats.FilesSkipped 0)) }},
         showing top {{ $fileCount }} files (<a rel="nofollow"
-           href="search?q={{.Last.Query}}&num={{More .Last.Num}}">show more</a>).
+           href="search?q={{.Last.Query}}&num={{More .Last.Num}}{{if .Last.Order}}&order={{.Last.Order}}{{end}}">show more</a>).
       {{else}}.{{end}}
+      {{if .FileMatches}}{{with .Last}}
+        Sort by {{if .Order}}<a rel="nofollow" href="search?q={{.Query}}&num={{.Num}}&ctx={{.Ctx}}{{if .Debug}}&debug=true{{end}}">relevance</a>{{else}}relevance{{end}}
+        or {{if .Order}}path{{else}}<a rel="nofollow" href="search?q={{.Query}}&num={{.Num}}&ctx={{.Ctx}}{{if .Debug}}&debug=true{{end}}&order=path">path</a>{{end}}.
+      {{end}}{{end}}
     </h5>
     {{range .FileMatches}}
     <table class="table table-hover table-condensed">
