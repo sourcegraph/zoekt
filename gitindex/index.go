@@ -341,11 +341,19 @@ func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) erro
 		desc.ID = id
 	}
 
+	// Tenant 0 means no tenant, and with strict tenant enforcement no tenant
+	// can search such a shard. So a malformed ID fails instead of becoming 0.
+	if v := sec.Options.Get("tenantID"); v != "" {
+		id, err := strconv.Atoi(v)
+		if err != nil || id < 0 {
+			return fmt.Errorf("zoekt.tenantID: invalid tenant ID %q", v)
+		}
+		desc.TenantID = id
+	}
+
 	if err := setNameAndURLFromRepoConfig(desc, cfg); err != nil {
 		slog.Warn("setting repository name and URL templates from git config failed", "repo", desc.Name, "error", err)
 	}
-
-	desc.TenantID, _ = strconv.Atoi(sec.Options.Get("tenantID"))
 
 	if desc.RawConfig == nil {
 		desc.RawConfig = map[string]string{}
