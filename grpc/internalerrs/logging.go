@@ -5,20 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/dustin/go-humanize"
-	"github.com/sourcegraph/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/sourcegraph/zoekt/grpc/grpcutil"
+	"github.com/sourcegraph/zoekt/internal/logging"
 )
 
 var (
-	logScope       = "gRPC.internal.error.reporter"
+	logScope = "gRPC.internal.error.reporter"
 
 	envLoggingEnabled        = envMustGetBool("GRPC_INTERNAL_ERROR_LOGGING_ENABLED", true)           //  "Enables logging of gRPC internal errors"
 	envLogStackTracesEnabled = envMustGetBool("GRPC_INTERNAL_ERROR_LOGGING_LOG_STACK_TRACES", false) //  "Enables including stack traces in logs of gRPC internal errors"
@@ -30,7 +31,7 @@ var (
 
 // LoggingUnaryClientInterceptor returns a grpc.UnaryClientInterceptor that logs
 // errors that appear to come from the go-grpc implementation.
-func LoggingUnaryClientInterceptor(l log.Logger) grpc.UnaryClientInterceptor {
+func LoggingUnaryClientInterceptor(l *slog.Logger) grpc.UnaryClientInterceptor {
 	if !envLoggingEnabled {
 		// Just return the default invoker if logging is disabled.
 		return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
@@ -38,8 +39,8 @@ func LoggingUnaryClientInterceptor(l log.Logger) grpc.UnaryClientInterceptor {
 		}
 	}
 
-	logger := l.Scoped(logScope)
-	logger = logger.Scoped("unaryMethod")
+	logger := logging.Scoped(l, logScope)
+	logger = logging.Scoped(logger, "unaryMethod")
 
 	return func(ctx context.Context, fullMethod string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		err := invoker(ctx, fullMethod, req, reply, cc, opts...)
@@ -60,7 +61,7 @@ func LoggingUnaryClientInterceptor(l log.Logger) grpc.UnaryClientInterceptor {
 
 // LoggingStreamClientInterceptor returns a grpc.StreamClientInterceptor that logs
 // errors that appear to come from the go-grpc implementation.
-func LoggingStreamClientInterceptor(l log.Logger) grpc.StreamClientInterceptor {
+func LoggingStreamClientInterceptor(l *slog.Logger) grpc.StreamClientInterceptor {
 	if !envLoggingEnabled {
 		// Just return the default streamer if logging is disabled.
 		return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
@@ -68,8 +69,8 @@ func LoggingStreamClientInterceptor(l log.Logger) grpc.StreamClientInterceptor {
 		}
 	}
 
-	logger := l.Scoped(logScope)
-	logger = logger.Scoped("streamingMethod")
+	logger := logging.Scoped(l, logScope)
+	logger = logging.Scoped(logger, "streamingMethod")
 
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, fullMethod string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 		serviceName, methodName := grpcutil.SplitMethodName(fullMethod)
@@ -80,7 +81,7 @@ func LoggingStreamClientInterceptor(l log.Logger) grpc.StreamClientInterceptor {
 			// until after the stream is created.
 			//
 			// This is fine since the error is already available, and the non-utf8 string check is robust against nil messages.
-			logger := logger.Scoped("postInit")
+			logger := logging.Scoped(logger, "postInit")
 			doLog(logger, serviceName, methodName, nil, nil, err)
 			return nil, err
 		}
@@ -92,7 +93,7 @@ func LoggingStreamClientInterceptor(l log.Logger) grpc.StreamClientInterceptor {
 
 // LoggingUnaryServerInterceptor returns a grpc.UnaryServerInterceptor that logs
 // errors that appear to come from the go-grpc implementation.
-func LoggingUnaryServerInterceptor(l log.Logger) grpc.UnaryServerInterceptor {
+func LoggingUnaryServerInterceptor(l *slog.Logger) grpc.UnaryServerInterceptor {
 	if !envLoggingEnabled {
 		// Just return the default handler if logging is disabled.
 		return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
@@ -100,8 +101,8 @@ func LoggingUnaryServerInterceptor(l log.Logger) grpc.UnaryServerInterceptor {
 		}
 	}
 
-	logger := l.Scoped(logScope)
-	logger = logger.Scoped("unaryMethod")
+	logger := logging.Scoped(l, logScope)
+	logger = logging.Scoped(logger, "unaryMethod")
 
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
 		response, err := handler(ctx, req)
@@ -122,7 +123,7 @@ func LoggingUnaryServerInterceptor(l log.Logger) grpc.UnaryServerInterceptor {
 
 // LoggingStreamServerInterceptor returns a grpc.StreamServerInterceptor that logs
 // errors that appear to come from the go-grpc implementation.
-func LoggingStreamServerInterceptor(l log.Logger) grpc.StreamServerInterceptor {
+func LoggingStreamServerInterceptor(l *slog.Logger) grpc.StreamServerInterceptor {
 	if !envLoggingEnabled {
 		// Just return the default handler if logging is disabled.
 		return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
@@ -130,8 +131,8 @@ func LoggingStreamServerInterceptor(l log.Logger) grpc.StreamServerInterceptor {
 		}
 	}
 
-	logger := l.Scoped(logScope)
-	logger = logger.Scoped("streamingMethod")
+	logger := logging.Scoped(l, logScope)
+	logger = logging.Scoped(logger, "streamingMethod")
 
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		serviceName, methodName := grpcutil.SplitMethodName(info.FullMethod)
@@ -141,9 +142,9 @@ func LoggingStreamServerInterceptor(l log.Logger) grpc.StreamServerInterceptor {
 	}
 }
 
-func newLoggingServerStream(s grpc.ServerStream, logger log.Logger, serviceName, methodName string) grpc.ServerStream {
-	sendLogger := logger.Scoped("postMessageSend")
-	receiveLogger := logger.Scoped("postMessageReceive")
+func newLoggingServerStream(s grpc.ServerStream, logger *slog.Logger, serviceName, methodName string) grpc.ServerStream {
+	sendLogger := logging.Scoped(logger, "postMessageSend")
+	receiveLogger := logging.Scoped(logger, "postMessageReceive")
 
 	requestSaver := requestSavingServerStream{ServerStream: s}
 
@@ -164,9 +165,9 @@ func newLoggingServerStream(s grpc.ServerStream, logger log.Logger, serviceName,
 	}
 }
 
-func newLoggingClientStream(s grpc.ClientStream, logger log.Logger, serviceName, methodName string) grpc.ClientStream {
-	sendLogger := logger.Scoped("postMessageSend")
-	receiveLogger := logger.Scoped("postMessageReceive")
+func newLoggingClientStream(s grpc.ClientStream, logger *slog.Logger, serviceName, methodName string) grpc.ClientStream {
+	sendLogger := logging.Scoped(logger, "postMessageSend")
+	receiveLogger := logging.Scoped(logger, "postMessageReceive")
 
 	requestSaver := requestSavingClientStream{ClientStream: s}
 
@@ -187,7 +188,7 @@ func newLoggingClientStream(s grpc.ClientStream, logger log.Logger, serviceName,
 	}
 }
 
-func doLog(logger log.Logger, serviceName, methodName string, initialRequest *proto.Message, payload any, err error) {
+func doLog(logger *slog.Logger, serviceName, methodName string, initialRequest *proto.Message, payload any, err error) {
 	if err == nil {
 		return
 	}
@@ -203,14 +204,14 @@ func doLog(logger log.Logger, serviceName, methodName string, initialRequest *pr
 		return
 	}
 
-	allFields := []log.Field{
-		log.String("grpcService", serviceName),
-		log.String("grpcMethod", methodName),
-		log.String("grpcCode", s.Code().String()),
+	allFields := []slog.Attr{
+		slog.String("grpcService", serviceName),
+		slog.String("grpcMethod", methodName),
+		slog.String("grpcCode", s.Code().String()),
 	}
 
 	if envLogStackTracesEnabled {
-		allFields = append(allFields, log.String("errWithStack", fmt.Sprintf("%+v", err)))
+		allFields = append(allFields, slog.String("errWithStack", fmt.Sprintf("%+v", err)))
 	}
 
 	// Log the initial request message
@@ -231,7 +232,7 @@ func doLog(logger log.Logger, serviceName, methodName string, initialRequest *pr
 		}
 	}
 
-	logger.Error(s.Message(), allFields...)
+	logger.LogAttrs(context.Background(), slog.LevelError, s.Message(), allFields...)
 }
 
 // messageJSONFields converts a protobuf message to a JSON string and returns it as a log field using the provided "key".
@@ -239,7 +240,7 @@ func doLog(logger log.Logger, serviceName, methodName string, initialRequest *pr
 //
 // If the size of the original protobuf message exceeds maxMessageSizeBytes or any serialization errors are encountered, log fields
 // describing the error are returned instead.
-func messageJSONFields(m *proto.Message, key string, maxMessageSizeBytes, maxJSONSizeBytes uint64) []log.Field {
+func messageJSONFields(m *proto.Message, key string, maxMessageSizeBytes, maxJSONSizeBytes uint64) []slog.Attr {
 	if m == nil || *m == nil {
 		return nil
 	}
@@ -253,7 +254,7 @@ func messageJSONFields(m *proto.Message, key string, maxMessageSizeBytes, maxJSO
 				humanize.Bytes(size), humanize.Bytes(maxMessageSizeBytes),
 			)
 
-			return []log.Field{log.Error(err)}
+			return []slog.Attr{slog.Any("error", err)}
 		}
 	}
 
@@ -261,11 +262,11 @@ func messageJSONFields(m *proto.Message, key string, maxMessageSizeBytes, maxJSO
 	bs, err := json.Marshal(*m)
 	if err != nil {
 		err := fmt.Errorf("failed to marshal protobuf message (key: %q) to string: %w", key, err)
-		return []log.Field{log.Error(err)}
+		return []slog.Attr{slog.Any("error", err)}
 	}
 
 	s := truncate(string(bs), maxJSONSizeBytes)
-	return []log.Field{log.String(key, s)}
+	return []slog.Attr{slog.String(key, s)}
 }
 
 // truncate shortens the string be to at most maxBytes bytes, appending a message indicating that the string was truncated if necessary.
@@ -294,13 +295,13 @@ func isNonUTF8StringError(s *status.Status) bool {
 }
 
 // nonUTF8StringLogFields checks a protobuf message for fields that contain non-utf8 strings, and returns them as log fields.
-func nonUTF8StringLogFields(m proto.Message) []log.Field {
+func nonUTF8StringLogFields(m proto.Message) []slog.Attr {
 	fs, err := findNonUTF8StringFields(m)
 	if err != nil {
 		err := fmt.Errorf("failed to find non-UTF8 string fields in protobuf message: %w", err)
-		return []log.Field{log.Error(err)}
+		return []slog.Attr{slog.Any("error", err)}
 
 	}
 
-	return []log.Field{log.Strings("nonUTF8StringFields", fs)}
+	return []slog.Attr{slog.Any("nonUTF8StringFields", fs)}
 }

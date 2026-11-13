@@ -1,9 +1,8 @@
 package main
 
 import (
+	"log/slog"
 	"time"
-
-	"github.com/sourcegraph/log"
 )
 
 type backoff struct {
@@ -28,7 +27,7 @@ func (b *backoff) Reset() {
 	b.backoffUntil = time.Unix(0, 0)
 }
 
-func (b *backoff) Fail(now time.Time, logger log.Logger, opts IndexOptions) {
+func (b *backoff) Fail(now time.Time, logger *slog.Logger, opts IndexOptions) {
 	backoffDuration := time.Duration(b.consecutiveFailures+1) * b.backoffDuration
 
 	if backoffDuration > b.maxBackoff {
@@ -39,9 +38,9 @@ func (b *backoff) Fail(now time.Time, logger log.Logger, opts IndexOptions) {
 	b.backoffUntil = now.Add(backoffDuration)
 
 	logger.Debug("Backoff subsequent attempts to index repository",
-		log.String("repo", opts.Name),
-		log.Uint32("id", opts.RepoID),
-		log.Duration("backoff_duration", b.backoffDuration),
-		log.Time("backoff_until", b.backoffUntil),
+		slog.String("repo", opts.Name),
+		slog.Uint64("id", uint64(opts.RepoID)),
+		slog.Duration("backoff_duration", b.backoffDuration),
+		slog.Time("backoff_until", b.backoffUntil),
 	)
 }

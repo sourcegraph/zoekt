@@ -191,7 +191,7 @@ const (
 // Server is the main functionality of zoekt-sourcegraph-indexserver. It
 // exists to conveniently use all the options passed in via func main.
 type Server struct {
-	logger sglog.Logger
+	logger *slog.Logger
 
 	Sourcegraph Sourcegraph
 
@@ -274,7 +274,7 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 		}
 	}()
 
-	s.logger.Debug("logged run", sglog.Strings("args", cmd.Args))
+	s.logger.Debug("logged run", slog.Any("args", cmd.Args))
 
 	if err := cmd.Start(); err != nil {
 		return err
@@ -410,7 +410,7 @@ func (s *Server) Run() {
 			go func() {
 				defer close(cleanupDone)
 				var timings phaseTimings
-				var fields []sglog.Field
+				var fields []slog.Attr
 				var lockWait, workDuration time.Duration
 				start := time.Now()
 				timings.next("lock_wait")
@@ -420,7 +420,7 @@ func (s *Server) Run() {
 					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging, &timings)
 					timings.next("git_cache")
 					if err := gitCache.cleanup(repos.IDs, time.Now()); err != nil {
-						s.logger.Error("failed to clean git clone cache", sglog.Error(err))
+						s.logger.Error("failed to clean git clone cache", slog.Any("error", err))
 					}
 					fields = timings.finish()
 					workDuration = time.Since(workStart)
@@ -428,12 +428,12 @@ func (s *Server) Run() {
 				if fields == nil { // Cleanup was skipped during its cooldown.
 					return
 				}
-				fields = append(fields, sglog.Duration("lock_held", workDuration))
+				fields = append(fields, slog.Duration("lock_held", workDuration))
 				// Log outside the lock. Slow waits matter even when cleanup itself is fast.
 				if lockWait > 5*time.Second || workDuration > 5*time.Second {
-					s.logger.Info("cleanup finished", fields...)
+					s.logger.LogAttrs(context.Background(), slog.LevelInfo, "cleanup finished", fields...)
 				} else {
-					s.logger.Debug("cleanup finished", fields...)
+					s.logger.LogAttrs(context.Background(), slog.LevelDebug, "cleanup finished", fields...)
 				}
 			}()
 
@@ -536,12 +536,12 @@ func (s *Server) processQueue() {
 					branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
 				}
 				s.logger.Info("updated index",
-					sglog.Int("tenant", args.TenantID),
-					sglog.String("repo", args.Name),
-					sglog.Uint32("id", args.RepoID),
-					sglog.Strings("branches", branches),
-					sglog.Duration("duration", elapsed),
-					sglog.Duration("index_delay", indexDelay),
+					slog.Int("tenant", args.TenantID),
+					slog.String("repo", args.Name),
+					slog.Uint64("id", uint64(args.RepoID)),
+					slog.Any("branches", branches),
+					slog.Duration("duration", elapsed),
+					slog.Duration("index_delay", indexDelay),
 				)
 			case indexStateSuccessMeta:
 				slog.Info("updated meta", append(slogArgs(args), "duration", elapsed)...)
@@ -711,10 +711,10 @@ func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, 
 
 	logIndexStatusUpdateError := func(err error) {
 		s.logger.Error("failed to update index status",
-			sglog.String("repo", args.Name),
-			sglog.Uint32("id", args.RepoID),
-			sglogBranches("branches", args.Branches),
-			sglog.Error(err),
+			slog.String("repo", args.Name),
+			slog.Uint64("id", uint64(args.RepoID)),
+			slogBranches("branches", args.Branches),
+			slog.Any("error", err),
 		)
 	}
 
@@ -852,12 +852,12 @@ func utf8SuffixBytes(s string, maxBytes int) string {
 	return s[start:]
 }
 
-func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
+func slogBranches(key string, branches []zoekt.RepositoryBranch) slog.Attr {
 	ss := make([]string, len(branches))
 	for i, b := range branches {
 		ss[i] = fmt.Sprintf("%s=%s", b.Name, b.Version)
 	}
-	return sglog.Strings(key, ss)
+	return slog.Any(key, ss)
 }
 
 // slogArgs returns the slog attributes identifying the repository of an
@@ -1227,7 +1227,7 @@ func (s *Server) DeleteAllData(ctx context.Context, _ *indexserverv1.DeleteAllDa
 	if err != nil {
 		return nil, err
 	}
-	s.logger.Warn("DeleteAllData", sglog.Int("tenant_id", tnt.ID()))
+	s.logger.Warn("DeleteAllData", slog.Int("tenant_id", tnt.ID()))
 
 	var merr error
 	s.muIndexDir.Global(func() {
@@ -1288,7 +1288,7 @@ func listIndexed(indexDir string) []uint32 {
 //
 // If main is true we will delete older temp directories left around. main is
 // false when this is a debug command.
-func setupTmpDir(logger sglog.Logger, main bool, index string) error {
+func setupTmpDir(logger *slog.Logger, main bool, index string) error {
 	// change the target tmp directory depending on if it's our main daemon or a
 	// debug sub command.
 	dir := ".indexserver.debug.tmp"
@@ -1299,10 +1299,10 @@ func setupTmpDir(logger sglog.Logger, main bool, index string) error {
 	tmpRoot := filepath.Join(index, dir)
 
 	if main {
-		logger.Info("removing tmp dir", sglog.String("tmpRoot", tmpRoot))
+		logger.Info("removing tmp dir", slog.String("tmpRoot", tmpRoot))
 		err := os.RemoveAll(tmpRoot)
 		if err != nil {
-			logger.Error("failed to remove tmp dir", sglog.String("tmpRoot", tmpRoot), sglog.Error(err))
+			logger.Error("failed to remove tmp dir", slog.String("tmpRoot", tmpRoot), slog.Any("error", err))
 		}
 	}
 
@@ -1537,7 +1537,7 @@ func startServer(conf rootConfig) error {
 
 		go func() {
 			slog.Debug("serving http", "addr", conf.listen)
-			mux := grpcutil.MultiplexGRPC(newGRPCServer(sglog.Scoped("indexserver"), s), mux)
+			mux := grpcutil.MultiplexGRPC(newGRPCServer(logging.Scoped(slog.Default(), "indexserver"), s), mux)
 			srv := &http.Server{Addr: conf.listen, Handler: mux, Protocols: grpcutil.Protocols()}
 			log.Fatal(srv.ListenAndServe())
 		}()
@@ -1594,7 +1594,7 @@ func startServer(conf rootConfig) error {
 }
 
 func newServer(conf rootConfig) (*Server, error) {
-	logger := sglog.Scoped("server")
+	logger := logging.Scoped(slog.Default(), "server")
 
 	if conf.cpuFraction <= 0.0 || conf.cpuFraction > 1.0 {
 		return nil, fmt.Errorf("cpu_fraction must be between 0.0 and 1.0")
@@ -1672,7 +1672,7 @@ func newServer(conf rootConfig) (*Server, error) {
 			WithBatchSize(batchSize),
 		}
 
-		logger := sglog.Scoped("zoektConfigurationGRPCClient")
+		logger := logging.Scoped(slog.Default(), "zoektConfigurationGRPCClient")
 		client, err := dialGRPCClient(rootURL.Host, logger)
 		if err != nil {
 			return nil, fmt.Errorf("initializing gRPC connection to %q: %w", rootURL.Host, err)
@@ -1722,7 +1722,7 @@ func newServer(conf rootConfig) (*Server, error) {
 	}, err
 }
 
-func newGRPCServer(logger sglog.Logger, s *Server, additionalOpts ...grpc.ServerOption) *grpc.Server {
+func newGRPCServer(logger *slog.Logger, s *Server, additionalOpts ...grpc.ServerOption) *grpc.Server {
 	grpcServer := defaults.NewServer(logger, additionalOpts...)
 	indexserverv1.RegisterSourcegraphIndexserverServiceServer(grpcServer, s)
 	return grpcServer
@@ -1759,7 +1759,7 @@ func internalActorStreamInterceptor() grpc.StreamClientInterceptor {
 // This can be overridden by providing custom Server/Dial options.
 const defaultGRPCMessageReceiveSizeBytes = 90 * 1024 * 1024 // 90 MB
 
-func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.DialOption) (configv1.ZoektConfigurationServiceClient, error) {
+func dialGRPCClient(addr string, logger *slog.Logger, additionalOpts ...grpc.DialOption) (configv1.ZoektConfigurationServiceClient, error) {
 	metrics := clientMetricsOnce()
 
 	// If the service seems to be unavailable, this
@@ -1860,14 +1860,14 @@ func cloneURL(u *url.URL) *url.URL {
 }
 
 func main() {
-	resource := sglog.Resource{
+	resource := logging.Resource{
 		Name:       "zoekt-indexserver",
 		Version:    index.Version,
 		InstanceID: index.HostnameBestEffort(),
 	}
-	liblog := sglog.Init(resource)
+	liblog := sglog.Init(sglog.Resource{Name: resource.Name, Version: resource.Version, InstanceID: resource.InstanceID})
 	defer liblog.Sync()
-	logging.Init(os.Stderr, logging.Resource{Name: resource.Name, Version: resource.Version, InstanceID: resource.InstanceID})
+	logging.Init(os.Stderr, resource)
 
 	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
 		log.Fatal(err)

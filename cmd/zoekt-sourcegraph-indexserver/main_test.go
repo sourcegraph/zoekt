@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,8 +16,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
-	sglog "github.com/sourcegraph/log"
-	"github.com/sourcegraph/log/logtest"
 	"github.com/stretchr/testify/require"
 	"github.com/xeipuuv/gojsonschema"
 	"google.golang.org/grpc"
@@ -215,14 +214,16 @@ func TestListRepoIDs(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	flag.Parse()
-	level := sglog.LevelInfo
 	if !testing.Verbose() {
 		log.SetOutput(io.Discard)
-		level = sglog.LevelNone
 	}
 
-	logtest.InitWithLevel(m, level)
 	os.Exit(m.Run())
+}
+
+// newTestLogger returns a logger that writes to the test output.
+func newTestLogger(t *testing.T) *slog.Logger {
+	return slog.New(slog.NewTextHandler(t.Output(), &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
 func TestCreateEmptyShard(t *testing.T) {

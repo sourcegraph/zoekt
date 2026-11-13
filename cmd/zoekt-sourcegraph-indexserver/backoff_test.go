@@ -4,8 +4,6 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
-
-	"github.com/sourcegraph/log/logtest"
 )
 
 func TestQueue_BackoffOnFail(t *testing.T) {
@@ -13,7 +11,7 @@ func TestQueue_BackoffOnFail(t *testing.T) {
 		backoffDuration := time.Minute
 		maxBackoffDuration := 2 * backoffDuration
 
-		queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
+		queue := NewQueue(backoffDuration, maxBackoffDuration, newTestLogger(t))
 		opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 		queue.AddOrUpdate(opts)
@@ -41,7 +39,7 @@ func TestQueue_ResetBackoffUntil(t *testing.T) {
 	backoffDuration := 1 * time.Hour
 	maxBackoffDuration := backoffDuration * 2
 
-	queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
+	queue := NewQueue(backoffDuration, maxBackoffDuration, newTestLogger(t))
 	opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 	queue.AddOrUpdate(opts)
@@ -67,7 +65,7 @@ func TestQueue_ResetFailuresCount(t *testing.T) {
 		backoffDuration := time.Minute
 		maxBackoffDuration := 1000 * time.Minute
 
-		queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
+		queue := NewQueue(backoffDuration, maxBackoffDuration, newTestLogger(t))
 		opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 		queue.AddOrUpdate(opts)
@@ -108,7 +106,7 @@ func TestQueue_MaxBackoffDuration(t *testing.T) {
 		backoffDuration := time.Hour
 		maxBackoffDuration := time.Minute
 
-		queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
+		queue := NewQueue(backoffDuration, maxBackoffDuration, newTestLogger(t))
 		opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 		queue.AddOrUpdate(opts)
@@ -155,7 +153,7 @@ func TestQueue_BackoffDisabled(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			queue := NewQueue(tc.backoffDuration, tc.maxBackoffDuration, logtest.Scoped(t))
+			queue := NewQueue(tc.backoffDuration, tc.maxBackoffDuration, newTestLogger(t))
 			opts := IndexOptions{RepoID: 1, Name: "foo"}
 
 			queue.AddOrUpdate(opts)
@@ -195,7 +193,7 @@ func TestBackoff_Disallow(t *testing.T) {
 	}
 
 	now := time.Now()
-	backoff.Fail(now, logtest.Scoped(t), opts)
+	backoff.Fail(now, newTestLogger(t), opts)
 	assertDisallow(t, now, backoff)
 }
 
@@ -210,7 +208,7 @@ func TestBackoff_BackoffExpiration(t *testing.T) {
 	}
 
 	now := time.Now()
-	backoff.Fail(now, logtest.Scoped(t), opts)
+	backoff.Fail(now, newTestLogger(t), opts)
 	assertDisallow(t, now, backoff)
 
 	backoffUntil := now.Add(backoffDuration)
@@ -232,7 +230,7 @@ func TestBackoff_ResetBackoffUntil(t *testing.T) {
 	}
 
 	now := time.Now()
-	backoff.Fail(now, logtest.Scoped(t), opts)
+	backoff.Fail(now, newTestLogger(t), opts)
 	assertDisallow(t, now, backoff)
 
 	backoff.Reset()
@@ -250,14 +248,14 @@ func TestBackoff_MaximumBackoffUntil(t *testing.T) {
 	}
 
 	firstIndex := time.Now()
-	backoff.Fail(firstIndex, logtest.Scoped(t), opts)
+	backoff.Fail(firstIndex, newTestLogger(t), opts)
 	currentBackoffUntil := backoffDuration
 
 	// disallowed before we pass backoff until timestamp
 	assertDisallow(t, firstIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
 
 	secondIndex := firstIndex.Add(currentBackoffUntil + 1*time.Minute)
-	backoff.Fail(secondIndex, logtest.Scoped(t), opts)
+	backoff.Fail(secondIndex, newTestLogger(t), opts)
 
 	// failures applies increased backoff duration due to consecutive failures
 	currentBackoffUntil += backoffDuration
@@ -266,7 +264,7 @@ func TestBackoff_MaximumBackoffUntil(t *testing.T) {
 	assertDisallow(t, secondIndex.Add(currentBackoffUntil-1*time.Minute), backoff)
 
 	thirdIndex := secondIndex.Add(currentBackoffUntil + 1*time.Minute)
-	backoff.Fail(thirdIndex, logtest.Scoped(t), opts)
+	backoff.Fail(thirdIndex, newTestLogger(t), opts)
 
 	// This would be the new backoff until timestamp if we were not bounded by maxBackoffDuration
 	currentBackoffUntil += backoffDuration
@@ -292,7 +290,7 @@ func TestBackoff_IncrementConsecutiveFailures(t *testing.T) {
 	expectedFailuresCount := 0
 
 	for i := range failedCount {
-		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
+		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), newTestLogger(t), opts)
 		expectedFailuresCount++
 		assertFailuresCount(t, expectedFailuresCount, backoff)
 	}
@@ -315,14 +313,14 @@ func TestBackoff_MaximumConsecutiveFailures(t *testing.T) {
 
 	// consecutive failures count increments per failure
 	for i := range maximumCount {
-		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
+		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), newTestLogger(t), opts)
 		expectedFailuresCount++
 		assertFailuresCount(t, expectedFailuresCount, backoff)
 	}
 
 	// consecutive failures count does not change
 	for i := maximumCount - 1; i < failedCount; i++ {
-		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), logtest.Scoped(t), opts)
+		backoff.Fail(now.Add(time.Duration(i)*backoffDuration), newTestLogger(t), opts)
 		assertFailuresCount(t, expectedFailuresCount, backoff)
 	}
 }
@@ -343,7 +341,7 @@ func TestBackoff_ResetConsecutiveFailures(t *testing.T) {
 
 		// fail j consecutive times
 		for j := i; j <= i; j++ {
-			backoff.Fail(now.Add(time.Duration(j)*backoffDuration), logtest.Scoped(t), opts)
+			backoff.Fail(now.Add(time.Duration(j)*backoffDuration), newTestLogger(t), opts)
 		}
 
 		// reset behavior is independent of current consecutiveFailures count

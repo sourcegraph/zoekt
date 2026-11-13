@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -37,7 +38,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
-	sglog "github.com/sourcegraph/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -248,7 +248,7 @@ func TestCrashResilience(t *testing.T) {
 	defer log.SetOutput(oldOut)
 
 	oldShardRecoveryLogger := shardRecoveryLogger
-	shardRecoveryLogger = sglog.NoOp
+	shardRecoveryLogger = func() *slog.Logger { return slog.New(slog.DiscardHandler) }
 	defer func() { shardRecoveryLogger = oldShardRecoveryLogger }()
 
 	ss := newShardedSearcher(2)

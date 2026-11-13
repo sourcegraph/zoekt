@@ -3,13 +3,13 @@ package defaults
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"runtime"
 	"sync"
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/prometheus/client_golang/prometheus"
-	sglog "github.com/sourcegraph/log"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -22,7 +22,7 @@ import (
 	"github.com/sourcegraph/zoekt/internal/tenant"
 )
 
-func NewServer(logger sglog.Logger, additionalOpts ...grpc.ServerOption) *grpc.Server {
+func NewServer(logger *slog.Logger, additionalOpts ...grpc.ServerOption) *grpc.Server {
 	metrics := serverMetricsOnce()
 
 	recoveryOpt := recovery.WithRecoveryHandlerContext(panicRecoveryHandler(logger))
@@ -65,7 +65,7 @@ func NewServer(logger sglog.Logger, additionalOpts ...grpc.ServerOption) *grpc.S
 // error. Shard searches already recover their own panics in searchOneShard, so
 // this only sees bugs in the layer between gRPC and the shard searchers. The
 // panic value is logged rather than returned, since it is internal detail.
-func panicRecoveryHandler(logger sglog.Logger) recovery.RecoveryHandlerFuncContext {
+func panicRecoveryHandler(logger *slog.Logger) recovery.RecoveryHandlerFuncContext {
 	return func(ctx context.Context, p any) error {
 		stack := make([]byte, 64<<10)
 		stack = stack[:runtime.Stack(stack, false)]
@@ -76,9 +76,9 @@ func panicRecoveryHandler(logger sglog.Logger) recovery.RecoveryHandlerFuncConte
 		}
 
 		logger.Error("recovered from panic in gRPC handler",
-			sglog.String("method", method),
-			sglog.String("panic", fmt.Sprint(p)),
-			sglog.String("stacktrace", string(stack)),
+			slog.String("method", method),
+			slog.String("panic", fmt.Sprint(p)),
+			slog.String("stacktrace", string(stack)),
 		)
 
 		return status.Error(codes.Internal, "internal error")

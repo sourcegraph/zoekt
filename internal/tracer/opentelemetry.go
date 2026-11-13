@@ -3,11 +3,11 @@ package tracer
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
-	sglog "github.com/sourcegraph/log"
 	jaegerpropagator "go.opentelemetry.io/contrib/propagators/jaeger"
 	otpropagator "go.opentelemetry.io/contrib/propagators/ot"
 	"go.opentelemetry.io/otel"
@@ -20,6 +20,7 @@ import (
 	oteltracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 
+	"github.com/sourcegraph/zoekt/internal/logging"
 	"github.com/sourcegraph/zoekt/internal/otlpenv"
 )
 
@@ -33,7 +34,7 @@ import (
 //
 // This setup is based on the one done in sourcegraph/sourcegraph - when making changes,
 // be wary of divergences from the source: https://github.com/sourcegraph/sourcegraph/blob/main/internal/tracer/otel.go
-func configureOpenTelemetry(resource sglog.Resource) (opentracing.Tracer, error) {
+func configureOpenTelemetry(resource logging.Resource) (opentracing.Tracer, error) {
 	// Ensure propagation between services continues to work. This is also done by another
 	// project that uses the OpenTracing bridge:
 	// https://sourcegraph.com/github.com/thanos-io/thanos/-/blob/pkg/tracing/migration/bridge.go?L62
@@ -64,9 +65,9 @@ func configureOpenTelemetry(resource sglog.Resource) (opentracing.Tracer, error)
 	bridge, otelTracerProvider := otelbridge.NewTracerPair(provider.Tracer("tracer.global"))
 	bridge.SetTextMapPropagator(compositePropagator)
 	otel.SetTracerProvider(otelTracerProvider)
-	otelLogger := sglog.Scoped("otel")
+	otelLogger := logging.Scoped(slog.Default(), "otel")
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-		otelLogger.Debug("error encountered", sglog.Error(err))
+		otelLogger.Debug("error encountered", slog.Any("error", err))
 	}))
 
 	// Done

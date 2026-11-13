@@ -6,7 +6,8 @@ import (
 	"strconv"
 
 	"github.com/opentracing/opentracing-go"
-	sglog "github.com/sourcegraph/log"
+
+	"github.com/sourcegraph/zoekt/internal/logging"
 )
 
 type tracerType string
@@ -36,7 +37,7 @@ func inferTracerType() tracerType {
 // Init should only be called from main and only once
 // It will initialize the configured tracer, and register it as the global tracer
 // This MUST be the same tracer as the one used by Sourcegraph
-func Init(resource sglog.Resource) {
+func Init(resource logging.Resource) {
 	var (
 		tt     = inferTracerType()
 		tracer opentracing.Tracer

@@ -18,7 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	sglog "github.com/sourcegraph/log"
+	"github.com/sourcegraph/zoekt/internal/logging"
 )
 
 type queueItem struct {
@@ -54,11 +54,11 @@ type Queue struct {
 	items        map[uint32]*queueItem
 	pq           pqueue
 	seq          int64
-	logger       sglog.Logger
+	logger       *slog.Logger
 	newQueueItem func(uint32) *queueItem
 }
 
-func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l sglog.Logger) *Queue {
+func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l *slog.Logger) *Queue {
 	if backoffDuration < 0 || maxBackoffDuration < 0 {
 		backoffDuration = 0
 		maxBackoffDuration = 0
@@ -78,7 +78,7 @@ func NewQueue(backoffDuration, maxBackoffDuration time.Duration, l sglog.Logger)
 		items:        map[uint32]*queueItem{},
 		pq:           make(pqueue, 0),
 		seq:          0,
-		logger:       l.Scoped("queue"),
+		logger:       logging.Scoped(l, "queue"),
 		newQueueItem: newQueueItem,
 	}
 }

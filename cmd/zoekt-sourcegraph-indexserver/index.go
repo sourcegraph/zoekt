@@ -5,18 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	sglog "github.com/sourcegraph/log"
-
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/ctags"
+	"github.com/sourcegraph/zoekt/internal/logging"
 )
 
 const defaultIndexingTimeout = 1*time.Hour + 30*time.Minute
@@ -171,8 +171,8 @@ type gitIndexConfig struct {
 	timeout time.Duration
 }
 
-func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l sglog.Logger) error {
-	logger := l.Scoped("gitIndex")
+func gitIndex(ctx context.Context, c gitIndexConfig, o *indexArgs, sourcegraph Sourcegraph, l *slog.Logger) error {
+	logger := logging.Scoped(l, "gitIndex")
 
 	if len(o.Branches) == 0 {
 		return errors.New("zoekt-git-index requires 1 or more branches")
@@ -223,7 +223,7 @@ func setZoektConfig(ctx context.Context, gitDir string, o *indexArgs, c gitIndex
 	return nil
 }
 
-func indexRepo(ctx context.Context, gitDir string, sourcegraph Sourcegraph, o *indexArgs, c gitIndexConfig, logger sglog.Logger) error {
+func indexRepo(ctx context.Context, gitDir string, sourcegraph Sourcegraph, o *indexArgs, c gitIndexConfig, logger *slog.Logger) error {
 	args := []string{
 		"-submodules=false",
 	}

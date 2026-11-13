@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	sglog "github.com/sourcegraph/log"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
@@ -208,20 +207,20 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool, 
 type phaseTimings struct {
 	name   string
 	start  time.Time
-	fields []sglog.Field
+	fields []slog.Attr
 }
 
 // next ends the previous phase, if any, and starts name.
 func (p *phaseTimings) next(name string) {
 	now := time.Now()
 	if p.name != "" {
-		p.fields = append(p.fields, sglog.Duration(p.name, now.Sub(p.start)))
+		p.fields = append(p.fields, slog.Duration(p.name, now.Sub(p.start)))
 	}
 	p.name, p.start = name, now
 }
 
 // finish ends the final phase and returns the fields for the caller to log.
-func (p *phaseTimings) finish() []sglog.Field {
+func (p *phaseTimings) finish() []slog.Attr {
 	p.next("")
 	return p.fields
 }

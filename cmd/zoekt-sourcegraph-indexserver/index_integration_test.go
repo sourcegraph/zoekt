@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/sourcegraph/log/logtest"
 	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt"
@@ -97,7 +96,7 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 				timeout: time.Minute,
 			}
 
-			require.NoError(gitCache.fetch(ctx, gitDir, args, c, logtest.Scoped(t)))
+			require.NoError(gitCache.fetch(ctx, gitDir, args, c, newTestLogger(t)))
 			if len(tc.largeFiles) == 0 {
 				assertPartialBareFetch(t, gitDir, fixture)
 			}

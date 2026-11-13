@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sourcegraph/log/logtest"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
@@ -69,7 +68,7 @@ func TestWithFetchedRepo(t *testing.T) {
 				}}
 				called := false
 				run := func() error {
-					return gitCache.withFetchedRepo(context.Background(), c, &args, logtest.Scoped(t), func(gitDir string) error {
+					return gitCache.withFetchedRepo(context.Background(), c, &args, newTestLogger(t), func(gitDir string) error {
 						called = true
 						require.Equal(t, dir, gitDir)
 						require.Equal(t, fixture.mainCommit, strings.TrimSpace(testutil.RunGit(t, gitDir, "rev-parse", "HEAD")))
@@ -217,7 +216,7 @@ func TestCachedGitIndexIntegration(t *testing.T) {
 			Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: fixture.mainCommit}, {Name: "old", Version: fixture.mainCommit}},
 		},
 	}
-	logger := logtest.Scoped(t)
+	logger := newTestLogger(t)
 	c := gitIndexConfig{
 		timeout: time.Minute,
 		findRepositoryMetadata: func(args *indexArgs) (*zoekt.Repository, *zoekt.IndexMetadata, bool, error) {
@@ -332,7 +331,7 @@ func TestCachedGitIndexIntegration(t *testing.T) {
 func TestGitCacheTenantDeletionAndRestart(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("TMPDIR", root)
-	logger := logtest.Scoped(t)
+	logger := newTestLogger(t)
 	server := &Server{IndexDir: t.TempDir(), logger: logger}
 	require.NoError(t, os.MkdirAll(filepath.Join(server.IndexDir, ".trash"), 0o755))
 	args := indexArgs{IndexOptions: IndexOptions{RepoID: 1, TenantID: 1, Name: "repo"}}
