@@ -7,9 +7,10 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"strconv"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
+
+	"github.com/sourcegraph/zoekt"
 )
 
 func debugIndex() *ffcli.Command {
@@ -30,11 +31,11 @@ func debugIndex() *ffcli.Command {
 			if err != nil {
 				return err
 			}
-			id, err := strconv.Atoi(args[0])
+			id, err := zoekt.ParseRepoID(args[0])
 			if err != nil {
 				return err
 			}
-			msg, err := s.forceIndex(ctx, uint32(id))
+			msg, err := s.forceIndex(ctx, id)
 			slog.Info("force index finished", "result", msg)
 			if err != nil {
 				return err

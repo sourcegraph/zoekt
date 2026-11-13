@@ -38,6 +38,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1465,6 +1466,39 @@ func testShardedStreamSearch(t *testing.T, q query.Q, ib *index.ShardBuilder, us
 		t.Fatal(err)
 	}
 	return files
+}
+
+func TestStreamSearchTimeToFirstResultMetric(t *testing.T) {
+	b := shardtest.Builder(t,
+		&zoekt.Repository{},
+		index.Document{Name: "file", Content: []byte("needle")})
+
+	sampleCount := func() uint64 {
+		m := &dto.Metric{}
+		if err := metricSearchTimeToFirstResult.Write(m); err != nil {
+			t.Fatal(err)
+		}
+		return m.GetHistogram().GetSampleCount()
+	}
+
+	before := sampleCount()
+	files := testShardedStreamSearch(t, &query.Substring{Pattern: "needle"}, b, false)
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
+	if got := sampleCount(); got != before+1 {
+		t.Fatalf("sample count after matching search is %d, want %d", got, before+1)
+	}
+
+	testShardedStreamSearch(t, &query.Substring{Pattern: "missing"}, b, false)
+	if got := sampleCount(); got != before+2 {
+		t.Fatalf("sample count after search without matches is %d, want %d", got, before+2)
+	}
+
+	testShardedStreamSearch(t, &query.Substring{Pattern: "needle"}, b, true)
+	if got := sampleCount(); got != before+3 {
+		t.Fatalf("sample count after buffered search is %d, want %d", got, before+3)
+	}
 }
 
 func testShardedSearch(t *testing.T, q query.Q, ib *index.ShardBuilder, useDocumentRanks bool) []zoekt.FileMatch {
