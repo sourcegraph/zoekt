@@ -22,7 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net/url"
 	"os"
@@ -558,7 +558,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		if errors.Is(err, zoekt.ErrInvalidRepoID) {
 			return false, fmt.Errorf("setTemplatesFromRepo(%s): %w", opts.RepoDir, err)
 		}
-		log.Printf("setTemplatesFromRepo(%s): %s", opts.RepoDir, err)
+		slog.Warn("setTemplatesFromRepo failed", "path", opts.RepoDir, "error", err)
 	}
 
 	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
@@ -607,7 +607,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	if opts.BuildOptions.IsDelta {
 		repos, branchVersions, changedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
 		if err != nil {
-			log.Printf("delta build: falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
+			slog.Warn("delta build failed, falling back to normal build", "repo", opts.BuildOptions.RepositoryDescription.Name, "error", err)
 			opts.BuildOptions.IsDelta = false
 		}
 	}
@@ -631,7 +631,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 			tpl = zoekt.Repository{URL: info.URL.String()}
 			if info.URL.String() != "" {
 				if err := SetTemplatesFromOrigin(&tpl, info.URL); err != nil {
-					log.Printf("setTemplatesFromOrigin(%s, %s): %s", path, info.URL, err)
+					slog.Warn("setTemplatesFromOrigin failed", "path", path, "url", info.URL.String(), "error", err)
 				}
 			}
 			if tpl.Name == "" {
@@ -686,21 +686,21 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	// ZOEKT_DISABLE_CATFILE_BATCH=true falls back to the go-git path for
 	// all files, useful as a kill switch if the cat-file path causes issues.
 	//
-	// 2026-04-02(keegan) we are regularly seeing git growing to over 9GB in
-	// memory usage in our production cluster. Disabling by default until the
-	// issue is resolved.
-	catfileBatchDisabled := cmp.Or(os.Getenv("ZOEKT_DISABLE_CATFILE_BATCH"), "true")
+	// Cat-file was briefly disabled by default after git grew past 9GB of
+	// memory in production. The cause was promisor lazy fetching of blobs
+	// that the size filter would skip, which GIT_NO_LAZY_FETCH=1 avoids (see
+	// doc/indexing.md).
+	catfileBatchDisabled := cmp.Or(os.Getenv("ZOEKT_DISABLE_CATFILE_BATCH"), "false")
 	useCatfileBatch := true
 	if disabled, _ := strconv.ParseBool(catfileBatchDisabled); disabled {
 		useCatfileBatch = false
-	} else {
-		log.Printf("cat-file batch enabled via ZOEKT_DISABLE_CATFILE_BATCH=false")
+		slog.Info("cat-file batch disabled via ZOEKT_DISABLE_CATFILE_BATCH=true")
 	}
 	filterSpec := catfileFilterSpec(opts)
 	if useCatfileBatch && filterSpec != "" {
 		if err := checkCatfileFilterSupport(opts.RepoDir, filterSpec); err != nil {
 			useCatfileBatch = false
-			log.Printf("git cat-file does not support --filter (%v), using go-git", err)
+			slog.Warn("git cat-file does not support --filter, using go-git", "error", err)
 		}
 	}
 
@@ -719,7 +719,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		}
 	}
 
-	log.Printf("attempting to index %d total files (%d via cat-file, %d via go-git)", totalFiles, len(mainRepoIDs), len(submoduleKeys))
+	slog.Info("attempting to index files", "count", totalFiles, "catfile_count", len(mainRepoIDs), "gogit_count", len(submoduleKeys))
 
 	// Stream main-repo blobs via pipelined cat-file --batch --buffer.
 	// Large blobs are skipped without reading content into memory.
@@ -764,6 +764,7 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 	defer cr.Close()
 
 	slab := newContentSlab(16 << 20) // 16 MB per slab
+	missingFiles := 0
 
 	for idx, key := range keys {
 		size, missing, excluded, err := cr.Next()
@@ -775,10 +776,13 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 		var doc index.Document
 
 		if missing {
-			// Unexpected for local repos — may indicate corruption, shallow
-			// clone, or a race with git gc. Log a warning and skip.
-			log.Printf("warning: blob %s missing for %s", key.ID, key.FullPath())
-			doc = skippedDoc(key, branches, index.SkipReasonMissing)
+			// Size-filtered partial clones intentionally omit large blobs. Match
+			// createDocument's assumption that missing blobs were filtered out,
+			// so switching readers preserves the user-visible skip reason. This
+			// is not a size check: other causes of missing objects get the same
+			// explanation. Keep a missing-object count for diagnostics below.
+			missingFiles++
+			doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 		} else if excluded {
 			doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 		} else {
@@ -807,6 +811,12 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 		if idx%10_000 == 0 {
 			builder.CheckMemoryUsage()
 		}
+	}
+
+	// Partial clones may intentionally omit many blobs. Summarize once instead
+	// of emitting a warning for every skipped file.
+	if missingFiles > 0 {
+		slog.Info("skipped files with missing git objects", "count", missingFiles, "path", opts.RepoDir)
 	}
 
 	return nil
@@ -1164,12 +1174,7 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 			return nil, nil, fmt.Errorf("commit.Tree: %w", err)
 		}
 
-		ig, err := newIgnoreMatcher(tree)
-		if err != nil {
-			return nil, nil, fmt.Errorf("newIgnoreMatcher: %w", err)
-		}
-
-		subVersions, err := rw.CollectFiles(tree, b, ig)
+		subVersions, err := rw.CollectFiles(tree, b)
 		if err != nil {
 			return nil, nil, fmt.Errorf("CollectFiles: %w", err)
 		}
@@ -1192,17 +1197,17 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 		for _, submodule := range submodules {
 			subRepository, err := submodule.Repository()
 			if err != nil {
-				log.Printf("failed to open submodule repository: %s, %s", submodule.Config().Name, err)
+				slog.Warn("failed to open submodule repository", "submodule", submodule.Config().Name, "error", err)
 				continue
 			}
 
 			sw, subVersions, err := prepareNormalBuildRecurse(options, subRepository, repoCache, true)
 			if err != nil {
-				log.Printf("failed to index submodule repository: %s, %s", submodule.Config().Name, err)
+				slog.Warn("failed to index submodule repository", "submodule", submodule.Config().Name, "error", err)
 				continue
 			}
 
-			log.Printf("adding subrepository files from: %s", submodule.Config().Name)
+			slog.Info("adding subrepository files", "submodule", submodule.Config().Name)
 
 			for k, repo := range sw {
 				rw.Files[fileKey{

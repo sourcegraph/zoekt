@@ -17,7 +17,6 @@ package index
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"math"
 	"regexp/syntax"
 	"strings"
@@ -212,20 +211,27 @@ func regexpPattern(s *query.Regexp) string {
 	return prefix + syntaxutil.RegexpString(s.Regexp)
 }
 
-func newRegexpMatchTree(s *query.Regexp) *regexpMatchTree {
+func newRegexpMatchTree(s *query.Regexp) (*regexpMatchTree, error) {
 	pattern := regexpPattern(s)
+	re, err := regexpCache().compile(pattern)
+	if err != nil {
+		return nil, err
+	}
 
 	// hybridRegexp is only used for file content matching; skip the RE2
 	// compilation overhead for filename-only regexps.
 	var hr *hybridre2.Regexp
 	if !s.FileName {
-		hr = hybridre2.MustCompile(pattern)
+		hr, err = regexpCache().compileHybrid(pattern)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &regexpMatchTree{
-		regexp:       regexp.MustCompile(pattern),
+		regexp:       re,
 		hybridRegexp: hr,
 		fileName:     s.FileName,
-	}
+	}, nil
 }
 
 func (d *indexData) newSymbolRegexpMatchTree(s *query.Regexp) (*symbolRegexpMatchTree, error) {
@@ -234,8 +240,13 @@ func (d *indexData) newSymbolRegexpMatchTree(s *query.Regexp) (*symbolRegexpMatc
 		return nil, err
 	}
 
+	re, err := regexpCache().compile(regexpPattern(s))
+	if err != nil {
+		return nil, err
+	}
+
 	return &symbolRegexpMatchTree{
-		regexp:    regexp.MustCompile(regexpPattern(s)),
+		regexp:    re,
 		all:       isRegexpAll(s.Regexp),
 		matchTree: prefilter,
 	}, nil
@@ -832,7 +843,7 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	data := cp.data(t.fileName)
 	// For file content, use hybridRegexp which dispatches to go-re2 when
 	// len(data) >= ZOEKT_RE2_THRESHOLD_BYTES. For filename matching, use
-	// grafana/regexp directly: filenames are always short, so the WASM
+	// grafana/regexp directly: filenames are always short, so the cgo
 	// call overhead of go-re2 outweighs any benefit.
 	var idxs [][]int
 	if t.fileName {
@@ -885,8 +896,10 @@ func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTr
 				byteMatchSz: uint32(len(t.word)),
 				fileName:    t.fileName,
 			})
+			offset += idx + len(t.word)
+		} else {
+			offset += idx + 1
 		}
-		offset += idx + len(t.word)
 	}
 
 	t.found = found
@@ -1032,7 +1045,10 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			// provide something faster.
 			tr = wmt
 		} else {
-			tr = newRegexpMatchTree(s)
+			tr, err = newRegexpMatchTree(s)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return &andMatchTree{
@@ -1067,8 +1083,12 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}, err
 
 	case *query.Type:
+		if s.Type == query.TypeFileMatch {
+			// file matches are what a shard search returns anyway
+			return d.newMatchTree(s.Child)
+		}
 		if s.Type != query.TypeFileName {
-			break
+			return nil, fmt.Errorf("type:repo must be rewritten before searching a shard (see search.typeRepoSearcher)")
 		}
 
 		ct, err := d.newMatchTree(s.Child)
@@ -1295,8 +1315,7 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			},
 		}, nil
 	}
-	log.Panicf("type %T", q)
-	return nil, nil
+	return nil, fmt.Errorf("unsupported query %T", q)
 }
 
 func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error) {
@@ -1312,7 +1331,7 @@ func (d *indexData) newSubstringMatchTree(s *query.Substring) (matchTree, error)
 			FileName:      s.FileName,
 			Content:       s.Content,
 			CaseSensitive: s.CaseSensitive,
-		}), nil
+		})
 	}
 
 	result, err := d.iterateNgrams(s)

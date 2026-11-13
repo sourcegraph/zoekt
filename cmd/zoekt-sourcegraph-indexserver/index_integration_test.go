@@ -19,25 +19,36 @@ import (
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/gitindex"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
 )
 
 func TestFetchRepoAndIndex_Integration(t *testing.T) {
 	requireGitDaemon(t)
+	t.Setenv("GIT_NO_LAZY_FETCH", "1")
 
 	for _, tc := range []struct {
 		name                     string
 		disableGoGitOptimization bool
+		catfile                  bool
+		largeFiles               []string
 	}{
 		{name: "optimized repo open"},
 		{name: "legacy repo open", disableGoGitOptimization: true},
+		{name: "cat-file partial clone", catfile: true},
+		{name: "cat-file large file exception", catfile: true, largeFiles: []string{"big.bin"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require := require.New(t)
 
 			ctx := context.Background()
 			fixture := newGitFetchFixture(t)
+			if tc.catfile {
+				t.Setenv("ZOEKT_DISABLE_CATFILE_BATCH", "false")
+			} else {
+				t.Setenv("ZOEKT_DISABLE_CATFILE_BATCH", "true")
+			}
 
 			if tc.disableGoGitOptimization {
 				t.Setenv("ZOEKT_DISABLE_GOGIT_OPTIMIZATION", "true")
@@ -47,10 +58,11 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 
 			sg := &recordingSourcegraph{
 				opts: IndexOptions{
-					RepoID:   123,
-					Name:     "test/repo",
-					CloneURL: fixture.cloneURL,
-					Symbols:  false,
+					RepoID:     123,
+					Name:       "test/repo",
+					CloneURL:   fixture.cloneURL,
+					Symbols:    false,
+					LargeFiles: tc.largeFiles,
 					Branches: []zoekt.RepositoryBranch{
 						{Name: "HEAD", Version: fixture.mainCommit},
 						{Name: "dev", Version: fixture.devCommit},
@@ -86,13 +98,29 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 			}
 
 			require.NoError(gitCache.fetch(ctx, gitDir, args, c, logtest.Scoped(t)))
-			assertPartialBareFetch(t, gitDir, fixture)
+			if len(tc.largeFiles) == 0 {
+				assertPartialBareFetch(t, gitDir, fixture)
+			}
 
 			require.NoError(setZoektConfig(ctx, gitDir, args, c))
+
+			if tc.catfile {
+				// The regression must exercise cat-file, not the old-Git fallback.
+				probe := exec.Command("git", "cat-file", "--batch-check", "--filter=blob:limit=1")
+				probe.Dir = gitDir
+				if err := runIntegrationCommand(probe); err != nil {
+					t.Skipf("cat-file filtering unavailable: %v", err)
+				}
+			}
 
 			updated, err := gitindex.IndexGitRepo(gitIndexOptionsForTest(args, gitDir))
 			require.NoError(err)
 			require.True(updated)
+			if len(tc.largeFiles) == 0 {
+				// Checking only search results would miss fetching a large blob and
+				// then skipping it. It must still be absent from the object store.
+				assertPartialBareFetch(t, gitDir, fixture)
+			}
 
 			repository, metadata, ok, err := args.BuildOptions().FindRepositoryMetadata()
 			require.NoError(err)
@@ -112,7 +140,13 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 
 			assertSearchContains(t, searcher, "smallneedle", "small.txt")
 			assertSearchContains(t, searcher, "devneedle", "dev.txt")
-			assertSearchEmpty(t, searcher, "largeneedle")
+			if len(tc.largeFiles) > 0 {
+				assertSearchContains(t, searcher, "largeneedle", "big.bin")
+			} else {
+				assertSearchEmpty(t, searcher, "largeneedle")
+				// Switching blob readers must preserve the user-visible skip reason.
+				assertSearchContains(t, searcher, "NOT-INDEXED: exceeds the maximum size limit", "big.bin")
+			}
 
 			require.NoError(updateIndexStatusOnSourcegraph(c, args, sg, nil))
 			require.Len(sg.updates, 1)
@@ -123,6 +157,16 @@ func TestFetchRepoAndIndex_Integration(t *testing.T) {
 			require.Empty(sg.updates[0][0].FailureMessage)
 			if diff := cmp.Diff(args.Branches, sg.updates[0][0].Branches); diff != "" {
 				t.Fatalf("status branches mismatch (-want +got):\n%s", diff)
+			}
+
+			// big.bin is the same document on both branches. With the large
+			// file exception, zero counts are still reported.
+			wantSkipped := &zoekt.SkippedFiles{}
+			if len(tc.largeFiles) == 0 {
+				wantSkipped.TooLarge = zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1}
+			}
+			if diff := cmp.Diff(wantSkipped, sg.updates[0][0].SkippedFiles); diff != "" {
+				t.Fatalf("status skipped files mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -171,6 +215,7 @@ func TestUpdateIndexStatusOnSourcegraphFailure(t *testing.T) {
 			require.Equal(t, tc.wantIndexTime, sg.updates[0][0].IndexTimeUnix)
 			require.Equal(t, configv1.UpdateIndexStatusRequest_Repository_STATE_FAILURE, sg.updates[0][0].State)
 			require.Equal(t, "boom", sg.updates[0][0].FailureMessage)
+			require.Nil(t, sg.updates[0][0].SkippedFiles)
 			if diff := cmp.Diff(args.Branches, sg.updates[0][0].Branches); diff != "" {
 				t.Fatalf("status branches mismatch (-want +got):\n%s", diff)
 			}
@@ -182,7 +227,7 @@ func requireGitDaemon(t *testing.T) {
 	t.Helper()
 
 	cmd := exec.Command("git", "daemon", "-h")
-	cmd.Env = gitTestEnv()
+	cmd.Env = testutil.GitEnv()
 	output, err := cmd.CombinedOutput()
 	text := string(output)
 
@@ -245,28 +290,28 @@ func newGitFetchFixture(t *testing.T) *gitFetchFixture {
 	require.NoError(t, os.MkdirAll(worktree, 0o755))
 	require.NoError(t, os.MkdirAll(serveRoot, 0o755))
 
-	runGit(t, root, "init", "-b", "main", worktree)
-	runGit(t, worktree, "config", "user.name", "Test User")
-	runGit(t, worktree, "config", "user.email", "test@example.com")
+	testutil.RunGit(t, root, "init", "-b", "main", worktree)
+	testutil.RunGit(t, worktree, "config", "user.name", "Test User")
+	testutil.RunGit(t, worktree, "config", "user.email", "test@example.com")
 
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "small.txt"), []byte("smallneedle\n"), 0o644))
 	large := strings.Repeat("x", MaxFileSize+1024)
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "big.bin"), []byte("largeneedle\n"+large), 0o644))
-	runGit(t, worktree, "add", "small.txt", "big.bin")
-	runGit(t, worktree, "commit", "-m", "main commit")
+	testutil.RunGit(t, worktree, "add", "small.txt", "big.bin")
+	testutil.RunGit(t, worktree, "commit", "-m", "main commit")
 
-	mainCommit := strings.TrimSpace(runGitOutput(t, worktree, "rev-parse", "HEAD"))
-	bigBlob := strings.TrimSpace(runGitOutput(t, worktree, "rev-parse", "HEAD:big.bin"))
+	mainCommit := strings.TrimSpace(testutil.RunGit(t, worktree, "rev-parse", "HEAD"))
+	bigBlob := strings.TrimSpace(testutil.RunGit(t, worktree, "rev-parse", "HEAD:big.bin"))
 
-	runGit(t, worktree, "checkout", "-b", "dev")
+	testutil.RunGit(t, worktree, "checkout", "-b", "dev")
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "dev.txt"), []byte("devneedle\n"), 0o644))
-	runGit(t, worktree, "add", "dev.txt")
-	runGit(t, worktree, "commit", "-m", "dev commit")
+	testutil.RunGit(t, worktree, "add", "dev.txt")
+	testutil.RunGit(t, worktree, "commit", "-m", "dev commit")
 
-	devCommit := strings.TrimSpace(runGitOutput(t, worktree, "rev-parse", "HEAD"))
-	runGit(t, root, "clone", "--bare", worktree, remoteDir)
-	runGit(t, remoteDir, "config", "uploadpack.allowFilter", "true")
-	runGit(t, remoteDir, "config", "uploadpack.allowAnySHA1InWant", "true")
+	devCommit := strings.TrimSpace(testutil.RunGit(t, worktree, "rev-parse", "HEAD"))
+	testutil.RunGit(t, root, "clone", "--bare", worktree, remoteDir)
+	testutil.RunGit(t, remoteDir, "config", "uploadpack.allowFilter", "true")
+	testutil.RunGit(t, remoteDir, "config", "uploadpack.allowAnySHA1InWant", "true")
 
 	daemon := startGitDaemon(t, serveRoot)
 
@@ -301,7 +346,7 @@ func startGitDaemon(t *testing.T, serveRoot string) *gitDaemon {
 		fmt.Sprintf("--port=%d", port),
 		serveRoot,
 	)
-	cmd.Env = gitTestEnv()
+	cmd.Env = testutil.GitEnv()
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
@@ -387,14 +432,14 @@ func assertPartialBareFetch(t *testing.T, gitDir string, fixture *gitFetchFixtur
 	t.Helper()
 	require := require.New(t)
 
-	require.Equal(fixture.mainCommit, strings.TrimSpace(runGitOutput(t, gitDir, "rev-parse", "HEAD")))
-	require.Equal(fixture.devCommit, strings.TrimSpace(runGitOutput(t, gitDir, "rev-parse", "refs/heads/dev")))
+	require.Equal(fixture.mainCommit, strings.TrimSpace(testutil.RunGit(t, gitDir, "rev-parse", "HEAD")))
+	require.Equal(fixture.devCommit, strings.TrimSpace(testutil.RunGit(t, gitDir, "rev-parse", "refs/heads/dev")))
 
 	promisors, err := filepath.Glob(filepath.Join(gitDir, "objects", "pack", "*.promisor"))
 	require.NoError(err)
 	require.NotEmpty(promisors)
 
-	objects := runGitOutput(t, gitDir, "rev-list", "--objects", "--missing=print", "HEAD", "refs/heads/dev")
+	objects := testutil.RunGit(t, gitDir, "rev-list", "--objects", "--missing=print", "HEAD", "refs/heads/dev")
 	require.Contains(objects, fixture.mainCommit)
 	require.Contains(objects, fixture.devCommit)
 	require.Contains(objects, "?"+fixture.bigBlob)
@@ -420,36 +465,10 @@ func assertSearchEmpty(t *testing.T, searcher zoekt.Searcher, pattern string) {
 }
 
 func runIntegrationCommand(cmd *exec.Cmd) error {
-	cmd.Env = gitTestEnv()
+	cmd.Env = testutil.GitEnv()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %w\n%s", strings.Join(cmd.Args, " "), err, output)
 	}
 	return nil
-}
-
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	_ = runGitOutput(t, dir, args...)
-}
-
-func runGitOutput(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = gitTestEnv()
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, output)
-	}
-
-	return string(output)
-}
-
-func gitTestEnv() []string {
-	return append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=",
-		"GIT_CONFIG_SYSTEM=",
-	)
 }

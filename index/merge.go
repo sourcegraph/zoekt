@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -30,6 +30,10 @@ func Merge(dstDir string, files ...IndexFile) (tmpName, dstName string, _ error)
 	ib, err := merge(ds...)
 	if err != nil {
 		return "", "", err
+	}
+	// A compound shard without repositories cannot be loaded by NewSearcher.
+	if len(ib.repoList) == 0 {
+		return "", "", errors.New("merge: no repositories left to merge")
 	}
 
 	hasher := sha1.New()
@@ -84,8 +88,10 @@ func builderWriteAll(fn string, ib *ShardBuilder) error {
 		return err
 	}
 
-	log.Printf("finished shard %s: %d index bytes (overhead %3.1f)", fn, fi.Size(),
-		float64(fi.Size())/float64(ib.ContentSize()+1))
+	slog.Info("finished shard",
+		"shard", fn,
+		"index_bytes", fi.Size(),
+		"overhead", float64(fi.Size())/float64(ib.ContentSize()+1))
 
 	return nil
 }
@@ -117,16 +123,11 @@ func merge(ds ...*indexData) (*ShardBuilder, error) {
 				}
 				lastRepoID = repoID
 
-				// Initialize repo metadata if it does not already exist.
-				repo := d.repoMetaData[repoID]
-				if repo.Metadata == nil {
-					repo.Metadata = make(map[string]string)
-				}
-
 				// TODO we are losing empty repos on merging since we only get here if
 				// there is an associated document.
 
-				if err := sb.setRepository(&d.repoMetaData[repoID]); err != nil {
+				repo := d.repoMetaWithTombstones(repoID)
+				if err := sb.setRepository(&repo); err != nil {
 					return nil, err
 				}
 			}
@@ -192,7 +193,7 @@ func Explode(dstDir string, inputShard string) error {
 	// best effort rename shards.
 	for tmpFn, dstFn := range exploded {
 		if err := os.Rename(tmpFn, dstFn); err != nil {
-			log.Printf("explode: rename failed: %s", err)
+			slog.Warn("explode rename failed", "error", err)
 		}
 	}
 
@@ -256,7 +257,8 @@ func explode(dstDir string, f IndexFile, ibFuncs ...shardBuilderFunc) (map[strin
 
 			sb = newShardBuilder(0)
 			sb.indexFormatVersion = IndexFormatVersion
-			if err := sb.setRepository(&d.repoMetaData[repoID]); err != nil {
+			repo := d.repoMetaWithTombstones(repoID)
+			if err := sb.setRepository(&repo); err != nil {
 				return shardNames, err
 			}
 		}

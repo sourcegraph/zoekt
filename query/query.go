@@ -17,7 +17,6 @@ package query
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"regexp/syntax"
 	"sort"
@@ -29,8 +28,6 @@ import (
 
 	"github.com/sourcegraph/zoekt/internal/syntaxutil"
 )
-
-var _ = log.Println
 
 // Q is a representation for a possibly hierarchical search query.
 type Q interface {

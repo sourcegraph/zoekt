@@ -20,7 +20,7 @@ import (
 	"crypto/sha1"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
@@ -37,7 +37,6 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/dustin/go-humanize"
 	"github.com/rs/xid"
 	"golang.org/x/sys/unix"
 
@@ -439,7 +438,7 @@ func (o *Options) IndexState() (IndexState, string) {
 	if updated, err := repo.MergeMutable(&o.RepositoryDescription); err != nil {
 		// non-nil err means we are trying to update an immutable field =>
 		// reindex content.
-		log.Printf("warn: immutable field changed, requires re-index: %s", err)
+		slog.Warn("immutable field changed, requires re-index", "error", err)
 		return IndexStateContent, fn
 	} else if updated {
 		return IndexStateMeta, fn
@@ -661,6 +660,7 @@ func (b *Builder) MarkFileAsChangedOrRemoved(path string) {
 // stale shards from previous runs. This should always be called, also
 // in failure cases, to ensure cleanup.
 //
+// A failed publication can leave a mix of old and new shards until a retry.
 // It is safe to call Finish() multiple times.
 func (b *Builder) Finish() error {
 	if b.finishCalled {
@@ -674,7 +674,7 @@ func (b *Builder) Finish() error {
 
 	if b.buildError != nil {
 		for tmp := range b.finishedShards {
-			log.Printf("Builder.Finish %s", tmp)
+			slog.Info("removing temporary shard after build error", "shard", tmp)
 			os.Remove(tmp)
 		}
 		b.finishedShards = map[string]string{}
@@ -732,6 +732,14 @@ func (b *Builder) Finish() error {
 				}
 			}
 
+			if len(repository.FileTombstones) > 0 {
+				filteredTombstones, err := filterShardFileTombstones(shard, repository.FileTombstones)
+				if err != nil {
+					return fmt.Errorf("filtering file tombstones for shard %q: %w", shard, err)
+				}
+				repository.FileTombstones = filteredTombstones
+			}
+
 			repository.Branches = b.opts.RepositoryDescription.Branches
 
 			repository.LatestCommitDate = b.opts.RepositoryDescription.LatestCommitDate
@@ -769,6 +777,13 @@ func (b *Builder) Finish() error {
 			paths, err := IndexFilePaths(name)
 			if err != nil {
 				b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
+				for tmp := range artifactPaths {
+					if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
+						slog.Warn("removing incomplete shard artifact failed", "path", tmp, "error", err)
+					}
+				}
+				b.finishedShards = map[string]string{}
+				return b.buildError
 			}
 			for _, p := range paths {
 				toDelete[p] = struct{}{}
@@ -776,16 +791,75 @@ func (b *Builder) Finish() error {
 		}
 	}
 
+	type publicationArtifact struct {
+		finishedShard
+		isMeta, isShardZero bool
+		shardNum            int
+	}
+	artifacts := make([]publicationArtifact, 0, len(artifactPaths))
 	for tmp, final := range artifactPaths {
-		if err := os.Rename(tmp, final); err != nil {
-			b.buildError = err
-			continue
+		name := strings.TrimSuffix(final, ".meta")
+		isMeta := name != final
+		name = strings.TrimSuffix(name, ".zoekt")
+		shardNum, err := strconv.Atoi(name[strings.LastIndexByte(name, '.')+1:])
+		if err != nil {
+			// Compound shard names need not have a shard number.
+			shardNum = 0
 		}
+		artifacts = append(artifacts, publicationArtifact{finishedShard{tmp, final}, isMeta, shardNum == 0, shardNum})
+	}
+	// Publish data before metadata, ascending with shard zero last for discovery and indexing decisions.
+	sort.Slice(artifacts, func(i, j int) bool {
+		a, b := artifacts[i], artifacts[j]
+		if a.isMeta != b.isMeta {
+			return !a.isMeta
+		}
+		if a.isShardZero != b.isShardZero {
+			return !a.isShardZero
+		}
+		return a.shardNum < b.shardNum
+	})
 
-		delete(toDelete, final)
+	hadShardZero := len(oldShards) > 0 && oldShards[0] == b.opts.shardName(0)
+	renamed := 0
+	for _, artifact := range artifacts {
+		if err := os.Rename(artifact.temp, artifact.final); err != nil {
+			b.buildError = err
+			break
+		}
+		renamed++
+		delete(toDelete, artifact.final)
+		if !artifact.isMeta {
+			// The old sidecar overrides embedded metadata. Remove it only
+			// after replacing its shard, even if a later rename fails.
+			meta := artifact.final + ".meta"
+			if err := os.Remove(meta); err != nil && !os.IsNotExist(err) {
+				b.buildError = err
+				break
+			}
+			delete(toDelete, meta)
+		}
 	}
 
 	b.finishedShards = map[string]string{}
+
+	// Keep un-replaced prior shards live if publication failed. Without a prior
+	// simple shard zero, remove new data too: a smaller retry cannot discover
+	// and retire it. Replacements of an existing simple index are not rolled back.
+	if b.buildError != nil {
+		for i, artifact := range artifacts {
+			paths := []string{artifact.temp, artifact.final}
+			if hadShardZero || i >= renamed || artifact.isMeta {
+				paths = paths[:1]
+			}
+			for _, p := range paths {
+				if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+					slog.Warn("removing incomplete shard artifact failed", "path", p, "error", err)
+				}
+			}
+		}
+		return b.buildError
+	}
 
 	for p := range toDelete {
 		// Don't delete compound shards, set tombstones instead.
@@ -797,7 +871,7 @@ func (b *Builder) Finish() error {
 			b.buildError = err
 			continue
 		}
-		log.Printf("removing old shard file: %s", p)
+		slog.Info("removing old shard file", "shard", p)
 		if err := os.Remove(p); err != nil {
 			b.buildError = err
 		}
@@ -973,7 +1047,7 @@ func (b *Builder) buildShard(todo []*Document, nextShardNum int) (*finishedShard
 			return nil, err
 		}
 		if err != nil {
-			log.Printf("ignoring universal:%s or scip:%s error: %v", b.opts.CTagsPath, b.opts.ScipCTagsPath, err)
+			slog.Warn("ignoring symbol parsing error", "ctags_path", b.opts.CTagsPath, "scip_ctags_path", b.opts.ScipCTagsPath, "error", err)
 		}
 	}
 
@@ -1015,17 +1089,17 @@ func (b *Builder) CheckMemoryUsage() {
 	if m.HeapAlloc > b.opts.HeapProfileTriggerBytes && b.heapProfileMu.TryLock() {
 		defer b.heapProfileMu.Unlock()
 
-		log.Printf("writing memory profile, allocated heap: %s", humanize.Bytes(m.HeapAlloc))
+		slog.Info("writing memory profile", "heap_alloc_bytes", m.HeapAlloc)
 		name := filepath.Join(b.opts.IndexDir, fmt.Sprintf("indexmemory.prof.%d", b.heapProfileNum))
 		f, err := os.Create(name)
 		if err != nil {
-			log.Printf("failed to create memory profile file: %v", err)
+			slog.Warn("failed to create memory profile file", "error", err)
 			return
 		}
 
 		err = pprof.WriteHeapProfile(f)
 		if err != nil {
-			log.Printf("failed to write memory profile: %v", err)
+			slog.Warn("failed to write memory profile", "error", err)
 		}
 
 		b.heapProfileNum++
@@ -1058,6 +1132,7 @@ func (b *Builder) newShardBuilder() (*ShardBuilder, error) {
 	desc.HasSymbols = !b.opts.DisableCTags && b.opts.CTagsPath != ""
 	desc.SubRepoMap = b.opts.SubRepositories
 	desc.IndexOptions = b.opts.GetHash()
+	desc.SkippedFiles = zoekt.SkippedFiles{}
 
 	content := b.getPostingsBuilder()
 	name := b.getPostingsBuilder()
@@ -1098,11 +1173,11 @@ func (b *Builder) writeShard(fn string, ib *ShardBuilder) (*finishedShard, error
 		return nil, err
 	}
 
-	log.Printf("finished shard %s: %d index bytes (overhead %3.1f), %d files processed \n",
-		fn,
-		fi.Size(),
-		float64(fi.Size())/float64(ib.ContentSize()+1),
-		ib.NumFiles())
+	slog.Info("finished shard",
+		"shard", fn,
+		"index_bytes", fi.Size(),
+		"overhead", float64(fi.Size())/float64(ib.ContentSize()+1),
+		"files_processed", ib.NumFiles())
 
 	return &finishedShard{f.Name(), fn}, nil
 }

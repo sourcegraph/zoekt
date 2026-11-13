@@ -17,7 +17,7 @@ package search
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"runtime"
@@ -214,6 +214,14 @@ type shardedSearcher struct {
 	// pressure.
 	sched scheduler
 
+	// healthCheck admits searches marked with WithHealthCheck, one at a time,
+	// instead of sched.
+	healthCheck *semaphore.Weighted
+
+	// queueWait bounds how long a search waits for the scheduler before it is
+	// rejected with zoekt.ErrOverloaded. Zero means only MaxWallTime bounds it.
+	queueWait time.Duration
+
 	mu     sync.Mutex // protects writes to shards
 	shards map[string]*rankedShard
 
@@ -223,10 +231,39 @@ type shardedSearcher struct {
 
 func newShardedSearcher(n int64) *shardedSearcher {
 	ss := &shardedSearcher{
-		shards: make(map[string]*rankedShard),
-		sched:  newScheduler(n),
+		shards:      make(map[string]*rankedShard),
+		sched:       newScheduler(n),
+		healthCheck: semaphore.NewWeighted(1),
+		queueWait:   schedQueueWait,
 	}
 	return ss
+}
+
+type healthCheckKey struct{}
+
+// WithHealthCheck marks ctx as belonging to a health check. Search and
+// StreamSearch calls made with the returned context skip the search scheduler,
+// so they answer even when every search slot is taken. They still search the
+// loaded shards, but only one runs at a time. Only use it for cheap queries,
+// like the one zoekt-webserver's /healthz runs.
+func WithHealthCheck(ctx context.Context) context.Context {
+	return context.WithValue(ctx, healthCheckKey{}, true)
+}
+
+// acquire admits a search to the scheduler, rejecting it with
+// zoekt.ErrOverloaded if it is not admitted in time, see
+// withAdmissionDeadline. Health checks bypass the scheduler and are never
+// shed, see WithHealthCheck.
+func (ss *shardedSearcher) acquire(ctx context.Context, opts *zoekt.SearchOptions) (*process, error) {
+	if ctx.Value(healthCheckKey{}) == nil {
+		ctx, cancel := withAdmissionDeadline(ctx, ss.queueWait)
+		defer cancel()
+		return ss.sched.Acquire(ctx, schedulingClass(opts))
+	}
+	if err := ss.healthCheck.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
+	return &process{releaseFunc: func() { ss.healthCheck.Release(1) }}, nil
 }
 
 // IndexFileOpener constructs an index file and takes ownership of f. A
@@ -372,13 +409,13 @@ func (tl *loader) load(keys ...string) {
 		tl.ss.replace(chunk)
 	}
 
-	log.Printf("[INFO] loading %d shard(s): %s", len(keys), humanTruncateList(keys, 5))
+	slog.Info("loading shards", "count", len(keys), "shards", humanTruncateList(keys, 5))
 
 	lastProgress := time.Now()
 	for i, key := range keys {
 		// If taking a while to start-up occasionally give a progress message
 		if time.Since(lastProgress) > 5*time.Second {
-			log.Printf("[INFO] still need to load %d shards...", len(keys)-i)
+			slog.Info("still loading shards", "count", len(keys)-i)
 			lastProgress = time.Now()
 
 			publishLoaded()
@@ -394,7 +431,7 @@ func (tl *loader) load(keys ...string) {
 			shard, err := loadShard(key, tl.indexFileOpener)
 			if err != nil {
 				metricShardsLoadFailedTotal.Inc()
-				log.Printf("[ERROR] reloading: %s, err %v ", key, err)
+				slog.Error("failed to reload shard", "shard", key, "error", err)
 				return
 			}
 			metricShardsLoadedTotal.Inc()
@@ -857,13 +894,13 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		}
 		tr.Finish()
 	}()
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := withMaxWallTime(ctx, opts)
 	defer cancel()
 
 	collectSender := newCollectSender(opts)
 
 	start := time.Now()
-	proc, err := ss.sched.Acquire(ctx, schedulingClass(opts))
+	proc, err := ss.acquire(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -910,9 +947,11 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		}
 		tr.Finish()
 	}()
+	ctx, cancel := withMaxWallTime(ctx, opts)
+	defer cancel()
 
 	start := time.Now()
-	proc, err := ss.sched.Acquire(ctx, schedulingClass(opts))
+	proc, err := ss.acquire(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -972,6 +1011,15 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 	return err
 }
 
+// withMaxWallTime bounds ctx by opts.MaxWallTime. Callers apply it when the
+// request arrives so time spent waiting for the scheduler counts against it.
+func withMaxWallTime(ctx context.Context, opts *zoekt.SearchOptions) (context.Context, context.CancelFunc) {
+	if opts == nil || opts.MaxWallTime == 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, opts.MaxWallTime)
+}
+
 func schedulingClass(opts *zoekt.SearchOptions) zoekt.SchedulingClass {
 	if opts == nil {
 		return zoekt.SchedulingClassInteractive
@@ -1015,13 +1063,8 @@ func streamSearch(ctx context.Context, proc *process, q query.Q, opts *zoekt.Sea
 		return func() {}, nil
 	}
 
-	var cancel context.CancelFunc
-	if opts.MaxWallTime == 0 {
-		ctx, cancel = context.WithCancel(ctx)
-	} else {
-		ctx, cancel = context.WithTimeout(ctx, opts.MaxWallTime)
-	}
-
+	// Search and StreamSearch already bound ctx by MaxWallTime.
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// We set the number of workers to GOMAXPROCS, or the number of shards,
@@ -1325,6 +1368,8 @@ func (ss *shardedSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 		isAll = c.Value
 	}
 
+	// List is not shed: clients use it to learn what is indexed, so a
+	// rejection does more harm than waiting.
 	proc, err := ss.sched.Acquire(ctx, zoekt.SchedulingClassInteractive)
 	if err != nil {
 		return nil, err
@@ -1468,7 +1513,7 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 	// rankedShard.repos being set.
 	result, err := s.List(systemtenant.WithUnsafeContext(context.Background()), &q, nil)
 	if err != nil {
-		log.Printf("[ERROR] mkRankedShard(%s): failed to cache repository list: %v", s, err)
+		slog.Error("failed to cache repository list for shard", "shard", s.String(), "error", err)
 		return &rankedShard{Searcher: s}
 	}
 

@@ -15,19 +15,18 @@
 package ctags
 
 import (
-	"os/exec"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 func TestJSON(t *testing.T) {
-	if _, err := exec.LookPath("universal-ctags"); err != nil {
-		t.Skip(err)
-	}
+	bin := testutil.RequireCTags(t)
 
-	p := NewCTagsParser(map[CTagsParserType]string{UniversalCTags: "universal-ctags"})
+	p := NewCTagsParser(map[CTagsParserType]string{UniversalCTags: bin})
 	defer p.Close()
 
 	java := `

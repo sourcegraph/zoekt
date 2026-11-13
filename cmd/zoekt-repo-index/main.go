@@ -47,7 +47,6 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/gitindex"
-	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
 )
 
@@ -362,7 +361,7 @@ func iterateManifest(mf *manifest.Manifest,
 		}
 
 		rw := gitindex.NewRepoWalker(topRepo, projURL.String(), cache)
-		subVersions, err := rw.CollectFiles(tree, rev, &ignore.Matcher{})
+		subVersions, err := rw.CollectFiles(tree, rev)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -312,3 +312,109 @@ func checkSameShards(t *testing.T, shard1, shard2 string) {
 
 	t.Fatalf("-%s\n+%s:\n%s", shard1, shard2, d)
 }
+
+// Merged documents carry no SkipReason, so merge and explode must copy each
+// repository's skipped file counts from its source shard.
+func TestMergeExplodePreservesSkippedFiles(t *testing.T) {
+	inputDir, mergeDir := t.TempDir(), t.TempDir()
+	branches := []zoekt.RepositoryBranch{{Name: "main"}, {Name: "dev"}}
+
+	build := func(name string, docs ...Document) *os.File {
+		sb, err := NewShardBuilder(&zoekt.Repository{Name: name, Branches: branches})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range docs {
+			if err := sb.Add(d); err != nil {
+				t.Fatal(err)
+			}
+		}
+		fn := filepath.Join(inputDir, name+".zoekt")
+		if err := builderWriteAll(fn, sb); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Open(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { f.Close() })
+		return f
+	}
+
+	readSkipped := func(paths ...string) map[string]zoekt.SkippedFiles {
+		got := map[string]zoekt.SkippedFiles{}
+		for _, p := range paths {
+			repos, _, err := ReadMetadataPath(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, r := range repos {
+				got[r.Name] = r.SkippedFiles
+			}
+		}
+		return got
+	}
+
+	var inputs []IndexFile
+	for _, f := range []*os.File{
+		build("a",
+			Document{Name: "large", SkipReason: SkipReasonTooLarge, Branches: []string{"main", "dev"}},
+			Document{Name: "bin", Content: []byte("a\x00b"), Branches: []string{"dev"}},
+			Document{Name: "text", Content: []byte("not skipped"), Branches: []string{"main"}}),
+		build("b",
+			Document{Name: "trigrams", SkipReason: SkipReasonTooManyTrigrams, Branches: []string{"main"}}),
+	} {
+		indexFile, err := NewIndexFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer indexFile.Close()
+		inputs = append(inputs, indexFile)
+	}
+
+	want := map[string]zoekt.SkippedFiles{
+		"a": {
+			TooLarge: zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
+			Binary:   zoekt.SkippedFileCount{Total: 1, DefaultBranch: 0},
+		},
+		"b": {
+			TooManyTrigrams: zoekt.SkippedFileCount{Total: 1, DefaultBranch: 1},
+		},
+	}
+
+	tmpName, compound, err := Merge(mergeDir, inputs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmpName, compound); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(want, readSkipped(compound)); diff != "" {
+		t.Fatalf("merged mismatch (-want +got):\n%s", diff)
+	}
+
+	f, err := os.Open(compound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	indexFile, err := NewIndexFile(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer indexFile.Close()
+	exploded, err := explode(mergeDir, indexFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for tmp, final := range exploded {
+		if err := os.Rename(tmp, final); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, final)
+	}
+	if diff := cmp.Diff(want, readSkipped(paths...)); diff != "" {
+		t.Fatalf("exploded mismatch (-want +got):\n%s", diff)
+	}
+}

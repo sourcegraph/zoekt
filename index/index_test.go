@@ -46,6 +46,8 @@ func clearScores(r *zoekt.SearchResult) {
 	}
 }
 
+// Copy of shardtest.Builder: internal tests of package index cannot import
+// internal/shardtest, since it imports index.
 func testShardBuilder(tb testing.TB, repo *zoekt.Repository, docs ...Document) *ShardBuilder {
 	tb.Helper()
 
@@ -290,6 +292,8 @@ func TestEmptyIndex(t *testing.T) {
 	}
 }
 
+// Copy of shardtest.IndexFile: internal tests of package index cannot import
+// internal/shardtest, since it imports index.
 type memSeeker struct {
 	data []byte
 }
@@ -410,6 +414,8 @@ func searchForTest(t *testing.T, b *ShardBuilder, q query.Q, o ...zoekt.SearchOp
 	return res
 }
 
+// Copy of shardtest.Searcher: internal tests of package index cannot import
+// internal/shardtest, since it imports index.
 func searcherForTest(t testing.TB, b *ShardBuilder) zoekt.Searcher {
 	var buf bytes.Buffer
 	if err := b.Write(&buf); err != nil {
@@ -423,6 +429,43 @@ func searcherForTest(t testing.TB, b *ShardBuilder) zoekt.Searcher {
 	}
 
 	return searcher
+}
+
+func TestSearchTypeQuery(t *testing.T) {
+	searcher := searcherForTest(t, testShardBuilder(t, nil,
+		Document{Name: "foo.go", Content: []byte("func foo() {}")},
+	))
+	defer searcher.Close()
+
+	for _, tc := range []struct {
+		q         string
+		wantFiles int
+		wantErr   bool
+	}{
+		{q: "type:file foo", wantFiles: 1},
+		{q: "type:filematch foo", wantFiles: 1},
+		{q: "type:repo foo", wantErr: true},
+	} {
+		t.Run(tc.q, func(t *testing.T) {
+			q, err := query.Parse(tc.q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("want error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Files) != tc.wantFiles {
+				t.Fatalf("got %d files, want %d", len(res.Files), tc.wantFiles)
+			}
+		})
+	}
 }
 
 func TestCaseFold(t *testing.T) {
@@ -1100,6 +1143,129 @@ func TestSearchMatchAllRegexp(t *testing.T) {
 			t.Fatalf("want 4 chars in every file, got %#v", matches)
 		}
 	})
+}
+
+func TestSearchBoundedRepeatRegexp(t *testing.T) {
+	b := testShardBuilder(t, nil,
+		Document{Name: "match", Content: []byte("foo and bar")},
+		Document{Name: "nomatch", Content: []byte("bar and foo")})
+
+	q, err := query.Parse(`foo.{0,500}bar`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sres := searchForTest(t, b, q)
+	if len(sres.Files) != 1 || sres.Files[0].FileName != "match" {
+		t.Fatalf("got %v, want only file \"match\"", sres.Files)
+	}
+}
+
+func TestSearchBM25ScoresAreDeterministic(t *testing.T) {
+	searcher := searcherForTest(t, testShardBuilder(t, nil,
+		Document{Name: "a.txt", Content: []byte("alpha beta beta gamma gamma gamma delta delta delta delta\n")},
+		// same term frequencies as a.txt, in a different order
+		Document{Name: "b.txt", Content: []byte("delta delta delta delta gamma gamma gamma beta beta alpha\n")},
+		// a longer file, so the average file length differs from that of a.txt and b.txt
+		Document{Name: "c.txt", Content: bytes.Repeat([]byte("lorem ipsum\n"), 20)},
+	))
+	defer searcher.Close()
+
+	q, err := query.Parse("alpha or beta or gamma or delta")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fileScores := map[float64]bool{}
+	lineScores := map[float64]bool{}
+	for range 200 {
+		res, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{UseBM25Scoring: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Files) != 2 {
+			t.Fatalf("got %d files, want 2", len(res.Files))
+		}
+		for _, fm := range res.Files {
+			fileScores[fm.Score] = true
+			lineScores[fm.LineMatches[0].Score] = true
+		}
+	}
+	if len(fileScores) != 1 || len(lineScores) != 1 {
+		t.Fatalf("got %d distinct file scores and %d distinct line scores, want 1 each", len(fileScores), len(lineScores))
+	}
+}
+
+// A regexp tree can be valid while its string form is not: Simplify expands
+// a{1,501} into nesting deeper than Go's parser allows. Search must return
+// an error for such a query instead of panicking.
+func TestSearchUncompilableRegexp(t *testing.T) {
+	re, err := syntax.Parse("a{1,501}", syntax.Perl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re = re.Simplify()
+
+	searcher := searcherForTest(t, testShardBuilder(t, nil, Document{Name: "f", Content: []byte("aaa")}))
+	for name, q := range map[string]query.Q{
+		"content": &query.Regexp{Regexp: re, Content: true},
+		"file":    &query.Regexp{Regexp: re, FileName: true},
+		"sym":     &query.Symbol{Expr: &query.Regexp{Regexp: re}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{}); err == nil {
+				t.Fatal("want error")
+			}
+		})
+	}
+}
+
+func TestSearchBM25AverageFileLength(t *testing.T) {
+	filler := strings.Repeat("lorem ipsum\n", 10)
+	one := Document{Name: "one", Content: []byte("needle\n" + filler)}
+	two := Document{Name: "two", Content: []byte("needle needle\n" + filler[:len(filler)-7])}
+	big := Document{Name: "big", Content: []byte(strings.Repeat(filler, 50))}
+	small := Document{Name: "small", Content: []byte("short\n")}
+
+	totalBytes := len(one.Content) + len(two.Content) + len(big.Content) + 5*len(small.Content)
+	avg := float64(totalBytes) / 8
+
+	scores := func(opts zoekt.SearchOptions, shards ...*ShardBuilder) map[string]float64 {
+		t.Helper()
+		opts.UseBM25Scoring = true
+		got := map[string]float64{}
+		for _, b := range shards {
+			res, err := searcherForTest(t, b).Search(context.Background(), &query.Substring{Pattern: "needle"}, &opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, fm := range res.Files {
+				got[fm.FileName] = fm.Score
+			}
+		}
+		return got
+	}
+
+	// The same files in one shard, and split so that "one" shares a shard
+	// with a long file and "two" with short files.
+	oneShard := scores(zoekt.SearchOptions{},
+		testShardBuilder(t, nil, one, two, big, small, small, small, small, small))
+	split := func(opts zoekt.SearchOptions) map[string]float64 {
+		return scores(opts,
+			testShardBuilder(t, nil, one, big),
+			testShardBuilder(t, nil, two, small, small, small, small, small))
+	}
+
+	if got := split(zoekt.SearchOptions{}); got["two"] >= got["one"] {
+		t.Fatalf("expected per-shard averages to rank one above two, got %v", got)
+	}
+
+	got := split(zoekt.SearchOptions{BM25AverageFileLength: avg})
+	if diff := cmp.Diff(oneShard, got, cmpopts.EquateApprox(0, 1e-9)); diff != "" {
+		t.Fatalf("split scores differ from one shard scores (-want +got):\n%s", diff)
+	}
+	if got["two"] <= got["one"] {
+		t.Fatalf("want two ranked above one, got %v", got)
+	}
 }
 
 func TestSearchBM25MatchScores(t *testing.T) {
@@ -1866,6 +2032,45 @@ func TestRegexpCaseFolding(t *testing.T) {
 	if len(res.Files) != 1 {
 		t.Fatalf("got %v, want one index", res.Files)
 	}
+
+	// A case-folded literal must not turn into a case-sensitive substring of
+	// its folded (upper case) runes.
+	for _, s := range []string{"(?i)gitiles", "(?i)GITILES"} {
+		q, err := query.Parse(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res := searchForTest(t, b, q); len(res.Files) != 1 {
+			t.Errorf("%s: got %v, want one file", s, res.Files)
+		}
+	}
+}
+
+func TestRegexpUnicodeFold(t *testing.T) {
+	for _, tc := range []struct{ expr, subject string }{
+		{"case:no content:σσσ$", "σσς"},
+		{"case:yes file:(?i:sss){1}", "ssſ"},
+	} {
+		t.Run(tc.expr, func(t *testing.T) {
+			b := testShardBuilder(t, nil, Document{Name: tc.subject, Content: []byte(tc.subject)})
+			q, err := query.Parse(tc.expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res := searchForTest(t, b, q)
+			if len(res.Files) != 1 {
+				t.Fatalf("got %d files, want one matching %q", len(res.Files), tc.subject)
+			}
+			matches := res.Files[0].LineMatches
+			if len(matches) != 1 || len(matches[0].LineFragments) != 1 {
+				t.Fatalf("got line matches %v, want one fragment", matches)
+			}
+			f := matches[0].LineFragments[0]
+			if f.Offset != 0 || f.MatchLength != len(tc.subject) {
+				t.Errorf("got fragment %v, want [0,%d)", f, len(tc.subject))
+			}
+		})
+	}
 }
 
 func TestCaseRegexp(t *testing.T) {
@@ -2157,9 +2362,10 @@ func TestListRepos(t *testing.T) {
 					Repos: []*zoekt.RepoListEntry{{
 						Repository: *repo,
 						Stats: zoekt.RepoStats{
-							Documents:    4,
-							ContentBytes: 68, // (15 bytes of content and 2 bytes of filename) x 4
-							Shards:       1,
+							Documents:        4,
+							ContentBytes:     68, // (15 bytes of content and 2 bytes of filename) x 4
+							FileContentBytes: 60,
+							Shards:           1,
 
 							NewLinesCount:              4,
 							DefaultBranchNewLinesCount: 2,
@@ -2167,10 +2373,11 @@ func TestListRepos(t *testing.T) {
 						},
 					}},
 					Stats: zoekt.RepoStats{
-						Repos:        1,
-						Documents:    4,
-						ContentBytes: 68,
-						Shards:       1,
+						Repos:            1,
+						Documents:        4,
+						ContentBytes:     68,
+						FileContentBytes: 60,
+						Shards:           1,
 
 						NewLinesCount:              4,
 						DefaultBranchNewLinesCount: 2,
@@ -2232,8 +2439,9 @@ func TestListRepos(t *testing.T) {
 				Repos:                      1,
 				Shards:                     1,
 				Documents:                  4,
-				IndexBytes:                 412,
+				IndexBytes:                 340,
 				ContentBytes:               68,
+				FileContentBytes:           60,
 				NewLinesCount:              4,
 				DefaultBranchNewLinesCount: 2,
 				OtherBranchesNewLinesCount: 3,
@@ -4033,6 +4241,7 @@ func TestStats(t *testing.T) {
 					Documents:                  0,
 					IndexBytes:                 20,
 					ContentBytes:               0,
+					FileContentBytes:           0,
 					NewLinesCount:              0,
 					DefaultBranchNewLinesCount: 0,
 					OtherBranchesNewLinesCount: 0,
@@ -4059,6 +4268,7 @@ func TestStats(t *testing.T) {
 					Documents:                  2,
 					IndexBytes:                 224,
 					ContentBytes:               28,
+					FileContentBytes:           18,
 					NewLinesCount:              0,
 					DefaultBranchNewLinesCount: 0,
 					OtherBranchesNewLinesCount: 0,
@@ -4097,6 +4307,7 @@ func TestStats(t *testing.T) {
 					Documents:                  2,
 					IndexBytes:                 180,
 					ContentBytes:               28,
+					FileContentBytes:           18,
 					NewLinesCount:              0,
 					DefaultBranchNewLinesCount: 0,
 					OtherBranchesNewLinesCount: 0,
@@ -4109,6 +4320,7 @@ func TestStats(t *testing.T) {
 					Documents:                  2,
 					IndexBytes:                 180,
 					ContentBytes:               28,
+					FileContentBytes:           18,
 					NewLinesCount:              0,
 					DefaultBranchNewLinesCount: 0,
 					OtherBranchesNewLinesCount: 0,
@@ -4141,14 +4353,16 @@ func TestStats(t *testing.T) {
 		got := repoListEntries(b)
 
 		entryEmpty := zoekt.RepoListEntry{Stats: zoekt.RepoStats{
-			Shards:       1,
-			Documents:    0,
-			ContentBytes: 0,
+			Shards:           1,
+			Documents:        0,
+			ContentBytes:     0,
+			FileContentBytes: 0,
 		}}
 		entryNonEmpty := zoekt.RepoListEntry{Stats: zoekt.RepoStats{
-			Shards:       1,
-			Documents:    1,
-			ContentBytes: 14,
+			Shards:           1,
+			Documents:        1,
+			ContentBytes:     14,
+			FileContentBytes: 9,
 		}}
 
 		want := []zoekt.RepoListEntry{
@@ -4242,6 +4456,26 @@ func TestWordSearch(t *testing.T) {
 	})
 }
 
+func TestWordSearchOverlap(t *testing.T) {
+	// "0.0" at offset 2 is not a word, the overlapping one at offset 4 is.
+	b := testShardBuilder(t, nil, Document{Name: "f1", Content: []byte("v10.0.0")})
+
+	sres := searchForTest(t, b,
+		&query.Regexp{
+			Regexp:        mustParseRE(`\b0\.0\b`),
+			CaseSensitive: true,
+			Content:       true,
+		})
+
+	if len(sres.Files) != 1 || len(sres.Files[0].LineMatches) != 1 {
+		t.Fatalf("got %v, want 1 match in 1 file", sres.Files)
+	}
+
+	if got := sres.Files[0].LineMatches[0].LineFragments[0].Offset; got != 4 {
+		t.Errorf("got offset %d, want 4", got)
+	}
+}
+
 // Simple benchmark focused on chunk match scoring. It creates a single file that will have a 1000-line chunk match.
 // The benchmark time is expected to be strongly correlated with time spent assembling and scoring this chunk.
 func BenchmarkScoreChunkMatches(b *testing.B) {
@@ -4273,6 +4507,20 @@ func BenchmarkScoreChunkMatches(b *testing.B) {
 
 			matches := sres.Files
 			if len(matches) == 0 {
+				b.Fatalf("want file index, got none")
+			}
+		}
+	})
+
+	b.Run("score large ChunkMatch with BM25", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for b.Loop() {
+			sres, err := searcher.Search(ctx, q, &zoekt.SearchOptions{ChunkMatches: true, NumContextLines: 1, UseBM25Scoring: true})
+			if err != nil {
+				b.Fatal(err)
+			}
+			if len(sres.Files) == 0 {
 				b.Fatalf("want file index, got none")
 			}
 		}

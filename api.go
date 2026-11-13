@@ -653,6 +653,16 @@ type Repository struct {
 	// FileTombstones is a set of file paths that should be ignored across all branches
 	// in this shard.
 	FileTombstones map[string]struct{} `json:",omitempty"`
+
+	// SkippedFiles counts the documents of this repository in this shard that
+	// were skipped at index time. It is per-shard index metadata: set when read
+	// with ReadMetadata*, zero for shards written before Zoekt recorded it, and
+	// kept by merge, explode and .meta rewrites. The indexserver sums it over
+	// a repository's shards and reports it to Sourcegraph.
+	//
+	// It is always zero in List results and is not part of the Repository
+	// protobuf.
+	SkippedFiles SkippedFiles `json:",omitzero"`
 }
 
 // ErrInvalidRepoID is returned, wrapped, by ParseRepoID when a repository ID
@@ -838,6 +848,11 @@ type RepoStats struct {
 	// ContentBytes is the amount of RAM used for raw content.
 	ContentBytes int64
 
+	// FileContentBytes is the total length of the documents' contents. Unlike
+	// ContentBytes it does not include file names. It is the file length that
+	// BM25 scoring uses, see SearchOptions.BM25AverageFileLength.
+	FileContentBytes int64
+
 	// Sourcegraph specific stats below. These are not as efficient to calculate
 	// as the above statistics. We experimentally measured about a 10% slower
 	// shard load time. However, we find these values very useful to track and
@@ -862,6 +877,37 @@ type RepoStats struct {
 	OtherBranchesNewLinesCount uint64
 }
 
+// SkippedFiles counts documents skipped at index time, per reason.
+type SkippedFiles struct {
+	TooLarge        SkippedFileCount `json:",omitzero"`
+	TooSmall        SkippedFileCount `json:",omitzero"`
+	Binary          SkippedFileCount `json:",omitzero"`
+	TooManyTrigrams SkippedFileCount `json:",omitzero"`
+}
+
+// Add adds the counts of o to s.
+func (s *SkippedFiles) Add(o *SkippedFiles) {
+	s.TooLarge.add(&o.TooLarge)
+	s.TooSmall.add(&o.TooSmall)
+	s.Binary.add(&o.Binary)
+	s.TooManyTrigrams.add(&o.TooManyTrigrams)
+}
+
+// SkippedFileCount counts skipped documents of one reason.
+type SkippedFileCount struct {
+	// Total is the number of skipped documents. A document with the same
+	// contents on several branches is counted once.
+	Total uint64 `json:",omitzero"`
+
+	// DefaultBranch is the number of skipped documents on the default branch.
+	DefaultBranch uint64 `json:",omitzero"`
+}
+
+func (c *SkippedFileCount) add(o *SkippedFileCount) {
+	c.Total += o.Total
+	c.DefaultBranch += o.DefaultBranch
+}
+
 func (s *RepoStats) Add(o *RepoStats) {
 	// can't update Repos, since one repo may have multiple
 	// shards.
@@ -869,6 +915,7 @@ func (s *RepoStats) Add(o *RepoStats) {
 	s.IndexBytes += o.IndexBytes
 	s.Documents += o.Documents
 	s.ContentBytes += o.ContentBytes
+	s.FileContentBytes += o.FileContentBytes
 
 	// Sourcegraph specific
 	s.NewLinesCount += o.NewLinesCount
@@ -994,6 +1041,11 @@ const (
 	SchedulingClassBatch
 )
 
+// ErrOverloaded is returned when a search is rejected because the server
+// could not start it in time. No shards were searched. Over gRPC it is
+// reported as codes.ResourceExhausted.
+var ErrOverloaded = errors.New("zoekt: search rejected because the server is overloaded")
+
 type SearchOptions struct {
 	// Return an upper-bound estimate of eligible documents in
 	// stats.ShardFilesConsidered.
@@ -1017,7 +1069,10 @@ type SearchOptions struct {
 	// be set to 1 to find all repositories containing a result.
 	ShardRepoMaxMatchCount int
 
-	// Abort the search after this much time has passed.
+	// Abort the search after this much time has passed since the request
+	// arrived. Time spent waiting for the scheduler counts against it. If the
+	// search cannot be admitted to the scheduler within half this time it
+	// fails with ErrOverloaded.
 	MaxWallTime time.Duration
 
 	// FlushWallTime if non-zero will stop streaming behaviour at first and
@@ -1057,6 +1112,15 @@ type SearchOptions struct {
 	//
 	// When enabled, all other scoring signals are ignored, including document ranks.
 	UseBM25Scoring bool
+
+	// EXPERIMENTAL. If greater than zero and UseBM25Scoring is set, BM25 uses
+	// this average file length in bytes instead of the average of the shard
+	// that holds the file. By default each shard has its own average, so the
+	// score of a file depends on which shard holds it. Set this to give a file
+	// the same score for every shard layout, for example to
+	// sum(RepoStats.FileContentBytes) / sum(RepoStats.Documents) over the
+	// shards being searched.
+	BM25AverageFileLength float64
 
 	// If set, the search results will contain debug information for scoring.
 	DebugScore bool
@@ -1123,6 +1187,9 @@ func (s *SearchOptions) String() string {
 	addBool("Whole", s.Whole)
 	addBool("ChunkMatches", s.ChunkMatches)
 	addBool("UseBM25Scoring", s.UseBM25Scoring)
+	if s.BM25AverageFileLength != 0 {
+		add("BM25AverageFileLength", strconv.FormatFloat(s.BM25AverageFileLength, 'g', -1, 64))
+	}
 	addBool("DebugScore", s.DebugScore)
 
 	b.WriteByte('}')

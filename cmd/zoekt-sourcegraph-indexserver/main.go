@@ -27,6 +27,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"log/slog"
 	"math"
 	"math/rand"
 	"net"
@@ -63,6 +64,7 @@ import (
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/debugserver"
+	"github.com/sourcegraph/zoekt/internal/logging"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 
@@ -243,12 +245,6 @@ type Server struct {
 	indexserverv1.UnimplementedSourcegraphIndexserverServiceServer
 }
 
-var (
-	debugLog = log.New(io.Discard, "[DEBUG] ", log.LstdFlags)
-	infoLog  = log.New(os.Stderr, "[INFO] ", log.LstdFlags)
-	errorLog = log.New(os.Stderr, "[ERROR] ", log.LstdFlags)
-)
-
 // our index commands should output something every 100mb they process.
 //
 // 2020-11-24 Keegan. "This should be rather quick so 5m is more than enough
@@ -300,12 +296,12 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 			// Periodically check if we have had output. If not kill the process.
 			if out.Len() != lastLen {
 				lastLen = out.Len()
-				infoLog.Printf("still running %s", cmd.Args)
+				slog.Info("still running", "args", cmd.Args)
 			} else {
 				// Send quit (C-\) first so we get a stack dump.
-				infoLog.Printf("no output for %s, quitting %s", noOutputTimeout, cmd.Args)
+				slog.Info("no output, quitting", "timeout", noOutputTimeout, "args", cmd.Args)
 				if err := cmd.Process.Signal(unix.SIGQUIT); err != nil {
-					errorLog.Println("quit failed:", err)
+					slog.Error("quit failed", "error", err)
 				}
 
 				// send sigkill if still running in 10s
@@ -313,9 +309,9 @@ func (s *Server) loggedRun(tr trace.Trace, cmd *exec.Cmd) (err error) {
 			}
 
 		case <-kill:
-			infoLog.Printf("still running, killing %s", cmd.Args)
+			slog.Info("still running, killing", "args", cmd.Args)
 			if err := cmd.Process.Kill(); err != nil {
-				errorLog.Println("kill failed:", err)
+				slog.Error("kill failed", "error", err)
 			}
 
 		case err := <-errC:
@@ -385,39 +381,60 @@ func (s *Server) Run() {
 
 	// Start a goroutine which updates the queue with commits to index.
 	go func() {
+		var cleanupSchedule cleanupScheduler
 		// We update the list of indexed repos every Interval. To speed up manual
 		// testing we also listen for SIGUSR1 to trigger updates.
 		// "pkill -SIGUSR1 zoekt-sourcegra"
 		for range jitterTicker(s.Interval, unix.SIGUSR1) {
 			if paused, msg := isIndexingPaused(s.IndexDir); paused {
-				infoLog.Printf("%s", msg)
+				slog.Info("indexing paused", "reason", msg)
 				continue
 			}
 
 			repos, err := s.Sourcegraph.List(context.Background(), listIndexed(s.IndexDir))
 			if err != nil {
-				errorLog.Printf("error listing repos: %s", err)
+				slog.Error("failed to list repos", "error", err)
 				continue
 			}
 
-			debugLog.Printf("updating index queue with %d repositories", len(repos.IDs))
+			slog.Debug("updating index queue", "count", len(repos.IDs))
 
 			// Stop indexing repos we don't need to track anymore
 			removed := s.queue.MaybeRemoveMissing(repos.IDs)
 			metricNumStoppedTrackingTotal.Add(float64(len(removed)))
 			if len(removed) > 0 {
-				infoLog.Printf("stopped tracking %d repositories: %s", len(removed), formatListUint32(removed, 5))
+				slog.Info("stopped tracking repositories", "count", len(removed), "ids", formatListUint32(removed, 5))
 			}
 
 			cleanupDone := make(chan struct{})
 			go func() {
 				defer close(cleanupDone)
-				s.muIndexDir.Global(func() {
-					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging)
+				var timings phaseTimings
+				var fields []sglog.Field
+				var lockWait, workDuration time.Duration
+				start := time.Now()
+				timings.next("lock_wait")
+				cleanupSchedule.run(&s.muIndexDir, func() {
+					workStart := time.Now()
+					lockWait = workStart.Sub(start)
+					cleanup(s.IndexDir, repos.IDs, time.Now(), s.shardMerging, &timings)
+					timings.next("git_cache")
 					if err := gitCache.cleanup(repos.IDs, time.Now()); err != nil {
 						s.logger.Error("failed to clean git clone cache", sglog.Error(err))
 					}
+					fields = timings.finish()
+					workDuration = time.Since(workStart)
 				})
+				if fields == nil { // Cleanup was skipped during its cooldown.
+					return
+				}
+				fields = append(fields, sglog.Duration("lock_held", workDuration))
+				// Log outside the lock. Slow waits matter even when cleanup itself is fast.
+				if lockWait > 5*time.Second || workDuration > 5*time.Second {
+					s.logger.Info("cleanup finished", fields...)
+				} else {
+					s.logger.Debug("cleanup finished", fields...)
+				}
 			}()
 
 			repos.IterateIndexOptions(s.queue.AddOrUpdate)
@@ -495,7 +512,7 @@ func (s *Server) processQueue() {
 		opts := item.Opts
 		args := s.indexArgs(opts)
 
-		ran := s.muIndexDir.With(opts.Name, func() {
+		ran := s.muIndexDir.With(opts.Name, opts.RepoID, func() {
 			// only record time taken once we hold the lock. This avoids us
 			// recording time taken while merging/cleanup runs.
 			start := time.Now()
@@ -509,7 +526,7 @@ func (s *Server) processQueue() {
 			metricIndexingDelay.WithLabelValues(string(state), repoNameForMetric(opts.Name)).Observe(indexDelay.Seconds())
 
 			if err != nil {
-				errorLog.Printf("error indexing %s: %s", args.String(), err)
+				slog.Error("failed to index", append(slogArgs(args), "error", err)...)
 			}
 
 			switch state {
@@ -527,7 +544,7 @@ func (s *Server) processQueue() {
 					sglog.Duration("index_delay", indexDelay),
 				)
 			case indexStateSuccessMeta:
-				infoLog.Printf("updated meta %s in %v", args.String(), elapsed)
+				slog.Info("updated meta", append(slogArgs(args), "duration", elapsed)...)
 			}
 			s.queue.SetIndexed(opts, state)
 		})
@@ -536,7 +553,7 @@ func (s *Server) processQueue() {
 			// Someone else is processing the repository. We can just skip this job
 			// since the repository will be added back to the queue and we will
 			// converge to the correct behaviour.
-			debugLog.Printf("index job for repository already running: %s", args)
+			slog.Debug("index job for repository already running", slogArgs(args)...)
 			continue
 		}
 	}
@@ -660,25 +677,25 @@ func (s *Server) index(ctx context.Context, args *indexArgs) (state indexState, 
 
 		switch incrementalState {
 		case index.IndexStateEqual:
-			debugLog.Printf("%s index already up to date. Shard=%s", args.String(), fn)
+			slog.Debug("index already up to date", append(slogArgs(args), "shard", fn)...)
 			return indexStateNoop, nil
 
 		case index.IndexStateMeta:
-			infoLog.Printf("updating index.meta %s", args.String())
+			slog.Info("updating index.meta", slogArgs(args)...)
 
 			// TODO(stefan) handle mergeMeta for tenant id.
 			if err := mergeMeta(bo); err != nil {
-				errorLog.Printf("falling back to full update: failed to update index.meta %s: %s", args.String(), err)
+				slog.Error("failed to update index.meta, falling back to full update", append(slogArgs(args), "error", err)...)
 			} else {
 				return indexStateSuccessMeta, nil
 			}
 
 		case index.IndexStateCorrupt:
-			infoLog.Printf("falling back to full update: corrupt index: %s", args.String())
+			slog.Info("corrupt index, falling back to full update", slogArgs(args)...)
 		}
 	}
 
-	infoLog.Printf("updating index %s reason=%s", args.String(), reason)
+	slog.Info("updating index", append(slogArgs(args), "reason", reason)...)
 
 	metricIndexingTotal.Inc()
 	c := gitIndexConfig{
@@ -722,6 +739,7 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 	state := configv1.UpdateIndexStatusRequest_Repository_STATE_SUCCESS
 	var failureMessage string
 	var indexTimeUnix int64
+	var skippedFiles *zoekt.SkippedFiles
 	if indexErr != nil {
 		state = configv1.UpdateIndexStatusRequest_Repository_STATE_FAILURE
 		failureMessage = truncateFailureMessageForSourcegraph(indexErr.Error())
@@ -741,6 +759,14 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 			return errors.New("failed to find metadata for new/updated index")
 		}
 		indexTimeUnix = metadata.IndexTime.Unix()
+
+		// The counts are secondary, so leave them unset rather than fail the
+		// status update.
+		if sum, err := sumSkippedFiles(args.BuildOptions()); err != nil {
+			slog.Error("failed to read skipped-file counts", append(slogArgs(args), "error", err)...)
+		} else {
+			skippedFiles = &sum
+		}
 	}
 
 	status := []indexStatus{{
@@ -749,6 +775,7 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 		IndexTimeUnix:  indexTimeUnix,
 		State:          state,
 		FailureMessage: failureMessage,
+		SkippedFiles:   skippedFiles,
 	}}
 
 	if err := sg.UpdateIndexStatus(status); err != nil {
@@ -756,6 +783,28 @@ func updateIndexStatusOnSourcegraph(c gitIndexConfig, args *indexArgs, sg Source
 	}
 
 	return nil
+}
+
+// sumSkippedFiles sums the skipped-file counts of the repository over all of
+// its shards. Shards written before Zoekt recorded the counts add zero.
+//
+// After a delta build, the sum can be too high until the next full build: the
+// older shards still count the skipped files at paths the delta build changed,
+// and the delta shard counts those paths again for every branch.
+func sumSkippedFiles(o *index.Options) (zoekt.SkippedFiles, error) {
+	var sum zoekt.SkippedFiles
+	for _, shard := range o.FindAllShards() {
+		repos, _, err := index.ReadMetadataPathAlive(shard)
+		if err != nil {
+			return zoekt.SkippedFiles{}, fmt.Errorf("reading metadata for shard %q: %w", shard, err)
+		}
+		for _, r := range repos {
+			if r.ID == o.RepositoryDescription.ID {
+				sum.Add(&r.SkippedFiles)
+			}
+		}
+	}
+	return sum, nil
 }
 
 func truncateFailureMessageForSourcegraph(s string) string {
@@ -809,6 +858,16 @@ func sglogBranches(key string, branches []zoekt.RepositoryBranch) sglog.Field {
 		ss[i] = fmt.Sprintf("%s=%s", b.Name, b.Version)
 	}
 	return sglog.Strings(key, ss)
+}
+
+// slogArgs returns the slog attributes identifying the repository of an
+// index job. They match the fields of the "updated index" log.
+func slogArgs(args *indexArgs) []any {
+	var branches []string
+	for _, b := range args.Branches {
+		branches = append(branches, fmt.Sprintf("%s=%s", b.Name, b.Version))
+	}
+	return []any{"repo", args.Name, "id", args.RepoID, "branches", branches}
 }
 
 func (s *Server) indexArgs(opts IndexOptions) *indexArgs {
@@ -1047,7 +1106,7 @@ func (s *Server) handleDebugList(w http.ResponseWriter, r *http.Request) {
 		}
 		_, err = fmt.Fprintf(tw, "%d\t%s\n", id, name)
 		if err != nil {
-			debugLog.Printf("handleDebugList: %s\n", err.Error())
+			slog.Debug("failed to write debug list entry", "error", err)
 		}
 	}
 	s.queue.mu.Unlock()
@@ -1110,7 +1169,7 @@ func (s *Server) handleDebugIndexed(w http.ResponseWriter, r *http.Request) {
 		}
 		_, err = fmt.Fprintf(tw, "%d\t%s\n", id, name)
 		if err != nil {
-			debugLog.Printf("handleDebugIndexed: %s\n", err.Error())
+			slog.Debug("failed to write debug indexed entry", "error", err)
 		}
 	}
 	s.queue.mu.Unlock()
@@ -1152,7 +1211,7 @@ func (s *Server) forceIndex(ctx context.Context, id uint32) (string, error) {
 	args.Incremental = false // force re-index
 
 	var state indexState
-	ran := s.muIndexDir.With(opts.Name, func() {
+	ran := s.muIndexDir.With(opts.Name, opts.RepoID, func() {
 		state, err = s.index(ctx, args)
 	})
 	if !ran {
@@ -1191,11 +1250,11 @@ func (s *Server) DeleteAllData(ctx context.Context, _ *indexserverv1.DeleteAllDa
 
 			err := cmd.Run()
 			if err != nil {
-				errorLog.Printf("explode failed: %v (stderr: %s)", err, stderrBuf.String())
+				slog.Error("explode failed", "error", err, "stderr", stderrBuf.String())
 				return err
 			}
 
-			infoLog.Printf("exploded shard: %s", stdoutBuf.String())
+			slog.Info("exploded shard", "stdout", stdoutBuf.String())
 
 			return nil
 		}); err != nil {
@@ -1291,11 +1350,6 @@ func printShardStats(fn string) error {
 	return index.PrintNgramStats(iFile)
 }
 
-func srcLogLevelIsDebug() bool {
-	lvl := os.Getenv(sglog.EnvLogLevel)
-	return strings.EqualFold(lvl, "dbug") || strings.EqualFold(lvl, "debug")
-}
-
 func getEnvWithDefaultBool(k string, defaultVal bool) bool {
 	v := os.Getenv(k)
 	if v == "" {
@@ -1344,18 +1398,6 @@ func getEnvWithDefaultUint64(k string, defaultVal uint64) uint64 {
 	return i
 }
 
-func getEnvWithDefaultFloat64(k string, defaultVal float64) float64 {
-	v := os.Getenv(k)
-	if v == "" {
-		return defaultVal
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		log.Fatalf("error parsing ENV %s to float64: %s", k, err)
-	}
-	return f
-}
-
 func getEnvWithDefaultString(k string, defaultVal string) string {
 	v := os.Getenv(k)
 	if v == "" {
@@ -1400,7 +1442,7 @@ func joinStringSet(set map[string]struct{}, sep string) string {
 func setShardsCounter(indexDir string) {
 	fns, err := filepath.Glob(filepath.Join(indexDir, "*.zoekt"))
 	if err != nil {
-		errorLog.Printf("setShardsCounter: %s\n", err)
+		slog.Error("failed to list shards for counter", "error", err)
 		return
 	}
 	metricNumberShards.Set(float64(len(fns)))
@@ -1499,9 +1541,10 @@ func startServer(conf rootConfig) error {
 		s.addDebugHandlers(mux)
 
 		go func() {
-			debugLog.Printf("serving HTTP on %s", conf.listen)
+			slog.Debug("serving http", "addr", conf.listen)
 			mux := grpcutil.MultiplexGRPC(newGRPCServer(sglog.Scoped("indexserver"), s), mux)
-			log.Fatal(http.ListenAndServe(conf.listen, mux))
+			srv := &http.Server{Addr: conf.listen, Handler: mux, Protocols: grpcutil.Protocols()}
+			log.Fatal(srv.ListenAndServe())
 		}()
 
 		// Serve mux on a unix domain socket on a best-effort-basis so that
@@ -1532,10 +1575,10 @@ func startServer(conf rootConfig) error {
 				if err := os.Chmod(socket, 0o777); err != nil {
 					return fmt.Errorf("failed to change permission of socket %s: %w", socket, err)
 				}
-				debugLog.Printf("serving HTTP on %s", socket)
+				slog.Debug("serving http on socket", "path", socket)
 				return http.Serve(l, mux)
 			}
-			debugLog.Print(serveHTTPOverSocket())
+			slog.Debug("stopped serving http on socket", "error", serveHTTPOverSocket())
 		}()
 	}
 
@@ -1593,35 +1636,31 @@ func newServer(conf rootConfig) (*Server, error) {
 		return nil, fmt.Errorf("failed to setup TMPDIR under %s: %v", conf.index, err)
 	}
 
-	if srcLogLevelIsDebug() {
-		debugLog.SetOutput(os.Stderr)
-	}
-
 	reposWithSeparateIndexingMetrics = getEnvWithDefaultEmptySet("INDEXING_METRICS_REPOS_ALLOWLIST")
 	if len(reposWithSeparateIndexingMetrics) > 0 {
-		debugLog.Printf("capturing separate indexing metrics for: %s", joinStringSet(reposWithSeparateIndexingMetrics, ", "))
+		slog.Debug("capturing separate indexing metrics", "repos", joinStringSet(reposWithSeparateIndexingMetrics, ", "))
 	}
 
 	deltaBuildRepositoriesAllowList := getEnvWithDefaultEmptySet("DELTA_BUILD_REPOS_ALLOWLIST")
 	if len(deltaBuildRepositoriesAllowList) > 0 {
-		debugLog.Printf("using delta shard builds for: %s", joinStringSet(deltaBuildRepositoriesAllowList, ", "))
+		slog.Debug("using delta shard builds", "repos", joinStringSet(deltaBuildRepositoriesAllowList, ", "))
 	}
 
 	deltaShardNumberFallbackThreshold := getEnvWithDefaultUint64("DELTA_SHARD_NUMBER_FALLBACK_THRESHOLD", 150)
 	if deltaShardNumberFallbackThreshold > 0 {
-		debugLog.Printf("setting delta shard fallback threshold to %d shard(s)", deltaShardNumberFallbackThreshold)
+		slog.Debug("setting delta shard fallback threshold", "threshold", deltaShardNumberFallbackThreshold)
 	} else {
-		debugLog.Printf("disabling delta build fallback behavior - delta builds will be performed regardless of the number of preexisting shards")
+		slog.Debug("disabling delta build fallback, delta builds will be performed regardless of the number of preexisting shards")
 	}
 
 	reposShouldSkipSymbolsCalculation := getEnvWithDefaultEmptySet("SKIP_SYMBOLS_REPOS_ALLOWLIST")
 	if len(reposShouldSkipSymbolsCalculation) > 0 {
-		debugLog.Printf("skipping generating symbols metadata for: %s", joinStringSet(reposShouldSkipSymbolsCalculation, ", "))
+		slog.Debug("skipping generating symbols metadata", "repos", joinStringSet(reposShouldSkipSymbolsCalculation, ", "))
 	}
 
 	indexingTimeout := getEnvWithDefaultDuration("INDEXING_TIMEOUT", defaultIndexingTimeout)
 	if indexingTimeout != defaultIndexingTimeout {
-		debugLog.Printf("using configured indexing timeout: %s", indexingTimeout)
+		slog.Debug("using configured indexing timeout", "timeout", indexingTimeout)
 	}
 
 	var sg Sourcegraph
@@ -1649,7 +1688,6 @@ func newServer(conf rootConfig) (*Server, error) {
 	} else {
 		sg = sourcegraphFake{
 			RootDir: rootURL.String(),
-			Log:     log.New(os.Stderr, "sourcegraph: ", log.LstdFlags),
 		}
 	}
 
@@ -1772,7 +1810,7 @@ func dialGRPCClient(addr string, logger sglog.Logger, additionalOpts ...grpc.Dia
 	// This dialer is used to connect via gRPC to the Sourcegraph instance.
 	// This is done lazily, so we can provide the client to use regardless of
 	// whether we enabled gRPC or not initially.
-	cc, err := grpc.Dial(addr, opts...)
+	cc, err := grpc.NewClient(addr, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("dialing %q: %w", addr, err)
 	}
@@ -1827,12 +1865,14 @@ func cloneURL(u *url.URL) *url.URL {
 }
 
 func main() {
-	liblog := sglog.Init(sglog.Resource{
+	resource := sglog.Resource{
 		Name:       "zoekt-indexserver",
 		Version:    index.Version,
 		InstanceID: index.HostnameBestEffort(),
-	})
+	}
+	liblog := sglog.Init(resource)
 	defer liblog.Sync()
+	logging.Init(os.Stderr, logging.Resource{Name: resource.Name, Version: resource.Version, InstanceID: resource.InstanceID})
 
 	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
 		log.Fatal(err)

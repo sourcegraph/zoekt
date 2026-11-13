@@ -13,16 +13,19 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"go.uber.org/atomic"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/grpc/grpcutil"
 	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
+	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/mockSearcher"
+	"github.com/sourcegraph/zoekt/internal/shardtest"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -52,15 +55,17 @@ func TestClientServer(t *testing.T) {
 	gs := grpc.NewServer()
 	defer gs.Stop()
 
-	webserverv1.RegisterWebserverServiceServer(gs, NewServer(adapter{mock}))
-	ts := httptest.NewServer(h2c.NewHandler(gs, &http2.Server{}))
+	webserverv1.RegisterWebserverServiceServer(gs, NewServer(shardtest.Streamer{Searcher: mock}))
+	ts := httptest.NewUnstartedServer(gs)
+	ts.Config.Protocols = grpcutil.Protocols()
+	ts.Start()
 	defer ts.Close()
 
 	u, err := url.Parse(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cc, err := grpc.Dial(u.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	cc, err := grpc.NewClient(u.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,6 +251,10 @@ func (m *mockSearchStreamServer) Send(r *webserverv1.StreamSearchResponse) error
 	return nil
 }
 
+func (m *mockSearchStreamServer) Context() context.Context {
+	return context.Background()
+}
+
 var (
 	_ webserverv1.WebserverService_StreamSearchServer = &mockSearchStreamServer{}
 	_ webserverv1.WebserverService_StreamSearchClient = &mockSearchStreamClient{}
@@ -277,15 +286,72 @@ func mustParse(s string) query.Q {
 	return q
 }
 
-type adapter struct {
-	zoekt.Searcher
+func TestShedSearchIsResourceExhausted(t *testing.T) {
+	gs := grpc.NewServer()
+	defer gs.Stop()
+
+	webserverv1.RegisterWebserverServiceServer(gs, NewServer(shardtest.Streamer{Searcher: overloadedSearcher{}}))
+	ts := httptest.NewUnstartedServer(gs)
+	ts.Config.Protocols = grpcutil.Protocols()
+	ts.Start()
+	defer ts.Close()
+
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cc, err := grpc.NewClient(u.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cc.Close()
+
+	client := webserverv1.NewWebserverServiceClient(cc)
+	q := query.QToProto(&query.Const{Value: true})
+
+	_, err = client.Search(context.Background(), &webserverv1.SearchRequest{Query: q})
+	if got := status.Code(err); got != codes.ResourceExhausted {
+		t.Errorf("Search: got code %v (%v), want ResourceExhausted", got, err)
+	}
+
+	stream, err := client.StreamSearch(context.Background(), &webserverv1.StreamSearchRequest{Request: &webserverv1.SearchRequest{Query: q}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = stream.Recv()
+	if got := status.Code(err); got != codes.ResourceExhausted {
+		t.Errorf("StreamSearch: got code %v (%v), want ResourceExhausted", got, err)
+	}
 }
 
-func (a adapter) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
-	sr, err := a.Search(ctx, q, opts)
+func TestSearchWithoutOpts(t *testing.T) {
+	b := shardtest.Builder(t, &zoekt.Repository{Name: "repo"}, index.Document{Name: "f.go", Content: []byte("needle")})
+	srv := NewServer(shardtest.Streamer{Searcher: shardtest.Searcher(t, b)})
+	req := &webserverv1.SearchRequest{Query: query.QToProto(&query.Substring{Pattern: "needle"})}
+
+	res, err := srv.Search(context.Background(), req)
 	if err != nil {
-		return err
+		t.Fatal(err)
 	}
-	sender.Send(sr)
-	return nil
+	if got := len(res.GetFiles()); got != 1 {
+		t.Errorf("Search: got %d files, want 1", got)
+	}
+
+	cs, ss := newPairedSearchStream(t)
+	if err := srv.StreamSearch(&webserverv1.StreamSearchRequest{Request: req}, ss); err != nil {
+		t.Fatal(err)
+	}
+	got := 0
+	for _, r := range readAllStream(t, cs) {
+		got += len(r.GetFiles())
+	}
+	if got != 1 {
+		t.Errorf("StreamSearch: got %d files, want 1", got)
+	}
+}
+
+type overloadedSearcher struct{ zoekt.Searcher }
+
+func (overloadedSearcher) Search(context.Context, query.Q, *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
+	return nil, zoekt.ErrOverloaded
 }

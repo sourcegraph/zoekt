@@ -25,6 +25,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	configv1 "github.com/sourcegraph/zoekt/cmd/zoekt-sourcegraph-indexserver/grpc/protos/sourcegraph/zoekt/configuration/v1"
 	"github.com/sourcegraph/zoekt/internal/ctags"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 func TestIterateIndexOptions_Fingerprint(t *testing.T) {
@@ -470,6 +471,8 @@ func TestGetIndexOptions(t *testing.T) {
 }
 
 func TestIndex(t *testing.T) {
+	t.Setenv("GIT_NO_LAZY_FETCH", "0")
+
 	cases := []struct {
 		name                   string
 		args                   indexArgs
@@ -622,8 +625,18 @@ func TestIndex(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var got []string
 			runCmd := func(c *exec.Cmd) error {
-				if c.Env != nil {
-					t.Fatal("expected nil Env for command. Tenant Enforcement relies on us inheritting the parent process environment.")
+				// Tenant enforcement relies on inheriting the parent environment.
+				// Only the indexing subprocess should override lazy fetching.
+				gotEnv := c.Environ()
+				wantEnv := os.Environ()
+				if c.Args[0] == "zoekt-git-index" {
+					wantEnv = slices.DeleteFunc(wantEnv, func(entry string) bool {
+						return strings.HasPrefix(entry, "GIT_NO_LAZY_FETCH=")
+					})
+					wantEnv = append(wantEnv, "GIT_NO_LAZY_FETCH=1")
+				}
+				if diff := cmp.Diff(wantEnv, gotEnv, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+					t.Fatalf("environment mismatch (-want +got):\n%s", diff)
 				}
 
 				cmd := strings.Join(c.Args, " ")
@@ -702,7 +715,7 @@ git init -b main
 `
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
-	cmd.Env = gitTestEnv()
+	cmd.Env = testutil.GitEnv()
 	_, err := cmd.CombinedOutput()
 	require.NoError(t, err)
 

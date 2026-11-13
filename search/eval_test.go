@@ -7,6 +7,7 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/shardtest"
 	"github.com/sourcegraph/zoekt/query"
 )
 
@@ -14,8 +15,8 @@ func TestSearchTypeRepo(t *testing.T) {
 	ss := newShardedSearcher(2)
 	nextShardNum := 1
 	addShard := func(docs ...index.Document) {
-		b := testShardBuilder(t, &zoekt.Repository{ID: 1, Name: "reponame"}, docs...)
-		shard := searcherForTest(t, b)
+		b := shardtest.Builder(t, &zoekt.Repository{ID: 1, Name: "reponame"}, docs...)
+		shard := shardtest.Searcher(t, b)
 		ss.replace(map[string]zoekt.Searcher{fmt.Sprintf("key-%d", nextShardNum): shard})
 		nextShardNum++
 	}

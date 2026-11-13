@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	git "github.com/go-git/go-git/v5"
+
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 func TestSetRemote(t *testing.T) {
@@ -35,7 +37,7 @@ git clone orig/.git clone.git
 
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
-	cmd.Env = gitTestEnv()
+	cmd.Env = testutil.GitEnv()
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("execution error: %v, output %s", err, out)

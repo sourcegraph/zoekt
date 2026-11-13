@@ -17,15 +17,12 @@ package query
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"regexp/syntax"
 
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt/languages"
 )
-
-var _ = log.Printf
 
 // parseStringLiteral parses a string literal, consumes the starting
 // quote too.
@@ -332,7 +329,9 @@ func RegexpQuery(text string, content, file bool) (Q, error) {
 
 	r = OptimizeRegexp(r, regexpFlags)
 
-	if r.Op == syntax.OpLiteral {
+	// A case-folded literal such as (?i)foo stays a Regexp: Substring has no
+	// way to carry the fold flag, and the parser stores the literal as FOO.
+	if r.Op == syntax.OpLiteral && r.Flags&syntax.FoldCase == 0 {
 		expr = &Substring{
 			Pattern:  string(r.Rune),
 			FileName: file,

@@ -99,8 +99,6 @@ type indexTOC struct {
 
 	repos          simpleSection
 	reposIDsBitmap simpleSection
-
-	ranks simpleSection
 }
 
 func (t *indexTOC) sections() []section {

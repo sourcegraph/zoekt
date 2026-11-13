@@ -48,6 +48,8 @@ func QToProto(q Q) *webserverv1.Q {
 		return &webserverv1.Q{Query: &webserverv1.Q_Branch{Branch: v.ToProto()}}
 	case *Boost:
 		return &webserverv1.Q{Query: &webserverv1.Q_Boost{Boost: v.ToProto()}}
+	case *Meta:
+		return &webserverv1.Q{Query: &webserverv1.Q_Meta{Meta: v.ToProto()}}
 	default:
 		// The following nodes do not have a proto representation:
 		// - caseQ: only used internally, not by the RPC layer
@@ -394,6 +396,13 @@ func MetaFromProto(p *webserverv1.Meta) (*Meta, error) {
 		Field: p.GetKey(),
 		Value: re,
 	}, nil
+}
+
+func (q *Meta) ToProto() *webserverv1.Meta {
+	return &webserverv1.Meta{
+		Key:   q.Field,
+		Value: q.Value.String(),
+	}
 }
 
 func (q *Boost) ToProto() *webserverv1.Boost {

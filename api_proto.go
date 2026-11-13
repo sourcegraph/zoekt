@@ -431,11 +431,6 @@ func RepositoryFromProto(p *webserverv1.Repository) Repository {
 		subRepoMap[name] = &r
 	}
 
-	fileTombstones := make(map[string]struct{}, len(p.GetFileTombstones()))
-	for _, file := range p.GetFileTombstones() {
-		fileTombstones[file] = struct{}{}
-	}
-
 	return Repository{
 		TenantID:             int(p.GetTenantId()),
 		ID:                   p.GetId(),
@@ -454,7 +449,6 @@ func RepositoryFromProto(p *webserverv1.Repository) Repository {
 		HasSymbols:           p.GetHasSymbols(),
 		Tombstone:            p.GetTombstone(),
 		LatestCommitDate:     p.GetLatestCommitDate().AsTime(),
-		FileTombstones:       fileTombstones,
 		Metadata:             p.GetMetadata(),
 	}
 }
@@ -472,11 +466,6 @@ func (r *Repository) ToProto() *webserverv1.Repository {
 	subRepoMap := make(map[string]*webserverv1.Repository, len(r.SubRepoMap))
 	for name, repo := range r.SubRepoMap {
 		subRepoMap[name] = repo.ToProto()
-	}
-
-	fileTombstones := make([]string, 0, len(r.FileTombstones))
-	for file := range r.FileTombstones {
-		fileTombstones = append(fileTombstones, file)
 	}
 
 	return &webserverv1.Repository{
@@ -497,7 +486,6 @@ func (r *Repository) ToProto() *webserverv1.Repository {
 		HasSymbols:           r.HasSymbols,
 		Tombstone:            r.Tombstone,
 		LatestCommitDate:     timestamppb.New(r.LatestCommitDate),
-		FileTombstones:       fileTombstones,
 		Metadata:             r.Metadata,
 	}
 }
@@ -549,6 +537,7 @@ func RepoStatsFromProto(p *webserverv1.RepoStats) RepoStats {
 		Documents:                  int(p.GetDocuments()),
 		IndexBytes:                 p.GetIndexBytes(),
 		ContentBytes:               p.GetContentBytes(),
+		FileContentBytes:           p.GetFileContentBytes(),
 		NewLinesCount:              p.GetNewLinesCount(),
 		DefaultBranchNewLinesCount: p.GetDefaultBranchNewLinesCount(),
 		OtherBranchesNewLinesCount: p.GetOtherBranchesNewLinesCount(),
@@ -562,6 +551,7 @@ func (s *RepoStats) ToProto() *webserverv1.RepoStats {
 		Documents:                  int64(s.Documents),
 		IndexBytes:                 s.IndexBytes,
 		ContentBytes:               s.ContentBytes,
+		FileContentBytes:           s.FileContentBytes,
 		NewLinesCount:              s.NewLinesCount,
 		DefaultBranchNewLinesCount: s.DefaultBranchNewLinesCount,
 		OtherBranchesNewLinesCount: s.OtherBranchesNewLinesCount,
@@ -708,6 +698,7 @@ func SearchOptionsFromProto(p *webserverv1.SearchOptions) *SearchOptions {
 		ChunkMatches:           p.GetChunkMatches(),
 		DebugScore:             p.GetDebugScore(),
 		UseBM25Scoring:         p.GetUseBm25Scoring(),
+		BM25AverageFileLength:  p.GetBm25AverageFileLength(),
 	}
 }
 
@@ -731,5 +722,6 @@ func (s *SearchOptions) ToProto() *webserverv1.SearchOptions {
 		ChunkMatches:           s.ChunkMatches,
 		DebugScore:             s.DebugScore,
 		UseBm25Scoring:         s.UseBM25Scoring,
+		Bm25AverageFileLength:  s.BM25AverageFileLength,
 	}
 }

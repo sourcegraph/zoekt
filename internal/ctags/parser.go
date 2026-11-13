@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	goctags "github.com/sourcegraph/go-ctags"
@@ -32,6 +33,11 @@ type Entry = goctags.Entry
 type CTagsParser struct {
 	bins    ParserBinMap
 	parsers map[CTagsParserType]goctags.Parser
+
+	// closing tracks parsers discarded after a timeout that are still being
+	// closed. Close waits for them so that ctags is killed and its temporary
+	// files removed before the indexer exits.
+	closing sync.WaitGroup
 }
 
 // parseTimeout is how long we wait for a response for parsing a single file
@@ -84,7 +90,7 @@ func (lp *CTagsParser) Parse(name string, content []byte, typ CTagsParserType) (
 		// The parser is still processing this request and cannot safely be reused.
 		// Discard it so a later file gets a fresh process.
 		delete(lp.parsers, typ)
-		go parser.Close()
+		lp.closing.Go(parser.Close)
 		return nil, &ParseTimeoutError{Name: name, Timeout: parseTimeout}
 	}
 }
@@ -109,4 +115,5 @@ func (lp *CTagsParser) Close() {
 	for _, parser := range lp.parsers {
 		parser.Close()
 	}
+	lp.closing.Wait()
 }

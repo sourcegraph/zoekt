@@ -16,11 +16,52 @@ package index
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
 	"github.com/sourcegraph/zoekt/internal/ctags"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
+
+func TestParseSymbolsLanguageMap(t *testing.T) {
+	// Starting this binary fails, so parseSymbols returns an error if it runs
+	// ctags on a document.
+	parserBins := ctags.ParserBinMap{
+		ctags.UniversalCTags: filepath.Join(t.TempDir(), "missing-universal-ctags"),
+	}
+
+	t.Run("runs ctags for a language without an entry", func(t *testing.T) {
+		docs := []*Document{{Name: "main.go", Content: []byte("package main\n"), Language: "Go"}}
+
+		err := parseSymbols(docs, ctags.LanguageMap{}, parserBins)
+
+		if err == nil {
+			t.Fatal("want an error from starting ctags, got nil")
+		}
+	})
+
+	// The language map uses the names from languages.NormalizeLanguage, while
+	// documents carry go-enry's names.
+	for _, tc := range []struct {
+		language string
+		key      string
+	}{
+		{language: "Go", key: "go"},
+		{language: "C#", key: "c_sharp"},
+		{language: "C++", key: "cpp"},
+	} {
+		t.Run("skips "+tc.language+" turned off as "+tc.key, func(t *testing.T) {
+			docs := []*Document{{Name: "file", Content: []byte("content\n"), Language: tc.language}}
+
+			err := parseSymbols(docs, ctags.LanguageMap{tc.key: ctags.NoCTags}, parserBins)
+
+			if err != nil {
+				t.Fatalf("want no ctags run, got error: %v", err)
+			}
+		})
+	}
+}
 
 func TestTagsToSections(t *testing.T) {
 	c := []byte("package foo\nfunc bar(j int) {}\n//bla")
@@ -253,7 +294,7 @@ func TestOverlaps(t *testing.T) {
 }
 
 func BenchmarkTagsToSections(b *testing.B) {
-	requireCTags(b)
+	testutil.RequireCTags(b)
 
 	file, err := os.ReadFile("./testdata/large_file.cc")
 	if err != nil {
@@ -289,20 +330,5 @@ func BenchmarkTagsToSections(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-	}
-}
-
-func requireCTags(tb testing.TB) {
-	tb.Helper()
-
-	if checkCTags() != "" {
-		return
-	}
-
-	// On CI we require ctags to be available. Otherwise we skip
-	if os.Getenv("CI") != "" {
-		tb.Fatal("universal-ctags is missing")
-	} else {
-		tb.Skip("universal-ctags is missing")
 	}
 }

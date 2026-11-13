@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"log"
+	"log/slog"
 	"math/rand"
 	"net/url"
 	"os"
@@ -376,6 +376,10 @@ type indexStatus struct {
 	IndexTimeUnix  int64
 	State          configv1.UpdateIndexStatusRequest_Repository_State
 	FailureMessage string
+
+	// SkippedFiles is the sum of the skipped-file counts over all of the
+	// repository's shards. Nil means not reported.
+	SkippedFiles *zoekt.SkippedFiles
 }
 
 type updateIndexStatusRequest struct {
@@ -401,6 +405,7 @@ func (u *updateIndexStatusRequest) ToProto() *configv1.UpdateIndexStatusRequest 
 			IndexTimeUnix:  repo.IndexTimeUnix,
 			State:          repo.State,
 			FailureMessage: repo.FailureMessage,
+			SkippedFiles:   skippedFilesToProto(repo.SkippedFiles),
 		})
 	}
 
@@ -430,11 +435,44 @@ func (u *updateIndexStatusRequest) FromProto(x *configv1.UpdateIndexStatusReques
 			IndexTimeUnix:  repo.GetIndexTimeUnix(),
 			State:          repo.GetState(),
 			FailureMessage: repo.GetFailureMessage(),
+			SkippedFiles:   skippedFilesFromProto(repo.GetSkippedFiles()),
 		})
 	}
 
 	*u = updateIndexStatusRequest{
 		Repositories: repositories,
+	}
+}
+
+// skippedFilesToProto converts the counts, keeping nil (not reported) distinct from
+// all-zero counts.
+func skippedFilesToProto(s *zoekt.SkippedFiles) *configv1.SkippedFiles {
+	if s == nil {
+		return nil
+	}
+	count := func(c zoekt.SkippedFileCount) *configv1.SkippedFileCount {
+		return &configv1.SkippedFileCount{Total: c.Total, DefaultBranch: c.DefaultBranch}
+	}
+	return &configv1.SkippedFiles{
+		TooLarge:        count(s.TooLarge),
+		TooSmall:        count(s.TooSmall),
+		Binary:          count(s.Binary),
+		TooManyTrigrams: count(s.TooManyTrigrams),
+	}
+}
+
+func skippedFilesFromProto(x *configv1.SkippedFiles) *zoekt.SkippedFiles {
+	if x == nil {
+		return nil
+	}
+	count := func(c *configv1.SkippedFileCount) zoekt.SkippedFileCount {
+		return zoekt.SkippedFileCount{Total: c.GetTotal(), DefaultBranch: c.GetDefaultBranch()}
+	}
+	return &zoekt.SkippedFiles{
+		TooLarge:        count(x.GetTooLarge()),
+		TooSmall:        count(x.GetTooSmall()),
+		Binary:          count(x.GetBinary()),
+		TooManyTrigrams: count(x.GetTooManyTrigrams()),
 	}
 }
 
@@ -454,7 +492,6 @@ func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error 
 
 type sourcegraphFake struct {
 	RootDir string
-	Log     *log.Logger
 }
 
 func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
@@ -466,11 +503,11 @@ func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*Sourcegr
 	iterate := func(f func(IndexOptions)) {
 		opts, err := sf.GetIndexOptions(repos...)
 		if err != nil {
-			sf.Log.Printf("WARN: ignoring GetIndexOptions error: %v", err)
+			slog.Warn("ignoring GetIndexOptions error", "error", err)
 		}
 		for _, opt := range opts {
 			if opt.Error != "" {
-				sf.Log.Printf("WARN: ignoring GetIndexOptions error for %s: %v", opt.Name, opt.Error)
+				slog.Warn("ignoring GetIndexOptions error", "repo", opt.Name, "error", opt.Error)
 				continue
 			}
 			f(opt.IndexOptions)
@@ -590,7 +627,7 @@ func (sf sourcegraphFake) getBranches(name string) ([]zoekt.RepositoryBranch, er
 		cmd := exec.Command("git", "rev-parse", branch)
 		cmd.Dir = dir
 		if b, err := cmd.Output(); err != nil {
-			sf.Log.Printf("WARN: Could not get branch %s/%s", name, branch)
+			slog.Warn("could not get branch", "repo", name, "branch", branch)
 		} else {
 			version := string(bytes.TrimSpace(b))
 			rBranches = append(rBranches, zoekt.RepositoryBranch{
@@ -634,7 +671,7 @@ func (sf sourcegraphFake) ListRepoIDs(ctx context.Context, indexed []uint32) ([]
 func (sf sourcegraphFake) visitRepos(visit func(name string)) error {
 	return filepath.Walk(sf.RootDir, func(path string, fi os.FileInfo, fileErr error) error {
 		if fileErr != nil {
-			sf.Log.Printf("WARN: ignoring error searching %s: %v", path, fileErr)
+			slog.Warn("ignoring error searching", "path", path, "error", fileErr)
 			return nil
 		}
 		if !fi.IsDir() {

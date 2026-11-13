@@ -27,13 +27,13 @@ require (
 	github.com/prometheus/procfs v0.15.1
 	github.com/rs/xid v1.6.0
 	github.com/shirou/gopsutil/v3 v3.24.5
-	github.com/sourcegraph/go-ctags v0.0.0-20250729094530-349a251d78d8
+	github.com/sourcegraph/go-ctags v0.0.0-20261102140213-2e73e57077a7
 	github.com/sourcegraph/log v0.0.0-20241024013702-574f7079c888
 	github.com/sourcegraph/mountinfo v0.0.0-20251117172727-e9f6a87f579c
 	github.com/stretchr/testify v1.11.1
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
-	github.com/wasilibs/go-re2 v1.10.0
+	github.com/wasilibs/go-re2 v1.13.0
 	github.com/xeipuuv/gojsonschema v1.2.0
 	gitlab.com/gitlab-org/api/client-go v1.46.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
@@ -51,7 +51,7 @@ require (
 	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.22.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.11
 	pgregory.net/rapid v1.2.0
@@ -65,8 +65,6 @@ require (
 	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/tetratelabs/wazero v1.9.0 // indirect
-	github.com/wasilibs/wazero-helpers v0.0.0-20240620070341-3dff1577cd52 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 )
 
@@ -147,6 +145,9 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-go 1.25.9
+// Make sure this is as low as possible such that our code still compiles.
+// Zoekt is consumed as a library.
+go 1.26.0
 
-toolchain go1.26.5
+// What we use in dev/CI
+toolchain go1.27.3

@@ -17,7 +17,7 @@ package gitindex
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -97,8 +97,11 @@ func (rw *RepoWalker) parseModuleMap(t *object.Tree) error {
 // non-nil, recurse into submodules. In addition, it returns a mapping
 // that indicates in which repo each SHA1 can be found.
 //
+// Files matched by the tree's own ignore file are skipped. Each submodule is
+// filtered by its own ignore file, since its paths are relative to its root.
+//
 // The collected files are available through the RepoWalker.Files map.
-func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string, ig *ignore.Matcher) (map[string]plumbing.Hash, error) {
+func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string) (map[string]plumbing.Hash, error) {
 	if err := rw.parseModuleMap(t); err != nil {
 		return nil, fmt.Errorf("parseModuleMap: %w", err)
 	}
@@ -113,21 +116,38 @@ func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string, ig *ignore.Mat
 
 	// Path => commit SHA1
 	subRepoVersions := make(map[string]plumbing.Hash)
+	skippedTrees := 0
 	for {
 		name, entry, err := tw.Next()
 		if err == io.EOF {
-			break
+			if name == "" {
+				break
+			}
+			// go-git returns io.EOF with the subtree's name when it cannot
+			// read a subtree, after moving past it, so keep walking. Without
+			// the ignore file we would index paths the repo excludes.
+			if name == path.Dir(ignore.IgnoreFile) {
+				return nil, fmt.Errorf("cannot read tree %s (%s)", name, entry.Hash)
+			}
+			skippedTrees++
+			continue
+		}
+		if err == object.ErrMaxTreeDepth {
+			return nil, fmt.Errorf("TreeWalker.Next: %w", err)
 		}
 		if err := rw.handleEntry(name, &entry, branch, subRepoVersions, ig); err != nil {
 			return nil, fmt.Errorf("handleEntry: %w", err)
 		}
+	}
+	if skippedTrees > 0 {
+		slog.Info("skipped trees with missing git objects", "count", skippedTrees, "branch", branch)
 	}
 	return subRepoVersions, nil
 }
 
 func (rw *RepoWalker) tryHandleSubmodule(p string, id *plumbing.Hash, branch string, subRepoVersions map[string]plumbing.Hash, ig *ignore.Matcher) error {
 	if err := rw.handleSubmodule(p, id, branch, subRepoVersions, ig); err != nil {
-		log.Printf("submodule %s: ignoring error %v", p, err)
+		slog.Warn("ignoring submodule error", "path", p, "error", err)
 	}
 	return nil
 }
@@ -160,7 +180,7 @@ func (rw *RepoWalker) handleSubmodule(p string, id *plumbing.Hash, branch string
 	subRepoVersions[p] = *id
 
 	sw := NewRepoWalker(subRepo, subURL.String(), rw.repoCache)
-	subVersions, err := sw.CollectFiles(tree, branch, ig)
+	subVersions, err := sw.CollectFiles(tree, branch)
 	if err != nil {
 		return err
 	}

@@ -17,6 +17,7 @@ package index
 import (
 	"cmp"
 	"encoding/binary"
+	"errors"
 	"math"
 	"sort"
 	"unicode"
@@ -56,50 +57,96 @@ func toLower(in []byte) []byte {
 	return out
 }
 
-// compare 'lower' and 'mixed', where lower is the needle. 'mixed' may
-// be larger than 'lower'. Returns the byte size of the match, whether there was
-// a match, and whether mixed ended before lower.
-func caseFoldingEqualsRunes(lower, mixed []byte) (int, bool, bool) {
-	matchTotal := 0
-	for len(lower) > 0 && len(mixed) > 0 {
-		lb := lower[0]
-		mb := mixed[0]
+var asciiLower = func() [256]byte {
+	var lower [256]byte
+	for i := range lower {
+		lower[i] = byte(i)
+		if i >= 'A' && i <= 'Z' {
+			lower[i] |= 0x20
+		}
+	}
+	return lower
+}()
+
+// Compare pattern and mixed using Unicode simple folding. Mixed may be larger
+// than pattern. Return the byte size of the match, whether there was a match,
+// and whether mixed ended before pattern. The optional lowered pattern must be
+// toLower(pattern); it keeps mismatch extent checks cheap when lowercasing
+// shortens the pattern.
+func caseFoldingEqualsRunes(pattern, mixed []byte, lowered ...[]byte) (int, bool, bool) {
+	pi, mi := 0, 0
+	// pi-lowerDelta is the corresponding byte offset in the lowered pattern.
+	lowerDelta := 0
+	for pi < len(pattern) && mi < len(mixed) {
+		pb, mb := pattern[pi], mixed[mi]
 		// Fast path for ASCII character matching, done for performance.
-		if lb < utf8.RuneSelf && mb < utf8.RuneSelf {
-			if mb >= 'A' && mb <= 'Z' {
-				mb |= 0x20
+		if pb|mb < utf8.RuneSelf {
+			if asciiLower[pb] != asciiLower[mb] {
+				extent := pattern[pi:]
+				if len(lowered) != 0 {
+					extent = lowered[0][pi-lowerDelta:]
+				}
+				return 0, false, !hasEnoughRunes(mixed[mi:], extent)
 			}
-			if lb != mb {
-				return 0, false, !hasEnoughRunes(mixed, lower)
-			}
-			lower = lower[1:]
-			mixed = mixed[1:]
-			matchTotal++
+			pi++
+			mi++
 			continue
 		}
 
-		lr, lsz := utf8.DecodeRune(lower)
-		lower = lower[lsz:]
+		pr, psz := utf8.DecodeRune(pattern[pi:])
+		if len(lowered) != 0 {
+			// toLower produces valid UTF-8; only the leading byte is needed.
+			lsz := 1
+			switch b := lowered[0][pi-lowerDelta]; {
+			case b >= 0xf0:
+				lsz = 4
+			case b >= 0xe0:
+				lsz = 3
+			case b >= 0xc0:
+				lsz = 2
+			}
+			lowerDelta += psz - lsz
+		}
+		pi += psz
+		mr, msz := utf8.DecodeRune(mixed[mi:])
+		mi += msz
 
-		mr, msz := utf8.DecodeRune(mixed)
-		mixed = mixed[msz:]
-		matchTotal += msz
-
-		if lr != unicode.ToLower(mr) {
-			return 0, false, !hasEnoughRunes(mixed, lower)
+		if pr == mr {
+			continue
+		}
+		if pr > mr {
+			pr, mr = mr, pr
+		}
+		var r rune
+		if mr <= unicode.MaxLatin1 {
+			// Lowercasing is enough when both runes are in Latin-1.
+			r = unicode.ToLower(pr)
+		} else {
+			// SimpleFold returns the next larger rune, or wraps to the smallest.
+			r = unicode.SimpleFold(pr)
+			for r > pr && r < mr {
+				r = unicode.SimpleFold(r)
+			}
+		}
+		if r != mr {
+			extent := pattern[pi:]
+			if len(lowered) != 0 {
+				extent = lowered[0][pi-lowerDelta:]
+			}
+			return 0, false, !hasEnoughRunes(mixed[mi:], extent)
 		}
 	}
 
-	return matchTotal, len(lower) == 0, len(lower) > 0
+	return mi, pi == len(pattern), pi < len(pattern)
 }
 
-func hasEnoughRunes(mixed, lower []byte) bool {
-	// A UTF-8 rune occupies at most UTFMax bytes, and lower cannot contain
+func hasEnoughRunes(mixed, pattern []byte) bool {
+	// A UTF-8 rune occupies at most UTFMax bytes, and pattern cannot contain
 	// more runes than bytes. A sufficiently long mixed suffix therefore proves
 	// the candidate span fits without walking either slice. In practice this
 	// keeps ordinary mismatches constant-time and reserves the exact scan below
 	// for candidates close enough to the document end to be truncated.
-	if len(mixed)/utf8.UTFMax >= len(lower) {
+	if len(mixed)/utf8.UTFMax >= len(pattern) {
 		return true
 	}
 
@@ -107,12 +154,12 @@ func hasEnoughRunes(mixed, lower []byte) bool {
 	// candidate mismatches. Reaching the end of mixed first means the candidate's
 	// expected rune span crosses the document boundary, which is a corrupt index
 	// invariant rather than an ordinary non-match.
-	for len(lower) > 0 {
+	for len(pattern) > 0 {
 		if len(mixed) == 0 {
 			return false
 		}
-		_, sz := utf8.DecodeRune(lower)
-		lower = lower[sz:]
+		_, sz := utf8.DecodeRune(pattern)
+		pattern = pattern[sz:]
 		_, sz = utf8.DecodeRune(mixed)
 		mixed = mixed[sz:]
 	}
@@ -241,8 +288,16 @@ func marshalDocSections(secs []DocumentSection) []byte {
 	return toSizedDeltas(ints)
 }
 
-func unmarshalDocSections(data []byte, ds []DocumentSection) []DocumentSection {
+// errCorruptVarint is returned by the delta decoders when binary.Uvarint
+// reports a truncated or overflowing varint. Without this check a truncated
+// varint (n == 0) never advances the input, so the decode loop never ends.
+var errCorruptVarint = errors.New("truncated or overflowing varint")
+
+func unmarshalDocSections(data []byte, ds []DocumentSection) ([]DocumentSection, error) {
 	sz, m := binary.Uvarint(data)
+	if m < 0 {
+		return nil, errCorruptVarint
+	}
 	data = data[m:]
 
 	if cap(ds) < int(sz)/2 {
@@ -258,30 +313,24 @@ func unmarshalDocSections(data []byte, ds []DocumentSection) []DocumentSection {
 		var d DocumentSection
 
 		delta, m := binary.Uvarint(data)
+		if m <= 0 {
+			return nil, errCorruptVarint
+		}
 		last += uint32(delta)
 		data = data[m:]
 		d.Start = last
 
 		delta, m = binary.Uvarint(data)
+		if m <= 0 {
+			return nil, errCorruptVarint
+		}
 		last += uint32(delta)
 		data = data[m:]
 		d.End = last
 
 		ds = append(ds, d)
 	}
-	return ds
-}
-
-type ngramSlice []ngram
-
-func (p ngramSlice) Len() int { return len(p) }
-
-func (p ngramSlice) Less(i, j int) bool {
-	return p[i] < p[j]
-}
-
-func (p ngramSlice) Swap(i, j int) {
-	p[i], p[j] = p[j], p[i]
+	return ds, nil
 }
 
 func toSizedDeltas(offsets []uint32) []byte {
@@ -303,8 +352,11 @@ func toSizedDeltas(offsets []uint32) []byte {
 	return deltas
 }
 
-func fromSizedDeltas(data []byte, ps []uint32) []uint32 {
+func fromSizedDeltas(data []byte, ps []uint32) ([]uint32, error) {
 	sz, m := binary.Uvarint(data)
+	if m < 0 {
+		return nil, errCorruptVarint
+	}
 	data = data[m:]
 
 	if cap(ps) < int(sz) {
@@ -316,12 +368,15 @@ func fromSizedDeltas(data []byte, ps []uint32) []uint32 {
 	var last uint32
 	for len(data) > 0 {
 		delta, m := binary.Uvarint(data)
+		if m <= 0 {
+			return nil, errCorruptVarint
+		}
 		offset := last + uint32(delta)
 		last = offset
 		data = data[m:]
 		ps = append(ps, offset)
 	}
-	return ps
+	return ps, nil
 }
 
 func toSizedDeltas16(offsets []uint16) []byte {
@@ -343,8 +398,11 @@ func toSizedDeltas16(offsets []uint16) []byte {
 	return deltas
 }
 
-func fromSizedDeltas16(data []byte, ps []uint16) []uint16 {
+func fromSizedDeltas16(data []byte, ps []uint16) ([]uint16, error) {
 	sz, m := binary.Uvarint(data)
+	if m < 0 {
+		return nil, errCorruptVarint
+	}
 	data = data[m:]
 
 	if cap(ps) < int(sz) {
@@ -356,15 +414,18 @@ func fromSizedDeltas16(data []byte, ps []uint16) []uint16 {
 	var last uint16
 	for len(data) > 0 {
 		delta, m := binary.Uvarint(data)
+		if m <= 0 {
+			return nil, errCorruptVarint
+		}
 		offset := last + uint16(delta)
 		last = offset
 		data = data[m:]
 		ps = append(ps, offset)
 	}
-	return ps
+	return ps, nil
 }
 
-func fromDeltas(data []byte, buf []uint32) []uint32 {
+func fromDeltas(data []byte, buf []uint32) ([]uint32, error) {
 	buf = buf[:0]
 	if cap(buf) < len(data)/2 {
 		buf = make([]uint32, 0, len(data)/2)
@@ -373,12 +434,15 @@ func fromDeltas(data []byte, buf []uint32) []uint32 {
 	var last uint32
 	for len(data) > 0 {
 		delta, m := binary.Uvarint(data)
+		if m <= 0 {
+			return nil, errCorruptVarint
+		}
 		offset := last + uint32(delta)
 		last = offset
 		data = data[m:]
 		buf = append(buf, offset)
 	}
-	return buf
+	return buf, nil
 }
 
 type runeOffsetCorrection struct {

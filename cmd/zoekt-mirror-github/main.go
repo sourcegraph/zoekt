@@ -95,7 +95,7 @@ func main() {
 			log.Fatal(err)
 		}
 		apiBaseURL := rootURL.ResolveReference(apiPath).String()
-		client, err = github.NewEnterpriseClient(apiBaseURL, apiBaseURL, tc)
+		client, err = github.NewClient(tc).WithEnterpriseURLs(apiBaseURL, apiBaseURL)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -272,9 +272,16 @@ func getOrgRepos(client *github.Client, org string, reposFilters reposFilters) (
 
 func getUserRepos(client *github.Client, user string, reposFilters reposFilters) ([]*github.Repository, error) {
 	var allRepos []*github.Repository
-	opt := &github.RepositoryListOptions{}
+	var opt github.ListOptions
 	for {
-		repos, resp, err := client.Repositories.List(context.Background(), user, opt)
+		var repos []*github.Repository
+		var resp *github.Response
+		var err error
+		if user != "" {
+			repos, resp, err = client.Repositories.ListByUser(context.Background(), user, &github.RepositoryListByUserOptions{ListOptions: opt})
+		} else {
+			repos, resp, err = client.Repositories.ListByAuthenticatedUser(context.Background(), &github.RepositoryListByAuthenticatedUserOptions{ListOptions: opt})
+		}
 		if err != nil {
 			return nil, err
 		}

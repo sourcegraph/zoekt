@@ -5,6 +5,7 @@ import (
 	"container/heap"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"sort"
@@ -124,6 +125,13 @@ func (q *Queue) AddOrUpdate(opts IndexOptions) {
 	q.mu.Lock()
 	item := q.getOrAdd(opts.RepoID)
 	if !reflect.DeepEqual(item.opts, opts) {
+		if item.indexed && item.heapIdx >= 0 {
+			// A periodic recheck is not time spent waiting for an update.
+			// Keep the original age only if an update was already pending.
+			q.seq++
+			item.seq = q.seq
+			item.dateAddedToQueue = time.Now()
+		}
 		item.indexed = false
 		item.opts = opts
 	}
@@ -316,7 +324,7 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) []uint32 {
 
 	// heuristically skip expensive work
 	if sameSize {
-		debugLog.Printf("skipping MaybeRemoveMissing due to same size: %d", len(ids))
+		slog.Debug("skipping MaybeRemoveMissing due to same size", "count", len(ids))
 		return nil
 	}
 

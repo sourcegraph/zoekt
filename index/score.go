@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/go-enry/go-enry/v2"
@@ -39,25 +40,37 @@ type chunkScore struct {
 // scoreChunk calculates the score for each line in the chunk based on its candidate matches, and returns the score of
 // the best-scoring line, along with its line number.
 // Invariant: there should be at least one input candidate, len(ms) > 0.
-func (p *contentProvider) scoreChunk(ms []*candidateMatch, language string, opts *zoekt.SearchOptions) (chunkScore, []*zoekt.Symbol) {
-	nl := p.newlines()
-
+func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range, language string, opts *zoekt.SearchOptions) (chunkScore, []*zoekt.Symbol) {
 	var bestScore lineScore
 	bestLine := 0
 	var symbolInfo []*zoekt.Symbol
+
+	// scoreLine returns symbol info indexed like the matches it was given, or
+	// nil if none of them is a symbol. SymbolInfo has to stay aligned with,
+	// and the same length as, Ranges, so place each line's entries at the
+	// offset of its first match.
+	collect := func(si []*zoekt.Symbol, start int) {
+		if si == nil {
+			return
+		}
+		if symbolInfo == nil {
+			symbolInfo = make([]*zoekt.Symbol, len(ms))
+		}
+		copy(symbolInfo[start:], si)
+	}
 
 	start := 0
 	currentLine := -1
 	for i, m := range ms {
 		lineNumber := -1
 		if !m.fileName {
-			lineNumber = nl.atOffset(m.byteOffset)
+			lineNumber = int(ranges[i].Start.LineNumber)
 		}
 
 		// If this match represents a new line, then score the previous line and update 'start'.
 		if i != 0 && lineNumber != currentLine {
 			score, si := p.scoreLine(ms[start:i], language, currentLine, opts)
-			symbolInfo = append(symbolInfo, si...)
+			collect(si, start)
 			if score.score > bestScore.score {
 				bestScore = score
 				bestLine = currentLine
@@ -69,7 +82,7 @@ func (p *contentProvider) scoreChunk(ms []*candidateMatch, language string, opts
 
 	// Make sure to score the last line
 	line, si := p.scoreLine(ms[start:], language, currentLine, opts)
-	symbolInfo = append(symbolInfo, si...)
+	collect(si, start)
 	if line.score > bestScore.score {
 		bestScore = line
 		bestLine = currentLine
@@ -218,27 +231,47 @@ func (p *contentProvider) scoreLineBM25(ms []*candidateMatch, lineNumber int) (f
 	lineLength := nl.lineStart(lineNumber+1) - nl.lineStart(lineNumber)
 	L := float64(lineLength) / 100.0
 
-	score := 0.0
 	tfs := p.calculateTermFrequency(ms, false) // ignore file priority, since we're just scoring within a single file
-	for _, f := range tfs {
-		score += tfScore(k, b, L, f)
-	}
+	score, _ := sumTFScores(k, b, L, tfs)
 
 	// Check if any index comes from a symbol match tree, and if so hydrate in symbol information
 	var symbolInfo []*zoekt.Symbol
-	for _, m := range ms {
+	for i, m := range ms {
 		if m.symbol {
 			if sec, si, ok := p.findSymbol(m); ok && si != nil {
+				if symbolInfo == nil {
+					symbolInfo = make([]*zoekt.Symbol, len(ms))
+				}
 				// findSymbols does not hydrate in Sym. So we need to store it.
 				sym := sectionSlice(p.data(false), sec)
 				si.Sym = string(sym)
-				symbolInfo = append(symbolInfo, si)
+				symbolInfo[i] = si
 			}
 		}
 	}
 
 	score = boostScore(score, ms)
 	return score, symbolInfo
+}
+
+// sumTFScores sums the BM25 term frequency scores of tf. Floating-point addition
+// is not associative, so it adds the scores in ascending order of frequency. This
+// makes the result depend only on L and the frequencies, not on map iteration
+// order or on where the terms occur. It also returns the sum of the frequencies.
+func sumTFScores(k, b, L float64, tf map[string]int) (float64, int) {
+	var buf [16]int // stack space for the common case of few terms
+	fs := buf[:0]
+	for _, f := range tf {
+		fs = append(fs, f)
+	}
+	slices.Sort(fs)
+
+	score, sumTF := 0.0, 0
+	for _, f := range fs {
+		sumTF += f
+		score += tfScore(k, b, L, f)
+	}
+	return score, sumTF
 }
 
 // tfScore is the term frequency score for BM25.
@@ -367,7 +400,10 @@ func (d *indexData) scoreFileBM25(fileMatch *zoekt.FileMatch, doc uint32, cands 
 	// Use standard parameter defaults used in Lucene (https://lucene.apache.org/core/10_1_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)
 	k, b := 1.2, 0.75
 
-	averageFileLength := float64(d.boundaries[d.numDocs()]) / float64(d.numDocs())
+	averageFileLength := opts.BM25AverageFileLength
+	if averageFileLength <= 0 {
+		averageFileLength = float64(d.boundaries[d.numDocs()]) / float64(d.numDocs())
+	}
 	// This is very unlikely, but explicitly guard against division by zero.
 	if averageFileLength == 0 {
 		averageFileLength++
@@ -379,12 +415,7 @@ func (d *indexData) scoreFileBM25(fileMatch *zoekt.FileMatch, doc uint32, cands 
 
 	L := fileLength / averageFileLength
 
-	bm25Score := 0.0
-	sumTF := 0 // Just for debugging
-	for _, f := range tf {
-		sumTF += f
-		bm25Score += tfScore(k, b, L, f)
-	}
+	bm25Score, sumTF := sumTFScores(k, b, L, tf)
 
 	score := boostScore(bm25Score, cands)
 	boosted := score != bm25Score

@@ -119,11 +119,7 @@ func TestChunker_DeliverAllMessages(t *testing.T) {
 
 		if err := quick.Check(func(payloads [][]byte) bool {
 			lastErr = runTest(payloads)
-			if lastErr != nil {
-				return false
-			}
-
-			return true
+			return lastErr == nil
 		}, nil); err != nil {
 			t.Fatal(lastErr)
 		}
@@ -268,7 +264,7 @@ func newClient(t *testing.T, serverSocketPath string) (grpc_testing.TestServiceC
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 
-	conn, err := grpc.Dial(serverSocketPath, connOpts...)
+	conn, err := grpc.NewClient(serverSocketPath, connOpts...)
 	if err != nil {
 		t.Fatal(err)
 	}

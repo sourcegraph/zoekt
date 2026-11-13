@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -16,6 +17,42 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
 )
+
+func TestCleanupScheduler(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		work     time.Duration
+		cooldown time.Duration
+	}{
+		{"minimum", 3 * time.Second, time.Minute},
+		{"proportional", 6 * time.Second, 66 * time.Second},
+		{"slow cleanup", 19 * time.Second, 209 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var mu indexMutex
+				var schedule cleanupScheduler
+				runs := 0
+				work := func() { runs++; time.Sleep(tc.work) }
+				schedule.run(&mu, work)
+				if runs != 1 {
+					t.Fatal("first cleanup did not run")
+				}
+				schedule.run(&mu, work)
+				time.Sleep(tc.cooldown - time.Nanosecond)
+				schedule.run(&mu, work)
+				if runs != 1 {
+					t.Fatal("cleanup ran before its cooldown ended")
+				}
+				time.Sleep(time.Nanosecond)
+				schedule.run(&mu, work)
+				if runs != 2 {
+					t.Fatal("cleanup did not run at its deadline")
+				}
+			})
+		})
+	}
+}
 
 func TestCleanup(t *testing.T) {
 	mk := func(name string, n int, mtime time.Time) shard {
@@ -138,7 +175,7 @@ func TestCleanup(t *testing.T) {
 			for _, name := range tt.repos {
 				repoIDs = append(repoIDs, fakeID(name))
 			}
-			cleanup(dir, repoIDs, now, false)
+			cleanup(dir, repoIDs, now, false, &phaseTimings{})
 
 			if d := cmp.Diff(tt.wantIndex, glob(filepath.Join(dir, "*.zoekt"))); d != "" {
 				t.Errorf("unexpected index (-want, +got):\n%s", d)
@@ -247,7 +284,7 @@ func TestCleanupRemovesOrphanMetadata(t *testing.T) {
 		}
 	}
 
-	cleanup(dir, nil, time.Now(), false)
+	cleanup(dir, nil, time.Now(), false, &phaseTimings{})
 
 	for _, path := range paths {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -297,6 +334,40 @@ func TestVacuum(t *testing.T) {
 		if r.Tombstone {
 			t.Fatalf("found tombstone for %s", r.Name)
 		}
+	}
+}
+
+// TestVacuumAllTombstoned checks that vacuuming a compound shard whose repos
+// are all tombstoned deletes the shard instead of writing an empty compound
+// shard, which zoekt-webserver cannot load.
+func TestVacuumAllTombstoned(t *testing.T) {
+	tmpDir := t.TempDir()
+	fn := createCompoundShard(t, tmpDir, []uint32{1, 2})
+	for _, id := range []uint32{1, 2} {
+		if err := index.SetTombstone(fn, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := mergeHelper(t, fn); err == nil {
+		t.Fatal("index.Merge should refuse to write a compound shard without repos")
+	}
+
+	mockMerger = func() error { return mergeHelper(t, fn) }
+	got, err := removeTombstones(fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("wanted 2 tombstones, got %d", len(got))
+	}
+
+	shards, err := filepath.Glob(tmpDir + "/compound-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shards) != 0 {
+		t.Fatalf("expected no compound shards, got %v", shards)
 	}
 }
 
@@ -438,7 +509,7 @@ func TestCleanupCompoundShards(t *testing.T) {
 	// want indexed
 	repos := []uint32{1, 2, 3, 4, 5}
 
-	cleanup(dir, repos, now, true)
+	cleanup(dir, repos, now, true, &phaseTimings{})
 
 	index := getShards(dir)
 	trash := getShards(filepath.Join(dir, ".trash"))

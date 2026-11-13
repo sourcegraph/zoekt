@@ -17,13 +17,13 @@ package main
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 func createTestShard(t *testing.T, indexDir, name, source string) string {
@@ -55,35 +55,18 @@ func createTestShard(t *testing.T, indexDir, name, source string) string {
 	return shards[0]
 }
 
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=",
-		"GIT_CONFIG_SYSTEM=",
-		"GIT_COMMITTER_NAME=Test",
-		"GIT_COMMITTER_EMAIL=test@example.com",
-		"GIT_AUTHOR_NAME=Test",
-		"GIT_AUTHOR_EMAIL=test@example.com",
-	)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
-	}
-}
-
 func createGitRepository(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, filepath.Dir(path), "init", "-b", "main", path)
+	testutil.RunGit(t, filepath.Dir(path), "init", "-b", "main", path)
 	if err := os.WriteFile(filepath.Join(path, "README.md"), []byte("local repository\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, path, "add", ".")
-	runGit(t, path, "commit", "-m", "initial commit")
-	runGit(t, path, "remote", "add", "origin", "git@github.com:example/different-name.git")
+	testutil.RunGit(t, path, "add", ".")
+	testutil.RunGit(t, path, "commit", "-m", "initial commit")
+	testutil.RunGit(t, path, "remote", "add", "origin", "git@github.com:example/different-name.git")
 }
 
 func TestSyncIndexesWithRootRelativeName(t *testing.T) {

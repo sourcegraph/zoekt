@@ -17,7 +17,7 @@ package gitindex
 import (
 	"bytes"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,13 +57,13 @@ func CloneRepo(destDir, name, cloneURL string, settings map[string]string) (stri
 
 	// Prevent prompting
 	cmd.Stdin = &bytes.Buffer{}
-	log.Println("running:", cmd.Args)
+	slog.Info("running command", "args", cmd.Args)
 	if err := cmd.Run(); err != nil {
 		return "", err
 	}
 
 	if err := setFetch(repoDest, "origin", "+refs/heads/*:refs/heads/*"); err != nil {
-		log.Printf("addFetch: %v", err)
+		slog.Warn("addFetch failed", "error", err)
 	}
 	return repoDest, nil
 }

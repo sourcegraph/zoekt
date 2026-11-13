@@ -3,6 +3,7 @@ package json
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -91,7 +92,10 @@ func (s *jsonSearcher) jsonSearch(w http.ResponseWriter, req *http.Request) {
 	}
 
 	searchResult, err := s.Searcher.Search(ctx, q, searchArgs.Opts)
-	if err != nil {
+	if errors.Is(err, zoekt.ErrOverloaded) {
+		jsonError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	} else if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

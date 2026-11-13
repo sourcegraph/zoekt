@@ -256,6 +256,14 @@ func indexRepo(ctx context.Context, gitDir string, sourcegraph Sourcegraph, o *i
 	args = append(args, gitDir)
 
 	cmd := exec.CommandContext(ctx, "zoekt-git-index", args...)
+	// Our size-filtered fetch intentionally leaves large blobs on the promisor
+	// remote. cat-file's size filter does not prevent fetching them: Git first
+	// hydrates a missing blob to learn its size, potentially using large amounts
+	// of memory in index-pack, and only then reports it as excluded (CU-3083).
+	// Disable lazy fetching for indexing, not for the preceding fetch or the
+	// standalone CLI. Large-file exceptions are already fetched without a filter.
+	// Preserve the inherited environment, including tenant enforcement settings.
+	cmd.Env = append(cmd.Environ(), "GIT_NO_LAZY_FETCH=1")
 	cmd.Stdin = &bytes.Buffer{}
 	if err := c.runCmd(cmd); err != nil {
 		return err

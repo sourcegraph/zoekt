@@ -1,7 +1,8 @@
 package tracer
 
 import (
-	"log"
+	"fmt"
+	"log/slog"
 	"reflect"
 
 	"github.com/opentracing/opentracing-go"
@@ -42,10 +43,10 @@ func configureJaeger(resource sglog.Resource) (opentracing.Tracer, error) {
 type jaegerLogger struct{}
 
 func (l *jaegerLogger) Error(msg string) {
-	log.Printf("ERROR: %s", msg)
+	slog.Error(msg)
 }
 
 // Infof logs a message at info priority
 func (l *jaegerLogger) Infof(msg string, args ...any) {
-	log.Printf(msg, args...)
+	slog.Info(fmt.Sprintf(msg, args...))
 }

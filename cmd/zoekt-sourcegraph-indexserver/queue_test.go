@@ -135,6 +135,38 @@ func TestQueue_Bump(t *testing.T) {
 	}
 }
 
+func TestQueueChangedAfterBump(t *testing.T) {
+	q := NewQueue(0, 0, logtest.Scoped(t))
+	q.AddOrUpdate(mkHEADIndexOptions(1, "old"))
+	item, _ := q.Pop()
+	q.SetIndexed(item.Opts, indexStateSuccess)
+	q.Bump([]uint32{1})
+
+	// Repo 2 really needs indexing before repo 1's new commit arrives.
+	q.AddOrUpdate(mkHEADIndexOptions(2, "pending"))
+	changed := time.Now()
+	q.AddOrUpdate(mkHEADIndexOptions(1, "new"))
+	afterChange := time.Now()
+	q.AddOrUpdate(mkHEADIndexOptions(3, "later"))
+	// A second commit must preserve repo 1's age and position ahead of 3.
+	q.AddOrUpdate(mkHEADIndexOptions(1, "newer"))
+
+	for _, id := range []uint32{2, 1, 3} {
+		got, ok := q.Pop()
+		if !ok || got.Opts.RepoID != id {
+			t.Fatalf("Pop: got %+v, %v; want repo %d", got, ok, id)
+		}
+		if id == 1 {
+			if got.Opts.Branches[0].Version != "newer" {
+				t.Fatalf("did not retain latest commit: %+v", got)
+			}
+			if got.DateAddedToQueue.Before(changed) || got.DateAddedToQueue.After(afterChange) {
+				t.Fatalf("age must start at first unindexed change, got %v outside [%v, %v]", got.DateAddedToQueue, changed, afterChange)
+			}
+		}
+	}
+}
+
 func TestQueue_Integration_DebugQueue(t *testing.T) {
 	// helper function to normalize the queue's debug output - this makes the test less brittle
 	// + makes it much less annoying to make edits to the expected output in a way that doesn't

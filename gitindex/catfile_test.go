@@ -2,6 +2,7 @@ package gitindex
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -10,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 // createTestRepo creates a git repo with various test files and returns
@@ -19,7 +22,7 @@ func createTestRepo(t *testing.T) (string, map[string]plumbing.Hash) {
 	dir := t.TempDir()
 	repoDir := filepath.Join(dir, "repo")
 
-	runGit(t, dir, "init", "-b", "main", "repo")
+	testutil.RunGit(t, dir, "init", "-b", "main", "repo")
 
 	files := []struct {
 		name    string
@@ -37,19 +40,14 @@ func createTestRepo(t *testing.T) (string, map[string]plumbing.Hash) {
 		}
 	}
 
-	runGit(t, repoDir, "add", ".")
-	runGit(t, repoDir, "commit", "-m", "initial")
+	testutil.RunGit(t, repoDir, "add", ".")
+	testutil.RunGit(t, repoDir, "commit", "-m", "initial")
 
 	// Get blob SHAs for each file.
 	blobs := map[string]plumbing.Hash{}
 	for _, file := range files {
-		name := file.name
-		out, err := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD:"+name).Output()
-		if err != nil {
-			t.Fatalf("rev-parse %s: %v", name, err)
-		}
-		sha := strings.TrimSpace(string(out))
-		blobs[name] = plumbing.NewHash(sha)
+		sha := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", "HEAD:"+file.name))
+		blobs[file.name] = plumbing.NewHash(sha)
 	}
 
 	return repoDir, blobs
@@ -140,6 +138,30 @@ func TestCatfileReader(t *testing.T) {
 	_, _, _, err = cr.Next()
 	if err != io.EOF {
 		t.Errorf("expected io.EOF after last entry, got %v", err)
+	}
+}
+
+func TestCatfileReader_ReportsProcessError(t *testing.T) {
+	binDir := t.TempDir()
+	fakeGit := filepath.Join(binDir, "git")
+	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\necho 'synthetic cat-file failure' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(%q): %v", fakeGit, err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	cr, err := newCatfileReader(t.TempDir(), []plumbing.Hash{plumbing.ZeroHash}, catfileReaderOptions{})
+	if err != nil {
+		t.Fatalf("newCatfileReader: %v", err)
+	}
+	defer cr.Close()
+
+	_, _, _, err = cr.Next()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("Next error = %v, want exec.ExitError", err)
+	}
+	if !strings.Contains(err.Error(), "synthetic cat-file failure") {
+		t.Fatalf("Next error = %v, want cat-file stderr", err)
 	}
 }
 

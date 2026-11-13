@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
@@ -225,7 +226,7 @@ func (gitRepoCache) fetch(ctx context.Context, gitDir string, o *indexArgs, c gi
 			name := o.BuildOptions().RepositoryDescription.Name
 			id := o.BuildOptions().RepositoryDescription.ID
 
-			errorLog.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch both latest and prior commits: %s", name, id, err)
+			slog.Error("failed to prepare delta build: failed to fetch both latest and prior commits", "repo", name, "id", id, "error", err)
 			if o.CacheGitRepo {
 				// Do not let a failed fetch poison a retained clone, including the
 				// existing fallback when a delta base is no longer available.
@@ -291,8 +292,7 @@ func (gitRepoCache) rootDir() string {
 }
 
 func (cache gitRepoCache) cachedDir(o *indexArgs) string {
-	// Include the name because indexMutex serializes by name; a rename must not
-	// share a mutable clone with an already-running job under the old name.
+	// Include the name so a rename gets a fresh clone under its new identity.
 	return filepath.Join(cache.rootDir(), strconv.Itoa(o.TenantID),
 		fmt.Sprintf("%d-%x.git", o.RepoID, sha256.Sum256([]byte(o.Name))))
 }

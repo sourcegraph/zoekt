@@ -20,37 +20,42 @@ type indexMutex struct {
 	// runningMu protects running. You need to first be holding indexMu.
 	runningMu sync.Mutex
 
-	// running maps by name since that is what we key by on disk. Once we start
-	// keying by repo ID on disk, we should switch to uint32.
-	running map[string]struct{}
+	// Match both names (legacy shard paths) and IDs (renames and ID-based paths).
+	running map[indexRepository]struct{}
 }
 
-// With runs f if no other f with the same repoName is running. If f runs true
-// is returned, otherwise false is returned.
+// With runs f if no job with the same repository name or ID is running.
+// If f runs true is returned, otherwise false is returned.
 //
 // With blocks if f runs or the Global lock is held.
-func (m *indexMutex) With(repoName string, f func()) bool {
+func (m *indexMutex) With(repoName string, repoID uint32, f func()) bool {
 	m.indexMu.RLock()
 	defer m.indexMu.RUnlock()
 
-	// init running; check and set running[repoName]
+	repo := indexRepository{name: repoName, id: repoID}
 	m.runningMu.Lock()
 	if m.running == nil {
-		m.running = map[string]struct{}{}
+		m.running = map[indexRepository]struct{}{}
 	}
-	_, alreadyRunning := m.running[repoName]
-	m.running[repoName] = struct{}{}
-	m.runningMu.Unlock()
-
+	alreadyRunning := false
+	for running := range m.running {
+		if running.name == repo.name || running.id == repo.id {
+			alreadyRunning = true
+			break
+		}
+	}
 	if alreadyRunning {
+		m.runningMu.Unlock()
 		metricIndexMutexAlreadyRunning.Inc()
 		return false
 	}
+	m.running[repo] = struct{}{}
+	m.runningMu.Unlock()
 
-	// release running[repoName]
+	// release the repository
 	defer func() {
 		m.runningMu.Lock()
-		delete(m.running, repoName)
+		delete(m.running, repo)
 		m.runningMu.Unlock()
 	}()
 
@@ -72,6 +77,11 @@ func (m *indexMutex) Global(f func()) {
 	defer m.indexMu.Unlock()
 
 	f()
+}
+
+type indexRepository struct {
+	name string
+	id   uint32
 }
 
 var (

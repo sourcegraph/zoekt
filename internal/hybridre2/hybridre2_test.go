@@ -15,7 +15,11 @@
 package hybridre2
 
 import (
+	"bytes"
 	"fmt"
+	"log"
+	"os"
+	"strings"
 	"testing"
 
 	grafanaregexp "github.com/grafana/regexp"
@@ -28,12 +32,54 @@ import (
 // and do not use it from TestMain or init().
 func withThreshold(tb testing.TB, thresh int64) {
 	tb.Helper()
+	if thresh >= 0 && !re2Available {
+		tb.Skip("RE2 requires -tags re2_cgo")
+	}
 	old := threshold
 	threshold = func() int64 { return thresh }
 	tb.Cleanup(func() { threshold = old })
 }
 
 // ---- unit tests ----
+
+func TestReadThreshold(t *testing.T) {
+	for _, tc := range []struct {
+		env      string
+		set      bool
+		want     int64
+		wantWarn bool
+	}{
+		{set: false, want: disabled},
+		{env: "-1", set: true, want: disabled},
+		{env: "bogus", set: true, want: disabled},
+		{env: "0", set: true, want: 0, wantWarn: !re2Available},
+		{env: "4096", set: true, want: 4096, wantWarn: !re2Available},
+	} {
+		t.Run(fmt.Sprintf("%q/%v", tc.env, tc.set), func(t *testing.T) {
+			if tc.set {
+				t.Setenv(envThreshold, tc.env)
+			} else {
+				t.Setenv(envThreshold, "")
+				os.Unsetenv(envThreshold)
+			}
+			var buf bytes.Buffer
+			oldWriter := log.Writer()
+			log.SetOutput(&buf)
+			t.Cleanup(func() { log.SetOutput(oldWriter) })
+
+			want := tc.want
+			if !re2Available {
+				want = disabled
+			}
+			if got := readThreshold(); got != want {
+				t.Errorf("readThreshold() = %d, want %d", got, want)
+			}
+			if warned := strings.Contains(buf.String(), "-tags re2_cgo"); warned != tc.wantWarn {
+				t.Errorf("warned = %v, want %v (log: %q)", warned, tc.wantWarn, buf.String())
+			}
+		})
+	}
+}
 
 func TestCompileValid(t *testing.T) {
 	_, err := Compile(`foo.*bar`)

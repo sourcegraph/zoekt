@@ -114,6 +114,37 @@ func TestYield(t *testing.T) {
 	t.Logf("pre=%d post=%d", pre, post)
 }
 
+func TestYieldCancelledContext(t *testing.T) {
+	sched := newMultiScheduler(4)
+	sched.interactiveDuration = 0 // instantly downgrade to batch on call to yield.
+	proc, err := sched.Acquire(context.Background(), zoekt.SchedulingClassInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proc.Release()
+
+	calls := 0
+	oldYieldFunc := proc.yieldFunc
+	proc.yieldFunc = func(ctx context.Context) error {
+		calls++
+		return oldYieldFunc(ctx)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := proc.Yield(ctx); err == nil {
+		t.Fatal("expected yield with cancelled context to fail")
+	}
+	// Callers such as streamSearch ignore the error and keep calling Yield.
+	for range 10 {
+		_ = proc.Yield(ctx)
+	}
+	if calls != 1 {
+		t.Fatalf("yieldFunc called %d times, want 1", calls)
+	}
+}
+
 func TestMultiScheduler(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

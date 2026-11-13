@@ -17,7 +17,7 @@ package search
 import (
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -201,7 +201,7 @@ func (s *DirectoryWatcher) scan() error {
 	}
 
 	if len(toDrop) > 0 {
-		log.Printf("[INFO] unloading %d shard(s): %s", len(toDrop), humanTruncateList(toDrop, 5))
+		slog.Info("unloading shards", "count", len(toDrop), "shards", humanTruncateList(toDrop, 5))
 	}
 
 	s.loader.drop(toDrop...)
@@ -266,7 +266,7 @@ func (s *DirectoryWatcher) watch() error {
 				// Ignore ErrEventOverflow since we rely on the presence of events so
 				// safe to ignore.
 				if err != nil && !errors.Is(err, fsnotify.ErrEventOverflow) {
-					log.Println("[ERROR] watcher error:", err)
+					slog.Error("watcher error", "error", err)
 				}
 
 			case <-s.quit:
@@ -282,7 +282,7 @@ func (s *DirectoryWatcher) watch() error {
 		defer close(s.stopped)
 		for range signal {
 			if err := s.scan(); err != nil {
-				log.Println("[ERROR] watcher error:", err)
+				slog.Error("watcher error", "error", err)
 			}
 		}
 	}()

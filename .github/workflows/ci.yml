@@ -8,36 +8,23 @@ name: CI
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: alpine:3
     steps:
-      - name: add dependencies
-        # zstd for faster actions/cache
-        # tar needed for actions/cache (busybox tar is incompatible)
-        # git for a native checkout (also needed in tests)
-        run: apk add zstd git tar
-
       - name: checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: setup go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
+      - name: install dev tools
+        uses: ./.github/actions/dev-tools
 
-      - name: Cache ctags
-        uses: actions/cache@v6
+      - name: cache go
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
+          # Includes the toolchain go.mod asks for, which Go downloads into the
+          # module cache.
           path: |
-            /usr/bin/ctags
-            /usr/bin/universal-ctags
-          key: ${{ runner.os }}-ctags-${{ hashFiles('install-ctags-alpine.sh') }}
-
-      - name: install ctags
-        run: |
-          if [ ! -f /usr/bin/ctags ]; then
-            ./install-ctags-alpine.sh
-          fi
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
 
       - name: test
         run: go test ./...
@@ -46,16 +33,16 @@ jobs:
     name: shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
 
   shfmt:
     name: shfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: reviewdog/action-shfmt@v1.0.4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: reviewdog/action-shfmt@d8f080930b9be5847b4f97e9f4122b81a82aaeac # v1.0.4
         with:
           filter_mode: "nofilter"
           fail_on_error: "true"
@@ -66,11 +53,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v6
-      # Install the `buf` CLI
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ secrets.GH_TOKEN }}
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      # Install `buf` from flake.nix
+      - uses: ./.github/actions/dev-tools
       # Lint your Protobuf sources
       - run: .github/workflows/buf-lint-check.sh
 
@@ -79,11 +64,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v6
-      # Install the `buf` CLI
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ secrets.GH_TOKEN }}
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      # Install `buf` from flake.nix
+      - uses: ./.github/actions/dev-tools
       # Check to see if the Protobuf sources are formatted
       - run: .github/workflows/buf-format-check.sh
 
@@ -92,11 +75,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Run `git checkout`
-      - uses: actions/checkout@v6
-      # Install the `buf` CLI
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ secrets.GH_TOKEN }}
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      # Install `buf` from flake.nix
+      - uses: ./.github/actions/dev-tools
       # Check if the generated code is up-to-date
       - run: .github/workflows/buf-generate-check.sh
+
+  # Pushes to main don't require PR approval (SEC-4380), so CI on main is
+  # checked after the fact. Track failures in one issue that stays open until
+  # main is green again.
+  track-main:
+    name: "track main failures"
+    needs: [test, shellcheck, shfmt, lint-protos, format-protos, generate-protos]
+    if: always() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      FAILED: ${{ contains(needs.*.result, 'failure') }}
+      PASSED: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SHA: ${{ github.sha }}
+    steps:
+      - run: |
+          title="CI failing on main"
+          issue=$(gh issue list --state open --limit 100 --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ "$FAILED" = true ]; then
+            body="CI failed on $SHA: $RUN_URL"
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --body "$body"
+            else
+              gh issue create --title "$title" --assignee keegancsmith --body "$body"
+            fi
+          elif [ "$PASSED" = true ] && [ -n "$issue" ]; then
+            gh issue close "$issue" --comment "CI passed on $SHA: $RUN_URL"
+          fi
 

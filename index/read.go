@@ -20,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc64"
-	"log"
+	"log/slog"
 	"os"
 	"slices"
 	"sort"
@@ -134,7 +134,7 @@ func (r *reader) readTOCSections(toc *indexTOC, tags []string) error {
 				// If we don't recognize the section, we may be reading a newer index than the current version. Use
 				// a "dummy section" struct to skip over it.
 				skipSection = true
-				log.Printf("encountered unrecognized index section (%s), skipping over it", tag)
+				slog.Info("encountered unrecognized index section, skipping over it", "section", tag)
 
 				switch sectionKind(kind) {
 				case sectionKindSimple:
@@ -326,7 +326,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	d.contentNgrams, err = d.newBtreeIndex(toc.ngramText, toc.postings)
+	d.contentNgrams, err = d.newNgramIndex(toc.ngramText, toc.postings)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 
 	d.fileNameIndex = toc.fileNames.relativeIndex()
 
-	d.fileNameNgrams, err = d.newBtreeIndex(toc.nameNgramText, toc.namePostings)
+	d.fileNameNgrams, err = d.newNgramIndex(toc.nameNgramText, toc.namePostings)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +366,10 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		return nil, err
 	}
 
-	d.runeDocSections = unmarshalDocSections(blob, nil)
+	d.runeDocSections, err = unmarshalDocSections(blob, nil)
+	if err != nil {
+		return nil, fmt.Errorf("runeDocSections: %w", err)
+	}
 
 	var runeOffsets, fileNameRuneOffsets []uint32
 
@@ -377,10 +380,12 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		toc.nameEndRunes:    &d.fileNameEndRunes,
 		toc.fileEndRunes:    &d.fileEndRunes,
 	} {
-		if blob, err := d.readSectionBlob(sect); err != nil {
+		blob, err := d.readSectionBlob(sect)
+		if err != nil {
 			return nil, err
-		} else {
-			*dest = fromSizedDeltas(blob, nil)
+		}
+		if *dest, err = fromSizedDeltas(blob, nil); err != nil {
+			return nil, err
 		}
 	}
 
@@ -414,11 +419,16 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		if err != nil {
 			return nil, err
 		}
-		d.repos = fromSizedDeltas16(blob, nil)
+		d.repos, err = fromSizedDeltas16(blob, nil)
+		if err != nil {
+			return nil, fmt.Errorf("repos: %w", err)
+		}
 	} else {
 		// every document is for repo index 0 (default value of uint16)
 		d.repos = make([]uint16, len(d.fileBranchMasks))
 	}
+
+	d.initTombstonedDocs()
 
 	if err := d.calculateStats(); err != nil {
 		return nil, err
@@ -475,33 +485,68 @@ func (r *reader) parseMetadata(metaData simpleSection, repoMetaData simpleSectio
 	return repos, &md, nil
 }
 
+// filterShardFileTombstones returns the subset of tombstones whose file names
+// exist in shardPath's fileNames section.
+func filterShardFileTombstones(shardPath string, tombstones map[string]struct{}) (map[string]struct{}, error) {
+	if len(tombstones) == 0 {
+		return nil, nil
+	}
+
+	f, err := os.Open(shardPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	inf, err := NewIndexFile(f)
+	if err != nil {
+		return nil, err
+	}
+	defer inf.Close()
+
+	rd := &reader{r: inf}
+	var toc indexTOC
+	if err := rd.readTOCSections(&toc, []string{"fileNames"}); err != nil {
+		return nil, err
+	}
+
+	if len(toc.fileNames.offsets) == 0 {
+		return nil, nil
+	}
+
+	nameContent, err := inf.Read(toc.fileNames.data.off, toc.fileNames.data.sz)
+	if err != nil {
+		return nil, err
+	}
+	nameIndex := toc.fileNames.relativeIndex()
+
+	var filtered map[string]struct{}
+	for i := 0; i+1 < len(nameIndex); i++ {
+		start, end := nameIndex[i], nameIndex[i+1]
+		if end > uint32(len(nameContent)) || start > end {
+			return nil, fmt.Errorf("corrupt fileNames section in shard %q", shardPath)
+		}
+		name := nameContent[start:end]
+		if _, ok := tombstones[string(name)]; ok {
+			if filtered == nil {
+				filtered = make(map[string]struct{})
+			}
+			filtered[string(name)] = struct{}{}
+		}
+	}
+
+	return filtered, nil
+}
+
 const ngramEncoding = 8
 
-func (d *indexData) newBtreeIndex(ngramSec simpleSection, postings compoundSection) (btreeIndex, error) {
-	bi := btreeIndex{file: d.file}
-
-	textContent, err := d.readSectionBlob(ngramSec)
+func (d *indexData) newNgramIndex(ngramSec simpleSection, postings compoundSection) (ngramIndex, error) {
+	ngramText, err := d.readSectionBlob(ngramSec)
 	if err != nil {
-		return btreeIndex{}, err
+		return ngramIndex{}, err
 	}
 
-	// For 500k trigams we can expect approx 1000 leaf nodes (500k divided by
-	// half the bucketSize) and 20 nodes on level 2 (all but the rightmost
-	// inner nodes will have exactly v=50 children) plus a root node.
-	bt := newBtree(btreeOpts{bucketSize: btreeBucketSize, v: 50})
-	for i := 0; i < len(textContent); i += ngramEncoding {
-		ng := ngram(binary.BigEndian.Uint64(textContent[i : i+ngramEncoding]))
-		bt.insert(ng)
-	}
-	bt.freeze()
-
-	bi.bt = bt
-
-	// hold on to simple sections (8 bytes each)
-	bi.ngramSec = ngramSec
-	bi.postingIndex = postings.index
-
-	return bi, nil
+	return newNgramIndex(d.file, ngramSec, postings.index, ngramText), nil
 }
 
 func (d *indexData) verify() error {
@@ -553,7 +598,10 @@ func (d *indexData) readNewlines(i uint32, buf []uint32) ([]uint32, uint32, erro
 		return nil, 0, err
 	}
 
-	nl := fromSizedDeltas(blob, buf)
+	nl, err := fromSizedDeltas(blob, buf)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	// can be nil if buf is nil and there are no doc sections. However, we rely
 	// on it being non-nil to cache the read.
@@ -573,7 +621,10 @@ func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]Document
 		return nil, 0, err
 	}
 
-	ds := unmarshalDocSections(blob, buf)
+	ds, err := unmarshalDocSections(blob, buf)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	// can be nil if buf is nil and there are no doc sections. However, we rely
 	// on it being non-nil to cache the read.
@@ -588,6 +639,9 @@ func (d *indexData) readDocSections(i uint32, buf []DocumentSection) ([]Document
 // results coming from this searcher are valid only for the lifetime
 // of the Searcher itself, ie. []byte members should be copied into
 // fresh buffers if the result is to survive closing the shard.
+//
+// The searcher does not evaluate type:repo, since that depends on every
+// shard; callers must rewrite it first, as search.typeRepoSearcher does.
 func NewSearcher(r IndexFile) (zoekt.Searcher, error) {
 	rd := &reader{r: r}
 

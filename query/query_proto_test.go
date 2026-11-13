@@ -85,6 +85,10 @@ func TestQueryRoundtrip(t *testing.T) {
 			},
 			Boost: 20,
 		},
+		&Meta{
+			Field: "license",
+			Value: regexp.MustCompile("^MIT$"),
+		},
 	}
 
 	for _, q := range testCases {
@@ -93,6 +97,27 @@ func TestQueryRoundtrip(t *testing.T) {
 			q2, err := QFromProto(protoQ)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if diff := cmp.Diff(q.String(), q2.String()); diff != "" {
+				t.Fatalf("unexpected diff: %s", diff)
+			}
+		})
+	}
+}
+
+// Bounded repeats must survive serialization. Expanding them into nested
+// optional groups produces patterns Go's regexp parser rejects as too deeply
+// nested once the upper bound is in the hundreds.
+func TestQueryRoundtripBoundedRepeat(t *testing.T) {
+	for _, s := range []string{`foo.{0,500}bar`, `foo.{1,1000}bar`, `(ab){0,1000}`} {
+		t.Run(s, func(t *testing.T) {
+			q, err := Parse(s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			q2, err := QFromProto(QToProto(q))
+			if err != nil {
+				t.Fatalf("%.100s", err)
 			}
 			if diff := cmp.Diff(q.String(), q2.String()); diff != "" {
 				t.Fatalf("unexpected diff: %s", diff)

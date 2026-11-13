@@ -31,8 +31,8 @@ import (
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt"
-	"github.com/sourcegraph/zoekt/ignore"
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
 )
@@ -99,7 +99,7 @@ EOF
 `
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
-	cmd.Env = gitTestEnv()
+	cmd.Env = testutil.GitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("execution error: %v, output %s", err, out)
 	}
@@ -175,7 +175,7 @@ func TestCollectFiles(t *testing.T) {
 	}
 
 	rw := NewRepoWalker(repo, aURL.String(), cache)
-	versions, err := rw.CollectFiles(tree, "main", &ignore.Matcher{})
+	versions, err := rw.CollectFiles(tree, "main")
 	if err != nil {
 		t.Fatalf("CollectFiles: %v", err)
 	}
@@ -365,7 +365,7 @@ EOF
 `
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
-	cmd.Env = gitTestEnv()
+	cmd.Env = testutil.GitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("execution error: %v, output %s", err, out)
 	}
@@ -493,7 +493,7 @@ git update-ref refs/meta/config HEAD
 `
 	cmd := exec.Command("/bin/sh", "-euxc", script)
 	cmd.Dir = dir
-	cmd.Env = gitTestEnv()
+	cmd.Env = testutil.GitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("execution error: %v, output %s", err, out)
 	}

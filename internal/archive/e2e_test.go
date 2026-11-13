@@ -6,10 +6,8 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,16 +18,13 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 	"github.com/sourcegraph/zoekt/query"
 	"github.com/sourcegraph/zoekt/search"
 )
 
 func TestMain(m *testing.M) {
-	flag.Parse()
-	if !testing.Verbose() {
-		log.SetOutput(io.Discard)
-	}
-	os.Exit(m.Run())
+	testutil.Main(m)
 }
 
 var modTime = time.Date(2024, 9, 26, 0, 0, 0, 0, time.UTC)
@@ -251,7 +246,7 @@ func testLatestCommitDate(t *testing.T, format string) {
 	f, err := os.Open(indexDir)
 	require.NoError(t, err)
 
-	indexFiles, err := f.Readdirnames(1)
+	indexFiles, _ := f.Readdirnames(1)
 	require.Len(t, indexFiles, 1)
 
 	repos, _, err := index.ReadMetadataPath(filepath.Join(indexDir, indexFiles[0]))

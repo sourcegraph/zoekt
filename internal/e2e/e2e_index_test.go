@@ -22,7 +22,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,6 +31,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt"
@@ -120,41 +120,26 @@ func TestBasicIndexing(t *testing.T) {
 	}
 
 	t.Run("meta file", func(t *testing.T) {
-		// use retryTest to allow for the directory watcher to notice the meta
-		// file
-		retryTest(t, func(fatalf func(format string, args ...any)) {
+		// Retry to allow for the directory watcher to notice the meta file.
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
 			// Add a .meta file for each shard with repo.Name set to
-			// "repo-mutated". We do this inside retry helper since we have noticed
+			// "repo-mutated". We do this on every attempt since we have noticed
 			// some flakiness on github CI.
 			for _, p := range fs {
 				repos, _, err := index.ReadMetadataPath(p)
-				if err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(c, err)
 				repos[0].Name = "repo-mutated"
 				b, err := json.Marshal(repos[0])
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				if err := os.WriteFile(p+".meta", b, 0o600); err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(c, err)
+				require.NoError(c, os.WriteFile(p+".meta", b, 0o600))
 			}
 
 			result, err := ss.Search(ctx, q, &sOpts)
-			if err != nil {
-				fatalf("Search(%v): %v", q, err)
-			}
-
-			if len(result.Files) != 1 {
-				fatalf("got %v, want 1 file.", result.Files)
-			} else if gotFile, wantFile := result.Files[0].FileName, "F1"; gotFile != wantFile {
-				fatalf("got file %q, want %q", gotFile, wantFile)
-			} else if gotRepo, wantRepo := result.Files[0].Repository, "repo-mutated"; gotRepo != wantRepo {
-				fatalf("got repo %q, want %q", gotRepo, wantRepo)
-			}
-		})
+			require.NoError(c, err)
+			require.Len(c, result.Files, 1)
+			assert.Equal(c, "F1", result.Files[0].FileName)
+			assert.Equal(c, "repo-mutated", result.Files[0].Repository)
+		}, time.Minute, 10*time.Millisecond)
 	})
 }
 
@@ -288,47 +273,6 @@ func TestListTenant(t *testing.T) {
 	result, err = ss.List(ctx2, &query.Const{Value: true}, nil)
 	require.NoError(t, err)
 	require.Len(t, result.Repos, 0)
-}
-
-// retryTest will retry f until min(t.Deadline(), time.Minute). It returns
-// once f doesn't call fatalf.
-func retryTest(t *testing.T, f func(fatalf func(format string, args ...any))) {
-	t.Helper()
-
-	sleep := 10 * time.Millisecond
-	deadline := time.Now().Add(time.Minute)
-	if d, ok := t.Deadline(); ok && d.Before(deadline) {
-		// give 1s for us to do a final test run
-		deadline = d.Add(-time.Second)
-	}
-
-	for {
-		done := make(chan bool)
-		go func() {
-			defer close(done)
-
-			f(func(format string, args ...any) {
-				runtime.Goexit()
-			})
-
-			done <- true
-		}()
-
-		success := <-done
-		if success {
-			return
-		}
-
-		// each time we increase sleep by 1.5
-		sleep := sleep*2 - sleep/2
-		if time.Now().Add(sleep).After(deadline) {
-			break
-		}
-		time.Sleep(sleep)
-	}
-
-	// final run for the test, using the real t.Fatalf
-	f(t.Fatalf)
 }
 
 func TestLargeFileOption(t *testing.T) {

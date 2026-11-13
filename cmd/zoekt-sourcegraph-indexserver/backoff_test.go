@@ -2,61 +2,39 @@ package main
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/sourcegraph/log/logtest"
 )
 
 func TestQueue_BackoffOnFail(t *testing.T) {
-	backoffDuration := 1 * time.Millisecond
-	maxBackoffDuration := backoffDuration * 2
+	synctest.Test(t, func(t *testing.T) {
+		backoffDuration := time.Minute
+		maxBackoffDuration := 2 * backoffDuration
 
-	queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
-	opts := IndexOptions{RepoID: 1, Name: "foo"}
+		queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
+		opts := IndexOptions{RepoID: 1, Name: "foo"}
 
-	queue.AddOrUpdate(opts)
-	emptyQueue(queue)
+		queue.AddOrUpdate(opts)
+		emptyQueue(queue)
 
-	queue.SetIndexed(opts, indexStateFail)
+		queue.SetIndexed(opts, indexStateFail)
 
-	bumpTime := time.Now()
-	queue.Bump([]uint32{opts.RepoID})
-
-	// item is disallowed from being pushed to heap during backoff period
-	if item, ok := queue.Pop(); ok {
-		qi := queue.items[item.Opts.RepoID]
-		if qi.backoff.backoffUntil.Before(bumpTime) {
-			t.Errorf("backoffDuration already passed before first attempt to push item to heap in Bump(). Increase backoffDuration for the Queue. backoffDuration: %s. maxBackoffDuration: %s.",
-				backoffDuration, maxBackoffDuration)
-		} else {
-			t.Fatal("queue should be empty")
+		// item is disallowed from being pushed to heap until the backoff period
+		// has passed. Allow is strict, so the end of the period still backs off.
+		time.Sleep(backoffDuration)
+		queue.Bump([]uint32{opts.RepoID})
+		if _, ok := queue.Pop(); ok {
+			t.Fatal("queue should be empty during the backoff period")
 		}
-	}
-}
 
-func TestQueue_BackoffAllowAfterDuration(t *testing.T) {
-	backoffDuration := 1 * time.Millisecond
-	maxBackoffDuration := backoffDuration * 2
-
-	queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
-	opts := IndexOptions{RepoID: 1, Name: "foo"}
-
-	queue.AddOrUpdate(opts)
-	emptyQueue(queue)
-
-	queue.SetIndexed(opts, indexStateFail)
-
-	if _, ok := queue.Pop(); ok {
-		t.Fatal("queue should be empty after SetIndexed")
-	}
-
-	time.Sleep(backoffDuration * 20)
-
-	queue.Bump([]uint32{opts.RepoID})
-
-	if _, ok := queue.Pop(); !ok {
-		t.Fatal("queue should no longer be empty after waiting for longer than the backoff duration and then bumping index options")
-	}
+		time.Sleep(time.Nanosecond)
+		queue.Bump([]uint32{opts.RepoID})
+		if _, ok := queue.Pop(); !ok {
+			t.Fatal("queue should no longer be empty after the backoff period and then bumping index options")
+		}
+	})
 }
 
 func TestQueue_ResetBackoffUntil(t *testing.T) {
@@ -85,71 +63,75 @@ func TestQueue_ResetBackoffUntil(t *testing.T) {
 }
 
 func TestQueue_ResetFailuresCount(t *testing.T) {
-	backoffDuration := 1 * time.Millisecond
-	maxBackoffDuration := 1000 * time.Millisecond
+	synctest.Test(t, func(t *testing.T) {
+		backoffDuration := time.Minute
+		maxBackoffDuration := 1000 * time.Minute
 
-	queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
-	opts := IndexOptions{RepoID: 1, Name: "foo"}
+		queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
+		opts := IndexOptions{RepoID: 1, Name: "foo"}
 
-	queue.AddOrUpdate(opts)
-	emptyQueue(queue)
+		queue.AddOrUpdate(opts)
+		emptyQueue(queue)
 
-	// consecutive failures will push backoff until to a further out time
-	for range 1000 {
+		// consecutive failures will push backoff until to a further out time
+		for range 1000 {
+			queue.SetIndexed(opts, indexStateFail)
+		}
+
+		if _, ok := queue.Pop(); ok {
+			t.Fatal("queue should be empty after SetIndexed")
+		}
+
+		queue.SetIndexed(opts, indexStateSuccess)
+
+		queue.Bump([]uint32{opts.RepoID})
+
+		// backoff until is only one duration in the future after resetting consecutive failures count
 		queue.SetIndexed(opts, indexStateFail)
-	}
 
-	if _, ok := queue.Pop(); ok {
-		t.Fatal("queue should be empty after SetIndexed")
-	}
+		if _, ok := queue.Pop(); ok {
+			t.Fatal("queue should be empty after SetIndexed")
+		}
 
-	queue.SetIndexed(opts, indexStateSuccess)
+		time.Sleep(backoffDuration + time.Nanosecond)
 
-	queue.Bump([]uint32{opts.RepoID})
+		queue.Bump([]uint32{opts.RepoID})
 
-	// backoff until is only one duration in the future after resetting consecutive failures count
-	queue.SetIndexed(opts, indexStateFail)
-
-	if _, ok := queue.Pop(); ok {
-		t.Fatal("queue should be empty after SetIndexed")
-	}
-
-	time.Sleep(backoffDuration)
-
-	queue.Bump([]uint32{opts.RepoID})
-
-	if _, ok := queue.Pop(); !ok {
-		t.Fatal("queue should no longer be empty after waiting a backoff duration for the first failure")
-	}
+		if _, ok := queue.Pop(); !ok {
+			t.Fatal("queue should no longer be empty after waiting a backoff duration for the first failure")
+		}
+	})
 }
 
 func TestQueue_MaxBackoffDuration(t *testing.T) {
-	backoffDuration := 1 * time.Hour
-	maxBackoffDuration := 1 * time.Millisecond
+	synctest.Test(t, func(t *testing.T) {
+		backoffDuration := time.Hour
+		maxBackoffDuration := time.Minute
 
-	queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
-	opts := IndexOptions{RepoID: 1, Name: "foo"}
+		queue := NewQueue(backoffDuration, maxBackoffDuration, logtest.Scoped(t))
+		opts := IndexOptions{RepoID: 1, Name: "foo"}
 
-	queue.AddOrUpdate(opts)
-	emptyQueue(queue)
+		queue.AddOrUpdate(opts)
+		emptyQueue(queue)
 
-	// consecutive failures increase duration up to a maximum
-	for range 100 {
-		queue.SetIndexed(opts, indexStateFail)
-	}
+		// consecutive failures increase duration up to a maximum
+		for range 100 {
+			queue.SetIndexed(opts, indexStateFail)
+		}
 
-	if _, ok := queue.Pop(); ok {
-		t.Fatal("queue should be empty after SetIndexed")
-	}
+		if _, ok := queue.Pop(); ok {
+			t.Fatal("queue should be empty after SetIndexed")
+		}
 
-	// sleep past maxBackoffDuration but long before backoffDuration would pass
-	time.Sleep(maxBackoffDuration * 200)
+		// sleep just past maxBackoffDuration, long before backoffDuration would pass
+		time.Sleep(maxBackoffDuration + time.Nanosecond)
 
-	queue.Bump([]uint32{opts.RepoID})
+		queue.Bump([]uint32{opts.RepoID})
 
-	if _, ok := queue.Pop(); !ok {
-		t.Fatal("queue should no longer be empty after max backoff duration has passed")
-	}
+		if _, ok := queue.Pop(); !ok {
+			t.Fatal("queue should no longer be empty after max backoff duration has passed")
+		}
+	})
 }
 
 func TestQueue_BackoffDisabled(t *testing.T) {

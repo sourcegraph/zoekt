@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha1"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/tenant/tenanttest"
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 func TestHasMultipleShards(t *testing.T) {
@@ -183,10 +183,7 @@ func TestMerge(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			_, err := copyTestShards(dir, m)
-			if err != nil {
-				t.Fatal(err)
-			}
+			testutil.CopyFiles(t, dir, m...)
 
 			s := &Server{
 				IndexDir:  dir,
@@ -261,34 +258,4 @@ func TestExplodeTenantCompoundShards(t *testing.T) {
 	compoundShards, err := filepath.Glob(filepath.Join(dir, "compound-*.zoekt"))
 	require.NoError(t, err)
 	require.Len(t, compoundShards, 1, "expected 1 compound shard")
-}
-
-func copyTestShards(dstDir string, srcShards []string) ([]string, error) {
-	var tmpShards []string
-	for _, s := range srcShards {
-		dst := filepath.Join(dstDir, filepath.Base(s))
-		tmpShards = append(tmpShards, dst)
-		if err := copyFile(s, dst); err != nil {
-			return nil, err
-		}
-	}
-	return tmpShards, nil
-}
-
-func copyFile(src, dst string) (err error) {
-	s, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer s.Close()
-
-	d, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(d, s); err != nil {
-		d.Close()
-		return err
-	}
-	return d.Close()
 }

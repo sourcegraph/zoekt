@@ -72,22 +72,28 @@ fourthpower[x_] := square[square[x]]
 		{path: "file.magik", content: emptyContent, expectedLanguages: []string{"Magik"}},
 		{path: "file.apxc", content: emptyContent, expectedLanguages: []string{"Apex"}},
 		// Check that we classify cls files by content and not just by extension
-		{path: "tex.cls", content: `\DeclareOption*{}`, expectedLanguages: []string{"TeX", "Apex", "ObjectScript", "Visual Basic 6.0", "VBA", "OpenEdge ABL"}},
-		{path: "tex.cls", content: `public class HelloWorld {`, expectedLanguages: []string{"Apex", "Visual Basic 6.0", "VBA", "TeX", "OpenEdge ABL", "ObjectScript"}},
+		{path: "command.cls", content: `\DeclareOption*{}`, expectedLanguages: []string{"TeX"}},
+		{path: "comment.CLS", content: "% TeX class", expectedLanguages: []string{"TeX"}},
+		{path: "apex.cls", content: `public class HelloWorld {`, expectedLanguages: []string{"Apex"}},
+		{path: "whitespace.cls", content: ` \DeclareOption*{}`, expectedLanguages: []string{"Apex"}},
+		{path: "later_comment.cls", content: "class Example {}\n% comment", expectedLanguages: []string{"Apex"}},
 	}
 
 	for _, testCase := range testCases {
-		var getContent func() ([]byte, error)
-		if testCase.content != "" {
-			getContent = func() ([]byte, error) { return []byte(testCase.content), nil }
-		}
-		gotLanguages, err := GetLanguages(testCase.path, getContent)
-		require.NoError(t, err)
-		if testCase.compareFirstOnly {
-			require.Equal(t, testCase.expectedLanguages, gotLanguages[0:1])
-			continue
-		}
-		require.Equal(t, testCase.expectedLanguages, gotLanguages)
+		t.Run(testCase.path, func(t *testing.T) {
+			var getContent func() ([]byte, error)
+			if testCase.content != "" {
+				getContent = func() ([]byte, error) { return []byte(testCase.content), nil }
+			}
+
+			gotLanguages, err := GetLanguages(testCase.path, getContent)
+			require.NoError(t, err)
+			if testCase.compareFirstOnly {
+				require.Equal(t, testCase.expectedLanguages, gotLanguages[0:1])
+				return
+			}
+			require.Equal(t, testCase.expectedLanguages, gotLanguages)
+		})
 	}
 
 	rapid.Check(t, func(t *rapid.T) {

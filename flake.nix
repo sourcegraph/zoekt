@@ -13,7 +13,6 @@
         "x86_64-linux"
         "aarch64-linux"
         "aarch64-darwin"
-        "x86_64-darwin"
       ];
       forAllSystems =
         f:
@@ -33,7 +32,18 @@
       devShells = forAllSystems (pkgs: {
         default = import ./shell.nix { inherit pkgs; };
       });
-      # Pin a specific version of universal-ctags to the same version as in ./install-ctags-alpine.sh.
+
+      # The dev shell's tools as one directory, for environments that put its
+      # bin on PATH instead of entering `nix develop`: orbs (.agents/setup) and
+      # CI. Unlike the dev shell, it doesn't pull in a C toolchain.
+      packages = forAllSystems (pkgs: {
+        dev-tools = pkgs.buildEnv {
+          name = "zoekt-dev-tools";
+          paths = (import ./shell.nix { inherit pkgs; }).nativeBuildInputs;
+        };
+      });
+
+      # Pin universal-ctags to the version in ./install-ctags-alpine.sh.
       overlays.ctags = import ./ctag-overlay.nix;
     };
 }

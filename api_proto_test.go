@@ -179,7 +179,9 @@ func TestProtoRoundtrip(t *testing.T) {
 		f := func(f1 *Repository) bool {
 			p1 := f1.ToProto()
 			f2 := RepositoryFromProto(p1)
-			if diff := cmp.Diff(f1, &f2, cmpopts.IgnoreUnexported(Repository{})); diff != "" {
+			// SkippedFiles is per-shard index metadata and not part of the
+			// Repository protobuf.
+			if diff := cmp.Diff(f1, &f2, cmpopts.IgnoreUnexported(Repository{}), cmpopts.IgnoreFields(Repository{}, "SkippedFiles")); diff != "" {
 				fmt.Printf("got diff: %s", diff)
 				return false
 			}
@@ -233,11 +235,10 @@ func TestProtoRoundtrip(t *testing.T) {
 				}},
 				SubRepoMap: map[string]*Repository{
 					"test": {
-						ID:             2,
-						Name:           "subrepo",
-						Branches:       []RepositoryBranch{},
-						SubRepoMap:     map[string]*Repository{},
-						FileTombstones: map[string]struct{}{},
+						ID:         2,
+						Name:       "subrepo",
+						Branches:   []RepositoryBranch{},
+						SubRepoMap: map[string]*Repository{},
 					},
 				},
 				CommitURLTemplate:    "committemplate",
@@ -252,9 +253,6 @@ func TestProtoRoundtrip(t *testing.T) {
 				HasSymbols:       true,
 				Tombstone:        false,
 				LatestCommitDate: time.Now(),
-				FileTombstones: map[string]struct{}{
-					"test1": {},
-				},
 			},
 			IndexMetadata: IndexMetadata{
 				IndexFormatVersion:    32,
@@ -274,6 +272,7 @@ func TestProtoRoundtrip(t *testing.T) {
 				Documents:                  5,
 				IndexBytes:                 6,
 				ContentBytes:               7,
+				FileContentBytes:           11,
 				NewLinesCount:              8,
 				DefaultBranchNewLinesCount: 9,
 				OtherBranchesNewLinesCount: 10,
@@ -401,7 +400,6 @@ func (*Repository) Generate(rng *rand.Rand, _ int) reflect.Value {
 		HasSymbols:           gen(r.HasSymbols, rng),
 		Tombstone:            gen(r.Tombstone, rng),
 		LatestCommitDate:     latestCommitDate,
-		FileTombstones:       gen(r.FileTombstones, rng),
 	}
 	return reflect.ValueOf(v)
 }
@@ -511,6 +509,7 @@ func Fuzz_RepoList_ProtoRoundTrip(f *testing.F) {
 
 		opts := []cmp.Option{
 			cmpopts.IgnoreUnexported(Repository{}),
+			cmpopts.IgnoreFields(Repository{}, "SkippedFiles"), // not part of the protobuf
 			cmpopts.EquateEmpty(),
 		}
 

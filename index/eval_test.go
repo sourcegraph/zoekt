@@ -128,6 +128,8 @@ func TestRegexpParse(t *testing.T) {
 			substrMT("bar"),
 		}}, false, false},
 		{"(foo){2,}", substrMT("foo"), false, false},
+		{"(foo){1,}", substrMT("foo"), true, false},
+		{"(foo){1,3}", substrMT("foo"), false, false},
 		{"(...)(...)", &bruteForceMatchTree{}, false, false},
 	}
 

@@ -32,6 +32,7 @@ import (
 	"github.com/sourcegraph/zoekt/gitindex"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 	"github.com/sourcegraph/zoekt/internal/profiler"
+	"github.com/sourcegraph/zoekt/languages"
 )
 
 func run() int {
@@ -118,7 +119,7 @@ func run() int {
 		if len(m) != 2 {
 			continue
 		}
-		opts.LanguageMap[m[0]] = ctags.StringToParser(m[1])
+		opts.LanguageMap[languages.NormalizeLanguage(m[0])] = ctags.StringToParser(m[1])
 	}
 
 	if heapProfileTrigger := os.Getenv("ZOEKT_HEAP_PROFILE_TRIGGER"); heapProfileTrigger != "" {
@@ -133,9 +134,6 @@ func run() int {
 	profiler.Init("zoekt-git-index")
 	exitStatus := 0
 	for dir, name := range gitRepos {
-		if opts.RepositoryDescription.Name == "" {
-			opts.RepositoryDescription.Name = name
-		}
 		gitOpts := gitindex.Options{
 			BranchPrefix:                      *branchPrefix,
 			Incremental:                       *incremental,
@@ -146,6 +144,9 @@ func run() int {
 			Branches:                          branches,
 			RepoDir:                           dir,
 			DeltaShardNumberFallbackThreshold: *deltaShardNumberFallbackThreshold,
+		}
+		if gitOpts.BuildOptions.RepositoryDescription.Name == "" {
+			gitOpts.BuildOptions.RepositoryDescription.Name = name
 		}
 
 		if _, err := gitindex.IndexGitRepo(gitOpts); err != nil {

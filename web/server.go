@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"regexp/syntax"
@@ -39,6 +39,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/tenant/systemtenant"
 	"github.com/sourcegraph/zoekt/query"
+	"github.com/sourcegraph/zoekt/search"
 )
 
 var Funcmap = template.FuncMap{
@@ -172,23 +173,6 @@ type Server struct {
 	lastStatsTS time.Time
 }
 
-func (s *Server) getTemplate(str string) *template.Template {
-	s.templateMu.Lock()
-	defer s.templateMu.Unlock()
-	t := s.templateCache[str]
-	if t != nil {
-		return t
-	}
-
-	t, err := template.New("cache").Parse(str)
-	if err != nil {
-		log.Printf("html template parse error: %v", err)
-		t = template.Must(template.New("empty").Parse(""))
-	}
-	s.templateCache[str] = t
-	return t
-}
-
 func (s *Server) getTextTemplate(str string) *texttemplate.Template {
 	s.templateMu.Lock()
 	defer s.templateMu.Unlock()
@@ -199,7 +183,7 @@ func (s *Server) getTextTemplate(str string) *texttemplate.Template {
 
 	t, err := index.ParseTemplate(str)
 	if err != nil {
-		log.Printf("text template parse error: %v", err)
+		slog.Warn("text template parse error", "error", err)
 		t = texttemplate.Must(texttemplate.New("empty").Parse(""))
 	}
 	s.textTemplateCache[str] = t
@@ -265,7 +249,12 @@ func (s *Server) serveHealthz(w http.ResponseWriter, r *http.Request) {
 	// We need to use WithUnsafeContext here because we want to perform a full
 	// search returning results. The result of this search is not used for anything
 	// other than determining if the server is healthy.
-	result, err := s.Searcher.Search(systemtenant.WithUnsafeContext(r.Context()), q, opts)
+	//
+	// WithHealthCheck skips the search scheduler. Kubernetes uses this endpoint
+	// as a liveness probe, and a probe queued behind user searches times out
+	// under load and gets a busy but healthy process killed.
+	ctx := search.WithHealthCheck(systemtenant.WithUnsafeContext(r.Context()))
+	result, err := s.Searcher.Search(ctx, q, opts)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("not ready: %v", err), http.StatusInternalServerError)
 		return

@@ -1,17 +1,11 @@
 package e2e
 
 import (
-	"flag"
-	"io"
-	"log"
-	"os"
 	"testing"
+
+	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
 func TestMain(m *testing.M) {
-	flag.Parse()
-	if !testing.Verbose() {
-		log.SetOutput(io.Discard)
-	}
-	os.Exit(m.Run())
+	testutil.Main(m)
 }
