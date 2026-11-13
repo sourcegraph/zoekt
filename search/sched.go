@@ -3,7 +3,7 @@ package search
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -77,7 +77,7 @@ func withAdmissionDeadline(ctx context.Context, queueWait time.Duration) (contex
 // SCHED_DISABLE. If so it will an equivalent scheduler as upstream zoekt.
 func newScheduler(capacity int64) scheduler {
 	if zoektSched["disable"] == 1 {
-		log.Println("ZOEKTSCHED=disable=1 specified. Using old zoekt scheduler.")
+		slog.Info("ZOEKTSCHED disable=1 specified, using old zoekt scheduler")
 		return &semaphoreScheduler{
 			throttle: semaphore.NewWeighted(capacity),
 			capacity: capacity,
@@ -135,7 +135,7 @@ func newMultiScheduler(capacity int64) *multiScheduler {
 		// Burst up to 1/4 of interactive capacity for batch.
 		batchdiv = 4
 	} else {
-		log.Printf("ZOEKTSCHED=batchdiv=%d specified. Batch queue size 1/%d of %d.", batchdiv, batchdiv, capacity)
+		slog.Info("custom ZOEKTSCHED batchdiv", "batchdiv", batchdiv, "capacity", capacity)
 	}
 
 	batchCap := capacity / int64(batchdiv)
@@ -147,7 +147,7 @@ func newMultiScheduler(capacity int64) *multiScheduler {
 	if interactiveseconds == 0 {
 		interactiveseconds = 5
 	} else {
-		log.Printf("ZOEKTSCHED=interactiveseconds=%d specified. Search requests will move to batch queue after %d seconds.", interactiveseconds, interactiveseconds)
+		slog.Info("custom ZOEKTSCHED interactiveseconds", "interactive_seconds", interactiveseconds)
 	}
 
 	return &multiScheduler{

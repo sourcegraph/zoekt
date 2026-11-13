@@ -19,7 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc64"
-	"log"
+	"log/slog"
 	"math"
 	"math/bits"
 	"slices"
@@ -305,7 +305,7 @@ func (d *indexData) calculateNewLinesStats(start, end uint32) (count, defaultCou
 		}
 		blob, err := d.readSectionBlob(sec)
 		if err != nil {
-			log.Printf("error reading newline index for document %d on shard %s: %v", i, d.file.Name(), err)
+			slog.Warn("error reading newline index for document", "document", i, "shard", d.file.Name(), "error", err)
 			continue
 		}
 		sz, _ := binary.Uvarint(blob)

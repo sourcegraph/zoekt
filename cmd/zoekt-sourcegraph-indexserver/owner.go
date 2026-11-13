@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -53,7 +54,7 @@ func (o *ownerChecker) Init() error {
 	if err := o.Check(); errors.Is(err, fs.ErrNotExist) {
 		// do nothing, first run so we just write out the file
 	} else if errors.As(err, &ownerErr) {
-		debugLog.Printf("WARN: detected a change in ownership at startup. You can ignore this if you only have one zoekt replica: %s", err)
+		slog.Debug("detected a change in ownership at startup, you can ignore this if you only have one zoekt replica", "error", err)
 	} else if err != nil {
 		return err
 	}

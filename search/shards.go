@@ -17,7 +17,7 @@ package search
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"runtime"
@@ -409,13 +409,13 @@ func (tl *loader) load(keys ...string) {
 		tl.ss.replace(chunk)
 	}
 
-	log.Printf("[INFO] loading %d shard(s): %s", len(keys), humanTruncateList(keys, 5))
+	slog.Info("loading shards", "count", len(keys), "shards", humanTruncateList(keys, 5))
 
 	lastProgress := time.Now()
 	for i, key := range keys {
 		// If taking a while to start-up occasionally give a progress message
 		if time.Since(lastProgress) > 5*time.Second {
-			log.Printf("[INFO] still need to load %d shards...", len(keys)-i)
+			slog.Info("still loading shards", "count", len(keys)-i)
 			lastProgress = time.Now()
 
 			publishLoaded()
@@ -431,7 +431,7 @@ func (tl *loader) load(keys ...string) {
 			shard, err := loadShard(key, tl.indexFileOpener)
 			if err != nil {
 				metricShardsLoadFailedTotal.Inc()
-				log.Printf("[ERROR] reloading: %s, err %v ", key, err)
+				slog.Error("failed to reload shard", "shard", key, "error", err)
 				return
 			}
 			metricShardsLoadedTotal.Inc()
@@ -1513,7 +1513,7 @@ func mkRankedShard(s zoekt.Searcher) *rankedShard {
 	// rankedShard.repos being set.
 	result, err := s.List(systemtenant.WithUnsafeContext(context.Background()), &q, nil)
 	if err != nil {
-		log.Printf("[ERROR] mkRankedShard(%s): failed to cache repository list: %v", s, err)
+		slog.Error("failed to cache repository list for shard", "shard", s.String(), "error", err)
 		return &rankedShard{Searcher: s}
 	}
 

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -88,8 +88,10 @@ func builderWriteAll(fn string, ib *ShardBuilder) error {
 		return err
 	}
 
-	log.Printf("finished shard %s: %d index bytes (overhead %3.1f)", fn, fi.Size(),
-		float64(fi.Size())/float64(ib.ContentSize()+1))
+	slog.Info("finished shard",
+		"shard", fn,
+		"index_bytes", fi.Size(),
+		"overhead", float64(fi.Size())/float64(ib.ContentSize()+1))
 
 	return nil
 }
@@ -191,7 +193,7 @@ func Explode(dstDir string, inputShard string) error {
 	// best effort rename shards.
 	for tmpFn, dstFn := range exploded {
 		if err := os.Rename(tmpFn, dstFn); err != nil {
-			log.Printf("explode: rename failed: %s", err)
+			slog.Warn("explode rename failed", "error", err)
 		}
 	}
 

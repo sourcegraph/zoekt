@@ -1,7 +1,7 @@
 package tracer
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 
@@ -46,18 +46,18 @@ func Init(resource sglog.Resource) {
 	case tracerTypeJaeger:
 		tracer, err = configureJaeger(resource)
 		if err != nil {
-			log.Printf("failed to configure Jaeger tracer: %v", err)
+			slog.Warn("failed to configure jaeger tracer", "error", err)
 			return
 		}
-		log.Printf("INFO: using Jaeger tracer")
+		slog.Info("using jaeger tracer")
 
 	case tracerTypeOpenTelemetry:
 		tracer, err = configureOpenTelemetry(resource)
 		if err != nil {
-			log.Printf("failed to configure OpenTelemetry tracer: %v", err)
+			slog.Warn("failed to configure opentelemetry tracer", "error", err)
 			return
 		}
-		log.Printf("INFO: using OpenTelemetry tracer")
+		slog.Info("using opentelemetry tracer")
 	}
 
 	if tracer != nil {

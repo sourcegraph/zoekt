@@ -20,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc64"
-	"log"
+	"log/slog"
 	"os"
 	"slices"
 	"sort"
@@ -134,7 +134,7 @@ func (r *reader) readTOCSections(toc *indexTOC, tags []string) error {
 				// If we don't recognize the section, we may be reading a newer index than the current version. Use
 				// a "dummy section" struct to skip over it.
 				skipSection = true
-				log.Printf("encountered unrecognized index section (%s), skipping over it", tag)
+				slog.Info("encountered unrecognized index section, skipping over it", "section", tag)
 
 				switch sectionKind(kind) {
 				case sectionKindSimple:

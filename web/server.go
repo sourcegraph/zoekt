@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"regexp/syntax"
@@ -183,7 +183,7 @@ func (s *Server) getTextTemplate(str string) *texttemplate.Template {
 
 	t, err := index.ParseTemplate(str)
 	if err != nil {
-		log.Printf("text template parse error: %v", err)
+		slog.Warn("text template parse error", "error", err)
 		t = texttemplate.Must(texttemplate.New("empty").Parse(""))
 	}
 	s.textTemplateCache[str] = t

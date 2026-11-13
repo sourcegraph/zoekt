@@ -18,7 +18,7 @@ package index
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 
@@ -48,7 +48,7 @@ func (f *mmapedIndexFile) Size() (uint32, error) {
 
 func (f *mmapedIndexFile) Close() {
 	if err := unix.Munmap(f.data); err != nil {
-		log.Printf("WARN failed to Munmap %s: %v", f.name, err)
+		slog.Warn("failed to munmap index file", "path", f.name, "error", err)
 	}
 }
 

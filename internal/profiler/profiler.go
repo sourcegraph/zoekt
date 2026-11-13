@@ -1,7 +1,7 @@
 package profiler
 
 import (
-	"log"
+	"log/slog"
 	"os"
 
 	"cloud.google.com/go/profiler"
@@ -19,7 +19,7 @@ func Init(svcName string) {
 			AllocForceGC:   true,
 		})
 		if err != nil {
-			log.Printf("could not initialize profiler: %s", err.Error())
+			slog.Warn("could not initialize profiler", "error", err)
 		}
 	}
 }

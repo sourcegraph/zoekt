@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
@@ -225,7 +226,7 @@ func (gitRepoCache) fetch(ctx context.Context, gitDir string, o *indexArgs, c gi
 			name := o.BuildOptions().RepositoryDescription.Name
 			id := o.BuildOptions().RepositoryDescription.ID
 
-			errorLog.Printf("delta build: failed to prepare delta build for %q (ID %d): failed to fetch both latest and prior commits: %s", name, id, err)
+			slog.Error("failed to prepare delta build: failed to fetch both latest and prior commits", "repo", name, "id", id, "error", err)
 			if o.CacheGitRepo {
 				// Do not let a failed fetch poison a retained clone, including the
 				// existing fallback when a delta base is no longer available.

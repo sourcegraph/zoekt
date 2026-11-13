@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"log"
+	"log/slog"
 	"math/rand"
 	"net/url"
 	"os"
@@ -492,7 +492,6 @@ func (s *sourcegraphClient) UpdateIndexStatus(repositories []indexStatus) error 
 
 type sourcegraphFake struct {
 	RootDir string
-	Log     *log.Logger
 }
 
 func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*SourcegraphListResult, error) {
@@ -504,11 +503,11 @@ func (sf sourcegraphFake) List(ctx context.Context, indexed []uint32) (*Sourcegr
 	iterate := func(f func(IndexOptions)) {
 		opts, err := sf.GetIndexOptions(repos...)
 		if err != nil {
-			sf.Log.Printf("WARN: ignoring GetIndexOptions error: %v", err)
+			slog.Warn("ignoring GetIndexOptions error", "error", err)
 		}
 		for _, opt := range opts {
 			if opt.Error != "" {
-				sf.Log.Printf("WARN: ignoring GetIndexOptions error for %s: %v", opt.Name, opt.Error)
+				slog.Warn("ignoring GetIndexOptions error", "repo", opt.Name, "error", opt.Error)
 				continue
 			}
 			f(opt.IndexOptions)
@@ -628,7 +627,7 @@ func (sf sourcegraphFake) getBranches(name string) ([]zoekt.RepositoryBranch, er
 		cmd := exec.Command("git", "rev-parse", branch)
 		cmd.Dir = dir
 		if b, err := cmd.Output(); err != nil {
-			sf.Log.Printf("WARN: Could not get branch %s/%s", name, branch)
+			slog.Warn("could not get branch", "repo", name, "branch", branch)
 		} else {
 			version := string(bytes.TrimSpace(b))
 			rBranches = append(rBranches, zoekt.RepositoryBranch{
@@ -672,7 +671,7 @@ func (sf sourcegraphFake) ListRepoIDs(ctx context.Context, indexed []uint32) ([]
 func (sf sourcegraphFake) visitRepos(visit func(name string)) error {
 	return filepath.Walk(sf.RootDir, func(path string, fi os.FileInfo, fileErr error) error {
 		if fileErr != nil {
-			sf.Log.Printf("WARN: ignoring error searching %s: %v", path, fileErr)
+			slog.Warn("ignoring error searching", "path", path, "error", fileErr)
 			return nil
 		}
 		if !fi.IsDir() {

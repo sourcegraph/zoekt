@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -258,10 +258,10 @@ func (m *monitor) EndParsing(entries []*ctags.Entry, parserType ctags.CTagsParse
 
 	var timeoutErr *ctags.ParseTimeoutError
 	if errors.As(err, &timeoutErr) {
-		log.Printf("WARN: skipping symbol analysis after timeout: file=%q parser=%s duration=%v timeout=%v size_bytes=%d", m.currentDocName, ctags.ParserToString(parserType), now.Sub(m.currentDocStart).Truncate(time.Second), timeoutErr.Timeout, m.currentDocSize)
+		slog.Warn("skipping symbol analysis after timeout", "file", m.currentDocName, "parser", ctags.ParserToString(parserType), "duration", now.Sub(m.currentDocStart).Truncate(time.Second), "timeout", timeoutErr.Timeout, "size_bytes", m.currentDocSize)
 	} else if m.currentDocStuckCount > 0 {
 		// Inform done if we warned about the current document.
-		log.Printf("symbol analysis for %s (size %d bytes) is done and found %d symbols", m.currentDocName, m.currentDocSize, len(entries))
+		slog.Info("symbol analysis for document is done", "file", m.currentDocName, "size_bytes", m.currentDocSize, "symbols", len(entries))
 	}
 	m.currentDocStuckCount = 0
 
@@ -289,7 +289,7 @@ func (m *monitor) run() {
 		case <-m.done:
 			now := time.Now()
 			m.mu.Lock()
-			log.Printf("symbol analysis finished for shard statistics: duration=%v symbols=%d bytes=%d", now.Sub(m.start).Truncate(time.Second), m.totalSymbols, m.totalSize)
+			slog.Info("symbol analysis finished for shard", "duration", now.Sub(m.start).Truncate(time.Second), "symbols", m.totalSymbols, "size_bytes", m.totalSize)
 			m.mu.Unlock()
 			return
 
@@ -300,14 +300,14 @@ func (m *monitor) run() {
 			report := monitorReportStuck * (1 << m.currentDocStuckCount) // double the amount of time each time we report
 			if m.currentDocName != "" && running >= report {
 				m.currentDocStuckCount++
-				log.Printf("WARN: symbol analysis for %s (%d bytes) has been running for %v", m.currentDocName, m.currentDocSize, running)
+				slog.Warn("symbol analysis for document is still running", "file", m.currentDocName, "size_bytes", m.currentDocSize, "duration", running)
 			}
 			m.mu.Unlock()
 
 		case <-statusTicker.C:
 			now := time.Now()
 			m.mu.Lock()
-			log.Printf("DEBUG: symbol analysis still running for shard statistics: duration=%v symbols=%d bytes=%d", now.Sub(m.start).Truncate(time.Second), m.totalSymbols, m.totalSize)
+			slog.Debug("symbol analysis still running for shard", "duration", now.Sub(m.start).Truncate(time.Second), "symbols", m.totalSymbols, "size_bytes", m.totalSize)
 			m.mu.Unlock()
 		}
 	}

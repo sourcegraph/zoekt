@@ -2,7 +2,7 @@ package gitindex
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -28,7 +28,7 @@ func DeleteRepos(baseDir string, urlPrefix *url.URL, names map[string]struct{}, 
 	}
 
 	if len(toDelete) > 0 {
-		log.Printf("deleting repos %v", toDelete)
+		slog.Info("deleting repos", "paths", toDelete)
 	}
 
 	var errs []string
