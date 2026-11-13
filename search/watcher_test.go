@@ -15,11 +15,14 @@
 package search
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/sourcegraph/zoekt/index"
 )
@@ -29,10 +32,11 @@ type loggingLoader struct {
 	drops chan string
 }
 
-func (l *loggingLoader) load(keys ...string) {
+func (l *loggingLoader) load(keys ...string) []string {
 	for _, key := range keys {
 		l.loads <- key
 	}
+	return keys
 }
 
 func (l *loggingLoader) drop(keys ...string) {
@@ -40,6 +44,24 @@ func (l *loggingLoader) drop(keys ...string) {
 		l.drops <- key
 	}
 }
+
+type failingLoader struct {
+	attempts int
+	loads    chan string
+}
+
+func (l *failingLoader) load(keys ...string) []string {
+	l.attempts += len(keys)
+	if l.attempts == 1 {
+		return nil
+	}
+	for _, key := range keys {
+		l.loads <- key
+	}
+	return keys
+}
+
+func (*failingLoader) drop(...string) {}
 
 func advanceFS() {
 	time.Sleep(10 * time.Millisecond)
@@ -98,6 +120,82 @@ func TestDirWatcherReloadsReplacementWithSameModTime(t *testing.T) {
 			default:
 			}
 		})
+	}
+}
+
+func TestDirWatcherRetriesFailedLoad(t *testing.T) {
+	dir := t.TempDir()
+	shard := filepath.Join(dir, "foo.zoekt")
+	if err := os.WriteFile(shard, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := &failingLoader{loads: make(chan string, 1)}
+	dw := &DirectoryWatcher{
+		dir:    dir,
+		files:  map[string]watchedFile{},
+		loader: loader,
+	}
+
+	if err := dw.scan(); err != nil {
+		t.Fatal(err)
+	}
+	if err := dw.scan(); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-loader.loads; got != shard {
+		t.Fatalf("got load %q, want %q", got, shard)
+	}
+
+	if err := dw.scan(); err != nil {
+		t.Fatal(err)
+	}
+	if loader.attempts != 2 {
+		t.Fatalf("got %d load attempts, want 2", loader.attempts)
+	}
+}
+
+func TestDirWatcherReconcilesAfterRegistration(t *testing.T) {
+	dir := t.TempDir()
+	logger := &loggingLoader{
+		loads: make(chan string, 1),
+		drops: make(chan string, 1),
+	}
+	dw := &DirectoryWatcher{
+		dir:     dir,
+		files:   map[string]watchedFile{},
+		loader:  logger,
+		quit:    make(chan struct{}),
+		stopped: make(chan struct{}),
+	}
+
+	if err := dw.scan(); err != nil {
+		t.Fatal(err)
+	}
+	shard := filepath.Join(dir, "foo.zoekt")
+	if err := os.WriteFile(shard, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := dw.watch(); err != nil {
+		t.Fatal(err)
+	}
+	defer dw.Stop()
+
+	if got := <-logger.loads; got != shard {
+		t.Fatalf("got load %q, want %q", got, shard)
+	}
+}
+
+func TestHandleWatcherErrorReconciles(t *testing.T) {
+	calls := 0
+	notify := func() { calls++ }
+
+	handleWatcherError(nil, notify)
+	handleWatcherError(fsnotify.ErrEventOverflow, notify)
+	handleWatcherError(errors.New("watch failed"), notify)
+
+	if calls != 2 {
+		t.Fatalf("got %d notifications, want 2", calls)
 	}
 }
 
