@@ -6,7 +6,7 @@ import (
 
 func TestCaseFoldingEqualsRunes(t *testing.T) {
 	for _, tc := range []struct {
-		lower     string
+		pattern   string
 		mixed     string
 		wantMatch bool
 		wantSz    int
@@ -15,6 +15,12 @@ func TestCaseFoldingEqualsRunes(t *testing.T) {
 		{"abc", "abc", true, 3},
 		{"abc", "ABC", true, 3},
 		{"abc", "AbC", true, 3},
+		{"ABC", "abc", true, 3},
+		{"ABC", "ABC", true, 3},
+		{"sss", "ssſ", true, 4},
+		{"ssſ", "SSS", true, 3},
+		{"σσσ", "σσς", true, 6},
+		{"ΣΣΣ", "ΣΣς", true, 6},
 		{"abc", "abcd", true, 3},
 		{"abc", "AB", false, 2},
 		{"abc", "xyz", false, 0},
@@ -25,10 +31,10 @@ func TestCaseFoldingEqualsRunes(t *testing.T) {
 		{"äbč", "ÄBČ", true, 5}, // 'ä' (2 bytes), 'b' (1 byte), 'č' (2 bytes)
 		{"äbč", "ÄBX", false, 0},
 	} {
-		sz, ok, _ := caseFoldingEqualsRunes([]byte(tc.lower), []byte(tc.mixed))
+		sz, ok, _ := caseFoldingEqualsRunes([]byte(tc.pattern), []byte(tc.mixed))
 		if ok != tc.wantMatch || sz != tc.wantSz {
 			t.Errorf("caseFoldingEqualsRunes(%q, %q): got (%d, %t), want (%d, %t)",
-				tc.lower, tc.mixed, sz, ok, tc.wantSz, tc.wantMatch)
+				tc.pattern, tc.mixed, sz, ok, tc.wantSz, tc.wantMatch)
 		}
 	}
 }

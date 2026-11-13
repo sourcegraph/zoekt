@@ -2034,6 +2034,33 @@ func TestRegexpCaseFolding(t *testing.T) {
 	}
 }
 
+func TestRegexpUnicodeFold(t *testing.T) {
+	for _, tc := range []struct{ expr, subject string }{
+		{"case:no content:σσσ$", "σσς"},
+		{"case:yes file:(?i:sss){1}", "ssſ"},
+	} {
+		t.Run(tc.expr, func(t *testing.T) {
+			b := testShardBuilder(t, nil, Document{Name: tc.subject, Content: []byte(tc.subject)})
+			q, err := query.Parse(tc.expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res := searchForTest(t, b, q)
+			if len(res.Files) != 1 {
+				t.Fatalf("got %d files, want one matching %q", len(res.Files), tc.subject)
+			}
+			matches := res.Files[0].LineMatches
+			if len(matches) != 1 || len(matches[0].LineFragments) != 1 {
+				t.Fatalf("got line matches %v, want one fragment", matches)
+			}
+			f := matches[0].LineFragments[0]
+			if f.Offset != 0 || f.MatchLength != len(tc.subject) {
+				t.Errorf("got fragment %v, want [0,%d)", f, len(tc.subject))
+			}
+		})
+	}
+}
+
 func TestCaseRegexp(t *testing.T) {
 	content := []byte("BLABLABLA")
 	b := testShardBuilder(t, nil,

@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 func TestMatchSize(t *testing.T) {
@@ -51,6 +52,7 @@ func TestCandidateMatchContentBounds(t *testing.T) {
 			name: "offset after content",
 			match: candidateMatch{
 				byteOffset:    4,
+				substrBytes:   []byte("x"),
 				substrLowered: []byte("x"),
 			},
 			want: "after content size",
@@ -69,6 +71,7 @@ func TestCandidateMatchContentBounds(t *testing.T) {
 			name: "case-insensitive span after content",
 			match: candidateMatch{
 				byteOffset:    2,
+				substrBytes:   []byte("cd"),
 				substrLowered: []byte("cd"),
 			},
 			want: "extends beyond content size",
@@ -77,6 +80,7 @@ func TestCandidateMatchContentBounds(t *testing.T) {
 			name: "case-insensitive mismatch before truncated content end",
 			match: candidateMatch{
 				byteOffset:    2,
+				substrBytes:   []byte("dx"),
 				substrLowered: []byte("dx"),
 			},
 			want: "extends beyond content size",
@@ -90,13 +94,47 @@ func TestCandidateMatchContentBounds(t *testing.T) {
 		})
 	}
 
-	t.Run("case-insensitive mismatch with complete span", func(t *testing.T) {
-		match := candidateMatch{byteOffset: 1, substrLowered: []byte("dx")}
-		matched, err := match.matchContent([]byte("abc"))
-		if matched || err != nil {
-			t.Fatalf("matchContent = (%t, %v), want ordinary non-match", matched, err)
+	for _, tc := range []struct{ pattern, content string }{
+		{"dx", "bc"},
+		{"Ⱥab", "Ⱥax"},
+		{"😀ab", "😀ax"},
+	} {
+		t.Run("case-insensitive mismatch with complete span/"+tc.pattern, func(t *testing.T) {
+			pattern := []byte(tc.pattern)
+			match := candidateMatch{byteOffset: 1, substrBytes: pattern, substrLowered: toLower(pattern)}
+			matched, err := match.matchContent([]byte("a" + tc.content))
+			if matched || err != nil {
+				t.Fatalf("matchContent = (%t, %v), want ordinary non-match", matched, err)
+			}
+		})
+	}
+}
+
+// Candidate verification must use the same fold classes as trigram generation.
+func TestCandidateMatchUnicodeFold(t *testing.T) {
+	// Lowercasing also merges some runes that are not in a fold class.
+	for _, tc := range []struct{ pattern, content string }{
+		{"abcİ", "abci"},
+		{"abci", "abcİ"},
+	} {
+		pattern := []byte(tc.pattern)
+		m := candidateMatch{substrBytes: pattern, substrLowered: toLower(pattern)}
+		if matched, err := m.matchContent([]byte(tc.content)); matched || err != nil {
+			t.Fatalf("matchContent(%q, %q) = (%t, %v), want no match", tc.pattern, tc.content, matched, err)
 		}
-	})
+	}
+	for r := rune(0); r <= unicode.MaxRune; r++ {
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			pattern := []byte("ab" + string(r))
+			content := []byte("AB" + string(f))
+			m := candidateMatch{substrBytes: pattern, substrLowered: toLower(pattern)}
+			matched, err := m.matchContent(content)
+			if err != nil || !matched || m.byteMatchSz != uint32(len(content)) {
+				t.Fatalf("matchContent(%q, %q) = (%t, %v), size %d; want match of %d bytes",
+					pattern, content, matched, err, m.byteMatchSz, len(content))
+			}
+		}
+	}
 }
 
 func TestFindOffsetReportsInvalidMappings(t *testing.T) {
