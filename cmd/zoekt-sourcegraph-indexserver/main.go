@@ -63,6 +63,7 @@ import (
 	"github.com/sourcegraph/zoekt/grpc/messagesize"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/debugserver"
+	"github.com/sourcegraph/zoekt/internal/logging"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tenant"
 
@@ -1864,12 +1865,14 @@ func cloneURL(u *url.URL) *url.URL {
 }
 
 func main() {
-	liblog := sglog.Init(sglog.Resource{
+	resource := sglog.Resource{
 		Name:       "zoekt-indexserver",
 		Version:    index.Version,
 		InstanceID: index.HostnameBestEffort(),
-	})
+	}
+	liblog := sglog.Init(resource)
 	defer liblog.Sync()
+	logging.Init(os.Stderr, logging.Resource{Name: resource.Name, Version: resource.Version, InstanceID: resource.InstanceID})
 
 	if err := rootCmd().ParseAndRun(context.Background(), os.Args[1:]); err != nil {
 		log.Fatal(err)

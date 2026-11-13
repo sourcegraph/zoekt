@@ -55,6 +55,7 @@ import (
 	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/debugserver"
+	"github.com/sourcegraph/zoekt/internal/logging"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
@@ -64,7 +65,7 @@ import (
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
 
-func divertLogs(dir string, interval time.Duration) {
+func divertLogs(dir string, interval time.Duration, r logging.Resource) {
 	t := time.NewTicker(interval)
 	var last *os.File
 	for {
@@ -78,7 +79,7 @@ func divertLogs(dir string, interval time.Duration) {
 			os.Exit(2)
 		}
 
-		log.SetOutput(f)
+		logging.Init(f, r)
 		last.Close()
 
 		last = f
@@ -169,6 +170,8 @@ func main() {
 
 	liblog := sglog.Init(resource)
 	defer liblog.Sync()
+	logResource := logging.Resource{Name: resource.Name, Version: resource.Version, InstanceID: resource.InstanceID}
+	logging.Init(os.Stderr, logResource)
 	tracer.Init(resource)
 	profiler.Init("zoekt-webserver")
 
@@ -179,7 +182,7 @@ func main() {
 		// We could do fdup acrobatics to also redirect
 		// stderr, but it is simpler and more portable for the
 		// caller to divert stderr output if necessary.
-		go divertLogs(*logDir, *logRefresh)
+		go divertLogs(*logDir, *logRefresh, logResource)
 	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
