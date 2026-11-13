@@ -1356,16 +1356,20 @@ func BenchmarkPrepareNormalBuild(b *testing.B) {
 func TestSetTemplates_RepoID(t *testing.T) {
 	t.Parallel()
 
+	// Each case's config is applied in order with git config. The last two
+	// cases cover config paths that return before reading other options.
 	cases := []struct {
 		name    string
-		repoID  string
+		config  []string
 		want    uint32
 		wantErr bool
 	}{
-		{name: "valid", repoID: "12345", want: 12345},
-		{name: "max uint32", repoID: "4294967295", want: 4294967295},
-		{name: "out of range", repoID: "4294967296", wantErr: true},
-		{name: "malformed", repoID: "abc", wantErr: true},
+		{name: "valid", config: []string{"zoekt.name", "example.com/repo", "zoekt.repoid", "12345"}, want: 12345},
+		{name: "max uint32", config: []string{"zoekt.name", "example.com/repo", "zoekt.repoid", "4294967295"}, want: 4294967295},
+		{name: "out of range", config: []string{"zoekt.name", "example.com/repo", "zoekt.repoid", "4294967296"}, wantErr: true},
+		{name: "malformed", config: []string{"zoekt.name", "example.com/repo", "zoekt.repoid", "abc"}, wantErr: true},
+		{name: "malformed without name or origin", config: []string{"zoekt.repoid", "abc"}, wantErr: true},
+		{name: "valid with unknown web-url-type", config: []string{"zoekt.repoid", "42", "zoekt.web-url", "https://example.com", "zoekt.web-url-type", "nope"}, want: 42, wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1373,19 +1377,14 @@ func TestSetTemplates_RepoID(t *testing.T) {
 
 			dir := t.TempDir()
 			runGit(t, dir, "init", "-b", "master")
-			runGit(t, dir, "config", "zoekt.name", "example.com/repo")
-			runGit(t, dir, "config", "zoekt.repoid", tc.repoID)
+			for i := 0; i < len(tc.config); i += 2 {
+				runGit(t, dir, "config", tc.config[i], tc.config[i+1])
+			}
 
 			desc := zoekt.Repository{}
 			err := setTemplatesFromConfig(&desc, dir)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected an error, got ID %d", desc.ID)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("setTemplatesFromConfig: %v", err)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("setTemplatesFromConfig error = %v, wantErr %v", err, tc.wantErr)
 			}
 			if desc.ID != tc.want {
 				t.Fatalf("got ID %d, want %d", desc.ID, tc.want)
@@ -1406,9 +1405,6 @@ func TestIndexGitRepo_InvalidRepoID(t *testing.T) {
 	}
 	runGit(t, repoDir, "add", ".")
 	runGit(t, repoDir, "commit", "-m", "initial commit")
-	// Repo config is only consulted for repositories with a zoekt.name or an
-	// origin remote, so give this one a name.
-	runGit(t, repoDir, "config", "zoekt.name", "example.com/repo")
 	runGit(t, repoDir, "config", "zoekt.repoid", "4294967296")
 
 	opts := Options{

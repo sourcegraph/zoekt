@@ -279,6 +279,16 @@ func setTemplatesFromRepoConfigPreservingName(desc *zoekt.Repository, cfg *confi
 func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) error {
 	sec := cfg.Raw.Section("zoekt")
 
+	// Read the ID before the URL templates, which can return early, so it is
+	// never silently dropped.
+	if v := sec.Options.Get("repoid"); v != "" {
+		id, err := zoekt.ParseRepoID(v)
+		if err != nil {
+			return fmt.Errorf("zoekt.repoid: %w", err)
+		}
+		desc.ID = id
+	}
+
 	webURLStr := sec.Options.Get("web-url")
 	webURLType := sec.Options.Get("web-url-type")
 
@@ -317,14 +327,6 @@ func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) erro
 		if err := SetTemplatesFromOrigin(desc, u); err != nil {
 			return err
 		}
-	}
-
-	if v := sec.Options.Get("repoid"); v != "" {
-		id, err := zoekt.ParseRepoID(v)
-		if err != nil {
-			return fmt.Errorf("zoekt.repoid: %w", err)
-		}
-		desc.ID = id
 	}
 
 	desc.TenantID, _ = strconv.Atoi(sec.Options.Get("tenantID"))
