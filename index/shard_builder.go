@@ -19,7 +19,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc64"
-	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -33,8 +32,6 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/languages"
 )
-
-var _ = log.Println
 
 const ngramSize = 3
 

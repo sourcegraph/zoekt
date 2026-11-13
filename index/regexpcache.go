@@ -2,7 +2,7 @@ package index
 
 import (
 	"container/list"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"sync"
@@ -58,7 +58,7 @@ func envInt(name string, def int) int {
 	}
 	n, err := strconv.Atoi(val)
 	if err != nil || n < 0 {
-		log.Printf("index: ignoring invalid %s=%q, using %d", name, val, def)
+		slog.Warn("ignoring invalid environment variable value", "name", name, "value", val, "default", def)
 		return def
 	}
 	return n

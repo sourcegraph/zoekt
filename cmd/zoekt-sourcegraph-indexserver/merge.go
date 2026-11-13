@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,7 +67,7 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 	// Guard against the user triggering competing merge jobs with the debug
 	// command.
 	if !mergeRunning.CompareAndSwap(false, true) {
-		infoLog.Printf("merge already running")
+		slog.Info("merge already running")
 		return
 	}
 	defer mergeRunning.Store(false)
@@ -81,14 +82,14 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 		next = false
 		s.muIndexDir.Global(func() {
 			candidates, excluded := loadCandidates(s.IndexDir, s.mergeOpts)
-			infoLog.Printf("loadCandidates: candidates=%d excluded=%d", len(candidates), excluded)
+			slog.Info("loaded merge candidates", "candidates", len(candidates), "excluded", excluded)
 
 			c := pickCandidates(candidates, s.mergeOpts.targetSizeBytes)
 			if len(c.shards) <= 1 {
-				infoLog.Printf("could not find enough shards to build a compound shard")
+				slog.Info("could not find enough shards to build a compound shard")
 				return
 			}
-			infoLog.Printf("start merging: shards=%d total_size=%.2fMiB", len(c.shards), float64(c.size)/(1024*1024))
+			slog.Info("start merging", "count", len(c.shards), "size_bytes", c.size)
 
 			var paths []string
 			for _, p := range c.shards {
@@ -107,14 +108,14 @@ func (s *Server) merge(mergeCmd func(args ...string) *exec.Cmd) {
 
 			err := cmd.Run()
 
-			durationSeconds := time.Since(start).Seconds()
-			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(durationSeconds)
+			duration := time.Since(start)
+			metricShardMergingDuration.WithLabelValues(strconv.FormatBool(err != nil)).Observe(duration.Seconds())
 			if err != nil {
-				errorLog.Printf("error merging shards: stdout=%s, stderr=%s, durationSeconds=%.2f err=%s", stdoutBuf.String(), stderrBuf.String(), durationSeconds, err)
+				slog.Error("failed to merge shards", "stdout", stdoutBuf.String(), "stderr", stderrBuf.String(), "duration", duration, "error", err)
 				return
 			}
 
-			infoLog.Printf("finished merging: shard=%s durationSeconds=%.2f", stdoutBuf.String(), durationSeconds)
+			slog.Info("finished merging", "stdout", stdoutBuf.String(), "duration", duration)
 
 			next = true
 		})
@@ -134,7 +135,7 @@ func loadCandidates(dir string, opts mergeOpts) ([]candidate, int) {
 
 	d, err := os.Open(dir)
 	if err != nil {
-		debugLog.Printf("failed to load candidates: %s", dir)
+		slog.Debug("failed to load candidates", "path", dir)
 		return []candidate{}, excluded
 	}
 	defer d.Close()
@@ -146,7 +147,7 @@ func loadCandidates(dir string, opts mergeOpts) ([]candidate, int) {
 
 		fi, err := os.Stat(path)
 		if err != nil {
-			debugLog.Printf("stat failed for %s: %s", n, err)
+			slog.Debug("stat failed", "path", n, "error", err)
 			continue
 		}
 
@@ -213,7 +214,7 @@ func isExcluded(path string, fi os.FileInfo, opts mergeOpts) bool {
 
 	repos, _, err := index.ReadMetadataPath(path)
 	if err != nil {
-		debugLog.Printf("failed to load metadata for %s\n", fi.Name())
+		slog.Debug("failed to load metadata", "path", fi.Name())
 		return true
 	}
 

@@ -16,7 +16,7 @@ package web
 
 import (
 	"bytes"
-	"log"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -53,7 +53,7 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 		if err := tpl.Execute(&buf, map[string]string{
 			"LineNumber": strconv.Itoa(linenum),
 		}); err != nil {
-			log.Printf("fragment template: %v", err)
+			slog.Warn("failed to execute fragment template", "error", err)
 			return ""
 		}
 		return buf.String()
@@ -82,7 +82,7 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 			"Path":    filename,
 		})
 		if err != nil {
-			log.Printf("url template: %v", err)
+			slog.Warn("failed to execute url template", "error", err)
 			return ""
 		}
 		return buf.String()

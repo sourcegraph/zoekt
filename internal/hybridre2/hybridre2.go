@@ -62,7 +62,7 @@
 package hybridre2
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"sync"
@@ -97,7 +97,7 @@ func readThreshold() int64 {
 		return disabled
 	}
 	if !re2Available {
-		log.Printf("hybridre2: %s is set but this binary was built without -tags re2_cgo; RE2 stays disabled", envThreshold)
+		slog.Warn("re2 threshold is set but this binary was built without -tags re2_cgo, re2 stays disabled", "env", envThreshold)
 		return disabled
 	}
 	return n

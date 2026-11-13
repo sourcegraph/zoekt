@@ -15,15 +15,13 @@
 package query
 
 import (
-	"log"
+	"log/slog"
 	"regexp/syntax"
 
 	"slices"
 
 	"github.com/sourcegraph/zoekt/internal/syntaxutil"
 )
-
-var _ = log.Println
 
 func LowerRegexp(r *syntax.Regexp) *syntax.Regexp {
 	newRE := *r
@@ -66,7 +64,7 @@ func convertCapture(re *syntax.Regexp, flags syntax.Flags) *syntax.Regexp {
 	// Make a copy so in unlikely event of an error the original can be used as a fallback
 	r, err := syntax.Parse(syntaxutil.RegexpString(re), flags)
 	if err != nil {
-		log.Printf("failed to copy regexp `%s`: %v", re, err)
+		slog.Warn("failed to copy regexp", "regexp", re.String(), "error", err)
 		return re
 	}
 
@@ -75,7 +73,7 @@ func convertCapture(re *syntax.Regexp, flags syntax.Flags) *syntax.Regexp {
 	// Parse again for new structure to take effect
 	r, err = syntax.Parse(syntaxutil.RegexpString(r), flags)
 	if err != nil {
-		log.Printf("failed to parse regexp after uncapture `%s`: %v", r, err)
+		slog.Warn("failed to parse regexp after uncapture", "regexp", re.String(), "error", err)
 		return re
 	}
 

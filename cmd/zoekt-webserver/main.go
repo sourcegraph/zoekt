@@ -25,6 +25,7 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -55,6 +56,7 @@ import (
 	webserverv1 "github.com/sourcegraph/zoekt/grpc/protos/zoekt/webserver/v1"
 	"github.com/sourcegraph/zoekt/index"
 	"github.com/sourcegraph/zoekt/internal/debugserver"
+	"github.com/sourcegraph/zoekt/internal/logging"
 	"github.com/sourcegraph/zoekt/internal/profiler"
 	"github.com/sourcegraph/zoekt/internal/tracer"
 	"github.com/sourcegraph/zoekt/query"
@@ -64,7 +66,7 @@ import (
 
 const logFormat = "2006-01-02T15-04-05.999999999Z07"
 
-func divertLogs(dir string, interval time.Duration) {
+func divertLogs(dir string, interval time.Duration, r logging.Resource) {
 	t := time.NewTicker(interval)
 	var last *os.File
 	for {
@@ -78,7 +80,7 @@ func divertLogs(dir string, interval time.Duration) {
 			os.Exit(2)
 		}
 
-		log.SetOutput(f)
+		logging.Init(f, r)
 		last.Close()
 
 		last = f
@@ -95,7 +97,7 @@ func loadTemplates(tpl *template.Template, dir string) error {
 		log.Fatalf("Glob: %v", err)
 	}
 
-	log.Printf("loading templates: %v", fs)
+	slog.Info("loading templates", "paths", fs)
 	for _, fn := range fs {
 		content, err := os.ReadFile(fn)
 		if err != nil {
@@ -169,6 +171,8 @@ func main() {
 
 	liblog := sglog.Init(resource)
 	defer liblog.Sync()
+	logResource := logging.Resource{Name: resource.Name, Version: resource.Version, InstanceID: resource.InstanceID}
+	logging.Init(os.Stderr, logResource)
 	tracer.Init(resource)
 	profiler.Init("zoekt-webserver")
 
@@ -179,7 +183,7 @@ func main() {
 		// We could do fdup acrobatics to also redirect
 		// stderr, but it is simpler and more portable for the
 		// caller to divert stderr output if necessary.
-		go divertLogs(*logDir, *logRefresh)
+		go divertLogs(*logDir, *logRefresh, logResource)
 	}
 
 	// Tune GOMAXPROCS to match Linux container CPU quota.
@@ -265,13 +269,13 @@ func main() {
 	watchdogTick := 30 * time.Second
 	if v := os.Getenv("ZOEKT_WATCHDOG_TICK"); v != "" {
 		watchdogTick, _ = time.ParseDuration(v)
-		log.Printf("custom ZOEKT_WATCHDOG_TICK=%v", watchdogTick)
+		slog.Info("custom watchdog tick", "duration", watchdogTick)
 	}
 
 	watchdogErrCount := 3
 	if v := os.Getenv("ZOEKT_WATCHDOG_ERRORS"); v != "" {
 		watchdogErrCount, _ = strconv.Atoi(v)
-		log.Printf("custom ZOEKT_WATCHDOG_ERRORS=%d", watchdogErrCount)
+		slog.Info("custom watchdog error count", "count", watchdogErrCount)
 	}
 
 	watchdogAddr := "http://" + *listen
@@ -283,7 +287,7 @@ func main() {
 	if watchdogErrCount > 0 && watchdogTick > 0 {
 		go watchdog(watchdogTick, watchdogErrCount, watchdogAddr)
 	} else {
-		log.Println("watchdog disabled")
+		slog.Info("watchdog disabled")
 	}
 
 	logger := sglog.Scoped("ZoektWebserverGRPCServer")
@@ -381,7 +385,7 @@ func shutdownOnSignal(srv *http.Server) error {
 		select {
 		case <-ctx.Done():
 		case sig := <-c:
-			log.Printf("received another signal (%v), immediate shutdown", sig)
+			slog.Info("received another signal, immediate shutdown", "signal", sig.String())
 			cancel()
 		}
 	}()
@@ -392,7 +396,7 @@ func shutdownOnSignal(srv *http.Server) error {
 	ctx, cancel2 := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel2()
 
-	log.Printf("shutting down")
+	slog.Info("shutting down")
 	return srv.Shutdown(ctx)
 }
 
@@ -439,22 +443,20 @@ func watchdog(dt time.Duration, maxErrCount int, addr string) {
 			metricWatchdogErrors.Set(float64(errCount))
 			metricWatchdogErrorsTotal.Inc()
 			if errCount >= maxErrCount {
-				log.Printf(`watchdog health check has consecutively failed %d times indicating is likely an unrecoverable error affecting zoekt. As such this process will exit with code 3.
-
-Final error: %v
+				slog.Error(`watchdog health check has consecutively failed indicating there is likely an unrecoverable error affecting zoekt. As such this process will exit with code 3.
 
 Possible remediations:
 - If this rarely happens, ignore and let your process manager restart zoekt.
 - Possibly under provisioned. Try increasing CPU or disk IO.
-- A bug. Reach out with logs and screenshots of metrics when this occurs.`, errCount, err)
+- A bug. Reach out with logs and screenshots of metrics when this occurs`, "count", errCount, "error", err)
 				os.Exit(3)
 			} else {
-				log.Printf("watchdog: failed, will try %d more times: %v", maxErrCount-errCount, err)
+				slog.Warn("watchdog health check failed, will retry", "remaining_attempts", maxErrCount-errCount, "error", err)
 			}
 		} else if errCount > 0 {
 			errCount = 0
 			metricWatchdogErrors.Set(float64(errCount))
-			log.Printf("watchdog: success, resetting error count")
+			slog.Info("watchdog health check succeeded, resetting error count")
 		}
 	}
 }

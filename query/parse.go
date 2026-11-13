@@ -17,15 +17,12 @@ package query
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"regexp/syntax"
 
 	"github.com/grafana/regexp"
 
 	"github.com/sourcegraph/zoekt/languages"
 )
-
-var _ = log.Printf
 
 // parseStringLiteral parses a string literal, consumes the starting
 // quote too.

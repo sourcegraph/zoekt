@@ -5,6 +5,7 @@ import (
 	"container/heap"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"sort"
@@ -323,7 +324,7 @@ func (q *Queue) MaybeRemoveMissing(ids []uint32) []uint32 {
 
 	// heuristically skip expensive work
 	if sameSize {
-		debugLog.Printf("skipping MaybeRemoveMissing due to same size: %d", len(ids))
+		slog.Debug("skipping MaybeRemoveMissing due to same size", "count", len(ids))
 		return nil
 	}
 

@@ -17,10 +17,7 @@ package index
 import (
 	"encoding/binary"
 	"io"
-	"log"
 )
-
-var _ = log.Println
 
 // writer is an io.Writer that keeps track of errors and offsets
 type writer struct {

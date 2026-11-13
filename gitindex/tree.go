@@ -17,7 +17,7 @@ package gitindex
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -140,14 +140,14 @@ func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string) (map[string]pl
 		}
 	}
 	if skippedTrees > 0 {
-		log.Printf("skipped %d trees with missing Git objects on branch %s", skippedTrees, branch)
+		slog.Info("skipped trees with missing git objects", "count", skippedTrees, "branch", branch)
 	}
 	return subRepoVersions, nil
 }
 
 func (rw *RepoWalker) tryHandleSubmodule(p string, id *plumbing.Hash, branch string, subRepoVersions map[string]plumbing.Hash, ig *ignore.Matcher) error {
 	if err := rw.handleSubmodule(p, id, branch, subRepoVersions, ig); err != nil {
-		log.Printf("submodule %s: ignoring error %v", p, err)
+		slog.Warn("ignoring submodule error", "path", p, "error", err)
 	}
 	return nil
 }

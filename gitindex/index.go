@@ -22,7 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net/url"
 	"os"
@@ -544,7 +544,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	}
 
 	if err := setTemplatesFromRepo(&opts.BuildOptions.RepositoryDescription, repo, opts.RepoDir); err != nil {
-		log.Printf("setTemplatesFromRepo(%s): %s", opts.RepoDir, err)
+		slog.Warn("setTemplatesFromRepo failed", "path", opts.RepoDir, "error", err)
 	}
 
 	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
@@ -593,7 +593,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	if opts.BuildOptions.IsDelta {
 		repos, branchVersions, changedOrRemovedFiles, err = prepareDeltaBuild(opts, repo)
 		if err != nil {
-			log.Printf("delta build: falling back to normal build since delta build failed, repository=%q, err=%s", opts.BuildOptions.RepositoryDescription.Name, err)
+			slog.Warn("delta build failed, falling back to normal build", "repo", opts.BuildOptions.RepositoryDescription.Name, "error", err)
 			opts.BuildOptions.IsDelta = false
 		}
 	}
@@ -617,7 +617,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 			tpl = zoekt.Repository{URL: info.URL.String()}
 			if info.URL.String() != "" {
 				if err := SetTemplatesFromOrigin(&tpl, info.URL); err != nil {
-					log.Printf("setTemplatesFromOrigin(%s, %s): %s", path, info.URL, err)
+					slog.Warn("setTemplatesFromOrigin failed", "path", path, "url", info.URL.String(), "error", err)
 				}
 			}
 			if tpl.Name == "" {
@@ -680,13 +680,13 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	useCatfileBatch := true
 	if disabled, _ := strconv.ParseBool(catfileBatchDisabled); disabled {
 		useCatfileBatch = false
-		log.Printf("cat-file batch disabled via ZOEKT_DISABLE_CATFILE_BATCH=true")
+		slog.Info("cat-file batch disabled via ZOEKT_DISABLE_CATFILE_BATCH=true")
 	}
 	filterSpec := catfileFilterSpec(opts)
 	if useCatfileBatch && filterSpec != "" {
 		if err := checkCatfileFilterSupport(opts.RepoDir, filterSpec); err != nil {
 			useCatfileBatch = false
-			log.Printf("git cat-file does not support --filter (%v), using go-git", err)
+			slog.Warn("git cat-file does not support --filter, using go-git", "error", err)
 		}
 	}
 
@@ -705,7 +705,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 		}
 	}
 
-	log.Printf("attempting to index %d total files (%d via cat-file, %d via go-git)", totalFiles, len(mainRepoIDs), len(submoduleKeys))
+	slog.Info("attempting to index files", "count", totalFiles, "catfile_count", len(mainRepoIDs), "gogit_count", len(submoduleKeys))
 
 	// Stream main-repo blobs via pipelined cat-file --batch --buffer.
 	// Large blobs are skipped without reading content into memory.
@@ -802,7 +802,7 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 	// Partial clones may intentionally omit many blobs. Summarize once instead
 	// of emitting a warning for every skipped file.
 	if missingFiles > 0 {
-		log.Printf("skipped %d files with missing Git objects in %s", missingFiles, opts.RepoDir)
+		slog.Info("skipped files with missing git objects", "count", missingFiles, "path", opts.RepoDir)
 	}
 
 	return nil
@@ -1183,17 +1183,17 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 		for _, submodule := range submodules {
 			subRepository, err := submodule.Repository()
 			if err != nil {
-				log.Printf("failed to open submodule repository: %s, %s", submodule.Config().Name, err)
+				slog.Warn("failed to open submodule repository", "submodule", submodule.Config().Name, "error", err)
 				continue
 			}
 
 			sw, subVersions, err := prepareNormalBuildRecurse(options, subRepository, repoCache, true)
 			if err != nil {
-				log.Printf("failed to index submodule repository: %s, %s", submodule.Config().Name, err)
+				slog.Warn("failed to index submodule repository", "submodule", submodule.Config().Name, "error", err)
 				continue
 			}
 
-			log.Printf("adding subrepository files from: %s", submodule.Config().Name)
+			slog.Info("adding subrepository files", "submodule", submodule.Config().Name)
 
 			for k, repo := range sw {
 				rw.Files[fileKey{

@@ -20,7 +20,7 @@ import (
 	"crypto/sha1"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
@@ -37,7 +37,6 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/dustin/go-humanize"
 	"github.com/rs/xid"
 	"golang.org/x/sys/unix"
 
@@ -439,7 +438,7 @@ func (o *Options) IndexState() (IndexState, string) {
 	if updated, err := repo.MergeMutable(&o.RepositoryDescription); err != nil {
 		// non-nil err means we are trying to update an immutable field =>
 		// reindex content.
-		log.Printf("warn: immutable field changed, requires re-index: %s", err)
+		slog.Warn("immutable field changed, requires re-index", "error", err)
 		return IndexStateContent, fn
 	} else if updated {
 		return IndexStateMeta, fn
@@ -675,7 +674,7 @@ func (b *Builder) Finish() error {
 
 	if b.buildError != nil {
 		for tmp := range b.finishedShards {
-			log.Printf("Builder.Finish %s", tmp)
+			slog.Info("removing temporary shard after build error", "shard", tmp)
 			os.Remove(tmp)
 		}
 		b.finishedShards = map[string]string{}
@@ -780,7 +779,7 @@ func (b *Builder) Finish() error {
 				b.buildError = fmt.Errorf("failed to find old paths for %s: %w", name, err)
 				for tmp := range artifactPaths {
 					if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
-						log.Printf("removing incomplete shard artifact %s: %v", tmp, err)
+						slog.Warn("removing incomplete shard artifact failed", "path", tmp, "error", err)
 					}
 				}
 				b.finishedShards = map[string]string{}
@@ -855,7 +854,7 @@ func (b *Builder) Finish() error {
 			}
 			for _, p := range paths {
 				if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-					log.Printf("removing incomplete shard artifact %s: %v", p, err)
+					slog.Warn("removing incomplete shard artifact failed", "path", p, "error", err)
 				}
 			}
 		}
@@ -872,7 +871,7 @@ func (b *Builder) Finish() error {
 			b.buildError = err
 			continue
 		}
-		log.Printf("removing old shard file: %s", p)
+		slog.Info("removing old shard file", "shard", p)
 		if err := os.Remove(p); err != nil {
 			b.buildError = err
 		}
@@ -1048,7 +1047,7 @@ func (b *Builder) buildShard(todo []*Document, nextShardNum int) (*finishedShard
 			return nil, err
 		}
 		if err != nil {
-			log.Printf("ignoring universal:%s or scip:%s error: %v", b.opts.CTagsPath, b.opts.ScipCTagsPath, err)
+			slog.Warn("ignoring symbol parsing error", "ctags_path", b.opts.CTagsPath, "scip_ctags_path", b.opts.ScipCTagsPath, "error", err)
 		}
 	}
 
@@ -1090,17 +1089,17 @@ func (b *Builder) CheckMemoryUsage() {
 	if m.HeapAlloc > b.opts.HeapProfileTriggerBytes && b.heapProfileMu.TryLock() {
 		defer b.heapProfileMu.Unlock()
 
-		log.Printf("writing memory profile, allocated heap: %s", humanize.Bytes(m.HeapAlloc))
+		slog.Info("writing memory profile", "heap_alloc_bytes", m.HeapAlloc)
 		name := filepath.Join(b.opts.IndexDir, fmt.Sprintf("indexmemory.prof.%d", b.heapProfileNum))
 		f, err := os.Create(name)
 		if err != nil {
-			log.Printf("failed to create memory profile file: %v", err)
+			slog.Warn("failed to create memory profile file", "error", err)
 			return
 		}
 
 		err = pprof.WriteHeapProfile(f)
 		if err != nil {
-			log.Printf("failed to write memory profile: %v", err)
+			slog.Warn("failed to write memory profile", "error", err)
 		}
 
 		b.heapProfileNum++
@@ -1174,11 +1173,11 @@ func (b *Builder) writeShard(fn string, ib *ShardBuilder) (*finishedShard, error
 		return nil, err
 	}
 
-	log.Printf("finished shard %s: %d index bytes (overhead %3.1f), %d files processed \n",
-		fn,
-		fi.Size(),
-		float64(fi.Size())/float64(ib.ContentSize()+1),
-		ib.NumFiles())
+	slog.Info("finished shard",
+		"shard", fn,
+		"index_bytes", fi.Size(),
+		"overhead", float64(fi.Size())/float64(ib.ContentSize()+1),
+		"files_processed", ib.NumFiles())
 
 	return &finishedShard{f.Name(), fn}, nil
 }

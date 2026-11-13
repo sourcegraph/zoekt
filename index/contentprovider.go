@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"log/slog"
 	"path"
 	"slices"
 	"sort"
@@ -27,8 +28,6 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 )
-
-var _ = log.Println
 
 // contentProvider is an abstraction to treat matches for names and
 // content with the same code.
@@ -398,7 +397,7 @@ func (p *contentProvider) fillContentChunkMatches(ms []*candidateMatch, numConte
 	// by byteOffset and non-overlapping. This invariant is true at the time of
 	// writing, but we conservatively enforce sorting.
 	if !sort.IsSorted((sortByOffsetSlice)(ms)) {
-		log.Printf("WARN: performance invariant violated. candidate matches are not sorted in fillContentChunkMatches. Report to developers.")
+		slog.Warn("performance invariant violated: candidate matches are not sorted in fillContentChunkMatches, report to developers")
 		sort.Sort((sortByOffsetSlice)(ms))
 	}
 
