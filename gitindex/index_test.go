@@ -1364,6 +1364,40 @@ func TestSetTemplates_RepoID(t *testing.T) {
 	}
 }
 
+func TestSetTemplates_TenantID(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		tenantID string
+		want     int
+		wantErr  bool
+	}{
+		{tenantID: "5", want: 5},
+		{tenantID: "0", want: 0},
+		{tenantID: "-1", wantErr: true},
+		{tenantID: "abc", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.tenantID, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			testutil.RunGit(t, dir, "init", "-b", "master")
+			testutil.RunGit(t, dir, "config", "zoekt.name", "example.com/repo")
+			testutil.RunGit(t, dir, "config", "zoekt.tenantID", tc.tenantID)
+
+			desc := zoekt.Repository{}
+			err := setTemplatesFromConfig(&desc, dir)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("setTemplatesFromConfig error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if desc.TenantID != tc.want {
+				t.Fatalf("got TenantID %d, want %d", desc.TenantID, tc.want)
+			}
+		})
+	}
+}
+
 // A bad URL template only affects result links, so the rest of the config must
 // still be applied.
 func TestSetTemplates_URLErrorKeepsConfig(t *testing.T) {
