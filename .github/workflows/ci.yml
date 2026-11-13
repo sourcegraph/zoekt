@@ -81,3 +81,36 @@ jobs:
       # Check if the generated code is up-to-date
       - run: .github/workflows/buf-generate-check.sh
 
+  # Pushes to main don't require PR approval (SEC-4380), so CI on main is
+  # checked after the fact. Track failures in one issue that stays open until
+  # main is green again.
+  track-main:
+    name: "track main failures"
+    needs: [test, shellcheck, shfmt, lint-protos, format-protos, generate-protos]
+    if: always() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      FAILED: ${{ contains(needs.*.result, 'failure') }}
+      PASSED: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SHA: ${{ github.sha }}
+    steps:
+      - run: |
+          title="CI failing on main"
+          issue=$(gh issue list --state open --limit 100 --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ "$FAILED" = true ]; then
+            body="CI failed on $SHA: $RUN_URL"
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --body "$body"
+            else
+              gh issue create --title "$title" --assignee keegancsmith --body "$body"
+            fi
+          elif [ "$PASSED" = true ] && [ -n "$issue" ]; then
+            gh issue close "$issue" --comment "CI passed on $SHA: $RUN_URL"
+          fi
+
