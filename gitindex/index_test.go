@@ -1329,8 +1329,7 @@ func BenchmarkPrepareNormalBuild(b *testing.B) {
 func TestSetTemplates_RepoID(t *testing.T) {
 	t.Parallel()
 
-	// Each case's config is applied in order with git config. The last two
-	// cases cover config paths that return before reading other options.
+	// Each case's config is applied in order with git config.
 	cases := []struct {
 		name    string
 		config  []string
@@ -1342,7 +1341,6 @@ func TestSetTemplates_RepoID(t *testing.T) {
 		{name: "out of range", config: []string{"zoekt.name", "example.com/repo", "zoekt.repoid", "4294967296"}, wantErr: true},
 		{name: "malformed", config: []string{"zoekt.name", "example.com/repo", "zoekt.repoid", "abc"}, wantErr: true},
 		{name: "malformed without name or origin", config: []string{"zoekt.repoid", "abc"}, wantErr: true},
-		{name: "valid with unknown web-url-type", config: []string{"zoekt.repoid", "42", "zoekt.web-url", "https://example.com", "zoekt.web-url-type", "nope"}, want: 42, wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1363,6 +1361,33 @@ func TestSetTemplates_RepoID(t *testing.T) {
 				t.Fatalf("got ID %d, want %d", desc.ID, tc.want)
 			}
 		})
+	}
+}
+
+// A bad URL template only affects result links, so the rest of the config must
+// still be applied.
+func TestSetTemplates_URLErrorKeepsConfig(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	testutil.RunGit(t, dir, "init", "-b", "master")
+	for _, kv := range [][2]string{
+		{"zoekt.web-url", "https://example.com"},
+		{"zoekt.web-url-type", "nope"},
+		{"zoekt.repoid", "42"},
+		{"zoekt.tenantID", "5"},
+		{"zoekt.public", "1"},
+		{"zoekt.github-stars", "100"},
+	} {
+		testutil.RunGit(t, dir, "config", kv[0], kv[1])
+	}
+
+	desc := zoekt.Repository{}
+	if err := setTemplatesFromConfig(&desc, dir); err != nil {
+		t.Fatalf("setTemplatesFromConfig: %v", err)
+	}
+	if desc.ID != 42 || desc.TenantID != 5 || desc.RawConfig["public"] != "1" || desc.Rank == 0 {
+		t.Fatalf("config not applied: ID=%d TenantID=%d RawConfig=%v Rank=%d", desc.ID, desc.TenantID, desc.RawConfig, desc.Rank)
 	}
 }
 
@@ -1390,8 +1415,8 @@ func TestIndexGitRepo_InvalidRepoID(t *testing.T) {
 	}
 
 	_, err := IndexGitRepo(opts)
-	if !errors.Is(err, zoekt.ErrInvalidRepoID) {
-		t.Fatalf("IndexGitRepo error = %v, want one wrapping zoekt.ErrInvalidRepoID", err)
+	if err == nil || !strings.Contains(err.Error(), "zoekt.repoid") {
+		t.Fatalf("IndexGitRepo error = %v, want an invalid zoekt.repoid error", err)
 	}
 
 	shards, err := filepath.Glob(filepath.Join(dir, "*.zoekt"))

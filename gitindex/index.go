@@ -249,13 +249,13 @@ func setTemplatesFromRepo(desc *zoekt.Repository, repo *git.Repository, repoDir 
 	// Some repositories, notably worktrees with .git files, need the plainOpenRepo
 	// fallback to resolve their common dir before go-git can read config.
 	repo, err = plainOpenRepo(repoDir)
-	if err != nil {
-		return err
+	if err == nil {
+		cfg, err = repo.Config()
 	}
-
-	cfg, err = repo.Config()
 	if err != nil {
-		return err
+		// go-git cannot parse every config git accepts, so index without it.
+		slog.Warn("reading git config failed", "path", repoDir, "error", err)
+		return nil
 	}
 
 	return setTemplatesFromRepoConfigPreservingName(desc, cfg, name)
@@ -276,18 +276,11 @@ func setTemplatesFromRepoConfigPreservingName(desc *zoekt.Repository, cfg *confi
 	return nil
 }
 
-func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) error {
+// setNameAndURLFromRepoConfig sets desc's name and URL templates from the
+// zoekt.name, zoekt.web-url and zoekt.web-url-type git config, falling back to
+// the origin remote.
+func setNameAndURLFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) error {
 	sec := cfg.Raw.Section("zoekt")
-
-	// Read the ID before the URL templates, which can return early, so it is
-	// never silently dropped.
-	if v := sec.Options.Get("repoid"); v != "" {
-		id, err := zoekt.ParseRepoID(v)
-		if err != nil {
-			return fmt.Errorf("zoekt.repoid: %w", err)
-		}
-		desc.ID = id
-	}
 
 	webURLStr := sec.Options.Get("web-url")
 	webURLType := sec.Options.Get("web-url-type")
@@ -327,6 +320,29 @@ func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) erro
 		if err := SetTemplatesFromOrigin(desc, u); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// setTemplatesFromRepoConfig applies the zoekt section of a repository's git
+// config to desc. It returns an error only for config that a shard must not be
+// written with, such as an invalid zoekt.repoid. The name and URL templates
+// only affect how results are displayed and linked, so problems with them are
+// logged and the rest of the config is still applied.
+func setTemplatesFromRepoConfig(desc *zoekt.Repository, cfg *config.Config) error {
+	sec := cfg.Raw.Section("zoekt")
+
+	if v := sec.Options.Get("repoid"); v != "" {
+		id, err := zoekt.ParseRepoID(v)
+		if err != nil {
+			return fmt.Errorf("zoekt.repoid: %w", err)
+		}
+		desc.ID = id
+	}
+
+	if err := setNameAndURLFromRepoConfig(desc, cfg); err != nil {
+		slog.Warn("setting repository name and URL templates from git config failed", "repo", desc.Name, "error", err)
 	}
 
 	desc.TenantID, _ = strconv.Atoi(sec.Options.Get("tenantID"))
@@ -551,14 +567,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	}
 
 	if err := setTemplatesFromRepo(&opts.BuildOptions.RepositoryDescription, repo, opts.RepoDir); err != nil {
-		// Template and URL problems only degrade the result links, so they are
-		// logged and indexing continues. An invalid repository ID is different:
-		// continuing would write a shard without an ID and without its raw
-		// config, so fail the build instead.
-		if errors.Is(err, zoekt.ErrInvalidRepoID) {
-			return false, fmt.Errorf("setTemplatesFromRepo(%s): %w", opts.RepoDir, err)
-		}
-		slog.Warn("setTemplatesFromRepo failed", "path", opts.RepoDir, "error", err)
+		return false, fmt.Errorf("setTemplatesFromRepo(%s): %w", opts.RepoDir, err)
 	}
 
 	branches, err := expandBranches(repo, opts.Branches, opts.BranchPrefix)
