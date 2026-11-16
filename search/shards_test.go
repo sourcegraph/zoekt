@@ -380,6 +380,45 @@ func TestOrderByShard(t *testing.T) {
 	}
 }
 
+// TestTotalMaxMatchCountReportsSkippedShards checks that shards abandoned
+// after TotalMaxMatchCount is reached are reported in ShardsSkipped, so a
+// client can tell the results are incomplete.
+func TestTotalMaxMatchCountReportsSkippedShards(t *testing.T) {
+	ss := newShardedSearcher(1)
+
+	// Each rankSearcher returns exactly one file, so every shard is either
+	// searched (one file) or skipped.
+	n := 10 * runtime.GOMAXPROCS(0)
+	shards := map[string]zoekt.Searcher{}
+	for i := range n {
+		shards[fmt.Sprintf("shard%d", i)] = &rankSearcher{rank: uint16(i)}
+	}
+	ss.replace(shards)
+	ss.markReady()
+
+	q := &query.Substring{Pattern: "bla"}
+	opts := &zoekt.SearchOptions{TotalMaxMatchCount: 3}
+
+	t.Run("Search", func(t *testing.T) {
+		res, err := ss.Search(context.Background(), q, opts)
+		require.NoError(t, err)
+		require.Less(t, len(res.Files), n, "TotalMaxMatchCount did not stop the search early")
+		assert.Equal(t, n, len(res.Files)+res.ShardsSkipped, "files=%d skipped=%d", len(res.Files), res.ShardsSkipped)
+	})
+
+	t.Run("StreamSearch", func(t *testing.T) {
+		var files int
+		var stats zoekt.Stats
+		err := ss.StreamSearch(context.Background(), q, opts, zoekt.SenderFunc(func(sr *zoekt.SearchResult) {
+			files += len(sr.Files)
+			stats.Add(sr.Stats)
+		}))
+		require.NoError(t, err)
+		require.Less(t, files, n, "TotalMaxMatchCount did not stop the search early")
+		assert.Equal(t, n, files+stats.ShardsSkipped, "files=%d skipped=%d", files, stats.ShardsSkipped)
+	})
+}
+
 func TestShardedSearcher_Ranking(t *testing.T) {
 	ss := newShardedSearcher(1)
 

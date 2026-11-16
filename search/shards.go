@@ -1165,7 +1165,11 @@ search:
 			// Update the match count statistics and stop searching new shards if we've
 			// reached the limit set in the options.
 			totalMatchCount += r.MatchCount
-			if opts.TotalMaxMatchCount > 0 && totalMatchCount > opts.TotalMaxMatchCount {
+			if opts.TotalMaxMatchCount > 0 && totalMatchCount > opts.TotalMaxMatchCount && work != nil {
+				// Shards never handed to a worker are abandoned. Report them as
+				// skipped so clients know the results are incomplete. Checking
+				// work != nil counts them only once, on a result we send.
+				r.ShardsSkipped += len(shards) - shard
 				stop()
 			}
 
