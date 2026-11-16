@@ -205,6 +205,9 @@ type loaded struct {
 	// ready is true if sharded searcher has finished loading all initial
 	// shards on startup.
 	ready bool
+
+	// loadFailures is the number of shards on disk that failed to load.
+	loadFailures int
 }
 
 type shardedSearcher struct {
@@ -227,6 +230,10 @@ type shardedSearcher struct {
 
 	ready  atomic.Bool
 	ranked atomic.Value
+
+	// loadFailures is the number of shards on disk that failed to load. We
+	// report each as a crash, since their results are missing.
+	loadFailures atomic.Int64
 }
 
 func newShardedSearcher(n int64) *shardedSearcher {
@@ -333,6 +340,7 @@ func newDirectorySearcher(
 	tl := &loader{
 		ss:              ss,
 		indexFileOpener: opts.indexFileOpener(),
+		failed:          map[string]struct{}{},
 	}
 	dw, err := newDirectoryWatcher(dir, tl)
 	if err != nil {
@@ -381,9 +389,13 @@ func (s *directorySearcher) Close() {
 type loader struct {
 	ss              *shardedSearcher
 	indexFileOpener IndexFileOpener
+
+	// failed is the set of shards whose last load failed. Only the directory
+	// watcher calls load and drop, one at a time, so it needs no lock.
+	failed map[string]struct{}
 }
 
-func (tl *loader) load(keys ...string) {
+func (tl *loader) load(keys ...string) (failed []string) {
 	// This is called with all keys on startup, so once this function has
 	// finished running shardedSearcher will be ready.
 	defer tl.ss.markReady()
@@ -391,7 +403,7 @@ func (tl *loader) load(keys ...string) {
 	if len(keys) == 0 {
 		// If there's nothing to load, we exit early here, but we want to mark
 		// ourselves as ready.
-		return
+		return nil
 	}
 
 	var (
@@ -432,6 +444,9 @@ func (tl *loader) load(keys ...string) {
 			if err != nil {
 				metricShardsLoadFailedTotal.Inc()
 				slog.Error("failed to reload shard", "shard", key, "error", err)
+				mu.Lock()
+				failed = append(failed, key)
+				mu.Unlock()
 				return
 			}
 			metricShardsLoadedTotal.Inc()
@@ -445,14 +460,26 @@ func (tl *loader) load(keys ...string) {
 	wg.Wait()
 
 	publishLoaded()
+
+	for _, key := range keys {
+		delete(tl.failed, key)
+	}
+	for _, key := range failed {
+		tl.failed[key] = struct{}{}
+	}
+	tl.ss.loadFailures.Store(int64(len(tl.failed)))
+
+	return failed
 }
 
 func (tl *loader) drop(keys ...string) {
 	shards := make(map[string]zoekt.Searcher, len(keys))
 	for _, key := range keys {
 		shards[key] = nil
+		delete(tl.failed, key)
 	}
 	tl.ss.replace(shards)
+	tl.ss.loadFailures.Store(int64(len(tl.failed)))
 }
 
 func (ss *shardedSearcher) String() string {
@@ -931,6 +958,7 @@ func (ss *shardedSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		// We may have missed results due to not being fully loaded.
 		aggregate.Crashes++
 	}
+	aggregate.Crashes += loaded.loadFailures
 
 	aggregate.Wait = wait
 	aggregate.Duration = time.Since(start)
@@ -971,6 +999,8 @@ func (ss *shardedSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		// We may have missed results due to not being fully loaded.
 		stillLoadingCrashes++
 	}
+	// Shards that failed to load are missing from the results too.
+	stillLoadingCrashes += loaded.loadFailures
 
 	sender.Send(&zoekt.SearchResult{
 		Stats: zoekt.Stats{
@@ -1387,6 +1417,8 @@ func (ss *shardedSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 		// We may have missed results due to not being fully loaded.
 		stillLoadingCrashes++
 	}
+	// Shards that failed to load are missing from the results too.
+	stillLoadingCrashes += loaded.loadFailures
 	agg := zoekt.RepoList{
 		Crashes:  stillLoadingCrashes,
 		ReposMap: zoekt.ReposMap{},
@@ -1496,8 +1528,9 @@ func (s *shardedSearcher) getLoaded() loaded {
 	// ranked is still not the final set of shards.
 	ranked, _ := s.ranked.Load().([]*rankedShard)
 	return loaded{
-		shards: ranked,
-		ready:  ready,
+		shards:       ranked,
+		ready:        ready,
+		loadFailures: int(s.loadFailures.Load()),
 	}
 }
 

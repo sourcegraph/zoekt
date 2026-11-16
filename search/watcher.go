@@ -32,15 +32,24 @@ import (
 )
 
 type shardLoader interface {
-	// Load a new file.
-	load(filenames ...string)
+	// Load new files. It returns the files that failed to load.
+	load(filenames ...string) (failed []string)
 	drop(filenames ...string)
 }
+
+// shardLoadRetryInterval is how long we wait before retrying a shard that
+// failed to load and has not changed since. Scans run on every shard write,
+// so without it a corrupt shard would be reopened and logged over and over.
+const shardLoadRetryInterval = time.Minute
 
 type DirectoryWatcher struct {
 	dir    string
 	files  map[string]watchedFile
 	loader shardLoader
+
+	// failed records when each file in files last failed to load, so that
+	// scan retries it.
+	failed map[string]time.Time
 
 	// closed once ready
 	ready    chan struct{}
@@ -80,6 +89,7 @@ func newDirectoryWatcher(dir string, loader shardLoader) (*DirectoryWatcher, err
 	sw := &DirectoryWatcher{
 		dir:     dir,
 		files:   map[string]watchedFile{},
+		failed:  map[string]time.Time{},
 		loader:  loader,
 		ready:   make(chan struct{}),
 		quit:    make(chan struct{}),
@@ -185,9 +195,12 @@ func (s *DirectoryWatcher) scan() error {
 
 	var toLoad []string
 	for k, current := range files {
-		if previous, ok := s.files[k]; !ok || !previous.equal(current) {
+		failedAt, failed := s.failed[k]
+		retry := failed && time.Since(failedAt) >= shardLoadRetryInterval
+		if previous, ok := s.files[k]; !ok || !previous.equal(current) || retry {
 			toLoad = append(toLoad, k)
 			s.files[k] = current
+			delete(s.failed, k)
 		}
 	}
 
@@ -197,6 +210,7 @@ func (s *DirectoryWatcher) scan() error {
 		if _, ok := files[k]; !ok {
 			toDrop = append(toDrop, k)
 			delete(s.files, k)
+			delete(s.failed, k)
 		}
 	}
 
@@ -205,7 +219,11 @@ func (s *DirectoryWatcher) scan() error {
 	}
 
 	s.loader.drop(toDrop...)
-	s.loader.load(toLoad...)
+	failed := s.loader.load(toLoad...)
+	failedAt := time.Now()
+	for _, k := range failed {
+		s.failed[k] = failedAt
+	}
 
 	return nil
 }

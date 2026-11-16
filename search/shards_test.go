@@ -1569,6 +1569,54 @@ func TestNewDirectorySearcher_empty(t *testing.T) {
 	})
 }
 
+func TestDirectorySearcherReportsShardLoadFailures(t *testing.T) {
+	dir := t.TempDir()
+	builder := shardtest.Builder(t, &zoekt.Repository{ID: 1, Name: "repo"},
+		index.Document{Name: "file.txt", Content: []byte("content")})
+	var contents bytes.Buffer
+	require.NoError(t, builder.Write(&contents))
+	prefix := filepath.Join(dir, fmt.Sprintf("repo_v%d.", index.IndexFormatVersion))
+	require.NoError(t, os.WriteFile(prefix+"00000.zoekt", contents.Bytes(), 0o600))
+	corrupt := prefix + "00001.zoekt"
+	require.NoError(t, os.WriteFile(corrupt, []byte("not a shard"), 0o600))
+
+	ss, err := NewDirectorySearcher(dir)
+	require.NoError(t, err)
+	t.Cleanup(ss.Close)
+
+	crashes := func(t require.TestingT) (search, stream, list int) {
+		ctx := context.Background()
+		q := &query.Substring{Pattern: "content"}
+
+		res, err := ss.Search(ctx, q, &zoekt.SearchOptions{})
+		require.NoError(t, err)
+		require.Len(t, res.Files, 1)
+
+		var stats zoekt.Stats
+		require.NoError(t, ss.StreamSearch(ctx, q, &zoekt.SearchOptions{}, zoekt.SenderFunc(func(sr *zoekt.SearchResult) {
+			stats.Add(sr.Stats)
+		})))
+
+		rl, err := ss.List(ctx, q, nil)
+		require.NoError(t, err)
+
+		return res.Crashes, stats.Crashes, rl.Crashes
+	}
+
+	// The corrupt shard's results are missing, so every call reports it.
+	search, stream, list := crashes(t)
+	assert.Equal(t, 1, search, "Search crashes")
+	assert.Equal(t, 1, stream, "StreamSearch crashes")
+	assert.Equal(t, 1, list, "List crashes")
+
+	// Once the corrupt shard is gone, nothing is missing anymore.
+	require.NoError(t, os.Remove(corrupt))
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		search, stream, list := crashes(c)
+		assert.Zero(c, search+stream+list)
+	}, 10*time.Second, 10*time.Millisecond)
+}
+
 func TestDirectorySearcherOptionsIndexFileOpener(t *testing.T) {
 	dir := t.TempDir()
 	writeShard := func(name string, repositoryID uint32) {

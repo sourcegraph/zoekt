@@ -29,10 +29,11 @@ type loggingLoader struct {
 	drops chan string
 }
 
-func (l *loggingLoader) load(keys ...string) {
+func (l *loggingLoader) load(keys ...string) []string {
 	for _, key := range keys {
 		l.loads <- key
 	}
+	return nil
 }
 
 func (l *loggingLoader) drop(keys ...string) {
@@ -99,6 +100,53 @@ func TestDirWatcherReloadsReplacementWithSameModTime(t *testing.T) {
 			}
 		})
 	}
+}
+
+// failingLoader records loads and fails every one of them.
+type failingLoader struct {
+	loads []string
+}
+
+func (l *failingLoader) load(keys ...string) []string {
+	l.loads = append(l.loads, keys...)
+	return keys
+}
+
+func (l *failingLoader) drop(...string) {}
+
+func TestDirWatcherRetriesFailedLoads(t *testing.T) {
+	dir := t.TempDir()
+	shard := filepath.Join(dir, "foo.zoekt")
+	if err := os.WriteFile(shard, []byte("corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := &failingLoader{}
+	dw := &DirectoryWatcher{
+		dir:    dir,
+		files:  map[string]watchedFile{},
+		failed: map[string]time.Time{},
+		loader: loader,
+	}
+	scan := func(wantLoads int) {
+		t.Helper()
+		if err := dw.scan(); err != nil {
+			t.Fatal(err)
+		}
+		if len(loader.loads) != wantLoads {
+			t.Fatalf("got %d loads %v, want %d", len(loader.loads), loader.loads, wantLoads)
+		}
+	}
+
+	scan(1)
+
+	// An unchanged shard that just failed is not retried on every scan.
+	scan(1)
+
+	// Once the retry interval has passed, the next scan retries it.
+	dw.failed[shard] = time.Now().Add(-shardLoadRetryInterval)
+	scan(2)
+	scan(2)
 }
 
 func writeFileWithModTime(t *testing.T, path, content string, modTime time.Time) {
