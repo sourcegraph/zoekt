@@ -301,3 +301,60 @@ func TestMetaQueryParsing(t *testing.T) {
 		})
 	}
 }
+
+func TestBranchMetaQueryParsing(t *testing.T) {
+	cases := []struct {
+		input   string
+		field   string
+		pattern string
+		err     bool
+	}{
+		{
+			input:   "branch.meta.supported:true",
+			field:   "supported",
+			pattern: "true",
+			err:     false,
+		},
+		{
+			input:   "branch.meta.owner:team-.*",
+			field:   "owner",
+			pattern: "team-.*",
+			err:     false,
+		},
+		{
+			input:   "branch.meta.invalid_field:(",
+			field:   "invalid_field",
+			pattern: "(",
+			err:     true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.input, func(t *testing.T) {
+			q, err := Parse(c.input)
+			if c.err {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+
+			branchMeta, ok := q.(*BranchMeta)
+			if !ok || branchMeta == nil {
+				t.Errorf("expected *BranchMeta, got %T", q)
+				return
+			}
+
+			if branchMeta.Field != c.field {
+				t.Errorf("expected field %q, got %q", c.field, branchMeta.Field)
+			}
+			if branchMeta.Value == nil || branchMeta.Value.String() != c.pattern {
+				t.Errorf("expected pattern %q, got %v", c.pattern, branchMeta.Value)
+			}
+		})
+	}
+}

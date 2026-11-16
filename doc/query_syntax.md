@@ -34,6 +34,7 @@ Fields restrict your query to specific criteria. Here's a list of fields and the
 | `fork:`      |         | `yes` or `no`          | Filters forked repositories.                               | `fork:no`                              |
 | `lang:`      |         | Text                   | Filters by programming language.                           | `lang:python`                          |
 | `meta.<field>:` |      | Regex pattern          | Filters repository metadata values.                        | `meta.license:Apache-.*`               |
+| `branch.meta.<field>:` | | Regex pattern        | Filters branch metadata values.                            | `branch.meta.supported:true`           |
 | `public:`    |         | `yes` or `no`          | Filters public repositories.                               | `public:yes`                           |
 | `regex:`     |         | Regex pattern          | Matches content using a regular expression.                | `regex:foo.*bar`                       |
 | `repo:`      | `r:`    | Regex pattern          | Filters repositories by name.                              | `repo:github\.com/user/project$`       |
@@ -115,6 +116,21 @@ meta.license:Apache-.*
 ```
 
 Repositories without that metadata field do not match.
+
+### Filtering by Branch Metadata
+
+When an indexer stores custom key-value metadata on individual branches (as
+opposed to the whole repository, see above), use `branch.meta.<field>:` to
+match the value with a regular expression. Only files that belong to a
+branch whose metadata matches are returned; other branches of the same
+repository are unaffected. For example, an indexer could tag actively
+maintained branches with `supported=true`:
+
+```plaintext
+branch.meta.supported:true
+```
+
+Branches without that metadata field do not match.
 
 ### Result Type Control
 
@@ -255,7 +271,8 @@ field       = ( "archived:" , boolean )
             | ( "sym:" , text )
             | ( ( "branch:" | "b:" ) , text )
             | ( ( "type:" | "t:" ) , type )
-            | ( "meta." , metadata-name , ":" , text );
+            | ( "meta." , metadata-name , ":" , text )
+            | ( "branch.meta." , metadata-name , ":" , text );
 
 boolean     = "yes" | "no" ;
 text        = quoted | unquoted ;
