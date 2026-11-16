@@ -676,9 +676,9 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	// Preparing the build can consume substantial memory, so check usage before starting to index.
 	builder.CheckMemoryUsage()
 
-	// we don't need to check error, since we either already have an error, or
-	// we returning the first call to builder.Finish.
-	defer builder.Finish() // nolint:errcheck
+	// Only Finish after all input has been read. On an input error, discard
+	// staged shards instead of publishing an incomplete repository.
+	defer builder.Abort()
 
 	for _, f := range changedOrRemovedFiles {
 		builder.MarkFileAsChangedOrRemoved(f)

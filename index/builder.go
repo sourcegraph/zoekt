@@ -656,9 +656,25 @@ func (b *Builder) MarkFileAsChangedOrRemoved(path string) {
 	b.opts.changedOrRemovedFiles = append(b.opts.changedOrRemovedFiles, path)
 }
 
+// Abort discards buffered documents, waits for shard builds to complete, and
+// removes their temporary files without publishing them or changing the old index.
+// After Abort, Add and Finish do no further work. It is safe to call Abort
+// multiple times, including after Finish.
+func (b *Builder) Abort() {
+	b.finishCalled = true
+	b.todo = nil
+	b.building.Wait()
+	for tmp := range b.finishedShards {
+		if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
+			slog.Warn("removing temporary shard after abort failed", "shard", tmp, "error", err)
+		}
+	}
+	b.finishedShards = nil
+}
+
 // Finish creates a last shard from the buffered documents, and clears
-// stale shards from previous runs. This should always be called, also
-// in failure cases, to ensure cleanup.
+// stale shards from previous runs. Either Finish or Abort must be called to
+// ensure cleanup. Use Abort if input could not be read completely.
 //
 // A failed publication can leave a mix of old and new shards until a retry.
 // It is safe to call Finish() multiple times.
@@ -673,11 +689,7 @@ func (b *Builder) Finish() error {
 	b.building.Wait()
 
 	if b.buildError != nil {
-		for tmp := range b.finishedShards {
-			slog.Info("removing temporary shard after build error", "shard", tmp)
-			os.Remove(tmp)
-		}
-		b.finishedShards = map[string]string{}
+		b.Abort()
 		return b.buildError
 	}
 

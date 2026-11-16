@@ -464,6 +464,44 @@ func TestBuilderFinishDeltaPublicationFailure(t *testing.T) {
 	}
 }
 
+func TestBuilderAbort(t *testing.T) {
+	for _, parallelism := range []int{1, 2} {
+		for _, shardMax := range []int{1, 1024} {
+			t.Run(fmt.Sprintf("parallelism=%d/shardMax=%d", parallelism, shardMax), func(t *testing.T) {
+				dir := t.TempDir()
+				b, err := NewBuilder(Options{
+					IndexDir:              dir,
+					RepositoryDescription: zoekt.Repository{Name: "repo"},
+					DisableCTags:          true,
+					Parallelism:           parallelism,
+					ShardMax:              shardMax,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := b.AddFile("a.txt", []byte("hello\n")); err != nil {
+					t.Fatal(err)
+				}
+				b.Abort()
+				b.Abort()
+				if err := b.AddFile("b.txt", []byte("world\n")); err != nil {
+					t.Fatal(err)
+				}
+				if err := b.Finish(); err != nil {
+					t.Fatal(err)
+				}
+				files, err := os.ReadDir(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(files) != 0 {
+					t.Fatalf("Abort left files: %v", files)
+				}
+			})
+		}
+	}
+}
+
 // Tests that we skip looping over repos in compound shards when we know that
 // the repository we are looking for is not in the shard.
 func TestSkipCompoundShards(t *testing.T) {
