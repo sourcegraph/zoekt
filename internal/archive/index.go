@@ -115,6 +115,13 @@ func Index(opts Options, bopts index.Options) error {
 
 	bopts.RepositoryDescription.Source = opts.Archive
 	var builder *index.Builder
+	// Only Finish after the whole archive has been read. On an input error,
+	// discard staged shards instead of leaving temporary files behind.
+	defer func() {
+		if builder != nil {
+			builder.Abort()
+		}
+	}()
 
 	once := sync.Once{}
 	var onceErr error
@@ -161,6 +168,12 @@ func Index(opts Options, bopts index.Options) error {
 		}
 	}
 
+	if builder == nil {
+		// The archive has no files, so index an empty repository.
+		if builder, err = index.NewBuilder(bopts); err != nil {
+			return err
+		}
+	}
 	return builder.Finish()
 }
 

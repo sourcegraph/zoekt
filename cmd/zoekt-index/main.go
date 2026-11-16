@@ -194,9 +194,9 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 	if err != nil {
 		return err
 	}
-	// we don't need to check error, since we either already have an error, or
-	// we returning the first call to builder.Finish.
-	defer builder.Finish() // nolint:errcheck
+	// Only Finish after all input has been read. On an input error, discard
+	// staged shards instead of publishing an incomplete repository.
+	defer builder.Abort()
 
 	branches := make([]string, 0, len(opts.RepositoryDescription.Branches))
 	for _, branch := range opts.RepositoryDescription.Branches {

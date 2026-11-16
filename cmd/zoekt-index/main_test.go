@@ -169,3 +169,58 @@ func TestIndexArgIndexesSymlinkTarget(t *testing.T) {
 		t.Fatalf("file name = %q, want %q", got, "link")
 	}
 }
+
+func TestIndexArgInputFailurePreservesIndex(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read files without read permission")
+	}
+	sourceDir := t.TempDir()
+	indexDir := t.TempDir()
+	writeFiles := func(content string) {
+		for _, name := range []string{"a.txt", "b.txt"} {
+			if err := os.WriteFile(filepath.Join(sourceDir, name), []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	searchFiles := func() map[string]string {
+		searcher, err := search.NewDirectorySearcher(indexDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer searcher.Close()
+		result, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		files := map[string]string{}
+		for _, f := range result.Files {
+			files[f.FileName] = string(f.Content)
+		}
+		return files
+	}
+
+	opts := index.Options{
+		IndexDir:              indexDir,
+		DisableCTags:          true,
+		RepositoryDescription: zoekt.Repository{Name: "repo"},
+	}
+	opts.SetDefaults()
+	writeFiles("old\n")
+	if err := indexArg(sourceDir, opts, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := searchFiles()
+
+	// a.txt is read and buffered before reading b.txt fails.
+	writeFiles("new\n")
+	if err := os.Chmod(filepath.Join(sourceDir, "b.txt"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := indexArg(sourceDir, opts, nil); err == nil {
+		t.Fatal("indexArg succeeded, want read error")
+	}
+	if got := searchFiles(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("search after input failure = %v, want %v", got, want)
+	}
+}
