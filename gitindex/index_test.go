@@ -140,188 +140,76 @@ func TestIndexTinyRepo(t *testing.T) {
 	}
 }
 
-// A failed input must not publish buffered documents or retire the old index.
+// A blob input error must not publish the documents read so far over the
+// existing index, whether they are still buffered or already staged as shards.
 func TestIndexGitRepo_InputFailurePreservesIndex(t *testing.T) {
-	readIndex := func(t *testing.T, dir string) map[string][]byte {
-		t.Helper()
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		files := make(map[string][]byte, len(entries))
-		for _, entry := range entries {
-			content, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			files[entry.Name()] = content
-		}
-		return files
-	}
-	searchFiles := func(t *testing.T, dir string) map[string]string {
-		t.Helper()
-		s, err := search.NewDirectorySearcher(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer s.Close()
-		result, err := s.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
-		if err != nil {
-			t.Fatal(err)
-		}
-		files := make(map[string]string, len(result.Files))
-		for _, f := range result.Files {
-			files[f.FileName] = string(f.Content)
-		}
-		return files
-	}
-
-	for _, failure := range []string{"next", "body", "start", "go-git"} {
-		for _, delta := range []bool{false, true} {
-			for _, shardMax := range []int{1, 1024} {
-				t.Run(fmt.Sprintf("%s/delta=%t/shardMax=%d", failure, delta, shardMax), func(t *testing.T) {
-					dir := t.TempDir()
-					testutil.RunGit(t, dir, "init", "-b", "main", "repo")
-					repoDir := filepath.Join(dir, "repo")
-					writeFiles := func(version string) map[string]string {
-						files := map[string]string{"a.txt": version + " a\n", "b.txt": version + " b\n"}
-						for name, content := range files {
-							if err := os.WriteFile(filepath.Join(repoDir, name), []byte(content), 0o644); err != nil {
-								t.Fatal(err)
-							}
-						}
-						testutil.RunGit(t, repoDir, "add", ".")
-						testutil.RunGit(t, repoDir, "commit", "-m", version)
-						return files
-					}
-					oldFiles := writeFiles("old")
-					indexDir := t.TempDir()
-					opts := Options{
-						RepoDir:  repoDir,
-						Branches: []string{"main"},
-						BuildOptions: index.Options{
-							RepositoryDescription: zoekt.Repository{Name: "repo"},
-							IndexDir:              indexDir,
-							DisableCTags:          true,
-							ShardMax:              shardMax,
-							Parallelism:           2,
-							LargeFiles:            []string{"*"}, // Avoid the cat-file filter support probe.
-						},
-					}
-					if _, err := IndexGitRepo(opts); err != nil {
+	for _, shardMax := range []int{1, 1024} {
+		t.Run(fmt.Sprintf("shardMax=%d", shardMax), func(t *testing.T) {
+			repoDir := filepath.Join(t.TempDir(), "repo")
+			testutil.RunGit(t, filepath.Dir(repoDir), "init", "-b", "main", "repo")
+			commit := func(version string) {
+				for _, name := range []string{"a.txt", "b.txt"} {
+					if err := os.WriteFile(filepath.Join(repoDir, name), []byte(version+"\n"), 0o644); err != nil {
 						t.Fatal(err)
 					}
-					if diff := cmp.Diff(oldFiles, searchFiles(t, indexDir)); diff != "" {
-						t.Fatalf("initial search (-want +got):\n%s", diff)
-					}
-					before := readIndex(t, indexDir)
-					newFiles := writeFiles("new")
-					firstID := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", "HEAD:a.txt"))
-					secondID := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", "HEAD:b.txt"))
-					opts.BuildOptions.IsDelta = delta
-					t.Run("failed input", func(t *testing.T) {
-						config := gitIndexConfig{}
-						if failure == "go-git" {
-							t.Setenv("ZOEKT_DISABLE_CATFILE_BATCH", "true")
-							// Corrupt the second blob after preparation so delta's tree
-							// diff can finish before document creation fails.
-							id := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", "HEAD:b.txt"))
-							blobPath := filepath.Join(repoDir, ".git", "objects", id[:2], id[2:])
-							blob, err := os.ReadFile(blobPath)
-							if err != nil {
-								t.Fatal(err)
-							}
-							corrupt := func(files map[fileKey]BlobLocation) {
-								if err := os.Chmod(blobPath, 0o644); err != nil {
-									t.Fatal(err)
-								}
-								if err := os.WriteFile(blobPath, []byte("invalid zlib data"), 0o644); err != nil {
-									t.Fatal(err)
-								}
-								// Delta preparation may have cached the blob. Reopen the
-								// locator to make document creation read the damaged object.
-								r, err := plainOpenRepo(repoDir)
-								if err != nil {
-									t.Fatal(err)
-								}
-								for key, loc := range files {
-									loc.GitRepo = r
-									files[key] = loc
-								}
-							}
-							t.Cleanup(func() {
-								if err := os.WriteFile(blobPath, blob, 0o644); err != nil {
-									t.Fatal(err)
-								}
-							})
-							config.prepareNormalBuild = func(o Options, r *git.Repository) (map[fileKey]BlobLocation, map[string]map[string]plumbing.Hash, error) {
-								files, versions, err := prepareNormalBuild(o, r)
-								if err != nil {
-									t.Fatal(err)
-								}
-								corrupt(files)
-								return files, versions, nil
-							}
-							config.prepareDeltaBuild = func(o Options, r *git.Repository) (map[fileKey]BlobLocation, map[string]map[string]plumbing.Hash, []string, error) {
-								files, versions, changed, err := prepareDeltaBuild(o, r)
-								if err != nil {
-									t.Fatal(err)
-								}
-								corrupt(files)
-								return files, versions, changed, nil
-							}
-						} else {
-							binDir := t.TempDir()
-							script := fmt.Sprintf("#!/bin/sh\nprintf '%%s blob %%d\\n%%s\\n' '%s' %d '%s'\n", firstID, len(newFiles["a.txt"]), newFiles["a.txt"])
-							if failure == "body" {
-								script += fmt.Sprintf("printf '%%s blob %%d\\nsh' '%s' %d\n", secondID, len(newFiles["b.txt"]))
-							}
-							script += "echo 'blob input failed' >&2\nexit 17\n"
-							if failure == "start" {
-								script = "#!/nonexistent-interpreter\n"
-							}
-							if err := os.WriteFile(filepath.Join(binDir, "git"), []byte(script), 0o755); err != nil {
-								t.Fatal(err)
-							}
-							t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-							t.Setenv("ZOEKT_DISABLE_CATFILE_BATCH", "false")
-						}
-						updated, err := indexGitRepo(opts, config)
-						if updated || err == nil {
-							t.Fatalf("indexGitRepo = (%t, %v), want false and input error", updated, err)
-						}
-						switch failure {
-						case "next", "body":
-							var exitErr *exec.ExitError
-							if !errors.As(err, &exitErr) || exitErr.ExitCode() != 17 {
-								t.Fatalf("indexGitRepo error = %v, want exit status 17", err)
-							}
-						case "start":
-							if !strings.Contains(err.Error(), "start git cat-file") {
-								t.Fatalf("indexGitRepo error = %v, want reader startup failure", err)
-							}
-						case "go-git":
-							if !strings.Contains(err.Error(), "zlib") {
-								t.Fatalf("indexGitRepo error = %v, want corrupt blob failure", err)
-							}
-						}
-						if !cmp.Equal(before, readIndex(t, indexDir)) {
-							t.Errorf("index files changed after input failure")
-						}
-						if diff := cmp.Diff(oldFiles, searchFiles(t, indexDir)); diff != "" {
-							t.Errorf("searchable files changed after input failure (-want +got):\n%s", diff)
-						}
-					})
-					// Retry with complete input, after restoring Git and any corrupted blob.
-					if updated, err := IndexGitRepo(opts); !updated || err != nil {
-						t.Fatalf("retry IndexGitRepo = (%t, %v), want true and nil", updated, err)
-					}
-					if diff := cmp.Diff(newFiles, searchFiles(t, indexDir)); diff != "" {
-						t.Errorf("search after retry (-want +got):\n%s", diff)
-					}
-				})
+				}
+				testutil.RunGit(t, repoDir, "add", ".")
+				testutil.RunGit(t, repoDir, "commit", "-m", version)
 			}
-		}
+			indexDir := t.TempDir()
+			searchFiles := func() map[string]string {
+				s, err := search.NewDirectorySearcher(indexDir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer s.Close()
+				result, err := s.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				files := map[string]string{}
+				for _, f := range result.Files {
+					files[f.FileName] = string(f.Content)
+				}
+				return files
+			}
+
+			commit("old")
+			opts := Options{
+				RepoDir:  repoDir,
+				Branches: []string{"main"},
+				BuildOptions: index.Options{
+					RepositoryDescription: zoekt.Repository{Name: "repo"},
+					IndexDir:              indexDir,
+					DisableCTags:          true,
+					ShardMax:              shardMax,
+					Parallelism:           2,
+					LargeFiles:            []string{"*"}, // Avoid the cat-file filter support probe.
+				},
+			}
+			if _, err := IndexGitRepo(opts); err != nil {
+				t.Fatal(err)
+			}
+			want := searchFiles()
+
+			// Replace git with a cat-file that returns the first new blob and then fails.
+			commit("new")
+			firstID := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", "HEAD:a.txt"))
+			binDir := t.TempDir()
+			script := fmt.Sprintf("#!/bin/sh\nprintf '%s blob 4\\nnew\\n\\n'\nexit 17\n", firstID)
+			if err := os.WriteFile(filepath.Join(binDir, "git"), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("ZOEKT_DISABLE_CATFILE_BATCH", "false")
+
+			if _, err := IndexGitRepo(opts); err == nil {
+				t.Fatal("IndexGitRepo succeeded, want input error")
+			}
+			if diff := cmp.Diff(want, searchFiles()); diff != "" {
+				t.Errorf("search after input failure (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

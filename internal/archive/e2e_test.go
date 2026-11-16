@@ -254,3 +254,45 @@ func testLatestCommitDate(t *testing.T, format string) {
 	require.Len(t, repos, 1)
 	require.True(t, repos[0].LatestCommitDate.Equal(modTime))
 }
+
+func TestIndexEmptyArchive(t *testing.T) {
+	for _, format := range []string{"tar", "tgz"} {
+		t.Run(format, func(t *testing.T) {
+			archive := filepath.Join(t.TempDir(), "archive")
+			f, err := os.Create(archive)
+			require.NoError(t, err)
+			require.NoError(t, writeArchive(f, format, nil))
+			require.NoError(t, f.Close())
+
+			indexDir := t.TempDir()
+			opts := Options{Archive: archive, Name: "repo", Branch: "master"}
+			require.NoError(t, Index(opts, index.Options{IndexDir: indexDir}))
+
+			shards, err := filepath.Glob(filepath.Join(indexDir, "*.zoekt"))
+			require.NoError(t, err)
+			require.Len(t, shards, 1)
+		})
+	}
+}
+
+// TestIndexTruncatedArchive tests that a read error after a shard was staged
+// leaves no temporary shard behind.
+func TestIndexTruncatedArchive(t *testing.T) {
+	archive := filepath.Join(t.TempDir(), "archive.tar")
+	f, err := os.Create(archive)
+	require.NoError(t, err)
+	require.NoError(t, writeArchive(f, "tar", map[string]string{"a": "aaaa", "b": "bbbb"}))
+	// Cut the archive inside the second file's body: header, padded body, header.
+	require.NoError(t, f.Truncate(3*512+2))
+	require.NoError(t, f.Close())
+
+	indexDir := t.TempDir()
+	opts := Options{Archive: archive, Name: "repo", Branch: "master"}
+	// ShardMax: 1 stages the first file as a shard before the second fails to read.
+	err = Index(opts, index.Options{IndexDir: indexDir, ShardMax: 1, Parallelism: 1, DisableCTags: true})
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+
+	entries, err := os.ReadDir(indexDir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
