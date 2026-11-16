@@ -3,7 +3,11 @@ package search
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
@@ -117,4 +121,59 @@ func TestSearchTypeRepo(t *testing.T) {
 		},
 		&query.Substring{Pattern: "file"}))
 	wantSingleMatch(res, "f2:8")
+}
+
+// TestSearchTypeRepoReportsCrashes checks that a shard which crashes while
+// evaluating a type:repo sub-query is reported. Its repositories are missing
+// from the repo set, so the main search skips the shard and would not report
+// the crash itself.
+func TestSearchTypeRepoReportsCrashes(t *testing.T) {
+	oldShardRecoveryLogger := shardRecoveryLogger
+	shardRecoveryLogger = func() *slog.Logger { return slog.New(slog.DiscardHandler) }
+	defer func() { shardRecoveryLogger = oldShardRecoveryLogger }()
+
+	ss := newShardedSearcher(2)
+	b := shardtest.Builder(t, &zoekt.Repository{ID: 1, Name: "reponame"},
+		index.Document{Name: "f1", Content: []byte("needle in a file")})
+	ss.replace(map[string]zoekt.Searcher{"key-1": shardtest.Searcher(t, b)})
+	// replace calls List on the shard, which crashSearcher does not survive,
+	// so add it to the ranked shards directly.
+	ss.ranked.Store([]*rankedShard{
+		ss.getLoaded().shards[0],
+		{
+			Searcher: &crashSearcher{},
+			repos:    []*zoekt.Repository{{ID: 2, Name: "crashrepo"}},
+		},
+	})
+	ss.markReady()
+
+	searcher := &typeRepoSearcher{ss}
+	q := query.NewAnd(
+		&query.Type{Type: query.TypeRepo, Child: &query.Substring{Pattern: "needle"}},
+		&query.Substring{Pattern: "file"})
+
+	t.Run("Search", func(t *testing.T) {
+		res, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{})
+		require.NoError(t, err)
+		assert.Len(t, res.Files, 1)
+		assert.Equal(t, 1, res.Crashes)
+	})
+
+	t.Run("StreamSearch", func(t *testing.T) {
+		var files int
+		var stats zoekt.Stats
+		err := searcher.StreamSearch(context.Background(), q, &zoekt.SearchOptions{}, zoekt.SenderFunc(func(sr *zoekt.SearchResult) {
+			files += len(sr.Files)
+			stats.Add(sr.Stats)
+		}))
+		require.NoError(t, err)
+		assert.Equal(t, 1, files)
+		assert.Equal(t, 1, stats.Crashes)
+	})
+
+	t.Run("List", func(t *testing.T) {
+		rl, err := searcher.List(context.Background(), q, nil)
+		require.NoError(t, err)
+		assert.Equal(t, 1, rl.Crashes)
+	})
 }
