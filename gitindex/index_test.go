@@ -174,6 +174,59 @@ func TestIndexGitRepo_Worktree(t *testing.T) {
 	}
 }
 
+func TestIndexGitRepo_SharedClone(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	testutil.RunGit(t, dir, "init", "-b", "main", "orig")
+	for _, name := range []string{"a/a.go", "b/b.go"} {
+		p := filepath.Join(dir, "orig", name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("package main\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	testutil.RunGit(t, filepath.Join(dir, "orig"), "add", ".")
+	testutil.RunGit(t, filepath.Join(dir, "orig"), "commit", "-m", "initial commit")
+
+	// The clone's new commit is local, but tree b/ is only in orig.
+	testutil.RunGit(t, dir, "clone", "--shared", "orig", "clone")
+	repoDir := filepath.Join(dir, "clone")
+	if err := os.WriteFile(filepath.Join(repoDir, "a", "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testutil.RunGit(t, repoDir, "commit", "-am", "change a")
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:  repoDir,
+		Branches: []string{"HEAD"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal("search failed", err)
+	}
+	if len(results.Files) != 2 {
+		t.Fatalf("got search result %v, want 2 files", results.Files)
+	}
+}
+
 func TestIndexGitRepoPreservesRepositoryName(t *testing.T) {
 	t.Parallel()
 
