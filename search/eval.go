@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"math"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/tenant"
@@ -33,12 +34,16 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		tr.Finish()
 	}()
 
-	q, err = s.eval(ctx, tr, q)
+	q, crashes, err := s.eval(ctx, tr, q)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.Streamer.Search(ctx, q, opts)
+	sr, err = s.Streamer.Search(ctx, q, opts)
+	if sr != nil {
+		sr.Crashes += crashes
+	}
+	return sr, err
 }
 
 func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zoekt.SearchOptions, sender zoekt.Sender) (err error) {
@@ -56,15 +61,30 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		tr.Finish()
 	}()
 
-	q, err = s.eval(ctx, tr, q)
+	q, crashes, err := s.eval(ctx, tr, q)
 	if err != nil {
 		return err
 	}
 
-	return s.Streamer.StreamSearch(ctx, q, opts, zoekt.SenderFunc(func(event *zoekt.SearchResult) {
+	err = s.Streamer.StreamSearch(ctx, q, opts, zoekt.SenderFunc(func(event *zoekt.SearchResult) {
 		stats.Add(event.Stats)
 		sender.Send(event)
 	}))
+
+	// Report shards that crashed while evaluating type:repo sub-queries. The
+	// stream is done, so nothing is pending anymore.
+	if crashes > 0 {
+		stats.Crashes += crashes
+		sender.Send(&zoekt.SearchResult{
+			Stats: zoekt.Stats{Crashes: crashes},
+			Progress: zoekt.Progress{
+				Priority:           math.Inf(-1),
+				MaxPendingPriority: math.Inf(-1),
+			},
+		})
+	}
+
+	return err
 }
 
 func (s *typeRepoSearcher) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions) (rl *zoekt.RepoList, err error) {
@@ -83,16 +103,23 @@ func (s *typeRepoSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 		tr.Finish()
 	}()
 
-	q, err = s.eval(ctx, tr, q)
+	q, crashes, err := s.eval(ctx, tr, q)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.Streamer.List(ctx, q, opts)
+	rl, err = s.Streamer.List(ctx, q, opts)
+	if rl != nil {
+		rl.Crashes += crashes
+	}
+	return rl, err
 }
 
-func (s *typeRepoSearcher) eval(ctx context.Context, tr *trace.Trace, q query.Q) (query.Q, error) {
-	var err error
+// eval replaces type:repo sub-queries with the set of repositories they match.
+// It returns the number of shards that crashed while listing those
+// repositories. Their repositories are missing from the set, so callers must
+// report the crashes or the results look complete.
+func (s *typeRepoSearcher) eval(ctx context.Context, tr *trace.Trace, q query.Q) (_ query.Q, crashes int, err error) {
 	q = query.Map(q, func(q query.Q) query.Q {
 		if err != nil {
 			return nil
@@ -110,6 +137,7 @@ func (s *typeRepoSearcher) eval(ctx context.Context, tr *trace.Trace, q query.Q)
 		if err != nil {
 			return nil
 		}
+		crashes += rl.Crashes
 
 		rs := &query.RepoSet{Set: make(map[string]bool, len(rl.Repos))}
 		for _, r := range rl.Repos {
@@ -120,5 +148,5 @@ func (s *typeRepoSearcher) eval(ctx context.Context, tr *trace.Trace, q query.Q)
 
 		return rs
 	})
-	return q, err
+	return q, crashes, err
 }
