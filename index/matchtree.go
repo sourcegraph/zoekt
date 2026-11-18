@@ -1355,9 +1355,21 @@ func regexpToWordMatchTree(q *query.Regexp) (_ *wordMatchTree, ok bool) {
 	if sub[0].Op != syntax.OpWordBoundary || sub[1].Op != syntax.OpLiteral || sub[2].Op != syntax.OpWordBoundary {
 		return nil, false
 	}
+	// An inline flag like (?i) folds just the literal, so the flags of the
+	// whole regexp don't show it.
+	if sub[1].Flags&syntax.FoldCase != 0 {
+		return nil, false
+	}
+	// wordMatchTree wants a non-word character on each side of the literal.
+	// That is what \b means only if the literal starts and ends with a word
+	// character.
+	word := string(sub[1].Rune)
+	if word == "" || !characterClass(word[0]) || !characterClass(word[len(word)-1]) {
+		return nil, false
+	}
 
 	return &wordMatchTree{
-		word:     string(sub[1].Rune),
+		word:     word,
 		fileName: q.FileName,
 	}, true
 }
