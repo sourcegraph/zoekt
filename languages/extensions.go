@@ -114,7 +114,19 @@ var sgExtraLangsForExts = map[string]string{
 }
 
 var sgExtraContentHeuristics = map[string]*enrydata.Heuristics{
-	".c": enrydata.ContentHeuristics[".h"],
+	// The ".h" rules, except that try and constexpr must be whole words: many
+	// C files have lines like "try_to_freeze();".
+	".c": {
+		rule.Or(
+			rule.MatchingLanguages("Objective-C"),
+			regexp.MustCompile(`(?m)^\s*(@(interface|class|protocol|property|end|synchronised|selector|implementation)\b|#import\s+.+\.h[">])`),
+		),
+		rule.Or(
+			rule.MatchingLanguages("C++"),
+			regexp.MustCompile(`(?m)^\s*#\s*include <(cstdint|string|vector|map|list|array|bitset|queue|stack|forward_list|unordered_map|unordered_set|(i|o|io)stream)>|^\s*template\s*<|^[ \t]*(try|constexpr)\b|^[ \t]*catch\s*\(|^[ \t]*(class|(using[ \t]+)?namespace)\s+\w+|^[ \t]*(private|public|protected):$|__has_cpp_attribute|__cplusplus >|std::\w+`),
+		),
+		rule.Always(rule.MatchingLanguages("C")),
+	},
 	".cls": {
 		rule.Or(rule.MatchingLanguages("TeX"), regexp.MustCompile(`\A[%\\]`)),
 		rule.Always(rule.MatchingLanguages("Apex")),
