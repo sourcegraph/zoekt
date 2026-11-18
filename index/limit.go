@@ -1,6 +1,7 @@
 package index
 
 import (
+	"bytes"
 	"log"
 	"slices"
 
@@ -55,7 +56,7 @@ func NewDisplayTruncator(opts *zoekt.SearchOptions) (_ DisplayTruncator, hasLimi
 		}
 
 		if matchLimited {
-			fm, matchLimit = limitMatches(fm, matchLimit, opts.ChunkMatches)
+			fm, matchLimit = limitMatches(fm, matchLimit, opts.ChunkMatches, opts.NumContextLines)
 			if matchLimit <= 0 {
 				done = true
 			}
@@ -65,10 +66,12 @@ func NewDisplayTruncator(opts *zoekt.SearchOptions) (_ DisplayTruncator, hasLimi
 	}, true
 }
 
-func limitMatches(files []zoekt.FileMatch, limit int, chunkMatches bool) ([]zoekt.FileMatch, int) {
+func limitMatches(files []zoekt.FileMatch, limit int, chunkMatches bool, numContextLines int) ([]zoekt.FileMatch, int) {
 	var limiter func(file *zoekt.FileMatch, limit int) int
 	if chunkMatches {
-		limiter = limitChunkMatches
+		limiter = func(file *zoekt.FileMatch, limit int) int {
+			return limitChunkMatches(file, limit, numContextLines)
+		}
 	} else {
 		limiter = limitLineMatches
 	}
@@ -83,19 +86,23 @@ func limitMatches(files []zoekt.FileMatch, limit int, chunkMatches bool) ([]zoek
 
 // Limit the number of ChunkMatches in the given FileMatch, returning the
 // remaining limit, if any.
-func limitChunkMatches(file *zoekt.FileMatch, limit int) int {
+func limitChunkMatches(file *zoekt.FileMatch, limit, numContextLines int) int {
 	for i := range file.ChunkMatches {
 		cm := &file.ChunkMatches[i]
 		if len(cm.Ranges) > limit {
 			// We potentially need to effect the limit upon 3 different fields:
 			// Ranges, SymbolInfo, and Content.
 
-			// Content is the most complicated: we need to remove the last N
-			// lines from it, where N is the difference between the line number
-			// of the end of the old last Range and that of the new last Range.
-			// This calculation is correct in the presence of both context lines
-			// and multiline Ranges.
-			n := cm.Ranges[len(cm.Ranges)-1].End.LineNumber - cm.Ranges[limit-1].End.LineNumber
+			// Content is the most complicated: we need to remove the lines
+			// after the context of the new last Range. Counting from the old
+			// last Range is not enough: the end of the file may have cut its
+			// context short. Ranges can span lines, so use the end line.
+			lines := bytes.Count(cm.Content, []byte{'\n'})
+			if len(cm.Content) > 0 && cm.Content[len(cm.Content)-1] != '\n' {
+				lines++
+			}
+			lastLine := int(cm.ContentStart.LineNumber) + lines - 1
+			n := lastLine - (int(cm.Ranges[limit-1].End.LineNumber) + numContextLines)
 			if n > 0 {
 				// Lines in Content keep their terminating newline. The last one
 				// closes the last line, so skip it before counting. The newline
