@@ -623,3 +623,27 @@ func mergeHelper(t *testing.T, fn string) error {
 	_, _, err = index.Merge(filepath.Dir(fn), indexFile)
 	return err
 }
+
+// An unassigned repository can be in a compound shard and in a simple shard,
+// for example if its builder was killed after publishing the simple shard but
+// before tombstoning the compound copy. Cleanup must tombstone the compound
+// copy instead of deleting the compound shard with all its other repositories.
+func TestCleanupUnassignedRepoInCompoundAndSimpleShard(t *testing.T) {
+	dir := t.TempDir()
+	cs := createCompoundShard(t, dir, []uint32{1, 2})
+	createTestShard(t, "repo1", 1, filepath.Join(dir, "repo1_v16.00000.zoekt"))
+
+	// repo1 is no longer assigned to this replica, repo2 still is.
+	cleanup(dir, []uint32{2}, time.Now(), true, &phaseTimings{})
+
+	repos, _, err := index.ReadMetadataPathAlive(cs)
+	if err != nil {
+		t.Fatalf("compound shard with assigned repo2 is gone: %v", err)
+	}
+	if len(repos) != 1 || repos[0].ID != 2 {
+		t.Fatalf("want only repo2 alive in compound shard, got %+v", repos)
+	}
+	if _, ok := getShards(filepath.Join(dir, ".trash"))[1]; !ok {
+		t.Fatal("want simple shard of repo1 in trash")
+	}
+}

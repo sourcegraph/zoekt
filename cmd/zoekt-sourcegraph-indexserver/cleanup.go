@@ -172,10 +172,18 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool, 
 			_ = os.Chtimes(shard.Path, now, now)
 		}
 
-		if shardMerging && maybeSetTombstone(shards, repo) {
-			continue
+		// The repository may be in a compound shard and in simple shards, for
+		// example if its indexing was interrupted before it tombstoned the
+		// compound copy. Tombstone the compound shards so moveAll doesn't delete
+		// them with all their other repositories.
+		simple := shards[:0]
+		for _, s := range shards {
+			if shardMerging && maybeSetTombstone([]shard{s}, repo) {
+				continue
+			}
+			simple = append(simple, s)
 		}
-		moveAll(trashDir, shards)
+		moveAll(trashDir, simple)
 	}
 
 	// Remove .tmp files from crashed indexer runs-- for example, if an indexer
