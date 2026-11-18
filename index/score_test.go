@@ -1,6 +1,7 @@
 package index
 
 import (
+	"context"
 	"testing"
 
 	"github.com/sourcegraph/zoekt"
@@ -56,6 +57,29 @@ func TestScoreChunkSymbolInfoAlignment(t *testing.T) {
 		if len(got.SymbolInfo) != len(got.Ranges) {
 			t.Errorf("bm25=%v: after truncation len(SymbolInfo) = %d, want %d",
 				bm25, len(got.SymbolInfo), len(got.Ranges))
+		}
+	}
+}
+
+// BestLineMatch is a 1-based line number for content chunks, even when no
+// line in the chunk scores above 0.
+func TestScoreChunkBestLineWithZeroScore(t *testing.T) {
+	// A match inside a word, with no symbol, scores 0.
+	b := testShardBuilder(t, nil, Document{Name: "f1", Content: []byte("line one\nxneedlex\n")})
+	q := &query.Substring{Pattern: "needle", Content: true}
+
+	// searchForTest clears BestLineMatch, so search directly.
+	s := searcherForTest(t, b)
+	for _, bm25 := range []bool{false, true} {
+		res, err := s.Search(context.Background(), q, &zoekt.SearchOptions{ChunkMatches: true, UseBM25Scoring: bm25})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Files) != 1 || len(res.Files[0].ChunkMatches) != 1 {
+			t.Fatalf("bm25=%v: want one file with one chunk, got %d files", bm25, len(res.Files))
+		}
+		if got := res.Files[0].ChunkMatches[0].BestLineMatch; got != 2 {
+			t.Errorf("bm25=%v: BestLineMatch = %d, want 2", bm25, got)
 		}
 	}
 }
