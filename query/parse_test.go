@@ -181,6 +181,10 @@ func TestParseQuery(t *testing.T) {
 		// whitespace
 		{"  (  )  ", &Const{Value: true}},
 		{"  ( foo )  ", &Substring{Pattern: "foo"}},
+		{"foo\nbar", NewAnd(&Substring{Pattern: "foo"}, &Substring{Pattern: "bar"})},
+		{"foo\n", &Substring{Pattern: "foo"}},
+		{"(foo\nbar)", NewAnd(&Substring{Pattern: "foo"}, &Substring{Pattern: "bar"})},
+		{"foo\r\nbar", NewAnd(&Substring{Pattern: "foo"}, &Substring{Pattern: "bar"})},
 	} {
 		got, err := Parse(c.in)
 		if (c.want == nil) != (err != nil) {

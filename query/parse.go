@@ -102,8 +102,9 @@ func stripCaseScopes(q Q) Q {
 	}
 }
 
+// isSpace matches the separators that end a token in nextToken.
 func isSpace(c byte) bool {
-	return c == ' ' || c == '\t'
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
 func startsQuerySyntax(in []byte) bool {
@@ -632,7 +633,7 @@ loop:
 			cur.Text = append(cur.Text, '\\', c)
 			left = left[1:]
 
-		case ' ', '\n', '\t':
+		case ' ', '\n', '\t', '\r':
 			if parenCount > 0 {
 				foundSpace = true
 			}
