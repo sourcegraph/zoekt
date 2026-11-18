@@ -100,14 +100,12 @@ func AddLineNumbers(content string, lineNum int, isBefore bool) []lineMatch {
 		return nil
 	}
 
-	lines := strings.Split(content, "\n")
+	// Context lines end with a newline. Trim it so it doesn't count as an
+	// extra line when numbering the before context backwards.
+	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
 	var result []lineMatch
 
 	for i, line := range lines {
-		if i == len(lines)-1 && line == "" {
-			continue
-		}
-
 		var num int
 		if isBefore {
 			num = lineNum - len(lines) + i

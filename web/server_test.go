@@ -73,6 +73,37 @@ func TestAddLineNumbers(t *testing.T) {
 			},
 		},
 		{
+			// Search results return context lines with their newlines.
+			name:     "before ending with a newline",
+			content:  "second line\nthird line\n",
+			lineNum:  4,
+			isBefore: true,
+			want: []lineMatch{
+				{LineNum: 2, Content: "second line"},
+				{LineNum: 3, Content: "third line"},
+			},
+		},
+		{
+			name:     "before ending with an empty line",
+			content:  "first line\n\n",
+			lineNum:  10,
+			isBefore: true,
+			want: []lineMatch{
+				{LineNum: 8, Content: "first line"},
+				{LineNum: 9, Content: ""},
+			},
+		},
+		{
+			name:     "after ending with a newline",
+			content:  "fifth line\nsixth line\n",
+			lineNum:  4,
+			isBefore: false,
+			want: []lineMatch{
+				{LineNum: 5, Content: "fifth line"},
+				{LineNum: 6, Content: "sixth line"},
+			},
+		},
+		{
 			name:     "content with empty lines after",
 			content:  "first line\n\nthird line",
 			lineNum:  10,
