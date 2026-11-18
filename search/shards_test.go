@@ -1289,6 +1289,44 @@ func TestSendByRepository(t *testing.T) {
 	}
 }
 
+// Repositories indexed without an ID all have RepositoryID 0. A compound
+// shard of them must still send each repository's URLs with its files.
+func TestSendByRepositoryWithoutIDs(t *testing.T) {
+	sr := &zoekt.SearchResult{
+		Files: []zoekt.FileMatch{
+			{Repository: "r1", FileName: "a", RepositoryPriority: 2},
+			{Repository: "r2", FileName: "b", RepositoryPriority: 1},
+		},
+		RepoURLs:      map[string]string{"r1": "https://r1/{{.Path}}", "r2": "https://r2/{{.Path}}"},
+		LineFragments: map[string]string{"r1": "#r1-{{.LineNumber}}", "r2": "#r2-{{.LineNumber}}"},
+	}
+
+	var sent []*zoekt.SearchResult
+	sendByRepository(sr, &zoekt.SearchOptions{}, zoekt.SenderFunc(func(r *zoekt.SearchResult) {
+		sent = append(sent, r)
+	}))
+
+	if len(sent) != 2 {
+		t.Fatalf("got %d batches, want one per repository", len(sent))
+	}
+	for _, r := range sent {
+		if len(r.Files) != 1 {
+			t.Fatalf("got a batch with %d files, want 1", len(r.Files))
+		}
+		if got, want := r.Priority, r.Files[0].RepositoryPriority; got != want {
+			t.Errorf("%s: batch priority %v, want %v", r.Files[0].Repository, got, want)
+		}
+		for _, f := range r.Files {
+			if got, want := r.RepoURLs[f.Repository], sr.RepoURLs[f.Repository]; got != want {
+				t.Errorf("%s: RepoURLs has %q, want %q", f.Repository, got, want)
+			}
+			if got, want := r.LineFragments[f.Repository], sr.LineFragments[f.Repository]; got != want {
+				t.Errorf("%s: LineFragments has %q, want %q", f.Repository, got, want)
+			}
+		}
+	}
+}
+
 type mockSender struct {
 	stats zoekt.Stats
 	files [][]zoekt.FileMatch
