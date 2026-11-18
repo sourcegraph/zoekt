@@ -195,6 +195,45 @@ func TestPrintDefault(t *testing.T) {
 	}
 }
 
+func TestPrintBranchIsExact(t *testing.T) {
+	b, err := index.NewShardBuilder(&zoekt.Repository{
+		Name: "name",
+		Branches: []zoekt.RepositoryBranch{
+			{Name: "main", Version: "1111"},
+			{Name: "main-old", Version: "2222"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewShardBuilder: %v", err)
+	}
+	for _, doc := range []index.Document{
+		{Name: "f", Content: []byte("new water\n"), Branches: []string{"main"}},
+		{Name: "f", Content: []byte("old water\n"), Branches: []string{"main-old"}},
+	} {
+		if err := b.Add(doc); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+	}
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
+	srv := Server{
+		Searcher: s,
+		Top:      Top,
+		HTML:     true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// b=main must not also pick the copy on main-old.
+	checkNeedles(t, ts, "/print?b=main&f=f&q=water&r=name", []string{"new water"})
+	checkNeedles(t, ts, "/print?b=main-old&f=f&q=water&r=name", []string{"old water"})
+}
+
 func checkNeedles(t *testing.T, ts *httptest.Server, req string, needles []string) {
 	res, err := http.Get(ts.URL + req)
 	if err != nil {
