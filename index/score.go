@@ -42,6 +42,8 @@ type chunkScore struct {
 // Invariant: there should be at least one input candidate, len(ms) > 0.
 func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range, language string, opts *zoekt.SearchOptions) (chunkScore, []*zoekt.Symbol) {
 	var bestScore lineScore
+	// Line numbers start at 1, so 0 means no line has been scored yet. Take
+	// the first line even if it scores 0.
 	bestLine := 0
 	var symbolInfo []*zoekt.Symbol
 
@@ -71,7 +73,7 @@ func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range,
 		if i != 0 && lineNumber != currentLine {
 			score, si := p.scoreLine(ms[start:i], language, currentLine, opts)
 			collect(si, start)
-			if score.score > bestScore.score {
+			if bestLine == 0 || score.score > bestScore.score {
 				bestScore = score
 				bestLine = currentLine
 			}
@@ -83,7 +85,7 @@ func (p *contentProvider) scoreChunk(ms []*candidateMatch, ranges []zoekt.Range,
 	// Make sure to score the last line
 	line, si := p.scoreLine(ms[start:], language, currentLine, opts)
 	collect(si, start)
-	if line.score > bestScore.score {
+	if bestLine == 0 || line.score > bestScore.score {
 		bestScore = line
 		bestLine = currentLine
 	}
