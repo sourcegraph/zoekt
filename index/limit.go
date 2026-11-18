@@ -125,6 +125,12 @@ func limitChunkMatches(file *zoekt.FileMatch, limit int) int {
 				// as Ranges.
 				cm.SymbolInfo = cm.SymbolInfo[:limit]
 			}
+			// The best line may have been dropped. Without its score we
+			// can't pick the next best, so fall back to the chunk's first
+			// match.
+			if cm.BestLineMatch > cm.Ranges[limit-1].End.LineNumber {
+				cm.BestLineMatch = cm.Ranges[0].Start.LineNumber
+			}
 		}
 		if len(cm.Ranges) == limit {
 			file.ChunkMatches = file.ChunkMatches[:i+1]

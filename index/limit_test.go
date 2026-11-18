@@ -2,6 +2,7 @@ package index
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"testing"
 
@@ -196,5 +197,36 @@ func TestLimitChunkMatchesContent(t *testing.T) {
 	}
 	if want := "l1 MATCH\nl2\nl3 MATCH\nl4\n"; string(cm.Content) != want {
 		t.Errorf("Content = %q, want %q", cm.Content, want)
+	}
+}
+
+// BestLineMatch is the line clients center a chunk on, so it must stay inside
+// the chunk when the match limit drops the range on that line.
+func TestLimitChunkMatchesBestLineMatch(t *testing.T) {
+	// The whole-word match on line 3 scores higher than the partial match on
+	// line 1. With one line of context both are in a single chunk.
+	content := "xfooy\nbar\nfoo\nbaz\n"
+	b := testShardBuilder(t, nil, Document{Name: "f1", Content: []byte(content)})
+
+	// searchForTest clears BestLineMatch, so search directly.
+	opts := zoekt.SearchOptions{ChunkMatches: true, NumContextLines: 1}
+	res, err := searcherForTest(t, b).Search(context.Background(), &query.Substring{Pattern: "foo"}, &opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) != 1 || len(res.Files[0].ChunkMatches) != 1 {
+		t.Fatalf("want one file with one chunk, got %+v", res.Files)
+	}
+	if got := res.Files[0].ChunkMatches[0].BestLineMatch; got != 3 {
+		t.Fatalf("BestLineMatch before truncation = %d, want 3", got)
+	}
+
+	opts.MaxMatchDisplayCount = 1
+	cm := SortAndTruncateFiles(res.Files, &opts)[0].ChunkMatches[0]
+	if len(cm.Ranges) != 1 || cm.Ranges[0].Start.LineNumber != 1 {
+		t.Fatalf("want only the range on line 1 after truncation, got %+v", cm.Ranges)
+	}
+	if cm.BestLineMatch != 1 {
+		t.Errorf("BestLineMatch = %d, but the chunk only has a match on line 1 and Content %q", cm.BestLineMatch, cm.Content)
 	}
 }
