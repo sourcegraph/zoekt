@@ -629,6 +629,28 @@ func TestFullAndShortRefNames(t *testing.T) {
 	}
 }
 
+func TestSubURL(t *testing.T) {
+	t.Parallel()
+
+	rw := NewRepoWalker(nil, "https://example.com/org/sup", nil)
+	// Git resolves "./" and "../" against the superproject's URL.
+	for relURL, want := range map[string]string{
+		"./s":                       "https://example.com/org/sup/s",
+		"./s/t":                     "https://example.com/org/sup/s/t",
+		"../t":                      "https://example.com/org/t",
+		"../../other/t":             "https://example.com/other/t",
+		"https://example.com/abs/u": "https://example.com/abs/u",
+	} {
+		u, err := rw.subURL(relURL)
+		if err != nil {
+			t.Fatalf("subURL(%q): %v", relURL, err)
+		}
+		if got := u.String(); got != want {
+			t.Errorf("subURL(%q) = %q, want %q", relURL, got, want)
+		}
+	}
+}
+
 func TestUniq(t *testing.T) {
 	t.Parallel()
 

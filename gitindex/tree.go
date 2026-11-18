@@ -50,7 +50,8 @@ func (rw *RepoWalker) subURL(relURL string) (*url.URL, error) {
 	if rw.repoURL == nil {
 		return nil, fmt.Errorf("no URL for base repo")
 	}
-	if strings.HasPrefix(relURL, "../") {
+	// Like git, resolve "./" and "../" URLs against the superproject's URL.
+	if strings.HasPrefix(relURL, "./") || strings.HasPrefix(relURL, "../") {
 		u := *rw.repoURL
 		u.Path = path.Join(u.Path, relURL)
 		return &u, nil
