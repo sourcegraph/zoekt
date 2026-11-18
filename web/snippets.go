@@ -58,34 +58,44 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 		}
 		return buf.String()
 	}
-	getURL := func(repo, filename string, branches []string, version string) string {
+	// getURL returns the link for f and whether it goes to the print page.
+	getURL := func(f *zoekt.FileMatch) (string, bool) {
+		// A subrepository's URL template takes paths relative to its root.
+		repo, filename := f.Repository, f.FileName
+		if f.SubRepositoryName != "" {
+			repo = f.SubRepositoryName
+			filename = strings.TrimPrefix(f.FileName[len(f.SubRepositoryPath):], "/")
+		}
+
 		tpl := templateMap[repo]
 		if localPrint || tpl == nil {
+			// The print page finds files by their indexed repository and full
+			// path, which for subrepository files are the superproject's.
 			v := make(url.Values)
-			v.Add("r", repo)
-			v.Add("f", filename)
+			v.Add("r", f.Repository)
+			v.Add("f", f.FileName)
 			v.Add("q", query)
-			if len(branches) > 0 {
-				v.Add("b", branches[0])
+			if len(f.Branches) > 0 {
+				v.Add("b", f.Branches[0])
 			}
-			return "print?" + v.Encode()
+			return "print?" + v.Encode(), true
 		}
 
 		var buf bytes.Buffer
 		b := ""
-		if len(branches) > 0 {
-			b = branches[0]
+		if len(f.Branches) > 0 {
+			b = f.Branches[0]
 		}
 		err := tpl.Execute(&buf, map[string]string{
 			"Branch":  b,
-			"Version": version,
+			"Version": f.Version,
 			"Path":    filename,
 		})
 		if err != nil {
 			slog.Warn("failed to execute url template", "error", err)
-			return ""
+			return "", false
 		}
-		return buf.String()
+		return buf.String(), false
 	}
 
 	// hash => result-id
@@ -107,15 +117,16 @@ func (s *Server) formatResults(result *zoekt.SearchResult, query string, localPr
 			seenFiles[string(f.Checksum)] = fMatch.ResultID
 		}
 
-		if f.SubRepositoryName != "" {
-			fn := strings.TrimPrefix(fMatch.FileName[len(f.SubRepositoryPath):], "/")
-			fMatch.URL = getURL(f.SubRepositoryName, fn, f.Branches, f.Version)
-		} else {
-			fMatch.URL = getURL(f.Repository, f.FileName, f.Branches, f.Version)
-		}
+		var printPage bool
+		fMatch.URL, printPage = getURL(&f)
 
 		for _, m := range f.LineMatches {
-			fragment := getFragment(f.Repository, m.LineNumber)
+			// The print page names its lines #lN, whatever the line fragment
+			// template says.
+			fragment := "#l" + strconv.Itoa(m.LineNumber)
+			if !printPage {
+				fragment = getFragment(f.Repository, m.LineNumber)
+			}
 			if !strings.HasPrefix(fragment, "#") && !strings.HasPrefix(fragment, ";") {
 				// TODO - remove this is backward compatibility glue.
 				fragment = "#" + fragment
