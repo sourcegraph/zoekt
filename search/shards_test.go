@@ -1237,6 +1237,77 @@ func TestPrioritySlice(t *testing.T) {
 	}
 }
 
+// prioritySearcher is a shard with one repository of the given priority.
+type prioritySearcher struct {
+	priority float64
+}
+
+func (s *prioritySearcher) repo() zoekt.Repository {
+	return zoekt.Repository{
+		ID:        uint32(s.priority),
+		Name:      fmt.Sprintf("repo%v", s.priority),
+		RawConfig: map[string]string{"priority": strconv.FormatFloat(s.priority, 'f', -1, 64)},
+	}
+}
+
+func (s *prioritySearcher) Search(context.Context, query.Q, *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
+	r := s.repo()
+	return &zoekt.SearchResult{
+		Files: []zoekt.FileMatch{{
+			FileName:           "f",
+			Repository:         r.Name,
+			RepositoryID:       r.ID,
+			RepositoryPriority: s.priority,
+		}},
+		Stats:    zoekt.Stats{MatchCount: 1},
+		RepoURLs: map[string]string{r.Name: ""},
+	}, nil
+}
+
+func (s *prioritySearcher) List(context.Context, query.Q, *zoekt.ListOptions) (*zoekt.RepoList, error) {
+	return &zoekt.RepoList{Repos: []*zoekt.RepoListEntry{{Repository: s.repo()}}}, nil
+}
+
+func (s *prioritySearcher) Close()         {}
+func (s *prioritySearcher) String() string { return fmt.Sprintf("prioritySearcher(%v)", s.priority) }
+
+// MaxPendingPriority promises that no later result has a higher priority, so
+// shards that have not been handed to a worker yet are pending too.
+func TestStreamSearchMaxPendingPriorityCoversUnsearchedShards(t *testing.T) {
+	// With one worker at most two shards are in flight. While a slow client
+	// receives a result, the worker finishes both and more shards wait.
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+
+	const n = 50
+	ss := newShardedSearcher(1)
+	shards := map[string]zoekt.Searcher{}
+	for i := 1; i <= n; i++ {
+		shards[fmt.Sprintf("shard%d", i)] = &prioritySearcher{priority: float64(i)}
+	}
+	ss.replace(shards)
+	ss.markReady()
+
+	for run := range 20 {
+		var events []zoekt.Progress
+		err := ss.StreamSearch(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{}, zoekt.SenderFunc(func(sr *zoekt.SearchResult) {
+			if len(sr.Files) > 0 {
+				time.Sleep(100 * time.Microsecond)
+			}
+			events = append(events, sr.Progress)
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, e := range events {
+			for _, later := range events[i+1:] {
+				if later.Priority > e.MaxPendingPriority {
+					t.Fatalf("run %d: event %d has MaxPendingPriority %v, but a later event has priority %v", run, i, e.MaxPendingPriority, later.Priority)
+				}
+			}
+		}
+	}
+}
+
 func TestSendByRepository(t *testing.T) {
 	wantStats := zoekt.Stats{}
 	wantStats.ShardsScanned = 1
