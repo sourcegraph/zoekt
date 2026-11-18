@@ -557,3 +557,45 @@ func TestRepositoryUnmarshalJSON_RawConfigIDs(t *testing.T) {
 		})
 	}
 }
+
+// zoekt-sourcegraph-indexserver sets both "priority" and "latestCommitDate".
+// The commit date ranks the repository, but its priority still orders shards
+// and is reported with its results.
+func TestRepositoryUnmarshalJSON_Priority(t *testing.T) {
+	date := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name         string
+		rawConfig    map[string]string
+		wantPriority float64
+		wantRank     uint16
+	}{{
+		name:         "priority",
+		rawConfig:    map[string]string{"priority": "5000"},
+		wantPriority: 5000,
+		wantRank:     math.MaxUint16 / 2,
+	}, {
+		name:         "priority and latestCommitDate",
+		rawConfig:    map[string]string{"priority": "5000", "latestCommitDate": "1"},
+		wantPriority: 5000,
+		wantRank:     monthsSince1970(date),
+	}, {
+		name:         "latestCommitDate",
+		rawConfig:    map[string]string{"latestCommitDate": "1"},
+		wantPriority: 0,
+		wantRank:     monthsSince1970(date),
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(&Repository{Name: "r", LatestCommitDate: date, RawConfig: tc.rawConfig})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var repo Repository
+			if err := json.Unmarshal(data, &repo); err != nil {
+				t.Fatal(err)
+			}
+			if repo.GetPriority() != tc.wantPriority || repo.Rank != tc.wantRank {
+				t.Fatalf("got priority %v rank %d, want %v %d", repo.GetPriority(), repo.Rank, tc.wantPriority, tc.wantRank)
+			}
+		})
+	}
+}
