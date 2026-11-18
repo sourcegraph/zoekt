@@ -155,6 +155,68 @@ func TestPrint(t *testing.T) {
 	}
 }
 
+func TestPrintSubRepository(t *testing.T) {
+	b, err := index.NewShardBuilder(&zoekt.Repository{
+		Name:                 "super",
+		FileURLTemplate:      `{{ URLJoinPath "https://example.com/super/blob" .Version .Path }}`,
+		LineFragmentTemplate: "#L{{.LineNumber}}",
+		Branches:             []zoekt.RepositoryBranch{{Name: "main", Version: "1111"}},
+		SubRepoMap: map[string]*zoekt.Repository{
+			"lib": {
+				Name:     "example.com/lib",
+				Branches: []zoekt.RepositoryBranch{{Name: "main", Version: "2222"}},
+			},
+			"tpl": {
+				Name:            "example.com/tpl",
+				FileURLTemplate: `{{ URLJoinPath "https://example.com/tpl/blob" .Version .Path }}`,
+				Branches:        []zoekt.RepositoryBranch{{Name: "main", Version: "3333"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewShardBuilder: %v", err)
+	}
+	for _, doc := range []index.Document{
+		{Name: "top.txt", Content: []byte("top water\n")},
+		{Name: "lib/f.txt", SubRepositoryPath: "lib", Content: []byte("lib water\n")},
+		{Name: "tpl/g.txt", SubRepositoryPath: "tpl", Content: []byte("tpl water\n")},
+	} {
+		doc.Branches = []string{"main"}
+		if err := b.Add(doc); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+	}
+	s := shardtest.Streamer{Searcher: shardtest.Searcher(t, b)}
+	srv := Server{
+		Searcher: s,
+		Top:      Top,
+		HTML:     true,
+	}
+
+	mux, err := NewMux(&srv)
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// lib has no URL template, so its file links to the print page. That
+	// looks files up by the indexed repository and the full path, and names
+	// its lines #lN. A URL template still gets the subrepository's own path
+	// and version.
+	checkNeedles(t, ts, "/search?q=water", []string{
+		`href="https://example.com/super/blob/1111/top.txt#L1"`,
+		`href="print?b=main&amp;f=lib%2Ff.txt&amp;q=water&amp;r=super"`,
+		`href="print?b=main&amp;f=lib%2Ff.txt&amp;q=water&amp;r=super#l1"`,
+		`href="https://example.com/tpl/blob/3333/g.txt"`,
+	})
+	checkNeedles(t, ts, "/print?b=main&f=lib%2Ff.txt&q=water&r=super", []string{
+		`id="l1"`,
+		"lib water",
+	})
+}
+
 func TestPrintDefault(t *testing.T) {
 	b, err := index.NewShardBuilder(&zoekt.Repository{
 		Name:     "name",
