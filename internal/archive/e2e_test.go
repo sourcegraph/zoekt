@@ -296,3 +296,27 @@ func TestIndexTruncatedArchive(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, entries)
 }
+
+// TestIndexIncrementallyWithoutCommit tests that an incremental build without
+// a commit indexes the archive again, since nothing tells whether it changed.
+func TestIndexIncrementallyWithoutCommit(t *testing.T) {
+	indexDir := t.TempDir()
+	archive := filepath.Join(t.TempDir(), "archive.tar")
+	for _, content := range []string{"old content\n", "new content\n"} {
+		f, err := os.Create(archive)
+		require.NoError(t, err)
+		require.NoError(t, writeArchive(f, "tar", map[string]string{"file.txt": content}))
+		require.NoError(t, f.Close())
+
+		opts := Options{Incremental: true, Archive: archive, Name: "repo", Branch: "main"}
+		require.NoError(t, Index(opts, index.Options{IndexDir: indexDir, DisableCTags: true}))
+
+		ss, err := search.NewDirectorySearcher(indexDir)
+		require.NoError(t, err)
+		result, err := ss.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
+		ss.Close()
+		require.NoError(t, err)
+		require.Len(t, result.Files, 1)
+		require.Equal(t, content, string(result.Files[0].Content))
+	}
+}
