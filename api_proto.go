@@ -17,6 +17,7 @@ package zoekt // import "github.com/sourcegraph/zoekt"
 import (
 	"math/rand"
 	"reflect"
+	"strings"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -218,11 +219,14 @@ func (s *Symbol) ToProto() *webserverv1.SymbolInfo {
 		return nil
 	}
 
+	// Sym is a slice of the file's content, which zoekt indexes even when it
+	// isn't valid UTF-8. Proto string fields must be valid UTF-8, or the whole
+	// response fails to marshal.
 	return &webserverv1.SymbolInfo{
-		Sym:        s.Sym,
-		Kind:       s.Kind,
-		Parent:     s.Parent,
-		ParentKind: s.ParentKind,
+		Sym:        strings.ToValidUTF8(s.Sym, "\uFFFD"),
+		Kind:       strings.ToValidUTF8(s.Kind, "\uFFFD"),
+		Parent:     strings.ToValidUTF8(s.Parent, "\uFFFD"),
+		ParentKind: strings.ToValidUTF8(s.ParentKind, "\uFFFD"),
 	}
 }
 
