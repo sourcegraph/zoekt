@@ -4476,6 +4476,47 @@ func TestWordSearchOverlap(t *testing.T) {
 	}
 }
 
+// The \bLITERAL\b fast path must find what the regexp finds.
+func TestWordSearchMatchesRegexp(t *testing.T) {
+	for _, tc := range []struct {
+		q, re, content string
+	}{
+		// (?i) folds only the literal. The first is how users type it.
+		{q: `(?i)\bfoo\b`, re: `(?i)\bfoo\b`, content: "x Foo y"},
+		{q: `case:yes \b(?i:foo)\b`, re: `\b(?i:foo)\b`, content: "x Foo y"},
+		// \b next to a non-word character needs a word character on the
+		// other side.
+		{q: `\b@Override\b`, re: `\b@Override\b`, content: "  @Override"},
+		{q: `\b@Override\b`, re: `\b@Override\b`, content: "x@Override"},
+		{q: `case:yes \b-foo\b`, re: `\b-foo\b`, content: "a-foo"},
+		{q: `case:yes \b-foo\b`, re: `\b-foo\b`, content: "x -foo"},
+		{q: `case:yes \bfoo-\b`, re: `\bfoo-\b`, content: "foo-a"},
+		{q: `case:yes \bfoo-\b`, re: `\bfoo-\b`, content: "foo- "},
+		{q: `case:yes \b\.\b`, re: `\b\.\b`, content: "a.b"},
+	} {
+		t.Run(tc.q+" in "+tc.content, func(t *testing.T) {
+			b := testShardBuilder(t, nil, Document{Name: "f1", Content: []byte(tc.content)})
+			q, err := query.Parse(tc.q)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var got [][]int
+			for _, f := range searchForTest(t, b, q).Files {
+				for _, lm := range f.LineMatches {
+					for _, fr := range lm.LineFragments {
+						got = append(got, []int{int(fr.Offset), int(fr.Offset) + fr.MatchLength})
+					}
+				}
+			}
+			want := regexp.MustCompile(tc.re).FindAllStringIndex(tc.content, -1)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("matches (-regexp +search):\n%s", diff)
+			}
+		})
+	}
+}
+
 // Simple benchmark focused on chunk match scoring. It creates a single file that will have a 1000-line chunk match.
 // The benchmark time is expected to be strongly correlated with time spent assembling and scoring this chunk.
 func BenchmarkScoreChunkMatches(b *testing.B) {
