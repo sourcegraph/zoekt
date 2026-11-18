@@ -1115,7 +1115,13 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		checksum := queryMetaChecksum(s.Field, s.Value)
 		cacheKeyField := "Meta"
 		if cached, ok := d.docMatchTreeCache.Get(cacheKeyField, checksum); ok {
-			return cached, nil
+			// Share the predicate but not the position, which an earlier or
+			// concurrent search has moved.
+			return &docMatchTree{
+				reason:    cached.reason,
+				numDocs:   cached.numDocs,
+				predicate: cached.predicate,
+			}, nil
 		}
 
 		reposWant := make([]bool, len(d.repoMetaData))

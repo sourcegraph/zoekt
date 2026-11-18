@@ -486,6 +486,37 @@ func TestMetaQueryMatchTree(t *testing.T) {
 	}
 }
 
+// Each search builds its own match tree. One from the cache must start at the
+// first document, not where the previous search stopped.
+func TestMetaQueryMatchTreeFromCache(t *testing.T) {
+	d := &indexData{
+		repoMetaData: []zoekt.Repository{
+			{Name: "r0", Metadata: map[string]string{"license": "MIT"}},
+			{Name: "r1"},
+			{Name: "r2", Metadata: map[string]string{"license": "MIT"}},
+		},
+		fileBranchMasks:   []uint64{1, 1, 1},
+		repos:             []uint16{0, 1, 2},
+		docMatchTreeCache: newDocMatchTreeCache(10),
+	}
+	q := &query.Meta{Field: "license", Value: regexp.MustCompile("MIT")}
+
+	for search := 1; search <= 2; search++ {
+		mt, err := d.newMatchTree(q)
+		if err != nil {
+			t.Fatalf("failed to build matchTree: %v", err)
+		}
+		var matched []uint32
+		for doc := mt.nextDoc(); doc != math.MaxUint32; doc = mt.nextDoc() {
+			matched = append(matched, doc)
+			mt.prepare(doc)
+		}
+		if want := []uint32{0, 2}; !reflect.DeepEqual(matched, want) {
+			t.Errorf("search %d: got %v, want %v", search, matched, want)
+		}
+	}
+}
+
 func Test_queryMetaCacheKey(t *testing.T) {
 	cases := []struct {
 		field   string
