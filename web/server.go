@@ -631,7 +631,7 @@ func (s *Server) servePrintErr(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if branchStr := qvals.Get("b"); branchStr != "" {
-		qs = append(qs, &query.Branch{Pattern: branchStr})
+		qs = append(qs, &query.Branch{Pattern: branchStr, Exact: true})
 	}
 
 	q := &query.And{Children: qs}
