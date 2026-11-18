@@ -1241,7 +1241,9 @@ func sendByRepository(result *zoekt.SearchResult, opts *zoekt.SearchOptions, sen
 
 	fm := zoekt.FileMatch{}
 	for endIndex, fm = range result.Files {
-		if curRepoID != fm.RepositoryID {
+		// Repositories indexed without an ID all have RepositoryID 0, so
+		// compare names too.
+		if curRepoID != fm.RepositoryID || curRepoName != fm.Repository {
 			// Stats must stay aggregate-able, hence we sent the aggregate stats with the
 			// last event.
 			send(curRepoName, startIndex, endIndex, zoekt.Stats{})
