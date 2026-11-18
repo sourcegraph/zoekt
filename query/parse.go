@@ -277,6 +277,13 @@ func parseExpr(in []byte) (Q, int, error) {
 		if subQ == nil {
 			return nil, 0, fmt.Errorf("query: '-' operator needs an argument")
 		}
+		// case: and type: apply to the list they are in, and parseExprList
+		// takes them out of it. A negated one would stay in the query, where
+		// QToProto panics on it and shards reject it.
+		switch subQ.(type) {
+		case *caseQ, *Type:
+			return nil, 0, fmt.Errorf("query: '-' operator cannot negate %q", bytes.TrimSpace(b[:n]))
+		}
 		b = b[n:]
 		expr = &Not{subQ}
 
