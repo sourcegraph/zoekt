@@ -608,6 +608,12 @@ func TestContextLines(t *testing.T) {
 	} {
 		checkResultMatches(t, ts, req, expected)
 	}
+
+	// The HTML page numbers the context lines around the match on line 4.
+	checkNeedles(t, ts, "/search?q=our&ctx=2", []string{
+		"<u>2</u>:</span>\n<span class=\"noselect\"><u>3</u>:</span>\n<span class=\"noselect\"><a href=",
+		"<u>4</u></a>:</span>\n<span class=\"noselect\"><u>5</u>:</span>\n<span class=\"noselect\"><u>6</u>:</span>",
+	})
 }
 
 func matchesPartiallyEqual(a, b []Match) bool {
