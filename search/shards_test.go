@@ -224,9 +224,11 @@ func TestMaxWallTimeIncludesQueueWait(t *testing.T) {
 	}
 }
 
-// deadlineSearcher records the context deadline of its last search.
+// deadlineSearcher records the context deadline of its last search and of its
+// last list.
 type deadlineSearcher struct {
-	deadline time.Time
+	deadline     time.Time
+	listDeadline time.Time
 }
 
 func (s *deadlineSearcher) Search(ctx context.Context, _ query.Q, _ *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
@@ -234,7 +236,8 @@ func (s *deadlineSearcher) Search(ctx context.Context, _ query.Q, _ *zoekt.Searc
 	return &zoekt.SearchResult{}, nil
 }
 
-func (s *deadlineSearcher) List(context.Context, query.Q, *zoekt.ListOptions) (*zoekt.RepoList, error) {
+func (s *deadlineSearcher) List(ctx context.Context, _ query.Q, _ *zoekt.ListOptions) (*zoekt.RepoList, error) {
+	s.listDeadline, _ = ctx.Deadline()
 	return &zoekt.RepoList{}, nil
 }
 
