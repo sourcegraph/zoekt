@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"regexp/syntax"
 	"sort"
 	"strings"
@@ -539,8 +540,14 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions
 			return true
 		}
 	} else {
+		// One match per repository is enough to list it. ShardMaxMatchCount
+		// counts the matches of all repositories in the shard, so the default
+		// would end the search before it reaches the later repositories of a
+		// compound shard.
 		sr, err := d.Search(ctx, q, &zoekt.SearchOptions{
 			ShardRepoMaxMatchCount: 1,
+			ShardMaxMatchCount:     math.MaxInt,
+			TotalMaxMatchCount:     math.MaxInt,
 		})
 		if err != nil {
 			return nil, err
