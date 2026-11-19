@@ -27,25 +27,21 @@ func NewServer(logger *slog.Logger, additionalOpts ...grpc.ServerOption) *grpc.S
 
 	recoveryOpt := recovery.WithRecoveryHandlerContext(panicRecoveryHandler(logger))
 
-	opts := []grpc.ServerOption{
+	opts := append(TenantServerOptions(), // first, so later interceptors see the tenant
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainStreamInterceptor(
-			propagator.StreamServerPropagator(tenant.Propagator{}),
-			tenant.StreamServerInterceptor,
 			metrics.StreamServerInterceptor(),
 			messagesize.StreamServerInterceptor,
 			internalerrs.LoggingStreamServerInterceptor(logger),
 			recovery.StreamServerInterceptor(recoveryOpt),
 		),
 		grpc.ChainUnaryInterceptor(
-			propagator.UnaryServerPropagator(tenant.Propagator{}),
-			tenant.UnaryServerInterceptor,
 			metrics.UnaryServerInterceptor(),
 			messagesize.UnaryServerInterceptor,
 			internalerrs.LoggingUnaryServerInterceptor(logger),
 			recovery.UnaryServerInterceptor(recoveryOpt),
 		),
-	}
+	)
 
 	opts = append(opts, additionalOpts...)
 
@@ -59,6 +55,25 @@ func NewServer(logger *slog.Logger, additionalOpts ...grpc.ServerOption) *grpc.S
 	s := grpc.NewServer(opts...)
 	reflection.Register(s)
 	return s
+}
+
+// TenantServerOptions returns the server options that read the tenant of
+// each request from its metadata into the context, where tenant enforcement
+// checks it against every shard's tenant. NewServer includes them. A server
+// that serves Zoekt searchers but is not created by NewServer, such as one
+// that embeds Zoekt as a library, must add them, or with tenant enforcement
+// set to strict every shard is filtered out.
+func TenantServerOptions() []grpc.ServerOption {
+	return []grpc.ServerOption{
+		grpc.ChainStreamInterceptor(
+			propagator.StreamServerPropagator(tenant.Propagator{}),
+			tenant.StreamServerInterceptor,
+		),
+		grpc.ChainUnaryInterceptor(
+			propagator.UnaryServerPropagator(tenant.Propagator{}),
+			tenant.UnaryServerInterceptor,
+		),
+	}
 }
 
 // panicRecoveryHandler converts a recovered handler panic into an Internal
