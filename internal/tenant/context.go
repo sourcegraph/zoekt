@@ -59,7 +59,12 @@ var pprofProfile *pprof.Profile
 func pprofMissingTenant() *pprof.Profile {
 	pprofOnce.Do(func() {
 		if shouldLogNoTenant() {
-			pprofProfile = pprof.NewProfile("missing_tenant")
+			// A program that embeds Zoekt, such as Sourcegraph, may already
+			// have created a profile of this name, and NewProfile panics on
+			// a name in use.
+			if pprofProfile = pprof.Lookup("missing_tenant"); pprofProfile == nil {
+				pprofProfile = pprof.NewProfile("missing_tenant")
+			}
 		}
 	})
 	return pprofProfile
