@@ -347,6 +347,33 @@ func TestProtoRoundtrip(t *testing.T) {
 	})
 }
 
+// A symbol's name is a slice of the file's content, which need not be valid
+// UTF-8. It must not make the whole result fail to marshal.
+func TestSymbolInvalidUTF8ToProto(t *testing.T) {
+	sym := &Symbol{Sym: "gr\xf6\xdfe", Kind: "variable", Parent: "\xff", ParentKind: "class"}
+	fm := &FileMatch{
+		FileName: "f.c",
+		LineMatches: []LineMatch{{
+			LineFragments: []LineFragmentMatch{{SymbolInfo: sym}},
+		}},
+		ChunkMatches: []ChunkMatch{{
+			Ranges:     []Range{{}},
+			SymbolInfo: []*Symbol{sym},
+		}},
+	}
+	b, err := proto.Marshal(fm.ToProto())
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var p webserverv1.FileMatch
+	if err := proto.Unmarshal(b, &p); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if got, want := p.GetChunkMatches()[0].GetSymbolInfo()[0].GetSym(), "gr\uFFFDe"; got != want {
+		t.Errorf("sym = %q, want %q", got, want)
+	}
+}
+
 func TestSearchOptionsSchedulingClassProto(t *testing.T) {
 	if got := SearchOptionsFromProto(&webserverv1.SearchOptions{}).SchedulingClass; got != SchedulingClassInteractive {
 		t.Fatalf("omitted scheduling class = %d, want interactive", got)
