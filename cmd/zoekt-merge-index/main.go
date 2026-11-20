@@ -69,6 +69,13 @@ func merge(dstDir string, names []string) (string, error) {
 		return "", fmt.Errorf("zoekt-merge-index: failed to rename compound shard: %w", err)
 	}
 
+	// The name only depends on the merged repositories, so we may have replaced
+	// an earlier compound shard of them. Its metadata, eg its tombstones, would
+	// override the metadata of the new shard.
+	if err := os.Remove(dstName + ".meta"); err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("zoekt-merge-index: failed to remove stale metadata: %w", err)
+	}
+
 	return dstName, nil
 }
 
