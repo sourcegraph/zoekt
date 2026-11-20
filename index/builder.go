@@ -105,6 +105,17 @@ type Options struct {
 	// last run.
 	IsDelta bool
 
+	// DeltaBase, if set, describes the shards of the repository's existing
+	// index for a delta build, in place of shard files in IndexDir, such as
+	// when the shards are in object storage. The build reads neither those
+	// shards nor their metadata from disk: it numbers its new shards after
+	// them and writes each base shard's updated metadata to its path plus
+	// ".meta". Without the shard files it cannot tell which files each one
+	// holds, so every base shard records every changed or removed file as a
+	// file tombstone; a tombstone for a file a shard lacks has no effect.
+	// It is ignored by builds that are not delta builds.
+	DeltaBase []DeltaBaseShard
+
 	// changedOrRemovedFiles is a list of file paths that have been changed or removed
 	// since the last indexing job for this repository. These files will be tombstoned
 	// in the older shards for this repository.
@@ -447,10 +458,31 @@ func (o *Options) IndexState() (IndexState, string) {
 	return IndexStateEqual, fn
 }
 
+// DeltaBaseShard is a shard of a repository's existing index that a delta
+// build stacks on without reading it.
+type DeltaBaseShard struct {
+	// Path is the shard's path in the build's IndexDir. The file need not
+	// exist.
+	Path string
+	// Repository is the shard's current repository metadata: the metadata
+	// embedded in the shard, or its ".meta" sidecar if it has one.
+	Repository zoekt.Repository
+}
+
+// deltaBase reports whether a delta build uses DeltaBase instead of the
+// shards in IndexDir.
+func (o *Options) deltaBase() bool {
+	return o.IsDelta && len(o.DeltaBase) > 0
+}
+
 // FindRepositoryMetadata returns the index metadata for the repository
 // specified in the options. 'ok' is false if the repository's metadata
 // couldn't be found or if an error occurred.
 func (o *Options) FindRepositoryMetadata() (repository *zoekt.Repository, metadata *zoekt.IndexMetadata, ok bool, err error) {
+	if o.deltaBase() {
+		r := o.DeltaBase[0].Repository
+		return &r, nil, true, nil
+	}
 	shard := o.findShard()
 	if shard == "" {
 		return nil, nil, false, nil
@@ -505,6 +537,13 @@ func (o *Options) findCompoundShard() string {
 }
 
 func (o *Options) FindAllShards() []string {
+	if o.deltaBase() {
+		paths := make([]string, len(o.DeltaBase))
+		for i, s := range o.DeltaBase {
+			paths[i] = s.Path
+		}
+		return paths
+	}
 	for _, v := range readVersions {
 		fn := o.shardNameVersion(v.IndexFormatVersion, 0)
 		if _, err := os.Stat(fn); err == nil {
@@ -702,21 +741,28 @@ func (b *Builder) Finish() error {
 	if b.opts.IsDelta {
 		// Delta shard builds need to update FileTombstone and branch commit information for all
 		// existing shards
-		for _, shard := range oldShards {
-			repositories, _, err := ReadMetadataPathAlive(shard)
-			if err != nil {
-				return fmt.Errorf("reading metadata from shard %q: %w", shard, err)
-			}
+		for i, shard := range oldShards {
+			var repository *zoekt.Repository
+			if b.opts.deltaBase() {
+				r := b.opts.DeltaBase[i].Repository
+				r.FileTombstones = maps.Clone(r.FileTombstones)
+				repository = &r
+			} else {
+				repositories, _, err := ReadMetadataPathAlive(shard)
+				if err != nil {
+					return fmt.Errorf("reading metadata from shard %q: %w", shard, err)
+				}
 
-			if len(repositories) > 1 {
-				return fmt.Errorf("delta shard builds don't support repositories contained in compound shards (shard %q)", shard)
-			}
+				if len(repositories) > 1 {
+					return fmt.Errorf("delta shard builds don't support repositories contained in compound shards (shard %q)", shard)
+				}
 
-			if len(repositories) == 0 {
-				return fmt.Errorf("failed to update repository metadata for shard %q - shard contains no repositories", shard)
-			}
+				if len(repositories) == 0 {
+					return fmt.Errorf("failed to update repository metadata for shard %q - shard contains no repositories", shard)
+				}
 
-			repository := repositories[0]
+				repository = repositories[0]
+			}
 			if repository.ID != b.opts.RepositoryDescription.ID {
 				return fmt.Errorf("shard %q doesn't contain repository ID %d (%q)", shard, b.opts.RepositoryDescription.ID, b.opts.RepositoryDescription.Name)
 			}
@@ -744,7 +790,7 @@ func (b *Builder) Finish() error {
 				}
 			}
 
-			if len(repository.FileTombstones) > 0 {
+			if len(repository.FileTombstones) > 0 && !b.opts.deltaBase() {
 				filteredTombstones, err := filterShardFileTombstones(shard, repository.FileTombstones)
 				if err != nil {
 					return fmt.Errorf("filtering file tombstones for shard %q: %w", shard, err)
