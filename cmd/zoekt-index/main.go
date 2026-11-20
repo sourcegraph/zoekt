@@ -182,13 +182,16 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 	if err != nil {
 		return err
 	}
+	if opts.RepositoryDescription.Name == "" {
+		opts.RepositoryDescription.Name = filepath.Base(dir)
+	}
+	// filepath.Walk does not follow a symlinked root, so resolve it here.
+	if dir, err = filepath.EvalSymlinks(dir); err != nil {
+		return err
+	}
 	ignoreMatcher, err := newIgnoreMatcher(dir)
 	if err != nil {
 		return err
-	}
-
-	if opts.RepositoryDescription.Name == "" {
-		opts.RepositoryDescription.Name = filepath.Base(dir)
 	}
 	builder, err := index.NewBuilder(opts)
 	if err != nil {
