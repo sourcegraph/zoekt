@@ -963,6 +963,16 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		return nil, nil, nil, fmt.Errorf("no existing shards found for repository")
 	}
 
+	// Delta shards stack on top of the repository's simple shards. Builder.Finish
+	// rejects a repository merged into a compound shard, which would fail every
+	// retry, so fall back to a normal build that moves it into a simple shard.
+	oldShards := options.BuildOptions.FindAllShards()
+	for _, shard := range oldShards {
+		if strings.HasPrefix(filepath.Base(shard), "compound-") {
+			return nil, nil, nil, fmt.Errorf("delta builds don't support repositories contained in compound shards (shard %q)", shard)
+		}
+	}
+
 	if options.DeltaShardNumberFallbackThreshold > 0 {
 		// HACK: For our interim compaction strategy, we force a full normal index once
 		// the number of shards on disk for this repository exceeds the provided threshold.
@@ -972,7 +982,6 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		// build would be disproportionately affected by this), but it'll allow us to continue experimenting on real workloads
 		// while we create a better compaction strategy).
 
-		oldShards := options.BuildOptions.FindAllShards()
 		if uint64(len(oldShards)) > options.DeltaShardNumberFallbackThreshold {
 			return nil, nil, nil, fmt.Errorf("number of existing shards (%d) > requested shard threshold (%d)", len(oldShards), options.DeltaShardNumberFallbackThreshold)
 		}
