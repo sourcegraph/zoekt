@@ -2,9 +2,11 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -176,4 +178,101 @@ func TestSearchTypeRepoReportsCrashes(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 1, rl.Crashes)
 	})
+}
+
+// typeRepoQuery is the shape Sourcegraph sends for repo:has.content.
+func typeRepoQuery() query.Q {
+	return query.NewAnd(
+		&query.Type{Type: query.TypeRepo, Child: &query.Substring{Pattern: "needle"}},
+		&query.Substring{Pattern: "file"})
+}
+
+// TestSearchTypeRepoMaxWallTime checks that MaxWallTime also bounds the List
+// calls that evaluate type:repo sub-queries. Otherwise a search runs for as
+// long as its sub-queries take, plus MaxWallTime.
+func TestSearchTypeRepoMaxWallTime(t *testing.T) {
+	const maxWallTime = time.Minute
+	opts := &zoekt.SearchOptions{MaxWallTime: maxWallTime}
+
+	for _, tc := range []struct {
+		name   string
+		search func(*typeRepoSearcher) error
+	}{
+		{"Search", func(s *typeRepoSearcher) error {
+			_, err := s.Search(context.Background(), typeRepoQuery(), opts)
+			return err
+		}},
+		{"StreamSearch", func(s *typeRepoSearcher) error {
+			return s.StreamSearch(context.Background(), typeRepoQuery(), opts, zoekt.SenderFunc(func(*zoekt.SearchResult) {}))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			shard := &deadlineSearcher{}
+			ss := newShardedSearcher(1)
+			ss.ranked.Store([]*rankedShard{{Searcher: shard}})
+
+			if err := tc.search(&typeRepoSearcher{ss}); err != nil {
+				t.Fatal(err)
+			}
+
+			if latest := time.Now().Add(maxWallTime); shard.listDeadline.IsZero() || shard.listDeadline.After(latest) {
+				t.Errorf("type:repo sub-query listed the shard with deadline %v, want at most %v", shard.listDeadline, latest)
+			}
+		})
+	}
+}
+
+// TestSearchTypeRepoShedding checks that a search is rejected with
+// ErrOverloaded when its type:repo sub-query can't get a scheduler slot in
+// time, like the search itself would be.
+func TestSearchTypeRepoShedding(t *testing.T) {
+	ss := newShardedSearcher(1)
+	ss.ranked.Store([]*rankedShard{{Searcher: &deadlineSearcher{}}})
+	for _, class := range []zoekt.SchedulingClass{zoekt.SchedulingClassInteractive, zoekt.SchedulingClassBatch} {
+		proc, err := ss.sched.Acquire(context.Background(), class)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer proc.Release()
+	}
+	searcher := &typeRepoSearcher{ss}
+	opts := &zoekt.SearchOptions{MaxWallTime: 50 * time.Millisecond}
+
+	// The client would wait much longer than the admission deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if _, err := searcher.Search(ctx, typeRepoQuery(), opts); !errors.Is(err, zoekt.ErrOverloaded) {
+		t.Errorf("Search: got %v, want ErrOverloaded", err)
+	}
+	if err := searcher.StreamSearch(ctx, typeRepoQuery(), opts, zoekt.SenderFunc(func(*zoekt.SearchResult) {})); !errors.Is(err, zoekt.ErrOverloaded) {
+		t.Errorf("StreamSearch: got %v, want ErrOverloaded", err)
+	}
+}
+
+// TestSearchTypeRepoSchedulingClass checks that the type:repo sub-queries of
+// a batch search are scheduled as batch too. A List on its own stays
+// interactive.
+func TestSearchTypeRepoSchedulingClass(t *testing.T) {
+	sched := &recordingScheduler{}
+	ss := newShardedSearcher(1)
+	ss.sched = sched
+	ss.ranked.Store([]*rankedShard{{Searcher: &deadlineSearcher{}}})
+	searcher := &typeRepoSearcher{ss}
+	opts := &zoekt.SearchOptions{SchedulingClass: zoekt.SchedulingClassBatch}
+
+	_, err := searcher.Search(context.Background(), typeRepoQuery(), opts)
+	require.NoError(t, err)
+	err = searcher.StreamSearch(context.Background(), typeRepoQuery(), opts, zoekt.SenderFunc(func(*zoekt.SearchResult) {}))
+	require.NoError(t, err)
+	_, err = searcher.List(context.Background(), typeRepoQuery(), nil)
+	require.NoError(t, err)
+
+	batch, interactive := zoekt.SchedulingClassBatch, zoekt.SchedulingClassInteractive
+	want := []zoekt.SchedulingClass{
+		batch, batch, // Search: sub-query, then the search
+		batch, batch, // StreamSearch: sub-query, then the search
+		interactive, interactive, // List: sub-query, then the list
+	}
+	assert.Equal(t, want, sched.classes)
 }

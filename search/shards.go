@@ -1020,6 +1020,16 @@ func withMaxWallTime(ctx context.Context, opts *zoekt.SearchOptions) (context.Co
 	return context.WithTimeout(ctx, opts.MaxWallTime)
 }
 
+type searchOptionsKey struct{}
+
+// withSearchOptions marks ctx as belonging to a search with opts. A List made
+// with the returned context is admitted to the scheduler like that search,
+// with its scheduling class, and is shed if it waits too long. typeRepoSearcher
+// uses it to list the repositories that match a type:repo sub-query.
+func withSearchOptions(ctx context.Context, opts *zoekt.SearchOptions) context.Context {
+	return context.WithValue(ctx, searchOptionsKey{}, opts)
+}
+
 func schedulingClass(opts *zoekt.SearchOptions) zoekt.SchedulingClass {
 	if opts == nil {
 		return zoekt.SchedulingClassInteractive
@@ -1375,8 +1385,14 @@ func (ss *shardedSearcher) List(ctx context.Context, q query.Q, opts *zoekt.List
 	}
 
 	// List is not shed: clients use it to learn what is indexed, so a
-	// rejection does more harm than waiting.
-	proc, err := ss.sched.Acquire(ctx, zoekt.SchedulingClassInteractive)
+	// rejection does more harm than waiting. A List that evaluates a type:repo
+	// sub-query is part of a search though, so it is admitted like that search.
+	var proc *process
+	if searchOpts, ok := ctx.Value(searchOptionsKey{}).(*zoekt.SearchOptions); ok {
+		proc, err = ss.acquire(ctx, searchOpts)
+	} else {
+		proc, err = ss.sched.Acquire(ctx, zoekt.SchedulingClassInteractive)
+	}
 	if err != nil {
 		return nil, err
 	}
