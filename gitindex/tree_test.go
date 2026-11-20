@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -703,5 +704,83 @@ func TestLatestCommit(t *testing.T) {
 
 	if want := time.Date(2021, 10, 6, 12, 0, 0, 0, time.UTC); rlist.Repos[0].Repository.LatestCommitDate != want {
 		t.Fatalf("want %s, got %s", want, rlist.Repos[0].Repository.LatestCommitDate)
+	}
+}
+
+// TestSubmoduleIndexWithoutRepocacheUsesPinnedCommit tests that a submodule is
+// indexed at the commit the superproject records, not at the submodule's own
+// branch of the same name.
+func TestSubmoduleIndexWithoutRepocacheUsesPinnedCommit(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=protocol.file.allow
+export GIT_CONFIG_VALUE_0=always
+
+git init -q -b master sub
+cd sub
+echo pinned-content > bfile
+git add bfile
+git commit -qm v1
+echo tip-content > bfile
+git commit -qam v2
+
+cd ..
+git init -q -b master super
+cd super
+echo acont > afile
+git add afile
+git commit -qm a
+git submodule -q add ../sub bname
+git -C bname checkout -q HEAD~1
+git add bname
+git commit -qm "pin sub at v1"
+git -C bname rev-parse HEAD
+`
+	cmd := exec.Command("/bin/sh", "-euc", script)
+	cmd.Dir = dir
+	cmd.Env = testutil.GitEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("script: %v", err)
+	}
+	pinned := strings.TrimSpace(string(out))
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:    filepath.Join(dir, "super"),
+		Branches:   []string{"master"},
+		Submodules: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "super"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(),
+		&query.Substring{Pattern: "content", Content: true},
+		&zoekt.SearchOptions{Whole: true})
+	if err != nil {
+		t.Fatal("Search", err)
+	}
+	if len(results.Files) != 1 {
+		t.Fatalf("got %d files, want 1", len(results.Files))
+	}
+	f := results.Files[0]
+	if got := string(f.Content); f.FileName != "bname/bfile" || got != "pinned-content\n" || f.Version != pinned {
+		t.Fatalf("got %s with %q at %s, want bname/bfile with %q at the pinned %s",
+			f.FileName, got, f.Version, "pinned-content\n", pinned)
 	}
 }
