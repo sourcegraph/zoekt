@@ -79,6 +79,22 @@ func (m *indexMutex) Global(f func()) {
 	f()
 }
 
+// TryGlobal runs f if the global lock is free now and reports whether f ran.
+// Unlike Global it never waits, so it never holds back new With calls.
+func (m *indexMutex) TryGlobal(f func()) bool {
+	if !m.indexMu.TryLock() {
+		return false
+	}
+	defer m.indexMu.Unlock()
+
+	metricIndexMutexGlobal.Inc()
+	defer metricIndexMutexGlobal.Dec()
+
+	f()
+
+	return true
+}
+
 type indexRepository struct {
 	name string
 	id   uint32

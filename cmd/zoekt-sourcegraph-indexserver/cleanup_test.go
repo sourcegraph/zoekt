@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -52,6 +53,57 @@ func TestCleanupScheduler(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestCleanupSchedulerBusyLock(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var mu indexMutex
+		var schedule cleanupScheduler
+		runs := 0
+		work := func() { runs++ }
+
+		// A long index job holds the lock until released.
+		release := make(chan struct{})
+		go mu.With("long", 1, func() { <-release })
+		synctest.Wait()
+
+		schedule.run(&mu, work)
+		if runs != 0 {
+			t.Fatal("cleanup ran while an index job held the lock")
+		}
+		if !mu.With("new", 2, func() {}) {
+			t.Fatal("index job did not run after cleanup found the lock busy")
+		}
+
+		time.Sleep(cleanupMaxDelay - time.Nanosecond)
+		schedule.run(&mu, work)
+		if runs != 0 {
+			t.Fatal("cleanup ran while an index job held the lock")
+		}
+
+		// Once overdue, cleanup waits for the lock instead of skipping again.
+		// A goroutine blocked on a mutex is not durably blocked, so yield
+		// instead of synctest.Wait.
+		time.Sleep(time.Nanosecond)
+		done := make(chan struct{})
+		go func() {
+			schedule.run(&mu, work)
+			close(done)
+		}()
+		for range 100 {
+			runtime.Gosched()
+		}
+		select {
+		case <-done:
+			t.Fatal("overdue cleanup did not wait for the lock")
+		default:
+		}
+		close(release)
+		<-done
+		if runs != 1 {
+			t.Fatal("overdue cleanup did not run once the lock was free")
+		}
+	})
 }
 
 func TestCleanup(t *testing.T) {

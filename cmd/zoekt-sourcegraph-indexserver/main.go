@@ -424,7 +424,7 @@ func (s *Server) Run() {
 					fields = timings.finish()
 					workDuration = time.Since(workStart)
 				})
-				if fields == nil { // Cleanup was skipped during its cooldown.
+				if fields == nil { // Cleanup was skipped: cooldown, or the lock was busy.
 					return
 				}
 				fields = append(fields, slog.Duration("lock_held", workDuration))

@@ -24,16 +24,24 @@ var metricCleanupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 	Buckets: prometheus.LinearBuckets(1, 1, 10),
 })
 
+// cleanupMaxDelay is how long cleanup takes the global lock only when it is
+// free before it waits for it.
+const cleanupMaxDelay = time.Hour
+
 // cleanupScheduler is used sequentially by the sync loop. Its zero value is ready.
 type cleanupScheduler struct {
 	next time.Time
 }
 
 func (c *cleanupScheduler) run(mu *indexMutex, cleanup func()) {
-	if time.Now().Before(c.next) {
+	now := time.Now()
+	if c.next.IsZero() {
+		c.next = now
+	}
+	if now.Before(c.next) {
 		return
 	}
-	mu.Global(func() {
+	work := func() {
 		start := time.Now()
 		cleanup()
 		finished := time.Now()
@@ -42,7 +50,15 @@ func (c *cleanupScheduler) run(mu *indexMutex, cleanup func()) {
 		// runs. This is a long-run duty cycle, not a hard hourly budget;
 		// time waiting for the lock is not cleanup work.
 		c.next = finished.Add(max(time.Minute, 11*finished.Sub(start)))
-	})
+	}
+	// A waiting Global blocks every new index job until all running jobs
+	// finish, so one long index stalls the other workers too. Take the lock
+	// only when it is free, and wait for it once cleanup is cleanupMaxDelay
+	// overdue so that a busy queue cannot starve cleanup.
+	if mu.TryGlobal(work) || now.Sub(c.next) < cleanupMaxDelay {
+		return
+	}
+	mu.Global(work)
 }
 
 // cleanup trashes shards in indexDir that do not exist in repos. For repos
