@@ -38,6 +38,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/utils/merkletrie"
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/ignore"
@@ -1057,14 +1058,24 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		}
 
 		for i, c := range changes {
-			oldFile, newFile, err := c.Files()
+			// Only tree entries are read, never blobs: the last indexed
+			// commit's blobs may be absent, such as when only its trees were
+			// fetched, and the new commit's large blobs may be filtered out.
+			action, err := c.Action()
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("change #%d: getting files before and after change: %w", i, err)
+				return nil, nil, nil, fmt.Errorf("change #%d: %w", i, err)
+			}
+			added := action == merkletrie.Insert || action == merkletrie.Modify
+			removed := action == merkletrie.Delete || action == merkletrie.Modify
+			// Like Change.Files, skip changes to anything but files, such as
+			// submodules.
+			if (added && !c.To.TreeEntry.Mode.IsFile()) || (removed && !c.From.TreeEntry.Mode.IsFile()) {
+				continue
 			}
 
-			if newFile != nil {
-				// note: newFile.Name could be a path that isn't relative to the repository root - using the
-				// change's Name field is the only way that @ggilmore saw to get the full path relative to the root
+			if added {
+				// note: the entry name is relative to its tree - the change's Name field is the path
+				// relative to the repository root
 				newFileRelativeRootPath := c.To.Name
 
 				// TODO@ggilmore: HACK - remove once ignore files are supported in delta builds
@@ -1073,7 +1084,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 				}
 
 				// either file is added or renamed, so we need to add the new version to the build
-				file := fileKey{Path: newFileRelativeRootPath, ID: newFile.Hash}
+				file := fileKey{Path: newFileRelativeRootPath, ID: c.To.TreeEntry.Hash}
 				if existing, ok := repos[file]; ok {
 					existing.Branches = append(existing.Branches, branch.Name)
 					repos[file] = existing
@@ -1086,13 +1097,11 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 				}
 			}
 
-			if oldFile == nil {
+			if !removed {
 				// file added - nothing more to do
 				continue
 			}
 
-			// Note: oldFile.Name could be a path that isn't relative to the repository root - using the
-			// change's "Name" field is the only way that ggilmore saw to get the full path relative to the root
 			oldFileRelativeRootPath := c.From.Name
 
 			if oldFileRelativeRootPath == ignore.IgnoreFile {
@@ -1102,17 +1111,13 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 			// The file is either modified or deleted. So, we need to add ALL versions
 			// of the old file (across all branches) to the build.
 			for b, currentTree := range branchToCurrentTree {
-				f, err := currentTree.File(oldFileRelativeRootPath)
-				if err != nil {
+				entry, err := currentTree.FindEntry(oldFileRelativeRootPath)
+				if err != nil || !entry.Mode.IsFile() {
 					// the file doesn't exist in this branch
-					if errors.Is(err, object.ErrFileNotFound) {
-						continue
-					}
-
-					return nil, nil, nil, fmt.Errorf("getting hash for file %q in branch %q: %w", oldFile.Name, b, err)
+					continue
 				}
 
-				file := fileKey{Path: oldFileRelativeRootPath, ID: f.ID()}
+				file := fileKey{Path: oldFileRelativeRootPath, ID: entry.Hash}
 				if existing, ok := repos[file]; ok {
 					existing.Branches = append(existing.Branches, b)
 					repos[file] = existing

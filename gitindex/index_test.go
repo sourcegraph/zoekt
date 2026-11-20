@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -1107,174 +1108,214 @@ func TestIndexDeltaBasic(t *testing.T) {
 		},
 	} {
 
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			indexDir := t.TempDir()
-			repositoryDir := t.TempDir()
-
-			// setup: initialize the repository and all of its branches
-			testutil.RunGit(t, repositoryDir, "init", "-b", "master")
-
-			for _, b := range test.branches {
-				testutil.RunGit(t, repositoryDir, "checkout", "-b", b)
-				testutil.RunGit(t, repositoryDir, "commit", "--allow-empty", "-m", "empty commit")
+		// With withDeltaBase, each delta build runs without the existing
+		// shards: they are moved out of the index directory and described in
+		// DeltaBase, then moved back next to what the build wrote, as when
+		// the shards live in object storage. The results must be the same.
+		for _, withDeltaBase := range []bool{false, true} {
+			name := test.name
+			if withDeltaBase {
+				name += " with delta base"
 			}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 
-			for _, step := range test.steps {
-				t.Run(step.name, func(t *testing.T) {
-					for _, b := range test.branches {
-						// setup: for each branch, process any document deletions / additions and commit those changes
+				indexDir := t.TempDir()
+				repositoryDir := t.TempDir()
 
-						hadChange := false
+				// setup: initialize the repository and all of its branches
+				testutil.RunGit(t, repositoryDir, "init", "-b", "master")
 
-						testutil.RunGit(t, repositoryDir, "checkout", b)
+				for _, b := range test.branches {
+					testutil.RunGit(t, repositoryDir, "checkout", "-b", b)
+					testutil.RunGit(t, repositoryDir, "commit", "--allow-empty", "-m", "empty commit")
+				}
 
-						for _, d := range step.deletedDocuments[b] {
-							hadChange = true
+				for _, step := range test.steps {
+					t.Run(step.name, func(t *testing.T) {
+						for _, b := range test.branches {
+							// setup: for each branch, process any document deletions / additions and commit those changes
 
-							file := filepath.Join(repositoryDir, d.Name)
+							hadChange := false
 
-							err := os.Remove(file)
-							if err != nil {
-								t.Fatalf("deleting file %q: %s", d.Name, err)
+							testutil.RunGit(t, repositoryDir, "checkout", b)
+
+							for _, d := range step.deletedDocuments[b] {
+								hadChange = true
+
+								file := filepath.Join(repositoryDir, d.Name)
+
+								err := os.Remove(file)
+								if err != nil {
+									t.Fatalf("deleting file %q: %s", d.Name, err)
+								}
+							}
+
+							for _, d := range step.addedDocuments[b] {
+								hadChange = true
+
+								file := filepath.Join(repositoryDir, d.Name)
+
+								err := os.MkdirAll(filepath.Dir(file), 0o755)
+								if err != nil {
+									t.Fatalf("ensuring that folders exist for file %q: %s", file, err)
+								}
+
+								err = os.WriteFile(file, d.Content, 0o644)
+								if err != nil {
+									t.Fatalf("writing file %q: %s", d.Name, err)
+								}
+							}
+
+							if !hadChange {
+								continue
+							}
+
+							testutil.RunGit(t, repositoryDir, "add", "-A")
+							testutil.RunGit(t, repositoryDir, "commit", "-m", step.name)
+						}
+
+						// setup: prepare indexOptions with given overrides
+						buildOptions := index.Options{
+							IndexDir: indexDir,
+							RepositoryDescription: zoekt.Repository{
+								Name: "repository",
+							},
+							IsDelta: false,
+						}
+						buildOptions.SetDefaults()
+
+						branches := append([]string{"HEAD"}, test.branches...)
+
+						options := Options{
+							RepoDir:      filepath.Join(repositoryDir, ".git"),
+							BuildOptions: buildOptions,
+							Branches:     branches,
+						}
+
+						if step.optFn != nil {
+							step.optFn(t, &options)
+						}
+
+						// setup: prepare spy versions of prepare delta / normal build so that we can observe
+						// whether they were called appropriately
+						deltaBuildCalled := false
+						prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
+							deltaBuildCalled = true
+							return prepareDeltaBuild(options, repository)
+						}
+
+						normalBuildCalled := false
+						prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
+							normalBuildCalled = true
+							return prepareNormalBuild(options, repository)
+						}
+
+						var moved []string
+						storeDir := t.TempDir()
+						if withDeltaBase && options.BuildOptions.IsDelta {
+							for _, shard := range options.BuildOptions.FindAllShards() {
+								repos, _, err := index.ReadMetadataPath(shard)
+								if err != nil {
+									t.Fatalf("ReadMetadataPath(%s): %s", shard, err)
+								}
+								options.BuildOptions.DeltaBase = append(options.BuildOptions.DeltaBase, index.DeltaBaseShard{Path: shard, Repository: *repos[0]})
+								for _, p := range []string{shard, shard + ".meta"} {
+									if err := os.Rename(p, filepath.Join(storeDir, filepath.Base(p))); err == nil {
+										moved = append(moved, p)
+									}
+								}
 							}
 						}
 
-						for _, d := range step.addedDocuments[b] {
-							hadChange = true
+						// run test
+						_, err := indexGitRepo(options, gitIndexConfig{
+							prepareDeltaBuild:  prepareDeltaSpy,
+							prepareNormalBuild: prepareNormalSpy,
+						})
+						if err != nil {
+							t.Fatalf("IndexGitRepo: %s", err)
+						}
 
-							file := filepath.Join(repositoryDir, d.Name)
-
-							err := os.MkdirAll(filepath.Dir(file), 0o755)
-							if err != nil {
-								t.Fatalf("ensuring that folders exist for file %q: %s", file, err)
-							}
-
-							err = os.WriteFile(file, d.Content, 0o644)
-							if err != nil {
-								t.Fatalf("writing file %q: %s", d.Name, err)
+						// A full build replaces the old shards. A delta build keeps
+						// them, with the ".meta" files it wrote replacing the old ones.
+						if !normalBuildCalled {
+							for _, p := range moved {
+								if _, err := os.Stat(p); err == nil {
+									continue
+								}
+								if err := os.Rename(filepath.Join(storeDir, filepath.Base(p)), p); err != nil {
+									t.Fatal(err)
+								}
 							}
 						}
 
-						if !hadChange {
-							continue
+						if options.BuildOptions.IsDelta != deltaBuildCalled {
+							// We should always try a delta build if we request it in the options.
+							t.Fatalf("expected deltaBuildCalled to be %t, got %t", options.BuildOptions.IsDelta, deltaBuildCalled)
 						}
 
-						testutil.RunGit(t, repositoryDir, "add", "-A")
-						testutil.RunGit(t, repositoryDir, "commit", "-m", step.name)
-					}
+						if options.BuildOptions.IsDelta && (step.expectedFallbackToNormalBuild != normalBuildCalled) {
+							// We only check the normal spy on delta builds because it's only considered a "fallback" if we
+							// asked for a delta build in the first place.
+							t.Fatalf("expected normalBuildCalled to be %t, got %t", step.expectedFallbackToNormalBuild, normalBuildCalled)
+						}
 
-					// setup: prepare indexOptions with given overrides
-					buildOptions := index.Options{
-						IndexDir: indexDir,
-						RepositoryDescription: zoekt.Repository{
-							Name: "repository",
-						},
-						IsDelta: false,
-					}
-					buildOptions.SetDefaults()
+						// examine outcome: load shards into a searcher instance and run a dummy search query
+						// that returns every document contained in the shards
+						//
+						// then, compare returned set of documents with the expected set for the step and see if they agree
 
-					branches := append([]string{"HEAD"}, test.branches...)
+						ss, err := search.NewDirectorySearcher(indexDir)
+						if err != nil {
+							t.Fatalf("NewDirectorySearcher(%s): %s", indexDir, err)
+						}
+						defer ss.Close()
 
-					options := Options{
-						RepoDir:      filepath.Join(repositoryDir, ".git"),
-						BuildOptions: buildOptions,
-						Branches:     branches,
-					}
+						searchOpts := &zoekt.SearchOptions{Whole: true}
+						result, err := ss.Search(context.Background(), &query.Const{Value: true}, searchOpts)
+						if err != nil {
+							t.Fatalf("Search: %s", err)
+						}
 
-					if step.optFn != nil {
-						step.optFn(t, &options)
-					}
+						var receivedDocuments []index.Document
+						for _, f := range result.Files {
+							receivedDocuments = append(receivedDocuments, index.Document{
+								Name:    f.FileName,
+								Content: f.Content,
+							})
+						}
 
-					// setup: prepare spy versions of prepare delta / normal build so that we can observe
-					// whether they were called appropriately
-					deltaBuildCalled := false
-					prepareDeltaSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, changedOrDeletedPaths []string, err error) {
-						deltaBuildCalled = true
-						return prepareDeltaBuild(options, repository)
-					}
+						for _, docs := range [][]index.Document{step.expectedDocuments, receivedDocuments} {
+							sort.Slice(docs, func(i, j int) bool {
+								a, b := docs[i], docs[j]
 
-					normalBuildCalled := false
-					prepareNormalSpy := func(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
-						normalBuildCalled = true
-						return prepareNormalBuild(options, repository)
-					}
+								// first compare names, then fallback to contents if the names are equal
 
-					// run test
-					_, err := indexGitRepo(options, gitIndexConfig{
-						prepareDeltaBuild:  prepareDeltaSpy,
-						prepareNormalBuild: prepareNormalSpy,
+								if a.Name < b.Name {
+									return true
+								}
+
+								if a.Name > b.Name {
+									return false
+								}
+
+								return bytes.Compare(a.Content, b.Content) < 0
+							})
+						}
+
+						compareOptions := []cmp.Option{
+							cmpopts.IgnoreFields(index.Document{}, "Branches", "rankFlags"),
+							cmpopts.EquateEmpty(),
+						}
+
+						if diff := cmp.Diff(step.expectedDocuments, receivedDocuments, compareOptions...); diff != "" {
+							t.Errorf("diff in received documents (-want +got):%s\n:", diff)
+						}
 					})
-					if err != nil {
-						t.Fatalf("IndexGitRepo: %s", err)
-					}
-
-					if options.BuildOptions.IsDelta != deltaBuildCalled {
-						// We should always try a delta build if we request it in the options.
-						t.Fatalf("expected deltaBuildCalled to be %t, got %t", options.BuildOptions.IsDelta, deltaBuildCalled)
-					}
-
-					if options.BuildOptions.IsDelta && (step.expectedFallbackToNormalBuild != normalBuildCalled) {
-						// We only check the normal spy on delta builds because it's only considered a "fallback" if we
-						// asked for a delta build in the first place.
-						t.Fatalf("expected normalBuildCalled to be %t, got %t", step.expectedFallbackToNormalBuild, normalBuildCalled)
-					}
-
-					// examine outcome: load shards into a searcher instance and run a dummy search query
-					// that returns every document contained in the shards
-					//
-					// then, compare returned set of documents with the expected set for the step and see if they agree
-
-					ss, err := search.NewDirectorySearcher(indexDir)
-					if err != nil {
-						t.Fatalf("NewDirectorySearcher(%s): %s", indexDir, err)
-					}
-					defer ss.Close()
-
-					searchOpts := &zoekt.SearchOptions{Whole: true}
-					result, err := ss.Search(context.Background(), &query.Const{Value: true}, searchOpts)
-					if err != nil {
-						t.Fatalf("Search: %s", err)
-					}
-
-					var receivedDocuments []index.Document
-					for _, f := range result.Files {
-						receivedDocuments = append(receivedDocuments, index.Document{
-							Name:    f.FileName,
-							Content: f.Content,
-						})
-					}
-
-					for _, docs := range [][]index.Document{step.expectedDocuments, receivedDocuments} {
-						sort.Slice(docs, func(i, j int) bool {
-							a, b := docs[i], docs[j]
-
-							// first compare names, then fallback to contents if the names are equal
-
-							if a.Name < b.Name {
-								return true
-							}
-
-							if a.Name > b.Name {
-								return false
-							}
-
-							return bytes.Compare(a.Content, b.Content) < 0
-						})
-					}
-
-					compareOptions := []cmp.Option{
-						cmpopts.IgnoreFields(index.Document{}, "Branches", "rankFlags"),
-						cmpopts.EquateEmpty(),
-					}
-
-					if diff := cmp.Diff(step.expectedDocuments, receivedDocuments, compareOptions...); diff != "" {
-						t.Errorf("diff in received documents (-want +got):%s\n:", diff)
-					}
-				})
-			}
-		})
+				}
+			})
+		}
 	}
 }
 
@@ -1586,5 +1627,95 @@ func TestIndexGitRepo_InvalidRepoID(t *testing.T) {
 	}
 	if len(shards) != 0 {
 		t.Fatalf("expected no shards to be written, got %v", shards)
+	}
+}
+
+// TestIndexDeltaWithoutOldBlobs checks that a delta build needs only the
+// trees of the last indexed commit, so a clone that fetched that commit
+// without its blobs still gets a delta build.
+func TestIndexDeltaWithoutOldBlobs(t *testing.T) {
+	t.Parallel()
+
+	source := t.TempDir()
+	testutil.RunGit(t, source, "init", "-b", "main")
+	testutil.RunGit(t, source, "config", "uploadpack.allowFilter", "true")
+	testutil.RunGit(t, source, "config", "uploadpack.allowAnySHA1InWant", "true")
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(source, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("kept.txt", "kept")
+	write("changed.txt", "old")
+	write("deleted.txt", "deleted")
+	testutil.RunGit(t, source, "add", "-A")
+	testutil.RunGit(t, source, "commit", "-m", "first")
+	first := strings.TrimSpace(testutil.RunGit(t, source, "rev-parse", "HEAD"))
+
+	indexDir := t.TempDir()
+	opts := func(repoDir string, delta bool) Options {
+		buildOptions := index.Options{
+			IndexDir:              indexDir,
+			RepositoryDescription: zoekt.Repository{Name: "repository"},
+			IsDelta:               delta,
+		}
+		buildOptions.SetDefaults()
+		return Options{RepoDir: repoDir, BuildOptions: buildOptions, Branches: []string{"HEAD"}}
+	}
+	if _, err := IndexGitRepo(opts(filepath.Join(source, ".git"), false)); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	write("changed.txt", "new")
+	if err := os.Remove(filepath.Join(source, "deleted.txt")); err != nil {
+		t.Fatal(err)
+	}
+	testutil.RunGit(t, source, "add", "-A")
+	testutil.RunGit(t, source, "commit", "-m", "second")
+	second := strings.TrimSpace(testutil.RunGit(t, source, "rev-parse", "HEAD"))
+
+	// The new commit with its blobs, and the last indexed commit without.
+	clone := t.TempDir()
+	testutil.RunGit(t, clone, "init", "--bare", "-b", "main")
+	testutil.RunGit(t, clone, "fetch", "--depth=1", "file://"+source, second)
+	testutil.RunGit(t, clone, "fetch", "--depth=1", "--filter=blob:none", "file://"+source, first)
+	testutil.RunGit(t, clone, "update-ref", "refs/heads/main", second)
+	check := exec.Command("git", "-C", clone, "cat-file", "-e", strings.TrimSpace(testutil.RunGit(t, source, "rev-parse", first+":deleted.txt")))
+	check.Env = append(testutil.GitEnv(), "GIT_NO_LAZY_FETCH=1")
+	if out, err := check.CombinedOutput(); err == nil {
+		t.Fatalf("the clone has the last indexed commit's blobs, so the test proves nothing: %s", out)
+	}
+
+	normalBuildCalled := false
+	_, err := indexGitRepo(opts(clone, true), gitIndexConfig{
+		prepareNormalBuild: func(options Options, repository *git.Repository) (map[fileKey]BlobLocation, map[string]map[string]plumbing.Hash, error) {
+			normalBuildCalled = true
+			return prepareNormalBuild(options, repository)
+		},
+	})
+	if err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+	if normalBuildCalled {
+		t.Fatal("fell back to a normal build")
+	}
+
+	ss, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	result, err := ss.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range result.Files {
+		got = append(got, f.FileName+"="+string(f.Content))
+	}
+	sort.Strings(got)
+	if want := []string{"changed.txt=new", "kept.txt=kept"}; !slices.Equal(got, want) {
+		t.Fatalf("got documents %q, want %q", got, want)
 	}
 }
