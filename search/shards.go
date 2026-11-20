@@ -1177,6 +1177,11 @@ search:
 
 			r.Priority = r.priority
 			r.MaxPendingPriority = pending.max()
+			if next != nil {
+				// Shards not handed to a worker yet are pending too. They are
+				// sorted by priority, so next has the highest.
+				r.MaxPendingPriority = max(r.MaxPendingPriority, next.priority)
+			}
 
 			sendByRepository(r.SearchResult, opts, sender) // send the result back to the client
 		}
