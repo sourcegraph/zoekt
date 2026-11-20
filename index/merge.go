@@ -306,7 +306,7 @@ func addDocument(d *indexData, ib *ShardBuilder, repoID int, docID uint32) error
 	// calculate branches
 	{
 		mask := d.fileBranchMasks[docID]
-		id := uint32(1)
+		id := uint64(1)
 		for mask != 0 {
 			if mask&0x1 != 0 {
 				doc.Branches = append(doc.Branches, d.branchNames[repoID][uint(id)])
