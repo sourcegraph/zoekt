@@ -15,9 +15,13 @@
 package index
 
 import (
+	"context"
+	"fmt"
 	"math"
+	"math/rand"
 	"reflect"
 	"regexp/syntax"
+	"strings"
 	"testing"
 
 	"github.com/RoaringBitmap/roaring/v2"
@@ -435,6 +439,119 @@ func TestIsRegexpAll(t *testing.T) {
 		}
 		if isRegexpAll(r) {
 			t.Errorf("expected %q to not match all", s)
+		}
+	}
+}
+
+func TestCanMatchNewline(t *testing.T) {
+	tests := []struct {
+		re   string
+		want bool
+	}{
+		{re: `\w+Handler`, want: false},
+		{re: `[A-Z]\w+Error`, want: false},
+		{re: `\bnil\b`, want: false},
+		{re: `^func\(\w+\)$`, want: false},
+		{re: `foo.*bar`, want: false},
+		{re: `foo\S+`, want: false},
+		{re: `foo\s+bar`, want: true},
+		{re: `foo[^a]`, want: true},
+		{re: `foo\W`, want: true},
+		{re: `foo[[:space:]]`, want: true},
+		{re: `foo\pC`, want: true},
+		{re: `foo\nbar`, want: true},
+		{re: `(?s)foo.bar`, want: true},
+		{re: `\Afoo`, want: true},
+		{re: `foo\z`, want: true},
+		{re: `foo|bar\n`, want: true},
+	}
+
+	for _, tt := range tests {
+		// Same flags as query.Parse, so ^ and $ match at line breaks.
+		r, err := syntax.Parse(tt.re, syntax.Perl&^syntax.OneLine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := canMatchNewline(r); got != tt.want {
+			t.Errorf("canMatchNewline(%q) = %v, want %v", tt.re, got, tt.want)
+		}
+	}
+}
+
+// TestRegexpLineFilter compares regexps that only run on their prefilter's
+// hit lines with Go's regexp over the whole file.
+func TestRegexpLineFilter(t *testing.T) {
+	r := rand.New(rand.NewSource(1))
+	pick := func(s ...string) string { return s[r.Intn(len(s))] }
+
+	var docs []Document
+	for i := range 30 {
+		var b strings.Builder
+		for range r.Intn(100) {
+			b.WriteString(pick("foo", "Bar", "nil", "err", "Handler", "set", "SET", "\u017fet", "kelvin", "\u212aelvin", "\u00b5s", "\u03bcs", "x_1", " ", ".", "\t", "\n", "\n", "\n\n", "\r\n"))
+		}
+		docs = append(docs, Document{Name: fmt.Sprint(i), Content: []byte(b.String())})
+	}
+	s := searcherForTest(t, testShardBuilder(t, nil, docs...))
+	defer s.Close()
+
+	for range 2000 {
+		var b strings.Builder
+		for range 1 + r.Intn(4) {
+			b.WriteString(pick("foo", "bar", "nil", "err", "Handler", "set", "kelvin", "\u00b5s", "(nil|err)", "(foo|set)",
+				`\w+`, `\w*`, `\b`, `\B`, `^`, `$`, `\A`, `\z`, `.`, `.*`, `(?s:.)`, `[a-z]`, `[^a]`, `\s`, `\S`, `\W`, `x?`, `|`, `(`, `)`, `)?`, `)+`, `){2}`))
+		}
+		q, err := query.Parse(pick("", "case:yes ", "case:no ") + b.String())
+		rq, ok := q.(*query.Regexp)
+		if err != nil || !ok {
+			continue
+		}
+		rq.Content = true
+
+		mt, err := s.(*indexData).newMatchTree(rq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mt, err = pruneMatchTree(mt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		filtered := false
+		visitMatchTree(mt, func(m matchTree) {
+			if rt, ok := m.(*regexpMatchTree); ok && rt.prefilter != nil {
+				_, brute := rt.prefilter.(*bruteForceMatchTree)
+				filtered = !brute
+			}
+		})
+		if !filtered {
+			continue
+		}
+
+		res, err := s.Search(context.Background(), rq, &zoekt.SearchOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]bool{}
+		for _, f := range res.Files {
+			for _, l := range f.LineMatches {
+				for _, m := range l.LineFragments {
+					got[fmt.Sprintf("%s:%d:%d", f.FileName, m.Offset, m.MatchLength)] = true
+				}
+			}
+		}
+		re := regexp.MustCompile(regexpPattern(rq))
+		for _, d := range docs {
+			for _, m := range re.FindAllIndex(d.Content, -1) {
+				key := fmt.Sprintf("%s:%d:%d", d.Name, m[0], m[1]-m[0])
+				if got[key] {
+					delete(got, key)
+				} else {
+					t.Errorf("%s: missing match %s %q", q, key, d.Content[m[0]:m[1]])
+				}
+			}
+		}
+		for key := range got {
+			t.Errorf("%s: unexpected match %s", q, key)
 		}
 	}
 }
