@@ -15,10 +15,15 @@
 package index
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"hash/fnv"
+	"math/rand/v2"
 	"reflect"
+	stdregexp "regexp"
 	"regexp/syntax"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -87,6 +92,11 @@ func TestRegexpParse(t *testing.T) {
 		caseSensitive bool
 	}
 
+	var sixteen []matchTree
+	for c := 'a'; c <= 'p'; c++ {
+		sixteen = append(sixteen, caseSensitiveSubstrMT(string(c)+"bc"))
+	}
+
 	cases := []testcase{
 		{"(foo|)bar", substrMT("bar"), false, false},
 		{"(foo|)", &bruteForceMatchTree{}, false, false},
@@ -113,7 +123,7 @@ func TestRegexpParse(t *testing.T) {
 		{"(?i)foo", substrMT("FOO"), true, false},
 		{"(?i)foo", substrMT("FOO"), true, true},
 		{"^foo", substrMT("foo"), false, false},
-		{"(foo) (bar)", &andMatchTree{[]matchTree{substrMT("foo"), substrMT("bar")}}, false, false},
+		{"(foo) (bar)", substrMT("FOO BAR"), true, false},
 		{"(thread|needle|haystack)", &orMatchTree{[]matchTree{
 			substrMT("thread"),
 			substrMT("needle"),
@@ -131,6 +141,21 @@ func TestRegexpParse(t *testing.T) {
 		{"(foo){1,}", substrMT("foo"), true, false},
 		{"(foo){1,3}", substrMT("foo"), false, false},
 		{"(...)(...)", &bruteForceMatchTree{}, false, false},
+		{"[Ee]rr", &orMatchTree{[]matchTree{caseSensitiveSubstrMT("Err"), caseSensitiveSubstrMT("err")}}, true, true},
+		{"[Ee]rr", substrMT("ERR"), true, false},
+		{"[Kk]ey", substrMT("KEY"), true, false},
+		{"f[ao]o", &orMatchTree{[]matchTree{substrMT("FAO"), substrMT("FOO")}}, true, false},
+		{"(Get|Set)Id", &orMatchTree{[]matchTree{caseSensitiveSubstrMT("GetId"), caseSensitiveSubstrMT("SetId")}}, true, true},
+		{"(?i)(get|set)id", &orMatchTree{[]matchTree{substrMT("GETID"), substrMT("SETID")}}, true, true},
+		{"(?i:k)ey", &orMatchTree{[]matchTree{
+			caseSensitiveSubstrMT("Key"),
+			caseSensitiveSubstrMT("key"),
+			caseSensitiveSubstrMT("Key"), // Kelvin sign
+		}}, true, true},
+		{"[ab]c", &bruteForceMatchTree{}, false, false},
+		{"[a-p]bc", &orMatchTree{sixteen}, true, true},
+		{"[a-q]bc", &bruteForceMatchTree{}, false, true},
+		{"ab(?:[cx]|cde)", &bruteForceMatchTree{}, false, true},
 	}
 
 	for _, c := range cases {
@@ -153,6 +178,189 @@ func TestRegexpParse(t *testing.T) {
 			printRegexp(t, r, 0)
 			t.Errorf("regexpToQuery(%q): got %v, want %v", c.in, isEq, c.isEquivalent)
 		}
+	}
+}
+
+// Compares searching random short regexps with running the regexp on each
+// document, so a match tree wrongly marked equivalent shows up as a wrong file
+// or line.
+func TestRegexpMatchTreeDifferential(t *testing.T) {
+	const seed = 1279
+	rng := rand.New(rand.NewPCG(seed, 0))
+	// Fold orbits with non-ASCII members: K, k, Kelvin sign; S, s, long s.
+	alphabet := []string{"a", "A", "b", "k", "K", "K", "s", "S", "ſ", "\n"}
+	pick := func() string { return alphabet[rng.IntN(len(alphabet))] }
+	word := func(n int) string {
+		var b strings.Builder
+		for range rng.IntN(n) {
+			b.WriteString(pick())
+		}
+		return b.String()
+	}
+	atom := func() string {
+		switch rng.IntN(8) {
+		case 0:
+			return "[" + pick() + pick() + "]"
+		case 1:
+			return "(?i:" + pick() + ")"
+		case 2:
+			return "(" + pick() + pick() + "|" + pick() + ")"
+		case 3:
+			return []string{".", "b?", `\b`, "^", "$", "[^a]", "(a|)"}[rng.IntN(7)]
+		default:
+			return pick()
+		}
+	}
+
+	for round := range 20 {
+		var docs []Document
+		for i := range 30 {
+			name := strconv.Itoa(i) + "_" + strings.ReplaceAll(word(5), "\n", "")
+			docs = append(docs, Document{Name: name, Content: []byte(word(40))})
+		}
+		searcher := searcherForTest(t, testShardBuilder(t, nil, docs...))
+		id := searcher.(*indexData)
+
+		for range 100 {
+			pat := pick() + atom() + atom()
+			for range rng.IntN(3) {
+				pat += atom()
+			}
+			if rng.IntN(4) == 0 {
+				pat = "(?i)" + pat
+			}
+			r, err := syntax.Parse(pat, syntax.ClassNL|syntax.PerlX|syntax.UnicodeGroups)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, cs := range []bool{true, false} {
+				q := &query.Regexp{Regexp: r, CaseSensitive: cs}
+				// An equivalent tree replaces the regexp, so it must match like
+				// Go's regexp. Other trees are checked by zoekt's regexp engine,
+				// which misses some folds, e.g. (?i)s doesn't match long s.
+				_, isEq, _, err := id.regexpToMatchTreeRecursive(r, ngramSize, false, cs)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var re interface {
+					FindAllIndex([]byte, int) [][]int
+					MatchString(string) bool
+				} = regexp.MustCompile(regexpPattern(q))
+				if isEq {
+					re = stdregexp.MustCompile(regexpPattern(q))
+				}
+
+				// File name -> content lines with a match. A file whose name
+				// matches is present without lines.
+				want := map[string][]int{}
+				exact := map[string]bool{}
+				for _, d := range docs {
+					lines := []int{}
+					exact[d.Name] = true
+					for _, m := range re.FindAllIndex(d.Content, -1) {
+						// Lines can differ when a match spans lines, since
+						// substrings report overlapping matches.
+						exact[d.Name] = exact[d.Name] && !bytes.Contains(d.Content[m[0]:m[1]], []byte("\n"))
+						lines = append(lines, 1+bytes.Count(d.Content[:m[0]], []byte("\n")))
+					}
+					if len(lines) > 0 || re.MatchString(d.Name) {
+						want[d.Name] = slices.Compact(lines)
+					}
+				}
+
+				res, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got := map[string][]int{}
+				for _, f := range res.Files {
+					lines := []int{}
+					for _, l := range f.LineMatches {
+						if !l.FileName {
+							lines = append(lines, l.LineNumber)
+						}
+					}
+					slices.Sort(lines)
+					got[f.FileName] = slices.Compact(lines)
+				}
+
+				for _, d := range docs {
+					g, gok := got[d.Name]
+					w, wok := want[d.Name]
+					if gok != wok || exact[d.Name] && !slices.Equal(g, w) {
+						t.Fatalf("seed %d round %d: %q case sensitive %v (equivalent tree %v), file %q %q: got %v %v, want %v %v",
+							seed, round, pat, cs, isEq, d.Name, d.Content, gok, g, wok, w)
+					}
+				}
+			}
+		}
+		searcher.Close()
+	}
+}
+
+// The regexp reports the first alternative that matches, so it can match less
+// than an OR of substrings when one string is a prefix of another.
+func TestRegexpExpansionPrefix(t *testing.T) {
+	for _, tc := range []struct{ re, content, want string }{
+		{`xa(?:[\nq]|\nb\nc)`, "xa\nb\nc\n", "1:0+2"},
+		{`ab(?:[cx]|cde)`, "abcde", "1:0+3"},
+	} {
+		b := testShardBuilder(t, nil, Document{Name: "f", Content: []byte(tc.content)})
+		res := searchForTest(t, b, &query.Regexp{Regexp: mustParseRE(tc.re), CaseSensitive: true, Content: true})
+		var got []string
+		for _, f := range res.Files {
+			for _, l := range f.LineMatches {
+				for _, fr := range l.LineFragments {
+					got = append(got, fmt.Sprintf("%d:%d+%d", l.LineNumber, fr.LineOffset, fr.MatchLength))
+				}
+			}
+		}
+		if strings.Join(got, " ") != tc.want {
+			t.Errorf("%s on %q: got matches %v, want %s", tc.re, tc.content, got, tc.want)
+		}
+	}
+}
+
+func BenchmarkRegexpPlanning(b *testing.B) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	words := []string{
+		"func", "return", "err", "Err", "nil", "if", "for", "range", "key", "Key", "value",
+		"GetName", "SetName", "getValue", "setValue", "index", "bar", "baz", "Set", "Get",
+	}
+	rare := []string{"foo", "fao", "GetId", "SetId", "getid", "SETID"}
+	var docs []Document
+	for i := range 2000 {
+		var c strings.Builder
+		for j := range 600 {
+			w := words[rng.IntN(len(words))]
+			if rng.IntN(2000) == 0 {
+				w = rare[rng.IntN(len(rare))]
+			}
+			c.WriteString(w)
+			if j%8 == 7 {
+				c.WriteString("\n")
+			} else {
+				c.WriteString(" ")
+			}
+		}
+		docs = append(docs, Document{Name: "f" + strconv.Itoa(i) + ".go", Content: []byte(c.String())})
+	}
+	searcher := searcherForTest(b, testShardBuilder(b, nil, docs...))
+	defer searcher.Close()
+
+	for _, pat := range []string{"[Ee]rr", "f[ao]o", "(Get|Set)Id", "(?i)(get|set)id", "[Ss]et[A-Z]"} {
+		q, err := query.Parse(pat)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.Run(pat, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{}); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
