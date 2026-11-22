@@ -178,6 +178,18 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 
 // getCommit returns a tree object for the given reference.
 func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error) {
+	// go-git tries a name made of hex digits as an abbreviated object ID before
+	// it tries the name as a ref, while git prefers the ref. So look up a branch
+	// with such a name, like a ticket number, before go-git can resolve it to an
+	// unrelated commit. A full object ID is still resolved as an object ID.
+	if prefix != "" && len(ref) < len(plumbing.ZeroHash.String()) && isHex(ref) {
+		if r, err := repo.Reference(plumbing.ReferenceName(filepath.Join(prefix, ref)), true); err == nil {
+			if commit, err := repo.CommitObject(r.Hash()); err == nil {
+				return commit, nil
+			}
+		}
+	}
+
 	sha1, err := repo.ResolveRevision(plumbing.Revision(ref))
 	// ref might be a branch name (e.g. "master") add branch prefix and try again.
 	if err != nil {
@@ -192,6 +204,19 @@ func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error)
 		return nil, err
 	}
 	return commitObj, nil
+}
+
+// isHex reports whether s is a non-empty string of hex digits.
+func isHex(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 func plainOpenRepo(repoDir string) (*git.Repository, error) {
