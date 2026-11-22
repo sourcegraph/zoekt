@@ -27,7 +27,9 @@ import (
 // Note: a lot of these can be in memory, so think about fieldalignment when
 // modify the fields of this structure.
 type candidateMatch struct {
-	substrBytes   []byte
+	substrBytes []byte
+	// substrLowered is the lowercased pattern. Regexp matches set it to their
+	// lowercased regexp, which BM25 uses to tell terms apart.
 	substrLowered []byte
 
 	scoreWeight float64
