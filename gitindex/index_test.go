@@ -1588,3 +1588,99 @@ func TestIndexGitRepo_InvalidRepoID(t *testing.T) {
 		t.Fatalf("expected no shards to be written, got %v", shards)
 	}
 }
+
+// A delta build must not index paths that the repository's ignore file
+// excludes. A normal build skips them, so a later change to such a file must
+// not make it searchable.
+func TestIndexDeltaHonorsIgnoreFile(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	indexDir := t.TempDir()
+	testutil.RunGit(t, repoDir, "init", "-b", "main")
+
+	write := func(name, content string) {
+		t.Helper()
+		p := filepath.Join(repoDir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commit := func(msg string) {
+		t.Helper()
+		testutil.RunGit(t, repoDir, "add", "-A")
+		testutil.RunGit(t, repoDir, "commit", "-m", msg)
+	}
+
+	write(ignore.IgnoreFile, "vendor/\n")
+	write("main.go", "package main // first\n")
+	write("vendor/lib/lib.go", "package lib // vendoredcode one\n")
+	commit("initial")
+
+	build := func(isDelta bool) {
+		t.Helper()
+		opts := Options{
+			RepoDir:  filepath.Join(repoDir, ".git"),
+			Branches: []string{"HEAD"},
+			BuildOptions: index.Options{
+				IndexDir:              indexDir,
+				RepositoryDescription: zoekt.Repository{Name: "repo"},
+				IsDelta:               isDelta,
+				DisableCTags:          true,
+			},
+		}
+		var deltaFailed bool
+		_, err := indexGitRepo(opts, gitIndexConfig{
+			prepareDeltaBuild: func(o Options, r *git.Repository) (map[fileKey]BlobLocation, map[string]map[string]plumbing.Hash, []string, error) {
+				repos, versions, changed, err := prepareDeltaBuild(o, r)
+				deltaFailed = err != nil
+				return repos, versions, changed, err
+			},
+		})
+		if err != nil {
+			t.Fatalf("indexGitRepo(delta=%t): %v", isDelta, err)
+		}
+		if deltaFailed {
+			t.Fatal("delta build unexpectedly fell back to a normal build")
+		}
+	}
+
+	searchNames := func(pattern string) []string {
+		t.Helper()
+		ss, err := search.NewDirectorySearcher(indexDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ss.Close()
+		res, err := ss.Search(context.Background(), &query.Substring{Pattern: pattern}, &zoekt.SearchOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, f := range res.Files {
+			names = append(names, f.FileName)
+		}
+		return names
+	}
+
+	build(false)
+	if got := searchNames("vendoredcode"); len(got) != 0 {
+		t.Fatalf("normal build: ignored files are searchable: %v", got)
+	}
+
+	write("main.go", "package main // second\n")
+	write("vendor/lib/lib.go", "package lib // vendoredcode two\n")
+	write("vendor/lib/new.go", "package lib // vendoredcode new\n")
+	commit("update vendored code")
+
+	build(true)
+	if got := searchNames("second"); len(got) != 1 {
+		t.Fatalf("delta build: want main.go to be updated, got %v", got)
+	}
+	if got := searchNames("vendoredcode"); len(got) != 0 {
+		t.Errorf("delta build: files excluded by %s are searchable: %v", ignore.IgnoreFile, got)
+	}
+}
