@@ -1691,3 +1691,116 @@ func TestDirectorySearcherOptionsIndexFileOpener(t *testing.T) {
 		assert.Equal(c, int32(2), opens.Load(), "shard opens after watcher reload")
 	}, 10*time.Second, 10*time.Millisecond)
 }
+
+// countingSearcher records how many times the sharded searcher dispatched a
+// search to the wrapped shard.
+type countingSearcher struct {
+	zoekt.Searcher
+	searches *atomic.Int64
+}
+
+func (s *countingSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.SearchOptions) (*zoekt.SearchResult, error) {
+	s.searches.Add(1)
+	return s.Searcher.Search(ctx, q, opts)
+}
+
+// TestSelectRepoSetUsesEveryRepoFilter checks that shard pruning applies every
+// repository filter of an And, not only the first one. A broad filter such as
+// archived:false placed before a narrow repo id filter must not cause every
+// shard to be searched.
+func TestSelectRepoSetUsesEveryRepoFilter(t *testing.T) {
+	const n = 200
+	const target = 42
+
+	shards := make([]*rankedShard, 0, n)
+	names := make([]string, 0, n)
+	for i := 1; i <= n; i++ {
+		name := fmt.Sprintf("repo%03d", i)
+		names = append(names, name)
+		shards = append(shards, &rankedShard{repos: []*zoekt.Repository{{
+			ID:   uint32(i),
+			Name: name,
+			Metadata: map[string]string{
+				"archived":   "false",
+				"project_id": strconv.Itoa(i),
+			},
+		}}})
+	}
+
+	sub := &query.Substring{Pattern: "needle"}
+	archived := &query.Meta{Field: "archived", Value: regexp.MustCompile("^false$")}
+	project := &query.Meta{Field: "project_id", Value: regexp.MustCompile(fmt.Sprintf("^(%d)$", target))}
+	repoIDs := query.NewRepoIDs(target)
+	repoRegexp := &query.Repo{Regexp: regexp.MustCompile("^repo")}
+	allRepos := query.NewRepoSet(names...)
+	head := &query.BranchesRepos{List: []query.BranchRepos{{Branch: "HEAD", Repos: roaring.BitmapOf(target)}}}
+
+	cases := []struct {
+		name string
+		q    query.Q
+		want query.Q
+	}{{
+		name: "meta before repo ids",
+		q:    query.NewAnd(sub, archived, repoIDs),
+		want: sub,
+	}, {
+		name: "two meta filters",
+		q:    query.NewAnd(archived, project, sub),
+		want: sub,
+	}, {
+		name: "repo regexp before repo ids",
+		q:    query.NewAnd(repoRegexp, repoIDs, sub),
+		want: sub,
+	}, {
+		name: "reposet before branches repos",
+		q:    query.NewAnd(allRepos, head, sub),
+		want: query.NewAnd(&query.Branch{Pattern: "HEAD", Exact: true}, sub),
+	}, {
+		name: "meta before branches repos",
+		q:    query.NewAnd(archived, head, sub),
+		want: query.NewAnd(&query.Branch{Pattern: "HEAD", Exact: true}, sub),
+	}, {
+		name: "repo ids before meta",
+		q:    query.NewAnd(repoIDs, archived, sub),
+		want: sub,
+	}}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, gotQ := selectRepoSet(shards, tc.q)
+			if len(got) != 1 || got[0].repos[0].ID != target {
+				t.Fatalf("%s: selected %d shards, want only the shard of repo %d", tc.q, len(got), target)
+			}
+			if gotQ.String() != tc.want.String() {
+				t.Fatalf("%s: got query %s, want %s", tc.q, gotQ, tc.want)
+			}
+		})
+	}
+
+	// The same through Search: only the matching shard is searched.
+	ss := newShardedSearcher(1)
+	var searches atomic.Int64
+	doc := index.Document{Name: "f.go", Content: []byte("needle")}
+	for i := 1; i <= n; i++ {
+		repo := &zoekt.Repository{
+			ID:       uint32(i),
+			Name:     fmt.Sprintf("repo%03d", i),
+			Metadata: map[string]string{"archived": "false"},
+		}
+		shard := shardtest.Searcher(t, shardtest.Builder(t, repo, doc))
+		ss.replace(map[string]zoekt.Searcher{
+			fmt.Sprintf("shard%d", i): &countingSearcher{Searcher: shard, searches: &searches},
+		})
+	}
+
+	res, err := ss.Search(context.Background(), query.NewAnd(sub, archived, repoIDs), &zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) != 1 || res.Files[0].RepositoryID != target {
+		t.Fatalf("got %d files, want 1 from repo %d", len(res.Files), target)
+	}
+	if got := searches.Load(); got != 1 {
+		t.Fatalf("searched %d of %d shards, want 1", got, n)
+	}
+}

@@ -728,6 +728,10 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 		}
 	}
 
+	// Every repository filter narrows the shards further, since all children of
+	// an And must match. Filters that match every repository of the remaining
+	// shards are replaced in a copy of the query.
+	var simplified *query.And
 	for i, c := range and.Children {
 		var setSize int
 		var hasRepos func([]*zoekt.Repository) (bool, bool)
@@ -834,16 +838,13 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 		if len(filtered) == 0 {
 			return filtered, and
 		}
+		shards = filtered
 
-		// We can't simplify the query since we are searching shards which contain
-		// repos we aren't supposed to search.
+		// We can't simplify this filter since we are searching shards which
+		// contain repos it excludes.
 		if !filteredAll {
-			return filtered, and
+			continue
 		}
-
-		// We don't want to mutate the original and, so we clone it before
-		// mutating it.
-		and = &query.And{Children: slices.Clone(and.Children)}
 
 		// This optimization allows us to avoid the work done by
 		// indexData.simplify for each shard.
@@ -852,30 +853,35 @@ func doSelectRepoSet(shards []*rankedShard, and *query.And) ([]*rankedShard, que
 		// then at this point filtered is [foo bar] and q is the same. For each
 		// shard indexData.simplify will simplify to (and true (content baz)) ->
 		// (content baz). This work can be done now once, rather than per shard.
+		var replacement query.Q
 		switch c := c.(type) {
 		case *query.RepoSet, *query.RepoIDs, *query.Repo, *query.Meta:
-			and.Children[i] = &query.Const{Value: true}
-			return filtered, query.Simplify(and)
+			replacement = &query.Const{Value: true}
 
 		case *query.BranchesRepos:
 			// We can only replace if all the repos want the same branches. We
 			// simplify and just check that we are requesting 1 branch. The common
 			// case is just asking for HEAD, so this should be effective.
 			if len(c.List) != 1 {
-				return filtered, and
+				continue
 			}
 
 			// Every repo wants the same branches, so we can replace RepoBranches
 			// with a list of branch queries.
-			and.Children[i] = &query.Branch{Pattern: c.List[0].Branch, Exact: true}
-			return filtered, query.Simplify(and)
+			replacement = &query.Branch{Pattern: c.List[0].Branch, Exact: true}
 		}
 
-		// Stop after first RepoSet, otherwise we might append duplicate
-		// shards to `filtered`
-		return filtered, and
+		// We don't want to mutate the original and, so we clone it before
+		// mutating it.
+		if simplified == nil {
+			simplified = &query.And{Children: slices.Clone(and.Children)}
+		}
+		simplified.Children[i] = replacement
 	}
 
+	if simplified != nil {
+		return shards, query.Simplify(simplified)
+	}
 	return shards, and
 }
 
