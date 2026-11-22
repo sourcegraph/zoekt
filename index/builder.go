@@ -45,6 +45,7 @@ import (
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/internal/ctags"
 	"github.com/sourcegraph/zoekt/internal/tenant"
+	"github.com/sourcegraph/zoekt/languages"
 )
 
 var DefaultDir = filepath.Join(os.Getenv("HOME"), ".zoekt")
@@ -132,16 +133,41 @@ type HashOptions struct {
 	ctagsPath        string
 	cTagsMustSucceed bool
 	largeFiles       []string
+
+	// languageMap holds the sorted "language:parser" pairs of languages that
+	// do not use the default universal-ctags parser.
+	languageMap []string
+	// scipCTagsPath is only set if a language uses scip-ctags.
+	scipCTagsPath string
 }
 
 func (o *Options) HashOptions() HashOptions {
-	return HashOptions{
+	h := HashOptions{
 		sizeMax:          o.SizeMax,
 		disableCTags:     o.DisableCTags,
 		ctagsPath:        o.CTagsPath,
 		cTagsMustSucceed: o.CTagsMustSucceed,
 		largeFiles:       o.LargeFiles,
 	}
+
+	// The language map picks the parser that produces each document's
+	// symbols. It has no effect without ctags.
+	if o.DisableCTags {
+		return h
+	}
+	for lang, parser := range o.LanguageMap {
+		switch parser {
+		case ctags.UnknownCTags, ctags.UniversalCTags:
+			// parseSymbols uses universal-ctags for unmapped languages too.
+			continue
+		case ctags.ScipCTags:
+			h.scipCTagsPath = o.ScipCTagsPath
+		}
+		// parseSymbols looks languages up by their normalized name.
+		h.languageMap = append(h.languageMap, fmt.Sprintf("%s:%d", languages.NormalizeLanguage(lang), parser))
+	}
+	slices.Sort(h.languageMap)
+	return h
 }
 
 func (o *Options) GetHash() string {
@@ -153,6 +179,13 @@ func (o *Options) GetHash() string {
 	hasher.Write(fmt.Appendf(nil, "%d", h.sizeMax))
 	hasher.Write(fmt.Appendf(nil, "%q", h.largeFiles))
 	hasher.Write(fmt.Appendf(nil, "%t", h.disableCTags))
+
+	// Only hash parser choices that differ from the default, so that indexes
+	// built without them keep their hash.
+	if len(h.languageMap) > 0 {
+		hasher.Write(fmt.Appendf(nil, "%q", h.languageMap))
+		hasher.Write([]byte(h.scipCTagsPath))
+	}
 
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }

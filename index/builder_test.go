@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/sourcegraph/zoekt"
+	"github.com/sourcegraph/zoekt/internal/ctags"
 	"github.com/sourcegraph/zoekt/internal/testutil"
 )
 
@@ -217,6 +218,53 @@ func TestIncrementalSkipIndexing(t *testing.T) {
 			got := tc.opts.IncrementalSkipIndexing()
 			if got != tc.want {
 				t.Fatalf("want %v got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+// The language map picks the ctags parser for each language, so changing it
+// changes the symbols in the index. A shard built with another parser choice
+// must not count as up to date, or symbols stay stale until the next commit.
+func TestIncrementalSkipIndexingLanguageMap(t *testing.T) {
+	options := func(dir string, lm ctags.LanguageMap) Options {
+		opts := Options{
+			IndexDir: dir,
+			RepositoryDescription: zoekt.Repository{
+				Name:     "repo",
+				Branches: []zoekt.RepositoryBranch{{Name: "HEAD", Version: "v1"}},
+			},
+			LanguageMap:   lm,
+			CTagsPath:     "universal-ctags",
+			ScipCTagsPath: "scip-ctags",
+		}
+		opts.SetDefaults()
+		return opts
+	}
+
+	for _, tc := range []struct {
+		name     string
+		old, new ctags.LanguageMap
+		wantSkip bool
+	}{
+		{"unchanged", ctags.LanguageMap{"go": ctags.ScipCTags}, ctags.LanguageMap{"go": ctags.ScipCTags}, true},
+		{"switch to scip-ctags", nil, ctags.LanguageMap{"go": ctags.ScipCTags}, false},
+		{"switch back to universal-ctags", ctags.LanguageMap{"go": ctags.ScipCTags}, ctags.LanguageMap{"go": ctags.UniversalCTags}, false},
+		{"turn symbols off", ctags.LanguageMap{"go": ctags.UniversalCTags}, ctags.LanguageMap{"go": ctags.NoCTags}, false},
+		{"explicit default parser", nil, ctags.LanguageMap{"go": ctags.UniversalCTags, "python": ctags.UnknownCTags}, true},
+		{"language name case", ctags.LanguageMap{"go": ctags.ScipCTags}, ctags.LanguageMap{"Go": ctags.ScipCTags}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			b, err := NewBuilder(options(dir, tc.old))
+			require.NoError(t, err)
+			require.NoError(t, b.Add(Document{Name: "main.go", Content: []byte("package main\n"), Branches: []string{"HEAD"}}))
+			require.NoError(t, b.Finish())
+
+			opts := options(dir, tc.new)
+			state, _ := opts.IndexState()
+			if got := opts.IncrementalSkipIndexing(); got != tc.wantSkip {
+				t.Errorf("language map %v -> %v: IncrementalSkipIndexing = %t (state %s), want %t", tc.old, tc.new, got, state, tc.wantSkip)
 			}
 		})
 	}
