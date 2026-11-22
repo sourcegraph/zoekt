@@ -142,6 +142,11 @@ type docMatchTree struct {
 	// created.
 	reason string
 
+	// repoFilter is set when predicate only looks at the document's
+	// repository. Such a filter says nothing about how well a file matches,
+	// and simplify drops it from shards where every repository passes it.
+	repoFilter bool
+
 	// mutable
 	firstDone bool
 	docID     uint32
@@ -1118,9 +1123,10 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			// Share the predicate but not the position, which an earlier or
 			// concurrent search has moved.
 			return &docMatchTree{
-				reason:    cached.reason,
-				numDocs:   cached.numDocs,
-				predicate: cached.predicate,
+				reason:     cached.reason,
+				numDocs:    cached.numDocs,
+				predicate:  cached.predicate,
+				repoFilter: cached.repoFilter,
 			}, nil
 		}
 
@@ -1134,8 +1140,9 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 		}
 
 		mt := &docMatchTree{
-			reason:  "Meta",
-			numDocs: d.numDocs(),
+			reason:     "Meta",
+			numDocs:    d.numDocs(),
+			repoFilter: true,
 			predicate: func(docID uint32) bool {
 				repoIdx := d.repos[docID]
 				if int(repoIdx) >= len(reposWant) {
@@ -1260,8 +1267,9 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			}
 		}
 		return &docMatchTree{
-			reason:  "RepoSet",
-			numDocs: d.numDocs(),
+			reason:     "RepoSet",
+			numDocs:    d.numDocs(),
+			repoFilter: true,
 			predicate: func(docID uint32) bool {
 				return reposWant[d.repos[docID]]
 			},
@@ -1275,8 +1283,9 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			}
 		}
 		return &docMatchTree{
-			reason:  "RepoIDs",
-			numDocs: d.numDocs(),
+			reason:     "RepoIDs",
+			numDocs:    d.numDocs(),
+			repoFilter: true,
 			predicate: func(docID uint32) bool {
 				return reposWant[d.repos[docID]]
 			},
@@ -1290,8 +1299,9 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			}
 		}
 		return &docMatchTree{
-			reason:  "Repo",
-			numDocs: d.numDocs(),
+			reason:     "Repo",
+			numDocs:    d.numDocs(),
+			repoFilter: true,
 			predicate: func(docID uint32) bool {
 				return reposWant[d.repos[docID]]
 			},
@@ -1305,8 +1315,9 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 			}
 		}
 		return &docMatchTree{
-			reason:  "RepoRegexp",
-			numDocs: d.numDocs(),
+			reason:     "RepoRegexp",
+			numDocs:    d.numDocs(),
+			repoFilter: true,
 			predicate: func(docID uint32) bool {
 				return reposWant[d.repos[docID]]
 			},
@@ -1314,8 +1325,9 @@ func (d *indexData) newMatchTree(q query.Q) (matchTree, error) {
 
 	case query.RawConfig:
 		return &docMatchTree{
-			reason:  s.String(),
-			numDocs: d.numDocs(),
+			reason:     s.String(),
+			numDocs:    d.numDocs(),
+			repoFilter: true,
 			predicate: func(docID uint32) bool {
 				return uint8(s)&d.rawConfigMasks[d.repos[docID]] == uint8(s)
 			},
