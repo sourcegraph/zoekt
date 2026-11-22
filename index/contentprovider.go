@@ -991,12 +991,16 @@ func (m fileMatchesByScore) Len() int           { return len(m) }
 func (m fileMatchesByScore) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 func (m fileMatchesByScore) Less(i, j int) bool { return m[i].Score > m[j].Score }
 
+// sortMatchesByScore sorts ms by descending score. Matches arrive in file
+// order and BM25 can give several the same score, so the sort is stable to
+// keep ties in file order.
 func sortMatchesByScore(ms []zoekt.LineMatch) {
-	sort.Sort(matchScoreSlice(ms))
+	sort.Stable(matchScoreSlice(ms))
 }
 
+// sortChunkMatchesByScore is like sortMatchesByScore for chunk matches.
 func sortChunkMatchesByScore(ms []zoekt.ChunkMatch) {
-	sort.Sort(chunkMatchScoreSlice(ms))
+	sort.Stable(chunkMatchScoreSlice(ms))
 }
 
 // SortFiles sorts files matches in the order we want to present results to
