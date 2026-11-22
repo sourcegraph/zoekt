@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -175,5 +176,28 @@ func TestShardBuilderCountsSkippedFiles(t *testing.T) {
 	}
 	if got := res.Repos[0].Repository.SkippedFiles; got != (zoekt.SkippedFiles{}) {
 		t.Errorf("List must not expose per-shard Repository.SkippedFiles, got %+v", got)
+	}
+}
+
+// failingWriter fails every write, like a file on a full disk.
+type failingWriter struct{ err error }
+
+func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+// A shard that fits in the write buffer reaches the file only in the final
+// flush. If that flush fails, Write must report it, or the builder publishes
+// a truncated shard over the previous good one.
+func TestShardBuilderWriteReportsFlushError(t *testing.T) {
+	b, err := NewShardBuilder(&zoekt.Repository{Name: "repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.AddFile("f.go", []byte("needle haystack")); err != nil {
+		t.Fatal(err)
+	}
+
+	wantErr := errors.New("no space left on device")
+	if err := b.Write(failingWriter{wantErr}); !errors.Is(err, wantErr) {
+		t.Fatalf("Write returned %v, want %v", err, wantErr)
 	}
 }
