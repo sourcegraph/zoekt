@@ -546,13 +546,23 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions
 			return nil, err
 		}
 
-		foundRepos := make(map[string]struct{}, len(sr.Files))
+		foundRepoIDs := make(map[uint32]struct{}, len(sr.Files))
+		foundRepoNames := make(map[string]struct{})
 		for _, file := range sr.Files {
-			foundRepos[file.Repository] = struct{}{}
+			if file.RepositoryID == 0 {
+				// Older indexes and OSS users may not have repository IDs.
+				foundRepoNames[file.Repository] = struct{}{}
+			} else {
+				foundRepoIDs[file.RepositoryID] = struct{}{}
+			}
 		}
 
 		include = func(rle *zoekt.RepoListEntry) bool {
-			_, ok := foundRepos[rle.Repository.Name]
+			if rle.Repository.ID == 0 {
+				_, ok := foundRepoNames[rle.Repository.Name]
+				return ok
+			}
+			_, ok := foundRepoIDs[rle.Repository.ID]
 			return ok
 		}
 	}
