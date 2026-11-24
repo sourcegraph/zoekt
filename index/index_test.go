@@ -2469,31 +2469,101 @@ func TestListRepos(t *testing.T) {
 func TestListReposByContent(t *testing.T) {
 	content := []byte("bla the needle")
 
-	b := testShardBuilder(t, &zoekt.Repository{
-		Name: "reponame",
-	},
-		Document{Name: "f1", Content: content},
-		Document{Name: "f2", Content: content})
+	for _, compound := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compound=%t", compound), func(t *testing.T) {
+			var b *ShardBuilder
+			if compound {
+				b = testShardBuilderCompound(t, []*zoekt.Repository{{Name: "reponame"}, {Name: "other"}}, [][]Document{
+					{{Name: "f1", Content: content}, {Name: "f2", Content: content}},
+					{{Name: "f1", Content: []byte("other content")}},
+				})
+			} else {
+				b = testShardBuilder(t, &zoekt.Repository{Name: "reponame"},
+					Document{Name: "f1", Content: content},
+					Document{Name: "f2", Content: content})
+			}
+			searcher := searcherForTest(t, b)
+			defer searcher.Close()
+			q := &query.Substring{Pattern: "needle"}
+			res, err := searcher.List(context.Background(), q, nil)
+			if err != nil {
+				t.Fatalf("List(%v): %v", q, err)
+			}
+			if len(res.Repos) != 1 || res.Repos[0].Repository.Name != "reponame" {
+				t.Fatalf("got %v, want 1 matches", res)
+			}
+			if got := res.Repos[0].Stats.Shards; got != 1 {
+				t.Fatalf("got %d, want 1 shard", got)
+			}
+			q = &query.Substring{Pattern: "foo"}
+			res, err = searcher.List(context.Background(), q, nil)
+			if err != nil {
+				t.Fatalf("List(%v): %v", q, err)
+			}
+			if len(res.Repos) != 0 {
+				t.Fatalf("got %v, want 0 matches", res)
+			}
+		})
+	}
+}
 
-	searcher := searcherForTest(t, b)
-	q := &query.Substring{Pattern: "needle"}
-	res, err := searcher.List(context.Background(), q, nil)
+func TestListReposSameName(t *testing.T) {
+	var repos []*zoekt.Repository
+	var docs [][]Document
+	for i := range 3 {
+		label := fmt.Sprintf("repo%d", i)
+		repos = append(repos, &zoekt.Repository{
+			ID:       uint32(i),
+			Name:     "same-name",
+			Branches: []zoekt.RepositoryBranch{{Name: label}},
+			Metadata: map[string]string{"label": label},
+		})
+		docs = append(docs, []Document{{
+			Name:     "file",
+			Content:  []byte(label + "\n"),
+			Branches: []string{label},
+		}})
+	}
+	s := searcherForTest(t, testShardBuilderCompound(t, repos, docs))
+	defer s.Close()
+	all, err := s.List(context.Background(), &query.Const{Value: true}, nil)
 	if err != nil {
-		t.Fatalf("List(%v): %v", q, err)
+		t.Fatal(err)
 	}
-	if len(res.Repos) != 1 || res.Repos[0].Repository.Name != "reponame" {
-		t.Fatalf("got %v, want 1 matches", res)
-	}
-	if got := res.Repos[0].Stats.Shards; got != 1 {
-		t.Fatalf("got %d, want 1 shard", got)
-	}
-	q = &query.Substring{Pattern: "foo"}
-	res, err = searcher.List(context.Background(), q, nil)
-	if err != nil {
-		t.Fatalf("List(%v): %v", q, err)
-	}
-	if len(res.Repos) != 0 {
-		t.Fatalf("got %v, want 0 matches", res)
+
+	for i, repo := range repos {
+		label := repo.Branches[0].Name
+		for _, q := range []query.Q{
+			query.NewRepoIDs(repo.ID),
+			&query.Substring{Pattern: label},
+			&query.Branch{Pattern: label, Exact: true},
+			&query.Meta{Field: "label", Value: regexp.MustCompile("^" + label + "$")},
+			&query.And{Children: []query.Q{query.NewRepoIDs(repo.ID), &query.Substring{Pattern: label}}},
+		} {
+			for _, field := range []zoekt.RepoListField{zoekt.RepoListFieldRepos, zoekt.RepoListFieldReposMap} {
+				t.Run(fmt.Sprintf("%d/%s/%d", repo.ID, q, field), func(t *testing.T) {
+					got, err := s.List(context.Background(), q, &zoekt.ListOptions{Field: field})
+					if err != nil {
+						t.Fatal(err)
+					}
+					rle := all.Repos[i]
+					want := &zoekt.RepoList{Stats: rle.Stats}
+					want.Stats.Repos = 1
+					if field == zoekt.RepoListFieldRepos || repo.ID == 0 {
+						want.Repos = []*zoekt.RepoListEntry{rle}
+					} else {
+						want.ReposMap = zoekt.ReposMap{repo.ID: {
+							HasSymbols:    rle.Repository.HasSymbols,
+							Branches:      rle.Repository.Branches,
+							IndexTimeUnix: rle.IndexMetadata.IndexTime.Unix(),
+						}}
+					}
+					if !cmp.Equal(want, got, cmpopts.EquateEmpty(), cmpopts.IgnoreFields(zoekt.Repository{}, "priority")) {
+						t.Errorf("List(%v) returned %d Repos, %d ReposMap, stats %+v; want ID %d, stats %+v", q, len(got.Repos), len(got.ReposMap), got.Stats, repo.ID, want.Stats)
+					}
+				})
+			}
+		}
 	}
 }
 
