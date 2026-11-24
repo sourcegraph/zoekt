@@ -331,6 +331,61 @@ func TestSubmoduleIndexWithoutRepocache(t *testing.T) {
 	}
 }
 
+func TestSubmoduleIgnorePatterns(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := createSubmoduleRepo(dir); err != nil {
+		t.Fatalf("createSubmoduleRepo: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		repoDir   string
+		repoCache string
+		patterns  []string
+	}{
+		{name: "repo cache, file pattern", repoDir: filepath.Join(dir, "gerrit.googlesource.com", "adir.git"), repoCache: dir, patterns: []string{"**/bfile"}},
+		{name: "repo cache, mount path pattern", repoDir: filepath.Join(dir, "gerrit.googlesource.com", "adir.git"), repoCache: dir, patterns: []string{"bname/**"}},
+		{name: "no repo cache, file pattern", repoDir: filepath.Join(dir, "adir"), patterns: []string{"**/bfile"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			indexDir := t.TempDir()
+			opts := Options{
+				RepoDir: tc.repoDir,
+				BuildOptions: index.Options{
+					RepositoryDescription: zoekt.Repository{Name: "adir"},
+					IndexDir:              indexDir,
+					IgnorePatterns:        tc.patterns,
+				},
+				BranchPrefix: "refs/heads/",
+				Branches:     []string{"master"},
+				Submodules:   true,
+				RepoCacheDir: tc.repoCache,
+			}
+			if _, err := IndexGitRepo(opts); err != nil {
+				t.Fatalf("IndexGitRepo: %v", err)
+			}
+
+			searcher, err := search.NewDirectorySearcher(indexDir)
+			if err != nil {
+				t.Fatal("NewDirectorySearcher", err)
+			}
+			defer searcher.Close()
+
+			for pattern, want := range map[string]int{"bcont": 0, "acont": 1} {
+				results, err := searcher.Search(context.Background(), &query.Substring{Pattern: pattern}, &zoekt.SearchOptions{})
+				if err != nil {
+					t.Fatalf("Search(%q): %v", pattern, err)
+				}
+				if len(results.Files) != want {
+					t.Errorf("Search(%q): got %v, want %d files", pattern, results.Files, want)
+				}
+			}
+		})
+	}
+}
+
 func createSymlinkRepo(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err

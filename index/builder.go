@@ -101,6 +101,10 @@ type Options struct {
 	// https://github.com/bmatcuk/doublestar/tree/v4#patterns.
 	LargeFiles []string
 
+	// IgnorePatterns are .sourcegraph/ignore lines that git builds skip, on top of the repository's
+	// own ignore file. They match paths from the top-level repository root, submodule files included.
+	IgnorePatterns []string
+
 	// IsDelta is true if this run contains only the changed documents since the
 	// last run.
 	IsDelta bool
@@ -132,6 +136,7 @@ type HashOptions struct {
 	ctagsPath        string
 	cTagsMustSucceed bool
 	largeFiles       []string
+	ignorePatterns   []string
 }
 
 func (o *Options) HashOptions() HashOptions {
@@ -141,6 +146,7 @@ func (o *Options) HashOptions() HashOptions {
 		ctagsPath:        o.CTagsPath,
 		cTagsMustSucceed: o.CTagsMustSucceed,
 		largeFiles:       o.LargeFiles,
+		ignorePatterns:   o.IgnorePatterns,
 	}
 }
 
@@ -153,6 +159,11 @@ func (o *Options) GetHash() string {
 	hasher.Write(fmt.Appendf(nil, "%d", h.sizeMax))
 	hasher.Write(fmt.Appendf(nil, "%q", h.largeFiles))
 	hasher.Write(fmt.Appendf(nil, "%t", h.disableCTags))
+	// Changed patterns can drop or add unchanged files, so they must force a normal build.
+	// Hashed only when set, so existing indexes keep their hash.
+	if len(h.ignorePatterns) > 0 {
+		hasher.Write(fmt.Appendf(nil, "%q", h.ignorePatterns))
+	}
 
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }

@@ -43,6 +43,10 @@ type RepoWalker struct {
 	// Path => SubmoduleEntry
 	submodules map[string]*SubmoduleEntry
 	repoCache  *RepoCache
+
+	// ignorePatterns are skipped in addition to the tree's own ignore file. Submodule walkers have none:
+	// their paths are relative to the submodule root, so prepareNormalBuildRecurse filters them instead.
+	ignorePatterns []string
 }
 
 // subURL returns the URL for a submodule.
@@ -106,7 +110,7 @@ func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string) (map[string]pl
 		return nil, fmt.Errorf("parseModuleMap: %w", err)
 	}
 
-	ig, err := newIgnoreMatcher(t)
+	ig, err := newIgnoreMatcher(t, rw.ignorePatterns)
 	if err != nil {
 		return nil, fmt.Errorf("newIgnoreMatcher: %w", err)
 	}

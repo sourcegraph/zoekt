@@ -655,6 +655,12 @@ func TestIndexDeltaBasic(t *testing.T) {
 	emptySourcegraphIgnore := index.Document{Name: ignore.IgnoreFile}
 	sourcegraphIgnoreWithContent := index.Document{Name: ignore.IgnoreFile, Content: []byte("good_content.txt")}
 
+	ignoreTestFiles := index.Document{Name: ignore.IgnoreFile, Content: []byte("**/*_test.go\n")}
+	ignoredV1 := index.Document{Name: "pkg/a_test.go", Content: []byte("version one")}
+	ignoredV2 := index.Document{Name: "pkg/a_test.go", Content: []byte("version two")}
+	ignoredV3 := index.Document{Name: "pkg/a_test.go", Content: []byte("version three")}
+	ignoredNew := index.Document{Name: "pkg/b_test.go", Content: []byte("brand new file")}
+
 	for _, test := range []struct {
 		name     string
 		branches []string
@@ -1057,6 +1063,108 @@ func TestIndexDeltaBasic(t *testing.T) {
 			},
 		},
 		{
+			name:     "ignore patterns from the options apply to normal and delta builds",
+			branches: []string{"main"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []index.Document{helloWorld, ignoredV1},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IgnorePatterns = []string{"**/*_test.go"}
+					},
+
+					expectedDocuments: []index.Document{helloWorld},
+				},
+				{
+					name: "add an ignored and a kept file, modify an ignored file",
+					addedDocuments: branchToDocumentMap{
+						"main": []index.Document{foo, ignoredNew, ignoredV2},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IgnorePatterns = []string{"**/*_test.go"}
+						o.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []index.Document{helloWorld, foo},
+				},
+				{
+					name: "changed ignore patterns fall back to a normal build",
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IgnorePatterns = []string{"**/*_test.go", "foo.txt"}
+						o.BuildOptions.IsDelta = true
+					},
+
+					expectedFallbackToNormalBuild: true,
+					expectedDocuments:             []index.Document{helloWorld},
+				},
+			},
+		},
+		{
+			name:     "delta build skips added and modified files matched by an unchanged Sourcegraph ignore file",
+			branches: []string{"main"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []index.Document{ignoreTestFiles, helloWorld, ignoredV1},
+					},
+
+					expectedDocuments: []index.Document{ignoreTestFiles, helloWorld},
+				},
+				{
+					name: "add an ignored and a kept file, modify an ignored file",
+					addedDocuments: branchToDocumentMap{
+						"main": []index.Document{foo, ignoredNew, ignoredV2},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []index.Document{ignoreTestFiles, helloWorld, foo},
+				},
+			},
+		},
+		{
+			name:     "delta build applies each branch's own Sourcegraph ignore file",
+			branches: []string{"main", "dev"},
+			steps: []step{
+				{
+					name: "setup",
+					addedDocuments: branchToDocumentMap{
+						"main": []index.Document{ignoreTestFiles, ignoredV1},
+						"dev":  []index.Document{ignoredV1},
+					},
+
+					expectedDocuments: []index.Document{ignoreTestFiles, ignoredV1},
+				},
+				{
+					name: "modify the file on both branches: only dev, which does not ignore it, indexes it",
+					addedDocuments: branchToDocumentMap{
+						"main": []index.Document{ignoredV2},
+						"dev":  []index.Document{ignoredV3},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []index.Document{ignoreTestFiles, ignoredV3},
+				},
+				{
+					name: "modify the file only on main, which ignores it: dev's version stays searchable",
+					addedDocuments: branchToDocumentMap{
+						"main": []index.Document{ignoredV1},
+					},
+					optFn: func(t *testing.T, o *Options) {
+						o.BuildOptions.IsDelta = true
+					},
+
+					expectedDocuments: []index.Document{ignoreTestFiles, ignoredV3},
+				},
+			},
+		},
+		{
 			name:     "should fallback to a full, normal build if the repository has more than the specified threshold of shards",
 			branches: []string{"main"},
 			steps: []step{
@@ -1275,6 +1383,94 @@ func TestIndexDeltaBasic(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// Older delta builds didn't apply .sourcegraph/ignore, so an existing index can hold an ignored file.
+// A later delta build that sees the file change must tombstone it, as a normal build would drop it.
+func TestIndexDeltaRemovesIgnoredFileIndexedByOlderBuild(t *testing.T) {
+	t.Parallel()
+
+	indexDir := t.TempDir()
+	repositoryDir := t.TempDir()
+
+	commit := func(files map[string]string) {
+		for name, content := range files {
+			if err := os.WriteFile(filepath.Join(repositoryDir, name), []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		testutil.RunGit(t, repositoryDir, "add", "-A")
+		testutil.RunGit(t, repositoryDir, "commit", "-m", "change")
+	}
+
+	build := func(isDelta bool, prepareDelta prepareDeltaBuildFunc) {
+		buildOptions := index.Options{IndexDir: indexDir, RepositoryDescription: zoekt.Repository{Name: "repository"}, IsDelta: isDelta}
+		buildOptions.SetDefaults()
+		options := Options{RepoDir: filepath.Join(repositoryDir, ".git"), BuildOptions: buildOptions, Branches: []string{"main"}}
+		if _, err := indexGitRepo(options, gitIndexConfig{prepareDeltaBuild: prepareDelta}); err != nil {
+			t.Fatalf("indexGitRepo: %s", err)
+		}
+	}
+
+	find := func(pattern string) []string {
+		ss, err := search.NewDirectorySearcher(indexDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ss.Close()
+		result, err := ss.Search(context.Background(), &query.Substring{Pattern: pattern}, &zoekt.SearchOptions{Whole: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found []string
+		for _, f := range result.Files {
+			found = append(found, f.FileName+": "+string(f.Content))
+		}
+		return found
+	}
+
+	testutil.RunGit(t, repositoryDir, "init", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(repositoryDir, ".sourcegraph"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commit(map[string]string{ignore.IgnoreFile: "secret.txt\n", "kept.txt": "kept content"})
+	build(false, nil)
+
+	// Simulate the older delta build: it also added the ignored secret.txt.
+	commit(map[string]string{"secret.txt": "secret version one"})
+	build(true, func(o Options, repo *git.Repository) (map[fileKey]BlobLocation, map[string]map[string]plumbing.Hash, []string, error) {
+		repos, versions, changed, err := prepareDeltaBuild(o, repo)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		head, err := repo.Head()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		c, err := repo.CommitObject(head.Hash())
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		f, err := c.File("secret.txt")
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		repos[fileKey{Path: "secret.txt", ID: f.Hash}] = BlobLocation{GitRepo: repo, URL: &url.URL{}, Branches: []string{"main"}}
+		return repos, versions, changed, nil
+	})
+	if got := find("secret version"); len(got) != 1 {
+		t.Fatalf("setup: want the older build's secret.txt indexed, got %v", got)
+	}
+
+	commit(map[string]string{"secret.txt": "secret version two"})
+	build(true, nil)
+
+	if got := find("secret version"); len(got) != 0 {
+		t.Errorf("want secret.txt gone after the delta build, got %v", got)
+	}
+	if got := find("kept content"); len(got) != 1 {
+		t.Errorf("want kept.txt still indexed, got %v", got)
 	}
 }
 

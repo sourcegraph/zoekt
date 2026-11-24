@@ -911,19 +911,21 @@ func catfileFilterSpec(opts Options) string {
 	return fmt.Sprintf("blob:limit=%d", int64(opts.BuildOptions.SizeMax)+1)
 }
 
-func newIgnoreMatcher(tree *object.Tree) (*ignore.Matcher, error) {
+// newIgnoreMatcher matches the paths that the tree's own ignore file or the extra patterns exclude.
+func newIgnoreMatcher(tree *object.Tree, extraPatterns []string) (*ignore.Matcher, error) {
+	var content string
 	ignoreFile, err := tree.File(ignore.IgnoreFile)
-	if errors.Is(err, object.ErrFileNotFound) {
-		return &ignore.Matcher{}, nil
-	}
-	if err != nil {
+	switch {
+	case errors.Is(err, object.ErrFileNotFound):
+	case err != nil:
 		return nil, err
+	default:
+		if content, err = ignoreFile.Contents(); err != nil {
+			return nil, err
+		}
 	}
-	content, err := ignoreFile.Contents()
-	if err != nil {
-		return nil, err
-	}
-	return ignore.ParseIgnoreFile(strings.NewReader(content))
+	lines := append([]string{content}, extraPatterns...)
+	return ignore.ParseIgnoreFile(strings.NewReader(strings.Join(lines, "\n")))
 }
 
 // prepareDeltaBuildFunc is a function that calculates the necessary metadata for preparing
@@ -1015,6 +1017,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 
 	// branch name -> git worktree at most current commit
 	branchToCurrentTree := make(map[string]*object.Tree, len(branches))
+	branchToIgnore := make(map[string]*ignore.Matcher, len(branches))
 
 	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)
@@ -1028,12 +1031,28 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		}
 
 		branchToCurrentTree[b] = tree
+
+		// A normal build skips the files that each branch's ignore file matches, so a delta build must too.
+		ig, err := newIgnoreMatcher(tree, options.BuildOptions.IgnorePatterns)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("reading %q for branch %q: %w", ignore.IgnoreFile, b, err)
+		}
+		branchToIgnore[b] = ig
 	}
 
 	rawURL := options.BuildOptions.RepositoryDescription.URL
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("parsing repository URL %q: %w", rawURL, err)
+	}
+
+	addFile := func(file fileKey, branch string) {
+		if existing, ok := repos[file]; ok {
+			existing.Branches = append(existing.Branches, branch)
+			repos[file] = existing
+		} else {
+			repos[file] = BlobLocation{GitRepo: repository, URL: u, Branches: []string{branch}}
+		}
 	}
 
 	// TODO: Support repository submodules for delta builds
@@ -1067,22 +1086,16 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 				// change's Name field is the only way that @ggilmore saw to get the full path relative to the root
 				newFileRelativeRootPath := c.To.Name
 
-				// TODO@ggilmore: HACK - remove once ignore files are supported in delta builds
+				// A changed ignore file can include or exclude files the diff doesn't list, so only a normal
+				// build can apply it.
 				if newFileRelativeRootPath == ignore.IgnoreFile {
 					return nil, nil, nil, fmt.Errorf("%q file is not yet supported in delta builds", ignore.IgnoreFile)
 				}
 
-				// either file is added or renamed, so we need to add the new version to the build
-				file := fileKey{Path: newFileRelativeRootPath, ID: newFile.Hash}
-				if existing, ok := repos[file]; ok {
-					existing.Branches = append(existing.Branches, branch.Name)
-					repos[file] = existing
-				} else {
-					repos[file] = BlobLocation{
-						GitRepo:  repository,
-						URL:      u,
-						Branches: []string{branch.Name},
-					}
+				// either file is added or renamed, so we need to add the new version to the build. An ignored
+				// path still falls through: an older delta build may have indexed it, so it must be tombstoned.
+				if !branchToIgnore[branch.Name].Match(newFileRelativeRootPath) {
+					addFile(fileKey{Path: newFileRelativeRootPath, ID: newFile.Hash}, branch.Name)
 				}
 			}
 
@@ -1102,6 +1115,10 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 			// The file is either modified or deleted. So, we need to add ALL versions
 			// of the old file (across all branches) to the build.
 			for b, currentTree := range branchToCurrentTree {
+				if branchToIgnore[b].Match(oldFileRelativeRootPath) {
+					continue
+				}
+
 				f, err := currentTree.File(oldFileRelativeRootPath)
 				if err != nil {
 					// the file doesn't exist in this branch
@@ -1112,17 +1129,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 					return nil, nil, nil, fmt.Errorf("getting hash for file %q in branch %q: %w", oldFile.Name, b, err)
 				}
 
-				file := fileKey{Path: oldFileRelativeRootPath, ID: f.ID()}
-				if existing, ok := repos[file]; ok {
-					existing.Branches = append(existing.Branches, b)
-					repos[file] = existing
-				} else {
-					repos[file] = BlobLocation{
-						GitRepo:  repository,
-						URL:      u,
-						Branches: []string{b},
-					}
-				}
+				addFile(fileKey{Path: oldFileRelativeRootPath, ID: f.ID()}, b)
 			}
 
 			changedOrDeletedPaths = append(changedOrDeletedPaths, oldFileRelativeRootPath)
@@ -1177,6 +1184,9 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 	}
 
 	rw := NewRepoWalker(repository, repoURL, repoCache)
+	if !isSubrepo {
+		rw.ignorePatterns = options.BuildOptions.IgnorePatterns
+	}
 	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)
 		if err != nil {
@@ -1237,6 +1247,20 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 
 			for k, v := range subVersions {
 				branchVersions[filepath.Join(submodule.Config().Path, k)] = v
+			}
+		}
+	}
+
+	// Submodule walkers apply only the submodule's own ignore file, so match the extra patterns
+	// against each submodule file's path in this repository.
+	if !isSubrepo && len(options.BuildOptions.IgnorePatterns) > 0 {
+		ig, err := ignore.ParseIgnoreFile(strings.NewReader(strings.Join(options.BuildOptions.IgnorePatterns, "\n")))
+		if err != nil {
+			return nil, nil, fmt.Errorf("parsing ignore patterns: %w", err)
+		}
+		for k := range rw.Files {
+			if k.SubRepoPath != "" && ig.Match(k.FullPath()) {
+				delete(rw.Files, k)
 			}
 		}
 	}

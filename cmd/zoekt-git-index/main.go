@@ -49,6 +49,7 @@ func run() int {
 	deltaShardNumberFallbackThreshold := flag.Uint64("delta_threshold", 0, "upper limit on the number of preexisting shards that can exist before attempting a delta build (0 to disable fallback behavior)")
 	languageMap := flag.String("language_map", "", "a mapping between a language and its ctags processor (a:0,b:3).")
 	metaFile := flag.String("meta", "", "path to .meta JSON file with repository description")
+	ignoreFile := flag.String("ignore_file", "", "path to a file in the .sourcegraph/ignore syntax; matching files are skipped in normal and delta builds, in addition to the repository's own ignore file. A change to it forces a normal build.")
 
 	cpuProfile := flag.String("cpu_profile", "", "write cpu profile to `file`")
 
@@ -79,6 +80,14 @@ func run() int {
 
 	opts := cmd.OptionsFromFlags()
 	opts.IsDelta = *isDelta
+
+	if *ignoreFile != "" {
+		data, err := os.ReadFile(*ignoreFile)
+		if err != nil {
+			log.Fatalf("failed to read ignore file %s: %v", *ignoreFile, err)
+		}
+		opts.IgnorePatterns = strings.Split(string(data), "\n")
+	}
 
 	if *metaFile != "" {
 		data, err := os.ReadFile(*metaFile)
