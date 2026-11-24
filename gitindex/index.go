@@ -913,16 +913,16 @@ func catfileFilterSpec(opts Options) string {
 
 // newIgnoreMatcher matches the paths that the tree's own ignore file or the extra patterns exclude.
 func newIgnoreMatcher(tree *object.Tree, extraPatterns []string) (*ignore.Matcher, error) {
-	var content string
 	ignoreFile, err := tree.File(ignore.IgnoreFile)
-	switch {
-	case errors.Is(err, object.ErrFileNotFound):
-	case err != nil:
+	if errors.Is(err, object.ErrFileNotFound) {
+		return ignore.ParseIgnoreFile(strings.NewReader(strings.Join(extraPatterns, "\n")))
+	}
+	if err != nil {
 		return nil, err
-	default:
-		if content, err = ignoreFile.Contents(); err != nil {
-			return nil, err
-		}
+	}
+	content, err := ignoreFile.Contents()
+	if err != nil {
+		return nil, err
 	}
 	lines := append([]string{content}, extraPatterns...)
 	return ignore.ParseIgnoreFile(strings.NewReader(strings.Join(lines, "\n")))
@@ -1046,15 +1046,6 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		return nil, nil, nil, fmt.Errorf("parsing repository URL %q: %w", rawURL, err)
 	}
 
-	addFile := func(file fileKey, branch string) {
-		if existing, ok := repos[file]; ok {
-			existing.Branches = append(existing.Branches, branch)
-			repos[file] = existing
-		} else {
-			repos[file] = BlobLocation{GitRepo: repository, URL: u, Branches: []string{branch}}
-		}
-	}
-
 	// TODO: Support repository submodules for delta builds
 
 	// loop over all branches, calculate the diff between our
@@ -1086,16 +1077,24 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 				// change's Name field is the only way that @ggilmore saw to get the full path relative to the root
 				newFileRelativeRootPath := c.To.Name
 
-				// A changed ignore file can include or exclude files the diff doesn't list, so only a normal
-				// build can apply it.
+				// TODO@ggilmore: HACK - remove once ignore files are supported in delta builds
 				if newFileRelativeRootPath == ignore.IgnoreFile {
 					return nil, nil, nil, fmt.Errorf("%q file is not yet supported in delta builds", ignore.IgnoreFile)
 				}
 
-				// either file is added or renamed, so we need to add the new version to the build. An ignored
-				// path still falls through: an older delta build may have indexed it, so it must be tombstoned.
-				if !branchToIgnore[branch.Name].Match(newFileRelativeRootPath) {
-					addFile(fileKey{Path: newFileRelativeRootPath, ID: newFile.Hash}, branch.Name)
+				// either file is added or renamed, so we need to add the new version to the build
+				file := fileKey{Path: newFileRelativeRootPath, ID: newFile.Hash}
+				if branchToIgnore[branch.Name].Match(newFileRelativeRootPath) {
+					// Not added. A modified file is still tombstoned below.
+				} else if existing, ok := repos[file]; ok {
+					existing.Branches = append(existing.Branches, branch.Name)
+					repos[file] = existing
+				} else {
+					repos[file] = BlobLocation{
+						GitRepo:  repository,
+						URL:      u,
+						Branches: []string{branch.Name},
+					}
 				}
 			}
 
@@ -1129,7 +1128,17 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 					return nil, nil, nil, fmt.Errorf("getting hash for file %q in branch %q: %w", oldFile.Name, b, err)
 				}
 
-				addFile(fileKey{Path: oldFileRelativeRootPath, ID: f.ID()}, b)
+				file := fileKey{Path: oldFileRelativeRootPath, ID: f.ID()}
+				if existing, ok := repos[file]; ok {
+					existing.Branches = append(existing.Branches, b)
+					repos[file] = existing
+				} else {
+					repos[file] = BlobLocation{
+						GitRepo:  repository,
+						URL:      u,
+						Branches: []string{b},
+					}
+				}
 			}
 
 			changedOrDeletedPaths = append(changedOrDeletedPaths, oldFileRelativeRootPath)
