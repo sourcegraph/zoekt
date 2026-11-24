@@ -75,6 +75,30 @@ func TestFindOffsetUTF8FileEnd(t *testing.T) {
 	}
 }
 
+func TestFindOffsetFilenameBoundaries(t *testing.T) {
+	searcher := searcherForTest(t, testShardBuilder(t, nil,
+		Document{Name: "é\xf0"},
+		Document{Name: "\x9f\x98\x80needle"},
+	))
+	defer searcher.Close()
+	for _, tc := range []struct {
+		name       string
+		doc, runes uint32
+	}{
+		{"file_end", 0, 2},
+		{"file_start", 1, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := contentProvider{id: searcher.(*indexData)}
+			cp.setDocument(tc.doc)
+			// The incomplete rune and continuation bytes belong to separate names.
+			if got := cp.findOffset(true, tc.runes); got != 3 {
+				t.Fatalf("findOffset(%d) = %d, want 3", tc.runes, got)
+			}
+		})
+	}
+}
+
 func TestFindOffsetReadBounds(t *testing.T) {
 	searcher := searcherForTest(t, testShardBuilder(t, nil, Document{
 		Name: "utf8", Content: []byte(strings.Repeat("é", runeOffsetFrequency+1)),
