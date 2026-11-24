@@ -165,12 +165,21 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 
 	var data []byte
 
+	// A sample in an earlier file can be replaced by this file's exact start.
+	if r < left {
+		byteOff = uint64(fileStartByte)
+		left = r
+	}
+
 	if filename {
 		if byteOff > uint64(len(p.id.fileNameContent)) {
 			p.panicCorrupt(fmt.Errorf("filename rune offset %d maps to byte offset %d past filename data size %d", absR, byteOff, len(p.id.fileNameContent)))
 			return 0
 		}
 		data = p.id.fileNameContent[uint32(byteOff):]
+		if byteOff <= uint64(fileEndByte) {
+			data = data[:min(uint64(len(data)), uint64(fileEndByte)-byteOff)]
+		}
 	} else {
 		corpusEnd := p.id.boundaries[len(p.id.boundaries)-1]
 		if byteOff > uint64(corpusEnd) {
@@ -188,38 +197,6 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 			}
 			if byteOff <= uint64(fileEndByte) {
 				data = data[:min(uint64(len(data)), uint64(fileEndByte)-byteOff)]
-			}
-			if byteOff < uint64(fileStartByte) {
-				// ASCII bytes cannot combine across a file boundary.
-				for left > 0 && byteOff < uint64(fileStartByte) && len(data) > 0 && data[0] < utf8.RuneSelf {
-					byteOff++
-					data = data[1:]
-					left--
-				}
-				if left > 0 && byteOff < uint64(fileStartByte) && len(data) > 0 {
-					// The builder decodes each file separately, including invalid UTF-8 tails.
-					next := sort.Search(int(p.idx)+1, func(i int) bool {
-						return uint64(p.id.boundaries[i]) > byteOff
-					})
-					for left > 0 && byteOff < uint64(fileStartByte) && len(data) > 0 {
-						n := min(uint64(len(data)), uint64(p.id.boundaries[next])-byteOff)
-						if n == 0 {
-							// Skip runs of empty files without visiting each boundary.
-							next += sort.Search(int(p.idx)+1-next, func(i int) bool {
-								return uint64(p.id.boundaries[next+i]) > byteOff
-							})
-							continue
-						}
-						for left > 0 && n > 0 {
-							_, sz := utf8.DecodeRune(data[:n])
-							byteOff += uint64(sz)
-							data = data[sz:]
-							n -= uint64(sz)
-							left--
-						}
-						next++
-					}
-				}
 			}
 		}
 	}
