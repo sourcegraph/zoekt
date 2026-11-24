@@ -177,11 +177,50 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 			p.panicCorrupt(fmt.Errorf("content rune offset %d maps to byte offset %d past content data size %d", absR, byteOff, corpusEnd))
 			return 0
 		}
-		var err error
-		data, err = p.id.readContentSlice(uint32(byteOff), 3*runeOffsetFrequency)
-		if err != nil {
-			p.panicCorrupt(fmt.Errorf("content rune offset %d cannot load bytes at offset %d: %w", absR, byteOff, err))
-			return 0
+		if left > 0 {
+			// Each remaining rune can occupy up to utf8.UTFMax bytes.
+			sz := min(utf8.UTFMax*left, corpusEnd-uint32(byteOff))
+			var err error
+			data, err = p.id.readContentSlice(uint32(byteOff), sz)
+			if err != nil {
+				p.panicCorrupt(fmt.Errorf("content rune offset %d cannot load bytes at offset %d: %w", absR, byteOff, err))
+				return 0
+			}
+			if byteOff <= uint64(fileEndByte) {
+				data = data[:min(uint64(len(data)), uint64(fileEndByte)-byteOff)]
+			}
+			if byteOff < uint64(fileStartByte) {
+				// ASCII bytes cannot combine across a file boundary.
+				for left > 0 && byteOff < uint64(fileStartByte) && len(data) > 0 && data[0] < utf8.RuneSelf {
+					byteOff++
+					data = data[1:]
+					left--
+				}
+				if left > 0 && byteOff < uint64(fileStartByte) && len(data) > 0 {
+					// The builder decodes each file separately, including invalid UTF-8 tails.
+					next := sort.Search(int(p.idx)+1, func(i int) bool {
+						return uint64(p.id.boundaries[i]) > byteOff
+					})
+					for left > 0 && byteOff < uint64(fileStartByte) && len(data) > 0 {
+						n := min(uint64(len(data)), uint64(p.id.boundaries[next])-byteOff)
+						if n == 0 {
+							// Skip runs of empty files without visiting each boundary.
+							next += sort.Search(int(p.idx)+1-next, func(i int) bool {
+								return uint64(p.id.boundaries[next+i]) > byteOff
+							})
+							continue
+						}
+						for left > 0 && n > 0 {
+							_, sz := utf8.DecodeRune(data[:n])
+							byteOff += uint64(sz)
+							data = data[sz:]
+							n -= uint64(sz)
+							left--
+						}
+						next++
+					}
+				}
+			}
 		}
 	}
 	for left > 0 {
