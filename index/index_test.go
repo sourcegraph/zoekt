@@ -2853,6 +2853,86 @@ func TestUnicodeFileStartOffsets(t *testing.T) {
 	}
 }
 
+func TestSearchUTF8FileBoundary(t *testing.T) {
+	s := searcherForTest(t, testShardBuilder(t, nil,
+		Document{Name: "previous", Content: []byte(strings.Repeat("😀", 74) + "a\xf0")},
+		Document{Name: "current", Content: []byte("\x9f\x98\x80needle")},
+	))
+	defer s.Close()
+	defer func() {
+		if p := recover(); p != nil {
+			t.Errorf("Search panicked: %v", p)
+		}
+	}()
+	r, err := s.Search(context.Background(), &query.Substring{Pattern: "\uFFFD\uFFFDneedle", Content: true}, &zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Files) != 1 {
+		t.Fatalf("got files %v, want one match in current", r.Files)
+	}
+	m := r.Files[0].LineMatches[0].LineFragments[0]
+	if m.Offset != 1 || m.MatchLength != 8 {
+		t.Fatalf("got match %v, want offset 1 and length 8", m)
+	}
+}
+
+func TestSearchFourByteUTF8(t *testing.T) {
+	for _, prefix := range []string{
+		strings.Repeat("😀", 74) + "ab😀",
+		strings.Repeat("😀", 76),
+	} {
+		content := []byte(prefix + "needle")
+		b := testShardBuilder(t, nil, Document{
+			Name:    "utf8",
+			Content: content,
+			Symbols: []DocumentSection{{uint32(len(prefix)), uint32(len(content))}},
+		})
+		searcher := searcherForTest(t, b)
+		t.Cleanup(searcher.Close)
+		for _, q := range []query.Q{
+			&query.Substring{Pattern: "needle", Content: true, CaseSensitive: true},
+			&query.Substring{Pattern: "NEEDLE", Content: true},
+			&query.Regexp{Regexp: mustParseRE("need.e"), Content: true, CaseSensitive: true},
+			&query.Symbol{Expr: &query.Substring{Pattern: "needle", CaseSensitive: true}},
+		} {
+			for _, chunks := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%d/%s/chunks=%t", len(prefix), q, chunks), func(t *testing.T) {
+					defer func() {
+						if recovered := recover(); recovered != nil {
+							t.Errorf("Search panicked for valid UTF-8: %v", recovered)
+						}
+					}()
+					res, err := searcher.Search(context.Background(), q, &zoekt.SearchOptions{ChunkMatches: chunks})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(res.Files) != 1 {
+						t.Fatalf("Search found %d files; want 1", len(res.Files))
+					}
+					var offset, size uint32
+					if chunks {
+						if len(res.Files[0].ChunkMatches) != 1 || len(res.Files[0].ChunkMatches[0].Ranges) != 1 {
+							t.Fatalf("Search returned chunks %v; want one match", res.Files[0].ChunkMatches)
+						}
+						r := res.Files[0].ChunkMatches[0].Ranges[0]
+						offset, size = r.Start.ByteOffset, r.End.ByteOffset-r.Start.ByteOffset
+					} else {
+						if len(res.Files[0].LineMatches) != 1 || len(res.Files[0].LineMatches[0].LineFragments) != 1 {
+							t.Fatalf("Search returned lines %v; want one match", res.Files[0].LineMatches)
+						}
+						m := res.Files[0].LineMatches[0].LineFragments[0]
+						offset, size = m.Offset, uint32(m.MatchLength)
+					}
+					if offset != uint32(len(prefix)) || size != uint32(len("needle")) {
+						t.Errorf("match offset/length = %d/%d, want %d/%d", offset, size, len(prefix), len("needle"))
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestLongFileUTF8(t *testing.T) {
 	needle := "neeedle"
 

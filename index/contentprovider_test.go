@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"testing/quick"
 	"unicode/utf8"
@@ -12,6 +13,93 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 )
+
+func TestFindOffsetUTF8(t *testing.T) {
+	for _, unit := range []string{"", "a", "é", "界", "😀", "aé界😀"} {
+		t.Run(unit, func(t *testing.T) {
+			content := strings.Repeat(unit, 2*runeOffsetFrequency+1)
+			searcher := searcherForTest(t, testShardBuilder(t, nil,
+				Document{Name: "first", Content: []byte("é")},
+				Document{Name: "second", Content: []byte(content)},
+			))
+			defer searcher.Close()
+			cp := contentProvider{id: searcher.(*indexData)}
+			cp.setDocument(1)
+
+			var offsets []uint32
+			for byteOffset := range content {
+				offsets = append(offsets, uint32(byteOffset))
+			}
+			offsets = append(offsets, uint32(len(content)))
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					t.Errorf("findOffset panicked for valid UTF-8: %v", recovered)
+				}
+			}()
+			for r, want := range offsets {
+				if got := cp.findOffset(false, uint32(r)); got != want {
+					t.Fatalf("findOffset(%d) = %d, want %d", r, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestFindOffsetUTF8FileEnd(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		contents []string
+		doc      uint32
+	}{
+		{"following_bytes", []string{"é\xf0", "\x9f\x98\x80needle"}, 0},
+		{"empty_files", []string{"é", "", "\xf0", "", "\x9f\x98\x80"}, 4},
+		{"ascii_prefix", []string{"é" + strings.Repeat("a", runeOffsetFrequency), "é"}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var docs []Document
+			for i, content := range tc.contents {
+				docs = append(docs, Document{Name: fmt.Sprint(i), Content: []byte(content)})
+			}
+			searcher := searcherForTest(t, testShardBuilder(t, nil, docs...))
+			defer searcher.Close()
+			cp := contentProvider{id: searcher.(*indexData)}
+			cp.setDocument(tc.doc)
+
+			// Incomplete runes end with their file, not with the next file's bytes.
+			content := tc.contents[tc.doc]
+			r := uint32(utf8.RuneCountInString(content))
+			if got := cp.findOffset(false, r); got != uint32(len(content)) {
+				t.Fatalf("findOffset(%d) = %d, want %d", r, got, len(content))
+			}
+		})
+	}
+}
+
+func TestFindOffsetReadBounds(t *testing.T) {
+	searcher := searcherForTest(t, testShardBuilder(t, nil, Document{
+		Name: "utf8", Content: []byte(strings.Repeat("é", runeOffsetFrequency+1)),
+	}))
+	defer searcher.Close()
+	d := searcher.(*indexData)
+	original := d.file
+	defer func() { d.file = original }()
+	mm := &mmapedIndexFile{data: original.(*memSeeker).data}
+	d.file = mm
+
+	// Do not let later serialized sections hide a read past the content corpus.
+	mm.data = mm.data[:d.boundariesStart+d.boundaries[len(d.boundaries)-1]]
+	cp := contentProvider{id: d}
+	cp.setDocument(0)
+	if got := cp.findOffset(false, runeOffsetFrequency-1); got != 2*(runeOffsetFrequency-1) {
+		t.Fatalf("findOffset before checkpoint = %d, want %d", got, 2*(runeOffsetFrequency-1))
+	}
+
+	// A checkpoint supplies the answer even if no content bytes can be read.
+	mm.data = nil
+	if got := cp.findOffset(false, runeOffsetFrequency); got != 2*runeOffsetFrequency {
+		t.Fatalf("findOffset at checkpoint = %d, want %d", got, 2*runeOffsetFrequency)
+	}
+}
 
 func getNewlines(data []byte) newlines {
 	var locs []uint32
