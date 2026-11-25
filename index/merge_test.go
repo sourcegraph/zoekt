@@ -418,3 +418,48 @@ func TestMergeExplodePreservesSkippedFiles(t *testing.T) {
 		t.Fatalf("exploded mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// TestMergeExplodePreservesHighBranches tests that merge and explode keep the
+// branches of documents beyond the 32nd branch of a repository.
+func TestMergeExplodePreservesHighBranches(t *testing.T) {
+	var branches []zoekt.RepositoryBranch
+	for i := range 40 {
+		branches = append(branches, zoekt.RepositoryBranch{Name: fmt.Sprintf("b%d", i), Version: "v"})
+	}
+	repo := &zoekt.Repository{Name: "repo", ID: 1, Branches: branches}
+	want := []string{"b0", "b31", "b32", "b39"}
+	b := testShardBuilder(t, repo, Document{Name: "f", Content: []byte("content"), Branches: want})
+
+	var buf bytes.Buffer
+	if err := b.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
+	f := &memSeeker{buf.Bytes()}
+	tmpName, _, err := Merge(t.TempDir(), f)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	compound, err := os.ReadFile(tmpName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exploded, err := explode(t.TempDir(), &memSeeker{compound})
+	if err != nil {
+		t.Fatalf("explode: %v", err)
+	}
+	for tmp := range exploded {
+		data, err := os.ReadFile(tmp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, err := NewSearcher(&memSeeker{data})
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := s.(*indexData)
+		if got := d.gatherBranches(0, d.fileBranchMasks[0]); !cmp.Equal(got, want) {
+			t.Errorf("branches after merge and explode = %v, want %v", got, want)
+		}
+	}
+}
