@@ -975,15 +975,25 @@ func scoreSymbolKind(language string, filename []byte, sym []byte, kind ctags.Sy
 
 type matchScoreSlice []zoekt.LineMatch
 
-func (m matchScoreSlice) Len() int           { return len(m) }
-func (m matchScoreSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
-func (m matchScoreSlice) Less(i, j int) bool { return m[i].Score > m[j].Score }
+func (m matchScoreSlice) Len() int      { return len(m) }
+func (m matchScoreSlice) Swap(i, j int) { m[i], m[j] = m[j], m[i] }
+func (m matchScoreSlice) Less(i, j int) bool {
+	if m[i].Score != m[j].Score {
+		return m[i].Score > m[j].Score
+	}
+	return m[i].LineNumber < m[j].LineNumber
+}
 
 type chunkMatchScoreSlice []zoekt.ChunkMatch
 
-func (m chunkMatchScoreSlice) Len() int           { return len(m) }
-func (m chunkMatchScoreSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
-func (m chunkMatchScoreSlice) Less(i, j int) bool { return m[i].Score > m[j].Score }
+func (m chunkMatchScoreSlice) Len() int      { return len(m) }
+func (m chunkMatchScoreSlice) Swap(i, j int) { m[i], m[j] = m[j], m[i] }
+func (m chunkMatchScoreSlice) Less(i, j int) bool {
+	if m[i].Score != m[j].Score {
+		return m[i].Score > m[j].Score
+	}
+	return m[i].ContentStart.ByteOffset < m[j].ContentStart.ByteOffset
+}
 
 type fileMatchesByScore []zoekt.FileMatch
 
@@ -991,16 +1001,15 @@ func (m fileMatchesByScore) Len() int           { return len(m) }
 func (m fileMatchesByScore) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 func (m fileMatchesByScore) Less(i, j int) bool { return m[i].Score > m[j].Score }
 
-// sortMatchesByScore sorts ms by descending score. Matches arrive in file
-// order and BM25 can give several the same score, so the sort is stable to
-// keep ties in file order.
+// sortMatchesByScore sorts ms by descending score. BM25 can give several
+// matches the same score, so ties are broken by position in the file.
 func sortMatchesByScore(ms []zoekt.LineMatch) {
-	sort.Stable(matchScoreSlice(ms))
+	sort.Sort(matchScoreSlice(ms))
 }
 
 // sortChunkMatchesByScore is like sortMatchesByScore for chunk matches.
 func sortChunkMatchesByScore(ms []zoekt.ChunkMatch) {
-	sort.Stable(chunkMatchScoreSlice(ms))
+	sort.Sort(chunkMatchScoreSlice(ms))
 }
 
 // SortFiles sorts files matches in the order we want to present results to
