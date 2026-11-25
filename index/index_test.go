@@ -2497,6 +2497,43 @@ func TestListReposByContent(t *testing.T) {
 	}
 }
 
+// TestListReposByContentCompound checks that List reports every repository of
+// a compound shard that has a match, however many matches the repositories
+// before it have. type:repo sub-queries are evaluated with List.
+func TestListReposByContentCompound(t *testing.T) {
+	// 101 repositories whose first file has 1000 matches each, so the matches
+	// before the last repository add up to 100,000, the default
+	// ShardMaxMatchCount.
+	const repoCount = 101
+	content := []byte(strings.Repeat("needle\n", 1000))
+	var repos []*zoekt.Repository
+	var docs [][]Document
+	for i := range repoCount {
+		repos = append(repos, &zoekt.Repository{Name: fmt.Sprintf("repo%03d", i), ID: uint32(i + 1)})
+		docs = append(docs, []Document{{Name: "f1", Content: content}})
+	}
+
+	searcher := searcherForTest(t, testShardBuilderCompound(t, repos, docs))
+	q := &query.Substring{Pattern: "needle"}
+	res, err := searcher.List(context.Background(), q, nil)
+	if err != nil {
+		t.Fatalf("List(%v): %v", q, err)
+	}
+	if len(res.Repos) != repoCount {
+		listed := map[string]bool{}
+		for _, r := range res.Repos {
+			listed[r.Repository.Name] = true
+		}
+		var missing []string
+		for _, r := range repos {
+			if !listed[r.Name] {
+				missing = append(missing, r.Name)
+			}
+		}
+		t.Fatalf("listed %d of %d repositories, missing %v", len(res.Repos), repoCount, missing)
+	}
+}
+
 func TestMetadata(t *testing.T) {
 	content := []byte("bla the needle")
 
