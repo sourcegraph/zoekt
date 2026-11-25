@@ -34,7 +34,12 @@ func (s *typeRepoSearcher) Search(ctx context.Context, q query.Q, opts *zoekt.Se
 		tr.Finish()
 	}()
 
-	q, crashes, err := s.eval(ctx, tr, q)
+	// MaxWallTime counts from when the search arrives, so it bounds the
+	// type:repo sub-queries too.
+	ctx, cancel := withMaxWallTime(ctx, opts)
+	defer cancel()
+
+	q, crashes, err := s.eval(withSearchOptions(ctx, opts), tr, q)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +66,10 @@ func (s *typeRepoSearcher) StreamSearch(ctx context.Context, q query.Q, opts *zo
 		tr.Finish()
 	}()
 
-	q, crashes, err := s.eval(ctx, tr, q)
+	ctx, cancel := withMaxWallTime(ctx, opts)
+	defer cancel()
+
+	q, crashes, err := s.eval(withSearchOptions(ctx, opts), tr, q)
 	if err != nil {
 		return err
 	}
