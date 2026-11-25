@@ -709,6 +709,15 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		}
 	}
 
+	// Shards are searched and merged in priority order, and results report it,
+	// whatever ranks the repository, so always read it.
+	if v, ok := repo.RawConfig["priority"]; ok {
+		r.priority, err = strconv.ParseFloat(v, 64)
+		if err != nil {
+			r.priority = 0
+		}
+	}
+
 	// Sourcegraph indexserver doesn't set repo.Rank, so we set it here. Setting it
 	// on read instead of during indexing allows us to avoid a complete reindex.
 	//
@@ -718,12 +727,7 @@ func (r *Repository) UnmarshalJSON(data []byte) error {
 		// We use the number of months since 1970 as a simple measure of repo freshness.
 		// It is monotonically increasing and stable across re-indexes and restarts.
 		r.Rank = monthsSince1970(repo.LatestCommitDate)
-	} else if v, ok := repo.RawConfig["priority"]; ok {
-		r.priority, err = strconv.ParseFloat(v, 64)
-		if err != nil {
-			r.priority = 0
-		}
-
+	} else if _, ok := repo.RawConfig["priority"]; ok {
 		// Sourcegraph indexserver doesn't set repo.Rank, so we set it here
 		// based on priority. Setting it on read instead of during indexing
 		// allows us to avoid a complete reindex.
