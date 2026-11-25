@@ -337,6 +337,12 @@ func boostScore(score float64, ms []*candidateMatch) float64 {
 func (d *indexData) scoreFile(fileMatch *zoekt.FileMatch, doc uint32, mt matchTree, known map[matchTree]bool, opts *zoekt.SearchOptions) {
 	atomMatchCount := 0
 	visitMatchAtoms(mt, known, func(mt matchTree) {
+		// A repository filter holds for every file in the repository. Only
+		// compound shards keep it, so counting it would rank their files
+		// above the same files in a simple shard.
+		if dmt, ok := mt.(*docMatchTree); ok && dmt.repoFilter {
+			return
+		}
 		atomMatchCount++
 	})
 
