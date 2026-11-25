@@ -1,6 +1,7 @@
 package languages
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/go-enry/go-enry/v2"
@@ -198,5 +199,24 @@ func TestGetLanguageByNameOrAlias(t *testing.T) {
 				t.Errorf("GetLanguageByNameOrAlias(%q) = %q, %t, want %q, %t", tt.alias, got, ok, tt.want, tt.wantOk)
 			}
 		})
+	}
+}
+
+// TestGetLanguagesCFileWithTryPrefix tests that .c files are only C++ when they
+// use the C++ keywords try and constexpr, not identifiers that start with them.
+func TestGetLanguagesCFileWithTryPrefix(t *testing.T) {
+	testCases := []struct {
+		path    string
+		content string
+		want    []string
+	}{
+		{path: "freezer.c", content: "void f(void)\n{\n\ttry_to_freeze();\n}\n", want: []string{"C"}},
+		{path: "lock.c", content: "int f(int *m)\n{\n\ttrylock(m);\n\treturn 0;\n}\n", want: []string{"C"}},
+		{path: "try.c", content: "int main() {\n  try {\n  } catch (...) {\n  }\n}\n", want: []string{"C++"}},
+	}
+	for _, tc := range testCases {
+		if got := GetLanguagesFromContent(tc.path, []byte(tc.content)); !slices.Equal(got, tc.want) {
+			t.Errorf("GetLanguagesFromContent(%q) = %v, want %v", tc.path, got, tc.want)
+		}
 	}
 }
