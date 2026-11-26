@@ -1366,10 +1366,7 @@ type fileChange struct {
 // diffTrees lists the files that differ between two commits with git
 // diff-tree, which reads trees only.
 func diffTrees(gitDir string, from, to plumbing.Hash) ([]fileChange, error) {
-	cmd := exec.Command("git", "diff-tree", "-r", "-z", "--no-renames", from.String(), to.String())
-	cmd.Dir = gitDir
-	// Like go-git, never fetch missing objects from a promisor remote.
-	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
+	cmd := gitCommand(gitDir, "diff-tree", "-r", "-z", "--no-renames", from.String(), to.String())
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -1380,6 +1377,9 @@ func diffTrees(gitDir string, from, to plumbing.Hash) ([]fileChange, error) {
 	// Each change is ":<old mode> <new mode> <old ID> <new ID> <status>\0<path>\0".
 	var changes []fileChange
 	fields := strings.Split(string(out), "\x00")
+	if len(fields)%2 != 1 || fields[len(fields)-1] != "" {
+		return nil, fmt.Errorf("git diff-tree %s %s: truncated output", from, to)
+	}
 	for i := 0; i+1 < len(fields); i += 2 {
 		meta := strings.Fields(strings.TrimPrefix(fields[i], ":"))
 		if len(meta) != 5 {
@@ -1432,9 +1432,7 @@ func diffTreesGoGit(from, to *object.Tree) ([]fileChange, error) {
 // lsTreeFiles returns the IDs of the files at paths in commit, using git
 // ls-tree. Paths with no file in commit are missing from the result.
 func lsTreeFiles(gitDir string, commit plumbing.Hash, paths map[string]struct{}) (map[string]plumbing.Hash, error) {
-	cmd := exec.Command("git", "ls-tree", "-r", "-z", "--full-tree", commit.String())
-	cmd.Dir = gitDir
-	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
+	cmd := gitCommand(gitDir, "ls-tree", "-r", "-z", "--full-tree", commit.String())
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.StdoutPipe()
