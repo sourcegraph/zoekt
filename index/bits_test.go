@@ -272,14 +272,20 @@ func sortedUnique(nums []uint32) []uint32 {
 
 func TestCondenseRuneOffsets(t *testing.T) {
 	for i, tc := range []struct {
-		arr  []uint32
-		want []runeOffsetCorrection
+		arr              []uint32
+		endRune, endByte uint32
+		want             []runeOffsetCorrection
 	}{
-		{[]uint32{}, []runeOffsetCorrection{}},
-		{[]uint32{0, 100, 200, 300, 400, 500}, []runeOffsetCorrection{}},
-		{[]uint32{0, 105, 205, 310, 420}, []runeOffsetCorrection{{100, 105}, {300, 310}, {400, 420}}},
+		{[]uint32{}, 0, 0, []runeOffsetCorrection{}},
+		{[]uint32{0, 100, 200, 300, 400, 500}, 550, 550, []runeOffsetCorrection{}},
+		{[]uint32{0, 105, 205, 310, 420}, 450, 470, []runeOffsetCorrection{{100, 105}, {300, 310}, {400, 420}}},
+		// The corpus ends on a sample boundary, which the builder never samples.
+		{[]uint32{0, 105}, 200, 210, []runeOffsetCorrection{{100, 105}, {200, 210}}},
+		{[]uint32{0, 105}, 200, 205, []runeOffsetCorrection{{100, 105}}},
+		// A sample at the corpus end is used as is.
+		{[]uint32{0, 105, 210}, 200, 210, []runeOffsetCorrection{{100, 105}, {200, 210}}},
 	} {
-		got := makeRuneOffsetMap(tc.arr)
+		got := makeRuneOffsetMap(tc.arr, tc.endRune, tc.endByte)
 		if !reflect.DeepEqual(got, runeOffsetMap(tc.want)) {
 			t.Errorf("#%d: got %v, want %v", i, got, tc.want)
 		}
