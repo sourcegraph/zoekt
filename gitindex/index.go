@@ -1239,9 +1239,11 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 			}
 
 			// CollectFiles recorded the submodule commit of each branch.
+			// Read only the branches, since branchVersions also gets
+			// <subpath>/<branch> keys from earlier submodules below.
 			subPinned := map[string]plumbing.Hash{}
-			for b, versions := range branchVersions {
-				if id, ok := versions[submodule.Config().Path]; ok {
+			for _, b := range branches {
+				if id, ok := branchVersions[b][submodule.Config().Path]; ok {
 					subPinned[b] = id
 				}
 			}

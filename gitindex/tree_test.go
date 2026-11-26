@@ -784,3 +784,92 @@ git -C bname rev-parse HEAD
 			f.FileName, got, f.Version, "pinned-content\n", pinned)
 	}
 }
+
+// TestSubmoduleIndexWithoutRepocacheIgnoresNestedVersions tests that a
+// submodule is indexed only at the commits its superproject's branches pin.
+// Here submodule a has a submodule of its own at path b, so the versions of a
+// hold a b entry under the key a/master. Submodule b of the superproject must
+// not take that as a branch.
+func TestSubmoduleIndexWithoutRepocacheIgnoresNestedVersions(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=protocol.file.allow
+export GIT_CONFIG_VALUE_0=always
+
+git init -q -b master brepo
+cd brepo
+echo pinned-content > bfile
+git add bfile
+git commit -qm v1
+echo nested-content > bfile
+git commit -qam v2
+
+cd ..
+git init -q -b master arepo
+cd arepo
+echo acont > afile
+git add afile
+git commit -qm a
+git submodule -q add ../brepo b
+git commit -qm "add b at v2"
+
+cd ..
+git init -q -b master super
+cd super
+echo scont > sfile
+git add sfile
+git commit -qm s
+git submodule -q add ../arepo a
+git submodule -q add ../brepo b
+git -C b checkout -q HEAD~1
+git add b
+git commit -qm "add a, and b at v1"
+git submodule -q update --init --recursive
+`
+	cmd := exec.Command("/bin/sh", "-euc", script)
+	cmd.Dir = dir
+	cmd.Env = testutil.GitEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("script: %v\n%s", err, out)
+	}
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:    filepath.Join(dir, "super"),
+		Branches:   []string{"master"},
+		Submodules: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "super"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(),
+		&query.Substring{Pattern: "content", Content: true},
+		&zoekt.SearchOptions{Whole: true})
+	if err != nil {
+		t.Fatal("Search", err)
+	}
+	var got []string
+	for _, f := range results.Files {
+		got = append(got, f.FileName+": "+strings.TrimSpace(string(f.Content)))
+	}
+	sort.Strings(got)
+	want := []string{"a/b/bfile: nested-content", "b/bfile: pinned-content"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
