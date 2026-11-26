@@ -23,6 +23,7 @@ import (
 	"math"
 	"math/bits"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/sourcegraph/zoekt"
@@ -407,10 +408,11 @@ func (data *indexData) ngrams(filename bool) ngramIndex {
 type ngramIterationResults struct {
 	matchIterator
 
-	caseSensitive bool
-	fileName      bool
-	substrBytes   []byte
-	substrLowered []byte
+	caseSensitive      bool
+	fileName           bool
+	substrHasRuneError bool
+	substrBytes        []byte
+	substrLowered      []byte
 }
 
 func (r *ngramIterationResults) String() string {
@@ -424,6 +426,7 @@ func (r *ngramIterationResults) candidates() []*candidateMatch {
 		c.fileName = r.fileName
 		c.substrBytes = r.substrBytes
 		c.substrLowered = r.substrLowered
+		c.substrHasRuneError = r.substrHasRuneError
 	}
 	return cs
 }
@@ -506,11 +509,12 @@ func (d *indexData) iterateNgrams(query *query.Substring) (*ngramIterationResult
 	lowerPatBytes := toLower(patBytes)
 
 	return &ngramIterationResults{
-		matchIterator: iter,
-		caseSensitive: query.CaseSensitive,
-		fileName:      query.FileName,
-		substrBytes:   patBytes,
-		substrLowered: lowerPatBytes,
+		matchIterator:      iter,
+		caseSensitive:      query.CaseSensitive,
+		fileName:           query.FileName,
+		substrHasRuneError: strings.ContainsRune(query.Pattern, utf8.RuneError),
+		substrBytes:        patBytes,
+		substrLowered:      lowerPatBytes,
 	}, nil
 }
 

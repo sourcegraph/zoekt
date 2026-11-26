@@ -44,6 +44,9 @@ type candidateMatch struct {
 	caseSensitive bool
 	fileName      bool
 	symbol        bool
+	// substrHasRuneError is set when substrBytes contains U+FFFD, which the
+	// index also stores for each invalid UTF-8 byte.
+	substrHasRuneError bool
 }
 
 // Matches content against the substring, and populates byteMatchSz on success.
@@ -57,6 +60,16 @@ func (m *candidateMatch) matchContent(content []byte) (bool, error) {
 	}
 
 	if m.caseSensitive {
+		if m.substrHasRuneError {
+			// The index stores an invalid UTF-8 byte as U+FFFD, so the
+			// candidate may match fewer bytes than the pattern has.
+			sz, ok, truncated := runesEqual(m.substrBytes, content[m.byteOffset:])
+			if truncated {
+				return false, fmt.Errorf("corrupt index: case-sensitive match at byte offset %d extends beyond %s size %d", m.byteOffset, kind, len(content))
+			}
+			m.byteMatchSz = uint32(sz)
+			return ok, nil
+		}
 		if uint64(m.byteOffset)+uint64(len(m.substrBytes)) > uint64(len(content)) {
 			return false, fmt.Errorf("corrupt index: case-sensitive match span [%d:%d] exceeds %s size %d", m.byteOffset, uint64(m.byteOffset)+uint64(len(m.substrBytes)), kind, len(content))
 		}
