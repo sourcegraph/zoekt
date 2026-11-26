@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -19,10 +18,8 @@ import (
 // resolveCommit resolves ref to a commit with git rev-parse in gitDir.
 //
 // With a prefix, ref names a branch in that namespace: <prefix>/<ref> wins over
-// any other ref or object ID of the same name, and a short name missing from
-// the namespace does not fall back to another branch of that name. Other
-// revisions, such as tags, HEAD, object IDs, qualified refs and revision
-// expressions, resolve as git resolves them.
+// any other ref or object ID of the same name. Otherwise, such as for HEAD, a
+// tag or an object ID, ref resolves as git resolves it.
 func resolveCommit(gitDir, prefix, ref string) (plumbing.Hash, error) {
 	if prefix != "" {
 		name := path.Join(prefix, ref)
@@ -34,44 +31,8 @@ func resolveCommit(gitDir, prefix, ref string) (plumbing.Hash, error) {
 		if !errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return id, err
 		}
-
-		branch, err := isShortBranchName(gitDir, ref)
-		if err != nil {
-			return plumbing.ZeroHash, err
-		}
-		if branch {
-			return plumbing.ZeroHash, plumbing.ErrReferenceNotFound
-		}
 	}
 	return revParseCommit(gitDir, ref)
-}
-
-// isShortBranchName reports whether ref is the short name of a local or
-// remote-tracking branch, rather than a tag, a root ref like HEAD, a ref under
-// refs/, an object ID or an expression. A tag passed as a branch name still
-// resolves when the namespace has no such branch.
-func isShortBranchName(gitDir, ref string) (bool, error) {
-	if strings.HasPrefix(ref, "refs/") || strings.Trim(ref, "ABCDEFGHIJKLMNOPQRSTUVWXYZ_") == "" {
-		return false, nil
-	}
-	expansions := []string{"refs/" + ref, "refs/heads/" + ref, "refs/remotes/" + ref, "refs/remotes/" + ref + "/HEAD"}
-	cmd := gitCommand(gitDir, append([]string{"for-each-ref", "--format=%(refname)"}, expansions...)...)
-	out, err := cmd.Output()
-	if err != nil {
-		return false, fmt.Errorf("git for-each-ref: %w", err)
-	}
-	// for-each-ref also lists refs below the patterns, so match whole names.
-	existing := strings.Split(string(out), "\n")
-	if slices.Contains(existing, expansions[0]) {
-		// git prefers refs/<ref>, such as refs/meta/config for meta/config.
-		return false, nil
-	}
-	for _, e := range expansions[1:] {
-		if slices.Contains(existing, e) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func revParseCommit(gitDir, rev string) (plumbing.Hash, error) {
