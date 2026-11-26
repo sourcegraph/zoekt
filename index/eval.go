@@ -741,18 +741,32 @@ const (
 // expandLiterals returns the strings r matches if r is made only of literals,
 // character classes, alternations, captures and concats, and matches at most
 // max strings. With ignoreCase, each rune becomes the smallest rune of its case
-// orbit, as syntax stores FoldCase literals. Without it, FoldCase literals
-// such as (?i:e), which syntax also makes from [Ee], are left to the regexp.
+// orbit, as syntax stores FoldCase literals. Without it, each rune of a
+// FoldCase literal of at most max runes, from (?i:e) or a class like [Ee],
+// expands to its orbit.
 func expandLiterals(r *syntax.Regexp, max int, ignoreCase bool) (strs []string, ok bool) {
 	switch r.Op {
 	case syntax.OpLiteral:
 		if ignoreCase {
 			return []string{strings.Map(minFold, string(r.Rune))}, true
 		}
-		if r.Flags&syntax.FoldCase != 0 {
+		if r.Flags&syntax.FoldCase == 0 {
+			return []string{string(r.Rune)}, true
+		}
+		if len(r.Rune) > max {
+			// Copying every string for each rune below is quadratic in len(r.Rune).
 			return nil, false
 		}
-		return []string{string(r.Rune)}, true
+		strs = []string{""}
+		for _, c := range r.Rune {
+			orbit := []string{string(c)}
+			for f := unicode.SimpleFold(c); f != c; f = unicode.SimpleFold(f) {
+				orbit = append(orbit, string(f))
+			}
+			if strs, ok = crossLiterals(strs, orbit, max); !ok {
+				return nil, false
+			}
+		}
 	case syntax.OpCharClass:
 		for i := 0; i < len(r.Rune); i += 2 {
 			if len(strs)+int(r.Rune[i+1]-r.Rune[i]) >= max {
