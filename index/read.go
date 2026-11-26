@@ -389,8 +389,8 @@ func (r *reader) readIndexData(toc *indexTOC) (*indexData, error) {
 		}
 	}
 
-	d.runeOffsets = makeRuneOffsetMap(runeOffsets)
-	d.fileNameRuneOffsets = makeRuneOffsetMap(fileNameRuneOffsets)
+	d.runeOffsets = makeRuneOffsetMap(runeOffsets, lastOrZero(d.fileEndRunes), lastOrZero(d.boundaries))
+	d.fileNameRuneOffsets = makeRuneOffsetMap(fileNameRuneOffsets, lastOrZero(d.fileNameEndRunes), lastOrZero(d.fileNameIndex))
 
 	d.subRepoPaths = make([][]string, 0, len(d.repoMetaData))
 	for i := range d.repoMetaData {
@@ -861,4 +861,12 @@ func backfillID(s string) string {
 	binary.BigEndian.PutUint32(id[:], 0)
 	binary.BigEndian.PutUint64(id[4:], crc64.Checksum([]byte(s), crc64Table))
 	return id.String()
+}
+
+// lastOrZero returns the last element of s, or 0 if s is empty.
+func lastOrZero(s []uint32) uint32 {
+	if len(s) == 0 {
+		return 0
+	}
+	return s[len(s)-1]
 }

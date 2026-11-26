@@ -464,7 +464,11 @@ type runeOffsetMap []runeOffsetCorrection
 //
 // The input is a sequence of y values that we expect to increase by 100 each,
 // so we just store (x, y) points where the expectation is violated.
-func makeRuneOffsetMap(off []uint32) runeOffsetMap {
+//
+// endRune and endByte are the corpus size in runes and bytes. The builder only
+// samples at the start of a rune, so when endRune is a multiple of
+// runeOffsetFrequency, off has no sample for it and we derive one.
+func makeRuneOffsetMap(off []uint32, endRune, endByte uint32) runeOffsetMap {
 	expected := uint32(0)
 	tmp := []runeOffsetCorrection{}
 	for runeOffset, byteOffset := range off {
@@ -473,6 +477,9 @@ func makeRuneOffsetMap(off []uint32) runeOffsetMap {
 			expected = byteOffset
 		}
 		expected += runeOffsetFrequency
+	}
+	if uint64(len(off))*runeOffsetFrequency == uint64(endRune) && endByte != expected {
+		tmp = append(tmp, runeOffsetCorrection{endRune, endByte})
 	}
 	// copy the slice to ensure it doesn't waste unused trailing capacity
 	out := make([]runeOffsetCorrection, len(tmp))
