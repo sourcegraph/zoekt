@@ -22,6 +22,7 @@ func TestSearchBM25CountsRegexpTermsSeparately(t *testing.T) {
 		{"substrings", "foo or bar", "foo foo foo\n", "foo bar zzz\n"},
 		{"short substrings", "fo or ba", "fo fo fo zz\n", "fo ba zz zz\n"},
 		{"regexps", "f.o or b.r", "foo foo foo\n", "foo bar zzz\n"},
+		{"case sensitive regexps", "case:yes F.o or f.o", "foo foo foo\n", "Foo foo zzz\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			searcher := searcherForTest(t, testShardBuilder(t, nil,

@@ -205,10 +205,11 @@ type regexpMatchTree struct {
 	bruteForceMatchTree
 }
 
-// regexpTerm returns the key BM25 counts the matches of r under. Substring
-// matches use their lowercased pattern, so regexps do the same.
+// regexpTerm returns the key BM25 counts the matches of r under. It is the
+// regexp itself. Lowercasing it would change its meaning, for example turning
+// a case sensitive F.o into f.o, or [A-Z] into [a-z].
 func regexpTerm(r *syntax.Regexp) []byte {
-	return toLower([]byte(syntaxutil.RegexpString(r)))
+	return []byte(syntaxutil.RegexpString(r))
 }
 
 func regexpPattern(s *query.Regexp) string {
