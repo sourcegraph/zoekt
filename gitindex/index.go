@@ -1322,16 +1322,30 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 	if options.Submodules && options.RepoCacheDir != "" {
 		repoCache = NewRepoCache(options.RepoCacheDir)
 	}
-	return prepareNormalBuildRecurse(options, repository, repoCache, false)
+	return prepareNormalBuildRecurse(options, repository, repoCache, nil)
 }
 
-func prepareNormalBuildRecurse(options Options, repository *git.Repository, repoCache *RepoCache, isSubrepo bool) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
+// prepareNormalBuildRecurse collects the files of repository. For a submodule,
+// pinned maps each branch of the superproject to the submodule commit that
+// branch records; it is nil for the superproject.
+func prepareNormalBuildRecurse(options Options, repository *git.Repository, repoCache *RepoCache, pinned map[string]plumbing.Hash) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
 	// Branch => Repo => SHA1
 	branchVersions = map[string]map[string]plumbing.Hash{}
 
-	branches, err := expandBranches(repository, options.Branches, options.BranchPrefix)
-	if err != nil {
-		return nil, nil, fmt.Errorf("expandBranches: %w", err)
+	isSubrepo := pinned != nil
+	var branches []string
+	if isSubrepo {
+		// Index the commits the superproject records, like the repo cache
+		// path does, rather than the submodule's own branches.
+		for b := range pinned {
+			branches = append(branches, b)
+		}
+		sort.Strings(branches)
+	} else {
+		branches, err = expandBranches(repository, options.Branches, options.BranchPrefix)
+		if err != nil {
+			return nil, nil, fmt.Errorf("expandBranches: %w", err)
+		}
 	}
 
 	repoURL := options.BuildOptions.RepositoryDescription.URL
@@ -1351,7 +1365,18 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 
 	rw := NewRepoWalker(repository, repoURL, repoCache)
 	for _, b := range branches {
-		commit, err := getCommit(repository, options.BranchPrefix, b)
+		var commit *object.Commit
+		if isSubrepo {
+			commit, err = repository.CommitObject(pinned[b])
+			if err != nil {
+				// Skip just this branch, like the repo cache path does,
+				// rather than dropping the submodule for every branch.
+				slog.Warn("skipping submodule branch", "branch", b, "commit", pinned[b], "error", err)
+				continue
+			}
+		} else {
+			commit, err = getCommit(repository, options.BranchPrefix, b)
+		}
 		if err != nil {
 			if options.AllowMissingBranch && err.Error() == "reference not found" {
 				continue
@@ -1392,7 +1417,17 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 				continue
 			}
 
-			sw, subVersions, err := prepareNormalBuildRecurse(options, subRepository, repoCache, true)
+			// CollectFiles recorded the submodule commit of each branch.
+			// Read only the branches, since branchVersions also gets
+			// <subpath>/<branch> keys from earlier submodules below.
+			subPinned := map[string]plumbing.Hash{}
+			for _, b := range branches {
+				if id, ok := branchVersions[b][submodule.Config().Path]; ok {
+					subPinned[b] = id
+				}
+			}
+
+			sw, subVersions, err := prepareNormalBuildRecurse(options, subRepository, repoCache, subPinned)
 			if err != nil {
 				slog.Warn("failed to index submodule repository", "submodule", submodule.Config().Name, "error", err)
 				continue

@@ -199,12 +199,22 @@ type regexpMatchTree struct {
 
 	fileName bool
 
+	// term identifies this regexp in BM25 term frequencies.
+	term []byte
+
 	// mutable
 	reEvaluated bool
 	found       []*candidateMatch
 
 	// nextDoc, prepare.
 	bruteForceMatchTree
+}
+
+// regexpTerm returns the key BM25 counts the matches of r under. It is the
+// regexp itself. Lowercasing it would change its meaning, for example turning
+// a case sensitive F.o into f.o, or [A-Z] into [a-z].
+func regexpTerm(r *syntax.Regexp) []byte {
+	return []byte(syntaxutil.RegexpString(r))
 }
 
 func regexpPattern(s *query.Regexp) string {
@@ -236,6 +246,7 @@ func newRegexpMatchTree(s *query.Regexp) (*regexpMatchTree, error) {
 		regexp:       re,
 		hybridRegexp: hr,
 		fileName:     s.FileName,
+		term:         regexpTerm(s.Regexp),
 	}, nil
 }
 
@@ -253,6 +264,7 @@ func (d *indexData) newSymbolRegexpMatchTree(s *query.Regexp) (*symbolRegexpMatc
 	return &symbolRegexpMatchTree{
 		regexp:    re,
 		all:       isRegexpAll(s.Regexp),
+		term:      regexpTerm(s.Regexp),
 		matchTree: prefilter,
 	}, nil
 }
@@ -262,6 +274,9 @@ type wordMatchTree struct {
 	word string
 
 	fileName bool
+
+	// term identifies this word in BM25 term frequencies.
+	term []byte
 
 	// mutable
 	evaluated bool
@@ -302,6 +317,9 @@ type symbolRegexpMatchTree struct {
 	regexp *regexp.Regexp
 	all    bool // skips regex match if .*
 
+	// term identifies this regexp in BM25 term frequencies.
+	term []byte
+
 	reEvaluated bool
 	found       []*candidateMatch
 }
@@ -337,10 +355,11 @@ func (t *symbolRegexpMatchTree) matches(cp *contentProvider, cost int, known map
 		}
 
 		cm := &candidateMatch{
-			byteOffset:  sec.Start + uint32(idx[0]),
-			byteMatchSz: uint32(idx[1] - idx[0]),
-			symbol:      true,
-			symbolIdx:   uint32(i),
+			substrLowered: t.term,
+			byteOffset:    sec.Start + uint32(idx[0]),
+			byteMatchSz:   uint32(idx[1] - idx[0]),
+			symbol:        true,
+			symbolIdx:     uint32(i),
 		}
 		found = append(found, cm)
 	}
@@ -859,9 +878,10 @@ func (t *regexpMatchTree) matches(cp *contentProvider, cost int, known map[match
 	found := t.found[:0]
 	for _, idx := range idxs {
 		cm := &candidateMatch{
-			byteOffset:  uint32(idx[0]),
-			byteMatchSz: uint32(idx[1] - idx[0]),
-			fileName:    t.fileName,
+			substrLowered: t.term,
+			byteOffset:    uint32(idx[0]),
+			byteMatchSz:   uint32(idx[1] - idx[0]),
+			fileName:      t.fileName,
 		}
 
 		found = append(found, cm)
@@ -897,9 +917,10 @@ func (t *wordMatchTree) matches(cp *contentProvider, cost int, known map[matchTr
 		endBoundary := relEndOffset > 0 && (relEndOffset == len(data) || !characterClass(data[relEndOffset]))
 		if startBoundary && endBoundary {
 			found = append(found, &candidateMatch{
-				byteOffset:  uint32(offset + idx),
-				byteMatchSz: uint32(len(t.word)),
-				fileName:    t.fileName,
+				substrLowered: t.term,
+				byteOffset:    uint32(offset + idx),
+				byteMatchSz:   uint32(len(t.word)),
+				fileName:      t.fileName,
 			})
 			offset += idx + len(t.word)
 		} else {
@@ -1389,6 +1410,7 @@ func regexpToWordMatchTree(q *query.Regexp) (_ *wordMatchTree, ok bool) {
 	return &wordMatchTree{
 		word:     word,
 		fileName: q.FileName,
+		term:     toLower([]byte(word)),
 	}, true
 }
 

@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -703,5 +704,248 @@ func TestLatestCommit(t *testing.T) {
 
 	if want := time.Date(2021, 10, 6, 12, 0, 0, 0, time.UTC); rlist.Repos[0].Repository.LatestCommitDate != want {
 		t.Fatalf("want %s, got %s", want, rlist.Repos[0].Repository.LatestCommitDate)
+	}
+}
+
+// TestSubmoduleIndexWithoutRepocacheUsesPinnedCommit tests that a submodule is
+// indexed at the commit the superproject records, not at the submodule's own
+// branch of the same name.
+func TestSubmoduleIndexWithoutRepocacheUsesPinnedCommit(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=protocol.file.allow
+export GIT_CONFIG_VALUE_0=always
+
+git init -q -b master sub
+cd sub
+echo pinned-content > bfile
+git add bfile
+git commit -qm v1
+echo tip-content > bfile
+git commit -qam v2
+
+cd ..
+git init -q -b master super
+cd super
+echo acont > afile
+git add afile
+git commit -qm a
+git submodule -q add ../sub bname
+git -C bname checkout -q HEAD~1
+git add bname
+git commit -qm "pin sub at v1"
+git -C bname rev-parse HEAD
+`
+	cmd := exec.Command("/bin/sh", "-euc", script)
+	cmd.Dir = dir
+	cmd.Env = testutil.GitEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("script: %v", err)
+	}
+	pinned := strings.TrimSpace(string(out))
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:    filepath.Join(dir, "super"),
+		Branches:   []string{"master"},
+		Submodules: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "super"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(),
+		&query.Substring{Pattern: "content", Content: true},
+		&zoekt.SearchOptions{Whole: true})
+	if err != nil {
+		t.Fatal("Search", err)
+	}
+	if len(results.Files) != 1 {
+		t.Fatalf("got %d files, want 1", len(results.Files))
+	}
+	f := results.Files[0]
+	if got := string(f.Content); f.FileName != "bname/bfile" || got != "pinned-content\n" || f.Version != pinned {
+		t.Fatalf("got %s with %q at %s, want bname/bfile with %q at the pinned %s",
+			f.FileName, got, f.Version, "pinned-content\n", pinned)
+	}
+}
+
+// TestSubmoduleIndexWithoutRepocacheIgnoresNestedVersions tests that a
+// submodule is indexed only at the commits its superproject's branches pin.
+// Here submodule a has a submodule of its own at path b, so the versions of a
+// hold a b entry under the key a/master. Submodule b of the superproject must
+// not take that as a branch.
+func TestSubmoduleIndexWithoutRepocacheIgnoresNestedVersions(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=protocol.file.allow
+export GIT_CONFIG_VALUE_0=always
+
+git init -q -b master brepo
+cd brepo
+echo pinned-content > bfile
+git add bfile
+git commit -qm v1
+echo nested-content > bfile
+git commit -qam v2
+
+cd ..
+git init -q -b master arepo
+cd arepo
+echo acont > afile
+git add afile
+git commit -qm a
+git submodule -q add ../brepo b
+git commit -qm "add b at v2"
+
+cd ..
+git init -q -b master super
+cd super
+echo scont > sfile
+git add sfile
+git commit -qm s
+git submodule -q add ../arepo a
+git submodule -q add ../brepo b
+git -C b checkout -q HEAD~1
+git add b
+git commit -qm "add a, and b at v1"
+git submodule -q update --init --recursive
+`
+	cmd := exec.Command("/bin/sh", "-euc", script)
+	cmd.Dir = dir
+	cmd.Env = testutil.GitEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("script: %v\n%s", err, out)
+	}
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:    filepath.Join(dir, "super"),
+		Branches:   []string{"master"},
+		Submodules: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "super"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(),
+		&query.Substring{Pattern: "content", Content: true},
+		&zoekt.SearchOptions{Whole: true})
+	if err != nil {
+		t.Fatal("Search", err)
+	}
+	var got []string
+	for _, f := range results.Files {
+		got = append(got, f.FileName+": "+strings.TrimSpace(string(f.Content)))
+	}
+	sort.Strings(got)
+	want := []string{"a/b/bfile: nested-content", "b/bfile: pinned-content"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// TestSubmoduleIndexWithoutRepocacheSkipsMissingPin tests that a branch which
+// pins a submodule commit the clone lacks only loses the submodule on that
+// branch, as with the repo cache.
+func TestSubmoduleIndexWithoutRepocacheSkipsMissingPin(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=protocol.file.allow
+export GIT_CONFIG_VALUE_0=always
+
+git init -q -b master brepo
+cd brepo
+echo pinned-content > bfile
+git add bfile
+git commit -qm v1
+
+cd ..
+git init -q -b master super
+cd super
+echo scont > sfile
+git add sfile
+git commit -qm s
+git submodule -q add ../brepo b
+git commit -qm "add b"
+
+git -C ../brepo commit -q --allow-empty -m v2
+missing=$(git -C ../brepo rev-parse HEAD)
+git checkout -q -b other
+git update-index --cacheinfo 160000,$missing,b
+git commit -qm "pin b at a commit the clone lacks"
+git checkout -q master
+`
+	cmd := exec.Command("/bin/sh", "-euc", script)
+	cmd.Dir = dir
+	cmd.Env = testutil.GitEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("script: %v\n%s", err, out)
+	}
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:    filepath.Join(dir, "super"),
+		Branches:   []string{"master", "other"},
+		Submodules: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "super"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(),
+		&query.Substring{Pattern: "pinned-content", Content: true},
+		&zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal("Search", err)
+	}
+	if len(results.Files) != 1 {
+		t.Fatalf("got %d files, want b/bfile on master", len(results.Files))
+	}
+	if f := results.Files[0]; f.FileName != "b/bfile" || !reflect.DeepEqual(f.Branches, []string{"master"}) {
+		t.Fatalf("got %s on %v, want b/bfile on [master]", f.FileName, f.Branches)
 	}
 }

@@ -187,6 +187,41 @@ func TestSearchPanicsOnMatchPastDocumentEnd(t *testing.T) {
 	}
 }
 
+func TestSearchCaseSensitiveReplacementCharacter(t *testing.T) {
+	// The index stores an invalid UTF-8 byte, like the Latin-1 "é" below, as
+	// U+FFFD. A pattern with U+FFFD therefore finds it as a candidate, and the
+	// match is shorter than the pattern's bytes. Case-insensitive search
+	// already compares runes and finds it.
+	for _, tc := range []struct {
+		name     string
+		content  string
+		fileName bool
+	}{
+		{name: "content at end of file", content: "Caf\xe9"},
+		{name: "content mid file", content: "Caf\xe9 au lait"},
+		{name: "filename", fileName: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := Document{Name: "menu.txt", Content: []byte(tc.content)}
+			if tc.fileName {
+				doc = Document{Name: "Caf\xe9", Content: []byte("menu")}
+			}
+			b := testShardBuilder(t, nil, doc)
+			for _, caseSensitive := range []bool{false, true} {
+				q := &query.Substring{Pattern: "Caf\uFFFD", Content: !tc.fileName, FileName: tc.fileName, CaseSensitive: caseSensitive}
+				res := searchForTest(t, b, q)
+				if len(res.Files) != 1 || len(res.Files[0].LineMatches) != 1 {
+					t.Fatalf("%s: got %d files, want 1", q, len(res.Files))
+				}
+				frags := res.Files[0].LineMatches[0].LineFragments
+				if len(frags) != 1 || frags[0].Offset != 0 || frags[0].MatchLength != 4 {
+					t.Fatalf("%s: got fragments %+v, want one 4 byte match at 0", q, frags)
+				}
+			}
+		})
+	}
+}
+
 func searchPanic(t *testing.T, searcher zoekt.Searcher, q query.Q) string {
 	t.Helper()
 	var recovered any
