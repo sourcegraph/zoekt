@@ -128,8 +128,6 @@ func (b *ShardBuilder) Write(out io.Writer) error {
 	next := b.indexFormatVersion == NextIndexFormatVersion
 
 	buffered := bufio.NewWriterSize(out, 1<<20)
-	defer buffered.Flush()
-
 	w := &writer{w: buffered}
 	toc := indexTOC{}
 
@@ -242,7 +240,13 @@ func (b *ShardBuilder) Write(out io.Writer) error {
 	w.writeTOC(&toc)
 	tocSection.end(w)
 	tocSection.write(w)
-	return w.err
+	if w.err != nil {
+		return w.err
+	}
+
+	// Small shards fit in the buffer and reach out only here, so a failed
+	// flush must fail the write.
+	return buffered.Flush()
 }
 
 func (b *ShardBuilder) writeJSON(data any, sec *simpleSection, w *writer) error {
