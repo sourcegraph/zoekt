@@ -309,3 +309,115 @@ func TestCatfileReader_Excluded(t *testing.T) {
 		t.Errorf("hello.txt = %q", content)
 	}
 }
+
+// TestCatfileReader_DesyncedStream feeds canned cat-file output through a fake
+// git so each check that keeps the stream aligned with the requested IDs fails
+// on its own. Without these checks the reader would hand back content under
+// the wrong file names.
+func TestCatfileReader_DesyncedStream(t *testing.T) {
+	binDir := t.TempDir()
+	// Drain the requested IDs, then print the canned stream from the work dir.
+	script := "#!/bin/sh\ncat >/dev/null\ncat stream\n"
+	if err := os.WriteFile(filepath.Join(binDir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	a := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	b := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	c := "cccccccccccccccccccccccccccccccccccccccc"
+	ids := []plumbing.Hash{plumbing.NewHash(a), plumbing.NewHash(b), plumbing.NewHash(c)}
+
+	cases := []struct {
+		name   string
+		stream string
+		// skip calls Next without reading content, exercising the discard path.
+		skip bool
+		// wantErr is empty for a well-formed stream.
+		wantErr string
+	}{
+		{
+			name:   "well formed",
+			stream: a + " blob 3\nabc\n" + b + " missing\n" + c + " excluded\n",
+		},
+		{
+			name:    "header for a different object",
+			stream:  b + " blob 3\nabc\n",
+			wantErr: "requested " + a,
+		},
+		{
+			name:    "missing entry for a different object",
+			stream:  a + " blob 3\nabc\n" + c + " missing\n",
+			wantErr: "requested " + b,
+		},
+		{
+			name:    "truncated object ID",
+			stream:  a[:39] + " blob 3\nabc\n",
+			wantErr: "requested " + a,
+		},
+		{
+			name:    "non-blob object",
+			stream:  a + " tree 3\nabc\n",
+			wantErr: `type "tree"`,
+		},
+		{
+			name:    "content not followed by LF on read",
+			stream:  a + " blob 3\nabcd\n" + b + " missing\n" + c + " missing\n",
+			wantErr: "not followed by LF",
+		},
+		{
+			name:    "content not followed by LF on skip",
+			stream:  a + " blob 3\nabcd\n" + b + " missing\n" + c + " missing\n",
+			skip:    true,
+			wantErr: "not followed by LF",
+		},
+		{
+			name:    "more entries than requested",
+			stream:  a + " missing\n" + b + " missing\n" + c + " missing\n" + a + " missing\n",
+			wantErr: "more entries than the 3 requested",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "stream"), []byte(tc.stream), 0o644); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+			cr, err := newCatfileReader(dir, ids, catfileReaderOptions{})
+			if err != nil {
+				t.Fatalf("newCatfileReader: %v", err)
+			}
+			defer cr.Close()
+
+			// Read until the stream ends or the reader reports an error.
+			var gotErr error
+			for gotErr == nil {
+				size, missing, excluded, err := cr.Next()
+				if err == io.EOF {
+					break
+				}
+				if err != nil || missing || excluded || tc.skip {
+					gotErr = err
+					continue
+				}
+				content := make([]byte, size)
+				if _, err := io.ReadFull(cr, content); err != nil {
+					gotErr = err
+				} else if string(content) != "abc" {
+					t.Fatalf("content = %q, want %q", content, "abc")
+				}
+			}
+
+			if tc.wantErr == "" {
+				if gotErr != nil {
+					t.Fatalf("unexpected error: %v", gotErr)
+				}
+				return
+			}
+			if gotErr == nil || !strings.Contains(gotErr.Error(), tc.wantErr) {
+				t.Fatalf("error = %v, want one containing %q", gotErr, tc.wantErr)
+			}
+		})
+	}
+}
