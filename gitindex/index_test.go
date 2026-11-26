@@ -1278,6 +1278,107 @@ func TestIndexDeltaBasic(t *testing.T) {
 	}
 }
 
+// A delta build of a repository that was merged into a compound shard must
+// fall back to a normal build instead of failing on every attempt.
+func TestIndexGitRepo_DeltaInCompoundShardFallsBack(t *testing.T) {
+	indexDir := t.TempDir()
+	repoDir := t.TempDir()
+	testutil.RunGit(t, repoDir, "init", "-b", "main")
+	write := func(content string) {
+		if err := os.WriteFile(filepath.Join(repoDir, "f.txt"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		testutil.RunGit(t, repoDir, "add", "-A")
+		testutil.RunGit(t, repoDir, "commit", "-m", content)
+	}
+	opts := func(delta bool) Options {
+		return Options{
+			RepoDir:  filepath.Join(repoDir, ".git"),
+			Branches: []string{"main"},
+			BuildOptions: index.Options{
+				IndexDir:              indexDir,
+				RepositoryDescription: zoekt.Repository{Name: "repo", ID: 1},
+				DisableCTags:          true,
+				ShardMerging:          true,
+				IsDelta:               delta,
+			},
+		}
+	}
+
+	write("oldneedle")
+	if _, err := IndexGitRepo(opts(false)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Merge the repository with another one into a compound shard, as
+	// indexserver does for repositories without recent commits.
+	other := index.Options{
+		IndexDir:              indexDir,
+		RepositoryDescription: zoekt.Repository{Name: "other", ID: 2},
+		DisableCTags:          true,
+	}
+	b, err := index.NewBuilder(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.AddFile("o.txt", []byte("other")); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	simple, err := filepath.Glob(filepath.Join(indexDir, "*.zoekt"))
+	if err != nil || len(simple) != 2 {
+		t.Fatalf("want 2 simple shards, got %v, %v", simple, err)
+	}
+	var files []index.IndexFile
+	for _, fn := range simple {
+		f, err := os.Open(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		inf, err := index.NewIndexFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer inf.Close()
+		files = append(files, inf)
+	}
+	tmp, dst, err := index.Merge(indexDir, files...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fn := range simple {
+		if err := os.Remove(fn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	write("newneedle")
+	if _, err := IndexGitRepo(opts(true)); err != nil {
+		t.Fatalf("delta build of repository in compound shard: %v", err)
+	}
+
+	ss, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	for needle, want := range map[string]int{"newneedle": 1, "oldneedle": 0, "other": 1} {
+		res, err := ss.Search(context.Background(), &query.Substring{Pattern: needle, Content: true}, &zoekt.SearchOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Files) != want {
+			t.Errorf("%q: got %d files, want %d", needle, len(res.Files), want)
+		}
+	}
+}
+
 func TestSetTemplates_e2e(t *testing.T) {
 	t.Parallel()
 
