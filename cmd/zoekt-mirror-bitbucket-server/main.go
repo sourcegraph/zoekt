@@ -134,7 +134,7 @@ func main() {
 	}
 	repos = trimmed
 
-	if err := cloneRepos(destDir, rootURL.Host, repos, password); err != nil {
+	if err := cloneRepos(destDir, rootURL.Host, repos, username, password); err != nil {
 		log.Fatalf("cloneRepos: %v", err)
 	}
 
@@ -235,7 +235,25 @@ func getProjectRepos(client bitbucketv1.APIClient, projectName string) ([]bitbuc
 	return allRepos, nil
 }
 
-func cloneRepos(destDir string, host string, repos []bitbucketv1.Repository, password string) error {
+// cloneURLWithCredentials returns href with username and password embedded.
+//
+// Bitbucket Server includes the authenticated user in the "http" clone link
+// (https://user@host/scm/proj/repo.git) when the API request is authenticated
+// with a username and password, but omits it when it is authenticated with an
+// HTTP access token (https://host/scm/proj/repo.git). Handle both forms.
+func cloneURLWithCredentials(href, username, password string) string {
+	if s := strings.SplitN(href, "@", 2); len(s) == 2 {
+		return s[0] + ":" + password + "@" + s[1]
+	}
+	u, err := url.Parse(href)
+	if err != nil {
+		return ""
+	}
+	u.User = url.UserPassword(username, password)
+	return u.String()
+}
+
+func cloneRepos(destDir string, host string, repos []bitbucketv1.Repository, username, password string) error {
 	for _, r := range repos {
 		fullName := filepath.Join(r.Project.Key, r.Slug)
 		config := map[string]string{
@@ -248,8 +266,7 @@ func cloneRepos(destDir string, host string, repos []bitbucketv1.Repository, pas
 		for _, cloneUrl := range r.Links.Clone {
 			// In fact, this is an https url, i.e. there's no separate Name for https.
 			if cloneUrl.Name == "http" {
-				s := strings.Split(cloneUrl.Href, "@")
-				httpsCloneUrl = s[0] + ":" + password + "@" + s[1]
+				httpsCloneUrl = cloneURLWithCredentials(cloneUrl.Href, username, password)
 			}
 		}
 
