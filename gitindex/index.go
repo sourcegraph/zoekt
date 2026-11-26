@@ -176,16 +176,33 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 	return nil
 }
 
-// getCommit returns a tree object for the given reference.
+// getCommit returns the commit for a branch name or revision. With a branch
+// prefix, the branch in that namespace wins. The git binary resolves the name,
+// unless ZOEKT_DISABLE_CATFILE_BATCH=true selects the go-git fallback.
 func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error) {
+	var id plumbing.Hash
+	var err error
+	if gitDir, ok := repoGitDir(repo); ok && !gitBinaryDisabled() {
+		id, err = resolveCommit(gitDir, prefix, ref)
+	} else {
+		id, err = resolveCommitGoGit(repo, prefix, ref)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return repo.CommitObject(id)
+}
+
+// resolveCommitGoGit is resolveCommit for the go-git fallback.
+func resolveCommitGoGit(repo *git.Repository, prefix, ref string) (plumbing.Hash, error) {
 	// go-git tries a name made of hex digits as an abbreviated object ID before
 	// it tries the name as a ref, while git prefers the ref. So look up a branch
 	// with such a name, like a ticket number, before go-git can resolve it to an
 	// unrelated commit. A full object ID is still resolved as an object ID.
 	if prefix != "" && len(ref) < len(plumbing.ZeroHash.String()) && isHex(ref) {
 		if r, err := repo.Reference(plumbing.ReferenceName(filepath.Join(prefix, ref)), true); err == nil {
-			if commit, err := repo.CommitObject(r.Hash()); err == nil {
-				return commit, nil
+			if _, err := repo.CommitObject(r.Hash()); err == nil {
+				return r.Hash(), nil
 			}
 		}
 	}
@@ -196,14 +213,9 @@ func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error)
 		sha1, err = repo.ResolveRevision(plumbing.Revision(filepath.Join(prefix, ref)))
 	}
 	if err != nil {
-		return nil, err
+		return plumbing.ZeroHash, err
 	}
-
-	commitObj, err := repo.CommitObject(*sha1)
-	if err != nil {
-		return nil, err
-	}
-	return commitObj, nil
+	return *sha1, nil
 }
 
 // isHex reports whether s is a non-empty string of hex digits.
@@ -610,7 +622,7 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	for _, b := range branches {
 		commit, err := getCommit(repo, opts.BranchPrefix, b)
 		if err != nil {
-			if opts.AllowMissingBranch && err.Error() == "reference not found" {
+			if opts.AllowMissingBranch && errors.Is(err, plumbing.ErrReferenceNotFound) {
 				continue
 			}
 
@@ -732,9 +744,8 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	// memory in production. The cause was promisor lazy fetching of blobs
 	// that the size filter would skip, which GIT_NO_LAZY_FETCH=1 avoids (see
 	// doc/indexing.md).
-	catfileBatchDisabled := cmp.Or(os.Getenv("ZOEKT_DISABLE_CATFILE_BATCH"), "false")
 	useCatfileBatch := true
-	if disabled, _ := strconv.ParseBool(catfileBatchDisabled); disabled {
+	if gitBinaryDisabled() {
 		useCatfileBatch = false
 		slog.Info("cat-file batch disabled via ZOEKT_DISABLE_CATFILE_BATCH=true")
 	}
@@ -1256,7 +1267,7 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 			commit, err = getCommit(repository, options.BranchPrefix, b)
 		}
 		if err != nil {
-			if options.AllowMissingBranch && err.Error() == "reference not found" {
+			if options.AllowMissingBranch && errors.Is(err, plumbing.ErrReferenceNotFound) {
 				continue
 			}
 
