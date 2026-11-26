@@ -197,7 +197,10 @@ func (cr *catfileReader) Next() (size int, missing bool, excluded bool, err erro
 		}
 	}
 
-	headerBytes, err := cr.reader.ReadBytes('\n')
+	// ReadSlice returns a view into the reader's buffer, avoiding a copy per
+	// entry. It is only valid until the next read, so header must not be
+	// retained past this call. Headers are far shorter than the buffer.
+	headerBytes, err := cr.reader.ReadSlice('\n')
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			err = cr.processError(err)
