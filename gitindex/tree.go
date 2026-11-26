@@ -112,11 +112,36 @@ func (rw *RepoWalker) CollectFiles(t *object.Tree, branch string) (map[string]pl
 		return nil, fmt.Errorf("newIgnoreMatcher: %w", err)
 	}
 
+	// Path => commit SHA1
+	subRepoVersions := make(map[string]plumbing.Hash)
+
+	// The git binary lists the tree unless ZOEKT_DISABLE_CATFILE_BATCH=true
+	// selects the go-git fallback.
+	if gitDir, ok := repoGitDir(rw.repo); ok && !gitBinaryDisabled() {
+		type entry struct {
+			path string
+			e    object.TreeEntry
+		}
+		// Collect all entries first, so a failed listing changes nothing.
+		var entries []entry
+		err := lsTree(gitDir, t.Hash, func(p string, e object.TreeEntry) {
+			entries = append(entries, entry{p, e})
+		})
+		if err == nil {
+			for _, e := range entries {
+				if err := rw.handleEntry(e.path, &e.e, branch, subRepoVersions, ig); err != nil {
+					return nil, fmt.Errorf("handleEntry: %w", err)
+				}
+			}
+			return subRepoVersions, nil
+		}
+		// ls-tree fails on a missing tree, which the go-git walk skips.
+		slog.Info("git ls-tree failed, walking the tree with go-git", "branch", branch, "error", err)
+	}
+
 	tw := object.NewTreeWalker(t, true, make(map[plumbing.Hash]bool))
 	defer tw.Close()
 
-	// Path => commit SHA1
-	subRepoVersions := make(map[string]plumbing.Hash)
 	skippedTrees := 0
 	for {
 		name, entry, err := tw.Next()

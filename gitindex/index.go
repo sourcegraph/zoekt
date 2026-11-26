@@ -1423,61 +1423,66 @@ func diffTreesGoGit(from, to *object.Tree) ([]fileChange, error) {
 // lsTreeFiles returns the IDs of the files at paths in commit, using git
 // ls-tree. Paths with no file in commit are missing from the result.
 func lsTreeFiles(gitDir string, commit plumbing.Hash, paths map[string]struct{}) (map[string]plumbing.Hash, error) {
-	cmd := exec.Command("git", "ls-tree", "-r", "-z", "--full-tree", commit.String())
+	files := map[string]plumbing.Hash{}
+	err := lsTree(gitDir, commit, func(p string, e object.TreeEntry) {
+		if _, ok := paths[p]; ok && e.Mode.IsFile() {
+			files[p] = e.Hash
+		}
+	})
+	return files, err
+}
+
+// lsTree calls fn with the path and entry of every non-tree entry below
+// treeish, such as files and submodules, using git ls-tree -r. It fails if a
+// tree is missing.
+func lsTree(gitDir string, treeish plumbing.Hash, fn func(path string, e object.TreeEntry)) error {
+	cmd := exec.Command("git", "ls-tree", "-r", "-z", "--full-tree", treeish.String())
 	cmd.Dir = gitDir
+	// Like go-git, never fetch missing objects from a promisor remote.
 	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start git ls-tree: %w", err)
+		return fmt.Errorf("start git ls-tree: %w", err)
 	}
 
-	files := map[string]plumbing.Hash{}
+	// Each entry is "<mode> <type> <ID>\t<path>\0".
 	var parseErr error
 	r := bufio.NewReaderSize(out, 64*1024)
 	for {
-		mode, _, id, p, err := readLsTreeEntry(r)
-		if err != nil {
-			if err != io.EOF {
-				parseErr = err
-			}
+		line, err := r.ReadString(0)
+		if err == io.EOF && line == "" {
 			break
 		}
-		if _, ok := paths[p]; ok && isFileMode(mode) {
-			files[p] = plumbing.NewHash(id)
+		if err != nil {
+			parseErr = err
+			break
 		}
+		meta, p, ok := strings.Cut(line[:len(line)-1], "\t")
+		fields := strings.Fields(meta)
+		var mode filemode.FileMode
+		if ok && len(fields) == 3 {
+			mode, err = filemode.New(fields[0])
+		}
+		if !ok || len(fields) != 3 || err != nil || !plumbing.IsHash(fields[2]) {
+			parseErr = fmt.Errorf("unexpected entry %q", line)
+			break
+		}
+		fn(p, object.TreeEntry{Name: path.Base(p), Mode: mode, Hash: plumbing.NewHash(fields[2])})
 	}
 	// Drain stdout so git can exit before we wait for it.
 	_, _ = io.Copy(io.Discard, r)
 	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("git ls-tree %s: %w: %s", commit, err, bytes.TrimSpace(stderr.Bytes()))
+		return fmt.Errorf("git ls-tree %s: %w: %s", treeish, err, bytes.TrimSpace(stderr.Bytes()))
 	}
 	if parseErr != nil {
-		return nil, fmt.Errorf("git ls-tree %s: %w", commit, parseErr)
+		return fmt.Errorf("git ls-tree %s: %w", treeish, parseErr)
 	}
-	return files, nil
-}
-
-// readLsTreeEntry reads one "<mode> <type> <ID>\t<path>\0" entry of git
-// ls-tree -z output.
-func readLsTreeEntry(r *bufio.Reader) (mode, typ, id, path string, err error) {
-	line, err := r.ReadString(0)
-	if err != nil {
-		if err == io.EOF && line != "" {
-			err = io.ErrUnexpectedEOF
-		}
-		return "", "", "", "", err
-	}
-	meta, path, ok := strings.Cut(line[:len(line)-1], "\t")
-	fields := strings.Fields(meta)
-	if !ok || len(fields) != 3 {
-		return "", "", "", "", fmt.Errorf("unexpected ls-tree entry %q", line)
-	}
-	return fields[0], fields[1], fields[2], path, nil
+	return nil
 }
 
 // isFileMode reports whether a git tree entry mode, in octal, is a file:

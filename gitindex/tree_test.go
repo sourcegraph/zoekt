@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -703,5 +704,64 @@ func TestLatestCommit(t *testing.T) {
 
 	if want := time.Date(2021, 10, 6, 12, 0, 0, 0, time.UTC); rlist.Repos[0].Repository.LatestCommitDate != want {
 		t.Fatalf("want %s, got %s", want, rlist.Repos[0].Repository.LatestCommitDate)
+	}
+}
+
+// A tree whose object is missing is skipped and the rest is indexed, whether
+// git ls-tree or the go-git walk lists the files.
+func TestIndexGitRepo_MissingTree(t *testing.T) {
+	for _, disableGitBinary := range []string{"false", "true"} {
+		t.Run("ZOEKT_DISABLE_CATFILE_BATCH="+disableGitBinary, func(t *testing.T) {
+			t.Setenv("ZOEKT_DISABLE_CATFILE_BATCH", disableGitBinary)
+
+			dir := t.TempDir()
+			testutil.RunGit(t, dir, "init", "-b", "main")
+			for _, name := range []string{"a.txt", "lost/b.txt", "kept/c.txt"} {
+				if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			testutil.RunGit(t, dir, "add", "-A")
+			testutil.RunGit(t, dir, "commit", "-m", "files")
+			lost := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD:lost"))
+			if err := os.Remove(filepath.Join(dir, ".git", "objects", lost[:2], lost[2:])); err != nil {
+				t.Fatal(err)
+			}
+
+			indexDir := t.TempDir()
+			opts := Options{
+				RepoDir:  filepath.Join(dir, ".git"),
+				Branches: []string{"main"},
+				BuildOptions: index.Options{
+					IndexDir:              indexDir,
+					RepositoryDescription: zoekt.Repository{Name: "repo"},
+					DisableCTags:          true,
+				},
+			}
+			if _, err := IndexGitRepo(opts); err != nil {
+				t.Fatal(err)
+			}
+
+			ss, err := search.NewDirectorySearcher(indexDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ss.Close()
+			res, err := ss.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, f := range res.Files {
+				got = append(got, f.FileName)
+			}
+			sort.Strings(got)
+			if want := []string{"a.txt", "kept/c.txt"}; !cmp.Equal(got, want) {
+				t.Errorf("indexed files %v, want %v", got, want)
+			}
+		})
 	}
 }
