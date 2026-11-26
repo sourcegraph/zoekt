@@ -261,8 +261,7 @@ func isShortBranchName(gitDir, ref string) (bool, error) {
 		return false, nil
 	}
 	expansions := []string{"refs/" + ref, "refs/heads/" + ref, "refs/remotes/" + ref, "refs/remotes/" + ref + "/HEAD"}
-	cmd := exec.Command("git", append([]string{"for-each-ref", "--format=%(refname)"}, expansions...)...)
-	cmd.Dir = gitDir
+	cmd := gitCommand(gitDir, append([]string{"for-each-ref", "--format=%(refname)"}, expansions...)...)
 	out, err := cmd.Output()
 	if err != nil {
 		return false, fmt.Errorf("git for-each-ref: %w", err)
@@ -287,8 +286,7 @@ func revParseCommit(gitDir, rev string) (plumbing.Hash, error) {
 	if strings.HasPrefix(rev, "-") {
 		return plumbing.ZeroHash, plumbing.ErrReferenceNotFound
 	}
-	cmd := exec.Command("git", "rev-parse", "--verify", "--quiet", rev+"^{commit}")
-	cmd.Dir = gitDir
+	cmd := gitCommand(gitDir, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -304,6 +302,17 @@ func revParseCommit(gitDir, rev string) (plumbing.Hash, error) {
 		return plumbing.ZeroHash, fmt.Errorf("git rev-parse %q: unexpected output %q", rev, out)
 	}
 	return plumbing.NewHash(hex), nil
+}
+
+// gitCommand returns a git command that runs in the git directory gitDir.
+// GIT_DIR=. keeps git from using an inherited GIT_DIR or searching parent
+// directories for another repository, as Sourcegraph's gitserver does. Like
+// go-git, git never fetches missing objects from a promisor remote here.
+func gitCommand(gitDir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = gitDir
+	cmd.Env = append(os.Environ(), "GIT_DIR=.", "GIT_NO_LAZY_FETCH=1")
+	return cmd
 }
 
 // repoGitDir returns the git directory of a repository stored on disk.
