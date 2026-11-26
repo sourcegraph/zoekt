@@ -170,6 +170,45 @@ func TestIndexArgIndexesSymlinkTarget(t *testing.T) {
 	}
 }
 
+func TestIndexArgFollowsSymlinkedRoot(t *testing.T) {
+	sourceDir := t.TempDir()
+	indexDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sourceDir, "file.txt"), []byte("needle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "repo")
+	if err := os.Symlink(sourceDir, link); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := index.Options{
+		IndexDir:     indexDir,
+		DisableCTags: true,
+	}
+	opts.SetDefaults()
+	if err := indexArg(link, opts, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer searcher.Close()
+
+	result, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range result.Files {
+		got = append(got, f.Repository+":"+f.FileName+":"+string(f.Content))
+	}
+	if want := []string{"repo:file.txt:needle\n"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("indexed %q, want %q", got, want)
+	}
+}
+
 func TestIndexArgInputFailurePreservesIndex(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can read files without read permission")
