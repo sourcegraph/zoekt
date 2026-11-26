@@ -1785,3 +1785,71 @@ func TestIndexDeltaHonorsIgnoreFile(t *testing.T) {
 		t.Errorf("delta build: files excluded by %s are searchable: %v", ignore.IgnoreFile, got)
 	}
 }
+
+// A branch whose name consists of hex digits, such as a ticket number, must be
+// indexed at the branch tip, as git resolves it, even if the name is also the
+// prefix of another commit's ID.
+func TestIndexGitRepo_HexBranchName(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	indexDir := t.TempDir()
+	testutil.RunGit(t, repoDir, "init", "-b", "main")
+	write := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		testutil.RunGit(t, repoDir, "add", "-A")
+		testutil.RunGit(t, repoDir, "commit", "-m", content)
+	}
+	write("old content")
+	old := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", "HEAD"))
+	write("new content")
+	tip := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", "HEAD"))
+
+	branch := old[:4]
+	testutil.RunGit(t, repoDir, "branch", branch, tip)
+	if got := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", branch)); got != tip {
+		t.Fatalf("git rev-parse %s = %s, want branch tip %s", branch, got, tip)
+	}
+
+	opts := Options{
+		RepoDir:      filepath.Join(repoDir, ".git"),
+		BranchPrefix: "refs/heads/",
+		Branches:     []string{branch},
+		BuildOptions: index.Options{
+			IndexDir:              indexDir,
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatal(err)
+	}
+
+	ss, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	res, err := ss.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) != 1 || string(res.Files[0].Content) != "new content" {
+		var got []string
+		for _, f := range res.Files {
+			got = append(got, string(f.Content))
+		}
+		t.Errorf("branch %q: indexed content %q, want the branch tip's %q", branch, got, "new content")
+	}
+
+	repo, _, ok, err := opts.BuildOptions.FindRepositoryMetadata()
+	if err != nil || !ok {
+		t.Fatalf("FindRepositoryMetadata: ok=%t, err=%v", ok, err)
+	}
+	if got := repo.Branches; len(got) != 1 || got[0].Version != tip {
+		t.Errorf("branch %q: indexed version %v, want %s (not %s)", branch, got, tip, old)
+	}
+}
