@@ -2037,3 +2037,29 @@ func TestIndexGitRepo_HexBranchName(t *testing.T) {
 		})
 	}
 }
+
+// Branches resolve in the indexed repository even when the environment
+// points git at another one, such as when zoekt runs from a git hook.
+func TestGetCommitIgnoresInheritedGitDir(t *testing.T) {
+	dir := t.TempDir()
+	testutil.RunGit(t, dir, "init", "-b", "main")
+	testutil.RunGit(t, dir, "commit", "--allow-empty", "-m", "indexed")
+	want := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD"))
+
+	other := t.TempDir()
+	testutil.RunGit(t, other, "init", "-b", "main")
+	testutil.RunGit(t, other, "commit", "--allow-empty", "-m", "other")
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := getCommit(repo, "refs/heads/", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := commit.Hash.String(); got != want {
+		t.Errorf("getCommit resolved main to %s, want %s from the indexed repository", got, want)
+	}
+}
