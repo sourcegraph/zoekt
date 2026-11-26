@@ -30,6 +30,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
@@ -2035,5 +2036,91 @@ func TestIndexGitRepo_HexBranchName(t *testing.T) {
 				t.Errorf("branch %q: indexed version %v, want %s (not %s)", branch, got, tip, old)
 			}
 		})
+	}
+}
+
+// The delta build diffs trees with git diff-tree, or with go-git when
+// ZOEKT_DISABLE_CATFILE_BATCH=true. Both must report the same files.
+func TestDiffTrees(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	testutil.RunGit(t, dir, "init", "-b", "main")
+	write := func(name, content string) {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"a.txt", "b.txt", "dir/same.txt", "exec.sh", "gone.txt", "sp ace ü.txt"} {
+		write(name, name)
+	}
+	if err := os.Symlink("a.txt", filepath.Join(dir, "link")); err != nil {
+		t.Fatal(err)
+	}
+	testutil.RunGit(t, dir, "add", "-A")
+	testutil.RunGit(t, dir, "commit", "-m", "old")
+	old := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD"))
+
+	write("a.txt", "changed")
+	write("sp ace ü.txt", "changed")
+	write("new.txt", "new")
+	testutil.RunGit(t, dir, "rm", "-q", "gone.txt", "b.txt")
+	write("b.txt/inner.txt", "file replaced by a directory")
+	testutil.RunGit(t, dir, "add", "-A")
+	testutil.RunGit(t, dir, "update-index", "--chmod=+x", "exec.sh")
+	testutil.RunGit(t, dir, "update-index", "--add", "--cacheinfo", "160000,"+old+",submodule")
+	testutil.RunGit(t, dir, "commit", "-m", "new")
+	cur := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD"))
+
+	id := func(path string) plumbing.Hash {
+		return plumbing.NewHash(strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", cur+":"+path)))
+	}
+	// Submodules are not files, so the gitlink is not reported.
+	want := []fileChange{
+		{From: "a.txt", To: "a.txt", ToID: id("a.txt")},
+		{From: "b.txt"},
+		{To: "b.txt/inner.txt", ToID: id("b.txt/inner.txt")},
+		{From: "exec.sh", To: "exec.sh", ToID: id("exec.sh")},
+		{From: "gone.txt"},
+		{To: "new.txt", ToID: id("new.txt")},
+		{From: "sp ace ü.txt", To: "sp ace ü.txt", ToID: id("sp ace ü.txt")},
+	}
+	sortChanges := cmpopts.SortSlices(func(a, b fileChange) bool { return a.From+"\x00"+a.To < b.From+"\x00"+b.To })
+
+	got, err := diffTrees(filepath.Join(dir, ".git"), plumbing.NewHash(old), plumbing.NewHash(cur))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(want, got, sortChanges); diff != "" {
+		t.Errorf("diffTrees (-want +got):\n%s", diff)
+	}
+
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := func(rev string) *object.Tree {
+		t.Helper()
+		c, err := repo.CommitObject(plumbing.NewHash(rev))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr, err := c.Tree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tr
+	}
+	got, err = diffTreesGoGit(tree(old), tree(cur))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(want, got, sortChanges); diff != "" {
+		t.Errorf("diffTreesGoGit (-want +got):\n%s", diff)
 	}
 }

@@ -16,6 +16,7 @@
 package gitindex
 
 import (
+	"bufio"
 	"bytes"
 	"cmp"
 	"context"
@@ -40,6 +41,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
@@ -1162,6 +1164,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 
 	// branch name -> git worktree at most current commit
 	branchToCurrentTree := make(map[string]*object.Tree, len(branches))
+	branchToCurrentCommit := make(map[string]plumbing.Hash, len(branches))
 
 	// branch name -> ignore file of the current tree. Delta builds fall back
 	// when an ignore file changes, so this also matches the last indexed tree.
@@ -1184,6 +1187,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		}
 
 		branchToCurrentTree[b] = tree
+		branchToCurrentCommit[b] = commit.Hash
 		branchToIgnore[b] = ig
 	}
 
@@ -1193,46 +1197,85 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		return nil, nil, nil, fmt.Errorf("parsing repository URL %q: %w", rawURL, err)
 	}
 
+	// The git binary diffs the trees unless ZOEKT_DISABLE_CATFILE_BATCH=true
+	// selects the go-git fallback.
+	gitDir, useGit := repoGitDir(repository)
+	useGit = useGit && !gitBinaryDisabled()
+
 	// TODO: Support repository submodules for delta builds
 
-	// loop over all branches, calculate the diff between our
-	// last indexed commit and the current commit, and add files mentioned in the diff
+	// calculate the diff between our last indexed commit and the current
+	// commit of each branch
+	branchToChanges := make(map[string][]fileChange, len(existingRepository.Branches))
+	oldPaths := map[string]struct{}{}
 	for _, branch := range existingRepository.Branches {
 		lastIndexedCommit, err := getCommit(repository, "", branch.Version)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("getting last indexed commit for branch %q: %w", branch.Name, err)
 		}
 
-		lastIndexedTree, err := lastIndexedCommit.Tree()
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("getting lasted indexed git tree for branch %q: %w", branch.Name, err)
+		var changes []fileChange
+		if useGit {
+			changes, err = diffTrees(gitDir, lastIndexedCommit.Hash, branchToCurrentCommit[branch.Name])
+		} else {
+			var lastIndexedTree *object.Tree
+			lastIndexedTree, err = lastIndexedCommit.Tree()
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("getting lasted indexed git tree for branch %q: %w", branch.Name, err)
+			}
+			changes, err = diffTreesGoGit(lastIndexedTree, branchToCurrentTree[branch.Name])
 		}
-
-		changes, err := object.DiffTreeWithOptions(context.Background(), lastIndexedTree, branchToCurrentTree[branch.Name], &object.DiffTreeOptions{DetectRenames: false})
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("generating changeset for branch %q: %w", branch.Name, err)
 		}
 
-		for i, c := range changes {
-			oldFile, newFile, err := c.Files()
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("change #%d: getting files before and after change: %w", i, err)
+		branchToChanges[branch.Name] = changes
+		for _, c := range changes {
+			if c.From != "" {
+				oldPaths[c.From] = struct{}{}
 			}
+		}
+	}
 
-			if newFile != nil {
-				// note: newFile.Name could be a path that isn't relative to the repository root - using the
-				// change's Name field is the only way that @ggilmore saw to get the full path relative to the root
-				newFileRelativeRootPath := c.To.Name
+	// currentFileID returns the ID of the file at p in branch b's current
+	// tree, if it has a file there.
+	branchToFiles := map[string]map[string]plumbing.Hash{}
+	currentFileID := func(b, p string) (plumbing.Hash, bool, error) {
+		if !useGit {
+			f, err := branchToCurrentTree[b].File(p)
+			if errors.Is(err, object.ErrFileNotFound) {
+				return plumbing.ZeroHash, false, nil
+			}
+			if err != nil {
+				return plumbing.ZeroHash, false, err
+			}
+			return f.ID(), true, nil
+		}
+		files, ok := branchToFiles[b]
+		if !ok {
+			var err error
+			if files, err = lsTreeFiles(gitDir, branchToCurrentCommit[b], oldPaths); err != nil {
+				return plumbing.ZeroHash, false, err
+			}
+			branchToFiles[b] = files
+		}
+		id, ok := files[p]
+		return id, ok, nil
+	}
 
+	// add files mentioned in the diff
+	for _, branch := range existingRepository.Branches {
+		for _, c := range branchToChanges[branch.Name] {
+			if c.To != "" {
 				// TODO@ggilmore: HACK - remove once ignore files are supported in delta builds
-				if newFileRelativeRootPath == ignore.IgnoreFile {
+				if c.To == ignore.IgnoreFile {
 					return nil, nil, nil, fmt.Errorf("%q file is not yet supported in delta builds", ignore.IgnoreFile)
 				}
 
 				// either file is added or renamed, so we need to add the new version to the build,
 				// unless a normal build would skip it because of the ignore file.
-				if !branchToIgnore[branch.Name].Match(newFileRelativeRootPath) {
-					file := fileKey{Path: newFileRelativeRootPath, ID: newFile.Hash}
+				if !branchToIgnore[branch.Name].Match(c.To) {
+					file := fileKey{Path: c.To, ID: c.ToID}
 					if existing, ok := repos[file]; ok {
 						existing.Branches = append(existing.Branches, branch.Name)
 						repos[file] = existing
@@ -1246,37 +1289,32 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 				}
 			}
 
-			if oldFile == nil {
+			if c.From == "" {
 				// file added - nothing more to do
 				continue
 			}
 
-			// Note: oldFile.Name could be a path that isn't relative to the repository root - using the
-			// change's "Name" field is the only way that ggilmore saw to get the full path relative to the root
-			oldFileRelativeRootPath := c.From.Name
-
-			if oldFileRelativeRootPath == ignore.IgnoreFile {
+			if c.From == ignore.IgnoreFile {
 				return nil, nil, nil, fmt.Errorf("%q file is not yet supported in delta builds", ignore.IgnoreFile)
 			}
 
 			// The file is either modified or deleted. So, we need to add ALL versions
 			// of the old file (across all branches) to the build.
-			for b, currentTree := range branchToCurrentTree {
-				if branchToIgnore[b].Match(oldFileRelativeRootPath) {
+			for b := range branchToCurrentTree {
+				if branchToIgnore[b].Match(c.From) {
 					continue
 				}
 
-				f, err := currentTree.File(oldFileRelativeRootPath)
+				id, ok, err := currentFileID(b, c.From)
 				if err != nil {
+					return nil, nil, nil, fmt.Errorf("getting hash for file %q in branch %q: %w", c.From, b, err)
+				}
+				if !ok {
 					// the file doesn't exist in this branch
-					if errors.Is(err, object.ErrFileNotFound) {
-						continue
-					}
-
-					return nil, nil, nil, fmt.Errorf("getting hash for file %q in branch %q: %w", oldFile.Name, b, err)
+					continue
 				}
 
-				file := fileKey{Path: oldFileRelativeRootPath, ID: f.ID()}
+				file := fileKey{Path: c.From, ID: id}
 				if existing, ok := repos[file]; ok {
 					existing.Branches = append(existing.Branches, b)
 					repos[file] = existing
@@ -1289,7 +1327,7 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 				}
 			}
 
-			changedOrDeletedPaths = append(changedOrDeletedPaths, oldFileRelativeRootPath)
+			changedOrDeletedPaths = append(changedOrDeletedPaths, c.From)
 		}
 	}
 
@@ -1306,6 +1344,147 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	changedOrDeletedPaths = uniq(changedOrDeletedPaths)
 
 	return repos, nil, changedOrDeletedPaths, nil
+}
+
+// fileChange is a file that differs between two trees, by its path from the
+// repository root. From or To is empty when that side has no file there, such
+// as when the file was added or deleted, or the entry is a submodule.
+type fileChange struct {
+	From, To string
+	ToID     plumbing.Hash
+}
+
+// diffTrees lists the files that differ between two commits with git
+// diff-tree, which reads trees only.
+func diffTrees(gitDir string, from, to plumbing.Hash) ([]fileChange, error) {
+	cmd := exec.Command("git", "diff-tree", "-r", "-z", "--no-renames", from.String(), to.String())
+	cmd.Dir = gitDir
+	// Like go-git, never fetch missing objects from a promisor remote.
+	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git diff-tree %s %s: %w: %s", from, to, err, bytes.TrimSpace(stderr.Bytes()))
+	}
+
+	// Each change is ":<old mode> <new mode> <old ID> <new ID> <status>\0<path>\0".
+	var changes []fileChange
+	fields := strings.Split(string(out), "\x00")
+	for i := 0; i+1 < len(fields); i += 2 {
+		meta := strings.Fields(strings.TrimPrefix(fields[i], ":"))
+		if len(meta) != 5 {
+			return nil, fmt.Errorf("git diff-tree %s %s: unexpected output %q", from, to, fields[i])
+		}
+		var c fileChange
+		if isFileMode(meta[0]) {
+			c.From = fields[i+1]
+		}
+		if isFileMode(meta[1]) {
+			c.To = fields[i+1]
+			c.ToID = plumbing.NewHash(meta[3])
+		}
+		if c != (fileChange{}) {
+			changes = append(changes, c)
+		}
+	}
+	return changes, nil
+}
+
+// diffTreesGoGit is diffTrees for the go-git fallback.
+func diffTreesGoGit(from, to *object.Tree) ([]fileChange, error) {
+	changes, err := object.DiffTreeWithOptions(context.Background(), from, to, &object.DiffTreeOptions{DetectRenames: false})
+	if err != nil {
+		return nil, err
+	}
+	var files []fileChange
+	for i, c := range changes {
+		oldFile, newFile, err := c.Files()
+		if err != nil {
+			return nil, fmt.Errorf("change #%d: getting files before and after change: %w", i, err)
+		}
+		// note: the files' Name fields may not be relative to the repository root,
+		// so use the change's Name fields.
+		var f fileChange
+		if oldFile != nil {
+			f.From = c.From.Name
+		}
+		if newFile != nil {
+			f.To = c.To.Name
+			f.ToID = newFile.Hash
+		}
+		if f != (fileChange{}) {
+			files = append(files, f)
+		}
+	}
+	return files, nil
+}
+
+// lsTreeFiles returns the IDs of the files at paths in commit, using git
+// ls-tree. Paths with no file in commit are missing from the result.
+func lsTreeFiles(gitDir string, commit plumbing.Hash, paths map[string]struct{}) (map[string]plumbing.Hash, error) {
+	cmd := exec.Command("git", "ls-tree", "-r", "-z", "--full-tree", commit.String())
+	cmd.Dir = gitDir
+	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start git ls-tree: %w", err)
+	}
+
+	files := map[string]plumbing.Hash{}
+	var parseErr error
+	r := bufio.NewReaderSize(out, 64*1024)
+	for {
+		mode, _, id, p, err := readLsTreeEntry(r)
+		if err != nil {
+			if err != io.EOF {
+				parseErr = err
+			}
+			break
+		}
+		if _, ok := paths[p]; ok && isFileMode(mode) {
+			files[p] = plumbing.NewHash(id)
+		}
+	}
+	// Drain stdout so git can exit before we wait for it.
+	_, _ = io.Copy(io.Discard, r)
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("git ls-tree %s: %w: %s", commit, err, bytes.TrimSpace(stderr.Bytes()))
+	}
+	if parseErr != nil {
+		return nil, fmt.Errorf("git ls-tree %s: %w", commit, parseErr)
+	}
+	return files, nil
+}
+
+// readLsTreeEntry reads one "<mode> <type> <ID>\t<path>\0" entry of git
+// ls-tree -z output.
+func readLsTreeEntry(r *bufio.Reader) (mode, typ, id, path string, err error) {
+	line, err := r.ReadString(0)
+	if err != nil {
+		if err == io.EOF && line != "" {
+			err = io.ErrUnexpectedEOF
+		}
+		return "", "", "", "", err
+	}
+	meta, path, ok := strings.Cut(line[:len(line)-1], "\t")
+	fields := strings.Fields(meta)
+	if !ok || len(fields) != 3 {
+		return "", "", "", "", fmt.Errorf("unexpected ls-tree entry %q", line)
+	}
+	return fields[0], fields[1], fields[2], path, nil
+}
+
+// isFileMode reports whether a git tree entry mode, in octal, is a file:
+// regular, executable or a symlink.
+func isFileMode(mode string) bool {
+	m, err := filemode.New(mode)
+	return err == nil && m.IsFile()
 }
 
 func prepareNormalBuild(options Options, repository *git.Repository) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
