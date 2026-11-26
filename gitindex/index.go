@@ -26,12 +26,16 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -176,8 +180,18 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 	return nil
 }
 
-// getCommit returns a tree object for the given reference.
+// getCommit returns the commit for a branch name or revision. With a branch
+// prefix, the branch in that namespace wins. The git binary resolves the name,
+// unless ZOEKT_DISABLE_CATFILE_BATCH=true selects the go-git fallback.
 func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error) {
+	if gitDir, ok := repoGitDir(repo); ok && !gitBinaryDisabled() {
+		id, err := resolveCommit(gitDir, prefix, ref)
+		if err != nil {
+			return nil, err
+		}
+		return repo.CommitObject(id)
+	}
+
 	// go-git tries a name made of hex digits as an abbreviated object ID before
 	// it tries the name as a ref, while git prefers the ref. So look up a branch
 	// with such a name, like a ticket number, before go-git can resolve it to an
@@ -204,6 +218,100 @@ func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error)
 		return nil, err
 	}
 	return commitObj, nil
+}
+
+// resolveCommit resolves ref to a commit with git rev-parse in gitDir.
+//
+// With a prefix, ref names a branch in that namespace: <prefix>/<ref> wins over
+// any other ref or object ID of the same name, and a short name missing from
+// the namespace does not fall back to a local branch or tag of that name.
+// Other revisions, such as HEAD, object IDs, qualified refs and revision
+// expressions, resolve as git resolves them.
+func resolveCommit(gitDir, prefix, ref string) (plumbing.Hash, error) {
+	if prefix != "" {
+		name := path.Join(prefix, ref)
+		// git would also expand the shorthand heads/x to refs/heads/heads/x.
+		if kind, _, _ := strings.Cut(name, "/"); kind == "heads" || kind == "tags" || kind == "remotes" {
+			name = "refs/" + name
+		}
+		id, err := revParseCommit(gitDir, name)
+		if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return id, err
+		}
+
+		short, err := isShortRefName(gitDir, ref)
+		if err != nil {
+			return plumbing.ZeroHash, err
+		}
+		if short {
+			return plumbing.ZeroHash, plumbing.ErrReferenceNotFound
+		}
+	}
+	return revParseCommit(gitDir, ref)
+}
+
+// isShortRefName reports whether git resolves ref by expanding it to a branch,
+// tag or remote of that short name, rather than as a root ref like HEAD, a ref
+// under refs/, an object ID or an expression.
+func isShortRefName(gitDir, ref string) (bool, error) {
+	if strings.HasPrefix(ref, "refs/") || strings.Trim(ref, "ABCDEFGHIJKLMNOPQRSTUVWXYZ_") == "" {
+		return false, nil
+	}
+	expansions := []string{"refs/" + ref, "refs/tags/" + ref, "refs/heads/" + ref, "refs/remotes/" + ref, "refs/remotes/" + ref + "/HEAD"}
+	cmd := exec.Command("git", append([]string{"for-each-ref", "--format=%(refname)"}, expansions...)...)
+	cmd.Dir = gitDir
+	out, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("git for-each-ref: %w", err)
+	}
+	// for-each-ref also lists refs below the patterns, so match whole names.
+	existing := strings.Split(string(out), "\n")
+	if slices.Contains(existing, expansions[0]) {
+		// git prefers refs/<ref>, such as refs/meta/config for meta/config.
+		return false, nil
+	}
+	for _, e := range expansions[1:] {
+		if slices.Contains(existing, e) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func revParseCommit(gitDir, rev string) (plumbing.Hash, error) {
+	cmd := exec.Command("git", "rev-parse", "--verify", "--quiet", "--end-of-options", rev+"^{commit}")
+	cmd.Dir = gitDir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if exitErr := (*exec.ExitError)(nil); errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		// Callers that allow missing branches check for this error.
+		return plumbing.ZeroHash, plumbing.ErrReferenceNotFound
+	}
+	if err != nil {
+		return plumbing.ZeroHash, fmt.Errorf("git rev-parse %q: %w: %s", rev, err, bytes.TrimSpace(stderr.Bytes()))
+	}
+	hex := strings.TrimSpace(string(out))
+	if !plumbing.IsHash(hex) {
+		return plumbing.ZeroHash, fmt.Errorf("git rev-parse %q: unexpected output %q", rev, out)
+	}
+	return plumbing.NewHash(hex), nil
+}
+
+// repoGitDir returns the git directory of a repository stored on disk.
+func repoGitDir(repo *git.Repository) (string, bool) {
+	s, ok := repo.Storer.(interface{ Filesystem() billy.Filesystem })
+	if !ok {
+		return "", false
+	}
+	return s.Filesystem().Root(), true
+}
+
+// gitBinaryDisabled reports whether ZOEKT_DISABLE_CATFILE_BATCH=true asks
+// for go-git instead of the git binary, as a kill switch.
+func gitBinaryDisabled() bool {
+	disabled, _ := strconv.ParseBool(os.Getenv("ZOEKT_DISABLE_CATFILE_BATCH"))
+	return disabled
 }
 
 // isHex reports whether s is a non-empty string of hex digits.
@@ -732,9 +840,8 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 	// memory in production. The cause was promisor lazy fetching of blobs
 	// that the size filter would skip, which GIT_NO_LAZY_FETCH=1 avoids (see
 	// doc/indexing.md).
-	catfileBatchDisabled := cmp.Or(os.Getenv("ZOEKT_DISABLE_CATFILE_BATCH"), "false")
 	useCatfileBatch := true
-	if disabled, _ := strconv.ParseBool(catfileBatchDisabled); disabled {
+	if gitBinaryDisabled() {
 		useCatfileBatch = false
 		slog.Info("cat-file batch disabled via ZOEKT_DISABLE_CATFILE_BATCH=true")
 	}
