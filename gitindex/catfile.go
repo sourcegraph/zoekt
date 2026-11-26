@@ -83,8 +83,12 @@ func checkCatfileFilterSupport(repoDir, filterSpec string) error {
 //	    io.ReadFull(cr, content)
 //	}
 type catfileReader struct {
-	cmd      *exec.Cmd
-	reader   *bufio.Reader
+	cmd    *exec.Cmd
+	reader *bufio.Reader
+	// ids are the requested object IDs, and next indexes the one the next
+	// header must echo. The writer goroutine only reads ids.
+	ids      []plumbing.Hash
+	next     int
 	writeErr <-chan error
 	stderr   *bytes.Buffer
 
@@ -157,6 +161,7 @@ func newCatfileReader(repoDir string, ids []plumbing.Hash, opts catfileReaderOpt
 	return &catfileReader{
 		cmd:      cmd,
 		reader:   bufio.NewReaderSize(stdout, 512*1024),
+		ids:      ids,
 		writeErr: writeErr,
 		stderr:   stderr,
 	}, nil
@@ -167,6 +172,11 @@ func newCatfileReader(repoDir string, ids []plumbing.Hash, opts catfileReaderOpt
 // the previous entry is automatically discarded. Returns io.EOF when all
 // entries have been consumed.
 //
+// Every header must echo the next requested object ID, and every present
+// object must be a blob followed by a LF. Otherwise the stream is out of sync
+// with the requested IDs and Next returns an error rather than attributing
+// content to the wrong file.
+//
 // After Next returns successfully with missing=false and excluded=false, call
 // Read to consume the blob content, or call Next again to skip it.
 func (cr *catfileReader) Next() (size int, missing bool, excluded bool, err error) {
@@ -174,15 +184,23 @@ func (cr *catfileReader) Next() (size int, missing bool, excluded bool, err erro
 		return 0, false, false, io.EOF
 	}
 
-	// Discard unread content from the previous entry.
+	// Discard unread content from the previous entry, then check its trailing
+	// LF rather than discarding it blindly.
 	if cr.pending > 0 {
-		if _, err := cr.reader.Discard(cr.pending); err != nil {
-			return 0, false, false, fmt.Errorf("discard pending bytes: %w", cr.processError(err))
+		if cr.pending > 1 {
+			if _, err := cr.reader.Discard(cr.pending - 1); err != nil {
+				return 0, false, false, fmt.Errorf("discard pending bytes: %w", cr.processError(err))
+			}
 		}
-		cr.pending = 0
+		if err := cr.readTrailingLF(); err != nil {
+			return 0, false, false, err
+		}
 	}
 
-	headerBytes, err := cr.reader.ReadBytes('\n')
+	// ReadSlice returns a view into the reader's buffer, avoiding a copy per
+	// entry. It is only valid until the next read, so header must not be
+	// retained past this call. Headers are far shorter than the buffer.
+	headerBytes, err := cr.reader.ReadSlice('\n')
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			err = cr.processError(err)
@@ -195,22 +213,48 @@ func (cr *catfileReader) Next() (size int, missing bool, excluded bool, err erro
 	}
 	header := headerBytes[:len(headerBytes)-1] // trim \n
 
-	if bytes.HasSuffix(header, []byte(" missing")) {
-		return 0, true, false, nil
+	// Headers are "<oid> missing", "<oid> excluded" or "<oid> <type> <size>".
+	firstSpace := bytes.IndexByte(header, ' ')
+	if firstSpace == -1 {
+		return 0, false, false, fmt.Errorf("unexpected header: %q", header)
+	}
+	if cr.next >= len(cr.ids) {
+		return 0, false, false, fmt.Errorf("cat-file returned more entries than the %d requested: %q", len(cr.ids), header)
+	}
+	want := cr.ids[cr.next]
+	cr.next++
+	// Decode the echoed ID instead of encoding the expected one, so the check
+	// stays allocation-free.
+	var got plumbing.Hash
+	oid := header[:firstSpace]
+	if len(oid) != hex.EncodedLen(len(got)) {
+		return 0, false, false, fmt.Errorf("cat-file stream out of sync: requested %s, got header %q", want, header)
+	}
+	if _, err := hex.Decode(got[:], oid); err != nil || got != want {
+		return 0, false, false, fmt.Errorf("cat-file stream out of sync: requested %s, got header %q", want, header)
 	}
 
-	if bytes.HasSuffix(header, []byte(" excluded")) {
+	rest := header[firstSpace+1:]
+	switch string(rest) {
+	case "missing":
+		return 0, true, false, nil
+	case "excluded":
 		return 0, false, true, nil
 	}
 
-	// Parse size from "<oid> <type> <size>".
-	lastSpace := bytes.LastIndexByte(header, ' ')
-	if lastSpace == -1 {
+	typeEnd := bytes.IndexByte(rest, ' ')
+	if typeEnd == -1 {
 		return 0, false, false, fmt.Errorf("unexpected header: %q", header)
 	}
-	size, err = strconv.Atoi(string(header[lastSpace+1:]))
+	if objType := rest[:typeEnd]; string(objType) != "blob" {
+		return 0, false, false, fmt.Errorf("object %s has type %q, want blob", want, objType)
+	}
+	size, err = strconv.Atoi(string(rest[typeEnd+1:]))
 	if err != nil {
 		return 0, false, false, fmt.Errorf("parse size from %q: %w", header, err)
+	}
+	if size < 0 {
+		return 0, false, false, fmt.Errorf("negative size in header %q", header)
 	}
 
 	// Track pending bytes: content + trailing LF.
@@ -218,9 +262,23 @@ func (cr *catfileReader) Next() (size int, missing bool, excluded bool, err erro
 	return size, false, false, nil
 }
 
+// readTrailingLF consumes the delimiter after the current entry's content and
+// checks that it is a LF, which catches a size that disagrees with the stream.
+func (cr *catfileReader) readTrailingLF() error {
+	b, err := cr.reader.ReadByte()
+	if err != nil {
+		return fmt.Errorf("read trailing LF: %w", cr.processError(err))
+	}
+	if b != '\n' {
+		return fmt.Errorf("cat-file stream out of sync: object %s not followed by LF, got %q", cr.ids[cr.next-1], b)
+	}
+	cr.pending = 0
+	return nil
+}
+
 // Read reads from the current blob's content. Implements io.Reader. Returns
 // io.EOF when the blob's content has been fully read (the trailing LF
-// delimiter is consumed automatically).
+// delimiter is consumed and checked automatically).
 func (cr *catfileReader) Read(p []byte) (int, error) {
 	if cr.pending <= 0 {
 		return 0, io.EOF
@@ -230,10 +288,9 @@ func (cr *catfileReader) Read(p []byte) (int, error) {
 	contentRemaining := cr.pending - 1
 	if contentRemaining <= 0 {
 		// Only the trailing LF remains; consume it and signal EOF.
-		if _, err := cr.reader.ReadByte(); err != nil {
-			return 0, fmt.Errorf("read trailing LF: %w", cr.processError(err))
+		if err := cr.readTrailingLF(); err != nil {
+			return 0, err
 		}
-		cr.pending = 0
 		return 0, io.EOF
 	}
 
@@ -246,15 +303,8 @@ func (cr *catfileReader) Read(p []byte) (int, error) {
 	if err != nil {
 		return n, cr.processError(err)
 	}
-
-	// If we've consumed all content bytes, also consume the trailing LF.
-	if cr.pending == 1 {
-		if _, err := cr.reader.ReadByte(); err != nil {
-			return n, fmt.Errorf("read trailing LF: %w", cr.processError(err))
-		}
-		cr.pending = 0
-	}
-
+	// Leave the trailing LF for Next (or a further Read) to check. An error
+	// returned here alongside the final bytes would be dropped by io.ReadFull.
 	return n, nil
 }
 
