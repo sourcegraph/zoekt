@@ -651,25 +651,20 @@ func (d *indexData) regexpToMatchTreeRecursive(r *syntax.Regexp, minTextSize int
 		}
 	case syntax.OpConcat, syntax.OpAlternate:
 		if r.Op == syntax.OpConcat && literalNodes(r, maxLiteralNodes) <= maxLiteralNodes {
-			ignoreCase := !caseSensitive
-			strs, closed, ok := expandLiterals(r, maxLiteralExpansions, ignoreCase)
-			if !ok && !ignoreCase {
-				// Too many case variants, but fine as case-insensitive
-				// substrings if r already matches every variant.
-				ignoreCase = true
-				strs, closed, ok = expandLiterals(r, maxLiteralExpansions, true)
-				ok = ok && closed
-			}
+			strs, ok := expandLiterals(r, maxLiteralExpansions, !caseSensitive)
 			for i := 0; ok && i < len(strs); i++ {
 				// The regexp reports the first alternative that matches, so it
-				// can differ when one string is a prefix of another.
+				// can differ when one string is a prefix of another. This only
+				// checks one concat on purpose: an outer alternation such as
+				// (?:[ab]cd|bcdef) can highlight a different span than the
+				// regexp, but it matches the same files.
 				ok = utf8.RuneCountInString(strs[i]) >= minTextSize && (i == 0 || !strings.HasPrefix(strs[i], strs[i-1]))
 			}
 			if ok {
 				qs := make([]matchTree, 0, len(strs))
 				singleLine = true
 				for _, s := range strs {
-					mt, err := d.newSubstringMatchTree(&query.Substring{Pattern: s, FileName: fileName, CaseSensitive: !ignoreCase})
+					mt, err := d.newSubstringMatchTree(&query.Substring{Pattern: s, FileName: fileName, CaseSensitive: caseSensitive})
 					if err != nil {
 						return nil, false, false, err
 					}
@@ -746,72 +741,54 @@ const (
 // expandLiterals returns the strings r matches if r is made only of literals,
 // character classes, alternations, captures and concats, and matches at most
 // max strings. With ignoreCase, each rune becomes the smallest rune of its case
-// orbit, as syntax stores FoldCase literals. closed reports whether r matches
-// every case variant of its strings, so ignoring case changes nothing.
-func expandLiterals(r *syntax.Regexp, max int, ignoreCase bool) (strs []string, closed bool, ok bool) {
+// orbit, as syntax stores FoldCase literals. Without it, FoldCase literals
+// such as (?i:e), which syntax also makes from [Ee], are left to the regexp.
+func expandLiterals(r *syntax.Regexp, max int, ignoreCase bool) (strs []string, ok bool) {
 	switch r.Op {
 	case syntax.OpLiteral:
-		foldCase := r.Flags&syntax.FoldCase != 0
-		closed = foldCase || !slices.ContainsFunc(r.Rune, func(c rune) bool { return unicode.SimpleFold(c) != c })
 		if ignoreCase {
-			return []string{strings.Map(minFold, string(r.Rune))}, closed, true
+			return []string{strings.Map(minFold, string(r.Rune))}, true
 		}
-		if !foldCase {
-			return []string{string(r.Rune)}, closed, true
+		if r.Flags&syntax.FoldCase != 0 {
+			return nil, false
 		}
-		strs = []string{""}
-		for _, c := range r.Rune {
-			orbit := []string{string(c)}
-			for f := unicode.SimpleFold(c); f != c; f = unicode.SimpleFold(f) {
-				orbit = append(orbit, string(f))
-			}
-			if strs, ok = crossLiterals(strs, orbit, max); !ok {
-				return nil, false, false
-			}
-		}
+		return []string{string(r.Rune)}, true
 	case syntax.OpCharClass:
-		var runes []rune
 		for i := 0; i < len(r.Rune); i += 2 {
-			if len(runes)+int(r.Rune[i+1]-r.Rune[i]) >= max {
-				return nil, false, false
+			if len(strs)+int(r.Rune[i+1]-r.Rune[i]) >= max {
+				return nil, false
 			}
 			for c := r.Rune[i]; c <= r.Rune[i+1]; c++ {
-				runes = append(runes, c)
+				s := c
+				if ignoreCase {
+					s = minFold(c)
+				}
+				strs = append(strs, string(s))
 			}
-		}
-		closed = true
-		for _, c := range runes {
-			closed = closed && slices.Contains(runes, unicode.SimpleFold(c))
-			if ignoreCase {
-				c = minFold(c)
-			}
-			strs = append(strs, string(c))
 		}
 	case syntax.OpCapture:
 		return expandLiterals(r.Sub[0], max, ignoreCase)
 	case syntax.OpConcat, syntax.OpAlternate:
-		closed = true
 		if r.Op == syntax.OpConcat {
 			strs = []string{""}
 		}
 		for _, sub := range r.Sub {
-			subStrs, subClosed, ok := expandLiterals(sub, max, ignoreCase)
+			subStrs, ok := expandLiterals(sub, max, ignoreCase)
 			if !ok {
-				return nil, false, false
+				return nil, false
 			}
-			closed = closed && subClosed
 			if r.Op == syntax.OpAlternate {
 				strs = append(strs, subStrs...)
 			} else if strs, ok = crossLiterals(strs, subStrs, max); !ok {
-				return nil, false, false
+				return nil, false
 			}
 		}
 	default:
-		return nil, false, false
+		return nil, false
 	}
 	slices.Sort(strs)
 	strs = slices.Compact(strs)
-	return strs, closed, len(strs) > 0 && len(strs) <= max
+	return strs, len(strs) > 0 && len(strs) <= max
 }
 
 // literalNodes counts r's nodes without allocating. It returns more than max

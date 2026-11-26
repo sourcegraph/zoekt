@@ -141,17 +141,16 @@ func TestRegexpParse(t *testing.T) {
 		{"(foo){1,}", substrMT("foo"), true, false},
 		{"(foo){1,3}", substrMT("foo"), false, false},
 		{"(...)(...)", &bruteForceMatchTree{}, false, false},
-		{"[Ee]rr", &orMatchTree{[]matchTree{caseSensitiveSubstrMT("Err"), caseSensitiveSubstrMT("err")}}, true, true},
+		// Case sensitive, FoldCase literals from [Ee] or (?i:...) keep the regexp path.
+		{"[Ee]rr", &bruteForceMatchTree{}, false, true},
 		{"[Ee]rr", substrMT("ERR"), true, false},
 		{"[Kk]ey", substrMT("KEY"), true, false},
 		{"f[ao]o", &orMatchTree{[]matchTree{substrMT("FAO"), substrMT("FOO")}}, true, false},
+		{"(foo|bar)baz", &orMatchTree{[]matchTree{substrMT("BARBAZ"), substrMT("FOOBAZ")}}, true, false},
 		{"(Get|Set)Id", &orMatchTree{[]matchTree{caseSensitiveSubstrMT("GetId"), caseSensitiveSubstrMT("SetId")}}, true, true},
-		{"(?i)(get|set)id", &orMatchTree{[]matchTree{substrMT("GETID"), substrMT("SETID")}}, true, true},
-		{"(?i:k)ey", &orMatchTree{[]matchTree{
-			caseSensitiveSubstrMT("Key"),
-			caseSensitiveSubstrMT("key"),
-			caseSensitiveSubstrMT("Key"), // Kelvin sign
-		}}, true, true},
+		{"(?i)(get|set)id", &orMatchTree{[]matchTree{substrMT("GET"), substrMT("SET")}}, false, true},
+		{"(?i)(get|set)id", &orMatchTree{[]matchTree{substrMT("GETID"), substrMT("SETID")}}, true, false},
+		{"(?i:k)ey", &bruteForceMatchTree{}, false, true},
 		{"[ab]c", &bruteForceMatchTree{}, false, false},
 		{"[a-p]bc", &orMatchTree{sixteen}, true, true},
 		{"[a-q]bc", &bruteForceMatchTree{}, false, true},
