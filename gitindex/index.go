@@ -1025,6 +1025,10 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	// branch name -> git worktree at most current commit
 	branchToCurrentTree := make(map[string]*object.Tree, len(branches))
 
+	// branch name -> ignore file of the current tree. Delta builds fall back
+	// when an ignore file changes, so this also matches the last indexed tree.
+	branchToIgnore := make(map[string]*ignore.Matcher, len(branches))
+
 	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)
 		if err != nil {
@@ -1036,7 +1040,13 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 			return nil, nil, nil, fmt.Errorf("getting current git tree for branch %q: %w", b, err)
 		}
 
+		ig, err := newIgnoreMatcher(tree)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("reading ignore file for branch %q: %w", b, err)
+		}
+
 		branchToCurrentTree[b] = tree
+		branchToIgnore[b] = ig
 	}
 
 	rawURL := options.BuildOptions.RepositoryDescription.URL
@@ -1081,16 +1091,19 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 					return nil, nil, nil, fmt.Errorf("%q file is not yet supported in delta builds", ignore.IgnoreFile)
 				}
 
-				// either file is added or renamed, so we need to add the new version to the build
-				file := fileKey{Path: newFileRelativeRootPath, ID: newFile.Hash}
-				if existing, ok := repos[file]; ok {
-					existing.Branches = append(existing.Branches, branch.Name)
-					repos[file] = existing
-				} else {
-					repos[file] = BlobLocation{
-						GitRepo:  repository,
-						URL:      u,
-						Branches: []string{branch.Name},
+				// either file is added or renamed, so we need to add the new version to the build,
+				// unless a normal build would skip it because of the ignore file.
+				if !branchToIgnore[branch.Name].Match(newFileRelativeRootPath) {
+					file := fileKey{Path: newFileRelativeRootPath, ID: newFile.Hash}
+					if existing, ok := repos[file]; ok {
+						existing.Branches = append(existing.Branches, branch.Name)
+						repos[file] = existing
+					} else {
+						repos[file] = BlobLocation{
+							GitRepo:  repository,
+							URL:      u,
+							Branches: []string{branch.Name},
+						}
 					}
 				}
 			}
@@ -1111,6 +1124,10 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 			// The file is either modified or deleted. So, we need to add ALL versions
 			// of the old file (across all branches) to the build.
 			for b, currentTree := range branchToCurrentTree {
+				if branchToIgnore[b].Match(oldFileRelativeRootPath) {
+					continue
+				}
+
 				f, err := currentTree.File(oldFileRelativeRootPath)
 				if err != nil {
 					// the file doesn't exist in this branch
