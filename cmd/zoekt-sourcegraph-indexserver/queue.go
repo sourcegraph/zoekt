@@ -284,7 +284,14 @@ func (q *Queue) handleDebugQueue(w http.ResponseWriter, r *http.Request) {
 // SetIndexed sets what the currently indexed options are for opts.RepoID.
 func (q *Queue) SetIndexed(opts IndexOptions, state indexState) {
 	q.mu.Lock()
-	item := q.getOrAdd(opts.RepoID)
+	item := q.get(opts.RepoID)
+	if item == nil {
+		// MaybeRemoveMissing stopped tracking the repository while it was
+		// indexed. Recreating it here would leave an item without options that
+		// Bump hands out if the repository is assigned again.
+		q.mu.Unlock()
+		return
+	}
 
 	item.indexState = state
 	if state != indexStateFail {

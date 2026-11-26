@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -162,6 +163,50 @@ func TestQueueChangedAfterBump(t *testing.T) {
 			if got.DateAddedToQueue.Before(changed) || got.DateAddedToQueue.After(afterChange) {
 				t.Fatalf("age must start at first unindexed change, got %v outside [%v, %v]", got.DateAddedToQueue, changed, afterChange)
 			}
+		}
+	}
+}
+
+// TestQueueUnassignedWhileIndexing follows the Run loop for a repository that
+// is unassigned while its index job runs and is later assigned again.
+func TestQueueUnassignedWhileIndexing(t *testing.T) {
+	q := NewQueue(0, 0, newTestLogger(t))
+	repo1 := mkHEADIndexOptions(1, "a")
+	repo1.TenantID = 1
+	q.AddOrUpdate(repo1)
+	q.AddOrUpdate(mkHEADIndexOptions(2, "b"))
+
+	// A worker starts indexing repo 1.
+	item, _ := q.Pop()
+	if item.Opts.RepoID != 1 {
+		t.Fatalf("popped %+v, want repo 1", item.Opts)
+	}
+
+	// The next sync no longer assigns repo 1, then the index job finishes.
+	q.MaybeRemoveMissing([]uint32{2})
+	q.SetIndexed(item.Opts, indexStateSuccess)
+
+	// A later sync assigns repo 1 again. Its options did not change, so only
+	// Bump and ForceIterateIndexOptions for the missing IDs can enqueue it.
+	ids := []uint32{1, 2}
+	q.MaybeRemoveMissing(ids)
+	missing := q.Bump(ids)
+	if slices.Contains(missing, 1) {
+		return // Run fetches repo 1's options afresh.
+	}
+	for {
+		got, ok := q.Pop()
+		if !ok {
+			t.Fatalf("repo 1 is neither missing nor queued (missing=%v)", missing)
+		}
+		if got.Opts.RepoID == 1 {
+			if d := cmp.Diff(repo1, got.Opts); d != "" {
+				t.Fatalf("repo 1 queued with wrong options (-want +got):\n%s", d)
+			}
+			return
+		}
+		if got.Opts.RepoID != 2 {
+			t.Fatalf("queue returned options for an unknown repo: %+v", got.Opts)
 		}
 	}
 }
