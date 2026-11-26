@@ -4059,6 +4059,31 @@ func TestSearchTypeFileName(t *testing.T) {
 		// -----------------------------------012345678901234567890-123456
 	)
 
+	t.Run("Score", func(t *testing.T) {
+		s := searcherForTest(t, b)
+		defer s.Close()
+		file := &query.Substring{Pattern: "file", Content: true}
+		var want float64
+		for i, child := range []query.Q{
+			file,
+			query.NewAnd(file, &query.Substring{Pattern: "needle", Content: true}),
+			&query.Boost{Boost: 2, Child: file},
+		} {
+			res, err := s.Search(context.Background(), &query.Type{Type: query.TypeFileName, Child: child}, &zoekt.SearchOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Files) != 1 {
+				t.Fatalf("got %d files, want 1", len(res.Files))
+			}
+			if i == 0 {
+				want = res.Files[0].Score
+			} else if got := res.Files[0].Score; got != want {
+				t.Errorf("filename-only query %s: score = %v, want %v", child, got, want)
+			}
+		}
+	})
+
 	t.Run("LineMatches", func(t *testing.T) {
 		wantSingleMatch := func(res *zoekt.SearchResult, want string) {
 			t.Helper()

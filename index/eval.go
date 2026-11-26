@@ -397,7 +397,7 @@ func addRepo(res *zoekt.SearchResult, repo *zoekt.Repository) {
 // but adjacent matches will remain.
 func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchTree]bool) []*candidateMatch {
 	var cands []*candidateMatch
-	visitMatches(mt, known, 1, func(mt matchTree, scoreWeight float64) {
+	visitMatches(mt, known, 1, false, func(mt matchTree, scoreWeight float64) {
 		if smt, ok := mt.(*substrMatchTree); ok {
 			cands = append(cands, setScoreWeight(scoreWeight, smt.current)...)
 		}
