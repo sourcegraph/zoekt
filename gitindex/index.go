@@ -1195,6 +1195,12 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 		var commit *object.Commit
 		if isSubrepo {
 			commit, err = repository.CommitObject(pinned[b])
+			if err != nil {
+				// Skip just this branch, like the repo cache path does,
+				// rather than dropping the submodule for every branch.
+				slog.Warn("skipping submodule branch", "branch", b, "commit", pinned[b], "error", err)
+				continue
+			}
 		} else {
 			commit, err = getCommit(repository, options.BranchPrefix, b)
 		}

@@ -873,3 +873,79 @@ git submodule -q update --init --recursive
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+// TestSubmoduleIndexWithoutRepocacheSkipsMissingPin tests that a branch which
+// pins a submodule commit the clone lacks only loses the submodule on that
+// branch, as with the repo cache.
+func TestSubmoduleIndexWithoutRepocacheSkipsMissingPin(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=protocol.file.allow
+export GIT_CONFIG_VALUE_0=always
+
+git init -q -b master brepo
+cd brepo
+echo pinned-content > bfile
+git add bfile
+git commit -qm v1
+
+cd ..
+git init -q -b master super
+cd super
+echo scont > sfile
+git add sfile
+git commit -qm s
+git submodule -q add ../brepo b
+git commit -qm "add b"
+
+git -C ../brepo commit -q --allow-empty -m v2
+missing=$(git -C ../brepo rev-parse HEAD)
+git checkout -q -b other
+git update-index --cacheinfo 160000,$missing,b
+git commit -qm "pin b at a commit the clone lacks"
+git checkout -q master
+`
+	cmd := exec.Command("/bin/sh", "-euc", script)
+	cmd.Dir = dir
+	cmd.Env = testutil.GitEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("script: %v\n%s", err, out)
+	}
+
+	indexDir := t.TempDir()
+	opts := Options{
+		RepoDir:    filepath.Join(dir, "super"),
+		Branches:   []string{"master", "other"},
+		Submodules: true,
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "super"},
+			IndexDir:              indexDir,
+			DisableCTags:          true,
+		},
+	}
+	if _, err := IndexGitRepo(opts); err != nil {
+		t.Fatalf("IndexGitRepo: %v", err)
+	}
+
+	searcher, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal("NewDirectorySearcher", err)
+	}
+	defer searcher.Close()
+
+	results, err := searcher.Search(context.Background(),
+		&query.Substring{Pattern: "pinned-content", Content: true},
+		&zoekt.SearchOptions{})
+	if err != nil {
+		t.Fatal("Search", err)
+	}
+	if len(results.Files) != 1 {
+		t.Fatalf("got %d files, want b/bfile on master", len(results.Files))
+	}
+	if f := results.Files[0]; f.FileName != "b/bfile" || !reflect.DeepEqual(f.Branches, []string{"master"}) {
+		t.Fatalf("got %s on %v, want b/bfile on [master]", f.FileName, f.Branches)
+	}
+}
