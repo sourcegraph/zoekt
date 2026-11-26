@@ -224,8 +224,8 @@ func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error)
 //
 // With a prefix, ref names a branch in that namespace: <prefix>/<ref> wins over
 // any other ref or object ID of the same name, and a short name missing from
-// the namespace does not fall back to a local branch or tag of that name.
-// Other revisions, such as HEAD, object IDs, qualified refs and revision
+// the namespace does not fall back to another branch of that name. Other
+// revisions, such as tags, HEAD, object IDs, qualified refs and revision
 // expressions, resolve as git resolves them.
 func resolveCommit(gitDir, prefix, ref string) (plumbing.Hash, error) {
 	if prefix != "" {
@@ -239,25 +239,26 @@ func resolveCommit(gitDir, prefix, ref string) (plumbing.Hash, error) {
 			return id, err
 		}
 
-		short, err := isShortRefName(gitDir, ref)
+		branch, err := isShortBranchName(gitDir, ref)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
-		if short {
+		if branch {
 			return plumbing.ZeroHash, plumbing.ErrReferenceNotFound
 		}
 	}
 	return revParseCommit(gitDir, ref)
 }
 
-// isShortRefName reports whether git resolves ref by expanding it to a branch,
-// tag or remote of that short name, rather than as a root ref like HEAD, a ref
-// under refs/, an object ID or an expression.
-func isShortRefName(gitDir, ref string) (bool, error) {
+// isShortBranchName reports whether ref is the short name of a local or
+// remote-tracking branch, rather than a tag, a root ref like HEAD, a ref under
+// refs/, an object ID or an expression. A tag passed as a branch name still
+// resolves when the namespace has no such branch.
+func isShortBranchName(gitDir, ref string) (bool, error) {
 	if strings.HasPrefix(ref, "refs/") || strings.Trim(ref, "ABCDEFGHIJKLMNOPQRSTUVWXYZ_") == "" {
 		return false, nil
 	}
-	expansions := []string{"refs/" + ref, "refs/tags/" + ref, "refs/heads/" + ref, "refs/remotes/" + ref, "refs/remotes/" + ref + "/HEAD"}
+	expansions := []string{"refs/" + ref, "refs/heads/" + ref, "refs/remotes/" + ref, "refs/remotes/" + ref + "/HEAD"}
 	cmd := exec.Command("git", append([]string{"for-each-ref", "--format=%(refname)"}, expansions...)...)
 	cmd.Dir = gitDir
 	out, err := cmd.Output()
@@ -279,7 +280,12 @@ func isShortRefName(gitDir, ref string) (bool, error) {
 }
 
 func revParseCommit(gitDir, rev string) (plumbing.Hash, error) {
-	cmd := exec.Command("git", "rev-parse", "--verify", "--quiet", "--end-of-options", rev+"^{commit}")
+	// Without --end-of-options, which needs git 2.30, a leading dash would be an
+	// option. No ref name starts with one.
+	if strings.HasPrefix(rev, "-") {
+		return plumbing.ZeroHash, plumbing.ErrReferenceNotFound
+	}
+	cmd := exec.Command("git", "rev-parse", "--verify", "--quiet", rev+"^{commit}")
 	cmd.Dir = gitDir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

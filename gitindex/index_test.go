@@ -121,6 +121,10 @@ func TestGetCommitBranchPrefix(t *testing.T) {
 		{"blob expression", "refs/remotes/origin", "main:file.txt", ""},
 		{"normalized fallback", "refs/remotes/origin", "missing/../only", remote},
 		{"empty revision fallback", "refs/heads/main", "", local},
+		{"tag as branch", "refs/heads", "annotated", remote},
+		{"tag missing from namespace", "refs/remotes/origin", "annotated", remote},
+		{"option-like name", "refs/heads", "--all", ""},
+		{"option-like name without prefix", "", "--output=x", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			commit, err := getCommit(repo, tt.prefix, tt.ref)
