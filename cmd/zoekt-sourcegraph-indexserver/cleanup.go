@@ -565,7 +565,7 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 		return nil, nil
 	}
 
-	defer func() {
+	removeShard := func() {
 		paths, err := index.IndexFilePaths(fn)
 		if err != nil {
 			return
@@ -573,15 +573,19 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 		for _, path := range paths {
 			os.Remove(path)
 		}
-	}()
+	}
 	// Merging would write an empty compound shard that zoekt-webserver cannot
-	// load. Removing the shard (deferred above) is all that is left to do.
+	// load. Removing the shard is all that is left to do.
 	if len(tombstones) == len(repos) {
+		removeShard()
 		return tombstones, nil
 	}
 	err = runMerge()
 	if err != nil {
+		// Keep the shard. Its live repositories stay searchable and the next
+		// vacuum retries.
 		return nil, fmt.Errorf("runMerge: %s", err)
 	}
+	removeShard()
 	return tombstones, nil
 }

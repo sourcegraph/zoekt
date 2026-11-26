@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -420,6 +421,35 @@ func TestVacuumAllTombstoned(t *testing.T) {
 	}
 	if len(shards) != 0 {
 		t.Fatalf("expected no compound shards, got %v", shards)
+	}
+}
+
+// TestVacuumMergeFailureKeepsShard checks that a failed vacuum merge, for
+// example when the disk is full or zoekt-merge-index is OOM killed, leaves the
+// compound shard and its live repositories in place.
+func TestVacuumMergeFailureKeepsShard(t *testing.T) {
+	dir := t.TempDir()
+	fn := createCompoundShard(t, dir, []uint32{1, 2, 3, 4})
+	if err := index.SetTombstone(fn, 2); err != nil {
+		t.Fatal(err)
+	}
+
+	mockMerger = func() error { return errors.New("write compound shard: no space left on device") }
+	t.Cleanup(func() { mockMerger = nil })
+
+	s := &Server{IndexDir: dir}
+	s.vacuum()
+
+	repos, _, err := index.ReadMetadataPathAlive(fn)
+	if err != nil {
+		t.Fatalf("compound shard is gone after a failed merge: %v", err)
+	}
+	var names []string
+	for _, r := range repos {
+		names = append(names, r.Name)
+	}
+	if want := []string{"repo1", "repo3", "repo4"}; !reflect.DeepEqual(names, want) {
+		t.Fatalf("got live repos %v, want %v", names, want)
 	}
 }
 
