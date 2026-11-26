@@ -261,8 +261,7 @@ func isShortBranchName(gitDir, ref string) (bool, error) {
 		return false, nil
 	}
 	expansions := []string{"refs/" + ref, "refs/heads/" + ref, "refs/remotes/" + ref, "refs/remotes/" + ref + "/HEAD"}
-	cmd := exec.Command("git", append([]string{"for-each-ref", "--format=%(refname)"}, expansions...)...)
-	cmd.Dir = gitDir
+	cmd := gitCommand(gitDir, append([]string{"for-each-ref", "--format=%(refname)"}, expansions...)...)
 	out, err := cmd.Output()
 	if err != nil {
 		return false, fmt.Errorf("git for-each-ref: %w", err)
@@ -287,8 +286,7 @@ func revParseCommit(gitDir, rev string) (plumbing.Hash, error) {
 	if strings.HasPrefix(rev, "-") {
 		return plumbing.ZeroHash, plumbing.ErrReferenceNotFound
 	}
-	cmd := exec.Command("git", "rev-parse", "--verify", "--quiet", rev+"^{commit}")
-	cmd.Dir = gitDir
+	cmd := gitCommand(gitDir, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -304,6 +302,17 @@ func revParseCommit(gitDir, rev string) (plumbing.Hash, error) {
 		return plumbing.ZeroHash, fmt.Errorf("git rev-parse %q: unexpected output %q", rev, out)
 	}
 	return plumbing.NewHash(hex), nil
+}
+
+// gitCommand returns a git command that runs in the git directory gitDir.
+// GIT_DIR=. keeps git from using an inherited GIT_DIR or searching parent
+// directories for another repository, as Sourcegraph's gitserver does. Like
+// go-git, git never fetches missing objects from a promisor remote here.
+func gitCommand(gitDir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = gitDir
+	cmd.Env = append(os.Environ(), "GIT_DIR=.", "GIT_NO_LAZY_FETCH=1")
+	return cmd
 }
 
 // repoGitDir returns the git directory of a repository stored on disk.
@@ -1357,10 +1366,7 @@ type fileChange struct {
 // diffTrees lists the files that differ between two commits with git
 // diff-tree, which reads trees only.
 func diffTrees(gitDir string, from, to plumbing.Hash) ([]fileChange, error) {
-	cmd := exec.Command("git", "diff-tree", "-r", "-z", "--no-renames", from.String(), to.String())
-	cmd.Dir = gitDir
-	// Like go-git, never fetch missing objects from a promisor remote.
-	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
+	cmd := gitCommand(gitDir, "diff-tree", "-r", "-z", "--no-renames", from.String(), to.String())
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -1371,6 +1377,9 @@ func diffTrees(gitDir string, from, to plumbing.Hash) ([]fileChange, error) {
 	// Each change is ":<old mode> <new mode> <old ID> <new ID> <status>\0<path>\0".
 	var changes []fileChange
 	fields := strings.Split(string(out), "\x00")
+	if len(fields)%2 != 1 || fields[len(fields)-1] != "" {
+		return nil, fmt.Errorf("git diff-tree %s %s: truncated output", from, to)
+	}
 	for i := 0; i+1 < len(fields); i += 2 {
 		meta := strings.Fields(strings.TrimPrefix(fields[i], ":"))
 		if len(meta) != 5 {
@@ -1436,10 +1445,7 @@ func lsTreeFiles(gitDir string, commit plumbing.Hash, paths map[string]struct{})
 // treeish, such as files and submodules, using git ls-tree -r. It fails if a
 // tree is missing.
 func lsTree(gitDir string, treeish plumbing.Hash, fn func(path string, e object.TreeEntry)) error {
-	cmd := exec.Command("git", "ls-tree", "-r", "-z", "--full-tree", treeish.String())
-	cmd.Dir = gitDir
-	// Like go-git, never fetch missing objects from a promisor remote.
-	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
+	cmd := gitCommand(gitDir, "ls-tree", "-r", "-z", "--full-tree", treeish.String())
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.StdoutPipe()
