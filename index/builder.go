@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"os"
 	"os/exec"
@@ -546,6 +547,17 @@ func (o *Options) IgnoreSizeMax(name string) bool {
 	return false
 }
 
+// SkipTooLarge reports whether a document of the given size should be
+// skipped as too large. Documents over math.MaxInt32 bytes are always skipped,
+// even when LargeFiles matches: shards store sizes and offsets as uint32, and
+// we would otherwise read the whole document into memory.
+func (o *Options) SkipTooLarge(name string, size int64) bool {
+	if size > math.MaxInt32 {
+		return true
+	}
+	return size > int64(o.SizeMax) && !o.IgnoreSizeMax(name)
+}
+
 func checkIsNegatePattern(pattern string) (bool, string) {
 	negate := "!"
 
@@ -615,7 +627,7 @@ func (b *Builder) Add(doc Document) error {
 	}
 
 	allowLargeFile := b.opts.IgnoreSizeMax(doc.Name)
-	if len(doc.Content) > b.opts.SizeMax && !allowLargeFile {
+	if b.opts.SkipTooLarge(doc.Name, int64(len(doc.Content))) {
 		// We could pass the document on to the shardbuilder, but if
 		// we pass through a part of the source tree with binary/large
 		// files, the corresponding shard would be mostly empty, so

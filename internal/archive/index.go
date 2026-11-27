@@ -139,14 +139,22 @@ func Index(opts Options, bopts index.Options) error {
 			return onceErr
 		}
 
-		contents, err := io.ReadAll(f)
-		if err != nil {
-			return err
-		}
-
 		name := stripComponents(f.Name, opts.Strip)
 		if name == "" {
 			return nil
+		}
+
+		if bopts.SkipTooLarge(name, f.Size) {
+			return builder.Add(index.Document{
+				Name:       name,
+				Branches:   brs,
+				SkipReason: index.SkipReasonTooLarge,
+			})
+		}
+
+		contents, err := io.ReadAll(f)
+		if err != nil {
+			return err
 		}
 
 		return builder.Add(index.Document{

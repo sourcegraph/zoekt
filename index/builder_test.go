@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1294,6 +1295,26 @@ func TestIgnoreSizeMax(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSkipTooLarge(t *testing.T) {
+	o := Options{SizeMax: 10, LargeFiles: []string{"*.bin"}}
+	for _, test := range []struct {
+		name string
+		size int64
+		want bool
+	}{
+		{"a.txt", 10, false},
+		{"a.txt", 11, true},
+		{"a.bin", 11, false},
+		{"a.bin", math.MaxInt32, false},
+		// LargeFiles does not lift the 2 GiB cap.
+		{"a.bin", math.MaxInt32 + 1, true},
+	} {
+		if got := o.SkipTooLarge(test.name, test.size); got != test.want {
+			t.Errorf("SkipTooLarge(%q, %d) = %v, want %v", test.name, test.size, got, test.want)
+		}
 	}
 }
 

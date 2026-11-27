@@ -841,7 +841,7 @@ func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]Blob
 			doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 		} else {
 			keyFullPath := key.FullPath()
-			if size > opts.BuildOptions.SizeMax && !opts.BuildOptions.IgnoreSizeMax(keyFullPath) {
+			if opts.BuildOptions.SkipTooLarge(keyFullPath, int64(size)) {
 				// Skip without reading content into memory.
 				doc = skippedDoc(key, branches, index.SkipReasonTooLarge)
 			} else {
@@ -1360,7 +1360,7 @@ func createDocument(key fileKey,
 	}
 
 	keyFullPath := key.FullPath()
-	if blob.Size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(keyFullPath) {
+	if opts.SkipTooLarge(keyFullPath, blob.Size) {
 		return skippedDoc(key, branches, index.SkipReasonTooLarge), nil
 	}
 

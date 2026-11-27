@@ -228,7 +228,7 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 			return err
 		}
 		displayName = filepath.ToSlash(displayName)
-		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
+		if opts.SkipTooLarge(displayName, f.size) {
 			if err := builder.Add(index.Document{
 				Name:       displayName,
 				Branches:   branches,
