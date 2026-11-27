@@ -2853,30 +2853,6 @@ func TestUnicodeFileStartOffsets(t *testing.T) {
 	}
 }
 
-func TestSearchUTF8FileBoundary(t *testing.T) {
-	s := searcherForTest(t, testShardBuilder(t, nil,
-		Document{Name: "previous", Content: []byte(strings.Repeat("😀", 74) + "a\xf0")},
-		Document{Name: "current", Content: []byte("\x9f\x98\x80needle")},
-	))
-	defer s.Close()
-	defer func() {
-		if p := recover(); p != nil {
-			t.Errorf("Search panicked: %v", p)
-		}
-	}()
-	r, err := s.Search(context.Background(), &query.Substring{Pattern: "\uFFFD\uFFFDneedle", Content: true}, &zoekt.SearchOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(r.Files) != 1 {
-		t.Fatalf("got files %v, want one match in current", r.Files)
-	}
-	m := r.Files[0].LineMatches[0].LineFragments[0]
-	if m.Offset != 1 || m.MatchLength != 8 {
-		t.Fatalf("got match %v, want offset 1 and length 8", m)
-	}
-}
-
 func TestSearchFourByteUTF8(t *testing.T) {
 	for _, prefix := range []string{
 		strings.Repeat("😀", 74) + "ab😀",

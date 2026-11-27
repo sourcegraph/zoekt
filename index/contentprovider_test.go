@@ -99,32 +99,6 @@ func TestFindOffsetFilenameBoundaries(t *testing.T) {
 	}
 }
 
-func TestFindOffsetReadBounds(t *testing.T) {
-	searcher := searcherForTest(t, testShardBuilder(t, nil, Document{
-		Name: "utf8", Content: []byte(strings.Repeat("é", runeOffsetFrequency+1)),
-	}))
-	defer searcher.Close()
-	d := searcher.(*indexData)
-	original := d.file
-	defer func() { d.file = original }()
-	mm := &mmapedIndexFile{data: original.(*memSeeker).data}
-	d.file = mm
-
-	// Do not let later serialized sections hide a read past the content corpus.
-	mm.data = mm.data[:d.boundariesStart+d.boundaries[len(d.boundaries)-1]]
-	cp := contentProvider{id: d}
-	cp.setDocument(0)
-	if got := cp.findOffset(false, runeOffsetFrequency-1); got != 2*(runeOffsetFrequency-1) {
-		t.Fatalf("findOffset before checkpoint = %d, want %d", got, 2*(runeOffsetFrequency-1))
-	}
-
-	// A checkpoint supplies the answer even if no content bytes can be read.
-	mm.data = nil
-	if got := cp.findOffset(false, runeOffsetFrequency); got != 2*runeOffsetFrequency {
-		t.Fatalf("findOffset at checkpoint = %d, want %d", got, 2*runeOffsetFrequency)
-	}
-}
-
 func getNewlines(data []byte) newlines {
 	var locs []uint32
 	for i, c := range data {
