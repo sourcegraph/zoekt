@@ -113,3 +113,48 @@ func TestExplode(t *testing.T) {
 		})
 	}
 }
+
+// Merging the same repositories again yields the same compound shard name. The
+// metadata sidecar of an earlier compound shard with that name, in which the
+// repositories were tombstoned after being reindexed, must not hide them.
+func TestMergeReplacesStaleMetadata(t *testing.T) {
+	dir := t.TempDir()
+	build := func() []string {
+		var shards []string
+		for id, name := range map[uint32]string{1: "repoA", 2: "repoB"} {
+			opts := index.Options{
+				IndexDir:              dir,
+				RepositoryDescription: zoekt.Repository{ID: id, Name: name},
+				DisableCTags:          true,
+				ShardMerging:          true,
+			}
+			b, err := index.NewBuilder(opts)
+			require.NoError(t, err)
+			require.NoError(t, b.AddFile("f.txt", []byte("needle "+name)))
+			require.NoError(t, b.Finish())
+			shards = append(shards, opts.FindAllShards()...)
+		}
+		sort.Strings(shards)
+		return shards
+	}
+
+	first, err := merge(dir, build())
+	require.NoError(t, err)
+	// Both repositories are reindexed (e.g. after an index format upgrade) into
+	// simple shards, which tombstones them in the compound shard.
+	shards := build()
+	alive, _, err := index.ReadMetadataPathAlive(first)
+	require.NoError(t, err)
+	require.Empty(t, alive)
+
+	second, err := merge(dir, shards)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+
+	ss, err := search.NewDirectorySearcher(dir)
+	require.NoError(t, err)
+	defer ss.Close()
+	result, err := ss.Search(context.Background(), &query.Substring{Pattern: "needle"}, &zoekt.SearchOptions{})
+	require.NoError(t, err)
+	require.Len(t, result.Files, 2, "repositories in the new compound shard are tombstoned")
+}

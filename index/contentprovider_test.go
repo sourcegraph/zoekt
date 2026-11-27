@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"testing/quick"
 	"unicode/utf8"
@@ -566,6 +567,42 @@ func TestFindMaxOverlappingSection(t *testing.T) {
 			}
 			if got != tt.wantSecIdx {
 				t.Fatalf("expected section %d, got %d", tt.wantSecIdx, got)
+			}
+		})
+	}
+}
+
+func TestFindOffsetCorpusEndOnSample(t *testing.T) {
+	// Each shard's corpus ends exactly on a rune offset sample, which has no
+	// rune to trigger it.
+	for _, tc := range []struct {
+		name  string
+		names []string
+		docs  []string
+	}{
+		{"content_non_ascii_last", []string{"a", "b"}, []string{"abc", strings.Repeat("é", 2*runeOffsetFrequency-3)}},
+		{"content_ascii_last", []string{"a", "b"}, []string{strings.Repeat("é", runeOffsetFrequency/2), strings.Repeat("a", runeOffsetFrequency/2)}},
+		{"filename", []string{"a", strings.Repeat("é", runeOffsetFrequency-1)}, []string{"x", "y"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var docs []Document
+			for i := range tc.docs {
+				docs = append(docs, Document{Name: tc.names[i], Content: []byte(tc.docs[i])})
+			}
+			searcher := searcherForTest(t, testShardBuilder(t, nil, docs...))
+			defer searcher.Close()
+			cp := contentProvider{id: searcher.(*indexData)}
+			last := len(docs) - 1
+			cp.setDocument(uint32(last))
+			for _, filename := range []bool{false, true} {
+				s := tc.docs[last]
+				if filename {
+					s = tc.names[last]
+				}
+				r := uint32(utf8.RuneCountInString(s))
+				if got := cp.findOffset(filename, r); got != uint32(len(s)) {
+					t.Errorf("findOffset(filename=%t, %d) = %d, want %d", filename, r, got, len(s))
+				}
 			}
 		})
 	}

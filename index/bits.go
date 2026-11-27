@@ -140,6 +140,24 @@ func caseFoldingEqualsRunes(pattern, mixed []byte, lowered ...[]byte) (int, bool
 	return mi, pi == len(pattern), pi < len(pattern)
 }
 
+// runesEqual compares pattern with the start of content rune by rune,
+// decoding invalid UTF-8 as utf8.RuneError like the index does. It returns
+// the byte size of the match, whether there was a match, and whether content
+// ended before pattern.
+func runesEqual(pattern, content []byte) (int, bool, bool) {
+	pi, ci := 0, 0
+	for pi < len(pattern) && ci < len(content) {
+		pr, psz := utf8.DecodeRune(pattern[pi:])
+		cr, csz := utf8.DecodeRune(content[ci:])
+		if pr != cr {
+			return 0, false, !hasEnoughRunes(content[ci:], pattern[pi:])
+		}
+		pi += psz
+		ci += csz
+	}
+	return ci, pi == len(pattern), pi < len(pattern)
+}
+
 func hasEnoughRunes(mixed, pattern []byte) bool {
 	// A UTF-8 rune occupies at most UTFMax bytes, and pattern cannot contain
 	// more runes than bytes. A sufficiently long mixed suffix therefore proves
@@ -464,7 +482,11 @@ type runeOffsetMap []runeOffsetCorrection
 //
 // The input is a sequence of y values that we expect to increase by 100 each,
 // so we just store (x, y) points where the expectation is violated.
-func makeRuneOffsetMap(off []uint32) runeOffsetMap {
+//
+// endRune and endByte are the corpus size in runes and bytes. The builder only
+// samples at the start of a rune, so when endRune is a multiple of
+// runeOffsetFrequency, off has no sample for it and we derive one.
+func makeRuneOffsetMap(off []uint32, endRune, endByte uint32) runeOffsetMap {
 	expected := uint32(0)
 	tmp := []runeOffsetCorrection{}
 	for runeOffset, byteOffset := range off {
@@ -473,6 +495,9 @@ func makeRuneOffsetMap(off []uint32) runeOffsetMap {
 			expected = byteOffset
 		}
 		expected += runeOffsetFrequency
+	}
+	if uint64(len(off))*runeOffsetFrequency == uint64(endRune) && endByte != expected {
+		tmp = append(tmp, runeOffsetCorrection{endRune, endByte})
 	}
 	// copy the slice to ensure it doesn't waste unused trailing capacity
 	out := make([]runeOffsetCorrection, len(tmp))

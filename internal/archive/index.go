@@ -103,7 +103,9 @@ func Index(opts Options, bopts index.Options) error {
 	bopts.RepositoryDescription.Branches = []zoekt.RepositoryBranch{{Name: opts.Branch, Version: opts.Commit}}
 	brs := []string{opts.Branch}
 
-	if opts.Incremental && bopts.IncrementalSkipIndexing() {
+	// The branch version is the commit, so without one an unchanged index
+	// state says nothing about whether the archive changed.
+	if opts.Incremental && opts.Commit != "" && bopts.IncrementalSkipIndexing() {
 		return nil
 	}
 

@@ -177,22 +177,59 @@ func setTemplates(repo *zoekt.Repository, u *url.URL, typ string) error {
 	return nil
 }
 
-// getCommit returns a tree object for the given reference.
+// getCommit returns the commit for a branch name or revision. With a branch
+// prefix, the branch in that namespace wins. The git binary resolves the name,
+// unless ZOEKT_DISABLE_CATFILE_BATCH=true selects the go-git fallback.
 func getCommit(repo *git.Repository, prefix, ref string) (*object.Commit, error) {
+	var id plumbing.Hash
+	var err error
+	if gitDir, ok := repoGitDir(repo); ok && !gitBinaryDisabled() {
+		id, err = resolveCommit(gitDir, prefix, ref)
+	} else {
+		id, err = resolveCommitGoGit(repo, prefix, ref)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return repo.CommitObject(id)
+}
+
+// resolveCommitGoGit is resolveCommit for the go-git fallback.
+func resolveCommitGoGit(repo *git.Repository, prefix, ref string) (plumbing.Hash, error) {
+	// go-git tries a name made of hex digits as an abbreviated object ID before
+	// it tries the name as a ref, while git prefers the ref. So look up a branch
+	// with such a name, like a ticket number, before go-git can resolve it to an
+	// unrelated commit. A full object ID is still resolved as an object ID.
+	if prefix != "" && len(ref) < len(plumbing.ZeroHash.String()) && isHex(ref) {
+		if r, err := repo.Reference(plumbing.ReferenceName(filepath.Join(prefix, ref)), true); err == nil {
+			if _, err := repo.CommitObject(r.Hash()); err == nil {
+				return r.Hash(), nil
+			}
+		}
+	}
+
 	sha1, err := repo.ResolveRevision(plumbing.Revision(ref))
 	// ref might be a branch name (e.g. "master") add branch prefix and try again.
 	if err != nil {
 		sha1, err = repo.ResolveRevision(plumbing.Revision(filepath.Join(prefix, ref)))
 	}
 	if err != nil {
-		return nil, err
+		return plumbing.ZeroHash, err
 	}
+	return *sha1, nil
+}
 
-	commitObj, err := repo.CommitObject(*sha1)
-	if err != nil {
-		return nil, err
+// isHex reports whether s is a non-empty string of hex digits.
+func isHex(s string) bool {
+	if s == "" {
+		return false
 	}
-	return commitObj, nil
+	for _, c := range s {
+		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 func plainOpenRepo(repoDir string) (*git.Repository, error) {
@@ -592,7 +629,7 @@ func indexGitRepo(ctx context.Context, opts Options, config gitIndexConfig) (boo
 	for _, b := range branches {
 		commit, err := getCommit(repo, opts.BranchPrefix, b)
 		if err != nil {
-			if opts.AllowMissingBranch && err.Error() == "reference not found" {
+			if opts.AllowMissingBranch && errors.Is(err, plumbing.ErrReferenceNotFound) {
 				continue
 			}
 
@@ -714,9 +751,8 @@ func indexGitRepo(ctx context.Context, opts Options, config gitIndexConfig) (boo
 	// memory in production. The cause was promisor lazy fetching of blobs
 	// that the size filter would skip, which GIT_NO_LAZY_FETCH=1 avoids (see
 	// doc/indexing.md).
-	catfileBatchDisabled := cmp.Or(os.Getenv("ZOEKT_DISABLE_CATFILE_BATCH"), "false")
 	useCatfileBatch := true
-	if disabled, _ := strconv.ParseBool(catfileBatchDisabled); disabled {
+	if gitBinaryDisabled() {
 		useCatfileBatch = false
 		slog.Info("cat-file batch disabled via ZOEKT_DISABLE_CATFILE_BATCH=true")
 	}
@@ -976,6 +1012,16 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		return nil, nil, nil, fmt.Errorf("no existing shards found for repository")
 	}
 
+	// Delta shards stack on top of the repository's simple shards. Builder.Finish
+	// rejects a repository merged into a compound shard, which would fail every
+	// retry, so fall back to a normal build that moves it into a simple shard.
+	oldShards := options.BuildOptions.FindAllShards()
+	for _, shard := range oldShards {
+		if strings.HasPrefix(filepath.Base(shard), "compound-") {
+			return nil, nil, nil, fmt.Errorf("delta builds don't support repositories contained in compound shards (shard %q)", shard)
+		}
+	}
+
 	if options.DeltaShardNumberFallbackThreshold > 0 {
 		// HACK: For our interim compaction strategy, we force a full normal index once
 		// the number of shards on disk for this repository exceeds the provided threshold.
@@ -985,7 +1031,6 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 		// build would be disproportionately affected by this), but it'll allow us to continue experimenting on real workloads
 		// while we create a better compaction strategy).
 
-		oldShards := options.BuildOptions.FindAllShards()
 		if uint64(len(oldShards)) > options.DeltaShardNumberFallbackThreshold {
 			return nil, nil, nil, fmt.Errorf("number of existing shards (%d) > requested shard threshold (%d)", len(oldShards), options.DeltaShardNumberFallbackThreshold)
 		}
@@ -1029,6 +1074,10 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 	// branch name -> git worktree at most current commit
 	branchToCurrentTree := make(map[string]*object.Tree, len(branches))
 
+	// branch name -> ignore file of the current tree. Delta builds fall back
+	// when an ignore file changes, so this also matches the last indexed tree.
+	branchToIgnore := make(map[string]*ignore.Matcher, len(branches))
+
 	for _, b := range branches {
 		commit, err := getCommit(repository, options.BranchPrefix, b)
 		if err != nil {
@@ -1040,7 +1089,13 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 			return nil, nil, nil, fmt.Errorf("getting current git tree for branch %q: %w", b, err)
 		}
 
+		ig, err := newIgnoreMatcher(tree)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("reading ignore file for branch %q: %w", b, err)
+		}
+
 		branchToCurrentTree[b] = tree
+		branchToIgnore[b] = ig
 	}
 
 	rawURL := options.BuildOptions.RepositoryDescription.URL
@@ -1095,16 +1150,19 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 					return nil, nil, nil, fmt.Errorf("%q file is not yet supported in delta builds", ignore.IgnoreFile)
 				}
 
-				// either file is added or renamed, so we need to add the new version to the build
-				file := fileKey{Path: newFileRelativeRootPath, ID: c.To.TreeEntry.Hash}
-				if existing, ok := repos[file]; ok {
-					existing.Branches = append(existing.Branches, branch.Name)
-					repos[file] = existing
-				} else {
-					repos[file] = BlobLocation{
-						GitRepo:  repository,
-						URL:      u,
-						Branches: []string{branch.Name},
+				// either file is added or renamed, so we need to add the new version to the build,
+				// unless a normal build would skip it because of the ignore file.
+				if !branchToIgnore[branch.Name].Match(newFileRelativeRootPath) {
+					file := fileKey{Path: newFileRelativeRootPath, ID: c.To.TreeEntry.Hash}
+					if existing, ok := repos[file]; ok {
+						existing.Branches = append(existing.Branches, branch.Name)
+						repos[file] = existing
+					} else {
+						repos[file] = BlobLocation{
+							GitRepo:  repository,
+							URL:      u,
+							Branches: []string{branch.Name},
+						}
 					}
 				}
 			}
@@ -1123,9 +1181,19 @@ func prepareDeltaBuild(options Options, repository *git.Repository) (repos map[f
 			// The file is either modified or deleted. So, we need to add ALL versions
 			// of the old file (across all branches) to the build.
 			for b, currentTree := range branchToCurrentTree {
+				if branchToIgnore[b].Match(oldFileRelativeRootPath) {
+					continue
+				}
+
 				entry, err := currentTree.FindEntry(oldFileRelativeRootPath)
-				if err != nil || !entry.Mode.IsFile() {
+				if errors.Is(err, object.ErrEntryNotFound) || errors.Is(err, object.ErrDirectoryNotFound) {
 					// the file doesn't exist in this branch
+					continue
+				}
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("getting hash for file %q in branch %q: %w", oldFileRelativeRootPath, b, err)
+				}
+				if !entry.Mode.IsFile() {
 					continue
 				}
 
@@ -1166,16 +1234,30 @@ func prepareNormalBuild(options Options, repository *git.Repository) (repos map[
 	if options.Submodules && options.RepoCacheDir != "" {
 		repoCache = NewRepoCache(options.RepoCacheDir)
 	}
-	return prepareNormalBuildRecurse(options, repository, repoCache, false)
+	return prepareNormalBuildRecurse(options, repository, repoCache, nil)
 }
 
-func prepareNormalBuildRecurse(options Options, repository *git.Repository, repoCache *RepoCache, isSubrepo bool) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
+// prepareNormalBuildRecurse collects the files of repository. For a submodule,
+// pinned maps each branch of the superproject to the submodule commit that
+// branch records; it is nil for the superproject.
+func prepareNormalBuildRecurse(options Options, repository *git.Repository, repoCache *RepoCache, pinned map[string]plumbing.Hash) (repos map[fileKey]BlobLocation, branchVersions map[string]map[string]plumbing.Hash, err error) {
 	// Branch => Repo => SHA1
 	branchVersions = map[string]map[string]plumbing.Hash{}
 
-	branches, err := expandBranches(repository, options.Branches, options.BranchPrefix)
-	if err != nil {
-		return nil, nil, fmt.Errorf("expandBranches: %w", err)
+	isSubrepo := pinned != nil
+	var branches []string
+	if isSubrepo {
+		// Index the commits the superproject records, like the repo cache
+		// path does, rather than the submodule's own branches.
+		for b := range pinned {
+			branches = append(branches, b)
+		}
+		sort.Strings(branches)
+	} else {
+		branches, err = expandBranches(repository, options.Branches, options.BranchPrefix)
+		if err != nil {
+			return nil, nil, fmt.Errorf("expandBranches: %w", err)
+		}
 	}
 
 	repoURL := options.BuildOptions.RepositoryDescription.URL
@@ -1195,9 +1277,20 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 
 	rw := NewRepoWalker(repository, repoURL, repoCache)
 	for _, b := range branches {
-		commit, err := getCommit(repository, options.BranchPrefix, b)
+		var commit *object.Commit
+		if isSubrepo {
+			commit, err = repository.CommitObject(pinned[b])
+			if err != nil {
+				// Skip just this branch, like the repo cache path does,
+				// rather than dropping the submodule for every branch.
+				slog.Warn("skipping submodule branch", "branch", b, "commit", pinned[b], "error", err)
+				continue
+			}
+		} else {
+			commit, err = getCommit(repository, options.BranchPrefix, b)
+		}
 		if err != nil {
-			if options.AllowMissingBranch && err.Error() == "reference not found" {
+			if options.AllowMissingBranch && errors.Is(err, plumbing.ErrReferenceNotFound) {
 				continue
 			}
 
@@ -1236,7 +1329,17 @@ func prepareNormalBuildRecurse(options Options, repository *git.Repository, repo
 				continue
 			}
 
-			sw, subVersions, err := prepareNormalBuildRecurse(options, subRepository, repoCache, true)
+			// CollectFiles recorded the submodule commit of each branch.
+			// Read only the branches, since branchVersions also gets
+			// <subpath>/<branch> keys from earlier submodules below.
+			subPinned := map[string]plumbing.Hash{}
+			for _, b := range branches {
+				if id, ok := branchVersions[b][submodule.Config().Path]; ok {
+					subPinned[b] = id
+				}
+			}
+
+			sw, subVersions, err := prepareNormalBuildRecurse(options, subRepository, repoCache, subPinned)
 			if err != nil {
 				slog.Warn("failed to index submodule repository", "submodule", submodule.Config().Name, "error", err)
 				continue

@@ -1,9 +1,14 @@
 package gitindex
 
 import (
+	"bufio"
+	"bytes"
+	"cmp"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"slices"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -13,6 +18,7 @@ import (
 //
 //	git clone --depth=1 https://github.com/kubernetes/kubernetes /tmp/k8s
 //	ZOEKT_BENCH_REPO=/tmp/k8s go test ./gitindex/ -bench=BenchmarkBlobRead -benchmem -count=5 -timeout=600s
+//	ZOEKT_BENCH_REPO=/tmp/k8s go test ./gitindex/ -run='^$' -bench=BenchmarkCatfileReader_Replay -benchmem -count=10
 
 func requireBenchGitRepo(b *testing.B) string {
 	b.Helper()
@@ -57,12 +63,16 @@ func collectBlobKeys(b *testing.B, repoDir string) (map[fileKey]BlobLocation, st
 	return rw.Files, repoDir
 }
 
-// sortedBlobKeys returns fileKeys for deterministic iteration.
+// sortedBlobKeys returns fileKeys for deterministic iteration, so the
+// files=N subsets read the same blobs on every run.
 func sortedBlobKeys(files map[fileKey]BlobLocation) []fileKey {
 	keys := make([]fileKey, 0, len(files))
 	for k := range files {
 		keys = append(keys, k)
 	}
+	slices.SortFunc(keys, func(a, b fileKey) int {
+		return cmp.Or(cmp.Compare(a.SubRepoPath, b.SubRepoPath), cmp.Compare(a.Path, b.Path))
+	})
 	return keys
 }
 
@@ -156,4 +166,57 @@ func BenchmarkBlobRead_CatfileReader(b *testing.B) {
 			b.ReportMetric(float64(len(subset)), "files/op")
 		})
 	}
+}
+
+// BenchmarkCatfileReader_Replay measures catfileReader's own per-entry work,
+// header parsing and validation plus content reads, without git in the loop.
+// It records the real "git cat-file --batch" output for every blob at HEAD
+// once, then replays it from memory. Content is read into a reused buffer so
+// allocations reported here come from the reader itself.
+func BenchmarkCatfileReader_Replay(b *testing.B) {
+	repoDir := requireBenchGitRepo(b)
+	files, _ := collectBlobKeys(b, repoDir)
+	keys := sortedBlobKeys(files)
+
+	ids := make([]plumbing.Hash, len(keys))
+	var stdin bytes.Buffer
+	for i, k := range keys {
+		ids[i] = k.ID
+		stdin.WriteString(k.ID.String())
+		stdin.WriteByte('\n')
+	}
+	cmd := exec.Command("git", "cat-file", "--batch")
+	cmd.Dir = repoDir
+	cmd.Stdin = &stdin
+	stream, err := cmd.Output()
+	if err != nil {
+		b.Fatalf("git cat-file: %v", err)
+	}
+	b.Logf("recorded %d entries, %d bytes", len(ids), len(stream))
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(stream)))
+	var buf []byte
+	for b.Loop() {
+		cr := &catfileReader{
+			reader: bufio.NewReaderSize(bytes.NewReader(stream), 512*1024),
+			ids:    ids,
+		}
+		for range ids {
+			size, missing, excluded, err := cr.Next()
+			if err != nil {
+				b.Fatalf("Next: %v", err)
+			}
+			if missing || excluded {
+				continue
+			}
+			if cap(buf) < size {
+				buf = make([]byte, size)
+			}
+			if _, err := io.ReadFull(cr, buf[:size]); err != nil {
+				b.Fatalf("ReadFull: %v", err)
+			}
+		}
+	}
+	b.ReportMetric(float64(len(ids)), "files/op")
 }

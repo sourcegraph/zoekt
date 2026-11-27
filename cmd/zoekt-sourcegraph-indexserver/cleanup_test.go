@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -423,6 +424,35 @@ func TestVacuumAllTombstoned(t *testing.T) {
 	}
 }
 
+// TestVacuumMergeFailureKeepsShard checks that a failed vacuum merge, for
+// example when the disk is full or zoekt-merge-index is OOM killed, leaves the
+// compound shard and its live repositories in place.
+func TestVacuumMergeFailureKeepsShard(t *testing.T) {
+	dir := t.TempDir()
+	fn := createCompoundShard(t, dir, []uint32{1, 2, 3, 4})
+	if err := index.SetTombstone(fn, 2); err != nil {
+		t.Fatal(err)
+	}
+
+	mockMerger = func() error { return errors.New("write compound shard: no space left on device") }
+	t.Cleanup(func() { mockMerger = nil })
+
+	s := &Server{IndexDir: dir}
+	s.vacuum()
+
+	repos, _, err := index.ReadMetadataPathAlive(fn)
+	if err != nil {
+		t.Fatalf("compound shard is gone after a failed merge: %v", err)
+	}
+	var names []string
+	for _, r := range repos {
+		names = append(names, r.Name)
+	}
+	if want := []string{"repo1", "repo3", "repo4"}; !reflect.DeepEqual(names, want) {
+		t.Fatalf("got live repos %v, want %v", names, want)
+	}
+}
+
 // Create 2 compound shards, each of which contains the same tombstoned repo but
 // from different commit dates.
 func TestGetTombstonedRepos(t *testing.T) {
@@ -674,4 +704,28 @@ func mergeHelper(t *testing.T, fn string) error {
 
 	_, _, err = index.Merge(filepath.Dir(fn), indexFile)
 	return err
+}
+
+// An unassigned repository can be in a compound shard and in a simple shard,
+// for example if its builder was killed after publishing the simple shard but
+// before tombstoning the compound copy. Cleanup must tombstone the compound
+// copy instead of deleting the compound shard with all its other repositories.
+func TestCleanupUnassignedRepoInCompoundAndSimpleShard(t *testing.T) {
+	dir := t.TempDir()
+	cs := createCompoundShard(t, dir, []uint32{1, 2})
+	createTestShard(t, "repo1", 1, filepath.Join(dir, "repo1_v16.00000.zoekt"))
+
+	// repo1 is no longer assigned to this replica, repo2 still is.
+	cleanup(dir, []uint32{2}, time.Now(), true, &phaseTimings{})
+
+	repos, _, err := index.ReadMetadataPathAlive(cs)
+	if err != nil {
+		t.Fatalf("compound shard with assigned repo2 is gone: %v", err)
+	}
+	if len(repos) != 1 || repos[0].ID != 2 {
+		t.Fatalf("want only repo2 alive in compound shard, got %+v", repos)
+	}
+	if _, ok := getShards(filepath.Join(dir, ".trash"))[1]; !ok {
+		t.Fatal("want simple shard of repo1 in trash")
+	}
 }

@@ -43,6 +43,182 @@ import (
 	"github.com/sourcegraph/zoekt/search"
 )
 
+func TestGetCommitBranchPrefix(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	testutil.RunGit(t, dir, "init", "-b", "work")
+	testutil.RunGit(t, dir, "commit", "--allow-empty", "-m", "local")
+	local := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD"))
+	testutil.RunGit(t, dir, "commit", "--allow-empty", "-m", "remote")
+	remote := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD"))
+	testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/main", remote)
+	testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/topic/nested", remote)
+	testutil.RunGit(t, dir, "update-ref", "refs/heads/main", local)
+	testutil.RunGit(t, dir, "update-ref", "refs/heads/refs/remotes/missing/main", local)
+	testutil.RunGit(t, dir, "update-ref", "refs/heads/remotes/missing/main", local)
+	testutil.RunGit(t, dir, "tag", "main", local)
+	testutil.RunGit(t, dir, "update-ref", "refs/heads/tagged", local)
+	testutil.RunGit(t, dir, "tag", "tagged", remote)
+	testutil.RunGit(t, dir, "tag", "-a", "annotated", "-m", "annotated", remote)
+	testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/only", remote)
+	testutil.RunGit(t, dir, "update-ref", "ORIG_HEAD", local)
+	testutil.RunGit(t, dir, "update-ref", "refs/meta/config", remote)
+	tagHash := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "refs/tags/annotated"))
+	treeHash := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD^{tree}"))
+	testutil.RunGit(t, dir, "tag", "-a", "refs/remotes/missing/main", "-m", "tree alias", treeHash)
+	for _, name := range []string{remote[:12], tagHash[:12]} {
+		testutil.RunGit(t, dir, "update-ref", "refs/heads/"+name, local)
+		testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/"+name, local)
+	}
+	for _, name := range []string{treeHash[:12], treeHash} {
+		testutil.RunGit(t, dir, "update-ref", "refs/heads/"+name, local)
+		testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/"+name, remote)
+	}
+
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, prefix, ref, want string
+	}{
+		{"remote", "refs/remotes/origin", "main", remote},
+		{"remote trailing slash", "refs/remotes/origin/", "main", remote},
+		{"remote shorthand prefix", "remotes/origin", "main", remote},
+		{"remote abbreviated prefix", "origin", "main", remote},
+		{"local shorthand prefix", "heads", "tagged", local},
+		{"tag shorthand prefix", "tags", "annotated", remote},
+		{"local versus tag", "refs/heads/", "tagged", local},
+		{"nested branch", "refs/remotes/origin", "topic/nested", remote},
+		{"missing namespace falls back", "refs/remotes/missing", "main", local},
+		{"missing shorthand namespace falls back", "remotes/missing", "main", local},
+		{"missing branch", "refs/remotes/origin", "missing", ""},
+		{"empty prefix", "", "main", local},
+		{"qualified local", "refs/remotes/origin", "refs/heads/main", local},
+		{"qualified remote", "refs/heads", "refs/remotes/origin/main", remote},
+		{"qualified tag", "refs/heads", "refs/tags/main", local},
+		{"annotated tag", "refs/tags", "annotated", remote},
+		{"commit hash", "refs/remotes/origin", local, local},
+		{"previous version hash", "", local, local},
+		{"HEAD", "refs/heads", "HEAD", remote},
+		{"HEAD parent", "refs/heads", "HEAD~1", local},
+		{"hash parent", "refs/heads", remote + "^", local},
+		{"abbreviated hash", "refs/remotes/origin", local[:12], local},
+		{"odd abbreviated hash", "refs/heads", remote[:11], remote},
+		{"hexadecimal branch versus tag object", "refs/heads", tagHash[:12], local},
+		{"branch versus hash", "refs/remotes/origin", remote[:12], local},
+		{"branch versus tag object", "refs/remotes/origin", tagHash[:12], local},
+		{"hexadecimal branch", "refs/remotes/origin", treeHash[:12], remote},
+		{"full hexadecimal branch", "refs/remotes/origin", treeHash, remote},
+		{"shorthand local ref", "refs/remotes/origin", "heads/work", remote},
+		{"shorthand remote ref", "refs/heads", "remotes/origin/main", remote},
+		{"remote branch with heads prefix", "refs/heads", "origin/main", remote},
+		{"shorthand tag ref", "refs/heads", "tags/annotated", remote},
+		{"custom qualified ref", "refs/heads", "meta/config", remote},
+		{"namespace-only parent", "refs/remotes/origin", "only~1", local},
+		{"namespace-only peel", "refs/remotes/origin", "only^0", remote},
+		{"namespaced expression", "refs/remotes/origin", "main^0", remote},
+		{"HEAD alias", "refs/remotes/origin", "@", remote},
+		{"top-level ref", "refs/remotes/origin", "ORIG_HEAD", local},
+		{"blob expression", "refs/remotes/origin", "main:file.txt", ""},
+		{"normalized fallback", "refs/remotes/origin", "missing/../only", remote},
+		{"empty revision fallback", "refs/heads/main", "", local},
+		{"tag as branch", "refs/heads", "annotated", remote},
+		{"tag missing from namespace", "refs/remotes/origin", "annotated", remote},
+		{"option-like name", "refs/heads", "--all", ""},
+		{"option-like name without prefix", "", "--output=x", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			commit, err := getCommit(repo, tt.prefix, tt.ref)
+			if tt.want == "" {
+				if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+					t.Errorf("getCommit(%q, %q) error = %v, want reference not found", tt.prefix, tt.ref, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("getCommit(%q, %q): %v", tt.prefix, tt.ref, err)
+			} else if got := commit.Hash.String(); got != tt.want {
+				t.Errorf("getCommit(%q, %q) = %s, want %s", tt.prefix, tt.ref, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIndexBranchPrefixDelta(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	testutil.RunGit(t, dir, "init", "-b", "work")
+	options := Options{
+		RepoDir:      dir,
+		BranchPrefix: "refs/remotes/origin",
+		Branches:     []string{"main"},
+		BuildOptions: index.Options{
+			IndexDir:              t.TempDir(),
+			RepositoryDescription: zoekt.Repository{Name: "repository"},
+			DisableCTags:          true,
+		},
+	}
+
+	for _, content := range []string{"initial remote payload", "updated remote payload"} {
+		if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		testutil.RunGit(t, dir, "add", ".")
+		testutil.RunGit(t, dir, "commit", "-m", content)
+		remote := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD"))
+		testutil.RunGit(t, dir, "update-ref", "refs/remotes/origin/main", remote)
+
+		if options.BuildOptions.IsDelta {
+			if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("wrong branch payload"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			testutil.RunGit(t, dir, "commit", "-am", "local competitor")
+			testutil.RunGit(t, dir, "branch", "main")
+		}
+
+		normalBuildCalled := false
+		_, err := indexGitRepo(context.Background(), options, gitIndexConfig{
+			prepareNormalBuild: func(options Options, repo *git.Repository) (map[fileKey]BlobLocation, map[string]map[string]plumbing.Hash, error) {
+				normalBuildCalled = true
+				return prepareNormalBuild(options, repo)
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if options.BuildOptions.IsDelta && normalBuildCalled {
+			t.Fatal("delta build fell back to a normal build")
+		}
+
+		ss, err := search.NewDirectorySearcher(options.BuildOptions.IndexDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := ss.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
+		ss.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Files) != 1 || string(result.Files[0].Content) != content {
+			t.Errorf("indexed files = %v, want file.txt with content %q", result.Files, content)
+		}
+		for _, shard := range options.BuildOptions.FindAllShards() {
+			repos, _, err := index.ReadMetadataPath(shard)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []zoekt.RepositoryBranch{{Name: "main", Version: remote}}
+			if len(repos) != 1 || !cmp.Equal(repos[0].Branches, want) {
+				t.Errorf("indexed repositories = %v, want main at %s", repos, remote)
+			}
+		}
+		options.BuildOptions.IsDelta = true
+	}
+}
+
 func TestIndexEmptyRepo(t *testing.T) {
 	t.Parallel()
 
@@ -559,9 +735,14 @@ func TestIndexGitRepo_CatfileFilterUnsupportedFallsBack(t *testing.T) {
 	repoDir, _ := initGitWorktree(t, "hello.txt", "hello world\n")
 	indexDir := t.TempDir()
 
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
 	binDir := t.TempDir()
 	fakeGit := filepath.Join(binDir, "git")
-	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\necho 'cat-file --filter unsupported' >&2\nexit 129\n"), 0o755); err != nil {
+	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" != cat-file ]; then exec %q \"$@\"; fi\necho 'cat-file --filter unsupported' >&2\nexit 129\n", realGit)
+	if err := os.WriteFile(fakeGit, []byte(script), 0o755); err != nil {
 		t.Fatalf("WriteFile(%q): %v", fakeGit, err)
 	}
 	t.Setenv("PATH", binDir)
@@ -1320,6 +1501,107 @@ func TestIndexDeltaBasic(t *testing.T) {
 	}
 }
 
+// A delta build of a repository that was merged into a compound shard must
+// fall back to a normal build instead of failing on every attempt.
+func TestIndexGitRepo_DeltaInCompoundShardFallsBack(t *testing.T) {
+	indexDir := t.TempDir()
+	repoDir := t.TempDir()
+	testutil.RunGit(t, repoDir, "init", "-b", "main")
+	write := func(content string) {
+		if err := os.WriteFile(filepath.Join(repoDir, "f.txt"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		testutil.RunGit(t, repoDir, "add", "-A")
+		testutil.RunGit(t, repoDir, "commit", "-m", content)
+	}
+	opts := func(delta bool) Options {
+		return Options{
+			RepoDir:  filepath.Join(repoDir, ".git"),
+			Branches: []string{"main"},
+			BuildOptions: index.Options{
+				IndexDir:              indexDir,
+				RepositoryDescription: zoekt.Repository{Name: "repo", ID: 1},
+				DisableCTags:          true,
+				ShardMerging:          true,
+				IsDelta:               delta,
+			},
+		}
+	}
+
+	write("oldneedle")
+	if _, err := IndexGitRepo(opts(false)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Merge the repository with another one into a compound shard, as
+	// indexserver does for repositories without recent commits.
+	other := index.Options{
+		IndexDir:              indexDir,
+		RepositoryDescription: zoekt.Repository{Name: "other", ID: 2},
+		DisableCTags:          true,
+	}
+	b, err := index.NewBuilder(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.AddFile("o.txt", []byte("other")); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	simple, err := filepath.Glob(filepath.Join(indexDir, "*.zoekt"))
+	if err != nil || len(simple) != 2 {
+		t.Fatalf("want 2 simple shards, got %v, %v", simple, err)
+	}
+	var files []index.IndexFile
+	for _, fn := range simple {
+		f, err := os.Open(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		inf, err := index.NewIndexFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer inf.Close()
+		files = append(files, inf)
+	}
+	tmp, dst, err := index.Merge(indexDir, files...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fn := range simple {
+		if err := os.Remove(fn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	write("newneedle")
+	if _, err := IndexGitRepo(opts(true)); err != nil {
+		t.Fatalf("delta build of repository in compound shard: %v", err)
+	}
+
+	ss, err := search.NewDirectorySearcher(indexDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	for needle, want := range map[string]int{"newneedle": 1, "oldneedle": 0, "other": 1} {
+		res, err := ss.Search(context.Background(), &query.Substring{Pattern: needle, Content: true}, &zoekt.SearchOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Files) != want {
+			t.Errorf("%q: got %d files, want %d", needle, len(res.Files), want)
+		}
+	}
+}
+
 func TestSetTemplates_e2e(t *testing.T) {
 	t.Parallel()
 
@@ -1780,5 +2062,199 @@ func TestIndexGitRepoContextCanceled(t *testing.T) {
 			names = append(names, e.Name())
 		}
 		t.Fatalf("canceled build left files in the index directory: %v", names)
+	}
+}
+
+// A delta build must not index paths that the repository's ignore file
+// excludes. A normal build skips them, so a later change to such a file must
+// not make it searchable.
+func TestIndexDeltaHonorsIgnoreFile(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	indexDir := t.TempDir()
+	testutil.RunGit(t, repoDir, "init", "-b", "main")
+
+	write := func(name, content string) {
+		t.Helper()
+		p := filepath.Join(repoDir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commit := func(msg string) {
+		t.Helper()
+		testutil.RunGit(t, repoDir, "add", "-A")
+		testutil.RunGit(t, repoDir, "commit", "-m", msg)
+	}
+
+	write(ignore.IgnoreFile, "vendor/\n")
+	write("main.go", "package main // first\n")
+	write("vendor/lib/lib.go", "package lib // vendoredcode one\n")
+	commit("initial")
+
+	build := func(isDelta bool) {
+		t.Helper()
+		opts := Options{
+			RepoDir:  filepath.Join(repoDir, ".git"),
+			Branches: []string{"HEAD"},
+			BuildOptions: index.Options{
+				IndexDir:              indexDir,
+				RepositoryDescription: zoekt.Repository{Name: "repo"},
+				IsDelta:               isDelta,
+				DisableCTags:          true,
+			},
+		}
+		var deltaFailed bool
+		_, err := indexGitRepo(context.Background(), opts, gitIndexConfig{
+			prepareDeltaBuild: func(o Options, r *git.Repository) (map[fileKey]BlobLocation, map[string]map[string]plumbing.Hash, []string, error) {
+				repos, versions, changed, err := prepareDeltaBuild(o, r)
+				deltaFailed = err != nil
+				return repos, versions, changed, err
+			},
+		})
+		if err != nil {
+			t.Fatalf("indexGitRepo(delta=%t): %v", isDelta, err)
+		}
+		if deltaFailed {
+			t.Fatal("delta build unexpectedly fell back to a normal build")
+		}
+	}
+
+	searchNames := func(pattern string) []string {
+		t.Helper()
+		ss, err := search.NewDirectorySearcher(indexDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ss.Close()
+		res, err := ss.Search(context.Background(), &query.Substring{Pattern: pattern}, &zoekt.SearchOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, f := range res.Files {
+			names = append(names, f.FileName)
+		}
+		return names
+	}
+
+	build(false)
+	if got := searchNames("vendoredcode"); len(got) != 0 {
+		t.Fatalf("normal build: ignored files are searchable: %v", got)
+	}
+
+	write("main.go", "package main // second\n")
+	write("vendor/lib/lib.go", "package lib // vendoredcode two\n")
+	write("vendor/lib/new.go", "package lib // vendoredcode new\n")
+	commit("update vendored code")
+
+	build(true)
+	if got := searchNames("second"); len(got) != 1 {
+		t.Fatalf("delta build: want main.go to be updated, got %v", got)
+	}
+	if got := searchNames("vendoredcode"); len(got) != 0 {
+		t.Errorf("delta build: files excluded by %s are searchable: %v", ignore.IgnoreFile, got)
+	}
+}
+
+// A branch whose name consists of hex digits, such as a ticket number, must be
+// indexed at the branch tip, as git resolves it, even if the name is also the
+// prefix of another commit's ID.
+func TestIndexGitRepo_HexBranchName(t *testing.T) {
+	repoDir := t.TempDir()
+	testutil.RunGit(t, repoDir, "init", "-b", "main")
+	write := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		testutil.RunGit(t, repoDir, "add", "-A")
+		testutil.RunGit(t, repoDir, "commit", "-m", content)
+	}
+	write("old content")
+	old := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", "HEAD"))
+	write("new content")
+	tip := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", "HEAD"))
+
+	branch := old[:4]
+	testutil.RunGit(t, repoDir, "branch", branch, tip)
+	if got := strings.TrimSpace(testutil.RunGit(t, repoDir, "rev-parse", branch)); got != tip {
+		t.Fatalf("git rev-parse %s = %s, want branch tip %s", branch, got, tip)
+	}
+
+	// ZOEKT_DISABLE_CATFILE_BATCH=true resolves the branch with go-git.
+	for _, disableGitBinary := range []string{"false", "true"} {
+		t.Run("ZOEKT_DISABLE_CATFILE_BATCH="+disableGitBinary, func(t *testing.T) {
+			t.Setenv("ZOEKT_DISABLE_CATFILE_BATCH", disableGitBinary)
+			indexDir := t.TempDir()
+			opts := Options{
+				RepoDir:      filepath.Join(repoDir, ".git"),
+				BranchPrefix: "refs/heads/",
+				Branches:     []string{branch},
+				BuildOptions: index.Options{
+					IndexDir:              indexDir,
+					RepositoryDescription: zoekt.Repository{Name: "repo"},
+					DisableCTags:          true,
+				},
+			}
+			if _, err := IndexGitRepo(opts); err != nil {
+				t.Fatal(err)
+			}
+
+			ss, err := search.NewDirectorySearcher(indexDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ss.Close()
+			res, err := ss.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{Whole: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Files) != 1 || string(res.Files[0].Content) != "new content" {
+				var got []string
+				for _, f := range res.Files {
+					got = append(got, string(f.Content))
+				}
+				t.Errorf("branch %q: indexed content %q, want the branch tip's %q", branch, got, "new content")
+			}
+
+			repo, _, ok, err := opts.BuildOptions.FindRepositoryMetadata()
+			if err != nil || !ok {
+				t.Fatalf("FindRepositoryMetadata: ok=%t, err=%v", ok, err)
+			}
+			if got := repo.Branches; len(got) != 1 || got[0].Version != tip {
+				t.Errorf("branch %q: indexed version %v, want %s (not %s)", branch, got, tip, old)
+			}
+		})
+	}
+}
+
+// Branches resolve in the indexed repository even when the environment
+// points git at another one, such as when zoekt runs from a git hook.
+func TestGetCommitIgnoresInheritedGitDir(t *testing.T) {
+	dir := t.TempDir()
+	testutil.RunGit(t, dir, "init", "-b", "main")
+	testutil.RunGit(t, dir, "commit", "--allow-empty", "-m", "indexed")
+	want := strings.TrimSpace(testutil.RunGit(t, dir, "rev-parse", "HEAD"))
+
+	other := t.TempDir()
+	testutil.RunGit(t, other, "init", "-b", "main")
+	testutil.RunGit(t, other, "commit", "--allow-empty", "-m", "other")
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := getCommit(repo, "refs/heads/", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := commit.Hash.String(); got != want {
+		t.Errorf("getCommit resolved main to %s, want %s from the indexed repository", got, want)
 	}
 }

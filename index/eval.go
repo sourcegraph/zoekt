@@ -20,9 +20,12 @@ import (
 	"log"
 	"math"
 	"regexp/syntax"
+	"slices"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/grafana/regexp"
 
@@ -553,13 +556,23 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions
 			return nil, err
 		}
 
-		foundRepos := make(map[string]struct{}, len(sr.Files))
+		foundRepoIDs := make(map[uint32]struct{}, len(sr.Files))
+		foundRepoNames := make(map[string]struct{})
 		for _, file := range sr.Files {
-			foundRepos[file.Repository] = struct{}{}
+			if file.RepositoryID == 0 {
+				// Older indexes and OSS users may not have repository IDs.
+				foundRepoNames[file.Repository] = struct{}{}
+			} else {
+				foundRepoIDs[file.RepositoryID] = struct{}{}
+			}
 		}
 
 		include = func(rle *zoekt.RepoListEntry) bool {
-			_, ok := foundRepos[rle.Repository.Name]
+			if rle.Repository.ID == 0 {
+				_, ok := foundRepoNames[rle.Repository.Name]
+				return ok
+			}
+			_, ok := foundRepoIDs[rle.Repository.ID]
 			return ok
 		}
 	}
@@ -627,8 +640,6 @@ func (d *indexData) List(ctx context.Context, q query.Q, opts *zoekt.ListOptions
 // or a andMatchTree (singleLine = false).
 func (d *indexData) regexpToMatchTreeRecursive(r *syntax.Regexp, minTextSize int, fileName bool, caseSensitive bool) (mt matchTree, isEqual bool, singleLine bool, err error) {
 	// TODO - we could perhaps transform Begin/EndText in '\n'?
-	// TODO - we could perhaps transform CharClass in (OrQuery )
-	// if there are just a few runes, and part of a OpConcat?
 	switch r.Op {
 	case syntax.OpLiteral:
 		s := string(r.Rune)
@@ -656,6 +667,33 @@ func (d *indexData) regexpToMatchTreeRecursive(r *syntax.Regexp, minTextSize int
 			return mt, false, singleLine, err
 		}
 	case syntax.OpConcat, syntax.OpAlternate:
+		if r.Op == syntax.OpConcat && literalNodes(r, maxLiteralNodes) <= maxLiteralNodes {
+			strs, ok := expandLiterals(r, maxLiteralExpansions, !caseSensitive)
+			for i := 0; ok && i < len(strs); i++ {
+				// The regexp reports the first alternative that matches, so it
+				// can differ when one string is a prefix of another. This only
+				// checks one concat on purpose: an outer alternation such as
+				// (?:[ab]cd|bcdef) can highlight a different span than the
+				// regexp, but it matches the same files.
+				ok = utf8.RuneCountInString(strs[i]) >= minTextSize && (i == 0 || !strings.HasPrefix(strs[i], strs[i-1]))
+			}
+			if ok {
+				qs := make([]matchTree, 0, len(strs))
+				singleLine = true
+				for _, s := range strs {
+					mt, err := d.newSubstringMatchTree(&query.Substring{Pattern: s, FileName: fileName, CaseSensitive: caseSensitive})
+					if err != nil {
+						return nil, false, false, err
+					}
+					qs = append(qs, mt)
+					singleLine = singleLine && !strings.Contains(s, "\n")
+				}
+				if len(qs) == 1 {
+					return qs[0], true, singleLine, nil
+				}
+				return &orMatchTree{qs}, true, singleLine, nil
+			}
+		}
 		var qs []matchTree
 		isEq := true
 		singleLine = true
@@ -706,6 +744,122 @@ func (d *indexData) regexpToMatchTreeRecursive(r *syntax.Regexp, minTextSize int
 		}
 	}
 	return &bruteForceMatchTree{}, false, false, nil
+}
+
+// maxLiteralExpansions caps the substrings a concat of short literals,
+// character classes and alternations is expanded into. maxLiteralNodes caps
+// the size of such a concat, so planning stays linear when concats nest; four
+// nodes per string covers an alternation of short concats.
+const (
+	maxLiteralExpansions = 16
+	maxLiteralNodes      = 4 * maxLiteralExpansions
+)
+
+// expandLiterals returns the strings r matches if r is made only of literals,
+// character classes, alternations, captures and concats, and matches at most
+// max strings. With ignoreCase, each rune becomes the smallest rune of its case
+// orbit, as syntax stores FoldCase literals. Without it, each rune of a
+// FoldCase literal of at most max runes, from (?i:e) or a class like [Ee],
+// expands to its orbit.
+func expandLiterals(r *syntax.Regexp, max int, ignoreCase bool) (strs []string, ok bool) {
+	switch r.Op {
+	case syntax.OpLiteral:
+		if ignoreCase {
+			return []string{strings.Map(minFold, string(r.Rune))}, true
+		}
+		if r.Flags&syntax.FoldCase == 0 {
+			return []string{string(r.Rune)}, true
+		}
+		if len(r.Rune) > max {
+			// Copying every string for each rune below is quadratic in len(r.Rune).
+			return nil, false
+		}
+		strs = []string{""}
+		for _, c := range r.Rune {
+			orbit := []string{string(c)}
+			for f := unicode.SimpleFold(c); f != c; f = unicode.SimpleFold(f) {
+				orbit = append(orbit, string(f))
+			}
+			if strs, ok = crossLiterals(strs, orbit, max); !ok {
+				return nil, false
+			}
+		}
+	case syntax.OpCharClass:
+		for i := 0; i < len(r.Rune); i += 2 {
+			if len(strs)+int(r.Rune[i+1]-r.Rune[i]) >= max {
+				return nil, false
+			}
+			for c := r.Rune[i]; c <= r.Rune[i+1]; c++ {
+				s := c
+				if ignoreCase {
+					s = minFold(c)
+				}
+				strs = append(strs, string(s))
+			}
+		}
+	case syntax.OpCapture:
+		return expandLiterals(r.Sub[0], max, ignoreCase)
+	case syntax.OpConcat, syntax.OpAlternate:
+		if r.Op == syntax.OpConcat {
+			strs = []string{""}
+		}
+		for _, sub := range r.Sub {
+			subStrs, ok := expandLiterals(sub, max, ignoreCase)
+			if !ok {
+				return nil, false
+			}
+			if r.Op == syntax.OpAlternate {
+				strs = append(strs, subStrs...)
+			} else if strs, ok = crossLiterals(strs, subStrs, max); !ok {
+				return nil, false
+			}
+		}
+	default:
+		return nil, false
+	}
+	slices.Sort(strs)
+	strs = slices.Compact(strs)
+	return strs, len(strs) > 0 && len(strs) <= max
+}
+
+// literalNodes counts r's nodes without allocating. It returns more than max
+// once there are more, or if r has an op expandLiterals doesn't expand.
+func literalNodes(r *syntax.Regexp, max int) int {
+	n := 1
+	switch r.Op {
+	case syntax.OpLiteral, syntax.OpCharClass:
+	case syntax.OpCapture, syntax.OpConcat, syntax.OpAlternate:
+		for i := 0; i < len(r.Sub) && n <= max; i++ {
+			n += literalNodes(r.Sub[i], max-n)
+		}
+	default:
+		n = max + 1
+	}
+	return n
+}
+
+// crossLiterals returns every string of a followed by one of b, if there are
+// at most max.
+func crossLiterals(a, b []string, max int) ([]string, bool) {
+	if len(a)*len(b) > max {
+		return nil, false
+	}
+	out := make([]string, 0, len(a)*len(b))
+	for _, x := range a {
+		for _, y := range b {
+			out = append(out, x+y)
+		}
+	}
+	return out, true
+}
+
+// minFold returns the smallest rune of c's case orbit.
+func minFold(c rune) rune {
+	m := c
+	for f := unicode.SimpleFold(c); f != c; f = unicode.SimpleFold(f) {
+		m = min(m, f)
+	}
+	return m
 }
 
 type timer struct {

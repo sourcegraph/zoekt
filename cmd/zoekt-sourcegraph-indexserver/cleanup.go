@@ -188,10 +188,18 @@ func cleanup(indexDir string, repos []uint32, now time.Time, shardMerging bool, 
 			_ = os.Chtimes(shard.Path, now, now)
 		}
 
-		if shardMerging && maybeSetTombstone(shards, repo) {
-			continue
+		// The repository may be in a compound shard and in simple shards, for
+		// example if its indexing was interrupted before it tombstoned the
+		// compound copy. Tombstone the compound shards so moveAll doesn't delete
+		// them with all their other repositories.
+		simple := shards[:0]
+		for _, s := range shards {
+			if shardMerging && maybeSetTombstone([]shard{s}, repo) {
+				continue
+			}
+			simple = append(simple, s)
 		}
-		moveAll(trashDir, shards)
+		moveAll(trashDir, simple)
 	}
 
 	// Remove .tmp files from crashed indexer runs-- for example, if an indexer
@@ -565,7 +573,7 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 		return nil, nil
 	}
 
-	defer func() {
+	removeShard := func() {
 		paths, err := index.IndexFilePaths(fn)
 		if err != nil {
 			return
@@ -573,15 +581,19 @@ func removeTombstones(fn string) ([]*zoekt.Repository, error) {
 		for _, path := range paths {
 			os.Remove(path)
 		}
-	}()
+	}
 	// Merging would write an empty compound shard that zoekt-webserver cannot
-	// load. Removing the shard (deferred above) is all that is left to do.
+	// load. Removing the shard is all that is left to do.
 	if len(tombstones) == len(repos) {
+		removeShard()
 		return tombstones, nil
 	}
 	err = runMerge()
 	if err != nil {
+		// Keep the shard. Its live repositories stay searchable and the next
+		// vacuum retries.
 		return nil, fmt.Errorf("runMerge: %s", err)
 	}
+	removeShard()
 	return tombstones, nil
 }
