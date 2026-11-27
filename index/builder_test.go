@@ -502,6 +502,61 @@ func TestBuilderAbort(t *testing.T) {
 	}
 }
 
+func TestBuilderCancel(t *testing.T) {
+	newBuilder := func(t *testing.T, dir string) *Builder {
+		b, err := NewBuilder(Options{
+			IndexDir:              dir,
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			DisableCTags:          true,
+			Parallelism:           2,
+			ShardMax:              1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+
+	t.Run("unblocks a flush waiting for a build slot", func(t *testing.T) {
+		dir := t.TempDir()
+		b := newBuilder(t, dir)
+		// Occupy every build slot, as long running shard builds would.
+		b.throttle <- 1
+		b.throttle <- 1
+
+		added := make(chan error, 1)
+		go func() { added <- b.AddFile("a.txt", []byte("hello\n")) }()
+		b.Cancel()
+		select {
+		case err := <-added:
+			if !errors.Is(err, errBuildCanceled) {
+				t.Fatalf("AddFile returned %v, want errBuildCanceled", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("AddFile still blocked after Cancel")
+		}
+		b.Abort()
+		if files, _ := os.ReadDir(dir); len(files) != 0 {
+			t.Fatalf("canceled build left files: %v", files)
+		}
+	})
+
+	t.Run("stops a shard build in progress", func(t *testing.T) {
+		dir := t.TempDir()
+		b := newBuilder(t, dir)
+		b.Cancel()
+		if _, err := b.buildShard([]*Document{{Name: "a.txt", Content: []byte("hello\n")}}, 0); !errors.Is(err, errBuildCanceled) {
+			t.Fatalf("buildShard returned %v, want errBuildCanceled", err)
+		}
+		if err := b.Finish(); !errors.Is(err, errBuildCanceled) {
+			t.Fatalf("Finish returned %v, want errBuildCanceled", err)
+		}
+		if files, _ := os.ReadDir(dir); len(files) != 0 {
+			t.Fatalf("canceled build left files: %v", files)
+		}
+	})
+}
+
 // Tests that we skip looping over repos in compound shards when we know that
 // the repository we are looking for is not in the shard.
 func TestSkipCompoundShards(t *testing.T) {

@@ -34,7 +34,7 @@ func TestParseSymbolsLanguageMap(t *testing.T) {
 	t.Run("runs ctags for a language without an entry", func(t *testing.T) {
 		docs := []*Document{{Name: "main.go", Content: []byte("package main\n"), Language: "Go"}}
 
-		err := parseSymbols(docs, ctags.LanguageMap{}, parserBins)
+		err := parseSymbols(docs, ctags.LanguageMap{}, parserBins, func() bool { return false })
 
 		if err == nil {
 			t.Fatal("want an error from starting ctags, got nil")
@@ -54,7 +54,7 @@ func TestParseSymbolsLanguageMap(t *testing.T) {
 		t.Run("skips "+tc.language+" turned off as "+tc.key, func(t *testing.T) {
 			docs := []*Document{{Name: "file", Content: []byte("content\n"), Language: tc.language}}
 
-			err := parseSymbols(docs, ctags.LanguageMap{tc.key: ctags.NoCTags}, parserBins)
+			err := parseSymbols(docs, ctags.LanguageMap{tc.key: ctags.NoCTags}, parserBins, func() bool { return false })
 
 			if err != nil {
 				t.Fatalf("want no ctags run, got error: %v", err)

@@ -573,10 +573,15 @@ func IndexGitRepo(opts Options) (bool, error) {
 	return indexGitRepo(context.Background(), opts, gitIndexConfig{})
 }
 
-// IndexGitRepoContext is IndexGitRepo, but stops between documents once ctx
-// is done. It then discards the shards built so far and returns ctx's error.
+// IndexGitRepoContext is IndexGitRepo, but stops reading documents and
+// building shards once ctx is done. It then discards the shards built so far and returns ctx's error.
 func IndexGitRepoContext(ctx context.Context, opts Options) (bool, error) {
-	return indexGitRepo(ctx, opts, gitIndexConfig{})
+	updated, err := indexGitRepo(ctx, opts, gitIndexConfig{})
+	if err != nil && ctx.Err() != nil {
+		// Report the cancellation rather than the builder failure it caused.
+		return false, ctx.Err()
+	}
+	return updated, err
 }
 
 // indexGitRepo indexes the git repository as specified by the options and the provided gitIndexConfig.
@@ -723,6 +728,9 @@ func indexGitRepo(ctx context.Context, opts Options, config gitIndexConfig) (boo
 	// Only Finish after all input has been read. On an input error, discard
 	// staged shards instead of publishing an incomplete repository.
 	defer builder.Abort()
+	// Shard builds run in the background and can each take a while, so
+	// cancellation must reach them too, not only the document loop below.
+	defer context.AfterFunc(ctx, builder.Cancel)()
 
 	for _, f := range changedOrRemovedFiles {
 		builder.MarkFileAsChangedOrRemoved(f)

@@ -28,7 +28,7 @@ import (
 	"github.com/sourcegraph/zoekt/languages"
 )
 
-func parseSymbols(todo []*Document, languageMap ctags.LanguageMap, parserBins ctags.ParserBinMap) error {
+func parseSymbols(todo []*Document, languageMap ctags.LanguageMap, parserBins ctags.ParserBinMap, canceled func() bool) error {
 	monitor := newMonitor()
 	defer monitor.Stop()
 
@@ -38,6 +38,9 @@ func parseSymbols(todo []*Document, languageMap ctags.LanguageMap, parserBins ct
 	defer parser.Close()
 
 	for _, doc := range todo {
+		if canceled() {
+			return errBuildCanceled
+		}
 		if len(doc.Content) == 0 || doc.Symbols != nil {
 			continue
 		}

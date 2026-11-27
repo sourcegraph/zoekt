@@ -18,6 +18,7 @@ package index
 
 import (
 	"crypto/sha1"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -270,6 +271,10 @@ type Builder struct {
 
 	errMu      sync.Mutex
 	buildError error
+
+	// canceled is closed by Cancel.
+	canceled   chan struct{}
+	cancelOnce sync.Once
 
 	// temp name => final name for finished shards. We only rename
 	// them once all shards succeed to avoid Frankstein corpuses.
@@ -607,6 +612,7 @@ func NewBuilder(opts Options) (*Builder, error) {
 		opts:           opts,
 		throttle:       make(chan int, opts.Parallelism),
 		finishedShards: map[string]string{},
+		canceled:       make(chan struct{}),
 	}
 
 	parserBins, err := ctags.NewParserBinMap(
@@ -709,6 +715,27 @@ func (b *Builder) Abort() {
 		}
 	}
 	b.finishedShards = nil
+}
+
+// errBuildCanceled is the build error after Cancel.
+var errBuildCanceled = errors.New("shard build canceled")
+
+// Cancel makes shard builds in progress stop at their next document and
+// fail, so that a following Abort or Finish returns promptly instead of
+// waiting for symbol parsing and shard writing. Unlike the other methods, it
+// is safe to call from any goroutine, any number of times. The caller must
+// still call Abort.
+func (b *Builder) Cancel() {
+	b.cancelOnce.Do(func() { close(b.canceled) })
+}
+
+func (b *Builder) isCanceled() bool {
+	select {
+	case <-b.canceled:
+		return true
+	default:
+		return false
+	}
 }
 
 // Finish creates a last shard from the buffered documents, and clears
@@ -975,7 +1002,13 @@ func (b *Builder) flush() error {
 
 	if b.opts.Parallelism > 1 {
 		b.building.Add(1)
-		b.throttle <- 1
+		select {
+		case b.throttle <- 1:
+		case <-b.canceled:
+			b.building.Done()
+			b.buildError = errBuildCanceled
+			return b.buildError
+		}
 		go func() {
 			done, err := b.buildShard(todo, shard)
 			<-b.throttle
@@ -1099,9 +1132,12 @@ func sortDocuments(todo []*Document) {
 }
 
 func (b *Builder) buildShard(todo []*Document, nextShardNum int) (*finishedShard, error) {
+	if b.isCanceled() {
+		return nil, errBuildCanceled
+	}
 	if !b.opts.DisableCTags && (b.opts.CTagsPath != "" || b.opts.ScipCTagsPath != "") {
-		err := parseSymbols(todo, b.opts.LanguageMap, b.parserBins)
-		if b.opts.CTagsMustSucceed && err != nil {
+		err := parseSymbols(todo, b.opts.LanguageMap, b.parserBins, b.isCanceled)
+		if errors.Is(err, errBuildCanceled) || b.opts.CTagsMustSucceed && err != nil {
 			return nil, err
 		}
 		if err != nil {
@@ -1119,6 +1155,10 @@ func (b *Builder) buildShard(todo []*Document, nextShardNum int) (*finishedShard
 	sortDocuments(todo)
 
 	for idx, t := range todo {
+		if b.isCanceled() {
+			b.returnPostingsBuilders(shardBuilder)
+			return nil, errBuildCanceled
+		}
 		if err := shardBuilder.Add(*t); err != nil {
 			return nil, err
 		}
