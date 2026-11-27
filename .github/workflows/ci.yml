@@ -29,6 +29,37 @@ jobs:
       - name: test
         run: go test ./...
 
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: setup go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: test index
+        run: go test ./index
+
+      - name: test Git repository paths
+        run: go test ./gitindex -run '^TestFileKeyFullPathUsesRepositorySeparators$'
+
+      - name: build
+        run: go build -o "$env:RUNNER_TEMP/bin/" ./cmd/zoekt-webserver ./cmd/zoekt-git-index ./cmd/zoekt
+
+      # Index this checkout with the git binary (rev-parse and cat-file) and
+      # search the shard, so Windows exercises the real indexing path.
+      - name: index and search
+        shell: bash
+        run: |
+          bin="$RUNNER_TEMP/bin"
+          "$bin/zoekt-git-index" -index "$RUNNER_TEMP/index" . 2>&1 | tee "$RUNNER_TEMP/index.log"
+          grep -q 'catfile_count=[1-9]' "$RUNNER_TEMP/index.log"
+          "$bin/zoekt" -index_dir "$RUNNER_TEMP/index" 'func resolveCommit' | grep -F 'gitindex/revparse.go:'
+
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest
@@ -86,7 +117,7 @@ jobs:
   # main is green again.
   track-main:
     name: "track main failures"
-    needs: [test, shellcheck, shfmt, lint-protos, format-protos, generate-protos]
+    needs: [test, test-windows, shellcheck, shfmt, lint-protos, format-protos, generate-protos]
     if: always() && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
