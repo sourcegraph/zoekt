@@ -652,6 +652,168 @@ func TestGatherBranches(t *testing.T) {
 	}
 }
 
+// Filename-only output must not hide branch filters from result metadata.
+func TestTypeFileNameBranches(t *testing.T) {
+	branches := []zoekt.RepositoryBranch{
+		{Name: "main", Version: "sha-main"},
+		{Name: "dev", Version: "sha-dev"},
+		{Name: "release", Version: "sha-release"},
+	}
+	b := testShardBuilder(t, &zoekt.Repository{
+		ID:       1,
+		Name:     "repo",
+		Branches: branches,
+		SubRepoMap: map[string]*zoekt.Repository{
+			"sub": {Name: "subrepo", Branches: []zoekt.RepositoryBranch{
+				{Name: "main", Version: "sub-main"},
+				{Name: "dev", Version: "sub-dev"},
+				{Name: "release", Version: "sub-release"},
+			}},
+		},
+	},
+		Document{Name: "root.txt", Content: []byte("hello"), Branches: []string{"main", "dev", "release"}},
+		Document{Name: "sub/file.txt", Content: []byte("hello"), Branches: []string{"main", "dev", "release"}, SubRepositoryPath: "sub"},
+	)
+	s := searcherForTest(t, b)
+	defer s.Close()
+	dev := &query.Branch{Pattern: "dev", Exact: true}
+	release := &query.Branch{Pattern: "release", Exact: true}
+	term := &query.Substring{Pattern: "hello", Content: true}
+	filename := func(q query.Q) query.Q { return &query.Type{Type: query.TypeFileName, Child: q} }
+
+	metadata := func(r *zoekt.SearchResult) map[string]zoekt.FileMatch {
+		out := map[string]zoekt.FileMatch{}
+		for _, f := range r.Files {
+			out[f.FileName] = zoekt.FileMatch{Branches: f.Branches, Version: f.Version}
+		}
+		return out
+	}
+
+	for _, filter := range []query.Q{
+		dev,
+		query.NewAnd(dev, release),
+		query.NewOr(dev, release),
+		query.NewOr(query.NewAnd(release, &query.Regexp{Regexp: mustParseRE("^$"), Content: true}), dev),
+		query.NewAnd(dev, &query.Not{Child: query.NewAnd(release, &query.Regexp{Regexp: mustParseRE("^$"), Content: true})}),
+		&query.Boost{Child: dev, Boost: 2},
+		query.NewSingleBranchesRepos("dev", 1),
+	} {
+		t.Run(filter.String(), func(t *testing.T) {
+			q := query.NewAnd(filter, term)
+			want, err := s.Search(context.Background(), q, &zoekt.SearchOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, wrapped := range []query.Q{
+				filename(q),
+				query.NewAnd(filename(filter), term),
+				query.NewAnd(filter, filename(term)),
+				filename(query.NewAnd(filename(filter), term)),
+				&query.Boost{Child: query.NewAnd(filename(filter), term), Boost: 2},
+				query.NewOr(query.NewAnd(filename(filter), term), query.NewAnd(release, &query.Regexp{Regexp: mustParseRE("^$"), Content: true})),
+			} {
+				got, err := s.Search(context.Background(), wrapped, &zoekt.SearchOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if diff := cmp.Diff(metadata(want), metadata(got)); diff != "" {
+					t.Errorf("Search(%s) branches and versions (-want +got):\n%s", wrapped, diff)
+				}
+			}
+		})
+	}
+
+	for _, typ := range []string{"file", "filename"} {
+		q, err := query.Parse("type:" + typ + " branch:dev hello")
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := s.Search(context.Background(), q, &zoekt.SearchOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Files) != 2 {
+			t.Fatalf("Search(%s): got %d files, want 2", q, len(res.Files))
+		}
+		for _, f := range res.Files {
+			version := "sha-dev"
+			if f.SubRepositoryPath != "" {
+				version = "sub-dev"
+			}
+			if diff := cmp.Diff([]string{"dev"}, f.Branches); diff != "" || f.Version != version {
+				t.Errorf("Search(%s), %s: branches = %v, version = %q, want [dev], %q", q, f.FileName, f.Branches, f.Version, version)
+			}
+		}
+	}
+}
+
+func TestSubRepoBranchVersions(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		branches []zoekt.RepositoryBranch
+		main     string
+		dev      string
+	}{
+		{name: "nil"},
+		{name: "empty", branches: []zoekt.RepositoryBranch{}},
+		{name: "aligned", branches: []zoekt.RepositoryBranch{{Name: "main", Version: "sub-main"}, {Name: "dev", Version: "sub-dev"}}, main: "sub-main", dev: "sub-dev"},
+		{name: "reordered", branches: []zoekt.RepositoryBranch{{Name: "dev", Version: "sub-dev"}, {Name: "main", Version: "sub-main"}}, main: "sub-main", dev: "sub-dev"},
+		{name: "only-main", branches: []zoekt.RepositoryBranch{{Name: "main", Version: "sub-main"}}, main: "sub-main"},
+		{name: "only-dev", branches: []zoekt.RepositoryBranch{{Name: "dev", Version: "sub-dev"}}, dev: "sub-dev"},
+		{name: "extra", branches: []zoekt.RepositoryBranch{{Name: "other", Version: "sub-other"}, {Name: "dev", Version: "sub-dev"}, {Name: "main", Version: "sub-main"}}, main: "sub-main", dev: "sub-dev"},
+		{name: "unrelated", branches: []zoekt.RepositoryBranch{{Name: "other", Version: "sub-other"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := searcherForTest(t, testShardBuilder(t, &zoekt.Repository{
+				Name: "parent",
+				Branches: []zoekt.RepositoryBranch{
+					{Name: "main", Version: "sha-main"},
+					{Name: "dev", Version: "sha-dev"},
+				},
+				SubRepoMap: map[string]*zoekt.Repository{"sub": {Name: "child", Branches: tc.branches}},
+			}, Document{Name: "sub/file.txt", SubRepositoryPath: "sub", Content: []byte("hello"), Branches: []string{"main", "dev"}}))
+			defer s.Close()
+			for _, text := range []string{
+				"type:file branch:main hello",
+				"type:file branch:dev hello",
+				"type:filename branch:dev hello",
+				"branch:dev hello",
+				"type:file hello",
+			} {
+				t.Run(text, func(t *testing.T) {
+					q, err := query.Parse(text)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer func() {
+						if p := recover(); p != nil {
+							t.Errorf("Search(%s) panicked: %v", text, p)
+						}
+					}()
+					res, err := s.Search(context.Background(), q, &zoekt.SearchOptions{})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(res.Files) != 1 {
+						t.Fatalf("Search(%s): got %d files, want 1", text, len(res.Files))
+					}
+					branches, version := []string{"main"}, tc.main
+					if strings.Contains(text, "branch:dev") {
+						branches, version = []string{"dev"}, tc.dev
+					} else if text == "type:file hello" {
+						branches = []string{"main", "dev"}
+					}
+					f := res.Files[0]
+					if diff := cmp.Diff(branches, f.Branches); diff != "" || f.Version != version {
+						t.Errorf("Search(%s): branches = %v, version = %q, want %v, %q", text, f.Branches, f.Version, branches, version)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestGatherBranchesMany(t *testing.T) {
 	content := []byte("dummy")
 	manyBranchNames := []string{}

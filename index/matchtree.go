@@ -677,39 +677,44 @@ func updateMatchTreeStats(mt matchTree, stats *zoekt.Stats) {
 	})
 }
 
+// visitMatchAtoms visits matched positive atoms, including filename-only subtrees.
 func visitMatchAtoms(t matchTree, known map[matchTree]bool, f func(matchTree)) {
-	visitMatches(t, known, 1, func(mt matchTree, _ float64) {
+	visitMatches(t, known, 1, true, func(mt matchTree, _ float64) {
 		f(mt)
 	})
 }
 
 // visitMatches visits all atoms which can contribute matches. Note: This
-// skips noVisitMatchTree.
-func visitMatches(t matchTree, known map[matchTree]bool, weight float64, f func(matchTree, float64)) {
+// skips noVisitMatchTree. includeFileName controls whether to descend into
+// filename-only subtrees, whose content matches must not be collected.
+func visitMatches(t matchTree, known map[matchTree]bool, weight float64, includeFileName bool, f func(matchTree, float64)) {
 	switch s := t.(type) {
 	case *andMatchTree:
 		for _, ch := range s.children {
 			if known[ch] {
-				visitMatches(ch, known, weight, f)
+				visitMatches(ch, known, weight, includeFileName, f)
 			}
 		}
 	case *andLineMatchTree:
-		visitMatches(&s.andMatchTree, known, weight, f)
+		visitMatches(&s.andMatchTree, known, weight, includeFileName, f)
 	case *orMatchTree:
 		for _, ch := range s.children {
 			if known[ch] {
-				visitMatches(ch, known, weight, f)
+				visitMatches(ch, known, weight, includeFileName, f)
 			}
 		}
 	case *boostMatchTree:
-		visitMatches(s.child, known, weight*s.boost, f)
+		visitMatches(s.child, known, weight*s.boost, includeFileName, f)
 	case *symbolSubstrMatchTree:
-		visitMatches(s.substrMatchTree, known, weight, f)
+		visitMatches(s.substrMatchTree, known, weight, includeFileName, f)
 	case *notMatchTree:
 	case *noVisitMatchTree:
 		// don't collect into negative trees.
 	case *fileNameMatchTree:
 		// We will just gather the filename if we do not visit this tree.
+		if includeFileName {
+			visitMatches(s.child, known, weight, includeFileName, f)
+		}
 	default:
 		f(s, weight)
 	}

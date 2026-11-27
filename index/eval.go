@@ -314,7 +314,17 @@ nextFileMatch:
 			sr := md.SubRepoMap[path]
 			fileMatch.SubRepositoryName = sr.Name
 			if idx := branchIndex(branchMask); idx >= 0 {
-				fileMatch.Version = sr.Branches[idx].Version
+				if idx < len(sr.Branches) && sr.Branches[idx].Name == md.Branches[idx].Name {
+					fileMatch.Version = sr.Branches[idx].Version
+				} else {
+					// Subrepository branches need not have the parent's order or length.
+					for _, branch := range sr.Branches {
+						if branch.Name == md.Branches[idx].Name {
+							fileMatch.Version = branch.Version
+							break
+						}
+					}
+				}
 			}
 		} else {
 			idx := branchIndex(branchMask)
@@ -400,7 +410,7 @@ func addRepo(res *zoekt.SearchResult, repo *zoekt.Repository) {
 // but adjacent matches will remain.
 func (d *indexData) gatherMatches(nextDoc uint32, mt matchTree, known map[matchTree]bool) []*candidateMatch {
 	var cands []*candidateMatch
-	visitMatches(mt, known, 1, func(mt matchTree, scoreWeight float64) {
+	visitMatches(mt, known, 1, false, func(mt matchTree, scoreWeight float64) {
 		if smt, ok := mt.(*substrMatchTree); ok {
 			cands = append(cands, setScoreWeight(scoreWeight, smt.current)...)
 		}
