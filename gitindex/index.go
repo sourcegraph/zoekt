@@ -533,14 +533,20 @@ func expandBranches(repo *git.Repository, bs []string, prefix string) ([]string,
 // updated when DryRun is set. This can be informative if doing incremental
 // indexing.
 func IndexGitRepo(opts Options) (bool, error) {
-	return indexGitRepo(opts, gitIndexConfig{})
+	return indexGitRepo(context.Background(), opts, gitIndexConfig{})
+}
+
+// IndexGitRepoContext is IndexGitRepo, but stops between documents once ctx
+// is done. It then discards the shards built so far and returns ctx's error.
+func IndexGitRepoContext(ctx context.Context, opts Options) (bool, error) {
+	return indexGitRepo(ctx, opts, gitIndexConfig{})
 }
 
 // indexGitRepo indexes the git repository as specified by the options and the provided gitIndexConfig.
 // The returned bool indicates whether the index was updated, or would be
 // updated when DryRun is set. This can be informative if doing incremental
 // indexing.
-func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
+func indexGitRepo(ctx context.Context, opts Options, config gitIndexConfig) (bool, error) {
 	prepareDeltaBuild := prepareDeltaBuild
 	if config.prepareDeltaBuild != nil {
 		prepareDeltaBuild = config.prepareDeltaBuild
@@ -750,13 +756,16 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 			return false, fmt.Errorf("newCatfileReader: %w", err)
 		}
 
-		if err := indexCatfileBlobs(cr, mainRepoKeys, repos, opts, builder); err != nil {
+		if err := indexCatfileBlobs(ctx, cr, mainRepoKeys, repos, opts, builder); err != nil {
 			return false, err
 		}
 	}
 
 	// Index submodule blobs via go-git.
 	for idx, key := range submoduleKeys {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
 		doc, err := createDocument(key, repos, opts.BuildOptions)
 		if err != nil {
 			return false, err
@@ -778,13 +787,16 @@ func indexGitRepo(opts Options, config gitIndexConfig) (bool, error) {
 // builder. Large blobs are skipped without reading content into memory.
 // keys must correspond 1:1 (in order) with the ids passed to newCatfileReader.
 // The reader is always closed when this function returns.
-func indexCatfileBlobs(cr *catfileReader, keys []fileKey, repos map[fileKey]BlobLocation, opts Options, builder *index.Builder) error {
+func indexCatfileBlobs(ctx context.Context, cr *catfileReader, keys []fileKey, repos map[fileKey]BlobLocation, opts Options, builder *index.Builder) error {
 	defer cr.Close()
 
 	slab := newContentSlab(16 << 20) // 16 MB per slab
 	missingFiles := 0
 
 	for idx, key := range keys {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		size, missing, excluded, err := cr.Next()
 		if err != nil {
 			return fmt.Errorf("cat-file next for %s: %w", key.FullPath(), err)

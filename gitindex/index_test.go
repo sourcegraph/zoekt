@@ -27,6 +27,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -1229,7 +1230,7 @@ func TestIndexDeltaBasic(t *testing.T) {
 						}
 
 						// run test
-						_, err := indexGitRepo(options, gitIndexConfig{
+						_, err := indexGitRepo(context.Background(), options, gitIndexConfig{
 							prepareDeltaBuild:  prepareDeltaSpy,
 							prepareNormalBuild: prepareNormalSpy,
 						})
@@ -1688,7 +1689,7 @@ func TestIndexDeltaWithoutOldBlobs(t *testing.T) {
 	}
 
 	normalBuildCalled := false
-	_, err := indexGitRepo(opts(clone, true), gitIndexConfig{
+	_, err := indexGitRepo(context.Background(), opts(clone, true), gitIndexConfig{
 		prepareNormalBuild: func(options Options, repository *git.Repository) (map[fileKey]BlobLocation, map[string]map[string]plumbing.Hash, error) {
 			normalBuildCalled = true
 			return prepareNormalBuild(options, repository)
@@ -1717,5 +1718,67 @@ func TestIndexDeltaWithoutOldBlobs(t *testing.T) {
 	sort.Strings(got)
 	if want := []string{"changed.txt=new", "kept.txt=kept"}; !slices.Equal(got, want) {
 		t.Fatalf("got documents %q, want %q", got, want)
+	}
+}
+
+// cancelAfter is a context that reports cancellation once Err was called n
+// times, so a test can cancel a build partway through its documents.
+type cancelAfter struct {
+	context.Context
+	n atomic.Int32
+}
+
+func (c *cancelAfter) Err() error {
+	if c.n.Add(-1) < 0 {
+		return context.Canceled
+	}
+	return nil
+}
+
+func TestIndexGitRepoContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	testutil.RunGit(t, dir, "init", "-b", "main", "repo")
+	repoDir := filepath.Join(dir, "repo")
+	for i := range 200 {
+		content := fmt.Sprintf("package p\n\nconst file%03d = %d\n", i, i)
+		if err := os.WriteFile(filepath.Join(repoDir, fmt.Sprintf("file%03d.go", i)), []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	testutil.RunGit(t, repoDir, "add", ".")
+	testutil.RunGit(t, repoDir, "commit", "-m", "many files")
+
+	// A small ShardMax flushes shards before the cancellation, so the
+	// build has temporary shards to discard.
+	indexDir := t.TempDir()
+	ctx := &cancelAfter{Context: context.Background()}
+	ctx.n.Store(50)
+	opts := Options{
+		RepoDir:  repoDir,
+		Branches: []string{"main"},
+		BuildOptions: index.Options{
+			RepositoryDescription: zoekt.Repository{Name: "repo"},
+			IndexDir:              indexDir,
+			ShardMax:              200,
+		},
+	}
+
+	_, err := IndexGitRepoContext(ctx, opts)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("got error %v, want context.Canceled", err)
+	}
+
+	entries, err := os.ReadDir(indexDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("canceled build left files in the index directory: %v", names)
 	}
 }
