@@ -165,23 +165,39 @@ func (p *contentProvider) findOffset(filename bool, r uint32) uint32 {
 
 	var data []byte
 
+	// A sample in an earlier file can be replaced by this file's exact start.
+	if r < left {
+		byteOff = uint64(fileStartByte)
+		left = r
+	}
+
 	if filename {
 		if byteOff > uint64(len(p.id.fileNameContent)) {
 			p.panicCorrupt(fmt.Errorf("filename rune offset %d maps to byte offset %d past filename data size %d", absR, byteOff, len(p.id.fileNameContent)))
 			return 0
 		}
 		data = p.id.fileNameContent[uint32(byteOff):]
+		if byteOff <= uint64(fileEndByte) {
+			data = data[:min(uint64(len(data)), uint64(fileEndByte)-byteOff)]
+		}
 	} else {
 		corpusEnd := p.id.boundaries[len(p.id.boundaries)-1]
 		if byteOff > uint64(corpusEnd) {
 			p.panicCorrupt(fmt.Errorf("content rune offset %d maps to byte offset %d past content data size %d", absR, byteOff, corpusEnd))
 			return 0
 		}
-		var err error
-		data, err = p.id.readContentSlice(uint32(byteOff), 3*runeOffsetFrequency)
-		if err != nil {
-			p.panicCorrupt(fmt.Errorf("content rune offset %d cannot load bytes at offset %d: %w", absR, byteOff, err))
-			return 0
+		if left > 0 {
+			// Each remaining rune can occupy up to utf8.UTFMax bytes.
+			sz := min(utf8.UTFMax*left, corpusEnd-uint32(byteOff))
+			var err error
+			data, err = p.id.readContentSlice(uint32(byteOff), sz)
+			if err != nil {
+				p.panicCorrupt(fmt.Errorf("content rune offset %d cannot load bytes at offset %d: %w", absR, byteOff, err))
+				return 0
+			}
+			if byteOff <= uint64(fileEndByte) {
+				data = data[:min(uint64(len(data)), uint64(fileEndByte)-byteOff)]
+			}
 		}
 	}
 	for left > 0 {

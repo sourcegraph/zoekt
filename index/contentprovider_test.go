@@ -14,6 +14,91 @@ import (
 	"github.com/sourcegraph/zoekt"
 )
 
+func TestFindOffsetUTF8(t *testing.T) {
+	for _, unit := range []string{"", "a", "é", "界", "😀", "aé界😀"} {
+		t.Run(unit, func(t *testing.T) {
+			content := strings.Repeat(unit, 2*runeOffsetFrequency+1)
+			searcher := searcherForTest(t, testShardBuilder(t, nil,
+				Document{Name: "first", Content: []byte("é")},
+				Document{Name: "second", Content: []byte(content)},
+			))
+			defer searcher.Close()
+			cp := contentProvider{id: searcher.(*indexData)}
+			cp.setDocument(1)
+
+			var offsets []uint32
+			for byteOffset := range content {
+				offsets = append(offsets, uint32(byteOffset))
+			}
+			offsets = append(offsets, uint32(len(content)))
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					t.Errorf("findOffset panicked for valid UTF-8: %v", recovered)
+				}
+			}()
+			for r, want := range offsets {
+				if got := cp.findOffset(false, uint32(r)); got != want {
+					t.Fatalf("findOffset(%d) = %d, want %d", r, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestFindOffsetUTF8FileEnd(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		contents []string
+		doc      uint32
+	}{
+		{"following_bytes", []string{"é\xf0", "\x9f\x98\x80needle"}, 0},
+		{"empty_files", []string{"é", "", "\xf0", "", "\x9f\x98\x80"}, 4},
+		{"ascii_prefix", []string{"é" + strings.Repeat("a", runeOffsetFrequency), "é"}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var docs []Document
+			for i, content := range tc.contents {
+				docs = append(docs, Document{Name: fmt.Sprint(i), Content: []byte(content)})
+			}
+			searcher := searcherForTest(t, testShardBuilder(t, nil, docs...))
+			defer searcher.Close()
+			cp := contentProvider{id: searcher.(*indexData)}
+			cp.setDocument(tc.doc)
+
+			// Incomplete runes end with their file, not with the next file's bytes.
+			content := tc.contents[tc.doc]
+			r := uint32(utf8.RuneCountInString(content))
+			if got := cp.findOffset(false, r); got != uint32(len(content)) {
+				t.Fatalf("findOffset(%d) = %d, want %d", r, got, len(content))
+			}
+		})
+	}
+}
+
+func TestFindOffsetFilenameBoundaries(t *testing.T) {
+	searcher := searcherForTest(t, testShardBuilder(t, nil,
+		Document{Name: "é\xf0"},
+		Document{Name: "\x9f\x98\x80needle"},
+	))
+	defer searcher.Close()
+	for _, tc := range []struct {
+		name       string
+		doc, runes uint32
+	}{
+		{"file_end", 0, 2},
+		{"file_start", 1, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := contentProvider{id: searcher.(*indexData)}
+			cp.setDocument(tc.doc)
+			// The incomplete rune and continuation bytes belong to separate names.
+			if got := cp.findOffset(true, tc.runes); got != 3 {
+				t.Fatalf("findOffset(%d) = %d, want 3", tc.runes, got)
+			}
+		})
+	}
+}
+
 func getNewlines(data []byte) newlines {
 	var locs []uint32
 	for i, c := range data {
