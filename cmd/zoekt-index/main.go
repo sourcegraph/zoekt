@@ -223,8 +223,12 @@ func indexArg(arg string, opts index.Options, ignore map[string]struct{}) error 
 	}()
 
 	for f := range comm {
-		displayName := strings.TrimPrefix(f.name, dir+"/")
-		if f.size > int64(opts.SizeMax) && !opts.IgnoreSizeMax(displayName) {
+		displayName, err := filepath.Rel(dir, f.name)
+		if err != nil {
+			return err
+		}
+		displayName = filepath.ToSlash(displayName)
+		if opts.SkipTooLarge(displayName, f.size) {
 			if err := builder.Add(index.Document{
 				Name:       displayName,
 				Branches:   branches,
