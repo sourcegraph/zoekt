@@ -421,3 +421,39 @@ func TestCatfileReader_DesyncedStream(t *testing.T) {
 		})
 	}
 }
+
+// TestCatfileReader_PartialCloneDoesNotLazyFetch checks that a blob a partial
+// clone filtered out is reported missing rather than fetched from the promisor
+// remote, even though that remote is reachable.
+func TestCatfileReader_PartialCloneDoesNotLazyFetch(t *testing.T) {
+	t.Parallel()
+
+	repoDir, blobs := createTestRepo(t)
+	testutil.RunGit(t, repoDir, "config", "uploadpack.allowFilter", "true")
+
+	clone := filepath.Join(t.TempDir(), "clone.git")
+	testutil.RunGit(t, filepath.Dir(clone), "clone", "--bare", "--filter=blob:limit=1k", "file://"+repoDir, clone)
+
+	cr, err := newCatfileReader(clone, []plumbing.Hash{blobs["large.bin"], blobs["hello.txt"]}, catfileReaderOptions{})
+	if err != nil {
+		t.Fatalf("newCatfileReader: %v", err)
+	}
+	defer cr.Close()
+
+	if _, missing, _, err := cr.Next(); err != nil || !missing {
+		t.Fatalf("Next large.bin: missing=%v err=%v, want missing", missing, err)
+	}
+	if size, missing, _, err := cr.Next(); err != nil || missing || size != len("hello world\n") {
+		t.Fatalf("Next hello.txt: size=%d missing=%v err=%v", size, missing, err)
+	}
+	if err := cr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	check := exec.Command("git", "cat-file", "-e", blobs["large.bin"].String())
+	check.Dir = clone
+	check.Env = append(testutil.GitEnv(), "GIT_NO_LAZY_FETCH=1")
+	if err := check.Run(); err == nil {
+		t.Fatal("large.bin was fetched into the partial clone")
+	}
+}

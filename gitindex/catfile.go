@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -40,6 +41,7 @@ type catfileReaderOptions struct {
 func checkCatfileFilterSupport(repoDir, filterSpec string) error {
 	cmd := exec.Command("git", "cat-file", "--batch-check", "--filter="+filterSpec)
 	cmd.Dir = repoDir
+	cmd.Env = noLazyFetchEnv()
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -51,6 +53,13 @@ func checkCatfileFilterSupport(repoDir, filterSpec string) error {
 		return err
 	}
 	return nil
+}
+
+// noLazyFetchEnv keeps git from fetching objects missing from a partial clone
+// from its promisor remote one by one. Blobs a fetch filtered out are skipped
+// instead, as they are with go-git.
+func noLazyFetchEnv() []string {
+	return append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
 }
 
 // catfileReader provides streaming access to git blob objects via a pipelined
@@ -118,6 +127,7 @@ func newCatfileReader(repoDir string, ids []plumbing.Hash, opts catfileReaderOpt
 
 	cmd := exec.Command("git", args...)
 	cmd.Dir = repoDir
+	cmd.Env = noLazyFetchEnv()
 	// Stdout EOF alone does not reveal why git exited. Buffer stderr so it can
 	// be attached to the process error after Wait completes.
 	stderr := &bytes.Buffer{}
